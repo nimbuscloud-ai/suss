@@ -49,6 +49,35 @@ Prefer `import type` for type-only imports: Biome enforces this and it keeps run
 - **Object arguments for 4+ params.** Functions that take four or more parameters should accept a single options object so call sites are self-documenting. `extractStatusCode({ extraction, exceptionType, calls })` beats `extractStatusCode(extraction, null, null, calls, null)`. Three-or-fewer params is fine positional when the order follows a standard pattern (input → filter → label, left → op → right). Callback-style functions (`map`, reducers) are exempt: they have a conventional positional contract.
 - **No if-else chains assigning to a variable.** `let x; if (...) { x = a } else if (...) { x = b } else { x = c }` is a code smell: extract a helper function that returns the value directly in each branch. Assigning in branches hides the fact that you are picking one of several results, it loses the type narrowing each branch would otherwise give you, and it makes `x` mutable for no reason. This complements the DispatchTable rule above: use a DispatchTable to dispatch on a discriminated union, and a helper with early returns for everything else (boolean conditions, string-compare chains, mixed predicates). Two-branch cases that reduce to a ternary are fine to leave inline.
 
+## Reading a value
+
+A value is read through the evaluator or the resolution store, never off the syntax at the position. What a name was written as, what a template folds to, which function a declaration is, which module an import came from: each of those has one answer per language, in one place. A reader written beside the call site knows the two or three spellings its author had in front of them, so it returns null for a constant declared in another file or a path built out of a template, and the caller then reports nothing at all rather than reporting that it could not read.
+
+In the TypeScript adapter the entry points are `discovery/resolveValue.ts` (`stringValueOf`, `objectLiteralOf`, `propertiesOf`, `propertyValueOf`, `propertyNameOf`, `functionValueOf`, `writtenNodeOf`, `arrayLiteralOf`), the `ResolutionStore` in `facts/store.ts` (`resolveWrittenValue`, `resolveObject`, `resolveCallable`, `argumentsPassedTo`, `importedNamesOf`, `importOriginsOf`, `exportsOf`), `resolve/functionBehind.ts` for which function is behind a declaration or an identifier, `walk/unwrap.ts` for casts and parentheses, and `discovery/importScan.ts` for imports. In the Python and Ruby adapters they are `values/evaluator.ts` (`evaluatedValue`, `stringValueOf`), `facts/resolve.ts` (`writtenValueOf`, `originsOf`) and the literal readers in `ast.ts`. A pack uses what its adapter exports; when the helper it needs is not exported, export it from the adapter's index rather than copying it.
+
+Chasing a declaration's initializer:
+
+```typescript
+// Before: finds a function only where it was written out.
+const initializer = declaration.getInitializer();
+const handler = Node.isArrowFunction(initializer) ? initializer : null;
+
+// After: also finds one bound to a name, imported, or behind a barrel.
+const handler = functionValueOf(reference, resolution);
+```
+
+Taking a literal off the syntax:
+
+```typescript
+// Before: null for `${base}/users`, and for a constant from another file.
+const path = Node.isStringLiteral(argument) ? argument.getLiteralValue() : null;
+
+// After: folds the template and follows the constant.
+const path = stringValueOf(argument, resolution);
+```
+
+When the facility cannot read a spelling, add the case to the facility: a lowering case, a resolution rule, a store method. A fallback that asks the facility first and reads the syntax second is the same copy with a branch in front of it. `npm run check:readers` scans the adapters and the packs for the textual tells of a second reader. The files that already fail are listed in `EXEMPT` in `scripts/checkReaders.mjs`, each with the functions doing the reading, and an entry comes out when the copy goes.
+
 ## Identifiers a pack names
 
 A pack may hardcode an identifier only when the library that pack is about defines it. An identifier that comes from one specific codebase belongs in per-project configuration instead, which you set through the pack's options and `-f <pack>=config.json`.

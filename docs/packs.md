@@ -49,6 +49,10 @@ interface PatternPack {
 }
 ```
 
+## Asking what a value is
+
+A pattern gives the adapter a position: this argument, this property, this loop's iterable. When a pack needs the value at that position, it asks the adapter's exported resolvers rather than reading the AST at the position. `@suss/adapter-typescript` exports `stringValueOf` for a string, `objectLiteralOf` and `propertiesOf` for an object, `functionValueOf` for a function, `arrayLiteralOf` for an array, and `writtenNodeOf` for the expression a name was written as; each of them follows the name through a property read, an array element, an alias, an import and a barrel, which reading the syntax cannot do. `npm run check:readers` rejects a pack that reaches for ts-morph itself, so `getInitializer`, `getSymbol`, `getDeclarations` and `getLiteralValue` all fail the build. [`docs/internal/style.md#reading-a-value`](internal/style.md#reading-a-value) has the rule and the Python and Ruby equivalents.
+
 ## Discovery-driven vs recognizer-only
 
 Packs come in two structural kinds, told apart by whether they discover units themselves or only fire on calls inside units other packs discovered.

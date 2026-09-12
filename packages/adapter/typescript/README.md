@@ -14,6 +14,10 @@ It supports both provider-side extraction (handler registration, terminal discov
 
 It imports `@suss/behavioral-ir` for type references and `@suss/extractor` for the `RawCodeStructure` contract. Framework packs and the CLI consume it. It runs one level above the extractor in the pipeline, feeding it raw structures produced from TypeScript AST analysis.
 
+## Reading a value
+
+Nothing outside the facility reads the syntax to find out what a value is. `discovery/resolveValue.ts` is the entry point most callers want: `stringValueOf` folds a template and follows a name to the string it was written as, `objectLiteralOf` and `propertiesOf` read an object through whatever name it arrived under and fold a spread into it, `functionValueOf` and `writtenNodeOf` say which function or which expression a reference comes to. Under those sit the `ResolutionStore` in `facts/store.ts` (`resolveWrittenValue`, `resolveObject`, `resolveCallable`, `argumentsPassedTo`, `importedNamesOf`, `importOriginsOf`, `exportsOf`), `resolve/functionBehind.ts`, `walk/unwrap.ts` for casts and parentheses, and `discovery/importScan.ts` for imports. Packs reach all of it through this package's exports. When the facility cannot read a spelling, the case goes into the facility; `npm run check:readers` at the repo root fails on a reader written beside a call site instead. [`docs/internal/style.md#reading-a-value`](../../../docs/internal/style.md#reading-a-value) has the rule.
+
 ## How a project is loaded
 
 ts-morph parses every file in the tsconfig include glob when a `Project` is constructed, which on a monorepo is thousands of files the extraction never touches. The bootstrap avoids that in four steps:

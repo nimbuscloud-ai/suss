@@ -101,6 +101,14 @@ jobs:
         if: steps.prepare.outputs.docs_only != 'true'
         run: npm run check:name-syntax
 
+      - name: One reader for a value
+        if: steps.prepare.outputs.docs_only != 'true'
+        run: npm run check:readers
+
+      - name: Tests for the check scripts
+        if: steps.prepare.outputs.docs_only != 'true'
+        run: npm run test:scripts
+
       - name: Pack wiring
         if: steps.prepare.outputs.docs_only != 'true'
         run: npm run check:packs

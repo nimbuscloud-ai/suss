@@ -22,6 +22,19 @@ export {
   namedImportsOf,
 } from "./discovery/importScan.js";
 export { discoverUnits } from "./discovery/index.js";
+// What a value at a position turns out to be. A pack calls these
+// rather than reading the syntax there, which stops at a name.
+export {
+  arrayLiteralOf,
+  functionValueOf,
+  objectLiteralOf,
+  propertiesOf,
+  propertyNameOf,
+  propertyValueOf,
+  stringPropertyOf,
+  stringValueOf,
+  writtenNodeOf,
+} from "./discovery/resolveValue.js";
 export { createTsDiscoveryContext } from "./discoveryContext.js";
 // The store behind the recognizer context's `resolveWrittenValue`.
 // Exported so a pack's test harness can give recognizers the same

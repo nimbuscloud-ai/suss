@@ -59,6 +59,7 @@
     "check:name-syntax": "node scripts/checkNameSyntax.mjs",
     "check:pack-counts": "node scripts/checkPackCounts.mjs",
     "check:packs": "node scripts/checkPacks.mjs",
+    "check:readers": "node scripts/checkReaders.mjs",
     "check:readmes": "node scripts/checkReadmes.mjs",
     "check:pack-tables": "node scripts/generatePackTables.mjs --check",
     "check:perf": "node scripts/checkPerfBaseline.mjs",
@@ -87,6 +88,7 @@
     "test:acceptance": "npm run -w @suss/acceptance test",
     "test:badges": "npm run test:coverage && npm run badges",
     "test:coverage": "turbo test:coverage --concurrency=3",
+    "test:scripts": "node --test scripts/*.test.mjs",
     "typecheck": "tsc --build tsconfig.typecheck.json",
     "fuzz:properties": "vitest run packages/datalog/src packages/resolution/src"
   },
