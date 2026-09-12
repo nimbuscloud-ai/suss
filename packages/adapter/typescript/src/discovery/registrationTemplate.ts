@@ -30,6 +30,7 @@ import {
 import {
   functionValueOf,
   objectLiteralOf,
+  propertyNameOf,
   propertyValueOf,
   stringValueOf,
 } from "./resolveValue.js";
@@ -268,7 +269,7 @@ function readPropertyAsFunction(
     return null;
   }
   for (const property of obj.getProperties()) {
-    if (propertyName(property) !== prop) {
+    if (propertyNameOf(property) !== prop) {
       continue;
     }
     if (Node.isMethodDeclaration(property)) {
@@ -282,18 +283,6 @@ function readPropertyAsFunction(
     return func === null
       ? null
       : { func, name: Node.isIdentifier(held) ? held.getText() : prop };
-  }
-  return null;
-}
-
-/** The name an object literal writes a property under. */
-function propertyName(property: Node): string | null {
-  if (
-    Node.isPropertyAssignment(property) ||
-    Node.isShorthandPropertyAssignment(property) ||
-    Node.isMethodDeclaration(property)
-  ) {
-    return property.getName();
   }
   return null;
 }

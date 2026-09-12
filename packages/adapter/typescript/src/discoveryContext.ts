@@ -22,6 +22,12 @@ import { peelParens } from "./walk/unwrap.js";
 import type { FunctionRoot } from "./conditions.js";
 
 export interface TsDiscoveryContext {
+  /**
+   * The run's store, for a pack reading a value through the adapter's
+   * shared resolvers rather than the syntax at the position.
+   */
+  resolution: ResolutionStore;
+
   /** Full filesystem path of the source file. Useful for excluding
    *  test / story files via the pack's own regex. */
   getFilePath(sourceFile: SourceFile): string;
@@ -61,6 +67,7 @@ export function createTsDiscoveryContext(
   // The adapter passes its run's store; a bare call gets its own.
   const store = resolution ?? new ResolutionStore();
   return {
+    resolution: store,
     getFilePath,
     exportedFunctions: (sourceFile) => exportedFunctions(sourceFile, store),
     hasJsxReturn,

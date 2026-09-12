@@ -16,6 +16,8 @@
 
 import { type CallExpression, Node, type SourceFile } from "ts-morph";
 
+import { matchingImportDeclarations } from "./discovery/importScan.js";
+
 import type { configuredCallOption, EffectArg } from "@suss/extractor";
 import type { z } from "zod";
 
@@ -66,7 +68,13 @@ export function readConfiguredCall(
 
   // Cheap checks first: the type query below asks the checker to walk
   // the receiver, and every call in the file would otherwise pay for it.
-  if (!importsModule(ctx.sourceFile, spec.module)) {
+  const declaring = matchingImportDeclarations(
+    ctx.sourceFile,
+    spec.module,
+    undefined,
+    true,
+  );
+  if (declaring.length === 0) {
     return null;
   }
 
@@ -83,21 +91,6 @@ export function readConfiguredCall(
   const body = spec.bodyArg === undefined ? null : (args[spec.bodyArg] ?? null);
 
   return { subject, body, callee: callee.getText() };
-}
-
-/**
- * Whether the file imports the module the spec gives. Sub-path imports
- * count, the same way `requiresImport` counts them: a package that
- * publishes `@scope/pkg/sqs` is still that package.
- */
-function importsModule(sourceFile: SourceFile, module: string): boolean {
-  for (const decl of sourceFile.getImportDeclarations()) {
-    const specifier = decl.getModuleSpecifierValue();
-    if (specifier === module || specifier.startsWith(`${module}/`)) {
-      return true;
-    }
-  }
-  return false;
 }
 
 /**

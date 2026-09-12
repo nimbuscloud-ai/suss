@@ -17,10 +17,14 @@ import {
 } from "@suss/behavioral-ir";
 
 import { ResolutionStore } from "../facts/store.js";
-import { peelSyntax } from "../walk/unwrap.js";
 import { callsByOriginName } from "./importedCalls.js";
 import { namedImportsOf } from "./importScan.js";
-import { stringValueOf } from "./resolveValue.js";
+import {
+  objectLiteralOf,
+  propertyValueOf,
+  stringValueOf,
+  writtenNodeOf,
+} from "./resolveValue.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { PatternPack } from "@suss/extractor";
@@ -76,7 +80,7 @@ export function stampGraphqlClientRefs(
     }
 
     if (dangling && registry === null) {
-      registry = fragmentRegistryStatus(sourceFiles, packs);
+      registry = fragmentRegistryStatus(sourceFiles, packs, resolution);
     }
 
     summary.metadata = withGraphqlMetadata(summary.metadata, {
@@ -225,6 +229,7 @@ interface FragmentRegistrySpec {
 export function fragmentRegistryStatus(
   sourceFiles: ReadonlyArray<SourceFile>,
   packs: ReadonlyArray<PatternPack>,
+  resolution: ResolutionStore | undefined,
 ): FragmentRegistryStatus {
   const statuses: FragmentRegistryStatus[] = [];
   for (const spec of packs.flatMap((pack) => pack.graphqlClients ?? [])) {
@@ -244,7 +249,9 @@ export function fragmentRegistryStatus(
       }
       sourceFile.forEachDescendant((node) => {
         if (isConstructionNamed(node, local)) {
-          statuses.push(constructionRegistryStatus(node, registrySpec));
+          statuses.push(
+            constructionRegistryStatus(node, registrySpec, resolution),
+          );
         }
       });
     }
@@ -267,39 +274,32 @@ function combineRegistryStatuses(
 
 /** One construction's verdict, from its options object down to the cache's options. */
 function constructionRegistryStatus(
-  construction: Node,
+  construction: NewExpression | CallExpression,
   spec: FragmentRegistrySpec,
+  resolution: ResolutionStore | undefined,
 ): FragmentRegistryStatus {
-  const options = firstArgumentObjectLiteral(construction);
+  const options = firstArgumentObject(construction, resolution);
   if (options === null) {
     return "unknown";
   }
 
-  const cacheExpr = propertyValueOf(options, spec.cacheProperty);
+  const cacheProperty = options.getProperty(spec.cacheProperty);
+  const cacheExpr =
+    cacheProperty === undefined ? null : propertyValueOf(cacheProperty);
   if (cacheExpr === null) {
     return "unknown";
   }
 
-  const cacheConstruction = resolveToConstructionOf(
-    cacheExpr,
-    spec.cacheConstructor,
-  );
-  if (cacheConstruction === null) {
+  const cache = writtenNodeOf(cacheExpr, resolution);
+  if (cache === null || !isConstructionOfClass(cache, spec.cacheConstructor)) {
     return "unknown";
   }
 
-  if (
-    !Node.isNewExpression(cacheConstruction) &&
-    !Node.isCallExpression(cacheConstruction)
-  ) {
-    return "unknown";
-  }
-  const args = cacheConstruction.getArguments();
-  if (args.length === 0) {
+  if (cache.getArguments().length === 0) {
     return "absent";
   }
 
-  const cacheOptions = firstArgumentObjectLiteral(cacheConstruction);
+  const cacheOptions = firstArgumentObject(cache, resolution);
   if (cacheOptions === null) {
     return "unknown";
   }
@@ -317,98 +317,32 @@ function constructionRegistryStatus(
   return hasSpread ? "unknown" : "absent";
 }
 
-/** The construction's first argument when it is a written object literal. */
-function firstArgumentObjectLiteral(
-  construction: Node,
+/** The object a construction is given as its first argument, written there or named. */
+function firstArgumentObject(
+  construction: NewExpression | CallExpression,
+  resolution: ResolutionStore | undefined,
 ): ObjectLiteralExpression | null {
-  if (
-    !Node.isNewExpression(construction) &&
-    !Node.isCallExpression(construction)
-  ) {
-    return null;
-  }
   const arg = construction.getArguments()[0];
-  if (arg === undefined || !Node.isObjectLiteralExpression(arg)) {
-    return null;
-  }
-  return arg;
+  return arg === undefined ? null : objectLiteralOf(arg, resolution);
 }
 
-/** The written value behind a property, shorthand `{ cache }` included. */
-function propertyValueOf(
-  options: ObjectLiteralExpression,
-  name: string,
-): Node | null {
-  const property = options.getProperty(name);
-  if (property === undefined) {
-    return null;
-  }
-
-  if (Node.isPropertyAssignment(property)) {
-    return property.getInitializer() ?? null;
-  }
-
-  if (Node.isShorthandPropertyAssignment(property)) {
-    // The `{ cache }` identifier's own symbol is the property; the
-    // local it forwards comes from the checker.
-    const symbol = property
-      .getProject()
-      .getTypeChecker()
-      .getShorthandAssignmentValueSymbol(property);
-    return symbol?.getValueDeclaration() ?? null;
-  }
-  return null;
-}
-
-/**
- * Follow an expression to a construction of the declared class:
- * through parentheses and `as` casts, and through local `const cache =
- * new InMemoryCache(...)` bindings one variable at a time. Anything
- * else (a parameter, a helper call, an import whose declaration is not
- * a variable) resolves to null and the caller reports "unknown".
- */
-function resolveToConstructionOf(
-  expression: Node,
+/** Whether this expression constructs the class the pack declares. */
+function isConstructionOfClass(
+  node: Node,
   cacheClass: { importModule: string; importName: string },
-): Node | null {
-  let current: Node | undefined = expression;
-  for (let hop = 0; hop < 4 && current !== undefined; hop += 1) {
-    current = unwrapExpression(current);
-    if (Node.isVariableDeclaration(current)) {
-      current = current.getInitializer();
-      continue;
-    }
-
-    if (Node.isNewExpression(current) || Node.isCallExpression(current)) {
-      const callee = current.getExpression();
-      if (callee === undefined || !Node.isIdentifier(callee)) {
-        return null;
-      }
-      const local = localImportName(
-        current.getSourceFile(),
-        cacheClass.importModule,
-        cacheClass.importName,
-      );
-      return local !== null && callee.getText() === local ? current : null;
-    }
-
-    if (!Node.isIdentifier(current)) {
-      return null;
-    }
-    const declaration = current.getSymbol()?.getValueDeclaration();
-    if (declaration === undefined || !Node.isVariableDeclaration(declaration)) {
-      return null;
-    }
-    current = declaration.getInitializer();
-  }
-  return null;
+): node is NewExpression | CallExpression {
+  const local = localImportName(
+    node.getSourceFile(),
+    cacheClass.importModule,
+    cacheClass.importName,
+  );
+  return local !== null && isConstructionNamed(node, local);
 }
 
-function unwrapExpression(node: Node): Node {
-  return peelSyntax(node);
-}
-
-function isConstructionNamed(node: Node, localName: string): boolean {
+function isConstructionNamed(
+  node: Node,
+  localName: string,
+): node is NewExpression | CallExpression {
   if (!Node.isNewExpression(node) && !Node.isCallExpression(node)) {
     return false;
   }

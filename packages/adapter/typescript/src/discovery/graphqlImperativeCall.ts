@@ -16,6 +16,7 @@ import {
   documentBehindWrapper,
   expandDocumentParameterCallers,
 } from "./graphqlWrapper.js";
+import { propertyValueOf } from "./resolveValue.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
 import type { ResolutionStore } from "../facts/store.js";
@@ -74,7 +75,7 @@ export function discoverGraphqlImperativeCalls(
     if (docProp === undefined) {
       return;
     }
-    const docValue = imperativeConfigValue(docProp);
+    const docValue = propertyValueOf(docProp);
     if (docValue === null) {
       return;
     }
@@ -129,30 +130,4 @@ export function discoverGraphqlImperativeCalls(
     });
   });
   return results;
-}
-
-function imperativeConfigValue(prop: Node): Node | null {
-  if (Node.isPropertyAssignment(prop)) {
-    return prop.getInitializer() ?? null;
-  }
-  if (Node.isShorthandPropertyAssignment(prop)) {
-    // Walk to the outer binding via getValueSymbol, same fix as
-    // in resolverMapObject, needed because ShorthandPropertyAssignment's
-    // `getSymbol()` returns the shorthand-property's own symbol,
-    // not the referenced value.
-    const valueSymbol = prop.getValueSymbol();
-    if (valueSymbol === undefined) {
-      return null;
-    }
-    for (const decl of valueSymbol.getDeclarations()) {
-      if (Node.isVariableDeclaration(decl)) {
-        const init = decl.getInitializer();
-        if (init !== undefined) {
-          return init;
-        }
-      }
-    }
-    return null;
-  }
-  return null;
 }

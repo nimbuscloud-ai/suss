@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { createTestProject } from "@suss/test-project";
 
+import { ResolutionStore } from "../facts/store.js";
 import { surfaceMethods } from "./factorySurface.js";
 
 import type { FunctionRoot } from "../conditions.js";
@@ -10,7 +11,7 @@ function surfacedNames(source: string, declName: string): string[] {
   const project = createTestProject();
   const file = project.createSourceFile("/probe.ts", source);
   const decl = file.getFunctionOrThrow(declName);
-  return surfaceMethods(decl as unknown as FunctionRoot)
+  return surfaceMethods(decl as unknown as FunctionRoot, new ResolutionStore())
     .map((m) => m.name)
     .sort();
 }
@@ -110,7 +111,7 @@ describe("surfaceMethods: shorthand over inner functions", () => {
     expect(names).toEqual([]);
   });
 
-  it("leaves a shorthand property bound to an import from another file unsurfaced", () => {
+  it("surfaces a shorthand property bound to an import from another file", () => {
     const project = createTestProject();
     project.createSourceFile(
       "/other.ts",
@@ -126,7 +127,24 @@ describe("surfaceMethods: shorthand over inner functions", () => {
     `,
     );
     const decl = file.getFunctionOrThrow("createX");
-    expect(surfaceMethods(decl as unknown as FunctionRoot)).toEqual([]);
+    const surfaced = surfaceMethods(
+      decl as unknown as FunctionRoot,
+      new ResolutionStore(),
+    );
+    expect(surfaced.map((m) => m.name)).toEqual(["helper"]);
+  });
+
+  it("surfaces the methods a spread of another object contributes", () => {
+    const names = surfacedNames(
+      `
+      const base = { ping() {} };
+      export function createX() {
+        return { ...base, pong() {} };
+      }
+    `,
+      "createX",
+    );
+    expect(names).toEqual(["ping", "pong"]);
   });
 });
 

@@ -21,10 +21,7 @@
 
 import { Node, type SourceFile } from "ts-morph";
 
-import {
-  matchingImportDeclarations,
-  resolvedModuleFile,
-} from "./importScan.js";
+import { resolvedModuleFile } from "./importScan.js";
 import { resolveImportedLocalName } from "./resolveImport.js";
 import { writtenNodeOf } from "./resolveValue.js";
 import { type DiscoveredUnit, findEnclosingFunction } from "./shared.js";
@@ -333,12 +330,11 @@ function isClientImport(
   }
 
   if (resolution === undefined) {
-    const local = resolvedImportLocalName(
+    const local = resolveImportedLocalName(
       subject.getSourceFile(),
       match.importModule,
       match.importName,
-      strictDefaultName,
-      resolution,
+      strictDefaultName ? {} : { anyRootSpelling: true },
     );
     return local !== null && subject.getText() === local;
   }
@@ -368,50 +364,6 @@ function isClientImport(
   return (
     viaDefault && (!strictDefaultName || subject.getText() === match.importName)
   );
-}
-
-/**
- * The local name `importName` (from `importModule`) is bound to in
- * `sourceFile`, or null when that file doesn't import it at all.
- *
- * `strictDefaultName` decides how a default import is read. A named
- * import always matches by the name it was exported under, whatever
- * local alias it's imported under; a default export has none, so the
- * caller says whether the local spelling has to be the conventional
- * one this pack matches its own same-file calls against (true), or
- * whether any default import of the right module counts (false),
- * which is what verifying an already-resolved instance's own creating
- * file needs.
- */
-function resolvedImportLocalName(
-  sourceFile: SourceFile,
-  importModule: string,
-  importName: string,
-  strictDefaultName: boolean,
-  resolution: ResolutionStore | undefined,
-): string | null {
-  for (const importDecl of matchingImportDeclarations(
-    sourceFile,
-    importModule,
-    resolution,
-  )) {
-    for (const namedImport of importDecl.getNamedImports()) {
-      if (
-        namedImport.getName() === importName ||
-        namedImport.getAliasNode()?.getText() === importName
-      ) {
-        return namedImport.getAliasNode()?.getText() ?? namedImport.getName();
-      }
-    }
-    const defaultImport = importDecl.getDefaultImport();
-    if (
-      defaultImport !== undefined &&
-      (!strictDefaultName || defaultImport.getText() === importName)
-    ) {
-      return defaultImport.getText();
-    }
-  }
-  return null;
 }
 
 /**

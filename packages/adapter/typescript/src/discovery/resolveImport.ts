@@ -4,9 +4,24 @@
 // (resolverMap, graphqlImperativeCall) and need the local identifier
 // the consumer actually wrote (which may be aliased).
 
-import { importedRootsOf, namedImportsOf } from "./importScan.js";
+import {
+  type ImportScanOptions,
+  importedRootsOf,
+  namedImportsOf,
+} from "./importScan.js";
 
 import type { SourceFile } from "ts-morph";
+
+export interface ImportedLocalNameOptions extends ImportScanOptions {
+  /**
+   * Take a default or namespace import under whatever local spelling
+   * the file gave it. A default export has no name of its own, so a
+   * caller checking which file already-resolved instance was built in
+   * accepts any spelling, while one matching a bare `axios.get(...)`
+   * against the conventional name leaves this off.
+   */
+  anyRootSpelling?: boolean;
+}
 
 /**
  * Locate local identifiers bound to the imported symbol (named,
@@ -18,14 +33,15 @@ export function resolveImportedLocalName(
   sourceFile: SourceFile,
   importModule: string,
   importName: string,
+  options: ImportedLocalNameOptions = {},
 ): string | null {
-  for (const one of namedImportsOf(sourceFile, [importModule])) {
+  for (const one of namedImportsOf(sourceFile, [importModule], options)) {
     if (one.canonical === importName || one.local === importName) {
       return one.local;
     }
   }
-  for (const root of importedRootsOf(sourceFile, [importModule])) {
-    if (root === importName) {
+  for (const root of importedRootsOf(sourceFile, [importModule], options)) {
+    if (options.anyRootSpelling === true || root === importName) {
       return root;
     }
   }

@@ -3472,6 +3472,30 @@ describe("graphqlImperativeCall discovery", () => {
     expect(units[0].operationInfo?.operationName).toBe("LoadPet");
   });
 
+  it("resolves a shorthand document declared in another module", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "documents.ts",
+      `
+      import { gql } from "@apollo/client";
+      export const query = gql\`query LoadPet { pet { id } }\`;
+    `,
+    );
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { ApolloClient } from "@apollo/client";
+      import { query } from "./documents";
+      declare const client: ApolloClient<unknown>;
+      export async function loadPet() {
+        return client.query({ query });
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeImperativePattern()]);
+    expect(units[0].operationInfo?.operationName).toBe("LoadPet");
+  });
+
   it("returns [] when ApolloClient isn't imported", () => {
     const project = createProject();
     const file = project.createSourceFile(
@@ -4158,6 +4182,34 @@ describe("decoratedRoute discovery", () => {
     );
     const units = discoverUnits(file, [makeDecoratedRoutePattern()]);
     expect(units).toHaveLength(0);
+  });
+
+  it("takes a project-relative decorator module the file spells from its own directory", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "http/decorators.ts",
+      `
+      export const Controller = (path?: string): ClassDecorator => () => {};
+      export const Get = (path?: string): MethodDecorator => () => {};
+    `,
+    );
+    const file = project.createSourceFile(
+      "users/users.controller.ts",
+      `
+      import { Controller, Get } from "../http/decorators";
+      @Controller("users")
+      class UsersController {
+        @Get(":id")
+        one() { return null; }
+      }
+    `,
+    );
+    const units = discoverUnits(file, [
+      makeDecoratedRoutePattern({ importModule: "./http/decorators" }),
+    ]);
+    expect(units.map((u) => u.routeInfo)).toEqual([
+      { method: "GET", path: "/users/:id" },
+    ]);
   });
 
   it("joins class-prefix and method-suffix into a leading-slash path", () => {

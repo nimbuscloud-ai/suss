@@ -268,4 +268,31 @@ describe("readConfiguredCall", () => {
 
     expect(readAll(sf).map((r) => r.subject)).toEqual(["order.placed"]);
   });
+
+  it("matches a project-relative module the file spells from its own directory", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "messaging/dispatcher.ts",
+      `
+      export class CommandDispatcher {
+        async dispatch(subject: string, data: unknown, opts: unknown) {}
+      }
+    `,
+    );
+    const sf = project.createSourceFile(
+      "orders/send.ts",
+      `
+      import { CommandDispatcher } from "../messaging/dispatcher";
+      export async function send(dispatcher: CommandDispatcher) {
+        await dispatcher.dispatch("order.placed", {}, {});
+      }
+    `,
+    );
+
+    const spec: ConfiguredCallSpec = {
+      ...DISPATCH,
+      module: "./messaging/dispatcher",
+    };
+    expect(readAll(sf, spec).map((r) => r.subject)).toEqual(["order.placed"]);
+  });
 });
