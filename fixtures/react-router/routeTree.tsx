@@ -7,8 +7,7 @@ import { Route, Routes } from "react-router-dom";
 
 import { Settings, UserDetail, UsersIndex } from "./pages";
 
-const section = "general";
-const settingsPath = `/settings/${section}`;
+const settingsPath = `/settings/${Math.random()}`;
 
 export function AppRoutes() {
   return (

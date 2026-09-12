@@ -87,11 +87,46 @@ describe("registrationTemplate discovery", () => {
       function registerCrud(_app: unknown, _resource: string, _handlers: any) {}
       const app = {};
       const handlers = { list() {} };
-      const dynamicResource = "users";
-      registerCrud(app, dynamicResource, handlers);
+      function register(resource: string) {
+        registerCrud(app, resource, handlers);
+      }
     `);
     const units = discoverUnits(file, [CRUD_PATTERN], new ResolutionStore());
     expect(units).toHaveLength(0);
+  });
+
+  it("reads the resource name from a constant imported from another module", () => {
+    const project = makeProject();
+    project.createSourceFile(
+      "resource.ts",
+      'export const RESOURCE = "widgets";',
+    );
+    const file = project.createSourceFile(
+      "user.ts",
+      `
+      import { RESOURCE } from "./resource.js";
+      function registerCrud(_app: unknown, _resource: string, _handlers: any) {}
+      const app = {};
+      registerCrud(app, RESOURCE, {
+        list() {},
+        create() {},
+        update() {},
+        remove() {},
+      });
+    `,
+    );
+    const units = discoverUnits(file, [CRUD_PATTERN], new ResolutionStore());
+    const routes = units
+      .map((u) => u.routeInfo)
+      .filter((r): r is { method: string; path: string } => r !== undefined)
+      .map((r) => `${r.method} ${r.path}`)
+      .sort();
+    expect(routes).toEqual([
+      "DELETE /widgets/:id",
+      "GET /widgets",
+      "POST /widgets",
+      "PUT /widgets/:id",
+    ]);
   });
 
   it("skips registrations whose handler arg can't be resolved", () => {

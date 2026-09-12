@@ -31,6 +31,7 @@ import {
   functionValueOf,
   objectLiteralOf,
   propertyValueOf,
+  stringValueOf,
 } from "./resolveValue.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
@@ -60,7 +61,7 @@ export function discoverRegistrationTemplates(
         : (mountPrefixes?.effectivePrefixFor(subject) ?? "");
 
     for (const reg of match.registrations) {
-      const path = substitutePath(reg.pathTemplate, args);
+      const path = substitutePath(reg.pathTemplate, args, resolution);
       if (path === null) {
         // Template referenced a non-literal arg slot; we can still
         // emit the registration with an opaque marker, but for v0
@@ -187,7 +188,11 @@ function isModuleFile(filePath: string, module: string): boolean {
   return withoutExtension === named || withoutExtension === `${named}/index`;
 }
 
-function substitutePath(template: string, args: Node[]): string | null {
+function substitutePath(
+  template: string,
+  args: Node[],
+  resolution: ResolutionStore | undefined,
+): string | null {
   const re = /\{(\d+)\}/g;
   let result = "";
   let lastIndex = 0;
@@ -199,7 +204,7 @@ function substitutePath(template: string, args: Node[]): string | null {
     if (arg === undefined) {
       return null;
     }
-    const literal = readStringLiteral(arg);
+    const literal = stringValueOf(arg, resolution);
     if (literal === null) {
       // Non-literal arg in a path slot: return null so caller can
       // skip this registration. Tombstone emission is a v1 concern.
@@ -211,16 +216,6 @@ function substitutePath(template: string, args: Node[]): string | null {
   }
   result += template.slice(lastIndex);
   return result;
-}
-
-function readStringLiteral(node: Node): string | null {
-  if (
-    Node.isStringLiteral(node) ||
-    Node.isNoSubstitutionTemplateLiteral(node)
-  ) {
-    return node.getLiteralValue();
-  }
-  return null;
 }
 
 function resolveHandler(

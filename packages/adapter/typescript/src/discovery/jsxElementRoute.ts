@@ -23,6 +23,7 @@ import {
   arrayLiteralOf,
   functionValueOf,
   propertyValueOf,
+  stringValueOf,
 } from "./resolveValue.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
@@ -213,27 +214,29 @@ function attributeValueOf(node: RouteJsxNode, name: string): Node | null {
 }
 
 /**
- * The string a JSX attribute or object-property value is, or null
- * for anything computed. `path="x"` and `path={"x"}` both read; a
- * template with substitutions, a variable, and a call all give null.
+ * The string a JSX attribute or object-property value is, following a
+ * name through the resolution store. A JSX attribute's own container is
+ * unwrapped first, so `path="x"` and `path={"x"}` both read the same
+ * way; the object-property form never has that container to begin with.
  */
-function literalStringOf(value: Node): string | null {
+function literalStringOf(
+  value: Node,
+  resolution: ResolutionStore | undefined,
+): string | null {
   const unwrapped = Node.isJsxExpression(value)
     ? (value.getExpression() ?? value)
     : value;
-  if (
-    Node.isStringLiteral(unwrapped) ||
-    Node.isNoSubstitutionTemplateLiteral(unwrapped)
-  ) {
-    return unwrapped.getLiteralValue();
-  }
-  return null;
+  return stringValueOf(unwrapped, resolution);
 }
 
-function ownPathOfJsx(node: RouteJsxNode, match: JsxRouteMatch): OwnPath {
+function ownPathOfJsx(
+  node: RouteJsxNode,
+  match: JsxRouteMatch,
+  resolution: ResolutionStore | undefined,
+): OwnPath {
   const pathValue = attributeValueOf(node, match.pathAttribute);
   if (pathValue !== null) {
-    const literal = literalStringOf(pathValue);
+    const literal = literalStringOf(pathValue, resolution);
     return literal !== null
       ? { kind: "literal", value: literal }
       : { kind: "unreadable" };
@@ -280,6 +283,7 @@ function composedPrefixOf(
   node: RouteJsxNode,
   match: JsxRouteMatch,
   routeNames: ReadonlySet<string>,
+  resolution: ResolutionStore | undefined,
 ): Prefix {
   const enclosing: RouteJsxNode[] = [];
   for (const ancestor of node.getAncestors()) {
@@ -290,7 +294,7 @@ function composedPrefixOf(
 
   let prefix: Prefix = { path: "" };
   for (const ancestor of enclosing.reverse()) {
-    prefix = prefixUnder(prefix, ownPathOfJsx(ancestor, match));
+    prefix = prefixUnder(prefix, ownPathOfJsx(ancestor, match, resolution));
   }
   return prefix;
 }
@@ -373,14 +377,14 @@ function unitForJsxRoute(
     return null;
   }
 
-  const own = ownPathOfJsx(node, match);
+  const own = ownPathOfJsx(node, match, resolution);
   if (own.kind === "none") {
     return null;
   }
 
   const resolved = resolvedPathOf(
     own,
-    composedPrefixOf(node, match, routeNames),
+    composedPrefixOf(node, match, routeNames, resolution),
   );
   if ("unread" in resolved) {
     return abstention(
@@ -591,7 +595,7 @@ function unitsForRouteObject(
   prefix: Prefix,
   ancestry: ReadonlySet<ArrayLiteralExpression>,
 ): DiscoveredUnit[] {
-  const own = ownPathOfObject(object, match);
+  const own = ownPathOfObject(object, match, resolution);
   const here = unitForRouteObject(object, match, kind, resolution, prefix, own);
   const nested = unitsUnderRouteObject(
     object,
@@ -671,10 +675,11 @@ function unitsUnderRouteObject(
 function ownPathOfObject(
   object: ObjectLiteralExpression,
   match: JsxRouteMatch,
+  resolution: ResolutionStore | undefined,
 ): OwnPath {
   const pathValue = routePropertyOf(object, match.pathAttribute);
   if (pathValue !== null) {
-    const literal = literalStringOf(pathValue);
+    const literal = literalStringOf(pathValue, resolution);
     return literal !== null
       ? { kind: "literal", value: literal }
       : { kind: "unreadable" };

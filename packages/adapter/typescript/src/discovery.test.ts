@@ -3947,6 +3947,33 @@ describe("decoratedMethod discovery", () => {
     expect(units).toHaveLength(1);
     expect(units[0].resolverInfo?.fieldName).toBe("all");
   });
+
+  it("reads a name override from a constant imported from another module", () => {
+    const project = createProject();
+    project.createSourceFile(
+      "fieldNames.ts",
+      'export const ALL_PETS = "allPets";',
+    );
+    const file = project.createSourceFile(
+      "stub.ts",
+      `
+      import { Query, Resolver } from "@nestjs/graphql";
+      import { ALL_PETS } from "./fieldNames.js";
+      @Resolver(() => Pet)
+      class PetResolver {
+        @Query(() => [Pet], { name: ALL_PETS })
+        all(): Pet[] { return []; }
+      }
+      declare class Pet { id: string; }
+    `,
+    );
+    const units = discoverUnits(
+      file,
+      [makeDecoratedMethodPattern()],
+      new ResolutionStore(),
+    );
+    expect(units[0].resolverInfo?.fieldName).toBe("allPets");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -4071,6 +4098,28 @@ describe("decoratedRoute with a declared binding", () => {
       pattern({ from: "decoratorArgument", position: 0 }),
     ]);
     expect(units[0]?.channelInfo?.channel).toBeNull();
+  });
+
+  it("reads the channel from a template with a substitution that folds to a constant", () => {
+    const file = createProject().createSourceFile(
+      "orders.ts",
+      `
+      import { Controller } from "@nestjs/common";
+      import { EventPattern } from "@nestjs/microservices";
+
+      const DOMAIN = "order";
+
+      @Controller()
+      class Orders {
+        @EventPattern(\`\${DOMAIN}.placed\`)
+        placed() {}
+      }
+    `,
+    );
+    const units = discoverUnits(file, [
+      pattern({ from: "decoratorArgument", position: 0 }),
+    ]);
+    expect(units[0]?.channelInfo?.channel).toBe("order.placed");
   });
 });
 

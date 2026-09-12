@@ -95,26 +95,8 @@ function declaredChannelOf(
   if (arg === undefined) {
     return null;
   }
-  const text = literalStringOf(arg, resolution);
+  const text = stringValueOf(arg, resolution);
   return text === null || text === "" ? null : text;
-}
-
-/** The string an expression states, following a name one written hop. */
-function literalStringOf(
-  node: Node,
-  resolution: ResolutionStore | undefined,
-): string | null {
-  if (
-    Node.isStringLiteral(node) ||
-    Node.isNoSubstitutionTemplateLiteral(node)
-  ) {
-    return node.getLiteralValue();
-  }
-  const written = resolution?.resolveWrittenValue(node) ?? null;
-  if (written === null || written === node) {
-    return null;
-  }
-  return literalStringOf(written, resolution);
 }
 
 export function discoverDecoratedRoutes(

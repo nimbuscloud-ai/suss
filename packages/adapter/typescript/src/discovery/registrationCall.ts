@@ -22,6 +22,7 @@ import { importedReferenceSpellings } from "./resolveImport.js";
 import {
   functionValueOf,
   stringPropertyOf,
+  stringValueOf,
   writtenNodeOf,
 } from "./resolveValue.js";
 import { findEnclosingFunction, namesAParameter } from "./shared.js";
@@ -865,13 +866,9 @@ export function discoverMountEdges(
 
     const args = node.getArguments();
     const prefixArg = args[mount.prefixPosition] as Node | undefined;
-    if (
-      prefixArg === undefined ||
-      !(
-        Node.isStringLiteral(prefixArg) ||
-        Node.isNoSubstitutionTemplateLiteral(prefixArg)
-      )
-    ) {
+    const prefix =
+      prefixArg === undefined ? null : stringValueOf(prefixArg, resolution);
+    if (prefix === null) {
       return;
     }
 
@@ -885,7 +882,7 @@ export function discoverMountEdges(
       edges.push({
         parentRouterId: nodeId(subjectNode),
         childRouterId: nodeId(targetNode),
-        prefix: prefixArg.getLiteralValue(),
+        prefix,
       });
     }
   });
@@ -992,13 +989,11 @@ function extractRouteInfoFromBinding(
   } else {
     const args = call.getArguments();
     const arg = args[binding.method.position] as Node | undefined;
-    if (
-      arg === undefined ||
-      !(Node.isStringLiteral(arg) || Node.isNoSubstitutionTemplateLiteral(arg))
-    ) {
+    const literal = arg === undefined ? null : stringValueOf(arg, resolution);
+    if (literal === null) {
       return null;
     }
-    method = arg.getLiteralValue().toUpperCase();
+    method = literal.toUpperCase();
   }
 
   const pathArg = call.getArguments()[binding.path.position] as

@@ -115,14 +115,36 @@ describe("registrationLoop discovery", () => {
     expect(units).toHaveLength(0);
   });
 
-  it("skips elements with non-literal method or path", () => {
+  it("skips elements whose method or path the evaluator cannot fold", () => {
+    const file = makeFile(`
+      function h() {}
+      const app: any = {};
+      function build(dynamicMethod: string) {
+        const routes = [
+          { method: "get", path: "/ok", handler: h },
+          { method: dynamicMethod, path: "/skip", handler: h },
+        ];
+        for (const r of routes) {
+          app[r.method](r.path, r.handler);
+        }
+      }
+    `);
+    const units = discoverUnits(file, [PATTERN], new ResolutionStore());
+    const routes = units
+      .map((u) => u.routeInfo)
+      .filter((r): r is { method: string; path: string } => r !== undefined)
+      .map((r) => `${r.method} ${r.path}`);
+    expect(routes).toEqual(["GET /ok"]);
+  });
+
+  it("reads a method bound to a constant declared elsewhere in the module", () => {
     const file = makeFile(`
       function h() {}
       const dynamicMethod = "get";
       const app: any = {};
       const routes = [
         { method: "get", path: "/ok", handler: h },
-        { method: dynamicMethod, path: "/skip", handler: h },
+        { method: dynamicMethod, path: "/from-constant", handler: h },
       ];
       for (const r of routes) {
         app[r.method](r.path, r.handler);
@@ -132,8 +154,9 @@ describe("registrationLoop discovery", () => {
     const routes = units
       .map((u) => u.routeInfo)
       .filter((r): r is { method: string; path: string } => r !== undefined)
-      .map((r) => `${r.method} ${r.path}`);
-    expect(routes).toEqual(["GET /ok"]);
+      .map((r) => `${r.method} ${r.path}`)
+      .sort();
+    expect(routes).toEqual(["GET /from-constant", "GET /ok"]);
   });
 
   it("supports an inline arrow function as handler", () => {

@@ -315,8 +315,9 @@ describe("discoverRegistrationCalls: handler discovery", () => {
     const sf = sourceFile(`
       import { App } from "framework";
       const app = App();
-      const verb = "GET";
-      app.route(verb, "/x", (req, res) => {});
+      function register(verb: string) {
+        app.route(verb, "/x", (req, res) => {});
+      }
     `);
     const match: RegistrationMatch = {
       type: "registrationCall",
@@ -330,6 +331,36 @@ describe("discoverRegistrationCalls: handler discovery", () => {
     };
     const units = discoverRegistrationCalls(sf, match, "handler", binding);
     expect(units[0].routeInfo).toBeUndefined();
+  });
+
+  it("reads a numeric-position method from a constant declared in the module", () => {
+    const sf = sourceFile(`
+      import { App } from "framework";
+      const app = App();
+      const VERB = "PATCH";
+      app.route(VERB, "/things/:id", (req, res) => {});
+    `);
+    const match: RegistrationMatch = {
+      type: "registrationCall",
+      importModule: "framework",
+      importName: "App",
+      registrationChain: [".route"],
+    };
+    const binding: BindingExtraction = {
+      method: { type: "fromRegistration", position: 0 },
+      path: { type: "fromArgument", position: 1 },
+    };
+    const units = discoverRegistrationCalls(
+      sf,
+      match,
+      "handler",
+      binding,
+      new ResolutionStore(),
+    );
+    expect(units[0].routeInfo).toEqual({
+      method: "PATCH",
+      path: "/things/:id",
+    });
   });
 
   it("omits routeInfo when the binding doesn't come from the registration", () => {
@@ -688,6 +719,27 @@ describe("discoverMountEdges", () => {
         store,
       ),
     ).toEqual([]);
+  });
+
+  it("reads a mount prefix from a constant declared elsewhere in the module", () => {
+    const sf = sourceFile(`
+      import express, { Router } from "express";
+      const API_PREFIX = "/api/orders";
+      const app = express();
+      const ordersRouter = Router();
+      app.use(API_PREFIX, ordersRouter);
+    `);
+    const store = new ResolutionStore();
+
+    const edges = discoverMountEdges(
+      sf,
+      expressAppMatch,
+      useMount,
+      expressSubjectIds(sf),
+      store,
+    );
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.prefix).toBe("/api/orders");
   });
 
   it("records nothing when the mounted value is a name nothing here resolves", () => {

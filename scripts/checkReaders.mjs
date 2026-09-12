@@ -206,11 +206,7 @@ const EXEMPT = new Map([
   ],
   [
     "packages/adapter/typescript/src/discovery/decoratedMethod.ts",
-    "resolveResolverClassTypeName, resolveOperationNameOverride",
-  ],
-  [
-    "packages/adapter/typescript/src/discovery/decoratedRoute.ts",
-    "literalStringOf",
+    "resolveResolverClassTypeName",
   ],
   [
     "packages/adapter/typescript/src/discovery/decoratorComposition.ts",
@@ -270,11 +266,11 @@ const EXEMPT = new Map([
   ],
   [
     "packages/adapter/typescript/src/discovery/registrationLoop.ts",
-    "tryExpandLoop, loopVariableName, readRouteSpec, readStringLiteralValue",
+    "tryExpandLoop, loopVariableName, readRouteSpec",
   ],
   [
     "packages/adapter/typescript/src/discovery/registrationTemplate.ts",
-    "declaredInModule, readStringLiteral, readPropertyAsFunction",
+    "declaredInModule, readPropertyAsFunction",
   ],
   ["packages/adapter/typescript/src/discovery/resolverMap.ts", "writtenSdl"],
   [
