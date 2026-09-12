@@ -29,6 +29,7 @@ import {
   arrayLiteralOf,
   functionValueOf,
   objectLiteralOf,
+  stringValueOf,
 } from "./resolveValue.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
@@ -260,9 +261,9 @@ function readRouteSpec(
       continue;
     }
     if (name === shape.methodKey) {
-      method = readStringLiteralValue(init);
+      method = stringValueOf(init, resolution);
     } else if (name === shape.pathKey) {
-      path = readStringLiteralValue(init);
+      path = stringValueOf(init, resolution);
     } else if (name === shape.handlerKey) {
       const func = functionValueOf(init, resolution);
       handler = func === null ? null : { func, name: handlerName(init) };
@@ -273,16 +274,6 @@ function readRouteSpec(
     return null;
   }
   return { method, path, handler: handler.func, handlerName: handler.name };
-}
-
-function readStringLiteralValue(node: Node): string | null {
-  if (
-    Node.isStringLiteral(node) ||
-    Node.isNoSubstitutionTemplateLiteral(node)
-  ) {
-    return node.getLiteralValue();
-  }
-  return null;
 }
 
 /**

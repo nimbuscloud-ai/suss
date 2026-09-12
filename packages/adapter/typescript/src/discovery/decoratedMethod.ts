@@ -9,6 +9,7 @@ import {
   importedDecoratorLocals,
 } from "./decoratedMembers.js";
 import { classDecoratorStandingFor } from "./decoratorComposition.js";
+import { stringValueOf } from "./resolveValue.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
 import type { ResolutionStore } from "../facts/store.js";
@@ -64,7 +65,10 @@ function resolveResolverClassTypeName(decoratorArg: Node): string | null {
  * (`@Query(() => User, { name: "foo" })`). Returns null when no override
  * is present so the caller can fall back to the method's declared name.
  */
-function resolveOperationNameOverride(decorator: Node): string | null {
+function resolveOperationNameOverride(
+  decorator: Node,
+  resolution: ResolutionStore | undefined,
+): string | null {
   if (!Node.isDecorator(decorator)) {
     return null;
   }
@@ -81,11 +85,9 @@ function resolveOperationNameOverride(decorator: Node): string | null {
     if (init === undefined) {
       continue;
     }
-    if (
-      Node.isStringLiteral(init) ||
-      Node.isNoSubstitutionTemplateLiteral(init)
-    ) {
-      return init.getLiteralValue();
+    const name = stringValueOf(init, resolution);
+    if (name !== null) {
+      return name;
     }
   }
   return null;
@@ -136,7 +138,8 @@ export function discoverDecoratedMethods(
       ...localMethodDecorators.keys(),
     ])) {
       const fieldName =
-        resolveOperationNameOverride(handler.decorator) ?? handler.name;
+        resolveOperationNameOverride(handler.decorator, resolution) ??
+        handler.name;
       const typeName = resolverTypeName({
         classTypeName,
         decoratorName:

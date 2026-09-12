@@ -55,6 +55,22 @@ describe("jsxElementRoute discovery", () => {
     expect(unit.func).not.toBeNull();
   });
 
+  it("reads a route element's path from a name imported from another module", () => {
+    const project = makeProject();
+    project.createSourceFile("paths.ts", 'export const USERS_PATH = "/users";');
+    const file = project.createSourceFile(
+      "routes.tsx",
+      `
+      import { Route } from "router-lib";
+      import { USERS_PATH } from "./paths.js";
+      function Users() { return <ul />; }
+      export const tree = <Route path={USERS_PATH} element={<Users />} />;
+    `,
+    );
+    const [unit] = discoverUnits(file, [PATTERN], new ResolutionStore());
+    expect(unit.routeInfo).toEqual({ method: "GET", path: "/users" });
+  });
+
   it("joins a nested route's path onto its parent's, and gives an index route the parent's path", () => {
     const file = makeFile(`
       import { Route } from "router-lib";
@@ -188,7 +204,7 @@ describe("jsxElementRoute discovery", () => {
     const file = makeFile(`
       import { createRouter } from "router-lib";
       function Detail() { return <li />; }
-      const base = "/tenants/" + String(1);
+      const base = "/tenants/" + String(Math.random());
       export const router = createRouter([
         { path: base, children: [{ path: ":id", element: <Detail /> }] },
       ]);
@@ -261,7 +277,7 @@ describe("jsxElementRoute discovery", () => {
     const file = makeFile(`
       import { Route } from "router-lib";
       function Settings() { return <form />; }
-      const where = "/settings/" + String(1);
+      const where = "/settings/" + String(Math.random());
       export const tree = <Route path={where} element={<Settings />} />;
     `);
     const [unit] = discoverUnits(file, [PATTERN], new ResolutionStore());
@@ -273,7 +289,7 @@ describe("jsxElementRoute discovery", () => {
     const file = makeFile(`
       import { Route } from "router-lib";
       function Detail() { return <li />; }
-      const base = "/tenants/" + String(1);
+      const base = "/tenants/" + String(Math.random());
       export const tree = (
         <Route path={base}>
           <Route path=":id" element={<Detail />} />
