@@ -24,8 +24,8 @@ import {
 } from "./ast.js";
 import { bodyTerminals, enumerateBodyBranches } from "./paths/bodyBranches.js";
 import { bodyCalls, invocationEffects } from "./paths/effects.js";
-import { constructionOf } from "./routers.js";
-import { scopeAt } from "./scope.js";
+import { constructorCalled } from "./routers.js";
+import { resolveName, scopeAt } from "./scope.js";
 import { evaluatedValue } from "./values/evaluator.js";
 import { originOf } from "./values/origin.js";
 
@@ -162,15 +162,32 @@ function calledAttribute(
   ) {
     return null;
   }
-  const built = constructionOf(
-    object.text,
-    scopeAt(object, module),
+  const constructorName = receiverConstructor(
+    object,
+    module,
     pattern.importModule,
   );
   const constructors = pattern.receiverConstructors ?? [];
-  return built !== null && constructors.includes(built.constructorName)
+  return constructorName !== null && constructors.includes(constructorName)
     ? attribute
     : null;
+}
+
+/**
+ * The constructor a receiver was built by, read off the scope binding
+ * because the value facts leave an as-pattern without a value and
+ * `with httpx.Client() as client` is how a project opens one.
+ */
+function receiverConstructor(
+  object: PyNode,
+  module: ModuleBinding,
+  importModule: readonly string[],
+): string | null {
+  const binding = resolveName(scopeAt(object, module), object.text);
+  if (binding?.kind !== "assignment" || binding.value?.type !== "call") {
+    return null;
+  }
+  return constructorCalled(binding.value, module, importModule);
 }
 
 /** The path the URL argument states, or null when it does not settle on one. */

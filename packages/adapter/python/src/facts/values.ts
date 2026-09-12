@@ -40,6 +40,42 @@ export function nodeId(filePath: string, node: PyNode): string {
   return `${filePath}:${node.startIndex}-${node.endIndex}`;
 }
 
+/**
+ * The node a value key was made from, for a caller that has the key the
+ * rules settled on and wants the expression back to read something the
+ * facts do not carry. Null when the key belongs to another file, and
+ * then the caller has nothing to read and abstains.
+ */
+export function nodeAt(
+  filePath: string,
+  root: PyNode,
+  key: string,
+): PyNode | null {
+  const prefix = `${filePath}:`;
+  if (!key.startsWith(prefix)) {
+    return null;
+  }
+  const [start, end] = key
+    .slice(prefix.length)
+    .split("-")
+    .map((part) => Number.parseInt(part, 10));
+  // Every key the rules hand back was written by `nodeId`.
+  /* v8 ignore start */
+  if (start === undefined || end === undefined || Number.isNaN(start * end)) {
+    return null;
+  }
+  /* v8 ignore stop */
+
+  let found = root.descendantForIndex(start, Math.max(start, end - 1));
+  while (
+    found !== null &&
+    (found.startIndex !== start || found.endIndex !== end)
+  ) {
+    found = found.parent;
+  }
+  return found;
+}
+
 /** A module-level name in a file, which is what a binding joins on. */
 function nameId(filePath: string, name: string): string {
   return `${filePath}#${name}`;

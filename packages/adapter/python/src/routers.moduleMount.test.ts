@@ -27,7 +27,49 @@ const fastapiLike: PythonPack = {
   ],
 };
 
-async function summariesOf(files: Record<string, string>) {
+/**
+ * A flask-restx shaped pack, written here rather than imported, because an
+ * adapter does not depend on a pack. Its blueprint states the prefix a
+ * namespace's routes are served under.
+ */
+const flaskRestxLike: PythonPack = {
+  name: "flask-restx-test",
+  protocol: "http",
+  discovery: [
+    {
+      type: "decoratedClassRoute",
+      importModule: ["flask_restx"],
+      decoratorName: "route",
+      verbMethodNames: { get: "GET", post: "POST" },
+      pathParamSyntax: "flaskConverters",
+      routerComposition: {
+        routerConstructorName: "Namespace",
+        includeMethodName: "add_namespace",
+        prefixKeyword: "path",
+        mountPrefixEffect: "replaces",
+        constructorPrefixRequired: true,
+        constructorPrefixTrailingSlash: "trimmed",
+        noValuePrefix: "unstated",
+        mountObjectPrefix: {
+          prefixKeyword: "prefix",
+          carrier: {
+            importModule: ["flask"],
+            constructorName: "Blueprint",
+            argumentIndex: 0,
+            prefixKeyword: "url_prefix",
+            handoffMethodName: "init_app",
+            registerMethodName: "register_blueprint",
+          },
+        },
+      },
+    },
+  ],
+};
+
+async function summariesOf(
+  files: Record<string, string>,
+  packs: PythonPack[] = [fastapiLike],
+) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "module-mount-"));
   for (const [name, source] of Object.entries(files)) {
     const full = path.join(dir, name);
@@ -36,7 +78,7 @@ async function summariesOf(files: Record<string, string>) {
   }
   const { summaries } = await extractPythonProject({
     files: findPythonFiles(dir),
-    packs: [fastapiLike],
+    packs,
     roots: [dir],
     workspaceRoot: dir,
   });
@@ -172,5 +214,45 @@ describe("a mount written through the module that defines the router", () => {
       ].join("\n"),
     });
     expect(pathOf(summaries, "read_order")).toBeNull();
+  });
+});
+
+describe("a blueprint the app module imports from the module that built it", () => {
+  it("puts the blueprint's prefix in front of the namespace's routes", async () => {
+    const summaries = await summariesOf(
+      {
+        "blueprints.py": [
+          "from flask import Blueprint",
+          "",
+          'api_bp = Blueprint("api", __name__, url_prefix="/api/v1")',
+          "",
+        ].join("\n"),
+        "main.py": [
+          "from flask import Flask",
+          "from flask_restx import Api, Namespace",
+          "",
+          "from blueprints import api_bp",
+          "",
+          "app = Flask(__name__)",
+          "api = Api(api_bp)",
+          'ns = Namespace("orders", path="/orders")',
+          "",
+          "",
+          '@ns.route("/<int:order_id>")',
+          "class OrderDetail:",
+          "    def get(self, order_id):",
+          "        pass",
+          "",
+          "",
+          "api.add_namespace(ns)",
+          "app.register_blueprint(api_bp)",
+          "",
+        ].join("\n"),
+      },
+      [flaskRestxLike],
+    );
+    expect(pathOf(summaries, "OrderDetail.get")).toBe(
+      "/api/v1/orders/{order_id}",
+    );
   });
 });
