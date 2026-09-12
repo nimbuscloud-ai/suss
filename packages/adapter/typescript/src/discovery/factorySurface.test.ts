@@ -149,6 +149,25 @@ describe("surfaceMethods: return through a same-file helper", () => {
     expect(names).toEqual(["example", "methods"]);
   });
 
+  it("surfaces a helper written as TS overload signatures", () => {
+    // The signature declaration comes before the implementation in
+    // `getDeclarations()` and has no body; the resolver has to land
+    // on the implementation regardless of which one it is handed.
+    const names = surfacedNames(
+      `
+      function createX(spec: unknown) {
+        return build(spec);
+      }
+      function build(spec: string): { method(): void };
+      function build(spec: unknown) {
+        return { method() {} };
+      }
+    `,
+      "createX",
+    );
+    expect(names).toEqual(["method"]);
+  });
+
   it("chases two hops through same-file helpers", () => {
     const names = surfacedNames(
       `

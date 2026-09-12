@@ -16,16 +16,13 @@ import { Node, SyntaxKind } from "ts-morph";
 
 import { positionKindKeyOf } from "../walk/nodeKeys.js";
 import { peelSyntax } from "../walk/unwrap.js";
+import { functionTargetOf } from "./functionBehind.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";
 import type {
-  ArrowFunction,
   CallExpression,
   ElementAccessExpression,
-  FunctionDeclaration,
-  FunctionExpression,
   Identifier,
-  MethodDeclaration,
   PropertyAccessExpression,
 } from "ts-morph";
 
@@ -375,49 +372,20 @@ export function resolveCallableBody(
   if (!Node.isIdentifier(callee)) {
     return null;
   }
-  const defs = safeGetDefinitions(callee);
-  for (const def of defs) {
-    const body = functionBodyOf(def);
-    if (!body) {
-      continue;
-    }
-    const bodyExpr = singleReturnExpression(body);
-    if (!bodyExpr) {
-      continue;
-    }
-    const paramNames = extractParamNames(def);
-    return { bodyExpr, paramNames };
+  const target = functionTargetOf(callee);
+  if (target === null) {
+    return null;
   }
-  return null;
-}
-
-function extractParamNames(decl: Node): string[] {
-  const getParams = (
-    fn:
-      | FunctionDeclaration
-      | ArrowFunction
-      | FunctionExpression
-      | MethodDeclaration,
-  ) => fn.getParameters().map((p) => p.getName());
-
-  if (
-    Node.isFunctionDeclaration(decl) ||
-    Node.isFunctionExpression(decl) ||
-    Node.isArrowFunction(decl) ||
-    Node.isMethodDeclaration(decl)
-  ) {
-    return getParams(decl);
+  const body = target.func.getBody();
+  if (body === undefined) {
+    return null;
   }
-  if (Node.isVariableDeclaration(decl)) {
-    const init = decl.getInitializer();
-    if (
-      init &&
-      (Node.isArrowFunction(init) || Node.isFunctionExpression(init))
-    ) {
-      return getParams(init);
-    }
+  const bodyExpr = singleReturnExpression(body);
+  if (!bodyExpr) {
+    return null;
   }
-  return [];
+  const paramNames = target.func.getParameters().map((p) => p.getName());
+  return { bodyExpr, paramNames };
 }
 
 function safeGetDefinitions(id: Node): Node[] {

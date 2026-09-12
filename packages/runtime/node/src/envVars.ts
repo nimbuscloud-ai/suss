@@ -57,6 +57,10 @@ type FunctionLike =
   | FunctionExpression
   | MethodDeclaration;
 
+import {
+  findEnclosingFunction,
+  functionTargetOf,
+} from "@suss/adapter-typescript";
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
 
 import type { Effect } from "@suss/behavioral-ir";
@@ -172,8 +176,8 @@ function callerLiteralReads(
   access: ElementAccessExpression,
   index: Identifier,
 ): EnvRead[] {
-  const enclosing = enclosingFunction(access);
-  if (enclosing === undefined) {
+  const enclosing = findEnclosingFunction(access);
+  if (enclosing === null) {
     return [];
   }
   const at = enclosing
@@ -217,16 +221,6 @@ function callerLiteralReads(
   return reads;
 }
 
-function enclosingFunction(node: Node): FunctionLike | undefined {
-  return node.getFirstAncestor(
-    (candidate): candidate is FunctionLike =>
-      N.isFunctionDeclaration(candidate) ||
-      N.isArrowFunction(candidate) ||
-      N.isFunctionExpression(candidate) ||
-      N.isMethodDeclaration(candidate),
-  );
-}
-
 /**
  * The string an argument comes down to: written in place, or one hop away
  * in a const whose initializer is written in place.
@@ -264,8 +258,8 @@ function forwardedParameter(
   if (!N.isIdentifier(passed)) {
     return null;
   }
-  const caller = enclosingFunction(call);
-  if (caller === undefined) {
+  const caller = findEnclosingFunction(call);
+  if (caller === null) {
     return null;
   }
   const at = caller
@@ -413,24 +407,7 @@ function functionBehindCallee(callee: Node): FunctionLike | null {
   if (!N.isIdentifier(nameNode)) {
     return null;
   }
-  for (const definition of nameNode.getDefinitionNodes()) {
-    if (
-      N.isFunctionDeclaration(definition) ||
-      N.isMethodDeclaration(definition)
-    ) {
-      return definition;
-    }
-    if (N.isVariableDeclaration(definition)) {
-      const initializer = definition.getInitializer();
-      if (
-        initializer !== undefined &&
-        (N.isArrowFunction(initializer) || N.isFunctionExpression(initializer))
-      ) {
-        return initializer;
-      }
-    }
-  }
-  return null;
+  return functionTargetOf(nameNode)?.func ?? null;
 }
 
 /** Keyed on the compiler node, which a re-parse replaces, so an edited file never reads a stale answer. */

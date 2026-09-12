@@ -598,6 +598,27 @@ describe("a helper call resolved from the caller's side", () => {
     expect(reads.map((read) => read.interaction.name)).toEqual(["QUEUE_URL"]);
   });
 
+  it("skips an unrelated call in the helper's body on the way to the forwarding one", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "env.ts",
+      `function inner(key: string): string {
+        return process.env[key] ?? "";
+      }
+      export function getEnv(name: string): string {
+        console.log("reading", "config");
+        return inner(name);
+      }`,
+    );
+    const handler = project.createSourceFile(
+      "handler.ts",
+      `import { getEnv } from "./env.js";
+      export const queue = getEnv("QUEUE_URL");`,
+    );
+    const reads = configReadEffectsOf(recognizeAll(handler));
+    expect(reads.map((read) => read.interaction.name)).toEqual(["QUEUE_URL"]);
+  });
+
   it("says nothing about a call whose callee nothing in the run defines", () => {
     const sourceFile = makeProject(`
       declare function requireEnv(name: string): string;

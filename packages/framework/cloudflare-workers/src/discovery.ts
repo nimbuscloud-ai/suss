@@ -13,6 +13,8 @@
 
 import { Node as N } from "ts-morph";
 
+import { functionTargetOf } from "@suss/adapter-typescript";
+
 import { TRIGGERS } from "./handlers.js";
 
 import type { FunctionRoot } from "@suss/adapter-typescript";
@@ -108,7 +110,7 @@ function defaultExportTriggers(sf: SourceFile): Trigger[] {
 
   const triggers: Trigger[] = [];
   for (const property of literal.getProperties()) {
-    const found = triggerOfProperty(property, sf);
+    const found = triggerOfProperty(property);
     if (found !== null) {
       triggers.push(found);
     }
@@ -117,12 +119,12 @@ function defaultExportTriggers(sf: SourceFile): Trigger[] {
 }
 
 /** One property of the entrypoint object, when it defines a trigger. */
-function triggerOfProperty(property: Node, sf: SourceFile): Trigger | null {
+function triggerOfProperty(property: Node): Trigger | null {
   const named = propertyName(property);
   if (named === null || TRIGGERS[named] === undefined) {
     return null;
   }
-  const func = functionOfProperty(property, sf);
+  const func = functionOfProperty(property);
   return func === null
     ? null
     : { name: named, func, registration: "default-export" };
@@ -139,19 +141,16 @@ function propertyName(property: Node): string | null {
   return N.isShorthandPropertyAssignment(property) ? property.getName() : null;
 }
 
-function functionOfProperty(
-  property: Node,
-  sf: SourceFile,
-): FunctionRoot | null {
+function functionOfProperty(property: Node): FunctionRoot | null {
   if (N.isMethodDeclaration(property)) {
     return property as FunctionRoot;
   }
   if (N.isPropertyAssignment(property)) {
     const written = property.getInitializer();
-    return written === undefined ? null : functionBehind(written, sf);
+    return written === undefined ? null : functionBehind(written);
   }
   if (N.isShorthandPropertyAssignment(property)) {
-    return functionBehind(property.getNameNode(), sf);
+    return functionBehind(property.getNameNode());
   }
   return null;
 }
@@ -160,46 +159,15 @@ function functionOfProperty(
  * The function an expression comes down to: written in place, or
  * declared elsewhere in this project under the name it refers to.
  */
-function functionBehind(expression: Node, sf: SourceFile): FunctionRoot | null {
+function functionBehind(expression: Node): FunctionRoot | null {
   if (N.isArrowFunction(expression) || N.isFunctionExpression(expression)) {
     return expression as FunctionRoot;
   }
   if (!N.isIdentifier(expression)) {
     return null;
   }
-  for (const definition of expression.getDefinitionNodes()) {
-    const declared = declaredFunction(definition);
-    if (declared !== null) {
-      return declared;
-    }
-  }
-  return localFunction(sf, expression.getText());
-}
-
-function declaredFunction(definition: Node): FunctionRoot | null {
-  if (N.isFunctionDeclaration(definition)) {
-    return definition as FunctionRoot;
-  }
-  if (!N.isVariableDeclaration(definition)) {
-    return null;
-  }
-  const written = definition.getInitializer();
-  if (written === undefined) {
-    return null;
-  }
-  return N.isArrowFunction(written) || N.isFunctionExpression(written)
-    ? (written as FunctionRoot)
-    : null;
-}
-
-/** A function this file declares under a name, when the symbol did not resolve. */
-function localFunction(sf: SourceFile, name: string): FunctionRoot | null {
-  const declaration = sf.getFunction(name);
-  if (declaration !== undefined) {
-    return declaration as FunctionRoot;
-  }
-  const variable = sf.getVariableDeclaration(name);
-  return variable === undefined ? null : declaredFunction(variable);
+  const target = functionTargetOf(expression);
+  return target === null ? null : target.func;
 }
 
 /**
@@ -258,7 +226,7 @@ function listenerTriggers(sf: SourceFile): Trigger[] {
     if (registered === null) {
       return;
     }
-    const func = functionBehind(registered.handler, sf);
+    const func = functionBehind(registered.handler);
     if (func !== null) {
       triggers.push({
         name: registered.event,

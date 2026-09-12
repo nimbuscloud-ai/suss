@@ -37,6 +37,7 @@ import { Database, evaluate, lit, rule, variable } from "@suss/datalog";
 import { createSourceFileLookup } from "../bootstrap/sourceFileLookup.js";
 import { endLineOf, startLineOf } from "../lines.js";
 import { lineRangeKey, offsetKeyFor } from "../walk/nodeKeys.js";
+import { resolveDecl } from "./functionBehind.js";
 
 import type { BehavioralSummary, Transition } from "@suss/behavioral-ir";
 import type { FunctionRoot } from "../conditions.js";
@@ -378,10 +379,11 @@ function resolveCalleeSummary(
     return null;
   }
   for (const decl of symbol.getDeclarations()) {
-    const func = functionFromDecl(decl);
-    if (func === null) {
+    const resolved = resolveDecl(decl, callee.getText());
+    if (resolved === null) {
       continue;
     }
+    const func = resolved.func;
     const sf = func.getSourceFile();
     // Summary paths are relative to the project root after CLI
     // processing, or absolute in-process, so files compare by suffix
@@ -404,27 +406,6 @@ function resolveCalleeSummary(
       ) {
         return summary;
       }
-    }
-  }
-  return null;
-}
-
-function functionFromDecl(decl: Node): FunctionRoot | null {
-  if (
-    Node.isFunctionDeclaration(decl) ||
-    Node.isFunctionExpression(decl) ||
-    Node.isArrowFunction(decl) ||
-    Node.isMethodDeclaration(decl)
-  ) {
-    return decl as FunctionRoot;
-  }
-  if (Node.isVariableDeclaration(decl)) {
-    const init = decl.getInitializer();
-    if (
-      init !== undefined &&
-      (Node.isArrowFunction(init) || Node.isFunctionExpression(init))
-    ) {
-      return init as FunctionRoot;
     }
   }
   return null;
