@@ -41,18 +41,31 @@ export interface ProjectNodes {
 }
 
 const evaluators = new WeakMap<Database, Evaluator<RbNode>>();
+const contexts = new WeakMap<Database, EvaluationContext>();
 const withoutFacts = new WeakMap<object, Evaluator<RbNode>>();
 
 const METHOD_TYPES = new Set(["method", "singleton_method"]);
 
 /** Register the parsed project, so reads through `db` can follow the facts back to nodes. */
 export function bindEvaluator(db: Database, nodes: ProjectNodes): void {
-  evaluators.set(
-    db,
-    new Evaluator(
-      rubyLowering({ context: contextOver(db, nodes), rows: rubyRows }),
-    ),
-  );
+  const context = contextOver(db, nodes);
+  contexts.set(db, context);
+  evaluators.set(db, new Evaluator(rubyLowering({ context, rows: rubyRows })));
+}
+
+/**
+ * The one expression `node` was written as, as the node itself, for a
+ * reader that needs the arguments of the call behind a name rather than
+ * the value the name comes down to. It takes the step the evaluator
+ * takes to follow a name, so a database with no project bound to it
+ * gives back null.
+ */
+export function writtenNodeOf(
+  node: RbNode,
+  db: Database | undefined,
+): RbNode | null {
+  const context = db === undefined ? undefined : contexts.get(db);
+  return context === undefined ? null : context.writtenTo(node);
 }
 
 /** Strings to read for the parameters of the block or method `node` is written in, the way a caller would supply them. */
