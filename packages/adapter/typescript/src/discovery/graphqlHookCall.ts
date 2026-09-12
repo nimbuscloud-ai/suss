@@ -11,9 +11,11 @@ import {
   functionNameOrAnon,
   type GraphqlOperationType,
   operationInfoFromResolution,
-  resolveGraphqlDocument,
-  unreadableDocument,
 } from "./graphqlShared.js";
+import {
+  documentBehindWrapper,
+  expandDocumentParameterCallers,
+} from "./graphqlWrapper.js";
 import { callsByOriginName } from "./importedCalls.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
@@ -55,11 +57,30 @@ export function discoverGraphqlHookCalls(
     }
     const spec: HookSpec = { canonical, operationType };
     const args = node.getArguments();
-    if (args.length === 0) {
+    const documentArgument = args[0];
+    if (documentArgument === undefined) {
       continue;
     }
-    const document =
-      resolveGraphqlDocument(args[0], store) ?? unreadableDocument(args[0]);
+    // A project hook that passes its own parameter here is one
+    // operation per component calling it, not one operation called
+    // `useAppQuery.query`.
+    const expansion = expandDocumentParameterCallers(documentArgument, node, {
+      kind,
+      operationType: spec.operationType,
+      methodName: spec.canonical,
+      store,
+    });
+    if (expansion !== null) {
+      results.push(...expansion.units);
+      if (expansion.unfollowedReason === null) {
+        continue;
+      }
+    }
+    const document = documentBehindWrapper(
+      documentArgument,
+      store,
+      expansion?.unfollowedReason ?? undefined,
+    );
     const operationInfo = operationInfoFromResolution(
       document,
       spec.operationType,

@@ -4282,3 +4282,246 @@ describe("namedExport of a binding written more than once", () => {
     expect(units).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// A project function in front of the library's GraphQL call
+// ---------------------------------------------------------------------------
+
+describe("a project hook that passes its document parameter to the library's", () => {
+  function wrapperProject(files: Record<string, string>) {
+    const project = createProject();
+    let last: ReturnType<typeof project.createSourceFile> | undefined;
+    for (const [name, source] of Object.entries(files)) {
+      last = project.createSourceFile(name, source);
+    }
+    if (last === undefined) {
+      throw new Error("no files");
+    }
+    return { project, hooks: project.getSourceFileOrThrow("hooks.ts") };
+  }
+
+  function unitsInHooks(
+    files: Record<string, string>,
+    pattern: DiscoveryPattern = makeGraphqlHookPattern(),
+  ) {
+    const { hooks } = wrapperProject(files);
+    return discoverUnits(hooks, [pattern], new ResolutionStore());
+  }
+
+  it("puts the unit on the caller, with the library hook as the call site", () => {
+    const units = unitsInHooks({
+      "hooks.ts": `
+        import { useQuery } from "@apollo/client";
+        export function useAppQuery(query: unknown) {
+          return useQuery(query as never);
+        }
+      `,
+      "page.ts": `
+        import { gql } from "@apollo/client";
+        import { useAppQuery } from "./hooks.js";
+        const GET_PET = gql\`query GetPet { pet { id } }\`;
+        export function usePet() { return useAppQuery(GET_PET); }
+      `,
+    });
+
+    expect(units).toHaveLength(1);
+    expect(units[0].name).toBe("usePet.GetPet");
+    expect(units[0].func?.getSourceFile().getBaseName()).toBe("page.ts");
+    expect(units[0].callSite?.methodName).toBe("useQuery");
+    expect(units[0].callSite?.callExpression.getText()).toBe(
+      "useAppQuery(GET_PET)",
+    );
+  });
+
+  it("reads a document argument written behind a cast", () => {
+    const units = unitsInHooks({
+      "hooks.ts": `
+        import { useQuery } from "@apollo/client";
+        export function useAppQuery(query: unknown) {
+          return useQuery((query as never));
+        }
+      `,
+      "page.ts": `
+        import { gql } from "@apollo/client";
+        import { useAppQuery } from "./hooks.js";
+        const GET_PET = gql\`query GetPet { pet { id } }\`;
+        export function usePet() { return useAppQuery(GET_PET); }
+      `,
+    });
+
+    expect(units.map((u) => u.name)).toEqual(["usePet.GetPet"]);
+  });
+
+  it("keeps the call site when the wrapper returns the result through a name", () => {
+    const units = unitsInHooks({
+      "hooks.ts": `
+        import { useQuery } from "@apollo/client";
+        export function useAppQuery(query: unknown) {
+          const result = useQuery(query as never);
+          return result;
+        }
+      `,
+      "page.ts": `
+        import { gql } from "@apollo/client";
+        import { useAppQuery } from "./hooks.js";
+        const GET_PET = gql\`query GetPet { pet { id } }\`;
+        export function usePet() { return useAppQuery(GET_PET); }
+      `,
+    });
+
+    expect(units[0]?.callSite?.methodName).toBe("useQuery");
+  });
+
+  it("keeps the call site when the result goes through a call on the way out", () => {
+    const units = unitsInHooks({
+      "hooks.ts": `
+        import { useQuery } from "@apollo/client";
+        declare function withTelemetry<T>(value: T): T;
+        export function useAppQuery(query: unknown) {
+          return withTelemetry(useQuery(query as never));
+        }
+      `,
+      "page.ts": `
+        import { gql } from "@apollo/client";
+        import { useAppQuery } from "./hooks.js";
+        const GET_PET = gql\`query GetPet { pet { id } }\`;
+        export function usePet() { return useAppQuery(GET_PET); }
+      `,
+    });
+
+    expect(units[0]?.callSite?.methodName).toBe("useQuery");
+  });
+
+  it("drops the call site when the wrapper hands back something of its own", () => {
+    const units = unitsInHooks({
+      "hooks.ts": `
+        import { useQuery } from "@apollo/client";
+        export function useAppQuery(query: unknown) {
+          useQuery(query as never);
+          return "done";
+        }
+      `,
+      "page.ts": `
+        import { gql } from "@apollo/client";
+        import { useAppQuery } from "./hooks.js";
+        const GET_PET = gql\`query GetPet { pet { id } }\`;
+        export function usePet() { return useAppQuery(GET_PET); }
+      `,
+    });
+
+    expect(units.map((u) => u.name)).toEqual(["usePet.GetPet"]);
+    expect(units[0].callSite).toBeUndefined();
+  });
+
+  const LAYERED = {
+    "hooks.ts": `
+      import { useQuery } from "@apollo/client";
+      export function useAppQuery(query: unknown) {
+        return useQuery(query as never);
+      }
+    `,
+    "one.ts": `
+      import { useAppQuery } from "./hooks.js";
+      export function useOne(query: unknown) { return useAppQuery(query); }
+    `,
+    "two.ts": `
+      import { useOne } from "./one.js";
+      export function useTwo(query: unknown) { return useOne(query); }
+    `,
+  };
+
+  it("follows three wrappers to the component at the top", () => {
+    const units = unitsInHooks({
+      ...LAYERED,
+      "page.ts": `
+        import { gql } from "@apollo/client";
+        import { useTwo } from "./two.js";
+        const GET_PET = gql\`query GetPet { pet { id } }\`;
+        export function usePet() { return useTwo(GET_PET); }
+      `,
+    });
+
+    expect(units.map((u) => u.name)).toEqual(["usePet.GetPet"]);
+  });
+
+  it("stops at the fourth and says the rest could not be followed", () => {
+    const units = unitsInHooks({
+      ...LAYERED,
+      "three.ts": `
+        import { useTwo } from "./two.js";
+        export function useThree(query: unknown) { return useTwo(query); }
+      `,
+      "page.ts": `
+        import { gql } from "@apollo/client";
+        import { useThree } from "./three.js";
+        const GET_PET = gql\`query GetPet { pet { id } }\`;
+        export function usePet() { return useThree(GET_PET); }
+      `,
+    });
+
+    expect(units.map((u) => u.name)).toEqual(["useAppQuery.query"]);
+    expect(units[0].operationInfo?.unresolved?.reason).toBe(
+      "the document argument is this function's parameter, and no call of the function was found in the files read",
+    );
+  });
+
+  it("stops when a wrapper hands its own parameter back to itself", () => {
+    const units = unitsInHooks({
+      "hooks.ts": `
+        import { useQuery } from "@apollo/client";
+        export function useAppQuery(query: unknown): unknown {
+          if (query === null) { return useAppQuery(query); }
+          return useQuery(query as never);
+        }
+      `,
+    });
+
+    expect(units.map((u) => u.name)).toEqual(["useAppQuery.query"]);
+  });
+
+  it("counts a call outside any function as one it could not follow", () => {
+    const units = unitsInHooks({
+      "hooks.ts": `
+        import { useQuery } from "@apollo/client";
+        export function useAppQuery(query: unknown) {
+          return useQuery(query as never);
+        }
+      `,
+      "page.ts": `
+        import { gql } from "@apollo/client";
+        import { useAppQuery } from "./hooks.js";
+        const GET_PET = gql\`query GetPet { pet { id } }\`;
+        export const pet = useAppQuery(GET_PET);
+      `,
+    });
+
+    expect(units.map((u) => u.name)).toEqual(["useAppQuery.query"]);
+    expect(units[0].operationInfo?.unresolved?.reason).toBe(
+      "the document argument is this function's parameter, and no call of the function was found in the files read",
+    );
+  });
+
+  it("expands a project function in front of an imperative client call", () => {
+    const units = unitsInHooks(
+      {
+        "hooks.ts": `
+        import { ApolloClient } from "@apollo/client";
+        declare const client: ApolloClient<unknown>;
+        export async function runQuery(document: unknown) {
+          return await client.query({ query: document });
+        }
+      `,
+        "page.ts": `
+        import { gql } from "@apollo/client";
+        import { runQuery } from "./hooks.js";
+        const LOAD_PET = gql\`query LoadPet { pet { id } }\`;
+        export async function loadPet() { return runQuery(LOAD_PET); }
+      `,
+      },
+      makeImperativePattern(),
+    );
+
+    expect(units.map((u) => u.name)).toEqual(["loadPet.LoadPet"]);
+    expect(units[0].callSite?.methodName).toBe("query");
+  });
+});

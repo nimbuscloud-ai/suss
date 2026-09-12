@@ -998,13 +998,18 @@ export function operationInfoFromResolution(
  * no GraphQL hooks from a file with five the reader could not follow,
  * and the second is the one worth knowing about. The boundary is
  * emitted with the operation type the call shape gives and the argument
- * text as the reference, so the gap says which call to go look at.
+ * text as the reference, so the gap says which call to go look at. A
+ * caller that knows more about why supplies its own `reason`.
  */
-export function unreadableDocument(arg: Node): DocumentResolution {
+export function unreadableDocument(
+  arg: Node,
+  reason?: string,
+): DocumentResolution {
   return {
     unresolved: {
       reference: singleLine(stripDocumentNodeCasts(arg).getText()),
       reason:
+        reason ??
         "the call matched but its document argument did not resolve to a readable GraphQL document",
     },
   };

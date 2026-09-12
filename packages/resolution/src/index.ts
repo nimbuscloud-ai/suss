@@ -454,6 +454,20 @@ export const RESOLUTION_RULES = [
     ],
   ),
 
+  // `const f = (x) => ...` puts the parameters on the arrow, while
+  // `callsFunction` arrives at the declaration the name is, so one
+  // binds hop joins the two. See the DESIGN for why this is apart.
+  rule(
+    "passesArgumentThroughName",
+    [v("r"), v("p"), v("a")],
+    [
+      lit("paramOf", v("f"), v("k"), v("p")),
+      lit("binds", v("g"), v("f")),
+      lit("callsFunction", v("r"), v("g")),
+      lit("callArg", v("r"), v("k"), v("a")),
+    ],
+  ),
+
   // Which module's export a re-exported name forwards to, however
   // many barrels deep the forwarding runs.
   rule(
@@ -796,6 +810,22 @@ export const RESOLUTION_QUESTIONS = [
     "wantedParamAt",
     [v("p"), v("r"), v("z")],
     [lit("wanted", v("p")), lit("paramAt", v("r"), v("p"), v("z"))],
+  ),
+  // The argument as the caller wrote it. A parameter given a GraphQL
+  // document has no `paramAt` answer, since that settles through
+  // `comesTo`, which stops at a function or an object.
+  rule(
+    "wantedPassesArgument",
+    [v("p"), v("r"), v("a")],
+    [lit("wanted", v("p")), lit("passesArgument", v("r"), v("p"), v("a"))],
+  ),
+  rule(
+    "wantedPassesArgument",
+    [v("p"), v("r"), v("a")],
+    [
+      lit("wanted", v("p")),
+      lit("passesArgumentThroughName", v("r"), v("p"), v("a")),
+    ],
   ),
   rule(
     "wantedComesFrom",

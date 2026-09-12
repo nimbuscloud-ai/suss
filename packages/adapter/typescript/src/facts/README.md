@@ -123,6 +123,23 @@ uses it for the file set the active packs apply to, which is how an app
 built in one file and registered on in another is joined up. A run whose
 packs register nothing reads nothing extra.
 
+`argumentsPassedTo(parameter)` is the question that needs it most. It
+gives every call of the function the parameter belongs to, with the
+argument that call wrote at it, as the caller wrote it rather than
+settled. `paramAt` settles the value through `comesTo`, which stops at a
+function or an object, so a parameter given a GraphQL document has no
+`paramAt` answer at all. The caller reads the argument itself, since it
+knows what kind of value it is after. This is what turns one project
+hook in front of `useQuery` into one operation per component.
+
+The callers are in files that import the parameter's own, so those get
+read first. `ModuleGraph.filesReachingFile` says which of a candidate
+set reach a given file, directly or through a barrel, the same rule
+shape as package reachability with a file in place of the package. The
+candidates are what `notePossibleCallers` was given, which the adapter
+fills with the files its packs apply to; without that it falls back to
+every file the project has loaded outside `node_modules`.
+
 The facts on the caller's side are the call's own: `call` and `callArg`.
 Extraction otherwise follows a file's exports, and `registerRoutes(app)`
 is written as a statement, so those calls are written down separately.

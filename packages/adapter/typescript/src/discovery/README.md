@@ -19,6 +19,7 @@ This runs after the bootstrap pre-filter has decided which files each pack appli
 - `registrationCall.ts:registrationSubjectsOf`, the variables in a file that contain the routable a `DiscoveryPattern.match`'s import produces. Route discovery and mount discovery share it, so both work out which variable is the routable the same way.
 - `wrapperIndex.ts:buildWrapperIndex`, which scans the same files for the registrations a pack declares through `DiscoveryPattern.wraps` (Express `app.use(fn)`, Hono `app.use(path, mw)` and `app.onError(fn)`). It gives back two things: the wrappers as units, so each one is summarized where what it does is written, and the edge from a wrapped unit to them. The edge is keyed on the routable the registration was made on, which a unit records through `DiscoveredUnit.registrationSubjectId`.
 - `helperIndex.ts:buildProjectHelperIndex`, which reads the functions the project wrote in front of a pack's library and hands the pack back what they do, so the pack's own matchers run at the call site. See "Reading the project's own helpers" below.
+- `graphqlWrapper.ts:expandDocumentParameterCallers`, which turns a project hook in front of `useQuery` into one unit per component calling it. See "A GraphQL hook in front of the library's" below.
 - `mountPrefix.ts:buildMountPrefixIndex`, which scans every file the pack's gate already applies to for mount calls (`DiscoveryPattern.mount`, Express `app.use`, Hono `app.route`) and builds the index that route discovery uses to put together a mounted router's prefix. It follows the mounted value across a file when the file refers to it by name, and chains through however many routers it was mounted onto in turn.
 
 ## Non-obvious things
@@ -63,6 +64,25 @@ Four things are worth knowing about it.
 What it costs: one extra `forEachDescendant` over each helper body, plus, for a text search, a `String.includes` over each walked file's text. A run whose packs ask for nothing does none of it and returns a shared empty index.
 
 What a stored summary is invalidated by: the per-file cache records each helper file as a dependency of every walked file that writes one of the helpers, so editing the helper re-walks its callers.
+
+## A GraphQL hook in front of the library's
+
+Production frontends rarely call `useQuery` directly. They write one hook that picks the client, handles a loading flag or adds telemetry, and every component calls that:
+
+```ts
+export const useAppQuery = (query: DocumentNode, options?: QueryHookOptions) => {
+  const client = useAppClient();
+  return useQuery(query, { ...options, client });
+};
+```
+
+The document argument at the `useQuery` call is `query`, a parameter, so the hook reports one summary with a gap saying the argument did not resolve, and the components that do name an operation reach no library call of their own. On a codebase written this way that is most of the operations.
+
+`expandDocumentParameterCallers` reads it as one operation per caller. It asks the store `argumentsPassedTo(parameter)`, which gives every call of the hook with the argument each wrote there, runs that argument through the same document ladder a direct call's argument goes through, and puts the unit on the calling function. `callSite.methodName` stays the library hook's name, so the pack's response semantics and failure delivery apply to the caller's `const { data, error } = useAppQuery(Doc)` the way they apply to `useQuery`'s. A wrapper that hands back something of its own rather than the hook's result gets the unit with no `callSite`, so no accessors are read off a result that is not the library's.
+
+When the argument at a call site is itself a parameter of the caller, the caller is a wrapper too and the same question is asked of it, three deep, with the parameters already expanded carried along so a cycle stops. The hook's own summary is dropped once every call produced a unit, since `useAppQuery.query` is no operation and a gap on it is a finding about nothing. Where some call could not be followed, the hook keeps its summary and the gap's reason says how many callers were read and how many were not.
+
+Two things this does not do. Which client the wrapper's other arguments pick is not read, so an operation goes to whichever service `operationScopes` says its file goes to. And the callers come from the facts alone: a spelling the rules do not cover is a rule to add, not a reference search to run here.
 
 ## Sibling modules
 

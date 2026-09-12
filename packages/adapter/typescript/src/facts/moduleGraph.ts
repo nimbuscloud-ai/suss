@@ -20,7 +20,8 @@ import type { SourceFile } from "ts-morph";
  * `importsFile(f, g)` says f writes a specifier resolving to file g.
  * `importsPackage(f, p)` says one of f's own specifiers is p or a
  * subpath of p. `reachesPackage(f, p)` says p is reachable from f
- * through project files.
+ * through project files. `reachesFile(f, t)` says the same of a file
+ * somebody asked about, with `wantedFile(t)` as the asking.
  */
 const REACH_RULES = [
   rule(
@@ -37,6 +38,19 @@ const REACH_RULES = [
     [v("f"), v("p")],
     [lit("reachesPackage", v("g"), v("p")), lit("importsFile", v("f"), v("g"))],
   ),
+  // Without `wantedFile` this is every edge closed over every other
+  // edge, which is the import graph squared.
+  rule(
+    "reachesFile",
+    [v("f"), v("t")],
+    [lit("wantedFile", v("t")), lit("importsFile", v("f"), v("t"))],
+  ),
+  // Same body order as `reachesPackage`, and for the same reason.
+  rule(
+    "reachesFile",
+    [v("f"), v("t")],
+    [lit("reachesFile", v("g"), v("t")), lit("importsFile", v("f"), v("g"))],
+  ),
 ];
 
 /** One question: do these files reach any of these packages. */
@@ -45,11 +59,18 @@ export interface FileSetQuery {
   packages: ReadonlyArray<string>;
 }
 
+/** One question: which of these files reach that one. */
+export interface FileTargetQuery {
+  sourceFiles: ReadonlyArray<SourceFile>;
+  target: SourceFile;
+}
+
 export class ModuleGraph {
   private readonly db = new Database();
   private readonly specifiers = new Map<string, string[]>();
   private readonly importedFiles = new Map<string, SourceFile[]>();
   private readonly settledFor = new Map<string, Set<string>>();
+  private readonly edgesWalked = new Set<string>();
   private stale = false;
 
   /**
@@ -105,6 +126,58 @@ export class ModuleGraph {
       }
       return reaching;
     });
+  }
+
+  /**
+   * For each of these targets, which of the given files reach it
+   * through project-local imports and re-exports. A file that imports
+   * the target through a barrel counts, which is what makes this worth
+   * asking the rules rather than reading one file's own specifiers.
+   *
+   * Answered together for the same reason package reachability is: one
+   * pass of the rules over the collected edges covers every target.
+   */
+  filesReachingFile(
+    queries: ReadonlyArray<FileTargetQuery>,
+  ): ReadonlyArray<ReadonlySet<SourceFile>> {
+    for (const { sourceFiles, target } of queries) {
+      this.assert("wantedFile", [target.getFilePath()]);
+      for (const sourceFile of sourceFiles) {
+        this.walkEdges(sourceFile);
+      }
+    }
+    this.derive();
+
+    return queries.map(({ sourceFiles, target }) => {
+      const targetPath = target.getFilePath();
+      const reaching = new Set<SourceFile>();
+      for (const sourceFile of sourceFiles) {
+        if (
+          this.db.has("reachesFile", [sourceFile.getFilePath(), targetPath])
+        ) {
+          reaching.add(sourceFile);
+        }
+      }
+      return reaching;
+    });
+  }
+
+  /**
+   * Resolve this file's specifiers and those of everything below it, so
+   * the rules have the edges. Unlike the package walk this cannot stop
+   * early: a file says nothing about which files reach it.
+   */
+  private walkEdges(root: SourceFile): void {
+    const stack = [root];
+    while (stack.length > 0) {
+      const current = stack.pop() as SourceFile;
+      const currentPath = current.getFilePath();
+      if (this.edgesWalked.has(currentPath)) {
+        continue;
+      }
+      this.edgesWalked.add(currentPath);
+      stack.push(...this.importedFilesOf(current));
+    }
   }
 
   private specifiersOf(sourceFile: SourceFile): string[] {
@@ -165,7 +238,7 @@ export class ModuleGraph {
     return created;
   }
 
-  private assert(relation: string, tuple: [string, string]): void {
+  private assert(relation: string, tuple: string[]): void {
     if (this.db.add(relation, tuple) === "added") {
       this.stale = true;
     }

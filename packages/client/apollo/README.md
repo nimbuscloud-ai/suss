@@ -23,6 +23,8 @@ A bare `...UserCard` in a document built by the project's own generated tag (wha
 
 Summary inputs come from the operation header's `$variables`, with role `variable`. The `variables: { ... }` call option is not read on its own, because the header is the authoritative variable declaration.
 
+A project hook that passes its own document parameter to one of Apollo's is read as one operation per caller, with the caller's document, at the caller's location. Most frontends write one `useAppQuery` that picks the client or adds telemetry and have every component call that, and the hook itself is no operation, so a summary for it would be a finding about nothing. The callers come from the resolution facts, which follow an alias and a re-export barrel, and a hook in front of another hook is followed to the component at the top, three deep. Each operation lands in the component's own file, so `operationScopes` applies per caller. When a caller cannot be followed, because it is outside the run or because the document reaches the wrapper through something the facts do not cover, the hook keeps a summary of its own and `metadata.graphql.unresolvedDocument.reason` says how many callers were read and how many were not. A caller whose document is computed rather than written gets its own summary with that gap on it, the same as a direct hook call with an argument nobody can read.
+
 ## Options
 
 Both options tell the pack which service an operation talks to, for a frontend wired to more than one. Pass them to `apolloClientPack()`, or as JSON to `-f apollo-client=packs/apollo.json`.

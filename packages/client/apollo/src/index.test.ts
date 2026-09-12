@@ -918,3 +918,298 @@ describe("apolloClientPack (documents in named constants)", () => {
     expect(gaps).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// A project hook in front of the library's
+// ---------------------------------------------------------------------------
+
+const WRAPPER_HOOKS = `
+  import { useMutation, useQuery } from "@apollo/client";
+  export const useAppQuery = (query: unknown, options?: unknown) =>
+    useQuery(query as never, options as never);
+  export function useAppMutation(mutation: unknown) {
+    return useMutation(mutation as never);
+  }
+`;
+
+/** Why a summary's document went unread, when it did. */
+function reasonOf(summary: BehavioralSummary | undefined): string | undefined {
+  if (summary === undefined) {
+    return undefined;
+  }
+  return readGraphqlMetadata(summary)?.unresolvedDocument?.reason;
+}
+
+function operationOf(
+  summaries: BehavioralSummary[],
+  name: string,
+): { operationType: string; operationName?: string } | null {
+  const semantics = summaries.find((s) => s.identity.name === name)?.identity
+    .boundaryBinding?.semantics;
+  if (semantics?.name !== "graphql-operation") {
+    return null;
+  }
+  return {
+    operationType: semantics.operationType,
+    ...(semantics.operationName !== undefined
+      ? { operationName: semantics.operationName }
+      : {}),
+  };
+}
+
+describe("apolloClientPack — a project hook wrapping the library's", () => {
+  it("gives each component calling it an operation of its own", async () => {
+    const summaries = await runInMemoryFiles({
+      "hooks.ts": WRAPPER_HOOKS,
+      "profile.ts": `
+        import { gql } from "@apollo/client";
+        import { useAppQuery } from "./hooks.js";
+        const ProfileQuery = gql\`query Profile($id: ID!) { user(id: $id) { id } }\`;
+        export function Profile(id: string) {
+          return useAppQuery(ProfileQuery, { variables: { id } });
+        }
+      `,
+      "settings.ts": `
+        import { gql } from "@apollo/client";
+        import { useAppQuery } from "./hooks.js";
+        const SettingsQuery = gql\`query Settings { settings { id } }\`;
+        export function Settings() {
+          return useAppQuery(SettingsQuery);
+        }
+      `,
+    });
+
+    expect(operationOf(summaries, "Profile.Profile")).toEqual({
+      operationType: "query",
+      operationName: "Profile",
+    });
+    expect(operationOf(summaries, "Settings.Settings")).toEqual({
+      operationType: "query",
+      operationName: "Settings",
+    });
+  });
+
+  it("puts each operation in the file the component is written in", async () => {
+    const summaries = await runInMemoryFiles({
+      "hooks.ts": WRAPPER_HOOKS,
+      "profile.ts": `
+        import { gql } from "@apollo/client";
+        import { useAppQuery } from "./hooks.js";
+        const ProfileQuery = gql\`query Profile { me { id } }\`;
+        export function Profile() {
+          return useAppQuery(ProfileQuery);
+        }
+      `,
+    });
+
+    const profile = summaries.find(
+      (s) => s.identity.name === "Profile.Profile",
+    );
+    expect(profile?.location.file).toContain("profile.ts");
+  });
+
+  it("drops the wrapper's own summary once every caller has one", async () => {
+    const summaries = await runInMemoryFiles({
+      "hooks.ts": WRAPPER_HOOKS,
+      "profile.ts": `
+        import { gql } from "@apollo/client";
+        import { useAppQuery } from "./hooks.js";
+        const ProfileQuery = gql\`query Profile { me { id } }\`;
+        export function Profile() {
+          return useAppQuery(ProfileQuery);
+        }
+      `,
+    });
+
+    expect(
+      summaries.filter((s) => s.identity.name.startsWith("useAppQuery.")),
+    ).toEqual([]);
+  });
+
+  it("takes the operation type from the document a mutation wrapper is given", async () => {
+    const summaries = await runInMemoryFiles({
+      "hooks.ts": WRAPPER_HOOKS,
+      "widget.ts": `
+        import { gql } from "@apollo/client";
+        import { useAppMutation } from "./hooks.js";
+        const CreateWidget = gql\`mutation CreateWidget($label: String!) { createWidget(label: $label) { id } }\`;
+        export function CreateWidget() {
+          return useAppMutation(CreateWidget);
+        }
+      `,
+    });
+
+    expect(operationOf(summaries, "CreateWidget.CreateWidget")).toEqual({
+      operationType: "mutation",
+      operationName: "CreateWidget",
+    });
+  });
+
+  it("follows a wrapper over a wrapper to the component at the top", async () => {
+    const summaries = await runInMemoryFiles({
+      "hooks.ts": WRAPPER_HOOKS,
+      "legacy.ts": `
+        import { useAppQuery } from "./hooks.js";
+        export function useLegacyQuery(query: unknown) {
+          return useAppQuery(query, { legacy: true });
+        }
+      `,
+      "panel.ts": `
+        import { gql } from "@apollo/client";
+        import { useLegacyQuery } from "./legacy.js";
+        const OrdersQuery = gql\`query Orders { orders { id } }\`;
+        export function Panel() {
+          return useLegacyQuery(OrdersQuery);
+        }
+      `,
+    });
+
+    expect(operationOf(summaries, "Panel.Orders")).toEqual({
+      operationType: "query",
+      operationName: "Orders",
+    });
+    expect(
+      summaries.filter((s) => s.identity.name.startsWith("useLegacyQuery.")),
+    ).toEqual([]);
+  });
+
+  it("resolves a document the component imported from another module", async () => {
+    const summaries = await runInMemoryFiles({
+      "hooks.ts": WRAPPER_HOOKS,
+      "documents.ts": `
+        import { gql } from "@apollo/client";
+        export const SettingsQuery = gql\`query Settings { settings { id } }\`;
+      `,
+      "settings.ts": `
+        import { useAppQuery } from "./hooks.js";
+        import { SettingsQuery } from "./documents.js";
+        export function Settings() {
+          return useAppQuery(SettingsQuery);
+        }
+      `,
+    });
+
+    expect(operationOf(summaries, "Settings.Settings")).toEqual({
+      operationType: "query",
+      operationName: "Settings",
+    });
+  });
+
+  it("finds a caller that reaches the wrapper only through a barrel", async () => {
+    const summaries = await runInMemoryFiles({
+      "hooks.ts": WRAPPER_HOOKS,
+      "index.ts": `export { useAppQuery } from "./hooks.js";`,
+      "profile.ts": `
+        import { gql } from "@apollo/client";
+        import { useAppQuery } from "./index.js";
+        const ProfileQuery = gql\`query Profile { me { id } }\`;
+        export function Profile() {
+          return useAppQuery(ProfileQuery);
+        }
+      `,
+    });
+
+    expect(operationOf(summaries, "Profile.Profile")).toEqual({
+      operationType: "query",
+      operationName: "Profile",
+    });
+  });
+
+  it("reports the gap on the component when its document is computed", async () => {
+    const summaries = await runInMemoryFiles({
+      "hooks.ts": WRAPPER_HOOKS,
+      "dashboard.ts": `
+        import { gql } from "@apollo/client";
+        import { useAppQuery } from "./hooks.js";
+        const Weekly = gql\`query Weekly { weekly { id } }\`;
+        const Daily = gql\`query Daily { daily { id } }\`;
+        declare const preferWeekly: boolean;
+        export function Dashboard() {
+          return useAppQuery(preferWeekly ? Weekly : Daily);
+        }
+      `,
+    });
+
+    const dashboard = summaries.filter((s) =>
+      s.identity.name.startsWith("Dashboard."),
+    );
+    expect(dashboard).toHaveLength(1);
+    expect(
+      readGraphqlMetadata(dashboard[0])?.unresolvedDocument?.reference,
+    ).toBe("preferWeekly ? Weekly : Daily");
+  });
+
+  it("keeps the wrapper's own summary when nothing in the run calls it", async () => {
+    const summaries = await runInMemoryFiles({ "hooks.ts": WRAPPER_HOOKS });
+
+    const wrapper = summaries.find((s) =>
+      s.identity.name.startsWith("useAppQuery."),
+    );
+    expect(reasonOf(wrapper)).toBe(
+      "the document argument is this function's parameter, and no call of the function was found in the files read",
+    );
+  });
+
+  it("says how many callers it read when only some could be followed", async () => {
+    const summaries = await runInMemoryFiles({
+      "hooks.ts": WRAPPER_HOOKS,
+      "profile.ts": `
+        import { gql } from "@apollo/client";
+        import { useAppQuery } from "./hooks.js";
+        const ProfileQuery = gql\`query Profile { me { id } }\`;
+        export function Profile() {
+          return useAppQuery(ProfileQuery);
+        }
+      `,
+      "topLevel.ts": `
+        import { gql } from "@apollo/client";
+        import { useAppQuery } from "./hooks.js";
+        const PingQuery = gql\`query Ping { ping }\`;
+        export const ping = useAppQuery(PingQuery);
+      `,
+    });
+
+    const wrapper = summaries.find((s) =>
+      s.identity.name.startsWith("useAppQuery."),
+    );
+    expect(reasonOf(wrapper)).toBe(
+      "the document argument is this function's parameter: 1 of its callers were read as operations of their own, and 1 could not be followed",
+    );
+  });
+
+  it("reads the caller's destructured result the way a direct hook call is read", async () => {
+    const body = (call: string) => `
+      export function Profile() {
+        const { data, error } = ${call};
+        if (error !== undefined) { return "unavailable"; }
+        return data;
+      }
+    `;
+    const wrapped = await runInMemoryFiles({
+      "hooks.ts": WRAPPER_HOOKS,
+      "profile.ts": `
+        import { gql } from "@apollo/client";
+        import { useAppQuery } from "./hooks.js";
+        const ProfileQuery = gql\`query Profile { me { id } }\`;
+        ${body("useAppQuery(ProfileQuery)")}
+      `,
+    });
+    const direct = await runInMemoryFiles({
+      "profile.ts": `
+        import { gql, useQuery } from "@apollo/client";
+        const ProfileQuery = gql\`query Profile { me { id } }\`;
+        ${body("useQuery(ProfileQuery)")}
+      `,
+    });
+
+    const shapeOf = (summaries: BehavioralSummary[]) =>
+      summaries
+        .find((s) => s.identity.name === "Profile.Profile")
+        ?.transitions.map((t) => t.expectedInput);
+    expect(shapeOf(wrapped)).toEqual(shapeOf(direct));
+    expect(shapeOf(direct)).toContainEqual({
+      type: "record",
+      properties: { error: { type: "unknown" }, data: { type: "unknown" } },
+    });
+  });
+});
