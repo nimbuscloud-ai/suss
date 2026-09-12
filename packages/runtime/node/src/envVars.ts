@@ -45,6 +45,7 @@ import {
   type MethodDeclaration,
   Node as N,
   type Node,
+  type ParameterDeclaration,
   type PropertyAccessExpression,
   type SourceFile,
   type VariableDeclaration,
@@ -61,6 +62,7 @@ import {
   functionTargetOf,
   isDefaultedAt,
   stringValueOf,
+  symbolBehind,
 } from "@suss/adapter-typescript";
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
 
@@ -158,9 +160,9 @@ function bracketRead(
  * literal is the unit that reads the variable.
  */
 /**
- * One lookup per read site. The same helper is visited once per unit whose
- * closure contains it, and findReferences is the expensive part, so the
- * repeat visits read the first answer.
+ * One lookup per read site. The same helper is visited once per unit
+ * whose closure contains it, and asking the store is the expensive
+ * part, so the repeat visits read the first answer.
  */
 const CALLER_LOOKUPS = new WeakMap<Node, EnvRead[]>();
 
@@ -183,43 +185,40 @@ function callerLiteralReads(
   index: Identifier,
   resolution: ResolutionStore | undefined,
 ): EnvRead[] {
+  if (resolution === undefined) {
+    return [];
+  }
   const enclosing = findEnclosingFunction(access);
   if (enclosing === null) {
     return [];
   }
-  const at = enclosing
+  const start = enclosing
     .getParameters()
-    .findIndex((parameter) => parameter.getName() === index.getText());
-  if (at === -1) {
+    .find((parameter) => parameter.getName() === index.getText());
+  if (start === undefined) {
     return [];
   }
 
   const defaulted = isDefaultedAt(access);
   const reads: EnvRead[] = [];
-  // A worklist over parameters, because the literal can be more than one
-  // call away: getEnv(name) handing to requireEnv(name) crosses two. A
-  // parameter already taken is skipped, so a pair of helpers calling each
-  // other ends instead of going round.
-  const pending: { fn: FunctionLike; at: number }[] = [{ fn: enclosing, at }];
-  const taken = new Set<string>();
+  // A worklist, because the literal can be more than one call away:
+  // getEnv(name) handing to requireEnv(name) crosses two. A parameter
+  // already taken ends a pair of helpers that call each other.
+  const pending: ParameterDeclaration[] = [start];
+  const taken = new Set<ParameterDeclaration>();
   while (pending.length > 0) {
-    const wanted = pending.pop() as { fn: FunctionLike; at: number };
-    const key = `${wanted.fn.getPos()}:${wanted.at}`;
-    if (taken.has(key)) {
+    const wanted = pending.pop() as ParameterDeclaration;
+    if (taken.has(wanted)) {
       continue;
     }
-    taken.add(key);
-    for (const call of callSitesOf(wanted.fn)) {
-      const passed = call.getArguments()[wanted.at];
-      if (passed === undefined) {
-        continue;
-      }
-      const literal = stringValueOf(passed, resolution);
+    taken.add(wanted);
+    for (const passed of resolution.argumentsPassedTo(wanted)) {
+      const literal = stringValueOf(passed.argument, resolution);
       if (literal !== null && literal.length > 0) {
-        reads.push({ name: literal, defaulted, node: call });
+        reads.push({ name: literal, defaulted, node: passed.call });
         continue;
       }
-      const forwarded = forwardedParameter(passed, call);
+      const forwarded = forwardedParameter(passed.argument, passed.call);
       if (forwarded !== null) {
         pending.push(forwarded);
       }
@@ -231,8 +230,8 @@ function callerLiteralReads(
 /** The caller's own parameter an argument passes along, for the worklist. */
 function forwardedParameter(
   passed: Node,
-  call: CallExpression,
-): { fn: FunctionLike; at: number } | null {
+  call: Node,
+): ParameterDeclaration | null {
   if (!N.isIdentifier(passed)) {
     return null;
   }
@@ -240,47 +239,11 @@ function forwardedParameter(
   if (caller === null) {
     return null;
   }
-  const at = caller
-    .getParameters()
-    .findIndex((parameter) => parameter.getName() === passed.getText());
-  return at === -1 ? null : { fn: caller, at };
-}
-
-/** Every call whose callee resolves to this function, found through its name. */
-function callSitesOf(fn: FunctionLike): CallExpression[] {
-  const named = N.isVariableDeclaration(fn.getParent())
-    ? (fn.getParent() as VariableDeclaration).getNameNode()
-    : (fn as { getNameNode?: () => Node | undefined }).getNameNode?.();
-  if (named === undefined || !N.isIdentifier(named)) {
-    return [];
+  const behind = symbolBehind(passed)?.getValueDeclaration();
+  if (behind === undefined || !N.isParameterDeclaration(behind)) {
+    return null;
   }
-  const calls: CallExpression[] = [];
-  for (const reference of named.findReferencesAsNodes()) {
-    const parent = reference.getParent();
-    if (parent === undefined) {
-      continue;
-    }
-    if (N.isCallExpression(parent) && parent.getExpression() === reference) {
-      calls.push(parent);
-      continue;
-    }
-    // A method call's callee is the property access containing the name,
-    // so the call is one level further up.
-    if (
-      N.isPropertyAccessExpression(parent) &&
-      parent.getNameNode() === reference
-    ) {
-      const grandparent = parent.getParent();
-      if (
-        grandparent !== undefined &&
-        N.isCallExpression(grandparent) &&
-        grandparent.getExpression() === parent
-      ) {
-        calls.push(grandparent);
-      }
-    }
-  }
-  return calls;
+  return behind.getParent() === caller ? behind : null;
 }
 
 /** The variable one element of `const { A, B: c } = process.env` names. */

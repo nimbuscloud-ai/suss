@@ -373,7 +373,7 @@ const EXEMPT = new Map([
   ["packages/framework/react-query/src/index.ts", "callbackExpressionOf"],
   [
     "packages/runtime/node/src/envVars.ts",
-    "bracketRead, callSitesOf, bindingRead, destructuredReads",
+    "bracketRead, bindingRead, destructuredReads, and forwardedParameter, which takes the declaration behind a symbol the facility already resolved",
   ],
   ["packages/adapter/python/src/decorators.ts", "argShapeOf"],
   [

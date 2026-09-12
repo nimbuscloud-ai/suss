@@ -63,7 +63,7 @@ export { parseConditionExpression } from "./predicates.js";
 // The executor ops a declared pack runs on. Exported so a pack's test
 // harness can build the same context the adapter threads through.
 export { callOpsFor } from "./resolve/callOps.js";
-export { functionTargetOf } from "./resolve/functionBehind.js";
+export { functionTargetOf, symbolBehind } from "./resolve/functionBehind.js";
 export {
   type Accessed,
   accessContextFor,

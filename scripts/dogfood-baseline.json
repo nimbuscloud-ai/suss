@@ -2,11 +2,11 @@
   "totals": {
     "packages": 75,
     "packagesWithExports": 75,
-    "exports": 974,
-    "internal": 3427,
-    "consumers": 1930,
-    "pairs": 1919,
-    "unfollowedCalls": 507,
+    "exports": 975,
+    "internal": 3424,
+    "consumers": 1934,
+    "pairs": 1923,
+    "unfollowedCalls": 506,
     "findingErrors": 0
   },
   "packages": {
@@ -26,8 +26,8 @@
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
-      "exports": 109,
-      "internal": 839,
+      "exports": 110,
+      "internal": 838,
       "consumers": 210,
       "unfollowedCalls": 114
     },
@@ -482,9 +482,9 @@
     "packages/packs": {
       "name": "@suss/packs",
       "exports": 53,
-      "internal": 170,
+      "internal": 169,
       "consumers": 0,
-      "unfollowedCalls": 7
+      "unfollowedCalls": 6
     },
     "packages/recognize": {
       "name": "@suss/recognize",
@@ -503,8 +503,8 @@
     "packages/runtime/node": {
       "name": "@suss/runtime-node",
       "exports": 12,
-      "internal": 18,
-      "consumers": 16,
+      "internal": 17,
+      "consumers": 20,
       "unfollowedCalls": 2
     },
     "packages/sql": {
