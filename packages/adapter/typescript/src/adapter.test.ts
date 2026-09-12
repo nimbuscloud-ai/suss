@@ -4953,6 +4953,265 @@ describe("wrapper expansion", () => {
       throw new Error("expected record expectedInput on wrapper-call branch");
     }
   });
+
+  it("follows a wrapper whose own caller is a wrapper", async () => {
+    const project = makeProject();
+    project.createSourceFile(
+      "api.ts",
+      `
+      import axios from "axios";
+      const api = axios.create({ baseURL: "/api" });
+
+      export async function getJson<T>(path: string): Promise<T> {
+        const { data } = await api.get(path);
+        return data;
+      }
+    `,
+    );
+    project.createSourceFile(
+      "middle.ts",
+      `
+      import { getJson } from "./api";
+
+      export async function fetchPath(p: string) {
+        return getJson<unknown>(p);
+      }
+    `,
+    );
+    project.createSourceFile(
+      "client.ts",
+      `
+      import { fetchPath } from "./middle";
+
+      export async function getPet() {
+        return fetchPath("/pet/1");
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosLikePack],
+    });
+    const summaries = await adapter.extractAll();
+
+    expect(
+      restPathOf(summaries.find((s) => s.identity.name === "getPet")),
+    ).toBe("/pet/1");
+    expect(
+      summaries.filter((s) => s.identity.name === "fetchPath").map(restPathOf),
+    ).toEqual([null]);
+  });
+
+  it("gives up on a wrapper whose callers call each other", async () => {
+    const project = makeProject();
+    project.createSourceFile(
+      "api.ts",
+      `
+      import axios from "axios";
+      const api = axios.create({ baseURL: "/api" });
+
+      export async function getJson<T>(path: string): Promise<T> {
+        const { data } = await api.get(path);
+        return data;
+      }
+    `,
+    );
+    project.createSourceFile(
+      "loop.ts",
+      `
+      import { getJson } from "./api";
+
+      export async function first(p: string): Promise<unknown> {
+        return second(p);
+      }
+
+      export async function second(p: string): Promise<unknown> {
+        return getJson<unknown>(p) ?? first(p);
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosLikePack],
+    });
+    const summaries = await adapter.extractAll();
+
+    expect(
+      summaries.filter(
+        (s) =>
+          (s.metadata as { derivedFromWrapper?: unknown } | undefined)
+            ?.derivedFromWrapper !== undefined,
+      ),
+    ).toHaveLength(0);
+  });
+});
+
+describe("wrapper expansion over a config object", () => {
+  const configPack: PatternPack = {
+    name: "axios",
+    protocol: "http",
+    languages: ["typescript"],
+    discovery: [
+      {
+        kind: "client",
+        match: {
+          type: "clientCall",
+          importModule: "axios",
+          importName: "axios",
+          methodFilter: ["request"],
+          factoryMethods: ["create"],
+          callable: true,
+        },
+        bindingExtraction: {
+          method: {
+            type: "fromArgumentProperty",
+            position: 0,
+            property: "method",
+            default: "GET",
+          },
+          path: { type: "fromArgumentProperty", position: 0, property: "url" },
+        },
+      },
+    ],
+    terminals: [
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+      { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
+    ],
+    inputMapping: { type: "positionalParams", params: [] },
+    responseSemantics: [
+      { name: "data", access: "property", semantics: { type: "body" } },
+    ],
+  };
+
+  const verbsOnAnObject = `
+    import axios from "axios";
+    const instance = axios.create();
+
+    export const client = {
+      get: (o: any) => instance({ ...o, method: "GET" }),
+      post: (o: any) => instance({ ...o, method: "POST" }),
+    };
+  `;
+
+  it("reads the verb a method on an object literal writes, for each of its callers", async () => {
+    const project = createTestProject();
+    project.createSourceFile("client.ts", verbsOnAnObject);
+    project.createSourceFile(
+      "sdk.ts",
+      `
+      import { client } from "./client";
+
+      export function readUsers() {
+        return client.get({ url: "/api/v1/users/" });
+      }
+
+      export function createUser() {
+        return client.post({ url: "/api/v1/users/" });
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [configPack],
+    });
+    const summaries = await adapter.extractAll();
+
+    expect(
+      summaries.find((s) => s.identity.name === "readUsers")?.identity
+        .boundaryBinding?.semantics,
+    ).toEqual({ name: "rest", method: "GET", path: "/api/v1/users/" });
+    expect(
+      summaries.find((s) => s.identity.name === "createUser")?.identity
+        .boundaryBinding?.semantics,
+    ).toEqual({ name: "rest", method: "POST", path: "/api/v1/users/" });
+  });
+
+  it("reads a caller whose receiver is written as a fallback to the module's client", async () => {
+    const project = createTestProject();
+    project.createSourceFile("client.ts", verbsOnAnObject);
+    project.createSourceFile(
+      "sdk.ts",
+      `
+      import { client } from "./client";
+
+      export function readUsers(options?: any) {
+        return (options?.client ?? client).get({
+          url: "/api/v1/users/",
+          ...options,
+        });
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [configPack],
+    });
+    const summaries = await adapter.extractAll();
+
+    expect(
+      summaries.find((s) => s.identity.name === "readUsers")?.identity
+        .boundaryBinding?.semantics,
+    ).toEqual({ name: "rest", method: "GET", path: "/api/v1/users/" });
+  });
+
+  it("takes the method from each caller's own object, two layers down", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "client.ts",
+      `
+      import axios from "axios";
+      const instance = axios.create();
+
+      function request(opts: any) {
+        return instance({ ...opts, url: opts.url });
+      }
+
+      export const client = {
+        get: (o: any) => request({ ...o, method: "GET" }),
+        post: (o: any) => request({ ...o, method: "POST" }),
+      };
+    `,
+    );
+    project.createSourceFile(
+      "sdk.ts",
+      `
+      import { client } from "./client";
+
+      export function readUsers() {
+        return client.get({ url: "/api/v1/users/" });
+      }
+
+      export function createUser() {
+        return client.post({ url: "/api/v1/users/" });
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [configPack],
+    });
+    const summaries = await adapter.extractAll();
+
+    // The pack's own reading of the wrapper leaves the path open, which
+    // is what starts the expansion.
+    expect(
+      restPathOf(summaries.find((s) => s.identity.name === "request")),
+    ).toBeNull();
+    expect(
+      restMethodOf(summaries.find((s) => s.identity.name === "readUsers")),
+    ).toBe("GET");
+    expect(
+      restMethodOf(summaries.find((s) => s.identity.name === "createUser")),
+    ).toBe("POST");
+    expect(
+      restPathOf(summaries.find((s) => s.identity.name === "createUser")),
+    ).toBe("/api/v1/users/");
+  });
 });
 
 describe("subUnits plumbing", () => {

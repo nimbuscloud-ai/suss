@@ -571,6 +571,19 @@ export const RESOLUTION_RULES = [
     [v("r"), v("f")],
     [lit("binds", v("g"), v("f")), lit("callsFunction", v("r"), v("g"))],
   ),
+  // A function written on an object, called off it: `client.get(o)`.
+  // Every rule above joins on a name the callee binds to, and a read of
+  // a property binds to nothing.
+  rule(
+    "callsFunction",
+    [v("r"), v("f")],
+    [
+      lit("holdsProperty", v("obj"), v("n"), v("f")),
+      lit("readsProperty", v("c"), v("o"), v("n")),
+      lit("objectOf", v("o"), v("obj")),
+      lit("call", v("r"), v("c")),
+    ],
+  ),
 
   // What an object contains, its base class included, so a method the base
   // declares is found on a subclass that never overrode it. A method both
