@@ -183,7 +183,7 @@ factories in the TypeScript adapter): the method exists and pairs
 when something calls it, and today nothing outside the package
 does.
 
-**The 5 unmatched consumers ask for a method that exists only on a
+**The 10 unmatched consumers ask for a method that exists only on a
 value's declared return type.** `SuppressionFileSchema.safeParse(...)`
 and `IntentDocSchema.safeParse(...)` both call a method zod puts on
 every schema object, which comes from the imported `ZodType` type
@@ -197,10 +197,16 @@ parameter, not an object literal a factory constructed. `@suss/runtime-node`'s
 `findEnclosingFunction(node).getParameters()`; `findEnclosingFunction`
 returns whichever function-shaped ancestor it walked to, and
 `getParameters` is a method ts-morph declares on that node's type, not
-one the adapter's own code builds. All five need reading a declared or
-inferred type to find the method, which `factorySurface` does not do:
-it reads what a function's own body returns, not what the type checker
-says that return is.
+one the adapter's own code builds. The remaining five are the same
+thing in two more packs: `propertyOf(...).getText()` and
+`propertyValueOf(...).getText()` in `@suss/contract-storybook`, and
+`writtenNodeOf(...).getExpression()`, `writtenNodeOf(...).getArguments()`
+and `arrayLiteralOf(...).getElements()` in `@suss/framework-drizzle`.
+All ten need reading a declared or inferred type to find the method,
+which `factorySurface` does not do: it reads what a function's own body
+returns, not what the type checker says that return is. The count rises
+whenever another pack drops its own reader and asks the adapter's
+resolvers instead, since every one of those hands back a ts-morph node.
 
 A method the language declares on every value used to land here too,
 and that was noise: `readSqlAccess(...).map(...)` asked for

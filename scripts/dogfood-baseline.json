@@ -2,11 +2,11 @@
   "totals": {
     "packages": 75,
     "packagesWithExports": 75,
-    "exports": 946,
-    "internal": 3455,
-    "consumers": 1897,
-    "pairs": 1892,
-    "unfollowedCalls": 507,
+    "exports": 970,
+    "internal": 3435,
+    "consumers": 1925,
+    "pairs": 1915,
+    "unfollowedCalls": 505,
     "findingErrors": 0
   },
   "packages": {
@@ -26,9 +26,9 @@
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
-      "exports": 102,
-      "internal": 850,
-      "consumers": 209,
+      "exports": 105,
+      "internal": 843,
+      "consumers": 210,
       "unfollowedCalls": 114
     },
     "packages/behavioral-ir": {
@@ -174,8 +174,8 @@
     "packages/contract/storybook": {
       "name": "@suss/contract-storybook",
       "exports": 1,
-      "internal": 3,
-      "consumers": 2,
+      "internal": 1,
+      "consumers": 11,
       "unfollowedCalls": 0
     },
     "packages/contract/terraform": {
@@ -236,7 +236,7 @@
     },
     "packages/framework/aws-lambda": {
       "name": "@suss/framework-aws-lambda",
-      "exports": 4,
+      "exports": 8,
       "internal": 13,
       "consumers": 17,
       "unfollowedCalls": 0
@@ -278,16 +278,16 @@
     },
     "packages/framework/cloudflare-workers": {
       "name": "@suss/framework-cloudflare-workers",
-      "exports": 5,
-      "internal": 24,
-      "consumers": 9,
-      "unfollowedCalls": 5
+      "exports": 7,
+      "internal": 15,
+      "consumers": 15,
+      "unfollowedCalls": 3
     },
     "packages/framework/drizzle": {
       "name": "@suss/framework-drizzle",
       "exports": 2,
-      "internal": 17,
-      "consumers": 9,
+      "internal": 13,
+      "consumers": 19,
       "unfollowedCalls": 0
     },
     "packages/framework/express": {
@@ -369,8 +369,8 @@
     },
     "packages/framework/nextjs": {
       "name": "@suss/framework-nextjs",
-      "exports": 2,
-      "internal": 0,
+      "exports": 4,
+      "internal": 5,
       "consumers": 4,
       "unfollowedCalls": 0
     },
@@ -397,14 +397,14 @@
     },
     "packages/framework/react": {
       "name": "@suss/framework-react",
-      "exports": 4,
-      "internal": 4,
+      "exports": 6,
+      "internal": 9,
       "consumers": 11,
       "unfollowedCalls": 0
     },
     "packages/framework/react-query": {
       "name": "@suss/framework-react-query",
-      "exports": 2,
+      "exports": 4,
       "internal": 4,
       "consumers": 6,
       "unfollowedCalls": 0
@@ -481,8 +481,8 @@
     },
     "packages/packs": {
       "name": "@suss/packs",
-      "exports": 46,
-      "internal": 179,
+      "exports": 53,
+      "internal": 172,
       "consumers": 0,
       "unfollowedCalls": 7
     },
@@ -502,9 +502,9 @@
     },
     "packages/runtime/node": {
       "name": "@suss/runtime-node",
-      "exports": 10,
-      "internal": 22,
-      "consumers": 10,
+      "exports": 12,
+      "internal": 21,
+      "consumers": 12,
       "unfollowedCalls": 2
     },
     "packages/sql": {
