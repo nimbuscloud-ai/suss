@@ -251,6 +251,18 @@ describe("the database work a Python body does", () => {
     ).toEqual(["email", "id"]);
   });
 
+  it("reads a query built from a function another module re-exports", async () => {
+    const effects = await effectsFor(
+      ["from base import select", "", "found = select(User.id).all()", ""].join(
+        "\n",
+      ),
+      ["from sqlalchemy import select", ""].join("\n"),
+    );
+    expect(effects.map(accessOf)).toMatchObject([
+      { kind: "read", operation: "select", fields: ["id"] },
+    ]);
+  });
+
   it("says nothing about a function of the same name from somewhere else", async () => {
     const effects = await effectsFor(
       [
@@ -451,6 +463,49 @@ describe("the database work a Python body does", () => {
     expect(effects.map(accessOf)).toMatchObject([
       { kind: "write", operation: "add" },
       { kind: "write", operation: "commit" },
+    ]);
+  });
+
+  it("reads a session a project function builds without saying it returns one", async () => {
+    const effects = await effectsFor(
+      [
+        "from base import open_session",
+        "",
+        "def create():",
+        "    db = open_session()",
+        "    db.add(Orders())",
+        "",
+      ].join("\n"),
+      [
+        "from sqlalchemy.orm import Session",
+        "",
+        "def open_session():",
+        "    return Session()",
+        "",
+      ].join("\n"),
+      "create",
+    );
+    expect(effects.map(accessOf)).toMatchObject([
+      { kind: "write", operation: "add" },
+    ]);
+  });
+
+  it("reads a session an alias in the same body stands for", async () => {
+    const effects = await effectsFor(
+      [
+        "from sqlalchemy.orm import Session",
+        "",
+        "def create():",
+        "    opened = Session()",
+        "    db = opened",
+        "    db.add(Orders())",
+        "",
+      ].join("\n"),
+      BASE,
+      "create",
+    );
+    expect(effects.map(accessOf)).toMatchObject([
+      { kind: "write", operation: "add" },
     ]);
   });
 
