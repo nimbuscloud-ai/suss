@@ -9,6 +9,7 @@ import { emitModuleImportFacts } from "./facts.js";
 import { parsePython } from "./parser.js";
 import { buildRouterIndex } from "./routers.js";
 import { bindModule } from "./scope.js";
+import { bindEvaluator } from "./values/evaluator.js";
 
 import type { RawCodeStructure } from "@suss/extractor";
 import type {
@@ -81,6 +82,10 @@ async function unitsOf(source: string, packs: PythonPack[] = [fastapiLike]) {
   const facts = new Database();
   emitModuleImportFacts(facts, file, module, { roots: [] });
   emitValueFacts(facts, file, tree.rootNode);
+  bindEvaluator(facts, {
+    files: [{ file, root: tree.rootNode, module }],
+    definitions: new Map(),
+  });
   const routerIndex = buildRouterIndex(
     [{ file, displayPath: "main.py", root: tree.rootNode, module }],
     packs,
@@ -345,8 +350,11 @@ describe("router prefix composition: abstentions", () => {
         "router = APIRouter()",
         "",
         "",
+        "import os",
+        "",
+        "",
         "def computed():",
-        '    return "/api"',
+        '    return os.environ["API_PREFIX"]',
         "",
         "",
         '@router.get("/ping")',
@@ -1866,8 +1874,11 @@ describe("prefix composition through the object a mount is called on", () => {
   it("abstains on a route declared on an Api whose prefix nobody can read", async () => {
     const units = await unitsOf(
       declaredOnApi([
+        "import os",
+        "",
+        "",
         "def computed():",
-        '    return "/api/v1"',
+        '    return os.environ["API_PREFIX"]',
         "",
         "",
         'bp = Blueprint("api", __name__, url_prefix=computed())',
@@ -1911,8 +1922,11 @@ describe("prefix composition through the object a mount is called on", () => {
   it("abstains when the Api's own prefix is not a string literal", async () => {
     expect(
       await reasonFor([
+        "import os",
+        "",
+        "",
         "def computed():",
-        '    return "/extra"',
+        '    return os.environ["API_PREFIX"]',
         "",
         "",
         'bp = Blueprint("api", __name__, url_prefix="/api/v1")',
@@ -1926,8 +1940,11 @@ describe("prefix composition through the object a mount is called on", () => {
   it("abstains when the blueprint's prefix is not a string literal", async () => {
     expect(
       await reasonFor([
+        "import os",
+        "",
+        "",
         "def computed():",
-        '    return "/api/v1"',
+        '    return os.environ["API_PREFIX"]',
         "",
         "",
         'bp = Blueprint("api", __name__, url_prefix=computed())',

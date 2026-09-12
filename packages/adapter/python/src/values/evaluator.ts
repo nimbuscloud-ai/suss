@@ -14,7 +14,11 @@ import { nodeOfKey } from "@suss/resolution";
 import { Evaluator, force, literalOf } from "@suss/values";
 
 import { enclosingFunction, field } from "../ast.js";
-import { resolveCalls, writtenValueOf } from "../facts/resolve.js";
+import {
+  resolveCalls,
+  writtenValueOf,
+  writtenValuesOf,
+} from "../facts/resolve.js";
 import { readKey } from "../facts/values.js";
 import { bindModule } from "../scope.js";
 import { pythonLowering } from "./lowering.js";
@@ -40,6 +44,7 @@ export interface ProjectNodes {
 }
 
 const evaluators = new WeakMap<Database, Evaluator<PyNode>>();
+const projects = new WeakMap<Database, BoundProject>();
 const withoutFacts = new WeakMap<object, Evaluator<PyNode>>();
 const modulesByTree = new WeakMap<object, ModuleBinding>();
 
@@ -48,16 +53,118 @@ export function bindEvaluator(db: Database, nodes: ProjectNodes): void {
   for (const entry of nodes.files) {
     modulesByTree.set(entry.root.tree, entry.module);
   }
+  const bound = projectOver(db, nodes);
+  projects.set(db, bound);
   evaluators.set(
     db,
     new Evaluator(
       pythonLowering({
-        context: contextOver(db, nodes),
+        context: bound.context,
         originOf: calleeOrigin,
         rows: pythonRows,
       }),
     ),
   );
+}
+
+/**
+ * The single expression the rules say a value was written as, as a node
+ * in whichever file writes it. Null until a project has been bound, since
+ * a key only leads back to a node once the run has said which files it
+ * covers.
+ */
+export function writtenNodeOf(
+  node: PyNode,
+  db: Database | undefined,
+): PyNode | null {
+  const bound = db === undefined ? undefined : projects.get(db);
+  return bound?.context.writtenTo(node) ?? null;
+}
+
+/** The call a value was built by, and where that call's callee came from. */
+export interface Construction {
+  /** The value key of the call, which is the key a router index keys its constructions by. */
+  key: string;
+  /** The name the callee's module exports it under, so a caller can tell a router from an app. */
+  origin: Origin;
+}
+
+/**
+ * What the rules say built a value. `severalCalls` is a value written
+ * more than one way, which a caller says something about at the site
+ * rather than reading as the same nothing as `noCall`.
+ */
+export type BuiltValue =
+  | { type: "oneCall"; construction: Construction }
+  | { type: "severalCalls"; constructions: Construction[] }
+  | { type: "noCall" };
+
+const NOTHING_BUILT: BuiltValue = { type: "noCall" };
+
+/**
+ * The call the rules say a name was written as, so `app` in
+ * `app = FastAPI()` comes from `fastapi`. An answer that is not a call,
+ * or whose callee came out of nowhere, is left out.
+ */
+export function constructionBehind(
+  node: PyNode,
+  db: Database | undefined,
+): BuiltValue {
+  if (db === undefined) {
+    return NOTHING_BUILT;
+  }
+  const bound = projects.get(db);
+  const key = bound?.keyOf(node);
+  if (bound === undefined || key === null || key === undefined) {
+    return NOTHING_BUILT;
+  }
+
+  const built = writtenValuesOf(db, key)
+    .map((answer) => constructionAt(answer, bound.roots))
+    .filter((candidate): candidate is Construction => candidate !== null);
+  if (built.length === 0) {
+    return NOTHING_BUILT;
+  }
+  const only = built[0];
+  return built.length === 1 && only !== undefined
+    ? { type: "oneCall", construction: only }
+    : { type: "severalCalls", constructions: built };
+}
+
+/** The construction one answer describes, or null when the answer is not a call out of some module. */
+function constructionAt(
+  answer: string,
+  roots: ReadonlyMap<string, PyNode>,
+): Construction | null {
+  const written = nodeOfKey(roots, answer);
+  if (written === null || written.type !== "call") {
+    return null;
+  }
+  const callee = field(written, "function");
+  const origin = callee === null ? null : calleeOrigin(callee);
+  return origin === null ? null : { key: answer, origin };
+}
+
+/**
+ * Ask the rules about all of these at once. The rules run over the whole
+ * project's facts, so a reader that then asks one at a time runs them
+ * once rather than once per question.
+ */
+export function askWrittenValues(
+  nodes: readonly PyNode[],
+  db: Database | undefined,
+): void {
+  if (db === undefined) {
+    return;
+  }
+  const bound = projects.get(db);
+  if (bound === undefined) {
+    return;
+  }
+  const keys = nodes
+    .map((node) => bound.keyOf(node))
+    .filter((key): key is string => key !== null);
+  resolveCalls(db, keys);
 }
 
 /** The abstract value `node` comes down to, through the facts when `db` was bound. */
@@ -94,7 +201,7 @@ function evaluatorFor(
 }
 
 /** The scope binding of the file a node is in, built once per tree when the project did not supply it. */
-function moduleOf(node: PyNode): ModuleBinding {
+export function moduleOf(node: PyNode): ModuleBinding {
   const tree = node.tree;
   let module = modulesByTree.get(tree);
   if (module === undefined) {
@@ -108,7 +215,15 @@ function calleeOrigin(callee: PyNode): Origin | null {
   return originOf(callee, moduleOf(callee));
 }
 
-function contextOver(db: Database, nodes: ProjectNodes): EvaluationContext {
+/** The project a database was bound to, so a reader can go from a node to a key and back. */
+interface BoundProject {
+  /** The key the rules join a read of this expression on, or null for a file the run did not cover. */
+  keyOf: (node: PyNode) => string | null;
+  roots: ReadonlyMap<string, PyNode>;
+  context: EvaluationContext;
+}
+
+function projectOver(db: Database, nodes: ProjectNodes): BoundProject {
   const filesByRoot = new Map<number, EvaluatedFile>();
   const rootsByFile = new Map<string, PyNode>();
   for (const entry of nodes.files) {
@@ -124,7 +239,7 @@ function contextOver(db: Database, nodes: ProjectNodes): EvaluationContext {
     return readKey(entry.file, node, enclosingFunction(node));
   };
 
-  return {
+  const context: EvaluationContext = {
     writtenTo: (node) => {
       const key = keyOf(node);
       if (key === null) {
@@ -150,4 +265,6 @@ function contextOver(db: Database, nodes: ProjectNodes): EvaluationContext {
         : (nodes.definitions.get(settled) ?? null);
     },
   };
+
+  return { keyOf, roots: rootsByFile, context };
 }

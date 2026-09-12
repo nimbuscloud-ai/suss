@@ -48,8 +48,6 @@ import {
   unwrapDecorator,
 } from "./decorators.js";
 import { envReadEffects } from "./envReads.js";
-import { subjectConstructions } from "./facts/resolve.js";
-import { readKey } from "./facts/values.js";
 import {
   bodyTerminals,
   enumerateBodyBranches,
@@ -67,7 +65,7 @@ import {
   storageCallIds,
   storageEffects,
 } from "./storage.js";
-import { evaluatedValue } from "./values/evaluator.js";
+import { askWrittenValues, evaluatedValue } from "./values/evaluator.js";
 
 import type {
   DispatchTable,
@@ -88,7 +86,6 @@ import type {
   SourceRange,
 } from "@suss/extractor";
 import type { DecoratorClassification } from "./decorators.js";
-import type { SubjectConstruction } from "./facts/resolve.js";
 import type { ImportedDefinitionLookup } from "./importedDefinitions.js";
 import type {
   DecoratedClassRoute,
@@ -128,55 +125,60 @@ export interface DiscoveryOptions {
   importedDefinition?: ImportedDefinitionLookup | undefined;
 }
 
-/** One decorated definition, and what the scope made of each decorator on it. */
+/** One decorated definition, and what each decorator on it was classified as. */
 interface DecoratedStatement {
   stmt: PyNode;
-  scope: Scope;
-  /** The function whose body it is written in, which is part of how a local name is keyed. */
-  enclosingFunction: PyNode | null;
   decorators: { node: PyNode; direct: DecoratorClassification }[];
 }
 
 /**
  * Every decorated definition in the file, wherever it is written. A route
  * can go anywhere the language allows a statement, and listing the places
- * loses to the language, so the walk goes everywhere and keeps track of the
- * scope as it goes.
- *
- * The binder opens a scope for every def and class it bound. One it did not
- * bind, such as a def written inside a try, keeps the enclosing scope.
+ * loses to the language, so the walk goes everywhere.
+ */
+function decoratedNodes(
+  root: PyNode,
+): { stmt: PyNode; decorators: PyNode[] }[] {
+  const found: { stmt: PyNode; decorators: PyNode[] }[] = [];
+  walkDescendants<PyNode, null>(root, null, {
+    at: (node) => {
+      if (node.type !== "decorated_definition") {
+        return;
+      }
+      found.push({ stmt: node, decorators: stripDecorators(node).decorators });
+    },
+    into: () => null,
+  });
+  return found;
+}
+
+/**
+ * What each decorator in the file was written as. The rules are asked
+ * about every object a decorator hangs on in one go, because they run
+ * over the whole project's facts and asking per decorator would run them
+ * once per route.
  */
 function decoratedStatements(
   root: PyNode,
   module: ModuleBinding,
+  facts: Database | undefined,
 ): DecoratedStatement[] {
-  const found: DecoratedStatement[] = [];
-  type Where = Pick<DecoratedStatement, "scope" | "enclosingFunction">;
-  walkDescendants<PyNode, Where>(
-    root,
-    { scope: module.moduleScope, enclosingFunction: null },
-    {
-      at: (node, where) => {
-        if (node.type !== "decorated_definition") {
-          return;
-        }
-        found.push({
-          stmt: node,
-          ...where,
-          decorators: stripDecorators(node).decorators.map((decorator) => ({
-            node: decorator,
-            direct: classifyDecorator(decorator, where.scope),
-          })),
-        });
-      },
-      into: (node, where) => ({
-        scope: module.scopeFor.get(node.id) ?? where.scope,
-        enclosingFunction:
-          node.type === "function_definition" ? node : where.enclosingFunction,
-      }),
-    },
+  const found = decoratedNodes(root);
+  askWrittenValues(
+    found.flatMap(({ decorators }) =>
+      decorators
+        .map((decorator) => decoratorReceiver(decorator)?.object)
+        .filter((object): object is PyNode => object !== undefined),
+    ),
+    facts,
   );
-  return found;
+  return found.map(({ stmt, decorators }) => ({
+    stmt,
+    decorators: decorators.map((decorator) => ({
+      node: decorator,
+      direct: classifyDecorator(decorator, module, facts),
+    })),
+  }));
 }
 
 export function discoverUnits(
@@ -184,11 +186,10 @@ export function discoverUnits(
   module: ModuleBinding,
   options: DiscoveryOptions,
 ): RawCodeStructure[] {
-  const decorated = decoratedStatements(root, module);
-  const subjects = builtSubjects(decorated, options);
   return [
-    ...decorated.flatMap((decoratedStatement) =>
-      decoratedUnits(decoratedStatement, module, options, subjects),
+    ...decoratedStatements(root, module, options.facts).flatMap(
+      (decoratedStatement) =>
+        decoratedUnits(decoratedStatement, module, options),
     ),
     ...clientUnits(root, module, options),
   ];
@@ -210,74 +211,21 @@ function clientUnits(
   );
 }
 
-/**
- * What the rules say built the object behind each decorator the scope could
- * not classify. Asked for the whole file at once, because the rules run over
- * the project's facts and asking per decorator would run them per route.
- */
-function builtSubjects(
-  decorated: readonly DecoratedStatement[],
-  options: DiscoveryOptions,
-): Map<string, SubjectConstruction> {
-  const facts = options.facts;
-  if (facts === undefined) {
-    return new Map();
-  }
-
-  const factsPath = options.absoluteFile ?? options.filePath;
-  const asked = new Set<string>();
-  for (const { enclosingFunction, decorators } of decorated) {
-    for (const { node, direct } of decorators) {
-      if (
-        direct.module !== null &&
-        acceptedByAnyPattern(direct.module, options)
-      ) {
-        continue;
-      }
-      const written = decoratorReceiver(node);
-      if (written !== null) {
-        asked.add(readKey(factsPath, written.object, enclosingFunction));
-      }
-    }
-  }
-  return subjectConstructions(facts, [...asked]);
-}
-
 function decoratedUnits(
   decoratedStatement: DecoratedStatement,
   module: ModuleBinding,
   options: DiscoveryOptions,
-  subjects: ReadonlyMap<string, SubjectConstruction>,
 ): RawCodeStructure[] {
-  const { stmt, scope, enclosingFunction, decorators } = decoratedStatement;
+  const { stmt, decorators } = decoratedStatement;
   const units: RawCodeStructure[] = [];
   const { definition } = stripDecorators(stmt);
   for (const { node: decoratorNode, direct } of decorators) {
-    // A decorator no pattern accepts as written may be a project wrapper
-    // around one a pattern does accept. Failing that, the rules say what
-    // the object it hangs on was built by.
+    // A decorator no pattern accepts as written may still be a project
+    // wrapper around one a pattern does accept.
     const classifications =
       direct.module !== null && acceptedByAnyPattern(direct.module, options)
         ? [direct]
-        : [
-            unwrapDecorator(
-              decoratorNode,
-              scope,
-              module,
-              (spec, name) =>
-                options.routerIndex?.moduleDef(
-                  options.absoluteFile ?? options.filePath,
-                  spec,
-                  name,
-                ) ?? null,
-            ) ??
-              builtSubjectClassification(
-                decoratorNode,
-                enclosingFunction,
-                subjects,
-                options,
-              ),
-          ].filter(
+        : [unwrapDecorator(decoratorNode, options.facts)].filter(
             (candidate): candidate is DecoratorClassification =>
               candidate !== null,
           );
@@ -314,52 +262,6 @@ function acceptedByAnyPattern(
   return options.packs.some((pack) =>
     pack.discovery.some((pattern) => pattern.importModule.includes(module)),
   );
-}
-
-/**
- * The decorator read through what the rules say built the object it hangs
- * on. `@self.app.get("/x")` says as much about the route as `@app.get("/x")`
- * does, once something says what `self.app` is.
- *
- * Null when the rules settled on nothing, or on a call out of a module no
- * pack accepts, and then the decorator stays unclassified.
- */
-function builtSubjectClassification(
-  decoratorNode: PyNode,
-  enclosingFunction: PyNode | null,
-  subjects: ReadonlyMap<string, SubjectConstruction>,
-  options: DiscoveryOptions,
-): DecoratorClassification | null {
-  const written = decoratorReceiver(decoratorNode);
-  if (written === null) {
-    return null;
-  }
-
-  const factsPath = options.absoluteFile ?? options.filePath;
-  const built = subjects.get(
-    readKey(factsPath, written.object, enclosingFunction),
-  );
-  const origin = built?.origins.find((candidate) =>
-    acceptedByAnyPattern(candidate.module, options),
-  );
-  if (built === undefined || origin === undefined) {
-    return null;
-  }
-
-  return {
-    importedName: written.attributeName,
-    module: origin.module,
-    objectName:
-      written.object.type === "identifier" ? written.object.text : null,
-    relativeLevel: 0,
-    args: written.args,
-    keywordArgs: written.keywordArgs,
-    range: written.range,
-    subjectConstruction: {
-      key: built.constructionKey,
-      constructorName: origin.name,
-    },
-  };
 }
 
 function unitsFor(
@@ -646,34 +548,53 @@ function readRoutePaths(
   }));
 }
 
-/** The router index's answer for this decorator's object, or null when nothing composes. */
+/**
+ * What the index says about this decorator's object, or null when nothing
+ * composes. A router the index never saw under a name is looked up by the
+ * call that built it.
+ */
 function routerResolutionOf(
   pattern: PythonDiscoveryPattern,
   classification: DecoratorClassification,
   module: ModuleBinding,
   options: DiscoveryOptions,
 ): RoutePrefixResolution | null {
+  const composition = pattern.routerComposition;
   const index = options.routerIndex;
-  if (pattern.routerComposition === undefined || index === undefined) {
+  if (composition === undefined || index === undefined) {
     return null;
   }
 
   const objectModule = classification.objectModule ?? module;
+  const byName =
+    classification.objectName === null
+      ? null
+      : index.resolve(pattern, objectModule, classification.objectName);
+  if (byName !== null && byName.kind !== "notRouter") {
+    return byName;
+  }
+
   const built = classification.subjectConstruction;
-  if (built !== undefined) {
-    return index.resolveConstruction(
-      pattern,
-      objectModule,
-      built.constructorName,
-      built.key,
-    );
+  if (built === undefined) {
+    return byName;
   }
 
-  if (classification.objectName === null) {
-    return null;
+  // A name the index does not know is looked up by its call only when the
+  // call built a router, since a mount object is what the index knows by
+  // name. A decorator with no name to look up has only its call.
+  if (
+    byName !== null &&
+    built.constructorName !== composition.routerConstructorName
+  ) {
+    return byName;
   }
 
-  return index.resolve(pattern, objectModule, classification.objectName);
+  return index.resolveConstruction(
+    pattern,
+    objectModule,
+    built.constructorName,
+    built.key,
+  );
 }
 
 function composeRoutePath(

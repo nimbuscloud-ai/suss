@@ -6,6 +6,7 @@ import {
   askResolution,
   placeholderValues,
   writtenValueOf as sharedWrittenValueOf,
+  writtenValuesOf as sharedWrittenValuesOf,
   singleAnswers,
 } from "@suss/resolution";
 
@@ -20,6 +21,12 @@ export function resolveCalls(db: Database, callKeys: readonly string[]): void {
 export function writtenValueOf(db: Database, key: string): string | null {
   resolveCalls(db, [key]);
   return sharedWrittenValueOf(db, key, (keys) => resolveCalls(db, keys));
+}
+
+/** Every expression a value was written as, for a caller with something to say about two. */
+export function writtenValuesOf(db: Database, key: string): string[] {
+  resolveCalls(db, [key]);
+  return sharedWrittenValuesOf(db, key, (keys) => resolveCalls(db, keys));
 }
 
 /** Where a name came from, for one construction: the module and the name that module exports it under. */

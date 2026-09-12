@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
 
-import { placeholderValues, singleAnswers } from "./singleAnswer.js";
+import {
+  answersByKey,
+  placeholderValues,
+  singleAnswers,
+} from "./singleAnswer.js";
 
 describe("the single-answer policy over a [key, answer] relation", () => {
   it("settles a key with exactly one answer", () => {
@@ -70,5 +74,40 @@ describe("the single-answer policy over a [key, answer] relation", () => {
       new Set(["none"]),
     );
     expect(settled.has("a")).toBe(false);
+  });
+});
+
+describe("every answer a key has", () => {
+  it("lists the answers of a key written two ways", () => {
+    const answers = answersByKey([
+      ["a", "b"],
+      ["a", "c"],
+    ]);
+    expect(answers.get("a")).toEqual(["b", "c"]);
+  });
+
+  it("drops a key's match against itself, and the key with it", () => {
+    const answers = answersByKey([["a", "a"]]);
+    expect(answers.has("a")).toBe(false);
+  });
+
+  it("lists a repeated answer once", () => {
+    const answers = answersByKey([
+      ["a", "b"],
+      ["a", "b"],
+    ]);
+    expect(answers.get("a")).toEqual(["b"]);
+  });
+
+  it("sets a placeholder answer aside when the key has others", () => {
+    const answers = answersByKey(
+      [
+        ["a", "none"],
+        ["a", "b"],
+        ["a", "c"],
+      ],
+      new Set(["none"]),
+    );
+    expect(answers.get("a")).toEqual(["b", "c"]);
   });
 });

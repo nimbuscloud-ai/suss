@@ -4,9 +4,9 @@
 //     def api_route(path):
 //         return orders_namespace.route(path)
 //
-// The wrapper is read where it is written, and the decorator is classified as
-// what the wrapper returns. A wrapper whose body does anything more keeps the
-// route undiscovered, the same as any decorator nothing recognizes.
+// The decorator is classified as the call the rules say the wrapper comes
+// down to. A wrapper that rearranges its parameters keeps the route
+// undiscovered, since the decorator's arguments are then not the library's.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -155,7 +155,7 @@ describe("a decorator written through a project wrapper", () => {
     expect(paths).toEqual(["/api/v1/orders/summary"]);
   });
 
-  it("keeps a wrapper with a second statement undiscovered", async () => {
+  it("composes the full path through a wrapper that does something else first", async () => {
     const paths = await pathsOf({
       "myapp/__init__.py": "",
       "myapp/wrappers.py": [
@@ -184,7 +184,7 @@ describe("a decorator written through a project wrapper", () => {
       ].join("\n"),
       "app.py": APP,
     });
-    expect(paths).toEqual([]);
+    expect(paths).toEqual(["/api/v1/orders/{order_id}"]);
   });
 
   it("keeps a wrapper that rearranges its arguments undiscovered", async () => {

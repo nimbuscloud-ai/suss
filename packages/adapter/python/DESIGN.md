@@ -12,9 +12,9 @@ If a pack declares nothing, it gets paths exactly as written and no parameter is
 
 A route is a decorator on something, and whether it counts depends on what that something is. `@app.get("/x")` is a route when `app` was built by calling what FastAPI exports, and nothing at all when `app` is some other object with a `get` method. So discovery has to answer one question per decorator: what built the object this hangs on?
 
-The lexical binder goes first, and it settles most cases: it follows the name one hop back to the call that built it and reads where that call's constructor was imported from. It is fast, it needs no facts, and it covers the module-level app and the app factory.
+The rules in `@suss/resolution` answer it, for every decorator. They follow the value however it was moved, through a binding, a property read, an import, or an argument, and come back with the one call it was written as. `originOf` then reads where that call's callee was imported from. The TypeScript adapter asks the same question of the same rules, so a spelling either language learns to follow, both get.
 
-The binder only records a name written directly in a body's own statement list, and it has no idea what an attribute refers to. So these two get nothing out of it:
+Reading the lexical binder instead would settle the module-level app and stop. The binder only records a name written directly in a body's own statement list, and it has no idea what an attribute refers to, so neither of these gets anything out of it:
 
 ```python
 class Holder:
@@ -22,21 +22,19 @@ class Holder:
         self.app = FastAPI()
 
     def wire(self):
-        @self.app.get("/health")     # the binder has no binding for self.app
+        @self.app.get("/health")     # no scope has a binding for self.app
         def health(): ...
 
 try:
     app = FastAPI()
 
-    @app.get("/health")              # the binder skips a name written inside a try
+    @app.get("/health")              # a name written inside a try is not bound
     def health(): ...
 except RuntimeError:
     pass
 ```
 
-Whatever the binder declines goes to the rules in `@suss/resolution`, as `wantedSubject`. They follow the value however it was moved, through a binding, a property read, an import, or an argument, and come back with the call it was written as and where that call's callee came from. The TypeScript adapter asks the same question of the same rules, so a spelling either language learns to follow, both get.
-
-The rules settle on one construction or on nothing. A name that could be two different constructions comes back with neither, because keying a route on the wrong app is worse than keying it on none, and then the decorator stays unclassified and the route is not discovered.
+A name assigned two constructions comes back as both, not as one of them, because keying a route on the wrong app is worse than keying it on none. Both out of the same module is still enough to say which pack the route belongs to, so the route is discovered and the router index reports the name the two share. Two out of different modules leave the decorator unclassified and the route undiscovered.
 
 Three Python facts feed the question. A method's receiver binds to the class it is declared in, so `self.app` is the value the class puts under `app`. An assignment written inside a method body binds its name, which the class walk used to skip. And an import of a package the repo cannot read still records which module a name came from, which is how `FastAPI()` is told apart from a same-named constructor the project wrote itself.
 
