@@ -103,6 +103,23 @@ end
     expect(filterCoversAction(filter, "index")).toBe(false);
   });
 
+  it("covers only the actions a constant behind only: lists", async () => {
+    const filters = await filtersOf(`
+class OrdersController < ApplicationController
+  GUARDED = %i[show cancel]
+
+  before_action :load_order, only: GUARDED
+
+  def load_order
+  end
+end
+`);
+
+    const filter = filters[0] as never;
+    expect(filterCoversAction(filter, "show")).toBe(true);
+    expect(filterCoversAction(filter, "index")).toBe(false);
+  });
+
   it("leaves out the actions an except: keyword names", async () => {
     const filters = await filtersOf(`
 class OrdersController < ApplicationController

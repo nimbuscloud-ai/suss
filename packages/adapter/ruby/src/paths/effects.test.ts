@@ -139,6 +139,26 @@ describe("ruby invocation effects", () => {
     ]);
   });
 
+  it("writes out an argument written as a constant, and one an interpolation folds", async () => {
+    const tree = await parseRuby(
+      [
+        "QUEUE = 'orders'",
+        "ENVIRONMENT = 'prod'",
+        "",
+        "def total",
+        '  publish(QUEUE, "#{ENVIRONMENT}-jobs")',
+        "end",
+      ].join("\n"),
+    );
+    const method = tree.rootNode.namedChildren.find(
+      (child) => child?.type === "method",
+    ) as RbNode;
+    expect(invocationEffects(method)[0]?.args).toEqual([
+      { kind: "string", value: "orders" },
+      { kind: "string", value: "prod-jobs" },
+    ]);
+  });
+
   it("reads a keyword argument's value rather than the keyword", async () => {
     const effects = await effectsFor([
       "def total",

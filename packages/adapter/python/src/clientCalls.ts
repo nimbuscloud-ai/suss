@@ -220,9 +220,10 @@ function argumentAt(
 function callerBranches(
   definition: PyNode,
   range: ReturnType<typeof rangeOf>,
+  facts: Database | undefined,
 ): RawBranch[] {
   const body = field(definition, "body");
-  const effects = invocationEffects(definition);
+  const effects = invocationEffects(definition, facts);
   const terminals = bodyTerminals(body, []);
   if (body === null || terminals.length === 0) {
     return [handsBack(range, effects)];
@@ -237,6 +238,7 @@ function callerBranches(
         ? { terminal: found.terminal, location: rangeOf(found.statement) }
         : handsBackAt(rangeOf(found.statement)),
     fallthrough: handsBackAt(range),
+    facts,
   });
   return branches.length === 0 ? [handsBack(range, effects)] : branches;
 }
@@ -326,7 +328,7 @@ function clientUnit(
       recognition: pack.name,
     }),
     parameters: [],
-    branches: callerBranches(definition, range),
+    branches: callerBranches(definition, range, options.facts),
     ...responseAccessors(pattern),
     bodyContent: "statements",
     dependencyCalls: [],

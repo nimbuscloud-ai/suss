@@ -325,6 +325,55 @@ describe("module imports on a summary", () => {
   });
 });
 
+describe("a status a handler returns as a name another module writes", () => {
+  const flaskRestxWithReturnStatus: PythonPack = {
+    ...flaskRestxLike,
+    discovery: [
+      {
+        ...flaskRestxLike.discovery[0],
+        statusFromReturnedTuple: true,
+      } as PythonPack["discovery"][number],
+    ],
+  };
+
+  it("reads the number the constant was written as", async () => {
+    write(
+      "myapp/wrappers/restx.py",
+      "from flask_restx import Namespace\n\napi = Namespace('app')\n\n\ndef route(path):\n    return api.route(path)\n",
+    );
+    const http = write("myapp/http.py", "HTTP_201 = 201\n");
+    const todos = write(
+      "myapp/routes/todos.py",
+      [
+        "from myapp.wrappers.restx import route",
+        "from myapp.http import HTTP_201",
+        "",
+        "",
+        '@route("/todos")',
+        "class TodoList:",
+        "    def post(self):",
+        '        return {"a": 1}, HTTP_201',
+        "",
+      ].join("\n"),
+    );
+
+    const { summaries } = await extractPythonProject({
+      files: [http, todos],
+      roots: [tmpDir],
+      packs: [flaskRestxWithReturnStatus],
+      workspaceRoot: tmpDir,
+    });
+    const route = summaries.find((s) => s.kind === "handler");
+    expect(
+      route?.transitions.map((transition) =>
+        transition.output.type === "response"
+          ? transition.output.statusCode
+          : null,
+      ),
+    ).toEqual([{ type: "literal", value: 201 }]);
+  });
+});
+
 describe("environment reads on a summary", () => {
   it("puts a route body's reads on the route and a module's reads on a module-init unit", async () => {
     const wrapper = write(

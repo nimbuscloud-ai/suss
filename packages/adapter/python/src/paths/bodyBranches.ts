@@ -13,6 +13,7 @@ import { NodeSet } from "../ast.js";
 import { lowerPythonBody } from "./lowering.js";
 import { predicateOf } from "./predicates.js";
 
+import type { Database } from "@suss/datalog";
 import type {
   ConditionInfo,
   RawBranch,
@@ -103,6 +104,8 @@ export interface EnumerateBodyOptions {
   branchOf: (terminal: BodyTerminal) => TerminalBranch;
   /** What a path that runs off the end of the body does. Unset drops those paths, which is right for a route that then returns None. */
   fallthrough?: TerminalBranch;
+  /** The project's facts, so a condition over a named constant reads the value that constant was written as. */
+  facts?: Database | undefined;
 }
 
 /** One branch per path to each terminal, and one per path off the end when the caller says what that does. */
@@ -141,7 +144,7 @@ export function enumerateBodyBranches(
         structured:
           condition.expression === null
             ? null
-            : predicateOf(condition.expression),
+            : predicateOf(condition.expression, options.facts),
         polarity: condition.polarity,
         source: condition.source,
       }));

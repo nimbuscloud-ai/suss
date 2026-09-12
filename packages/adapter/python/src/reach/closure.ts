@@ -503,7 +503,7 @@ function libraryUnit(
           emitEvent: null,
           location: range,
         },
-        effects: invocationEffects(node),
+        effects: invocationEffects(node, options.facts),
         ...(extra.length === 0 ? {} : { extraEffects: extra }),
         location: range,
         isDefault: true,

@@ -14,9 +14,10 @@
  */
 
 import { nodeOfKey } from "@suss/resolution";
-import { force, hole, literalOf, piecesOf } from "@suss/values";
+import { hole, literalOf, piecesOf } from "@suss/values";
 
 import { evaluatedValue } from "./values/evaluator.js";
+import { literalElementsOf } from "./values/literals.js";
 
 import type { Database } from "@suss/datalog";
 import type { Value } from "@suss/values";
@@ -206,32 +207,11 @@ function listsBehind(
     0,
     nameKey,
   )) {
-    const elements = literalElementsOf(rootsByFile, String(overKey), db);
+    const node = nodeOfKey(rootsByFile, String(overKey));
+    const elements = node === null ? null : literalElementsOf(node, db);
     if (elements !== null) {
       found.push({ element: String(element), index: String(index), elements });
     }
   }
   return found;
-}
-
-/** The strings the expression at `key` comes down to when it is a list of them, or null when any element is something else. */
-function literalElementsOf(
-  rootsByFile: ReadonlyMap<string, RbNode>,
-  key: string,
-  db: Database,
-): string[] | null {
-  const node = nodeOfKey(rootsByFile, key);
-  const value = node === null ? null : evaluatedValue(node, db);
-  if (value === null || value.kind !== "sequence") {
-    return null;
-  }
-  const elements: string[] = [];
-  for (const item of value.items) {
-    const literal = literalOf(force(item.value));
-    if (literal === null) {
-      return null;
-    }
-    elements.push(literal);
-  }
-  return elements;
 }

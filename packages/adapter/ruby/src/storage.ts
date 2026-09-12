@@ -16,10 +16,16 @@
 import { storageBinding } from "@suss/ir-core";
 import { askResolution } from "@suss/resolution";
 
-import { field } from "./ast.js";
+import {
+  field,
+  hashKeySymbolName,
+  stringLiteralValue,
+  symbolValue,
+} from "./ast.js";
 import { RUBY_PROGRAM } from "./facts/resolve.js";
 import { nodeId, readKey } from "./facts/values.js";
 import { compoundName } from "./scope.js";
+import { evaluatedValue, stringValueOf } from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
@@ -162,65 +168,69 @@ function argumentsOf(call: RbNode): RbNode[] {
   return args === null ? [] : children(args);
 }
 
-/** Whether this argument was written as keywords, either bare or inside braces. */
-function isKeywordArgument(argument: RbNode): boolean {
-  return argument.type === "pair" || argument.type === "hash";
+/** The field names one argument comes down to, which is empty for anything that is not a hash. */
+function recordFieldsOf(argument: RbNode, facts: Database): string[] {
+  const value = evaluatedValue(argument, facts);
+  return value.kind === "record" ? [...value.fields.keys()] : [];
 }
 
-/** The name a keyword or a symbol is written under, without the `:` either side of it. */
-function bareName(node: RbNode): string {
-  return node.text.replace(/^:/, "").replace(/:$/, "");
-}
-
-/** The keyword pairs one argument is made of, whether it was written bare or inside braces. */
-function pairsIn(argument: RbNode): RbNode[] {
-  if (argument.type === "pair") {
-    return [argument];
-  }
-  if (argument.type === "hash") {
-    return children(argument).filter((child) => child.type === "pair");
-  }
-  return [];
-}
-
-/** The keys a call was given as keywords, `id` in both `find_by(id: 1)` and `find_by({ id: 1 })`. */
-function keywordKeys(call: RbNode): string[] {
+/** The keys a call was given as keywords, `id` in `find_by(id: 1)`, `find_by({ id: 1 })` and `find_by(CONDITIONS)`. */
+function keywordKeys(call: RbNode, facts: Database): string[] {
   const keys: string[] = [];
   for (const argument of argumentsOf(call)) {
-    for (const pair of pairsIn(argument)) {
-      const key = field(pair, "key");
-      if (key !== null) {
-        keys.push(bareName(key));
-      }
+    if (argument.type !== "pair") {
+      keys.push(...recordFieldsOf(argument, facts));
+      continue;
+    }
+    const key = field(argument, "key");
+    const name = key === null ? null : keyNameOf(key);
+    if (name !== null) {
+      keys.push(name);
     }
   }
   return keys;
 }
 
+/** The name a bare keyword is written under, `id` in all of `id:`, `:id =>` and `"id" =>`. */
+function keyNameOf(key: RbNode): string | null {
+  return hashKeySymbolName(key) ?? symbolValue(key) ?? stringLiteralValue(key);
+}
+
 /** Whether the call was given something other than keywords, the `1` in `find(1)`. */
-function hasPositionalArgument(call: RbNode): boolean {
-  return argumentsOf(call).some((argument) => !isKeywordArgument(argument));
+function hasPositionalArgument(call: RbNode, facts: Database): boolean {
+  return argumentsOf(call).some(
+    (argument) =>
+      argument.type !== "pair" && recordFieldsOf(argument, facts).length === 0,
+  );
 }
 
 /** The columns a read asks for by name, `name` and `email` in `pluck(:name, :email)`. */
-function columnsAskedFor(call: RbNode, pattern: RbStoragePattern): string[] {
+function columnsAskedFor(
+  call: RbNode,
+  pattern: RbStoragePattern,
+  facts: Database,
+): string[] {
   if (!(pattern.columnArguments ?? []).includes(methodOf(call))) {
     return [];
   }
   return argumentsOf(call)
-    .filter((argument) => argument.type === "simple_symbol")
-    .map(bareName);
+    .map((argument) => stringValueOf(argument, facts))
+    .filter((column): column is string => column !== null);
 }
 
 /** The primary key, where this call is a lookup by it and was given one. */
-function primaryKeySelector(call: RbNode, pattern: RbStoragePattern): string[] {
+function primaryKeySelector(
+  call: RbNode,
+  pattern: RbStoragePattern,
+  facts: Database,
+): string[] {
   const byPrimaryKey = pattern.byPrimaryKey;
   if (byPrimaryKey === undefined) {
     return [];
   }
   const picks =
     byPrimaryKey.methods.includes(methodOf(call)) &&
-    hasPositionalArgument(call);
+    hasPositionalArgument(call, facts);
   return picks ? [byPrimaryKey.column] : [];
 }
 
@@ -229,12 +239,16 @@ function primaryKeySelector(call: RbNode, pattern: RbStoragePattern): string[] {
  * along it, and the primary key where a lookup by it was given one
  * positionally.
  */
-function selectorOf(call: RbNode, pattern: RbStoragePattern): string[] {
+function selectorOf(
+  call: RbNode,
+  pattern: RbStoragePattern,
+  facts: Database,
+): string[] {
   const picked: string[] = [];
   for (const link of chainLinks(call)) {
-    picked.push(...primaryKeySelector(link, pattern));
+    picked.push(...primaryKeySelector(link, pattern, facts));
     if (pattern.reads.includes(methodOf(link))) {
-      picked.push(...keywordKeys(link));
+      picked.push(...keywordKeys(link, facts));
     }
   }
   return [...new Set(picked)];
@@ -250,13 +264,14 @@ function fieldsOf(
   call: RbNode,
   pattern: RbStoragePattern,
   kind: StorageKind,
+  facts: Database,
 ): string[] {
   if (kind === "write") {
-    return [...new Set(keywordKeys(call))];
+    return [...new Set(keywordKeys(call, facts))];
   }
   return [
     ...new Set(
-      chainLinks(call).flatMap((link) => columnsAskedFor(link, pattern)),
+      chainLinks(call).flatMap((link) => columnsAskedFor(link, pattern, facts)),
     ),
   ];
 }
@@ -440,8 +455,8 @@ function modelCallEffects(
         target.container,
         pattern,
         kind,
-        selectorOf(worked, pattern),
-        fieldsOf(worked, pattern, kind),
+        selectorOf(worked, pattern, options.facts),
+        fieldsOf(worked, pattern, kind, options.facts),
       ),
     ];
   }

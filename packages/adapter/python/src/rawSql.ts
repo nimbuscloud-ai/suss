@@ -6,18 +6,21 @@
  * those with a statement it can read becomes the same storage-access
  * effect a query through the ORM would have produced, one per table.
  *
- * A statement built at runtime from a variable is left alone. What an
- * f-string interpolates is a value nearly every time, so those read as
- * parameters, which is what they would have been anyway.
+ * The statement goes through the shared value evaluator, so one built by
+ * `+` or held in a constant another module writes reads the same as one
+ * written out at the call. What the evaluator cannot settle becomes a
+ * parameter, which is what an f-string interpolation would have been.
  */
 
 import { storageBinding } from "@suss/ir-core";
 import { readSqlAccess, sqlFromParts } from "@suss/sql";
 
-import { field, stringContentValue } from "./ast.js";
+import { field } from "./ast.js";
+import { evaluatedValue } from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
+import type { Value } from "@suss/values";
 import type { RawSqlPattern } from "./pack.js";
 import type { PyNode } from "./parser.js";
 
@@ -41,7 +44,7 @@ export function rawSqlEffects(
     if (pattern === undefined) {
       continue;
     }
-    const statement = statementIn(call);
+    const statement = statementIn(call, options.facts);
     if (statement === null) {
       continue;
     }
@@ -96,26 +99,39 @@ function patternFor(
   );
 }
 
-/** The SQL a call states, with what an f-string fills in as parameters. */
-function statementIn(call: PyNode): string | null {
+/** The SQL a call states, with everything the evaluator could not settle left as a parameter. */
+function statementIn(call: PyNode, facts: Database): string | null {
   const args = field(call, "arguments");
   const first = args?.namedChildren.find((child) => child !== null) ?? null;
-  if (first === null || first.type !== "string") {
+  if (first === null) {
     return null;
   }
-  const parts: string[] = [""];
-  for (const child of first.namedChildren) {
-    if (child === null) {
-      continue;
-    }
-    if (child.type === "string_content") {
-      parts[parts.length - 1] += stringContentValue(child);
-      continue;
-    }
-    if (child.type === "interpolation") {
-      parts.push("");
-    }
+  const parts = literalParts(evaluatedValue(first, facts));
+  if (parts === null) {
+    return null;
   }
   const statement = sqlFromParts(parts);
   return statement.trim() === "" ? null : statement;
+}
+
+/**
+ * The literal text either side of everything the value left unsettled, which
+ * is the form the SQL reader takes a statement in. Null for a value that is
+ * not a string at all, so a call handed a name nothing wrote stays unread
+ * instead of becoming a statement of nothing but parameters.
+ */
+function literalParts(value: Value): string[] | null {
+  if (value.kind !== "string") {
+    return null;
+  }
+  const parts: string[] = [""];
+  for (const piece of value.pieces) {
+    const only = piece.kind === "text" ? piece.options : [];
+    if (only.length === 1) {
+      parts[parts.length - 1] += only[0] ?? "";
+      continue;
+    }
+    parts.push("");
+  }
+  return parts;
 }

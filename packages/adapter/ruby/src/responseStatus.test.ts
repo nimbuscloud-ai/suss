@@ -1,12 +1,28 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
+
+import { Database } from "@suss/datalog";
 
 import { controllerActionsPattern } from "./__fixtures__/railsControllerPattern.js";
 import { field, instanceMethodsByName } from "./ast.js";
+import {
+  collectFileConstants,
+  emitConstantBindings,
+} from "./facts/constants.js";
+import { emitValueFacts } from "./facts/values.js";
+import { emitRequireFacts } from "./facts.js";
 import { parseRuby } from "./parser.js";
+import { findRubyFiles } from "./project.js";
 import { responseBranches } from "./responseStatus.js";
+import { bindEvaluator, methodDefinitionsIn } from "./values/evaluator.js";
 
 import type { RawBranch, RawEffect, Reading } from "@suss/extractor";
 import type { ControllerActions } from "./pack.js";
+import type { RbNode } from "./parser.js";
+import type { EvaluatedFile } from "./values/evaluator.js";
 
 /** Rails' own response calls and the handful of Rack names these tests write. */
 const RAILS_LIKE: Partial<ControllerActions> = {
@@ -177,6 +193,65 @@ describe("responseBranches, reading one response call", () => {
         "    def fallback\n      return render(json: {}, status: :created)\n    end\n    head :ok",
       ),
     ).toMatchObject({ kind: "written", value: 200 });
+  });
+
+  it("reads a status written as a constant another file defines", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-ruby-status-"));
+    const files: Record<string, string> = {
+      "http.rb": "CREATED = 201\n",
+      "orders_controller.rb": [
+        'require "http"',
+        "",
+        "class OrdersController < ApplicationController",
+        "  def create",
+        "    render json: item, status: CREATED",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    };
+    for (const [name, source] of Object.entries(files)) {
+      fs.writeFileSync(path.join(dir, name), source);
+    }
+
+    const db = new Database();
+    const parsed: EvaluatedFile[] = [];
+    const definitions = new Map<string, RbNode>();
+    const constants = [];
+    for (const file of findRubyFiles(dir)) {
+      const tree = await parseRuby(fs.readFileSync(file, "utf8"));
+      emitValueFacts(db, file, tree.rootNode);
+      constants.push(collectFileConstants(file, tree.rootNode));
+      for (const [key, method] of methodDefinitionsIn(file, tree.rootNode)) {
+        definitions.set(key, method);
+      }
+      parsed.push({ file, root: tree.rootNode });
+    }
+    emitConstantBindings(db, constants);
+    const known = new Set(parsed.map(({ file }) => file));
+    for (const { file, root } of parsed) {
+      emitRequireFacts(db, file, root, known);
+    }
+    bindEvaluator(db, { files: parsed, definitions });
+
+    const controller = parsed.find((entry) =>
+      entry.file.endsWith("orders_controller.rb"),
+    ) as EvaluatedFile;
+    const classNode = controller.root.namedChildren.find(
+      (child) => child?.type === "class",
+    ) as RbNode;
+    const method = instanceMethodsByName(
+      field(classNode, "body") as RbNode,
+    ).get("create") as RbNode;
+
+    const branches = responseBranches(
+      method,
+      controllerActionsPattern(RAILS_LIKE),
+      [],
+      undefined,
+      { facts: db },
+    ) as RawBranch[];
+    expect(readings(branches)).toMatchObject([{ kind: "written", value: 201 }]);
   });
 
   it("reads no outcome at all from an action that only raises", async () => {

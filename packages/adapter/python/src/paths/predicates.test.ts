@@ -14,6 +14,20 @@ async function conditionOf(source: string): Promise<PyNode> {
 
 const read = async (source: string) => predicateOf(await conditionOf(source));
 
+/** The condition of the `if` written after `before`, so a name the module binds is in scope. */
+async function conditionAfter(
+  before: string[],
+  source: string,
+): Promise<PyNode> {
+  const tree = await parsePython(
+    `${before.join("\n")}\nif ${source}:\n    pass\n`,
+  );
+  const statement = tree.rootNode.namedChildren.find(
+    (child) => child?.type === "if_statement",
+  ) as PyNode;
+  return statement.childForFieldName("condition") as PyNode;
+}
+
 describe("what a condition says", () => {
   it("reads `is None` as a null check", async () => {
     expect(await read("order is None")).toEqual({
@@ -114,6 +128,26 @@ describe("what a condition says", () => {
     });
     expect(await read("flag == True")).toMatchObject({
       right: { type: "literal", value: true },
+    });
+  });
+
+  it("reads a status written as a named constant as the number behind the name", async () => {
+    const condition = await conditionAfter(
+      ["NOT_FOUND = 404"],
+      "response.status_code == NOT_FOUND",
+    );
+    expect(predicateOf(condition)).toMatchObject({
+      right: { type: "literal", value: 404 },
+    });
+  });
+
+  it("reads a name an f-string folds as the string it comes down to", async () => {
+    const condition = await conditionAfter(
+      ['ENV = "prod"', 'BUCKET = f"assets-{ENV}"'],
+      "bucket == BUCKET",
+    );
+    expect(predicateOf(condition)).toMatchObject({
+      right: { type: "literal", value: "assets-prod" },
     });
   });
 

@@ -119,6 +119,8 @@ export function createFileCache(
  * among them, is one of these and can be passed straight through.
  */
 export interface BodyReadOptions {
+  /** The run's own facts, which the value evaluator reads a name through. Absent in a test that builds one file by hand. */
+  readonly facts?: Database | undefined;
   /** What a pack needs to say a call talks to the database. Absent when no pack does. */
   readonly storage?: RbStorageOptions | undefined;
   /** The methods every pack in the run said its own library defines, which are left off an effect list. */
@@ -137,8 +139,6 @@ export interface DiscoveryOptions extends BodyReadOptions {
   absoluteFile?: string;
   /** What a summary's `location.file` says for a file other than the one being read, which a controller's filters need when an ancestor defines them. */
   displayPathOf?: (absolute: string) => string;
-  /** The run's own facts, which the value evaluator reads a name through. Absent in a test that builds one file by hand. */
-  facts?: Database;
   cache: FileCache;
   /** Called once per discovered unit whose own body is a method this run can follow calls out of, so the reach walk has a place to start. */
   onReachSeed?: (raw: RawCodeStructure, seed: ReachSeed) => void;
@@ -421,6 +421,7 @@ async function controllerActionUnits(
       pattern,
       displayPath,
       bodyOfMethod(filter.method, filter.file, options),
+      options.facts,
     );
     units.push(raw);
     options.onReachSeed?.(raw, {
@@ -541,6 +542,7 @@ function buildControllerActionUnit(
     pattern,
     body.effects ?? [],
     body.extraEffects,
+    { facts: bodyRead.facts },
   );
   return {
     identity: {
@@ -750,6 +752,7 @@ export function bodyOfMethod(
     method,
     bodyRead.inheritedMethods,
     EVERY_ARGLESS_CALL,
+    bodyRead.facts,
   );
   const storage = bodyRead.storage;
   const extra = [
