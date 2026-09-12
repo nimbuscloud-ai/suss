@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { parse as graphqlParse, Kind } from "graphql";
 import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
@@ -20,6 +21,32 @@ import type { DiscoveryPattern } from "@suss/extractor";
 
 function createProject() {
   return createTestProject();
+}
+
+/**
+ * Which fields one root field of a parsed document selects. Reading the
+ * document back through the parser is how a test says a spliced string
+ * became part of the operation rather than text sitting beside it.
+ */
+function selectionUnder(document: string, rootField: string): string[] {
+  for (const definition of graphqlParse(document).definitions) {
+    if (definition.kind !== Kind.OPERATION_DEFINITION) {
+      continue;
+    }
+    for (const selection of definition.selectionSet.selections) {
+      if (selection.kind !== Kind.FIELD || selection.name.value !== rootField) {
+        continue;
+      }
+      const fields: string[] = [];
+      for (const inner of selection.selectionSet?.selections ?? []) {
+        if (inner.kind === Kind.FIELD) {
+          fields.push(inner.name.value);
+        }
+      }
+      return fields;
+    }
+  }
+  return [];
 }
 
 function makeNamedExportPattern(
@@ -2109,6 +2136,277 @@ describe("graphqlHookCall discovery", () => {
     expect(units[0].operationInfo?.document).toBeUndefined();
     expect(units[0].operationInfo?.unresolved?.reason).toContain(
       "did not parse",
+    );
+  });
+
+  it("splices a fragment tagged in place inside the interpolation", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      const GET_PET = gql\`
+        query GetPet { pet { ...PetFields } }
+        \${gql\`fragment PetFields on Pet { id name }\`}
+      \`;
+      export function usePet() {
+        return useQuery(GET_PET);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units[0].operationInfo?.document).toContain(
+      "fragment PetFields on Pet",
+    );
+    expect(units[0].operationInfo?.unresolvedFragments).toBeUndefined();
+  });
+
+  it("splices a fragment the interpolation reaches through an alias", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      const PET_FIELDS = gql\`fragment PetFields on Pet { id name }\`;
+      const FIELDS = PET_FIELDS;
+      const GET_PET = gql\`
+        query GetPet { pet { ...PetFields } }
+        \${FIELDS}
+      \`;
+      export function usePet() {
+        return useQuery(GET_PET);
+      }
+    `,
+    );
+    const units = discoverUnits(
+      file,
+      [makeGraphqlHookPattern()],
+      new ResolutionStore(),
+    );
+    expect(units[0].operationInfo?.document).toContain(
+      "fragment PetFields on Pet",
+    );
+    expect(units[0].operationInfo?.unresolvedFragments).toBeUndefined();
+  });
+
+  it("leaves an interpolation the code computes unread", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      declare function fieldsFor(kind: string): string;
+      const GET_PET = gql\`
+        query GetPet { pet { id \${fieldsFor("pet")} } }
+      \`;
+      export function usePet() {
+        return useQuery(GET_PET);
+      }
+    `,
+    );
+    const units = discoverUnits(
+      file,
+      [makeGraphqlHookPattern()],
+      new ResolutionStore(),
+    );
+    expect(units[0].operationInfo?.document).toBeUndefined();
+    expect(units[0].operationInfo?.unresolved?.reason).toContain(
+      "selection set",
+    );
+  });
+
+  it("splices a string literal written straight into the interpolation", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      const GET_PET = gql\`
+        query GetPet { pet { \${"id name"} } }
+      \`;
+      export function usePet() {
+        return useQuery(GET_PET);
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeGraphqlHookPattern()]);
+    expect(units[0].operationInfo?.unresolved).toBeUndefined();
+    expect(
+      selectionUnder(units[0].operationInfo?.document ?? "", "pet"),
+    ).toEqual(["id", "name"]);
+  });
+
+  it("splices the field list written in a plain string constant", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      const RESULT_FIELDS = \`
+        id
+        title
+        publishedAt
+        author { id name }
+      \`;
+      const SEARCH = gql\`
+        query Search($term: String!) {
+          search(term: $term) {
+            \${RESULT_FIELDS}
+          }
+        }
+      \`;
+      export function useSearch(term: string) {
+        return useQuery(SEARCH, { variables: { term } });
+      }
+    `,
+    );
+    const units = discoverUnits(
+      file,
+      [makeGraphqlHookPattern()],
+      new ResolutionStore(),
+    );
+    expect(units).toHaveLength(1);
+    expect(units[0].operationInfo?.unresolved).toBeUndefined();
+    expect(units[0].operationInfo?.rootFields).toEqual(["search"]);
+    expect(
+      selectionUnder(units[0].operationInfo?.document ?? "", "search"),
+    ).toEqual(["id", "title", "publishedAt", "author"]);
+  });
+
+  it("splices a constant whose text is built from another constant", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      const BASE_FIELDS = "id name";
+      const PET_FIELDS = \`\${BASE_FIELDS} tag\`;
+      const GET_PET = gql\`
+        query GetPet { pet { \${PET_FIELDS} } }
+      \`;
+      export function usePet() {
+        return useQuery(GET_PET);
+      }
+    `,
+    );
+    const units = discoverUnits(
+      file,
+      [makeGraphqlHookPattern()],
+      new ResolutionStore(),
+    );
+    expect(units[0].operationInfo?.unresolved).toBeUndefined();
+    expect(
+      selectionUnder(units[0].operationInfo?.document ?? "", "pet"),
+    ).toEqual(["id", "name", "tag"]);
+  });
+
+  it("still reads a tagged template as the document it is", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      const PET_FIELDS = gql\`fragment PetFields on Pet { id name }\`;
+      const GET_PET = gql\`
+        query GetPet { pet { ...PetFields } }
+        \${PET_FIELDS}
+      \`;
+      export function usePet() {
+        return useQuery(GET_PET);
+      }
+    `,
+    );
+    const units = discoverUnits(
+      file,
+      [makeGraphqlHookPattern()],
+      new ResolutionStore(),
+    );
+    expect(units[0].operationInfo?.document).toContain(
+      "fragment PetFields on Pet",
+    );
+    expect(units[0].operationInfo?.unresolvedFragments).toBeUndefined();
+  });
+
+  it("leaves the operation unread when two writes settle the constant differently", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      export let PET_FIELDS = "id name";
+      export function widen() {
+        PET_FIELDS = "id name tag";
+      }
+      const GET_PET = gql\`
+        query GetPet { pet { \${PET_FIELDS} } }
+      \`;
+      export function usePet() {
+        return useQuery(GET_PET);
+      }
+    `,
+    );
+    const units = discoverUnits(
+      file,
+      [makeGraphqlHookPattern()],
+      new ResolutionStore(),
+    );
+    expect(units[0].operationInfo?.document).toBeUndefined();
+    expect(units[0].operationInfo?.unresolved?.reason).toContain(
+      "selection set",
+    );
+  });
+
+  it("stops on two constants whose text interpolates each other", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      const LEFT = \`id \${RIGHT}\`;
+      const RIGHT = \`name \${LEFT}\`;
+      const GET_PET = gql\`
+        query GetPet { pet { \${LEFT} } }
+      \`;
+      export function usePet() {
+        return useQuery(GET_PET);
+      }
+    `,
+    );
+    const units = discoverUnits(
+      file,
+      [makeGraphqlHookPattern()],
+      new ResolutionStore(),
+    );
+    expect(units[0].operationInfo?.document).toBeUndefined();
+    expect(units[0].operationInfo?.unresolved?.reason).toContain(
+      "selection set",
+    );
+  });
+
+  it("keeps the selection open across a spliced string, so a hole in it counts", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { gql, useQuery } from "@apollo/client";
+      declare const extraFields: string;
+      const PET_FIELDS = \`id \${extraFields}\`;
+      const GET_PET = gql\`
+        query GetPet { pet { \${PET_FIELDS} } }
+      \`;
+      export function usePet() {
+        return useQuery(GET_PET);
+      }
+    `,
+    );
+    const units = discoverUnits(
+      file,
+      [makeGraphqlHookPattern()],
+      new ResolutionStore(),
+    );
+    expect(units[0].operationInfo?.document).toBeUndefined();
+    expect(units[0].operationInfo?.unresolved?.reason).toContain(
+      "selection set",
     );
   });
 

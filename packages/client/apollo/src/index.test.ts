@@ -750,6 +750,166 @@ describe("apolloClientPack — interpolated fragments", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Field lists shared as plain strings and interpolated into the document
+// ---------------------------------------------------------------------------
+
+// A shared field list is often written as a string rather than as a
+// fragment. No document rung reads one, and the template evaluates to
+// the operation with that text in it.
+describe("apolloClientPack, interpolated string constants", () => {
+  const resultFields = `
+    export const RESULT_FIELDS = \`
+      id
+      title
+      publishedAt
+      author { id name }
+    \`;
+  `;
+
+  const search = `
+    export const SEARCH = gql\`
+      query Search($term: String!) {
+        search(term: $term) {
+          \${RESULT_FIELDS}
+        }
+      }
+    \`;
+    export function useSearch(term: string) {
+      return useQuery(SEARCH, { variables: { term } });
+    }
+  `;
+
+  it("splices a field list the same module writes", async () => {
+    const summaries = await runInMemory(`
+      import { gql, useQuery } from "@apollo/client";
+      ${resultFields}
+      ${search}
+    `);
+    expect(summaries.map((s) => s.identity.name)).toEqual(["useSearch.Search"]);
+    const graphql = readGraphqlMetadata(summaries[0]);
+    expect(graphql?.unresolvedDocument).toBeUndefined();
+    expect(graphql?.document).toContain("title");
+    expect(graphql?.document).toContain("author");
+  });
+
+  it("splices a field list another module writes", async () => {
+    const summaries = await runInMemoryFiles({
+      "fields.ts": resultFields,
+      "consumer.ts": `
+        import { gql, useQuery } from "@apollo/client";
+        import { RESULT_FIELDS } from "./fields";
+        ${search}
+      `,
+    });
+    expect(summaries.map((s) => s.identity.name)).toEqual(["useSearch.Search"]);
+    const graphql = readGraphqlMetadata(summaries[0]);
+    expect(graphql?.unresolvedDocument).toBeUndefined();
+    expect(graphql?.document).toContain("publishedAt");
+  });
+
+  it("splices a field list reached through a re-export barrel", async () => {
+    const summaries = await runInMemoryFiles({
+      "fields.ts": resultFields,
+      "index.ts": `export { RESULT_FIELDS } from "./fields";`,
+      "consumer.ts": `
+        import { gql, useQuery } from "@apollo/client";
+        import { RESULT_FIELDS } from "./index";
+        ${search}
+      `,
+    });
+    expect(summaries.map((s) => s.identity.name)).toEqual(["useSearch.Search"]);
+    const graphql = readGraphqlMetadata(summaries[0]);
+    expect(graphql?.unresolvedDocument).toBeUndefined();
+    expect(graphql?.document).toContain("publishedAt");
+  });
+
+  it("splices the same field list into a graphql-tag document", async () => {
+    const summaries = await runInMemoryFiles({
+      "fields.ts": resultFields,
+      "consumer.ts": `
+        import gql from "graphql-tag";
+        import { useQuery } from "@apollo/client";
+        import { RESULT_FIELDS } from "./fields";
+        ${search}
+      `,
+    });
+    expect(summaries.map((s) => s.identity.name)).toEqual(["useSearch.Search"]);
+    const graphql = readGraphqlMetadata(summaries[0]);
+    expect(graphql?.unresolvedDocument).toBeUndefined();
+    expect(graphql?.document).toContain("author");
+  });
+
+  it("splices the same field list into a client-preset document", async () => {
+    const summaries = await runInMemoryFiles({
+      "generated/gql.ts": `
+        export function gql(source: string): unknown {
+          return { source };
+        }
+      `,
+      "fields.ts": resultFields,
+      "consumer.ts": `
+        import { useQuery } from "@apollo/client";
+        import { gql } from "./generated/gql.js";
+        import { RESULT_FIELDS } from "./fields";
+        export const SEARCH = gql(/* GraphQL */ \`
+          query Search($term: String!) {
+            search(term: $term) {
+              \${RESULT_FIELDS}
+            }
+          }
+        \`);
+        export function useSearch(term: string) {
+          return useQuery(SEARCH, { variables: { term } });
+        }
+      `,
+    });
+    expect(summaries.map((s) => s.identity.name)).toEqual(["useSearch.Search"]);
+    const graphql = readGraphqlMetadata(summaries[0]);
+    expect(graphql?.unresolvedDocument).toBeUndefined();
+    expect(graphql?.document).toContain("author");
+  });
+
+  it("leaves the operation unread when the constant has two writes", async () => {
+    const summaries = await runInMemory(`
+      import { gql, useQuery } from "@apollo/client";
+      export let RESULT_FIELDS = "title";
+      export function widen() {
+        RESULT_FIELDS = "title publishedAt";
+      }
+      export const SEARCH = gql\`
+        query Search($term: String!) {
+          search(term: $term) {
+            id
+            \${RESULT_FIELDS}
+          }
+        }
+      \`;
+      export function useSearch(term: string) {
+        return useQuery(SEARCH, { variables: { term } });
+      }
+    `);
+    expect(summaries.map((s) => s.identity.name)).toEqual(["useSearch.Search"]);
+    const graphql = readGraphqlMetadata(summaries[0]);
+    expect(graphql?.document).toBeUndefined();
+    expect(graphql?.unresolvedDocument?.reference).toBe("SEARCH");
+    expect(graphql?.unresolvedDocument?.reason).toContain("selection set");
+  });
+
+  it("stops on two constants that interpolate each other", async () => {
+    const summaries = await runInMemory(`
+      import { gql, useQuery } from "@apollo/client";
+      export const RESULT_FIELDS = \`id \${AUTHOR_FIELDS}\`;
+      export const AUTHOR_FIELDS = \`author { name \${RESULT_FIELDS} }\`;
+      ${search}
+    `);
+    expect(summaries.map((s) => s.identity.name)).toEqual(["useSearch.Search"]);
+    const graphql = readGraphqlMetadata(summaries[0]);
+    expect(graphql?.document).toBeUndefined();
+    expect(graphql?.unresolvedDocument?.reason).toContain("selection set");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Fragments spread by name, the way codegen's client preset writes them
 // ---------------------------------------------------------------------------
 
