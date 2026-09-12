@@ -3,9 +3,9 @@
     "packages": 75,
     "packagesWithExports": 75,
     "exports": 936,
-    "internal": 3472,
-    "consumers": 1865,
-    "pairs": 1862,
+    "internal": 3474,
+    "consumers": 1877,
+    "pairs": 1874,
     "unfollowedCalls": 505,
     "findingErrors": 0
   },
@@ -27,7 +27,7 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 92,
-      "internal": 856,
+      "internal": 858,
       "consumers": 204,
       "unfollowedCalls": 112
     },
@@ -56,7 +56,7 @@
       "name": "@suss/cli",
       "exports": 30,
       "internal": 537,
-      "consumers": 335,
+      "consumers": 340,
       "unfollowedCalls": 57
     },
     "packages/client/aiohttp": {
@@ -70,7 +70,7 @@
       "name": "@suss/client-apollo",
       "exports": 2,
       "internal": 1,
-      "consumers": 25,
+      "consumers": 32,
       "unfollowedCalls": 0
     },
     "packages/client/axios": {
