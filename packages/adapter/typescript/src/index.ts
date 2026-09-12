@@ -91,11 +91,13 @@ export {
   computeAdapterPacksDigest,
   computeContentHash,
 } from "./version.js";
+export { isDefaultedAt } from "./walk/defaulted.js";
 export {
   type DescentBarriers,
   NO_BARRIERS,
   startsItsOwnScope,
 } from "./walk/descent.js";
+export { climbSyntax, peelSyntax, peelValue } from "./walk/unwrap.js";
 
 export type {
   ExplainStats,

@@ -10,7 +10,7 @@ import { Node, SyntaxKind } from "ts-morph";
 
 import { patternHole, referenceName } from "@suss/behavioral-ir";
 
-import { peelParens } from "../walk/unwrap.js";
+import { climbSyntax, peelParens } from "../walk/unwrap.js";
 
 import type { Reference } from "@suss/behavioral-ir";
 
@@ -187,10 +187,7 @@ function read(expr: Node, ctx: Context): string | null {
 
 /** Whether a resolved node is written as one branch of `||` or `??`. */
 function isFallbackBranch(node: Node): boolean {
-  let step: Node | undefined = node.getParent();
-  while (step !== undefined && Node.isParenthesizedExpression(step)) {
-    step = step.getParent();
-  }
+  const step = climbSyntax(node).getParent();
   if (step === undefined || !Node.isBinaryExpression(step)) {
     return false;
   }

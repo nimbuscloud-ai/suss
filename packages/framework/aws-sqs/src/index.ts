@@ -42,7 +42,7 @@
 import { type CallExpression, Node as N, type Node } from "ts-morph";
 import { z } from "zod";
 
-import { readConfiguredCall } from "@suss/adapter-typescript";
+import { climbSyntax, readConfiguredCall } from "@suss/adapter-typescript";
 import { messageBusBinding } from "@suss/behavioral-ir";
 import { configuredCallOption } from "@suss/extractor";
 import { constructedFrom, messageSends, pack } from "@suss/recognize";
@@ -253,13 +253,7 @@ function isSqsRecordIdentifier(recordExpr: Node): boolean {
 function extractDestructuredFields(
   call: CallExpression,
 ): Record<string, EffectArg> | null {
-  let parent: Node | undefined = call.getParent();
-  while (
-    parent !== undefined &&
-    (N.isAsExpression(parent) || N.isParenthesizedExpression(parent))
-  ) {
-    parent = parent.getParent();
-  }
+  const parent = climbSyntax(call).getParent();
   if (parent === undefined || !N.isVariableDeclaration(parent)) {
     return null;
   }

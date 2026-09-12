@@ -15,7 +15,11 @@
 
 import { Node as N } from "ts-morph";
 
-import { propertyFunctionOf, propertyNameOf } from "@suss/adapter-typescript";
+import {
+  isDefaultedAt,
+  propertyFunctionOf,
+  propertyNameOf,
+} from "@suss/adapter-typescript";
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
 
 import { entrypointTriggerFunctions } from "./discovery.js";
@@ -138,37 +142,6 @@ function writtenUnderTriggerName(owner: Node): boolean {
     return false;
   }
   return propertyFunctionOf(property, undefined) === owner;
-}
-
-/**
- * Whether something else supplies a value when the binding is absent.
- * `env.X ?? "default"` and `env.X || other` both do, and so does the
- * middle of a chain. The climb stops where the read is the last operand,
- * which is where its absence propagates.
- */
-function isDefaultedAt(node: Node): boolean {
-  let child: Node = node;
-  let parent = child.getParent();
-  while (parent !== undefined) {
-    if (N.isParenthesizedExpression(parent)) {
-      child = parent;
-      parent = parent.getParent();
-      continue;
-    }
-    if (!N.isBinaryExpression(parent)) {
-      return false;
-    }
-    const operator = parent.getOperatorToken().getText();
-    if (operator !== "??" && operator !== "||") {
-      return false;
-    }
-    if (parent.getLeft() === child) {
-      return true;
-    }
-    child = parent;
-    parent = parent.getParent();
-  }
-  return false;
 }
 
 function configReadEffect(read: EnvRead, instanceName: string): Effect {

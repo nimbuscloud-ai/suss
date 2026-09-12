@@ -12,6 +12,7 @@
 
 import { Node } from "ts-morph";
 
+import { peelSyntax } from "../walk/unwrap.js";
 import {
   enclosingFunctionRoot,
   functionNameOrAnon,
@@ -223,7 +224,7 @@ function parameterBehind(
   value: Node,
   func: FunctionRoot,
 ): ParameterDeclaration | null {
-  const name = stripCasts(value);
+  const name = peelSyntax(value);
   if (!Node.isIdentifier(name)) {
     return null;
   }
@@ -236,16 +237,4 @@ function parameterBehind(
     }
   }
   return null;
-}
-
-function stripCasts(node: Node): Node {
-  let current = node;
-  while (
-    Node.isAsExpression(current) ||
-    Node.isParenthesizedExpression(current) ||
-    Node.isNonNullExpression(current)
-  ) {
-    current = current.getExpression();
-  }
-  return current;
 }
