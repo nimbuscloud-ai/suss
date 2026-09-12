@@ -34,9 +34,6 @@ import type { DiscoveredUnit } from "./shared.js";
  */
 const MAX_WRAPPER_DEPTH = 3;
 
-/** How far into a returned expression the result is still the call's. */
-const MAX_RETURN_DEPTH = 4;
-
 /** What the caller's units are made of, once a wrapper is recognized. */
 export interface WrapperContext {
   kind: string;
@@ -77,7 +74,7 @@ export function expandDocumentParameterCallers(
 
   const expanded = expandParameter(
     parameter,
-    givesBackCall(wrapper, libraryCall),
+    context.store.returnsCall(wrapper, libraryCall),
     0,
     new Set([parameter]),
     context,
@@ -137,7 +134,7 @@ function expandParameter(
     if (nested !== null) {
       const deeper = expandNested(
         nested,
-        forwardsResult && givesBackCall(caller, call),
+        forwardsResult && context.store.returnsCall(caller, call),
         depth,
         expanded,
         context,
@@ -249,88 +246,6 @@ function stripCasts(node: Node): Node {
     Node.isNonNullExpression(current)
   ) {
     current = current.getExpression();
-  }
-  return current;
-}
-
-/**
- * Whether running `func` hands back what `call` returned: the call
- * itself, a name the call was written into, or a call given the result.
- * A wrapper that returns something of its own is still one operation
- * per caller, but the caller reads its result rather than the library's.
- */
-function givesBackCall(func: FunctionRoot, call: Node): boolean {
-  return returnedExpressions(func).some((returned) =>
-    leadsToCall(returned, call, func, 0),
-  );
-}
-
-function returnedExpressions(func: FunctionRoot): Node[] {
-  const returned: Node[] = [];
-  const body = func.getBody();
-  if (body !== undefined && !Node.isBlock(body)) {
-    returned.push(body);
-  }
-  func.forEachDescendant((node) => {
-    if (!Node.isReturnStatement(node)) {
-      return;
-    }
-    const expression = node.getExpression();
-    if (expression !== undefined && enclosingFunctionRoot(node) === func) {
-      returned.push(expression);
-    }
-  });
-  return returned;
-}
-
-function leadsToCall(
-  expression: Node,
-  call: Node,
-  func: FunctionRoot,
-  depth: number,
-): boolean {
-  if (depth > MAX_RETURN_DEPTH) {
-    return false;
-  }
-  const value = stripReturnWrappers(expression);
-  if (value === call) {
-    return true;
-  }
-  if (Node.isIdentifier(value)) {
-    return declaredValuesIn(value, func).some((written) =>
-      leadsToCall(written, call, func, depth + 1),
-    );
-  }
-  if (Node.isCallExpression(value)) {
-    return value
-      .getArguments()
-      .some((argument) => leadsToCall(argument, call, func, depth + 1));
-  }
-  return false;
-}
-
-/** What a name inside this function was declared as. */
-function declaredValuesIn(name: Node, func: FunctionRoot): Node[] {
-  const written: Node[] = [];
-  for (const declaration of name.getSymbol()?.getDeclarations() ?? []) {
-    if (
-      !Node.isVariableDeclaration(declaration) ||
-      enclosingFunctionRoot(declaration) !== func
-    ) {
-      continue;
-    }
-    const initializer = declaration.getInitializer();
-    if (initializer !== undefined) {
-      written.push(initializer);
-    }
-  }
-  return written;
-}
-
-function stripReturnWrappers(node: Node): Node {
-  let current = stripCasts(node);
-  while (Node.isAwaitExpression(current)) {
-    current = stripCasts(current.getExpression());
   }
   return current;
 }

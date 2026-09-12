@@ -66,18 +66,11 @@ export const SOUND_REACH_PATHS = [
   "throughBarrel",
   "throughTwoBarrels",
   "throughCallReturn",
+  // The handler is supplied by whoever calls the registering function,
+  // and the call is in the same file, so the parameter steps to what it
+  // passed and the route reads the same as the plainest spelling.
+  "throughParameter",
 ] as const;
-
-/**
- * The reach path where the handler is supplied by whoever calls the
- * registering function. No chain reaches it from the file the route is
- * written in, so the summary keeps the route and says the handler was
- * not read, rather than agreeing with a spelling that does state a
- * body. Comparing it against the plainest spelling would report the one
- * difference it is meant to have, so the differential asserts the shape
- * it should be instead.
- */
-export const REACH_PATHS_FROM_A_CALLER = ["throughParameter"] as const;
 
 /**
  * The one that resolves to nothing at all, for its own reason rather

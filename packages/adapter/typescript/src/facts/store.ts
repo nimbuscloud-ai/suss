@@ -361,6 +361,23 @@ export class ResolutionStore {
   }
 
   /**
+   * Whether running this function hands back that call: returned
+   * outright, written into a name and returned, or a shorthand body.
+   * A call whose own callee the rules cannot follow is not, which is
+   * what keeps a wrapper's own result apart from the library's.
+   */
+  returnsCall(func: Node, call: Node): boolean {
+    const target = factKeyOf(func);
+    const handedBack = nodeId(factKeyOf(call));
+    return this.askAbout(target, "wanted", () => {
+      this.derive();
+      return this.answersFor("wantedReturnsCall", nodeId(target)).includes(
+        handedBack,
+      );
+    });
+  }
+
+  /**
    * Files a later question about a parameter may find a caller in.
    * Without this the search falls back to every file the project has
    * loaded, which reads more of the import graph than a run needs.

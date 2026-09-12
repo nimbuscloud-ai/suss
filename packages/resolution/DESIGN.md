@@ -203,6 +203,7 @@ comesFrom(x, m, n)          following x arrives at m's export n
 callsInto(f, m, n)          calling f ends up calling m's n
 paramAt(r, p, z)            the call r puts z in the parameter p
 passesArgument(r, p, a)     the call r writes a at the parameter p
+returnsCall(f, c)           running f hands back the expression c
 ```
 
 `resolves` is the question most callers ask. `comesTo` is the one
@@ -248,13 +249,18 @@ given a GraphQL document gets no answer at all. Asking for the argument
 as the caller wrote it leaves the reading to whoever knows what they are
 looking at.
 
-`passesArgumentThroughName` is the same hop for a function written as
-`const f = (x) => ...`. Its parameters are on the arrow, while
-`callsFunction` arrives at the declaration the name is, so the two never
-join and a parameter of such a function steps to no argument at all.
-Putting the missing binds hop on `callsFunction` itself would fix that
-everywhere, and it changes what `comesTo` and `resolves` answer, so it
-is stated apart until somebody has measured the wider version.
+Both of them go through `callsFunction`, which starts from the function
+and asks which calls reach it. A function written as `const f = (x) =>
+...` splits that in two: the name is the declaration, and the parameters
+are on the arrow the declaration was given. So `callsFunction` follows
+one binds hop out of what a call arrives at, and a function reached
+through a name is the same function as one reached directly.
+
+`returnsCall` is `isWrittenAs` asked of what a function returns, so a
+caller can tell a wrapper that hands the library's call straight back
+from one that hands back something of its own. A name the result was
+written into first is the same answer, and a call whose own callee the
+rules cannot follow is not.
 
 `callsInto` puts that together with the calls a function makes. A
 project writes its own decorator that calls `Resolver()` and applies

@@ -4220,15 +4220,30 @@ describe("a handler named at the registration rather than written there", () => 
     expect(units).toHaveLength(0);
   });
 
-  it("finds nothing when the handler arrives as a parameter", () => {
-    // Whoever calls `register` supplies the function, and this file
-    // cannot see where it came from.
+  it("finds the handler a caller in the same file supplied", () => {
+    // `register` takes the function as a parameter, and the one call of
+    // it is right here, so the parameter steps to what that call passed.
     const units = discoverIn(
       [
         "const register = (handle: any) => {",
         '  router.get("/p", handle);',
         "};",
         `register(${HANDLER});`,
+      ].join("\n"),
+    );
+    expect(units).toHaveLength(1);
+    expect(units[0].name).toBe("get");
+    expect(units[0].func?.getText()).toContain("res.json({ ok: true })");
+  });
+
+  it("finds nothing when nothing in the run supplies the handler", () => {
+    // Whoever calls `register` supplies the function, and this run
+    // never reaches a call of it.
+    const units = discoverIn(
+      [
+        "export const register = (handle: any) => {",
+        '  router.get("/p", handle);',
+        "};",
       ].join("\n"),
     );
     expect(units).toHaveLength(0);
@@ -4372,11 +4387,32 @@ describe("a project hook that passes its document parameter to the library's", (
     expect(units[0]?.callSite?.methodName).toBe("useQuery");
   });
 
-  it("keeps the call site when the result goes through a call on the way out", () => {
+  it("drops the call site when a library call the rules cannot follow wraps the result", () => {
     const units = unitsInHooks({
       "hooks.ts": `
         import { useQuery } from "@apollo/client";
         declare function withTelemetry<T>(value: T): T;
+        export function useAppQuery(query: unknown) {
+          return withTelemetry(useQuery(query as never));
+        }
+      `,
+      "page.ts": `
+        import { gql } from "@apollo/client";
+        import { useAppQuery } from "./hooks.js";
+        const GET_PET = gql\`query GetPet { pet { id } }\`;
+        export function usePet() { return useAppQuery(GET_PET); }
+      `,
+    });
+
+    expect(units.map((u) => u.name)).toEqual(["usePet.GetPet"]);
+    expect(units[0].callSite).toBeUndefined();
+  });
+
+  it("keeps the call site when a project function hands the result on", () => {
+    const units = unitsInHooks({
+      "hooks.ts": `
+        import { useQuery } from "@apollo/client";
+        function withTelemetry<T>(value: T): T { return value; }
         export function useAppQuery(query: unknown) {
           return withTelemetry(useQuery(query as never));
         }

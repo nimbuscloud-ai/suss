@@ -421,6 +421,14 @@ export const RESOLUTION_RULES = [
     ],
   ),
 
+  // Which expression running f hands back, whether f returns it, writes
+  // it into a name first, or ends on it as a shorthand body.
+  rule(
+    "returnsCall",
+    [v("f"), v("c")],
+    [lit("returnsValue", v("f"), v("v")), lit("isWrittenAs", v("v"), v("c"))],
+  ),
+
   // What one call site put in a parameter, told apart from what the
   // other callers passed.
   rule(
@@ -451,20 +459,6 @@ export const RESOLUTION_RULES = [
       lit("paramNamed", v("f"), v("n"), v("p")),
       lit("callsFunction", v("r"), v("f")),
       lit("callKeywordArg", v("r"), v("n"), v("a")),
-    ],
-  ),
-
-  // `const f = (x) => ...` puts the parameters on the arrow, while
-  // `callsFunction` arrives at the declaration the name is, so one
-  // binds hop joins the two. See the DESIGN for why this is apart.
-  rule(
-    "passesArgumentThroughName",
-    [v("r"), v("p"), v("a")],
-    [
-      lit("paramOf", v("f"), v("k"), v("p")),
-      lit("binds", v("g"), v("f")),
-      lit("callsFunction", v("r"), v("g")),
-      lit("callArg", v("r"), v("k"), v("a")),
     ],
   ),
 
@@ -568,6 +562,14 @@ export const RESOLUTION_RULES = [
       lit("binds", v("c"), v("d")),
       lit("call", v("r"), v("c")),
     ],
+  ),
+  // `const f = (x) => ...` declares the name and puts the parameters on
+  // the arrow, so everything above arrives at the declaration and
+  // `paramOf` is about the arrow. One binds hop joins the two.
+  rule(
+    "callsFunction",
+    [v("r"), v("f")],
+    [lit("binds", v("g"), v("f")), lit("callsFunction", v("r"), v("g"))],
   ),
 
   // What an object contains, its base class included, so a method the base
@@ -820,12 +822,9 @@ export const RESOLUTION_QUESTIONS = [
     [lit("wanted", v("p")), lit("passesArgument", v("r"), v("p"), v("a"))],
   ),
   rule(
-    "wantedPassesArgument",
-    [v("p"), v("r"), v("a")],
-    [
-      lit("wanted", v("p")),
-      lit("passesArgumentThroughName", v("r"), v("p"), v("a")),
-    ],
+    "wantedReturnsCall",
+    [v("f"), v("c")],
+    [lit("wanted", v("f")), lit("returnsCall", v("f"), v("c"))],
   ),
   rule(
     "wantedComesFrom",

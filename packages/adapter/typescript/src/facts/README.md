@@ -132,6 +132,13 @@ function or an object, so a parameter given a GraphQL document has no
 knows what kind of value it is after. This is what turns one project
 hook in front of `useQuery` into one operation per component.
 
+`returnsCall(func, call)` is the other half of that reading: whether
+running the function hands that call back, so a wrapper that forwards
+the library's result is told from one that returns something of its
+own. It is `isWrittenAs` asked of what the function returns, so a result
+written into a name first is the same answer, and a result handed to a
+function the rules cannot follow is not.
+
 The callers are in files that import the parameter's own, so those get
 read first. `ModuleGraph.filesReachingFile` says which of a candidate
 set reach a given file, directly or through a barrel, the same rule

@@ -2351,3 +2351,81 @@ describe("argumentsPassedTo", () => {
     ).toEqual([{ call: "send(payload)", argument: "payload" }]);
   });
 });
+
+describe("returnsCall", () => {
+  /** Whether `outer` in /mod.ts hands back the call written as `text`. */
+  function handsBack(source: string, text: string): boolean {
+    const project = projectOf({ "/mod.ts": source });
+    const sourceFile = project.getSourceFileOrThrow("/mod.ts");
+    const outer = sourceFile.getFunctionOrThrow("outer");
+    const call = outer
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .find((one) => one.getText() === text);
+    if (call === undefined) {
+      throw new Error(`No call written as ${text}`);
+    }
+    return new ResolutionStore().returnsCall(outer, call);
+  }
+
+  it("says yes to a call the function returns outright", () => {
+    expect(
+      handsBack(
+        `declare function inner(): number;
+         export function outer() { return inner(); }`,
+        "inner()",
+      ),
+    ).toBe(true);
+  });
+
+  it("says yes to a call the function wrote into a name first", () => {
+    expect(
+      handsBack(
+        `declare function inner(): number;
+         export function outer() { const result = inner(); return result; }`,
+        "inner()",
+      ),
+    ).toBe(true);
+  });
+
+  it("says no to a call whose result the function keeps to itself", () => {
+    expect(
+      handsBack(
+        `declare function inner(): number;
+         export function outer() { inner(); return 1; }`,
+        "inner()",
+      ),
+    ).toBe(false);
+  });
+
+  it("says no when a function outside the run is given the result", () => {
+    expect(
+      handsBack(
+        `declare function inner(): number;
+         declare function log<T>(value: T): T;
+         export function outer() { return log(inner()); }`,
+        "inner()",
+      ),
+    ).toBe(false);
+  });
+
+  it("says yes when a function in the run hands the result on", () => {
+    expect(
+      handsBack(
+        `declare function inner(): number;
+         function log<T>(value: T): T { return value; }
+         export function outer() { return log(inner()); }`,
+        "inner()",
+      ),
+    ).toBe(true);
+  });
+
+  it("says no to a call a closure inside it returns rather than it", () => {
+    expect(
+      handsBack(
+        `declare function inner(): number;
+         export function outer() { return () => inner(); }`,
+        "inner()",
+      ),
+    ).toBe(false);
+  });
+});
