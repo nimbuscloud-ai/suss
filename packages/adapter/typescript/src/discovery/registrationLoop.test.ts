@@ -115,7 +115,7 @@ describe("registrationLoop discovery", () => {
     expect(units).toHaveLength(0);
   });
 
-  it("skips elements with a genuinely non-literal method or path", () => {
+  it("skips elements whose method or path the evaluator cannot fold", () => {
     const file = makeFile(`
       function h() {}
       const app: any = {};
