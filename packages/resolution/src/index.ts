@@ -421,6 +421,14 @@ export const RESOLUTION_RULES = [
     ],
   ),
 
+  // Which expression running f hands back, whether f returns it, writes
+  // it into a name first, or ends on it as a shorthand body.
+  rule(
+    "returnsCall",
+    [v("f"), v("c")],
+    [lit("returnsValue", v("f"), v("v")), lit("isWrittenAs", v("v"), v("c"))],
+  ),
+
   // What one call site put in a parameter, told apart from what the
   // other callers passed.
   rule(
@@ -554,6 +562,14 @@ export const RESOLUTION_RULES = [
       lit("binds", v("c"), v("d")),
       lit("call", v("r"), v("c")),
     ],
+  ),
+  // `const f = (x) => ...` declares the name and puts the parameters on
+  // the arrow, so everything above arrives at the declaration and
+  // `paramOf` is about the arrow. One binds hop joins the two.
+  rule(
+    "callsFunction",
+    [v("r"), v("f")],
+    [lit("binds", v("g"), v("f")), lit("callsFunction", v("r"), v("g"))],
   ),
 
   // What an object contains, its base class included, so a method the base
@@ -796,6 +812,19 @@ export const RESOLUTION_QUESTIONS = [
     "wantedParamAt",
     [v("p"), v("r"), v("z")],
     [lit("wanted", v("p")), lit("paramAt", v("r"), v("p"), v("z"))],
+  ),
+  // The argument as the caller wrote it. A parameter given a GraphQL
+  // document has no `paramAt` answer, since that settles through
+  // `comesTo`, which stops at a function or an object.
+  rule(
+    "wantedPassesArgument",
+    [v("p"), v("r"), v("a")],
+    [lit("wanted", v("p")), lit("passesArgument", v("r"), v("p"), v("a"))],
+  ),
+  rule(
+    "wantedReturnsCall",
+    [v("f"), v("c")],
+    [lit("wanted", v("f")), lit("returnsCall", v("f"), v("c"))],
   ),
   rule(
     "wantedComesFrom",

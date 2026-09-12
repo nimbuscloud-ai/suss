@@ -1,4 +1,10 @@
-import { Node, type Project, type SourceFile, SyntaxKind } from "ts-morph";
+import {
+  type ArrowFunction,
+  Node,
+  type Project,
+  type SourceFile,
+  SyntaxKind,
+} from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { createTestProject } from "@suss/test-project";
@@ -2230,5 +2236,196 @@ describe("a dependency a factory built", () => {
         ),
       ),
     ).toBeNull();
+  });
+});
+
+describe("argumentsPassedTo", () => {
+  function firstParameterOf(
+    project: Project,
+    file: string,
+    name: string,
+  ): Node {
+    const sourceFile = project.getSourceFileOrThrow(file);
+    const declared = sourceFile.getFunction(name);
+    const written = sourceFile.getVariableDeclaration(name)?.getInitializer() as
+      | ArrowFunction
+      | undefined;
+    const parameter = (declared ?? written)?.getParameters()[0];
+    if (parameter === undefined) {
+      throw new Error(`No first parameter on ${name} in ${file}`);
+    }
+    return parameter;
+  }
+
+  function passedTo(
+    files: Record<string, string>,
+    name: string,
+  ): Array<{ call: string; argument: string }> {
+    const project = projectOf(files);
+    const store = new ResolutionStore();
+    return store
+      .argumentsPassedTo(firstParameterOf(project, "/wrapper.ts", name))
+      .map((one) => ({
+        call: one.call.getText().replace(/\s+/g, " "),
+        argument: one.argument.getText(),
+      }));
+  }
+
+  it("gives each call of the function and the argument it wrote", () => {
+    expect(
+      passedTo(
+        {
+          "/wrapper.ts": "export function send(body: unknown) { return body; }",
+          "/one.ts": `
+            import { send } from "./wrapper";
+            export const first = () => send("hello");
+          `,
+          "/two.ts": `
+            import { send } from "./wrapper";
+            export const second = () => send("goodbye");
+          `,
+        },
+        "send",
+      ).sort((a, b) => a.argument.localeCompare(b.argument)),
+    ).toEqual([
+      { call: 'send("goodbye")', argument: '"goodbye"' },
+      { call: 'send("hello")', argument: '"hello"' },
+    ]);
+  });
+
+  it("finds the callers of a function written as a name given an arrow", () => {
+    expect(
+      passedTo(
+        {
+          "/wrapper.ts": "export const send = (body: unknown) => body;",
+          "/one.ts": `
+            import { send } from "./wrapper";
+            export const first = () => send("hello");
+          `,
+        },
+        "send",
+      ),
+    ).toEqual([{ call: 'send("hello")', argument: '"hello"' }]);
+  });
+
+  it("finds a caller that reaches the function through a barrel", () => {
+    expect(
+      passedTo(
+        {
+          "/wrapper.ts": "export function send(body: unknown) { return body; }",
+          "/index.ts": `export { send } from "./wrapper";`,
+          "/one.ts": `
+            import { send } from "./index";
+            export const first = () => send("hello");
+          `,
+        },
+        "send",
+      ),
+    ).toEqual([{ call: 'send("hello")', argument: '"hello"' }]);
+  });
+
+  it("gives back nothing for a function nothing in the run calls", () => {
+    expect(
+      passedTo(
+        {
+          "/wrapper.ts": "export function send(body: unknown) { return body; }",
+        },
+        "send",
+      ),
+    ).toEqual([]);
+  });
+
+  it("keeps the argument as it was written rather than settling it", () => {
+    expect(
+      passedTo(
+        {
+          "/wrapper.ts": "export function send(body: unknown) { return body; }",
+          "/one.ts": `
+            import { send } from "./wrapper";
+            const payload = { id: 1 };
+            export const first = () => send(payload);
+          `,
+        },
+        "send",
+      ),
+    ).toEqual([{ call: "send(payload)", argument: "payload" }]);
+  });
+});
+
+describe("returnsCall", () => {
+  /** Whether `outer` in /mod.ts hands back the call written as `text`. */
+  function handsBack(source: string, text: string): boolean {
+    const project = projectOf({ "/mod.ts": source });
+    const sourceFile = project.getSourceFileOrThrow("/mod.ts");
+    const outer = sourceFile.getFunctionOrThrow("outer");
+    const call = outer
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .find((one) => one.getText() === text);
+    if (call === undefined) {
+      throw new Error(`No call written as ${text}`);
+    }
+    return new ResolutionStore().returnsCall(outer, call);
+  }
+
+  it("says yes to a call the function returns outright", () => {
+    expect(
+      handsBack(
+        `declare function inner(): number;
+         export function outer() { return inner(); }`,
+        "inner()",
+      ),
+    ).toBe(true);
+  });
+
+  it("says yes to a call the function wrote into a name first", () => {
+    expect(
+      handsBack(
+        `declare function inner(): number;
+         export function outer() { const result = inner(); return result; }`,
+        "inner()",
+      ),
+    ).toBe(true);
+  });
+
+  it("says no to a call whose result the function keeps to itself", () => {
+    expect(
+      handsBack(
+        `declare function inner(): number;
+         export function outer() { inner(); return 1; }`,
+        "inner()",
+      ),
+    ).toBe(false);
+  });
+
+  it("says no when a function outside the run is given the result", () => {
+    expect(
+      handsBack(
+        `declare function inner(): number;
+         declare function log<T>(value: T): T;
+         export function outer() { return log(inner()); }`,
+        "inner()",
+      ),
+    ).toBe(false);
+  });
+
+  it("says yes when a function in the run hands the result on", () => {
+    expect(
+      handsBack(
+        `declare function inner(): number;
+         function log<T>(value: T): T { return value; }
+         export function outer() { return log(inner()); }`,
+        "inner()",
+      ),
+    ).toBe(true);
+  });
+
+  it("says no to a call a closure inside it returns rather than it", () => {
+    expect(
+      handsBack(
+        `declare function inner(): number;
+         export function outer() { return () => inner(); }`,
+        "inner()",
+      ),
+    ).toBe(false);
   });
 });

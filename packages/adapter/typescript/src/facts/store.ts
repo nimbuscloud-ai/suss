@@ -1,13 +1,14 @@
 /**
- * The resolution store, and the three questions callers ask it.
+ * The resolution store, and the questions callers ask it.
  *
  * `resolveCallable` says which function a value comes down to, through
  * any depth of aliasing, imports, re-export barrels, wrapper factories
  * and `.bind`. `resolveWrittenValue` says which expression a value is
  * written as, for callers chasing something that is neither a function
- * nor an object. `filesImportingTransitively` says which of a set of
- * files reach any of a set of packages, which a per-file import check
- * misses whenever a local barrel re-exports the SDK.
+ * nor an object. `argumentsPassedTo` goes the other way, from a
+ * parameter out to the calls that filled it. `filesImportingTransitively`
+ * says which of a set of files reach any of a set of packages, which a
+ * per-file import check misses whenever a local barrel re-exports the SDK.
  *
  * A query extracts the modules the rules ask for while answering it,
  * so the files a question reads do not depend on what was asked before.
@@ -133,6 +134,12 @@ export interface ExplainedResolution {
   stats: ExplainStats;
 }
 
+/** One call of a function, and what it wrote at one parameter. */
+export interface PassedArgument {
+  call: Node;
+  argument: Node;
+}
+
 export class ResolutionStore {
   private readonly db = new Database();
   private readonly table: NodeTable = createNodeTable();
@@ -178,6 +185,9 @@ export class ResolutionStore {
   private lastQueryWalked: string[] = [];
   private readonly declarations = new Map<Node, Node>();
   private readonly graph = new ModuleGraph();
+  /** See `notePossibleCallers`. */
+  private readonly possibleCallers = new Set<SourceFile>();
+  private readonly callerFilesRead = new Set<string>();
 
   private stale = true;
 
@@ -319,6 +329,91 @@ export class ResolutionStore {
       extractedAt: this.fullyExtracted.size,
     });
     return written;
+  }
+
+  /**
+   * Every call of the function this parameter belongs to, with the
+   * argument that call wrote at it, as the caller wrote it. The reading
+   * is left to the asker, who knows what kind of value it is after.
+   *
+   * The callers are in files that import the parameter's own, so they
+   * are read into the store first; no query starting at the parameter
+   * arrives at them.
+   */
+  argumentsPassedTo(parameter: Node): PassedArgument[] {
+    this.readPossibleCallersOf(parameter.getSourceFile());
+    return this.askAbout(parameter, "wanted", () => {
+      this.derive();
+      const found: PassedArgument[] = [];
+      for (const pair of this.answerPairsFor(
+        "wantedPassesArgument",
+        nodeId(parameter),
+      )) {
+        const [callId = "", argumentId = ""] = tupleKeyParts(pair);
+        const call = this.table.byId.get(callId);
+        const argument = this.table.byId.get(argumentId);
+        if (call !== undefined && argument !== undefined) {
+          found.push({ call, argument });
+        }
+      }
+      return found;
+    });
+  }
+
+  /**
+   * Whether running this function hands back that call: returned
+   * outright, written into a name and returned, or a shorthand body.
+   * A call whose own callee the rules cannot follow is not, which is
+   * what keeps a wrapper's own result apart from the library's.
+   */
+  returnsCall(func: Node, call: Node): boolean {
+    const target = factKeyOf(func);
+    const handedBack = nodeId(factKeyOf(call));
+    return this.askAbout(target, "wanted", () => {
+      this.derive();
+      return this.answersFor("wantedReturnsCall", nodeId(target)).includes(
+        handedBack,
+      );
+    });
+  }
+
+  /**
+   * Files a later question about a parameter may find a caller in.
+   * Without this the search falls back to every file the project has
+   * loaded, which reads more of the import graph than a run needs.
+   */
+  notePossibleCallers(sourceFiles: Iterable<SourceFile>): void {
+    for (const sourceFile of sourceFiles) {
+      this.possibleCallers.add(sourceFile);
+    }
+  }
+
+  private readPossibleCallersOf(target: SourceFile): void {
+    const targetPath = target.getFilePath();
+    if (this.callerFilesRead.has(targetPath)) {
+      return;
+    }
+    this.callerFilesRead.add(targetPath);
+    const candidates = [...this.callerCandidates(target)].filter(
+      (one) => one !== target,
+    );
+    if (candidates.length === 0) {
+      return;
+    }
+    const [reaching] = this.graph.filesReachingFile([
+      { sourceFiles: candidates, target },
+    ]);
+    this.extractFiles(reaching ?? []);
+  }
+
+  private callerCandidates(target: SourceFile): Iterable<SourceFile> {
+    if (this.possibleCallers.size > 0) {
+      return this.possibleCallers;
+    }
+    return target
+      .getProject()
+      .getSourceFiles()
+      .filter((one) => !one.isInNodeModules());
   }
 
   /**

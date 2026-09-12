@@ -11,9 +11,11 @@ import {
   functionNameOrAnon,
   type GraphqlOperationType,
   operationInfoFromResolution,
-  resolveGraphqlDocument,
-  unreadableDocument,
 } from "./graphqlShared.js";
+import {
+  documentBehindWrapper,
+  expandDocumentParameterCallers,
+} from "./graphqlWrapper.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
 import type { ResolutionStore } from "../facts/store.js";
@@ -76,9 +78,28 @@ export function discoverGraphqlImperativeCalls(
     if (docValue === null) {
       return;
     }
-    const document =
-      resolveGraphqlDocument(docValue, resolution) ??
-      unreadableDocument(docValue);
+    // A project function that passes its own parameter here is one
+    // operation per caller, the same as a wrapped hook.
+    const expansion =
+      resolution === undefined
+        ? null
+        : expandDocumentParameterCallers(docValue, node, {
+            kind,
+            operationType: spec.operationType,
+            methodName,
+            store: resolution,
+          });
+    if (expansion !== null) {
+      results.push(...expansion.units);
+      if (expansion.unfollowedReason === null) {
+        return;
+      }
+    }
+    const document = documentBehindWrapper(
+      docValue,
+      resolution,
+      expansion?.unfollowedReason ?? undefined,
+    );
     // Method-driven operation type wins when the gql header is
     // anonymous: `client.mutate({ mutation: gql\`...\` })` is a
     // mutation regardless of whether the doc says `mutation` or just

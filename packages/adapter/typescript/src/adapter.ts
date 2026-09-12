@@ -2297,6 +2297,10 @@ export function createTypeScriptAdapter(
         readRegisteringFiles(packsByFile, resolution),
       );
 
+      // Where a question about a parameter looks for the calls that
+      // filled it.
+      resolution.notePossibleCallers(packsByFile.keys());
+
       // A route on a mounted router needs the mount's prefix folded into
       // its path before the walk below builds its binding.
       const mountPrefixes = timer.time("mountPrefix", () =>
