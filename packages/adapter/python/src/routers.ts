@@ -107,9 +107,9 @@ export interface RouterIndex {
     objectName: string,
   ): RoutePrefixResolution;
   /**
-   * The same answer for a decorator whose object has no variable name to
-   * look up, such as one written on `self.router`. The rules give the call
-   * that built it, and every construction is already keyed by its call.
+   * The same for a decorator whose object has no variable name to look up,
+   * such as one written on `self.router`. The rules give the call that
+   * built it, and every construction is already keyed by its call.
    */
   resolveConstruction(
     pattern: PythonDiscoveryPattern,
@@ -117,16 +117,6 @@ export interface RouterIndex {
     constructorName: string,
     constructionKey: string,
   ): RoutePrefixResolution;
-  /**
-   * The module-level def a name in another module refers to, with that
-   * module's own bindings, so a decorator written through a project wrapper
-   * can be read where the wrapper is written.
-   */
-  moduleDef(
-    fromFile: string,
-    spec: { module: string; relativeLevel: number },
-    name: string,
-  ): { node: PyNode; module: ModuleBinding } | null;
 }
 
 /** An `x = <Constructor>(...)` from an accepted module, and what its call said about a prefix. */
@@ -262,18 +252,6 @@ export function buildRouterIndex(
   }
 
   return {
-    moduleDef(fromFile, spec, name) {
-      const bound = boundModuleAt(fromFile, spec, byFile, resolverOptions);
-      if (bound === null) {
-        return null;
-      }
-      const binding = bound.module.moduleScope.bindings.get(name);
-      if (binding?.kind !== "functionDef") {
-        return null;
-      }
-      return { node: binding.node, module: bound.module };
-    },
-
     resolve(pattern, module, objectName) {
       const index = byPattern.get(pattern);
       if (index === undefined) {

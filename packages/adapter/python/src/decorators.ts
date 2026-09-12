@@ -12,12 +12,27 @@
 // re-exported through a project's own wrapper: classify the name as an
 // import of module X, and let the pack list every module X it accepts.
 
-import { field, rangeOf, stringLiteralValue } from "./ast.js";
-import { resolveName } from "./scope.js";
+import { dispatchByType } from "@suss/behavioral-ir";
 
+import {
+  enclosingFunction,
+  field,
+  rangeOf,
+  stringLiteralValue,
+} from "./ast.js";
+import {
+  constructionBehind,
+  moduleOf,
+  writtenNodeOf,
+} from "./values/evaluator.js";
+import { originOf } from "./values/origin.js";
+
+import type { DispatchTable } from "@suss/behavioral-ir";
+import type { Database } from "@suss/datalog";
 import type { Range } from "./ast.js";
 import type { PyNode } from "./parser.js";
-import type { ModuleBinding, Scope } from "./scope.js";
+import type { ModuleBinding } from "./scope.js";
+import type { BuiltValue } from "./values/evaluator.js";
 
 /** An argument as written, plus its node so a reader can evaluate what it comes down to. */
 export type DecoratorArg = DecoratorArgShape & { readonly node: PyNode };
@@ -41,7 +56,6 @@ export interface DecoratorClassification {
   module: string | null;
   /** The local variable an attribute decorator hangs on, `app` in `@app.get(...)`. */
   objectName: string | null;
-  relativeLevel: number;
   args: DecoratorArg[];
   keywordArgs: Record<string, DecoratorArg>;
   /** Where the decorator is written. Anything we read out of its arguments uses this as its provenance. */
@@ -53,9 +67,9 @@ export interface DecoratorClassification {
    */
   objectModule?: ModuleBinding;
   /**
-   * The call the rules say built the object this decorator hangs on, when
-   * the lexical scope could not say. A router prefix is looked up by this
-   * call rather than by a variable name, because there may not be one.
+   * The call the rules say built the object this decorator hangs on. A
+   * router the index never saw under a name is looked up by this call
+   * instead, and a decorator on `self.router` has no name to look up.
    */
   subjectConstruction?: { key: string; constructorName: string };
 }
@@ -190,112 +204,108 @@ export function readCallArguments(argumentList: PyNode | null): {
   return { args, keywordArgs };
 }
 
-const UNRESOLVED: Pick<
+/** Everything a classification says about its callee, before the arguments are read. */
+type ResolvedCallee = Pick<
   DecoratorClassification,
-  "importedName" | "module" | "objectName" | "relativeLevel"
-> = {
+  "importedName" | "module" | "objectName" | "subjectConstruction"
+>;
+
+const UNRESOLVED: ResolvedCallee = {
   importedName: null,
   module: null,
   objectName: null,
-  relativeLevel: 0,
 };
 
 /**
- * Where an identifier's value came from, either an import or one hop
- * back to a call on something imported (`app = FastAPI()`). One hop,
- * not a general points-to analysis.
+ * What the call that built a decorator's object says about the decorator.
+ * Two constructions out of the same module still say which pack the route
+ * belongs to, and leaving out the construction key sends the router index
+ * looking by name, where it reports the name the two share. Two that
+ * disagree about the module say nothing.
  */
-function resolveObjectModule(
-  name: string,
-  scope: Scope,
-): { module: string; relativeLevel: number } | null {
-  const binding = resolveName(scope, name);
-  if (binding?.kind === "import") {
-    return { module: binding.module, relativeLevel: binding.relativeLevel };
-  }
-  if (binding?.kind === "assignment" && binding.value?.type === "call") {
-    const callee = field(binding.value, "function");
-    return callee === null ? null : calleeModule(callee, scope);
-  }
-  return null;
+function builtObjectCallee(
+  built: BuiltValue,
+  attributeName: string,
+  objectName: string | null,
+): ResolvedCallee | null {
+  const table: DispatchTable<BuiltValue, ResolvedCallee | null> = {
+    noCall: () => null,
+    oneCall: ({ construction }) => ({
+      importedName: attributeName,
+      module: construction.origin.module,
+      objectName,
+      subjectConstruction: {
+        key: construction.key,
+        constructorName: construction.origin.name,
+      },
+    }),
+    severalCalls: ({ constructions }) => {
+      const modules = new Set(
+        constructions.map((construction) => construction.origin.module),
+      );
+      const agreed = [...modules][0];
+      if (modules.size !== 1 || agreed === undefined) {
+        return null;
+      }
+      return { importedName: attributeName, module: agreed, objectName };
+    },
+  };
+  return dispatchByType(table, built);
 }
 
 /**
- * The module a call's constructor comes from, whichever way the call
- * reaches it. Both spellings put the same object in the variable:
- *
- *   from fastapi import APIRouter   ->   APIRouter()
- *   import fastapi                  ->   fastapi.APIRouter()
- *
- * so a route decorated with what either one returns belongs to the same
- * pack.
+ * A decorator's callee, as the name a module exports and the module that
+ * exports it. An attribute chain deeper than one property access
+ * (`a.b.route`) is left unresolved, and its decorator is not discovered.
  */
-function calleeModule(
-  callee: PyNode,
-  scope: Scope,
-): { module: string; relativeLevel: number } | null {
-  if (callee.type === "identifier") {
-    const binding = resolveName(scope, callee.text);
-    return binding?.kind === "importFrom"
-      ? { module: binding.module, relativeLevel: binding.relativeLevel }
-      : null;
-  }
-  if (callee.type !== "attribute") {
-    return null;
-  }
-  const object = field(callee, "object");
-  if (object?.type !== "identifier") {
-    return null;
-  }
-  const binding = resolveName(scope, object.text);
-  return binding?.kind === "import"
-    ? { module: binding.module, relativeLevel: binding.relativeLevel }
-    : null;
-}
-
-/** An attribute chain deeper than one property access (`a.b.route`) is left unresolved, and its decorator is not discovered. */
 function resolveCallee(
   expr: PyNode,
-  scope: Scope,
-): Pick<
-  DecoratorClassification,
-  "importedName" | "module" | "objectName" | "relativeLevel"
-> {
+  module: ModuleBinding,
+  facts: Database | undefined,
+): ResolvedCallee {
   if (expr.type === "identifier") {
-    const binding = resolveName(scope, expr.text);
-    if (binding?.kind === "importFrom") {
-      return {
-        importedName: binding.importedName,
-        module: binding.module,
-        objectName: null,
-        relativeLevel: binding.relativeLevel,
-      };
-    }
+    const origin = originOf(expr, module);
+    return origin === null
+      ? UNRESOLVED
+      : { importedName: origin.name, module: origin.module, objectName: null };
+  }
+  if (expr.type !== "attribute") {
     return UNRESOLVED;
   }
-  if (expr.type === "attribute") {
-    const object = field(expr, "object");
-    const attribute = field(expr, "attribute");
-    if (object === null || attribute === null || object.type !== "identifier") {
-      return UNRESOLVED;
-    }
-    const origin = resolveObjectModule(object.text, scope);
-    if (origin === null) {
-      return UNRESOLVED;
-    }
-    return {
-      importedName: attribute.text,
-      module: origin.module,
-      objectName: object.text,
-      relativeLevel: origin.relativeLevel,
-    };
+
+  const object = field(expr, "object");
+  const attribute = field(expr, "attribute");
+  if (object === null || attribute === null) {
+    return UNRESOLVED;
   }
-  return UNRESOLVED;
+  const objectName = object.type === "identifier" ? object.text : null;
+
+  // What a name was assigned wins over what it was imported as. Python
+  // lets `import app.store` bind `app` over an `app = FastAPI()` written
+  // above it, and the app is what the decorator hangs on.
+  const built = builtObjectCallee(
+    constructionBehind(object, facts),
+    attribute.text,
+    objectName,
+  );
+  if (built !== null) {
+    return built;
+  }
+
+  const imported = originOf(expr, module);
+  return imported === null
+    ? UNRESOLVED
+    : {
+        importedName: imported.name,
+        module: imported.module,
+        objectName,
+      };
 }
 
 export function classifyDecorator(
   decoratorNode: PyNode,
-  scope: Scope,
+  module: ModuleBinding,
+  facts?: Database,
 ): DecoratorClassification {
   const range = rangeOf(decoratorNode);
   const expr = decoratorNode.namedChild(0);
@@ -307,7 +317,7 @@ export function classifyDecorator(
     const callee = field(expr, "function");
     const argumentList = field(expr, "arguments");
     const resolved =
-      callee !== null ? resolveCallee(callee, scope) : UNRESOLVED;
+      callee !== null ? resolveCallee(callee, module, facts) : UNRESOLVED;
     const { args, keywordArgs } =
       argumentList?.type === "argument_list"
         ? readCallArguments(argumentList)
@@ -315,59 +325,51 @@ export function classifyDecorator(
     return { ...resolved, args, keywordArgs, range };
   }
 
-  return { ...resolveCallee(expr, scope), args: [], keywordArgs: {}, range };
+  return {
+    ...resolveCallee(expr, module, facts),
+    args: [],
+    keywordArgs: {},
+    range,
+  };
 }
 
-/** The def a name refers to, in whichever module declares it. */
-export type ModuleDefLookup = (
-  spec: { module: string; relativeLevel: number },
-  name: string,
-) => { node: PyNode; module: ModuleBinding } | null;
-
 /**
- * Read a decorator through a one-hop project wrapper:
+ * Read a decorator through a project wrapper:
  *
  *     def api_route(path):
  *         return orders_namespace.route(path)
  *
- * The wrapper's body has to be a single return of an attribute call whose
- * positional arguments are exactly the wrapper's parameters in order.
- * Anything else, a second statement or a rearranged argument, gives null and
- * the decorator stays what it was.
+ * The rules say what the wrapper's call comes down to, wherever the
+ * wrapper is written. A wrapper that rearranges its parameters gives null,
+ * because the arguments written here are then not the ones the library is
+ * called with.
  */
 export function unwrapDecorator(
   decoratorNode: PyNode,
-  scope: Scope,
-  ownModule: ModuleBinding,
-  moduleDef: ModuleDefLookup,
+  facts: Database | undefined,
 ): DecoratorClassification | null {
   const expr = decoratorNode.namedChild(0);
   if (expr === null || expr.type !== "call") {
     return null;
   }
-  const callee = field(expr, "function");
-  if (callee === null || callee.type !== "identifier") {
+
+  const inner = writtenNodeOf(expr, facts);
+  const innerCallee = inner === null ? null : field(inner, "function");
+  if (
+    inner === null ||
+    innerCallee === null ||
+    innerCallee.type !== "attribute"
+  ) {
     return null;
   }
 
-  const wrapper = wrapperBehind(callee.text, scope, ownModule, moduleDef);
-  if (wrapper === null) {
+  const wrapper = enclosingFunction(inner);
+  if (wrapper === null || !passesParametersThrough(wrapper, inner)) {
     return null;
   }
 
-  const inner = singleReturnedCall(wrapper.node);
-  if (inner === null) {
-    return null;
-  }
-  const innerCallee = field(inner, "function");
-  if (innerCallee === null || innerCallee.type !== "attribute") {
-    return null;
-  }
-  if (!passesParametersThrough(wrapper.node, inner)) {
-    return null;
-  }
-
-  const resolved = resolveCallee(innerCallee, wrapper.module.moduleScope);
+  const wrapperModule = moduleOf(inner);
+  const resolved = resolveCallee(innerCallee, wrapperModule, facts);
   if (resolved.importedName === null) {
     return null;
   }
@@ -382,43 +384,8 @@ export function unwrapDecorator(
     args,
     keywordArgs,
     range: rangeOf(decoratorNode),
-    objectModule: wrapper.module,
+    objectModule: wrapperModule,
   };
-}
-
-function wrapperBehind(
-  name: string,
-  scope: Scope,
-  ownModule: ModuleBinding,
-  moduleDef: ModuleDefLookup,
-): { node: PyNode; module: ModuleBinding } | null {
-  const binding = resolveName(scope, name);
-  if (binding?.kind === "functionDef") {
-    return { node: binding.node, module: ownModule };
-  }
-  if (binding?.kind === "importFrom") {
-    return moduleDef(
-      { module: binding.module, relativeLevel: binding.relativeLevel },
-      binding.importedName,
-    );
-  }
-  return null;
-}
-
-/** The call a body consists of returning, when a return is all the body does. */
-function singleReturnedCall(def: PyNode): PyNode | null {
-  const body = field(def, "body");
-  if (body === null) {
-    return null;
-  }
-  const statements = body.namedChildren.filter(
-    (child): child is PyNode => child !== null && child.type !== "comment",
-  );
-  if (statements.length !== 1 || statements[0]?.type !== "return_statement") {
-    return null;
-  }
-  const returned = statements[0].namedChildren[0];
-  return returned !== null && returned?.type === "call" ? returned : null;
 }
 
 /** Whether the inner call's positional arguments are the def's parameters, in order. */

@@ -9,6 +9,7 @@ import { emitModuleImportFacts } from "./facts.js";
 import { parsePython } from "./parser.js";
 import { buildRouterIndex } from "./routers.js";
 import { bindModule } from "./scope.js";
+import { bindEvaluator } from "./values/evaluator.js";
 
 import type { Predicate } from "@suss/behavioral-ir";
 import type { RawCodeStructure } from "@suss/extractor";
@@ -278,17 +279,12 @@ function conditionText(condition: Predicate): string {
 }
 
 async function unitsOf(source: string, packs: PythonPack[]) {
-  const tree = await parsePython(source);
-  const binding = bindModule(tree.rootNode);
-  return discoverUnits(tree.rootNode, binding, {
-    packs,
-    filePath: "myapp/routes/todos.py",
-  });
+  return unitsWithRulesOf(source, packs);
 }
 
 /**
- * The same, with the facts the rules read and the router index a project
- * run builds, which together are what the project extractor hands
+ * The facts the rules read and, when a test asks for it, the router index
+ * a project run builds: together what the project extractor hands
  * discovery. The file is named once and used as both paths, since a run
  * only shortens the display path when a workspace root was given.
  */
@@ -306,6 +302,7 @@ async function unitsWithRulesOf(
   const bound = [
     { file, displayPath: file, root: tree.rootNode, module: binding },
   ];
+  bindEvaluator(db, { files: bound, definitions: new Map() });
   return discoverUnits(tree.rootNode, binding, {
     packs,
     filePath: file,
@@ -1361,6 +1358,30 @@ describe("discoverUnits: a route declared inside an app factory", () => {
       ].join("\n"),
       [fastapiLike],
     );
+    expect(units).toEqual([]);
+  });
+});
+
+describe("discoverUnits: a database the run never bound a project to", () => {
+  it("discovers nothing, because nothing can lead a key back to a node", async () => {
+    const source = [
+      "from fastapi import FastAPI",
+      "",
+      "app = FastAPI()",
+      "",
+      "",
+      '@app.get("/health")',
+      "def health():",
+      "    pass",
+      "",
+    ].join("\n");
+    const tree = await parsePython(source);
+    const binding = bindModule(tree.rootNode);
+    const units = discoverUnits(tree.rootNode, binding, {
+      packs: [fastapiLike],
+      filePath: "myapp/routes/todos.py",
+      facts: new Database(),
+    });
     expect(units).toEqual([]);
   });
 });
