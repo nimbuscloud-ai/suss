@@ -127,10 +127,14 @@ const PROBES = [
     says: "searches the project for references; the resolution store already has those edges",
   },
   {
-    pattern: /while\s*\([^)]*Node\.is(As|Parenthesized)Expression/,
-    label: "while (Node.isAsExpression(...))",
+    text: ".isParenthesizedExpression(",
     reads: "ts-morph",
-    says: "peels casts or parentheses in a loop; `peelValue` in walk/unwrap.ts does that",
+    says: "peels or climbs a wrapper by hand; `peelSyntax`, `peelValue`, `peelParens` and `climbSyntax` in walk/unwrap.ts do that",
+  },
+  {
+    text: ".isAsExpression(",
+    reads: "ts-morph",
+    says: "peels or climbs a wrapper by hand; `peelSyntax`, `peelValue` and `climbSyntax` in walk/unwrap.ts do that",
   },
   {
     text: ".text.slice(1, -1)",
@@ -211,7 +215,7 @@ const EXEMPT = new Map([
   ],
   [
     "packages/adapter/typescript/src/discovery/graphqlShared.ts",
-    "writtenStringText, isDocumentTag, documentTagOrigin, declarationFileOf, importCarrying, singleLine, importedVariableInitializers, resolveGqlTemplateText, resolveTypedDocumentHeader, evaluateObjectLiteralAsJson",
+    "writtenStringText, isDocumentTag, documentTagOrigin, declarationFileOf, importCarrying, singleLine, importedVariableInitializers, resolveGqlTemplateText, resolveTypedDocumentHeader, evaluateObjectLiteralAsJson, and documentNodeCastTypeArgs, which reads the type written on a cast rather than peeling the cast off",
   ],
   [
     "packages/adapter/typescript/src/discovery/graphqlWrapper.ts",
@@ -331,7 +335,10 @@ const EXEMPT = new Map([
     "packages/adapter/typescript/src/terminals/helperResolution.ts",
     "memoizedLocalHelper, declarationsFor, asFunctionLike, bindArguments",
   ],
-  ["packages/adapter/typescript/src/terminals/jsx.ts", "collectJsxAttributes"],
+  [
+    "packages/adapter/typescript/src/terminals/jsx.ts",
+    "collectJsxAttributes, and the parenthesis case of jsxToRenderNode and jsxExpressionToRenderNode, which recurse rather than loop",
+  ],
   [
     "packages/adapter/typescript/src/terminals/returns.ts",
     "terminalFromReturnedObject",
@@ -348,10 +355,7 @@ const EXEMPT = new Map([
     "packages/adapter/typescript/src/terminals/throws.ts",
     "extractThrowMessage",
   ],
-  [
-    "packages/framework/aws-sqs/src/index.ts",
-    "isSqsRecordIdentifier, extractDestructuredFields",
-  ],
+  ["packages/framework/aws-sqs/src/index.ts", "isSqsRecordIdentifier"],
   ["packages/framework/cloudflare-workers/src/discovery.ts", "listenerAt"],
   [
     "packages/framework/cloudflare-workers/src/envBindings.ts",

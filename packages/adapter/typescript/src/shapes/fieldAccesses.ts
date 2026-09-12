@@ -18,6 +18,7 @@ import {
   thenLikeCall,
   thenParameterLink,
 } from "../promiseThen.js";
+import { peelValue } from "../walk/unwrap.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";
 import type { ResponsePropertyMapping } from "@suss/extractor";
@@ -180,7 +181,7 @@ function prefixOfExpr(
   if (depth >= MAX_PREFIX_DEPTH) {
     return null;
   }
-  const node = unwrap(expr);
+  const node = peelValue(expr);
   if (node === responseCall) {
     return [];
   }
@@ -248,18 +249,6 @@ function firstCallbackParamName(callback: Node | undefined): string | null {
   return Node.isIdentifier(nameNode) ? nameNode.getText() : null;
 }
 
-function unwrap(expr: Expression): Node {
-  let node: Node = expr;
-  while (
-    Node.isAwaitExpression(node) ||
-    Node.isParenthesizedExpression(node) ||
-    Node.isAsExpression(node)
-  ) {
-    node = node.getExpression();
-  }
-  return node;
-}
-
 /**
  * The property segments of `expr` when it is a chain rooted at the
  * identifier `rootName`, e.g. `res.json` → `["json"]`, `data.body.name`
@@ -284,7 +273,7 @@ function chainRootedAt(expr: Expression, rootName: string): string[] | null {
  * `{ root: res, segments: [] }`. A single trailing call is unwrapped.
  */
 function memberChain(expr: Node): { root: Node; segments: string[] } | null {
-  let node = Node.isExpression(expr) ? unwrap(expr) : expr;
+  let node = Node.isExpression(expr) ? peelValue(expr) : expr;
   if (Node.isCallExpression(node)) {
     node = node.getExpression();
   }

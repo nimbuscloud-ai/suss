@@ -19,6 +19,7 @@ import {
 import { Node } from "ts-morph";
 
 import { resolveAliasedSymbol } from "../moduleExports.js";
+import { peelSyntax } from "../walk/unwrap.js";
 import { stringValueOf } from "./resolveValue.js";
 
 import type {
@@ -256,7 +257,7 @@ function interpolatedDocumentText(
   expr: Node,
   assembly: DocumentAssembly,
 ): string | null {
-  const stripped = stripDocumentNodeCasts(expr);
+  const stripped = peelSyntax(expr);
   const inline = documentTextFromExpression(stripped, assembly);
   if (inline !== null) {
     return inline;
@@ -356,7 +357,7 @@ export function resolveGraphqlDocument(
   const assembly = startAssembly(resolution);
   // Peel `FooDocument as DocumentNode` / parenthesization at the call
   // site so the underlying identifier or tagged template is reached.
-  const stripped = stripDocumentNodeCasts(arg);
+  const stripped = peelSyntax(arg);
   const text =
     documentTextFromExpression(stripped, assembly) ??
     resolveGqlTemplateText(stripped, assembly) ??
@@ -762,7 +763,7 @@ function documentTextFromExpression(
   if (first === undefined) {
     return null;
   }
-  const template = stripDocumentNodeCasts(first);
+  const template = peelSyntax(first);
   if (
     !Node.isNoSubstitutionTemplateLiteral(template) &&
     !Node.isTemplateExpression(template)
@@ -1017,7 +1018,7 @@ export function unreadableDocument(
 ): DocumentResolution {
   return {
     unresolved: {
-      reference: singleLine(stripDocumentNodeCasts(arg).getText()),
+      reference: singleLine(peelSyntax(arg).getText()),
       reason:
         reason ??
         "the call matched but its document argument did not resolve to a readable GraphQL document",
@@ -1100,10 +1101,7 @@ export function resolveGqlTemplateText(
   // A tagged const in this module, or one reached through the import to
   // the defining module's declaration.
   for (const init of importedVariableInitializers(arg)) {
-    const text = documentTextFromExpression(
-      stripDocumentNodeCasts(init),
-      assembly,
-    );
+    const text = documentTextFromExpression(peelSyntax(init), assembly);
     if (text !== null) {
       return text;
     }
@@ -1151,7 +1149,7 @@ export function resolveTypedDocumentSource(arg: Node): string | null {
  * corner of it can't be evaluated statically.
  */
 function typedDocumentSourceOf(node: Node): string | null {
-  const inner = stripDocumentNodeCasts(node);
+  const inner = peelSyntax(node);
   if (!Node.isObjectLiteralExpression(inner)) {
     return null;
   }
@@ -1290,22 +1288,6 @@ function operationHeaderFromResultType(
     }
   }
   return null;
-}
-
-/**
- * Strip the `as unknown as DocumentNode<...>` cast that codegen emits.
- * Walks AsExpression chains so a multi-step `expr as unknown as
- * DocumentNode<X, Y>` peels to the inner object literal.
- */
-function stripDocumentNodeCasts(node: Node): Node {
-  let current: Node = node;
-  while (
-    Node.isAsExpression(current) ||
-    Node.isParenthesizedExpression(current)
-  ) {
-    current = current.getExpression();
-  }
-  return current;
 }
 
 /**

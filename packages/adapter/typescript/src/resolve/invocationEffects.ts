@@ -36,7 +36,7 @@ import {
   isModuleScopeStop,
   NO_BARRIERS,
 } from "../walk/descent.js";
-import { peelSyntax } from "../walk/unwrap.js";
+import { climbSyntax, peelSyntax } from "../walk/unwrap.js";
 import { callOpsFor } from "./callOps.js";
 
 import type { Effect } from "@suss/behavioral-ir";
@@ -418,13 +418,10 @@ function invocationAt(
   };
 }
 
-/** Whether the caller waits on the result: `await f()`, through any parentheses. */
+/** Whether the caller waits on the result: `await f()`, through any wrapper. */
 function isAwaited(call: CallExpression): boolean {
-  let current: Node | undefined = call.getParent();
-  while (current !== undefined && Node.isParenthesizedExpression(current)) {
-    current = current.getParent();
-  }
-  return current !== undefined && Node.isAwaitExpression(current);
+  const consumer = climbSyntax(call).getParent();
+  return consumer !== undefined && Node.isAwaitExpression(consumer);
 }
 
 /**

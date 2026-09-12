@@ -59,6 +59,7 @@ type FunctionLike =
 import {
   findEnclosingFunction,
   functionTargetOf,
+  isDefaultedAt,
   stringValueOf,
 } from "@suss/adapter-typescript";
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
@@ -467,44 +468,6 @@ function parameterReachesEnvRead(
   }
   byParameter.set(at, found);
   return found;
-}
-
-/**
- * Whether something else supplies a value when this read comes back
- * empty. `process.env.X ?? "default"` and `process.env.X || other`
- * both do, and so does the middle of a chain: in
- * `process.env.A || process.env.B || undefined`, B's fallback is the
- * chain's tail. The climb stops when the read is the final operand
- * (`getDefault() ?? process.env.X`), where the read IS the fallback
- * and its absence propagates.
- */
-function isDefaultedAt(node: Node): boolean {
-  let child: Node = node;
-  let parent = child.getParent();
-  while (parent !== undefined) {
-    if (N.isParenthesizedExpression(parent)) {
-      child = parent;
-      parent = parent.getParent();
-      continue;
-    }
-
-    if (!N.isBinaryExpression(parent)) {
-      return false;
-    }
-    // String-equality on the token text rather than the SyntaxKind
-    // enum, which renumbers between TypeScript releases.
-    const op = parent.getOperatorToken().getText();
-    if (op !== "??" && op !== "||") {
-      return false;
-    }
-
-    if (parent.getLeft() === child) {
-      return true;
-    }
-    child = parent;
-    parent = parent.getParent();
-  }
-  return false;
 }
 
 function configReadEffect(

@@ -29,6 +29,7 @@ import {
   isFunctionRoot,
 } from "../discovery/shared.js";
 import { resolveAliasedSymbol } from "../moduleExports.js";
+import { climbSyntax } from "../walk/unwrap.js";
 import {
   describeWrites,
   isWrittenAgain,
@@ -1096,24 +1097,10 @@ function emitTopLevelCalls(
   }
 }
 
-/** Whether a nested function expression sits directly under a return. */
+/** Whether a nested function expression is directly under a return. */
 function descendantIsReturned(fn: Node): boolean {
-  let current: Node | undefined = fn.getParent();
-  while (current !== undefined) {
-    if (Node.isReturnStatement(current)) {
-      return true;
-    }
-    if (
-      Node.isParenthesizedExpression(current) ||
-      Node.isAsExpression(current) ||
-      Node.isSatisfiesExpression(current)
-    ) {
-      current = current.getParent();
-      continue;
-    }
-    return false;
-  }
-  return false;
+  const consumer = climbSyntax(fn).getParent();
+  return consumer !== undefined && Node.isReturnStatement(consumer);
 }
 
 /**

@@ -2,10 +2,10 @@
   "totals": {
     "packages": 75,
     "packagesWithExports": 75,
-    "exports": 970,
-    "internal": 3435,
-    "consumers": 1925,
-    "pairs": 1915,
+    "exports": 974,
+    "internal": 3423,
+    "consumers": 1932,
+    "pairs": 1921,
     "unfollowedCalls": 506,
     "findingErrors": 0
   },
@@ -26,8 +26,8 @@
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
-      "exports": 105,
-      "internal": 843,
+      "exports": 109,
+      "internal": 839,
       "consumers": 210,
       "unfollowedCalls": 114
     },
@@ -265,8 +265,8 @@
     "packages/framework/aws-sqs": {
       "name": "@suss/framework-aws-sqs",
       "exports": 2,
-      "internal": 6,
-      "consumers": 9,
+      "internal": 5,
+      "consumers": 11,
       "unfollowedCalls": 0
     },
     "packages/framework/aws-ssm": {
@@ -279,8 +279,8 @@
     "packages/framework/cloudflare-workers": {
       "name": "@suss/framework-cloudflare-workers",
       "exports": 7,
-      "internal": 15,
-      "consumers": 15,
+      "internal": 13,
+      "consumers": 16,
       "unfollowedCalls": 3
     },
     "packages/framework/drizzle": {
@@ -482,7 +482,7 @@
     "packages/packs": {
       "name": "@suss/packs",
       "exports": 53,
-      "internal": 172,
+      "internal": 170,
       "consumers": 0,
       "unfollowedCalls": 7
     },
@@ -503,8 +503,8 @@
     "packages/runtime/node": {
       "name": "@suss/runtime-node",
       "exports": 12,
-      "internal": 21,
-      "consumers": 12,
+      "internal": 18,
+      "consumers": 16,
       "unfollowedCalls": 2
     },
     "packages/sql": {

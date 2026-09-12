@@ -14,9 +14,39 @@
 
 import { Node } from "ts-morph";
 
+import type {
+  AsExpression,
+  NonNullExpression,
+  ParenthesizedExpression,
+  SatisfiesExpression,
+  TypeAssertion,
+} from "ts-morph";
+
 // Peeling is one layer per pass, so an odd AST could in principle nest
 // deeply. The bound is what stops that becoming a hang.
 const MAX_LAYERS = 16;
+
+/**
+ * A wrapper that states something about the type of the expression
+ * inside it and nothing about the value. `await` is left out, so a
+ * caller can still ask TypeScript for the awaited type.
+ */
+type TypeLevelWrapper =
+  | AsExpression
+  | NonNullExpression
+  | ParenthesizedExpression
+  | SatisfiesExpression
+  | TypeAssertion;
+
+function isTypeLevelWrapper(node: Node): node is TypeLevelWrapper {
+  return (
+    Node.isAsExpression(node) ||
+    Node.isTypeAssertion(node) ||
+    Node.isParenthesizedExpression(node) ||
+    Node.isNonNullExpression(node) ||
+    Node.isSatisfiesExpression(node)
+  );
+}
 
 /**
  * The expression inside any type-level wrappers: `as` and
@@ -27,17 +57,33 @@ const MAX_LAYERS = 16;
 export function peelSyntax(node: Node): Node {
   let current = node;
   for (let i = 0; i < MAX_LAYERS; i++) {
-    if (
-      Node.isAsExpression(current) ||
-      Node.isTypeAssertion(current) ||
-      Node.isParenthesizedExpression(current) ||
-      Node.isNonNullExpression(current) ||
-      Node.isSatisfiesExpression(current)
-    ) {
-      current = current.getExpression();
-      continue;
+    if (!isTypeLevelWrapper(current)) {
+      break;
     }
-    break;
+    current = current.getExpression();
+  }
+  return current;
+}
+
+/**
+ * The outermost node wrapping this one through the same type-level
+ * wrappers `peelSyntax` sees through, or the node itself when nothing
+ * wraps it. Ask the result for its parent to get the node that consumes
+ * the value, and compare the result against that parent's operands to
+ * find out which operand this was.
+ */
+export function climbSyntax(node: Node): Node {
+  let current = node;
+  for (let i = 0; i < MAX_LAYERS; i++) {
+    const parent = current.getParent();
+    if (
+      parent === undefined ||
+      !isTypeLevelWrapper(parent) ||
+      parent.getExpression() !== current
+    ) {
+      break;
+    }
+    current = parent;
   }
   return current;
 }
@@ -82,12 +128,5 @@ export function peelValue(node: Node): Node {
  * parents instead of peeling down.
  */
 export function passesValueThrough(node: Node): boolean {
-  return (
-    Node.isParenthesizedExpression(node) ||
-    Node.isAwaitExpression(node) ||
-    Node.isAsExpression(node) ||
-    Node.isTypeAssertion(node) ||
-    Node.isNonNullExpression(node) ||
-    Node.isSatisfiesExpression(node)
-  );
+  return isTypeLevelWrapper(node) || Node.isAwaitExpression(node);
 }
