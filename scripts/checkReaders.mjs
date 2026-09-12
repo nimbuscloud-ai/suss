@@ -210,7 +210,7 @@ const EXEMPT = new Map([
   ],
   [
     "packages/adapter/typescript/src/discovery/factorySurface.ts",
-    "sameFileFunctionBehind, functionAmong, collectFromObjectLiteral, collectShorthandFunction",
+    "collectFromObjectLiteral",
   ],
   [
     "packages/adapter/typescript/src/discovery/graphqlClientConstruction.ts",
@@ -292,7 +292,7 @@ const EXEMPT = new Map([
   ],
   [
     "packages/adapter/typescript/src/resolve/astResolve.ts",
-    "resolveElementAccess, shapeFromDeclaration, extractParamNames, safeGetDefinitions, functionBodyOf",
+    "resolveElementAccess, shapeFromDeclaration, safeGetDefinitions, functionBodyOf",
   ],
   [
     "packages/adapter/typescript/src/resolve/callOps.ts",
@@ -312,7 +312,7 @@ const EXEMPT = new Map([
   ],
   [
     "packages/adapter/typescript/src/resolve/rethrowEnrichment.ts",
-    "resolveCalleeSummary, functionFromDecl",
+    "resolveCalleeSummary",
   ],
   [
     "packages/adapter/typescript/src/resolve/unfollowedCall.ts",
@@ -332,7 +332,7 @@ const EXEMPT = new Map([
   ],
   [
     "packages/adapter/typescript/src/subUnitContext.ts",
-    "findJsxAttributes, resolveAttributeValueFunction, tryExtractFunction, readArrayLiteralText",
+    "findJsxAttributes, resolveAttributeValueFunction, readArrayLiteralText",
   ],
   [
     "packages/adapter/typescript/src/terminals/extract.ts",
@@ -369,7 +369,7 @@ const EXEMPT = new Map([
   ],
   [
     "packages/framework/cloudflare-workers/src/discovery.ts",
-    "defaultExportTriggers, propertyName, functionOfProperty, functionBehind, declaredFunction, objectBehind, listenerAt",
+    "defaultExportTriggers, propertyName, functionOfProperty, objectBehind, listenerAt",
   ],
   [
     "packages/framework/cloudflare-workers/src/envBindings.ts",
@@ -390,7 +390,7 @@ const EXEMPT = new Map([
   ["packages/framework/react-query/src/index.ts", "callbackExpressionOf"],
   [
     "packages/runtime/node/src/envVars.ts",
-    "bracketRead, literalBehind, callSitesOf, bindingRead, destructuredReads, functionBehindCallee",
+    "bracketRead, literalBehind, callSitesOf, bindingRead, destructuredReads",
   ],
   ["packages/adapter/python/src/decorators.ts", "argShapeOf"],
   [
