@@ -330,6 +330,38 @@ describe("FastAPI wrappers", () => {
       ],
     });
   });
+
+  it("registers nothing off an app a factory in another module builds", async () => {
+    const summaries = await extractWritten({
+      "app/__init__.py": "",
+      "app/factory.py": [
+        "from fastapi import Depends, FastAPI",
+        "",
+        "",
+        "def tag_request(): pass",
+        "",
+        "",
+        "def create_app():",
+        "    return FastAPI(dependencies=[Depends(tag_request)])",
+        "",
+      ].join("\n"),
+      "app/main.py": [
+        "from app.factory import create_app",
+        "",
+        "app = create_app()",
+        "",
+        "",
+        "@app.get('/orders')",
+        "def orders():",
+        "    return {'ok': True}",
+        "",
+      ].join("\n"),
+    });
+
+    // The dependency list is written on the call, and that call is in
+    // the other file.
+    expect(wrappersOf(routeFor(summaries, "GET", "/orders"))).toBeUndefined();
+  });
 });
 
 describe("flask-restx wrappers", () => {

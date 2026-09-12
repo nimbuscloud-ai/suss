@@ -1,11 +1,10 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
-import {
-  bindModule,
-  buildRouterIndex,
-  discoverUnits,
-  parsePython,
-} from "@suss/adapter-python";
+import { extractPythonProject, findPythonFiles } from "@suss/adapter-python";
 
 import { flaskRestxFramework } from "./index.js";
 
@@ -107,51 +106,50 @@ describe("flaskRestxFramework", () => {
 });
 
 describe("the path the shipped pack composes for a blueprint-mounted route", () => {
-  async function unitsOf(setup: string[]) {
-    const source = [
-      "from flask import Blueprint, Flask",
-      "from flask_restx import Api, Namespace",
-      "",
-      ...setup,
-      'ns = Namespace("orders", path="/orders")',
-      "",
-      "",
-      '@ns.route("/<int:order_id>")',
-      "class OrderDetail:",
-      "    def get(self, order_id):",
-      "        return {}",
-      "",
-      "",
-      "api.add_namespace(ns)",
-      "",
-    ].join("\n");
-
-    const packs = [flaskRestxFramework()];
-    const tree = await parsePython(source);
-    const module = bindModule(tree.rootNode);
-    return discoverUnits(tree.rootNode, module, {
-      packs,
-      filePath: "main.py",
-      routerIndex: buildRouterIndex(
-        [
-          {
-            file: "/proj/main.py",
-            displayPath: "main.py",
-            root: tree.rootNode,
-            module,
-          },
-        ],
-        packs,
-        { roots: [] },
-      ),
+  /** A project on disk, since the mount is read through the facts a run emits. */
+  async function servedPath(files: Record<string, string>, name: string) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "flask-restx-"));
+    for (const [file, source] of Object.entries(files)) {
+      const full = path.join(dir, file);
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, source);
+    }
+    const { summaries } = await extractPythonProject({
+      files: findPythonFiles(dir),
+      packs: [flaskRestxFramework()],
+      roots: [dir],
+      workspaceRoot: dir,
     });
+    const semantics = summaries.find(
+      (summary) => summary.identity.name === name,
+    )?.identity.boundaryBinding?.semantics;
+    return semantics?.name === "rest" ? semantics.path : undefined;
   }
 
+  /** One file that opens with the library's imports, states the setup, and declares one route on a namespace. */
   async function pathOf(setup: string[], name: string) {
-    const units = await unitsOf(setup);
-    const unit = units.find((candidate) => candidate.identity.name === name);
-    const semantics = unit?.boundaryBinding?.semantics;
-    return semantics?.name === "rest" ? semantics.path : undefined;
+    return servedPath(
+      {
+        "main.py": [
+          "from flask import Blueprint, Flask",
+          "from flask_restx import Api, Namespace",
+          "",
+          ...setup,
+          'ns = Namespace("orders", path="/orders")',
+          "",
+          "",
+          '@ns.route("/<int:order_id>")',
+          "class OrderDetail:",
+          "    def get(self, order_id):",
+          "        return {}",
+          "",
+          "",
+          "api.add_namespace(ns)",
+          "",
+        ].join("\n"),
+      },
+      name,
+    );
   }
 
   it("puts the blueprint's prefix in front of the namespace's path", async () => {
@@ -194,5 +192,43 @@ describe("the path the shipped pack composes for a blueprint-mounted route", () 
         "OrderDetail.get",
       ),
     ).toBe("/api/v1/extra/orders/{order_id}");
+  });
+
+  it("reads a blueprint the app module imports from the module that built it", async () => {
+    expect(
+      await servedPath(
+        {
+          "shared/__init__.py": "",
+          "shared/blueprints.py": [
+            "from flask import Blueprint",
+            "",
+            'api_bp = Blueprint("api", __name__, url_prefix="/api/v1")',
+            "",
+          ].join("\n"),
+          "main.py": [
+            "from flask import Flask",
+            "from flask_restx import Api, Namespace",
+            "",
+            "from shared.blueprints import api_bp",
+            "",
+            "app = Flask(__name__)",
+            "api = Api(api_bp)",
+            'ns = Namespace("orders", path="/orders")',
+            "",
+            "",
+            '@ns.route("/<int:order_id>")',
+            "class OrderDetail:",
+            "    def get(self, order_id):",
+            "        return {}",
+            "",
+            "",
+            "api.add_namespace(ns)",
+            "app.register_blueprint(api_bp)",
+            "",
+          ].join("\n"),
+        },
+        "OrderDetail.get",
+      ),
+    ).toBe("/api/v1/orders/{order_id}");
   });
 });

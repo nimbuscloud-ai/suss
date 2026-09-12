@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 
+import { Database } from "@suss/datalog";
 import { assembleSummary } from "@suss/extractor";
 
 import { discoverUnits } from "./discovery.js";
+import { emitValueFacts } from "./facts/values.js";
+import { emitModuleImportFacts } from "./facts.js";
 import { parsePython } from "./parser.js";
 import { buildRouterIndex } from "./routers.js";
 import { bindModule } from "./scope.js";
@@ -66,24 +69,28 @@ const namespaceLike: PythonPack = {
   discovery: [namespaceClassRoute],
 };
 
+/**
+ * The router index and the facts behind it, built the way a project run
+ * builds them, since every construction a mount reads comes back through
+ * the resolution rules.
+ */
 async function unitsOf(source: string, packs: PythonPack[] = [fastapiLike]) {
   const tree = await parsePython(source);
   const module = bindModule(tree.rootNode);
+  const file = "/proj/main.py";
+  const facts = new Database();
+  emitModuleImportFacts(facts, file, module, { roots: [] });
+  emitValueFacts(facts, file, tree.rootNode);
   const routerIndex = buildRouterIndex(
-    [
-      {
-        file: "/proj/main.py",
-        displayPath: "main.py",
-        root: tree.rootNode,
-        module,
-      },
-    ],
+    [{ file, displayPath: "main.py", root: tree.rootNode, module }],
     packs,
-    { roots: [] },
+    { roots: [], facts },
   );
   return discoverUnits(tree.rootNode, module, {
     packs,
     filePath: "main.py",
+    absoluteFile: file,
+    facts,
     routerIndex,
   });
 }
@@ -2109,7 +2116,7 @@ describe("a blueprint prefix and the site the mount is written at", () => {
     ).toBe("/orders/{order_id}");
   });
 
-  it("abstains on a loop over a call even when the blueprint states a prefix", async () => {
+  it("puts the blueprint's prefix in front of a namespace a loop over a call registers", async () => {
     const units = await unitsOf(
       app([
         'bp = Blueprint("api", __name__, url_prefix="/api/v1")',
@@ -2129,10 +2136,7 @@ describe("a blueprint prefix and the site the mount is written at", () => {
       ]),
       [blueprintLike],
     );
-    expect(pathOf(units, "OrderDetail.get")).toBeNull();
-    expect(unreadTextOf(units[0])).toContain(
-      "routers read out of a call this reading does not follow",
-    );
+    expect(pathOf(units, "OrderDetail.get")).toBe("/api/v1/orders/{order_id}");
   });
 });
 

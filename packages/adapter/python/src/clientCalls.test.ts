@@ -159,6 +159,21 @@ describe("a function that calls a request function", () => {
     expect(units).toEqual([]);
   });
 
+  it("says nothing about a receiver bound to something that is not a call", async () => {
+    const units = await unitsIn(
+      [
+        "import httpclient",
+        "",
+        "client = SESSIONS[0]",
+        "",
+        "def load():",
+        '    return client.get("/orders")',
+      ].join("\n"),
+    );
+
+    expect(units).toEqual([]);
+  });
+
   it("says nothing about a call the pack declares no method for", async () => {
     const units = await unitsIn(
       [

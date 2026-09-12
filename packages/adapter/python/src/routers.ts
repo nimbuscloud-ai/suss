@@ -46,11 +46,13 @@ import {
   objectReturnedBy,
   resolveCalls,
   subjectConstructions,
+  writtenValueOf,
 } from "./facts/resolve.js";
-import { nameKeyIn, nodeId } from "./facts/values.js";
+import { nameKeyIn, nodeAt, nodeId } from "./facts/values.js";
 import { resolveModule } from "./moduleResolver.js";
 import { resolveName } from "./scope.js";
 import { stringValueOf } from "./values/evaluator.js";
+import { originOf } from "./values/origin.js";
 
 import type { Database } from "@suss/datalog";
 import type { DecoratorArg } from "./decorators.js";
@@ -678,30 +680,54 @@ export function boundModuleAt(
   return byFile.get(resolution.file) ?? null;
 }
 
+/** One file, as much of it as a name lookup needs: the path the facts key on and the tree to read back. */
+export interface ConstructionSite {
+  file: string;
+  root: PyNode;
+}
+
+/** What the rules say a name was built by. */
+export interface NamedConstruction {
+  /** The value key of the call, which is what the index keys a construction by. */
+  key: string;
+  /** The call itself, when it turned out to be written in the file that was asked. */
+  call: PyNode | null;
+}
+
 /**
- * The call a module-level name was assigned from, when the thing being called
- * was imported from one of the accepted modules. This follows a single
- * assignment back to a constructor and never a chain, the same one-hop limit
- * `classifyDecorator` uses when it traces an object.
+ * The call a name was built by, asked of the resolution rules: an
+ * assignment in this file, a name imported from the file that assigned
+ * it, or a project factory's call followed into what it returns. Null
+ * without a facts database, which is a run that emitted no value facts.
  */
 export function constructionOf(
   name: string,
   scope: Scope,
-  importModule: string[],
-): { constructorName: string; call: PyNode } | null {
+  where: ConstructionSite,
+  facts: Database | undefined,
+): NamedConstruction | null {
   const binding = resolveName(scope, name);
-  if (binding?.kind !== "assignment" || binding.value?.type !== "call") {
+  if (facts === undefined || binding === null) {
+    return null;
+  }
+  // A parameter, or a name bound some other way, cannot be keyed
+  // correctly here, so it is left alone rather than asked about under
+  // the wrong key.
+  if (binding.kind !== "assignment" && binding.kind !== "importFrom") {
     return null;
   }
 
-  const callee = field(binding.value, "function");
-  if (callee === null) {
-    return null;
-  }
-  const constructorName = importedConstructorName(callee, scope, importModule);
-  return constructorName === null
+  // A function's own names are keyed under it, so a router built inside an
+  // app factory has to be asked about there rather than at module level.
+  const nameKey = nameKeyIn(
+    where.file,
+    scope.kind === "function" ? scope.node : enclosingFunction(scope.node),
+    name,
+  );
+  const key = writtenValueOf(facts, nameKey);
+  return key === null
     ? null
-    : { constructorName, call: binding.value };
+    : { key, call: nodeAt(where.file, where.root, key) };
 }
 
 /** The prefix as the library stores it. A library that drops trailing slashes ends up with something other than what the source wrote. */
@@ -780,7 +806,7 @@ function constructorPrefix(
 /** The name, constructor, and call of a `name = <Imported>(...)` statement; null for any other statement. */
 function constructionStatement(
   stmt: PyNode,
-  scope: Scope,
+  module: ModuleBinding,
   importModule: string[],
 ): { name: string; constructorName: string; call: PyNode } | null {
   if (stmt.type !== "expression_statement") {
@@ -800,11 +826,7 @@ function constructionStatement(
     return null;
   }
 
-  const callee = field(right, "function");
-  if (callee === null) {
-    return null;
-  }
-  const constructorName = importedConstructorName(callee, scope, importModule);
+  const constructorName = constructorCalled(right, module, importModule);
   if (constructorName === null) {
     return null;
   }
@@ -813,9 +835,9 @@ function constructionStatement(
 }
 
 /**
- * The constructor a call says it is calling, when it comes from one of the
- * pack's modules. A project reaches the same constructor two ways, and
- * both have to name it:
+ * The constructor a call says it is calling, when it comes out of one of
+ * the pack's modules. A project reaches the same constructor two ways,
+ * and both have to say which one:
  *
  *   from fastapi import APIRouter   ->   APIRouter(prefix=...)
  *   import fastapi                  ->   fastapi.APIRouter(prefix=...)
@@ -823,35 +845,17 @@ function constructionStatement(
  * Null for anything else, including a same-named constructor somebody
  * else exports.
  */
-function importedConstructorName(
-  callee: PyNode,
-  scope: Scope,
-  importModule: string[],
+export function constructorCalled(
+  call: PyNode,
+  module: ModuleBinding,
+  importModule: readonly string[],
 ): string | null {
-  if (callee.type === "identifier") {
-    const binding = resolveName(scope, callee.text);
-    if (
-      binding?.kind !== "importFrom" ||
-      !importModule.includes(binding.module)
-    ) {
-      return null;
-    }
-    return binding.importedName;
-  }
-
-  if (callee.type !== "attribute") {
+  const callee = field(call, "function");
+  const origin = callee === null ? null : originOf(callee, module);
+  if (origin === null || !importModule.includes(origin.module)) {
     return null;
   }
-  const object = field(callee, "object");
-  const attribute = field(callee, "attribute");
-  if (object?.type !== "identifier" || attribute?.type !== "identifier") {
-    return null;
-  }
-  const binding = resolveName(scope, object.text);
-  if (binding?.kind !== "import" || !importModule.includes(binding.module)) {
-    return null;
-  }
-  return attribute.text;
+  return origin.name;
 }
 
 /**
@@ -898,7 +902,7 @@ function collectConstructions(
   for (const stmt of bodyStatements(bound.root)) {
     const construction = constructionStatement(
       stmt,
-      bound.module.moduleScope,
+      bound.module,
       importModule,
     );
     if (
@@ -938,22 +942,19 @@ function collectReturnedConstructions(
     if (definition.type !== "function_definition") {
       continue;
     }
-    // The binder gives every top-level def a scope of its own.
-    const scope = bound.module.scopeFor.get(definition.id);
-
     for (const inner of nestedStatements(definition)) {
-      if (inner.type !== "return_statement" || scope === undefined) {
+      if (inner.type !== "return_statement") {
         continue;
       }
       const returned = inner.namedChildren[0];
       if (returned?.type !== "call") {
         continue;
       }
-      const callee = field(returned, "function");
-      const constructorName =
-        callee === null
-          ? null
-          : importedConstructorName(callee, scope, importModule);
+      const constructorName = constructorCalled(
+        returned,
+        bound.module,
+        importModule,
+      );
       if (constructorName !== composition.routerConstructorName) {
         continue;
       }
@@ -988,10 +989,10 @@ function collectCarrierConstructions(
     bodyStatements(scan.bound.root),
     modulePosition(scan),
     scan,
-    (stmt, position) => {
+    (stmt) => {
       const construction = constructionStatement(
         stmt,
-        position.scope,
+        scan.bound.module,
         carrier.importModule,
       );
       if (construction === null) {
@@ -1017,12 +1018,10 @@ function collectCarrierConstructions(
 }
 
 /**
- * The construction a name refers to, followed through exactly one
- * variable binding: a name assigned in this file, or a name imported
- * from the file that assigned it. Anything else (an attribute like
- * `items.router`, a call, an unresolvable import) returns null, and
- * the router it meant stays unmounted, which is what makes its routes
- * abstain.
+ * The construction a name refers to, looked up by name rather than by
+ * the call the rules settle it on. A carrier read this way keeps the
+ * `reassigned` entry a name written twice leaves behind, and the rules
+ * drop such a name rather than settling it on one of the two.
  */
 function constructionNamed(
   name: string,
@@ -1062,40 +1061,14 @@ function constructionNamed(
   return resolvers[binding.kind]?.() ?? null;
 }
 
-/**
- * The construction a name is bound to through a project wrapper's
- * call, once `constructionNamed` does not find an entry by name.
- * Restricted to the two binding kinds `constructionNamed` itself
- * reads, so a parameter or another name this reading cannot key
- * correctly is left alone rather than asked about under the wrong key.
- */
-function constructionThroughFacts(
+/** The index entry for the call the rules say a name was built by. */
+function constructionIndexed(
   name: string,
   scope: Scope,
   scan: Scan,
 ): Construction | null {
-  const facts = scan.index.facts;
-  const binding = resolveName(scope, name);
-  if (facts === undefined || binding === null) {
-    return null;
-  }
-  if (binding.kind !== "assignment" && binding.kind !== "importFrom") {
-    return null;
-  }
-
-  // A function's own names are keyed under it, so a router built inside an
-  // app factory has to be asked about there rather than at module level.
-  const nameKey = nameKeyIn(
-    scan.bound.file,
-    scope.kind === "function" ? scope.node : enclosingFunction(scope.node),
-    name,
-  );
-  const constructionKey = subjectConstructions(facts, [nameKey]).get(
-    nameKey,
-  )?.constructionKey;
-  return constructionKey === undefined
-    ? null
-    : (scan.index.byValueKey.get(constructionKey) ?? null);
+  const found = constructionOf(name, scope, scan.bound, scan.index.facts);
+  return found === null ? null : (scan.index.byValueKey.get(found.key) ?? null);
 }
 
 /** What a prefix written on the mount call does to where the router is mounted. A mount that writes no prefix never gets here. */
@@ -1334,6 +1307,7 @@ function mountCallOf(
   call: PyNode;
   objectName: string;
   includerConstructorName: string;
+  includerKey: string;
   includerCall: PyNode;
 } | null {
   if (stmt.type !== "expression_statement") {
@@ -1359,20 +1333,34 @@ function mountCallOf(
     return null;
   }
 
-  // The mount only counts when whatever it is called on was itself
-  // constructed from an accepted module: `app.include_router(...)`
-  // where `app = FastAPI()`. A same-named method on some other
-  // object is not this library's mount.
-  const includer = constructionOf(objectNode.text, scope, scan.importModule);
-  if (includer === null) {
+  // The mount counts only when whatever it is called on was itself built
+  // from an accepted module, so a same-named method on some other object
+  // is not this library's mount.
+  const includer = constructionOf(
+    objectNode.text,
+    scope,
+    scan.bound,
+    scan.index.facts,
+  );
+  const includerCall = includer === null ? null : includer.call;
+  const includerConstructorName =
+    includerCall === null
+      ? null
+      : constructorCalled(includerCall, scan.bound.module, scan.importModule);
+  if (
+    includer === null ||
+    includerCall === null ||
+    includerConstructorName === null
+  ) {
     return null;
   }
 
   return {
     call,
     objectName: objectNode.text,
-    includerConstructorName: includer.constructorName,
-    includerCall: includer.call,
+    includerConstructorName,
+    includerKey: includer.key,
+    includerCall,
   };
 }
 
@@ -1398,9 +1386,12 @@ function constructionsReturnedBy(
   index: PatternIndex,
 ): ReturnedConstructions {
   const facts = index.facts;
+  // A mount is recorded only once the rules named what it was called on.
+  /* v8 ignore start */
   if (facts === undefined) {
     return { kind: "unread" };
   }
+  /* v8 ignore stop */
 
   const callKey = nodeId(target.file, target.call);
   resolveCalls(facts, [callKey]);
@@ -1454,9 +1445,7 @@ function mountedConstructions(
   }
 
   const named = (name: string): Construction[] => {
-    const construction =
-      constructionNamed(name, position.scope, scan) ??
-      constructionThroughFacts(name, position.scope, scan);
+    const construction = constructionIndexed(name, position.scope, scan);
     return construction === null ? [] : [construction];
   };
 
@@ -1569,10 +1558,9 @@ function recordMountStatement(
     position.scope,
     scan,
   );
-  const includerKey = nodeId(scan.bound.file, mountCall.includerCall);
   const state = mountStateOf(
     mountCall.includerConstructorName,
-    scan.index.byValueKey.get(includerKey) ?? null,
+    scan.index.byValueKey.get(mountCall.includerKey) ?? null,
     keywordArgs,
     objectPrefix,
     scan.composition,
@@ -1869,7 +1857,7 @@ function collectObjectPrefixes(spec: MountObjectPrefix, scan: Scan): void {
   for (const stmt of bodyStatements(scan.bound.root)) {
     const construction = constructionStatement(
       stmt,
-      scan.bound.module.moduleScope,
+      scan.bound.module,
       scan.importModule,
     );
     if (

@@ -31,7 +31,7 @@ import {
 } from "./paths/effects.js";
 import { raisedResponses } from "./paths/raisedResponses.js";
 import { functionNamed } from "./reach/resolveCallee.js";
-import { boundModuleAt, constructionOf } from "./routers.js";
+import { boundModuleAt, constructionOf, constructorCalled } from "./routers.js";
 import { resolveName } from "./scope.js";
 
 import type { WrapperReference } from "@suss/behavioral-ir";
@@ -224,17 +224,20 @@ export class PythonWrapperIndex {
 
   private ownRoutesOf(query: RouteWrapperQuery): Registered[] {
     const site = this.objectSiteOf(query);
-    if (site === null) {
+    const bound = site === null ? undefined : this.filesByPath.get(site.file);
+    if (site === null || bound === undefined) {
       return [];
     }
     for (const form of query.pattern.wrappers ?? []) {
-      const match = registrarOf(site.name, site.scope, {
-        pack: query.pack,
-        pattern: query.pattern,
-        form,
-      });
+      const match = registrarOf(
+        site.name,
+        site.scope,
+        bound,
+        this.options.facts,
+        { pack: query.pack, pattern: query.pattern, form },
+      );
       if (match !== null && match.registrar.covers === "ownRoutes") {
-        return this.ownRoutes.get(constructionKey(site.file, match.call)) ?? [];
+        return this.ownRoutes.get(match.key) ?? [];
       }
     }
     return [];
@@ -311,6 +314,8 @@ function runOrder(form: PyWrapperForm): number {
 
 interface RegistrarMatch {
   registrar: PyWrapperRegistrar;
+  /** The value key of the construction call, which is what a registration is filed under. */
+  key: string;
   call: PyNode;
 }
 
@@ -322,6 +327,8 @@ interface RegistrarMatch {
 function registrarOf(
   name: string,
   scope: Scope,
+  where: BoundPythonFile,
+  facts: Database | undefined,
   declared: FormOf,
 ): RegistrarMatch | null {
   const modules = [
@@ -330,20 +337,21 @@ function registrarOf(
       (registrar) => registrar.importModule ?? [],
     ),
   ];
-  const construction = constructionOf(name, scope, modules);
-  if (construction === null) {
+  // The keyword list a dependency form reads is written on the call
+  // itself, so a construction in another file gives nothing to read.
+  const construction = constructionOf(name, scope, where, facts);
+  const call = construction === null ? null : construction.call;
+  if (construction === null || call === null) {
     return null;
   }
+
+  const constructorName = constructorCalled(call, where.module, modules);
   const registrar = declared.form.registrars.find(
-    (candidate) => candidate.constructorName === construction.constructorName,
+    (candidate) => candidate.constructorName === constructorName,
   );
   return registrar === undefined
     ? null
-    : { registrar, call: construction.call };
-}
-
-function constructionKey(file: string, call: PyNode): string {
-  return `${file}#${call.startIndex}`;
+    : { registrar, key: construction.key, call };
 }
 
 /** Every registration one file writes, through every form the pack declares. */
@@ -395,7 +403,13 @@ function registerConstructorDependencies(
     if (left?.type !== "identifier") {
       continue;
     }
-    const match = registrarOf(left.text, scope, declared);
+    const match = registrarOf(
+      left.text,
+      scope,
+      file,
+      index.options.facts,
+      declared,
+    );
     if (match === null) {
       continue;
     }
@@ -407,11 +421,7 @@ function registerConstructorDependencies(
     for (const name of dependencyNamesIn(listed.node, form)) {
       const target = index.functionCalled(file.file, name);
       if (target !== null) {
-        index.register(
-          coverageOf(match, file, declared.pack),
-          target,
-          declared,
-        );
+        index.register(coverageOf(match, declared.pack), target, declared);
       }
     }
   }
@@ -419,12 +429,11 @@ function registerConstructorDependencies(
 
 function coverageOf(
   match: RegistrarMatch,
-  file: BoundPythonFile,
   pack: PythonPack,
 ): { kind: "everyRoute"; pack: string } | { kind: "ownRoutes"; key: string } {
   return match.registrar.covers === "everyRoute"
     ? { kind: "everyRoute", pack: pack.name }
-    : { kind: "ownRoutes", key: constructionKey(file.file, match.call) };
+    : { kind: "ownRoutes", key: match.key };
 }
 
 /** `@app.middleware("http")` and the like, on a function written anywhere in the file. */
@@ -452,13 +461,19 @@ function registerDecorated(
         ) {
           continue;
         }
-        const match = registrarOf(receiver.object.text, scope, declared);
+        const match = registrarOf(
+          receiver.object.text,
+          scope,
+          file,
+          index.options.facts,
+          declared,
+        );
         const name = field(definition, "name")?.text;
         if (match === null || name === undefined) {
           continue;
         }
         index.register(
-          coverageOf(match, file, declared.pack),
+          coverageOf(match, declared.pack),
           { file, node: definition, name, exportPath: [name] },
           declared,
         );
