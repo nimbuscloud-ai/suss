@@ -1338,6 +1338,9 @@ function extractFromSourceFile(
           raw.graphqlUnresolvedFragments =
             unit.operationInfo.unresolvedFragments;
         }
+        if (unit.operationInfo.ambiguousFragments !== undefined) {
+          raw.graphqlAmbiguousFragments = unit.operationInfo.ambiguousFragments;
+        }
         if (unit.operationInfo.unresolved !== undefined) {
           raw.graphqlUnresolvedDocument = unit.operationInfo.unresolved;
         }

@@ -378,6 +378,9 @@ export interface RawCodeStructure {
   /** Fragment spreads in `graphqlDocument` with no definition in it, so a
    * partially read document is marked rather than passed off as whole. */
   graphqlUnresolvedFragments?: string[];
+  /** Spreads in `graphqlDocument` the project defines more than once, with
+   * different bodies, so no definition of them could be used. */
+  graphqlAmbiguousFragments?: string[];
   /** Set when a document reference was recognized but its body could not be
    * read, so an unreadable document is accounted for instead of dropped. */
   graphqlUnresolvedDocument?: { reference: string; reason: string };
@@ -704,6 +707,9 @@ function buildGraphqlMetadataValue(
   }
   if (raw.graphqlUnresolvedFragments !== undefined) {
     graphql.unresolvedFragments = raw.graphqlUnresolvedFragments;
+  }
+  if (raw.graphqlAmbiguousFragments !== undefined) {
+    graphql.ambiguousFragments = raw.graphqlAmbiguousFragments;
   }
   if (raw.graphqlUnresolvedDocument !== undefined) {
     graphql.unresolvedDocument = raw.graphqlUnresolvedDocument;

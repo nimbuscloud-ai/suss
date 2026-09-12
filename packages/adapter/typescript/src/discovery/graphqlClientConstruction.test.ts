@@ -1,7 +1,3 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-
 import { describe, expect, it } from "vitest";
 
 import {
@@ -472,74 +468,5 @@ describe("stampGraphqlClientRefs", () => {
     const summary = operationSummary();
     stampGraphqlClientRefs([summary], [file], [clientPack], undefined);
     expect(readGraphqlMetadata(summary)?.client).toBeUndefined();
-  });
-});
-
-describe("a fragment the codegen client preset registers", () => {
-  it("resolves a spread whose definition is a document of its own", () => {
-    const project = createTestProject();
-    const file = project.createSourceFile(
-      "src/pet.tsx",
-      `
-      import { gql } from "../gql";
-      gql(\`
-        fragment PetFields on Pet {
-          id
-          name
-        }
-      \`);
-      export const GET_PET = gql(\`
-        query GetPet { pet { ...PetFields } }
-      \`);
-    `,
-    );
-
-    const summary = danglingSpreadSummary();
-    stampGraphqlClientRefs([summary], [file], [clientPack], undefined);
-
-    const metadata = readGraphqlMetadata(summary);
-    expect(metadata?.unresolvedFragments).toBeUndefined();
-    expect(metadata?.fragmentRegistry).toBeUndefined();
-  });
-
-  it("keeps a spread nothing in the project defines", () => {
-    const project = createTestProject();
-    const file = project.createSourceFile(
-      "src/other.tsx",
-      `
-      import { gql } from "../gql";
-      gql(\`fragment OwnerFields on Owner { id }\`);
-    `,
-    );
-
-    const summary = danglingSpreadSummary();
-    stampGraphqlClientRefs([summary], [file], [clientPack], undefined);
-
-    expect(readGraphqlMetadata(summary)?.unresolvedFragments).toEqual([
-      "PetFields",
-    ]);
-  });
-});
-
-describe("a fragment written in a graphql file", () => {
-  it("registers for an operation that spreads it", () => {
-    const project = createTestProject();
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-gql-file-"));
-    fs.writeFileSync(
-      path.join(dir, "pet-fragment.graphql"),
-      "fragment PetFields on Pet { id name }\n",
-    );
-    const file = project.createSourceFile(
-      path.join(dir, "pet.tsx"),
-      `
-      import { gql } from "../gql";
-      export const GET_PET = gql(\`query GetPet { pet { ...PetFields } }\`);
-    `,
-    );
-
-    const summary = danglingSpreadSummary();
-    stampGraphqlClientRefs([summary], [file], [clientPack], undefined);
-
-    expect(readGraphqlMetadata(summary)?.unresolvedFragments).toBeUndefined();
   });
 });

@@ -592,6 +592,89 @@ describe("pairGraphqlOperations — meta-fields and fragments", () => {
     expect(unchecked[0].description).toContain("were not checked");
   });
 
+  it("keeps the info finding for an ambiguous spread with no registry", () => {
+    const op = operation(
+      "usePet",
+      "GetPet",
+      "query",
+      `query GetPet { pet(id: "1") { ...PetFields ...OwnerFields } }`,
+    );
+    op.metadata = {
+      graphql: {
+        document: `query GetPet { pet(id: "1") { ...PetFields ...OwnerFields } }`,
+        unresolvedFragments: ["OwnerFields", "PetFields"],
+        ambiguousFragments: ["PetFields"],
+        fragmentRegistry: "absent",
+      },
+    };
+    const result = pairGraphqlOperations([op]);
+    const thrown = result.findings.filter(
+      (finding) => finding.kind === "graphqlUnknownFragment",
+    );
+    expect(thrown).toHaveLength(1);
+    expect(thrown[0].description).toContain("Unknown fragment: OwnerFields");
+    expect(thrown[0].description).not.toContain("PetFields");
+    const unchecked = result.findings.filter(
+      (finding) => finding.kind === "lowConfidence",
+    );
+    expect(unchecked).toHaveLength(1);
+    expect(unchecked[0].description).toContain(
+      '"...PetFields" is defined more than once in the project',
+    );
+  });
+
+  it("says so when the project defines the spread more than one way", () => {
+    const petResolver = resolver("Query", "pet", "apollo", {
+      schemaSdl: petSchemaSdl,
+    });
+    const op = operation(
+      "usePet",
+      "GetPet",
+      "query",
+      `query GetPet { pet(id: "1") { ...PetFields } }`,
+    );
+    op.metadata = {
+      graphql: {
+        document: `query GetPet { pet(id: "1") { ...PetFields } }`,
+        unresolvedFragments: ["PetFields"],
+        ambiguousFragments: ["PetFields"],
+      },
+    };
+    const result = pairGraphqlOperations([petResolver, op]);
+    const unchecked = result.findings.filter(
+      (finding) => finding.kind === "lowConfidence",
+    );
+    expect(unchecked).toHaveLength(1);
+    expect(unchecked[0].description).toContain(
+      '"...PetFields" is defined more than once in the project, with different bodies',
+    );
+  });
+
+  it("tells an ambiguous spread from an undefined one in the same finding", () => {
+    const op = operation(
+      "usePet",
+      "GetPet",
+      "query",
+      `query GetPet { pet(id: "1") { ...PetFields ...OwnerFields } }`,
+    );
+    op.metadata = {
+      graphql: {
+        document: `query GetPet { pet(id: "1") { ...PetFields ...OwnerFields } }`,
+        unresolvedFragments: ["OwnerFields", "PetFields"],
+        ambiguousFragments: ["PetFields"],
+        fragmentRegistry: "unknown",
+      },
+    };
+    const result = pairGraphqlOperations([op]);
+    const unchecked = result.findings.filter(
+      (finding) => finding.kind === "lowConfidence",
+    );
+    expect(unchecked).toHaveLength(1);
+    expect(unchecked[0].description).toContain(
+      '"...PetFields" is defined more than once in the project, with different bodies, and no definition of "...OwnerFields" was found',
+    );
+  });
+
   it("reports a dangling spread as an error when no fragment registry is configured", () => {
     const petResolver = resolver("Query", "pet", "apollo", {
       schemaSdl: petSchemaSdl,
