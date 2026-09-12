@@ -193,10 +193,6 @@ const EXEMPT = new Map([
     "importsModule, receiverTypeName",
   ],
   [
-    "packages/adapter/typescript/src/contract.ts",
-    "resolveContractObject, extractEndpointContract, readContract, readContractForClientCall",
-  ],
-  [
     "packages/adapter/typescript/src/discovery/clientCall.ts",
     "discoverClientCalls, clientReceiverCheckFor, resolvedImportLocalName",
   ],
