@@ -13,18 +13,22 @@
 
 import { Node as N } from "ts-morph";
 
-import { functionTargetOf } from "@suss/adapter-typescript";
+import {
+  functionValueOf,
+  propertiesOf,
+  propertyFunctionOf,
+  propertyNameOf,
+} from "@suss/adapter-typescript";
 
 import { TRIGGERS } from "./handlers.js";
 
-import type { FunctionRoot } from "@suss/adapter-typescript";
-import type { DiscoveredCustomUnit, PatternPack } from "@suss/extractor";
 import type {
-  Expression,
-  Node,
-  ObjectLiteralExpression,
-  SourceFile,
-} from "ts-morph";
+  FunctionRoot,
+  ResolutionStore,
+  TsDiscoveryContext,
+} from "@suss/adapter-typescript";
+import type { DiscoveredCustomUnit, PatternPack } from "@suss/extractor";
+import type { Node, ObjectLiteralExpression, SourceFile } from "ts-morph";
 
 /** Metadata namespace stamped on every unit this pack discovers. */
 export const METADATA_NAMESPACE = "cloudflareWorkers";
@@ -50,9 +54,13 @@ export interface CloudflareWorkersDiscoveryOptions {
 export function cloudflareWorkersDiscovery(
   options: CloudflareWorkersDiscoveryOptions = {},
 ): NonNullable<PatternPack["discoverUnits"]> {
-  return (sourceFile) => {
+  return (sourceFile, ctx) => {
     const sf = sourceFile as SourceFile;
-    const triggers = [...defaultExportTriggers(sf), ...listenerTriggers(sf)];
+    const { resolution } = ctx as TsDiscoveryContext;
+    const triggers = [
+      ...defaultExportTriggers(sf, resolution),
+      ...listenerTriggers(sf, resolution),
+    ];
 
     const units: DiscoveredCustomUnit[] = [];
     const taken = new Set<string>();
@@ -102,116 +110,72 @@ function unitFor(
  * skips this export, since it lists only the ones whose declaration is
  * a function, and an entrypoint's is an object.
  */
-function defaultExportTriggers(sf: SourceFile): Trigger[] {
-  const literal = defaultExportObject(sf);
+function defaultExportTriggers(
+  sf: SourceFile,
+  resolution: ResolutionStore,
+): Trigger[] {
+  const literal = defaultExportObject(sf, resolution);
   if (literal === null) {
     return [];
   }
 
   const triggers: Trigger[] = [];
-  for (const property of literal.getProperties()) {
-    const found = triggerOfProperty(property);
-    if (found !== null) {
-      triggers.push(found);
+  for (const property of propertiesOf(literal, resolution)) {
+    const name = propertyNameOf(property);
+    if (name === null || TRIGGERS[name] === undefined) {
+      continue;
+    }
+    const func = propertyFunctionOf(property, resolution);
+    if (func !== null) {
+      triggers.push({ name, func, registration: "default-export" });
     }
   }
   return triggers;
 }
 
-/** One property of the entrypoint object, when it defines a trigger. */
-function triggerOfProperty(property: Node): Trigger | null {
-  const named = propertyName(property);
-  if (named === null || TRIGGERS[named] === undefined) {
-    return null;
+/**
+ * The function each trigger property of the entrypoint refers to,
+ * written into the object or named there. The env-binding recognizer
+ * asks this of every property read in the file, so the answer is kept
+ * for as long as the run's store is.
+ */
+export function entrypointTriggerFunctions(
+  sf: SourceFile,
+  resolution: ResolutionStore,
+): Set<Node> {
+  let perRun = triggerFunctionsPerRun.get(resolution);
+  if (perRun === undefined) {
+    perRun = new Map();
+    triggerFunctionsPerRun.set(resolution, perRun);
   }
-  const func = functionOfProperty(property);
-  return func === null
-    ? null
-    : { name: named, func, registration: "default-export" };
+  const filePath = sf.getFilePath();
+  let found = perRun.get(filePath);
+  if (found === undefined) {
+    found = new Set(
+      defaultExportTriggers(sf, resolution).map((trigger) => trigger.func),
+    );
+    perRun.set(filePath, found);
+  }
+  return found;
 }
 
-function propertyName(property: Node): string | null {
-  if (N.isMethodDeclaration(property) || N.isPropertyAssignment(property)) {
-    const name = property.getNameNode();
-    if (N.isIdentifier(name)) {
-      return name.getText();
+const triggerFunctionsPerRun = new WeakMap<
+  ResolutionStore,
+  Map<string, Set<Node>>
+>();
+
+/** The object the file default-exports, written there or named. */
+export function defaultExportObject(
+  sf: SourceFile,
+  resolution: ResolutionStore,
+): ObjectLiteralExpression | null {
+  for (const exported of resolution.exportsOf(sf).get("default") ?? []) {
+    const object = resolution.resolveObject(exported);
+    if (object !== null && N.isObjectLiteralExpression(object)) {
+      return object;
     }
-    return N.isStringLiteral(name) ? name.getLiteralValue() : null;
-  }
-  return N.isShorthandPropertyAssignment(property) ? property.getName() : null;
-}
-
-function functionOfProperty(property: Node): FunctionRoot | null {
-  if (N.isMethodDeclaration(property)) {
-    return property as FunctionRoot;
-  }
-  if (N.isPropertyAssignment(property)) {
-    const written = property.getInitializer();
-    return written === undefined ? null : functionBehind(written);
-  }
-  if (N.isShorthandPropertyAssignment(property)) {
-    return functionBehind(property.getNameNode());
   }
   return null;
-}
-
-/**
- * The function an expression comes down to: written in place, or
- * declared elsewhere in this project under the name it refers to.
- */
-function functionBehind(expression: Node): FunctionRoot | null {
-  if (N.isArrowFunction(expression) || N.isFunctionExpression(expression)) {
-    return expression as FunctionRoot;
-  }
-  if (!N.isIdentifier(expression)) {
-    return null;
-  }
-  const target = functionTargetOf(expression);
-  return target === null ? null : target.func;
-}
-
-/**
- * The object literal the file default-exports, through however many
- * type assertions the entrypoint is written with.
- */
-function defaultExportObject(sf: SourceFile): ObjectLiteralExpression | null {
-  const assignment = sf.getExportAssignment((a) => !a.isExportEquals());
-  if (assignment === undefined) {
-    return null;
-  }
-  return objectBehind(unwrap(assignment.getExpression()), sf);
-}
-
-/** An expression with its `satisfies`, `as` and parentheses taken off. */
-function unwrap(expression: Expression): Expression {
-  let inner = expression;
-  while (
-    N.isSatisfiesExpression(inner) ||
-    N.isAsExpression(inner) ||
-    N.isParenthesizedExpression(inner)
-  ) {
-    inner = inner.getExpression();
-  }
-  return inner;
-}
-
-function objectBehind(
-  expression: Expression,
-  sf: SourceFile,
-): ObjectLiteralExpression | null {
-  if (N.isObjectLiteralExpression(expression)) {
-    return expression;
-  }
-  if (!N.isIdentifier(expression)) {
-    return null;
-  }
-  const declaration = sf.getVariableDeclaration(expression.getText());
-  const written = declaration?.getInitializer();
-  if (written === undefined) {
-    return null;
-  }
-  const inner = unwrap(written);
-  return N.isObjectLiteralExpression(inner) ? inner : null;
 }
 
 /**
@@ -219,14 +183,17 @@ function objectBehind(
  * string literal is read: an event name computed at run time gives no
  * trigger anyone can pair against.
  */
-function listenerTriggers(sf: SourceFile): Trigger[] {
+function listenerTriggers(
+  sf: SourceFile,
+  resolution: ResolutionStore,
+): Trigger[] {
   const triggers: Trigger[] = [];
   sf.forEachDescendant((node) => {
     const registered = listenerAt(node);
     if (registered === null) {
       return;
     }
-    const func = functionBehind(registered.handler);
+    const func = functionValueOf(registered.handler, resolution);
     if (func !== null) {
       triggers.push({
         name: registered.event,

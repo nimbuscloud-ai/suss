@@ -21,7 +21,7 @@ import { callsByOriginName } from "./importedCalls.js";
 import { namedImportsOf } from "./importScan.js";
 import {
   objectLiteralOf,
-  propertyValueOf,
+  propertyOf,
   stringValueOf,
   writtenNodeOf,
 } from "./resolveValue.js";
@@ -283,9 +283,7 @@ function constructionRegistryStatus(
     return "unknown";
   }
 
-  const cacheProperty = options.getProperty(spec.cacheProperty);
-  const cacheExpr =
-    cacheProperty === undefined ? null : propertyValueOf(cacheProperty);
+  const cacheExpr = propertyOf(options, spec.cacheProperty, resolution);
   if (cacheExpr === null) {
     return "unknown";
   }

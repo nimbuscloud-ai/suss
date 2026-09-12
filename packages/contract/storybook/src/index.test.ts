@@ -32,8 +32,8 @@ describe("generateSummariesFromStories — CSF3 basics", () => {
     if (labelInput?.type === "parameter") {
       expect(labelInput.role).toBe("label");
       if (labelInput.shape?.type === "ref") {
-        // The raw source text of the arg value, including quotes.
-        expect(labelInput.shape.name).toBe('"Click me"');
+        // The string the arg is set to, not the source text around it.
+        expect(labelInput.shape.name).toBe("Click me");
       } else {
         throw new Error("expected ref shape");
       }
@@ -141,14 +141,29 @@ describe("generateSummariesFromStories — shape variants", () => {
       { projectRoot: repoRoot },
     );
     const def = summaries.find((s) => s.identity.name === "Counter.Default");
-    // `args: { label, initial: 0 }`, `label` is shorthand.
+    // `args: { label, initial: 0 }`, `label` is shorthand for the
+    // module's `const label = "primary"`.
     const labelInput = def?.inputs.find(
       (i) => i.type === "parameter" && i.name === "label",
     );
     expect(labelInput).toBeDefined();
     if (labelInput?.type === "parameter" && labelInput.shape?.type === "ref") {
-      expect(labelInput.shape.name).toBe("label");
+      expect(labelInput.shape.name).toBe("primary");
     }
+  });
+
+  it("captures args spread in from another object", () => {
+    const summaries = generateSummariesFromStories(
+      [path.join(fixturesDir, "Counter.stories.tsx")],
+      { projectRoot: repoRoot },
+    );
+    const def = summaries.find((s) => s.identity.name === "Counter.Default");
+    // `args: { label, ...startingPoint }`, where startingPoint sets
+    // `initial`.
+    const initial = def?.inputs.find(
+      (i) => i.type === "parameter" && i.name === "initial",
+    );
+    expect(initial).toBeDefined();
   });
 
   it("handles `export default { ... }` without an intermediate const", () => {

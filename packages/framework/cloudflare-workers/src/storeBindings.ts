@@ -14,12 +14,13 @@
 
 import { Node as N } from "ts-morph";
 
-import { readName } from "@suss/adapter-typescript";
+import { readName, stringValueOf } from "@suss/adapter-typescript";
 import { storageBinding } from "@suss/behavioral-ir";
 import { readSqlAccess } from "@suss/sql";
 
 import { isTriggerEnvArgument } from "./envBindings.js";
 
+import type { ResolutionStore } from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
 import type { CallExpression, Node, PropertyAccessExpression } from "ts-morph";
 
@@ -34,11 +35,19 @@ interface StoreAccess {
 
 type Resolve = (value: Node) => Node | null;
 
+/** What the recognizer was handed for reading the values at a call. */
+interface Reading {
+  /** One hop from a name to what it was written as, for `readName`. */
+  resolve: Resolve;
+  /** The run's store, for the adapter's shared resolvers. */
+  resolution: ResolutionStore | undefined;
+}
+
 /** Reads one store's method call, or null for a method it is not. */
 type OperationReader = (
   method: string,
   call: CallExpression,
-  resolve: Resolve,
+  reading: Reading,
 ) => StoreAccess | null;
 
 /** KV and R2 spell the same five operations, and the kinds line up. */
@@ -60,7 +69,7 @@ const KEYED_OPERATIONS = new Set([
   "delete",
 ]);
 
-const objectStoreAccess: OperationReader = (method, call, resolve) => {
+const objectStoreAccess: OperationReader = (method, call, reading) => {
   const kind = OBJECT_OPERATIONS[method];
   if (kind === undefined) {
     return null;
@@ -68,7 +77,10 @@ const objectStoreAccess: OperationReader = (method, call, resolve) => {
   const argument = call.getArguments()[0];
   const selector =
     argument !== undefined && KEYED_OPERATIONS.has(method)
-      ? readName(argument, { resolve, unsettled: "reference" })
+      ? readName(argument, {
+          resolve: reading.resolve,
+          unsettled: "reference",
+        })
       : null;
   return { kind, ...(selector !== null ? { selector } : {}) };
 };
@@ -85,11 +97,15 @@ const D1_STATEMENT_METHODS = new Set(["prepare", "exec"]);
  * writes. A statement nobody can read settles neither, and the call
  * goes unrecorded rather than recorded with a guessed kind.
  */
-const d1Access: OperationReader = (method, call, resolve) => {
+const d1Access: OperationReader = (method, call, reading) => {
   if (!D1_STATEMENT_METHODS.has(method)) {
     return null;
   }
-  const sql = literalText(call.getArguments()[0], resolve);
+  const statement = call.getArguments()[0];
+  const sql =
+    statement === undefined
+      ? null
+      : stringValueOf(statement, reading.resolution);
   if (sql === null) {
     return null;
   }
@@ -116,6 +132,7 @@ const STORES: Record<string, { storageSystem: string; read: OperationReader }> =
 
 interface RecognizerContext {
   resolveWrittenValue?: (value: Node) => Node | null;
+  resolution?: ResolutionStore;
 }
 
 export function storeBindingRecognizer(
@@ -123,14 +140,17 @@ export function storeBindingRecognizer(
   ctx: unknown,
 ): Effect[] | null {
   const callNode = call as CallExpression;
-  const resolve =
-    (ctx as RecognizerContext).resolveWrittenValue ?? (() => null);
+  const given = ctx as RecognizerContext;
+  const reading: Reading = {
+    resolve: given.resolveWrittenValue ?? (() => null),
+    resolution: given.resolution,
+  };
 
   const callee = callNode.getExpression();
   if (!N.isPropertyAccessExpression(callee)) {
     return null;
   }
-  const binding = boundReceiver(callee.getExpression(), resolve);
+  const binding = boundReceiver(callee.getExpression(), reading);
   if (binding === null) {
     return null;
   }
@@ -139,7 +159,7 @@ export function storeBindingRecognizer(
     return null;
   }
   const method = callee.getName();
-  const access = store.read(method, callNode, resolve);
+  const access = store.read(method, callNode, reading);
   if (access === null) {
     return null;
   }
@@ -182,10 +202,15 @@ interface BoundReceiver {
  * something else. A receiver written into a variable first
  * (`const kv = env.SESSIONS`) is followed back to where it was built.
  */
-function boundReceiver(subject: Node, resolve: Resolve): BoundReceiver | null {
+function boundReceiver(
+  subject: Node,
+  reading: Reading,
+): BoundReceiver | null {
   let receiver: Node = subject;
   if (N.isIdentifier(receiver)) {
-    const written = declaredInitializer(receiver) ?? resolve(receiver);
+    // The store's own resolution stops at module scope, and a handler
+    // body's `const kv = env.SESSIONS` is where these are written.
+    const written = declaredInitializer(receiver) ?? reading.resolve(receiver);
     if (written !== null && written !== receiver) {
       receiver = written;
     }
@@ -194,7 +219,7 @@ function boundReceiver(subject: Node, resolve: Resolve): BoundReceiver | null {
     return null;
   }
   const env = receiver.getExpression();
-  if (!N.isIdentifier(env) || !isTriggerEnvArgument(env)) {
+  if (!N.isIdentifier(env) || !isTriggerEnvArgument(env, reading.resolution)) {
     return null;
   }
   const typeName = declaredTypeName(receiver);
@@ -204,11 +229,7 @@ function boundReceiver(subject: Node, resolve: Resolve): BoundReceiver | null {
   return { name: receiver.getName(), typeName };
 }
 
-/**
- * What a variable was written as, for a binding held in a local const
- * first. The shared resolver follows module-level bindings, and a
- * handler body's own const is one symbol lookup away.
- */
+/** What a variable was written as, for a binding named in the body first. */
 function declaredInitializer(identifier: Node): Node | null {
   for (const declaration of identifier.getSymbol()?.getDeclarations() ?? []) {
     if (N.isVariableDeclaration(declaration)) {
@@ -230,24 +251,6 @@ function declaredTypeName(receiver: PropertyAccessExpression): string | null {
     if (typeNode !== undefined) {
       return typeNode.getText();
     }
-  }
-  return null;
-}
-
-/** A string the argument states, followed through const bindings. */
-function literalText(
-  argument: Node | undefined,
-  resolve: Resolve,
-): string | null {
-  if (argument === undefined) {
-    return null;
-  }
-  const written = resolve(argument) ?? argument;
-  if (
-    N.isStringLiteral(written) ||
-    N.isNoSubstitutionTemplateLiteral(written)
-  ) {
-    return written.getLiteralValue();
   }
   return null;
 }

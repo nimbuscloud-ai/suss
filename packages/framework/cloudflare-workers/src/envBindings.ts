@@ -15,10 +15,13 @@
 
 import { Node as N } from "ts-morph";
 
+import { propertyFunctionOf, propertyNameOf } from "@suss/adapter-typescript";
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
 
+import { entrypointTriggerFunctions } from "./discovery.js";
 import { TRIGGERS } from "./handlers.js";
 
+import type { ResolutionStore } from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
 import type { AccessRecognizer } from "@suss/extractor";
 import type { Node, ParameterDeclaration } from "ts-morph";
@@ -46,8 +49,9 @@ export function envBindingRecognizer(
   options: EnvBindingRecognizerOptions = {},
 ): AccessRecognizer {
   const instanceName = options.scriptName ?? "<unknown>";
-  return (access) => {
-    const read = envReadAt(access as Node);
+  return (access, ctx) => {
+    const { resolution } = ctx as { resolution?: ResolutionStore };
+    const read = envReadAt(access as Node, resolution);
     return read === null ? null : [configReadEffect(read, instanceName)];
   };
 }
@@ -57,12 +61,15 @@ interface EnvRead {
   defaulted: boolean;
 }
 
-function envReadAt(node: Node): EnvRead | null {
+function envReadAt(
+  node: Node,
+  resolution: ResolutionStore | undefined,
+): EnvRead | null {
   if (!N.isPropertyAccessExpression(node)) {
     return null;
   }
   const subject = node.getExpression();
-  if (!N.isIdentifier(subject) || !isTriggerEnvArgument(subject)) {
+  if (!N.isIdentifier(subject) || !isTriggerEnvArgument(subject, resolution)) {
     return null;
   }
   const name = node.getName();
@@ -70,11 +77,14 @@ function envReadAt(node: Node): EnvRead | null {
 }
 
 /** Whether an identifier refers to the env argument of a trigger. */
-export function isTriggerEnvArgument(subject: Node): boolean {
+export function isTriggerEnvArgument(
+  subject: Node,
+  resolution: ResolutionStore | undefined,
+): boolean {
   for (const definition of subject.getSymbol()?.getDeclarations() ?? []) {
     if (
       N.isParameterDeclaration(definition) &&
-      isTriggerEnvParameter(definition)
+      isTriggerEnvParameter(definition, resolution)
     ) {
       return true;
     }
@@ -82,7 +92,10 @@ export function isTriggerEnvArgument(subject: Node): boolean {
   return false;
 }
 
-function isTriggerEnvParameter(parameter: ParameterDeclaration): boolean {
+function isTriggerEnvParameter(
+  parameter: ParameterDeclaration,
+  resolution: ResolutionStore | undefined,
+): boolean {
   const owner = parameter.getParent() as Node & {
     getParameters?: () => ParameterDeclaration[];
   };
@@ -90,90 +103,41 @@ function isTriggerEnvParameter(parameter: ParameterDeclaration): boolean {
   if (parameters[ENV_PARAMETER_POSITION] !== parameter) {
     return false;
   }
-  return isTriggerBody(owner);
+  return isTriggerBody(owner, resolution);
 }
 
 /**
- * Whether a function is one of the entrypoint's triggers. A method or a
- * property of the object a file default-exports is one, and so is a
- * named function that object refers to.
+ * Whether a function is one of the entrypoint's triggers. Given the
+ * run's store, discovery has already settled which functions those are,
+ * wherever each was written. Without one, a handler written into the
+ * object is all this can tell apart from any other function, and taking
+ * more would make every second parameter in the file a set of bindings.
  */
-function isTriggerBody(owner: Node): boolean {
-  const named = triggerNameOf(owner);
-  if (named !== null) {
-    return TRIGGERS[named] !== undefined;
+function isTriggerBody(
+  owner: Node,
+  resolution: ResolutionStore | undefined,
+): boolean {
+  if (resolution !== undefined) {
+    return entrypointTriggerFunctions(owner.getSourceFile(), resolution).has(
+      owner,
+    );
   }
-  return referredToByEntrypoint(owner);
+  return writtenUnderTriggerName(owner);
 }
 
-/** The property name a function is written under, when it is written under one. */
-function triggerNameOf(owner: Node): string | null {
-  if (N.isMethodDeclaration(owner)) {
-    const name = owner.getNameNode();
-    return N.isIdentifier(name) ? name.getText() : null;
-  }
-  const parent = owner.getParent();
-  if (parent !== undefined && N.isPropertyAssignment(parent)) {
-    const name = parent.getNameNode();
-    return N.isIdentifier(name) ? name.getText() : null;
-  }
-  return null;
-}
-
-/**
- * Whether the file's default export puts this function under a trigger
- * name. A service that writes its handler as a top-level `async function
- * handleFetch(request, env)` and exports `{ fetch: handleFetch }` reads
- * its bindings there, and the read is on the same channel.
- *
- * Only the entrypoint's own properties are read. Everything the handler
- * body mentions is inside that expression too, and taking those would
- * make every second parameter in the file a set of bindings.
- */
-function referredToByEntrypoint(owner: Node): boolean {
-  const name = declaredName(owner);
-  if (name === null) {
+/** Whether the property this function is written under names a trigger. */
+function writtenUnderTriggerName(owner: Node): boolean {
+  const property: Node | undefined = N.isMethodDeclaration(owner)
+    ? owner
+    : owner.getParent();
+  if (property === undefined) {
     return false;
   }
-  const assignment = owner
-    .getSourceFile()
-    .getExportAssignment((a) => !a.isExportEquals());
-  if (assignment === undefined) {
+  const name = propertyNameOf(property);
+  if (name === null || TRIGGERS[name] === undefined) {
     return false;
   }
-  return triggerReferences(assignment.getExpression()).has(name);
-}
-
-function declaredName(owner: Node): string | null {
-  if (N.isFunctionDeclaration(owner)) {
-    return owner.getName() ?? null;
-  }
-  const parent = owner.getParent();
-  return parent !== undefined && N.isVariableDeclaration(parent)
-    ? parent.getName()
-    : null;
-}
-
-/** The function each trigger property of an entrypoint object refers to. */
-function triggerReferences(expression: Node): Set<string> {
-  const names = new Set<string>();
-  if (!N.isObjectLiteralExpression(expression)) {
-    return names;
-  }
-  for (const property of expression.getProperties()) {
-    if (!N.isPropertyAssignment(property)) {
-      continue;
-    }
-    const key = property.getNameNode();
-    if (!N.isIdentifier(key) || TRIGGERS[key.getText()] === undefined) {
-      continue;
-    }
-    const written = property.getInitializer();
-    if (written !== undefined && N.isIdentifier(written)) {
-      names.add(written.getText());
-    }
-  }
-  return names;
+  return propertyFunctionOf(property, undefined) === owner;
 }
 
 /**
