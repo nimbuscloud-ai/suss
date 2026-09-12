@@ -3,6 +3,7 @@
 //   - `{...} satisfies Meta<typeof Counter>` on both meta and stories.
 //   - A story with no `args` at all.
 //   - A shorthand property in args.
+//   - Args spread in from an object declared beside the story.
 
 import type { Counter } from "../react/Counter";
 
@@ -11,6 +12,10 @@ type StoryObj<_T> = Record<string, unknown>;
 
 const label = "primary";
 
+const startingPoint = {
+  initial: 0,
+};
+
 export default {
   component: Counter,
 } satisfies Meta<typeof Counter>;
@@ -18,7 +23,7 @@ export default {
 export const Default = {
   args: {
     label,
-    initial: 0,
+    ...startingPoint,
   },
 } satisfies StoryObj<typeof Counter>;
 

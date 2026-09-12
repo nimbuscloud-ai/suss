@@ -48,7 +48,6 @@ import {
   type PropertyAccessExpression,
   type SourceFile,
   type VariableDeclaration,
-  VariableDeclarationKind,
 } from "ts-morph";
 
 type FunctionLike =
@@ -60,9 +59,11 @@ type FunctionLike =
 import {
   findEnclosingFunction,
   functionTargetOf,
+  stringValueOf,
 } from "@suss/adapter-typescript";
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
 
+import type { ResolutionStore } from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
 import type { AccessRecognizer } from "@suss/extractor";
 
@@ -123,7 +124,10 @@ function dottedRead(node: PropertyAccessExpression): EnvRead[] {
  * the pack cannot read back as a literal refers to a variable nothing can
  * pair against, so it reports nothing rather than a guess.
  */
-function bracketRead(access: ElementAccessExpression): EnvRead[] {
+function bracketRead(
+  access: ElementAccessExpression,
+  resolution: ResolutionStore | undefined,
+): EnvRead[] {
   const argument = access.getArgumentExpression();
   if (argument === undefined) {
     return [];
@@ -139,7 +143,7 @@ function bracketRead(access: ElementAccessExpression): EnvRead[] {
     return [{ name, defaulted: isDefaultedAt(access), node: access }];
   }
   if (N.isIdentifier(argument)) {
-    return readsThroughParameter(access, argument);
+    return readsThroughParameter(access, argument, resolution);
   }
   return [];
 }
@@ -162,12 +166,13 @@ const CALLER_LOOKUPS = new WeakMap<Node, EnvRead[]>();
 function readsThroughParameter(
   access: ElementAccessExpression,
   index: Identifier,
+  resolution: ResolutionStore | undefined,
 ): EnvRead[] {
   const remembered = CALLER_LOOKUPS.get(access);
   if (remembered !== undefined) {
     return remembered;
   }
-  const found = callerLiteralReads(access, index);
+  const found = callerLiteralReads(access, index, resolution);
   CALLER_LOOKUPS.set(access, found);
   return found;
 }
@@ -175,6 +180,7 @@ function readsThroughParameter(
 function callerLiteralReads(
   access: ElementAccessExpression,
   index: Identifier,
+  resolution: ResolutionStore | undefined,
 ): EnvRead[] {
   const enclosing = findEnclosingFunction(access);
   if (enclosing === null) {
@@ -207,7 +213,7 @@ function callerLiteralReads(
       if (passed === undefined) {
         continue;
       }
-      const literal = literalBehind(passed);
+      const literal = stringValueOf(passed, resolution);
       if (literal !== null && literal.length > 0) {
         reads.push({ name: literal, defaulted, node: call });
         continue;
@@ -219,35 +225,6 @@ function callerLiteralReads(
     }
   }
   return reads;
-}
-
-/**
- * The string an argument comes down to: written in place, or one hop away
- * in a const whose initializer is written in place.
- */
-function literalBehind(passed: Node): string | null {
-  if (N.isStringLiteral(passed) || N.isNoSubstitutionTemplateLiteral(passed)) {
-    return passed.getLiteralValue();
-  }
-  if (!N.isIdentifier(passed)) {
-    return null;
-  }
-  for (const definition of passed.getDefinitionNodes()) {
-    if (!N.isVariableDeclaration(definition)) {
-      continue;
-    }
-    const initializer = definition.getInitializer();
-    if (
-      initializer !== undefined &&
-      definition.getVariableStatement()?.getDeclarationKind() ===
-        VariableDeclarationKind.Const &&
-      (N.isStringLiteral(initializer) ||
-        N.isNoSubstitutionTemplateLiteral(initializer))
-    ) {
-      return initializer.getLiteralValue();
-    }
-  }
-  return null;
 }
 
 /** The caller's own parameter an argument passes along, for the worklist. */
@@ -345,10 +322,13 @@ function destructuredReads(declaration: VariableDeclaration): EnvRead[] {
  * through a property of it. Both put the variable name somewhere the
  * dotted form does not: in an index argument, or in a binding pattern.
  */
-function readsThroughEnvObject(envNode: PropertyAccessExpression): EnvRead[] {
+function readsThroughEnvObject(
+  envNode: PropertyAccessExpression,
+  resolution: ResolutionStore | undefined,
+): EnvRead[] {
   const parent = envNode.getParent();
   if (N.isElementAccessExpression(parent)) {
-    return bracketRead(parent);
+    return bracketRead(parent, resolution);
   }
   if (N.isVariableDeclaration(parent)) {
     return destructuredReads(parent);
@@ -362,14 +342,19 @@ function readsThroughEnvObject(envNode: PropertyAccessExpression): EnvRead[] {
  * recognized from exactly one of them and the dotted read is reported
  * once.
  */
-function envReadsAt(node: Node): EnvRead[] {
+function envReadsAt(
+  node: Node,
+  resolution: ResolutionStore | undefined,
+): EnvRead[] {
   if (N.isCallExpression(node)) {
-    return readsThroughHelperCall(node);
+    return readsThroughHelperCall(node, resolution);
   }
   if (!N.isPropertyAccessExpression(node)) {
     return [];
   }
-  return isProcessEnv(node) ? readsThroughEnvObject(node) : dottedRead(node);
+  return isProcessEnv(node)
+    ? readsThroughEnvObject(node, resolution)
+    : dottedRead(node);
 }
 
 /**
@@ -380,14 +365,17 @@ function envReadsAt(node: Node): EnvRead[] {
  * the call resolves forward too. Anchoring at the call keeps the read in
  * the caller's file whatever file defines the helper.
  */
-function readsThroughHelperCall(call: CallExpression): EnvRead[] {
+function readsThroughHelperCall(
+  call: CallExpression,
+  resolution: ResolutionStore | undefined,
+): EnvRead[] {
   const reads: EnvRead[] = [];
   const callee = functionBehindCallee(call.getExpression());
   if (callee === null) {
     return reads;
   }
   call.getArguments().forEach((passed, at) => {
-    const literal = literalBehind(passed);
+    const literal = stringValueOf(passed, resolution);
     if (literal === null || literal.length === 0) {
       return;
     }
@@ -544,8 +532,9 @@ function recognizeProcessEnvRead(
   access: unknown,
   deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment",
   instanceName: string,
+  resolution: ResolutionStore | undefined,
 ): Effect[] | null {
-  const reads = envReadsAt(access as Node);
+  const reads = envReadsAt(access as Node, resolution);
   if (reads.length === 0) {
     return null;
   }
@@ -562,13 +551,14 @@ function recognizeProcessEnvRead(
  */
 export function findProcessEnvReads(
   sourceFile: SourceFile,
+  resolution?: ResolutionStore,
 ): Array<{ name: string; defaulted: boolean; line: number }> {
   const out: Array<{ name: string; defaulted: boolean; line: number }> = [];
   // A helper call resolves from the call and from the bracket read in
   // the callee, with the same anchor, so one of the pair is dropped.
   const seen = new Set<string>();
   sourceFile.forEachDescendant((node) => {
-    for (const read of envReadsAt(node)) {
+    for (const read of envReadsAt(node, resolution)) {
       const key = `${read.node.getPos()}:${read.name}`;
       if (seen.has(key)) {
         continue;
@@ -595,6 +585,11 @@ export function envVarRecognizer(
 ): AccessRecognizer {
   const deploymentTarget = opts.deploymentTarget ?? "lambda";
   const instanceName = opts.instanceName ?? "<unknown>";
-  return (access, _ctx) =>
-    recognizeProcessEnvRead(access, deploymentTarget, instanceName);
+  return (access, ctx) =>
+    recognizeProcessEnvRead(
+      access,
+      deploymentTarget,
+      instanceName,
+      (ctx as { resolution?: ResolutionStore }).resolution,
+    );
 }

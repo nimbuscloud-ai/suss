@@ -123,8 +123,6 @@ function effectsOver(
     );
   }
 
-  const resolve = (value: Node): Node | null =>
-    store.resolveWrittenValue(value);
   const originatesFrom = (value: Node, module: string): boolean =>
     store.importOriginsOf(value, [module]).length > 0;
   const anchors = (value: Node, matches: (call: Node) => boolean): Node[] =>
@@ -136,7 +134,7 @@ function effectsOver(
         effects,
         invocations,
         node,
-        invocationContextFor(node, resolve, originatesFrom, anchors),
+        invocationContextFor(node, store, originatesFrom, anchors),
       );
     }
     // The access walk reaches a tagged template as well, which is how a
@@ -150,7 +148,7 @@ function effectsOver(
         effects,
         accesses,
         node,
-        accessContextFor(node, sourceFile, resolve, originatesFrom, anchors),
+        accessContextFor(node, sourceFile, store, originatesFrom, anchors),
       );
     }
   });

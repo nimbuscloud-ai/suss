@@ -101,9 +101,27 @@ export function propertyNameOf(property: Node): string | null {
     Node.isShorthandPropertyAssignment(property) ||
     Node.isMethodDeclaration(property)
   ) {
-    return property.getName();
+    return keyNameOf(property.getNameNode());
   }
   return null;
+}
+
+/**
+ * `{ "fetch"() {} }` and `{ fetch() {} }` define the same property, so
+ * a quoted key gives the string inside the quotes. A computed key
+ * gives null, which is what a caller matching a name can do with it.
+ */
+function keyNameOf(name: Node): string | null {
+  if (Node.isIdentifier(name) || Node.isPrivateIdentifier(name)) {
+    return name.getText();
+  }
+  if (
+    Node.isStringLiteral(name) ||
+    Node.isNoSubstitutionTemplateLiteral(name)
+  ) {
+    return name.getLiteralValue();
+  }
+  return Node.isNumericLiteral(name) ? String(name.getLiteralValue()) : null;
 }
 
 /**
@@ -169,6 +187,24 @@ function propertiesReached(
     const spread = objectLiteralOf(property.getExpression(), resolution);
     return spread === null ? [] : propertiesReached(spread, resolution, seen);
   });
+}
+
+/**
+ * What an object sets one named property to, with a spread walked and
+ * a shorthand giving back the name it forwards. Null when nothing in
+ * the object sets that name.
+ */
+export function propertyOf(
+  object: ObjectLiteralExpression,
+  name: string,
+  resolution: ResolutionStore | undefined,
+): Node | null {
+  for (const property of propertiesOf(object, resolution)) {
+    if (propertyNameOf(property) === name) {
+      return propertyValueOf(property);
+    }
+  }
+  return null;
 }
 
 /**

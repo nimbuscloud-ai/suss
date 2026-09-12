@@ -123,6 +123,19 @@ beforeAll(() => {
      };
      export default { fetch: handle };`,
   );
+  write(
+    "src/importedHandler.ts",
+    `export interface Env { REMOTE_ORIGIN: string }
+     export const fetch = async (request: Request, env: Env) => {
+       return new Response(env.REMOTE_ORIGIN);
+     };`,
+  );
+  write(
+    "src/spreadImported.ts",
+    `import { fetch } from "./importedHandler";
+     const base = { fetch };
+     export default { ...base };`,
+  );
 });
 
 afterAll(() => {
@@ -239,6 +252,11 @@ describe("cloudflareWorkersDiscovery", () => {
     expect(
       inFile(await run(), "exportedFunction.ts").map((u) => u.identity.name),
     ).toEqual(["fetch"]);
+  });
+
+  it("reads a handler spread in from an object of imported functions", async () => {
+    const units = inFile(await run(), "importedHandler.ts");
+    expect(units.map((u) => u.identity.name)).toEqual(["fetch"]);
   });
 
   it("leaves a registration and a property it cannot read alone", async () => {

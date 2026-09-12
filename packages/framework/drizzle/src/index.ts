@@ -42,7 +42,15 @@
 import { type CallExpression, Node as N, type Node } from "ts-morph";
 import { z } from "zod";
 
-import { resolveAliasedSymbol } from "@suss/adapter-typescript";
+import {
+  arrayLiteralOf,
+  objectLiteralOf,
+  propertiesOf,
+  propertyNameOf,
+  propertyOf,
+  stringValueOf,
+  writtenNodeOf,
+} from "@suss/adapter-typescript";
 import { storageBinding } from "@suss/behavioral-ir";
 import { scopeOption, storageSystemOption } from "@suss/extractor";
 import {
@@ -53,6 +61,7 @@ import {
   sqlStatements,
 } from "@suss/recognize";
 
+import type { ResolutionStore } from "@suss/adapter-typescript";
 import type { InvocationRecognizer, PatternPack } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 import type { SqlStatements } from "@suss/recognize";
@@ -61,6 +70,9 @@ const QUERY_API_METHODS = new Set(["findMany", "findFirst"]);
 
 /** Schema-declaration callees whose first string argument gives the table's name. */
 const TABLE_FACTORIES = new Set(["pgTable", "mysqlTable", "sqliteTable"]);
+
+/** The package every table factory and the client itself come from. */
+const DRIZZLE_PACKAGE = "drizzle-orm";
 
 const CHAIN_WALK_LIMIT = 12;
 
@@ -124,8 +136,9 @@ function rawStatements(opts: DrizzleRecognizerOptions): SqlStatements {
 function makeRecognizer(opts: DrizzleRecognizerOptions): InvocationRecognizer {
   const storageSystem = opts.storageSystem ?? "postgresql";
   const scope = opts.scope ?? "default";
-  return (call) => {
-    const query = recognizeAnchor(call as CallExpression);
+  return (call, ctx) => {
+    const { resolution } = ctx as { resolution?: ResolutionStore };
+    const query = recognizeAnchor(call as CallExpression, resolution);
     if (query === null) {
       return null;
     }
@@ -151,7 +164,10 @@ function makeRecognizer(opts: DrizzleRecognizerOptions): InvocationRecognizer {
   };
 }
 
-function recognizeAnchor(call: CallExpression): RecognizedQuery | null {
+function recognizeAnchor(
+  call: CallExpression,
+  resolution: ResolutionStore | undefined,
+): RecognizedQuery | null {
   const callee = call.getExpression();
   if (!N.isPropertyAccessExpression(callee)) {
     return null;
@@ -159,13 +175,13 @@ function recognizeAnchor(call: CallExpression): RecognizedQuery | null {
   const method = callee.getName();
 
   if (method === "from") {
-    return recognizeSelect(call, callee.getExpression());
+    return recognizeSelect(call, callee.getExpression(), resolution);
   }
   if (method === "insert" || method === "update" || method === "delete") {
-    return recognizeMutation(call, callee.getExpression(), method);
+    return recognizeMutation(call, callee.getExpression(), method, resolution);
   }
   if (QUERY_API_METHODS.has(method)) {
-    return recognizeQueryApi(call, callee.getExpression(), method);
+    return recognizeQueryApi(call, callee.getExpression(), method, resolution);
   }
   return null;
 }
@@ -178,6 +194,7 @@ function recognizeAnchor(call: CallExpression): RecognizedQuery | null {
 function recognizeSelect(
   fromCall: CallExpression,
   receiver: Node,
+  resolution: ResolutionStore | undefined,
 ): RecognizedQuery | null {
   if (!N.isCallExpression(receiver)) {
     return null;
@@ -198,16 +215,15 @@ function recognizeSelect(
   if (tableArg === undefined) {
     return null;
   }
-  const table = resolveTableName(tableArg);
+  const table = resolveTableName(tableArg, resolution);
   const tableExprText = tableArg.getText();
 
   // Projected columns: keys of the select's object argument;
   // a bare `select()` reads the whole row.
   const selectArg = receiver.getArguments()[0];
-  const fields =
-    selectArg !== undefined && N.isObjectLiteralExpression(selectArg)
-      ? objectKeys(selectArg)
-      : ["*"];
+  const projected =
+    selectArg === undefined ? [] : objectKeys(selectArg, resolution);
+  const fields = projected.length > 0 ? projected : ["*"];
 
   const chain = collectChainCalls(fromCall);
   const selector = selectorFromWhere(chain.get("where"), tableExprText);
@@ -232,6 +248,7 @@ function recognizeMutation(
   call: CallExpression,
   receiver: Node,
   operation: "insert" | "update" | "delete",
+  resolution: ResolutionStore | undefined,
 ): RecognizedQuery | null {
   if (!isDrizzleReceiver(receiver)) {
     return null;
@@ -240,15 +257,15 @@ function recognizeMutation(
   if (tableArg === undefined) {
     return null;
   }
-  const table = resolveTableName(tableArg);
+  const table = resolveTableName(tableArg, resolution);
   const tableExprText = tableArg.getText();
   const chain = collectChainCalls(call);
 
   const fields =
     operation === "insert"
-      ? valuesKeys(chain.get("values"))
+      ? valuesKeys(chain.get("values"), resolution)
       : operation === "update"
-        ? setKeys(chain.get("set"))
+        ? setKeys(chain.get("set"), resolution)
         : ["*"];
   const selector = selectorFromWhere(chain.get("where"), tableExprText);
 
@@ -272,6 +289,7 @@ function recognizeQueryApi(
   call: CallExpression,
   receiver: Node,
   operation: string,
+  resolution: ResolutionStore | undefined,
 ): RecognizedQuery | null {
   if (!N.isPropertyAccessExpression(receiver)) {
     return null;
@@ -287,21 +305,20 @@ function recognizeQueryApi(
     return null;
   }
 
-  const table = resolveTableName(receiver) ?? receiver.getName();
+  const table = resolveTableName(receiver, resolution) ?? receiver.getName();
 
   // `columns: { id: true, email: true }` narrows the read set;
   // `with: { orders: true }` pulls in relations: both are field
   // knowledge. Anything else reads the whole row.
   const optionsArg = call.getArguments()[0];
+  const options =
+    optionsArg === undefined ? null : objectLiteralOf(optionsArg, resolution);
   const fields: string[] = [];
-  if (optionsArg !== undefined && N.isObjectLiteralExpression(optionsArg)) {
-    const columns = objectProperty(optionsArg, "columns");
-    if (columns !== null && N.isObjectLiteralExpression(columns)) {
-      fields.push(...objectKeys(columns));
-    }
-    const withProp = objectProperty(optionsArg, "with");
-    if (withProp !== null && N.isObjectLiteralExpression(withProp)) {
-      fields.push(...objectKeys(withProp));
+  for (const key of ["columns", "with"]) {
+    const written =
+      options === null ? null : propertyOf(options, key, resolution);
+    if (written !== null) {
+      fields.push(...objectKeys(written, resolution));
     }
   }
 
@@ -382,113 +399,89 @@ function isDrizzleReceiver(node: Node): boolean {
  * not settle it. Returning the written source text instead would pair
  * against a schema table that merely spells the same way (#121).
  */
-function resolveTableName(tableExpr: Node): string | null {
-  const symbol = N.isPropertyAccessExpression(tableExpr)
-    ? tableExpr.getNameNode().getSymbol()
-    : tableExpr.getSymbol();
-  if (symbol === undefined) {
+function resolveTableName(
+  tableExpr: Node,
+  resolution: ResolutionStore | undefined,
+): string | null {
+  const written = writtenNodeOf(tableExpr, resolution);
+  if (
+    written === null ||
+    !N.isCallExpression(written) ||
+    !isTableFactory(written.getExpression(), resolution)
+  ) {
     return null;
   }
-  for (const decl of symbol.getDeclarations()) {
-    const declared = tableNameFromDeclaration(decl);
-    if (declared !== null) {
-      return declared;
-    }
-  }
-  return null;
+  const first = written.getArguments()[0];
+  return first === undefined ? null : stringValueOf(first, resolution);
 }
 
-function tableNameFromDeclaration(decl: Node): string | null {
-  // Import specifiers point one hop further: follow to the aliased
-  // symbol's declarations once.
-  if (N.isImportSpecifier(decl)) {
-    const symbol = decl.getNameNode().getSymbol();
-    const aliased =
-      symbol === undefined ? undefined : resolveAliasedSymbol(symbol);
-    for (const target of aliased?.getDeclarations() ?? []) {
-      const name = tableNameFromDeclaration(target);
-      if (name !== null) {
-        return name;
-      }
-    }
-    return null;
+/** Whether a callee is one of Drizzle's own table-declaring functions. */
+function isTableFactory(
+  callee: Node,
+  resolution: ResolutionStore | undefined,
+): boolean {
+  if (resolution === undefined) {
+    return false;
   }
-  if (!N.isVariableDeclaration(decl)) {
-    return null;
-  }
-  const init = decl.getInitializer();
-  if (init === undefined || !N.isCallExpression(init)) {
-    return null;
-  }
-  const calleeText = init.getExpression().getText();
-  const calleeName = calleeText.split(".").pop() ?? calleeText;
-  if (!TABLE_FACTORIES.has(calleeName)) {
-    return null;
-  }
-  const first = init.getArguments()[0];
-  if (first !== undefined && N.isStringLiteral(first)) {
-    return first.getLiteralValue();
-  }
-  return null;
+  return resolution
+    .importedNamesOf(callee, [DRIZZLE_PACKAGE])
+    .some((name) => TABLE_FACTORIES.has(name));
 }
 
 // ---------------------------------------------------------------------------
 // Field / selector extraction
 // ---------------------------------------------------------------------------
 
-function objectKeys(obj: Node): string[] {
-  if (!N.isObjectLiteralExpression(obj)) {
+function objectKeys(
+  value: Node,
+  resolution: ResolutionStore | undefined,
+): string[] {
+  const object = objectLiteralOf(value, resolution);
+  if (object === null) {
     return [];
   }
   const keys: string[] = [];
-  for (const prop of obj.getProperties()) {
-    if (N.isPropertyAssignment(prop) || N.isShorthandPropertyAssignment(prop)) {
-      keys.push(prop.getName());
+  for (const property of propertiesOf(object, resolution)) {
+    const name = propertyNameOf(property);
+    if (name !== null) {
+      keys.push(name);
     }
   }
   return keys;
 }
 
-function objectProperty(obj: Node, name: string): Node | null {
-  if (!N.isObjectLiteralExpression(obj)) {
-    return null;
-  }
-  for (const prop of obj.getProperties()) {
-    if (N.isPropertyAssignment(prop) && prop.getName() === name) {
-      return prop.getInitializer() ?? null;
-    }
-  }
-  return null;
-}
-
 /** `.values({...})`: object keys; array of objects unions the keys. */
-function valuesKeys(valuesCall: CallExpression | undefined): string[] {
+function valuesKeys(
+  valuesCall: CallExpression | undefined,
+  resolution: ResolutionStore | undefined,
+): string[] {
   const arg = valuesCall?.getArguments()[0];
   if (arg === undefined) {
     return ["*"];
   }
-  if (N.isObjectLiteralExpression(arg)) {
-    const keys = objectKeys(arg);
-    return keys.length > 0 ? keys : ["*"];
-  }
-  if (N.isArrayLiteralExpression(arg)) {
+  const rows = arrayLiteralOf(arg, resolution);
+  if (rows !== null) {
     const union = new Set<string>();
-    for (const element of arg.getElements()) {
-      for (const key of objectKeys(element)) {
+    for (const element of rows.getElements()) {
+      for (const key of objectKeys(element, resolution)) {
         union.add(key);
       }
     }
     return union.size > 0 ? [...union] : ["*"];
   }
-  return ["*"];
+  const keys = objectKeys(arg, resolution);
+  return keys.length > 0 ? keys : ["*"];
 }
 
-function setKeys(setCall: CallExpression | undefined): string[] {
+function setKeys(
+  setCall: CallExpression | undefined,
+  resolution: ResolutionStore | undefined,
+): string[] {
   const arg = setCall?.getArguments()[0];
   if (arg === undefined) {
     return ["*"];
   }
-  const keys = objectKeys(arg);
+  const keys = objectKeys(arg, resolution);
   return keys.length > 0 ? keys : ["*"];
 }
 

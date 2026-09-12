@@ -1507,9 +1507,7 @@ function extractFromSourceFile(
     runAccessRecognizersAtModuleScope(
       sourceFile,
       allAccessRecognizers,
-      resolution === undefined
-        ? undefined
-        : (value) => resolution.resolveWrittenValue(value),
+      resolution,
       resolution === undefined
         ? undefined
         : (value, module) =>

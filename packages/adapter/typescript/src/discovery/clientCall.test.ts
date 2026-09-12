@@ -69,6 +69,14 @@ describe("clientReceiverCheckFor without a store", () => {
     expect(clientReceiverCheckFor(file, match, undefined)(subject)).toBe(true);
   });
 
+  it("recognizes a namespace import spelled as the client name", () => {
+    const { file, subject } = subjectNamed(
+      `import * as Deck from "tapedeck";\nconst d = Deck;\n`,
+      "Deck",
+    );
+    expect(clientReceiverCheckFor(file, match, undefined)(subject)).toBe(true);
+  });
+
   it("says no for a name from somewhere else", () => {
     const { file, subject } = subjectNamed(
       "const other = { play: () => null };\nconst d = other;\n",

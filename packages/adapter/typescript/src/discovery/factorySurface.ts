@@ -9,11 +9,9 @@
 //      function createX() {
 //        return { method() {}, prop: () => {} }
 //      }
-//    Each property whose value is a function expression / arrow /
-//    method-shorthand becomes a surfaced method. A shorthand property
-//    (`return { project }`) surfaces too when `project` binds to a
-//    function declared in the same file; spreads (`return { ...x }`)
-//    and other non-callable values are skipped.
+//    Each property a function is behind becomes a surfaced method,
+//    whether written there or named (`return { project }`). A spread
+//    contributes the properties of what it spreads.
 //
 // 2. A factory that returns through a same-file helper:
 //      function createX(spec) { return build(spec); }
@@ -40,14 +38,20 @@ import { Node, SyntaxKind } from "ts-morph";
 
 import { functionTargetOf } from "../resolve/functionBehind.js";
 import { peelParens } from "../walk/unwrap.js";
+import {
+  propertiesOf,
+  propertyFunctionOf,
+  propertyNameOf,
+} from "./resolveValue.js";
 
 import type {
   ClassDeclaration,
   Identifier,
+  ObjectLiteralExpression,
   ReturnStatement,
-  ShorthandPropertyAssignment,
 } from "ts-morph";
 import type { FunctionRoot } from "../conditions.js";
+import type { ResolutionStore } from "../facts/store.js";
 
 // One hop covers every same-file builder in the dogfood run; the bound
 // stops a helper whose return calls back into itself from recursing.
@@ -58,7 +62,10 @@ export interface SurfacedMethod {
   name: string;
 }
 
-export function surfaceMethods(decl: Node): SurfacedMethod[] {
+export function surfaceMethods(
+  decl: Node,
+  resolution?: ResolutionStore,
+): SurfacedMethod[] {
   if (Node.isClassDeclaration(decl)) {
     return surfaceClassMethods(decl);
   }
@@ -68,7 +75,7 @@ export function surfaceMethods(decl: Node): SurfacedMethod[] {
     Node.isArrowFunction(decl) ||
     Node.isMethodDeclaration(decl)
   ) {
-    return surfaceFactoryReturnMethods(decl as FunctionRoot);
+    return surfaceFactoryReturnMethods(decl as FunctionRoot, resolution);
   }
   return [];
 }
@@ -102,10 +109,13 @@ function surfaceClassMethods(cls: ClassDeclaration): SurfacedMethod[] {
   return out;
 }
 
-function surfaceFactoryReturnMethods(fn: FunctionRoot): SurfacedMethod[] {
+function surfaceFactoryReturnMethods(
+  fn: FunctionRoot,
+  resolution: ResolutionStore | undefined,
+): SurfacedMethod[] {
   const out: SurfacedMethod[] = [];
   const seen = new Set<string>();
-  collectFromFunctionReturns(fn, out, seen, 0);
+  collectFromFunctionReturns(fn, out, seen, 0, resolution);
   return out;
 }
 
@@ -119,13 +129,14 @@ function collectFromFunctionReturns(
   out: SurfacedMethod[],
   seen: Set<string>,
   depth: number,
+  resolution: ResolutionStore | undefined,
 ): void {
   // Concise-arrow body: `() => ({ method() {} })`.
   // ts-morph's getBody() returns the expression directly for these.
   if (Node.isArrowFunction(fn)) {
     const body = fn.getBody();
     if (Node.isExpression(body)) {
-      collectFromReturnValue(body, out, seen, depth);
+      collectFromReturnValue(body, out, seen, depth, resolution);
       return;
     }
   }
@@ -162,7 +173,7 @@ function collectFromFunctionReturns(
     if (expr === undefined) {
       continue;
     }
-    collectFromReturnValue(expr, out, seen, depth);
+    collectFromReturnValue(expr, out, seen, depth, resolution);
   }
 }
 
@@ -176,10 +187,11 @@ function collectFromReturnValue(
   out: SurfacedMethod[],
   seen: Set<string>,
   depth: number,
+  resolution: ResolutionStore | undefined,
 ): void {
   const expr = peelParens(node);
   if (Node.isObjectLiteralExpression(expr)) {
-    collectFromObjectLiteral(expr, out, seen);
+    collectFromObjectLiteral(expr, out, seen, resolution);
     return;
   }
 
@@ -192,7 +204,7 @@ function collectFromReturnValue(
   }
   const helper = sameFileFunctionBehind(callee);
   if (helper !== null) {
-    collectFromFunctionReturns(helper, out, seen, depth + 1);
+    collectFromFunctionReturns(helper, out, seen, depth + 1, resolution);
   }
 }
 
@@ -209,69 +221,27 @@ function sameFileFunctionBehind(id: Identifier): FunctionRoot | null {
   return target.func;
 }
 
+/**
+ * Every property of the returned object that a function is behind. A
+ * getter or setter has no name here, and neither does a spread, whose
+ * own properties are walked in its place.
+ */
 function collectFromObjectLiteral(
-  node: Node,
+  object: ObjectLiteralExpression,
   out: SurfacedMethod[],
   seen: Set<string>,
+  resolution: ResolutionStore | undefined,
 ): void {
-  const e = peelParens(node);
-  if (!Node.isObjectLiteralExpression(e)) {
-    return;
-  }
-  for (const prop of e.getProperties()) {
-    if (Node.isMethodDeclaration(prop)) {
-      const name = prop.getName();
-      if (seen.has(name)) {
-        continue;
-      }
-      seen.add(name);
-      out.push({ func: prop as FunctionRoot, name });
+  for (const property of propertiesOf(object, resolution)) {
+    const name = propertyNameOf(property);
+    if (name === null || seen.has(name)) {
       continue;
     }
-    if (Node.isPropertyAssignment(prop)) {
-      const init = prop.getInitializer();
-      if (init === undefined) {
-        continue;
-      }
-      let v = init;
-      while (Node.isParenthesizedExpression(v)) {
-        v = v.getExpression();
-      }
-      if (Node.isArrowFunction(v) || Node.isFunctionExpression(v)) {
-        const name = prop.getName();
-        if (seen.has(name)) {
-          continue;
-        }
-        seen.add(name);
-        out.push({ func: v as FunctionRoot, name });
-      }
+    const func = propertyFunctionOf(property, resolution);
+    if (func === null) {
+      continue;
     }
-    if (Node.isShorthandPropertyAssignment(prop)) {
-      collectShorthandFunction(prop, out, seen);
-    }
-    // SpreadAssignment (`{ ...other }`): opaque source object.
-    // GetAccessor/SetAccessor: not callable in the method-call sense.
-  }
-}
-
-/**
- * A shorthand property (`{ project }`) surfaces `project` when it
- * binds to a function declared in the same file. `getSymbol()` on the
- * property node gives the property's own symbol, not the value it
- * shorthands, so this reads `getValueSymbol()` instead.
- */
-function collectShorthandFunction(
-  prop: ShorthandPropertyAssignment,
-  out: SurfacedMethod[],
-  seen: Set<string>,
-): void {
-  const name = prop.getName();
-  if (seen.has(name)) {
-    return;
-  }
-  const fn = sameFileFunctionBehind(prop.getNameNode());
-  if (fn !== null) {
     seen.add(name);
-    out.push({ func: fn, name });
+    out.push({ func, name });
   }
 }

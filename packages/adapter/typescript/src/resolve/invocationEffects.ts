@@ -48,6 +48,7 @@ import type {
   RawCondition,
   RawEffect,
 } from "@suss/extractor";
+import type { ResolutionStore } from "../facts/store.js";
 
 export interface InvocationEffectLocation {
   effect: RawEffect;
@@ -106,6 +107,12 @@ export interface TsAccessRecognizerContext {
    */
   resolveWrittenValue: (value: Node) => Node | null;
   /**
+   * The run's store, for a recognizer reading a value through the
+   * adapter's shared resolvers rather than one hop at a time.
+   * Undefined when the run has no store.
+   */
+  resolution?: ResolutionStore;
+  /**
    * What a declared pack asks about this node, when the node is a call
    * or a tagged template. This walk visits property accesses as well,
    * and there is no call there to ask about, so a declared pack
@@ -160,6 +167,12 @@ export interface TsInvocationRecognizerContext {
    */
   resolveWrittenValue(value: Node): Node | null;
   /**
+   * The run's store, for a recognizer reading a value through the
+   * adapter's shared resolvers rather than one hop at a time.
+   * Undefined when the run has no store.
+   */
+  resolution?: ResolutionStore;
+  /**
    * What a declared pack asks about this call, in the vocabulary
    * `@suss/extractor` defines. A pack written as a chain of data links
    * reads only this; the members above are what a pack written as code
@@ -176,10 +189,11 @@ export interface TsInvocationRecognizerContext {
  */
 export function invocationContextFor(
   call: CallExpression,
-  resolveWrittenValue?: (value: Node) => Node | null,
+  resolution?: ResolutionStore,
   originatesFrom?: OriginatesFrom,
   anchorCallsOf?: AnchorCallsOf,
 ): TsInvocationRecognizerContext {
+  const resolveWrittenValue = writtenValueResolver(resolution);
   // Built on the first read rather than up front: most calls reach no
   // declared pack, and following a receiver costs more than the walk.
   let ops: CallOps | null = null;
@@ -189,9 +203,8 @@ export function invocationContextFor(
     extractArgs: () => extractArgs(call),
     isImportedFrom: (identifier, expectedModule) =>
       isImportedFrom(identifier, expectedModule, originatesFrom),
-    // A context built without a store gives null, and the recognizer's
-    // own pattern match runs on the raw node.
-    resolveWrittenValue: resolveWrittenValue ?? (() => null),
+    resolveWrittenValue,
+    ...(resolution === undefined ? {} : { resolution }),
     get ops(): CallOps {
       ops ??= callOpsFor(
         call,
@@ -202,6 +215,35 @@ export function invocationContextFor(
       return ops;
     },
   };
+}
+
+const NO_WRITTEN_VALUE = (): null => null;
+
+/**
+ * One resolver per store, since a context is built for every node the
+ * walk visits and they all ask the same store.
+ */
+const writtenValueResolvers = new WeakMap<
+  ResolutionStore,
+  (value: Node) => Node | null
+>();
+
+/**
+ * A context built without a store gives null, and the recognizer's own
+ * pattern match runs on the raw node.
+ */
+function writtenValueResolver(
+  resolution: ResolutionStore | undefined,
+): (value: Node) => Node | null {
+  if (resolution === undefined) {
+    return NO_WRITTEN_VALUE;
+  }
+  let resolve = writtenValueResolvers.get(resolution);
+  if (resolve === undefined) {
+    resolve = (value) => resolution.resolveWrittenValue(value);
+    writtenValueResolvers.set(resolution, resolve);
+  }
+  return resolve;
 }
 
 /**
@@ -400,7 +442,7 @@ export function runInvocationRecognizers(
   func: FunctionRoot,
   recognizers: InvocationRecognizer[],
   barriers: DescentBarriers = NO_BARRIERS,
-  resolveWrittenValue?: (value: Node) => Node | null,
+  resolution?: ResolutionStore,
   originatesFrom?: OriginatesFrom,
   anchorCallsOf?: AnchorCallsOf,
 ): RecognizedEffectLocation[] {
@@ -420,7 +462,7 @@ export function runInvocationRecognizers(
     }
     const ctx = invocationContextFor(
       node,
-      resolveWrittenValue,
+      resolution,
       originatesFrom,
       anchorCallsOf,
     );
@@ -476,7 +518,7 @@ export function runAccessRecognizers(
   func: FunctionRoot,
   recognizers: AccessRecognizer[],
   barriers: DescentBarriers = NO_BARRIERS,
-  resolveWrittenValue?: (value: Node) => Node | null,
+  resolution?: ResolutionStore,
   originatesFrom?: OriginatesFrom,
   anchorCallsOf?: AnchorCallsOf,
 ): RecognizedEffectLocation[] {
@@ -484,7 +526,7 @@ export function runAccessRecognizers(
     func,
     recognizers,
     (node) => isDescentStop(node, func, barriers),
-    resolveWrittenValue,
+    resolution,
     originatesFrom,
     anchorCallsOf,
   );
@@ -499,7 +541,7 @@ export function runAccessRecognizers(
 export function runAccessRecognizersAtModuleScope(
   sourceFile: SourceFile,
   recognizers: AccessRecognizer[],
-  resolveWrittenValue?: (value: Node) => Node | null,
+  resolution?: ResolutionStore,
   originatesFrom?: OriginatesFrom,
   anchorCallsOf?: AnchorCallsOf,
 ): RecognizedEffectLocation[] {
@@ -507,7 +549,7 @@ export function runAccessRecognizersAtModuleScope(
     sourceFile,
     recognizers,
     isModuleScopeStop,
-    resolveWrittenValue,
+    resolution,
     originatesFrom,
     anchorCallsOf,
   );
@@ -530,11 +572,17 @@ export type Accessed =
 export function accessContextFor(
   node: Accessed,
   sourceFile: SourceFile,
-  resolveWrittenValue: (value: Node) => Node | null = () => null,
+  resolution?: ResolutionStore,
   originatesFrom?: OriginatesFrom,
   anchorCallsOf?: AnchorCallsOf,
 ): TsAccessRecognizerContext {
-  const given = { access: node, sourceFile, resolveWrittenValue };
+  const resolveWrittenValue = writtenValueResolver(resolution);
+  const given = {
+    access: node,
+    sourceFile,
+    resolveWrittenValue,
+    ...(resolution === undefined ? {} : { resolution }),
+  };
   if (Node.isPropertyAccessExpression(node)) {
     return given;
   }
@@ -557,7 +605,7 @@ function dispatchAccessRecognizers(
   root: Node,
   recognizers: AccessRecognizer[],
   isStop: (node: Node) => boolean,
-  resolveWrittenValue?: (value: Node) => Node | null,
+  resolution?: ResolutionStore,
   originatesFrom?: OriginatesFrom,
   anchorCallsOf?: AnchorCallsOf,
 ): RecognizedEffectLocation[] {
@@ -590,7 +638,7 @@ function dispatchAccessRecognizers(
     const ctx = accessContextFor(
       node,
       sourceFile,
-      resolveWrittenValue,
+      resolution,
       originatesFrom,
       anchorCallsOf,
     );

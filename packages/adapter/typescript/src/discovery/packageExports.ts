@@ -85,7 +85,7 @@ export function discoverPackageExports(
             (Node.isArrowFunction(init) || Node.isFunctionExpression(init))
           ) {
             results.push(buildUnit(init, kind, exportName, entry));
-            for (const m of surfaceMethods(init)) {
+            for (const m of surfaceMethods(init, resolution)) {
               results.push(buildSurfacedUnit(m, kind, exportName, entry));
             }
             seenNames.add(key);
@@ -99,7 +99,7 @@ export function discoverPackageExports(
         // method calls won't pair against a provider for now (tracked
         // gap; would need a constructor-as-unit synthesis step).
         if (Node.isClassDeclaration(decl)) {
-          for (const m of surfaceMethods(decl)) {
+          for (const m of surfaceMethods(decl, resolution)) {
             results.push(buildSurfacedUnit(m, kind, exportName, entry));
           }
           seenNames.add(key);
@@ -108,7 +108,7 @@ export function discoverPackageExports(
         const fn = toFunctionRoot(decl);
         if (fn !== null) {
           results.push(buildUnit(fn, kind, exportName, entry));
-          for (const m of surfaceMethods(fn)) {
+          for (const m of surfaceMethods(fn, resolution)) {
             results.push(buildSurfacedUnit(m, kind, exportName, entry));
           }
           seenNames.add(key);

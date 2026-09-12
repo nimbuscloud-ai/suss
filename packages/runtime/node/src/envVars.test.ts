@@ -531,12 +531,49 @@ describe("node runtime pack — env-var wiring", () => {
     expect(reads.map((read) => read.interaction.name)).toEqual(["TABLE_NAME"]);
   });
 
-  it("says nothing about a name kept in a let, which a later write could change", () => {
+  it("reads a name kept in a let, taking the last value written to it", () => {
     const sourceFile = makeProject(`
       function requireEnv(name: string): string {
         return process.env[name] ?? "";
       }
       let key = "TABLE_NAME";
+      key = "OTHER_TABLE";
+      export const table = requireEnv(key);
+    `);
+    const reads = configReadEffectsOf(recognizeAll(sourceFile));
+    expect(reads.map((read) => read.interaction.name)).toEqual(["OTHER_TABLE"]);
+  });
+
+  it("reads a name a caller builds from a prefix and a constant", () => {
+    const sourceFile = makeProject(`
+      function requireEnv(name: string): string {
+        return process.env[name] ?? "";
+      }
+      const suffix = "TABLE";
+      export const table = requireEnv("APP_" + suffix);
+    `);
+    const reads = configReadEffectsOf(recognizeAll(sourceFile));
+    expect(reads.map((read) => read.interaction.name)).toEqual(["APP_TABLE"]);
+  });
+
+  it("says nothing about a caller that passes the helper no name at all", () => {
+    const sourceFile = makeProject(`
+      function requireEnv(name: string): string {
+        return process.env[name] ?? "";
+      }
+      export function boot() {
+        return requireEnv();
+      }
+    `);
+    expect(configReadEffectsOf(recognizeAll(sourceFile))).toEqual([]);
+  });
+
+  it("says nothing for a name only the run would know, passed at module scope", () => {
+    const sourceFile = makeProject(`
+      function requireEnv(name: string): string {
+        return process.env[name] ?? "";
+      }
+      declare const key: string;
       export const table = requireEnv(key);
     `);
     expect(configReadEffectsOf(recognizeAll(sourceFile))).toEqual([]);

@@ -188,17 +188,14 @@ const EXEMPT = new Map([
     "packages/adapter/typescript/src/bootstrap/preFilter.ts",
     "computePackApplicability",
   ],
-  [
-    "packages/adapter/typescript/src/configuredCall.ts",
-    "importsModule, receiverTypeName",
-  ],
+  ["packages/adapter/typescript/src/configuredCall.ts", "receiverTypeName"],
   [
     "packages/adapter/typescript/src/discovery/clientCall.ts",
-    "discoverClientCalls, clientReceiverCheckFor, resolvedImportLocalName",
+    "discoverClientCalls, clientReceiverCheckFor",
   ],
   [
     "packages/adapter/typescript/src/discovery/decoratedMembers.ts",
-    "importedDecoratorLocals, callableOf",
+    "callableOf",
   ],
   [
     "packages/adapter/typescript/src/discovery/decoratedMethod.ts",
@@ -209,16 +206,8 @@ const EXEMPT = new Map([
     "statesAValue",
   ],
   [
-    "packages/adapter/typescript/src/discovery/factorySurface.ts",
-    "collectFromObjectLiteral",
-  ],
-  [
     "packages/adapter/typescript/src/discovery/graphqlClientConstruction.ts",
-    "constructionRegistryStatus, propertyValueOf, resolveToConstructionOf, constructionRef",
-  ],
-  [
-    "packages/adapter/typescript/src/discovery/graphqlImperativeCall.ts",
-    "imperativeConfigValue",
+    "constructionRegistryStatus, constructionRef",
   ],
   [
     "packages/adapter/typescript/src/discovery/graphqlShared.ts",
@@ -266,7 +255,7 @@ const EXEMPT = new Map([
   ],
   [
     "packages/adapter/typescript/src/discovery/registrationTemplate.ts",
-    "declaredInModule, readPropertyAsFunction",
+    "declaredInModule",
   ],
   ["packages/adapter/typescript/src/discovery/resolverMap.ts", "writtenSdl"],
   [
@@ -360,29 +349,19 @@ const EXEMPT = new Map([
     "extractThrowMessage",
   ],
   [
-    "packages/contract/storybook/src/index.ts",
-    "extractMeta, findMetaObjectLiteral, unwrapToObjectLiteral, extractStories",
-  ],
-  [
     "packages/framework/aws-sqs/src/index.ts",
     "isSqsRecordIdentifier, extractDestructuredFields",
   ],
-  [
-    "packages/framework/cloudflare-workers/src/discovery.ts",
-    "defaultExportTriggers, propertyName, functionOfProperty, objectBehind, listenerAt",
-  ],
+  ["packages/framework/cloudflare-workers/src/discovery.ts", "listenerAt"],
   [
     "packages/framework/cloudflare-workers/src/envBindings.ts",
-    "isTriggerEnvArgument, triggerReferences",
+    "isTriggerEnvArgument",
   ],
   [
     "packages/framework/cloudflare-workers/src/storeBindings.ts",
-    "declaredInitializer, declaredTypeName, literalText",
+    "declaredInitializer, declaredTypeName",
   ],
-  [
-    "packages/framework/drizzle/src/index.ts",
-    "isDrizzleReceiver, resolveTableName, tableNameFromDeclaration, objectKeys, objectProperty, valuesKeys",
-  ],
+  ["packages/framework/drizzle/src/index.ts", "isDrizzleReceiver, valuesKeys"],
   [
     "packages/framework/nextjs/src/serverActions.ts",
     "leadingDirectives, nextjsServerActions",
@@ -390,7 +369,7 @@ const EXEMPT = new Map([
   ["packages/framework/react-query/src/index.ts", "callbackExpressionOf"],
   [
     "packages/runtime/node/src/envVars.ts",
-    "bracketRead, literalBehind, callSitesOf, bindingRead, destructuredReads",
+    "bracketRead, callSitesOf, bindingRead, destructuredReads",
   ],
   ["packages/adapter/python/src/decorators.ts", "argShapeOf"],
   [

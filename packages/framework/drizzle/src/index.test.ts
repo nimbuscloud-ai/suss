@@ -162,6 +162,45 @@ describe("drizzle recognizer — mutations", () => {
     expect(interaction.fields).toEqual(["email", "name"]);
   });
 
+  it("reads the value keys off a row named beside the call", () => {
+    const effects = effectsIn(`
+      import { drizzle } from "drizzle-orm";
+      import { users } from "./schema.js";
+      const db = drizzle({});
+      export async function createUser(email: string) {
+        const defaults = { name: "new" };
+        const row = { email, ...defaults };
+        return db.insert(users).values(row).returning();
+      }
+    `);
+    expect(effects).toHaveLength(1);
+    const interaction = interactionOf(effects[0]);
+    expect(interaction.fields).toEqual(["email", "name"]);
+  });
+
+  it("names a table declared under a factory the schema aliases", () => {
+    const effects = drizzle.effectsAcross(
+      {
+        "/schema.ts": `
+          import { pgTable as table, serial } from "drizzle-orm/pg-core";
+          const NAME = "audit" + "_log";
+          export const auditLog = table(NAME, { id: serial("id") });
+        `,
+        [ENTRY]: `
+          import { drizzle } from "drizzle-orm";
+          import { auditLog } from "./schema.js";
+          const db = drizzle({});
+          export async function recent() {
+            return db.select().from(auditLog);
+          }
+        `,
+      },
+      ENTRY,
+    );
+    expect(effects).toHaveLength(1);
+    expect(tableOf(effects[0])).toBe("audit_log");
+  });
+
   it("update().set().where() carries set keys and where columns", () => {
     const effects = effectsIn(`
       import { drizzle, eq } from "drizzle-orm";

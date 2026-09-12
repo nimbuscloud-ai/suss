@@ -38,16 +38,22 @@
 import path from "node:path";
 
 import {
+  Node as N,
   type Node,
   type ObjectLiteralExpression,
   Project,
   type SourceFile,
-  SyntaxKind,
 } from "ts-morph";
 
 import {
   exportedDeclarationsOf,
+  objectLiteralOf,
+  propertiesOf,
+  propertyNameOf,
+  propertyOf,
+  propertyValueOf,
   ResolutionStore,
+  stringValueOf,
 } from "@suss/adapter-typescript";
 import { functionCallBinding } from "@suss/behavioral-ir";
 
@@ -97,7 +103,7 @@ export function generateSummariesFromStories(
   for (const sf of project.getSourceFiles()) {
     const absPath = sf.getFilePath();
     const relPath = path.relative(projectRoot, absPath);
-    const meta = extractMeta(sf);
+    const meta = extractMeta(sf, resolution);
     if (meta === null) {
       continue;
     }
@@ -119,89 +125,34 @@ interface MetaInfo {
   componentName: string;
 }
 
-function extractMeta(sf: SourceFile): MetaInfo | null {
-  const defaultExport = sf.getDefaultExportSymbol();
-  if (defaultExport === undefined) {
-    return null;
-  }
-
-  // The default export is commonly a `const meta = { component: X };
-  // export default meta;` pattern, a direct `export default { ... }`,
-  // or `export default satisfies Meta<typeof X>`. Walk the symbol's
-  // declarations looking for an object-literal with a `component`
-  // property whose value is an identifier.
-  for (const decl of defaultExport.getDeclarations()) {
-    const objLit = findMetaObjectLiteral(decl);
-    if (objLit === null) {
-      continue;
-    }
-    const componentProp = objLit.getProperty("component");
-    if (componentProp === undefined) {
-      continue;
-    }
-    if (!componentProp.isKind(SyntaxKind.PropertyAssignment)) {
-      continue;
-    }
-    const initializer = componentProp.getInitializer();
-    if (initializer === undefined) {
+function extractMeta(
+  sf: SourceFile,
+  resolution: ResolutionStore,
+): MetaInfo | null {
+  for (const exported of resolution.exportsOf(sf).get("default") ?? []) {
+    const meta = objectBehind(exported, resolution);
+    if (meta === null) {
       continue;
     }
     // Commonly an identifier (`component: Button`). Record its name.
-    return { componentName: initializer.getText() };
+    const component = propertyOf(meta, "component", resolution);
+    if (component !== null) {
+      return { componentName: component.getText() };
+    }
   }
 
   return null;
 }
 
-function findMetaObjectLiteral(node: Node): ObjectLiteralExpression | null {
-  if (node.isKind(SyntaxKind.ExportAssignment)) {
-    return unwrapToObjectLiteral(node.getExpression());
-  }
-  // `const meta = { ... }; export default meta;`, the default-export
-  // symbol's declaration is the VariableDeclaration itself.
-  if (node.isKind(SyntaxKind.VariableDeclaration)) {
-    const init = node.getInitializer();
-    return init === undefined ? null : unwrapToObjectLiteral(init);
-  }
-  return null;
-}
-
-/**
- * Follow `satisfies` wrappers, parens, and identifier references (to
- * local variable declarations) to reach an object literal. Returns
- * null when the expression doesn't resolve to one statically.
- */
-function unwrapToObjectLiteral(node: Node): ObjectLiteralExpression | null {
-  if (node.isKind(SyntaxKind.ObjectLiteralExpression)) {
-    return node;
-  }
-  if (node.isKind(SyntaxKind.SatisfiesExpression)) {
-    return unwrapToObjectLiteral(node.getExpression());
-  }
-  if (node.isKind(SyntaxKind.ParenthesizedExpression)) {
-    return unwrapToObjectLiteral(node.getExpression());
-  }
-  if (node.isKind(SyntaxKind.AsExpression)) {
-    return unwrapToObjectLiteral(node.getExpression());
-  }
-  if (node.isKind(SyntaxKind.Identifier)) {
-    const sym = node.getSymbol();
-    if (sym === undefined) {
-      return null;
-    }
-    for (const d of sym.getDeclarations()) {
-      if (d.isKind(SyntaxKind.VariableDeclaration)) {
-        const init = d.getInitializer();
-        if (init !== undefined) {
-          const unwrapped = unwrapToObjectLiteral(init);
-          if (unwrapped !== null) {
-            return unwrapped;
-          }
-        }
-      }
-    }
-  }
-  return null;
+/** The object a declaration or an expression comes down to. */
+function objectBehind(
+  value: Node,
+  resolution: ResolutionStore,
+): ObjectLiteralExpression | null {
+  const resolved = resolution.resolveObject(value);
+  return resolved !== null && N.isObjectLiteralExpression(resolved)
+    ? resolved
+    : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -228,45 +179,48 @@ function extractStories(
       continue;
     }
     for (const decl of decls) {
-      if (!decl.isKind(SyntaxKind.VariableDeclaration)) {
+      const story = objectBehind(decl, resolution);
+      if (story === null) {
         continue;
-      }
-      const init = decl.getInitializer();
-      if (init === undefined) {
-        continue;
-      }
-      const objLit = unwrapToObjectLiteral(init);
-      if (objLit === null) {
-        continue;
-      }
-
-      const argsProp = objLit.getProperty("args");
-      const args: Record<string, string> = {};
-      if (argsProp?.isKind(SyntaxKind.PropertyAssignment)) {
-        const argsInit = argsProp.getInitializer();
-        if (argsInit?.isKind(SyntaxKind.ObjectLiteralExpression)) {
-          for (const prop of argsInit.getProperties()) {
-            if (prop.isKind(SyntaxKind.PropertyAssignment)) {
-              const value = prop.getInitializer();
-              if (value !== undefined) {
-                args[prop.getName()] = value.getText();
-              }
-            } else if (prop.isKind(SyntaxKind.ShorthandPropertyAssignment)) {
-              args[prop.getName()] = prop.getName();
-            }
-          }
-        }
       }
 
       results.push({
         name,
-        args,
+        args: storyArgs(story, resolution),
         line: decl.getStartLineNumber(),
       });
     }
   }
 
   return results;
+}
+
+/**
+ * What a story hands its component, one entry per arg. A string comes
+ * back as the string, so a name and a template read the same as a
+ * quoted literal. Anything the evaluator does not settle to a string,
+ * a number, a JSX element or an object among them, keeps its source
+ * text, which is all a reader can be given for it.
+ */
+function storyArgs(
+  story: ObjectLiteralExpression,
+  resolution: ResolutionStore,
+): Record<string, string> {
+  const args: Record<string, string> = {};
+  const written = propertyOf(story, "args", resolution);
+  const object = written === null ? null : objectLiteralOf(written, resolution);
+  if (object === null) {
+    return args;
+  }
+  for (const property of propertiesOf(object, resolution)) {
+    const name = propertyNameOf(property);
+    const value = propertyValueOf(property);
+    if (name === null || value === null) {
+      continue;
+    }
+    args[name] = stringValueOf(value, resolution) ?? value.getText();
+  }
+  return args;
 }
 
 // ---------------------------------------------------------------------------

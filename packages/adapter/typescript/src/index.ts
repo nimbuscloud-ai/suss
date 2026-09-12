@@ -26,10 +26,13 @@ export { discoverUnits } from "./discovery/index.js";
 // rather than reading the syntax there, which stops at a name.
 export {
   arrayLiteralOf,
+  couldNameAValue,
   functionValueOf,
   objectLiteralOf,
   propertiesOf,
+  propertyFunctionOf,
   propertyNameOf,
+  propertyOf,
   propertyValueOf,
   stringPropertyOf,
   stringValueOf,

@@ -263,17 +263,13 @@ export function extractRawBranches(
     originatesFrom,
     resolveCallee,
   );
-  const resolveWrittenValue =
-    resolution === undefined
-      ? undefined
-      : (value: Node) => resolution.resolveWrittenValue(value);
   const invocations = extractInvocationEffects(func, barriers);
   const recognized = [
     ...runInvocationRecognizers(
       func,
       invocationRecognizers,
       barriers,
-      resolveWrittenValue,
+      resolution,
       originatesFrom,
       anchorCallsOf,
     ),
@@ -281,7 +277,7 @@ export function extractRawBranches(
       func,
       accessRecognizers,
       barriers,
-      resolveWrittenValue,
+      resolution,
       originatesFrom,
       anchorCallsOf,
     ),

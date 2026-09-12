@@ -7,6 +7,7 @@ import {
 } from "@suss/behavioral-ir";
 import { createTestProject } from "@suss/test-project";
 
+import { ResolutionStore } from "../facts/store.js";
 import {
   collectGraphqlClientRefs,
   soleGraphqlClientRef,
@@ -341,8 +342,47 @@ describe("stampGraphqlClientRefs", () => {
     `,
     );
     const summary = danglingSpreadSummary();
-    stampGraphqlClientRefs([summary], [file], [clientPack], undefined);
+    stampGraphqlClientRefs(
+      [summary],
+      [file],
+      [clientPack],
+      new ResolutionStore(),
+    );
     expect(readGraphqlMetadata(summary)?.fragmentRegistry).toBe("absent");
+  });
+
+  it("reads a cache built in another module", () => {
+    const project = createTestProject();
+    const cacheFile = project.createSourceFile(
+      "src/cache.ts",
+      `
+      import { InMemoryCache } from "@apollo/client";
+      import { createFragmentRegistry } from "@apollo/client/cache";
+      import { gql } from "@apollo/client";
+      export const cache = new InMemoryCache({
+        fragments: createFragmentRegistry(gql\`fragment F on T { id }\`),
+      });
+    `,
+    );
+    const file = project.createSourceFile(
+      "src/client.ts",
+      `
+      import { ApolloClient } from "@apollo/client";
+      import { cache } from "./cache";
+      export const client = new ApolloClient({
+        uri: "https://api.example.com/graphql",
+        cache,
+      });
+    `,
+    );
+    const summary = danglingSpreadSummary();
+    stampGraphqlClientRefs(
+      [summary],
+      [cacheFile, file],
+      [clientPack],
+      new ResolutionStore(),
+    );
+    expect(readGraphqlMetadata(summary)?.fragmentRegistry).toBe("configured");
   });
 
   it("stamps fragmentRegistry configured when the cache installs one", () => {

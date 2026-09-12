@@ -8,6 +8,7 @@
 
 import { Node } from "ts-morph";
 
+import { importedNamesOf } from "./importScan.js";
 import { toFunctionRoot } from "./shared.js";
 
 import type {
@@ -50,16 +51,12 @@ export function importedDecoratorLocals(
   canonicalNames: readonly string[],
 ): Map<string, string> {
   const localToCanonical = new Map<string, string>();
-  for (const importDecl of sourceFile.getImportDeclarations()) {
-    if (!acceptedModules.includes(importDecl.getModuleSpecifierValue())) {
-      continue;
-    }
-    for (const named of importDecl.getNamedImports()) {
-      const canonical = named.getName();
-      if (canonicalNames.includes(canonical)) {
-        const local = named.getAliasNode()?.getText() ?? canonical;
-        localToCanonical.set(local, canonical);
-      }
+  for (const [local, canonical] of importedNamesOf(
+    sourceFile,
+    acceptedModules,
+  )) {
+    if (canonicalNames.includes(canonical)) {
+      localToCanonical.set(local, canonical);
     }
   }
   return localToCanonical;
