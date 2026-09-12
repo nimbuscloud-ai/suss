@@ -299,15 +299,20 @@ gives two, and nothing is claimed.
 A chain also matches when the name it starts on is declared, where the chain
 is written, as one of the query types: a parameter annotated `db: Session`,
 a local bound by `session = Session()` or `with Session() as session:`, or a
-project function whose return annotation says `Session`. The type has to be
-imported from the pattern's module, so a project class that happens to share
-the name does not match. `recordsNothing` lists the methods on such a type
-that touch no rows of their own: `execute` runs a statement whose own chain is
-the read or write, and `close` manages the session.
+project function whose return annotation says `Session`. Where the source
+annotates nothing, the resolution rules follow the name to what built it, so
+`db = open_session()` matches on the `Session()` inside `open_session` even
+though the function annotates no return. The type has to have come from the
+pattern's module, through however many aliases and re-exports the project put
+in the way, so a project class that happens to share the name does not match.
+`recordsNothing` lists the methods on such a type that touch no rows of their
+own: `execute` runs a statement whose own chain is the read or write, and
+`close` manages the session.
 
 A query built from a function the library exports has no project method in
 between for its return to be read off, so a pack lists those by name and a call
-site importing one matches on that:
+site that reaches one matches on that. The rules say where the name came from,
+so a project module that re-exports `select` is followed through:
 
 ```ts
 queryFunctions: ["select", "insert", "update", "delete"]

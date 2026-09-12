@@ -6,18 +6,22 @@ import { storageBinding } from "@suss/ir-core";
 
 import { genericTypeArgs } from "./annotations.js";
 import {
-  bodyStatements,
   children,
   enclosingFunction,
   field,
   parameterNameAndType,
   stringLiteralValue,
 } from "./ast.js";
-import { originsOf, resolveCalls } from "./facts/resolve.js";
-import { readKey } from "./facts/values.js";
+import {
+  originsOf,
+  resolveCalls,
+  subjectConstructions,
+} from "./facts/resolve.js";
+import { nameKeyIn, readKey } from "./facts/values.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
+import type { SubjectOrigin } from "./facts/resolve.js";
 import type { RawSqlPattern, StoragePattern } from "./pack.js";
 import type { PyNode } from "./parser.js";
 
@@ -125,17 +129,18 @@ function importedQueryFunction(
   if (callee === null || callee.type !== "identifier") {
     return undefined;
   }
-  const from = options.facts
-    .facts("pyImportedName")
-    .find((row) => String(row[0]) === `${options.filePath}#${callee.text}`);
-  if (from === undefined) {
-    return undefined;
+  const key = readKey(options.filePath, callee, enclosingFunction(callee));
+  for (const origin of originsOf(options.facts, key)) {
+    const pattern = options.patterns.find(
+      (candidate) =>
+        origin.module === candidate.module &&
+        (candidate.queryFunctions ?? []).includes(origin.name),
+    );
+    if (pattern !== undefined) {
+      return pattern;
+    }
   }
-  return options.patterns.find(
-    (pattern) =>
-      String(from[1]) === pattern.module &&
-      (pattern.queryFunctions ?? []).includes(String(from[2])),
-  );
+  return undefined;
 }
 
 /** The name a chain's first call is read off, `db` in `db.add(order)`, or null when it starts anywhere else. */
@@ -181,22 +186,59 @@ function typeNameOf(annotation: PyNode): string | null {
   return null;
 }
 
-/** The class a statement gives a name: an annotation on the assignment, the callee it constructs with, or the call a `with ... as name` opens. */
-function typeGivenBy(
-  statement: PyNode,
-  name: string,
-  options: StorageOptions,
+/**
+ * The class the source states a name is where the chain is written: the
+ * annotation on a parameter of the enclosing function, the annotation on
+ * an assignment to the name, or the class a `with ... as name` opens.
+ * Each of those states a type beside the name, and a type is not a value,
+ * so the resolution facts say nothing about any of them.
+ */
+function statedTypeName(name: string, from: PyNode): string | null {
+  const fn = enclosingFunction(from);
+  if (fn === null) {
+    return null;
+  }
+  const params = field(fn, "parameters");
+  for (const param of params === null ? [] : children(params)) {
+    const info = parameterNameAndType(param);
+    if (info?.name === name && info.typeNode !== null) {
+      return typeNameOf(info.typeNode);
+    }
+  }
+  const body = field(fn, "body");
+  return body === null
+    ? null
+    : firstInBody(body, (statement) => statedBy(statement, name));
+}
+
+/** The first answer `read` gives for a statement in a body, past the nested functions, which bind a name of their own. */
+function firstInBody(
+  node: PyNode,
+  read: (statement: PyNode) => string | null,
 ): string | null {
+  const here = read(node);
+  if (here !== null) {
+    return here;
+  }
+  for (const child of children(node)) {
+    if (child.type === "function_definition" || child.type === "lambda") {
+      continue;
+    }
+    const found = firstInBody(child, read);
+    if (found !== null) {
+      return found;
+    }
+  }
+  return null;
+}
+
+/** The type one statement states for `name`: the annotation on an assignment to it, or the class a `with ... as` opens. */
+function statedBy(statement: PyNode, name: string): string | null {
   if (statement.type === "assignment") {
-    if (field(statement, "left")?.text !== name) {
-      return null;
-    }
     const annotation = field(statement, "type");
-    if (annotation !== null) {
-      return typeNameOf(annotation);
-    }
-    const right = field(statement, "right");
-    return right?.type === "call" ? builtType(right, options) : null;
+    return field(statement, "left")?.text === name && annotation !== null
+      ? typeNameOf(annotation)
+      : null;
   }
   if (statement.type === "as_pattern") {
     const alias = field(statement, "alias");
@@ -249,7 +291,7 @@ function resolvedReturnType(
     : returnTypeName(options.definitionAt(settled));
 }
 
-/** The one definition a callee resolves to, asking the rules first. Undefined when it resolves to none or to more than one. */
+/** The one definition a callee resolves to, asking the rules. Undefined when it resolves to none or to more than one. */
 function settledCallee(
   options: StorageOptions,
   callee: PyNode,
@@ -264,50 +306,37 @@ function settledCallee(
 }
 
 /**
- * The class the enclosing function says a name is: the annotation on a
- * parameter of that name, or what the body binds it to. Null at module
- * level or when the function never says.
+ * The class the call a name is assigned gives back. Walking to the
+ * assignment is a value read, and the rules answer it only when the class
+ * is one the file imported. A class the project wrote, a method read off
+ * one, and a return annotation are all outside what they say.
  */
-function declaredTypeName(
+function builtTypeName(
   name: string,
   from: PyNode,
   options: StorageOptions,
 ): string | null {
   const fn = enclosingFunction(from);
-  if (fn === null) {
+  const body = fn === null ? null : field(fn, "body");
+  if (body === null) {
     return null;
   }
-  const params = field(fn, "parameters");
-  for (const param of params === null ? [] : children(params)) {
-    const info = parameterNameAndType(param);
-    if (info?.name === name && info.typeNode !== null) {
-      return typeNameOf(info.typeNode);
-    }
-  }
-  const visit = (node: PyNode): string | null => {
-    const given = typeGivenBy(node, name, options);
-    if (given !== null) {
-      return given;
-    }
-    for (const child of children(node)) {
-      if (child.type === "function_definition" || child.type === "lambda") {
-        continue;
-      }
-      const found = visit(child);
-      if (found !== null) {
-        return found;
-      }
-    }
-    return null;
-  };
-  const body = field(fn, "body");
-  for (const statement of body === null ? [] : bodyStatements(body)) {
-    const found = visit(statement);
-    if (found !== null) {
-      return found;
-    }
-  }
-  return null;
+  return firstInBody(body, (statement) => {
+    const right =
+      statement.type === "assignment" ? field(statement, "right") : null;
+    return right?.type === "call" && field(statement, "left")?.text === name
+      ? builtType(right, options)
+      : null;
+  });
+}
+
+/** The class the enclosing function says a name is: what the source states, or what the call it is assigned builds. */
+function declaredTypeName(
+  name: string,
+  from: PyNode,
+  options: StorageOptions,
+): string | null {
+  return statedTypeName(name, from) ?? builtTypeName(name, from, options);
 }
 
 /**
@@ -325,30 +354,35 @@ function typedReceiverPattern(
   if (receiver === null) {
     return undefined;
   }
-  const typeName = declaredTypeName(receiver, chain.root, options);
-  if (typeName === null) {
-    return undefined;
-  }
-  const typeKey = `${options.filePath}#${typeName}`;
-  const imported = options.facts
-    .facts("pyImportedName")
-    .find((row) => String(row[0]) === typeKey);
-  const direct =
-    imported === undefined
-      ? undefined
-      : queryTypePattern(options, String(imported[1]), String(imported[2]));
-  if (direct !== undefined) {
-    return direct;
-  }
-  // `db: SessionDep` with `SessionDep = Annotated[Session, ...]` in another
-  // module reaches the library only through what that module exports.
-  for (const origin of originsOf(options.facts, typeKey)) {
+  for (const origin of receiverTypeOrigins(options, receiver, chain.root)) {
     const pattern = queryTypePattern(options, origin.module, origin.name);
     if (pattern !== undefined) {
       return pattern;
     }
   }
   return undefined;
+}
+
+/**
+ * Where the class a receiver is came from. A stated type is a name and
+ * nothing more, so the rules say where that name came from, which is how
+ * `db: SessionDep` with `SessionDep = Annotated[Session, ...]` in another
+ * module still reaches the library. Where the source states no type the
+ * receiver is a name bound to a value, and the rules answer that whole:
+ * `session = Session()`, and `session = open_session()` with the project
+ * function returning one.
+ */
+function receiverTypeOrigins(
+  options: StorageOptions,
+  name: string,
+  from: PyNode,
+): readonly SubjectOrigin[] {
+  const stated = statedTypeName(name, from);
+  if (stated !== null) {
+    return originsOf(options.facts, `${options.filePath}#${stated}`);
+  }
+  const key = nameKeyIn(options.filePath, enclosingFunction(from), name);
+  return subjectConstructions(options.facts, [key]).get(key)?.origins ?? [];
 }
 
 /** The pattern whose module exports `name` as one of its query types. */
