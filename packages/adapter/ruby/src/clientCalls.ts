@@ -8,7 +8,9 @@
  * way a route's path is evaluated, and reports the enclosing method as
  * a client of that method and path. A call at the top level of a file
  * has no unit to belong to, and one whose URL does not settle on a
- * string says nothing.
+ * string says nothing. The request object a library takes in place of a
+ * URL is read from the value facts, so a run without them sees only the
+ * request objects built in the call itself.
  */
 
 import { namesNothing, restBinding } from "@suss/behavioral-ir";
@@ -18,7 +20,7 @@ import { field, rangeOf, readCallArgs, runStatements, spanOf } from "./ast.js";
 import { invocationEffects } from "./paths/effects.js";
 import { returnPathBranches } from "./responseStatus.js";
 import { compoundName } from "./scope.js";
-import { evaluatedValue } from "./values/evaluator.js";
+import { evaluatedValue, writtenNodeOf } from "./values/evaluator.js";
 
 import type { Database } from "@suss/datalog";
 import type { RawBranch, RawCodeStructure } from "@suss/extractor";
@@ -121,7 +123,7 @@ function requestCall(
   if (sent === undefined || sent.attribute !== called) {
     return null;
   }
-  const built = requestBuilt(args.positional[0], method, sent);
+  const built = requestBuilt(args.positional[0], sent, options);
   if (built === null) {
     return null;
   }
@@ -130,19 +132,21 @@ function requestCall(
 }
 
 /**
- * The request object a call was handed: one of the library's request
- * classes built in the call itself, or a local name assigned from one.
+ * The request object a call was handed: whatever the facts say the
+ * argument was written as, or the argument itself, because the facts
+ * drop a value's match against itself and a request class built in the
+ * call is that match.
  */
 function requestBuilt(
   argument: RbNode | undefined,
-  method: RbNode,
   sent: NonNullable<RbClientCall["requestObject"]>,
+  options: ClientCallOptions,
 ): { method: string; url: RbNode | undefined } | null {
-  const written =
-    argument === undefined
-      ? null
-      : (assignedCall(argument, method) ?? argument);
-  if (written === null || written.type !== "call") {
+  if (argument === undefined) {
+    return null;
+  }
+  const written = writtenNodeOf(argument, options.facts) ?? argument;
+  if (written.type !== "call") {
     return null;
   }
   const requestClass = field(written, "receiver")?.text;
@@ -153,15 +157,6 @@ function requestBuilt(
   }
   const args = readCallArgs(field(written, "arguments"));
   return { method: verb, url: args.positional[sent.urlPosition] };
-}
-
-/** The call a local name was assigned from in this method, or null for anything else. */
-function assignedCall(node: RbNode, method: RbNode): RbNode | null {
-  if (node.type !== "identifier") {
-    return null;
-  }
-  const value = assignedValue(node.text, method);
-  return value !== null && value.type === "call" ? value : null;
 }
 
 /**
@@ -218,6 +213,11 @@ function namesConstant(receiver: RbNode, constantName: string): boolean {
  * was called on. A local assignment in the same method, or a method of
  * that name in the same file, which is where a service object keeps the
  * one connection its request methods share.
+ *
+ * The value facts settle neither spelling. An argument-less
+ * `Faraday.new` is a property read, which the rules give no written
+ * value, and a call to a method of the same file is a bare name, which
+ * gets no `call` fact for the rules to step through.
  */
 function builtBy(
   name: string,

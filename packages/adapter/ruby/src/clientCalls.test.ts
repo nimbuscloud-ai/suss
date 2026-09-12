@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
+import { Database } from "@suss/datalog";
+
 import { clientCallUnits } from "./clientCalls.js";
+import { emitValueFacts } from "./facts/values.js";
 import { parseRuby } from "./parser.js";
+import { bindEvaluator, methodDefinitionsIn } from "./values/evaluator.js";
 
 import type { RawCodeStructure } from "@suss/extractor";
 import type { RbClientCall, RubyPack } from "./pack.js";
@@ -22,13 +26,22 @@ const PACK: RubyPack = {
   clients: [REQUEST_CALLS],
 };
 
+const FILE = "app/clients/order_client.rb";
+
 async function unitsIn(
   source: string,
   pattern: RbClientCall = REQUEST_CALLS,
 ): Promise<RawCodeStructure[]> {
   const tree = await parseRuby(source);
+  const facts = new Database();
+  emitValueFacts(facts, FILE, tree.rootNode);
+  bindEvaluator(facts, {
+    files: [{ file: FILE, root: tree.rootNode }],
+    definitions: methodDefinitionsIn(FILE, tree.rootNode),
+  });
   return clientCallUnits(tree.rootNode, PACK, pattern, {
-    filePath: "app/clients/order_client.rb",
+    filePath: FILE,
+    facts,
   });
 }
 
@@ -393,6 +406,42 @@ describe("a library that sends a request object", () => {
     );
 
     expect(boundary(units)).toEqual({ method: "POST", path: "/orders" });
+  });
+
+  it("reads a request object a method of the file returned", async () => {
+    const units = await unitsIn(
+      [
+        "def load(body)",
+        "  conn = HttpClient.build",
+        "  conn.send_it(order_request())",
+        "end",
+        "",
+        "def order_request",
+        '  HttpClient::Post.new(URI("https://api.example.com/orders"))',
+        "end",
+      ].join("\n"),
+      WRAPPED_URLS,
+    );
+
+    expect(boundary(units)).toEqual({ method: "POST", path: "/orders" });
+  });
+
+  it("reads the last request object written to a name", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def load(body)",
+        "    conn = HttpClient.build",
+        '    request = HttpClient::Post.new(URI("https://api.example.com/drafts"))',
+        '    request = HttpClient::Post.new(URI("https://api.example.com/orders"))',
+        "    conn.send_it(request)",
+        "  end",
+        "end",
+      ].join("\n"),
+      WRAPPED_URLS,
+    );
+
+    expect(boundary(units).path).toBe("/orders");
   });
 
   it("says nothing about a request object of a class the pack does not declare", async () => {
