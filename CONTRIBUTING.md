@@ -62,6 +62,12 @@ Name a thing for the job it does, and let a package's directory spell out the na
 
 Vitest, with each test file next to its source (`foo.ts` and `foo.test.ts`). A test that parses fixture source takes its ts-morph project from `@suss/test-project`, so every test reads the same language the adapter reads. See [`docs/internal/style.md#tests`](docs/internal/style.md#tests).
 
+## Reading a value
+
+Ask the evaluator or the resolution store what a value is; don't read the syntax at the position. In the TypeScript adapter that means `discovery/resolveValue.ts`, the `ResolutionStore` in `facts/store.ts`, `resolve/functionBehind.ts`, `walk/unwrap.ts` and `discovery/importScan.ts`. In the Python and Ruby adapters it means `values/evaluator.ts`, `facts/resolve.ts` and the literal readers in `ast.ts`. A pack calls what its adapter exports.
+
+A reader you write beside the call site handles the spellings you had in front of you and gives up on a template or a constant from another file. So when the facility cannot read a spelling, add the case there rather than reading the syntax yourself. `npm run check:readers` fails on the textual tells of a second reader, and the files that already fail are listed in `EXEMPT` in [`scripts/checkReaders.mjs`](scripts/checkReaders.mjs). [`docs/internal/style.md#reading-a-value`](docs/internal/style.md#reading-a-value) has the entry points and two before-and-after examples.
+
 ## Adding a new framework pack
 
 A framework pack is a set of patterns you declare in configuration rather than write as code. See [`docs/packs.md`](docs/packs.md) for the full guide, and copy from the packs that already exist under `packages/framework/` and `packages/client/`.

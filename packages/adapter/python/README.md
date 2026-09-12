@@ -29,6 +29,10 @@ npx suss check --dir summaries/
 
 How each of those is decided, and where it stops: [how the Python adapter reads a project](./DESIGN.md).
 
+## Reading a value
+
+Nothing outside the facility reads a node's text to find out what a value is. `values/evaluator.ts` is the evaluator: `evaluatedValue` runs the statements ahead of an expression and says what it comes to, and `stringValueOf` gives the string when it settles to one, so a path built out of an f-string or a module constant reads the same as one written out. `facts/resolve.ts` says where a name came from, with `writtenValueOf` and `originsOf`, and the literal readers in `ast.ts` (`stringLiteralValue`, `booleanLiteralValue`) are for the places a literal really is written out. When one of them cannot read a spelling, the case goes into the evaluator's lowering or the resolution rules; `npm run check:readers` at the repo root fails on a reader written beside a call site instead. [`docs/internal/style.md#reading-a-value`](../../../docs/internal/style.md#reading-a-value) has the rule.
+
 ## Where it fits
 
 It depends on `@suss/extractor`, `@suss/behavioral-ir`, `@suss/datalog` and `web-tree-sitter`. The `fastapi`, `flask-restx` and `sqlalchemy` packs consume its `PythonPack` contract, and nothing here knows what any particular library's decorators are called.

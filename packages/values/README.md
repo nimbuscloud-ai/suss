@@ -22,6 +22,12 @@ registration call. Each one knew a few spellings and gave up on the
 rest. The engine knows statements and values, so a spelling it has not
 seen still folds when the pieces it is made of do.
 
+So a value in this repository is read here and nowhere else. [The rule
+and each adapter's entry
+points](../../docs/internal/style.md#reading-a-value) say where to call
+in from, and `npm run check:readers` fails on a reader written beside a
+call site instead.
+
 ## The value domain
 
 A value keeps what the source determines and puts a hole where it does
