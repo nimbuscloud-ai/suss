@@ -7,13 +7,20 @@ import { Node } from "ts-morph";
 
 import { restBinding } from "@suss/behavioral-ir";
 
-import { objectLiteralOf, propertiesOf } from "./discovery/resolveValue.js";
-import { exportedDeclarationsOf } from "./moduleExports.js";
+import {
+  objectLiteralOf,
+  propertiesOf,
+  propertyNameOf,
+  propertyValueOf,
+  stringPropertyOf,
+  writtenNodeOf,
+} from "./discovery/resolveValue.js";
 import { shapeFromNodeType } from "./shapes/typeShapes.js";
 import { peelSyntax } from "./walk/unwrap.js";
 
 import type { BoundaryBinding, TypeShape } from "@suss/behavioral-ir";
 import type { ContractPattern, RawDeclaredContract } from "@suss/extractor";
+import type { ObjectLiteralExpression } from "ts-morph";
 import type { DiscoveredUnit } from "./discovery/index.js";
 import type { ResolutionStore } from "./facts/store.js";
 
@@ -121,213 +128,182 @@ function findRouterCall(unit: DiscoveredUnit): {
 }
 
 /**
- * Given a contract reference node, resolve it to the object literal that
- * defines the contract routes.
+ * The object literal a contract reference comes down to: the routes of a
+ * whole contract, or the definition of one endpoint.
  *
- * Expected shapes:
- *   - ObjectLiteralExpression → already the routes literal
- *   - Identifier → follow symbol to VariableDeclaration → initializer is
- *     `c.router({ ... })` (or a direct object literal)
- *   - PropertyAccessExpression → composed contracts like
- *     `s.router(apiContract.internal, { ... })`. Resolve the base to its
- *     routes literal, pick the named property, and recurse on the value
- *     (usually another identifier bound to `subContract.router({ ... })`).
+ * A contract is written as `c.router({ ... })`, bound to a name, exported,
+ * imported, and composed into a parent contract, so a registration site
+ * is hardly ever given the literal itself. The resolution store
+ * settles the name, the property read, the import and the barrel; the only
+ * step left is taking off the `router(...)` call, which is the part
+ * ts-rest and zod-openapi know about and the store does not.
  */
-function resolveContractObject(
-  contractArg: Node,
-  resolution?: ResolutionStore,
-): Node | null {
-  if (Node.isObjectLiteralExpression(contractArg)) {
-    return contractArg;
-  }
+function contractObjectOf(
+  contractValue: Node,
+  resolution: ResolutionStore | undefined,
+): ObjectLiteralExpression | null {
+  return contractObjectReached(contractValue, resolution, new Set());
+}
 
-  // Composed contracts: `apiContract.internal`: resolve the base to its
-  // routes literal, then pick the property whose name matches the access.
-  // The property's value is typically another identifier bound to a
-  // sub-contract (`internal: internalApi`); recursion handles the chain.
-  if (Node.isPropertyAccessExpression(contractArg)) {
-    const base = resolveContractObject(contractArg.getExpression(), resolution);
-    if (base === null || !Node.isObjectLiteralExpression(base)) {
-      return null;
-    }
-    const propName = contractArg.getName();
-    for (const prop of base.getProperties()) {
-      if (!Node.isPropertyAssignment(prop)) {
-        continue;
-      }
-      if (prop.getName() !== propName) {
-        continue;
-      }
-      const value = prop.getInitializer();
-      if (value === undefined) {
-        return null;
-      }
-      if (Node.isObjectLiteralExpression(value)) {
-        return value;
-      }
-      if (Node.isIdentifier(value) || Node.isPropertyAccessExpression(value)) {
-        return resolveContractObject(value, resolution);
-      }
-      if (Node.isCallExpression(value)) {
-        return unwrapContractInit(value);
-      }
-      return null;
-    }
+function contractObjectReached(
+  contractValue: Node,
+  resolution: ResolutionStore | undefined,
+  seen: Set<Node>,
+): ObjectLiteralExpression | null {
+  if (seen.has(contractValue)) {
     return null;
   }
+  seen.add(contractValue);
 
-  if (!Node.isIdentifier(contractArg)) {
-    return null;
+  // A contract written out at the registration site needs no name
+  // settled, and asking anyway costs a query per route.
+  const here = peelSyntax(contractValue);
+  if (Node.isObjectLiteralExpression(here) || Node.isCallExpression(here)) {
+    return unwrapContractInit(here, resolution);
   }
 
-  const symbol = contractArg.getSymbol();
-  if (symbol === undefined) {
-    return null;
+  const literal = objectLiteralOf(here, resolution);
+  if (literal !== null) {
+    return literal;
   }
-
-  const decls = symbol.getDeclarations();
-  if (decls.length === 0) {
-    return null;
+  const written = writtenNodeOf(here, resolution);
+  if (written !== null) {
+    return unwrapContractInit(written, resolution);
   }
-
-  const decl = decls[0];
-
-  if (Node.isImportSpecifier(decl)) {
-    const importDecl = decl.getImportDeclaration();
-    const sourceFile = importDecl.getModuleSpecifierSourceFile();
-    if (sourceFile !== undefined && resolution !== undefined) {
-      // Use the original (non-aliased) name to find the export
-      const exported = exportedDeclarationsOf(sourceFile, resolution).get(
-        decl.getName(),
-      );
-      if (exported !== undefined && exported.length > 0) {
-        const exportedDecl = exported[0];
-        if (Node.isVariableDeclaration(exportedDecl)) {
-          return unwrapContractInit(exportedDecl.getInitializer());
-        }
-      }
-    }
-    return null;
-  }
-
-  if (Node.isVariableDeclaration(decl)) {
-    return unwrapContractInit(decl.getInitializer());
-  }
-
-  return null;
+  return subContractOf(here, resolution, seen);
 }
 
 /**
- * Unwrap a contract initializer like `c.router({ ... })` to get the routes object.
+ * A sub-contract read off a parent, `apiContract.internal`. The store
+ * settles the parent to the `router(...)` call it is written as and
+ * stops there, because only a contract-reading pack knows that call
+ * gives back the routes it was passed. Take the call off first, and the
+ * property read is an ordinary one.
  */
-function unwrapContractInit(init: Node | undefined): Node | null {
-  if (init === undefined) {
+function subContractOf(
+  read: Node,
+  resolution: ResolutionStore | undefined,
+  seen: Set<Node>,
+): ObjectLiteralExpression | null {
+  if (!Node.isPropertyAccessExpression(read)) {
     return null;
   }
+  const parent = contractObjectReached(read.getExpression(), resolution, seen);
+  if (parent === null) {
+    return null;
+  }
+  const sub = declaredUnder(parent, read.getName(), resolution);
+  return sub === null ? null : contractObjectReached(sub, resolution, seen);
+}
 
+/**
+ * The routes object inside a contract initializer, `c.router({ ... })` or
+ * `createRoute({ ... })`. A contract written straight out, with no call
+ * around it, is its own initializer.
+ */
+function unwrapContractInit(
+  init: Node,
+  resolution: ResolutionStore | undefined,
+): ObjectLiteralExpression | null {
   // `{ ... } as const` and `route as RouteConfig` both leave the object
   // as written; the cast is only there for the type.
   const node = peelSyntax(init);
+  if (!Node.isCallExpression(node)) {
+    return objectLiteralOf(node, resolution);
+  }
+  const routes = node.getArguments()[0];
+  return routes === undefined ? null : objectLiteralOf(routes, resolution);
+}
 
-  // c.router({ getUser: { ... }, createUser: { ... } })
-  if (Node.isCallExpression(node)) {
-    const args = node.getArguments();
-    if (args.length > 0 && Node.isObjectLiteralExpression(args[0])) {
-      return args[0];
+/**
+ * What a contract object declares under `name`: an endpoint on a routes
+ * object, or a sub-contract on a composed one.
+ */
+function declaredUnder(
+  object: ObjectLiteralExpression,
+  name: string,
+  resolution: ResolutionStore | undefined,
+): Node | null {
+  for (const property of propertiesOf(object, resolution)) {
+    if (propertyNameOf(property) === name) {
+      return propertyValueOf(property);
     }
-    return null;
   }
-
-  if (Node.isObjectLiteralExpression(node)) {
-    return node;
-  }
-
   return null;
 }
 
 /**
- * Extract responses from a single endpoint definition in the contract.
+ * The statuses an endpoint declares, with the body shape of each one the
+ * shape extractor can read. A status the endpoint spreads in from a
+ * shared object counts the same as one written out here.
+ */
+function declaredResponsesOf(
+  endpoint: ObjectLiteralExpression,
+  pattern: ContractPattern,
+  resolution: ResolutionStore | undefined,
+): RawDeclaredContract["responses"] {
+  const responses: RawDeclaredContract["responses"] = [];
+
+  for (const property of propertiesOf(endpoint, resolution)) {
+    if (propertyNameOf(property) !== pattern.responseExtraction.property) {
+      continue;
+    }
+    const value = propertyValueOf(property);
+    const declared = value === null ? null : objectLiteralOf(value, resolution);
+    if (declared === null) {
+      continue;
+    }
+
+    for (const status of propertiesOf(declared, resolution)) {
+      const name = propertyNameOf(status);
+      if (name === null) {
+        continue;
+      }
+      const statusCode = Number(name);
+      if (!Number.isFinite(statusCode)) {
+        continue;
+      }
+      const body = extractDeclaredBody(propertyValueOf(status) ?? undefined);
+      responses.push(body !== null ? { statusCode, body } : { statusCode });
+    }
+  }
+
+  return responses;
+}
+
+/**
+ * The contract one endpoint declares: its statuses, and the method and
+ * path its binding comes from.
  *
- * Expected shape:
  * ```
- * getUser: {
- *   method: "GET",
- *   path: "/users/:id",
- *   responses: {
- *     200: c.type<...>(),
- *     ...commonResponses,
- *   }
- * }
+ * getUser: { method: "GET", path: "/users/:id", responses: { 200: c.type<...>() } }
  * ```
  */
 function extractEndpointContract(
-  endpointNode: Node,
+  endpointValue: Node,
   pattern: ContractPattern,
   framework: string,
   resolution: ResolutionStore | undefined,
 ): ContractReadResult | null {
-  if (!Node.isObjectLiteralExpression(endpointNode)) {
+  const endpoint = contractObjectOf(endpointValue, resolution);
+  if (endpoint === null) {
     return null;
   }
 
-  const responses: RawDeclaredContract["responses"] = [];
-  let method: string | undefined;
-  let path: string | undefined;
-
-  for (const prop of endpointNode.getProperties()) {
-    if (!Node.isPropertyAssignment(prop)) {
-      continue;
-    }
-
-    const propName = prop.getName();
-
-    if (propName === pattern.methodProperty) {
-      const val = prop.getInitializer();
-      if (val !== undefined && Node.isStringLiteral(val)) {
-        method = val.getLiteralValue();
-      }
-    }
-
-    if (propName === pattern.pathProperty) {
-      const val = prop.getInitializer();
-      if (val !== undefined && Node.isStringLiteral(val)) {
-        path = val.getLiteralValue();
-      }
-    }
-
-    if (propName === pattern.responseExtraction.property) {
-      const written = prop.getInitializer();
-      const val =
-        written === undefined ? null : objectLiteralOf(written, resolution);
-      if (val !== null) {
-        for (const respProp of propertiesOf(val, resolution)) {
-          if (!Node.isPropertyAssignment(respProp)) {
-            continue;
-          }
-
-          const statusStr = respProp.getName();
-          const statusCode = Number(statusStr);
-          if (!Number.isFinite(statusCode)) {
-            continue;
-          }
-
-          const body = extractDeclaredBody(respProp.getInitializer());
-          responses.push(body !== null ? { statusCode, body } : { statusCode });
-        }
-      }
-    }
-  }
-
+  const responses = declaredResponsesOf(endpoint, pattern, resolution);
   if (responses.length === 0) {
     return null;
   }
 
+  const method = stringPropertyOf(endpoint, pattern.methodProperty, resolution);
+  const path = stringPropertyOf(endpoint, pattern.pathProperty, resolution);
+
   const boundaryBinding: BoundaryBinding | null =
-    method !== undefined || path !== undefined
+    method !== null || path !== null
       ? restBinding({
           transport: "http",
-          method: method ?? null,
-          path: path ?? null,
+          method,
+          path,
           recognition: framework,
         })
       : null;
@@ -380,42 +356,22 @@ export function readContract(
     );
   }
 
-  // Step 1: Find the .router() call enclosing this handler
   const routerInfo = findRouterCall(unit);
   if (routerInfo === null) {
     return null;
   }
 
-  // Step 2: Resolve the contract argument to the routes object literal
-  const contractObj = resolveContractObject(routerInfo.contractArg, resolution);
-  if (contractObj === null || !Node.isObjectLiteralExpression(contractObj)) {
+  const routes = contractObjectOf(routerInfo.contractArg, resolution);
+  if (routes === null) {
     return null;
   }
 
-  // Step 3: Find the endpoint matching this handler's name
-  for (const prop of contractObj.getProperties()) {
-    if (!Node.isPropertyAssignment(prop)) {
-      continue;
-    }
-
-    if (prop.getName() !== routerInfo.handlerName) {
-      continue;
-    }
-
-    const endpointInit = prop.getInitializer();
-    if (endpointInit === undefined) {
-      continue;
-    }
-
-    return extractEndpointContract(
-      endpointInit,
-      pattern,
-      framework,
-      resolution,
-    );
+  const endpoint = declaredUnder(routes, routerInfo.handlerName, resolution);
+  if (endpoint === null) {
+    return null;
   }
 
-  return null;
+  return extractEndpointContract(endpoint, pattern, framework, resolution);
 }
 
 /**
@@ -446,17 +402,7 @@ function endpointFromRegistrationArgument(
     return null;
   }
 
-  let node: Node = arg;
-  while (Node.isAsExpression(node)) {
-    node = node.getExpression();
-  }
-  if (Node.isObjectLiteralExpression(node)) {
-    return node;
-  }
-  if (Node.isCallExpression(node)) {
-    return unwrapContractInit(node);
-  }
-  return resolveContractObject(node, resolution);
+  return contractObjectOf(arg, resolution);
 }
 
 // ---------------------------------------------------------------------------
@@ -477,7 +423,7 @@ export function readContractForClientCall(
   framework: string,
   resolution?: ResolutionStore,
 ): ContractReadResult | null {
-  // Walk from client.getUser() → client → find the variable declaration
+  // Walk from client.getUser() back to the client the call is made on.
   const callee = Node.isCallExpression(callExpression)
     ? callExpression.getExpression()
     : null;
@@ -485,65 +431,27 @@ export function readContractForClientCall(
     return null;
   }
 
-  const clientIdentifier = callee.getExpression();
-  if (!Node.isIdentifier(clientIdentifier)) {
+  // The client is written as initClient(contract, ...), here or in
+  // whichever module the project set it up in.
+  const client = writtenNodeOf(callee.getExpression(), resolution);
+  if (client === null || !Node.isCallExpression(client)) {
     return null;
   }
 
-  const symbol = clientIdentifier.getSymbol();
-  if (symbol === undefined) {
+  const contractArg = client.getArguments()[0];
+  if (contractArg === undefined) {
     return null;
   }
 
-  const decls = symbol.getDeclarations();
-  if (decls.length === 0) {
+  const routes = contractObjectOf(contractArg, resolution);
+  if (routes === null) {
     return null;
   }
 
-  const decl = decls[0];
-  if (!Node.isVariableDeclaration(decl)) {
+  const endpoint = declaredUnder(routes, methodName, resolution);
+  if (endpoint === null) {
     return null;
   }
 
-  // The variable init should be initClient(contract, ...) or similar
-  const init = decl.getInitializer();
-  if (init === undefined || !Node.isCallExpression(init)) {
-    return null;
-  }
-
-  const args = init.getArguments();
-  if (args.length === 0) {
-    return null;
-  }
-
-  // First arg is the contract reference
-  const contractObj = resolveContractObject(args[0], resolution);
-  if (contractObj === null || !Node.isObjectLiteralExpression(contractObj)) {
-    return null;
-  }
-
-  // Find the endpoint for the method name
-  for (const prop of contractObj.getProperties()) {
-    if (!Node.isPropertyAssignment(prop)) {
-      continue;
-    }
-
-    if (prop.getName() !== methodName) {
-      continue;
-    }
-
-    const endpointInit = prop.getInitializer();
-    if (endpointInit === undefined) {
-      continue;
-    }
-
-    return extractEndpointContract(
-      endpointInit,
-      pattern,
-      framework,
-      resolution,
-    );
-  }
-
-  return null;
+  return extractEndpointContract(endpoint, pattern, framework, resolution);
 }

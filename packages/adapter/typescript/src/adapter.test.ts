@@ -20,6 +20,7 @@ import {
 } from "./adapter.js";
 import { readContract } from "./contract.js";
 import { discoverUnits } from "./discovery/index.js";
+import { ResolutionStore } from "./facts/store.js";
 
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
 import type { PatternPack } from "@suss/extractor";
@@ -536,6 +537,7 @@ describe("readContract", () => {
       tsRestPack.contractReading ??
         raise("ts-rest pack missing contractReading"),
       tsRestPack.name,
+      new ResolutionStore(),
     );
 
     expect(result).not.toBeNull();
@@ -565,6 +567,7 @@ describe("readContract", () => {
       tsRestPack.contractReading ??
         raise("ts-rest pack missing contractReading"),
       tsRestPack.name,
+      new ResolutionStore(),
     );
 
     expect(result).toBeNull();
@@ -603,6 +606,7 @@ describe("readContract", () => {
       tsRestPack.contractReading ??
         raise("ts-rest pack missing contractReading"),
       tsRestPack.name,
+      new ResolutionStore(),
     );
     expect(result).toBeNull();
   });
@@ -631,6 +635,7 @@ describe("readContract", () => {
       zodOpenapiPack.contractReading ??
         raise("zod-openapi pack missing contractReading"),
       zodOpenapiPack.name,
+      new ResolutionStore(),
     );
     expect(result?.declaredContract.responses).toEqual([
       { statusCode: 200 },
@@ -695,6 +700,7 @@ describe("readContract", () => {
       zodOpenapiPack.contractReading ??
         raise("zod-openapi pack missing contractReading"),
       zodOpenapiPack.name,
+      new ResolutionStore(),
     );
     expect(result).toBeNull();
   });
@@ -731,6 +737,7 @@ describe("readContract", () => {
       tsRestPack.contractReading ??
         raise("ts-rest pack missing contractReading"),
       tsRestPack.name,
+      new ResolutionStore(),
     );
 
     expect(result).not.toBeNull();
@@ -768,6 +775,7 @@ describe("readContract", () => {
       tsRestPack.contractReading ??
         raise("ts-rest pack missing contractReading"),
       tsRestPack.name,
+      new ResolutionStore(),
     );
 
     expect(result).not.toBeNull();
@@ -820,6 +828,7 @@ describe("readContract", () => {
       tsRestPack.contractReading ??
         raise("ts-rest pack missing contractReading"),
       tsRestPack.name,
+      new ResolutionStore(),
     );
 
     expect(result).not.toBeNull();
@@ -853,10 +862,179 @@ describe("readContract", () => {
       tsRestPack.contractReading ??
         raise("ts-rest pack missing contractReading"),
       tsRestPack.name,
+      new ResolutionStore(),
     );
 
     expect(result).not.toBeNull();
     expect(result?.boundaryBinding).toBeNull();
+  });
+
+  it("reads a contract the server imports through a barrel", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/contract/users.ts",
+      `
+      import { initContract } from "@ts-rest/core";
+      const c = initContract();
+      export const usersContract = c.router({
+        getUser: {
+          method: "GET",
+          path: "/users/:id",
+          responses: { 200: null as any },
+        },
+      });
+      `,
+    );
+    project.createSourceFile("/contract/index.ts", `export * from "./users";`);
+    const file = project.createSourceFile(
+      "/server.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { usersContract } from "./contract/index";
+
+      const s = initServer();
+      export const router = s.router(usersContract, {
+        getUser: async () => ({ status: 200, body: {} }),
+      });
+      `,
+    );
+    const units = discoverUnits(file, tsRestPack.discovery);
+
+    const result = readContract(
+      units[0],
+      tsRestPack.contractReading ??
+        raise("ts-rest pack missing contractReading"),
+      tsRestPack.name,
+      new ResolutionStore(),
+    );
+
+    expect(restMethodOf(result ?? null)).toBe("GET");
+    expect(restPathOf(result ?? null)).toBe("/users/:id");
+  });
+
+  it("reads a composed contract whose sub-contract lives in another module", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/contract/internal.ts",
+      `
+      import { initContract } from "@ts-rest/core";
+      const ic = initContract();
+      export const internalApi = ic.router({
+        fetchThing: {
+          method: "GET",
+          path: "/things/:id",
+          responses: { 200: null as any },
+        },
+      });
+      `,
+    );
+    project.createSourceFile(
+      "/contract/index.ts",
+      `
+      import { initContract } from "@ts-rest/core";
+      import { internalApi } from "./internal";
+      const c = initContract();
+      export const apiContract = c.router({ internal: internalApi });
+      `,
+    );
+    const file = project.createSourceFile(
+      "/server.ts",
+      `
+      import { initServer } from "@ts-rest/express";
+      import { apiContract } from "./contract/index";
+
+      const s = initServer();
+      export const router = s.router(apiContract.internal, {
+        fetchThing: async () => ({ status: 200, body: {} }),
+      });
+      `,
+    );
+    const units = discoverUnits(file, tsRestPack.discovery);
+
+    const result = readContract(
+      units[0],
+      tsRestPack.contractReading ??
+        raise("ts-rest pack missing contractReading"),
+      tsRestPack.name,
+      new ResolutionStore(),
+    );
+
+    expect(restPathOf(result ?? null)).toBe("/things/:id");
+  });
+
+  it("reads a path the contract states as a constant from another module", () => {
+    const project = createTestProject();
+    project.createSourceFile("/paths.ts", `export const USERS = "/users";`);
+    const file = project.createSourceFile(
+      "/server.ts",
+      `
+      import { initContract } from "@ts-rest/core";
+      import { initServer } from "@ts-rest/express";
+      import { USERS } from "./paths";
+
+      const c = initContract();
+      const contract = c.router({
+        getUser: {
+          method: "GET",
+          path: \`\${USERS}/:id\`,
+          responses: { 200: null as any },
+        },
+      });
+
+      const s = initServer();
+      export const router = s.router(contract, {
+        getUser: async () => ({ status: 200, body: {} }),
+      });
+      `,
+    );
+    const units = discoverUnits(file, tsRestPack.discovery);
+
+    const result = readContract(
+      units[0],
+      tsRestPack.contractReading ??
+        raise("ts-rest pack missing contractReading"),
+      tsRestPack.name,
+      new ResolutionStore(),
+    );
+
+    expect(restPathOf(result ?? null)).toBe("/users/:id");
+  });
+
+  it("reads an endpoint the routes object spreads in from a base object", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/server.ts",
+      `
+      import { initContract } from "@ts-rest/core";
+      import { initServer } from "@ts-rest/express";
+
+      const c = initContract();
+      const baseRoutes = {
+        getUser: {
+          method: "GET",
+          path: "/users/:id",
+          responses: { 200: null as any },
+        },
+      };
+      const contract = c.router({ ...baseRoutes });
+
+      const s = initServer();
+      export const router = s.router(contract, {
+        getUser: async () => ({ status: 200, body: {} }),
+      });
+      `,
+    );
+    const units = discoverUnits(file, tsRestPack.discovery);
+
+    const result = readContract(
+      units[0],
+      tsRestPack.contractReading ??
+        raise("ts-rest pack missing contractReading"),
+      tsRestPack.name,
+      new ResolutionStore(),
+    );
+
+    expect(restPathOf(result ?? null)).toBe("/users/:id");
   });
 });
 
@@ -4445,6 +4623,46 @@ describe("client-side contract resolution via fromClientMethod", () => {
       semantics: { name: "rest", method: null, path: null },
       recognition: "ts-rest",
     });
+  });
+
+  it("resolves the contract when the client is set up in another module", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "/api.ts",
+      `
+      import { initClient, initContract } from "@ts-rest/core";
+
+      const c = initContract();
+      export const contract = c.router({
+        getUser: {
+          method: "GET",
+          path: "/users/:id",
+          responses: { 200: null as any },
+        },
+      });
+
+      export const client = initClient(contract, { baseUrl: "" });
+      `,
+    );
+    project.createSourceFile(
+      "/consumer.ts",
+      `
+      import { client } from "./api";
+
+      export async function loadUser(id: string) {
+        return client.getUser({ params: { id } });
+      }
+      `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [tsRestClientPack],
+    });
+    const summaries = await adapter.extractAll();
+    const consumer = summaries.find((s) => s.identity.name === "loadUser");
+    expect(restPathOf(consumer)).toBe("/users/:id");
+    expect(restMethodOf(consumer)).toBe("GET");
   });
 });
 
