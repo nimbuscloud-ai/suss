@@ -30,6 +30,7 @@ import {
 import {
   functionValueOf,
   objectLiteralOf,
+  propertiesOf,
   propertyNameOf,
   propertyValueOf,
   stringValueOf,
@@ -268,7 +269,7 @@ function readPropertyAsFunction(
   if (obj === null) {
     return null;
   }
-  for (const property of obj.getProperties()) {
+  for (const property of propertiesOf(obj, resolution)) {
     if (propertyNameOf(property) !== prop) {
       continue;
     }

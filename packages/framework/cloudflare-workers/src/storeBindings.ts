@@ -202,10 +202,7 @@ interface BoundReceiver {
  * something else. A receiver written into a variable first
  * (`const kv = env.SESSIONS`) is followed back to where it was built.
  */
-function boundReceiver(
-  subject: Node,
-  reading: Reading,
-): BoundReceiver | null {
+function boundReceiver(subject: Node, reading: Reading): BoundReceiver | null {
   let receiver: Node = subject;
   if (N.isIdentifier(receiver)) {
     // The store's own resolution stops at module scope, and a handler

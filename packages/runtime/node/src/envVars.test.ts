@@ -556,6 +556,29 @@ describe("node runtime pack — env-var wiring", () => {
     expect(reads.map((read) => read.interaction.name)).toEqual(["APP_TABLE"]);
   });
 
+  it("says nothing about a caller that passes the helper no name at all", () => {
+    const sourceFile = makeProject(`
+      function requireEnv(name: string): string {
+        return process.env[name] ?? "";
+      }
+      export function boot() {
+        return requireEnv();
+      }
+    `);
+    expect(configReadEffectsOf(recognizeAll(sourceFile))).toEqual([]);
+  });
+
+  it("says nothing for a name only the run would know, passed at module scope", () => {
+    const sourceFile = makeProject(`
+      function requireEnv(name: string): string {
+        return process.env[name] ?? "";
+      }
+      declare const key: string;
+      export const table = requireEnv(key);
+    `);
+    expect(configReadEffectsOf(recognizeAll(sourceFile))).toEqual([]);
+  });
+
   it("follows a literal from a caller in another file", () => {
     const project = createTestProject();
     const helper = project.createSourceFile(

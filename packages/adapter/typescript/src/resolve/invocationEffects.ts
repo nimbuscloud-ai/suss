@@ -40,7 +40,6 @@ import { peelSyntax } from "../walk/unwrap.js";
 import { callOpsFor } from "./callOps.js";
 
 import type { Effect } from "@suss/behavioral-ir";
-import type { ResolutionStore } from "../facts/store.js";
 import type {
   AccessRecognizer,
   CallOps,
@@ -49,6 +48,7 @@ import type {
   RawCondition,
   RawEffect,
 } from "@suss/extractor";
+import type { ResolutionStore } from "../facts/store.js";
 
 export interface InvocationEffectLocation {
   effect: RawEffect;
@@ -217,6 +217,17 @@ export function invocationContextFor(
   };
 }
 
+const NO_WRITTEN_VALUE = (): null => null;
+
+/**
+ * One resolver per store, since a context is built for every node the
+ * walk visits and they all ask the same store.
+ */
+const writtenValueResolvers = new WeakMap<
+  ResolutionStore,
+  (value: Node) => Node | null
+>();
+
 /**
  * A context built without a store gives null, and the recognizer's own
  * pattern match runs on the raw node.
@@ -224,9 +235,15 @@ export function invocationContextFor(
 function writtenValueResolver(
   resolution: ResolutionStore | undefined,
 ): (value: Node) => Node | null {
-  return resolution === undefined
-    ? () => null
-    : (value) => resolution.resolveWrittenValue(value);
+  if (resolution === undefined) {
+    return NO_WRITTEN_VALUE;
+  }
+  let resolve = writtenValueResolvers.get(resolution);
+  if (resolve === undefined) {
+    resolve = (value) => resolution.resolveWrittenValue(value);
+    writtenValueResolvers.set(resolution, resolve);
+  }
+  return resolve;
 }
 
 /**
