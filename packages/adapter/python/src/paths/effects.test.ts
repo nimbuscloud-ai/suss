@@ -124,6 +124,39 @@ describe("python invocation effects", () => {
     ]);
   });
 
+  it("writes out an argument written as a module-level constant", async () => {
+    const tree = await parsePython(
+      ['QUEUE = "orders"', "", "def get(self):", "    publish(QUEUE)"].join(
+        "\n",
+      ),
+    );
+    const fn = tree.rootNode.namedChildren.find(
+      (child) => child?.type === "function_definition",
+    ) as PyNode;
+    const [effect] = invocationEffects(fn);
+    expect(effect?.type === "invocation" && effect.args).toEqual([
+      { kind: "string", value: "orders" },
+    ]);
+  });
+
+  it("folds an f-string argument into the one string it comes down to", async () => {
+    const tree = await parsePython(
+      [
+        'ENV = "prod"',
+        "",
+        "def get(self):",
+        '    publish(f"orders-{ENV}")',
+      ].join("\n"),
+    );
+    const fn = tree.rootNode.namedChildren.find(
+      (child) => child?.type === "function_definition",
+    ) as PyNode;
+    const [effect] = invocationEffects(fn);
+    expect(effect?.type === "invocation" && effect.args).toEqual([
+      { kind: "string", value: "orders-prod" },
+    ]);
+  });
+
   it("reads a keyword argument's value rather than the keyword", async () => {
     const effects = await effectsFor([
       "def get(self):",

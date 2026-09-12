@@ -12,17 +12,13 @@
  */
 
 import { inheritedStatements, methodInAncestry } from "./ancestry.js";
-import {
-  bodyStatements,
-  field,
-  rangeOf,
-  readCallArgs,
-  spanOf,
-  symbolValue,
-} from "./ast.js";
+import { field, rangeOf, readCallArgs, spanOf } from "./ast.js";
 import { responseBranches } from "./responseStatus.js";
+import { stringValueOf } from "./values/evaluator.js";
+import { namesOf } from "./values/literals.js";
 
 import type { WrapperReference } from "@suss/behavioral-ir";
+import type { Database } from "@suss/datalog";
 import type { RawBranch, RawCodeStructure } from "@suss/extractor";
 import type { Ancestry, BodyReading } from "./ancestry.js";
 import type { Range } from "./ast.js";
@@ -93,7 +89,7 @@ export function controllerFilters(
     }
     const form = byName.get(called);
     if (form !== undefined) {
-      for (const declaration of declarationsOf(statement, form)) {
+      for (const declaration of declarationsOf(statement, form, read.facts)) {
         declared = [
           ...declared.filter((earlier) => !sameFilter(earlier, declaration)),
           declaration,
@@ -103,7 +99,7 @@ export function controllerFilters(
     }
     const skipped = skipNames.get(called);
     if (skipped !== undefined) {
-      declared = applySkips(declared, skipsOf(statement, skipped));
+      declared = applySkips(declared, skipsOf(statement, skipped, read.facts));
     }
   }
 
@@ -169,6 +165,7 @@ export function filterUnit(
   pattern: ControllerActions,
   displayPath: string,
   body: FilterBody,
+  facts?: Database | undefined,
 ): RawCodeStructure {
   const range = rangeOf(filter.method);
   const branches = responseBranches(
@@ -176,7 +173,7 @@ export function filterUnit(
     pattern,
     body.effects ?? [],
     body.extraEffects,
-    { fallthrough: "handOn" },
+    { fallthrough: "handOn", facts },
   );
   return {
     identity: {
@@ -235,14 +232,19 @@ function calledName(statement: RbNode): string | null {
 function declarationsOf(
   statement: RbNode,
   filter: RbControllerFilter,
+  facts: Database | undefined,
 ): Declaration[] {
   const args = readCallArgs(field(statement, "arguments"));
   const keywords = filter.actionKeywords;
   const only =
-    keywords === undefined ? null : namesUnder(args.keyword[keywords.include]);
+    keywords === undefined
+      ? null
+      : actionsUnder(args.keyword[keywords.include], facts);
   const except =
-    keywords === undefined ? null : namesUnder(args.keyword[keywords.exclude]);
-  return methodNamesOf(args, filter).map((methodName) => ({
+    keywords === undefined
+      ? null
+      : actionsUnder(args.keyword[keywords.exclude], facts);
+  return methodNamesOf(args, filter, facts).map((methodName) => ({
     filter,
     methodName,
     only,
@@ -253,23 +255,28 @@ function declarationsOf(
 function methodNamesOf(
   args: ReturnType<typeof readCallArgs>,
   filter: RbControllerFilter,
+  facts: Database | undefined,
 ): string[] {
   if (filter.methodFrom === "withKeyword") {
     const named = args.keyword.with;
-    const value = named === undefined ? null : symbolValue(named);
+    const value = named === undefined ? null : stringValueOf(named, facts);
     return value === null ? [] : [value];
   }
   return args.positional
-    .map((arg) => symbolValue(arg))
+    .map((arg) => stringValueOf(arg, facts))
     .filter((name): name is string => name !== null);
 }
 
 /** A skip names its filters by method, the way the filter itself does. */
-function skipsOf(statement: RbNode, filterName: string): Skip[] {
+function skipsOf(
+  statement: RbNode,
+  filterName: string,
+  facts: Database | undefined,
+): Skip[] {
   const args = readCallArgs(field(statement, "arguments"));
-  const actions = namesUnder(args.keyword.only);
+  const actions = actionsUnder(args.keyword.only, facts);
   return args.positional
-    .map((arg) => symbolValue(arg))
+    .map((arg) => stringValueOf(arg, facts))
     .filter((name): name is string => name !== null)
     .map((methodName) => ({ filterName, methodName, actions }));
 }
@@ -310,26 +317,14 @@ function applySkips(
   return left;
 }
 
-/** The action names a keyword's value gives: one symbol, or an array of them. */
-function namesUnder(node: RbNode | undefined): ReadonlySet<string> | null {
+/** The actions a keyword's value comes down to: one symbol, or an array of them. */
+function actionsUnder(
+  node: RbNode | undefined,
+  facts: Database | undefined,
+): ReadonlySet<string> | null {
   if (node === undefined) {
     return null;
   }
-  const single = symbolValue(node);
-  if (single !== null) {
-    return new Set([single]);
-  }
-  if (node.type !== "array" && node.type !== "symbol_array") {
-    return null;
-  }
-  const names = new Set<string>();
-  for (const child of bodyStatements(node)) {
-    // `%i[show]` gives a bare_symbol, whose own text is the name.
-    const bare = child.type === "bare_symbol" ? child.text : null;
-    const name = symbolValue(child) ?? bare;
-    if (name !== null) {
-      names.add(name);
-    }
-  }
-  return names;
+  const found = namesOf(node, facts);
+  return found === null ? null : new Set(found);
 }

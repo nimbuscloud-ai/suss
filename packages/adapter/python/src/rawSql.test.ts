@@ -160,6 +160,37 @@ describe("a statement a Python body writes as SQL", () => {
     ).toEqual([]);
   });
 
+  it("reads a statement built with +", async () => {
+    const effects = await effectsFor(
+      [
+        "from sqlalchemy import text",
+        "",
+        "def load(session):",
+        '    return session.execute(text("SELECT id" + " FROM users"))',
+      ].join("\n"),
+    );
+
+    expect(storageOf(effects[0] as Effect).semantics.container).toBe("users");
+  });
+
+  it("reads a statement held in a module-level name", async () => {
+    const effects = await effectsFor(
+      [
+        "from sqlalchemy import text",
+        "",
+        'LOAD_USERS = "SELECT id, email FROM users"',
+        "",
+        "def load(session):",
+        "    return session.execute(text(LOAD_USERS))",
+      ].join("\n"),
+    );
+
+    expect(storageOf(effects[0] as Effect).interaction).toMatchObject({
+      kind: "read",
+      fields: ["id", "email"],
+    });
+  });
+
   it("says nothing about a statement built somewhere else", async () => {
     expect(
       await effectsFor(

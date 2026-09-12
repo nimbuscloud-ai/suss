@@ -27,6 +27,7 @@ import { lowerRubyBody } from "./paths/lowering.js";
 import { predicateOf } from "./paths/predicates.js";
 import { evaluatedValue } from "./values/evaluator.js";
 
+import type { Database } from "@suss/datalog";
 import type {
   ConditionInfo,
   RawBranch,
@@ -61,8 +62,9 @@ function statusArgumentOf(
 function statusNumberOf(
   node: RbNode,
   names: Record<string, number>,
+  facts: Database | undefined,
 ): number | null {
-  const value = evaluatedValue(node);
+  const value = evaluatedValue(node, facts);
   const constant = constantOf(value);
   if (typeof constant === "number") {
     return constant;
@@ -140,6 +142,7 @@ function readingOfCall(
   call: RbNode,
   declaration: RbStatusCall,
   names: Record<string, number>,
+  facts: Database | undefined,
 ): Reading<number> {
   const argument = statusArgumentOf(call, declaration);
   if (argument === null) {
@@ -147,7 +150,7 @@ function readingOfCall(
       ? absentReading
       : writtenReading(declaration.defaultStatusCode, rangeOf(call));
   }
-  const status = statusNumberOf(argument, names);
+  const status = statusNumberOf(argument, names, facts);
   if (status === null) {
     return unreadableReading(
       "This response writes a status that does not settle on a number here, so this outcome claims none",
@@ -197,6 +200,8 @@ interface Outcome {
 /** What a path that writes no response of its own does. A filter hands the request on where an action responds with the library's default. */
 export interface BranchOptions {
   fallthrough?: "respond" | "handOn";
+  /** The project's facts, so a status written as a constant another file defines resolves. */
+  facts?: Database | undefined;
 }
 
 function branchOf(
@@ -365,7 +370,7 @@ export function responseBranches(
     const reading =
       declaration === undefined
         ? absentReading
-        : readingOfCall(terminal, declaration, statusNames);
+        : readingOfCall(terminal, declaration, statusNames, options.facts);
     for (const path of enumerated.byTerminal.get(terminal) ?? []) {
       outcomes.push({
         conditions: path.map(conditionOf),

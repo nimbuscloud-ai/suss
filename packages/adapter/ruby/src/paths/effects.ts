@@ -3,11 +3,14 @@
 // what the IR means by a call that does not always fire.
 
 import { enumerateOrDegrade, sharedGatingConditions } from "@suss/extractor";
+import { constantOf, literalOf } from "@suss/values";
 
 import { field, NodeMap, OWN_BODY_TYPES } from "../ast.js";
+import { evaluatedValue } from "../values/evaluator.js";
 import { isBareMethodCall, localNamesIn } from "./bareCalls.js";
 import { lowerRubyBody } from "./lowering.js";
 
+import type { Database } from "@suss/datalog";
 import type { EffectArg, RawEffect } from "@suss/extractor";
 import type { RbNode } from "../parser.js";
 
@@ -25,23 +28,25 @@ const BLOCK_TYPES = new Set([
   "block",
 ]);
 
-const LITERAL_ARGS: Record<string, (node: RbNode) => EffectArg | null> = {
-  string: (node) => ({
-    kind: "string",
-    value: node.text.replace(/^["']|["']$/g, ""),
-  }),
-  integer: (node) => {
-    const value = Number.parseInt(node.text, 10);
-    return Number.isNaN(value) ? null : { kind: "number", value };
-  },
-  float: (node) => {
-    const value = Number.parseFloat(node.text);
-    return Number.isNaN(value) ? null : { kind: "number", value };
-  },
-  true: () => ({ kind: "boolean", value: true }),
-  false: () => ({ kind: "boolean", value: false }),
-  simple_symbol: (node) => ({ kind: "string", value: node.text.slice(1) }),
-};
+/** The literal an argument comes down to, or null when it does not come down to one. */
+function literalArgOf(
+  node: RbNode,
+  facts: Database | undefined,
+): EffectArg | null {
+  const value = evaluatedValue(node, facts);
+  const text = literalOf(value);
+  if (text !== null) {
+    return { kind: "string", value: text };
+  }
+  const constant = constantOf(value);
+  if (typeof constant === "number") {
+    return { kind: "number", value: constant };
+  }
+  if (typeof constant === "boolean") {
+    return { kind: "boolean", value: constant };
+  }
+  return null;
+}
 
 function children(node: RbNode): RbNode[] {
   return node.namedChildren.filter((child): child is RbNode => child !== null);
@@ -210,26 +215,30 @@ export function calleeText(call: RbNode): string {
   return receiver === null ? method : `${receiver.text}.${method}`;
 }
 
-function argOf(node: RbNode): EffectArg {
-  const literal = LITERAL_ARGS[node.type]?.(node);
-  if (literal !== null && literal !== undefined) {
+function argOf(node: RbNode, facts: Database | undefined): EffectArg {
+  const literal = literalArgOf(node, facts);
+  if (literal !== null) {
     return literal;
   }
   if (node.type === "call" && !isArglessReceiverCall(node)) {
-    return { kind: "call", callee: calleeText(node), args: argsOf(node) };
+    return {
+      kind: "call",
+      callee: calleeText(node),
+      args: argsOf(node, facts),
+    };
   }
   return { kind: "identifier", name: node.text };
 }
 
-function argsOf(call: RbNode): EffectArg[] {
+function argsOf(call: RbNode, facts: Database | undefined): EffectArg[] {
   const args = field(call, "arguments");
   if (args === null) {
     return [];
   }
   return children(args).map((child) =>
     child.type === "pair"
-      ? argOf(field(child, "value") ?? child)
-      : argOf(child),
+      ? argOf(field(child, "value") ?? child, facts)
+      : argOf(child, facts),
   );
 }
 
@@ -260,6 +269,7 @@ export function invocationEffects(
   definitionNode: RbNode,
   inherited: InheritedMethods = NO_INHERITED_METHODS,
   keepsArglessCall: (call: RbNode) => boolean = NO_ARGLESS_CALLS,
+  facts?: Database | undefined,
 ): InvocationEffect[] {
   const body = field(definitionNode, "body");
   if (body === null) {
@@ -309,7 +319,7 @@ export function invocationEffects(
     return {
       type: "invocation",
       callee: calleeText(call),
-      args: argsOf(call),
+      args: argsOf(call, facts),
       async: false,
       ...(conditions.length > 0 ? { preconditions: conditions } : {}),
     };

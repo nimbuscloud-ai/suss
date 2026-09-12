@@ -1,10 +1,19 @@
-// predicates.ts: what a condition expression says, as a Predicate.
-// The checker reads a transition's conditions to tell a status test from an
-// ordinary one, so a condition left opaque takes no part in that.
+/**
+ * predicates.ts: what a condition expression says, as a Predicate.
+ *
+ * The checker reads a transition's conditions to tell a status test from an
+ * ordinary one, so a condition left opaque takes no part in that. Each side
+ * of a comparison goes through the shared value evaluator, so a status
+ * written as a named constant is the number the test compares against.
+ */
+
+import { constantOf, literalOf } from "@suss/values";
 
 import { field } from "../ast.js";
+import { evaluatedValue } from "../values/evaluator.js";
 
 import type { ComparisonOp, Predicate, ValueRef } from "@suss/behavioral-ir";
+import type { Database } from "@suss/datalog";
 import type { PyNode } from "../parser.js";
 
 /** Python's own spelling of each operator the IR models. */
@@ -27,18 +36,15 @@ function operatorText(node: PyNode): string {
 }
 
 /** A literal the IR can carry, or the expression as written. */
-function valueRefOf(node: PyNode): ValueRef {
-  if (node.type === "string") {
-    return { type: "literal", value: node.text.slice(1, -1) };
+function valueRefOf(node: PyNode, facts: Database | undefined): ValueRef {
+  const value = evaluatedValue(node, facts);
+  const constant = constantOf(value);
+  if (constant !== undefined) {
+    return { type: "literal", value: constant };
   }
-  if (node.type === "integer") {
-    const value = Number.parseInt(node.text, 10);
-    if (!Number.isNaN(value)) {
-      return { type: "literal", value };
-    }
-  }
-  if (node.type === "true" || node.type === "false") {
-    return { type: "literal", value: node.type === "true" };
+  const literal = literalOf(value);
+  if (literal !== null) {
+    return { type: "literal", value: literal };
   }
 
   const chain = attributeChain(node);
@@ -81,11 +87,15 @@ const opaqueOf = (node: PyNode): Predicate => ({
 });
 
 /** `x is None` and `x is not None`, which is how Python asks about null. */
-function nullCheckOf(subject: PyNode, negated: boolean): Predicate {
-  return { type: "nullCheck", subject: valueRefOf(subject), negated };
+function nullCheckOf(
+  subject: PyNode,
+  negated: boolean,
+  facts: Database | undefined,
+): Predicate {
+  return { type: "nullCheck", subject: valueRefOf(subject, facts), negated };
 }
 
-function comparisonOf(node: PyNode): Predicate {
+function comparisonOf(node: PyNode, facts: Database | undefined): Predicate {
   const [left, right] = node.namedChildren.filter(
     (child): child is PyNode => child !== null,
   );
@@ -95,13 +105,13 @@ function comparisonOf(node: PyNode): Predicate {
 
   const operator = operatorText(node);
   if (operator === "is" && right.type === "none") {
-    return nullCheckOf(left, false);
+    return nullCheckOf(left, false, facts);
   }
   if (operator === "is not" && right.type === "none") {
-    return nullCheckOf(left, true);
+    return nullCheckOf(left, true, facts);
   }
   if (operator === "is" && left.type === "none") {
-    return nullCheckOf(right, false);
+    return nullCheckOf(right, false, facts);
   }
 
   const op = COMPARISONS[operator];
@@ -111,9 +121,9 @@ function comparisonOf(node: PyNode): Predicate {
 
   return {
     type: "comparison",
-    left: valueRefOf(left),
+    left: valueRefOf(left, facts),
     op,
-    right: valueRefOf(right),
+    right: valueRefOf(right, facts),
   };
 }
 
@@ -122,27 +132,30 @@ function comparisonOf(node: PyNode): Predicate {
  * opaque with its own source text, which is what every Python condition was
  * before.
  */
-export function predicateOf(node: PyNode): Predicate {
+export function predicateOf(
+  node: PyNode,
+  facts?: Database | undefined,
+): Predicate {
   if (node.type === "parenthesized_expression") {
     const inner = node.namedChildren[0];
-    return inner == null ? opaqueOf(node) : predicateOf(inner);
+    return inner == null ? opaqueOf(node) : predicateOf(inner, facts);
   }
 
   if (node.type === "comparison_operator") {
-    return comparisonOf(node);
+    return comparisonOf(node, facts);
   }
 
   if (node.type === "not_operator") {
     const operand = field(node, "argument") ?? node.namedChildren[0];
     return operand == null
       ? opaqueOf(node)
-      : { type: "negation", operand: predicateOf(operand) };
+      : { type: "negation", operand: predicateOf(operand, facts) };
   }
 
   if (node.type === "identifier" || node.type === "attribute") {
     return {
       type: "truthinessCheck",
-      subject: valueRefOf(node),
+      subject: valueRefOf(node, facts),
       negated: false,
     };
   }

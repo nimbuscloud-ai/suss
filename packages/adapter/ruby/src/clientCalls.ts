@@ -346,7 +346,7 @@ function clientUnit(
       recognition: pack.name,
     }),
     parameters: [],
-    branches: callerBranches(method, range),
+    branches: callerBranches(method, range, options.facts),
     ...responseAccessors(pattern),
     bodyContent: "statements",
     dependencyCalls: [],
@@ -358,8 +358,12 @@ function clientUnit(
  * One branch per path the caller takes after the call, so a test it
  * writes on the response says which statuses it handles.
  */
-function callerBranches(method: RbNode, range: Range): RawBranch[] {
-  const effects = invocationEffects(method);
+function callerBranches(
+  method: RbNode,
+  range: Range,
+  facts: Database | undefined,
+): RawBranch[] {
+  const effects = invocationEffects(method, undefined, undefined, facts);
   return returnPathBranches(method, effects) ?? [returnBranch(range, effects)];
 }
 

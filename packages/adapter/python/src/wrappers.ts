@@ -572,7 +572,7 @@ function wrapperUnit(
   });
   const continuations = continuationStatements(node, declared.form);
   const terminals = bodyTerminals(body, raised, continuations);
-  const effects = invocationEffects(node);
+  const effects = invocationEffects(node, options.facts);
   const extra = recognizedBodyEffects(
     node,
     file.module,
@@ -629,6 +629,7 @@ function wrapperUnit(
     effects,
     branchOf,
     fallthrough: delegate(node),
+    facts: options.facts,
   }).map((branch) =>
     extra.length === 0 ? branch : { ...branch, extraEffects: extra },
   );

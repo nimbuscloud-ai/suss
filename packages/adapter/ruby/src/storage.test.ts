@@ -367,6 +367,29 @@ describe("the database work a Ruby body does", () => {
     });
   });
 
+  it("says which columns a read asked for through a constant", async () => {
+    const effects = await effectsFor(
+      ["COLUMN = :name", "names = Order.pluck(COLUMN)"].join("\n"),
+    );
+    expect(accessOf(effects[0])).toMatchObject({
+      kind: "read",
+      operation: "pluck",
+      fields: ["name"],
+    });
+  });
+
+  it("picks rows by the keywords a hash held in a constant writes", async () => {
+    const effects = await effectsFor(
+      ["CONDITIONS = { email: nil }", "found = Order.find_by(CONDITIONS)"].join(
+        "\n",
+      ),
+    );
+    expect(accessOf(effects[0])).toMatchObject({
+      kind: "read",
+      selector: ["email"],
+    });
+  });
+
   it("says nothing about the columns a write was given as a variable", async () => {
     const effects = await effectsFor("Order.create(attrs)\n");
     expect(accessOf(effects[0])).toMatchObject({ kind: "write", fields: [] });

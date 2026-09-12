@@ -9,30 +9,39 @@
  */
 
 import { enumerateOrDegrade, sharedGatingConditions } from "@suss/extractor";
+import { constantOf, literalOf } from "@suss/values";
 
 import { field } from "../ast.js";
+import { evaluatedValue } from "../values/evaluator.js";
 import { lowerPythonBody } from "./lowering.js";
 import { predicateOf } from "./predicates.js";
 
+import type { Database } from "@suss/datalog";
 import type { EffectArg, RawEffect } from "@suss/extractor";
 import type { PyNode } from "../parser.js";
 
 /** A body written in one of these belongs to the function it declares. */
 const NESTED_DEFINITION_TYPES = new Set(["function_definition"]);
 
-const LITERAL_ARGS: Record<string, (node: PyNode) => EffectArg | null> = {
-  string: (node) => ({ kind: "string", value: node.text.slice(1, -1) }),
-  integer: (node) => {
-    const value = Number.parseInt(node.text, 10);
-    return Number.isNaN(value) ? null : { kind: "number", value };
-  },
-  float: (node) => {
-    const value = Number.parseFloat(node.text);
-    return Number.isNaN(value) ? null : { kind: "number", value };
-  },
-  true: () => ({ kind: "boolean", value: true }),
-  false: () => ({ kind: "boolean", value: false }),
-};
+/** The literal an argument comes down to, or null when it does not come down to one. */
+function literalArgOf(
+  node: PyNode,
+  facts: Database | undefined,
+): EffectArg | null {
+  const value = evaluatedValue(node, facts);
+  const text = literalOf(value);
+  if (text !== null) {
+    return { kind: "string", value: text };
+  }
+  const constant = constantOf(value);
+  if (typeof constant === "number") {
+    return { kind: "number", value: constant };
+  }
+  if (typeof constant === "boolean") {
+    return { kind: "boolean", value: constant };
+  }
+  return null;
+}
 
 /** Every call written in this function's own body, in source order. */
 export function bodyCalls(node: PyNode, found: PyNode[] = []): PyNode[] {
@@ -61,18 +70,22 @@ export function enclosingStatement(call: PyNode, body: PyNode): PyNode | null {
 }
 
 /** What one argument says, written out as the IR spells an effect argument. */
-function argOf(node: PyNode): EffectArg {
-  const literal = LITERAL_ARGS[node.type]?.(node);
-  if (literal !== null && literal !== undefined) {
+function argOf(node: PyNode, facts: Database | undefined): EffectArg {
+  const literal = literalArgOf(node, facts);
+  if (literal !== null) {
     return literal;
   }
   if (node.type === "call") {
-    return { kind: "call", callee: calleeText(node), args: argsOf(node) };
+    return {
+      kind: "call",
+      callee: calleeText(node),
+      args: argsOf(node, facts),
+    };
   }
   return { kind: "identifier", name: node.text };
 }
 
-function argsOf(call: PyNode): EffectArg[] {
+function argsOf(call: PyNode, facts: Database | undefined): EffectArg[] {
   const args = field(call, "arguments");
   if (args === null) {
     return [];
@@ -81,8 +94,8 @@ function argsOf(call: PyNode): EffectArg[] {
     .filter((child): child is PyNode => child !== null)
     .map((child) =>
       child.type === "keyword_argument"
-        ? argOf(field(child, "value") ?? child)
-        : argOf(child),
+        ? argOf(field(child, "value") ?? child, facts)
+        : argOf(child, facts),
     );
 }
 
@@ -98,6 +111,7 @@ export function calleeText(call: PyNode): string {
  */
 export function invocationEffects(
   definitionNode: PyNode,
+  facts?: Database | undefined,
 ): Extract<RawEffect, { type: "invocation" }>[] {
   const body = field(definitionNode, "body");
   if (body === null) {
@@ -139,12 +153,12 @@ export function invocationEffects(
       statement === undefined
         ? undefined
         : enumerated.byTerminal.get(statement),
-      predicateOf,
+      (condition) => predicateOf(condition, facts),
     );
     return {
       type: "invocation",
       callee: calleeText(call),
-      args: argsOf(call),
+      args: argsOf(call, facts),
       async: false,
       ...(conditions.length > 0 ? { preconditions: conditions } : {}),
     };

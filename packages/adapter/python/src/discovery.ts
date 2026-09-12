@@ -24,7 +24,7 @@ import {
   walkDescendants,
   writtenReading,
 } from "@suss/extractor";
-import { literalOf, pathOf } from "@suss/values";
+import { constantOf, literalOf, pathOf } from "@suss/values";
 
 import {
   aliasValueOf,
@@ -39,7 +39,6 @@ import {
   parameterNameAndType,
   rangeOf,
   spanOf,
-  stringLiteralValue,
   stripDecorators,
 } from "./ast.js";
 import { clientCallUnits } from "./clientCalls.js";
@@ -774,16 +773,20 @@ function readStatusCode(
 }
 
 /** Flask takes the status off the tuple as an int, or off the front of a string like "201 CREATED". */
-function statusFromReturnedValue(node: PyNode | undefined): number | null {
+function statusFromReturnedValue(
+  node: PyNode | undefined,
+  facts: Database | undefined,
+): number | null {
   if (node === undefined) {
     return null;
   }
-  if (node.type === "integer") {
-    const parsed = Number.parseInt(node.text, 10);
-    return Number.isNaN(parsed) ? null : parsed;
+  const value = evaluatedValue(node, facts);
+  const number = constantOf(value);
+  if (typeof number === "number") {
+    return Number.isInteger(number) ? number : null;
   }
 
-  const text = stringLiteralValue(node);
+  const text = literalOf(value);
   if (text === null) {
     return null;
   }
@@ -794,6 +797,7 @@ function statusFromReturnedValue(node: PyNode | undefined): number | null {
 /** What one `return` says about the status: a number, nothing, or unreadable. */
 function statusOfReturn(
   statement: PyNode,
+  facts: Database | undefined,
 ):
   | { kind: "status"; value: number }
   | { kind: "none" }
@@ -803,7 +807,7 @@ function statusOfReturn(
     return { kind: "none" };
   }
 
-  const status = statusFromReturnedValue(returned.namedChildren[1]);
+  const status = statusFromReturnedValue(returned.namedChildren[1], facts);
   return status === null
     ? { kind: "unreadable" }
     : { kind: "status", value: status };
@@ -938,6 +942,7 @@ function branchesPerTerminal(options: PerTerminalOptions): RawBranch[] | null {
     raised,
     effects: options.effects,
     branchOf: (found) => terminalBranchOf(found, options.ctx),
+    facts: options.ctx.facts,
   });
   return branches.length > 1 || soleReturnWritesBody ? branches : null;
 }
@@ -961,7 +966,7 @@ function statusOfReturnIn(
   if (pattern.statusFromReturnedTuple !== true) {
     return { kind: "none" };
   }
-  return statusOfReturn(statement);
+  return statusOfReturn(statement, options.facts);
 }
 
 interface ReturnedStatusOptions {
@@ -1336,7 +1341,7 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
   // A route that says nothing about the body shape and nothing about the
   // status declares no response at all, so the library's default status has
   // nothing to apply to.
-  const effects = invocationEffects(definitionNode);
+  const effects = invocationEffects(definitionNode, options.facts);
   const extra = recognizedBodyEffects(definitionNode, module, storageLookup);
   const perTerminal = branchesPerTerminal({
     definitionNode,

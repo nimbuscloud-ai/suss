@@ -397,16 +397,11 @@ const EXEMPT = new Map([
     "bracketRead, literalBehind, callSitesOf, bindingRead, destructuredReads, functionBehindCallee",
   ],
   ["packages/adapter/python/src/decorators.ts", "argShapeOf"],
-  ["packages/adapter/python/src/discovery.ts", "statusFromReturnedValue"],
-  ["packages/adapter/python/src/paths/effects.ts", "the LITERAL_ARGS table"],
-  ["packages/adapter/python/src/paths/predicates.ts", "valueRefOf"],
   [
     "packages/adapter/python/src/paths/returnedShape.ts",
     "recordShape, shapeOfReturned",
   ],
-  ["packages/adapter/ruby/src/paths/effects.ts", "the LITERAL_ARGS table"],
   ["packages/adapter/ruby/src/paths/predicates.ts", "literalOf"],
-  ["packages/adapter/ruby/src/storage.ts", "bareName"],
 ]);
 
 function isUnder(relative, entry) {
