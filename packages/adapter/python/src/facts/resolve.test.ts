@@ -212,6 +212,24 @@ describe("resolving a value across files", () => {
     });
   });
 
+  it("settles a name built by a member of a plain module import", async () => {
+    const { facts, dir } = await factsFor({
+      "app.py": ["import fastapi", "", "router = fastapi.APIRouter()", ""].join(
+        "\n",
+      ),
+    });
+
+    const construction = facts.facts("call")[0];
+    expect(construction, "the construction was not recorded").toBeDefined();
+
+    const nameKey = `${path.join(dir, "app.py")}#router`;
+    const settled = subjectConstructions(facts, [nameKey]);
+    expect(settled.get(nameKey)).toEqual({
+      constructionKey: String(construction?.[0]),
+      origins: [{ module: "fastapi", name: "APIRouter" }],
+    });
+  });
+
   it("settles a call to a wrapper on the construction the wrapper returns", async () => {
     const { facts, dir } = await factsFor({
       "lib.py": "def connect():\n    pass\n",

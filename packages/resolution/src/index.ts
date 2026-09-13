@@ -99,7 +99,8 @@ export type {
 //   containsFn(f, g)            g is declared inside f
 //   call(r, c)                  r is a call whose callee is c
 //   callArg(r, k, a)            r passes a at position k
-//   imports(x, m, n)            x is the name n imported from module m
+//   imports(x, m, n)            x is the name n imported from module m,
+//                               or the whole of m when n is `*`
 //   exportsAs(m, n, v)          module m exports v under the name n
 //   reExports(m, n, m2, n2)     m's n is m2's n2
 //   reExportsAll(m, m2)         m forwards everything m2 exports
@@ -139,6 +140,12 @@ export const VALUE_STEP = constant("value");
  */
 export const NAMESPACE_IMPORT_NAME = "*";
 export const NAMESPACE_IMPORT = constant(NAMESPACE_IMPORT_NAME);
+
+/**
+ * The label on the `comesFrom` rule for a member read off a whole-module
+ * import. `explain` tells that proof from the two import ones by it.
+ */
+export const NAMESPACE_MEMBER_RULE = "namespace member";
 
 /** A step to what running the call x is handed back. */
 export const RESULT_STEP = constant("result");
@@ -722,8 +729,8 @@ export const RESOLUTION_RULES = [
     ],
   ),
   // Where a name comes from, when what it refers to lives outside the
-  // source being read. A walk ends at something written out in source,
-  // so it never reaches a library's own function.
+  // source being read. A walk ends at what the source writes out, so it
+  // never reaches a library's own function; these rules do.
   rule(
     "comesFrom",
     [v("x"), v("m"), v("n")],
@@ -736,6 +743,28 @@ export const RESOLUTION_RULES = [
       lit("reaches", v("x"), v("y"), VALUE_STEP),
       lit("imports", v("y"), v("m"), v("n")),
     ],
+  ),
+  // A member read off a whole-module import: the member's own name is
+  // what the module exports, so `fastapi.APIRouter` comes from
+  // fastapi's `APIRouter`. Directly, or through a name for the module.
+  rule(
+    "comesFrom",
+    [v("x"), v("m"), v("n")],
+    [
+      lit("readsProperty", v("x"), v("ns"), v("n")),
+      lit("imports", v("ns"), v("m"), NAMESPACE_IMPORT),
+    ],
+    NAMESPACE_MEMBER_RULE,
+  ),
+  rule(
+    "comesFrom",
+    [v("x"), v("m"), v("n")],
+    [
+      lit("readsProperty", v("x"), v("o"), v("n")),
+      lit("reaches", v("o"), v("ns"), VALUE_STEP),
+      lit("imports", v("ns"), v("m"), NAMESPACE_IMPORT),
+    ],
+    NAMESPACE_MEMBER_RULE,
   ),
 
   // Calling f ends up calling the name n that module m exports, one

@@ -17,6 +17,7 @@ describe("bindModule: imports", () => {
       module: "a.b.c",
       relativeLevel: 0,
       localName: "a",
+      bindsWholeModule: false,
     });
   });
 
@@ -28,6 +29,7 @@ describe("bindModule: imports", () => {
       module: "a.b.c",
       relativeLevel: 0,
       localName: "abc",
+      bindsWholeModule: true,
     });
   });
 

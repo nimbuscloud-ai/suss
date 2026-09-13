@@ -199,7 +199,7 @@ a condition on where the walk ended.
 | `isWrittenAs(x, z)` | at anything written out in source rather than named |
 | `objectOf(o, obj)` | at the object an expression refers to |
 | `paramAt(r, p, z)` | at what one call site put in parameter `p` |
-| `comesFrom(x, m, n)` | at an import, giving the module and the name |
+| `comesFrom(x, m, n)` | at an import, giving the module and the name, including a member read off a module imported whole |
 | `callsInto(f, m, n)` | at a library name that calling `f` ends up calling |
 | `resolves(x, z)` | `comesTo` narrowed to functions |
 

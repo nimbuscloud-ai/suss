@@ -1170,6 +1170,43 @@ describe("where a name comes from", () => {
       ),
     ).toEqual(["@nestjs/graphql:Resolver", "barrel:Resolver"]);
   });
+
+  it("reads a member off a whole-module import as that module's export", () => {
+    expect(
+      originsOf(
+        [
+          ["imports", "ns", "fastapi", "*"],
+          ["readsProperty", "member", "ns", "APIRouter"],
+        ],
+        "member",
+      ),
+    ).toEqual(["fastapi:APIRouter"]);
+  });
+
+  it("reads a member off a name for a whole-module import", () => {
+    expect(
+      originsOf(
+        [
+          ["imports", "ns", "express", "*"],
+          ["binds", "local", "ns"],
+          ["readsProperty", "member", "local", "Router"],
+        ],
+        "member",
+      ),
+    ).toEqual(["express:Router"]);
+  });
+
+  it("says nothing about a member read off a named import", () => {
+    expect(
+      originsOf(
+        [
+          ["imports", "client", "httpx", "Client"],
+          ["readsProperty", "member", "client", "get"],
+        ],
+        "member",
+      ),
+    ).toEqual([]);
+  });
 });
 
 describe("what calling a project wrapper reaches", () => {

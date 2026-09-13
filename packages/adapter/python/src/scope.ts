@@ -37,7 +37,17 @@ export interface Scope {
  * a bare `from . import c`.
  */
 export type Binding =
-  | { kind: "import"; module: string; relativeLevel: number; localName: string }
+  | {
+      kind: "import";
+      module: string;
+      relativeLevel: number;
+      localName: string;
+      /**
+       * False for `import a.b.c`, where the name binds the package `a`
+       * and a member read off it lands somewhere other than `module`.
+       */
+      bindsWholeModule: boolean;
+    }
   | {
       kind: "importFrom";
       module: string;
@@ -213,6 +223,7 @@ function bindImportStatement(stmt: PyNode, scope: Scope): void {
           module: dotted.text,
           relativeLevel: 0,
           localName: alias.text,
+          bindsWholeModule: true,
         });
       }
       continue;
@@ -226,6 +237,7 @@ function bindImportStatement(stmt: PyNode, scope: Scope): void {
           module: nameNode.text,
           relativeLevel: 0,
           localName: first.text,
+          bindsWholeModule: nameNode.text === first.text,
         });
       }
     }

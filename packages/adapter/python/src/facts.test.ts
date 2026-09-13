@@ -126,6 +126,28 @@ describe("emitModuleImportFacts", () => {
     ]);
   });
 
+  it("records a plain import as the whole module", async () => {
+    const importingFile = write(
+      "root/myapp/routes/todos.py",
+      "import fastapi\nimport sqlalchemy.orm\nimport a.b as ab\n",
+    );
+    const tree = await parsePython(fs.readFileSync(importingFile, "utf8"));
+    const module = bindModule(tree.rootNode);
+
+    const db = new Database();
+    emitModuleImportFacts(db, importingFile, module, {
+      roots: [path.join(tmpDir, "root")],
+    });
+
+    // `import sqlalchemy.orm` binds the package `sqlalchemy`, so a
+    // member off it is not one of `sqlalchemy.orm`'s.
+    expect(db.facts("imports")).toEqual([
+      [`${importingFile}#fastapi`, "fastapi", "*"],
+      [`${importingFile}#sqlalchemy`, "sqlalchemy.orm", "sqlalchemy"],
+      [`${importingFile}#ab`, "a.b", "*"],
+    ]);
+  });
+
   it("records an external import with no resolved-file fact", async () => {
     const importingFile = write(
       "root/myapp/routes/todos.py",
