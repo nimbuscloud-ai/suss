@@ -105,6 +105,42 @@ describe("resolving a value across files", () => {
     expect(names).toEqual(["alias", "build"]);
   });
 
+  it("reads a method off the result of a function annotated with a class in another file", async () => {
+    const { facts } = await factsFor({
+      "models.py": [
+        "class User:",
+        "    def save(self):",
+        "        pass",
+        "",
+      ].join("\n"),
+      "app.py": [
+        "from models import User",
+        "",
+        "def current_user() -> User: ...",
+        "",
+        "u = current_user()",
+        "u.save()",
+        "",
+      ].join("\n"),
+    });
+
+    const read = facts
+      .facts("readsProperty")
+      .find((row) => String(row[2]) === "save");
+    expect(read, "the method read was not recorded").toBeDefined();
+    const method = facts
+      .facts("holdsProperty")
+      .find((row) => String(row[1]) === "save")?.[2];
+
+    resolveCalls(facts, [String(read?.[0])]);
+    expect(
+      facts
+        .facts("wantedResolves")
+        .filter((row) => String(row[0]) === String(read?.[0]))
+        .map((row) => String(row[1])),
+    ).toEqual([String(method)]);
+  });
+
   it("claims nothing for a call whose callee it never reached", async () => {
     const { facts } = await factsFor({ "app.py": "registry = missing()\n" });
     const call = facts.facts("call")[0];

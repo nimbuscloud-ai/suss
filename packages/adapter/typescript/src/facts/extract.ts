@@ -43,6 +43,8 @@ import type {
   ClassDeclaration,
   ParameterDeclaration,
   PropertyDeclaration,
+  TypeNode,
+  TypeReferenceNode,
   VariableDeclaration,
 } from "ts-morph";
 
@@ -992,6 +994,7 @@ function emitFunctionFacts(db: Database, table: NodeTable, fn: Node): void {
   ) {
     emitParameters(db, table, fnId, fn.getParameters());
 
+    const returns: ReturnState = { stated: false };
     const body = fn.getBody?.();
     if (body !== undefined) {
       // An arrow written without braces returns its body, and the body
@@ -1002,15 +1005,91 @@ function emitFunctionFacts(db: Database, table: NodeTable, fn: Node): void {
       // resolved to nothing.
       if (Node.isExpression(body)) {
         fact(db, "returnsValue", fnId, emitValue(db, table, body));
-        recordBodyNode(db, table, fnId, body);
+        returns.stated = true;
+        recordBodyNode(db, table, fnId, body, returns);
       }
       body.forEachDescendant((descendant, traversal) => {
-        if (recordBodyNode(db, table, fnId, descendant)) {
+        if (recordBodyNode(db, table, fnId, descendant, returns)) {
           traversal.skip();
         }
       });
     }
+
+    if (!returns.stated) {
+      emitReturnAnnotation(db, table, fnId, fn.getReturnTypeNode());
+    }
   }
+}
+
+/** Whether a function's body has said what it gives back. */
+interface ReturnState {
+  stated: boolean;
+}
+
+/**
+ * What a signature says a call arrives at, read only when the body said
+ * nothing, so a caller never gets two different results for one
+ * function.
+ */
+function emitReturnAnnotation(
+  db: Database,
+  table: NodeTable,
+  fnId: string,
+  annotation: TypeNode | undefined,
+): void {
+  const reference = returnedTypeReference(annotation);
+  if (reference === null) {
+    return;
+  }
+
+  fact(db, "returnsNamed", fnId, reference.getTypeName().getText());
+  const cls = classBehindTypeName(reference);
+  if (cls === null) {
+    return;
+  }
+  emitClassFacts(db, table, cls);
+  fact(db, "returnsClass", fnId, nodeId(cls));
+}
+
+/**
+ * The type a call arrives at. A promise is read through, since awaiting
+ * it is what every caller does; any other generic hands back the
+ * container itself, so its arguments say nothing about the result.
+ */
+function returnedTypeReference(
+  annotation: TypeNode | undefined,
+): TypeReferenceNode | null {
+  if (annotation === undefined || !Node.isTypeReference(annotation)) {
+    return null;
+  }
+  if (annotation.getTypeName().getText() !== "Promise") {
+    return annotation;
+  }
+  const [inner] = annotation.getTypeArguments();
+  return returnedTypeReference(inner);
+}
+
+/**
+ * The class a type name refers to. An import brings in the alias rather
+ * than the class, so following it is the second try; warming a
+ * re-export chain is expensive enough to skip when the first try lands.
+ */
+function classBehindTypeName(
+  reference: TypeReferenceNode,
+): ClassDeclaration | null {
+  const symbol = reference.getTypeName().getSymbol();
+  if (symbol === undefined) {
+    return null;
+  }
+  const written = symbol.getDeclarations().find(Node.isClassDeclaration);
+  if (written !== undefined) {
+    return written;
+  }
+  return (
+    resolveAliasedSymbol(symbol)
+      ?.getDeclarations()
+      .find(Node.isClassDeclaration) ?? null
+  );
 }
 
 /**
@@ -1027,10 +1106,12 @@ function recordBodyNode(
   table: NodeTable,
   fnId: string,
   node: Node,
+  returns: ReturnState,
 ): boolean {
   if (isFunctionRoot(node)) {
     if (descendantIsReturned(node)) {
       fact(db, "returnsValue", fnId, emitValue(db, table, node as Expression));
+      returns.stated = true;
     } else {
       emitValue(db, table, node as Expression);
     }
@@ -1042,6 +1123,7 @@ function recordBodyNode(
     const returned = node.getExpression();
     if (returned !== undefined) {
       fact(db, "returnsValue", fnId, emitValue(db, table, returned));
+      returns.stated = true;
     }
     return false;
   }

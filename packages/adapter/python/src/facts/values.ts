@@ -478,11 +478,13 @@ function emitFunctionFacts(
 
   // One walk for both, since this function's own facts and the expression
   // facts want the same nodes and the walk is the expensive part.
+  let statesReturn = false;
   walkExpressions(inside, body, (child) => {
     if (child.type === "return_statement") {
       const returned = child.namedChildren[0];
       if (returned != null) {
         add(inside, "returnsValue", funcKey, valueKey(inside, returned));
+        statesReturn = true;
       }
     }
     if (child.type === "call") {
@@ -494,7 +496,35 @@ function emitFunctionFacts(
     emitExpressionFact(inside, child);
   });
 
+  if (!statesReturn) {
+    emitReturnAnnotation(emitter, fn, funcKey);
+  }
+
   return funcKey;
+}
+
+/**
+ * What a function's signature says it gives back, read only when its
+ * body stated nothing, so a caller never gets two different results for
+ * one function. The name is bound in the scope around the function.
+ */
+function emitReturnAnnotation(
+  emitter: Emitter,
+  fn: PyNode,
+  funcKey: string,
+): void {
+  const annotated = returnedClass(field(fn, "return_type") ?? undefined);
+  if (annotated === null) {
+    return;
+  }
+  const classKey = classReferenceKey(emitter, annotated);
+  if (classKey !== null) {
+    add(emitter, "returnsClass", funcKey, classKey);
+  }
+  const written = writtenBaseName(annotated) ?? stringLiteralValue(annotated);
+  if (written !== null) {
+    add(emitter, "returnsNamed", funcKey, written);
+  }
 }
 
 /**
@@ -586,6 +616,54 @@ function annotatedClass(node: PyNode | undefined): PyNode | null {
     return annotatedClass(sideBesidesNone(node) ?? undefined);
   }
   return null;
+}
+
+/**
+ * The generics a return annotation is read through. Everything else,
+ * `list[Item]` included, hands the caller the container rather than the
+ * Item, so the annotation says nothing about what a method call on the
+ * result would find.
+ */
+const RETURN_WRAPPERS = new Set(["Optional", "Awaitable"]);
+
+/**
+ * The class a return annotation is about, or null when the annotation is
+ * about no single class. A dotted name comes back as the attribute so
+ * the caller can read its text, and a forward reference as the string.
+ */
+function returnedClass(node: PyNode | undefined): PyNode | null {
+  if (node === undefined) {
+    return null;
+  }
+  if (
+    node.type === "identifier" ||
+    node.type === "attribute" ||
+    node.type === "string"
+  ) {
+    return node;
+  }
+  if (node.type === "type") {
+    return returnedClass(children(node)[0]);
+  }
+  if (node.type === "generic_type") {
+    return returnedClass(unwrappedReturnParameter(node));
+  }
+  if (node.type === "binary_operator") {
+    return returnedClass(sideBesidesNone(node) ?? undefined);
+  }
+  return null;
+}
+
+/** What `Optional[Item]` and `Awaitable[Item]` are about; nothing for any other generic. */
+function unwrappedReturnParameter(generic: PyNode): PyNode | undefined {
+  const base = children(generic)[0];
+  if (base === undefined || !RETURN_WRAPPERS.has(base.text)) {
+    return undefined;
+  }
+  const parameter = children(generic).find(
+    (child) => child.type === "type_parameter",
+  );
+  return parameter === undefined ? undefined : children(parameter)[0];
 }
 
 /**

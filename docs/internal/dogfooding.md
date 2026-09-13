@@ -211,6 +211,12 @@ return is. The count rises whenever another pack drops its own reader
 and asks the adapter's resolvers instead, since every one of those
 hands back a ts-morph node.
 
+The `returnsClass` fact does not reach any of them. An adapter emits it
+only for a function whose body states no value of its own, and every
+function above returns something: `evaluate` returns the database it was
+handed, and the rest return a node they walked to. For those, the
+adapter never reads the annotation at all.
+
 A method the language declares on every value used to land here too,
 and that was noise: `readSqlAccess(...).map(...)` asked for
 `@suss/sql::readSqlAccess.map`, and the count climbed by one for every

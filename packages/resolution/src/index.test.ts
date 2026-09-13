@@ -551,6 +551,51 @@ describe("what a call gives back", () => {
   });
 });
 
+describe("what a function is annotated as returning", () => {
+  // def current_user() -> User: ...; u = current_user(); u.save()
+  const annotated: Array<[string, ...string[]]> = [
+    ["func", "save"],
+    ["objectValue", "User"],
+    ["holdsProperty", "User", "save", "save"],
+    ["binds", "UserRef", "User"],
+    ["func", "currentUser"],
+    ["returnsClass", "currentUser", "UserRef"],
+    ["binds", "currentUserRef", "currentUser"],
+    ["call", "site", "currentUserRef"],
+  ];
+
+  it("gives back the class the annotation names", () => {
+    expect(resultsOf(annotated, "site")).toEqual(["User"]);
+  });
+
+  it("reads a method off the result through the name the call was declared as", () => {
+    expect(
+      resolutionsOf(
+        [
+          ...annotated,
+          ["binds", "u", "site"],
+          ["readsProperty", "callee", "u", "save"],
+        ],
+        "callee",
+      ),
+    ).toEqual(["save"]);
+  });
+
+  it("gives back nothing when the annotation names something the run has no class for", () => {
+    expect(
+      resultsOf(
+        [
+          ["func", "currentUser"],
+          ["returnsClass", "currentUser", "RouterRef"],
+          ["binds", "currentUserRef", "currentUser"],
+          ["call", "site", "currentUserRef"],
+        ],
+        "site",
+      ),
+    ).toEqual([]);
+  });
+});
+
 describe("a call written as what its callee returns", () => {
   // function client() { return construction; }, and construction is
   // itself a call, so it has no comesTo answer of its own.

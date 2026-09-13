@@ -95,6 +95,8 @@ export type {
 //   extendsNamed(c, n)          class c extends the name n, where no
 //                               node in the run backs that name
 //   returnsValue(f, v)          f returns v
+//   returnsClass(f, c)          f is annotated as returning c
+//   returnsNamed(f, n)          f's return annotation is written n
 //   bodyCalls(f, c)             f's body calls c
 //   containsFn(f, g)            g is declared inside f
 //   call(r, c)                  r is a call whose callee is c
@@ -335,6 +337,21 @@ export const RESOLUTION_RULES = [
     [v("r"), v("ret"), RESULT_STEP],
     [lit("invokes", v("r"), v("f")), lit("returnsValue", v("f"), v("ret"))],
     "call result",
+  ),
+
+  // What a function says it gives back when its body never states a
+  // value. The adapter stays quiet about the annotation whenever the
+  // body does state one, so the two never answer the same question.
+  rule(
+    "stepsTo",
+    [v("r"), v("cls"), RESULT_STEP],
+    [
+      lit("invokes", v("r"), v("f")),
+      lit("returnsClass", v("f"), v("x")),
+      lit("comesTo", v("x"), v("cls")),
+      lit("objectValue", v("cls")),
+    ],
+    "declared return type",
   ),
 
   // Where a walk gets to, and whether it ran a call on the way. The walk

@@ -39,7 +39,7 @@ Three layers do the work.
 
   <rect class="box" x="60" y="66" width="540" height="68" rx="6" />
   <text class="label" x="330" y="88" text-anchor="middle">1. The adapter reads each file into facts</text>
-  <text class="note" x="330" y="106" text-anchor="middle">23 relations for TypeScript: binds, call, callArg, paramOf, imports, exportsAs and the rest</text>
+  <text class="note" x="330" y="106" text-anchor="middle">25 relations for TypeScript: binds, call, callArg, paramOf, imports, exportsAs and the rest</text>
   <text class="note" x="330" y="124" text-anchor="middle">nothing is resolved at this layer, only written down</text>
 
   <line class="arrow" x1="330" y1="134" x2="330" y2="156" marker-end="url(#layers-arrow)" />
@@ -51,7 +51,7 @@ Three layers do the work.
 
   <rect class="box" x="60" y="220" width="540" height="86" rx="6" />
   <text class="label" x="330" y="242" text-anchor="middle">2. One rule set joins the facts into a value graph</text>
-  <text class="note" x="330" y="260" text-anchor="middle">51 rules. Ten of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
+  <text class="note" x="330" y="260" text-anchor="middle">68 rules. Fourteen of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
   <text class="note" x="330" y="277" text-anchor="middle">reaches is the transitive closure of those hops, and it records</text>
   <text class="note" x="330" y="294" text-anchor="middle">whether the walk ran a call along the way.</text>
 
@@ -135,24 +135,29 @@ declared as something. `fallbackBranch` says `a || b` is one of its two
 branches, without saying which. `readsProperty` says an expression is
 `o.n`. None of them says what anything resolves to.
 
-The rules read 25 relations that no rule derives, so something has to
-supply them. The TypeScript adapter supplies 21 of the 25 by reading
-source, and emits two more of its own on top: `bindCall`, for the
-JavaScript `.bind` rule, and `importsModule`, for walking module edges.
-That leaves four it never emits. `extends` and `callKeywordArg` come
-from the Python and Ruby adapters. `unwrapsByName` and `wrapperModule`
-come from a pack's wrapper declarations, so no source file contains
-them at all.
+A signature can supply one too. `returnsClass` says a function is
+annotated as giving back a class, and an adapter emits it only when the
+function's body states no value of its own, so a body that says what it
+returns is never contradicted by its annotation.
+
+The rules read relations that no rule derives, so something has to
+supply them. The TypeScript adapter reads most of them out of source,
+and emits two more of its own on top: `bindCall`, for the JavaScript
+`.bind` rule, and `importsModule`, for walking module edges. `extends`,
+`extendsNamed` and `callKeywordArg` come from the Python and Ruby
+adapters. `unwrapsByName`, `wrapperModule` and the `givesBackOne` family
+come from a pack's declarations, so no source file contains them at
+all.
 
 `packages/resolution/README.md` lists the vocabulary with a line of
 explanation each.
 
 ## Layer 2: one rule set makes a graph
 
-`packages/resolution/src/index.ts` contains 51 rules and no code. Ten
-of them derive `stepsTo(x, y, kind)`, which says the value `x` leads to
-the value `y` in one hop. The TypeScript adapter adds an eleventh for
-`.bind`.
+`packages/resolution/src/index.ts` contains 68 rules and no code.
+Fourteen of them derive `stepsTo(x, y, kind)`, which says the value `x`
+leads to the value `y` in one hop. The TypeScript adapter adds a
+fifteenth for `.bind`.
 
 ```ts
 rule(
