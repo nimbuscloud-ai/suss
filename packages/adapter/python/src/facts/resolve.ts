@@ -4,10 +4,9 @@
 
 import {
   askResolution,
-  placeholderValues,
   writtenValueOf as sharedWrittenValueOf,
   writtenValuesOf as sharedWrittenValuesOf,
-  singleAnswers,
+  writtenValuesByKey,
 } from "@suss/resolution";
 
 import type { Database } from "@suss/datalog";
@@ -73,52 +72,46 @@ export function subjectConstructions(
     return found;
   }
 
-  const askSubjects = (keys: Iterable<string>): void => {
+  const askSubjects = (keys: readonly string[]): void => {
     askResolution(db, keys, "wantedSubject");
   };
   askSubjects(valueKeys);
-  const placeholders = placeholderValues(db);
-  const written = singleAnswers(db.facts("wantedSubjectWritten"), placeholders);
-
-  // A name's one answer can be a call to a project function; asking
-  // about that call as its own subject reaches what it returns.
-  const calls = new Set(db.facts("call").map((row) => String(row[0])));
-  const throughCalls = new Set(
-    [...written.values()].filter((candidate) => calls.has(candidate)),
-  );
-  if (throughCalls.size > 0) {
-    askSubjects(throughCalls);
-  }
-  const writtenThroughCall = singleAnswers(
-    db.facts("wantedSubjectWritten"),
-    placeholders,
+  const written = writtenValuesByKey(
+    db,
+    valueKeys,
+    askSubjects,
+    "wantedSubjectWritten",
   );
 
-  const origins = new Map<string, SubjectOrigin[]>();
-  for (const row of db.facts("wantedSubjectConstruction")) {
-    const key = `${String(row[0])}|${String(row[1])}`;
-    const listed = origins.get(key) ?? [];
-    listed.push({ module: String(row[2]), name: String(row[3]) });
-    origins.set(key, listed);
-  }
-
-  for (const valueKey of valueKeys) {
-    const direct = written.get(valueKey);
-    if (direct === undefined) {
-      continue;
-    }
-    const deeper = calls.has(direct)
-      ? writtenThroughCall.get(direct)
-      : undefined;
-    const constructionKey = deeper ?? direct;
-    const originOf = deeper === undefined ? valueKey : direct;
-
-    const from = origins.get(`${originOf}|${constructionKey}`);
+  const origins = originsByConstruction(db);
+  for (const [valueKey, constructionKey] of written) {
+    const from = origins.get(constructionKey);
     if (from !== undefined) {
       found.set(valueKey, { constructionKey, origins: from });
     }
   }
   return found;
+}
+
+/**
+ * Where each construction's callee came from. The module and the name
+ * follow from the call alone, so two subjects settling on the same
+ * construction get the same pair and one entry covers both.
+ */
+function originsByConstruction(db: Database): Map<string, SubjectOrigin[]> {
+  const origins = new Map<string, SubjectOrigin[]>();
+  for (const row of db.facts("wantedSubjectConstruction")) {
+    const construction = String(row[1]);
+    const one = { module: String(row[2]), name: String(row[3]) };
+    const listed = origins.get(construction) ?? [];
+    if (
+      !listed.some((was) => was.module === one.module && was.name === one.name)
+    ) {
+      listed.push(one);
+    }
+    origins.set(construction, listed);
+  }
+  return origins;
 }
 
 /**

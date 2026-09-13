@@ -46,7 +46,11 @@ export {
   singleAnswers,
 } from "./singleAnswer.js";
 export { type NameWrite, valueLeftByWrites } from "./writes.js";
-export { writtenValueOf, writtenValuesOf } from "./writtenValue.js";
+export {
+  writtenValueOf,
+  writtenValuesByKey,
+  writtenValuesOf,
+} from "./writtenValue.js";
 
 export type {
   CaseFiles,
