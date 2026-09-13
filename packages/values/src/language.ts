@@ -111,12 +111,12 @@ export interface Parameter<N> {
   readonly default: N | null;
   /**
    * The position of the argument that fills the name. Every name a
-   * destructured parameter binds shares one argument, so the position
-   * in this list is the wrong answer once a lowering destructures. A
-   * lowering that never does can leave this out and take the position
-   * in the list.
+   * destructured parameter binds shares one argument, and a parameter
+   * a lowering drops for want of a path still uses up a position, so a
+   * lowering has to say this rather than let a caller count list
+   * entries.
    */
-  readonly position?: number;
+  readonly position: number;
   /**
    * The properties to read off that argument, outermost first, for a
    * name a destructured parameter binds. A plain name takes the
@@ -128,8 +128,9 @@ export interface Parameter<N> {
 export function parameter<N>(
   name: string,
   fallback: N | null = null,
+  position = 0,
 ): Parameter<N> {
-  return { name, default: fallback };
+  return { name, default: fallback, position };
 }
 
 export type FunctionBody<N> = readonly N[] | { readonly expression: N };

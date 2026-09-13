@@ -752,20 +752,44 @@ function siteOf(node: RbNode): Site<RbNode> | null {
   }
 }
 
-/** The parameters a list declares, in order; an optional or keyword parameter with its default. */
+/** A bare `*` or `**`, with no name of its own, blocks further positional or keyword arguments rather than taking one. */
+const BARE_SPLAT_TYPES = new Set(["splat_parameter", "hash_splat_parameter"]);
+
+/**
+ * The parameters a list declares, in order, with the position of the
+ * argument that fills each one. `(a, b)` destructures one argument by
+ * position, and the evaluator only reads a property by name, so it
+ * binds nothing, but the argument it took still moves every parameter
+ * after it up by one.
+ */
 function parametersOf(parameters: RbNode | null): Parameter<RbNode>[] {
   if (parameters === null) {
     return [];
   }
-  return named(parameters).flatMap((parameter) => {
-    if (parameter.type === "identifier") {
-      return [{ name: parameter.text, default: null }];
+  const declared: Parameter<RbNode>[] = [];
+  let position = 0;
+  for (const parameter of named(parameters)) {
+    if (
+      BARE_SPLAT_TYPES.has(parameter.type) &&
+      field(parameter, "name") === null
+    ) {
+      continue;
     }
-    const name = field(parameter, "name");
-    return name === null
-      ? []
-      : [{ name: name.text, default: field(parameter, "value") }];
-  });
+    if (parameter.type === "identifier") {
+      declared.push({ name: parameter.text, default: null, position });
+    } else {
+      const name = field(parameter, "name");
+      if (name !== null) {
+        declared.push({
+          name: name.text,
+          default: field(parameter, "value"),
+          position,
+        });
+      }
+    }
+    position += 1;
+  }
+  return declared;
 }
 
 function functionOf(node: RbNode): FunctionShape<RbNode> | null {

@@ -538,9 +538,8 @@ function functionOf(node: PyNode): FunctionShape<PyNode> | null {
   if (node.type !== "function_definition") {
     return null;
   }
-  const parameters = parameterShapes(node);
   return {
-    parameters: isMethod(node) ? parameters.slice(1) : parameters,
+    parameters: parameterShapes(node, isMethod(node) ? 1 : 0),
     body: blockStatements(field(node, "body")),
   };
 }
