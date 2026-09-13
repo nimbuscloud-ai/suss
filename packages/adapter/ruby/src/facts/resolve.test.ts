@@ -142,6 +142,41 @@ describe("resolving a value across a Ruby file", () => {
     expect(writtenValueOf(db, nameKey)).toBe(String(construction?.[0]));
   });
 
+  it("settles a name written as a library builder's own call on that call", async () => {
+    const db = await factsFor(
+      ["conn = Faraday.new", 'conn.get("/items")', ""].join("\n"),
+    );
+
+    const construction = db
+      .facts("readsProperty")
+      .find((row) => String(row[2]) === "new")?.[0];
+    expect(construction, "the construction was not recorded").toBeDefined();
+    const built = db
+      .facts("call")
+      .find((row) => String(row[1]) === String(construction));
+
+    expect(writtenValueOf(db, "f.rb#conn")).toBe(String(built?.[0]));
+  });
+
+  it("runs a bare name no local declares, so the value is what the method gives back", async () => {
+    const db = await factsFor(
+      [
+        "def build_client",
+        "  connect()",
+        "end",
+        "",
+        "table = build_client",
+      ].join("\n"),
+    );
+
+    const construction = db
+      .facts("call")
+      .find((row) => String(row[1]).endsWith("#connect"));
+    expect(construction, "the construction was not recorded").toBeDefined();
+
+    expect(writtenValueOf(db, "f.rb#table")).toBe(String(construction?.[0]));
+  });
+
   it("keeps nil for a name written only as nil", async () => {
     const db = await factsFor("value = nil\n");
     const placeholder = db.facts("placeholderValue")[0];
@@ -204,6 +239,11 @@ describe("a finder Ruby writes with no arguments", () => {
   });
 });
 
+/** The call whose callee is this property read, which is the whole `a.b` expression. */
+function callOf(db: Database, callee: string): string {
+  return String(db.facts("call").find((row) => String(row[1]) === callee)?.[0]);
+}
+
 describe("a method Ruby runs by reading it off a constant", () => {
   /** The list written out in the source, which is the object holding an element at position 0. */
   const listOf = (db: Database): string =>
@@ -211,12 +251,15 @@ describe("a method Ruby runs by reading it off a constant", () => {
       db.facts("holdsProperty").find((row) => String(row[1]) === "0")?.[0],
     );
 
-  /** The `Settings.filters` read, which is what the evaluator asks about. */
+  /** The `Settings.filters` call, which is what the evaluator asks about. */
   const readOf = (db: Database): string =>
-    String(
-      db
-        .facts("readsProperty")
-        .find((row) => String(row[1]).endsWith("#Settings"))?.[0],
+    callOf(
+      db,
+      String(
+        db
+          .facts("readsProperty")
+          .find((row) => String(row[1]).endsWith("#Settings"))?.[0],
+      ),
     );
 
   it("is worth what the method gives back", async () => {
@@ -307,23 +350,26 @@ describe("a call on an association", () => {
   it("settles on the class the association reaches", async () => {
     const db = await modelFactsFor(ASSOCIATION_SOURCE);
     const status = classBehind(db, "f.rb#Status");
-    const read = String(
-      db
-        .facts("readsProperty")
-        .find((row) => String(row[2]) === "statuses")?.[0],
+    const statuses = callOf(
+      db,
+      String(
+        db
+          .facts("readsProperty")
+          .find((row) => String(row[2]) === "statuses")?.[0],
+      ),
     );
-    const callee = String(
-      db
-        .facts("readsProperty")
-        .find(
-          (row) => String(row[1]) === read && String(row[2]) === "find",
-        )?.[0],
-    );
-    const find = String(
-      db.facts("call").find((row) => String(row[1]) === callee)?.[0],
+    const find = callOf(
+      db,
+      String(
+        db
+          .facts("readsProperty")
+          .find(
+            (row) => String(row[1]) === statuses && String(row[2]) === "find",
+          )?.[0],
+      ),
     );
 
-    expect(objectsBehind(db, read)).toEqual([status]);
+    expect(objectsBehind(db, statuses)).toEqual([status]);
     expect(objectsBehind(db, find)).toEqual([status]);
   });
 });

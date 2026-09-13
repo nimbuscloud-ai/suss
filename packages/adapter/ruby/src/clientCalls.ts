@@ -214,10 +214,8 @@ function namesConstant(receiver: RbNode, constantName: string): boolean {
  * that name in the same file, which is where a service object keeps the
  * one connection its request methods share.
  *
- * The value facts settle neither spelling. An argument-less
- * `Faraday.new` is a property read, which the rules give no written
- * value, and a call to a method of the same file is a bare name, which
- * gets no `call` fact for the rules to step through.
+ * The facts settle the assignment. They do not settle the method: a
+ * bare name Ruby looks up on `self` binds to nothing.
  */
 function builtBy(
   name: string,

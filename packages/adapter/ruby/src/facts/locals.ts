@@ -147,6 +147,17 @@ function readForVariable(node: RbNode): LocalWrite[] {
   return targetsOf(pattern).map((target) => writeOf(target, null, node, false));
 }
 
+/** `rescue => e` puts the exception in a name, which outlives the rescue body. */
+function readRescueVariable(node: RbNode): LocalWrite[] {
+  const variable = field(node, "variable");
+  if (variable === null) {
+    return [];
+  }
+  return bodyStatements(variable)
+    .flatMap(targetsOf)
+    .map((target) => writeOf(target, null, node, false));
+}
+
 function readBlockParameters(node: RbNode): LocalWrite[] {
   const found: LocalWrite[] = [];
   for (const param of parametersOf(node)) {
@@ -162,6 +173,7 @@ const WRITE_READERS: Record<string, WriteReader> = {
   assignment: readAssignment,
   operator_assignment: readOperatorAssignment,
   for: readForVariable,
+  rescue: readRescueVariable,
   block: readBlockParameters,
   do_block: readBlockParameters,
 };
@@ -270,6 +282,24 @@ export function ownerOfName(
     }
   }
   return enclosing !== null && names.locals.has(name) ? enclosing : null;
+}
+
+/**
+ * Whether a bare name here is a local. Ruby spells a local read and a
+ * call of a method on `self` the same way, so a name no scope around
+ * this point wrote is the second one.
+ */
+export function isLocalName(
+  node: RbNode,
+  name: string,
+  enclosing: RbNode | null,
+): boolean {
+  const names =
+    enclosing === null ? namesOfFile(node.tree) : namesOfMethod(enclosing);
+  if (names.blockParams.has(name) && blockDeclaring(node, name) !== null) {
+    return true;
+  }
+  return names.locals.has(name);
 }
 
 /** The nearest block around a node that declares the name as a parameter. */

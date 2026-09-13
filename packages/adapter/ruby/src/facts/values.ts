@@ -14,8 +14,10 @@ import {
   OWN_BODY_TYPES,
   PREPEND_CALL,
 } from "../ast.js";
+import { spellsAName } from "../paths/bareCalls.js";
 import {
   collectWrites,
+  isLocalName,
   ownerOfName,
   parametersOf,
   paramNameOf,
@@ -75,6 +77,11 @@ function nameKey(
  * The key a read of this expression joins on, for a caller that has an
  * expression in hand and wants to ask the rules about it. `enclosing` is
  * the method the expression is written in, or null outside one.
+ *
+ * Two Ruby spellings are keyed on a node rather than on a name. Ruby
+ * gives `receiver.method` no node of its own, so the method name is
+ * where the callee is keyed, and a name Ruby runs as a method is the
+ * call itself.
  */
 export function readKey(
   filePath: string,
@@ -85,20 +92,32 @@ export function readKey(
   if (node.type !== "identifier" && node.type !== "constant") {
     return nodeId(filePath, node);
   }
-  // A bare `receiver.method` read is keyed by the whole call, the way
-  // `emitPropertyRead` reads it back; `isPropertyRead` says which this is.
+  if (isMethodOfReceiver(node) || isBareCall(node, enclosing)) {
+    return nodeId(filePath, node);
+  }
+  return nameKey(filePath, node, enclosing);
+}
+
+/** Whether this name is the method of a `receiver.method` call, which is that call's callee. */
+function isMethodOfReceiver(node: RbNode): boolean {
   const parent = node.parent;
-  if (
+  return (
     parent !== null &&
     parent.type === "call" &&
     field(parent, "method")?.id === node.id &&
     field(parent, "receiver") !== null
-  ) {
-    return isPropertyRead(parent)
-      ? nodeId(filePath, parent)
-      : nodeId(filePath, node);
+  );
+}
+
+/**
+ * Whether Ruby runs this name rather than reading it: no local in
+ * scope declares it, so it is a call of a method on `self`.
+ */
+function isBareCall(node: RbNode, enclosing: RbNode | null): boolean {
+  if (node.type !== "identifier" || spellsAName(node)) {
+    return false;
   }
-  return nameKey(filePath, node, enclosing);
+  return !isLocalName(node, node.text, enclosing);
 }
 
 const WRITTEN_VALUE_TYPES = new Set([
@@ -156,16 +175,9 @@ function add(emitter: Emitter, relation: string, ...tuple: string[]): void {
   emitter.db.add(relation, tuple);
 }
 
-/**
- * The key a value joins on. A bare name joins on the name, so a read of `x`
- * meets whatever `x` was bound to; anything else joins on its own node.
- */
+/** The key a value joins on, which is the key a reader asks the rules about. */
 function valueKey(emitter: Emitter, written: RbNode): string {
-  const value = readThrough(written);
-  if (value.type !== "identifier" && value.type !== "constant") {
-    return nodeId(emitter.filePath, value);
-  }
-  return nameKey(emitter.filePath, value, emitter.enclosing);
+  return readKey(emitter.filePath, written, emitter.enclosing);
 }
 
 /** A pair's key when it is written as a symbol or a string, which is what a property joins on. */
@@ -182,32 +194,28 @@ function pairKeyText(key: RbNode): string | null {
   return null;
 }
 
-/** `config.host` parses as a call with a receiver and no arguments, which is Ruby's property read. */
-function isPropertyRead(node: RbNode): boolean {
-  return (
-    node.type === "call" &&
-    field(node, "receiver") !== null &&
-    field(node, "arguments") === null &&
-    children(node).every(
-      (child) => child.type !== "do_block" && child.type !== "block",
-    )
-  );
-}
-
-function emitPropertyRead(emitter: Emitter, node: RbNode): void {
-  const receiver = field(node, "receiver");
-  const method = field(node, "method");
-  if (receiver === null || method === null) {
-    return;
+/**
+ * The key of the method an expression runs, or null when it runs none.
+ * Ruby gives `receiver.method` no node of its own, so the method name
+ * is the callee, and a bare name Ruby runs is its own method name.
+ */
+export function calleeKeyOf(
+  filePath: string,
+  node: RbNode,
+  enclosing: RbNode | null,
+): string | null {
+  if (isBareCall(node, enclosing)) {
+    return nameKey(filePath, node, enclosing);
   }
-
-  add(
-    emitter,
-    "readsProperty",
-    nodeId(emitter.filePath, node),
-    valueKey(emitter, receiver),
-    method.text,
-  );
+  const method = node.type === "call" ? field(node, "method") : null;
+  if (method === null) {
+    return null;
+  }
+  // Keying a bare callee on its node would find a method of that name at
+  // the top of the file instead of the one in scope.
+  return field(node, "receiver") === null
+    ? nameKey(filePath, method, enclosing)
+    : nodeId(filePath, method);
 }
 
 function emitCall(emitter: Emitter, call: RbNode): void {
@@ -215,20 +223,15 @@ function emitCall(emitter: Emitter, call: RbNode): void {
   // chain there and `isWrittenAs` reads it back.
   add(emitter, "writtenValue", nodeId(emitter.filePath, call));
 
-  const method = field(call, "method");
-  if (method === null) {
+  // A bare name Ruby runs is the whole call and its own method name.
+  const method = call.type === "identifier" ? call : field(call, "method");
+  const calleeKey = calleeKeyOf(emitter.filePath, call, emitter.enclosing);
+  if (method === null || calleeKey === null) {
     return;
   }
 
-  // Ruby gives `receiver.method` no node of its own, so the method name is
-  // where the read is keyed. Keying on the bare name would find a method of
-  // that name at the top of the file instead.
   const receiver = field(call, "receiver");
   const callKey = nodeId(emitter.filePath, call);
-  const calleeKey =
-    receiver === null
-      ? valueKey(emitter, method)
-      : nodeId(emitter.filePath, method);
   add(emitter, "call", callKey, calleeKey);
   if (receiver !== null) {
     add(
@@ -420,9 +423,7 @@ function emitExpressionFacts(emitter: Emitter, node: RbNode): void {
   emitDynamicDefinition(emitter, node, []);
   walkExpressions(node, emitter, (child, turns) => {
     emitDynamicDefinition(emitter, child, turns);
-    if (isPropertyRead(child)) {
-      emitPropertyRead(emitter, child);
-    } else if (child.type === "call") {
+    if (child.type === "call" || isBareCall(child, emitter.enclosing)) {
       emitCall(emitter, child);
     }
     if (ARRAY_TYPES.has(child.type)) {
@@ -617,7 +618,7 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
         add(inside, "returnsValue", funcKey, valueKey(inside, returned));
       }
     }
-    if (child.type === "call") {
+    if (child.type === "call" || isBareCall(child, method)) {
       add(inside, "bodyCalls", funcKey, nodeId(inside.filePath, child));
     }
   });

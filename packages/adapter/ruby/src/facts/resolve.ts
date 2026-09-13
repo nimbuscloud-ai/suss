@@ -12,11 +12,11 @@ import {
 
 import type { Database } from "@suss/datalog";
 
-/** The steps Ruby states beyond the shared rules, all about a call written with no arguments. */
+/** The steps Ruby states beyond the shared rules. */
 export const RUBY_RULES = [
-  // `Loader.new` makes one of the class, which the shared rules already say
-  // about calling a class. Ruby writes it as a method read off the constant
-  // instead, so the read is what steps to the class here.
+  // Making one of a class is a call of the class, which the shared rules
+  // already say. Ruby writes the callee as `new` read off the constant, so
+  // what this adds is that the callee is the class.
   rule(
     "stepsTo",
     [v("x"), v("cls"), VALUE_STEP],
@@ -27,43 +27,16 @@ export const RUBY_RULES = [
     ],
   ),
 
-  // The shared `declared finder` step, for the same spelling: `Account.first`
-  // and `Account.where(x).first` write no arguments, so Ruby reads them as
-  // property reads and neither gets a `call` fact to hang that step on.
-  rule(
-    "stepsTo",
-    [v("x"), v("cls"), VALUE_STEP],
-    [
-      lit("readsProperty", v("x"), v("o"), v("m")),
-      lit("objectOf", v("o"), v("cls")),
-      lit("objectValue", v("cls")),
-      lit("libraryBase", v("cls"), v("n")),
-      lit("givesBackOne", v("n"), v("m")),
-    ],
-    "declared finder",
-  ),
-
-  // Ruby cannot refer to a method without running it, so
-  // `Settings.filters` is worth what the method returns. The shared
-  // rules hang that step on a `call` fact this spelling never gets.
-  rule(
-    "invokes",
-    [v("x"), v("f")],
-    [
-      lit("readsProperty", v("x"), v("o"), v("m")),
-      lit("comesTo", v("x"), v("f")),
-      lit("func", v("f")),
-    ],
-    "property read runs a method",
-  ),
-
   // `%i[a b].freeze` is worth the list it was written as. The evaluator
   // says the same in its row table, for a value it reads in one file.
   ...["freeze", "dup"].map((method) =>
     rule(
       "stepsTo",
-      [v("x"), v("o"), VALUE_STEP],
-      [lit("readsProperty", v("x"), v("o"), constant(method))],
+      [v("r"), v("o"), VALUE_STEP],
+      [
+        lit("call", v("r"), v("c")),
+        lit("readsProperty", v("c"), v("o"), constant(method)),
+      ],
       "hands back the receiver",
     ),
   ),

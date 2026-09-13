@@ -436,9 +436,9 @@ The shared rules read that. `Account.find(params[:id])` steps to `Account`,
 so a method read off the result runs the one `Account` declares, and a
 `before_action` writing `@account` reaches the action the same way any other
 instance variable does. A chain composes one method at a time, so
-`Account.where(x).first` steps to `Account` twice. Ruby writes a call with
-no arguments as a property read rather than a call, which is why the adapter
-states the same step a second time in `RUBY_RULES` for that spelling.
+`Account.where(x).first` steps to `Account` twice. `Account.first` writes no
+arguments, and the value facts state it as a call all the same, so the shared
+step covers both spellings.
 
 The storage recognizer asks the same rules about a receiver that is not
 written as a constant, which is how `@account.update(attrs)` after that
@@ -545,6 +545,8 @@ An instance variable is a name on the object rather than on any one method, so i
 A call with no receiver, or one on `self`, never reaches the rules: Ruby looks that name up on the enclosing class's ancestry, then among the methods the project writes outside any class, which Ruby mixes into every object as a private method.
 
 A call written as a bare name, with no receiver, no arguments and no parentheses, is one of these. `visible_items` on its own parses as an identifier, the same node a local variable read parses as, so `bareCalls.ts` tells the two apart the way Ruby does: a name the method binds is a local variable, and every other identifier read is a call on self. A name is bound by a parameter, an assignment, a block or lambda parameter, a `for` variable, or a `rescue => err` clause. Binding is over-approximated on purpose: a name assigned anywhere in the method counts as a local even below the read, so the mistake this can make is missing a call rather than inventing one. An identifier written where a name is spelled rather than a value read, a method's own name or an assignment's left side, is left alone. So is one written as another call's receiver, since `orders.first` gives no way to resolve what `first` runs on.
+
+The value facts read a bare name the same way, through the same table, so `handler = build_index` states a `call` and `handler` is worth what `build_index` gives back rather than worth the method. Every `a.b` states a `call` too, with the method name as the callee and a `readsProperty` on it, whether or not arguments follow, because Ruby has no way to name a method without running it. That is what lets the shared rules say what `Faraday.new` and `Account.first` come down to, where the adapter used to state a step of its own for each.
 
 A pack can also say which receiverless calls its own library defines, in `inheritedMethodNames` on the `controllerActions` pattern. A call by one of those names is left off the effect list and out of the reach walk, because an effect list is there to show what a body reaches in the project and nothing in the project defines those methods. The list applies to every body the run reads, not only to a discovered action, since the reach walk reaches methods that no pattern discovered. A call written against a receiver keeps its effect, so `page.render(json: 1)` is recorded even when a pack declared `render`. No such name appears in this package; `@suss/framework-rails` supplies Rails' own list.
 

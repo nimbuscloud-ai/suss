@@ -122,6 +122,15 @@ export function localNamesIn(definitionNode: RbNode): Set<string> {
   return names;
 }
 
+/** Whether this identifier spells a name rather than reading a value. */
+export function spellsAName(node: RbNode): boolean {
+  const parent = node.parent;
+  if (parent === null) {
+    return true;
+  }
+  return SPELLS_A_NAME[parent.type]?.(parent, node) === true;
+}
+
 /** Whether this identifier is a bare call on self rather than a local variable read or a name being spelled. */
 export function isBareMethodCall(
   node: RbNode,
@@ -130,9 +139,5 @@ export function isBareMethodCall(
   if (node.type !== "identifier" || locals.has(node.text)) {
     return false;
   }
-  const parent = node.parent;
-  if (parent === null) {
-    return false;
-  }
-  return SPELLS_A_NAME[parent.type]?.(parent, node) !== true;
+  return !spellsAName(node);
 }
