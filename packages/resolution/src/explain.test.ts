@@ -75,6 +75,38 @@ describe("explainResolutionProof", () => {
     );
   });
 
+  it("says a two-way name once per write, with the ordering called out", () => {
+    const db = evaluated([
+      ["func", "devFn"],
+      ["func", "prodFn"],
+      ["mayHold", "panel", "devFn"],
+      ["mayHold", "panel", "prodFn"],
+      ["writesAllStated", "panel"],
+    ]);
+
+    const toDev = explainResolutionProof(
+      proofOf(db, "resolves", ["panel", "devFn"]),
+      { describe: say },
+    );
+    const toProd = explainResolutionProof(
+      proofOf(db, "resolves", ["panel", "prodFn"]),
+      { describe: say },
+    );
+
+    expect(toDev?.steps.map((step) => step.rule)).toEqual([
+      "one of several writes",
+    ]);
+    expect(toDev?.steps[0].reason).toBe(
+      "panel is written more than once, and one of those writes makes it devFn",
+    );
+    expect(toProd?.steps[0].reason).toBe(
+      "panel is written more than once, and one of those writes makes it prodFn",
+    );
+    expect(toDev?.assumptions).toEqual([
+      "nothing says which write to panel ran last, so every write it has is a possible value",
+    ]);
+  });
+
   it("says which barrels forwarded a re-exported name", () => {
     const db = evaluated([
       ["func", "daoFn"],

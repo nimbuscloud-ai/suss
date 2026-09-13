@@ -738,24 +738,36 @@ function emitScopeWrites(
  * narrows the name is left out, and a write with no value of its own, a
  * `for` target or a block parameter, is what `writesUnstated` says. A
  * method parameter is left out of both: `paramNamed` already says the
- * value is whatever the caller passed.
+ * value is whatever the caller passed. `writesAllStated` is the other
+ * side: the run read every write to the name.
  */
 function emitCandidates(
   emitter: Emitter,
   key: string,
   group: NameWrites,
 ): void {
+  let unstated = false;
+  let stated = 0;
   for (const write of group.writes) {
     if (write.value === null) {
       add(emitter, "writesUnstated", key);
+      unstated = true;
       continue;
     }
+    // A parameter's value comes from the caller, and no fact here says
+    // whether a later write always replaces it, so the writes the run
+    // did read are not the whole set.
     if (write.fromParameter) {
+      unstated = true;
       continue;
     }
     if (!describeWrite(emitter, write).narrowsName) {
       add(emitter, "mayHold", key, valueKey(emitter, write.value));
+      stated += 1;
     }
+  }
+  if (!unstated && stated > 0) {
+    add(emitter, "writesAllStated", key);
   }
 }
 

@@ -133,6 +133,24 @@ describe("calleeOutcomeOf", () => {
     expect(outcome.kind).toBe("severalSources");
   });
 
+  it("takes the one write that reaches a class once the rules step through them", () => {
+    // `writesAllStated` lets `stepsTo` take both writes, and only the
+    // construction comes to a class. The plain written value is no
+    // longer counted as a second source.
+    const outcome = outcomeOf(
+      [
+        ["objectValue", "Entity"],
+        ["mayHold", "thing", "made"],
+        ["mayHold", "thing", "text"],
+        ["writesAllStated", "thing"],
+        ["call", "made", "Entity"],
+        ["writtenValue", "text"],
+      ],
+      "thing",
+    );
+    expect(outcome).toEqual({ kind: "object", key: "Entity" });
+  });
+
   it("puts a name from a module this run never read outside the run", () => {
     expect(
       outcomeOf([["imports", "getLogger", "logging", "getLogger"]], "getLogger")

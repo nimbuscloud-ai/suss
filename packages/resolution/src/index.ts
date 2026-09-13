@@ -107,8 +107,10 @@ export type {
 //   reExports(m, n, m2, n2)     m's n is m2's n2
 //   reExportsAll(m, m2)         m forwards everything m2 exports
 //   mayHold(x, y)               one write to x wrote y, and nothing
-//                               says which write ran last
+//                               says which write ran last. x steps to
+//                               every such y at once
 //   writesUnstated(x)           a write to x states no value at all
+//   writesAllStated(x)          every write to x states a value
 //   entersAs(y, r)              y is the name a block opens over the
 //                               call r, so entering r is what wrote y
 //   givesBackOne(base, m)       a pack's word: m on a class reaching base
@@ -182,13 +184,23 @@ export const RESOLUTION_RULES = [
   ),
 
   // A name written more than once has the value the last write left
-  // there. The adapter works out which write that is and stays quiet
-  // when control flow decides, so such a name steps nowhere at all.
+  // there. The adapter works out which write that is, and stays quiet
+  // when control flow decides; the rule below takes that name instead.
   rule(
     "stepsTo",
     [v("x"), v("y"), VALUE_STEP],
     [lit("endsHolding", v("x"), v("y"))],
     "last write",
+  ),
+
+  // A name whose writes nothing orders leads to each of them, so a
+  // caller that can use several values gets them all and one that needs
+  // a single value gets none. A write stating no value stops every step.
+  rule(
+    "stepsTo",
+    [v("x"), v("y"), VALUE_STEP],
+    [lit("mayHold", v("x"), v("y")), lit("writesAllStated", v("x"))],
+    "one of several writes",
   ),
 
   // A fallback says the value is one of its branches, so each branch is

@@ -1409,6 +1409,52 @@ describe("a name written more than once", () => {
     ).toEqual([]);
   });
 
+  it("comes to both writes when nothing says which of them ran last", () => {
+    expect(
+      resolutionsOf(
+        [
+          ["func", "first"],
+          ["func", "second"],
+          ["mayHold", "panel", "first"],
+          ["mayHold", "panel", "second"],
+          ["writesAllStated", "panel"],
+        ],
+        "panel",
+      ),
+    ).toEqual(["first", "second"]);
+  });
+
+  it("comes to neither write when one of them states no value", () => {
+    expect(
+      resolutionsOf(
+        [
+          ["func", "first"],
+          ["func", "second"],
+          ["mayHold", "panel", "first"],
+          ["mayHold", "panel", "second"],
+          ["writesUnstated", "panel"],
+        ],
+        "panel",
+      ),
+    ).toEqual([]);
+  });
+
+  it("carries both writes on through an alias", () => {
+    expect(
+      resolutionsOf(
+        [
+          ["func", "first"],
+          ["func", "second"],
+          ["mayHold", "panel", "first"],
+          ["mayHold", "panel", "second"],
+          ["writesAllStated", "panel"],
+          ["binds", "alias", "panel"],
+        ],
+        "alias",
+      ),
+    ).toEqual(["first", "second"]);
+  });
+
   it("carries the surviving value through an alias and an import", () => {
     expect(
       resolutionsOf(
