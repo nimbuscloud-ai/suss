@@ -14,7 +14,7 @@
 
 import { ruleLabel } from "@suss/datalog";
 
-import { NAMESPACE_MEMBER_RULE } from "./index.js";
+import { BASE_CLASS_RULE, NAMESPACE_MEMBER_RULE } from "./index.js";
 
 import type { Atom, Proof, ProofDerived, Tuple } from "@suss/datalog";
 
@@ -133,7 +133,8 @@ const DEFAULT_PHRASES: Record<string, StepPhrase> = {
     const [, object, name] = premises[0].tuple;
     const contains = premises[2];
     const inherited =
-      contains.kind === "derived" && contains.premises.length > 1;
+      contains.kind === "derived" &&
+      ruleLabel(contains.rule) === BASE_CLASS_RULE;
     return {
       reason: `${describe(tuple[0])} reads ${String(name)} off ${describe(object)}, which contains ${describe(tuple[1])}`,
       notes: inherited ? [`${String(name)} comes from a base class`] : [],

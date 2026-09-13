@@ -685,13 +685,38 @@ describe("the database work a Ruby body does", () => {
       expect(effects).toEqual([]);
     });
 
-    it("says nothing when the rules settle the receiver on two classes", async () => {
+    it("takes the last of two writes one body runs in order", async () => {
       const effects = await writesIn(
         "suspend",
         [
           "class ThingsController",
           "  def set_thing",
           "    @thing = Account.find(params[:id])",
+          "    @thing = Status.find(params[:id])",
+          "  end",
+          "",
+          "  def suspend",
+          "    @thing.save",
+          "  end",
+          "end",
+          "",
+        ].join("\n"),
+        ASSOCIATED_MODELS,
+      );
+      expect(effects).toHaveLength(1);
+      expect(containerOf(effects[0])).toBe("Status");
+    });
+
+    it("says nothing when two methods settle the receiver on two classes", async () => {
+      const effects = await writesIn(
+        "suspend",
+        [
+          "class ThingsController",
+          "  def set_account",
+          "    @thing = Account.find(params[:id])",
+          "  end",
+          "",
+          "  def set_status",
           "    @thing = Status.find(params[:id])",
           "  end",
           "",

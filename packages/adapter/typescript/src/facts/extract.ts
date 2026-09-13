@@ -32,7 +32,9 @@ import { resolveAliasedSymbol } from "../moduleExports.js";
 import { climbSyntax } from "../walk/unwrap.js";
 import {
   describeWrites,
+  type FieldDeclaration,
   isWrittenAgain,
+  storesToField,
   writesToBinding,
   writesToField,
 } from "./assignments.js";
@@ -636,15 +638,7 @@ function emitParameterPropertyRead(
   if (settled === null) {
     return;
   }
-  if (Node.isExpression(settled)) {
-    fact(db, "binds", referenceId, emitValue(db, table, settled));
-    return;
-  }
-
-  // The parameter itself is not an expression, so it is written down
-  // here rather than through `emitValue`.
-  table.byId.set(nodeId(settled), settled);
-  fact(db, "binds", referenceId, nodeId(settled));
+  fact(db, "binds", referenceId, storedKey(db, table, settled));
 }
 
 /**
@@ -908,6 +902,9 @@ function emitClassFacts(
   const id = nodeId(declaration);
   table.byId.set(id, declaration);
   fact(db, "objectValue", id);
+  // The class is used as its constructor, since `emitConstructorParameters`
+  // puts the constructor's parameters on it.
+  fact(db, "initializes", id, id);
 
   emitConstructorParameters(db, table, declaration, id);
 
@@ -920,6 +917,7 @@ function emitClassFacts(
   }
 
   for (const property of declaration.getProperties()) {
+    emitFieldStores(db, table, id, property.getName(), property);
     const initializer = property.getInitializer();
     if (initializer !== undefined) {
       fact(
@@ -931,6 +929,55 @@ function emitClassFacts(
       );
     }
   }
+
+  for (const parameter of parameterProperties(declaration)) {
+    emitFieldStores(db, table, id, parameter.getName(), parameter);
+  }
+}
+
+/** The parameters a constructor declares as fields: `constructor(private dao: Dao)`. */
+function parameterProperties(
+  declaration: ClassDeclaration,
+): ParameterDeclaration[] {
+  return declaration
+    .getConstructors()
+    .flatMap((candidate) => candidate.getParameters())
+    .filter((parameter) => parameter.isParameterProperty());
+}
+
+/**
+ * What each body of the class puts in one field. The rules put what the
+ * constructor stored on every construction of the class, and what a
+ * method stored on the class, so a read through an instance finds either.
+ */
+function emitFieldStores(
+  db: Database,
+  table: NodeTable,
+  classId: string,
+  name: string,
+  declaration: FieldDeclaration,
+): void {
+  for (const store of storesToField(declaration)) {
+    const settled = settledWrite(store.values, store.inOrder);
+    if (settled === null) {
+      continue;
+    }
+    const owner = store.method === null ? classId : nodeId(store.method);
+    fact(db, "storesProperty", owner, name, storedKey(db, table, settled));
+  }
+}
+
+/**
+ * The key a stored value joins on. A parameter property's value is the
+ * parameter, which is not an expression, so it is written down here
+ * rather than walked as one.
+ */
+function storedKey(db: Database, table: NodeTable, value: Node): string {
+  if (Node.isExpression(value)) {
+    return emitValue(db, table, value);
+  }
+  table.byId.set(nodeId(value), value);
+  return nodeId(value);
 }
 
 /**

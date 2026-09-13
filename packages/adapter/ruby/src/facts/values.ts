@@ -17,6 +17,7 @@ import {
 import { spellsAName } from "../paths/bareCalls.js";
 import {
   collectWrites,
+  instanceWritesRunInOrder,
   isLocalName,
   ownerOfName,
   parametersOf,
@@ -176,12 +177,11 @@ interface Emitter {
   /** The class or module `self` means here, or null outside one. */
   selfKey: string | null;
   /**
-   * Every value the class being walked writes to each of its instance
-   * variables. They are collected across the whole class because the
-   * method that writes one and the method that reads it are two
-   * different bodies, and nothing here orders them.
+   * Every value the body being walked writes to each of its instance
+   * variables. One map per method, so the facts say which method stored
+   * what, and one for a class body's own statements.
    */
-  instanceWrites: Map<string, NameWrite[]> | null;
+  instanceWrites: Map<string, InstanceWrite[]> | null;
   /** The calls the run's packs say run their block as part of the body around it. */
   bodyBlocks: BodyBlocks;
 }
@@ -502,6 +502,12 @@ function emitInstanceRead(emitter: Emitter, node: RbNode): void {
   );
 }
 
+/** One write to `@name`, with the target node that orders it against the others. */
+interface InstanceWrite {
+  write: NameWrite;
+  target: RbNode;
+}
+
 function collectInstanceWrite(emitter: Emitter, node: RbNode): void {
   const left = field(node, "left");
   const right = field(node, "right");
@@ -520,39 +526,79 @@ function collectInstanceWrite(emitter: Emitter, node: RbNode): void {
       ? right
       : null;
   const written = collector.get(left.text) ?? [];
-  written.push(
-    describeWrite(emitter, {
+  written.push({
+    write: describeWrite(emitter, {
       name: left.text,
       target: left,
       value,
       at: node,
       fromParameter: false,
     }),
-  );
+    target: left,
+  });
   collector.set(left.text, written);
 }
 
 /**
- * The value each instance variable the class writes ends up with.
- * Nothing orders two methods, so the writes settle on a value only when
- * they agree; otherwise each write is a value the name may end up with,
- * and a reader that needs one answer sees more than one source.
+ * The values one instance variable ends up with. Writes the body runs one
+ * after another settle on the last; anything a branch or a loop decides
+ * gives one value per write, and a reader that needs a single answer sees
+ * more than one source.
  */
+function settledWrites(
+  writes: readonly InstanceWrite[],
+  ordered: boolean,
+): string[] {
+  const described = writes.map((written) => written.write);
+  const settled = valueLeftByWrites(described, ordered);
+  if (settled !== null) {
+    return [settled];
+  }
+  const left: string[] = [];
+  for (const write of described) {
+    if (write.value !== null && !write.narrowsName) {
+      left.push(write.value);
+    }
+  }
+  return left;
+}
+
+/** What a class body's own statements, rather than any method, put on the class. */
 function emitInstanceWrites(
   emitter: Emitter,
   classKey: string,
-  collected: ReadonlyMap<string, NameWrite[]>,
+  collected: ReadonlyMap<string, InstanceWrite[]>,
 ): void {
   for (const [name, writes] of collected) {
-    const settled = valueLeftByWrites(writes, false);
-    if (settled !== null) {
-      add(emitter, "holdsProperty", classKey, name, settled);
+    for (const value of settledWrites(writes, false)) {
+      add(emitter, "holdsProperty", classKey, name, value);
+    }
+  }
+}
+
+/**
+ * What one method's body stored, which the rules put on the class and on
+ * each site. `@thing = @thing.where(a: 1)` states no store: what it leaves
+ * behind depends on a value another body decided.
+ */
+function emitInstanceStores(
+  emitter: Emitter,
+  funcKey: string,
+  body: RbNode,
+  collected: ReadonlyMap<string, InstanceWrite[]>,
+): void {
+  for (const [name, writes] of collected) {
+    const deciding = writes.filter((written) => !written.write.narrowsName);
+    if (deciding.length === 0) {
       continue;
     }
-    for (const write of writes) {
-      if (write.value !== null && !write.narrowsName) {
-        add(emitter, "holdsProperty", classKey, name, write.value);
-      }
+    const ordered = instanceWritesRunInOrder(
+      body,
+      name,
+      deciding.map((written) => written.target),
+    );
+    for (const value of settledWrites(deciding, ordered)) {
+      add(emitter, "storesProperty", funcKey, name, value);
     }
   }
 }
@@ -792,6 +838,9 @@ function emitCandidates(
 
 const METHOD_TYPES = new Set(["method", "singleton_method"]);
 
+/** The method Ruby runs on a new instance. */
+const INITIALIZE_METHOD = "initialize";
+
 /** A name a rule can join on. A mixin written any other way has none. */
 const CONSTANT_REF_TYPES = new Set(["constant", "scope_resolution"]);
 
@@ -856,7 +905,7 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
     add(emitter, "extendsNamed", classKey, base.text);
   }
 
-  const collected = new Map<string, NameWrite[]>();
+  const collected = new Map<string, InstanceWrite[]>();
   const within: Emitter = {
     ...emitter,
     selfKey: classKey,
@@ -894,10 +943,21 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
       emitExpressionFacts(within, statement);
       continue;
     }
-    const funcKey = emitMethodFacts(within, statement);
+    const stored = new Map<string, InstanceWrite[]>();
+    const funcKey = emitMethodFacts(
+      { ...within, instanceWrites: stored },
+      statement,
+    );
     const name = field(statement, "name");
     if (name !== null) {
       add(emitter, "holdsProperty", classKey, name.text, funcKey);
+      if (name.text === INITIALIZE_METHOD) {
+        add(emitter, "initializes", classKey, funcKey);
+      }
+    }
+    const methodBody = field(statement, "body");
+    if (methodBody !== null) {
+      emitInstanceStores(within, funcKey, methodBody, stored);
     }
   }
   emitInstanceWrites(within, classKey, collected);

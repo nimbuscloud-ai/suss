@@ -119,3 +119,63 @@ describe("a function's declared return type", () => {
     ]);
   });
 });
+
+describe("what a class's bodies store on the receiver", () => {
+  it("says the class itself is what runs when one of it is made", () => {
+    const { db, table } = factsFor({
+      "/mod.ts": [
+        "export class Api { items() {} }",
+        "export const v1 = new Api();",
+        "",
+      ].join("\n"),
+    });
+
+    expect(rows(db, table, "initializes")).toEqual([
+      ["export class Api { items() {} }", "export class Api { items() {} }"],
+    ]);
+  });
+
+  it("keys a constructor's store to the class and a method's to the method", () => {
+    const { db, table } = factsFor({
+      "/mod.ts": [
+        "declare function create(): string;",
+        "declare function warm(): string;",
+        "export class Api {",
+        "  private client!: string;",
+        "  private cache!: string;",
+        "  constructor() { this.client = create(); }",
+        "  prime() { this.cache = warm(); }",
+        "}",
+        "export const v1 = new Api();",
+        "",
+      ].join("\n"),
+    });
+
+    const stored = rows(db, table, "storesProperty");
+    expect(stored.map((row) => [row[1], row[2]])).toEqual([
+      ["client", "create()"],
+      ["cache", "warm()"],
+    ]);
+    expect(stored[0]?.[0]?.startsWith("export class Api {")).toBe(true);
+    expect(stored[1]?.[0]).toBe("prime() { this.cache = warm(); }");
+  });
+
+  it("settles two stores to one name in one body on the last of them", () => {
+    const { db, table } = factsFor({
+      "/mod.ts": [
+        "declare function first(): string;",
+        "declare function second(): string;",
+        "export class Api {",
+        "  private page!: string;",
+        "  constructor() { this.page = first(); this.page = second(); }",
+        "}",
+        "export const v1 = new Api();",
+        "",
+      ].join("\n"),
+    });
+
+    expect(rows(db, table, "storesProperty").map((row) => row[2])).toEqual([
+      "second()",
+    ]);
+  });
+});

@@ -51,7 +51,7 @@ Three layers do the work.
 
   <rect class="box" x="60" y="220" width="540" height="86" rx="6" />
   <text class="label" x="330" y="242" text-anchor="middle">2. One rule set joins the facts into a value graph</text>
-  <text class="note" x="330" y="260" text-anchor="middle">76 rules. 16 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
+  <text class="note" x="330" y="260" text-anchor="middle">84 rules. 17 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
   <text class="note" x="330" y="277" text-anchor="middle">reaches is the transitive closure of those hops, and it records</text>
   <text class="note" x="330" y="294" text-anchor="middle">the strongest kind of step the walk took.</text>
 
@@ -160,10 +160,10 @@ explanation each.
 
 ## Layer 2: one rule set makes a graph
 
-`packages/resolution/src/index.ts` contains 76 rules and no code.
-16 of them derive `stepsTo(x, y, kind)`, which says the value `x`
-leads to the value `y` in one hop. The TypeScript adapter adds a
-seventeenth for `.bind`.
+`packages/resolution/src/index.ts` contains 84 rules and no code.
+17 of them derive `stepsTo(x, y, kind)`, which says the value `x`
+leads to the value `y` in one hop. The TypeScript adapter adds an
+eighteenth for `.bind`.
 
 ```ts
 rule(
@@ -188,6 +188,13 @@ handed back. Eight more rules turn those single hops into
 `reaches(x, z, kind)`, which is true when you can get from `x` to `z` by
 taking one hop after another, however many that takes. A walk takes the
 strongest kind it stepped, value weakest and result strongest.
+
+A construction is an object in its own right, called an allocation site.
+It contains whatever the class's constructor and its other methods put
+on the receiver, and the facts say which function did the storing
+(`storesProperty`) rather than putting a value on the class under a
+field name. The class contains the same things, so a class nothing in
+the run makes one of still resolves a read through the receiver.
 
 Applying the rules over and over until nothing new appears is the whole
 of what the engine does. It matches every rule against everything known

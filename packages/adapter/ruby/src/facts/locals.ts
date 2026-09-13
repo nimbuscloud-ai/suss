@@ -377,6 +377,28 @@ export function collectWrites(
 }
 
 /**
+ * Whether one body's writes to an instance variable run once each, in the
+ * order they are written. The writes are collected off the expression walk
+ * rather than by `collectWrites`, so they arrive as the target node each
+ * one writes to.
+ */
+export function instanceWritesRunInOrder(
+  body: RbNode,
+  name: string,
+  targets: readonly RbNode[],
+): boolean {
+  return writesRunInOrder(
+    body,
+    name,
+    targets.map((target) => ({
+      at: target,
+      direct: target.parent?.parent?.id === body.id,
+    })),
+    nameReads(new Set(targets.map((target) => target.id))),
+  );
+}
+
+/**
  * A write is a statement of the scope's own list when the scope is its
  * parent. A parameter arrives before the body runs, so no statement of the
  * body orders it.

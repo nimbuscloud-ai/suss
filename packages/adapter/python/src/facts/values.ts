@@ -462,11 +462,11 @@ function emitFunctionFacts(
       if (byPosition && position >= 0) {
         add(emitter, "paramOf", funcKey, String(position), paramKey);
       }
-      // Calling a class makes one of it, so an instance is the class
-      // object, and that is what a method's receiver comes down to.
+      // The receiver is one of the class rather than the class itself,
+      // so what one method stored reaches a read in another.
       if (classKey !== undefined && position === -1) {
         receiver = { classKey, name: paramName.text };
-        add(emitter, "binds", paramKey, classKey);
+        add(emitter, "instanceOf", paramKey, classKey);
       }
       add(emitter, "paramNamed", funcKey, paramName.text, paramKey);
     }
@@ -497,6 +497,7 @@ function emitFunctionFacts(
   // One walk for both, since this function's own facts and the expression
   // facts want the same nodes and the walk is the expensive part.
   let statesReturn = false;
+  const stores = new Map<string, ReceiverWrite[]>();
   walkExpressions(inside, body, (child) => {
     if (child.type === "return_statement") {
       const returned = child.namedChildren[0];
@@ -509,10 +510,11 @@ function emitFunctionFacts(
       add(inside, "bodyCalls", funcKey, nodeId(inside.filePath, child));
     }
     if (child.type === "assignment" && receiver !== null) {
-      emitReceiverProperty(inside, child, receiver);
+      collectReceiverProperty(inside, child, receiver, body, stores);
     }
     emitExpressionFact(inside, child);
   });
+  emitReceiverStores(inside, funcKey, body, stores);
 
   if (!statesReturn) {
     emitReturnAnnotation(emitter, fn, funcKey);
@@ -545,14 +547,26 @@ function emitReturnAnnotation(
   }
 }
 
+/** One `self.name = value`, with what orders it against the others in the body. */
+interface ReceiverWrite {
+  write: NameWrite;
+  /** The property as the source spells it, which is what a read of it is spelled as. */
+  spelling: string;
+  at: PyNode;
+  /** Whether the write is a direct statement of the method's own statement list. */
+  direct: boolean;
+}
+
 /**
- * `self.name = value` inside a method, which puts the value on the class so
- * a later `self.name` finds it.
+ * `self.name = value` inside a method, kept until the body has been read
+ * so two writes to one name settle against each other.
  */
-function emitReceiverProperty(
+function collectReceiverProperty(
   emitter: Emitter,
   assignment: PyNode,
   receiver: MethodReceiver,
+  body: PyNode,
+  stores: Map<string, ReceiverWrite[]>,
 ): void {
   const left = field(assignment, "left");
   const right = field(assignment, "right");
@@ -569,13 +583,48 @@ function emitReceiverProperty(
   ) {
     return;
   }
-  add(
-    emitter,
-    "holdsProperty",
-    receiver.classKey,
-    property.text,
-    valueKey(emitter, right),
-  );
+  const written = stores.get(property.text) ?? [];
+  written.push({
+    write: describeWrite(
+      emitter,
+      { value: right, given: null, at: assignment, direct: false },
+      property.text,
+    ),
+    spelling: left.text,
+    at: left,
+    direct: isDirectStatement(assignment, body),
+  });
+  stores.set(property.text, written);
+}
+
+/**
+ * What each property a method writes ends up with. Writes the body runs
+ * one after another settle on the last; anything a branch or a loop
+ * decides gives one value per write, and a reader that needs a single
+ * answer sees more than one source.
+ */
+function emitReceiverStores(
+  emitter: Emitter,
+  funcKey: string,
+  body: PyNode,
+  stores: ReadonlyMap<string, ReceiverWrite[]>,
+): void {
+  for (const [name, writes] of stores) {
+    const spelling = writes[0]?.spelling ?? name;
+    const settled = valueLeftByWrites(
+      writes.map((written) => written.write),
+      writesRunInOrder(body, spelling, writes, RECEIVER_READS),
+    );
+    if (settled !== null) {
+      add(emitter, "storesProperty", funcKey, name, settled);
+      continue;
+    }
+    for (const { write } of writes) {
+      if (write.value !== null && !write.narrowsName) {
+        add(emitter, "storesProperty", funcKey, name, write.value);
+      }
+    }
+  }
 }
 
 /**
@@ -791,6 +840,9 @@ function writtenBaseName(base: PyNode): string | null {
     : null;
 }
 
+/** The method Python runs on a new instance. */
+const INIT_METHOD = "__init__";
+
 /**
  * A class is an object containing its methods, which is the treatment an
  * object literal gets. That is what lets a method read off an instance
@@ -831,6 +883,9 @@ function emitClassFacts(emitter: Emitter, cls: PyNode): string {
     const name = field(member, "name");
     if (memberKey !== null && name !== null) {
       add(emitter, "holdsProperty", classKey, name.text, memberKey);
+      if (name.text === INIT_METHOD) {
+        add(emitter, "initializes", classKey, memberKey);
+      }
     }
   }
 
@@ -1220,6 +1275,12 @@ const NAME_READS: NameReads<PyNode> & ChainReads<PyNode> = {
   childrenOf: children,
   isRead: isNameRead,
   readFirst,
+};
+
+/** The same walk over `self.name`, which is an attribute rather than a name. */
+const RECEIVER_READS: NameReads<PyNode> = {
+  ...NAME_READS,
+  nameTypes: new Set(["attribute"]),
 };
 
 /** A value built where it is written, which is what tells two writes of one name apart. */
