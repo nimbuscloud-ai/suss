@@ -1,4 +1,4 @@
-// The parameter list the lowering hands the evaluator. What the
+// The parameters the lowering reads off a method or block. What the
 // evaluator then does with these names is covered in evaluator.test.ts.
 import { describe, expect, it } from "vitest";
 
