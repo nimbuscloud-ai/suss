@@ -546,6 +546,60 @@ describe("a connection the class builds in a method of its own", () => {
     });
   });
 
+  it("serves the calls that go through an instance variable", async () => {
+    const units = await unitsIn(`
+      class OrderClient
+        def initialize
+          @conn = HttpClient.build(base: "https://api.example.com/v1")
+        end
+
+        def show(id)
+          @conn.get("/orders/#{id}")
+        end
+      end
+    `);
+
+    expect(boundary(units)).toEqual({
+      method: "GET",
+      path: "/v1/orders/{id}",
+    });
+  });
+
+  it("serves the calls that go through a memoised instance method", async () => {
+    const units = await unitsIn(`
+      class OrderClient
+        def conn
+          @conn ||= HttpClient.build(base: "https://api.example.com/v1")
+        end
+
+        def show(id)
+          conn.get("/orders/#{id}")
+        end
+      end
+    `);
+
+    expect(boundary(units)).toEqual({
+      method: "GET",
+      path: "/v1/orders/{id}",
+    });
+  });
+
+  it("says nothing about an instance variable the library did not build", async () => {
+    const units = await unitsIn(`
+      class OrderClient
+        def initialize
+          @conn = something_else
+        end
+
+        def show
+          @conn.get("/orders")
+        end
+      end
+    `);
+
+    expect(units).toEqual([]);
+  });
+
   it("reads a base URL written as the first argument", async () => {
     const units = await unitsIn(`
       class OrderClient

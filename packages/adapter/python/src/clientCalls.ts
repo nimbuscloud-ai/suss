@@ -154,11 +154,7 @@ function calledAttribute(
 
   const object = field(callee, "object");
   const attribute = field(callee, "attribute")?.text;
-  if (
-    object === null ||
-    object.type !== "identifier" ||
-    attribute === undefined
-  ) {
+  if (object === null || attribute === undefined) {
     return null;
   }
   const constructorName = receiverConstructor(

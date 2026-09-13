@@ -352,6 +352,74 @@ describe("a function that calls a request function", () => {
     expect(units[0]?.identity.name).toBe("load");
   });
 
+  it("reads a session call on a client the constructor stored on the instance", async () => {
+    const units = await unitsIn(
+      [
+        "import httpclient",
+        "",
+        "class Orders:",
+        "    def __init__(self):",
+        "        self.client = httpclient.Session()",
+        "",
+        "    def load(self):",
+        '        return self.client.get("/orders")',
+      ].join("\n"),
+    );
+
+    expect(units.map((unit) => unit.identity.name)).toEqual(["load"]);
+    expect(boundary(units)).toEqual({ method: "GET", path: "/orders" });
+  });
+
+  it("reads a session call on a client the class holds as an attribute", async () => {
+    const units = await unitsIn(
+      [
+        "import httpclient",
+        "",
+        "class Orders:",
+        "    client = httpclient.Session()",
+        "",
+        "    def load(self):",
+        '        return self.client.get("/orders")',
+      ].join("\n"),
+    );
+
+    expect(boundary(units)).toEqual({ method: "GET", path: "/orders" });
+  });
+
+  it("reads a session call on a client some other method stored", async () => {
+    const units = await unitsIn(
+      [
+        "import httpclient",
+        "",
+        "class Orders:",
+        "    def connect(self):",
+        "        self.client = httpclient.Session()",
+        "",
+        "    def load(self):",
+        '        return self.client.get("/orders")',
+      ].join("\n"),
+    );
+
+    expect(boundary(units)).toEqual({ method: "GET", path: "/orders" });
+  });
+
+  it("says nothing about an instance attribute the library did not build", async () => {
+    const units = await unitsIn(
+      [
+        "import httpclient",
+        "",
+        "class Orders:",
+        "    def __init__(self):",
+        "        self.client = object()",
+        "",
+        "    def load(self):",
+        '        return self.client.get("/orders")',
+      ].join("\n"),
+    );
+
+    expect(units).toEqual([]);
+  });
+
   it("takes no session calls when the pack declares no constructor", async () => {
     const units = await unitsIn(
       [

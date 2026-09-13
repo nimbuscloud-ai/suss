@@ -16,7 +16,7 @@
 import { namesNothing, restBinding } from "@suss/behavioral-ir";
 import { pathOf } from "@suss/values";
 
-import { field, rangeOf, readCallArgs, runStatements, spanOf } from "./ast.js";
+import { field, rangeOf, readCallArgs, spanOf } from "./ast.js";
 import { invocationEffects } from "./paths/effects.js";
 import { returnPathBranches } from "./responseStatus.js";
 import { compoundName } from "./scope.js";
@@ -56,7 +56,7 @@ export function clientCallUnits(
       continue;
     }
     for (const call of callsUnder(method)) {
-      const request = requestCall(call, method, root, pattern, options);
+      const request = requestCall(call, pattern, options);
       if (request === null) {
         continue;
       }
@@ -97,8 +97,6 @@ function callsUnder(node: RbNode, found: RbNode[] = []): RbNode[] {
 /** What this call says about the boundary, or null when it is not one of the library's. */
 function requestCall(
   call: RbNode,
-  method: RbNode,
-  root: RbNode,
   pattern: RbClientCall,
   options: ClientCallOptions,
 ): RequestCall | null {
@@ -107,7 +105,7 @@ function requestCall(
   if (receiver === null || called === undefined) {
     return null;
   }
-  const prefix = receiverPrefix(receiver, method, root, pattern, options);
+  const prefix = receiverPrefix(receiver, pattern, options);
   if (prefix === null) {
     return null;
   }
@@ -166,18 +164,13 @@ function requestBuilt(
  */
 function receiverPrefix(
   receiver: RbNode,
-  method: RbNode,
-  root: RbNode,
   pattern: RbClientCall,
   options: ClientCallOptions,
 ): string | null {
   if (namesConstant(receiver, pattern.constantName)) {
     return "";
   }
-  if (receiver.type !== "identifier") {
-    return null;
-  }
-  const built = builtBy(receiver.text, method, root, pattern);
+  const built = builderCallBehind(receiver, pattern, options.facts);
   if (built === null) {
     return null;
   }
@@ -209,80 +202,32 @@ function namesConstant(receiver: RbNode, constantName: string): boolean {
 }
 
 /**
- * The call the library's own builder made, behind the name a request
- * was called on. A local assignment in the same method, or a method of
- * that name in the same file, which is where a service object keeps the
- * one connection its request methods share.
- *
- * The facts settle the assignment. They do not settle the method: a
- * bare name Ruby looks up on `self` binds to nothing.
+ * The library's own builder call behind whatever a request was called
+ * on. The receiver can be spelled any way the facts settle: a local, an
+ * instance variable, or a method the class keeps its one connection in.
  */
-function builtBy(
-  name: string,
-  method: RbNode,
-  root: RbNode,
+function builderCallBehind(
+  receiver: RbNode,
   pattern: RbClientCall,
+  facts: Database | undefined,
 ): RbNode | null {
   const builders = pattern.receiverBuilders ?? [];
   if (builders.length === 0) {
     return null;
   }
 
-  const value =
-    assignedValue(name, method) ?? valueMethodNamedReturns(name, root);
+  const written = writtenNodeOf(receiver, facts);
   if (
-    value === null ||
-    value.type !== "call" ||
-    !builders.includes(field(value, "method")?.text ?? "")
+    written === null ||
+    written.type !== "call" ||
+    !builders.includes(field(written, "method")?.text ?? "")
   ) {
     return null;
   }
-  const receiver = field(value, "receiver");
-  return receiver !== null && namesConstant(receiver, pattern.constantName)
-    ? value
+  const constant = field(written, "receiver");
+  return constant !== null && namesConstant(constant, pattern.constantName)
+    ? written
     : null;
-}
-
-/**
- * What a method of this name in the same file comes back with. Ruby
- * returns the last statement, and a method that keeps one connection
- * writes `@conn ||= ...`, so the value is on the right of that.
- */
-function valueMethodNamedReturns(name: string, root: RbNode): RbNode | null {
-  const defined = methodDefinitions(root).find(
-    (candidate) => field(candidate, "name")?.text === name,
-  );
-  if (defined === undefined) {
-    return null;
-  }
-
-  const body = field(defined, "body");
-  const statements = body === null ? [] : body.namedChildren;
-  const last = statements[statements.length - 1];
-  if (last === undefined) {
-    return null;
-  }
-  if (last.type === "operator_assignment" || last.type === "assignment") {
-    return field(last, "right");
-  }
-  return last.type === "return" ? (last.namedChildren[0] ?? null) : last;
-}
-
-/** What a local name was assigned in this method body, one assignment back and no further. */
-function assignedValue(name: string, method: RbNode): RbNode | null {
-  const body = field(method, "body");
-  if (body === null) {
-    return null;
-  }
-  for (const statement of runStatements(body)) {
-    if (statement.type !== "assignment") {
-      continue;
-    }
-    if (field(statement, "left")?.text === name) {
-      return field(statement, "right");
-    }
-  }
-  return null;
 }
 
 /** The path the URL argument states, or null when it does not settle on one. */
