@@ -132,6 +132,14 @@ function or an object, so a parameter given a GraphQL document has no
 knows what kind of value it is after. This is what turns one project
 hook in front of `useQuery` into one operation per component.
 
+`callsPassing(parameter)` is the reverse question, answered from facts
+already in the store rather than by reading the caller's file first:
+every call in the parameter's own function, or a closure inside it,
+that hands the parameter to something else. A helper that reads an
+environment variable through a parameter its own caller only forwards,
+`wrap(name) { return read(name); }`, is found by asking `wrap`'s
+parameter what it is passed to, then asking the same of `read`'s.
+
 REST client wrappers read the same question. A generated HTTP client
 builds its request out of a parameter, so the path and the verb at the
 library call are holes. The store says which calls filled that

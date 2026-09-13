@@ -517,7 +517,7 @@ describe("node runtime pack — env-var wiring", () => {
       }
       export const table = getEnv("TABLE_NAME");
     `);
-    const reads = configReadEffectsOf(recognizeAll(sourceFile));
+    const reads = configReadEffectsOf(recognizeWithStore(sourceFile));
     expect(reads.map((read) => read.interaction.name)).toEqual(["TABLE_NAME"]);
   });
 
@@ -531,6 +531,19 @@ describe("node runtime pack — env-var wiring", () => {
       }
     `);
     expect(configReadEffectsOf(recognizeAll(sourceFile))).toEqual([]);
+  });
+
+  it("stops going round two forwarding helpers even once a literal reaches them", () => {
+    const sourceFile = makeProject(`
+      function one(name: string): string {
+        return two(name);
+      }
+      function two(name: string): string {
+        return one(name);
+      }
+      export const table = one("TABLE_NAME");
+    `);
+    expect(configReadEffectsOf(recognizeWithStore(sourceFile))).toEqual([]);
   });
 
   it("follows a literal into a method helper", () => {
@@ -791,7 +804,7 @@ describe("a helper call resolved from the caller's side", () => {
       `import { getEnv } from "./env.js";
       export const queue = getEnv("QUEUE_URL");`,
     );
-    const reads = configReadEffectsOf(recognizeAll(handler));
+    const reads = configReadEffectsOf(recognizeWithStore(handler));
     expect(reads.map((read) => read.interaction.name)).toEqual(["QUEUE_URL"]);
   });
 
@@ -812,8 +825,89 @@ describe("a helper call resolved from the caller's side", () => {
       `import { getEnv } from "./env.js";
       export const queue = getEnv("QUEUE_URL");`,
     );
-    const reads = configReadEffectsOf(recognizeAll(handler));
+    const reads = configReadEffectsOf(recognizeWithStore(handler));
     expect(reads.map((read) => read.interaction.name)).toEqual(["QUEUE_URL"]);
+  });
+
+  it("follows a forwarded call through a wrapper factory imported from another file", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "env.ts",
+      `export function read(key: string): string {
+        return process.env[key] ?? "";
+      }`,
+    );
+    project.createSourceFile(
+      "wrapFactory.ts",
+      `import { read } from "./env.js";
+      export function withLogging(fn: (key: string) => string) {
+        return (key: string) => fn(key);
+      }
+      export const loggedRead = withLogging(read);`,
+    );
+    project.createSourceFile(
+      "helpers.ts",
+      `import { loggedRead } from "./wrapFactory.js";
+      export function getEnv(name: string): string {
+        return loggedRead(name);
+      }`,
+    );
+    const handler = project.createSourceFile(
+      "handler.ts",
+      `import { getEnv } from "./helpers.js";
+      export const table = getEnv("TABLE_NAME");`,
+    );
+    const reads = configReadEffectsOf(recognizeWithStore(handler));
+    expect(reads.map((read) => read.interaction.name)).toEqual(["TABLE_NAME"]);
+  });
+
+  it("skips an unrelated element access on the way to a direct read", () => {
+    const sourceFile = makeProject(`
+      const flags = ["a", "b"];
+      function requireEnv(name: string): string {
+        const first = flags[0];
+        return first + (process.env[name] ?? "");
+      }
+      export const table = requireEnv("TABLE_NAME");
+    `);
+    const reads = configReadEffectsOf(recognizeWithStore(sourceFile));
+    expect(reads.map((read) => read.interaction.name)).toEqual(["TABLE_NAME"]);
+  });
+
+  it("stops when a forwarded call lands on a position the callee has no parameter for", () => {
+    const sourceFile = makeProject(`
+      function read(key: string): string {
+        return process.env[key] ?? "";
+      }
+      function wrap(name: string): string {
+        return read(0, name);
+      }
+      export const table = wrap("TABLE_NAME");
+    `);
+    expect(configReadEffectsOf(recognizeWithStore(sourceFile))).toEqual([]);
+  });
+
+  it("does not follow a parameter handed to a constructor rather than a call", () => {
+    const sourceFile = makeProject(`
+      class Marker {
+        constructor(key: string) {}
+      }
+      function wrap(name: string): unknown {
+        return new Marker(name);
+      }
+      export const table = wrap("TABLE_NAME");
+    `);
+    expect(configReadEffectsOf(recognizeWithStore(sourceFile))).toEqual([]);
+  });
+
+  it("stops at a callee nothing calling wrap ever supplies", () => {
+    const sourceFile = makeProject(`
+      function wrap(name: string, fn: (key: string) => string): string {
+        return fn(name);
+      }
+      export const table = wrap("TABLE_NAME");
+    `);
+    expect(configReadEffectsOf(recognizeWithStore(sourceFile))).toEqual([]);
   });
 
   it("says nothing about a call whose callee nothing in the run defines", () => {
