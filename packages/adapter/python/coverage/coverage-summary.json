@@ -19,8 +19,8 @@
       "pct": 99.51
     },
     "branches": {
-      "total": 3154,
-      "covered": 2782,
+      "total": 3153,
+      "covered": 2781,
       "skipped": 0,
       "pct": 88.2
     },
@@ -103,10 +103,10 @@
       "pct": 96.34
     },
     "branches": {
-      "total": 76,
-      "covered": 63,
+      "total": 75,
+      "covered": 62,
       "skipped": 0,
-      "pct": 82.89
+      "pct": 82.66
     }
   },
   "src/decorators.ts": {
