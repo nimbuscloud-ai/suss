@@ -151,7 +151,8 @@ export type {
 // Making one of a class is a call of the class, however the language
 // writes it: `Foo()`, `new Foo()`, `Foo.new`. The adapter says `call`
 // about whichever of those it reads, and lists the constructor's
-// parameters as `paramOf` of the class.
+// parameters as `paramOf` of the class. The hop from that call to the
+// class is an instance step.
 
 import { constant, lit, rule, variable as v } from "@suss/datalog";
 
@@ -173,6 +174,9 @@ export const NAMESPACE_IMPORT = constant(NAMESPACE_IMPORT_NAME);
  */
 export const NAMESPACE_MEMBER_RULE = "namespace member";
 
+/** A step from an instance to the class it is one of. */
+export const INSTANCE_STEP = constant("instance");
+
 /** A step to what running the call x is handed back. */
 export const RESULT_STEP = constant("result");
 
@@ -181,10 +185,11 @@ export const RESULT_STEP = constant("result");
  * rules onto these before evaluating.
  *
  * Every construct states its hops once, as `stepsTo(x, y, kind)`, which
- * says x leads to y. A value step goes to the value x is written as, and a
+ * says x leads to y. A value step goes to the value x is written as, an
+ * instance step goes from an instance to the class it is one of, and a
  * result step runs the call x is and goes to what that call handed back.
- * `reaches` is the closure of those steps, and a walk counts as a result
- * walk once it has run a call anywhere along it.
+ * `reaches` is the closure of those steps, and a walk takes the strongest
+ * kind it stepped: value, then instance, then result.
  *
  * Each question is that one closure with its own stopping condition, so
  * adding a construct is one step and every question gets it, and adding
@@ -271,7 +276,7 @@ export const RESOLUTION_RULES = [
   // caveat below is about a factory function, and a class is not one.
   rule(
     "stepsTo",
-    [v("r"), v("cls"), VALUE_STEP],
+    [v("r"), v("cls"), INSTANCE_STEP],
     [
       lit("call", v("r"), v("c")),
       lit("comesTo", v("c"), v("cls")),
@@ -285,7 +290,7 @@ export const RESOLUTION_RULES = [
   // left alone. The DESIGN says what a chain of them composes into.
   rule(
     "stepsTo",
-    [v("r"), v("cls"), VALUE_STEP],
+    [v("r"), v("cls"), INSTANCE_STEP],
     [
       lit("call", v("r"), v("c")),
       lit("readsProperty", v("c"), v("o"), v("m")),
@@ -304,7 +309,7 @@ export const RESOLUTION_RULES = [
   // pack named is what keeps an unrelated `get` out.
   rule(
     "stepsTo",
-    [v("r"), v("cls"), VALUE_STEP],
+    [v("r"), v("cls"), INSTANCE_STEP],
     [
       lit("call", v("r"), v("c")),
       lit("readsProperty", v("c"), v("o"), v("m")),
@@ -323,7 +328,7 @@ export const RESOLUTION_RULES = [
   // function spelled the same way is not mistaken for it.
   rule(
     "stepsTo",
-    [v("r"), v("cls"), VALUE_STEP],
+    [v("r"), v("cls"), INSTANCE_STEP],
     [
       lit("call", v("r"), v("c")),
       lit("comesFrom", v("c"), v("mod"), v("n")),
@@ -403,9 +408,9 @@ export const RESOLUTION_RULES = [
     "declared return type",
   ),
 
-  // Where a walk gets to, and whether it ran a call on the way. The walk
-  // so far comes first, so demand stays on the value asked about; the
-  // README says what the other order cost.
+  // Where a walk gets to, under the strongest step it took: value, then
+  // instance, then result. The walk so far comes first, so demand stays
+  // on the value asked about; the README says what the other order cost.
   rule(
     "reaches",
     [v("x"), v("z"), v("kind")],
@@ -419,15 +424,47 @@ export const RESOLUTION_RULES = [
       lit("stepsTo", v("y"), v("z"), v("kind")),
     ],
   ),
-  // Two rules rather than one leaving the next step's kind free. A free
-  // kind is a second question about the same relation, and a
+  // A rule per pair rather than one leaving the next step's kind free. A
+  // free kind is a second question about the same relation, and a
   // demand-driven run then derives both to answer either.
+  rule(
+    "reaches",
+    [v("x"), v("z"), INSTANCE_STEP],
+    [
+      lit("reaches", v("x"), v("y"), INSTANCE_STEP),
+      lit("stepsTo", v("y"), v("z"), VALUE_STEP),
+    ],
+  ),
+  rule(
+    "reaches",
+    [v("x"), v("z"), INSTANCE_STEP],
+    [
+      lit("reaches", v("x"), v("y"), INSTANCE_STEP),
+      lit("stepsTo", v("y"), v("z"), INSTANCE_STEP),
+    ],
+  ),
+  rule(
+    "reaches",
+    [v("x"), v("z"), RESULT_STEP],
+    [
+      lit("reaches", v("x"), v("y"), INSTANCE_STEP),
+      lit("stepsTo", v("y"), v("z"), RESULT_STEP),
+    ],
+  ),
   rule(
     "reaches",
     [v("x"), v("z"), RESULT_STEP],
     [
       lit("reaches", v("x"), v("y"), RESULT_STEP),
       lit("stepsTo", v("y"), v("z"), VALUE_STEP),
+    ],
+  ),
+  rule(
+    "reaches",
+    [v("x"), v("z"), RESULT_STEP],
+    [
+      lit("reaches", v("x"), v("y"), RESULT_STEP),
+      lit("stepsTo", v("y"), v("z"), INSTANCE_STEP),
     ],
   ),
   rule(
@@ -453,6 +490,18 @@ export const RESOLUTION_RULES = [
     "comesTo",
     [v("x"), v("z")],
     [lit("reaches", v("x"), v("z"), VALUE_STEP), lit("objectValue", v("z"))],
+  ),
+  // An instance walk stops the same way, so a method read off
+  // `new App()` still finds what the class declares.
+  rule(
+    "comesTo",
+    [v("x"), v("z")],
+    [lit("reaches", v("x"), v("z"), INSTANCE_STEP), lit("func", v("z"))],
+  ),
+  rule(
+    "comesTo",
+    [v("x"), v("z")],
+    [lit("reaches", v("x"), v("z"), INSTANCE_STEP), lit("objectValue", v("z"))],
   ),
 
   // The same stopping condition, for the walk that ran a call. A call

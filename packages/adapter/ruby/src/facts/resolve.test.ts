@@ -45,15 +45,24 @@ describe("resolving a value across a Ruby file", () => {
       .facts("call")
       .find((row) => String(row[1]).endsWith("#make_client"));
     expect(wrapperCall, "the wrapper call was not recorded").toBeDefined();
-    const clientClass = db.facts("objectValue")[0];
-    expect(clientClass, "the class was not recorded").toBeDefined();
+    const newReads = new Set(
+      db
+        .facts("readsProperty")
+        .filter((row) => String(row[2]) === "new")
+        .map((row) => String(row[0])),
+    );
+    const construction = db
+      .facts("call")
+      .find((row) => newReads.has(String(row[1])));
+    expect(construction, "the construction was not recorded").toBeDefined();
 
     resolveValues(db, [String(wrapperCall?.[0])]);
     const written = db
       .facts("wantedIsWrittenAs")
       .filter((row) => row[0] === wrapperCall?.[0])
       .map((row) => String(row[1]));
-    expect(written).toContain(String(clientClass?.[0]));
+    expect(written).toContain(String(construction?.[0]));
+    expect(written).not.toContain(String(db.facts("objectValue")[0]?.[0]));
   });
 
   it("settles a name bound to a wrapper call on the construction the wrapper returns", async () => {

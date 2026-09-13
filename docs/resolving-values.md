@@ -51,9 +51,9 @@ Three layers do the work.
 
   <rect class="box" x="60" y="220" width="540" height="86" rx="6" />
   <text class="label" x="330" y="242" text-anchor="middle">2. One rule set joins the facts into a value graph</text>
-  <text class="note" x="330" y="260" text-anchor="middle">70 rules. 16 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
+  <text class="note" x="330" y="260" text-anchor="middle">76 rules. 16 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
   <text class="note" x="330" y="277" text-anchor="middle">reaches is the transitive closure of those hops, and it records</text>
-  <text class="note" x="330" y="294" text-anchor="middle">whether the walk ran a call along the way.</text>
+  <text class="note" x="330" y="294" text-anchor="middle">the strongest kind of step the walk took.</text>
 
   <line class="arrow" x1="330" y1="306" x2="330" y2="328" marker-end="url(#layers-arrow)" />
 
@@ -160,7 +160,7 @@ explanation each.
 
 ## Layer 2: one rule set makes a graph
 
-`packages/resolution/src/index.ts` contains 70 rules and no code.
+`packages/resolution/src/index.ts` contains 76 rules and no code.
 16 of them derive `stepsTo(x, y, kind)`, which says the value `x`
 leads to the value `y` in one hop. The TypeScript adapter adds a
 seventeenth for `.bind`.
@@ -179,12 +179,15 @@ argument is the rule's name. Nothing in the evaluation uses that name; it
 is there so that when suss explains an answer it can say which rule
 took each hop, and this one prints as `alias`.
 
-The `kind` column separates two sorts of hop. A value step goes to what
-`x` is written as. A result step runs the call `x` is and goes to what
-that call handed back. Four more rules turn those single hops into
+The `kind` column separates three sorts of hop. A value step goes to what
+`x` is written as. An instance step goes from an instance to the class it
+is one of, so `new App()` steps to `App`; `isWrittenAs` does not follow
+that hop, because `app` was written as the construction and not as the
+class. A result step runs the call `x` is and goes to what that call
+handed back. Eight more rules turn those single hops into
 `reaches(x, z, kind)`, which is true when you can get from `x` to `z` by
-taking one hop after another, however many that takes. A walk counts as
-a result walk as soon as it has run a call anywhere along it.
+taking one hop after another, however many that takes. A walk takes the
+strongest kind it stepped, value weakest and result strongest.
 
 Applying the rules over and over until nothing new appears is the whole
 of what the engine does. It matches every rule against everything known
