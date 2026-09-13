@@ -47,7 +47,7 @@ export interface PythonPack {
   storage?: StoragePattern[];
   /** Which of the library's calls give back one of a model class. The README says what a chain of them composes into. */
   models?: PyModelQueries[];
-  /** Which of the library's classes hand a `with` block the object itself. */
+  /** Which of the library's classes return themselves from `__enter__`, so a `with` block gets the object itself. */
   contextManagers?: PyContextManager[];
   /** How the library lets a project hand the database SQL it wrote itself. */
   rawSql?: RawSqlPattern[];

@@ -986,11 +986,9 @@ function identifierOf(node: PyNode): PyNode | null {
 }
 
 /**
- * `with open(p) as fh` and `except E as err`: what the name takes is the
- * construct's to decide. A `with` over a call hands the name whatever
- * `__enter__` gave back, which is the call's object for some libraries
- * and something else for others, so the call is recorded and a pack
- * decides whether the two are the same thing.
+ * `with open(p) as fh` and `except E as err`: the construct decides what
+ * the name takes. Only a pack knows whether `__enter__` returns the
+ * call's own object, so the call is recorded and the pack decides.
  */
 function readAsPattern(node: PyNode, sink: WriteSink): void {
   const target = field(node, "alias") ?? children(node)[1];

@@ -168,8 +168,8 @@ export function emitModelQueryFacts(
 
 /**
  * Put each pack's context manager declarations in the facts. A `with`
- * hands the block whatever `__enter__` gave back, and the library is the
- * only one that knows its own class gives back the object it built.
+ * block gets whatever `__enter__` returned, and only the library knows
+ * that its own class returns the object it built.
  */
 export function emitContextManagerFacts(
   db: Database,
