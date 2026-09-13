@@ -2445,3 +2445,39 @@ describe("returnsCall", () => {
     ).toBe(false);
   });
 });
+
+describe("a method read off what a declared return type names", () => {
+  it("resolves to the method that class declares", () => {
+    const project = projectOf({
+      "/dao.ts": `
+        export class OrdersDao {
+          async findByCustomer(id: string) {
+            return "orders:" + id;
+          }
+        }
+      `,
+      "/registry.ts": `
+        import { OrdersDao } from "./dao";
+        export declare function ordersDao(): OrdersDao;
+      `,
+      "/entry.ts": `
+        import { ordersDao } from "./registry";
+        export const handler = async (id: string) => {
+          const dao = ordersDao();
+          return dao.findByCustomer(id);
+        };
+      `,
+    });
+
+    const callee = project
+      .getSourceFileOrThrow("/entry.ts")
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .map((call) => call.getExpression())
+      .find((expression) => expression.getText().endsWith("findByCustomer"));
+    expect(callee, "the method call was not found").toBeDefined();
+
+    expect(resolvedBody(new ResolutionStore(), callee as Node)).toContain(
+      '"orders:"',
+    );
+  });
+});

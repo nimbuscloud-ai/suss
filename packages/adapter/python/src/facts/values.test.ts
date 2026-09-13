@@ -58,6 +58,44 @@ describe("python value facts", () => {
     expect(rows(db, "returnsValue")[0]?.[1]).toBe("#other");
   });
 
+  it("records the class a return annotation names, and the name as written", async () => {
+    const db = await factsFor("def current_user() -> User: ...\n");
+    expect(rows(db, "returnsClass").map((row) => row[1])).toEqual(["#User"]);
+    expect(rows(db, "returnsNamed").map((row) => row[1])).toEqual(["User"]);
+  });
+
+  it("reads Optional and Awaitable through to the class inside them", async () => {
+    const optional = await factsFor("def find() -> Optional[User]: ...\n");
+    expect(rows(optional, "returnsClass").map((row) => row[1])).toEqual([
+      "#User",
+    ]);
+    const awaited = await factsFor(
+      "async def load() -> Awaitable[User]: ...\n",
+    );
+    expect(rows(awaited, "returnsClass").map((row) => row[1])).toEqual([
+      "#User",
+    ]);
+    const orNone = await factsFor("def find() -> User | None: ...\n");
+    expect(rows(orNone, "returnsClass").map((row) => row[1])).toEqual([
+      "#User",
+    ]);
+  });
+
+  it("says nothing about a generic that hands back a container", async () => {
+    const db = await factsFor("def all_users() -> list[User]: ...\n");
+    expect(db.size("returnsClass")).toBe(0);
+    expect(db.size("returnsNamed")).toBe(0);
+  });
+
+  it("leaves the annotation alone when the body states what it returns", async () => {
+    const db = await factsFor(
+      "def current_user() -> User:\n    return cached\n",
+    );
+    expect(rows(db, "returnsValue").map((row) => row[1])).toEqual(["#cached"]);
+    expect(db.size("returnsClass")).toBe(0);
+    expect(db.size("returnsNamed")).toBe(0);
+  });
+
   it("keeps a list's elements under their positions, the way an array does", async () => {
     const db = await factsFor("items = [first, second]\n");
     expect(db.size("objectValue")).toBe(1);
