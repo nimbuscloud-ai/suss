@@ -48,6 +48,7 @@ import {
   type ParameterDeclaration,
   type PropertyAccessExpression,
   type SourceFile,
+  SyntaxKind,
   type VariableDeclaration,
 } from "ts-morph";
 
@@ -343,7 +344,7 @@ function readsThroughHelperCall(
     if (literal === null || literal.length === 0) {
       return;
     }
-    const read = parameterReachesEnvRead(callee, at);
+    const read = parameterReachesEnvRead(callee, at, resolution);
     if (read !== null) {
       reads.push({ name: literal, defaulted: read.defaulted, node: call });
     }
@@ -371,12 +372,15 @@ const PARAM_ENV_READS = new WeakMap<
 /**
  * Whether a function's parameter reaches a `process.env[...]` read,
  * through however many helpers forward it. The worklist mirrors
- * `callerLiteralReads` in the other direction, and the taken set ends a
- * pair of helpers calling each other.
+ * `callerLiteralReads` in the other direction: at each parameter, a
+ * direct read inside its own function settles it, and `callsPassing`
+ * gives the calls that hand it to another function instead. The taken
+ * set ends a pair of helpers calling each other.
  */
 function parameterReachesEnvRead(
   fn: FunctionLike,
   at: number,
+  resolution: ResolutionStore | undefined,
 ): { defaulted: boolean } | null {
   const byParameter =
     PARAM_ENV_READS.get(fn.compilerNode) ??
@@ -387,10 +391,24 @@ function parameterReachesEnvRead(
     return remembered;
   }
 
-  let found: { defaulted: boolean } | null = null;
+  const found = reachesEnvRead(fn, at, resolution);
+  byParameter.set(at, found);
+  return found;
+}
+
+/**
+ * Without a store, only the direct read at the starting parameter is
+ * reachable: forwarding to another function is `callsPassing`'s
+ * question, and there is nowhere to ask it.
+ */
+function reachesEnvRead(
+  fn: FunctionLike,
+  at: number,
+  resolution: ResolutionStore | undefined,
+): { defaulted: boolean } | null {
   const pending: { fn: FunctionLike; at: number }[] = [{ fn, at }];
   const taken = new Set<string>();
-  while (pending.length > 0 && found === null) {
+  while (pending.length > 0) {
     const wanted = pending.pop() as { fn: FunctionLike; at: number };
     const key = `${wanted.fn.getPos()}:${wanted.at}`;
     if (taken.has(key)) {
@@ -401,36 +419,69 @@ function parameterReachesEnvRead(
     if (parameter === undefined) {
       continue;
     }
-    const name = parameter.getName();
-    wanted.fn.forEachDescendant((node) => {
-      if (found !== null) {
-        return;
+
+    const direct = directEnvRead(wanted.fn, parameter);
+    if (direct !== null) {
+      return direct;
+    }
+    if (resolution === undefined) {
+      continue;
+    }
+
+    for (const passed of resolution.callsPassing(parameter)) {
+      if (!N.isCallExpression(passed.call)) {
+        continue;
       }
-      if (
-        N.isElementAccessExpression(node) &&
-        isProcessEnv(node.getExpression())
-      ) {
-        const argument = node.getArgumentExpression();
-        if (argument !== undefined && argument.getText() === name) {
-          found = { defaulted: isDefaultedAt(node) };
-        }
-        return;
+      const position = passed.call.getArguments().indexOf(passed.argument);
+      const next = functionLikeOf(
+        resolution.resolveCallable(passed.call.getExpression()),
+      );
+      if (position >= 0 && next !== null && next !== wanted.fn) {
+        pending.push({ fn: next, at: position });
       }
-      if (N.isCallExpression(node)) {
-        node.getArguments().forEach((argument, position) => {
-          if (!N.isIdentifier(argument) || argument.getText() !== name) {
-            return;
-          }
-          const next = functionBehindCallee(node.getExpression());
-          if (next !== null && next !== wanted.fn) {
-            pending.push({ fn: next, at: position });
-          }
-        });
-      }
-    });
+    }
   }
-  byParameter.set(at, found);
-  return found;
+  return null;
+}
+
+/**
+ * `process.env[name]` read directly in a function's own body, or a
+ * closure nested in it. The shape is specific to this runtime surface,
+ * so nothing in the fact vocabulary reads it on this reader's behalf.
+ */
+function directEnvRead(
+  fn: FunctionLike,
+  parameter: ParameterDeclaration,
+): { defaulted: boolean } | null {
+  for (const access of fn.getDescendantsOfKind(
+    SyntaxKind.ElementAccessExpression,
+  )) {
+    if (!isProcessEnv(access.getExpression())) {
+      continue;
+    }
+    const argument = access.getArgumentExpression();
+    if (
+      argument !== undefined &&
+      N.isIdentifier(argument) &&
+      symbolBehind(argument)?.getValueDeclaration() === parameter
+    ) {
+      return { defaulted: isDefaultedAt(access) };
+    }
+  }
+  return null;
+}
+
+/** Narrow a resolved value down to the function shapes this reader can recurse into. */
+function functionLikeOf(node: Node | null): FunctionLike | null {
+  if (node === null) {
+    return null;
+  }
+  return N.isFunctionDeclaration(node) ||
+    N.isArrowFunction(node) ||
+    N.isFunctionExpression(node) ||
+    N.isMethodDeclaration(node)
+    ? node
+    : null;
 }
 
 function configReadEffect(

@@ -32,6 +32,20 @@ function exportValue(project: Project, file: string, name: string): Node {
   throw new Error(`No exported const ${name} in ${file}`);
 }
 
+/** The first parameter of a function declared, or written as an arrow, under `name`. */
+function firstParameterOf(project: Project, file: string, name: string): Node {
+  const sourceFile = project.getSourceFileOrThrow(file);
+  const declared = sourceFile.getFunction(name);
+  const written = sourceFile.getVariableDeclaration(name)?.getInitializer() as
+    | ArrowFunction
+    | undefined;
+  const parameter = (declared ?? written)?.getParameters()[0];
+  if (parameter === undefined) {
+    throw new Error(`No first parameter on ${name} in ${file}`);
+  }
+  return parameter;
+}
+
 function resolvedBody(store: ResolutionStore, value: Node): string | null {
   const resolved = store.resolveCallable(value);
   return resolved === null ? null : resolved.getText().replace(/\s+/g, " ");
@@ -2256,23 +2270,6 @@ describe("a dependency a factory built", () => {
 });
 
 describe("argumentsPassedTo", () => {
-  function firstParameterOf(
-    project: Project,
-    file: string,
-    name: string,
-  ): Node {
-    const sourceFile = project.getSourceFileOrThrow(file);
-    const declared = sourceFile.getFunction(name);
-    const written = sourceFile.getVariableDeclaration(name)?.getInitializer() as
-      | ArrowFunction
-      | undefined;
-    const parameter = (declared ?? written)?.getParameters()[0];
-    if (parameter === undefined) {
-      throw new Error(`No first parameter on ${name} in ${file}`);
-    }
-    return parameter;
-  }
-
   function passedTo(
     files: Record<string, string>,
     name: string,
@@ -2365,6 +2362,90 @@ describe("argumentsPassedTo", () => {
         "send",
       ),
     ).toEqual([{ call: "send(payload)", argument: "payload" }]);
+  });
+});
+
+describe("callsPassing", () => {
+  function passing(
+    files: Record<string, string>,
+    name: string,
+  ): Array<{ call: string; argument: string }> {
+    const project = projectOf(files);
+    const store = new ResolutionStore();
+    return store
+      .callsPassing(firstParameterOf(project, "/wrapper.ts", name))
+      .map((one) => ({
+        call: one.call.getText().replace(/\s+/g, " "),
+        argument: one.argument.getText(),
+      }));
+  }
+
+  it("gives every call in the parameter's own body that hands it on", () => {
+    expect(
+      passing(
+        {
+          "/wrapper.ts": `
+            declare function readA(key: string): string;
+            declare function readB(key: string): string;
+            export function wrap(name: string) {
+              readA(name);
+              return readB(name);
+            }
+          `,
+        },
+        "wrap",
+      ).sort((a, b) => a.call.localeCompare(b.call)),
+    ).toEqual([
+      { call: "readA(name)", argument: "name" },
+      { call: "readB(name)", argument: "name" },
+    ]);
+  });
+
+  it("gives back nothing for a parameter no call in the body passes on", () => {
+    expect(
+      passing(
+        {
+          "/wrapper.ts": `
+            export function wrap(name: string) {
+              return name.length;
+            }
+          `,
+        },
+        "wrap",
+      ),
+    ).toEqual([]);
+  });
+
+  it("finds a call made from a closure nested in the parameter's function", () => {
+    expect(
+      passing(
+        {
+          "/wrapper.ts": `
+            declare function read(key: string): string;
+            export function wrap(name: string) {
+              return () => read(name);
+            }
+          `,
+        },
+        "wrap",
+      ),
+    ).toEqual([{ call: "read(name)", argument: "name" }]);
+  });
+
+  it("leaves out an argument that only spells the parameter's name, not a reference to it", () => {
+    expect(
+      passing(
+        {
+          "/wrapper.ts": `
+            declare function log(message: string): void;
+            export function wrap(name: string) {
+              log("name");
+            }
+          `,
+        },
+        "wrap",
+      ),
+    ).toEqual([]);
   });
 });
 

@@ -5,13 +5,11 @@
  * any depth of aliasing, imports, re-export barrels, wrapper factories
  * and `.bind`. `resolveWrittenValue` says which expression a value is
  * written as, for callers chasing something that is neither a function
- * nor an object. `argumentsPassedTo` goes the other way, from a
- * parameter out to the calls that filled it. `filesImportingTransitively`
- * says which of a set of files reach any of a set of packages, which a
- * per-file import check misses whenever a local barrel re-exports the SDK.
- *
- * A query extracts the modules the rules ask for while answering it,
- * so the files a question reads do not depend on what was asked before.
+ * nor an object. `argumentsPassedTo` and `callsPassing` go from a
+ * parameter to the calls that filled it, or the ones it hands to.
+ * `filesImportingTransitively` says which of a set of files reach any
+ * of a set of packages, which a per-file import check misses whenever a
+ * local barrel re-exports the SDK.
  */
 
 import { Node } from "ts-morph";
@@ -358,6 +356,31 @@ export class ResolutionStore {
       }
       return found;
     });
+  }
+
+  /**
+   * The other direction from `argumentsPassedTo`: every call in this
+   * parameter's own function, or a closure nested inside it, that hands
+   * the parameter to something else. `callArg` keeps the argument as a
+   * bare reference, so the join is against `binds` rather than the
+   * parameter's own key; a reference only binds to a parameter in scope
+   * where it is written, which already keeps the answer inside the
+   * parameter's own function with no join against `bodyCalls` needed.
+   */
+  callsPassing(parameter: Node): PassedArgument[] {
+    this.extractFile(parameter.getSourceFile());
+    const found: PassedArgument[] = [];
+    for (const [referenceId] of this.db.lookup("binds", 1, nodeId(parameter))) {
+      const reference = String(referenceId);
+      for (const passed of this.db.lookup("callArg", 2, reference)) {
+        const call = this.table.byId.get(String(passed[0]));
+        const argument = this.table.byId.get(reference);
+        if (call !== undefined && argument !== undefined) {
+          found.push({ call, argument });
+        }
+      }
+    }
+    return found;
   }
 
   /**
