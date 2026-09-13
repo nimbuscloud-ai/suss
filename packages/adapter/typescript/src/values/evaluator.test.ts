@@ -460,13 +460,79 @@ describe("functions", () => {
     ).toBe("/p");
   });
 
-  it("skips a destructured parameter", () => {
+  it("fills a destructured parameter from the argument", () => {
+    expect(
+      literal(`
+        function route({ prefix }: { prefix: string }): string {
+          return \`\${prefix}/items\`;
+        }
+        export const subject = route({ prefix: "/api" });
+      `),
+    ).toBe("/api/items");
+  });
+
+  it("fills a renamed destructured parameter", () => {
+    expect(
+      literal(`
+        function route({ prefix: p }: { prefix: string }): string { return p; }
+        export const subject = route({ prefix: "/x" });
+      `),
+    ).toBe("/x");
+  });
+
+  it("fills a nested destructured parameter", () => {
+    expect(
+      literal(`
+        function route({ opts: { prefix } }: { opts: { prefix: string } }) {
+          return prefix;
+        }
+        export const subject = route({ opts: { prefix: "/deep" } });
+      `),
+    ).toBe("/deep");
+  });
+
+  it("takes the element default when the property is absent", () => {
+    expect(
+      literal(`
+        function route({ prefix = "/" }: { prefix?: string }): string {
+          return prefix;
+        }
+        export const subject = route({});
+      `),
+    ).toBe("/");
+  });
+
+  it("leaves a destructured parameter unknown when the argument is not an object", () => {
     expect(
       subjectOf(`
-        function route({ p }: { p: string }): string { return p; }
-        export const subject = route({ p: "/x" });
+        declare const options: { prefix: string };
+        function route({ prefix }: { prefix: string }): string { return prefix; }
+        export const subject = route(options);
       `).kind,
     ).toBe("hole");
+  });
+
+  it("reads a destructured parameter out of its own argument", () => {
+    expect(
+      literal(`
+        function route({ prefix }: { prefix: string }, suffix: string): string {
+          return prefix + suffix;
+        }
+        export const subject = route({ prefix: "/api" }, "/items");
+      `),
+    ).toBe("/api/items");
+  });
+
+  it("reads a plain parameter that a pattern of two shifted", () => {
+    expect(
+      literal(`
+        type Options = { prefix: string; method: string };
+        function route({ prefix, method }: Options, suffix: string): string {
+          return method + " " + prefix + suffix;
+        }
+        export const subject = route({ prefix: "/api", method: "GET" }, "/items");
+      `),
+    ).toBe("GET /api/items");
   });
 
   it("reads a constructed value as unknown", () => {

@@ -84,8 +84,14 @@ every statement that comes before it at each level of nesting.
   is inlined under a depth cap. A keyword argument binds its parameter
   by name, and a parameter the call leaves out takes the default the
   lowering gave it, evaluated after the parameters before it so a
-  default can read one of them. Otherwise the lowering is asked what
-  the call is written to through `writtenTo`, which is how a declared
+  default can read one of them. A lowering that destructures a
+  parameter gives one name per property, and each parameter then states
+  which argument fills it, since the position in the list has stopped
+  matching. A destructured name also comes with the properties to read
+  off that argument: when the argument does not fold to an object with
+  the property the name is a hole, and when the object has no such
+  property the default applies. Otherwise the lowering is asked what the
+  call is written to through `writtenTo`, which is how a declared
   wrapper that passes one argument through evaluates to that argument.
   Otherwise the call is a hole and every allocation it was handed
   escapes.

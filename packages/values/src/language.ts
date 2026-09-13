@@ -109,6 +109,20 @@ export interface FunctionShape<N> {
 export interface Parameter<N> {
   readonly name: string;
   readonly default: N | null;
+  /**
+   * The position of the argument that fills the name. Every name a
+   * destructured parameter binds shares one argument, so the position
+   * in this list is the wrong answer once a lowering destructures. A
+   * lowering that never does can leave this out and take the position
+   * in the list.
+   */
+  readonly position?: number;
+  /**
+   * The properties to read off that argument, outermost first, for a
+   * name a destructured parameter binds. A plain name takes the
+   * argument itself.
+   */
+  readonly path?: readonly string[];
 }
 
 export function parameter<N>(
