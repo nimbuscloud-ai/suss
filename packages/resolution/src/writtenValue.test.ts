@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
 
-import { writtenValueOf, writtenValuesOf } from "./writtenValue.js";
+import {
+  writtenValueOf,
+  writtenValuesByKey,
+  writtenValuesOf,
+} from "./writtenValue.js";
 
 describe("the expression a key was written as", () => {
   it("returns the one expression a key is written as", () => {
@@ -115,5 +119,41 @@ describe("every expression a key was written as", () => {
     db.add("mayHold", ["f.py#router", "f.py:7-12"]);
     db.add("mayHold", ["f.py#router", "f.py:14-19"]);
     expect(writtenValueOf(db, "f.py#router", () => {})).toBeNull();
+  });
+});
+
+describe("the expression each of a batch of keys was written as", () => {
+  it("asks once for every call in the batch", () => {
+    const db = new Database();
+    db.add("wantedSubjectWritten", ["f.py#app", "f.py:7-12"]);
+    db.add("wantedSubjectWritten", ["f.py#api", "f.py:14-19"]);
+    db.add("call", ["f.py:7-12", "f.py:20-30"]);
+    db.add("call", ["f.py:14-19", "f.py:31-40"]);
+    const asked: string[][] = [];
+    const answers = writtenValuesByKey(
+      db,
+      ["f.py#app", "f.py#api"],
+      (keys) => {
+        asked.push([...keys]);
+        db.add("wantedSubjectWritten", ["f.py:7-12", "f.py:50-54"]);
+      },
+      "wantedSubjectWritten",
+    );
+
+    expect(asked).toEqual([["f.py:7-12", "f.py:14-19"]]);
+    expect([...answers]).toEqual([
+      ["f.py#app", "f.py:50-54"],
+      ["f.py#api", "f.py:14-19"],
+    ]);
+  });
+
+  it("leaves out a key written two ways", () => {
+    const db = new Database();
+    db.add("wantedIsWrittenAs", ["f.py#app", "f.py:7-12"]);
+    db.add("wantedIsWrittenAs", ["f.py#app", "f.py:14-19"]);
+    db.add("wantedIsWrittenAs", ["f.py#api", "f.py:21-26"]);
+    expect([
+      ...writtenValuesByKey(db, ["f.py#app", "f.py#api"], () => {}),
+    ]).toEqual([["f.py#api", "f.py:21-26"]]);
   });
 });

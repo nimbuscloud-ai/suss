@@ -437,8 +437,9 @@ describe("a class the caller makes one of", () => {
     ).toEqual([]);
   });
 
-  // const app = new App(); `app` is written as two things at once, the
-  // construction and the class it made one of. See issue #1055, item 8.
+  // const app = new App(). Picking the construction here without also
+  // picking the call in `%i[a b].freeze` needs a row that says which
+  // step produced it. See issue #1055.
   it.skip("is written as both the construction and the class it made one of", () => {
     expect(
       writtenAsOf(

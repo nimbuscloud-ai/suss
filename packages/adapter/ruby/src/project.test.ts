@@ -5,13 +5,17 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
+import { addPackWords } from "@suss/resolution";
 
 import { graphqlRubyTestPack } from "./__fixtures__/graphqlRubyPattern.js";
 import { railsTestPack } from "./__fixtures__/railsControllerPattern.js";
+import { writtenValueOf } from "./facts/resolve.js";
+import { parseRuby } from "./parser.js";
 import {
-  emitStorageFacts,
   extractRubyProject,
+  factsForFile,
   findRubyFiles,
+  packWordsOf,
 } from "./project.js";
 
 import type { ExtractionReport, TimingReport } from "@suss/extractor";
@@ -752,9 +756,15 @@ describe("what a pack's storage patterns put in the facts", () => {
     ],
   });
 
-  it("pairs every declared method with every base class the pattern lists", () => {
+  /** The facts a run over these packs starts from, the way the extractor puts them there. */
+  const packFacts = (packs: readonly RubyPack[]): Database => {
     const db = new Database();
-    emitStorageFacts(db, [
+    addPackWords(db, packWordsOf(packs));
+    return db;
+  };
+
+  it("pairs every declared method with every base class the pattern lists", () => {
+    const db = packFacts([
       patternFor(["ActiveRecord::Base", "Legacy::Model"], ["find", "where"]),
     ]);
 
@@ -767,9 +777,59 @@ describe("what a pack's storage patterns put in the facts", () => {
   });
 
   it("says nothing for a pack with no storage patterns at all", () => {
-    const db = new Database();
-    emitStorageFacts(db, [{ name: "rails", protocol: "http", discovery: [] }]);
+    const db = packFacts([{ name: "rails", protocol: "http", discovery: [] }]);
 
     expect(db.size("givesBackOne")).toBe(0);
+  });
+});
+
+describe("the facts for a single parsed file", () => {
+  const activeRecordLike: RubyPack = {
+    name: "activerecord",
+    protocol: "postgresql",
+    discovery: [],
+    storage: [
+      {
+        baseClasses: ["ActiveRecord::Base"],
+        writes: [],
+        reads: [],
+        givesBack: ["find"],
+        storageSystem: "postgresql",
+      },
+    ],
+  };
+
+  const factsFor = async (source: string, packs: readonly RubyPack[]) => {
+    const tree = await parseRuby(source);
+    return factsForFile({
+      file: "app/models/order.rb",
+      root: tree.rootNode,
+      packs,
+    });
+  };
+
+  it("reads the file's own values and the packs' words in one store", async () => {
+    const db = await factsFor(
+      ["class Order < ActiveRecord::Base", "end", ""].join("\n"),
+      [activeRecordLike],
+    );
+
+    expect(db.facts("givesBackOne").map((row) => row.map(String))).toEqual([
+      ["ActiveRecord::Base", "find"],
+    ]);
+    expect(db.size("objectValue")).toBeGreaterThan(0);
+  });
+
+  it("settles a name on the call it was written as", async () => {
+    const db = await factsFor(
+      ["conn = Faraday.new", 'conn.get("/items")', ""].join("\n"),
+      [],
+    );
+
+    const built = db.facts("call")[0];
+    expect(built, "the construction was not recorded").toBeDefined();
+    expect(writtenValueOf(db, "app/models/order.rb#conn")).toBe(
+      String(built?.[0]),
+    );
   });
 });

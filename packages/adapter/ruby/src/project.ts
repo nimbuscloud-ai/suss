@@ -32,6 +32,7 @@ import {
   runDigest,
   stampModuleImports,
 } from "@suss/extractor";
+import { addPackWords, type PackWords } from "@suss/resolution";
 
 import { rangeOf } from "./ast.js";
 import { readDynamicNames } from "./defineMethod.js";
@@ -118,12 +119,6 @@ function inheritedMethodsIn(packs: readonly RubyPack[]): ReadonlySet<string> {
 }
 
 /**
- * Put each storage pattern's `givesBack` methods in the facts, paired
- * with every base class the pattern lists. Ruby writes no return type,
- * so this is the only thing that says `Account.find(id)` is one Account,
- * and the shared `declared finder` rule is what reads it.
- */
-/**
  * What every storage pattern in the run says an association declaration
  * looks like. The constants pass reads a model's body with these, since
  * that is where the class a target name refers to is settled.
@@ -138,19 +133,58 @@ export function associationCallsIn(
   );
 }
 
-export function emitStorageFacts(
-  db: Database,
-  packs: readonly RubyPack[],
-): void {
-  for (const pack of packs) {
-    for (const pattern of pack.storage ?? []) {
-      for (const base of pattern.baseClasses) {
-        for (const method of pattern.givesBack) {
-          db.add("givesBackOne", [base, method]);
-        }
-      }
-    }
-  }
+/**
+ * What the run's packs say about their own libraries, in the shape
+ * `addPackWords` takes. Ruby writes no return type, so a storage
+ * pattern's `givesBack` methods are the only thing that says
+ * `Account.find(id)` is one Account.
+ */
+export function packWordsOf(packs: readonly RubyPack[]): PackWords {
+  return {
+    givesBackOne: packs.flatMap((pack) =>
+      (pack.storage ?? []).flatMap((pattern) =>
+        pattern.baseClasses.flatMap((base) =>
+          pattern.givesBack.map((method) => ({ base, method })),
+        ),
+      ),
+    ),
+  };
+}
+
+/** One parsed file and the packs a run over it would load. */
+export interface FileFactsOptions {
+  file: string;
+  root: RbNode;
+  packs: readonly RubyPack[];
+}
+
+/**
+ * The facts for a single parsed file, with the evaluator bound to them,
+ * for a caller that has one file and no project. A pack's own tests need
+ * these: what built a receiver is an answer the rules give, and without
+ * facts they have nothing to give it from. A project run emits the same
+ * facts across every file at once, so a name written in another file
+ * resolves there and never here.
+ */
+export function factsForFile(options: FileFactsOptions): Database {
+  const db = new Database();
+  const bodyBlocks = bodyBlocksIn(options.packs);
+  emitValueFacts(db, options.file, options.root, bodyBlocks);
+  emitConstantBindings(db, [
+    collectFileConstants(
+      options.file,
+      options.root,
+      associationCallsIn(options.packs),
+      inflectionsIn(options.packs),
+    ),
+  ]);
+  emitRequireFacts(db, options.file, options.root, new Set([options.file]));
+  bindEvaluator(db, {
+    files: [{ file: options.file, root: options.root }],
+    definitions: new Map(methodDefinitionsIn(options.file, options.root)),
+  });
+  addPackWords(db, packWordsOf(options.packs));
+  return db;
 }
 
 /**
@@ -255,7 +289,7 @@ export async function extractRubyProject(
       emitRequireFacts(db, file, root, known);
     }
     bindEvaluator(db, { files: parsed, definitions });
-    emitStorageFacts(db, options.packs);
+    addPackWords(db, packWordsOf(options.packs));
     return readDynamicNames(
       db,
       new Map(parsed.map(({ file, root }) => [file, root])),

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
+import { addPackWords } from "@suss/resolution";
 
 import {
   collectFileConstants,
@@ -8,6 +9,7 @@ import {
 } from "./facts/constants.js";
 import { emitValueFacts } from "./facts/values.js";
 import { parseRuby } from "./parser.js";
+import { packWordsOf } from "./project.js";
 import { storageClaims, storageEffects } from "./storage.js";
 
 import type {
@@ -187,11 +189,19 @@ const CONTROLLER = [
   "",
 ].join("\n");
 
-/** What `emitStorageFacts` puts in a run, which is the only thing that says a finder gives back one of the model. */
+/** The pack word that says a finder gives back one of the model, added the way a run adds it. */
 function emitGivesBack(db: Database): void {
-  for (const method of ACTIVE_RECORD.givesBack) {
-    db.add("givesBackOne", ["ActiveRecord::Base", method]);
-  }
+  addPackWords(
+    db,
+    packWordsOf([
+      {
+        name: "activerecord",
+        protocol: "postgresql",
+        discovery: [],
+        storage: [ACTIVE_RECORD],
+      },
+    ]),
+  );
 }
 
 function methodNamed(node: RbNode, name: string): RbNode {

@@ -6,6 +6,15 @@ import {
 
 import type { Database } from "@suss/datalog";
 
+type Ask = (keys: readonly string[]) => void;
+
+/**
+ * Where a plain `wanted` question puts its answers. A caller asking
+ * under another demand class, `wantedSubject`, passes that class's
+ * relation instead and gets the same policy.
+ */
+const WRITTEN_AS = "wantedIsWrittenAs";
+
 /**
  * The single expression a value was written as, once the caller has
  * asked the rules about `key`. A call to a project function is asked
@@ -15,9 +24,10 @@ import type { Database } from "@suss/datalog";
 export function writtenValueOf(
   db: Database,
   key: string,
-  ask: (keys: readonly string[]) => void,
+  ask: Ask,
+  relation: string = WRITTEN_AS,
 ): string | null {
-  const answers = settledAs(db, key, ask);
+  const answers = settledByKey(db, [key], ask, relation).get(key) ?? [];
   return answers.length === 1 ? (answers[0] as string) : null;
 }
 
@@ -30,32 +40,70 @@ export function writtenValueOf(
 export function writtenValuesOf(
   db: Database,
   key: string,
-  ask: (keys: readonly string[]) => void,
+  ask: Ask,
+  relation: string = WRITTEN_AS,
 ): string[] {
-  const settled = settledAs(db, key, ask);
+  const settled = settledByKey(db, [key], ask, relation).get(key) ?? [];
   return settled.length > 0 ? settled : writesLeft(db, key);
 }
 
-/** What the rules settled the key on, with a call to a project function followed to what it returns. */
-function settledAs(
+/**
+ * The one expression each key was written as, for a caller with several
+ * keys at once. Keys the rules settled on nothing, or on more than one
+ * expression, are left out. One round of asking covers them all, which
+ * is what a caller gets here that a loop over `writtenValueOf` would
+ * not.
+ */
+export function writtenValuesByKey(
   db: Database,
-  key: string,
-  ask: (keys: readonly string[]) => void,
-): string[] {
+  keys: readonly string[],
+  ask: Ask,
+  relation: string = WRITTEN_AS,
+): Map<string, string> {
+  const one = new Map<string, string>();
+  for (const [key, answers] of settledByKey(db, keys, ask, relation)) {
+    if (answers.length === 1) {
+      one.set(key, answers[0] as string);
+    }
+  }
+  return one;
+}
+
+/** What the rules settled each key on, with a call to a project function followed to what it returns. */
+function settledByKey(
+  db: Database,
+  keys: readonly string[],
+  ask: Ask,
+  relation: string,
+): Map<string, string[]> {
   const placeholders = placeholderValues(db);
-  const direct =
-    answersByKey(db.facts("wantedIsWrittenAs"), placeholders).get(key) ?? [];
+  const byKey = answersByKey(db.facts(relation), placeholders);
+  const direct = new Map(keys.map((key) => [key, byKey.get(key) ?? []]));
 
   const calls = new Set(db.facts("call").map((row) => String(row[0])));
-  const throughCalls = direct.filter((answer) => calls.has(answer));
+  const throughCalls = [...direct.values()]
+    .flat()
+    .filter((answer) => calls.has(answer));
   if (throughCalls.length === 0) {
     return direct;
   }
 
   ask(throughCalls);
-  const deeper = singleAnswers(db.facts("wantedIsWrittenAs"), placeholders);
-  // A step off a call, `Foo.new` or `list.freeze`, leaves the call and
-  // what it comes down to as two answers that are the same one.
+  const deeper = singleAnswers(db.facts(relation), placeholders);
+  return new Map(
+    [...direct].map(([key, answers]) => [
+      key,
+      collapseCalls(answers, calls, deeper),
+    ]),
+  );
+}
+
+/** A step off a call, `Foo.new` or `list.freeze`, leaves the call and what it comes down to as two answers that are the same one. */
+function collapseCalls(
+  direct: readonly string[],
+  calls: ReadonlySet<string>,
+  deeper: ReadonlyMap<string, string>,
+): string[] {
   return [
     ...new Set(
       direct.map((answer) =>

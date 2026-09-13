@@ -34,6 +34,7 @@ import {
   runDigest,
   stampModuleImports,
 } from "@suss/extractor";
+import { addPackWords, type PackWords } from "@suss/resolution";
 
 import { field, isFunction, rangeOf } from "./ast.js";
 import {
@@ -126,62 +127,35 @@ function reportUnresolvedProjectModules(
 }
 
 /**
- * Put each pack's model declarations in the facts, pairing every method
- * with every base name the pack lists. Python writes no return type, so
- * this is the only thing that says `session.get(User, id)` is one User,
- * and the shared finder rules are what read it.
+ * What the run's packs say about their own libraries, in the shape
+ * `addPackWords` takes. Python writes no return type, so a pack's model
+ * declarations are the only thing that says `session.get(User, id)` is
+ * one User. A `with` block gets whatever `__enter__` returned, and only
+ * the library knows that its own class returns the object it built.
  */
-export function emitModelQueryFacts(
-  db: Database,
-  packs: readonly PythonPack[],
-): void {
-  for (const pack of packs) {
-    for (const model of pack.models ?? []) {
-      for (const base of model.baseNames) {
-        for (const method of model.givesBack) {
-          db.add("givesBackOne", [base, method]);
-        }
-        for (const entry of model.entryMethods) {
-          db.add("givesBackOneOfArgument", [
-            base,
-            entry.method,
-            String(entry.argument),
-          ]);
-        }
-      }
-      for (const entry of model.entryFunctions) {
-        db.add("givesBackOneOfImport", [
-          entry.module,
-          entry.name,
-          String(entry.argument),
-        ]);
-      }
-      for (const relationship of model.relationships ?? []) {
-        db.add("associationConstructor", [
-          relationship.module,
-          relationship.name,
-        ]);
-      }
-    }
-  }
-}
-
-/**
- * Put each pack's context manager declarations in the facts. A `with`
- * block gets whatever `__enter__` returned, and only the library knows
- * that its own class returns the object it built.
- */
-export function emitContextManagerFacts(
-  db: Database,
-  packs: readonly PythonPack[],
-): void {
-  for (const pack of packs) {
-    for (const manager of pack.contextManagers ?? []) {
-      for (const className of manager.returnsSelf) {
-        db.add("entersAsSelf", [manager.module, className]);
-      }
-    }
-  }
+export function packWordsOf(packs: readonly PythonPack[]): PackWords {
+  const models = packs.flatMap((pack) => pack.models ?? []);
+  return {
+    givesBackOne: models.flatMap((model) =>
+      model.baseNames.flatMap((base) =>
+        model.givesBack.map((method) => ({ base, method })),
+      ),
+    ),
+    givesBackOneOfArgument: models.flatMap((model) =>
+      model.baseNames.flatMap((base) =>
+        model.entryMethods.map((entry) => ({ base, ...entry })),
+      ),
+    ),
+    givesBackOneOfImport: models.flatMap((model) => model.entryFunctions),
+    associationConstructor: models.flatMap(
+      (model) => model.relationships ?? [],
+    ),
+    entersAsSelf: packs.flatMap((pack) =>
+      (pack.contextManagers ?? []).flatMap((manager) =>
+        manager.returnsSelf.map((name) => ({ module: manager.module, name })),
+      ),
+    ),
+  };
 }
 
 /** One parsed file and the packs a run over it would load. */
@@ -194,11 +168,11 @@ export interface FileFactsOptions {
 
 /**
  * The facts for a single parsed file, with the evaluator bound to them,
- * for a caller holding one file rather than a project. A pack's own
- * tests need these: what built a receiver is an answer the rules give,
- * and without facts they have nothing to give it from. A project run
- * emits the same facts across every file at once, so a name written in
- * another file resolves there and never here.
+ * for a caller that has one file and no project. A pack's own tests need
+ * these: what built a receiver is an answer the rules give, and without
+ * facts they have nothing to give it from. A project run emits the same
+ * facts across every file at once, so a name written in another file
+ * resolves there and never here.
  */
 export function factsForFile(options: FileFactsOptions): Database {
   const db = new Database();
@@ -210,8 +184,7 @@ export function factsForFile(options: FileFactsOptions): Database {
     files: [{ file: options.file, root: options.root, module: options.module }],
     definitions,
   });
-  emitModelQueryFacts(db, options.packs);
-  emitContextManagerFacts(db, options.packs);
+  addPackWords(db, packWordsOf(options.packs));
   return db;
 }
 
@@ -318,8 +291,7 @@ export async function extractPythonProject(
     if (needsValues) {
       bindEvaluator(db, { files: bound, definitions });
     }
-    emitModelQueryFacts(db, options.packs);
-    emitContextManagerFacts(db, options.packs);
+    addPackWords(db, packWordsOf(options.packs));
   });
 
   reportUnresolvedProjectModules(options, db);
