@@ -51,7 +51,7 @@ Three layers do the work.
 
   <rect class="box" x="60" y="220" width="540" height="86" rx="6" />
   <text class="label" x="330" y="242" text-anchor="middle">2. One rule set joins the facts into a value graph</text>
-  <text class="note" x="330" y="260" text-anchor="middle">84 rules. 17 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
+  <text class="note" x="330" y="260" text-anchor="middle">150 rules. 17 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
   <text class="note" x="330" y="277" text-anchor="middle">reaches is the transitive closure of those hops, and it records</text>
   <text class="note" x="330" y="294" text-anchor="middle">the strongest kind of step the walk took.</text>
 
@@ -160,21 +160,22 @@ explanation each.
 
 ## Layer 2: one rule set makes a graph
 
-`packages/resolution/src/index.ts` contains 84 rules and no code.
-17 of them derive `stepsTo(x, y, kind)`, which says the value `x`
-leads to the value `y` in one hop. The TypeScript adapter adds an
-eighteenth for `.bind`.
+`packages/resolution/src/index.ts` contains 150 rules and no code.
+17 of them derive `stepsTo(x, y, kind)`, which says the value `x` leads
+to the value `y` in one hop. Fifteen of those are stated as `hop` and
+given a `stepsTo` twin, since a walk under a receiver context reads
+`hop`. The TypeScript adapter adds a sixteenth hop, for `.bind`.
 
 ```ts
 rule(
-  "stepsTo",
+  "hop",
   [v("x"), v("y"), VALUE_STEP],
   [lit("binds", v("x"), v("y"))],
   "alias",
 ),
 ```
 
-Read that as `stepsTo(x, y, value) :- binds(x, y)`. The fourth
+Read that as `hop(x, y, value) :- binds(x, y)`. The fourth
 argument is the rule's name. Nothing in the evaluation uses that name; it
 is there so that when suss explains an answer it can say which rule
 took each hop, and this one prints as `alias`.
@@ -195,6 +196,56 @@ on the receiver, and the facts say which function did the storing
 (`storesProperty`) rather than putting a value on the class under a
 field name. The class contains the same things, so a class nothing in
 the run makes one of still resolves a read through the receiver.
+
+### Asking under one allocation site
+
+Two constructions of one class share their class's facts, so a field
+read off either of them comes down to the same expression. Which
+argument built it is a different question, and the answer differs per
+construction:
+
+```ts
+class Api {
+  client: AxiosInstance;
+  constructor(base: string) { this.client = axios.create({ baseURL: base }); }
+  items() { return this.client.get("/items"); }
+}
+const v1 = new Api("https://a.example.com/v1");
+const v2 = new Api("https://b.example.com/v2");
+```
+
+Asked what `base` is written as, the rules give both literals. Asked
+under `v1`'s construction they give `https://a.example.com/v1`, and
+under `v2`'s they give `https://b.example.com/v2`.
+
+`reachesUnder(x, c, z, c2, kind)` is the closure again, with the site
+the walk started under and the site it arrived under. The receiver read
+under a site is that site, so `this.client` inside `items` is the client
+that construction built. A property read goes on under the site the
+object was made at, whichever site the question named. A parameter goes
+on at the arguments of the calls that run its function under that site:
+a construction runs its constructor under the site it makes, a method
+call runs under the site its receiver is, and a call written as a plain
+name runs under the site the body around it has.
+
+That last one is what keeps a site through a plain function. In
+`this.client = axios.create(url(base))` the call to `url` is written in
+the constructor, so `url` runs under the site being made and its
+parameter comes back to that construction's argument alone. A plain
+function calling another passes the site along the same way, however
+many of them there are. The site is lost only where a call is made
+outside every method body, and then the walk takes every caller.
+
+One level of receiver is all of it. A condition is not read either:
+`env === "prod" ? a : b` gives both branches under a site, because the
+rules record the branches and do not evaluate the comparison.
+
+`askResolutionUnder` puts the question and `isWrittenAsUnder`,
+`comesToUnder` and `objectOfUnder` read the answers. No context-free
+answer moves: the two closures share their hops, and `reaches` is
+untouched. The three questions run on a program of their own, so a run
+that never mentions a context is rewritten without the second closure
+and pays nothing for it.
 
 Applying the rules over and over until nothing new appears is the whole
 of what the engine does. It matches every rule against everything known

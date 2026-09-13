@@ -228,6 +228,7 @@ const CHAIN_RELATIONS = new Set([
   "comesFrom",
   "reaches",
   "stepsTo",
+  "hop",
 ]);
 
 interface WalkState {
@@ -325,7 +326,7 @@ const flattenInto = (proof: Proof, state: WalkState): void => {
   }
 
   const relation = proof.relation;
-  if (relation === "stepsTo") {
+  if (relation === "stepsTo" || relation === "hop") {
     state.steps.push(stepFrom(proof, state));
     return;
   }

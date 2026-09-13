@@ -160,6 +160,104 @@ describe("what a class's bodies store on the receiver", () => {
     expect(stored[1]?.[0]).toBe("prime() { this.cache = warm(); }");
   });
 
+  it("gives the receiver a node of its own, which is one of the class", () => {
+    const { db, table } = factsFor({
+      "/mod.ts": [
+        "declare function create(): string;",
+        "export class Api {",
+        "  private client!: string;",
+        "  constructor() { this.client = create(); }",
+        "  items() { return this.client; }",
+        "}",
+        "export const v1 = new Api();",
+        "",
+      ].join("\n"),
+    });
+
+    const [row] = db.facts("instanceOf");
+    const [receiver, cls] = (row ?? []).map(String);
+    expect(db.size("instanceOf")).toBe(1);
+    expect(receiver).toBe(`${cls}#this`);
+    expect(table.byId.get(cls)?.getText().startsWith("export class Api")).toBe(
+      true,
+    );
+    expect(
+      db
+        .facts("readsProperty")
+        .map((read) => [String(read[1]), String(read[2])]),
+    ).toContainEqual([receiver, "client"]);
+  });
+
+  it("gives no receiver to `this` in a nested function or outside a class", () => {
+    const { db } = factsFor({
+      "/mod.ts": [
+        "export class Api {",
+        "  items() {",
+        "    function loose(this: { a: string }) { return this.a; }",
+        "    return loose;",
+        "  }",
+        "}",
+        "export const stray = () => this;",
+        "",
+      ].join("\n"),
+    });
+
+    expect(db.size("instanceOf")).toBe(0);
+  });
+
+  it("says which calls are outside every method body", () => {
+    const { db, table } = factsFor({
+      "/mod.ts": [
+        "declare function make(): string;",
+        "declare function warm(fn: () => string): string;",
+        "declare function nested(): string;",
+        "declare function built(): string;",
+        "declare function plainCall(): string;",
+        "declare function top(): string;",
+        "export class Api {",
+        "  private a!: string;",
+        "  private b!: string;",
+        "  items() { this.a = make(); }",
+        "  refresh() { this.b = warm(() => nested()); }",
+        "  static build() { return built(); }",
+        "}",
+        "export function plain() { return plainCall(); }",
+        "export const started = top();",
+        "",
+      ].join("\n"),
+    });
+
+    expect(
+      rows(db, table, "callOutsideMethod")
+        .map((row) => row[0])
+        .sort(),
+    ).toEqual(["built()", "plainCall()", "top()"]);
+  });
+
+  it("states one store per body when the constructor and a method write one field", () => {
+    const { db, table } = factsFor({
+      "/mod.ts": [
+        "declare function create(): string;",
+        "declare function warm(): string;",
+        "export class Api {",
+        "  private client!: string;",
+        "  constructor() { this.client = create(); }",
+        "  prime() { this.client = warm(); }",
+        "}",
+        "export const v1 = new Api();",
+        "",
+      ].join("\n"),
+    });
+
+    const stored = rows(db, table, "storesProperty");
+    expect(stored.map((row) => [row[1], row[2]])).toEqual([
+      ["client", "create()"],
+      ["client", "warm()"],
+    ]);
+    expect(stored[0]?.[0]?.startsWith("export class Api {")).toBe(true);
+    expect(stored[1]?.[0]).toBe("prime() { this.client = warm(); }");
+  });
+
   it("settles two stores to one name in one body on the last of them", () => {
     const { db, table } = factsFor({
       "/mod.ts": [

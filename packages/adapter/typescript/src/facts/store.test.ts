@@ -1868,13 +1868,36 @@ describe("a class field", () => {
     ).toBeNull();
   });
 
-  it("reads nothing from a field a method writes, which runs whenever it is called", () => {
+  it("reads a field's declared value past a method store that resolves to nothing", () => {
     const project = projectOf({
       "/dao.ts": `
         export class OrdersDao {
           private tableName = "orders-v1";
           rename(next: string) {
             this.tableName = next;
+          }
+          find() {
+            return { TableName: this.tableName };
+          }
+        }
+      `,
+    });
+    const store = new ResolutionStore();
+
+    // Each body states its own store, and nothing calls rename, so what
+    // it writes resolves to nothing and the declaration's value is left.
+    expect(written(store, fieldValue(project, "/dao.ts", "tableName"))).toBe(
+      '"orders-v1"',
+    );
+  });
+
+  it("reads nothing from a field two bodies write to different values", () => {
+    const project = projectOf({
+      "/dao.ts": `
+        export class OrdersDao {
+          private tableName = "orders-v1";
+          rename() {
+            this.tableName = "orders-v2";
           }
           find() {
             return { TableName: this.tableName };
@@ -2069,7 +2092,7 @@ describe("a dependency the constructor was handed", () => {
     ).toContain('"orders:"');
   });
 
-  it("reads nothing from a parameter property a method writes again", () => {
+  it("reads the constructed dependency past a swap that resolves to nothing", () => {
     const project = serviceProject(
       `
         import type { OrdersReader } from "./dao";
@@ -2086,12 +2109,14 @@ describe("a dependency the constructor was handed", () => {
       "new OrdersDao()",
     );
 
+    // swap states its own store, and nothing calls it, so the parameter
+    // it writes resolves to nothing and the construction is what is left.
     expect(
       resolvedBody(
         storeThatRead(project),
         calleeIn(project, "/service.ts", "forCustomer"),
       ),
-    ).toBeNull();
+    ).toContain('"orders:"');
   });
 
   it("reads nothing when two construction sites pass different classes", () => {

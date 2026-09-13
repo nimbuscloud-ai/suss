@@ -36,8 +36,10 @@ export {
 export {
   ASKING_RELATIONS,
   askResolution,
+  askResolutionUnder,
   queryFacts,
   resolutionProgram,
+  resolutionUnderProgram,
 } from "./program.js";
 export { explainResolvedKey } from "./session.js";
 export {
@@ -45,6 +47,11 @@ export {
   placeholderValues,
   singleAnswers,
 } from "./singleAnswer.js";
+export {
+  comesToUnder,
+  isWrittenAsUnder,
+  objectOfUnder,
+} from "./underContext.js";
 export { type NameWrite, valueLeftByWrites } from "./writes.js";
 export {
   writtenValueOf,
@@ -115,6 +122,7 @@ export type {
 //   returnsClass(f, c)          f is annotated as returning c
 //   returnsNamed(f, n)          f's return annotation is written n
 //   bodyCalls(f, c)             f's body calls c
+//   callOutsideMethod(r)        the call r is outside every method body
 //   containsFn(f, g)            g is declared inside f
 //   call(r, c)                  r is a call whose callee is c
 //   callArg(r, k, a)            r passes a at position k
@@ -161,6 +169,8 @@ export type {
 
 import { constant, lit, rule, variable as v } from "@suss/datalog";
 
+import type { Rule } from "@suss/datalog";
+
 /** A step to the value x is written as. */
 export const VALUE_STEP = constant("value");
 
@@ -191,6 +201,25 @@ export const INSTANCE_STEP = constant("instance");
 /** A step to what running the call x is handed back. */
 export const RESULT_STEP = constant("result");
 
+/** The context a value read outside every allocation site is read under. */
+export const NO_CONTEXT_NAME = "none";
+export const NO_CONTEXT = constant(NO_CONTEXT_NAME);
+
+/**
+ * How two steps in a row combine: value is weaker than instance, which
+ * is weaker than result. One table for both closures, so `reaches` and
+ * `reachesUnder` cannot drift apart.
+ */
+const STEP_LATTICE = [
+  { soFar: VALUE_STEP, next: v("kind"), took: v("kind") },
+  { soFar: INSTANCE_STEP, next: VALUE_STEP, took: INSTANCE_STEP },
+  { soFar: INSTANCE_STEP, next: INSTANCE_STEP, took: INSTANCE_STEP },
+  { soFar: INSTANCE_STEP, next: RESULT_STEP, took: RESULT_STEP },
+  { soFar: RESULT_STEP, next: VALUE_STEP, took: RESULT_STEP },
+  { soFar: RESULT_STEP, next: INSTANCE_STEP, took: RESULT_STEP },
+  { soFar: RESULT_STEP, next: RESULT_STEP, took: RESULT_STEP },
+];
+
 /**
  * The rules every language adapter shares. Concatenate a language's own
  * rules onto these before evaluating.
@@ -206,12 +235,12 @@ export const RESULT_STEP = constant("result");
  * adding a construct is one step and every question gets it, and adding
  * a question is a stopping condition and no steps at all.
  */
-export const RESOLUTION_RULES = [
+const STATED_RULES = [
   // Aliasing: const x = y, or an identifier referencing a declaration.
   // A language with a hop of its own, like JavaScript's `.bind`, states
   // it as a step too, or every question but `comesTo` misses it.
   rule(
-    "stepsTo",
+    "hop",
     [v("x"), v("y"), VALUE_STEP],
     [lit("binds", v("x"), v("y"))],
     "alias",
@@ -221,7 +250,7 @@ export const RESOLUTION_RULES = [
   // there. The adapter works out which write that is, and stays quiet
   // when control flow decides; the rule below takes that name instead.
   rule(
-    "stepsTo",
+    "hop",
     [v("x"), v("y"), VALUE_STEP],
     [lit("endsHolding", v("x"), v("y"))],
     "last write",
@@ -231,7 +260,7 @@ export const RESOLUTION_RULES = [
   // caller that can use several values gets them all and one that needs
   // a single value gets none. A write stating no value stops every step.
   rule(
-    "stepsTo",
+    "hop",
     [v("x"), v("y"), VALUE_STEP],
     [lit("mayHold", v("x"), v("y")), lit("writesAllStated", v("x"))],
     "one of several writes",
@@ -241,7 +270,7 @@ export const RESOLUTION_RULES = [
   // a step. A branch that resolves to nothing makes no claim, and two
   // branches resolving to different things fail the single-answer policy.
   rule(
-    "stepsTo",
+    "hop",
     [v("x"), v("b"), VALUE_STEP],
     [lit("fallbackBranch", v("x"), v("b"))],
     "fallback",
@@ -249,7 +278,7 @@ export const RESOLUTION_RULES = [
 
   // An import steps to what the module exports under that name.
   rule(
-    "stepsTo",
+    "hop",
     [v("x"), v("value"), VALUE_STEP],
     [
       lit("imports", v("x"), v("m"), v("n")),
@@ -286,7 +315,7 @@ export const RESOLUTION_RULES = [
   // a method read off the result is the one the class declares. The
   // caveat below is about a factory function, and a class is not one.
   rule(
-    "stepsTo",
+    "hop",
     [v("r"), v("cls"), INSTANCE_STEP],
     [
       lit("call", v("r"), v("c")),
@@ -300,7 +329,7 @@ export const RESOLUTION_RULES = [
   // same hop a construction takes, so a method read off `self` finds
   // what the class declares.
   rule(
-    "stepsTo",
+    "hop",
     [v("x"), v("cls"), INSTANCE_STEP],
     [lit("instanceOf", v("x"), v("cls"))],
     "receiver instance",
@@ -310,7 +339,7 @@ export const RESOLUTION_RULES = [
   // project class with a method of the same name on another hierarchy is
   // left alone. The DESIGN says what a chain of them composes into.
   rule(
-    "stepsTo",
+    "hop",
     [v("r"), v("cls"), INSTANCE_STEP],
     [
       lit("call", v("r"), v("c")),
@@ -329,7 +358,7 @@ export const RESOLUTION_RULES = [
   // instead of as the receiver. The argument having to reach the base a
   // pack named is what keeps an unrelated `get` out.
   rule(
-    "stepsTo",
+    "hop",
     [v("r"), v("cls"), INSTANCE_STEP],
     [
       lit("call", v("r"), v("c")),
@@ -348,7 +377,7 @@ export const RESOLUTION_RULES = [
   // anything, keyed on the module it was imported from so a project
   // function spelled the same way is not mistaken for it.
   rule(
-    "stepsTo",
+    "hop",
     [v("r"), v("cls"), INSTANCE_STEP],
     [
       lit("call", v("r"), v("c")),
@@ -364,7 +393,7 @@ export const RESOLUTION_RULES = [
   // entering one gives back the object it built, so the name the block
   // opens is that call.
   rule(
-    "stepsTo",
+    "hop",
     [v("y"), v("r"), VALUE_STEP],
     [
       lit("entersAs", v("y"), v("r")),
@@ -378,7 +407,7 @@ export const RESOLUTION_RULES = [
   // Wrapper transparency, derived: calling a factory that returns a
   // function which calls its parameter k steps to argument k.
   rule(
-    "stepsTo",
+    "hop",
     [v("r"), v("a"), VALUE_STEP],
     [
       lit("call", v("r"), v("c")),
@@ -393,7 +422,7 @@ export const RESOLUTION_RULES = [
   // argument k. The callee has to come from the library the pack said,
   // so a local object spelled the same way is not mistaken for it.
   rule(
-    "stepsTo",
+    "hop",
     [v("r"), v("a"), VALUE_STEP],
     [
       lit("calleeName", v("r"), v("n")),
@@ -408,7 +437,7 @@ export const RESOLUTION_RULES = [
   // The one step that runs a function forwards: a call steps to what
   // the function it invokes returns.
   rule(
-    "stepsTo",
+    "hop",
     [v("r"), v("ret"), RESULT_STEP],
     [lit("invokes", v("r"), v("f")), lit("returnsValue", v("f"), v("ret"))],
     "call result",
@@ -418,7 +447,7 @@ export const RESOLUTION_RULES = [
   // value. The adapter stays quiet about the annotation whenever the
   // body does state one, so the two never answer the same question.
   rule(
-    "stepsTo",
+    "hop",
     [v("r"), v("cls"), RESULT_STEP],
     [
       lit("invokes", v("r"), v("f")),
@@ -437,63 +466,425 @@ export const RESOLUTION_RULES = [
     [v("x"), v("z"), v("kind")],
     [lit("stepsTo", v("x"), v("z"), v("kind"))],
   ),
-  rule(
-    "reaches",
-    [v("x"), v("z"), v("kind")],
-    [
-      lit("reaches", v("x"), v("y"), VALUE_STEP),
-      lit("stepsTo", v("y"), v("z"), v("kind")),
-    ],
-  ),
   // A rule per pair rather than one leaving the next step's kind free. A
   // free kind is a second question about the same relation, and a
   // demand-driven run then derives both to answer either.
+  ...STEP_LATTICE.map(({ soFar, next, took }) =>
+    rule(
+      "reaches",
+      [v("x"), v("z"), took],
+      [
+        lit("reaches", v("x"), v("y"), soFar),
+        lit("stepsTo", v("y"), v("z"), next),
+      ],
+    ),
+  ),
+
+  // A context is an allocation site, or nothing at all for a value read
+  // outside every site. Both are stated, so a rule that starts a walk
+  // binds its context from a premise rather than from a negation.
+  rule("context", [NO_CONTEXT], [], "no context"),
   rule(
-    "reaches",
-    [v("x"), v("z"), INSTANCE_STEP],
+    "context",
+    [v("site")],
+    [lit("allocates", v("site"), v("cls"))],
+    "site context",
+  ),
+
+  // The same closure, with the context the walk started under and the
+  // context it arrived under. It takes `hop`, because an argument and a
+  // property read have their own rules below.
+  rule(
+    "reachesUnder",
+    [v("x"), v("c"), v("z"), v("c"), v("kind")],
+    [lit("context", v("c")), lit("hop", v("x"), v("z"), v("kind"))],
+    "under one hop",
+  ),
+  ...STEP_LATTICE.map(({ soFar, next, took }) =>
+    rule(
+      "reachesUnder",
+      [v("x"), v("c"), v("z"), v("c2"), took],
+      [
+        lit("reachesUnder", v("x"), v("c"), v("y"), v("c2"), soFar),
+        lit("hop", v("y"), v("z"), next),
+      ],
+    ),
+  ),
+
+  // The receiver read under a site is that site. The ordinary hop from a
+  // receiver to its class stays in `hop`, so `self` under any context
+  // still comes to the class a single-answer reader wants.
+  rule(
+    "reachesUnder",
+    [v("x"), v("c"), v("c"), v("c"), VALUE_STEP],
+    [lit("instanceOf", v("x"), v("cls")), lit("allocates", v("c"), v("cls"))],
+    "receiver is the site",
+  ),
+  rule(
+    "reachesUnder",
+    [v("x"), v("c"), v("c2"), v("c2"), v("kind")],
     [
-      lit("reaches", v("x"), v("y"), INSTANCE_STEP),
-      lit("stepsTo", v("y"), v("z"), VALUE_STEP),
+      lit("reachesUnder", v("x"), v("c"), v("y"), v("c2"), v("kind")),
+      lit("instanceOf", v("y"), v("cls")),
+      lit("allocates", v("c2"), v("cls")),
+    ],
+    "reached receiver is the site",
+  ),
+
+  // The object an expression refers to under a context. A site is an
+  // answer here, unlike `objectOf`, and the class an instance is one of
+  // is an answer only under no context.
+  rule(
+    "objectOfUnder",
+    [v("site"), v("c"), v("site")],
+    [lit("context", v("c")), lit("allocates", v("site"), v("cls"))],
+    "site is its own object",
+  ),
+  rule(
+    "objectOfUnder",
+    [v("o"), v("c"), v("site")],
+    [
+      lit("reachesUnder", v("o"), v("c"), v("site"), v("c2"), VALUE_STEP),
+      lit("allocates", v("site"), v("cls")),
+    ],
+    "name of a site",
+  ),
+  rule(
+    "objectOfUnder",
+    [v("o"), v("c"), v("obj")],
+    [
+      lit("reachesUnder", v("o"), v("c"), v("obj"), v("c2"), VALUE_STEP),
+      lit("objectValue", v("obj")),
+    ],
+    "written object under a context",
+  ),
+  rule(
+    "objectOfUnder",
+    [v("o"), v("c"), v("obj")],
+    [
+      lit("reachesUnder", v("o"), v("c"), v("obj"), v("c2"), RESULT_STEP),
+      lit("objectValue", v("obj")),
+    ],
+    "returned object under a context",
+  ),
+  rule(
+    "objectOfUnder",
+    [v("o"), NO_CONTEXT, v("cls")],
+    [
+      lit(
+        "reachesUnder",
+        v("o"),
+        NO_CONTEXT,
+        v("cls"),
+        NO_CONTEXT,
+        INSTANCE_STEP,
+      ),
+      lit("objectValue", v("cls")),
+    ],
+    "class reached with no context",
+  ),
+  rule(
+    "objectOfUnder",
+    [v("o"), NO_CONTEXT, v("cls")],
+    [lit("instanceOf", v("o"), v("cls"))],
+    "receiver class with no context",
+  ),
+  rule(
+    "objectOfUnder",
+    [v("o"), v("c"), v("o")],
+    [lit("context", v("c")), lit("objectValue", v("o"))],
+    "object under a context is itself",
+  ),
+
+  // A property read goes on under the site the object was made at, so a
+  // field read off two constructions gives each one its own value. A
+  // class or a literal object keeps the context the walk was already in.
+  rule(
+    "reachesUnder",
+    [v("x"), v("c"), v("held"), v("site"), VALUE_STEP],
+    [
+      lit("context", v("c")),
+      lit("readsProperty", v("x"), v("o"), v("n")),
+      lit("objectOfUnder", v("o"), v("c"), v("site")),
+      lit("allocates", v("site"), v("cls")),
+      lit("contains", v("site"), v("n"), v("held")),
+    ],
+    "property read at a site",
+  ),
+  rule(
+    "reachesUnder",
+    [v("x"), v("c"), v("held"), v("c"), VALUE_STEP],
+    [
+      lit("context", v("c")),
+      lit("readsProperty", v("x"), v("o"), v("n")),
+      lit("objectOfUnder", v("o"), v("c"), v("obj")),
+      lit("objectValue", v("obj")),
+      lit("contains", v("obj"), v("n"), v("held")),
+    ],
+    "property read off an object",
+  ),
+  rule(
+    "reachesUnder",
+    [v("x"), v("c"), v("held"), v("site"), v("kind")],
+    [
+      lit("reachesUnder", v("x"), v("c"), v("y"), v("c2"), v("kind")),
+      lit("readsProperty", v("y"), v("o"), v("n")),
+      lit("objectOfUnder", v("o"), v("c2"), v("site")),
+      lit("allocates", v("site"), v("cls")),
+      lit("contains", v("site"), v("n"), v("held")),
+    ],
+    "reached property read at a site",
+  ),
+  rule(
+    "reachesUnder",
+    [v("x"), v("c"), v("held"), v("c2"), v("kind")],
+    [
+      lit("reachesUnder", v("x"), v("c"), v("y"), v("c2"), v("kind")),
+      lit("readsProperty", v("y"), v("o"), v("n")),
+      lit("objectOfUnder", v("o"), v("c2"), v("obj")),
+      lit("objectValue", v("obj")),
+      lit("contains", v("obj"), v("n"), v("held")),
+    ],
+    "reached property read off an object",
+  ),
+
+  // A parameter goes on at the argument, under the context its caller
+  // was read in, and only from the calls that run the function under the
+  // context the walk is in. This is the one hop that changes context.
+  rule(
+    "reachesUnder",
+    [v("p"), v("c"), v("a"), v("c3"), VALUE_STEP],
+    [
+      lit("context", v("c")),
+      lit("paramOf", v("f"), v("i"), v("p")),
+      lit("entersUnder", v("r"), v("f"), v("c"), v("c3")),
+      lit("callArg", v("r"), v("i"), v("a")),
+    ],
+    "argument under a context",
+  ),
+  rule(
+    "reachesUnder",
+    [v("p"), v("c"), v("a"), v("c3"), VALUE_STEP],
+    [
+      lit("context", v("c")),
+      lit("paramNamed", v("f"), v("n"), v("p")),
+      lit("entersUnder", v("r"), v("f"), v("c"), v("c3")),
+      lit("callKeywordArg", v("r"), v("n"), v("a")),
+    ],
+    "keyword argument under a context",
+  ),
+  rule(
+    "reachesUnder",
+    [v("x"), v("c"), v("a"), v("c3"), v("kind")],
+    [
+      lit("reachesUnder", v("x"), v("c"), v("p"), v("c2"), v("kind")),
+      lit("paramOf", v("f"), v("i"), v("p")),
+      lit("entersUnder", v("r"), v("f"), v("c2"), v("c3")),
+      lit("callArg", v("r"), v("i"), v("a")),
+    ],
+    "reached argument under a context",
+  ),
+  rule(
+    "reachesUnder",
+    [v("x"), v("c"), v("a"), v("c3"), v("kind")],
+    [
+      lit("reachesUnder", v("x"), v("c"), v("p"), v("c2"), v("kind")),
+      lit("paramNamed", v("f"), v("n"), v("p")),
+      lit("entersUnder", v("r"), v("f"), v("c2"), v("c3")),
+      lit("callKeywordArg", v("r"), v("n"), v("a")),
+    ],
+    "reached keyword argument under a context",
+  ),
+
+  // Which call runs which function under which context. A construction
+  // runs its constructor under the site it makes, a method call runs
+  // under the site its receiver is, and anything else under no context.
+  rule(
+    "entersUnder",
+    [v("site"), v("ctor"), v("site"), v("caller")],
+    [
+      lit("allocates", v("site"), v("cls")),
+      lit("runsConstructor", v("cls"), v("ctor")),
+      lit("callUnder", v("site"), v("caller")),
+    ],
+    "construction enters its constructor",
+  ),
+  rule(
+    "entersUnder",
+    [v("r"), v("f"), v("site"), v("caller")],
+    [
+      lit("call", v("r"), v("cal")),
+      lit("readsProperty", v("cal"), v("o"), v("m")),
+      lit("objectOfUnder", v("o"), v("caller"), v("site")),
+      lit("allocates", v("site"), v("cls")),
+      lit("contains", v("site"), v("m"), v("f")),
+      lit("callUnder", v("r"), v("caller")),
+    ],
+    "method call enters under its receiver",
+  ),
+  // A call written as a name runs with whatever receiver the body
+  // around it has, so a plain function called from a method keeps the
+  // site rather than taking every caller of it.
+  rule(
+    "entersUnder",
+    [v("r"), v("f"), v("c"), v("c")],
+    [
+      lit("context", v("c")),
+      lit("callsNamed", v("r"), v("f")),
+      lit("callUnder", v("r"), v("c")),
+    ],
+    "named call enters under the site it is made in",
+  ),
+  rule(
+    "entersUnder",
+    [v("r"), v("f"), NO_CONTEXT, v("caller")],
+    [
+      lit("callsFunction", v("r"), v("f")),
+      lit("callUnder", v("r"), v("caller")),
+    ],
+    "call enters with no context",
+  ),
+
+  // The constructor a construction runs, the ancestry included, so a
+  // subclass that declares none still fills in what it inherits.
+  rule(
+    "runsConstructor",
+    [v("cls"), v("f")],
+    [lit("initializes", v("cls"), v("f"))],
+  ),
+  rule(
+    "runsConstructor",
+    [v("cls"), v("f")],
+    [
+      lit("extends", v("cls"), v("b")),
+      lit("comesTo", v("b"), v("base")),
+      lit("runsConstructor", v("base"), v("f")),
+    ],
+  ),
+
+  // Which body a call is written in. One adapter states the call it
+  // found and another states the callee, so both spellings are read.
+  rule(
+    "callInBody",
+    [v("f"), v("r")],
+    [lit("bodyCallsDeep", v("f"), v("r")), lit("call", v("r"), v("c"))],
+  ),
+  rule(
+    "callInBody",
+    [v("f"), v("r")],
+    [lit("bodyCallsDeep", v("f"), v("c")), lit("call", v("r"), v("c"))],
+  ),
+
+  // The context a call is made under: every site of the class whose
+  // method or constructor it is written in, and no context for a call
+  // outside every method body.
+  rule(
+    "callUnder",
+    [v("r"), v("site")],
+    [
+      lit("callInBody", v("f"), v("r")),
+      lit("holdsProperty", v("cls"), v("m"), v("f")),
+      lit("allocates", v("site"), v("cls")),
+    ],
+    "call in a method",
+  ),
+  rule(
+    "callUnder",
+    [v("r"), v("site")],
+    [
+      lit("callInBody", v("f"), v("r")),
+      lit("initializes", v("cls"), v("f")),
+      lit("allocates", v("site"), v("cls")),
+    ],
+    "call in a constructor",
+  ),
+  // A plain function entered under a site makes its own calls under
+  // that site, so a chain of plain functions off one method keeps it.
+  rule(
+    "callUnder",
+    [v("r"), v("c")],
+    [
+      lit("callOutsideMethod", v("r")),
+      lit("callInBody", v("f"), v("r")),
+      lit("entersUnder", v("into"), v("f"), v("c"), v("c4")),
+    ],
+    "call in a function entered under a site",
+  ),
+  rule(
+    "callUnder",
+    [v("r"), NO_CONTEXT],
+    [lit("callOutsideMethod", v("r"))],
+    "call outside every method",
+  ),
+
+  // The two questions a caller puts under a context, stopping where
+  // `isWrittenAs` and `comesTo` stop, whatever context the walk ended in.
+  rule(
+    "isWrittenAsUnder",
+    [v("x"), v("c"), v("x")],
+    [lit("context", v("c")), lit("writtenValue", v("x"))],
+  ),
+  rule(
+    "isWrittenAsUnder",
+    [v("x"), v("c"), v("x")],
+    [lit("context", v("c")), lit("objectValue", v("x"))],
+  ),
+  rule(
+    "isWrittenAsUnder",
+    [v("x"), v("c"), v("z")],
+    [
+      lit("reachesUnder", v("x"), v("c"), v("z"), v("c2"), VALUE_STEP),
+      lit("writtenValue", v("z")),
     ],
   ),
   rule(
-    "reaches",
-    [v("x"), v("z"), INSTANCE_STEP],
+    "isWrittenAsUnder",
+    [v("x"), v("c"), v("z")],
     [
-      lit("reaches", v("x"), v("y"), INSTANCE_STEP),
-      lit("stepsTo", v("y"), v("z"), INSTANCE_STEP),
+      lit("reachesUnder", v("x"), v("c"), v("z"), v("c2"), VALUE_STEP),
+      lit("objectValue", v("z")),
     ],
   ),
   rule(
-    "reaches",
-    [v("x"), v("z"), RESULT_STEP],
+    "comesToUnder",
+    [v("x"), v("c"), v("x")],
+    [lit("context", v("c")), lit("func", v("x"))],
+  ),
+  rule(
+    "comesToUnder",
+    [v("x"), v("c"), v("x")],
+    [lit("context", v("c")), lit("objectValue", v("x"))],
+  ),
+  rule(
+    "comesToUnder",
+    [v("x"), v("c"), v("z")],
     [
-      lit("reaches", v("x"), v("y"), INSTANCE_STEP),
-      lit("stepsTo", v("y"), v("z"), RESULT_STEP),
+      lit("reachesUnder", v("x"), v("c"), v("z"), v("c2"), VALUE_STEP),
+      lit("func", v("z")),
     ],
   ),
   rule(
-    "reaches",
-    [v("x"), v("z"), RESULT_STEP],
+    "comesToUnder",
+    [v("x"), v("c"), v("z")],
     [
-      lit("reaches", v("x"), v("y"), RESULT_STEP),
-      lit("stepsTo", v("y"), v("z"), VALUE_STEP),
+      lit("reachesUnder", v("x"), v("c"), v("z"), v("c2"), VALUE_STEP),
+      lit("objectValue", v("z")),
     ],
   ),
   rule(
-    "reaches",
-    [v("x"), v("z"), RESULT_STEP],
+    "comesToUnder",
+    [v("x"), v("c"), v("z")],
     [
-      lit("reaches", v("x"), v("y"), RESULT_STEP),
-      lit("stepsTo", v("y"), v("z"), INSTANCE_STEP),
+      lit("reachesUnder", v("x"), v("c"), v("z"), v("c2"), INSTANCE_STEP),
+      lit("func", v("z")),
     ],
   ),
   rule(
-    "reaches",
-    [v("x"), v("z"), RESULT_STEP],
+    "comesToUnder",
+    [v("x"), v("c"), v("z")],
     [
-      lit("reaches", v("x"), v("y"), RESULT_STEP),
-      lit("stepsTo", v("y"), v("z"), RESULT_STEP),
+      lit("reachesUnder", v("x"), v("c"), v("z"), v("c2"), INSTANCE_STEP),
+      lit("objectValue", v("z")),
     ],
   ),
 
@@ -701,12 +1092,12 @@ export const RESOLUTION_RULES = [
   // the function. Starting from `call` instead asks what every call in
   // the project imports, which was 72% of everything derived.
   rule(
-    "callsFunction",
+    "callsNamed",
     [v("r"), v("f")],
     [lit("binds", v("c"), v("f")), lit("call", v("r"), v("c"))],
   ),
   rule(
-    "callsFunction",
+    "callsNamed",
     [v("r"), v("f")],
     [
       lit("moduleExport", v("m"), v("n"), v("f")),
@@ -717,7 +1108,7 @@ export const RESOLUTION_RULES = [
   // The same, for a language whose adapter writes the import down as a
   // declaration and the call's callee as the name referring to it.
   rule(
-    "callsFunction",
+    "callsNamed",
     [v("r"), v("f")],
     [
       lit("moduleExport", v("m"), v("n"), v("f")),
@@ -729,6 +1120,16 @@ export const RESOLUTION_RULES = [
   // `const f = (x) => ...` declares the name and puts the parameters on
   // the arrow, so everything above arrives at the declaration and
   // `paramOf` is about the arrow. One binds hop joins the two.
+  rule(
+    "callsNamed",
+    [v("r"), v("f")],
+    [lit("binds", v("g"), v("f")), lit("callsNamed", v("r"), v("g"))],
+  ),
+
+  // Every one of those, and the binds hop again over the whole
+  // relation, so a property holding a name for a function is reached
+  // the way it was before the two were told apart.
+  rule("callsFunction", [v("r"), v("f")], [lit("callsNamed", v("r"), v("f"))]),
   rule(
     "callsFunction",
     [v("r"), v("f")],
@@ -1008,6 +1409,27 @@ export const RESOLUTION_RULES = [
 ];
 
 /**
+ * Rules with a `stepsTo` twin for each hop among them.
+ *
+ * `reaches` reads `stepsTo` and `reachesUnder` reads `hop`. A rule
+ * passing one through to the other would look tidier and costs far
+ * more: the demand for `stepsTo` is one of the largest relations a run
+ * derives, and every row of it would be copied into a demand for `hop`
+ * whether or not anybody asked about a context. A language that states
+ * a hop of its own passes it through here for the same reason.
+ */
+export function alsoSteps(rules: readonly Rule[]): Rule[] {
+  return [
+    ...rules,
+    ...rules
+      .filter((r) => r.head.relation === "hop")
+      .map((r) => ({ ...r, head: { ...r.head, relation: "stepsTo" } })),
+  ];
+}
+
+export const RESOLUTION_RULES = alsoSteps(STATED_RULES);
+
+/**
  * The questions a caller asks, written as rules. Two facts say somebody
  * is asking: `wanted(x)` for what a value is, and `wantedOrigin(x)` for
  * where a name came from. Each answer relation contains the pairs for the
@@ -1055,6 +1477,33 @@ export const RESOLUTION_QUESTIONS = [
       lit("wanted", v("x")),
       lit("objectOf", v("x"), v("z")),
       lit("objectValue", v("z")),
+    ],
+  ),
+  // The same three questions under one allocation site, keyed by the
+  // value and the site both. An allocation site is an answer here,
+  // unlike `wantedObjectOf`, since a site is what a context is.
+  rule(
+    "wantedIsWrittenAsUnder",
+    [v("x"), v("c"), v("z")],
+    [
+      lit("wantedUnder", v("x"), v("c")),
+      lit("isWrittenAsUnder", v("x"), v("c"), v("z")),
+    ],
+  ),
+  rule(
+    "wantedComesToUnder",
+    [v("x"), v("c"), v("z")],
+    [
+      lit("wantedUnder", v("x"), v("c")),
+      lit("comesToUnder", v("x"), v("c"), v("z")),
+    ],
+  ),
+  rule(
+    "wantedObjectOfUnder",
+    [v("x"), v("c"), v("z")],
+    [
+      lit("wantedUnder", v("x"), v("c")),
+      lit("objectOfUnder", v("x"), v("c"), v("z")),
     ],
   ),
   // The same for the function a call returns: `app.use(requireCaller(config))`
@@ -1354,4 +1803,18 @@ export const RESOLUTION_QUESTIONS = [
 /** The relations `RESOLUTION_QUESTIONS` answers into. */
 export const ANSWER_RELATIONS = [
   ...new Set(RESOLUTION_QUESTIONS.map((r) => r.head.relation)),
+];
+
+/**
+ * The three of those a caller asks under one allocation site.
+ *
+ * They are listed apart because leaving them out of what a program has
+ * to answer drops the whole second closure from it. A run that never
+ * mentions a context would otherwise carry a thousand rewritten rules
+ * it can never fire, and the engine reads every rule once a round.
+ */
+export const UNDER_ANSWER_RELATIONS = [
+  "wantedIsWrittenAsUnder",
+  "wantedComesToUnder",
+  "wantedObjectOfUnder",
 ];

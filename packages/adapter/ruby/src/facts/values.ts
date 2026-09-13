@@ -176,6 +176,8 @@ interface Emitter {
   enclosing: RbNode | null;
   /** The class or module `self` means here, or null outside one. */
   selfKey: string | null;
+  /** Whether the body being walked runs with a receiver, so a call in it has one too. */
+  insideMethod: boolean;
   /**
    * Every value the body being walked writes to each of its instance
    * variables. One map per method, so the facts say which method stored
@@ -248,6 +250,9 @@ function emitCall(emitter: Emitter, call: RbNode): void {
   const receiver = field(call, "receiver");
   const callKey = nodeId(emitter.filePath, call);
   add(emitter, "call", callKey, calleeKey);
+  if (!emitter.insideMethod) {
+    add(emitter, "callOutsideMethod", callKey);
+  }
   if (receiver !== null) {
     add(
       emitter,
@@ -841,6 +846,21 @@ const METHOD_TYPES = new Set(["method", "singleton_method"]);
 /** The method Ruby runs on a new instance. */
 const INITIALIZE_METHOD = "initialize";
 
+/**
+ * The key `self` joins on inside a method. An instance method gets one
+ * of the class, so a walk under one construction reads that
+ * construction's fields; `def self.x` runs on the class itself.
+ */
+function receiverKeyOf(
+  filePath: string,
+  method: RbNode,
+  classKey: string,
+): string {
+  return method.type === "singleton_method"
+    ? classKey
+    : `${nodeId(filePath, method)}#self`;
+}
+
 /** A name a rule can join on. A mixin written any other way has none. */
 const CONSTANT_REF_TYPES = new Set(["constant", "scope_resolution"]);
 
@@ -909,6 +929,7 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
   const within: Emitter = {
     ...emitter,
     selfKey: classKey,
+    insideMethod: false,
     instanceWrites: collected,
   };
   const statements =
@@ -944,8 +965,17 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
       continue;
     }
     const stored = new Map<string, InstanceWrite[]>();
+    const receiverKey = receiverKeyOf(emitter.filePath, statement, classKey);
+    if (receiverKey !== classKey) {
+      add(emitter, "instanceOf", receiverKey, classKey);
+    }
     const funcKey = emitMethodFacts(
-      { ...within, instanceWrites: stored },
+      {
+        ...within,
+        selfKey: receiverKey,
+        insideMethod: receiverKey !== classKey,
+        instanceWrites: stored,
+      },
       statement,
     );
     const name = field(statement, "name");
@@ -980,6 +1010,7 @@ export function emitValueFacts(
     filePath,
     enclosing: null,
     selfKey: null,
+    insideMethod: false,
     instanceWrites: null,
     bodyBlocks,
   };

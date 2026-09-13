@@ -45,6 +45,12 @@ function keyOf(source: string, text: string): string {
   return `:${start}-${start + text.length}`;
 }
 
+/** The source a node key points at, once `rows` has dropped the file prefix. */
+function textAt(source: string, key: string): string {
+  const [start, end] = key.slice(1).split("-").map(Number);
+  return source.slice(start, end);
+}
+
 /** The same, for the last of several nodes written the same way. */
 function lastKeyOf(source: string, text: string): string {
   const start = source.lastIndexOf(text);
@@ -413,11 +419,17 @@ describe("ruby value facts", () => {
     ]);
   });
 
-  it("reads a name written with no receiver off the class it is written in", async () => {
+  it("reads a name written with no receiver off the method's own receiver", async () => {
     const source = "class Loader\n  def load\n    conn.get\n  end\nend\n";
     const db = await factsFor(source);
     const cls = rows(db, "objectValue")[0]?.[0];
-    expect(rows(db, "readsProperty")).toContainEqual(["#conn", cls, "conn"]);
+    const receiver = `${keyOf(source, "def load\n    conn.get\n  end")}#self`;
+    expect(rows(db, "readsProperty")).toContainEqual([
+      "#conn",
+      receiver,
+      "conn",
+    ]);
+    expect(rows(db, "instanceOf")).toContainEqual([receiver, cls]);
   });
 
   it("takes a method's memoised connection as what the method comes back with", async () => {
@@ -842,22 +854,37 @@ describe("ruby value facts", () => {
     ]);
   });
 
-  it("binds `self` to the class the method is written in, so a chain runs on", async () => {
+  it("binds `self` to the method's receiver, which is one of the class", async () => {
     const source = "class Entity\n  def filter\n    self\n  end\nend\n";
     const db = await factsFor(source);
     const classKey = rows(db, "objectValue")[0]?.[0];
-    expect(rows(db, "binds")).toContainEqual([keyOf(source, "self"), classKey]);
+    const receiver = `${keyOf(source, "def filter\n    self\n  end")}#self`;
+    expect(rows(db, "binds")).toContainEqual([keyOf(source, "self"), receiver]);
+    expect(rows(db, "instanceOf")).toContainEqual([receiver, classKey]);
   });
 
-  it("reads an instance variable as a property of the class it is written in", async () => {
+  it("keeps the class as the receiver inside a `def self.` method", async () => {
+    const source = "class Entity\n  def self.filter\n    self\n  end\nend\n";
+    const db = await factsFor(source);
+    const classKey = rows(db, "objectValue")[0]?.[0];
+    expect(rows(db, "binds")).toContainEqual([
+      lastKeyOf(source, "self"),
+      classKey,
+    ]);
+    expect(rows(db, "instanceOf")).toEqual([]);
+  });
+
+  it("reads an instance variable as a property of the method's receiver", async () => {
     const source = "class C\n  def go\n    @thing\n  end\nend\n";
     const db = await factsFor(source);
     const classKey = rows(db, "objectValue")[0]?.[0];
+    const receiver = `${keyOf(source, "def go\n    @thing\n  end")}#self`;
     expect(rows(db, "readsProperty")).toContainEqual([
       keyOf(source, "@thing"),
-      classKey,
+      receiver,
       "@thing",
     ]);
+    expect(rows(db, "instanceOf")).toContainEqual([receiver, classKey]);
   });
 
   it("says which method wrote an instance variable, and what it wrote", async () => {
@@ -1099,5 +1126,35 @@ describe("ruby value facts", () => {
     expect(rows(db, "endsHolding")).toEqual([
       [`${funcKey}#where`, keyOf(source, "Bar.new")],
     ]);
+  });
+
+  it("says which calls are outside every method body", async () => {
+    const source = [
+      "class Api",
+      "  def items",
+      "    make",
+      "  end",
+      "  def refresh",
+      "    warm { nested }",
+      "  end",
+      "  def self.build",
+      "    built",
+      "  end",
+      "end",
+      "",
+      "def plain",
+      "  plain_call",
+      "end",
+      "",
+      "started = top",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+
+    expect(
+      rows(db, "callOutsideMethod")
+        .map((row) => textAt(source, row[0] as string))
+        .sort(),
+    ).toEqual(["built", "plain_call", "top"]);
   });
 });

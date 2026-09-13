@@ -9,7 +9,14 @@ import { describe, expect, it } from "vitest";
 
 import { Database, evaluate } from "@suss/datalog";
 
-import { RESOLUTION_RULES } from "./index.js";
+import {
+  askResolution,
+  askResolutionUnder,
+  isWrittenAsUnder,
+  RESOLUTION_RULES,
+  resolutionProgram,
+  resolutionUnderProgram,
+} from "./index.js";
 
 /**
  * Feed facts in, run the rules, and read one relation back, keeping the
@@ -114,6 +121,18 @@ function containedIn(
 ): string[] {
   return derive(facts, "contains", object)
     .map((t) => `${String(t[1])}:${String(t[2])}`)
+    .sort();
+}
+
+/** The expressions a value is written as, read under one allocation site. */
+function writtenAsUnder(
+  facts: Array<[string, ...string[]]>,
+  value: string,
+  site: string,
+): string[] {
+  return derive(facts, "isWrittenAsUnder", value)
+    .filter((t) => t[1] === site)
+    .map((t) => String(t[2]))
     .sort();
 }
 
@@ -647,6 +666,259 @@ describe("a construction as an object of its own", () => {
     ];
     expect(containedIn(written, "clientSite")).toEqual(["timeout:five"]);
     expect(writtenAsOf(written, "read")).toEqual(["five"]);
+  });
+});
+
+describe("a value read under the site its receiver was made at", () => {
+  // class Api { constructor(base) { this.client = axios.create(base) }
+  // items(path) {} refresh() { this.items("/c") } }, with two module-level
+  // constructions, new Api(urlA) and new Api(urlB).
+  const twoClients: Array<[string, ...string[]]> = [
+    ["objectValue", "Api"],
+    // The class is its own constructor, which is how TypeScript keys one.
+    ["initializes", "Api", "Api"],
+    ["paramOf", "Api", "0", "base"],
+    ["writtenValue", "created"],
+    ["call", "created", "axiosCreate"],
+    ["bodyCalls", "Api", "axiosCreate"],
+    ["storesProperty", "Api", "client", "created"],
+    ["instanceOf", "Api#self", "Api"],
+    ["func", "items"],
+    ["paramOf", "items", "0", "path"],
+    ["holdsProperty", "Api", "items", "items"],
+    ["func", "refresh"],
+    ["holdsProperty", "Api", "refresh", "refresh"],
+    ["binds", "ApiRef", "Api"],
+    ["call", "v1Site", "ApiRef"],
+    ["writtenValue", "v1Site"],
+    ["callOutsideMethod", "v1Site"],
+    ["callArg", "v1Site", "0", "urlA"],
+    ["writtenValue", "urlA"],
+    ["binds", "v1", "v1Site"],
+    ["call", "v2Site", "ApiRef"],
+    ["writtenValue", "v2Site"],
+    ["callOutsideMethod", "v2Site"],
+    ["callArg", "v2Site", "0", "urlB"],
+    ["writtenValue", "urlB"],
+    ["binds", "v2", "v2Site"],
+    ["readsProperty", "v1Client", "v1", "client"],
+    ["readsProperty", "selfClient", "Api#self", "client"],
+  ];
+
+  it("gives one construction's base url under its site and both under none", () => {
+    expect(writtenAsUnder(twoClients, "base", "none")).toEqual([
+      "urlA",
+      "urlB",
+    ]);
+    expect(writtenAsUnder(twoClients, "base", "v1Site")).toEqual(["urlA"]);
+    expect(writtenAsUnder(twoClients, "base", "v2Site")).toEqual(["urlB"]);
+  });
+
+  it("reads a field off the receiver inside a method under one site", () => {
+    expect(writtenAsUnder(twoClients, "selfClient", "v1Site")).toEqual([
+      "created",
+    ]);
+    expect(writtenAsUnder(twoClients, "v1Client", "v1Site")).toEqual([
+      "created",
+    ]);
+  });
+
+  // v1.items("/a"), v2.items("/b"), and this.items("/c") inside refresh.
+  const withCalls: Array<[string, ...string[]]> = [
+    ...twoClients,
+    ["readsProperty", "v1Items", "v1", "items"],
+    ["call", "callA", "v1Items"],
+    ["callArg", "callA", "0", "pathA"],
+    ["writtenValue", "pathA"],
+    ["callOutsideMethod", "callA"],
+    ["readsProperty", "v2Items", "v2", "items"],
+    ["call", "callB", "v2Items"],
+    ["callArg", "callB", "0", "pathB"],
+    ["writtenValue", "pathB"],
+    ["callOutsideMethod", "callB"],
+    ["readsProperty", "selfItems", "Api#self", "items"],
+    ["call", "callC", "selfItems"],
+    ["callArg", "callC", "0", "pathC"],
+    ["writtenValue", "pathC"],
+    ["bodyCalls", "refresh", "selfItems"],
+  ];
+
+  it("puts a method's parameter under the site the receiver was made at", () => {
+    expect(writtenAsUnder(withCalls, "path", "v1Site")).toEqual([
+      "pathA",
+      "pathC",
+    ]);
+    expect(writtenAsUnder(withCalls, "path", "v2Site")).toEqual([
+      "pathB",
+      "pathC",
+    ]);
+  });
+
+  // function url(u) {}, called from the constructor as
+  // this.client = axios.create(url(base)).
+  const throughPlainFunction: Array<[string, ...string[]]> = [
+    ...twoClients,
+    ["func", "url"],
+    ["paramOf", "url", "0", "u"],
+    ["binds", "urlRef", "url"],
+    ["call", "urlCall", "urlRef"],
+    ["callArg", "urlCall", "0", "base"],
+    ["bodyCalls", "Api", "urlRef"],
+  ];
+
+  it("keeps the site through a plain function the constructor calls", () => {
+    expect(writtenAsUnder(throughPlainFunction, "u", "v1Site")).toEqual([
+      "urlA",
+    ]);
+    expect(writtenAsUnder(throughPlainFunction, "u", "v2Site")).toEqual([
+      "urlB",
+    ]);
+    expect(writtenAsUnder(throughPlainFunction, "u", "none")).toEqual([
+      "urlA",
+      "urlB",
+    ]);
+  });
+
+  // The constructor calls helper(base), and helper's body calls url(b).
+  it("keeps the site through one plain function calling another", () => {
+    const twoDeep: Array<[string, ...string[]]> = [
+      ...twoClients,
+      ["func", "helper"],
+      ["paramOf", "helper", "0", "b"],
+      ["binds", "helperRef", "helper"],
+      ["call", "helperCall", "helperRef"],
+      ["callArg", "helperCall", "0", "base"],
+      ["bodyCalls", "Api", "helperRef"],
+      ["func", "url"],
+      ["paramOf", "url", "0", "u"],
+      ["binds", "innerUrlRef", "url"],
+      ["call", "innerUrlCall", "innerUrlRef"],
+      ["callArg", "innerUrlCall", "0", "b"],
+      ["bodyCalls", "helper", "innerUrlRef"],
+      ["callOutsideMethod", "innerUrlCall"],
+    ];
+    expect(writtenAsUnder(twoDeep, "u", "v1Site")).toEqual(["urlA"]);
+    expect(writtenAsUnder(twoDeep, "u", "v2Site")).toEqual(["urlB"]);
+  });
+
+  it("leaves another class's arguments out of the site that did not call it", () => {
+    const twoClasses: Array<[string, ...string[]]> = [
+      ...throughPlainFunction,
+      ["objectValue", "Other"],
+      ["initializes", "Other", "Other"],
+      ["paramOf", "Other", "0", "otherBase"],
+      ["binds", "otherUrlRef", "url"],
+      ["bodyCalls", "Other", "otherUrlRef"],
+      ["call", "otherUrlCall", "otherUrlRef"],
+      ["callArg", "otherUrlCall", "0", "otherBase"],
+      ["binds", "OtherRef", "Other"],
+      ["call", "otherSite", "OtherRef"],
+      ["callOutsideMethod", "otherSite"],
+      ["callArg", "otherSite", "0", "urlC"],
+      ["writtenValue", "urlC"],
+    ];
+    expect(writtenAsUnder(twoClasses, "u", "v1Site")).toEqual(["urlA"]);
+    expect(writtenAsUnder(twoClasses, "u", "none")).toEqual([
+      "urlA",
+      "urlB",
+      "urlC",
+    ]);
+  });
+
+  // A method called with no receiver written, which Ruby keys to the
+  // receiver of the body it is in, beside the same call written `self.`.
+  it("keeps the site whether or not the receiver is written out", () => {
+    const spellings: Array<[string, ...string[]]> = [
+      ...twoClients,
+      ["binds", "selfNode", "Api#self"],
+      ["readsProperty", "bareItems", "Api#self", "items"],
+      ["call", "bareCall", "bareItems"],
+      ["callArg", "bareCall", "0", "barePath"],
+      ["writtenValue", "barePath"],
+      ["bodyCalls", "refresh", "bareItems"],
+      ["readsProperty", "writtenItems", "selfNode", "items"],
+      ["call", "writtenCall", "writtenItems"],
+      ["callArg", "writtenCall", "0", "writtenPath"],
+      ["writtenValue", "writtenPath"],
+      ["bodyCalls", "refresh", "writtenItems"],
+    ];
+    expect(writtenAsUnder(spellings, "path", "v1Site")).toEqual([
+      "barePath",
+      "writtenPath",
+    ]);
+  });
+
+  it("gives both stores when the constructor and a method write one field", () => {
+    const twoStores: Array<[string, ...string[]]> = [
+      ...twoClients,
+      ["func", "prime"],
+      ["holdsProperty", "Api", "prime", "prime"],
+      ["writtenValue", "primed"],
+      ["storesProperty", "prime", "client", "primed"],
+    ];
+    expect(writtenAsUnder(twoStores, "v1Client", "v1Site")).toEqual([
+      "created",
+      "primed",
+    ]);
+  });
+
+  it("resolves through the class when the run has no site of it", () => {
+    const noSites: Array<[string, ...string[]]> = [
+      ["objectValue", "Api"],
+      ["initializes", "Api", "Api"],
+      ["writtenValue", "created"],
+      ["storesProperty", "Api", "client", "created"],
+      ["instanceOf", "Api#self", "Api"],
+      ["readsProperty", "selfClient", "Api#self", "client"],
+    ];
+    expect(writtenAsUnder(noSites, "selfClient", "none")).toEqual(["created"]);
+  });
+
+  it("fills a base constructor's parameter from the subclass's own site", () => {
+    const subclass: Array<[string, ...string[]]> = [
+      ["objectValue", "Base"],
+      ["initializes", "Base", "Base"],
+      ["paramOf", "Base", "0", "baseParam"],
+      ["writtenValue", "baseCreated"],
+      ["storesProperty", "Base", "client", "baseCreated"],
+      ["objectValue", "Sub"],
+      ["initializes", "Sub", "Sub"],
+      ["binds", "BaseRef", "Base"],
+      ["extends", "Sub", "BaseRef"],
+      ["binds", "SubRef", "Sub"],
+      ["call", "subSite", "SubRef"],
+      ["writtenValue", "subSite"],
+      ["callOutsideMethod", "subSite"],
+      ["callArg", "subSite", "0", "subUrl"],
+      ["writtenValue", "subUrl"],
+      ["binds", "sub", "subSite"],
+      ["readsProperty", "subClient", "sub", "client"],
+    ];
+    expect(writtenAsUnder(subclass, "subClient", "subSite")).toEqual([
+      "baseCreated",
+    ]);
+    expect(writtenAsUnder(subclass, "baseParam", "subSite")).toEqual([
+      "subUrl",
+    ]);
+  });
+
+  it("leaves the context-free answers where they were", () => {
+    const db = new Database();
+    for (const [name, ...tuple] of twoClients) {
+      db.add(name, tuple);
+    }
+    askResolution(db, ["base"], "wanted", resolutionProgram());
+    const writtenAs = (): string[] =>
+      db
+        .facts("wantedIsWrittenAs")
+        .map((tuple) => tuple.join(" "))
+        .sort();
+    const before = writtenAs();
+
+    askResolutionUnder(db, [["base", "v1Site"]], resolutionUnderProgram());
+
+    expect(writtenAs()).toEqual(before);
+    expect(isWrittenAsUnder(db, "base", "v1Site")).toEqual(["urlA"]);
   });
 });
 

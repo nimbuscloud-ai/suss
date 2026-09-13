@@ -4,6 +4,7 @@
 
 import { constant, lit, rule, variable as v } from "@suss/datalog";
 import {
+  alsoSteps,
   askResolution,
   INSTANCE_STEP,
   resolutionProgram,
@@ -14,12 +15,12 @@ import {
 import type { Database } from "@suss/datalog";
 
 /** The steps Ruby states beyond the shared rules. */
-export const RUBY_RULES = [
+export const RUBY_RULES = alsoSteps([
   // Making one of a class is a call of the class, which the shared rules
   // already say. Ruby writes the callee as `new` read off the constant, so
   // what this adds is that the callee is the class.
   rule(
-    "stepsTo",
+    "hop",
     [v("x"), v("cls"), INSTANCE_STEP],
     [
       lit("readsProperty", v("x"), v("o"), constant("new")),
@@ -32,7 +33,7 @@ export const RUBY_RULES = [
   // says the same in its row table, for a value it reads in one file.
   ...["freeze", "dup"].map((method) =>
     rule(
-      "stepsTo",
+      "hop",
       [v("r"), v("o"), VALUE_STEP],
       [
         lit("call", v("r"), v("c")),
@@ -41,7 +42,7 @@ export const RUBY_RULES = [
       "hands back the receiver",
     ),
   ),
-];
+]);
 
 /**
  * The shared rules with Ruby's own, and the questions, as one program.

@@ -946,4 +946,30 @@ describe("python value facts", () => {
     const db = await factsFor("with build() as (first, second):\n    pass\n");
     expect(db.size("binds")).toBe(0);
   });
+
+  it("says which calls are outside every method body", async () => {
+    const source = [
+      "class Api:",
+      "    def items(self):",
+      "        return make()",
+      "    def refresh(self):",
+      "        return warm(lambda: nested())",
+      "    @staticmethod",
+      "    def build():",
+      "        return built()",
+      "",
+      "def plain():",
+      "    return plain_call()",
+      "",
+      "started = top()",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+
+    expect(
+      rows(db, "callOutsideMethod")
+        .map((row) => textAt(source, row[0] as string))
+        .sort(),
+    ).toEqual(["built()", "plain_call()", "top()"]);
+  });
 });
