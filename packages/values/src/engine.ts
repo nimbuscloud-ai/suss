@@ -21,6 +21,7 @@ import {
   type FunctionBody,
   type Literal,
   type Lowering,
+  type Parameter,
   type Row,
   type Site,
   statementsOf,
@@ -915,7 +916,7 @@ export class Evaluator<N extends object> {
     };
     // Bound in order so a default can read a parameter before it.
     shape.parameters.forEach((parameter, i) => {
-      const passed = args.named.get(parameter.name) ?? args.positional[i];
+      const passed = this.argumentFor(parameter, i, args, inner);
       const bound =
         passed ??
         (parameter.default === null
@@ -932,6 +933,49 @@ export class Evaluator<N extends object> {
       outcome.returns.push(constant(undefined));
     }
     return joinAll(outcome.returns);
+  }
+
+  /** What a call gives a parameter, or undefined when it leaves it out. */
+  private argumentFor(
+    parameter: Parameter<N>,
+    index: number,
+    args: Arguments,
+    state: State,
+  ): Value | undefined {
+    if (parameter.from === undefined) {
+      return args.named.get(parameter.name) ?? args.positional[index];
+    }
+    const argument = args.positional[parameter.from.position];
+    return argument === undefined
+      ? undefined
+      : this.propertyAt(argument, parameter.from.path, parameter.name, state);
+  }
+
+  /**
+   * The value at `path` inside an argument. Undefined when the argument
+   * is an object without that property, so the default applies the way
+   * it does for an argument nobody passed; a hole when the argument does
+   * not fold to an object at all.
+   */
+  private propertyAt(
+    argument: Value,
+    path: readonly string[],
+    name: string,
+    state: State,
+  ): Value | undefined {
+    let current = argument;
+    for (const key of path) {
+      const content = this.contentOf(current, state);
+      if (content.kind !== "record") {
+        return hole(name);
+      }
+      const field = content.fields.get(key);
+      if (field === undefined) {
+        return content.open ? hole(name) : undefined;
+      }
+      current = field.value;
+    }
+    return current;
   }
 
   private containsLoop(body: FunctionBody<N>): boolean {

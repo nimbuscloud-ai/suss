@@ -41,7 +41,17 @@ import {
   type Value,
 } from "./value.js";
 
-import type { Lowering } from "./language.js";
+import type { Lowering, Parameter } from "./language.js";
+
+/** A name a destructured parameter binds out of the argument at `position`. */
+function destructured(
+  name: string,
+  position: number,
+  path: string[],
+  fallback: TestNode | null = null,
+): Parameter<TestNode> {
+  return { name, default: fallback, from: { position, path } };
+}
 
 function evaluate(target: TestNode, bindings?: Record<string, Value>): Value {
   const evaluator = new Evaluator(testLowering);
@@ -430,6 +440,63 @@ describe("Evaluator", () => {
       );
       module([helper, expr(target)]);
       expect(literalOf(evaluate(target))).toBe("/api/v1/y");
+    });
+
+    it("reads a destructured parameter off the argument it names", () => {
+      const helper = fn(
+        ["base", destructured("prefix", 1, ["opts", "prefix"])],
+        op("+", name("base"), name("prefix")),
+      );
+      const target = call(
+        null,
+        "helper",
+        [lit("/api"), record({ opts: record({ prefix: lit("/items") }) })],
+        { calls: helper },
+      );
+      module([helper, expr(target)]);
+      expect(literalOf(evaluate(target))).toBe("/api/items");
+    });
+
+    it("takes the default when the argument has no such property", () => {
+      const helper = fn(
+        [destructured("prefix", 0, ["prefix"], lit("/"))],
+        name("prefix"),
+      );
+      const target = call(null, "helper", [record({})], { calls: helper });
+      module([helper, expr(target)]);
+      expect(literalOf(evaluate(target))).toBe("/");
+    });
+
+    it("takes the default when the call passes no argument at all", () => {
+      const helper = fn(
+        [destructured("prefix", 0, ["prefix"], lit("/"))],
+        name("prefix"),
+      );
+      const target = call(null, "helper", [], { calls: helper });
+      module([helper, expr(target)]);
+      expect(literalOf(evaluate(target))).toBe("/");
+    });
+
+    it("leaves a destructured parameter unknown when the argument is not an object", () => {
+      const helper = fn(
+        [destructured("prefix", 0, ["prefix"])],
+        name("prefix"),
+      );
+      const target = call(null, "helper", [lit("/api")], { calls: helper });
+      module([helper, expr(target)]);
+      expect(force(evaluate(target))).toEqual(hole("prefix"));
+    });
+
+    it("leaves a destructured parameter unknown when the object is open", () => {
+      const helper = fn(
+        [destructured("prefix", 0, ["prefix"])],
+        name("prefix"),
+      );
+      const target = call(null, "helper", [computedRecord([], opaque())], {
+        calls: helper,
+      });
+      module([helper, expr(target)]);
+      expect(force(evaluate(target))).toEqual(hole("prefix"));
     });
 
     it("loses an array handed to an unknown call by keyword", () => {

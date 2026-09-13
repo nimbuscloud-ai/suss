@@ -24,10 +24,16 @@ import type {
   FunctionShape,
   Lowering,
   Origin,
+  Parameter,
   Row,
   Site,
   Statement,
 } from "@suss/values";
+import type {
+  BindingElement,
+  ObjectBindingPattern,
+  ParameterDeclaration,
+} from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";
 
 const ASSIGNMENT_OPERATORS = new Set([
@@ -455,17 +461,7 @@ function functionOf(node: Node): FunctionShape<Node> | null {
   if (!Node.isFunctionLikeDeclaration(node)) {
     return null;
   }
-  const parameters = node.getParameters().flatMap((parameter) => {
-    const nameNode = parameter.getNameNode();
-    return Node.isIdentifier(nameNode)
-      ? [
-          {
-            name: nameNode.getText(),
-            default: parameter.getInitializer() ?? null,
-          },
-        ]
-      : [];
-  });
+  const parameters = node.getParameters().flatMap(parametersOf);
   const body = Node.isBodied(node)
     ? node.getBody()
     : Node.isBodyable(node)
@@ -477,6 +473,82 @@ function functionOf(node: Node): FunctionShape<Node> | null {
   return Node.isBlock(body)
     ? { parameters, body: body.getStatements() }
     : { parameters, body: { expression: body } };
+}
+
+/**
+ * The names one parameter binds. A plain name binds itself. An object
+ * binding pattern binds one name per property, each carrying the
+ * properties to read off the argument, so a call site can fill them.
+ * An array pattern binds nothing, since the evaluator reads a property
+ * by name.
+ */
+function parametersOf(
+  parameter: ParameterDeclaration,
+  position: number,
+): Parameter<Node>[] {
+  const nameNode = parameter.getNameNode();
+  if (Node.isIdentifier(nameNode)) {
+    return [
+      { name: nameNode.getText(), default: parameter.getInitializer() ?? null },
+    ];
+  }
+  // A pattern with a default of its own would need the properties read
+  // off that default when the call passes nothing, which is a second
+  // default per name.
+  if (
+    !Node.isObjectBindingPattern(nameNode) ||
+    parameter.getInitializer() !== undefined
+  ) {
+    return [];
+  }
+  return destructuredNames(nameNode, position, []);
+}
+
+function destructuredNames(
+  pattern: ObjectBindingPattern,
+  position: number,
+  prefix: readonly string[],
+): Parameter<Node>[] {
+  return pattern.getElements().flatMap((element) => {
+    const property =
+      element.getDotDotDotToken() === undefined
+        ? propertyReadBy(element)
+        : null;
+    if (property === null) {
+      return [];
+    }
+    const path = [...prefix, property];
+    const nameNode = element.getNameNode();
+    if (Node.isIdentifier(nameNode)) {
+      return [
+        {
+          name: nameNode.getText(),
+          default: element.getInitializer() ?? null,
+          from: { position, path },
+        },
+      ];
+    }
+    return Node.isObjectBindingPattern(nameNode) &&
+      element.getInitializer() === undefined
+      ? destructuredNames(nameNode, position, path)
+      : [];
+  });
+}
+
+/** The property a binding element takes its value from, or null when it is computed. */
+function propertyReadBy(element: BindingElement): string | null {
+  const propertyName = element.getPropertyNameNode();
+  if (propertyName === undefined) {
+    const nameNode = element.getNameNode();
+    return Node.isIdentifier(nameNode) ? nameNode.getText() : null;
+  }
+  if (
+    Node.isStringLiteral(propertyName) ||
+    Node.isNumericLiteral(propertyName)
+  ) {
+    return String(propertyName.getLiteralValue());
+  }
+  return Node.isIdentifier(propertyName) ? propertyName.getText() : null;
 }
 
 /** The names a function nested somewhere under `root` writes to or mutates. */
