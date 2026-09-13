@@ -2,8 +2,8 @@
   "totals": {
     "packages": 75,
     "packagesWithExports": 75,
-    "exports": 977,
-    "internal": 3438,
+    "exports": 978,
+    "internal": 3442,
     "consumers": 1952,
     "pairs": 1940,
     "unfollowedCalls": 509,
@@ -20,7 +20,7 @@
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
       "exports": 70,
-      "internal": 352,
+      "internal": 356,
       "consumers": 169,
       "unfollowedCalls": 77
     },
@@ -530,7 +530,7 @@
     },
     "packages/values": {
       "name": "@suss/values",
-      "exports": 44,
+      "exports": 45,
       "internal": 68,
       "consumers": 3,
       "unfollowedCalls": 30
