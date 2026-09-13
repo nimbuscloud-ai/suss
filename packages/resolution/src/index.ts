@@ -152,7 +152,7 @@ export type {
 // writes it: `Foo()`, `new Foo()`, `Foo.new`. The adapter says `call`
 // about whichever of those it reads, and lists the constructor's
 // parameters as `paramOf` of the class. The hop from that call to the
-// class is an instance step, not a value step.
+// class is an instance step.
 
 import { constant, lit, rule, variable as v } from "@suss/datalog";
 

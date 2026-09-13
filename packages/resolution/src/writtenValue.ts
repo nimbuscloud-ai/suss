@@ -98,7 +98,7 @@ function settledByKey(
   );
 }
 
-/** A value-preserving step off a call, `list.freeze`, leaves the call and what it comes down to as two answers that are the same one. */
+/** A step off a call that keeps its value, `list.freeze`, leaves the call and what it comes down to as two answers that are the same one. */
 function collapseCalls(
   direct: readonly string[],
   calls: ReadonlySet<string>,
