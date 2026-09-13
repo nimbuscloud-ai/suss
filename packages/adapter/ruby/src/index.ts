@@ -52,7 +52,11 @@ export {
   parseRubySync,
   preloadRubyGrammar,
 } from "./parser.js";
-export { extractRubyProject, findRubyFiles } from "./project.js";
+export {
+  extractRubyProject,
+  factsForFile,
+  findRubyFiles,
+} from "./project.js";
 export {
   graphqlTypeNameFromQualified,
   qualifyConstantRef,
@@ -95,7 +99,11 @@ export type {
   RubyPack,
 } from "./pack.js";
 export type { RbNode, RbTree } from "./parser.js";
-export type { ExtractRubyOptions, ExtractRubyResult } from "./project.js";
+export type {
+  ExtractRubyOptions,
+  ExtractRubyResult,
+  FileFactsOptions,
+} from "./project.js";
 export type { ClassInfo, GraphqlTypeNameConvention } from "./scope.js";
 export type {
   RubyExtendsSite,

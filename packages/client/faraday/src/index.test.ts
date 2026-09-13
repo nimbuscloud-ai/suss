@@ -1,17 +1,22 @@
 import { describe, expect, it } from "vitest";
 
-import { discoverUnits, parseRuby } from "@suss/adapter-ruby";
+import { discoverUnits, factsForFile, parseRuby } from "@suss/adapter-ruby";
 
 import { faradayClient } from "./index.js";
 
 import type { RawCodeStructure } from "@suss/extractor";
 
+const FILE = "app/clients/order_client.rb";
+
+/** The units of one file, with the facts a run would have put in the store. */
 async function unitsIn(source: string): Promise<RawCodeStructure[]> {
   const tree = await parseRuby(source);
+  const packs = [faradayClient()];
   return discoverUnits(tree.rootNode, {
-    packs: [faradayClient()],
-    filePath: "app/clients/order_client.rb",
+    packs,
+    filePath: FILE,
     cache: { get: async () => null },
+    facts: factsForFile({ file: FILE, root: tree.rootNode, packs }),
   });
 }
 

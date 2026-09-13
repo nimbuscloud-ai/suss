@@ -187,7 +187,7 @@ const CONTROLLER = [
   "",
 ].join("\n");
 
-/** What `emitStorageFacts` puts in a run, which is the only thing that says a finder gives back one of the model. */
+/** The pack word that says a finder gives back one of the model, which a run adds through `addPackWords`. */
 function emitGivesBack(db: Database): void {
   for (const method of ACTIVE_RECORD.givesBack) {
     db.add("givesBackOne", ["ActiveRecord::Base", method]);

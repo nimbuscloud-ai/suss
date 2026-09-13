@@ -5,14 +5,11 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
+import { addPackWords } from "@suss/resolution";
 
 import { graphqlRubyTestPack } from "./__fixtures__/graphqlRubyPattern.js";
 import { railsTestPack } from "./__fixtures__/railsControllerPattern.js";
-import {
-  emitStorageFacts,
-  extractRubyProject,
-  findRubyFiles,
-} from "./project.js";
+import { extractRubyProject, findRubyFiles, packWordsOf } from "./project.js";
 
 import type { ExtractionReport, TimingReport } from "@suss/extractor";
 import type { RubyPack } from "./pack.js";
@@ -752,9 +749,15 @@ describe("what a pack's storage patterns put in the facts", () => {
     ],
   });
 
-  it("pairs every declared method with every base class the pattern lists", () => {
+  /** The facts a run over these packs starts from, the way the extractor puts them there. */
+  const packFacts = (packs: readonly RubyPack[]): Database => {
     const db = new Database();
-    emitStorageFacts(db, [
+    addPackWords(db, packWordsOf(packs));
+    return db;
+  };
+
+  it("pairs every declared method with every base class the pattern lists", () => {
+    const db = packFacts([
       patternFor(["ActiveRecord::Base", "Legacy::Model"], ["find", "where"]),
     ]);
 
@@ -767,8 +770,7 @@ describe("what a pack's storage patterns put in the facts", () => {
   });
 
   it("says nothing for a pack with no storage patterns at all", () => {
-    const db = new Database();
-    emitStorageFacts(db, [{ name: "rails", protocol: "http", discovery: [] }]);
+    const db = packFacts([{ name: "rails", protocol: "http", discovery: [] }]);
 
     expect(db.size("givesBackOne")).toBe(0);
   });

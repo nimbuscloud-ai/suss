@@ -6,12 +6,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { summaryIdentifier } from "@suss/behavioral-ir";
 import { Database } from "@suss/datalog";
+import { addPackWords } from "@suss/resolution";
 
 import {
-  emitContextManagerFacts,
-  emitModelQueryFacts,
   extractPythonProject,
   findPythonFiles,
+  packWordsOf,
 } from "./project.js";
 
 import type { ExtractionReport, TimingReport } from "@suss/extractor";
@@ -1287,6 +1287,13 @@ describe("the extraction report", () => {
   });
 });
 
+/** The facts a run over these packs starts from, the way the extractor puts them there. */
+function packFacts(packs: readonly PythonPack[]): Database {
+  const db = new Database();
+  addPackWords(db, packWordsOf(packs));
+  return db;
+}
+
 describe("what a pack's model declarations put in the facts", () => {
   const packWithModels = (models: PyModelQueries[]): PythonPack => ({
     name: "sqlmodel",
@@ -1296,8 +1303,7 @@ describe("what a pack's model declarations put in the facts", () => {
   });
 
   it("pairs every method with every base name the declaration lists", () => {
-    const db = new Database();
-    emitModelQueryFacts(db, [
+    const db = packFacts([
       packWithModels([
         {
           baseNames: ["DeclarativeBase", "SQLModel"],
@@ -1321,8 +1327,7 @@ describe("what a pack's model declarations put in the facts", () => {
   });
 
   it("keys a function called on its own by the module it comes from", () => {
-    const db = new Database();
-    emitModelQueryFacts(db, [
+    const db = packFacts([
       packWithModels([
         {
           baseNames: ["SQLModel"],
@@ -1339,8 +1344,7 @@ describe("what a pack's model declarations put in the facts", () => {
   });
 
   it("keys a relationship constructor by the module it comes from", () => {
-    const db = new Database();
-    emitModelQueryFacts(db, [
+    const db = packFacts([
       packWithModels([
         {
           baseNames: ["SQLModel"],
@@ -1358,8 +1362,7 @@ describe("what a pack's model declarations put in the facts", () => {
   });
 
   it("says nothing for a pack that declares no models at all", () => {
-    const db = new Database();
-    emitModelQueryFacts(db, [flaskRestxLike]);
+    const db = packFacts([flaskRestxLike]);
 
     expect(db.size("givesBackOne")).toBe(0);
     expect(db.size("givesBackOneOfArgument")).toBe(0);
@@ -1370,8 +1373,7 @@ describe("what a pack's model declarations put in the facts", () => {
 
 describe("what a pack's context manager declarations put in the facts", () => {
   it("keys every class the declaration lists by its module", () => {
-    const db = new Database();
-    emitContextManagerFacts(db, [
+    const db = packFacts([
       {
         name: "httpx",
         protocol: "http",
@@ -1389,8 +1391,7 @@ describe("what a pack's context manager declarations put in the facts", () => {
   });
 
   it("says nothing for a pack that declares no context manager at all", () => {
-    const db = new Database();
-    emitContextManagerFacts(db, [flaskRestxLike]);
+    const db = packFacts([flaskRestxLike]);
 
     expect(db.size("entersAsSelf")).toBe(0);
   });

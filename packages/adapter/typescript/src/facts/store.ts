@@ -29,6 +29,7 @@ import {
 } from "@suss/datalog";
 import {
   ASKING_RELATIONS,
+  addPackWords,
   type ExplainStats,
   queryFacts,
   RESOLUTION_QUESTIONS,
@@ -190,10 +191,7 @@ export class ResolutionStore {
   private stale = true;
 
   constructor(wrappers: TransparentWrapper[] = []) {
-    for (const wrapper of wrappers) {
-      this.db.add("unwrapsByName", [wrapper.callee, String(wrapper.argument)]);
-      this.db.add("wrapperModule", [wrapper.callee, wrapper.module]);
-    }
+    addPackWords(this.db, { unwrapsByName: wrappers });
   }
 
   /**

@@ -24,6 +24,16 @@ export {
 } from "./nameReads.js";
 export { nodeOfKey, type SpannedNode } from "./nodeKey.js";
 export {
+  type AssociationConstructor,
+  addPackWords,
+  type EntersAsSelf,
+  type GivesBackOne,
+  type GivesBackOneOfArgument,
+  type GivesBackOneOfImport,
+  type PackWords,
+  type UnwrapsByName,
+} from "./packWords.js";
+export {
   ASKING_RELATIONS,
   askResolution,
   queryFacts,
@@ -120,6 +130,10 @@ export type {
 //   givesBackOneOfArgument(base, m, k)   the same, with the class at k
 //   givesBackOneOfImport(mod, n, k)      the same, for the bare
 //                               function n that module mod exports
+//   unwrapsByName(n, k)         a pack's word: calling n gives back the
+//                               argument at k it was passed
+//   wrapperModule(n, m)         which module n comes from, for the word
+//                               above to apply to it
 //   declaresName(c, n)          c declares a method n under a name the
 //                               source computes rather than writes out
 //   declaresAssociation(c, n, t)  class c declares an association n,
