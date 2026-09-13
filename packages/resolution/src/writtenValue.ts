@@ -48,11 +48,11 @@ export function writtenValuesOf(
 }
 
 /**
- * The one expression each of a list of keys was written as, for a caller
- * holding a batch. Keys the rules settled on nothing, or on more than one
- * expression, are left out. One round of asking covers the whole batch,
- * which is what a caller gets here that a loop over `writtenValueOf`
- * would not.
+ * The one expression each key was written as, for a caller with several
+ * keys at once. Keys the rules settled on nothing, or on more than one
+ * expression, are left out. One round of asking covers them all, which
+ * is what a caller gets here that a loop over `writtenValueOf` would
+ * not.
  */
 export function writtenValuesByKey(
   db: Database,
