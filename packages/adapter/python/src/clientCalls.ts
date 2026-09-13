@@ -24,9 +24,7 @@ import {
 } from "./ast.js";
 import { bodyTerminals, enumerateBodyBranches } from "./paths/bodyBranches.js";
 import { bodyCalls, invocationEffects } from "./paths/effects.js";
-import { constructorCalled } from "./routers.js";
-import { resolveName, scopeAt } from "./scope.js";
-import { evaluatedValue } from "./values/evaluator.js";
+import { constructionBehind, evaluatedValue } from "./values/evaluator.js";
 import { originOf } from "./values/origin.js";
 
 import type { Database } from "@suss/datalog";
@@ -98,7 +96,7 @@ function requestCall(
   if (callee === null) {
     return null;
   }
-  const attribute = calledAttribute(callee, pattern, module);
+  const attribute = calledAttribute(callee, pattern, module, options.facts);
   if (attribute === null) {
     return null;
   }
@@ -147,6 +145,7 @@ function calledAttribute(
   callee: PyNode,
   pattern: PyClientCall,
   module: ModuleBinding,
+  facts: Database | undefined,
 ): string | null {
   const origin = originOf(callee, module);
   if (origin !== null) {
@@ -164,8 +163,8 @@ function calledAttribute(
   }
   const constructorName = receiverConstructor(
     object,
-    module,
     pattern.importModule,
+    facts,
   );
   const constructors = pattern.receiverConstructors ?? [];
   return constructorName !== null && constructors.includes(constructorName)
@@ -173,21 +172,18 @@ function calledAttribute(
     : null;
 }
 
-/**
- * The constructor a receiver was built by, read off the scope binding
- * because the value facts leave an as-pattern without a value and
- * `with httpx.Client() as client` is how a project opens one.
- */
+/** The constructor a receiver was built by, whether it was assigned or opened with `with`. */
 function receiverConstructor(
   object: PyNode,
-  module: ModuleBinding,
   importModule: readonly string[],
+  facts: Database | undefined,
 ): string | null {
-  const binding = resolveName(scopeAt(object, module), object.text);
-  if (binding?.kind !== "assignment" || binding.value?.type !== "call") {
+  const built = constructionBehind(object, facts);
+  if (built.type !== "oneCall") {
     return null;
   }
-  return constructorCalled(binding.value, module, importModule);
+  const { origin } = built.construction;
+  return importModule.includes(origin.module) ? origin.name : null;
 }
 
 /** The path the URL argument states, or null when it does not settle on one. */

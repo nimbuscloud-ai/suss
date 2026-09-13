@@ -54,6 +54,9 @@ export function requestsClient(): PythonPack {
         },
       },
     ],
+    // `Session.__enter__` returns the session, so `with
+    // requests.Session() as s` puts the constructed session in s.
+    contextManagers: [{ module: "requests", returnsSelf: ["Session"] }],
   };
 }
 

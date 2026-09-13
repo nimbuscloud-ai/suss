@@ -68,6 +68,7 @@ import type { PythonPack, StoragePattern } from "./pack.js";
 import type { PyNode } from "./parser.js";
 import type { Seed } from "./reach/closure.js";
 import type { BoundPythonFile } from "./routers.js";
+import type { ModuleBinding } from "./scope.js";
 import type { StorageLookup } from "./storage.js";
 
 export interface ExtractPythonOptions {
@@ -165,6 +166,55 @@ export function emitModelQueryFacts(
   }
 }
 
+/**
+ * Put each pack's context manager declarations in the facts. A `with`
+ * hands the block whatever `__enter__` gave back, and the library is the
+ * only one that knows its own class gives back the object it built.
+ */
+export function emitContextManagerFacts(
+  db: Database,
+  packs: readonly PythonPack[],
+): void {
+  for (const pack of packs) {
+    for (const manager of pack.contextManagers ?? []) {
+      for (const className of manager.returnsSelf) {
+        db.add("entersAsSelf", [manager.module, className]);
+      }
+    }
+  }
+}
+
+/** One parsed file and the packs a run over it would load. */
+export interface FileFactsOptions {
+  file: string;
+  root: PyNode;
+  module: ModuleBinding;
+  packs: readonly PythonPack[];
+}
+
+/**
+ * The facts for a single parsed file, with the evaluator bound to them,
+ * for a caller holding one file rather than a project. A pack's own
+ * tests need these: what built a receiver is an answer the rules give,
+ * and without facts they have nothing to give it from. A project run
+ * emits the same facts across every file at once, so a name written in
+ * another file resolves there and never here.
+ */
+export function factsForFile(options: FileFactsOptions): Database {
+  const db = new Database();
+  emitModuleImportFacts(db, options.file, options.module, { roots: [] });
+  emitValueFacts(db, options.file, options.root);
+  const definitions = new Map<string, PyNode>();
+  indexDefinitions(definitions, options.file, options.root);
+  bindEvaluator(db, {
+    files: [{ file: options.file, root: options.root, module: options.module }],
+    definitions,
+  });
+  emitModelQueryFacts(db, options.packs);
+  emitContextManagerFacts(db, options.packs);
+  return db;
+}
+
 export async function extractPythonProject(
   options: ExtractPythonOptions,
 ): Promise<ExtractPythonResult> {
@@ -242,9 +292,16 @@ export async function extractPythonProject(
   const rawSqlPatterns = options.packs.flatMap((pack) => pack.rawSql ?? []);
   const modelQueries = options.packs.flatMap((pack) => pack.models ?? []);
   const discovers = options.packs.some((pack) => pack.discovery.length > 0);
+  // A client pattern with a receiver asks the rules what built it.
+  const buildsReceivers = options.packs.some((pack) =>
+    (pack.clients ?? []).some(
+      (client) => (client.receiverConstructors ?? []).length > 0,
+    ),
+  );
   const needsValues =
     discovers ||
     mountsRouters ||
+    buildsReceivers ||
     storagePatterns.length > 0 ||
     modelQueries.length > 0;
   // Which function a resolved key was written as, so a recognizer can read
@@ -262,6 +319,7 @@ export async function extractPythonProject(
       bindEvaluator(db, { files: bound, definitions });
     }
     emitModelQueryFacts(db, options.packs);
+    emitContextManagerFacts(db, options.packs);
   });
 
   reportUnresolvedProjectModules(options, db);

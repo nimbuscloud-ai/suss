@@ -32,7 +32,11 @@ export {
   parsePythonSync,
   preloadPythonGrammar,
 } from "./parser.js";
-export { extractPythonProject, findPythonFiles } from "./project.js";
+export {
+  extractPythonProject,
+  factsForFile,
+  findPythonFiles,
+} from "./project.js";
 export { buildRouterIndex } from "./routers.js";
 export { bindModule, resolveName } from "./scope.js";
 export { pythonImportEvidence } from "./stubEvidence.js";
@@ -71,7 +75,11 @@ export type {
   StoragePattern,
 } from "./pack.js";
 export type { PyNode, PyTree } from "./parser.js";
-export type { ExtractPythonOptions, ExtractPythonResult } from "./project.js";
+export type {
+  ExtractPythonOptions,
+  ExtractPythonResult,
+  FileFactsOptions,
+} from "./project.js";
 export type {
   BoundPythonFile,
   RoutePrefixResolution,
