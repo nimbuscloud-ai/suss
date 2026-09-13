@@ -8,12 +8,18 @@
  * program of its own to pass around.
  */
 
-import { clearRelations, deriveOnDemand, evaluate } from "@suss/datalog";
+import {
+  clearRelations,
+  deriveOnDemand,
+  evaluate,
+  tupleKey,
+} from "@suss/datalog";
 
 import {
   ANSWER_RELATIONS,
   RESOLUTION_QUESTIONS,
   RESOLUTION_RULES,
+  UNDER_ANSWER_RELATIONS,
 } from "./index.js";
 
 import type { Database, OnDemandRules, Rule } from "@suss/datalog";
@@ -25,6 +31,7 @@ import type { Database, OnDemandRules, Rule } from "@suss/datalog";
  */
 export const ASKING_RELATIONS: readonly string[] = [
   "wanted",
+  "wantedUnder",
   "wantedOrigin",
   "wantedCallOrigin",
   "wantedExportsOf",
@@ -36,21 +43,21 @@ export const ASKING_RELATIONS: readonly string[] = [
 const NO_LANGUAGE_RULES: readonly Rule[] = [];
 
 const programs = new WeakMap<readonly Rule[], OnDemandRules>();
+const underPrograms = new WeakMap<readonly Rule[], OnDemandRules>();
 
-/**
- * The shared rules, whatever the language states of its own, and the
- * questions, rewritten so a relation is derived only where a question
- * reaches it. Built once per language and kept, because the rewrite
- * does not depend on the facts.
- *
- * `SUSS_RESOLUTION_ON_DEMAND=0` runs the same rules unrestricted. Both
- * settings give the same answers; they differ in how much never gets
- * derived at all.
- */
-export function resolutionProgram(
-  languageRules: readonly Rule[] = NO_LANGUAGE_RULES,
+// Read when a program is built rather than when this module loads,
+// since the module it comes from re-exports this one.
+const contextFreeAnswers = (): readonly string[] =>
+  ANSWER_RELATIONS.filter(
+    (relation) => !UNDER_ANSWER_RELATIONS.includes(relation),
+  );
+
+function builtProgram(
+  languageRules: readonly Rule[],
+  cache: WeakMap<readonly Rule[], OnDemandRules>,
+  complete: readonly string[],
 ): OnDemandRules {
-  const built = programs.get(languageRules);
+  const built = cache.get(languageRules);
   if (built !== undefined) {
     return built;
   }
@@ -62,9 +69,43 @@ export function resolutionProgram(
   const program =
     process.env.SUSS_RESOLUTION_ON_DEMAND === "0"
       ? { rules, demandDriven: [], demands: [] }
-      : deriveOnDemand(rules, ANSWER_RELATIONS);
-  programs.set(languageRules, program);
+      : deriveOnDemand(rules, complete);
+  cache.set(languageRules, program);
   return program;
+}
+
+/**
+ * The shared rules, whatever the language states of its own, and the
+ * questions, rewritten so a relation is derived only where a question
+ * reaches it. Built once per language and kept, because the rewrite
+ * does not depend on the facts.
+ *
+ * The questions asked under an allocation site are left out, which
+ * drops every rule behind them, so a caller that never mentions a
+ * context pays nothing for the second closure.
+ *
+ * `SUSS_RESOLUTION_ON_DEMAND=0` runs the same rules unrestricted. Both
+ * settings give the same answers; they differ in how much never gets
+ * derived at all.
+ */
+export function resolutionProgram(
+  languageRules: readonly Rule[] = NO_LANGUAGE_RULES,
+): OnDemandRules {
+  return builtProgram(languageRules, programs, contextFreeAnswers());
+}
+
+/**
+ * The same rules with the three questions under an allocation site
+ * added, which is what `askResolutionUnder` evaluates.
+ *
+ * Running both programs over one database costs the context-free one
+ * its resume state, so a caller with many context-free questions and a
+ * few under a site is better off asking the context-free ones first.
+ */
+export function resolutionUnderProgram(
+  languageRules: readonly Rule[] = NO_LANGUAGE_RULES,
+): OnDemandRules {
+  return builtProgram(languageRules, underPrograms, ANSWER_RELATIONS);
 }
 
 /**
@@ -121,6 +162,41 @@ export function askResolution(
   for (const key of fresh) {
     asked.add(key);
     db.add(asking, [key]);
+  }
+  evaluate(db, program.rules);
+  const forget = queryFacts(program);
+  if (forget.length > 0) {
+    clearRelations(db, program.rules, forget);
+  }
+}
+
+/** Which value-and-site pairs have been asked about, per database. */
+const askedUnderByDb = new WeakMap<Database, Set<string>>();
+
+/**
+ * `askResolution` for a value read under one allocation site. Each pair
+ * is a question of its own, so asking about a value under two sites is
+ * two rows, and asking the same pair twice costs nothing.
+ */
+export function askResolutionUnder(
+  db: Database,
+  pairs: Iterable<readonly [string, string]>,
+  program: OnDemandRules = resolutionUnderProgram(),
+): void {
+  let asked = askedUnderByDb.get(db);
+  if (asked === undefined) {
+    asked = new Set();
+    askedUnderByDb.set(db, asked);
+  }
+  const fresh = [...pairs].filter(
+    ([key, site]) => !asked.has(tupleKey([key, site])),
+  );
+  if (fresh.length === 0) {
+    return;
+  }
+  for (const [key, site] of fresh) {
+    asked.add(tupleKey([key, site]));
+    db.add("wantedUnder", [key, site]);
   }
   evaluate(db, program.rules);
   const forget = queryFacts(program);

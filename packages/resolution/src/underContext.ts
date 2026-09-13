@@ -1,0 +1,52 @@
+/**
+ * Reading an answer that was asked for under one allocation site.
+ *
+ * The context-free readers take a key and get everything the rules
+ * settled it on. These take a key and a site, and get what the value is
+ * when the receiver behind it is the one that site made, so two clients
+ * of one class answer apart here and together context-free.
+ *
+ * Nothing is derived until `askResolutionUnder` has put the pair as a
+ * question, the same way the context-free readers need `askResolution`.
+ */
+
+import type { Database } from "@suss/datalog";
+
+function answersUnder(
+  db: Database,
+  relation: string,
+  key: string,
+  site: string,
+): string[] {
+  return db
+    .lookup(relation, 0, key)
+    .filter((row) => String(row[1]) === site)
+    .map((row) => String(row[2]));
+}
+
+/** Every expression the value was written as under this site. */
+export function isWrittenAsUnder(
+  db: Database,
+  key: string,
+  site: string,
+): string[] {
+  return answersUnder(db, "wantedIsWrittenAsUnder", key, site);
+}
+
+/** Every function or object the value comes down to under this site. */
+export function comesToUnder(
+  db: Database,
+  key: string,
+  site: string,
+): string[] {
+  return answersUnder(db, "wantedComesToUnder", key, site);
+}
+
+/** Every object the value refers to under this site, sites included. */
+export function objectOfUnder(
+  db: Database,
+  key: string,
+  site: string,
+): string[] {
+  return answersUnder(db, "wantedObjectOfUnder", key, site);
+}

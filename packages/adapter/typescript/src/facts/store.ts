@@ -30,6 +30,7 @@ import {
 import {
   ASKING_RELATIONS,
   addPackWords,
+  alsoSteps,
   type ExplainStats,
   queryFacts,
   RESOLUTION_QUESTIONS,
@@ -59,16 +60,16 @@ import type { Atom, Proof } from "@suss/datalog";
 import type { TransparentWrapper } from "@suss/extractor";
 import type { Project, SourceFile } from "ts-morph";
 
-const JS_RULES = [
-  // f.bind(...) leads wherever f leads. Stated as a step, so the
+const JS_RULES = alsoSteps([
+  // f.bind(...) leads wherever f leads. Stated as a hop, so the
   // questions other than `comesTo` follow it too.
   rule(
-    "stepsTo",
+    "hop",
     [v("r"), v("t"), VALUE_STEP],
     [lit("bindCall", v("r"), v("t"))],
     "bind",
   ),
-];
+]);
 
 const RESOLUTION_PROGRAM: OnDemandRules = resolutionProgram(JS_RULES);
 

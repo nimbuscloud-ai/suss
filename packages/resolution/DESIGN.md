@@ -26,8 +26,12 @@ fallbackBranch(x, b)        x is a fallback expression and b is one
 paramOf(f, k, p)            p is f's parameter at position k
 paramNamed(f, n, p)         p is f's parameter called n
 extends(c, b)               class c is written as extending b
+initializes(cls, f)         f runs when one of cls is made
+storesProperty(f, n, x)     f's body writes x to the receiver's n
+instanceOf(x, cls)          x is one of cls, and nothing says which
 returnsValue(f, v)          f returns v
 bodyCalls(f, c)             f's body calls c
+callOutsideMethod(r)        the call r is outside every method body
 containsFn(f, g)            g is declared inside f
 call(r, c)                  r is a call whose callee is c
 callArg(r, k, a)            r passes a at position k
@@ -157,9 +161,17 @@ Node identity is the adapter's business. The rules only join on it.
 Every construct states its hops once, in one relation:
 
 ```
-stepsTo(x, y, kind)         following x leads to y in one hop
-reaches(x, z, kind)         the closure of those hops
+hop(x, y, kind)             following x leads to y in one hop
+stepsTo(x, y, kind)         every hop, stated again, plus the two a
+                            receiver context replaces
+reaches(x, z, kind)         the closure of those steps
+reachesUnder(x, c, z, c2, kind)   the same closure under one site
 ```
+
+Each hop is written twice, once as a `hop` and once as a `stepsTo`,
+rather than passed from one to the other. A demand for `stepsTo` is one
+of the largest relations a run derives, and passing it through `hop`
+would copy the lot.
 
 A value step goes to the value x is written as: a name to its
 declaration, an import to what the module exports, a parameter to what a
@@ -189,6 +201,47 @@ that is one of two different things is not one thing.
 Each question is that one closure with its own stopping condition. So
 adding a construct is one step and every question gets it, and adding a
 question is a stopping condition and no steps at all.
+
+### Under one allocation site
+
+`reachesUnder` has two more columns: the site the walk started under,
+and the site whatever it arrived at is read under. A context is
+an allocation site or the constant `none`. Three hops differ from the
+context-free ones:
+
+- The receiver under a site is that site, so a field read inside a
+  method is the field of the construction the question named.
+- A property read goes on under the site the object was made at, which
+  is the object's own site rather than the one the question named.
+- A parameter goes on at the arguments of the calls that run its
+  function under that site. `entersUnder` says which those are: a
+  construction runs its constructor under the site it makes, a method
+  call runs under the site its receiver is, and every other call runs
+  with no site, which is every caller the way `argument` reads.
+
+`callUnder` says which site a call is made under, from the class whose
+method or constructor the call is written in. `callOutsideMethod` is the
+adapter's word for a call written at module level, in a plain function,
+in a class body, or in a static method; it is a fact rather than a
+negation because the demand rewrite refuses negation.
+
+One level of receiver is all of it. A plain function called from a
+method is entered with no site, so a walk through it takes every
+construction that reaches it, another class's included. A condition is
+not evaluated either, so `env === "prod" ? a : b` gives both branches.
+
+`askResolutionUnder` puts the question, and `isWrittenAsUnder`,
+`comesToUnder` and `objectOfUnder` read the answers. `objectOfUnder`
+gives back a site, which `objectOf` does not, since a site is what a
+context is.
+
+The three questions run on a program of their own,
+`resolutionUnderProgram`. Leaving them out of what the ordinary program
+has to answer drops every rule behind them from the rewrite, so a run
+that never mentions a context gets none of the second closure. The
+engine reads every rule once a round, and the thousand rules the
+rewrite makes of `reachesUnder` were measured at two and a half times
+the wall time of a whole extraction.
 
 The closure is written with the walk so far first and the next hop after
 it: `reaches(x, z) <- reaches(x, y), stepsTo(y, z)`. The order matters

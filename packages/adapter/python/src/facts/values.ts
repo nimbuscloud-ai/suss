@@ -224,6 +224,8 @@ interface Emitter {
   filePath: string;
   /** The function whose body is being walked, and the functions around it. Null at module level. */
   enclosing: FunctionScope | null;
+  /** Whether the body being walked runs with a receiver, so a call in it has one too. */
+  insideMethod: boolean;
 }
 
 function add(emitter: Emitter, relation: string, ...tuple: string[]): void {
@@ -285,6 +287,9 @@ function emitCall(emitter: Emitter, call: PyNode): void {
   /* v8 ignore stop */
   const callKey = nodeId(emitter.filePath, call);
   add(emitter, "call", callKey, valueKey(emitter, callee));
+  if (!emitter.insideMethod) {
+    add(emitter, "callOutsideMethod", callKey);
+  }
 
   let position = 0;
   for (const argument of children(args)) {
@@ -476,6 +481,10 @@ function emitFunctionFacts(
   const reading = scopeReadingOf(fn);
   const inside: Emitter = {
     ...emitter,
+    // A def written in a class takes a receiver or it does not, and a
+    // def nested in a method runs as part of the method around it.
+    insideMethod:
+      classKey === undefined ? emitter.insideMethod : receiver !== null,
     enclosing: {
       funcKey,
       locals: reading.locals,
@@ -1420,7 +1429,12 @@ export function emitValueFacts(
   filePath: string,
   root: PyNode,
 ): void {
-  const emitter: Emitter = { db, filePath, enclosing: null };
+  const emitter: Emitter = {
+    db,
+    filePath,
+    enclosing: null,
+    insideMethod: false,
+  };
   emitNestedDefinitions(emitter, root);
   emitScopeWrites(emitter, readScope(root, []), true);
   emitExpressionFacts(emitter, root);

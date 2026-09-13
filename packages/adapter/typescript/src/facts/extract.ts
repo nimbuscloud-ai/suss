@@ -392,6 +392,16 @@ export function emitValue(
   value: Expression,
 ): string {
   const expression = unwrapExpression(value);
+
+  // Ahead of the guard below, since the key is the class's rather than
+  // this node's and every read of `this` has to arrive at the same one.
+  if (expression.getKind() === SyntaxKind.ThisKeyword) {
+    const receiver = receiverKeyOf(db, table, expression);
+    if (receiver !== null) {
+      return receiver;
+    }
+  }
+
   const id = nodeId(expression);
   table.byId.set(id, expression);
 
@@ -534,6 +544,39 @@ export function emitValue(
 }
 
 /**
+ * The key `this` joins on, one per class, and null where `this` means
+ * something the rules have nothing to say about.
+ *
+ * A `function` declaration takes a receiver of its own, so `this` inside
+ * one is not the class around it. An arrow and a function expression
+ * both keep the enclosing `this`, which is why the walk goes through
+ * them. Whichever method read it makes no difference to any rule, so
+ * one node per class is enough.
+ *
+ * The class's own facts go in here as well, since a read off the
+ * receiver goes through what the class contains and a lazy extraction
+ * may never have reached the class any other way.
+ */
+function receiverKeyOf(
+  db: Database,
+  table: NodeTable,
+  expression: Node,
+): string | null {
+  for (let at = expression.getParent(); at !== undefined; at = at.getParent()) {
+    if (Node.isFunctionDeclaration(at)) {
+      return null;
+    }
+    if (Node.isClassDeclaration(at)) {
+      emitClassFacts(db, table, at);
+      const receiver = `${nodeId(at)}#this`;
+      fact(db, "instanceOf", receiver, nodeId(at));
+      return receiver;
+    }
+  }
+  return null;
+}
+
+/**
  * The write a name comes down to, by the policy every adapter shares.
  * Null when the writes settle on nothing.
  */
@@ -612,8 +655,7 @@ function emitFieldValues(
   table: NodeTable,
   declaration: PropertyDeclaration,
 ): void {
-  const { values, inOrder } = writesToField(declaration);
-  const settled = settledWrite(values, inOrder);
+  const settled = settledFieldValue(declaration);
   if (settled === null || !Node.isExpression(settled)) {
     return;
   }
@@ -621,11 +663,17 @@ function emitFieldValues(
   fact(db, "binds", nodeId(declaration), emitValue(db, table, settled));
 }
 
+/** The one value every body of the class leaves in a field, or null. */
+function settledFieldValue(declaration: FieldDeclaration): Node | null {
+  const { values, inOrder } = writesToField(declaration);
+  return settledWrite(values, inOrder);
+}
+
 /**
  * What reading `this.dao` off a parameter property comes down to. The
  * field and the parameter are one declaration, so the read binds to
- * what the field ends up holding, which is the parameter itself unless
- * the constructor writes over it.
+ * what the field ends up with, which is the parameter itself unless the
+ * constructor writes over it.
  */
 function emitParameterPropertyRead(
   db: Database,
@@ -633,8 +681,7 @@ function emitParameterPropertyRead(
   referenceId: string,
   declaration: ParameterDeclaration,
 ): void {
-  const { values, inOrder } = writesToField(declaration);
-  const settled = settledWrite(values, inOrder);
+  const settled = settledFieldValue(declaration);
   if (settled === null) {
     return;
   }
@@ -837,6 +884,23 @@ function emitReferenceFacts(
   }
 }
 
+/**
+ * Whether a call runs with a receiver, which is what gives it a context.
+ * A callback nested in a method runs as part of that method, so the walk
+ * goes through everything up to the method itself.
+ */
+function insideMethodBody(call: Node): boolean {
+  for (let at = call.getParent(); at !== undefined; at = at.getParent()) {
+    if (Node.isConstructorDeclaration(at)) {
+      return true;
+    }
+    if (Node.isMethodDeclaration(at)) {
+      return !at.isStatic();
+    }
+  }
+  return false;
+}
+
 function emitCallFacts(
   db: Database,
   table: NodeTable,
@@ -859,6 +923,9 @@ function emitCallFacts(
 
   fact(db, "call", callId, emitValue(db, table, callee));
   fact(db, "calleeName", callId, callee.getText());
+  if (!insideMethodBody(call as unknown as Node)) {
+    fact(db, "callOutsideMethod", callId);
+  }
 
   for (const origin of importOriginsOf(callee)) {
     fact(db, "calleeOrigin", callId, origin);
@@ -906,7 +973,7 @@ function emitClassFacts(
   // puts the constructor's parameters on it.
   fact(db, "initializes", id, id);
 
-  emitConstructorParameters(db, table, declaration, id);
+  emitConstructorFacts(db, table, declaration, id);
 
   for (const method of declaration.getMethods()) {
     const methodId = nodeId(method);
@@ -919,7 +986,7 @@ function emitClassFacts(
   for (const property of declaration.getProperties()) {
     emitFieldStores(db, table, id, property.getName(), property);
     const initializer = property.getInitializer();
-    if (initializer !== undefined) {
+    if (initializer !== undefined && settlesOnItsInitializer(property)) {
       fact(
         db,
         "holdsProperty",
@@ -933,6 +1000,15 @@ function emitClassFacts(
   for (const parameter of parameterProperties(declaration)) {
     emitFieldStores(db, table, id, parameter.getName(), parameter);
   }
+}
+
+/**
+ * Whether a field's initializer is the value every reader sees. The
+ * constructor runs after it, so stating the initializer beside the
+ * store the class already has would answer both of them.
+ */
+function settlesOnItsInitializer(declaration: PropertyDeclaration): boolean {
+  return settledFieldValue(declaration) === declaration.getInitializer();
 }
 
 /** The parameters a constructor declares as fields: `constructor(private dao: Dao)`. */
@@ -957,6 +1033,12 @@ function emitFieldStores(
   name: string,
   declaration: FieldDeclaration,
 ): void {
+  // A field two bodies write could be either value, and the source does
+  // not say which of them ran last, so the class states nothing rather
+  // than give back whichever body a reader can follow.
+  if (settledFieldValue(declaration) === null) {
+    return;
+  }
   for (const store of storesToField(declaration)) {
     const settled = settledWrite(store.values, store.inOrder);
     if (settled === null) {
@@ -981,11 +1063,12 @@ function storedKey(db: Database, table: NodeTable, value: Node): string {
 }
 
 /**
- * The parameters a construction fills in. A class written with no
- * constructor has none, and an overload signature has no body, so the
- * parameters the arguments land in are the implementation's.
+ * The parameters a construction fills in, and the calls the constructor
+ * makes. A class written with no constructor has neither, and an
+ * overload signature has no body, so both come from the implementation.
+ * They go on the class, which is the key `initializes` points at.
  */
-function emitConstructorParameters(
+function emitConstructorFacts(
   db: Database,
   table: NodeTable,
   declaration: ClassDeclaration,
@@ -998,6 +1081,16 @@ function emitConstructorParameters(
     return;
   }
   emitParameters(db, table, classId, implementation.getParameters());
+
+  const body = implementation.getBody();
+  if (body === undefined) {
+    return;
+  }
+  body.forEachDescendant((descendant, traversal) => {
+    if (recordBodyCalls(db, table, classId, descendant)) {
+      traversal.skip();
+    }
+  });
 }
 
 /** paramOf and paramNamed for everything a call fills in. */
@@ -1155,13 +1248,9 @@ function recordBodyNode(
   node: Node,
   returns: ReturnState,
 ): boolean {
-  if (isFunctionRoot(node)) {
-    if (descendantIsReturned(node)) {
-      fact(db, "returnsValue", fnId, emitValue(db, table, node as Expression));
-      returns.stated = true;
-    } else {
-      emitValue(db, table, node as Expression);
-    }
+  if (isFunctionRoot(node) && descendantIsReturned(node)) {
+    fact(db, "returnsValue", fnId, emitValue(db, table, node as Expression));
+    returns.stated = true;
     fact(db, "containsFn", fnId, nodeId(node));
     return true;
   }
@@ -1173,6 +1262,26 @@ function recordBodyNode(
       returns.stated = true;
     }
     return false;
+  }
+
+  return recordBodyCalls(db, table, fnId, node);
+}
+
+/**
+ * The same walk with what the body gives back left out, which is what a
+ * constructor wants: it is keyed on the class, and a class is not a
+ * function that returns anything.
+ */
+function recordBodyCalls(
+  db: Database,
+  table: NodeTable,
+  fnId: string,
+  node: Node,
+): boolean {
+  if (isFunctionRoot(node)) {
+    emitValue(db, table, node as Expression);
+    fact(db, "containsFn", fnId, nodeId(node));
+    return true;
   }
 
   if (!Node.isExpression(node)) {
