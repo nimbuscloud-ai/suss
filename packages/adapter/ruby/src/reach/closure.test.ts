@@ -714,10 +714,13 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
     ).toEqual(["build_index"]);
   });
 
-  it("leaves a name read off a method this file declares to the language", async () => {
+  it("leaves a name read off a value this file built to the language", async () => {
     write("app/graphql/types/query_type.rb", [
-      "def build_index(user)",
-      "  user",
+      "class Index",
+      "end",
+      "",
+      "def build_index",
+      "  Index.new",
       "end",
       "",
       "class Types::QueryType < Types::BaseObject",

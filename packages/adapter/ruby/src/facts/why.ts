@@ -23,7 +23,7 @@ import { parseRubySync } from "../parser.js";
 import { findRubyFiles } from "../project.js";
 import { collectFileConstants, emitConstantBindings } from "./constants.js";
 import { RUBY_RULES } from "./resolve.js";
-import { emitValueFacts, nodeId, readKey } from "./values.js";
+import { calleeKeyOf, emitValueFacts, nodeId, readKey } from "./values.js";
 
 import type { ValueLocation, WhyExplained } from "@suss/resolution";
 import type { RbNode } from "../parser.js";
@@ -114,6 +114,18 @@ function displayNameOf(node: RbNode): string {
 
 function width(node: RbNode): number {
   return node.endIndex - node.startIndex;
+}
+
+/**
+ * The key a question about this expression asks. Which method a call
+ * runs is the answer somebody asking about a call wants.
+ */
+function askedKey(value: RubyValueHandle): string {
+  const enclosing = enclosingMethod(value.node);
+  return (
+    calleeKeyOf(value.file, value.node, enclosing) ??
+    readKey(value.file, value.node, enclosing)
+  );
 }
 
 export class RubyWhySession {
@@ -213,7 +225,7 @@ export class RubyWhySession {
     return explainResolvedKey({
       db: this.db,
       rules: WITNESS_RULES,
-      key: readKey(value.file, value.node, enclosingMethod(value.node)),
+      key: askedKey(value),
       locate: (key) => this.locate(key),
       displayPath: (key) => this.displayPath(key),
       ...options,

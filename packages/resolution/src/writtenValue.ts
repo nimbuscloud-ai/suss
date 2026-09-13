@@ -54,9 +54,15 @@ function settledAs(
 
   ask(throughCalls);
   const deeper = singleAnswers(db.facts("wantedIsWrittenAs"), placeholders);
-  return direct.map((answer) =>
-    calls.has(answer) ? (deeper.get(answer) ?? answer) : answer,
-  );
+  // A step off a call, `Foo.new` or `list.freeze`, leaves the call and
+  // what it comes down to as two answers that are the same one.
+  return [
+    ...new Set(
+      direct.map((answer) =>
+        calls.has(answer) ? (deeper.get(answer) ?? answer) : answer,
+      ),
+    ),
+  ];
 }
 
 /**

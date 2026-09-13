@@ -123,8 +123,8 @@ describe("RubyWhySession", () => {
       line: 2,
     });
     expect(explained?.lines).toEqual([
-      "h.fetch (app.rb:2) -> fetch (helpers.rb:2)",
-      "  h.fetch (app.rb:2) reads fetch off h (app.rb:1), which contains fetch (helpers.rb:2)",
+      "fetch (app.rb:2) -> fetch (helpers.rb:2)",
+      "  fetch (app.rb:2) reads fetch off h (app.rb:1), which contains fetch (helpers.rb:2)",
     ]);
   });
 

@@ -45,6 +45,12 @@ function keyOf(source: string, text: string): string {
   return `:${start}-${start + text.length}`;
 }
 
+/** The same, for the last of several nodes written the same way. */
+function lastKeyOf(source: string, text: string): string {
+  const start = source.lastIndexOf(text);
+  return `:${start}-${start + text.length}`;
+}
+
 describe("ruby value facts", () => {
   it("says a def is a function and binds its name to it", async () => {
     const db = await factsFor("def handler\nend\n");
@@ -62,86 +68,201 @@ describe("ruby value facts", () => {
   });
 
   it("records what an explicit return gives back", async () => {
-    const db = await factsFor("def handler\n  return other\nend\n");
-    expect(rows(db, "returnsValue").map((row) => row[1])).toContain("#other");
+    const source = "def handler\n  return other\nend\n";
+    const db = await factsFor(source);
+    expect(rows(db, "returnsValue").map((row) => row[1])).toContain(
+      keyOf(source, "other"),
+    );
   });
 
   it("records the last expression as the return, which Ruby does implicitly", async () => {
-    const db = await factsFor("def handler\n  compute\nend\n");
-    expect(rows(db, "returnsValue").map((row) => row[1])).toContain("#compute");
+    const source = "def handler\n  compute\nend\n";
+    const db = await factsFor(source);
+    expect(rows(db, "returnsValue").map((row) => row[1])).toContain(
+      keyOf(source, "compute"),
+    );
   });
 
   it("keeps an array's elements under their positions", async () => {
-    const db = await factsFor("items = [first, second]\n");
+    const source = "items = [first, second]\n";
+    const db = await factsFor(source);
     expect(db.size("objectValue")).toBe(1);
     expect(rows(db, "holdsProperty").map((row) => [row[1], row[2]])).toEqual([
-      ["0", "#first"],
-      ["1", "#second"],
+      ["0", keyOf(source, "first")],
+      ["1", keyOf(source, "second")],
     ]);
   });
 
   it("keeps a hash's values under their keys, symbol or string", async () => {
-    const db = await factsFor(
-      "config = { host: host_name, 'port' => port_value }\n",
-    );
+    const source = "config = { host: host_name, 'port' => port_value }\n";
+    const db = await factsFor(source);
     expect(rows(db, "holdsProperty").map((row) => [row[1], row[2]])).toEqual([
-      ["host", "#host_name"],
-      ["port", "#port_value"],
+      ["host", keyOf(source, "host_name")],
+      ["port", keyOf(source, "port_value")],
     ]);
   });
 
   it("records a call, its callee and its positional arguments", async () => {
-    const db = await factsFor("build(first, second)\n");
+    const source = "build(first, second)\n";
+    const db = await factsFor(source);
     expect(rows(db, "call")[0]?.[1]).toBe("#build");
     expect(rows(db, "callArg").map((row) => [row[1], row[2]])).toEqual([
-      ["0", "#first"],
-      ["1", "#second"],
+      ["0", keyOf(source, "first")],
+      ["1", keyOf(source, "second")],
     ]);
   });
 
   it("records a keyword argument under its name", async () => {
-    const db = await factsFor("build(prefix: value)\n");
+    const source = "build(prefix: value)\n";
+    const db = await factsFor(source);
     expect(db.size("callArg")).toBe(0);
     expect(rows(db, "callKeywordArg").map((row) => [row[1], row[2]])).toEqual([
-      ["prefix", "#value"],
+      ["prefix", keyOf(source, "value")],
     ]);
   });
 
-  it("reads a receiver call with no arguments as a property read", async () => {
-    const db = await factsFor("value = config.host\n");
-    expect(rows(db, "readsProperty")[0]?.slice(1)).toEqual(["#config", "host"]);
-    expect(db.size("call")).toBe(0);
+  it("reads a receiver call as a call whose callee reads the receiver, with arguments or without", async () => {
+    const read = "value = config.host\n";
+    const withArgs = "value = config.fetch(key)\n";
+    expect(rows(await factsFor(read), "readsProperty")).toEqual([
+      [keyOf(read, "host"), "#config", "host"],
+    ]);
+    expect(rows(await factsFor(read), "call")).toEqual([
+      [keyOf(read, "config.host"), keyOf(read, "host")],
+    ]);
+    expect(rows(await factsFor(withArgs), "readsProperty")).toEqual([
+      [keyOf(withArgs, "fetch"), "#config", "fetch"],
+    ]);
   });
 
-  it("still reads a receiver call with arguments as a call, whose callee reads the receiver", async () => {
-    const db = await factsFor("value = config.fetch(key)\n");
-    expect(db.size("call")).toBe(1);
-    expect(rows(db, "readsProperty")[0]?.slice(1)).toEqual([
-      "#config",
-      "fetch",
+  it("writes down a value for a receiver call with no arguments", async () => {
+    const source = "conn = Faraday.new\n";
+    const db = await factsFor(source);
+    expect(rows(db, "binds")).toEqual([
+      ["#conn", keyOf(source, "Faraday.new")],
+    ]);
+    expect(rows(db, "writtenValue")).toContainEqual([
+      keyOf(source, "Faraday.new"),
+    ]);
+  });
+
+  it("binds a name an or-assignment is the only write to", async () => {
+    const source = "def build\n  conn ||= Faraday.new\nend\n";
+    const db = await factsFor(source);
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "binds")).toContainEqual([
+      `${funcKey}#conn`,
+      keyOf(source, "Faraday.new"),
+    ]);
+  });
+
+  it("ends an or-assignment written after a nil on the construction", async () => {
+    const source = "def build\n  conn = nil\n  conn ||= Faraday.new\nend\n";
+    const db = await factsFor(source);
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "endsHolding")).toEqual([
+      [`${funcKey}#conn`, keyOf(source, "Faraday.new")],
+    ]);
+  });
+
+  it("keeps a memoised instance variable under the class that writes it", async () => {
+    const source =
+      "class C\n  def conn\n    @conn ||= Faraday.new\n  end\nend\n";
+    const db = await factsFor(source);
+    const [classKey] = rows(db, "objectValue")[0] ?? [];
+    expect(rows(db, "holdsProperty")).toContainEqual([
+      classKey,
+      "@conn",
+      keyOf(source, "Faraday.new"),
+    ]);
+  });
+
+  it("reads a bare name no local declares as a call of a method on self", async () => {
+    const source = "value = helper\n";
+    const db = await factsFor(source);
+    expect(rows(db, "call")).toEqual([[keyOf(source, "helper"), "#helper"]]);
+    expect(rows(db, "writtenValue")).toContainEqual([keyOf(source, "helper")]);
+  });
+
+  it("leaves a bare name a local declares as a read of that local", async () => {
+    const source = "helper = 1\nvalue = helper\n";
+    const db = await factsFor(source);
+    expect(db.size("call")).toBe(0);
+    expect(rows(db, "binds")).toContainEqual(["#value", "#helper"]);
+  });
+
+  it("counts the name a rescue binds as a local, not as a call", async () => {
+    const source = [
+      "def act",
+      "  risky",
+      "rescue => error",
+      "  log(error)",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "writesUnstated")).toContainEqual([`${funcKey}#error`]);
+    expect(rows(db, "callArg").map((row) => row[2])).toEqual([
+      `${funcKey}#error`,
+    ]);
+  });
+
+  it("says nothing about a rescue that binds no name", async () => {
+    const source = [
+      "def act",
+      "  risky",
+      "rescue",
+      "  fallback",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    expect(rows(db, "writesUnstated")).toEqual([]);
+    expect(rows(db, "call").map((row) => row[1])).toEqual([
+      "#risky",
+      "#fallback",
     ]);
   });
 
   it("binds a name to what an assignment writes", async () => {
-    const db = await factsFor("alias_name = original\n");
-    expect(rows(db, "binds")).toEqual([["#alias_name", "#original"]]);
+    const source = "alias_name = original\n";
+    const db = await factsFor(source);
+    expect(rows(db, "binds")).toEqual([
+      ["#alias_name", keyOf(source, "original")],
+    ]);
   });
 
   it("binds a constant the same way", async () => {
-    const db = await factsFor("Registry = builder\n");
-    expect(rows(db, "binds")).toEqual([["#Registry", "#builder"]]);
+    const source = "Registry = builder\n";
+    const db = await factsFor(source);
+    expect(rows(db, "binds")).toEqual([
+      ["#Registry", keyOf(source, "builder")],
+    ]);
   });
 
   it("gives a nested method its own returns rather than the outer one's", async () => {
-    const db = await factsFor(
-      ["class Outer", "  def inner", "    deep", "  end", "end", ""].join("\n"),
+    const source = [
+      "class Outer",
+      "  def inner",
+      "    deep",
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    expect(rows(db, "returnsValue").map((row) => row[1])).toContain(
+      keyOf(source, "deep"),
     );
-    expect(rows(db, "returnsValue").map((row) => row[1])).toContain("#deep");
   });
 
-  it("records the calls a method's body makes", async () => {
-    const db = await factsFor("def handler\n  log(event)\nend\n");
-    expect(db.size("bodyCalls")).toBe(1);
+  it("records the calls a method's body makes, the bare ones included", async () => {
+    const source = "def handler\n  log(event)\nend\n";
+    const db = await factsFor(source);
+    expect(rows(db, "bodyCalls").map((row) => row[1])).toEqual([
+      keyOf(source, "log(event)"),
+      keyOf(source, "event"),
+    ]);
   });
 
   it("reads the expressions a class body runs, which Ruby runs like any other code", async () => {
@@ -162,10 +283,13 @@ describe("ruby value facts", () => {
   });
 
   it("gives back what an assignment on the last line wrote", async () => {
-    const db = await factsFor(
-      ["def filters", "  @filters ||= build", "end", ""].join("\n"),
+    const source = ["def filters", "  @filters ||= build", "end", ""].join(
+      "\n",
     );
-    expect(rows(db, "returnsValue").map((row) => row[1])).toContain("#build");
+    const db = await factsFor(source);
+    expect(rows(db, "returnsValue").map((row) => row[1])).toContain(
+      keyOf(source, "build"),
+    );
   });
 
   it("leaves the return unread when the last line combines with what is there", async () => {
@@ -175,9 +299,10 @@ describe("ruby value facts", () => {
     expect(rows(db, "returnsValue").map((row) => row[1])).not.toContain("#one");
   });
   it("reads a plain symbol key on a hash", async () => {
-    const db = await factsFor("config = { :host => host_name }\n");
+    const source = "config = { :host => host_name }\n";
+    const db = await factsFor(source);
     expect(rows(db, "holdsProperty").map((row) => [row[1], row[2]])).toEqual([
-      ["host", "#host_name"],
+      ["host", keyOf(source, "host_name")],
     ]);
   });
 
@@ -270,15 +395,17 @@ describe("ruby value facts", () => {
   });
 
   it("keeps a class constant under its name", async () => {
-    const db = await factsFor("class Loader\n  REGISTRY = built\nend\n");
+    const source = "class Loader\n  REGISTRY = built\nend\n";
+    const db = await factsFor(source);
     expect(rows(db, "holdsProperty")[0]?.slice(1)).toEqual([
       "REGISTRY",
-      "#built",
+      keyOf(source, "built"),
     ]);
   });
 
   it("reads a call with a receiver off the receiver rather than off the file", async () => {
-    const db = await factsFor("loader.load(key)\n");
+    const source = "loader.load(key)\n";
+    const db = await factsFor(source);
     const [callee] = rows(db, "call").map((row) => row[1]);
     expect(rows(db, "readsProperty")).toEqual([[callee, "#loader", "load"]]);
   });
@@ -478,9 +605,13 @@ describe("ruby value facts", () => {
   });
 
   it("binds a local written once to what that write says", async () => {
-    const db = await factsFor("def act\n  query = build\nend\n");
+    const source = "def act\n  query = build\nend\n";
+    const db = await factsFor(source);
     const [funcKey] = rows(db, "func")[0] ?? [];
-    expect(rows(db, "binds")).toContainEqual([`${funcKey}#query`, "#build"]);
+    expect(rows(db, "binds")).toContainEqual([
+      `${funcKey}#query`,
+      keyOf(source, "build"),
+    ]);
   });
 
   it("keeps a method's local out of what the file exports", async () => {
@@ -799,14 +930,20 @@ describe("ruby value facts", () => {
       "",
     ].join("\n");
     const db = await factsFor(source);
-    expect(rows(db, "returnsValue").map((row) => row[1])).toContain("#item");
+    expect(rows(db, "returnsValue").map((row) => row[1])).toContain(
+      lastKeyOf(source, "item"),
+    );
   });
 
   it("does not resolve a block parameter's name to the block when read outside any block, at the top of a file", async () => {
-    const db = await factsFor(
-      ["list.each do |item|", "end", "other = item", ""].join("\n"),
+    const source = ["list.each do |item|", "end", "other = item", ""].join(
+      "\n",
     );
-    expect(rows(db, "binds")).toContainEqual(["#other", "#item"]);
+    const db = await factsFor(source);
+    expect(rows(db, "binds")).toContainEqual([
+      "#other",
+      lastKeyOf(source, "item"),
+    ]);
   });
 
   it("does not mistake a method call for a read of a same-named local", async () => {
