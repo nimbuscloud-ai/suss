@@ -712,6 +712,53 @@ describe("ruby value facts", () => {
     ]);
   });
 
+  it("says every write to such a name states a value", async () => {
+    const db = await factsFor(
+      [
+        "def act",
+        "  q = Entity.all",
+        "  q = Other.all if flag",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "writesAllStated")).toEqual([[`${funcKey}#q`]]);
+  });
+
+  it("says nothing about reading all of them when one write states no value", async () => {
+    const db = await factsFor(
+      [
+        "def act",
+        "  for q in rows",
+        "    q = Other.all if flag",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    expect(db.size("mayHold")).toBeGreaterThan(0);
+    expect(db.size("writesAllStated")).toBe(0);
+  });
+
+  it("says nothing about reading all of them for a parameter a branch writes again", async () => {
+    const db = await factsFor(
+      [
+        "def act(thing)",
+        "  thing = Entity.all if flag",
+        "  thing",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "mayHold").map((row) => row[0])).toEqual([
+      `${funcKey}#thing`,
+    ]);
+    expect(db.size("writesUnstated")).toBe(0);
+    expect(db.size("writesAllStated")).toBe(0);
+  });
+
   it("leaves a narrowing write out of the values a name may hold", async () => {
     const source = [
       "def act",

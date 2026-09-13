@@ -51,7 +51,7 @@ Three layers do the work.
 
   <rect class="box" x="60" y="220" width="540" height="86" rx="6" />
   <text class="label" x="330" y="242" text-anchor="middle">2. One rule set joins the facts into a value graph</text>
-  <text class="note" x="330" y="260" text-anchor="middle">69 rules. Fifteen of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
+  <text class="note" x="330" y="260" text-anchor="middle">70 rules. Sixteen of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
   <text class="note" x="330" y="277" text-anchor="middle">reaches is the transitive closure of those hops, and it records</text>
   <text class="note" x="330" y="294" text-anchor="middle">whether the walk ran a call along the way.</text>
 
@@ -160,10 +160,10 @@ explanation each.
 
 ## Layer 2: one rule set makes a graph
 
-`packages/resolution/src/index.ts` contains 69 rules and no code.
-Fifteen of them derive `stepsTo(x, y, kind)`, which says the value `x`
+`packages/resolution/src/index.ts` contains 70 rules and no code.
+Sixteen of them derive `stepsTo(x, y, kind)`, which says the value `x`
 leads to the value `y` in one hop. The TypeScript adapter adds a
-sixteenth for `.bind`.
+seventeenth for `.bind`.
 
 ```ts
 rule(

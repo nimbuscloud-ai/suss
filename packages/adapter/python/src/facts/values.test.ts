@@ -547,6 +547,61 @@ describe("python value facts", () => {
     );
   });
 
+  it("names each write to such a name, and says it read all of them", async () => {
+    const db = await factsFor(
+      [
+        "def handler(flag):",
+        "    q = Entity.query",
+        "    if flag:",
+        "        q = Other.query",
+        "    return q",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "mayHold").map((row) => row[0])).toEqual([
+      `${funcKey}#q`,
+      `${funcKey}#q`,
+    ]);
+    expect(rows(db, "writesAllStated")).toEqual([[`${funcKey}#q`]]);
+  });
+
+  it("says nothing about reading all of them when one write states no value", async () => {
+    const db = await factsFor(
+      [
+        "def handler(flag, items):",
+        "    for q in items:",
+        "        pass",
+        "    if flag:",
+        "        q = Other.query",
+        "    return q",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "writesUnstated")).toEqual([[`${funcKey}#q`]]);
+    expect(db.size("mayHold")).toBe(1);
+    expect(db.size("writesAllStated")).toBe(0);
+  });
+
+  it("says nothing about reading all of them for a parameter a branch writes again", async () => {
+    const db = await factsFor(
+      [
+        "def handler(thing, flag):",
+        "    if flag:",
+        "        thing = Entity()",
+        "    return thing",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "mayHold").map((row) => row[0])).toEqual([
+      `${funcKey}#thing`,
+    ]);
+    expect(db.size("writesUnstated")).toBe(0);
+    expect(db.size("writesAllStated")).toBe(0);
+  });
+
   it("says nothing about a parameter the body writes again", async () => {
     const db = await factsFor(
       ["def handler(db):", "    db = connect()", "    return db", ""].join(

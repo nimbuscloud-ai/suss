@@ -546,7 +546,7 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
     expect(calls(field)).toEqual([["user.notify", undefined]]);
   });
 
-  it("reports a call on a local two branches write differently as more than one source", async () => {
+  it("follows the one write it can read when the other write reaches no class", async () => {
     writeQueryType("orders", [
       "scope = OrderService.new",
       'scope = "text" if current_user',
@@ -561,13 +561,18 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
     ]);
 
     const summaries = await extract();
+    // Nothing orders the two writes, so `scope` steps to each of them.
+    // The string reaches no class with a `list_orders` on it, and the
+    // run stops recording that a source went unread.
     const field = unitNamed(summaries, "Query.orders");
-    expect(field.gaps).toContainEqual(
-      expect.objectContaining({
-        type: "unfollowedCall",
-        callee: "scope.list_orders",
-        description: expect.stringContaining("more than one possible source"),
-      }),
+    expect(calls(field)).toEqual([
+      [
+        "scope.list_orders",
+        "app/services/order_service.rb::OrderService.list_orders",
+      ],
+    ]);
+    expect(field.gaps.filter((gap) => gap.type === "unfollowedCall")).toEqual(
+      [],
     );
   });
 

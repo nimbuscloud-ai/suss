@@ -110,6 +110,12 @@ const DEFAULT_PHRASES: Record<string, StepPhrase> = {
   "last write": ({ tuple, describe }) => ({
     reason: `${describe(tuple[0])} is written more than once, and the last write leaves it as ${describe(tuple[1])}`,
   }),
+  "one of several writes": ({ tuple, describe }) => ({
+    reason: `${describe(tuple[0])} is written more than once, and one of those writes makes it ${describe(tuple[1])}`,
+    assumptions: [
+      `nothing says which write to ${describe(tuple[0])} ran last, so every write it has is a possible value`,
+    ],
+  }),
   fallback: ({ tuple, describe }) => ({
     reason: `${describe(tuple[0])} is a fallback expression, and ${describe(tuple[1])} is the branch that resolves`,
   }),

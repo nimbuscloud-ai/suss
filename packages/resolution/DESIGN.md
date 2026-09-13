@@ -16,6 +16,11 @@ readsProperty(x, o, n)      x is the expression o.n
 binds(x, y)                 the name x is declared as y
 endsHolding(x, y)           the name x is written more than once and
                             holds y once the writes have run
+mayHold(x, y)               one write to x wrote y, and nothing says
+                            which write ran last
+writesUnstated(x)           a write to x states no value at all
+writesAllStated(x)          every write to x states a value, so the
+                            mayHold rows for x are all of them
 fallbackBranch(x, b)        x is a fallback expression and b is one
                             of its branches
 paramOf(f, k, p)            p is f's parameter at position k
@@ -434,9 +439,10 @@ written twice in a module's own statement list does resolve. Those
 statements run once each, top to bottom, so the last write is what
 anything importing the name gets, and the adapter says so with
 `endsHolding`. A write inside a branch, a loop, or a function body is a
-different claim, and the adapter says nothing about it. The name then
-resolves to nothing, and it stays that way until we have control-flow
-facts to reason over.
+different claim. The adapter says `mayHold` once per write instead, and
+the rules step the name to every one of them, so a caller that can use
+several values gets them all and a caller that needs one gets none.
+Which write a particular read sees is still unanswered.
 
 Answering that in general is reaching definitions, per use rather than
 per name. That needs facts saying which statement follows which and
@@ -448,8 +454,19 @@ writes have no later write. Negation says that in one line, but this
 evaluator has to throw its last fixpoint away and start over whenever a
 rule set uses negation. The store evaluates after every wave of facts,
 so one negated rule turned a 66 second run on the Saleor dashboard into
-one that had not finished in ten minutes. Source order is something
-every adapter already knows.
+one that had not finished in ten minutes. The on-demand rewrite refuses
+negation before that, since a relation derived only where somebody
+asked is smaller than the one `not p(x)` was written against. Source
+order is something every adapter already knows.
+
+`writesAllStated` is what makes stepping to each write safe, and it is
+the same trade. Some writes leave the adapter with no value to record:
+a loop target, an `except ... as`, and a parameter, whose value is the
+caller's and which a later write may or may not have replaced by the
+time a read runs. The writes it did record are then not the whole set,
+and stepping to them would say a name is one of two things when it
+could be a third. Saying that in a rule takes `not writesUnstated(x)`,
+so the adapter states the other side of it and the rule joins on that.
 
 What the adapter supplies is the reading: the values in source order,
 and a description of its grammar. `writesRunInOrder` walks the scope

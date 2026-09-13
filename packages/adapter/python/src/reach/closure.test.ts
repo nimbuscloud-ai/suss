@@ -863,7 +863,7 @@ describe("the spellings a callee can have", () => {
     ]);
   });
 
-  it("stops with more than one source when a name's assignments disagree", async () => {
+  it("follows the one write it can read when the other write reaches no class", async () => {
     write("app/main.py", [
       ...APP_HEADER,
       "class Entity:",
@@ -879,13 +879,17 @@ describe("the spellings a callee can have", () => {
     ]);
 
     const summaries = await extract();
+    // Nothing orders the two writes, so `thing` steps to each of them.
+    // The string reaches no class with a `run` on it, and the run stops
+    // recording that a source went unread.
     const route = unitNamed(summaries, "either");
-    expect(route.gaps.filter((gap) => gap.type === "unfollowedCall")).toEqual([
-      expect.objectContaining({
-        callee: "thing.run",
-        description: expect.stringContaining("more than one possible source"),
-      }),
+    expect(calls(route)).toContainEqual([
+      "thing.run",
+      "app/main.py::Entity.run",
     ]);
+    expect(route.gaps.filter((gap) => gap.type === "unfollowedCall")).toEqual(
+      [],
+    );
   });
 });
 

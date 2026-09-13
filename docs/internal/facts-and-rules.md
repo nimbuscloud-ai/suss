@@ -118,6 +118,8 @@ untested(u) :- entry(u), not covered(u).
 
 Two requirements apply. First, a positive literal (`entry`) must bind the variable `u` before the negated literal uses it, so the rule asks a closed question about units it already knows. Second, the rule set must stratify: every rule that derives `covered` must run before any rule that reads its absence. The evaluator enforces that by running strata in order and rejecting rule sets where negation forms a cycle.
 
+One rule in value resolution needs a shape like this. A name whose writes nothing orders should step to each of its writes, but only when the adapter read a value out of every one of them, which is the absence of `writesUnstated`. The resolution rules cannot say that. `deriveOnDemand` rejects a negated literal outright, because a relation derived only where somebody asked is smaller than the one `not p(x)` was written against, which makes the literal match where it should not. And a rule set with any negation in it makes the evaluator retract what it derived and start from the base facts on every pass, which the resolution store runs once per wave of files. So the adapter states `writesAllStated` and the rule joins on it.
+
 ## The shared fact store
 
 Each `extractAll` run creates **one** fact database and threads it through the passes (`ClosureFacts` in `resolve/reachableClosure.ts`):

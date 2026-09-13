@@ -1296,6 +1296,7 @@ function emitScopeWrites(
  * Each value a write put in an unsettled name. A write that narrows the
  * name is left out, and a write with no value of its own, a loop target
  * or an `except ... as`, is what `writesUnstated` says.
+ * `writesAllStated` is its other side: the run read every write.
  */
 function emitCandidates(
   emitter: Emitter,
@@ -1303,6 +1304,8 @@ function emitCandidates(
   name: string,
   writes: readonly RawWrite[],
 ): void {
+  let unstated = false;
+  let stated = 0;
   for (const write of writes) {
     if (write.value === null) {
       // The name a `with` opens is the call's `__enter__`, which is a
@@ -1311,8 +1314,10 @@ function emitCandidates(
         add(emitter, "entersAs", key, valueKey(emitter, write.entered));
         continue;
       }
-      // A parameter arrives with a value the source spells nowhere, and
-      // that is the caller's rather than something this scope left out.
+      // A parameter's value comes from the caller, and no fact here
+      // says whether a later write always replaces it, so the writes
+      // the run did read are not the whole set.
+      unstated = true;
       if (write.given === null) {
         add(emitter, "writesUnstated", key);
       }
@@ -1320,7 +1325,11 @@ function emitCandidates(
     }
     if (!describeWrite(emitter, write, name).narrowsName) {
       add(emitter, "mayHold", key, valueKey(emitter, write.value));
+      stated += 1;
     }
+  }
+  if (!unstated && stated > 0) {
+    add(emitter, "writesAllStated", key);
   }
 }
 
