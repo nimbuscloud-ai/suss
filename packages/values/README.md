@@ -58,6 +58,13 @@ A set of literals wider than `SET_CAP` becomes a hole, and a set of
 constants wider than `CONSTANT_CAP` does the same, so a value never
 grows without bound.
 
+A value has no field for the syntax node it came from. A caller that
+needs that node back, to compare where two values were constructed for
+instance, keeps a key for it and looks the node up from that key on
+demand. `writtenNodeOf` is that lookup in all three adapters, so a
+reader that wants a node asks the adapter for one rather than expecting
+the value to have it.
+
 ## What the engine does
 
 Asked about an expression, the engine finds its site (the enclosing

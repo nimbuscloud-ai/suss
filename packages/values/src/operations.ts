@@ -147,6 +147,38 @@ export function equals(a: Value, b: Value): Value {
   return hole("value");
 }
 
+/**
+ * Whether a value settles to a string that starts with `literal`. The
+ * pieces before the first hole or set of literals are read as one
+ * settled head; once that head is long enough to decide the question,
+ * the rest of the value is never folded.
+ */
+export function startsWith(value: Value, literal: string): Value {
+  const forced = force(value);
+  if (forced.kind !== "string") {
+    return hole("value");
+  }
+  let head = "";
+  let settledToEnd = true;
+  for (const piece of forced.pieces) {
+    if (piece.kind === "hole" || piece.options.length !== 1) {
+      settledToEnd = false;
+      break;
+    }
+    head += piece.options[0] ?? "";
+    if (head.length >= literal.length) {
+      break;
+    }
+  }
+  if (head.length >= literal.length) {
+    return constant(head.startsWith(literal));
+  }
+  if (settledToEnd || literal.slice(0, head.length) !== head) {
+    return constant(false);
+  }
+  return hole("value");
+}
+
 export function negated(value: Value): Value {
   const c = constantOf(value);
   if (c !== undefined) {

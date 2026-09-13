@@ -47,6 +47,7 @@ export {
   percentFormatted,
   plus,
   readableFallback,
+  startsWith,
   stripped,
 } from "./operations.js";
 export { pathOf } from "./routePath.js";
