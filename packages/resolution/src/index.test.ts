@@ -766,35 +766,100 @@ describe("a value read under the site its receiver was made at", () => {
     ["bodyCalls", "Api", "urlRef"],
   ];
 
-  it("loses the site through a plain function the constructor calls", () => {
-    expect(writtenAsUnder(throughPlainFunction, "u", "v1Site")).toEqual([]);
+  it("keeps the site through a plain function the constructor calls", () => {
+    expect(writtenAsUnder(throughPlainFunction, "u", "v1Site")).toEqual([
+      "urlA",
+    ]);
+    expect(writtenAsUnder(throughPlainFunction, "u", "v2Site")).toEqual([
+      "urlB",
+    ]);
     expect(writtenAsUnder(throughPlainFunction, "u", "none")).toEqual([
       "urlA",
       "urlB",
     ]);
   });
 
-  it("takes another class's arguments once that class calls the same function", () => {
-    expect(
-      writtenAsUnder(
-        [
-          ...throughPlainFunction,
-          ["objectValue", "Other"],
-          ["initializes", "Other", "Other"],
-          ["paramOf", "Other", "0", "otherBase"],
-          ["bodyCalls", "Other", "urlRef"],
-          ["call", "otherUrlCall", "urlRef"],
-          ["callArg", "otherUrlCall", "0", "otherBase"],
-          ["binds", "OtherRef", "Other"],
-          ["call", "otherSite", "OtherRef"],
-          ["callOutsideMethod", "otherSite"],
-          ["callArg", "otherSite", "0", "urlC"],
-          ["writtenValue", "urlC"],
-        ],
-        "u",
-        "none",
-      ),
-    ).toEqual(["urlA", "urlB", "urlC"]);
+  // The constructor calls helper(base), and helper's body calls url(b).
+  it("keeps the site through one plain function calling another", () => {
+    const twoDeep: Array<[string, ...string[]]> = [
+      ...twoClients,
+      ["func", "helper"],
+      ["paramOf", "helper", "0", "b"],
+      ["binds", "helperRef", "helper"],
+      ["call", "helperCall", "helperRef"],
+      ["callArg", "helperCall", "0", "base"],
+      ["bodyCalls", "Api", "helperRef"],
+      ["func", "url"],
+      ["paramOf", "url", "0", "u"],
+      ["binds", "innerUrlRef", "url"],
+      ["call", "innerUrlCall", "innerUrlRef"],
+      ["callArg", "innerUrlCall", "0", "b"],
+      ["bodyCalls", "helper", "innerUrlRef"],
+      ["callOutsideMethod", "innerUrlCall"],
+    ];
+    expect(writtenAsUnder(twoDeep, "u", "v1Site")).toEqual(["urlA"]);
+    expect(writtenAsUnder(twoDeep, "u", "v2Site")).toEqual(["urlB"]);
+  });
+
+  it("leaves another class's arguments out of the site that did not call it", () => {
+    const twoClasses: Array<[string, ...string[]]> = [
+      ...throughPlainFunction,
+      ["objectValue", "Other"],
+      ["initializes", "Other", "Other"],
+      ["paramOf", "Other", "0", "otherBase"],
+      ["binds", "otherUrlRef", "url"],
+      ["bodyCalls", "Other", "otherUrlRef"],
+      ["call", "otherUrlCall", "otherUrlRef"],
+      ["callArg", "otherUrlCall", "0", "otherBase"],
+      ["binds", "OtherRef", "Other"],
+      ["call", "otherSite", "OtherRef"],
+      ["callOutsideMethod", "otherSite"],
+      ["callArg", "otherSite", "0", "urlC"],
+      ["writtenValue", "urlC"],
+    ];
+    expect(writtenAsUnder(twoClasses, "u", "v1Site")).toEqual(["urlA"]);
+    expect(writtenAsUnder(twoClasses, "u", "none")).toEqual([
+      "urlA",
+      "urlB",
+      "urlC",
+    ]);
+  });
+
+  // A method called with no receiver written, which Ruby keys to the
+  // receiver of the body it is in, beside the same call written `self.`.
+  it("keeps the site whether or not the receiver is written out", () => {
+    const spellings: Array<[string, ...string[]]> = [
+      ...twoClients,
+      ["binds", "selfNode", "Api#self"],
+      ["readsProperty", "bareItems", "Api#self", "items"],
+      ["call", "bareCall", "bareItems"],
+      ["callArg", "bareCall", "0", "barePath"],
+      ["writtenValue", "barePath"],
+      ["bodyCalls", "refresh", "bareItems"],
+      ["readsProperty", "writtenItems", "selfNode", "items"],
+      ["call", "writtenCall", "writtenItems"],
+      ["callArg", "writtenCall", "0", "writtenPath"],
+      ["writtenValue", "writtenPath"],
+      ["bodyCalls", "refresh", "writtenItems"],
+    ];
+    expect(writtenAsUnder(spellings, "path", "v1Site")).toEqual([
+      "barePath",
+      "writtenPath",
+    ]);
+  });
+
+  it("gives both stores when the constructor and a method write one field", () => {
+    const twoStores: Array<[string, ...string[]]> = [
+      ...twoClients,
+      ["func", "prime"],
+      ["holdsProperty", "Api", "prime", "prime"],
+      ["writtenValue", "primed"],
+      ["storesProperty", "prime", "client", "primed"],
+    ];
+    expect(writtenAsUnder(twoStores, "v1Client", "v1Site")).toEqual([
+      "created",
+      "primed",
+    ]);
   });
 
   it("resolves through the class when the run has no site of it", () => {

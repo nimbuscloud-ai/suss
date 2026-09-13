@@ -216,19 +216,30 @@ context-free ones:
 - A parameter goes on at the arguments of the calls that run its
   function under that site. `entersUnder` says which those are: a
   construction runs its constructor under the site it makes, a method
-  call runs under the site its receiver is, and every other call runs
-  with no site, which is every caller the way `argument` reads.
+  call runs under the site its receiver is, a call written as a plain
+  name runs under the site the body around it has, and every other call
+  runs with no site, which is every caller the way `argument` reads.
 
-`callUnder` says which site a call is made under, from the class whose
-method or constructor the call is written in. `callOutsideMethod` is the
-adapter's word for a call written at module level, in a plain function,
-in a class body, or in a static method; it is a fact rather than a
-negation because the demand rewrite refuses negation.
+`callsNamed` is the half of `callsFunction` that finds a callee by a
+name it binds to rather than by a property read off a receiver. Both
+halves make a `callsFunction` row, so nothing context-free moves, and
+`entersUnder` reads the name-bound half on its own. A call written as a
+name runs with whatever receiver the body around it has, which is what
+lets a walk follow it without leaving the site.
 
-One level of receiver is all of it. A plain function called from a
-method is entered with no site, so a walk through it takes every
-construction that reaches it, another class's included. A condition is
-not evaluated either, so `env === "prod" ? a : b` gives both branches.
+`callUnder` says which site a call is made under: the class whose
+method or constructor the call is written in, and the site a plain
+function was entered under for the calls that function makes, so a
+chain of plain functions off one method keeps the site. It is recursive
+through `entersUnder` and positive, which the demand rewrite allows.
+`callOutsideMethod` is the adapter's word for a call written at module
+level, in a plain function, in a class body, or in a static method; it
+is a fact rather than a negation because the rewrite refuses negation.
+
+One level of receiver is all of it. The site is lost where a call is
+made outside every method body, and the walk then takes every caller. A
+condition is not evaluated either, so `env === "prod" ? a : b` gives
+both branches.
 
 `askResolutionUnder` puts the question, and `isWrittenAsUnder`,
 `comesToUnder` and `objectOfUnder` read the answers. `objectOfUnder`

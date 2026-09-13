@@ -722,6 +722,19 @@ const STATED_RULES = [
     ],
     "method call enters under its receiver",
   ),
+  // A call written as a name runs with whatever receiver the body
+  // around it has, so a plain function called from a method keeps the
+  // site rather than taking every caller of it.
+  rule(
+    "entersUnder",
+    [v("r"), v("f"), v("c"), v("c")],
+    [
+      lit("context", v("c")),
+      lit("callsNamed", v("r"), v("f")),
+      lit("callUnder", v("r"), v("c")),
+    ],
+    "named call enters under the site it is made in",
+  ),
   rule(
     "entersUnder",
     [v("r"), v("f"), NO_CONTEXT, v("caller")],
@@ -784,6 +797,18 @@ const STATED_RULES = [
       lit("allocates", v("site"), v("cls")),
     ],
     "call in a constructor",
+  ),
+  // A plain function entered under a site makes its own calls under
+  // that site, so a chain of plain functions off one method keeps it.
+  rule(
+    "callUnder",
+    [v("r"), v("c")],
+    [
+      lit("callOutsideMethod", v("r")),
+      lit("callInBody", v("f"), v("r")),
+      lit("entersUnder", v("into"), v("f"), v("c"), v("c4")),
+    ],
+    "call in a function entered under a site",
   ),
   rule(
     "callUnder",
@@ -1067,12 +1092,12 @@ const STATED_RULES = [
   // the function. Starting from `call` instead asks what every call in
   // the project imports, which was 72% of everything derived.
   rule(
-    "callsFunction",
+    "callsNamed",
     [v("r"), v("f")],
     [lit("binds", v("c"), v("f")), lit("call", v("r"), v("c"))],
   ),
   rule(
-    "callsFunction",
+    "callsNamed",
     [v("r"), v("f")],
     [
       lit("moduleExport", v("m"), v("n"), v("f")),
@@ -1083,7 +1108,7 @@ const STATED_RULES = [
   // The same, for a language whose adapter writes the import down as a
   // declaration and the call's callee as the name referring to it.
   rule(
-    "callsFunction",
+    "callsNamed",
     [v("r"), v("f")],
     [
       lit("moduleExport", v("m"), v("n"), v("f")),
@@ -1095,6 +1120,16 @@ const STATED_RULES = [
   // `const f = (x) => ...` declares the name and puts the parameters on
   // the arrow, so everything above arrives at the declaration and
   // `paramOf` is about the arrow. One binds hop joins the two.
+  rule(
+    "callsNamed",
+    [v("r"), v("f")],
+    [lit("binds", v("g"), v("f")), lit("callsNamed", v("r"), v("g"))],
+  ),
+
+  // Every one of those, and the binds hop again over the whole
+  // relation, so a property holding a name for a function is reached
+  // the way it was before the two were told apart.
+  rule("callsFunction", [v("r"), v("f")], [lit("callsNamed", v("r"), v("f"))]),
   rule(
     "callsFunction",
     [v("r"), v("f")],

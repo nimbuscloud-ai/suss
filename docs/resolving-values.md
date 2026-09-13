@@ -51,7 +51,7 @@ Three layers do the work.
 
   <rect class="box" x="60" y="220" width="540" height="86" rx="6" />
   <text class="label" x="330" y="242" text-anchor="middle">2. One rule set joins the facts into a value graph</text>
-  <text class="note" x="330" y="260" text-anchor="middle">146 rules. 17 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
+  <text class="note" x="330" y="260" text-anchor="middle">150 rules. 17 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
   <text class="note" x="330" y="277" text-anchor="middle">reaches is the transitive closure of those hops, and it records</text>
   <text class="note" x="330" y="294" text-anchor="middle">the strongest kind of step the walk took.</text>
 
@@ -160,7 +160,7 @@ explanation each.
 
 ## Layer 2: one rule set makes a graph
 
-`packages/resolution/src/index.ts` contains 146 rules and no code.
+`packages/resolution/src/index.ts` contains 150 rules and no code.
 17 of them derive `stepsTo(x, y, kind)`, which says the value `x` leads
 to the value `y` in one hop. Fifteen of those are stated as `hop` and
 given a `stepsTo` twin, since a walk under a receiver context reads
@@ -224,14 +224,19 @@ under a site is that site, so `this.client` inside `items` is the client
 that construction built. A property read goes on under the site the
 object was made at, whichever site the question named. A parameter goes
 on at the arguments of the calls that run its function under that site:
-a construction runs its constructor under the site it makes, and a
-method call runs under the site its receiver is.
+a construction runs its constructor under the site it makes, a method
+call runs under the site its receiver is, and a call written as a plain
+name runs under the site the body around it has.
 
-One level of receiver is all of it. A plain function called from a
-method is entered with no site at all, so `this.client =
-axios.create(url(base))` follows `url`'s parameter back to every
-construction that reaches it, and to another class's constructions too
-once that class calls `url` as well. A condition is not read either:
+That last one is what keeps a site through a plain function. In
+`this.client = axios.create(url(base))` the call to `url` is written in
+the constructor, so `url` runs under the site being made and its
+parameter comes back to that construction's argument alone. A plain
+function calling another passes the site along the same way, however
+many of them there are. The site is lost only where a call is made
+outside every method body, and then the walk takes every caller.
+
+One level of receiver is all of it. A condition is not read either:
 `env === "prod" ? a : b` gives both branches under a site, because the
 rules record the branches and do not evaluate the comparison.
 
