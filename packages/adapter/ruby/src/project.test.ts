@@ -9,7 +9,14 @@ import { addPackWords } from "@suss/resolution";
 
 import { graphqlRubyTestPack } from "./__fixtures__/graphqlRubyPattern.js";
 import { railsTestPack } from "./__fixtures__/railsControllerPattern.js";
-import { extractRubyProject, findRubyFiles, packWordsOf } from "./project.js";
+import { writtenValueOf } from "./facts/resolve.js";
+import { parseRuby } from "./parser.js";
+import {
+  extractRubyProject,
+  factsForFile,
+  findRubyFiles,
+  packWordsOf,
+} from "./project.js";
 
 import type { ExtractionReport, TimingReport } from "@suss/extractor";
 import type { RubyPack } from "./pack.js";
@@ -773,5 +780,56 @@ describe("what a pack's storage patterns put in the facts", () => {
     const db = packFacts([{ name: "rails", protocol: "http", discovery: [] }]);
 
     expect(db.size("givesBackOne")).toBe(0);
+  });
+});
+
+describe("the facts for a single parsed file", () => {
+  const activeRecordLike: RubyPack = {
+    name: "activerecord",
+    protocol: "postgresql",
+    discovery: [],
+    storage: [
+      {
+        baseClasses: ["ActiveRecord::Base"],
+        writes: [],
+        reads: [],
+        givesBack: ["find"],
+        storageSystem: "postgresql",
+      },
+    ],
+  };
+
+  const factsFor = async (source: string, packs: readonly RubyPack[]) => {
+    const tree = await parseRuby(source);
+    return factsForFile({
+      file: "app/models/order.rb",
+      root: tree.rootNode,
+      packs,
+    });
+  };
+
+  it("reads the file's own values and the packs' words in one store", async () => {
+    const db = await factsFor(
+      ["class Order < ActiveRecord::Base", "end", ""].join("\n"),
+      [activeRecordLike],
+    );
+
+    expect(db.facts("givesBackOne").map((row) => row.map(String))).toEqual([
+      ["ActiveRecord::Base", "find"],
+    ]);
+    expect(db.size("objectValue")).toBeGreaterThan(0);
+  });
+
+  it("settles a name on the call it was written as", async () => {
+    const db = await factsFor(
+      ["conn = Faraday.new", 'conn.get("/items")', ""].join("\n"),
+      [],
+    );
+
+    const built = db.facts("call")[0];
+    expect(built, "the construction was not recorded").toBeDefined();
+    expect(writtenValueOf(db, "app/models/order.rb#conn")).toBe(
+      String(built?.[0]),
+    );
   });
 });
