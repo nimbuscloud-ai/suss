@@ -125,13 +125,14 @@ describe("ruby value facts", () => {
     const read = "value = config.host\n";
     const withArgs = "value = config.fetch(key)\n";
     expect(rows(await factsFor(read), "readsProperty")).toEqual([
-      [keyOf(read, "host"), "#config", "host"],
+      [keyOf(read, "host"), keyOf(read, "config"), "host"],
     ]);
     expect(rows(await factsFor(read), "call")).toEqual([
       [keyOf(read, "config.host"), keyOf(read, "host")],
+      [keyOf(read, "config"), "#config"],
     ]);
     expect(rows(await factsFor(withArgs), "readsProperty")).toEqual([
-      [keyOf(withArgs, "fetch"), "#config", "fetch"],
+      [keyOf(withArgs, "fetch"), keyOf(withArgs, "config"), "fetch"],
     ]);
   });
 
@@ -407,7 +408,36 @@ describe("ruby value facts", () => {
     const source = "loader.load(key)\n";
     const db = await factsFor(source);
     const [callee] = rows(db, "call").map((row) => row[1]);
-    expect(rows(db, "readsProperty")).toEqual([[callee, "#loader", "load"]]);
+    expect(rows(db, "readsProperty")).toEqual([
+      [callee, keyOf(source, "loader"), "load"],
+    ]);
+  });
+
+  it("reads a name written with no receiver off the class it is written in", async () => {
+    const source = "class Loader\n  def load\n    conn.get\n  end\nend\n";
+    const db = await factsFor(source);
+    const cls = rows(db, "objectValue")[0]?.[0];
+    expect(rows(db, "readsProperty")).toContainEqual(["#conn", cls, "conn"]);
+  });
+
+  it("takes a method's memoised connection as what the method comes back with", async () => {
+    const source = [
+      "class Loader",
+      "  def conn",
+      "    @conn ||= Faraday.new(url: BASE)",
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const cls = rows(db, "objectValue")[0]?.[0];
+    const built = keyOf(source, "Faraday.new(url: BASE)");
+    const conn = keyOf(
+      source,
+      "def conn\n    @conn ||= Faraday.new(url: BASE)\n  end",
+    );
+    expect(rows(db, "returnsValue")).toEqual([[conn, built]]);
+    expect(rows(db, "holdsProperty")).toContainEqual([cls, "@conn", built]);
   });
 
   it("says which class a class is written as extending", async () => {

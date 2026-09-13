@@ -109,12 +109,27 @@ function isMethodOfReceiver(node: RbNode): boolean {
   );
 }
 
+/** Whether this name is the receiver of a `name.method` call. */
+function isReceiverOfCall(node: RbNode): boolean {
+  const parent = node.parent;
+  return (
+    parent !== null &&
+    parent.type === "call" &&
+    field(parent, "receiver")?.id === node.id
+  );
+}
+
 /**
  * Whether Ruby runs this name rather than reading it: no local in
- * scope declares it, so it is a call of a method on `self`.
+ * scope declares it, so it is a call of a method on `self`. A receiver
+ * is one of these too, which is how a service object reaches the one
+ * connection its request methods share.
  */
 function isBareCall(node: RbNode, enclosing: RbNode | null): boolean {
-  if (node.type !== "identifier" || spellsAName(node)) {
+  if (node.type !== "identifier") {
+    return false;
+  }
+  if (spellsAName(node) && !isReceiverOfCall(node)) {
     return false;
   }
   return !isLocalName(node, node.text, enclosing);
@@ -241,6 +256,10 @@ function emitCall(emitter: Emitter, call: RbNode): void {
       valueKey(emitter, receiver),
       method.text,
     );
+  } else if (emitter.selfKey !== null) {
+    // Ruby looks a name written with no receiver up on `self`, so inside
+    // a class it finds a method that class declares.
+    add(emitter, "readsProperty", calleeKey, emitter.selfKey, method.text);
   }
 
   const args = field(call, "arguments");
