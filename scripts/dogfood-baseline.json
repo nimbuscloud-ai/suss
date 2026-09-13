@@ -2,19 +2,19 @@
   "totals": {
     "packages": 75,
     "packagesWithExports": 75,
-    "exports": 978,
-    "internal": 3444,
-    "consumers": 1952,
-    "pairs": 1940,
+    "exports": 979,
+    "internal": 3445,
+    "consumers": 1958,
+    "pairs": 1946,
     "unfollowedCalls": 509,
     "findingErrors": 0
   },
   "packages": {
     "packages/adapter/python": {
       "name": "@suss/adapter-python",
-      "exports": 58,
-      "internal": 387,
-      "consumers": 223,
+      "exports": 59,
+      "internal": 388,
+      "consumers": 225,
       "unfollowedCalls": 67
     },
     "packages/adapter/ruby": {
@@ -63,7 +63,7 @@
       "name": "@suss/client-aiohttp",
       "exports": 2,
       "internal": 0,
-      "consumers": 3,
+      "consumers": 4,
       "unfollowedCalls": 0
     },
     "packages/client/apollo": {
@@ -91,7 +91,7 @@
       "name": "@suss/client-httpx",
       "exports": 2,
       "internal": 0,
-      "consumers": 3,
+      "consumers": 4,
       "unfollowedCalls": 0
     },
     "packages/client/net-http": {
@@ -105,7 +105,7 @@
       "name": "@suss/client-requests",
       "exports": 2,
       "internal": 0,
-      "consumers": 3,
+      "consumers": 4,
       "unfollowedCalls": 0
     },
     "packages/client/web": {
@@ -497,7 +497,7 @@
       "name": "@suss/resolution",
       "exports": 23,
       "internal": 31,
-      "consumers": 85,
+      "consumers": 86,
       "unfollowedCalls": 28
     },
     "packages/runtime/node": {
