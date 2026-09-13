@@ -874,6 +874,20 @@ describe("a helper call resolved from the caller's side", () => {
     expect(reads.map((read) => read.interaction.name)).toEqual(["TABLE_NAME"]);
   });
 
+  it("does not credit the parameter with a read done by a local that shadows its name", () => {
+    const sourceFile = makeProject(`
+      function wrap(name: string): string {
+        const compute = (): string => {
+          const name = "SHADOWED";
+          return process.env[name] ?? "";
+        };
+        return compute();
+      }
+      export const table = wrap("TABLE_NAME");
+    `);
+    expect(configReadEffectsOf(recognizeWithStore(sourceFile))).toEqual([]);
+  });
+
   it("stops when a forwarded call lands on a position the callee has no parameter for", () => {
     const sourceFile = makeProject(`
       function read(key: string): string {

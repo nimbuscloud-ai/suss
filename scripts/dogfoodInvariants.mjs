@@ -26,7 +26,7 @@ import { declaredExports } from "./declaredSurface.mjs";
  * Lowering it is a fix landing. Raising it needs saying which call
  * sites arrived and why they match the rest, in the notes.
  */
-const KNOWN_UNPAIRED_CONSUMERS = 11;
+const KNOWN_UNPAIRED_CONSUMERS = 12;
 
 /**
  * Every function a package says it exports has a provider summary.

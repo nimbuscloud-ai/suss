@@ -420,7 +420,7 @@ function reachesEnvRead(
       continue;
     }
 
-    const direct = directEnvRead(wanted.fn, parameter.getName());
+    const direct = directEnvRead(wanted.fn, parameter);
     if (direct !== null) {
       return direct;
     }
@@ -451,7 +451,7 @@ function reachesEnvRead(
  */
 function directEnvRead(
   fn: FunctionLike,
-  name: string,
+  parameter: ParameterDeclaration,
 ): { defaulted: boolean } | null {
   for (const access of fn.getDescendantsOfKind(
     SyntaxKind.ElementAccessExpression,
@@ -460,7 +460,11 @@ function directEnvRead(
       continue;
     }
     const argument = access.getArgumentExpression();
-    if (argument !== undefined && argument.getText() === name) {
+    if (
+      argument !== undefined &&
+      N.isIdentifier(argument) &&
+      symbolBehind(argument)?.getValueDeclaration() === parameter
+    ) {
       return { defaulted: isDefaultedAt(access) };
     }
   }

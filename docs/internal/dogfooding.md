@@ -183,7 +183,7 @@ factories in the TypeScript adapter): the method exists and pairs
 when something calls it, and today nothing outside the package
 does.
 
-**The 11 unmatched consumers ask for a method that exists only on a
+**The 12 unmatched consumers ask for a method that exists only on a
 value's declared return type.** `SuppressionFileSchema.safeParse(...)`
 and `IntentDocSchema.safeParse(...)` both call a method zod puts on
 every schema object, which comes from the imported `ZodType` type
@@ -197,8 +197,12 @@ parameter, not an object literal a factory constructed. `@suss/runtime-node`'s
 `findEnclosingFunction(node).getParameters()`; `findEnclosingFunction`
 returns whichever function-shaped ancestor it walked to, and
 `getParameters` is a method ts-morph declares on that node's type, not
-one the adapter's own code builds. The remaining six are the same
-thing in three more packs: `propertyOf(...).getText()` and
+one the adapter's own code builds. `forwardedParameter` and, since it stopped matching a parameter by its
+spelling and started comparing declarations, `directEnvRead` both also
+call `symbolBehind(reference)?.getValueDeclaration()`, the same shape
+one call further in: `symbolBehind` gives a ts-morph symbol, and
+`getValueDeclaration` is that symbol's own method. The remaining six
+are the same thing in three more packs: `propertyOf(...).getText()` and
 `propertyValueOf(...).getText()` in `@suss/contract-storybook`,
 `writtenNodeOf(...).getExpression()`, `writtenNodeOf(...).getArguments()`
 and `arrayLiteralOf(...).getElements()` in `@suss/framework-drizzle`,
