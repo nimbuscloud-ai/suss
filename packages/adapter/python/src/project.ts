@@ -168,11 +168,11 @@ export interface FileFactsOptions {
 
 /**
  * The facts for a single parsed file, with the evaluator bound to them,
- * for a caller that has one file and no project. A pack's own
- * tests need these: what built a receiver is an answer the rules give,
- * and without facts they have nothing to give it from. A project run
- * emits the same facts across every file at once, so a name written in
- * another file resolves there and never here.
+ * for a caller that has one file and no project. A pack's own tests need
+ * these: what built a receiver is an answer the rules give, and without
+ * facts they have nothing to give it from. A project run emits the same
+ * facts across every file at once, so a name written in another file
+ * resolves there and never here.
  */
 export function factsForFile(options: FileFactsOptions): Database {
   const db = new Database();
