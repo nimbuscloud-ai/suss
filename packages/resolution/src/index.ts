@@ -679,8 +679,8 @@ export const RESOLUTION_RULES = [
     [lit("givesBack", v("x"), v("obj")), lit("objectValue", v("obj"))],
   ),
   // A construction is the object it made, and so is any name for it.
-  // The class stays an answer too, and both give the same rows until
-  // step 3 of #1067 puts a context on them.
+  // The class stays an answer too, so an instance whose site is not in
+  // the run still reads what the class stores.
   rule(
     "objectOf",
     [v("site"), v("site")],
@@ -791,8 +791,7 @@ export const RESOLUTION_RULES = [
     "constructed association",
   ),
   // What the constructor put on the receiver. The class is the object
-  // for an instance whose own site is not in the run, and step 3 of
-  // #1067 narrows that to the empty context.
+  // for an instance whose own site is not in the run.
   rule(
     "contains",
     [v("cls"), v("n"), v("held")],
