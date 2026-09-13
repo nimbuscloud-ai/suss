@@ -436,6 +436,23 @@ describe("a class the caller makes one of", () => {
       ),
     ).toEqual([]);
   });
+
+  // const app = new App(); `app` is written as two things at once, the
+  // construction and the class it made one of. See issue #1055, item 8.
+  it.skip("is written as both the construction and the class it made one of", () => {
+    expect(
+      writtenAsOf(
+        [
+          ["objectValue", "App"],
+          ["binds", "AppRef", "App"],
+          ["call", "made", "AppRef"],
+          ["writtenValue", "made"],
+          ["binds", "app", "made"],
+        ],
+        "app",
+      ),
+    ).toEqual(["made"]);
+  });
 });
 
 describe("what a call gives back", () => {

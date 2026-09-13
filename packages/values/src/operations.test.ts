@@ -15,10 +15,12 @@ import {
   percentFormatted,
   plus,
   readableFallback,
+  startsWith,
   stripped,
   isPresent as takesLeftWhenPresent,
 } from "./operations.js";
 import {
+  concat,
   constant,
   hole,
   holePiece,
@@ -152,6 +154,48 @@ describe("equals and negated", () => {
     expect(negated(text(""))).toEqual(constant(true));
     expect(negated(text("a"))).toEqual(constant(false));
     expect(negated(hole("x"))).toEqual(hole("value"));
+  });
+});
+
+describe("startsWith", () => {
+  it("settles yes when the whole value is known and matches", () => {
+    expect(startsWith(text("/api/items"), "/api")).toEqual(constant(true));
+  });
+
+  it("settles no when the whole value is known and does not match", () => {
+    expect(startsWith(text("/other"), "/api")).toEqual(constant(false));
+  });
+
+  it("settles no when the whole value is known and shorter than the literal", () => {
+    expect(startsWith(text("/a"), "/api")).toEqual(constant(false));
+  });
+
+  it("settles no when a short settled head already mismatches, tail or not", () => {
+    expect(startsWith(concat([text("/o"), hole("id")]), "/api")).toEqual(
+      constant(false),
+    );
+  });
+
+  it("decides from a settled head long enough to answer, with an unknown tail", () => {
+    expect(startsWith(concat([text("/api/"), hole("id")]), "/api")).toEqual(
+      constant(true),
+    );
+    expect(startsWith(concat([text("/other/"), hole("id")]), "/api")).toEqual(
+      constant(false),
+    );
+  });
+
+  it("is unknown when the head is too short to decide and a hole could still complete it", () => {
+    expect(startsWith(concat([hole("prefix"), text("api")]), "/api")).toEqual(
+      hole("value"),
+    );
+    expect(startsWith(concat([text("/a"), hole("id")]), "/api")).toEqual(
+      hole("value"),
+    );
+  });
+
+  it("is unknown for a value that never settles to a string", () => {
+    expect(startsWith(constant(1), "/api")).toEqual(hole("value"));
   });
 });
 

@@ -59,8 +59,10 @@ keeps the identity of what it stores. A row that copies instead, the
 way `concat` does, calls `contentOf(arg)` to read what is behind it.
 
 `operations.ts` has the building blocks a row usually needs: `plus`,
-`appended`, `extended`, `joined`, `equals`, `negated`, `fallback` and
-`isPresent`.
+`appended`, `extended`, `joined`, `equals`, `startsWith`, `negated`,
+`fallback` and `isPresent`. `startsWith` reads only as much of a
+concatenation's settled head as it needs to answer, so a value with an
+unresolved tail can still decide.
 
 ## Spelling a route path
 
