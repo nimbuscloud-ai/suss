@@ -234,6 +234,30 @@ describe("what a class's bodies store on the receiver", () => {
     ).toEqual(["built()", "plainCall()", "top()"]);
   });
 
+  it("states one store per body when the constructor and a method write one field", () => {
+    const { db, table } = factsFor({
+      "/mod.ts": [
+        "declare function create(): string;",
+        "declare function warm(): string;",
+        "export class Api {",
+        "  private client!: string;",
+        "  constructor() { this.client = create(); }",
+        "  prime() { this.client = warm(); }",
+        "}",
+        "export const v1 = new Api();",
+        "",
+      ].join("\n"),
+    });
+
+    const stored = rows(db, table, "storesProperty");
+    expect(stored.map((row) => [row[1], row[2]])).toEqual([
+      ["client", "create()"],
+      ["client", "warm()"],
+    ]);
+    expect(stored[0]?.[0]?.startsWith("export class Api {")).toBe(true);
+    expect(stored[1]?.[0]).toBe("prime() { this.client = warm(); }");
+  });
+
   it("settles two stores to one name in one body on the last of them", () => {
     const { db, table } = factsFor({
       "/mod.ts": [

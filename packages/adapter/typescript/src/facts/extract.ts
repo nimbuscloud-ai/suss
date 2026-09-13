@@ -1033,12 +1033,6 @@ function emitFieldStores(
   name: string,
   declaration: FieldDeclaration,
 ): void {
-  // A field two bodies write could be either value, and the source does
-  // not say which of them ran last, so the class states nothing rather
-  // than give back whichever body a reader can follow.
-  if (settledFieldValue(declaration) === null) {
-    return;
-  }
   for (const store of storesToField(declaration)) {
     const settled = settledWrite(store.values, store.inOrder);
     if (settled === null) {
