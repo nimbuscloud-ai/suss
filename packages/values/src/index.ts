@@ -8,7 +8,6 @@ export {
   type CallInput,
   type CallOutput,
   type Declaration,
-  type DestructuredArgument,
   type Element,
   type Expression,
   expressionBodyOf,

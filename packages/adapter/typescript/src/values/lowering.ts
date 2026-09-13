@@ -480,7 +480,8 @@ function functionOf(node: Node): FunctionShape<Node> | null {
  * binding pattern binds one name per property, each carrying the
  * properties to read off the argument, so a call site can fill them.
  * An array pattern binds nothing, since the evaluator reads a property
- * by name.
+ * by name. The position of the argument comes with each entry, because
+ * a pattern that binds two names shifts every parameter after it.
  */
 function parametersOf(
   parameter: ParameterDeclaration,
@@ -489,7 +490,11 @@ function parametersOf(
   const nameNode = parameter.getNameNode();
   if (Node.isIdentifier(nameNode)) {
     return [
-      { name: nameNode.getText(), default: parameter.getInitializer() ?? null },
+      {
+        name: nameNode.getText(),
+        default: parameter.getInitializer() ?? null,
+        position,
+      },
     ];
   }
   // A pattern with a default of its own would need the properties read
@@ -524,7 +529,8 @@ function destructuredNames(
         {
           name: nameNode.getText(),
           default: element.getInitializer() ?? null,
-          from: { position, path },
+          position,
+          path,
         },
       ];
     }

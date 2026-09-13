@@ -523,6 +523,18 @@ describe("functions", () => {
     ).toBe("/api/items");
   });
 
+  it("reads a plain parameter that a pattern of two shifted", () => {
+    expect(
+      literal(`
+        type Options = { prefix: string; method: string };
+        function route({ prefix, method }: Options, suffix: string): string {
+          return method + " " + prefix + suffix;
+        }
+        export const subject = route({ prefix: "/api", method: "GET" }, "/items");
+      `),
+    ).toBe("GET /api/items");
+  });
+
   it("reads a constructed value as unknown", () => {
     expect(subjectOf(`export const subject = new URL("/a");`).kind).toBe(
       "hole",

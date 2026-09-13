@@ -50,7 +50,12 @@ function destructured(
   path: string[],
   fallback: TestNode | null = null,
 ): Parameter<TestNode> {
-  return { name, default: fallback, from: { position, path } };
+  return { name, default: fallback, position, path };
+}
+
+/** A plain parameter that states which argument fills it. */
+function positioned(name: string, position: number): Parameter<TestNode> {
+  return { name, default: null, position };
 }
 
 function evaluate(target: TestNode, bindings?: Record<string, Value>): Value {
@@ -451,6 +456,25 @@ describe("Evaluator", () => {
         null,
         "helper",
         [lit("/api"), record({ opts: record({ prefix: lit("/items") }) })],
+        { calls: helper },
+      );
+      module([helper, expr(target)]);
+      expect(literalOf(evaluate(target))).toBe("/api/items");
+    });
+
+    it("reads a plain parameter that a pattern of two shifted", () => {
+      const helper = fn(
+        [
+          destructured("prefix", 0, ["prefix"]),
+          destructured("method", 0, ["method"]),
+          positioned("suffix", 1),
+        ],
+        op("+", name("prefix"), name("suffix")),
+      );
+      const target = call(
+        null,
+        "helper",
+        [record({ prefix: lit("/api"), method: lit("GET") }), lit("/items")],
         { calls: helper },
       );
       module([helper, expr(target)]);

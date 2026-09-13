@@ -942,13 +942,13 @@ export class Evaluator<N extends object> {
     args: Arguments,
     state: State,
   ): Value | undefined {
-    if (parameter.from === undefined) {
-      return args.named.get(parameter.name) ?? args.positional[index];
+    const argument = args.positional[parameter.position ?? index];
+    if (parameter.path === undefined) {
+      return args.named.get(parameter.name) ?? argument;
     }
-    const argument = args.positional[parameter.from.position];
     return argument === undefined
       ? undefined
-      : this.propertyAt(argument, parameter.from.path, parameter.name, state);
+      : this.propertyAt(argument, parameter.path, parameter.name, state);
   }
 
   /**

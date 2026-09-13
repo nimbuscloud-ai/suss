@@ -18,11 +18,12 @@ function parametersOf(source: string): readonly Parameter<Node>[] {
   return shape?.parameters ?? [];
 }
 
-/** Each parameter as its name, the properties it reads, and its default. */
+/** Each parameter as its name, the argument it reads, and its default. */
 function shapesOf(source: string) {
   return parametersOf(source).map((parameter) => ({
     name: parameter.name,
-    from: parameter.from ?? null,
+    position: parameter.position ?? null,
+    path: parameter.path ?? null,
     default: parameter.default?.getText() ?? null,
   }));
 }
@@ -30,7 +31,7 @@ function shapesOf(source: string) {
 describe("parameter lowering", () => {
   it("keeps a plain parameter and its default", () => {
     expect(shapesOf(`function route(prefix = "/") { return prefix; }`)).toEqual(
-      [{ name: "prefix", from: null, default: `"/"` }],
+      [{ name: "prefix", position: 0, path: null, default: `"/"` }],
     );
   });
 
@@ -38,25 +39,15 @@ describe("parameter lowering", () => {
     expect(
       shapesOf("function route({ prefix, method }: any) { return prefix; }"),
     ).toEqual([
-      {
-        name: "prefix",
-        from: { position: 0, path: ["prefix"] },
-        default: null,
-      },
-      {
-        name: "method",
-        from: { position: 0, path: ["method"] },
-        default: null,
-      },
+      { name: "prefix", position: 0, path: ["prefix"], default: null },
+      { name: "method", position: 0, path: ["method"], default: null },
     ]);
   });
 
   it("binds a renamed property to the local name", () => {
     expect(
       shapesOf("function route({ prefix: p }: any) { return p; }"),
-    ).toEqual([
-      { name: "p", from: { position: 0, path: ["prefix"] }, default: null },
-    ]);
+    ).toEqual([{ name: "p", position: 0, path: ["prefix"], default: null }]);
   });
 
   it("gives a nested pattern a path of two", () => {
@@ -65,7 +56,8 @@ describe("parameter lowering", () => {
     ).toEqual([
       {
         name: "prefix",
-        from: { position: 0, path: ["opts", "prefix"] },
+        position: 0,
+        path: ["opts", "prefix"],
         default: null,
       },
     ]);
@@ -75,34 +67,25 @@ describe("parameter lowering", () => {
     expect(
       shapesOf(`function route({ prefix = "/" }: any) { return prefix; }`),
     ).toEqual([
-      {
-        name: "prefix",
-        from: { position: 0, path: ["prefix"] },
-        default: `"/"`,
-      },
+      { name: "prefix", position: 0, path: ["prefix"], default: `"/"` },
     ]);
   });
 
   it("reads a quoted property name", () => {
     expect(
       shapesOf(`function route({ "x-prefix": p }: any) { return p; }`),
-    ).toEqual([
-      { name: "p", from: { position: 0, path: ["x-prefix"] }, default: null },
-    ]);
+    ).toEqual([{ name: "p", position: 0, path: ["x-prefix"], default: null }]);
   });
 
-  it("says which argument a destructured name comes out of", () => {
+  it("keeps the declared position of a parameter a pattern shifted", () => {
     expect(
       shapesOf(
-        "function route(base: string, { prefix }: any) { return base; }",
+        "function route({ prefix, method }: any, suffix: string) { return suffix; }",
       ),
     ).toEqual([
-      { name: "base", from: null, default: null },
-      {
-        name: "prefix",
-        from: { position: 1, path: ["prefix"] },
-        default: null,
-      },
+      { name: "prefix", position: 0, path: ["prefix"], default: null },
+      { name: "method", position: 0, path: ["method"], default: null },
+      { name: "suffix", position: 1, path: null, default: null },
     ]);
   });
 
