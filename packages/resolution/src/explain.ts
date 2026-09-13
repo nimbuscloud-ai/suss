@@ -14,6 +14,8 @@
 
 import { ruleLabel } from "@suss/datalog";
 
+import { NAMESPACE_MEMBER_RULE } from "./index.js";
+
 import type { Atom, Proof, ProofDerived, Tuple } from "@suss/datalog";
 
 /** How a caller says an atom in source terms: a name, a file, a line. */
@@ -290,6 +292,22 @@ function importStep(proof: Proof, state: WalkState): ResolutionStep {
   };
 }
 
+/** The final hop of a `comesFrom` proof through a whole-module import. */
+function namespaceMemberStep(
+  proof: ProofDerived,
+  state: WalkState,
+): ResolutionStep {
+  const [x, module, name] = proof.tuple;
+  return {
+    from: x,
+    to: module,
+    rule: NAMESPACE_MEMBER_RULE,
+    reason: `${state.describe(x)} reads ${String(name)} off ${state.describe(module)}, which is imported whole`,
+    notes: [],
+    assumptions: [],
+  };
+}
+
 const flattenInto = (proof: Proof, state: WalkState): void => {
   if (proof.kind === "truncated") {
     state.truncated = true;
@@ -311,6 +329,10 @@ const flattenInto = (proof: Proof, state: WalkState): void => {
     return;
   }
   if (relation === "comesFrom") {
+    if (ruleLabel(proof.rule) === NAMESPACE_MEMBER_RULE) {
+      state.steps.push(namespaceMemberStep(proof, state));
+      return;
+    }
     // The last premise is the import; the one before it, when there is
     // one, is the walk that got there.
     if (proof.premises.length === 2) {

@@ -1598,6 +1598,22 @@ describe("subjectConstructionOf through a project wrapper", () => {
     ).toBe("Router()");
   });
 
+  it("resolves a name built by a member of a namespace import", () => {
+    const project = projectOf({
+      "/items.ts": `
+        import * as express from "express";
+        export const router = express.Router();
+        router.get("/:id", () => {});
+      `,
+    });
+    const store = new ResolutionStore();
+    const subject = subjectReceiverOf(project, "/items.ts", "get");
+
+    expect(
+      store.subjectConstructionOf(subject, "express", "Router")?.getText(),
+    ).toBe("express.Router()");
+  });
+
   it("declines a name bound to a wrapper whose branches build two different routers", () => {
     const project = projectOf({
       "/routers.ts": `

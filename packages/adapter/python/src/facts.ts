@@ -16,6 +16,8 @@
 // import *` for a future rule to consult when it needs to, rather than
 // expanding it here.
 
+import { NAMESPACE_IMPORT_NAME } from "@suss/resolution";
+
 import { resolveModule } from "./moduleResolver.js";
 
 import type { Database } from "@suss/datalog";
@@ -88,17 +90,24 @@ export function emitModuleImportFacts(
       if (scope.kind === "module") {
         db.add("exportsAs", [filePath, localName, nameKey]);
       }
+      // `import fastapi` brings in the whole module, and the shared
+      // rules spell that `*`, which is what turns `fastapi.APIRouter`
+      // into fastapi's own `APIRouter`.
+      const exportedName =
+        binding.kind === "import" && binding.bindsWholeModule
+          ? NAMESPACE_IMPORT_NAME
+          : importedName;
       if (resolution.status === "resolved") {
         db.add("pyImportResolved", [filePath, moduleText, resolution.file]);
         // The shared rules follow a name across files through these two, so a
         // resolved module is keyed by the file it resolved to.
-        db.add("imports", [nameKey, resolution.file, importedName]);
+        db.add("imports", [nameKey, resolution.file, exportedName]);
         continue;
       }
       // A third-party package resolves to no file, and the shared rules
       // still have to say a name came out of it: that is how `FastAPI()`
       // is told from a same-named constructor the project wrote itself.
-      db.add("imports", [nameKey, moduleText, importedName]);
+      db.add("imports", [nameKey, moduleText, exportedName]);
     }
   }
 

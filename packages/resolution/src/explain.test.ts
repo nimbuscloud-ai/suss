@@ -366,6 +366,23 @@ describe("explainResolutionProof", () => {
     expect(directExplained?.steps.map((step) => step.rule)).toEqual(["import"]);
   });
 
+  it("says a member was read off a module imported whole", () => {
+    const db = evaluated([
+      ["imports", "ns", "some-lib", "*"],
+      ["readsProperty", "member", "ns", "handler"],
+    ]);
+
+    const proof = proofOf(db, "comesFrom", ["member", "some-lib", "handler"]);
+    const explained = explainResolutionProof(proof, { describe: say });
+
+    expect(explained?.steps.map((step) => step.rule)).toEqual([
+      "namespace member",
+    ]);
+    expect(explained?.steps[0].reason).toBe(
+      "member reads handler off some-lib, which is imported whole",
+    );
+  });
+
   it("says a barrel forwards everything another module exports", () => {
     const db = evaluated([
       ["func", "daoFn"],
