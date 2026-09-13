@@ -5,6 +5,7 @@
 import { constant, lit, rule, variable as v } from "@suss/datalog";
 import {
   askResolution,
+  INSTANCE_STEP,
   resolutionProgram,
   writtenValueOf as sharedWrittenValueOf,
   VALUE_STEP,
@@ -19,7 +20,7 @@ export const RUBY_RULES = [
   // what this adds is that the callee is the class.
   rule(
     "stepsTo",
-    [v("x"), v("cls"), VALUE_STEP],
+    [v("x"), v("cls"), INSTANCE_STEP],
     [
       lit("readsProperty", v("x"), v("o"), constant("new")),
       lit("comesTo", v("o"), v("cls")),

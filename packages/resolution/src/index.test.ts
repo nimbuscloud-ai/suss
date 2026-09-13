@@ -61,6 +61,18 @@ function writtenAsOf(
     .sort();
 }
 
+/** The kinds of walk that get from one value to another. */
+function kindsReached(
+  facts: Array<[string, ...string[]]>,
+  from: string,
+  to: string,
+): string[] {
+  return derive(facts, "reaches", from)
+    .filter((t) => t[1] === to)
+    .map((t) => String(t[2]))
+    .sort();
+}
+
 /** What each call site put in a parameter, as `call:value`. */
 function perCallSite(
   facts: Array<[string, ...string[]]>,
@@ -437,10 +449,8 @@ describe("a class the caller makes one of", () => {
     ).toEqual([]);
   });
 
-  // const app = new App(). Picking the construction here without also
-  // picking the call in `%i[a b].freeze` needs a row that says which
-  // step produced it. See issue #1055.
-  it.skip("is written as both the construction and the class it made one of", () => {
+  it("is written as the construction and not the class it made one of", () => {
+    // const app = new App()
     expect(
       writtenAsOf(
         [
@@ -453,6 +463,44 @@ describe("a class the caller makes one of", () => {
         "app",
       ),
     ).toEqual(["made"]);
+  });
+
+  it("resolves a method read off a construction through the instance step", () => {
+    // new App().run()
+    expect(
+      resolutionsOf(
+        [
+          ["func", "run"],
+          ["objectValue", "App"],
+          ["holdsProperty", "App", "run", "run"],
+          ["binds", "AppRef", "App"],
+          ["call", "made", "AppRef"],
+          ["readsProperty", "callee", "made", "run"],
+        ],
+        "callee",
+      ),
+    ).toEqual(["run"]);
+  });
+
+  it("steps a declared finder to the class under the instance kind", () => {
+    // User.find(1), where a pack says find on an ActiveRecord::Base gives back one User
+    const finder: Array<[string, ...string[]]> = [
+      ["func", "touch"],
+      ["objectValue", "User"],
+      ["holdsProperty", "User", "touch", "touch"],
+      ["extendsNamed", "User", "ActiveRecord::Base"],
+      ["givesBackOne", "ActiveRecord::Base", "find"],
+      ["binds", "UserRef", "User"],
+      ["readsProperty", "findRead", "UserRef", "find"],
+      ["call", "found", "findRead"],
+    ];
+    expect(kindsReached(finder, "found", "User")).toEqual(["instance"]);
+    expect(
+      resolutionsOf(
+        [...finder, ["readsProperty", "callee", "found", "touch"]],
+        "callee",
+      ),
+    ).toEqual(["touch"]);
   });
 });
 
