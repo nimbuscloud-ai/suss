@@ -55,6 +55,11 @@ body nobody can read: `unwrapsByName(name, k)` and
 `calleeOrigin`, so a local function that happens to be spelled the same
 as the library's does not match.
 
+Every fact a pack states goes in through `addPackWords`, which takes the
+declarations in one language-neutral shape. Each adapter maps its own
+pack type onto that shape, so a new pack word is written once here
+rather than once per language.
+
 A third comes from a pack for the same reason: `givesBackOne(base, m)`
 says that calling `m` on a class whose ancestry reaches the base written
 as `base` gives back one of that class. That covers a Rails finder,
