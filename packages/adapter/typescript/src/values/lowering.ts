@@ -477,7 +477,7 @@ function functionOf(node: Node): FunctionShape<Node> | null {
 
 /**
  * The names one parameter binds. A plain name binds itself. An object
- * binding pattern binds one name per property, each carrying the
+ * binding pattern binds one name per property, and each name says which
  * properties to read off the argument, so a call site can fill them.
  * An array pattern binds nothing, since the evaluator reads a property
  * by name. The position of the argument comes with each entry, because
