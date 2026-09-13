@@ -24,6 +24,7 @@ import { createPerFileCache } from "../perFileCache.js";
 import type { NameWrite } from "@suss/resolution";
 import type {
   Expression,
+  MethodDeclaration,
   ParameterDeclaration,
   PropertyDeclaration,
   SourceFile,
@@ -77,6 +78,7 @@ export interface FieldWrites {
 const byFile = createPerFileCache<Map<Written, Write[]>>();
 const byDeclaration = new WeakMap<VariableDeclaration, BindingWrites>();
 const byField = new WeakMap<FieldDeclaration, FieldWrites>();
+const byStore = new WeakMap<FieldDeclaration, FieldStore[]>();
 
 /**
  * Every value a binding takes, the declaration's initializer first.
@@ -216,6 +218,81 @@ function writesToFieldUncached(declaration: FieldDeclaration): FieldWrites {
 }
 
 /**
+ * What one body of a class puts in a field. `method` is null for the
+ * constructor, which the field's own initializer runs alongside.
+ */
+export interface FieldStore {
+  method: MethodDeclaration | null;
+  /** As `FieldWrites.values`. */
+  values: Node[];
+  /** As `BindingWrites.inOrder`. */
+  inOrder: boolean;
+}
+
+/**
+ * What each body of the class puts in a field, so the facts can say
+ * which function stored what. A write outside the class is left out:
+ * nothing here says which object of the class it landed on.
+ */
+export function storesToField(declaration: FieldDeclaration): FieldStore[] {
+  const remembered = byStore.get(declaration);
+  if (remembered !== undefined) {
+    return remembered;
+  }
+  const answer = storesToFieldUncached(declaration);
+  byStore.set(declaration, answer);
+  return answer;
+}
+
+function storesToFieldUncached(declaration: FieldDeclaration): FieldStore[] {
+  const holder = classHolding(declaration);
+  const byBody = new Map<MethodDeclaration | null, Write[]>();
+  for (const write of assignmentsTo(declaration)) {
+    const body = bodyWriting(write.node, holder);
+    if (body === undefined) {
+      continue;
+    }
+    byBody.set(body, [...(byBody.get(body) ?? []), write]);
+  }
+
+  const first = startingValueOf(declaration);
+  if (first !== undefined && !byBody.has(null)) {
+    byBody.set(null, []);
+  }
+
+  const stores: FieldStore[] = [];
+  for (const [method, writes] of byBody) {
+    const store = storeOf(method, method === null ? first : undefined, writes);
+    if (store !== null) {
+      stores.push(store);
+    }
+  }
+  return stores;
+}
+
+/** One body's writes as a store, or null when a write states no value of its own. */
+function storeOf(
+  method: MethodDeclaration | null,
+  first: Node | undefined,
+  writes: readonly Write[],
+): FieldStore | null {
+  const values: Node[] = first === undefined ? [] : [first];
+  for (const write of writes) {
+    if (write.value === null) {
+      return null;
+    }
+    values.push(write.value);
+  }
+  return values.length === 0
+    ? null
+    : {
+        method,
+        values,
+        inOrder: writes.every((write) => runsDirectly(write.node)),
+      };
+}
+
+/**
  * The value a field has before anything assigns to it. A parameter
  * property's is the parameter, which the language sets the field to
  * before the constructor's first statement runs.
@@ -236,19 +313,46 @@ function writeRunsInConstructor(
   declaration: FieldDeclaration,
   write: Write,
 ): boolean {
-  const statement = statementOf(write.node);
-  if (statement === null) {
-    return false;
+  return (
+    bodyWriting(write.node, classHolding(declaration)) === null &&
+    runsDirectly(write.node)
+  );
+}
+
+/**
+ * The method a write to a field is written in, null for the class's own
+ * constructor, and undefined for a write anywhere else. A write inside a
+ * callback belongs to the body around the callback.
+ */
+function bodyWriting(
+  node: Node,
+  holder: Node | undefined,
+): MethodDeclaration | null | undefined {
+  for (
+    let current = node.getParent();
+    current !== undefined;
+    current = current.getParent()
+  ) {
+    if (Node.isConstructorDeclaration(current)) {
+      return current.getParent() === holder ? null : undefined;
+    }
+    if (Node.isMethodDeclaration(current)) {
+      return current.getParent() === holder ? current : undefined;
+    }
   }
-  const body = statement.getParent();
+  return undefined;
+}
+
+/** Whether a write is a statement of its body's own list, rather than one a branch runs. */
+function runsDirectly(node: Node): boolean {
+  const body = statementOf(node)?.getParent();
   if (body === undefined || !Node.isBlock(body)) {
     return false;
   }
   const owner = body.getParent();
   return (
     owner !== undefined &&
-    Node.isConstructorDeclaration(owner) &&
-    owner.getParent() === classHolding(declaration)
+    (Node.isConstructorDeclaration(owner) || Node.isMethodDeclaration(owner))
   );
 }
 

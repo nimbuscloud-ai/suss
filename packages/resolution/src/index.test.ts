@@ -83,13 +83,37 @@ function perCallSite(
     .sort();
 }
 
-/** The objects an expression refers to. */
+/** The objects an expression refers to, narrowed the way the question is. */
 function objectsOf(
+  facts: Array<[string, ...string[]]>,
+  value: string,
+): string[] {
+  const stated = new Set(
+    facts.filter(([relation]) => relation === "objectValue").map(([, o]) => o),
+  );
+  return derive(facts, "objectOf", value)
+    .map((t) => String(t[1]))
+    .filter((object) => stated.has(object))
+    .sort();
+}
+
+/** Every object an expression refers to, an allocation site included. */
+function everyObjectOf(
   facts: Array<[string, ...string[]]>,
   value: string,
 ): string[] {
   return derive(facts, "objectOf", value)
     .map((t) => String(t[1]))
+    .sort();
+}
+
+/** What an object contains, as `name:value` pairs. */
+function containedIn(
+  facts: Array<[string, ...string[]]>,
+  object: string,
+): string[] {
+  return derive(facts, "contains", object)
+    .map((t) => `${String(t[1])}:${String(t[2])}`)
     .sort();
 }
 
@@ -501,6 +525,128 @@ describe("a class the caller makes one of", () => {
         "callee",
       ),
     ).toEqual(["touch"]);
+  });
+});
+
+describe("a construction as an object of its own", () => {
+  // class Api { constructor(base) { this.client = axios.create({ baseURL: base }) }
+  // items() { return this.client.get("/items") } }, and const v1 = new Api(...)
+  const api: Array<[string, ...string[]]> = [
+    ["objectValue", "Api"],
+    ["func", "ctor"],
+    ["initializes", "Api", "ctor"],
+    ["writtenValue", "created"],
+    ["storesProperty", "ctor", "client", "created"],
+    ["func", "items"],
+    ["holdsProperty", "Api", "items", "items"],
+    ["binds", "ApiRef", "Api"],
+    ["call", "v1Site", "ApiRef"],
+    ["writtenValue", "v1Site"],
+    ["binds", "v1", "v1Site"],
+  ];
+
+  it("contains what the constructor stored, and the class's methods", () => {
+    expect(containedIn(api, "v1Site")).toEqual([
+      "client:created",
+      "items:items",
+    ]);
+  });
+
+  it("is an object of its own, and so is a name for it", () => {
+    expect(everyObjectOf(api, "v1Site")).toEqual(["Api", "v1Site"]);
+    expect(everyObjectOf(api, "v1")).toEqual(["Api", "v1Site"]);
+  });
+
+  it("reads the stored value back off a name for the construction", () => {
+    expect(
+      writtenAsOf([...api, ["readsProperty", "read", "v1", "client"]], "read"),
+    ).toEqual(["created"]);
+  });
+
+  it("reads it back off a receiver that is one of the class", () => {
+    expect(
+      writtenAsOf(
+        [
+          ...api,
+          ["instanceOf", "ctor#self", "Api"],
+          ["readsProperty", "selfClient", "ctor#self", "client"],
+        ],
+        "selfClient",
+      ),
+    ).toEqual(["created"]);
+  });
+
+  it("contains what a method other than the constructor stored", () => {
+    expect(
+      containedIn(
+        [
+          ...api,
+          ["func", "prime"],
+          ["holdsProperty", "Api", "prime", "prime"],
+          ["writtenValue", "cached"],
+          ["storesProperty", "prime", "cache", "cached"],
+        ],
+        "v1Site",
+      ),
+    ).toContain("cache:cached");
+  });
+
+  it("contains what a base class's constructor stored", () => {
+    expect(
+      containedIn(
+        [
+          ["objectValue", "Base"],
+          ["func", "baseCtor"],
+          ["initializes", "Base", "baseCtor"],
+          ["writtenValue", "created"],
+          ["storesProperty", "baseCtor", "client", "created"],
+          ["objectValue", "Sub"],
+          ["binds", "BaseRef", "Base"],
+          ["extends", "Sub", "BaseRef"],
+          ["binds", "SubRef", "Sub"],
+          ["call", "subSite", "SubRef"],
+        ],
+        "subSite",
+      ),
+    ).toEqual(["client:created"]);
+  });
+
+  it("makes a site of a finder call as well as of a construction", () => {
+    // User.find(1), where a pack says find on an ActiveRecord::Base gives
+    // back one User.
+    expect(
+      containedIn(
+        [
+          ["objectValue", "User"],
+          ["func", "userCtor"],
+          ["initializes", "User", "userCtor"],
+          ["writtenValue", "tableName"],
+          ["storesProperty", "userCtor", "table", "tableName"],
+          ["extendsNamed", "User", "ActiveRecord::Base"],
+          ["givesBackOne", "ActiveRecord::Base", "find"],
+          ["binds", "UserRef", "User"],
+          ["readsProperty", "findRead", "UserRef", "find"],
+          ["call", "found", "findRead"],
+        ],
+        "found",
+      ),
+    ).toEqual(["table:tableName"]);
+  });
+
+  it("puts a store through a name on whatever that name refers to", () => {
+    // No adapter states a store keyed by a receiver value yet; the rule
+    // is here for the one that does.
+    const written: Array<[string, ...string[]]> = [
+      ["objectValue", "Client"],
+      ["binds", "ClientRef", "Client"],
+      ["call", "clientSite", "ClientRef"],
+      ["binds", "client", "clientSite"],
+      ["writtenValue", "five"],
+      ["storesProperty", "client", "timeout", "five"],
+      ["readsProperty", "read", "client", "timeout"],
+    ];
+    expect(containedIn(written, "clientSite")).toEqual(["timeout:five"]);
+    expect(writtenAsOf(written, "read")).toEqual(["five"]);
   });
 });
 

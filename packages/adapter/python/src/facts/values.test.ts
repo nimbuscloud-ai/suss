@@ -29,6 +29,12 @@ function findFunctionNode(node: PyNode): PyNode | null {
   return null;
 }
 
+/** The source a node key points at, once `rows` has dropped the file prefix. */
+function textAt(source: string, key: string): string {
+  const [start, end] = key.slice(1).split("-").map(Number);
+  return source.slice(start, end);
+}
+
 /** The tuples of one relation, with the file prefix dropped so a test reads. */
 function rows(db: Database, relation: string): string[][] {
   return db
@@ -267,16 +273,16 @@ describe("python value facts", () => {
     ]);
   });
 
-  it("binds a method's receiver to the class it is declared in", async () => {
+  it("says a method's receiver is one of the class it is declared in", async () => {
     const db = await factsFor(
       ["class Holder:", "    def wire(self):", "        pass", ""].join("\n"),
     );
     const [cls] = rows(db, "objectValue");
     const [method] = rows(db, "func");
-    expect(rows(db, "binds")).toContainEqual([`${method?.[0]}#self`, cls?.[0]]);
+    expect(rows(db, "instanceOf")).toEqual([[`${method?.[0]}#self`, cls?.[0]]]);
   });
 
-  it("puts what a method writes to its receiver on the class", async () => {
+  it("says which method stored what on the receiver", async () => {
     const db = await factsFor(
       [
         "class Holder:",
@@ -286,9 +292,61 @@ describe("python value facts", () => {
       ].join("\n"),
     );
     const [cls] = rows(db, "objectValue");
+    const [method] = rows(db, "func");
+    expect(rows(db, "initializes")).toEqual([[cls?.[0], method?.[0]]]);
+    expect(rows(db, "storesProperty").map((row) => [row[0], row[1]])).toEqual([
+      [method?.[0], "app"],
+    ]);
     expect(rows(db, "holdsProperty").map((row) => [row[0], row[1]])).toEqual([
-      [cls?.[0], "app"],
       [cls?.[0], "__init__"],
+    ]);
+  });
+
+  it("keys a store in a method other than the constructor to that method", async () => {
+    const db = await factsFor(
+      [
+        "class Holder:",
+        "    def connect(self):",
+        "        self.app = build()",
+        "",
+      ].join("\n"),
+    );
+    const [method] = rows(db, "func");
+    expect(rows(db, "initializes")).toEqual([]);
+    expect(rows(db, "storesProperty").map((row) => [row[0], row[1]])).toEqual([
+      [method?.[0], "app"],
+    ]);
+  });
+
+  it("settles two stores to one name in one body on the last of them", async () => {
+    const source = [
+      "class Holder:",
+      "    def __init__(self):",
+      "        self.page = first()",
+      "        self.page = second()",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const stored = rows(db, "storesProperty");
+    expect(stored).toHaveLength(1);
+    expect(textAt(source, stored[0]?.[2] ?? "")).toBe("second()");
+  });
+
+  it("states both stores when a branch decides which one ran", async () => {
+    const db = await factsFor(
+      [
+        "class Holder:",
+        "    def __init__(self, flag):",
+        "        if flag:",
+        "            self.page = first()",
+        "        else:",
+        "            self.page = second()",
+        "",
+      ].join("\n"),
+    );
+    expect(rows(db, "storesProperty").map((row) => row[1])).toEqual([
+      "page",
+      "page",
     ]);
   });
 
@@ -378,7 +436,7 @@ describe("python value facts", () => {
     expect(rows(db, "binds")).toEqual([]);
   });
 
-  it("puts a value on the class only when a method writes it to its own receiver", async () => {
+  it("stores a value only when a method writes it to its own receiver", async () => {
     const db = await factsFor(
       [
         "class Holder:",
@@ -388,10 +446,7 @@ describe("python value facts", () => {
         "",
       ].join("\n"),
     );
-    // The class keeps its own methods too, so the point is that one
-    // write landed and the write to somebody else's receiver did not.
-    const held = rows(db, "holdsProperty").map((row) => String(row[1]));
-    expect(held.filter((name) => name === "app")).toEqual(["app"]);
+    expect(rows(db, "storesProperty").map((row) => row[1])).toEqual(["app"]);
   });
 
   it("says nothing about a subscript assignment", async () => {

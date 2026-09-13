@@ -96,6 +96,9 @@ export type {
 //   placeholderValue(x)         x is a written value a later write is
 //                               expected to replace, such as None
 //   holdsProperty(o, n, x)      object o holds x under the name n
+//   initializes(cls, f)         f runs when one of cls is made
+//   storesProperty(f, n, x)     f's body writes x to the receiver's n
+//   instanceOf(x, cls)          x is one of cls, and nothing says which
 //   readsProperty(x, o, n)      x is the expression o.n
 //   binds(x, y)                 the name x is declared as y
 //   endsHolding(x, y)           the name x is written more than once
@@ -152,7 +155,9 @@ export type {
 // writes it: `Foo()`, `new Foo()`, `Foo.new`. The adapter says `call`
 // about whichever of those it reads, and lists the constructor's
 // parameters as `paramOf` of the class. The hop from that call to the
-// class is an instance step.
+// class is an instance step. The receiver inside a method is one of
+// the class, and `instanceOf` says so. A property its body writes is
+// `storesProperty` about that method.
 
 import { constant, lit, rule, variable as v } from "@suss/datalog";
 
@@ -173,6 +178,12 @@ export const NAMESPACE_IMPORT = constant(NAMESPACE_IMPORT_NAME);
  * import. `explain` tells that proof from the two import ones by it.
  */
 export const NAMESPACE_MEMBER_RULE = "namespace member";
+
+/**
+ * The label on the `contains` rule that walks a class's ancestry.
+ * `explain` says a name came from a base class when it fired.
+ */
+export const BASE_CLASS_RULE = "base class";
 
 /** A step from an instance to the class it is one of. */
 export const INSTANCE_STEP = constant("instance");
@@ -283,6 +294,16 @@ export const RESOLUTION_RULES = [
       lit("objectValue", v("cls")),
     ],
     "class instance",
+  ),
+
+  // The receiver a method is called on. Being one of a class is the
+  // same hop a construction takes, so a method read off `self` finds
+  // what the class declares.
+  rule(
+    "stepsTo",
+    [v("x"), v("cls"), INSTANCE_STEP],
+    [lit("instanceOf", v("x"), v("cls"))],
+    "receiver instance",
   ),
 
   // A finder the library declares, keyed on the base a pack named so a
@@ -657,6 +678,22 @@ export const RESOLUTION_RULES = [
     [v("x"), v("obj")],
     [lit("givesBack", v("x"), v("obj")), lit("objectValue", v("obj"))],
   ),
+  // A construction is the object it made, and so is any name for it.
+  // The class stays an answer too, and both give the same rows until
+  // step 3 of #1067 puts a context on them.
+  rule(
+    "objectOf",
+    [v("site"), v("site")],
+    [lit("allocates", v("site"), v("c"))],
+  ),
+  rule(
+    "objectOf",
+    [v("o"), v("site")],
+    [
+      lit("reaches", v("o"), v("site"), VALUE_STEP),
+      lit("allocates", v("site"), v("c")),
+    ],
+  ),
 
   // Which calls a function, found by the name the call is written as
   // rather than by resolving every callee in the project. A caller knows
@@ -729,6 +766,7 @@ export const RESOLUTION_RULES = [
       lit("comesTo", v("base"), v("baseCls")),
       lit("contains", v("baseCls"), v("n"), v("held")),
     ],
+    BASE_CLASS_RULE,
   ),
   // An association is read off an instance as a property, and stating
   // it as `contains` is what puts it on the ancestry rule, so a concern
@@ -751,6 +789,63 @@ export const RESOLUTION_RULES = [
       lit("associationConstructor", v("m"), v("name")),
     ],
     "constructed association",
+  ),
+  // What the constructor put on the receiver. The class is the object
+  // for an instance whose own site is not in the run, and step 3 of
+  // #1067 narrows that to the empty context.
+  rule(
+    "contains",
+    [v("cls"), v("n"), v("held")],
+    [
+      lit("initializes", v("cls"), v("f")),
+      lit("storesProperty", v("f"), v("n"), v("held")),
+    ],
+    "constructor store",
+  ),
+  // What any other method of the class put there. Two methods writing
+  // one name give two rows, since nothing here orders them.
+  rule(
+    "contains",
+    [v("cls"), v("n"), v("held")],
+    [
+      lit("holdsProperty", v("cls"), v("m"), v("f")),
+      lit("storesProperty", v("f"), v("n"), v("held")),
+    ],
+    "method store",
+  ),
+  // A write through a name rather than through the receiver,
+  // `client.timeout = 5`, which lands on whatever that name refers to.
+  rule(
+    "contains",
+    [v("obj"), v("n"), v("held")],
+    [
+      lit("storesProperty", v("r"), v("n"), v("held")),
+      lit("objectOf", v("r"), v("obj")),
+    ],
+    "named receiver store",
+  ),
+  // Each construction is an object of its own containing what its
+  // class stores, so two sites are two objects.
+  rule(
+    "contains",
+    [v("site"), v("n"), v("held")],
+    [
+      lit("allocates", v("site"), v("cls")),
+      lit("contains", v("cls"), v("n"), v("held")),
+    ],
+    "allocated instance",
+  ),
+
+  // A call that makes one of a class. Every finder a pack declared is
+  // one too, so `User.find(1)` is a site the same way `User.new` is.
+  rule(
+    "allocates",
+    [v("site"), v("cls")],
+    [
+      lit("call", v("site"), v("c")),
+      lit("stepsTo", v("site"), v("cls"), INSTANCE_STEP),
+    ],
+    "allocation site",
   ),
 
   // The library base a class's ancestry arrives at, however many of a
@@ -952,12 +1047,16 @@ export const RESOLUTION_QUESTIONS = [
     [lit("wanted", v("x")), lit("isWrittenAs", v("x"), v("z"))],
   ),
   // A call is given no `comesTo`, so this is the only way to ask what
-  // object one arrives at, and without it a demand-driven run derives
-  // `objectOf` nowhere.
+  // object one arrives at, and a demand-driven run derives `objectOf`
+  // nowhere without it. An allocation site is not one of the answers.
   rule(
     "wantedObjectOf",
     [v("x"), v("z")],
-    [lit("wanted", v("x")), lit("objectOf", v("x"), v("z"))],
+    [
+      lit("wanted", v("x")),
+      lit("objectOf", v("x"), v("z")),
+      lit("objectValue", v("z")),
+    ],
   ),
   // The same for the function a call returns: `app.use(requireCaller(config))`
   // registers what the factory gives back, and `resolves` on the call

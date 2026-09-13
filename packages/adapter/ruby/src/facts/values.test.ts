@@ -166,13 +166,13 @@ describe("ruby value facts", () => {
     ]);
   });
 
-  it("keeps a memoised instance variable under the class that writes it", async () => {
+  it("keeps a memoised instance variable under the method that writes it", async () => {
     const source =
       "class C\n  def conn\n    @conn ||= Faraday.new\n  end\nend\n";
     const db = await factsFor(source);
-    const [classKey] = rows(db, "objectValue")[0] ?? [];
-    expect(rows(db, "holdsProperty")).toContainEqual([
-      classKey,
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "storesProperty")).toContainEqual([
+      funcKey,
       "@conn",
       keyOf(source, "Faraday.new"),
     ]);
@@ -437,7 +437,8 @@ describe("ruby value facts", () => {
       "def conn\n    @conn ||= Faraday.new(url: BASE)\n  end",
     );
     expect(rows(db, "returnsValue")).toEqual([[conn, built]]);
-    expect(rows(db, "holdsProperty")).toContainEqual([cls, "@conn", built]);
+    expect(rows(db, "holdsProperty")).toContainEqual([cls, "conn", conn]);
+    expect(rows(db, "storesProperty")).toContainEqual([conn, "@conn", built]);
   });
 
   it("says which class a class is written as extending", async () => {
@@ -859,14 +860,37 @@ describe("ruby value facts", () => {
     ]);
   });
 
-  it("puts what a method writes to an instance variable on the class", async () => {
+  it("says which method wrote an instance variable, and what it wrote", async () => {
     const source = "class C\n  def set\n    @thing = Entity.all\n  end\nend\n";
     const db = await factsFor(source);
+    const funcKey = rows(db, "func")[0]?.[0];
+    expect(rows(db, "storesProperty")).toEqual([
+      [funcKey, "@thing", keyOf(source, "Entity.all")],
+    ]);
+  });
+
+  it("says which method runs when one of the class is made", async () => {
+    const source =
+      "class C\n  def initialize\n    @thing = Entity.all\n  end\nend\n";
+    const db = await factsFor(source);
     const classKey = rows(db, "objectValue")[0]?.[0];
-    expect(rows(db, "holdsProperty")).toContainEqual([
-      classKey,
-      "@thing",
-      keyOf(source, "Entity.all"),
+    const funcKey = rows(db, "func")[0]?.[0];
+    expect(rows(db, "initializes")).toEqual([[classKey, funcKey]]);
+  });
+
+  it("settles two writes in one body on the last of them", async () => {
+    const source = [
+      "class C",
+      "  def set",
+      "    @thing = First.all",
+      "    @thing = Second.all",
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    expect(rows(db, "storesProperty").map((row) => row[2])).toEqual([
+      keyOf(source, "Second.all"),
     ]);
   });
 
@@ -892,7 +916,7 @@ describe("ruby value facts", () => {
     ].join("\n");
     const db = await factsFor(source);
     expect(
-      rows(db, "holdsProperty")
+      rows(db, "storesProperty")
         .filter((row) => row[1] === "@thing")
         .map((row) => row[2]),
     ).toEqual([keyOf(source, "First.all"), keyOf(source, "Second.all")]);
@@ -912,7 +936,7 @@ describe("ruby value facts", () => {
     ].join("\n");
     const db = await factsFor(source);
     expect(
-      rows(db, "holdsProperty")
+      rows(db, "storesProperty")
         .filter((row) => row[1] === "@thing")
         .map((row) => row[2]),
     ).toEqual([keyOf(source, "First.all")]);
@@ -922,7 +946,7 @@ describe("ruby value facts", () => {
     const source = "class C\n  def go\n    @count += 1\n  end\nend\n";
     const db = await factsFor(source);
     expect(
-      rows(db, "holdsProperty").filter((row) => row[1] === "@count"),
+      rows(db, "storesProperty").filter((row) => row[1] === "@count"),
     ).toEqual([]);
   });
 
@@ -930,14 +954,52 @@ describe("ruby value facts", () => {
     const source = "class C\n  def go\n    @thing ||= Entity.all\n  end\nend\n";
     const db = await factsFor(source);
     expect(
-      rows(db, "holdsProperty")
+      rows(db, "storesProperty")
         .filter((row) => row[1] === "@thing")
         .map((row) => row[2]),
     ).toEqual([keyOf(source, "Entity.all")]);
   });
 
+  it("states both writes when a branch decides which one ran", async () => {
+    const source = [
+      "class C",
+      "  def set",
+      "    if flag",
+      "      @thing = First.all",
+      "    else",
+      "      @thing = Second.all",
+      "    end",
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    expect(rows(db, "storesProperty").map((row) => row[2])).toEqual([
+      keyOf(source, "First.all"),
+      keyOf(source, "Second.all"),
+    ]);
+  });
+
+  it("puts a write a class body runs itself on the class", async () => {
+    const source = [
+      "class C",
+      "  if flag",
+      "    @thing = Entity.all",
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const classKey = rows(db, "objectValue")[0]?.[0];
+    expect(rows(db, "holdsProperty")).toEqual([
+      [classKey, "@thing", keyOf(source, "Entity.all")],
+    ]);
+    expect(db.size("storesProperty")).toBe(0);
+  });
+
   it("says nothing about an instance variable written outside any class", async () => {
     const db = await factsFor("@thing = Entity.all\n@thing\n");
+    expect(db.size("storesProperty")).toBe(0);
     expect(db.size("holdsProperty")).toBe(0);
     expect(rows(db, "readsProperty").map((row) => row[2])).not.toContain(
       "@thing",
