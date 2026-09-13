@@ -53,6 +53,11 @@ export function httpxClient(): PythonPack {
         },
       },
     ],
+    // Both classes document `__enter__` as giving back the client, so
+    // `with httpx.Client() as c` puts the constructed client in c.
+    contextManagers: [
+      { module: "httpx", returnsSelf: ["Client", "AsyncClient"] },
+    ],
   };
 }
 

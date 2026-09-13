@@ -51,7 +51,7 @@ Three layers do the work.
 
   <rect class="box" x="60" y="220" width="540" height="86" rx="6" />
   <text class="label" x="330" y="242" text-anchor="middle">2. One rule set joins the facts into a value graph</text>
-  <text class="note" x="330" y="260" text-anchor="middle">68 rules. Fourteen of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
+  <text class="note" x="330" y="260" text-anchor="middle">69 rules. Fifteen of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
   <text class="note" x="330" y="277" text-anchor="middle">reaches is the transitive closure of those hops, and it records</text>
   <text class="note" x="330" y="294" text-anchor="middle">whether the walk ran a call along the way.</text>
 
@@ -149,15 +149,21 @@ adapters. `unwrapsByName`, `wrapperModule` and the `givesBackOne` family
 come from a pack's declarations, so no source file contains them at
 all.
 
+Some of them take both. Python's `with httpx.Client() as client` gives
+`entersAs(client, the call)` from the adapter, which says only that the
+block opened over that call. What `__enter__` gave back is the
+library's to decide, so the pack says `entersAsSelf(httpx, Client)` and
+the rule that joins the two is what makes `client` the client.
+
 `packages/resolution/README.md` lists the vocabulary with a line of
 explanation each.
 
 ## Layer 2: one rule set makes a graph
 
-`packages/resolution/src/index.ts` contains 68 rules and no code.
-Fourteen of them derive `stepsTo(x, y, kind)`, which says the value `x`
+`packages/resolution/src/index.ts` contains 69 rules and no code.
+Fifteen of them derive `stepsTo(x, y, kind)`, which says the value `x`
 leads to the value `y` in one hop. The TypeScript adapter adds a
-fifteenth for `.bind`.
+sixteenth for `.bind`.
 
 ```ts
 rule(

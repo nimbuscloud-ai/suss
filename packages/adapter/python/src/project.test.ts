@@ -8,6 +8,7 @@ import { summaryIdentifier } from "@suss/behavioral-ir";
 import { Database } from "@suss/datalog";
 
 import {
+  emitContextManagerFacts,
   emitModelQueryFacts,
   extractPythonProject,
   findPythonFiles,
@@ -1364,5 +1365,33 @@ describe("what a pack's model declarations put in the facts", () => {
     expect(db.size("givesBackOneOfArgument")).toBe(0);
     expect(db.size("givesBackOneOfImport")).toBe(0);
     expect(db.size("associationConstructor")).toBe(0);
+  });
+});
+
+describe("what a pack's context manager declarations put in the facts", () => {
+  it("keys every class the declaration lists by its module", () => {
+    const db = new Database();
+    emitContextManagerFacts(db, [
+      {
+        name: "httpx",
+        protocol: "http",
+        discovery: [],
+        contextManagers: [
+          { module: "httpx", returnsSelf: ["Client", "AsyncClient"] },
+        ],
+      },
+    ]);
+
+    expect(db.facts("entersAsSelf").map((row) => row.map(String))).toEqual([
+      ["httpx", "Client"],
+      ["httpx", "AsyncClient"],
+    ]);
+  });
+
+  it("says nothing for a pack that declares no context manager at all", () => {
+    const db = new Database();
+    emitContextManagerFacts(db, [flaskRestxLike]);
+
+    expect(db.size("entersAsSelf")).toBe(0);
   });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { clientCallUnits } from "./clientCalls.js";
 import { parsePython } from "./parser.js";
+import { factsForFile } from "./project.js";
 import { bindModule } from "./scope.js";
 
 import type { RawCodeStructure } from "@suss/extractor";
@@ -27,16 +28,26 @@ const PACK: PythonPack = {
   protocol: "http",
   discovery: [],
   clients: [REQUEST_CALLS],
+  contextManagers: [{ module: "httpclient", returnsSelf: ["Session"] }],
 };
 
+const FILE = "app/orders.py";
+
+/**
+ * The units, with the facts a project run hands discovery, since the
+ * rules are what say a receiver was built by the library's constructor.
+ */
 async function unitsIn(
   source: string,
   pattern: PyClientCall = REQUEST_CALLS,
 ): Promise<RawCodeStructure[]> {
   const tree = await parsePython(source);
   const root = tree.rootNode;
-  return clientCallUnits(root, bindModule(root), PACK, pattern, {
-    filePath: "app/orders.py",
+  const module = bindModule(root);
+  const facts = factsForFile({ file: FILE, root, module, packs: [PACK] });
+  return clientCallUnits(root, module, PACK, pattern, {
+    filePath: FILE,
+    facts,
   });
 }
 
@@ -194,6 +205,34 @@ describe("a function that calls a request function", () => {
         "",
         "def load():",
         '    return getattr(httpclient, "get")("/orders")',
+      ].join("\n"),
+    );
+
+    expect(units).toEqual([]);
+  });
+
+  it("reads a session call on a receiver a with block opened", async () => {
+    const units = await unitsIn(
+      [
+        "import httpclient",
+        "",
+        "def load():",
+        "    with httpclient.Session() as session:",
+        '        return session.get("/orders")',
+      ].join("\n"),
+    );
+
+    expect(boundary(units)).toEqual({ method: "GET", path: "/orders" });
+  });
+
+  it("says nothing about a with block over a constructor no pack declared", async () => {
+    const units = await unitsIn(
+      [
+        "import contextlib",
+        "",
+        "def load():",
+        "    with contextlib.nullcontext() as session:",
+        '        return session.get("/orders")',
       ].join("\n"),
     );
 

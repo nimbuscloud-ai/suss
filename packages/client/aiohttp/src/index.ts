@@ -42,6 +42,9 @@ export function aiohttpClient(): PythonPack {
         receiverConstructors: ["ClientSession"],
       },
     ],
+    // `ClientSession.__aenter__` returns the session, so `async with
+    // aiohttp.ClientSession() as s` puts the constructed session in s.
+    contextManagers: [{ module: "aiohttp", returnsSelf: ["ClientSession"] }],
   };
 }
 

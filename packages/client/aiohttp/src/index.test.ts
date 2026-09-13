@@ -1,17 +1,27 @@
 import { describe, expect, it } from "vitest";
 
-import { bindModule, discoverUnits, parsePython } from "@suss/adapter-python";
+import {
+  bindModule,
+  discoverUnits,
+  factsForFile,
+  parsePython,
+} from "@suss/adapter-python";
 
 import { aiohttpClient } from "./index.js";
 
 import type { RawCodeStructure } from "@suss/extractor";
 
+const FILE = "app/orders.py";
+
 async function unitsIn(source: string): Promise<RawCodeStructure[]> {
   const tree = await parsePython(source);
   const root = tree.rootNode;
-  return discoverUnits(root, bindModule(root), {
-    packs: [aiohttpClient()],
-    filePath: "app/orders.py",
+  const module = bindModule(root);
+  const packs = [aiohttpClient()];
+  return discoverUnits(root, module, {
+    packs,
+    filePath: FILE,
+    facts: factsForFile({ file: FILE, root, module, packs }),
   });
 }
 

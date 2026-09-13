@@ -1198,6 +1198,54 @@ describe("a bare function a pack says gives back one of the class it was passed"
   });
 });
 
+/** `with httpx.Client() as client`, read off a whole-module import. */
+const ENTERED_CLIENT: Array<[string, ...string[]]> = [
+  ["imports", "#httpx", "httpx", "*"],
+  ["readsProperty", "clientCallee", "#httpx", "Client"],
+  ["writtenValue", "clientCall"],
+  ["call", "clientCall", "clientCallee"],
+  ["entersAs", "#client", "clientCall"],
+];
+
+describe("a name a block opens over a call", () => {
+  it("is the call, when a pack says entering one gives back the object", () => {
+    expect(
+      writtenAsOf(
+        [...ENTERED_CLIENT, ["entersAsSelf", "httpx", "Client"]],
+        "#client",
+      ),
+    ).toEqual(["clientCall"]);
+  });
+
+  it("is the call for a constructor imported by name as well", () => {
+    expect(
+      writtenAsOf(
+        [
+          ["imports", "#Client", "httpx", "Client"],
+          ["writtenValue", "clientCall"],
+          ["call", "clientCall", "#Client"],
+          ["entersAs", "#client", "clientCall"],
+          ["entersAsSelf", "httpx", "Client"],
+        ],
+        "#client",
+      ),
+    ).toEqual(["clientCall"]);
+  });
+
+  it("is nothing when no pack said what entering the call gives back", () => {
+    expect(writtenAsOf(ENTERED_CLIENT, "#client")).toEqual([]);
+  });
+
+  it("is nothing when the pack declared a different class of the module", () => {
+    expect(
+      writtenAsOf(
+        [...ENTERED_CLIENT, ["entersAsSelf", "httpx", "AsyncClient"]],
+        "#client",
+      ),
+    ).toEqual([]);
+  });
+});
+
 describe("where a name comes from", () => {
   it("answers with the module an import names", () => {
     expect(

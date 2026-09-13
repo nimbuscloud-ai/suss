@@ -47,6 +47,8 @@ export interface PythonPack {
   storage?: StoragePattern[];
   /** Which of the library's calls give back one of a model class. The README says what a chain of them composes into. */
   models?: PyModelQueries[];
+  /** Which of the library's classes hand a `with` block the object itself. */
+  contextManagers?: PyContextManager[];
   /** How the library lets a project hand the database SQL it wrote itself. */
   rawSql?: RawSqlPattern[];
 }
@@ -156,6 +158,19 @@ export interface RawSqlPattern {
 export type PythonDiscoveryPattern =
   | DecoratedClassRoute
   | DecoratedFunctionRoute;
+
+/**
+ * A class whose `__enter__` gives back the object it was called on, so
+ * `with X() as y` makes y the `X()` the block opened. Python
+ * lets `__enter__` return anything, so only the library that wrote the
+ * class can say this, and a pack declares it for its own classes alone.
+ */
+export interface PyContextManager {
+  /** The module the classes come from, `httpx`. */
+  module: string;
+  /** The class names the library documents as returning self. */
+  returnsSelf: string[];
+}
 
 /**
  * The callables a library gives a project for making a request. A

@@ -856,6 +856,8 @@ interface RawWrite {
   at: PyNode;
   /** Whether the write is a direct statement of the scope's own statement list. */
   direct: boolean;
+  /** The call a `with` opened, when this write is the `as` target of one. */
+  entered?: PyNode;
 }
 
 /** What a scope's own statements write, and the names that keeps in the scope. */
@@ -983,18 +985,27 @@ function identifierOf(node: PyNode): PyNode | null {
   return children(node).find((child) => child.type === "identifier") ?? null;
 }
 
-/** `with open(p) as fh` and `except E as err`: what the name takes is the construct's to decide. */
+/**
+ * `with open(p) as fh` and `except E as err`: what the name takes is the
+ * construct's to decide. A `with` over a call hands the name whatever
+ * `__enter__` gave back, which is the call's object for some libraries
+ * and something else for others, so the call is recorded and a pack
+ * decides whether the two are the same thing.
+ */
 function readAsPattern(node: PyNode, sink: WriteSink): void {
   const target = field(node, "alias") ?? children(node)[1];
   const name = target === undefined ? null : identifierOf(target);
   if (name === null) {
     return;
   }
+  const opened = children(node)[0];
+  const namesOneThing = target !== undefined && target.text === name.text;
   sink.record(name.text, {
     value: null,
     given: null,
     at: node,
     direct: false,
+    ...(namesOneThing && opened?.type === "call" ? { entered: opened } : {}),
   });
 }
 
@@ -1284,7 +1295,7 @@ function emitScopeWrites(
 /**
  * Each value a write put in an unsettled name. A write that narrows the
  * name is left out, and a write with no value of its own, a loop target
- * or a `with ... as`, is what `writesUnstated` says.
+ * or an `except ... as`, is what `writesUnstated` says.
  */
 function emitCandidates(
   emitter: Emitter,
@@ -1294,6 +1305,12 @@ function emitCandidates(
 ): void {
   for (const write of writes) {
     if (write.value === null) {
+      // The name a `with` opens is the call's `__enter__`, which is a
+      // value the source states rather than one it left out.
+      if (write.entered !== undefined) {
+        add(emitter, "entersAs", key, valueKey(emitter, write.entered));
+        continue;
+      }
       // A parameter arrives with a value the source spells nowhere, and
       // that is the caller's rather than something this scope left out.
       if (write.given === null) {

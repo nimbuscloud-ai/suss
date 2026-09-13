@@ -700,6 +700,35 @@ describe("python value facts", () => {
     );
   });
 
+  it("says which call a with-target entered, instead of that it states nothing", async () => {
+    const db = await factsFor(
+      [
+        "def handler():",
+        "    with httpx.Client() as client:",
+        "        return client",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    const [callKey] = rows(db, "call")[0] ?? [];
+    expect(rows(db, "entersAs")).toEqual([[`${funcKey}#client`, callKey]]);
+    expect(rows(db, "writesUnstated")).toEqual([]);
+  });
+
+  it("says a with-target states nothing when it is not opened over a call", async () => {
+    const db = await factsFor(
+      [
+        "def handler(source):",
+        "    with source as reader:",
+        "        return reader",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "entersAs")).toEqual([]);
+    expect(rows(db, "writesUnstated")).toEqual([[`${funcKey}#reader`]]);
+  });
+
   it("makes an except-target the function's own name with no value settled", async () => {
     const db = await factsFor(
       [

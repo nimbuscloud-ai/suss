@@ -109,8 +109,12 @@ export type {
 //   mayHold(x, y)               one write to x wrote y, and nothing
 //                               says which write ran last
 //   writesUnstated(x)           a write to x states no value at all
+//   entersAs(y, r)              y is the name a block opens over the
+//                               call r, so entering r is what wrote y
 //   givesBackOne(base, m)       a pack's word: m on a class reaching base
 //                               gives back one of that class
+//   entersAsSelf(mod, n)        a pack's word: entering one of module
+//                               mod's n gives back that same object
 //   givesBackOneOfArgument(base, m, k)   the same, with the class at k
 //   givesBackOneOfImport(mod, n, k)      the same, for the bare
 //                               function n that module mod exports
@@ -298,6 +302,21 @@ export const RESOLUTION_RULES = [
       lit("objectOf", v("a"), v("cls")),
     ],
     "declared import finder",
+  ),
+
+  // A block opened over a library's own constructor. The pack says
+  // entering one gives back the object it built, so the name the block
+  // opens is that call.
+  rule(
+    "stepsTo",
+    [v("y"), v("r"), VALUE_STEP],
+    [
+      lit("entersAs", v("y"), v("r")),
+      lit("call", v("r"), v("c")),
+      lit("comesFrom", v("c"), v("mod"), v("n")),
+      lit("entersAsSelf", v("mod"), v("n")),
+    ],
+    "context manager returns self",
   ),
 
   // Wrapper transparency, derived: calling a factory that returns a
