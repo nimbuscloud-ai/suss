@@ -141,6 +141,12 @@ const SEQUENCE_TYPES = new Set(["list", "tuple", "set"]);
 /** `*args` and `**kwargs` collect what is left rather than taking one value. */
 const SPLAT_TYPES = new Set(["list_splat_pattern", "dictionary_splat_pattern"]);
 
+/** A bare `*` or `/` divides the list into positional-only, ordinary and keyword-only groups; a call never supplies an argument for either. */
+const PARAMETER_DIVIDERS = new Set([
+  "keyword_separator",
+  "positional_separator",
+]);
+
 /**
  * What a parameter is called. `loader: ApplicationLoader` is a
  * `typed_parameter`, which the grammar gives no name field, so the name is the
@@ -162,18 +168,30 @@ export function parameterList(fn: PyNode): string[] {
   return parameterShapes(fn).map((parameter) => parameter.name);
 }
 
-/** Each parameter with the expression it defaults to, in order. `*args` and `**kwargs` are left out. */
-export function parameterShapes(fn: PyNode): Parameter<PyNode>[] {
+/**
+ * Each parameter with the expression it defaults to and the position
+ * of the argument that fills it, in order. `*args`, `**kwargs` and a
+ * bare `*` or `/` are left out; `skip` drops a method's leading
+ * receiver from both the list and the count, since a call never
+ * writes it.
+ */
+export function parameterShapes(fn: PyNode, skip = 0): Parameter<PyNode>[] {
   const params = field(fn, "parameters");
   const declared: Parameter<PyNode>[] = [];
+  let position = 0;
   for (const param of params === null ? [] : children(params)) {
-    if (SPLAT_TYPES.has(param.type)) {
+    if (SPLAT_TYPES.has(param.type) || PARAMETER_DIVIDERS.has(param.type)) {
       continue;
     }
     const name = parameterName(param);
-    if (name !== null) {
-      declared.push({ name: name.text, default: field(param, "value") });
+    if (name !== null && position >= skip) {
+      declared.push({
+        name: name.text,
+        default: field(param, "value"),
+        position: position - skip,
+      });
     }
+    position += 1;
   }
   return declared;
 }

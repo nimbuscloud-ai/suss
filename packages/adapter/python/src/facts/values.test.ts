@@ -689,6 +689,23 @@ describe("python value facts", () => {
     expect(shapes[1]?.default?.text).toBe("False");
   });
 
+  it("keeps the position of a keyword-only parameter past a bare *", async () => {
+    const tree = await parsePython("def route(a, *, b):\n    pass\n");
+    const fn = findFunctionNode(tree.rootNode);
+    if (fn === null) {
+      throw new Error("expected a function_definition node");
+    }
+    expect(
+      parameterShapes(fn).map((parameter) => ({
+        name: parameter.name,
+        position: parameter.position,
+      })),
+    ).toEqual([
+      { name: "a", position: 0 },
+      { name: "b", position: 1 },
+    ]);
+  });
+
   it("skips a dictionary child written as a spread rather than a pair", async () => {
     const db = await factsFor("config = {**other}\n");
     expect(db.size("holdsProperty")).toBe(0);

@@ -51,7 +51,7 @@ Three layers do the work.
 
   <rect class="box" x="60" y="220" width="540" height="86" rx="6" />
   <text class="label" x="330" y="242" text-anchor="middle">2. One rule set joins the facts into a value graph</text>
-  <text class="note" x="330" y="260" text-anchor="middle">70 rules. Sixteen of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
+  <text class="note" x="330" y="260" text-anchor="middle">70 rules. 16 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
   <text class="note" x="330" y="277" text-anchor="middle">reaches is the transitive closure of those hops, and it records</text>
   <text class="note" x="330" y="294" text-anchor="middle">whether the walk ran a call along the way.</text>
 
@@ -161,7 +161,7 @@ explanation each.
 ## Layer 2: one rule set makes a graph
 
 `packages/resolution/src/index.ts` contains 70 rules and no code.
-Sixteen of them derive `stepsTo(x, y, kind)`, which says the value `x`
+16 of them derive `stepsTo(x, y, kind)`, which says the value `x`
 leads to the value `y` in one hop. The TypeScript adapter adds a
 seventeenth for `.bind`.
 
@@ -361,12 +361,12 @@ binds variables. A rule that needs `comesTo(y, z)` in order to answer
 the outer one was asked for. A relation nothing asks for is not derived
 at all.
 
-The 59 rules that `RESOLUTION_RULES` and `RESOLUTION_QUESTIONS` contain
-become 125 rewritten rules over 44 demand-restricted relations. Demand
-is an ordinary fact, `wanted(x)`. Asking something new adds one more
-fact to the set, so the engine continues from where it was instead of
-starting the fixpoint over, and a caller that has read its answer can
-retract the question again.
+The rewrite turns every rule `RESOLUTION_RULES` and `RESOLUTION_QUESTIONS`
+contain into several rules of its own, one for each way a demand fact
+can reach it. Demand is an ordinary fact, `wanted(x)`. Asking something
+new adds one more fact to the set, so the engine continues from where
+it was instead of starting the fixpoint over, and a caller that has
+read its answer can retract the question again.
 
 What that saves, measured on the `createUser` question in the next
 section, over the same base facts and with the same one answer coming

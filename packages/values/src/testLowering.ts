@@ -165,8 +165,13 @@ export const fn = (
   body: TestNode[] | TestNode,
   extra: Partial<TestNode> = {},
 ): TestNode => {
-  const parameters = parameterList.map((entry) =>
-    typeof entry === "string" ? parameter<TestNode>(entry) : entry,
+  // A plain name takes its place in this list as its position; a
+  // caller that built the Parameter itself already said which
+  // argument it reads.
+  const parameters = parameterList.map((entry, position) =>
+    typeof entry === "string"
+      ? parameter<TestNode>(entry, null, position)
+      : entry,
   );
   const shape: FunctionShape<TestNode> = Array.isArray(body)
     ? { parameters, body }

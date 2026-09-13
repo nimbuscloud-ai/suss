@@ -915,8 +915,8 @@ export class Evaluator<N extends object> {
       parameters: new Set(),
     };
     // Bound in order so a default can read a parameter before it.
-    shape.parameters.forEach((parameter, i) => {
-      const passed = this.argumentFor(parameter, i, args, inner);
+    shape.parameters.forEach((parameter) => {
+      const passed = this.argumentFor(parameter, args, inner);
       const bound =
         passed ??
         (parameter.default === null
@@ -938,11 +938,10 @@ export class Evaluator<N extends object> {
   /** What a call gives a parameter, or undefined when it leaves it out. */
   private argumentFor(
     parameter: Parameter<N>,
-    index: number,
     args: Arguments,
     state: State,
   ): Value | undefined {
-    const argument = args.positional[parameter.position ?? index];
+    const argument = args.positional[parameter.position];
     if (parameter.path === undefined) {
       return args.named.get(parameter.name) ?? argument;
     }

@@ -410,7 +410,7 @@ describe("Evaluator", () => {
 
     it("takes a parameter default when the call leaves it out", () => {
       const helper = fn(
-        ["a", parameter("b", lit("/v1"))],
+        ["a", parameter("b", lit("/v1"), 1)],
         op("+", name("a"), name("b")),
       );
       const short = call(null, "helper", [lit("/api")], { calls: helper });
@@ -424,7 +424,7 @@ describe("Evaluator", () => {
 
     it("reads a default from a constant above and from an earlier parameter", () => {
       const helper = fn(
-        ["a", parameter("b", name("SUFFIX")), parameter("c", name("b"))],
+        ["a", parameter("b", name("SUFFIX"), 1), parameter("c", name("b"), 2)],
         op("+", name("a"), name("c")),
       );
       const target = call(null, "helper", [lit("/api")], { calls: helper });
@@ -434,7 +434,7 @@ describe("Evaluator", () => {
 
     it("binds a keyword argument by name ahead of position", () => {
       const helper = fn(
-        ["a", parameter("b", lit("/v1")), parameter("c", lit("/z"))],
+        ["a", parameter("b", lit("/v1"), 1), parameter("c", lit("/z"), 2)],
         op("+", op("+", name("a"), name("b")), name("c")),
       );
       const target = call(
