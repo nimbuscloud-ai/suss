@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 9561,
-      "covered": 8489,
+      "total": 9592,
+      "covered": 8519,
       "skipped": 0,
-      "pct": 88.78
+      "pct": 88.81
     },
     "statements": {
-      "total": 9657,
-      "covered": 8578,
+      "total": 9690,
+      "covered": 8610,
       "skipped": 0,
-      "pct": 88.82
+      "pct": 88.85
     },
     "functions": {
-      "total": 1470,
-      "covered": 1375,
+      "total": 1476,
+      "covered": 1381,
       "skipped": 0,
-      "pct": 93.53
+      "pct": 93.56
     },
     "branches": {
-      "total": 7416,
-      "covered": 6049,
+      "total": 7438,
+      "covered": 6070,
       "skipped": 0,
-      "pct": 81.56
+      "pct": 81.6
     },
     "branchesTrue": {
       "total": 0,
@@ -1672,9 +1672,9 @@
   "src/facts/assignments.ts": {
     "lines": {
       "total": 177,
-      "covered": 164,
+      "covered": 165,
       "skipped": 0,
-      "pct": 92.65
+      "pct": 93.22
     },
     "functions": {
       "total": 34,
@@ -1684,41 +1684,41 @@
     },
     "statements": {
       "total": 178,
-      "covered": 165,
+      "covered": 166,
       "skipped": 0,
-      "pct": 92.69
+      "pct": 93.25
     },
     "branches": {
       "total": 163,
-      "covered": 139,
+      "covered": 140,
       "skipped": 0,
-      "pct": 85.27
+      "pct": 85.88
     }
   },
   "src/facts/extract.ts": {
     "lines": {
-      "total": 500,
-      "covered": 482,
+      "total": 531,
+      "covered": 511,
       "skipped": 0,
-      "pct": 96.4
+      "pct": 96.23
     },
     "functions": {
-      "total": 54,
-      "covered": 54,
+      "total": 60,
+      "covered": 60,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 503,
-      "covered": 485,
+      "total": 536,
+      "covered": 516,
       "skipped": 0,
-      "pct": 96.42
+      "pct": 96.26
     },
     "branches": {
-      "total": 327,
-      "covered": 291,
+      "total": 349,
+      "covered": 311,
       "skipped": 0,
-      "pct": 88.99
+      "pct": 89.11
     }
   },
   "src/facts/moduleGraph.ts": {
