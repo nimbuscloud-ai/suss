@@ -32,8 +32,12 @@ import type {
 import type { PyNode } from "../parser.js";
 
 export interface EvaluationContext {
-  /** The expression a name or call resolves to through the facts, or null. */
-  writtenTo(node: PyNode): PyNode | null;
+  /**
+   * The expression a name or call resolves to through the facts, or
+   * null. With a site, only what it resolves to when the receiver
+   * behind it is the instance that site made.
+   */
+  writtenTo(node: PyNode, site?: string): PyNode | null;
   /** The function definition a call's callee resolves to, or null. */
   callable(call: PyNode): PyNode | null;
 }
@@ -84,7 +88,8 @@ export function pythonLowering(options: LoweringOptions): Lowering<PyNode> {
     statement: statementOf,
     siteOf,
     functionOf,
-    writtenTo: (node) => (context === null ? null : context.writtenTo(node)),
+    writtenTo: (node, site) =>
+      context === null ? null : context.writtenTo(node, site),
     callable: (node) => {
       if (context === null || hasDictionarySplat(node)) {
         return null;

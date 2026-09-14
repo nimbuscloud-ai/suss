@@ -143,3 +143,34 @@ describe("what a caller does with the response", () => {
     });
   });
 });
+
+describe("a class given its path prefix when it was made", () => {
+  it("is a client of one route per construction", async () => {
+    const units = await unitsIn(
+      [
+        "class Resource",
+        "  def initialize(base)",
+        "    @base = base",
+        "  end",
+        "",
+        "  def list",
+        "    Faraday.get(@base)",
+        "  end",
+        "end",
+        "",
+        'USERS = Resource.new("/users")',
+        'ORDERS = Resource.new("/orders")',
+      ].join("\n"),
+    );
+
+    expect(units.map((unit) => unit.identity.name)).toEqual(["list", "list"]);
+    expect(
+      units
+        .map((unit) => {
+          const semantics = unit.boundaryBinding?.semantics;
+          return semantics?.name === "rest" ? semantics.path : null;
+        })
+        .sort(),
+    ).toEqual(["/orders", "/users"]);
+  });
+});

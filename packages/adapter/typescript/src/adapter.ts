@@ -953,7 +953,9 @@ function extractBindingMethod(
   if (m.type === "fromArgumentProperty") {
     const arg = callSite.callExpression.getArguments()[m.position];
     const value =
-      arg === undefined ? null : stringPropertyOf(arg, m.property, resolution);
+      arg === undefined
+        ? null
+        : stringPropertyOf(arg, m.property, resolution, callSite.under);
     return value ?? m.default;
   }
   if (m.type === "literal") {
@@ -974,13 +976,15 @@ function extractBindingPath(
   }
   if (p.type === "fromArgument") {
     const arg = callSite.callExpression.getArguments()[p.position];
-    return arg === undefined ? undefined : pathFromArgument(arg, resolution);
+    return arg === undefined
+      ? undefined
+      : pathFromArgument(arg, resolution, callSite.under);
   }
   if (p.type === "fromArgumentProperty") {
     const arg = callSite.callExpression.getArguments()[p.position];
     return arg === undefined
       ? undefined
-      : pathFromProperty(arg, p.property, resolution);
+      : pathFromProperty(arg, p.property, resolution, callSite.under);
   }
   return undefined;
 }

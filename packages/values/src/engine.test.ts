@@ -774,6 +774,74 @@ describe("Evaluator", () => {
     });
   });
 
+  describe("under an allocation site", () => {
+    /** A lowering that answers a name differently per site, and says who asked. */
+    function perSite(asked: Array<string | undefined>): Lowering<TestNode> {
+      return {
+        ...testLowering,
+        writtenTo: (n, site) => {
+          if (n.shape.kind === "name" && n.shape.text === "base") {
+            asked.push(site);
+            return site === undefined ? null : lit(site);
+          }
+          return testLowering.writtenTo(n);
+        },
+      };
+    }
+
+    it("hands the site to the lowering and answers per site", () => {
+      const asked: Array<string | undefined> = [];
+      const target = template(name("base"), "/items");
+      module([expr(target)]);
+      const evaluator = new Evaluator(perSite(asked));
+
+      expect(literalOf(force(evaluator.evaluate(target)))).toBe(null);
+      expect(
+        literalOf(force(evaluator.evaluate(target, { site: "/users" }))),
+      ).toBe("/users/items");
+      expect(
+        literalOf(force(evaluator.evaluate(target, { site: "/orders" }))),
+      ).toBe("/orders/items");
+      expect(asked).toEqual([undefined, "/users", "/orders"]);
+    });
+
+    it("leaves the plain answer as it was after a run under a site", () => {
+      const asked: Array<string | undefined> = [];
+      const target = template(name("base"), "/items");
+      module([expr(target)]);
+      const evaluator = new Evaluator(perSite(asked));
+
+      expect(
+        literalOf(force(evaluator.evaluate(target, { site: "/users" }))),
+      ).toBe("/users/items");
+      expect(literalOf(force(evaluator.evaluate(target)))).toBe(null);
+    });
+
+    it("runs the statements before the target again for each site", () => {
+      let ran = 0;
+      const target = name("p");
+      const counted = op("+", lit("/a"), lit(""));
+      module([declare({ p: counted }), expr(target)]);
+      const counting: Lowering<TestNode> = {
+        ...testLowering,
+        expression: (n) => {
+          if (n === counted) {
+            ran += 1;
+          }
+          return testLowering.expression(n);
+        },
+      };
+      const evaluator = new Evaluator(counting);
+
+      evaluator.evaluate(target);
+      evaluator.evaluate(target);
+      expect(ran).toBe(1);
+      force(evaluator.evaluate(target, { site: "one" }));
+      force(evaluator.evaluate(target, { site: "two" }));
+      expect(ran).toBe(3);
+    });
+  });
+
   describe("limits", () => {
     it("stops running statements past the budget", () => {
       const target = name("p");

@@ -4,11 +4,15 @@
 
 import { constant, lit, rule, variable as v } from "@suss/datalog";
 import {
+  allocationSitesOf,
   alsoSteps,
   askResolution,
+  askResolutionUnder,
   INSTANCE_STEP,
   resolutionProgram,
+  resolutionUnderProgram,
   writtenValueOf as sharedWrittenValueOf,
+  writtenValueUnder as sharedWrittenValueUnder,
   VALUE_STEP,
 } from "@suss/resolution";
 
@@ -26,6 +30,19 @@ export const RUBY_RULES = alsoSteps([
       lit("readsProperty", v("x"), v("o"), constant("new")),
       lit("comesTo", v("o"), v("cls")),
       lit("objectValue", v("cls")),
+    ],
+  ),
+
+  // The same spelling again, for the caller asking where a class was
+  // made. `callsNamed` reaches a callee written as the name itself, and
+  // Ruby writes `new` off the constant instead.
+  rule(
+    "constructsNamed",
+    [v("r"), v("cls")],
+    [
+      lit("binds", v("o"), v("cls")),
+      lit("readsProperty", v("c"), v("o"), constant("new")),
+      lit("call", v("r"), v("c")),
     ],
   ),
 
@@ -72,4 +89,24 @@ export function resolvedFunctions(db: Database, key: string): string[] {
 export function writtenValueOf(db: Database, key: string): string | null {
   resolveValues(db, [key]);
   return sharedWrittenValueOf(db, key, (keys) => resolveValues(db, keys));
+}
+
+/**
+ * The single expression a value was written as when the receiver behind
+ * it is the instance one site made. An ivar two constructions fill
+ * differently settles here and not context free.
+ */
+export function writtenValueUnder(
+  db: Database,
+  key: string,
+  site: string,
+): string | null {
+  askResolutionUnder(db, [[key, site]], resolutionUnderProgram(RUBY_RULES));
+  return sharedWrittenValueUnder(db, key, site);
+}
+
+/** Every construction of a class the run can see, as the keys to ask under. */
+export function constructionSites(db: Database, classKey: string): string[] {
+  askResolution(db, [classKey], "wantedSites", RUBY_PROGRAM);
+  return allocationSitesOf(db, classKey);
 }

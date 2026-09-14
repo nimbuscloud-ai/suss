@@ -2,11 +2,17 @@ import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
 
-import { askResolutionUnder, resolutionUnderProgram } from "./program.js";
 import {
+  askResolution,
+  askResolutionUnder,
+  resolutionUnderProgram,
+} from "./program.js";
+import {
+  allocationSitesOf,
   comesToUnder,
   isWrittenAsUnder,
   objectOfUnder,
+  writtenValueUnder,
 } from "./underContext.js";
 
 // class Api { constructor(base) { this.client = axios.create(base) } }, with
@@ -72,6 +78,18 @@ describe("reading an answer under one allocation site", () => {
     expect(objectOfUnder(db, "v1", "v1Site")).toEqual(["v1Site"]);
   });
 
+  it("settles on the one answer a site gives, and declines two", () => {
+    const db = askedDb([
+      ["base", "v1Site"],
+      ["base", "v2Site"],
+    ]);
+    db.add("wantedIsWrittenAsUnder", ["base", "v2Site", "urlC"]);
+
+    expect(writtenValueUnder(db, "base", "v1Site")).toBe("urlA");
+    expect(writtenValueUnder(db, "base", "v2Site")).toBe(null);
+    expect(writtenValueUnder(db, "base", "noSite")).toBe(null);
+  });
+
   it("costs nothing to ask the same pair twice", () => {
     const db = askedDb([["base", "v1Site"]]);
     const before = db.size("wantedIsWrittenAsUnder");
@@ -79,5 +97,29 @@ describe("reading an answer under one allocation site", () => {
     askResolutionUnder(db, [["base", "v1Site"]], resolutionUnderProgram());
 
     expect(db.size("wantedIsWrittenAsUnder")).toBe(before);
+  });
+});
+
+describe("where a class was made", () => {
+  function sitesIn(facts: Array<[string, ...string[]]>): string[] {
+    const db = new Database();
+    for (const [relation, ...tuple] of facts) {
+      db.add(relation, tuple);
+    }
+    askResolution(db, ["Api"], "wantedSites");
+    return allocationSitesOf(db, "Api");
+  }
+
+  it("gives every construction written with the class's name", () => {
+    expect(sitesIn(TWO_CLIENTS).sort()).toEqual(["v1Site", "v2Site"]);
+  });
+
+  it("gives nothing for a class nothing constructs", () => {
+    expect(
+      sitesIn([
+        ["objectValue", "Api"],
+        ["initializes", "Api", "Api"],
+      ]),
+    ).toEqual([]);
   });
 });

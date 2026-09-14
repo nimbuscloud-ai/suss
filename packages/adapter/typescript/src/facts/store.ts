@@ -30,13 +30,17 @@ import {
 import {
   ASKING_RELATIONS,
   addPackWords,
+  allocationSitesOf,
   alsoSteps,
+  askResolutionUnder,
   type ExplainStats,
   queryFacts,
   RESOLUTION_QUESTIONS,
   resolutionProgram,
+  resolutionUnderProgram,
   RESOLUTION_RULES as SHARED_RULES,
   VALUE_STEP,
+  writtenValueUnder,
 } from "@suss/resolution";
 
 import { recordFileDependency } from "../depTracking.js";
@@ -95,6 +99,7 @@ type Question =
   | "wantedOrigin"
   | "wantedCallOrigin"
   | "wantedAnchor"
+  | "wantedSites"
   | "wantedSubject";
 
 /**
@@ -181,6 +186,9 @@ export class ResolutionStore {
    * extraction elsewhere cannot change an entry.
    */
   private readonly exportTables = new Map<string, Map<string, Node[]>>();
+  /** Keyed by value and site both, since one value differs per site. */
+  private readonly writtenUnderSite = new Map<string, Node | null>();
+  private readonly constructionSites = new Map<string, string[]>();
   /** Files the most recent query read, for the memo to keep. */
   private lastQueryWalked: string[] = [];
   private readonly declarations = new Map<Node, Node>();
@@ -326,6 +334,62 @@ export class ResolutionStore {
       extractedAt: this.fullyExtracted.size,
     });
     return written;
+  }
+
+  /**
+   * The same question under one construction site: what the value is
+   * when the receiver behind it is the instance that site made. A field
+   * two constructions fill differently settles here and not context
+   * free, where two answers are ambiguity.
+   */
+  resolveWrittenValueUnder(value: Node, site: string): Node | null {
+    const target = factKeyOf(value);
+    const key = nodeId(target);
+    const cached = this.writtenUnderSite.get(`${key}|${site}`);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    // The value's own file has to be read before the question, the way
+    // `askAbout` reads it, and the under program runs over everything
+    // the store already has rather than following its own demand.
+    this.askAbout(target, "wanted", () => undefined);
+    askResolutionUnder(
+      this.db,
+      [[key, site]],
+      resolutionUnderProgram(JS_RULES),
+    );
+    // The under program cleared what the context-free one had derived.
+    this.stale = true;
+
+    const answer = writtenValueUnder(this.db, key, site);
+    const node = answer === null ? null : (this.table.byId.get(answer) ?? null);
+    const written =
+      node === null || node === target || !Node.isExpression(node)
+        ? null
+        : node;
+    this.writtenUnderSite.set(`${key}|${site}`, written);
+    return written;
+  }
+
+  /**
+   * Every construction of this class the run can see, as fact keys, for
+   * a caller about to ask a value question under each. A class nothing
+   * constructs has none.
+   */
+  constructionSitesOf(cls: Node): string[] {
+    const key = nodeId(cls);
+    const cached = this.constructionSites.get(key);
+    if (cached !== undefined) {
+      return cached;
+    }
+    this.readPossibleCallersOf(cls.getSourceFile());
+    const sites = this.askAbout(cls, "wantedSites", () => {
+      this.derive();
+      return allocationSitesOf(this.db, key);
+    });
+    this.constructionSites.set(key, sites);
+    return sites;
   }
 
   /**

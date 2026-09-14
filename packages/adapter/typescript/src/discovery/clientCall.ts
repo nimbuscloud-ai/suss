@@ -19,14 +19,17 @@
 // argument is a parameter rather than a literal. Turning that into a
 // summary per caller is expandWrapperCallers's job, unchanged.
 
-import { Node, type SourceFile } from "ts-morph";
+import { Node, type SourceFile, SyntaxKind } from "ts-morph";
 
+import { hasNameHole } from "@suss/behavioral-ir";
+
+import { pathFromArgument, pathFromProperty } from "../resolve/routePath.js";
 import { resolvedModuleFile } from "./importScan.js";
 import { resolveImportedLocalName } from "./resolveImport.js";
-import { writtenNodeOf } from "./resolveValue.js";
+import { stringPropertyOf, writtenNodeOf } from "./resolveValue.js";
 import { type DiscoveredUnit, findEnclosingFunction } from "./shared.js";
 
-import type { DiscoveryPattern } from "@suss/extractor";
+import type { BindingExtraction, DiscoveryPattern } from "@suss/extractor";
 import type { CallExpression, NewExpression } from "ts-morph";
 import type { FunctionRoot } from "../conditions.js";
 import type { ResolutionStore } from "../facts/store.js";
@@ -44,6 +47,7 @@ export function discoverClientCalls(
   match: ClientCallMatch,
   kind: string,
   resolution?: ResolutionStore,
+  binding?: BindingExtraction,
 ): DiscoveredUnit[] {
   const results: DiscoveredUnit[] = [];
   const isGlobal = match.importModule === "global";
@@ -127,18 +131,140 @@ export function discoverClientCalls(
       return;
     }
 
-    results.push({
-      func: enclosingFunc,
-      kind,
-      name: clientUnitName(enclosingFunc, methodName),
-      callSite: {
-        callExpression: node,
-        methodName,
-      },
-    });
+    for (const under of sitesToReadUnder(node, binding, resolution)) {
+      results.push({
+        func: enclosingFunc,
+        kind,
+        name: clientUnitName(enclosingFunc, methodName),
+        callSite: {
+          callExpression: node,
+          methodName,
+          ...(under === undefined ? {} : { under }),
+        },
+      });
+    }
   });
 
   return results;
+}
+
+/**
+ * Which construction of the surrounding class to read this call under.
+ * One entry of `undefined` is the ordinary case: the call says what it
+ * reaches wherever the instance came from. A class that takes a piece
+ * of the request in its constructor says something different per
+ * construction, so each of those becomes a call of its own.
+ */
+function sitesToReadUnder(
+  call: CallExpression,
+  binding: BindingExtraction | undefined,
+  resolution: ResolutionStore | undefined,
+): Array<string | undefined> {
+  const cls = call.getFirstAncestorByKind(SyntaxKind.ClassDeclaration);
+  if (binding === undefined || resolution === undefined || cls === undefined) {
+    return [undefined];
+  }
+  const plain = requestStatedBy(call, binding, resolution, undefined);
+  if (plain.settled) {
+    return [undefined];
+  }
+
+  // Two constructions that state the same request are one call, since
+  // nothing about the crossing tells them apart.
+  const bySignature = new Map<string, string>();
+  for (const site of resolution.constructionSitesOf(cls)) {
+    const stated = requestStatedBy(call, binding, resolution, site);
+    if (stated.signature === plain.signature) {
+      continue;
+    }
+    if (!bySignature.has(stated.signature)) {
+      bySignature.set(stated.signature, site);
+    }
+  }
+  return bySignature.size === 0 ? [undefined] : [...bySignature.values()];
+}
+
+/** One reading of what a call says about the boundary it reaches. */
+interface StatedRequest {
+  /** Both halves as one string, for telling two readings apart. */
+  signature: string;
+  /** Whether every half the call itself writes came out with nothing left open. */
+  settled: boolean;
+}
+
+function requestStatedBy(
+  call: CallExpression,
+  binding: BindingExtraction,
+  resolution: ResolutionStore,
+  site: string | undefined,
+): StatedRequest {
+  const path = pathStated(call, binding, resolution, site);
+  const method = methodStated(call, binding, resolution, site);
+  return {
+    signature: `${method.text ?? ""}|${path.text ?? ""}`,
+    settled: settled(path) && settled(method),
+  };
+}
+
+/**
+ * One half of the request as one read of it came out. `fromCall` says
+ * the pack takes it from the call rather than from the pack's own
+ * words, which is what makes an unreadable one worth a second look.
+ */
+interface StatedHalf {
+  text: string | undefined;
+  fromCall: boolean;
+}
+
+const NOT_FROM_THE_CALL: StatedHalf = { text: undefined, fromCall: false };
+
+/** A half the pack takes from the call has to come out with nothing left open. */
+function settled(half: StatedHalf): boolean {
+  if (!half.fromCall) {
+    return true;
+  }
+  return half.text !== undefined && !hasNameHole(half.text);
+}
+
+function pathStated(
+  call: CallExpression,
+  binding: BindingExtraction,
+  resolution: ResolutionStore,
+  site: string | undefined,
+): StatedHalf {
+  const p = binding.path;
+  if (p.type !== "fromArgument" && p.type !== "fromArgumentProperty") {
+    return NOT_FROM_THE_CALL;
+  }
+  const arg = call.getArguments()[p.position];
+  if (arg === undefined) {
+    return NOT_FROM_THE_CALL;
+  }
+  return {
+    fromCall: true,
+    text:
+      p.type === "fromArgument"
+        ? pathFromArgument(arg, resolution, site)
+        : pathFromProperty(arg, p.property, resolution, site),
+  };
+}
+
+function methodStated(
+  call: CallExpression,
+  binding: BindingExtraction,
+  resolution: ResolutionStore,
+  site: string | undefined,
+): StatedHalf {
+  const m = binding.method;
+  if (m.type !== "fromArgumentProperty") {
+    return NOT_FROM_THE_CALL;
+  }
+  const arg = call.getArguments()[m.position];
+  const stated =
+    arg === undefined
+      ? null
+      : stringPropertyOf(arg, m.property, resolution, site);
+  return { fromCall: true, text: stated ?? m.default };
 }
 
 /**

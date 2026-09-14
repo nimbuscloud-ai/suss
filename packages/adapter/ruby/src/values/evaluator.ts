@@ -16,9 +16,11 @@ import { Evaluator, force, literalOf, text } from "@suss/values";
 
 import { field } from "../ast.js";
 import {
+  constructionSites,
   resolvedFunctions,
   resolveValues,
   writtenValueOf,
+  writtenValueUnder,
 } from "../facts/resolve.js";
 import { nodeId, readKey } from "../facts/values.js";
 import { rubyLowering } from "./lowering.js";
@@ -43,11 +45,16 @@ export interface ProjectNodes {
 const evaluators = new WeakMap<Database, Evaluator<RbNode>>();
 const contexts = new WeakMap<Database, EvaluationContext>();
 const withoutFacts = new WeakMap<object, Evaluator<RbNode>>();
+/** The file a parsed tree came from, for a reader that has only a node. */
+const filesByTree = new WeakMap<object, string>();
 
 const METHOD_TYPES = new Set(["method", "singleton_method"]);
 
 /** Register the parsed project, so reads through `db` can follow the facts back to nodes. */
 export function bindEvaluator(db: Database, nodes: ProjectNodes): void {
+  for (const entry of nodes.files) {
+    filesByTree.set(entry.root.tree, entry.file);
+  }
   const context = contextOver(db, nodes);
   contexts.set(db, context);
   evaluators.set(db, new Evaluator(rubyLowering({ context, rows: rubyRows })));
@@ -71,20 +78,62 @@ export function writtenNodeOf(
 /** Strings to read for the parameters of the block or method `node` is written in, the way a caller would supply them. */
 export type ParameterBindings = ReadonlyMap<string, string>;
 
-/** The abstract value `node` comes down to, through the facts when `db` was bound. */
+/**
+ * The abstract value `node` comes down to, through the facts when `db`
+ * was bound. With a site, what it comes down to when the receiver
+ * behind it is the instance that site made; that run is not memoized.
+ */
 export function evaluatedValue(
   node: RbNode,
   db?: Database,
   bindings?: ParameterBindings,
+  site?: string,
 ): Value {
   const evaluator = evaluatorFor(node, db);
   if (bindings === undefined) {
-    return force(evaluator.evaluate(node));
+    return force(
+      site === undefined
+        ? evaluator.evaluate(node)
+        : evaluator.evaluate(node, { site }),
+    );
   }
   const supplied = new Map(
     [...bindings].map(([name, value]) => [name, text(value)]),
   );
-  return force(evaluator.evaluate(node, { bindings: supplied }));
+  return force(
+    evaluator.evaluate(node, {
+      bindings: supplied,
+      ...(site === undefined ? {} : { site }),
+    }),
+  );
+}
+
+/**
+ * Every construction of the class this node is written inside, as the
+ * keys to read a value under. Empty for a node outside a class, or for
+ * one whose class nothing in the run constructs.
+ */
+export function constructionSitesOf(
+  node: RbNode,
+  db: Database | undefined,
+): string[] {
+  const cls = enclosingClass(node);
+  const file = cls === null ? undefined : filesByTree.get(cls.tree);
+  if (db === undefined || cls === null || file === undefined) {
+    return [];
+  }
+  return constructionSites(db, nodeId(file, cls));
+}
+
+function enclosingClass(node: RbNode): RbNode | null {
+  let current = node.parent;
+  while (current !== null) {
+    if (current.type === "class") {
+      return current;
+    }
+    current = current.parent;
+  }
+  return null;
 }
 
 /** The one string `node` comes down to, or null when it does not settle on one. */
@@ -157,15 +206,16 @@ function contextOver(db: Database, nodes: ProjectNodes): EvaluationContext {
     filesByRoot.get(node.tree.rootNode.id)?.file ?? null;
 
   return {
-    writtenTo: (node) => {
+    writtenTo: (node, site) => {
       const file = fileOf(node);
       if (file === null) {
         return null;
       }
-      const answer = writtenValueOf(
-        db,
-        readKey(file, node, enclosingMethod(node)),
-      );
+      const key = readKey(file, node, enclosingMethod(node));
+      const answer =
+        site === undefined
+          ? writtenValueOf(db, key)
+          : writtenValueUnder(db, key, site);
       return answer === null ? null : nodeOfKey(rootsByFile, answer);
     },
     callable: (call) => {

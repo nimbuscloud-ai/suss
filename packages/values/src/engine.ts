@@ -64,6 +64,12 @@ interface Arguments {
 export interface EvaluateOptions {
   /** Values for parameters of the enclosing function, from a call site. */
   readonly bindings?: ReadonlyMap<string, Value>;
+  /**
+   * The allocation site the receiver behind this expression was made
+   * at, for a name the lowering can only settle once it knows which
+   * instance is reading it.
+   */
+  readonly site?: string;
 }
 
 export interface EvaluatorOptions {
@@ -74,6 +80,8 @@ export interface EvaluatorOptions {
 export class Evaluator<N extends object> {
   private nextAllocation = 0;
   private statements = 0;
+  /** The allocation site the current `evaluate` call is running under. */
+  private underSite: string | undefined;
   private readonly statementBudget: number;
   private readonly stateAfterStatement = new Map<unknown, State>();
   private readonly outerByNode = new Map<unknown, Value>();
@@ -116,14 +124,37 @@ export class Evaluator<N extends object> {
     return this.lowering.idOf === undefined ? node : this.lowering.idOf(node);
   }
 
+  /**
+   * Whether this run may write to the memos. Both a call site's
+   * bindings and an allocation site answer for one caller, and the
+   * memos are shared by every caller.
+   */
+  private remembers(
+    bindings: ReadonlyMap<string, Value> | null = null,
+  ): boolean {
+    return bindings === null && this.underSite === undefined;
+  }
+
   private same(a: N, b: N): boolean {
     return this.idOf(a) === this.idOf(b);
   }
 
-  /** The value of an expression where it is written. */
+  /**
+   * The value of an expression where it is written. An answer under an
+   * allocation site is true only for that site, so it is forced before
+   * the site is dropped and none of it is kept.
+   */
   evaluate(node: N, options: EvaluateOptions = {}): Value {
     this.statements = 0;
-    return this.valueAt(node, options);
+    if (options.site === undefined) {
+      return this.valueAt(node, options);
+    }
+    this.underSite = options.site;
+    try {
+      return force(this.valueAt(node, options));
+    } finally {
+      this.underSite = undefined;
+    }
   }
 
   private valueAt(node: N, options: EvaluateOptions = {}): Value {
@@ -158,7 +189,7 @@ export class Evaluator<N extends object> {
       }
     }
     const body = shape === null ? [] : statementsOf(shape.body);
-    const memo = bindings === null ? this.stateAfterStatement : null;
+    const memo = this.remembers(bindings) ? this.stateAfterStatement : null;
     return this.runPath(body, site.path, state, site.root, depth, memo);
   }
 
@@ -688,7 +719,7 @@ export class Evaluator<N extends object> {
    */
   private outer(node: N, name: string, throughScopes: boolean): Value {
     const id = this.idOf(node);
-    const cached = this.outerByNode.get(id);
+    const cached = this.remembers() ? this.outerByNode.get(id) : undefined;
     if (cached !== undefined) {
       return cached;
     }
@@ -697,7 +728,9 @@ export class Evaluator<N extends object> {
         throughScopes ? this.outerName(node, name) : this.outerValue(node),
       name,
     );
-    this.outerByNode.set(id, value);
+    if (this.remembers()) {
+      this.outerByNode.set(id, value);
+    }
     return value;
   }
 
@@ -731,17 +764,19 @@ export class Evaluator<N extends object> {
     if (this.computing.has(id)) {
       return hole(this.lowering.holeNameOf(node));
     }
-    const cached = this.writtenByNode.get(id);
+    const cached = this.remembers() ? this.writtenByNode.get(id) : undefined;
     if (cached !== undefined) {
       return cached;
     }
     const value = this.writtenValue(node, id);
-    this.writtenByNode.set(id, value);
+    if (this.remembers()) {
+      this.writtenByNode.set(id, value);
+    }
     return value;
   }
 
   private writtenValue(node: N, id: unknown): Value {
-    const written = this.lowering.writtenTo(node);
+    const written = this.lowering.writtenTo(node, this.underSite);
     if (written === null || this.same(written, node)) {
       return hole(this.lowering.holeNameOf(node));
     }

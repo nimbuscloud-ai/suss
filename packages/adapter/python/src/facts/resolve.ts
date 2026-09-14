@@ -3,9 +3,12 @@
 // adapter evaluates, so a Python value is followed the way any value is.
 
 import {
+  allocationSitesOf,
   askResolution,
+  askResolutionUnder,
   writtenValueOf as sharedWrittenValueOf,
   writtenValuesOf as sharedWrittenValuesOf,
+  writtenValueUnder as sharedWrittenValueUnder,
   writtenValuesByKey,
 } from "@suss/resolution";
 
@@ -14,6 +17,26 @@ import type { Database } from "@suss/datalog";
 /** Ask what these calls come down to, then derive. */
 export function resolveCalls(db: Database, callKeys: readonly string[]): void {
   askResolution(db, callKeys);
+}
+
+/**
+ * The single expression a value was written as when the receiver behind
+ * it is the instance one site made. A field two constructions fill
+ * differently settles here and not context free.
+ */
+export function writtenValueUnder(
+  db: Database,
+  key: string,
+  site: string,
+): string | null {
+  askResolutionUnder(db, [[key, site]]);
+  return sharedWrittenValueUnder(db, key, site);
+}
+
+/** Every construction of a class the run can see, as the keys to ask under. */
+export function constructionSites(db: Database, classKey: string): string[] {
+  askResolution(db, [classKey], "wantedSites");
+  return allocationSitesOf(db, classKey);
 }
 
 /** The single expression a value was written as, asking the rules about `key` first. */

@@ -281,8 +281,9 @@ export function stringPropertyOf(
   object: Node,
   name: string,
   resolution: ResolutionStore | undefined,
+  site?: string,
 ): string | null {
-  const record = evaluatedValue(object, resolution);
+  const record = evaluatedValue(object, resolution, site);
   if (record.kind !== "record") {
     return null;
   }

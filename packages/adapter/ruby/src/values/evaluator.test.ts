@@ -18,6 +18,7 @@ import { parseRuby } from "../parser.js";
 import { findRubyFiles } from "../project.js";
 import {
   bindEvaluator,
+  constructionSitesOf,
   evaluatedValue,
   methodDefinitionsIn,
   stringValueOf,
@@ -730,5 +731,60 @@ describe("stringValueOf", () => {
     expect(stringValueOf(node, undefined, new Map([["root_path", "u"]]))).toBe(
       "u/x",
     );
+  });
+});
+
+describe("reading a value under one construction", () => {
+  async function boundTo(source: string): Promise<{
+    db: Database;
+    root: RbNode;
+  }> {
+    const tree = await parseRuby(source);
+    const db = new Database();
+    emitValueFacts(db, "f.rb", tree.rootNode);
+    bindEvaluator(db, {
+      files: [{ file: "f.rb", root: tree.rootNode }],
+      definitions: methodDefinitionsIn("f.rb", tree.rootNode),
+    });
+    return { db, root: tree.rootNode };
+  }
+
+  it("reads the ivar the construction filled, with a binding map supplied too", async () => {
+    const { db, root } = await boundTo(
+      [
+        "class Resource",
+        "  def initialize(base)",
+        "    @base = base",
+        "  end",
+        "",
+        "  def list",
+        '    subject = "#{@base}/items"',
+        "  end",
+        "end",
+        'USERS = Resource.new("/users")',
+      ].join("\n"),
+    );
+    const method = [...methodDefinitionsIn("f.rb", root).values()].find(
+      (one) => field(one, "name")?.text === "list",
+    ) as RbNode;
+    const node = subjectNodeIn(field(method, "body") as RbNode);
+    const sites = constructionSitesOf(node, db);
+
+    expect(sites).toHaveLength(1);
+    expect(pathOf(evaluatedValue(node, db))).toBe("{base}/items");
+    expect(pathOf(evaluatedValue(node, db, undefined, sites[0]))).toBe(
+      "/users/items",
+    );
+    expect(pathOf(evaluatedValue(node, db, new Map(), sites[0]))).toBe(
+      "/users/items",
+    );
+  });
+
+  it("finds nothing to read under for a node outside a class, or with no facts", async () => {
+    const { db, root } = await boundTo('subject = "/x"');
+    const node = subjectNodeIn(root);
+
+    expect(constructionSitesOf(node, db)).toEqual([]);
+    expect(constructionSitesOf(node, undefined)).toEqual([]);
   });
 });

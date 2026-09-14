@@ -86,6 +86,7 @@ function runPattern(
       pattern.match,
       pattern.kind,
       resolution,
+      pattern.bindingExtraction,
     );
   }
   if (pattern.match.type === "graphqlHookCall") {

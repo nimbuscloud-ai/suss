@@ -6,7 +6,13 @@ import { askResolution } from "@suss/resolution";
 import { bodyBlocksIn } from "../pack.js";
 import { parseRuby } from "../parser.js";
 import { collectFileConstants, emitConstantBindings } from "./constants.js";
-import { RUBY_PROGRAM, resolveValues, writtenValueOf } from "./resolve.js";
+import {
+  constructionSites,
+  RUBY_PROGRAM,
+  resolveValues,
+  writtenValueOf,
+  writtenValueUnder,
+} from "./resolve.js";
 import { emitValueFacts } from "./values.js";
 
 /** What the Rails pack says about a concern's own block. */
@@ -440,5 +446,88 @@ describe("a name a class defines dynamically", () => {
     expect(
       db.lookup("wantedDeclaredName", 0, account).map((row) => String(row[1])),
     ).toContain("suspended?");
+  });
+});
+
+describe("reading a value under one construction", () => {
+  const RESOURCE = [
+    "class Resource",
+    "  def initialize(base)",
+    "    @base = base",
+    "  end",
+    "",
+    "  def list",
+    "    @base",
+    "  end",
+    "end",
+  ];
+
+  /** The ivar read in `list`, keyed the way the facts key it. */
+  function readInList(db: Database): string {
+    const row = db
+      .facts("readsProperty")
+      .find((one) => String(one[2]) === "@base");
+    if (row === undefined) {
+      throw new Error("the ivar read was not emitted");
+    }
+    return String(row[0]);
+  }
+
+  function classKeyOf(db: Database): string {
+    const row = db.facts("objectValue")[0];
+    if (row === undefined) {
+      throw new Error("the class was not emitted");
+    }
+    return String(row[0]);
+  }
+
+  it("gives each construction its own literal", async () => {
+    const db = await factsFor(
+      [
+        ...RESOURCE,
+        'USERS = Resource.new("/users")',
+        'ORDERS = Resource.new("/orders")',
+      ].join("\n"),
+    );
+    const read = readInList(db);
+
+    const written = constructionSites(db, classKeyOf(db))
+      .map((site) => writtenValueUnder(db, read, site))
+      .map((answer) => (answer === null ? "nothing" : answer));
+    expect(written).toHaveLength(2);
+    expect(new Set(written).size).toBe(2);
+    expect(written).not.toContain("nothing");
+  });
+
+  it("gives nothing for an ivar the constructor writes twice", async () => {
+    const db = await factsFor(
+      [
+        "class Resource",
+        "  def initialize(flag)",
+        "    if flag",
+        '      @base = "/users"',
+        "    else",
+        '      @base = "/orders"',
+        "    end",
+        "  end",
+        "",
+        "  def list",
+        "    @base",
+        "  end",
+        "end",
+        "USERS = Resource.new(true)",
+      ].join("\n"),
+    );
+    const read = readInList(db);
+
+    const sites = constructionSites(db, classKeyOf(db));
+    expect(sites).toHaveLength(1);
+    expect(writtenValueUnder(db, read, sites[0] as string)).toBe(null);
+  });
+
+  it("does not find a construction for a class nothing builds", async () => {
+    const db = await factsFor(RESOURCE.join("\n"));
+
+    expect(constructionSites(db, classKeyOf(db))).toEqual([]);
   });
 });
