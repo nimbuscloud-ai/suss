@@ -102,11 +102,14 @@ export function typescriptLowering(options: LoweringOptions): Lowering<Node> {
     statement: statementOf,
     siteOf,
     functionOf,
-    writtenTo: (node) => {
+    writtenTo: (node, site) => {
       if (resolution === undefined) {
         return null;
       }
       const target = peelValue(node);
+      if (site !== undefined) {
+        return resolution.resolveWrittenValueUnder(target, site);
+      }
       return (
         resolution.resolveWrittenValue(target) ??
         resolution.resolveObject(target)
@@ -176,6 +179,12 @@ function expressionOf(
     return node.getText() === "undefined"
       ? { kind: "literal", value: undefined }
       : { kind: "name", text: node.getText() };
+  }
+  // A name, so a member read off it goes to the facts when the engine
+  // has no object to index, which is where a field the constructor set
+  // is answered.
+  if (Node.isThisExpression(node)) {
+    return { kind: "name", text: "this" };
   }
   if (Node.isTemplateExpression(node)) {
     return {

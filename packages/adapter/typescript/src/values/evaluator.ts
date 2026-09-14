@@ -32,12 +32,22 @@ export function evaluatorFor(
   return evaluator;
 }
 
-/** What an expression is worth where it is written, with nothing left lazy. */
+/**
+ * What an expression is worth where it is written, with nothing left
+ * lazy. With a site, what it is worth when the receiver behind it is
+ * the instance that site made; that run is not memoized.
+ */
 export function evaluatedValue(
   node: Node,
   resolution: ResolutionStore | undefined,
+  site?: string,
 ): Value {
-  return force(evaluatorFor(node, resolution).evaluate(node));
+  const evaluator = evaluatorFor(node, resolution);
+  return force(
+    site === undefined
+      ? evaluator.evaluate(node)
+      : evaluator.evaluate(node, { site }),
+  );
 }
 
 /**

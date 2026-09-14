@@ -11,7 +11,7 @@
  * one whose URL does not settle on a string.
  */
 
-import { restBinding } from "@suss/behavioral-ir";
+import { hasNameHole, restBinding } from "@suss/behavioral-ir";
 import { pathOf } from "@suss/values";
 
 import {
@@ -24,7 +24,11 @@ import {
 } from "./ast.js";
 import { bodyTerminals, enumerateBodyBranches } from "./paths/bodyBranches.js";
 import { bodyCalls, invocationEffects } from "./paths/effects.js";
-import { constructionBehind, evaluatedValue } from "./values/evaluator.js";
+import {
+  constructionBehind,
+  constructionSitesOf,
+  evaluatedValue,
+} from "./values/evaluator.js";
 import { originOf } from "./values/origin.js";
 
 import type { Database } from "@suss/datalog";
@@ -64,11 +68,11 @@ export function clientCallUnits(
       continue;
     }
     for (const call of bodyCalls(definition)) {
-      const request = requestCall(call, pattern, module, options);
-      if (request === null) {
-        continue;
+      for (const request of requestCalls(call, pattern, module, options)) {
+        units.push(
+          clientUnit(definition, name, request, pattern, pack, options),
+        );
       }
-      units.push(clientUnit(definition, name, request, pattern, pack, options));
     }
   }
   return units;
@@ -85,22 +89,57 @@ function functionDefinitions(node: PyNode, found: PyNode[] = []): PyNode[] {
   return found;
 }
 
-/** What this call says about the boundary, or null when it is not one of the library's. */
-function requestCall(
+/**
+ * What this call says about the boundary, once per boundary it states.
+ * A URL the enclosing class takes in `__init__` says something different
+ * per construction, so each of those is a request of its own.
+ */
+function requestCalls(
   call: PyNode,
   pattern: PyClientCall,
   module: ModuleBinding,
   options: ClientCallOptions,
-): RequestCall | null {
+): RequestCall[] {
   const callee = field(call, "function");
-  if (callee === null) {
-    return null;
-  }
-  const attribute = calledAttribute(callee, pattern, module, options.facts);
+  const attribute =
+    callee === null
+      ? null
+      : calledAttribute(callee, pattern, module, options.facts);
   if (attribute === null) {
-    return null;
+    return [];
+  }
+  const plain = requestCall(call, attribute, pattern, options);
+  if (plain !== null && !hasNameHole(plain.path)) {
+    return [plain];
   }
 
+  // Two constructions that state the same request are one call, since
+  // nothing about the crossing tells them apart.
+  const byBoundary = new Map<string, RequestCall>();
+  for (const site of constructionSitesOf(call, options.facts)) {
+    const stated = requestCall(call, attribute, pattern, options, site);
+    if (stated === null) {
+      continue;
+    }
+    const key = `${stated.method} ${stated.path}`;
+    if (!byBoundary.has(key)) {
+      byBoundary.set(key, stated);
+    }
+  }
+  if (byBoundary.size > 0) {
+    return [...byBoundary.values()];
+  }
+  return plain === null ? [] : [plain];
+}
+
+/** What this call says about the boundary, or null when it says nothing readable. */
+function requestCall(
+  call: PyNode,
+  attribute: string,
+  pattern: PyClientCall,
+  options: ClientCallOptions,
+  site?: string,
+): RequestCall | null {
   const verb = pattern.verbAttributeNames[attribute];
   if (verb !== undefined) {
     const path = urlAt(
@@ -108,6 +147,7 @@ function requestCall(
       pattern.url.position,
       pattern.url.keyword,
       options,
+      site,
     );
     return path === null ? null : { method: verb, path, range: rangeOf(call) };
   }
@@ -130,6 +170,7 @@ function requestCall(
     methodCall.urlPosition,
     pattern.url.keyword,
     options,
+    site,
   );
   return path === null
     ? null
@@ -188,12 +229,13 @@ function urlAt(
   position: number,
   keyword: string,
   options: ClientCallOptions,
+  site?: string,
 ): string | null {
   const argument = argumentAt(call, position, keyword);
   if (argument === null) {
     return null;
   }
-  return pathOf(evaluatedValue(argument, options.facts)) ?? null;
+  return pathOf(evaluatedValue(argument, options.facts, site)) ?? null;
 }
 
 /** The argument at a position, or the one written under a keyword. */

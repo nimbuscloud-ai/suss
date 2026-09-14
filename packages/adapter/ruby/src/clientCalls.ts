@@ -13,14 +13,18 @@
  * request objects built in the call itself.
  */
 
-import { namesNothing, restBinding } from "@suss/behavioral-ir";
+import { hasNameHole, namesNothing, restBinding } from "@suss/behavioral-ir";
 import { pathOf } from "@suss/values";
 
 import { field, rangeOf, readCallArgs, spanOf } from "./ast.js";
 import { invocationEffects } from "./paths/effects.js";
 import { returnPathBranches } from "./responseStatus.js";
 import { compoundName } from "./scope.js";
-import { evaluatedValue, writtenNodeOf } from "./values/evaluator.js";
+import {
+  constructionSitesOf,
+  evaluatedValue,
+  writtenNodeOf,
+} from "./values/evaluator.js";
 
 import type { Database } from "@suss/datalog";
 import type { RawBranch, RawCodeStructure } from "@suss/extractor";
@@ -56,11 +60,9 @@ export function clientCallUnits(
       continue;
     }
     for (const call of callsUnder(method)) {
-      const request = requestCall(call, pattern, options);
-      if (request === null) {
-        continue;
+      for (const request of requestCalls(call, pattern, options)) {
+        units.push(clientUnit(method, name, request, pattern, pack, options));
       }
-      units.push(clientUnit(method, name, request, pattern, pack, options));
     }
   }
   return units;
@@ -94,26 +96,69 @@ function callsUnder(node: RbNode, found: RbNode[] = []): RbNode[] {
   return found;
 }
 
-/** What this call says about the boundary, or null when it is not one of the library's. */
-function requestCall(
+/**
+ * What this call says about the boundary, once per boundary it states.
+ * A URL the enclosing class takes in `initialize` says something
+ * different per construction, so each of those is a request of its own.
+ */
+function requestCalls(
   call: RbNode,
   pattern: RbClientCall,
   options: ClientCallOptions,
-): RequestCall | null {
+): RequestCall[] {
   const receiver = field(call, "receiver");
   const called = field(call, "method")?.text;
-  if (receiver === null || called === undefined) {
-    return null;
+  if (
+    receiver === null ||
+    called === undefined ||
+    !isLibraryReceiver(receiver, pattern, options)
+  ) {
+    return [];
   }
-  const prefix = receiverPrefix(receiver, pattern, options);
-  if (prefix === null) {
-    return null;
+  const read = (site?: string): RequestCall | null =>
+    requestCall(
+      call,
+      called,
+      receiverPrefix(receiver, pattern, options, site),
+      pattern,
+      options,
+      site,
+    );
+
+  const plain = read();
+  if (plain !== null && !hasNameHole(plain.path)) {
+    return [plain];
   }
+
+  // Two constructions that state the same request are one call, since
+  // nothing about the crossing tells them apart.
+  const byBoundary = new Map<string, RequestCall>();
+  for (const site of constructionSitesOf(call, options.facts)) {
+    const stated = read(site);
+    if (stated !== null) {
+      byBoundary.set(`${stated.method} ${stated.path}`, stated);
+    }
+  }
+  if (byBoundary.size > 0) {
+    return [...byBoundary.values()];
+  }
+  return plain === null ? [] : [plain];
+}
+
+/** What this call says about the boundary, or null when it says nothing readable. */
+function requestCall(
+  call: RbNode,
+  called: string,
+  prefix: string,
+  pattern: RbClientCall,
+  options: ClientCallOptions,
+  site?: string,
+): RequestCall | null {
   const args = readCallArgs(field(call, "arguments"));
 
   const verb = pattern.verbMethodNames[called];
   if (verb !== undefined) {
-    const path = urlIn(args, pattern, options);
+    const path = urlIn(args, pattern, options, site);
     return path === null ? null : { method: verb, path: prefix + path };
   }
 
@@ -125,7 +170,7 @@ function requestCall(
   if (built === null) {
     return null;
   }
-  const path = pathAt(built.url, options);
+  const path = pathAt(built.url, options, site);
   return path === null ? null : { method: built.method, path: prefix + path };
 }
 
@@ -157,22 +202,32 @@ function requestBuilt(
   return { method: verb, url: args.positional[sent.urlPosition] };
 }
 
+/** Whether a call on this receiver is a call on something the library gave the project. */
+function isLibraryReceiver(
+  receiver: RbNode,
+  pattern: RbClientCall,
+  options: ClientCallOptions,
+): boolean {
+  return (
+    namesConstant(receiver, pattern.constantName) ||
+    builderCallBehind(receiver, pattern, options.facts) !== null
+  );
+}
+
 /**
  * The path in front of a call's own, which is empty for a call on the
  * library's constant and whatever base URL a builder was given for a
- * call on what it built. Null when the receiver is neither.
+ * call on what it built.
  */
 function receiverPrefix(
   receiver: RbNode,
   pattern: RbClientCall,
   options: ClientCallOptions,
-): string | null {
-  if (namesConstant(receiver, pattern.constantName)) {
-    return "";
-  }
+  site?: string,
+): string {
   const built = builderCallBehind(receiver, pattern, options.facts);
   if (built === null) {
-    return null;
+    return "";
   }
   const args = readCallArgs(field(built, "arguments"));
   const keyword = pattern.builderUrlKeyword;
@@ -181,7 +236,9 @@ function receiverPrefix(
     (keyword === undefined ? undefined : args.keyword[keyword]) ??
     args.positional[0];
   const path =
-    base === undefined ? null : pathOf(evaluatedValue(base, options.facts));
+    base === undefined
+      ? null
+      : pathOf(evaluatedValue(base, options.facts, undefined, site));
   return path === undefined || path === null ? "" : trimmed(path);
 }
 
@@ -235,12 +292,13 @@ function urlIn(
   args: CallArgs,
   pattern: RbClientCall,
   options: ClientCallOptions,
+  site?: string,
 ): string | null {
   const keyword = pattern.url.keyword;
   const written =
     (keyword === undefined ? undefined : args.keyword[keyword]) ??
     args.positional[pattern.url.position];
-  return pathAt(written, options);
+  return pathAt(written, options, site);
 }
 
 /**
@@ -251,13 +309,14 @@ function urlIn(
 function pathAt(
   written: RbNode | undefined,
   options: ClientCallOptions,
+  site?: string,
 ): string | null {
   if (written === undefined) {
     return null;
   }
   // A URL handed in whole evaluates to one hole and nothing else, and
   // a path like that matches no route and pairs with nothing.
-  const path = pathOf(evaluatedValue(written, options.facts));
+  const path = pathOf(evaluatedValue(written, options.facts, undefined, site));
   return path === undefined || namesNothing(path) ? null : path;
 }
 

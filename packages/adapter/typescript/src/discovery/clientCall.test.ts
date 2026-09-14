@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createTestProject } from "@suss/test-project";
 
 import { ResolutionStore } from "../facts/store.js";
+import { pathFromArgument } from "../resolve/routePath.js";
 import { clientReceiverCheckFor, discoverClientCalls } from "./clientCall.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
@@ -145,5 +146,102 @@ describe("naming a unit by its enclosing shape", () => {
       (unit) => unit.name,
     );
     expect(names.sort()).toEqual(["fromWindow", "proxied"]);
+  });
+});
+
+describe("a path a constructor argument states", () => {
+  const match = {
+    type: "clientCall",
+    importModule: "global",
+    importName: "fetch",
+  } as Extract<DiscoveryPattern["match"], { type: "clientCall" }>;
+
+  const binding = {
+    method: { type: "literal", value: "GET" },
+    path: { type: "fromArgument", position: 0 },
+  } as NonNullable<DiscoveryPattern["bindingExtraction"]>;
+
+  const RESOURCE = `
+      export class Resource {
+        constructor(private base: string) {}
+        list() { return fetch(\`\${this.base}\`); }
+        one(id: string) { return fetch(\`\${this.base}/\${id}\`); }
+      }
+  `;
+
+  function pathsUnder(source: string): string[] {
+    const project = createTestProject();
+    const file = project.createSourceFile("/consumer.ts", source);
+    const store = new ResolutionStore();
+    return discoverClientCalls(file, match, "client", store, binding)
+      .filter((unit) => unit.name === "list")
+      .map((unit) =>
+        pathFromArgument(
+          unit.callSite?.callExpression.getArguments()[0] as Node,
+          store,
+          unit.callSite?.under,
+        ),
+      )
+      .map((path) => path ?? "unresolved")
+      .sort();
+  }
+
+  it("gives one call per construction of the class", () => {
+    expect(
+      pathsUnder(`${RESOURCE}
+      export const users = new Resource("/users");
+      export const orders = new Resource("/orders");
+      `),
+    ).toEqual(["/orders", "/users"]);
+  });
+
+  it("gives one call when the class is constructed once", () => {
+    expect(
+      pathsUnder(`${RESOURCE}
+      export const users = new Resource("/users");
+      `),
+    ).toEqual(["/users"]);
+  });
+
+  it("leaves the hole in place when nothing constructs the class", () => {
+    expect(pathsUnder(RESOURCE)).toEqual(["{base}"]);
+  });
+
+  it("gives one call when two constructions state the same path", () => {
+    expect(
+      pathsUnder(`${RESOURCE}
+      export const users = new Resource("/users");
+      export const same = new Resource("/users");
+      `),
+    ).toEqual(["/users"]);
+  });
+
+  it("asks nothing under a site for a path written out at the call", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/consumer.ts",
+      `
+      export class Resource {
+        constructor(private base: string) {}
+        list() { return fetch("/users"); }
+      }
+      export const users = new Resource("/users");
+      `,
+    );
+    const store = new ResolutionStore();
+    let asked = 0;
+    const watched = new Proxy(store, {
+      get(target, name, receiver) {
+        if (name === "constructionSitesOf") {
+          asked += 1;
+        }
+        return Reflect.get(target, name, receiver) as unknown;
+      },
+    });
+    const units = discoverClientCalls(file, match, "client", watched, binding);
+
+    expect(units).toHaveLength(1);
+    expect(units[0]?.callSite?.under).toBeUndefined();
+    expect(asked).toBe(0);
   });
 });

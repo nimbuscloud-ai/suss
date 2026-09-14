@@ -15,9 +15,11 @@ import { Evaluator, force, literalOf } from "@suss/values";
 
 import { enclosingFunction, field } from "../ast.js";
 import {
+  constructionSites,
   resolveCalls,
   writtenValueOf,
   writtenValuesOf,
+  writtenValueUnder,
 } from "../facts/resolve.js";
 import { readKey } from "../facts/values.js";
 import { bindModule } from "../scope.js";
@@ -167,14 +169,56 @@ export function askWrittenValues(
   resolveCalls(db, keys);
 }
 
-/** The abstract value `node` comes down to, through the facts when `db` was bound. */
-export function evaluatedValue(node: PyNode, db?: Database): Value {
-  return force(evaluatorFor(node, db).evaluate(node));
+/**
+ * The abstract value `node` comes down to, through the facts when `db`
+ * was bound. With a site, what it comes down to when the receiver
+ * behind it is the instance that site made; that run is not memoized.
+ */
+export function evaluatedValue(
+  node: PyNode,
+  db?: Database,
+  site?: string,
+): Value {
+  const evaluator = evaluatorFor(node, db);
+  return force(
+    site === undefined
+      ? evaluator.evaluate(node)
+      : evaluator.evaluate(node, { site }),
+  );
 }
 
 /** The one string `node` comes down to, or null when it does not settle on one. */
 export function stringValueOf(node: PyNode, db?: Database): string | null {
   return literalOf(evaluatedValue(node, db));
+}
+
+/**
+ * Every construction of the class this node is written inside, as the
+ * keys to read a value under. Empty for a node outside a class, or for
+ * one whose class nothing in the run constructs.
+ */
+export function constructionSitesOf(
+  node: PyNode,
+  db: Database | undefined,
+): string[] {
+  const cls = enclosingClass(node);
+  const bound = db === undefined ? undefined : projects.get(db);
+  if (cls === null || db === undefined || bound === undefined) {
+    return [];
+  }
+  const key = bound.keyOf(cls);
+  return key === null ? [] : constructionSites(db, key);
+}
+
+function enclosingClass(node: PyNode): PyNode | null {
+  let current = node.parent;
+  while (current !== null) {
+    if (current.type === "class_definition") {
+      return current;
+    }
+    current = current.parent;
+  }
+  return null;
 }
 
 function evaluatorFor(
@@ -240,12 +284,15 @@ function projectOver(db: Database, nodes: ProjectNodes): BoundProject {
   };
 
   const context: EvaluationContext = {
-    writtenTo: (node) => {
+    writtenTo: (node, site) => {
       const key = keyOf(node);
       if (key === null) {
         return null;
       }
-      const answer = writtenValueOf(db, key);
+      const answer =
+        site === undefined
+          ? writtenValueOf(db, key)
+          : writtenValueUnder(db, key, site);
       return answer === null ? null : nodeOfKey(rootsByFile, answer);
     },
     callable: (call) => {

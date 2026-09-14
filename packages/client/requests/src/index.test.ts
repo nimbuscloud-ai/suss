@@ -169,3 +169,33 @@ describe("what a caller does with the response", () => {
     });
   });
 });
+
+describe("a class given its path prefix when it was made", () => {
+  it("is a client of one route per construction", async () => {
+    const units = await unitsIn(
+      [
+        "import requests",
+        "",
+        "class Resource:",
+        "    def __init__(self, base):",
+        "        self.base = base",
+        "",
+        "    def list(self):",
+        "        return requests.get(self.base)",
+        "",
+        'users = Resource("/users")',
+        'orders = Resource("/orders")',
+      ].join("\n"),
+    );
+
+    expect(units.map((unit) => unit.identity.name)).toEqual(["list", "list"]);
+    expect(
+      units
+        .map((unit) => {
+          const semantics = unit.boundaryBinding?.semantics;
+          return semantics?.name === "rest" ? semantics.path : null;
+        })
+        .sort(),
+    ).toEqual(["/orders", "/users"]);
+  });
+});

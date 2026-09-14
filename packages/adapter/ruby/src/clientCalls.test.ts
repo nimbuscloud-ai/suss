@@ -619,3 +619,56 @@ describe("a connection the class builds in a method of its own", () => {
     });
   });
 });
+
+describe("a URL the constructor was given", () => {
+  const RESOURCE = `
+      class Resource
+        def initialize(base)
+          @base = base
+        end
+
+        def list
+          HttpClient.get(@base)
+        end
+      end
+  `;
+
+  function paths(units: RawCodeStructure[]): string[] {
+    return units
+      .map((unit) => {
+        const semantics = unit.boundaryBinding?.semantics;
+        return semantics?.name === "rest" ? (semantics.path ?? "") : "";
+      })
+      .sort();
+  }
+
+  it("gives one client per construction of the class", async () => {
+    const units = await unitsIn(`${RESOURCE}
+      USERS = Resource.new("/users")
+      ORDERS = Resource.new("/orders")
+    `);
+
+    expect(paths(units)).toEqual(["/orders", "/users"]);
+  });
+
+  it("gives one client when the class is constructed once", async () => {
+    const units = await unitsIn(`${RESOURCE}
+      USERS = Resource.new("/users")
+    `);
+
+    expect(paths(units)).toEqual(["/users"]);
+  });
+
+  it("gives one client when two constructions state the same URL", async () => {
+    const units = await unitsIn(`${RESOURCE}
+      USERS = Resource.new("/users")
+      SAME = Resource.new("/users")
+    `);
+
+    expect(paths(units)).toEqual(["/users"]);
+  });
+
+  it("gives nothing when nothing constructs the class", async () => {
+    expect(await unitsIn(RESOURCE)).toEqual([]);
+  });
+});

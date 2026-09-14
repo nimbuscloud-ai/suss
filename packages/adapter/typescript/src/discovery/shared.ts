@@ -25,6 +25,12 @@ export interface ClientCallSite {
   callExpression: CallExpression;
   /** Method name on the client object (e.g. "getUser"), null for bare calls like fetch() */
   methodName: string | null;
+  /**
+   * The construction of the surrounding class to read the request
+   * under, for a call whose path or method a constructor argument
+   * states. Absent for a call that says what it reaches on its own.
+   */
+  under?: string;
 }
 
 export interface DiscoveredUnit {
@@ -230,7 +236,8 @@ export function unitNode(unit: DiscoveredUnit): Node | null {
  * kind start it off, and then everything that lets one function be more
  * than one boundary is added on: the package export a caller consumes,
  * the route it serves, the GraphQL field it resolves, the channel it
- * listens on, and the GraphQL operation it runs. A component that loads
+ * listens on, the GraphQL operation it runs, and the construction of
+ * its class a request is read under. A component that loads
  * a user and searches for mentions runs two hooks in one body, and both
  * documents are boundaries.
  *
@@ -276,6 +283,7 @@ export function unitDedupKey(unit: DiscoveredUnit): string {
     unit.operationInfo === undefined
       ? ""
       : `${unit.operationInfo.operationType}.${unit.operationInfo.operationName ?? unit.name}`,
+    unit.callSite?.under ?? "",
   ];
   return parts.join("-");
 }

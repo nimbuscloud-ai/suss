@@ -878,4 +878,16 @@ describe("axiosPack fixtures", () => {
       recognition: "axios",
     });
   });
+
+  it("summarizes one route per construction of a class given its prefix", () => {
+    const paths = summaries
+      .filter((one) => one.identity.name === "list")
+      .map((one) => {
+        const semantics = one.identity.boundaryBinding?.semantics;
+        return semantics?.name === "rest" ? semantics.path : null;
+      })
+      .sort();
+
+    expect(paths).toEqual(["/orders", "/users"]);
+  });
 });

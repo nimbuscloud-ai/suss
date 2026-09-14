@@ -2587,3 +2587,71 @@ describe("a method read off what a declared return type names", () => {
     );
   });
 });
+
+describe("reading a value under one construction", () => {
+  const RESOURCE = `
+    export class Resource {
+      constructor(private base: string) {}
+      list() { return this.base; }
+    }
+  `;
+
+  function readUnderEachSite(files: Record<string, string>): string[] {
+    const project = projectOf(files);
+    const cls = project
+      .getSourceFileOrThrow("/resource.ts")
+      .getClassOrThrow("Resource");
+    const read = cls
+      .getMethodOrThrow("list")
+      .getFirstDescendantByKindOrThrow(SyntaxKind.PropertyAccessExpression);
+    const store = new ResolutionStore();
+    store.notePossibleCallers(project.getSourceFiles());
+    return store
+      .constructionSitesOf(cls)
+      .map((site) => store.resolveWrittenValueUnder(read, site)?.getText())
+      .map((written) => written ?? "nothing")
+      .sort();
+  }
+
+  it("gives each construction its own literal", () => {
+    expect(
+      readUnderEachSite({
+        "/resource.ts": RESOURCE,
+        "/app.ts": `
+          import { Resource } from "./resource.js";
+          export const users = new Resource("/users");
+          export const orders = new Resource("/orders");
+        `,
+      }),
+    ).toEqual(['"/orders"', '"/users"']);
+  });
+
+  it("gives nothing for a field the constructor writes twice", () => {
+    expect(
+      readUnderEachSite({
+        "/resource.ts": `
+          export class Resource {
+            base: string;
+            constructor(flag: boolean) {
+              if (flag) { this.base = "/users"; } else { this.base = "/orders"; }
+            }
+            list() { return this.base; }
+          }
+        `,
+        "/app.ts": `
+          import { Resource } from "./resource.js";
+          export const either = new Resource(true);
+        `,
+      }),
+    ).toEqual(["nothing"]);
+  });
+
+  it("does not find a construction for a class nothing builds", () => {
+    const project = projectOf({ "/resource.ts": RESOURCE });
+    const cls = project
+      .getSourceFileOrThrow("/resource.ts")
+      .getClassOrThrow("Resource");
+
+    expect(new ResolutionStore().constructionSitesOf(cls)).toEqual([]);
+  });
+});

@@ -36,8 +36,12 @@ import type {
 import type { RbNode } from "../parser.js";
 
 export interface EvaluationContext {
-  /** The expression a name or call resolves to through the facts, or null. */
-  writtenTo(node: RbNode): RbNode | null;
+  /**
+   * The expression a name or call resolves to through the facts, or
+   * null. With a site, only what it resolves to when the receiver
+   * behind it is the instance that site made.
+   */
+  writtenTo(node: RbNode, site?: string): RbNode | null;
   /** The method definition a call's callee resolves to, or null. */
   callable(call: RbNode): RbNode | null;
 }
@@ -118,7 +122,8 @@ export function rubyLowering(options: LoweringOptions): Lowering<RbNode> {
     statement: statementOf,
     siteOf,
     functionOf,
-    writtenTo: (node) => (context === null ? null : context.writtenTo(node)),
+    writtenTo: (node, site) =>
+      context === null ? null : context.writtenTo(node, site),
     callable: (node) => {
       if (!isInlinableCall(node)) {
         return null;
