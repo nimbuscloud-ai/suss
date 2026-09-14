@@ -161,8 +161,12 @@ export interface Lowering<N> {
   siteOf(node: N): Site<N> | null;
   /** The body of a function node, or of a module. */
   functionOf(node: N): FunctionShape<N> | null;
-  /** The expression a name resolves to, through imports and re-exports. */
-  writtenTo(node: N): N | null;
+  /**
+   * The expression a name resolves to, through imports and re-exports.
+   * With a site, only what the name is when the receiver behind it is
+   * the one that site made.
+   */
+  writtenTo(node: N, site?: string): N | null;
   /** The function a callee resolves to, through wrappers and barrels. */
   callable(node: N): N | null;
   /** Whether a function nested in `root` writes to, or calls a method on, `name`. */
