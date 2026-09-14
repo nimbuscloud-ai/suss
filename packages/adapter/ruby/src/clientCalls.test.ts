@@ -2,29 +2,22 @@ import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
 
+import {
+  httpClientTestPack,
+  requestCallsPattern,
+  wrappedUrlsPattern,
+} from "./__fixtures__/httpClientPattern.js";
 import { clientCallUnits } from "./clientCalls.js";
 import { emitValueFacts } from "./facts/values.js";
 import { parseRuby } from "./parser.js";
 import { bindEvaluator, methodDefinitionsIn } from "./values/evaluator.js";
 
 import type { RawCodeStructure } from "@suss/extractor";
-import type { RbClientCall, RubyPack } from "./pack.js";
+import type { RbClientCall } from "./pack.js";
 
-/** A library like Faraday, written the way a pack writes one. */
-const REQUEST_CALLS: RbClientCall = {
-  constantName: "HttpClient",
-  verbMethodNames: { get: "GET", post: "POST" },
-  url: { position: 0, keyword: "url" },
-  receiverBuilders: ["build"],
-  builderUrlKeyword: "base",
-};
+const REQUEST_CALLS: RbClientCall = requestCallsPattern();
 
-const PACK: RubyPack = {
-  name: "httpclient",
-  protocol: "http",
-  discovery: [],
-  clients: [REQUEST_CALLS],
-};
+const PACK = httpClientTestPack(REQUEST_CALLS);
 
 const FILE = "app/clients/order_client.rb";
 
@@ -362,18 +355,7 @@ describe("a method that calls a request method", () => {
   });
 });
 
-/** A library that sends a request built somewhere else. */
-const WRAPPED_URLS: RbClientCall = {
-  constantName: "HttpClient",
-  verbMethodNames: { get: "GET" },
-  url: { position: 0 },
-  receiverBuilders: ["build"],
-  requestObject: {
-    attribute: "send_it",
-    constructors: { "HttpClient::Post": "POST" },
-    urlPosition: 0,
-  },
-};
+const WRAPPED_URLS: RbClientCall = wrappedUrlsPattern();
 
 describe("a library that sends a request object", () => {
   it("reads a URL the standard library wrapped in a URI", async () => {

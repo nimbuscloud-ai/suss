@@ -12,6 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {
+  boundaryKey,
   disambiguateSummaryIds,
   linkCallsToSummaries,
   placeArgTargets,
@@ -196,10 +197,14 @@ type Discovered =
   | { readonly raw: RawCodeStructure; readonly seedKey: string | null }
   | { readonly summary: BehavioralSummary };
 
-/** Whether this unit is one an earlier file's discovery already reported, by where its body is written and what it is reported as. An action two controllers inherit is one body and two units, one per route. */
+/** Whether this unit is one an earlier file's discovery already reported, by where its body is written, what it is reported as, and which boundary it reaches. An action two controllers inherit, and a client call that reaches a different route under each construction of its class, are each one body and several units. */
 function alreadyDiscovered(seen: Set<string>, raw: RawCodeStructure): boolean {
   const reported = raw.identity.exportPath?.join(".") ?? raw.identity.name;
-  const key = `${raw.identity.file}::${reported}::${raw.identity.range.start}`;
+  const boundary =
+    raw.boundaryBinding === null
+      ? ""
+      : (boundaryKey(raw.boundaryBinding) ?? "");
+  const key = `${raw.identity.file}::${reported}::${raw.identity.range.start}::${boundary}`;
   if (seen.has(key)) {
     return true;
   }
