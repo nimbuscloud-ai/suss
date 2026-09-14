@@ -48,9 +48,11 @@ export {
   singleAnswers,
 } from "./singleAnswer.js";
 export {
+  allocationSitesOf,
   comesToUnder,
   isWrittenAsUnder,
   objectOfUnder,
+  writtenValueUnder,
 } from "./underContext.js";
 export { type NameWrite, valueLeftByWrites } from "./writes.js";
 export {
@@ -1224,6 +1226,15 @@ const STATED_RULES = [
     ],
     "named receiver store",
   ),
+  // A call written with a class's own name, which is how most languages
+  // spell a construction. A language that spells one some other way
+  // states its own rule for this, the way Ruby does for `Const.new`.
+  rule(
+    "constructsNamed",
+    [v("r"), v("cls")],
+    [lit("objectValue", v("cls")), lit("callsNamed", v("r"), v("cls"))],
+  ),
+
   // Each construction is an object of its own containing what its
   // class stores, so two sites are two objects.
   rule(
@@ -1488,6 +1499,18 @@ export const RESOLUTION_QUESTIONS = [
     [
       lit("wantedUnder", v("x"), v("c")),
       lit("isWrittenAsUnder", v("x"), v("c"), v("z")),
+    ],
+  ),
+  // Where a class was made, for a caller about to ask a value question
+  // under each. Going through `constructsNamed` keeps the demand on the
+  // calls written with the class's name rather than on every call.
+  rule(
+    "wantedAllocatedAt",
+    [v("cls"), v("site")],
+    [
+      lit("wantedSites", v("cls")),
+      lit("constructsNamed", v("site"), v("cls")),
+      lit("allocates", v("site"), v("cls")),
     ],
   ),
   rule(

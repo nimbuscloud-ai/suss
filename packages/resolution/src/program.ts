@@ -32,6 +32,7 @@ import type { Database, OnDemandRules, Rule } from "@suss/datalog";
 export const ASKING_RELATIONS: readonly string[] = [
   "wanted",
   "wantedUnder",
+  "wantedSites",
   "wantedOrigin",
   "wantedCallOrigin",
   "wantedExportsOf",
