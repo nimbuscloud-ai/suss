@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 9592,
-      "covered": 8519,
+      "total": 9657,
+      "covered": 8580,
       "skipped": 0,
-      "pct": 88.81
+      "pct": 88.84
     },
     "statements": {
-      "total": 9690,
-      "covered": 8610,
+      "total": 9756,
+      "covered": 8672,
       "skipped": 0,
-      "pct": 88.85
+      "pct": 88.88
     },
     "functions": {
-      "total": 1476,
-      "covered": 1381,
+      "total": 1485,
+      "covered": 1390,
       "skipped": 0,
-      "pct": 93.56
+      "pct": 93.6
     },
     "branches": {
-      "total": 7438,
-      "covered": 6070,
+      "total": 7498,
+      "covered": 6120,
       "skipped": 0,
-      "pct": 81.6
+      "pct": 81.62
     },
     "branchesTrue": {
       "total": 0,
@@ -813,28 +813,28 @@
   },
   "src/discovery/clientCall.ts": {
     "lines": {
-      "total": 93,
-      "covered": 90,
+      "total": 128,
+      "covered": 121,
       "skipped": 0,
-      "pct": 96.77
+      "pct": 94.53
     },
     "functions": {
-      "total": 14,
-      "covered": 14,
+      "total": 19,
+      "covered": 19,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 93,
-      "covered": 90,
+      "total": 128,
+      "covered": 121,
       "skipped": 0,
-      "pct": 96.77
+      "pct": 94.53
     },
     "branches": {
-      "total": 130,
-      "covered": 120,
+      "total": 169,
+      "covered": 150,
       "skipped": 0,
-      "pct": 92.3
+      "pct": 88.75
     }
   },
   "src/discovery/decoratedMembers.ts": {
@@ -1611,10 +1611,10 @@
       "pct": 100
     },
     "branches": {
-      "total": 59,
-      "covered": 56,
+      "total": 61,
+      "covered": 58,
       "skipped": 0,
-      "pct": 94.91
+      "pct": 95.08
     }
   },
   "src/discovery/wrapperFactory.ts": {
@@ -1749,28 +1749,28 @@
   },
   "src/facts/store.ts": {
     "lines": {
-      "total": 403,
-      "covered": 384,
+      "total": 428,
+      "covered": 409,
       "skipped": 0,
-      "pct": 95.28
+      "pct": 95.56
     },
     "functions": {
-      "total": 81,
-      "covered": 78,
+      "total": 85,
+      "covered": 82,
       "skipped": 0,
-      "pct": 96.29
+      "pct": 96.47
     },
     "statements": {
-      "total": 409,
-      "covered": 390,
+      "total": 435,
+      "covered": 416,
       "skipped": 0,
-      "pct": 95.35
+      "pct": 95.63
     },
     "branches": {
-      "total": 178,
-      "covered": 150,
+      "total": 191,
+      "covered": 162,
       "skipped": 0,
-      "pct": 84.26
+      "pct": 84.81
     }
   },
   "src/facts/why.ts": {
@@ -2451,8 +2451,8 @@
   },
   "src/values/evaluator.ts": {
     "lines": {
-      "total": 9,
-      "covered": 9,
+      "total": 10,
+      "covered": 10,
       "skipped": 0,
       "pct": 100
     },
@@ -2463,24 +2463,24 @@
       "pct": 100
     },
     "statements": {
-      "total": 9,
-      "covered": 9,
+      "total": 10,
+      "covered": 10,
       "skipped": 0,
       "pct": 100
     },
     "branches": {
-      "total": 8,
-      "covered": 8,
+      "total": 10,
+      "covered": 10,
       "skipped": 0,
       "pct": 100
     }
   },
   "src/values/lowering.ts": {
     "lines": {
-      "total": 229,
-      "covered": 225,
+      "total": 233,
+      "covered": 229,
       "skipped": 0,
-      "pct": 98.25
+      "pct": 98.28
     },
     "functions": {
       "total": 39,
@@ -2489,16 +2489,16 @@
       "pct": 97.43
     },
     "statements": {
-      "total": 231,
-      "covered": 226,
+      "total": 235,
+      "covered": 230,
       "skipped": 0,
-      "pct": 97.83
+      "pct": 97.87
     },
     "branches": {
-      "total": 247,
-      "covered": 235,
+      "total": 251,
+      "covered": 239,
       "skipped": 0,
-      "pct": 95.14
+      "pct": 95.21
     }
   },
   "src/values/rows.ts": {

@@ -1,26 +1,26 @@
 {
   "total": {
     "lines": {
-      "total": 3977,
-      "covered": 3852,
+      "total": 4004,
+      "covered": 3879,
       "skipped": 0,
-      "pct": 96.85
+      "pct": 96.87
     },
     "statements": {
-      "total": 4032,
-      "covered": 3907,
+      "total": 4059,
+      "covered": 3934,
       "skipped": 0,
-      "pct": 96.89
+      "pct": 96.92
     },
     "functions": {
-      "total": 833,
-      "covered": 829,
+      "total": 838,
+      "covered": 834,
       "skipped": 0,
-      "pct": 99.51
+      "pct": 99.52
     },
     "branches": {
-      "total": 3169,
-      "covered": 2795,
+      "total": 3194,
+      "covered": 2817,
       "skipped": 0,
       "pct": 88.19
     },
@@ -85,28 +85,28 @@
   },
   "src/clientCalls.ts": {
     "lines": {
-      "total": 82,
-      "covered": 79,
+      "total": 92,
+      "covered": 89,
       "skipped": 0,
-      "pct": 96.34
+      "pct": 96.73
     },
     "functions": {
-      "total": 13,
-      "covered": 13,
+      "total": 14,
+      "covered": 14,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 82,
-      "covered": 79,
+      "total": 92,
+      "covered": 89,
       "skipped": 0,
-      "pct": 96.34
+      "pct": 96.73
     },
     "branches": {
-      "total": 75,
-      "covered": 62,
+      "total": 85,
+      "covered": 71,
       "skipped": 0,
-      "pct": 82.66
+      "pct": 83.52
     }
   },
   "src/decorators.ts": {
@@ -579,22 +579,22 @@
   },
   "src/facts/resolve.ts": {
     "lines": {
-      "total": 39,
-      "covered": 38,
+      "total": 43,
+      "covered": 42,
       "skipped": 0,
-      "pct": 97.43
+      "pct": 97.67
     },
     "functions": {
-      "total": 19,
-      "covered": 19,
+      "total": 21,
+      "covered": 21,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 42,
-      "covered": 41,
+      "total": 46,
+      "covered": 45,
       "skipped": 0,
-      "pct": 97.61
+      "pct": 97.82
     },
     "branches": {
       "total": 12,
@@ -865,28 +865,28 @@
   },
   "src/values/evaluator.ts": {
     "lines": {
-      "total": 85,
-      "covered": 85,
+      "total": 98,
+      "covered": 98,
       "skipped": 0,
       "pct": 100
     },
     "functions": {
-      "total": 20,
-      "covered": 20,
+      "total": 22,
+      "covered": 22,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 85,
-      "covered": 85,
+      "total": 98,
+      "covered": 98,
       "skipped": 0,
       "pct": 100
     },
     "branches": {
-      "total": 53,
-      "covered": 49,
+      "total": 68,
+      "covered": 62,
       "skipped": 0,
-      "pct": 92.45
+      "pct": 91.17
     }
   },
   "src/values/lowering.ts": {
