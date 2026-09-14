@@ -1565,8 +1565,7 @@ export const RESOLUTION_QUESTIONS = [
 
   // Call-origin questions, for attribution, in their own demand
   // class. Attribution stops at the import declaration, so nothing
-  // here demands reaches or callsInto. The chains are closures with
-  // no depth bound: an alias run of any length resolves.
+  // here demands callsInto, and an alias run of any length resolves.
   rule("callOriginChain", [v("x"), v("x")], [lit("wantedCallOrigin", v("x"))]),
   // The chain with at least one hop taken, which is what tells a
   // destructured binding apart from asking about a node directly. The
@@ -1595,6 +1594,19 @@ export const RESOLUTION_QUESTIONS = [
     [
       lit("callOriginChain", v("x"), v("y")),
       lit("fallbackBranch", v("y"), v("z")),
+    ],
+  ),
+  // A field read goes to what the object stores under that name, which
+  // is how a call on a field reaches the import behind it. This is the
+  // one step here that demands `objectOf`, and so the value closure.
+  rule(
+    "callOriginChainStepped",
+    [v("x"), v("held")],
+    [
+      lit("callOriginChain", v("x"), v("y")),
+      lit("readsProperty", v("y"), v("o"), v("n")),
+      lit("objectOf", v("o"), v("obj")),
+      lit("contains", v("obj"), v("n"), v("held")),
     ],
   ),
   rule(

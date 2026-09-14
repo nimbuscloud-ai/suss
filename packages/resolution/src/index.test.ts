@@ -13,10 +13,13 @@ import {
   askResolution,
   askResolutionUnder,
   isWrittenAsUnder,
+  RESOLUTION_QUESTIONS,
   RESOLUTION_RULES,
   resolutionProgram,
   resolutionUnderProgram,
 } from "./index.js";
+
+import type { Rule } from "@suss/datalog";
 
 /**
  * Feed facts in, run the rules, and read one relation back, keeping the
@@ -28,12 +31,13 @@ function derive(
   relation: string,
   subject: string,
   at = 0,
+  rules: Rule[] = RESOLUTION_RULES,
 ): ReadonlyArray<ReadonlyArray<string | number>> {
   const db = new Database();
   for (const [name, ...tuple] of facts) {
     db.add(name, tuple);
   }
-  return evaluate(db, RESOLUTION_RULES)
+  return evaluate(db, rules)
     .facts(relation)
     .filter((t) => t[at] === subject);
 }
@@ -147,6 +151,35 @@ function originsOf(
 /** The (module, name) pairs calling a function ends up reaching. */
 function callsOf(facts: Array<[string, ...string[]]>, fn: string): string[] {
   return pairs(derive(facts, "callsInto", fn));
+}
+
+/** The (module, name) pairs attribution arrives at, asked as a caller asks. */
+function callOriginsOf(
+  facts: Array<[string, ...string[]]>,
+  value: string,
+): string[] {
+  const db = new Database();
+  for (const [name, ...tuple] of facts) {
+    db.add(name, tuple);
+  }
+  askResolution(db, [value], "wantedCallOrigin", resolutionProgram());
+  return pairs(db.lookup("wantedCallOriginPair", 0, value));
+}
+
+/** The values attribution's chain passes through. */
+function callOriginChainOf(
+  facts: Array<[string, ...string[]]>,
+  value: string,
+): string[] {
+  return derive(
+    [...facts, ["wantedCallOrigin", value]],
+    "callOriginChain",
+    value,
+    0,
+    [...RESOLUTION_RULES, ...RESOLUTION_QUESTIONS],
+  )
+    .map((tuple) => String(tuple[1]))
+    .sort();
 }
 
 const pairs = (
@@ -872,6 +905,48 @@ describe("a value read under the site its receiver was made at", () => {
       ["readsProperty", "selfClient", "Api#self", "client"],
     ];
     expect(writtenAsUnder(noSites, "selfClient", "none")).toEqual(["created"]);
+  });
+
+  // class Api { constructor(private base) {} refresh() { v1.base } }, with
+  // two module-level constructions, so a method of one reads a field of
+  // the other and the answer has to leave the asked site.
+  const moduleLevelRead: Array<[string, ...string[]]> = [
+    ["objectValue", "Api"],
+    ["initializes", "Api", "Api"],
+    ["paramOf", "Api", "0", "base"],
+    ["storesProperty", "Api", "base", "base"],
+    ["instanceOf", "Api#self", "Api"],
+    ["binds", "ApiRef", "Api"],
+    ["call", "v1Site", "ApiRef"],
+    ["writtenValue", "v1Site"],
+    ["callOutsideMethod", "v1Site"],
+    ["callArg", "v1Site", "0", "urlA"],
+    ["writtenValue", "urlA"],
+    ["binds", "v1", "v1Site"],
+    ["call", "v2Site", "ApiRef"],
+    ["writtenValue", "v2Site"],
+    ["callOutsideMethod", "v2Site"],
+    ["callArg", "v2Site", "0", "urlB"],
+    ["writtenValue", "urlB"],
+    ["binds", "v2", "v2Site"],
+    ["readsProperty", "v1Base", "v1", "base"],
+  ];
+
+  it("takes a module-level field read to the object's own site", () => {
+    expect(writtenAsUnder(moduleLevelRead, "v1Base", "v2Site")).toEqual([
+      "urlA",
+    ]);
+  });
+
+  it("adds the asked site's own value when the read binds to the field", () => {
+    const withBinds: Array<[string, ...string[]]> = [
+      ...moduleLevelRead,
+      ["binds", "v1Base", "base"],
+    ];
+    expect(writtenAsUnder(withBinds, "v1Base", "v2Site")).toEqual([
+      "urlA",
+      "urlB",
+    ]);
   });
 
   it("fills a base constructor's parameter from the subclass's own site", () => {
@@ -1783,6 +1858,73 @@ describe("where a name comes from", () => {
         "member",
       ),
     ).toEqual([]);
+  });
+});
+
+describe("where a call read off a field comes from", () => {
+  // class Api { constructor() { this.client = axios } get() { this.client.get() } }
+  const setInConstructor: Array<[string, ...string[]]> = [
+    ["imports", "axiosRef", "axios", "default"],
+    ["objectValue", "Api"],
+    ["initializes", "Api", "Api"],
+    ["storesProperty", "Api", "client", "axiosRef"],
+    ["instanceOf", "Api#self", "Api"],
+    ["readsProperty", "selfClient", "Api#self", "client"],
+  ];
+
+  it("follows a field the constructor set to the import behind it", () => {
+    expect(callOriginsOf(setInConstructor, "selfClient")).toEqual([
+      "axios:default",
+    ]);
+  });
+
+  it("follows a field written as its own initializer", () => {
+    expect(
+      callOriginsOf(
+        [
+          ["imports", "axiosRef", "axios", "default"],
+          ["objectValue", "Api"],
+          ["holdsProperty", "Api", "client", "axiosRef"],
+          ["instanceOf", "Api#self", "Api"],
+          ["readsProperty", "selfClient", "Api#self", "client"],
+        ],
+        "selfClient",
+      ),
+    ).toEqual(["axios:default"]);
+  });
+
+  it("follows a field read off a name for a construction", () => {
+    expect(
+      callOriginsOf(
+        [
+          ...setInConstructor,
+          ["binds", "ApiRef", "Api"],
+          ["call", "site", "ApiRef"],
+          ["writtenValue", "site"],
+          ["binds", "v1", "site"],
+          ["readsProperty", "v1Client", "v1", "client"],
+        ],
+        "v1Client",
+      ),
+    ).toEqual(["axios:default"]);
+  });
+
+  // constructor(private dao: Dao). Attribution takes no argument hop, so
+  // the parameter is as far as the chain goes, which is where the
+  // TypeScript adapter's own binds used to stop.
+  it("follows a parameter property to the constructor's parameter", () => {
+    const parameterProperty: Array<[string, ...string[]]> = [
+      ["objectValue", "Svc"],
+      ["initializes", "Svc", "Svc"],
+      ["paramOf", "Svc", "0", "dao"],
+      ["storesProperty", "Svc", "dao", "dao"],
+      ["instanceOf", "Svc#self", "Svc"],
+      ["readsProperty", "selfDao", "Svc#self", "dao"],
+    ];
+    expect(callOriginChainOf(parameterProperty, "selfDao")).toEqual([
+      "dao",
+      "selfDao",
+    ]);
   });
 });
 

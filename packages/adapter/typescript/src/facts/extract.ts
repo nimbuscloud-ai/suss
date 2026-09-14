@@ -643,49 +643,10 @@ export function forgetReassignedNamesUnstated(): void {
   reassignedUnstated.clear();
 }
 
-/**
- * What a class field comes down to. `writesToField` says whether the
- * field takes one value every reader sees, which is the case a
- * constructor assignment makes, and the shared policy settles the rest.
- * A field it settles on nothing for comes down to nothing rather than
- * to its first value.
- */
-function emitFieldValues(
-  db: Database,
-  table: NodeTable,
-  declaration: PropertyDeclaration,
-): void {
-  const settled = settledFieldValue(declaration);
-  if (settled === null || !Node.isExpression(settled)) {
-    return;
-  }
-
-  fact(db, "binds", nodeId(declaration), emitValue(db, table, settled));
-}
-
 /** The one value every body of the class leaves in a field, or null. */
 function settledFieldValue(declaration: FieldDeclaration): Node | null {
   const { values, inOrder } = writesToField(declaration);
   return settledWrite(values, inOrder);
-}
-
-/**
- * What reading `this.dao` off a parameter property comes down to. The
- * field and the parameter are one declaration, so the read binds to
- * what the field ends up with, which is the parameter itself unless the
- * constructor writes over it.
- */
-function emitParameterPropertyRead(
-  db: Database,
-  table: NodeTable,
-  referenceId: string,
-  declaration: ParameterDeclaration,
-): void {
-  const settled = settledFieldValue(declaration);
-  if (settled === null) {
-    return;
-  }
-  fact(db, "binds", referenceId, storedKey(db, table, settled));
 }
 
 /**
@@ -843,22 +804,20 @@ function emitReferenceFacts(
       continue;
     }
 
+    // A field read is left to the property rule, which goes through the
+    // object. Binding it to the declaration instead would give a walk
+    // under one construction the value of every construction.
     if (Node.isPropertyDeclaration(declaration)) {
-      fact(db, "binds", referenceId, declarationId);
-      emitFieldValues(db, table, declaration);
       continue;
     }
 
     if (Node.isParameterDeclaration(declaration)) {
-      // `this.dao` where dao is a parameter property reads the field,
-      // which the constructor can write again; a bare `dao` reads the
-      // parameter, which nothing else can.
+      // A bare `dao` reads the parameter, and nothing else can write
+      // it. `this.dao` on a parameter property reads the field.
       if (
-        declaration.isParameterProperty() &&
-        Node.isPropertyAccessExpression(reference)
+        !declaration.isParameterProperty() ||
+        !Node.isPropertyAccessExpression(reference)
       ) {
-        emitParameterPropertyRead(db, table, referenceId, declaration);
-      } else {
         fact(db, "binds", referenceId, declarationId);
       }
       continue;

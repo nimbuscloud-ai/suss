@@ -188,6 +188,29 @@ describe("what a class's bodies store on the receiver", () => {
     ).toContainEqual([receiver, "client"]);
   });
 
+  it("states a field read as a property read and binds it to nothing", () => {
+    const { db, table } = factsFor({
+      "/mod.ts": [
+        "declare const axios: { get(): string };",
+        "export class Api {",
+        "  private client = axios;",
+        "  constructor(private dao: string) {}",
+        "  items() { return this.client; }",
+        "  load() { return this.dao; }",
+        "}",
+        "",
+      ].join("\n"),
+    });
+
+    expect(rows(db, table, "readsProperty").map((row) => row[2])).toEqual([
+      "client",
+      "dao",
+    ]);
+    expect(
+      rows(db, table, "binds").filter((row) => row[0]?.startsWith("this.")),
+    ).toEqual([]);
+  });
+
   it("gives no receiver to `this` in a nested function or outside a class", () => {
     const { db } = factsFor({
       "/mod.ts": [
