@@ -65,14 +65,16 @@ export function bindEvaluator(db: Database, nodes: ProjectNodes): void {
  * reader that needs the arguments of the call behind a name rather than
  * the value the name comes down to. It takes the step the evaluator
  * takes to follow a name, so a database with no project bound to it
- * gives back null.
+ * gives back null. With a site, the expression it was written as when
+ * the receiver behind it is the instance that site made.
  */
 export function writtenNodeOf(
   node: RbNode,
   db: Database | undefined,
+  site?: string,
 ): RbNode | null {
   const context = db === undefined ? undefined : contexts.get(db);
-  return context === undefined ? null : context.writtenTo(node);
+  return context === undefined ? null : context.writtenTo(node, site);
 }
 
 /** Strings to read for the parameters of the block or method `node` is written in, the way a caller would supply them. */

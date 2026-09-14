@@ -166,7 +166,7 @@ function requestCall(
   if (sent === undefined || sent.attribute !== called) {
     return null;
   }
-  const built = requestBuilt(args.positional[0], sent, options);
+  const built = requestBuilt(args.positional[0], sent, options, site);
   if (built === null) {
     return null;
   }
@@ -184,11 +184,12 @@ function requestBuilt(
   argument: RbNode | undefined,
   sent: NonNullable<RbClientCall["requestObject"]>,
   options: ClientCallOptions,
+  site?: string,
 ): { method: string; url: RbNode | undefined } | null {
   if (argument === undefined) {
     return null;
   }
-  const written = writtenNodeOf(argument, options.facts) ?? argument;
+  const written = writtenNodeOf(argument, options.facts, site) ?? argument;
   if (written.type !== "call") {
     return null;
   }

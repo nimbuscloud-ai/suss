@@ -8,6 +8,10 @@ import { Database } from "@suss/datalog";
 import { addPackWords } from "@suss/resolution";
 
 import { graphqlRubyTestPack } from "./__fixtures__/graphqlRubyPattern.js";
+import {
+  httpClientTestPack,
+  wrappedUrlsPattern,
+} from "./__fixtures__/httpClientPattern.js";
 import { railsTestPack } from "./__fixtures__/railsControllerPattern.js";
 import { writtenValueOf } from "./facts/resolve.js";
 import { parseRuby } from "./parser.js";
@@ -18,6 +22,7 @@ import {
   packWordsOf,
 } from "./project.js";
 
+import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { ExtractionReport, TimingReport } from "@suss/extractor";
 import type { RubyPack } from "./pack.js";
 
@@ -117,6 +122,123 @@ describe("extractRubyProject", () => {
       packs: [graphqlRubyPack(path.join(tmpDir, "app", "graphql"))],
     });
     expect(summaries[0]?.location.file).toBe(file);
+  });
+});
+
+/** The method and path of every REST boundary in a run, sorted. */
+function routesIn(summaries: BehavioralSummary[]): string[] {
+  return summaries
+    .flatMap((summary) => {
+      const semantics = summary.identity.boundaryBinding?.semantics;
+      return semantics?.name === "rest"
+        ? [`${semantics.method} ${semantics.path}`]
+        : [];
+    })
+    .sort();
+}
+
+describe("a client method whose class is constructed more than once", () => {
+  it("is a client of one route per construction", async () => {
+    const client = write(
+      "app/clients/api.rb",
+      [
+        "class Api",
+        "  def initialize(base)",
+        "    @base = base",
+        "  end",
+        "",
+        "  def items",
+        "    HttpClient.get(@base)",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const wiring = write(
+      "config/wiring.rb",
+      ['USERS = Api.new("/users")', 'ORDERS = Api.new("/orders")', ""].join(
+        "\n",
+      ),
+    );
+
+    const { summaries } = await extractRubyProject({
+      files: [client, wiring],
+      packs: [httpClientTestPack()],
+      workspaceRoot: tmpDir,
+    });
+
+    expect(routesIn(summaries)).toEqual(["GET /orders", "GET /users"]);
+    expect(new Set(summaries.map((s) => s.identity.id)).size).toBe(2);
+  });
+
+  it("takes the request method from the request object each construction was handed", async () => {
+    const client = write(
+      "app/clients/api.rb",
+      [
+        "class Api",
+        "  def initialize(request)",
+        "    @request = request",
+        "  end",
+        "",
+        "  def send_it",
+        "    conn = HttpClient.build",
+        "    conn.send_it(@request)",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const wiring = write(
+      "config/wiring.rb",
+      [
+        'USERS = Api.new(HttpClient::Get.new(URI("/users")))',
+        'ORDERS = Api.new(HttpClient::Post.new(URI("/orders")))',
+        "",
+      ].join("\n"),
+    );
+
+    const { summaries } = await extractRubyProject({
+      files: [client, wiring],
+      packs: [httpClientTestPack(wrappedUrlsPattern())],
+      workspaceRoot: tmpDir,
+    });
+
+    expect(routesIn(summaries)).toEqual(["GET /users", "POST /orders"]);
+  });
+
+  it("reads the field each construction filled into the URL the call interpolates", async () => {
+    const client = write(
+      "app/clients/api.rb",
+      [
+        "class Api",
+        "  def initialize(base)",
+        "    @base = base",
+        "  end",
+        "",
+        "  def items",
+        '    HttpClient.get("#{@base}/items")',
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const wiring = write(
+      "config/wiring.rb",
+      ['USERS = Api.new("/users")', 'ORDERS = Api.new("/orders")', ""].join(
+        "\n",
+      ),
+    );
+
+    const { summaries } = await extractRubyProject({
+      files: [client, wiring],
+      packs: [httpClientTestPack()],
+      workspaceRoot: tmpDir,
+    });
+
+    expect(routesIn(summaries)).toEqual([
+      "GET /orders/items",
+      "GET /users/items",
+    ]);
   });
 });
 
