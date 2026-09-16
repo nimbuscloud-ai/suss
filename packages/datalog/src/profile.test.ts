@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   chargeAbandoned,
+  chargeQuestion,
   Database,
   evaluate,
   formatProfile,
   lit,
   profileEvaluation,
   profileEvaluationAsync,
+  rowBudget,
   rule,
   variable as v,
 } from "./index.js";
@@ -59,7 +61,7 @@ describe("evaluation profiling", () => {
     const db = chain(200);
     const { profile } = profileEvaluation(() => {
       try {
-        evaluate(db, REACHES, undefined, 500);
+        evaluate(db, REACHES, undefined, rowBudget(500));
       } catch {
         chargeAbandoned("n0 under n1", 501);
       }
@@ -69,6 +71,24 @@ describe("evaluation profiling", () => {
       { question: "n0 under n1", examined: 501 },
     ]);
     expect(formatProfile(profile)).toContain("gave up on n0 under n1");
+  });
+
+  it("counts the questions a caller put and how they went", () => {
+    const { profile } = profileEvaluation(() => {
+      chargeQuestion();
+      chargeQuestion("abandoned");
+      chargeQuestion("skipped");
+      chargeQuestion("skipped");
+    });
+
+    expect(profile.questions).toEqual({
+      asked: 4,
+      abandoned: 1,
+      skipped: 2,
+    });
+    expect(formatProfile(profile)).toContain(
+      "4 questions under a site: 1 given up part way, 2 never put",
+    );
   });
 
   it("names the body relations so a rule is recognisable in a report", () => {

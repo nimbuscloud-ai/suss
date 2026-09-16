@@ -11,9 +11,11 @@
 import {
   BudgetExhausted,
   chargeAbandoned,
+  chargeQuestion,
   clearRelations,
   deriveOnDemand,
   evaluate,
+  rowBudget,
   tupleKey,
 } from "@suss/datalog";
 
@@ -188,24 +190,70 @@ const askedUnderByDb = new WeakMap<Database, Set<string>>();
  */
 export const UNDER_QUESTION_ROW_BUDGET = 20_000_000;
 
-/** Whether a question was worked through, or given up on its budget. */
+/**
+ * How many rows the joins may read for every under-question a run asks,
+ * together.
+ *
+ * The per-question budget stops one question walking forever. It says
+ * nothing about how many questions a project asks, and a value read
+ * under every site of a class built in seventy places is seventy
+ * questions, each a fixpoint of its own. Twenty of those at the
+ * per-question limit is seven minutes, which is a hang however well
+ * each behaved on its own.
+ *
+ * This is two runaway questions' worth, or sixty-six of the biggest
+ * one measured. Past it a run keeps the context-free answer.
+ */
+export const UNDER_RUN_ROW_BUDGET = 40_000_000;
+
+/** Whether a question was worked through, or given up on a budget. */
 export type UnderOutcome = "answered" | "abandoned";
+
+/** What the under-questions of one run have cost it so far. */
+interface UnderSpend {
+  rows: number;
+  asked: number;
+  abandoned: number;
+  skipped: number;
+}
+
+const spentUnderByDb = new WeakMap<Database, UnderSpend>();
+
+function spendOf(db: Database): UnderSpend {
+  let spend = spentUnderByDb.get(db);
+  if (spend === undefined) {
+    spend = { rows: 0, asked: 0, abandoned: 0, skipped: 0 };
+    spentUnderByDb.set(db, spend);
+  }
+  return spend;
+}
+
+/**
+ * What the under-questions of this database have cost, for a caller
+ * reporting on a run.
+ */
+export function underQuestionSpend(db: Database): Readonly<UnderSpend> {
+  return { ...spendOf(db) };
+}
 
 /**
  * `askResolution` for a value read under one allocation site. Each pair
  * is a question of its own, so asking about a value under two sites is
  * two rows, and asking the same pair twice costs nothing.
  *
- * A question that runs past `rowBudget` is abandoned: the rows it added
- * come back out, the answer relations stay as empty as they were, and
- * the caller is told so it can keep the context-free answer instead.
- * The pair stays marked as asked, so nobody pays for it twice.
+ * A question that runs past `questionBudget`, or one asked after the
+ * run has spent `runBudget` on questions before it, is abandoned: the
+ * rows it added come back out, the answer relations stay as empty as
+ * they were, and the caller is told so it can keep the context-free
+ * answer instead. The pair stays marked as asked either way, so nobody
+ * pays for it twice.
  */
 export function askResolutionUnder(
   db: Database,
   pairs: Iterable<readonly [string, string]>,
   program: OnDemandRules = resolutionUnderProgram(),
-  rowBudget: number = UNDER_QUESTION_ROW_BUDGET,
+  questionBudget: number = UNDER_QUESTION_ROW_BUDGET,
+  runBudget: number = UNDER_RUN_ROW_BUDGET,
 ): UnderOutcome {
   let asked = askedUnderByDb.get(db);
   if (asked === undefined) {
@@ -218,8 +266,19 @@ export function askResolutionUnder(
   if (fresh.length === 0) {
     return "answered";
   }
+  const spend = spendOf(db);
   for (const [key, site] of fresh) {
     asked.add(tupleKey([key, site]));
+  }
+  spend.asked += 1;
+  // Nothing is added to the database when the run is out, so there is
+  // nothing to take back and the question costs a comparison.
+  if (spend.rows >= runBudget) {
+    spend.skipped += 1;
+    chargeQuestion("skipped");
+    return "abandoned";
+  }
+  for (const [key, site] of fresh) {
     db.add("wantedUnder", [key, site]);
   }
   const forget = queryFacts(program);
@@ -229,12 +288,16 @@ export function askResolutionUnder(
     }
   };
 
+  const budget = rowBudget(questionBudget);
   try {
-    evaluate(db, program.rules, undefined, rowBudget);
+    evaluate(db, program.rules, undefined, budget);
   } catch (error) {
     if (!(error instanceof BudgetExhausted)) {
       throw error;
     }
+    spend.rows += error.examined;
+    spend.abandoned += 1;
+    chargeQuestion("abandoned");
     // Clearing covers these when the rules are demand-driven, and this
     // covers them when they are not.
     db.retract("wantedUnder", fresh);
@@ -245,6 +308,8 @@ export function askResolutionUnder(
     );
     return "abandoned";
   }
+  spend.rows += budget.examined;
+  chargeQuestion();
   clearDerived();
   return "answered";
 }

@@ -40,6 +40,19 @@ export interface AbandonedQuestion {
 }
 
 /**
+ * How a caller that asks one question at a time got on. `skipped` are
+ * the ones it never put, because what it had already spent was gone.
+ */
+export interface QuestionTally {
+  asked: number;
+  abandoned: number;
+  skipped: number;
+}
+
+/** How one question ended, for the tally. */
+export type QuestionOutcome = keyof Omit<QuestionTally, "asked">;
+
+/**
  * How big a relation grew. `derived` separates the relations rules
  * concluded from the base facts an adapter emitted, because "derive fewer
  * tuples" is advice about the first kind and meaningless about the second.
@@ -88,6 +101,8 @@ export interface EvaluationProfile {
   largestEvaluation: number;
   /** Every question abandoned on its budget, in the order they were given up. */
   abandoned: AbandonedQuestion[];
+  /** How many questions a one-at-a-time caller asked, and how they went. */
+  questions: QuestionTally;
   /** Final tuple count per relation, largest first. */
   relations: RelationSize[];
   /** Per-rule cost across every rule set, most expensive first. */
@@ -113,6 +128,7 @@ interface Collector {
   ruleSets: Map<string, RuleSetCollector>;
   abandoned: AbandonedQuestion[];
   largestEvaluation: number;
+  questions: QuestionTally;
 }
 
 // Every open scope, outermost first. A charge goes to all of them, so a
@@ -182,6 +198,19 @@ export function chargeRule(
 export function chargeAbandoned(question: string, examined: number): void {
   for (const collector of open) {
     collector.abandoned.push({ question, examined });
+  }
+}
+
+/**
+ * Note that a caller put one question. `outcome` says whether it was
+ * given up part way or never put at all; leave it out when it answered.
+ */
+export function chargeQuestion(outcome?: QuestionOutcome): void {
+  for (const collector of open) {
+    collector.questions.asked += 1;
+    if (outcome !== undefined) {
+      collector.questions[outcome] += 1;
+    }
   }
 }
 
@@ -300,6 +329,7 @@ function openScope(): Collector {
     ruleSets: new Map(),
     abandoned: [],
     largestEvaluation: 0,
+    questions: { asked: 0, abandoned: 0, skipped: 0 },
   };
   open.push(mine);
   return mine;
@@ -339,6 +369,7 @@ function summarise(mine: Collector): EvaluationProfile {
     examined: totalExamined(mine.rules.values()),
     largestEvaluation: mine.largestEvaluation,
     abandoned: [...mine.abandoned],
+    questions: { ...mine.questions },
     relations: [...mine.relations]
       .map(([relation, tuples]) => ({
         relation,
@@ -377,6 +408,13 @@ export function formatProfile(profile: EvaluationProfile): string {
   lines.push(
     `datalog: ${profile.datalogMs.toFixed(0)}ms (${share(profile.datalogMs, profile.wallMs).trim()} of ${profile.wallMs.toFixed(0)}ms wall), ${profile.evaluations} evaluations, ${profile.rounds} rounds, ${profile.examined} rows read (${profile.largestEvaluation} in the biggest evaluation)`,
   );
+
+  const { asked, abandoned, skipped } = profile.questions;
+  if (asked > 0) {
+    lines.push(
+      `  ${asked} questions under a site: ${abandoned} given up part way, ${skipped} never put once the run's rows were spent`,
+    );
+  }
 
   for (const given of profile.abandoned) {
     lines.push(

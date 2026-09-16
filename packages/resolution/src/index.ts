@@ -41,7 +41,9 @@ export {
   resolutionProgram,
   resolutionUnderProgram,
   UNDER_QUESTION_ROW_BUDGET,
+  UNDER_RUN_ROW_BUDGET,
   type UnderOutcome,
+  underQuestionSpend,
 } from "./program.js";
 export { explainResolvedKey } from "./session.js";
 export {

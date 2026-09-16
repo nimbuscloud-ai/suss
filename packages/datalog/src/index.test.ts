@@ -7,6 +7,7 @@ import {
   evaluate,
   lit,
   notLit,
+  rowBudget,
   rule,
   stratify,
   type TagAlgebra,
@@ -745,7 +746,7 @@ describe("evaluate: a row budget", () => {
 
   it("gives up once the joins have read more rows than the budget", () => {
     const db = chainOf(200);
-    expect(() => evaluate(db, CLOSURE, undefined, 500)).toThrow(
+    expect(() => evaluate(db, CLOSURE, undefined, rowBudget(500))).toThrow(
       BudgetExhausted,
     );
   });
@@ -753,7 +754,7 @@ describe("evaluate: a row budget", () => {
   it("says how much it read and what it was deriving", () => {
     const db = chainOf(200);
     try {
-      evaluate(db, CLOSURE, undefined, 500);
+      evaluate(db, CLOSURE, undefined, rowBudget(500));
       expect.unreachable("the budget should have run out");
     } catch (error) {
       expect(error).toBeInstanceOf(BudgetExhausted);
@@ -765,7 +766,7 @@ describe("evaluate: a row budget", () => {
 
   it("leaves the caller its own facts and none of its conclusions", () => {
     const db = chainOf(200);
-    expect(() => evaluate(db, CLOSURE, undefined, 500)).toThrow(
+    expect(() => evaluate(db, CLOSURE, undefined, rowBudget(500))).toThrow(
       BudgetExhausted,
     );
 
@@ -775,7 +776,7 @@ describe("evaluate: a row budget", () => {
 
   it("starts over rather than resuming a run it gave up on", () => {
     const db = chainOf(200);
-    expect(() => evaluate(db, CLOSURE, undefined, 500)).toThrow(
+    expect(() => evaluate(db, CLOSURE, undefined, rowBudget(500))).toThrow(
       BudgetExhausted,
     );
     evaluate(db, CLOSURE);
@@ -787,11 +788,19 @@ describe("evaluate: a row budget", () => {
 
   it("derives what it would have without a budget when it fits", () => {
     const db = chainOf(30);
-    evaluate(db, CLOSURE, undefined, 1_000_000);
+    evaluate(db, CLOSURE, undefined, rowBudget(1_000_000));
 
     const unbudgeted = chainOf(30);
     evaluate(unbudgeted, CLOSURE);
     expect(sorted(db.facts("path"))).toEqual(sorted(unbudgeted.facts("path")));
+  });
+
+  it("says what an answered evaluation cost", () => {
+    const budget = rowBudget(1_000_000);
+    evaluate(chainOf(30), CLOSURE, undefined, budget);
+
+    expect(budget.examined).toBeGreaterThan(0);
+    expect(budget.examined).toBeLessThan(1_000_000);
   });
 
   it("refuses a budget together with a tag algebra", () => {
@@ -801,8 +810,8 @@ describe("evaluate: a row budget", () => {
       combine: (tags) => tags.reduce((sum, tag) => sum + tag, 1),
       merge: (stored, incoming) => Math.min(stored, incoming),
     };
-    expect(() => evaluate(chainOf(3), CLOSURE, shortest, 1_000)).toThrow(
-      "tag algebra and a row budget",
-    );
+    expect(() =>
+      evaluate(chainOf(3), CLOSURE, shortest, rowBudget(1_000)),
+    ).toThrow("tag algebra and a row budget");
   });
 });

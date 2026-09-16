@@ -36,10 +36,13 @@ export {
 export {
   type AbandonedQuestion,
   chargeAbandoned,
+  chargeQuestion,
   type EvaluationProfile,
   formatProfile,
   profileEvaluation,
   profileEvaluationAsync,
+  type QuestionOutcome,
+  type QuestionTally,
   type RuleCost,
 } from "./profile.js";
 export { tupleKey, tupleKeyParts } from "./tupleKey.js";
@@ -629,13 +632,22 @@ function planBodyOrder(r: Rule, deltaAt: number): readonly number[] {
  * a question that walks: the walk finds the same conclusions over and
  * over, so nothing new arrives while the reading runs away.
  *
- * An evaluation with no budget gets a limit of Infinity, so the hot loop
- * does the same increment and the same compare either way.
+ * The caller builds one with `rowBudget` and reads `examined` back after
+ * the call, which is how it learns what a question cost whether or not
+ * the question settled. An evaluation with no budget gets a limit of
+ * Infinity, so the hot loop does the same increment and the same
+ * compare either way.
  */
-interface RowBudget {
+export interface RowBudget {
   examined: number;
   limit: number;
 }
+
+/** A budget for one evaluation, ready to hand to `evaluate`. */
+export const rowBudget = (limit: number): RowBudget => ({
+  examined: 0,
+  limit,
+});
 
 /**
  * Thrown out of the join when the budget runs out and caught by
@@ -986,15 +998,15 @@ function currentMarks(db: Database): Map<string, number> {
  * `TagAlgebra`). Supply the same algebra every time over one
  * database: a resumed run tags only what the new facts reach.
  *
- * With a `rowBudget`, evaluation gives up once its joins have read
- * that many rows and throws `BudgetExhausted`, which says what it
- * put back before throwing.
+ * With a `budget`, evaluation gives up once its joins have read that
+ * many rows and throws `BudgetExhausted`. Either way the budget says
+ * afterwards what the evaluation cost.
  */
 export function evaluate<Tag = never>(
   db: Database,
   rules: Rule[],
   algebra?: TagAlgebra<Tag>,
-  rowBudget?: number,
+  budget?: RowBudget,
 ): Database {
   if (algebra !== undefined && isDemandRewritten(rules)) {
     throw new Error(
@@ -1004,12 +1016,12 @@ export function evaluate<Tag = never>(
   }
   // An improved tag is not something the abandoned evaluation can take
   // back, so the two together are refused rather than half handled.
-  if (algebra !== undefined && rowBudget !== undefined) {
+  if (algebra !== undefined && budget !== undefined) {
     throw new Error("cannot evaluate with both a tag algebra and a row budget");
   }
   deriving.set(db, (deriving.get(db) ?? 0) + 1);
   try {
-    return runRules(db, rules, algebra, rowBudget);
+    return runRules(db, rules, algebra, budget);
   } finally {
     const depth = (deriving.get(db) ?? 1) - 1;
     if (depth === 0) {
@@ -1126,7 +1138,7 @@ function runRules<Tag>(
   db: Database,
   rules: Rule[],
   algebra?: TagAlgebra<Tag>,
-  rowBudget?: number,
+  given?: RowBudget,
 ): Database {
   const {
     signature,
@@ -1134,14 +1146,14 @@ function runRules<Tag>(
     derivedRelations,
     strata,
   } = shapeOf(rules);
-  const budget: RowBudget = {
+  const budget: RowBudget = given ?? {
     examined: 0,
-    limit: rowBudget ?? Number.POSITIVE_INFINITY,
+    limit: Number.POSITIVE_INFINITY,
   };
+  const startedAt = budget.examined;
   // Only a budgeted evaluation can be asked to take its conclusions
   // back, and remembering them costs memory every other run would pay.
-  const addedHere: [string, Tuple][] | null =
-    rowBudget === undefined ? null : [];
+  const addedHere: [string, Tuple][] | null = given === undefined ? null : [];
   chargeEvaluation(ruleSetName);
   const states = statesFor(db);
   const state: RuleSetState = states.get(signature) ?? {
@@ -1307,6 +1319,10 @@ function runRules<Tag>(
     }
   };
 
+  // What this call read, where the budget itself may have been carrying
+  // rows from an earlier one.
+  const readHere = (): number => budget.examined - startedAt;
+
   try {
     for (const stratum of strata) {
       runStratum(stratum);
@@ -1321,11 +1337,11 @@ function runRules<Tag>(
     // Retracting already sends every rule set back to the base facts,
     // but a run that gave up before deriving anything retracts nothing.
     state.marks = null;
-    chargeEvaluationRows(budget.examined);
-    throw new BudgetExhausted(ruleSetName, budget.examined);
+    chargeEvaluationRows(readHere());
+    throw new BudgetExhausted(ruleSetName, readHere());
   }
 
-  chargeEvaluationRows(budget.examined);
+  chargeEvaluationRows(readHere());
   state.marks = currentMarks(db);
   if (isProfiling()) {
     chargeRelationSizes(
