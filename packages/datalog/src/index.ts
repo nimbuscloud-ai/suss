@@ -28,11 +28,7 @@ export {
   confidence,
   confidenceWith,
 } from "./confidence.js";
-export {
-  type Demand,
-  deriveOnDemand,
-  type OnDemandRules,
-} from "./onDemand.js";
+export { type Demand, deriveOnDemand, type OnDemandRules } from "./onDemand.js";
 export {
   type AbandonedQuestion,
   chargeAbandoned,
@@ -533,98 +529,29 @@ function headTuple(head: Rule["head"], bindings: Bindings | null): Tuple {
   });
 }
 
-const variablesOf = (literal: Literal): string[] =>
-  literal.terms
-    .filter((term) => term.type === "variable")
-    .map((term) => (term as { name: string }).name);
-
-/** Which body literal the round's new facts are, and the order to walk. */
-interface BodyPlan {
-  deltaAt: number;
-  order: readonly number[];
-}
-
-const plans = new WeakMap<Rule, Map<number, BodyPlan>>();
+/** The body positions of a rule's positive literals, in written order. */
+const positiveLiterals = new WeakMap<Rule, readonly number[]>();
 
 /**
- * How to walk one rule's body. A join gives the same rows whatever order
- * it takes them in; the README says why this one is cheaper.
+ * Which body literal the `deltaIndex`-th positive literal is, or -1
+ * when the rule has fewer positive literals than that.
  */
-function bodyPlan(r: Rule, deltaIndex: number): BodyPlan {
-  let byDelta = plans.get(r);
-  if (byDelta === undefined) {
-    byDelta = new Map();
-    plans.set(r, byDelta);
+function deltaLiteral(r: Rule, deltaIndex: number): number {
+  let positives = positiveLiterals.get(r);
+  if (positives === undefined) {
+    positives = r.body
+      .map((literal, index) => (literal.negated ? -1 : index))
+      .filter((index) => index !== -1);
+    positiveLiterals.set(r, positives);
   }
-  const known = byDelta.get(deltaIndex);
-  if (known !== undefined) {
-    return known;
-  }
-  const positives = r.body
-    .map((literal, index) => (literal.negated ? -1 : index))
-    .filter((index) => index !== -1);
-  const deltaAt = positives[deltaIndex] ?? -1;
-  const computed = { deltaAt, order: planBodyOrder(r, deltaAt) };
-  byDelta.set(deltaIndex, computed);
-  return computed;
+  return positives[deltaIndex] ?? -1;
 }
 
-function planBodyOrder(r: Rule, deltaAt: number): readonly number[] {
-  const natural = r.body.map((_, i) => i);
-  // With the delta already leading, the written order is what the rule
-  // author chose and there is nothing to improve on.
-  if (deltaAt <= 0) {
-    return natural;
-  }
-
-  const taken = r.body.map(() => false);
-  const bound = new Set<string>();
-  const order: number[] = [];
-  const take = (index: number): void => {
-    taken[index] = true;
-    order.push(index);
-    for (const name of variablesOf(r.body[index])) {
-      bound.add(name);
-    }
-  };
-  const firstWhere = (want: (index: number) => boolean): number =>
-    natural.find((index) => !taken[index] && want(index)) ?? -1;
-
-  const nextLiteral = (): number => {
-    // A negated literal only filters, so ask it as soon as its variables
-    // are bound.
-    const ready = firstWhere(
-      (i) =>
-        r.body[i].negated &&
-        variablesOf(r.body[i]).every((name) => bound.has(name)),
-    );
-    if (ready !== -1) {
-      return ready;
-    }
-    // Sharing a bound variable is what lets a literal come off an index.
-    const joined = firstWhere(
-      (i) =>
-        !r.body[i].negated &&
-        variablesOf(r.body[i]).some((name) => bound.has(name)),
-    );
-    if (joined !== -1) {
-      return joined;
-    }
-    const disconnected = firstWhere((i) => !r.body[i].negated);
-    if (disconnected !== -1) {
-      return disconnected;
-    }
-    // Every literal left is negated with a variable nothing binds, which
-    // is a malformed rule. Written order is where it gets reported.
-    return firstWhere(() => true);
-  };
-
-  take(deltaAt);
-  while (order.length < r.body.length) {
-    take(nextLiteral());
-  }
-  return order;
-}
+const allBound = (literal: Literal, bindings: Bindings | null): boolean =>
+  literal.terms.every(
+    (term) =>
+      term.type === "constant" || boundValue(bindings, term.name) !== undefined,
+  );
 
 /**
  * How many rows the joins of one evaluation may read, and how many they
@@ -684,6 +611,12 @@ export class BudgetExhausted extends Error {
  * Evaluate one rule with the `deltaIndex`-th positive literal drawn
  * from the delta set and every other positive literal from the full
  * database. Returns the derived head tuples.
+ *
+ * The delta is read first. The rest of the body is walked in whatever
+ * order the bindings so far make cheapest, chosen afresh under each
+ * binding; the DESIGN notes say why a fixed order loses. A bitmask
+ * records which literals a branch has taken, so a body is limited to
+ * 31 literals.
  */
 function evaluateRule(
   db: Database,
@@ -693,27 +626,17 @@ function evaluateRule(
   budget: RowBudget,
 ): Tuple[] {
   const results: Tuple[] = [];
-  const { deltaAt, order } = bodyPlan(r, deltaIndex);
+  const body = r.body;
+  const deltaAt = deltaLiteral(r, deltaIndex);
+  const whole = (1 << body.length) - 1;
 
-  const step = (orderIndex: number, bindings: Bindings | null): void => {
-    if (orderIndex === order.length) {
-      results.push(headTuple(r.head, bindings));
-      return;
-    }
-    const literalIndex = order[orderIndex];
-    const literal = r.body[literalIndex];
-
-    if (literal.negated) {
-      if (!db.has(literal.relation, groundNegated(literal, bindings))) {
-        step(orderIndex + 1, bindings);
-      }
-      return;
-    }
-
-    const source =
-      literalIndex === deltaAt
-        ? (deltas.get(literal.relation) ?? [])
-        : boundSource(db, literal, bindings);
+  const walk = (
+    index: number,
+    source: readonly Tuple[],
+    taken: number,
+    bindings: Bindings | null,
+  ): void => {
+    const literal = body[index];
     for (const tuple of source) {
       budget.examined++;
       if (budget.examined > budget.limit) {
@@ -721,26 +644,98 @@ function evaluateRule(
       }
       const next = unify(literal, tuple, bindings);
       if (next !== NO_MATCH) {
-        step(orderIndex + 1, next);
+        step(taken | (1 << index), next);
       }
     }
   };
 
-  step(0, null);
+  const step = (taken: number, bindings: Bindings | null): void => {
+    if (taken === whole) {
+      results.push(headTuple(r.head, bindings));
+      return;
+    }
+    let pick = -1;
+    let narrowest: readonly Tuple[] | null = null;
+    for (let index = 0; index < body.length; index++) {
+      if (taken & (1 << index)) {
+        continue;
+      }
+      const literal = body[index];
+      if (literal.negated) {
+        // A negated literal only filters, so ask it as soon as its
+        // variables are bound.
+        if (allBound(literal, bindings)) {
+          if (!db.has(literal.relation, groundNegated(literal, bindings))) {
+            step(taken | (1 << index), bindings);
+          }
+          return;
+        }
+        continue;
+      }
+      const source = narrowedSource(db, literal, bindings);
+      if (source === null) {
+        continue;
+      }
+      if (source.length === 0) {
+        return;
+      }
+      if (narrowest === null || source.length < narrowest.length) {
+        pick = index;
+        narrowest = source;
+      }
+    }
+    if (narrowest !== null) {
+      walk(pick, narrowest, taken, bindings);
+      return;
+    }
+    // Nothing left shares a bound variable, so the first positive
+    // literal is scanned whole. Only negated literals with a variable
+    // nothing binds remain after that, and grounding one reports it.
+    for (let index = 0; index < body.length; index++) {
+      if (!(taken & (1 << index)) && !body[index].negated) {
+        walk(index, db.facts(body[index].relation), taken, bindings);
+        return;
+      }
+    }
+    for (let index = 0; index < body.length; index++) {
+      if (!(taken & (1 << index))) {
+        groundNegated(body[index], bindings);
+      }
+    }
+  };
+
+  // The delta has no index, so it is read once, first, and never under
+  // a binding.
+  if (deltaAt === -1) {
+    step(0, null);
+  } else {
+    walk(deltaAt, deltas.get(body[deltaAt].relation) ?? [], 0, null);
+  }
   return results;
 }
 
 /**
- * The facts worth trying for a literal. When one of its terms is
- * already fixed, either written as a constant or bound by an earlier
- * literal, the index on that column gives those facts directly.
- * Otherwise there is nothing to narrow by, so the join scans.
+ * The facts worth trying for a literal whose terms are all still free:
+ * every one of them.
  */
-function boundSource(
+const boundSource = (
   db: Database,
   literal: Literal,
   bindings: Bindings | null,
-): readonly Tuple[] {
+): readonly Tuple[] =>
+  narrowedSource(db, literal, bindings) ?? db.facts(literal.relation);
+
+/**
+ * The facts worth trying for a literal with a term already fixed, either
+ * written as a constant or bound by an earlier literal: the index on
+ * that column gives them directly. Null when nothing is fixed, so the
+ * caller can tell a scan from a lookup.
+ */
+function narrowedSource(
+  db: Database,
+  literal: Literal,
+  bindings: Bindings | null,
+): readonly Tuple[] | null {
   // Of the columns already fixed, the one with the fewest facts under
   // its value feeds the join the fewest candidates to reject.
   let narrowest: readonly Tuple[] | null = null;
@@ -759,7 +754,7 @@ function boundSource(
       narrowest = bucket;
     }
   }
-  return narrowest ?? db.facts(literal.relation);
+  return narrowest;
 }
 
 /** One derived head tuple and the tag its derivation combined to. */
