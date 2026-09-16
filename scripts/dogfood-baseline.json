@@ -2,11 +2,11 @@
   "totals": {
     "packages": 75,
     "packagesWithExports": 75,
-    "exports": 992,
-    "internal": 3472,
-    "consumers": 1997,
-    "pairs": 1985,
-    "unfollowedCalls": 511,
+    "exports": 993,
+    "internal": 3476,
+    "consumers": 2014,
+    "pairs": 2002,
+    "unfollowedCalls": 512,
     "findingErrors": 0
   },
   "packages": {
@@ -56,7 +56,7 @@
       "name": "@suss/cli",
       "exports": 30,
       "internal": 537,
-      "consumers": 340,
+      "consumers": 352,
       "unfollowedCalls": 57
     },
     "packages/client/aiohttp": {
@@ -194,10 +194,10 @@
     },
     "packages/datalog": {
       "name": "@suss/datalog",
-      "exports": 27,
-      "internal": 71,
+      "exports": 28,
+      "internal": 75,
       "consumers": 0,
-      "unfollowedCalls": 12
+      "unfollowedCalls": 13
     },
     "packages/extractor": {
       "name": "@suss/extractor",
@@ -497,7 +497,7 @@
       "name": "@suss/resolution",
       "exports": 33,
       "internal": 34,
-      "consumers": 105,
+      "consumers": 110,
       "unfollowedCalls": 29
     },
     "packages/runtime/node": {

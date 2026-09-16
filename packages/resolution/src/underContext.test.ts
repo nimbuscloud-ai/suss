@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { Database } from "@suss/datalog";
+import { Database, notLit, rule, variable } from "@suss/datalog";
 
 import {
   askResolution,
@@ -145,6 +145,18 @@ describe("a question that runs past its budget", () => {
     askResolutionUnder(db, [["base", "v2Site"]], resolutionUnderProgram());
 
     expect(isWrittenAsUnder(db, "base", "v2Site")).toEqual(["urlB"]);
+  });
+
+  it("hands back anything else the rules throw", () => {
+    const malformed = {
+      rules: [rule("bad", [variable("x")], [notLit("blocked", variable("z"))])],
+      demandDriven: [],
+      demands: [],
+    };
+
+    expect(() =>
+      askResolutionUnder(factsDb(), [["base", "v1Site"]], malformed),
+    ).toThrow('unbound variable "z"');
   });
 });
 

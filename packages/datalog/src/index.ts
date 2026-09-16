@@ -818,10 +818,10 @@ function evaluateRuleTagged<Tag>(
         ? (deltas.get(literal.relation) ?? [])
         : boundSource(db, literal, bindings);
     for (const tuple of source) {
+      // Counted for the profile, never given up on: a tagged
+      // evaluation is refused a budget, since it could not take an
+      // improved tag back.
       budget.examined++;
-      if (budget.examined > budget.limit) {
-        throw OUT_OF_BUDGET;
-      }
       const next = unify(literal, tuple, bindings);
       if (next !== NO_MATCH) {
         if (readsTags) {
