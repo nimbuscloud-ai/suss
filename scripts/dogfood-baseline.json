@@ -6,7 +6,7 @@
     "internal": 3479,
     "consumers": 2020,
     "pairs": 2008,
-    "unfollowedCalls": 512,
+    "unfollowedCalls": 511,
     "findingErrors": 0
   },
   "packages": {
@@ -197,7 +197,7 @@
       "exports": 30,
       "internal": 76,
       "consumers": 0,
-      "unfollowedCalls": 13
+      "unfollowedCalls": 12
     },
     "packages/extractor": {
       "name": "@suss/extractor",
