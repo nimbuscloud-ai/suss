@@ -817,6 +817,31 @@ describe("Evaluator", () => {
       expect(literalOf(force(evaluator.evaluate(target)))).toBe(null);
     });
 
+    it("asks about an unfilled parameter without the site", () => {
+      const asked: { node: TestNode; site: string | undefined }[] = [];
+      const endpoint = name("endpoint");
+      const baseUrl = member(name("this"), "baseUrl");
+      const target = template(baseUrl, "/", endpoint);
+      module([fn(["endpoint"], target)]);
+      const recording: Lowering<TestNode> = {
+        ...testLowering,
+        writtenTo: (n, site) => {
+          asked.push({ node: n, site });
+          return testLowering.writtenTo(n);
+        },
+      };
+      const evaluator = new Evaluator(recording);
+
+      force(evaluator.evaluate(target, { site: "made-here" }));
+
+      const siteFor = (n: TestNode): string | undefined | null => {
+        const entry = asked.find((one) => one.node === n);
+        return entry === undefined ? null : entry.site;
+      };
+      expect(siteFor(endpoint)).toBe(undefined);
+      expect(siteFor(baseUrl)).toBe("made-here");
+    });
+
     it("runs the statements before the target again for each site", () => {
       let ran = 0;
       const target = name("p");
