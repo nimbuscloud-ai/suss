@@ -628,7 +628,7 @@ function evaluateRule(
   const results: Tuple[] = [];
   const body = r.body;
   const deltaAt = deltaLiteral(r, deltaIndex);
-  const whole = (1 << body.length) - 1;
+  const whole = 2 ** body.length - 1;
 
   const walk = (
     index: number,
@@ -715,8 +715,8 @@ function evaluateRule(
 }
 
 /**
- * The facts worth trying for a literal whose terms are all still free:
- * every one of them.
+ * The facts worth trying for a literal: the narrowed set when one of its
+ * terms is fixed, otherwise every fact of its relation.
  */
 const boundSource = (
   db: Database,
