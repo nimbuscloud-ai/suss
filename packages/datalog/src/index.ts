@@ -15,6 +15,7 @@
 import { isDemandRewritten } from "./onDemand.js";
 import {
   chargeEvaluation,
+  chargeEvaluationRows,
   chargeRelationSizes,
   chargeRound,
   chargeRule,
@@ -33,10 +34,15 @@ export {
   type OnDemandRules,
 } from "./onDemand.js";
 export {
+  type AbandonedQuestion,
+  chargeAbandoned,
+  chargeQuestion,
   type EvaluationProfile,
   formatProfile,
   profileEvaluation,
   profileEvaluationAsync,
+  type QuestionOutcome,
+  type QuestionTally,
   type RuleCost,
 } from "./profile.js";
 export { tupleKey, tupleKeyParts } from "./tupleKey.js";
@@ -621,6 +627,60 @@ function planBodyOrder(r: Rule, deltaAt: number): readonly number[] {
 }
 
 /**
+ * How many rows the joins of one evaluation may read, and how many they
+ * have read so far. Counting rows rather than new tuples is what catches
+ * a question that walks: the walk finds the same conclusions over and
+ * over, so nothing new arrives while the reading runs away.
+ *
+ * The caller builds one with `rowBudget` and reads `examined` back after
+ * the call, which is how it learns what a question cost whether or not
+ * the question settled. An evaluation with no budget gets a limit of
+ * Infinity, so the hot loop does the same increment and the same
+ * compare either way.
+ */
+export interface RowBudget {
+  examined: number;
+  limit: number;
+}
+
+/** A budget for one evaluation, ready to hand to `evaluate`. */
+export const rowBudget = (limit: number): RowBudget => ({
+  examined: 0,
+  limit,
+});
+
+/**
+ * Thrown out of the join when the budget runs out and caught by
+ * `runRules`, which tidies up and throws `BudgetExhausted` instead. One
+ * shared object, since it never reaches a caller and an Error built per
+ * throw would carry a stack nobody reads.
+ */
+const OUT_OF_BUDGET = Symbol("datalog row budget exhausted");
+
+/**
+ * What `evaluate` throws when a row budget runs out.
+ *
+ * By the time this reaches a caller the database is back where it
+ * started: every fact that evaluation derived has been retracted, and
+ * the rule set will start over from the base facts next time rather
+ * than from a delta that was never worked through. The caller's own
+ * facts, the question it asked among them, are still there for it to
+ * take back.
+ */
+export class BudgetExhausted extends Error {
+  constructor(
+    readonly ruleSet: string,
+    readonly examined: number,
+  ) {
+    // A rule set is called after every relation it derives, which runs
+    // to thousands of characters for the resolution program, so it
+    // stays a field and the message says the number a reader acts on.
+    super(`gave up after reading ${examined} rows without settling`);
+    this.name = "BudgetExhausted";
+  }
+}
+
+/**
  * Evaluate one rule with the `deltaIndex`-th positive literal drawn
  * from the delta set and every other positive literal from the full
  * database. Returns the derived head tuples.
@@ -630,6 +690,7 @@ function evaluateRule(
   deltas: Map<string, readonly Tuple[]>,
   r: Rule,
   deltaIndex: number,
+  budget: RowBudget,
 ): Tuple[] {
   const results: Tuple[] = [];
   const { deltaAt, order } = bodyPlan(r, deltaIndex);
@@ -654,6 +715,10 @@ function evaluateRule(
         ? (deltas.get(literal.relation) ?? [])
         : boundSource(db, literal, bindings);
     for (const tuple of source) {
+      budget.examined++;
+      if (budget.examined > budget.limit) {
+        throw OUT_OF_BUDGET;
+      }
       const next = unify(literal, tuple, bindings);
       if (next !== NO_MATCH) {
         step(orderIndex + 1, next);
@@ -716,6 +781,7 @@ function evaluateRuleTagged<Tag>(
   r: Rule,
   deltaIndex: number,
   algebra: TagAlgebra<Tag>,
+  budget: RowBudget,
 ): TaggedDerivation<Tag>[] {
   const results: TaggedDerivation<Tag>[] = [];
   const bodyTags: Tag[] = [];
@@ -764,6 +830,10 @@ function evaluateRuleTagged<Tag>(
         ? (deltas.get(literal.relation) ?? [])
         : boundSource(db, literal, bindings);
     for (const tuple of source) {
+      // Counted for the profile, never given up on: a tagged
+      // evaluation is refused a budget, since it could not take an
+      // improved tag back.
+      budget.examined++;
       const next = unify(literal, tuple, bindings);
       if (next !== NO_MATCH) {
         if (readsTags) {
@@ -921,18 +991,22 @@ function currentMarks(db: Database): Map<string, number> {
 /**
  * Evaluate `rules` over `db` to fixpoint, adding derived facts in
  * place. Rules are stratified first; within a stratum, semi-naïve
- * iteration joins each rule against the last round's delta so work is
- * proportional to new facts, not all facts.
+ * iteration joins each rule against the last round's delta, so work
+ * is proportional to new facts rather than to all facts.
  *
  * With an `algebra`, every derivation also tags its conclusion (see
- * `TagAlgebra`). Supply the same algebra on every evaluation of a rule
- * set over a database: a resumed run derives only from the new facts,
- * so it tags only what those reach.
+ * `TagAlgebra`). Supply the same algebra every time over one
+ * database: a resumed run tags only what the new facts reach.
+ *
+ * With a `budget`, evaluation gives up once its joins have read that
+ * many rows and throws `BudgetExhausted`. Either way the budget says
+ * afterwards what the evaluation cost.
  */
 export function evaluate<Tag = never>(
   db: Database,
   rules: Rule[],
   algebra?: TagAlgebra<Tag>,
+  budget?: RowBudget,
 ): Database {
   if (algebra !== undefined && isDemandRewritten(rules)) {
     throw new Error(
@@ -940,9 +1014,14 @@ export function evaluate<Tag = never>(
         "follow the demand-transformed rules rather than the ones the caller wrote",
     );
   }
+  // An improved tag is not something the abandoned evaluation can take
+  // back, so the two together are refused rather than half handled.
+  if (algebra !== undefined && budget !== undefined) {
+    throw new Error("cannot evaluate with both a tag algebra and a row budget");
+  }
   deriving.set(db, (deriving.get(db) ?? 0) + 1);
   try {
-    return runRules(db, rules, algebra);
+    return runRules(db, rules, algebra, budget);
   } finally {
     const depth = (deriving.get(db) ?? 1) - 1;
     if (depth === 0) {
@@ -1059,6 +1138,7 @@ function runRules<Tag>(
   db: Database,
   rules: Rule[],
   algebra?: TagAlgebra<Tag>,
+  given?: RowBudget,
 ): Database {
   const {
     signature,
@@ -1066,6 +1146,14 @@ function runRules<Tag>(
     derivedRelations,
     strata,
   } = shapeOf(rules);
+  const budget: RowBudget = given ?? {
+    examined: 0,
+    limit: Number.POSITIVE_INFINITY,
+  };
+  const startedAt = budget.examined;
+  // Only a budgeted evaluation can be asked to take its conclusions
+  // back, and remembering them costs memory every other run would pay.
+  const addedHere: [string, Tuple][] | null = given === undefined ? null : [];
   chargeEvaluation(ruleSetName);
   const states = statesFor(db);
   const state: RuleSetState = states.get(signature) ?? {
@@ -1092,6 +1180,7 @@ function runRules<Tag>(
       derived.set(relation, ledger);
     }
     ledger.set(keyOf(tuple), tuple);
+    addedHere?.push([relation, tuple]);
   };
   const mergeStored =
     algebra === undefined ? undefined : storedMergeFor(algebra);
@@ -1099,7 +1188,7 @@ function runRules<Tag>(
   // what the strata below it just derived.
   const marks = canResume(rules, state) ? state.marks : undefined;
 
-  for (const stratum of strata) {
+  const runStratum = (stratum: Rule[]): void => {
     let delta = new Map<string, Tuple[]>();
     const derivedHere = new Set(stratum.map((r) => r.head.relation));
 
@@ -1139,19 +1228,19 @@ function runRules<Tag>(
           r,
           deltaIndex,
           algebra,
+          budget,
         )) {
           recordTagged(r.head.relation, found.tuple, found.tag);
         }
         return;
       }
-      for (const tuple of evaluateRule(db, seed, r, deltaIndex)) {
+      for (const tuple of evaluateRule(db, seed, r, deltaIndex, budget)) {
         record(r.head.relation, tuple);
       }
     };
 
     // One rule against one delta. Profiling charges the rule here, where
-    // both the time and the new tuples are in scope. Comparing the head
-    // relation's size before and after is how we tell it found something.
+    // the time, the new tuples and the rows read are all in scope.
     const runOneRule = (
       r: Rule,
       seed: Map<string, readonly Tuple[]>,
@@ -1163,6 +1252,7 @@ function runRules<Tag>(
       }
       const startedAt = performance.now();
       const before = db.size(r.head.relation);
+      const readBefore = budget.examined;
       deriveInto(r, seed, deltaIndex);
       chargeRule(
         ruleSetName,
@@ -1170,6 +1260,7 @@ function runRules<Tag>(
         r.body.map(literalName),
         performance.now() - startedAt,
         db.size(r.head.relation) - before,
+        budget.examined - readBefore,
       );
     };
 
@@ -1226,8 +1317,31 @@ function runRules<Tag>(
       applyDelta(lastDelta, true);
       chargeRound(ruleSetName);
     }
+  };
+
+  // What this call read, where the budget itself may have been carrying
+  // rows from an earlier one.
+  const readHere = (): number => budget.examined - startedAt;
+
+  try {
+    for (const stratum of strata) {
+      runStratum(stratum);
+    }
+  } catch (error) {
+    if (error !== OUT_OF_BUDGET) {
+      throw error;
+    }
+    for (const [relation, tuples] of byRelation(addedHere ?? [])) {
+      db.retract(relation, tuples);
+    }
+    // Retracting already sends every rule set back to the base facts,
+    // but a run that gave up before deriving anything retracts nothing.
+    state.marks = null;
+    chargeEvaluationRows(readHere());
+    throw new BudgetExhausted(ruleSetName, readHere());
   }
 
+  chargeEvaluationRows(readHere());
   state.marks = currentMarks(db);
   if (isProfiling()) {
     chargeRelationSizes(
@@ -1236,6 +1350,15 @@ function runRules<Tag>(
     );
   }
   return db;
+}
+
+/** Tuples gathered under the relation they were derived into. */
+function byRelation(added: readonly [string, Tuple][]): Map<string, Tuple[]> {
+  const buckets = new Map<string, Tuple[]>();
+  for (const [relation, tuple] of added) {
+    addTo(buckets, relation, tuple);
+  }
+  return buckets;
 }
 
 function addTo(

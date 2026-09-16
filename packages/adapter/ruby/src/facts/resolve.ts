@@ -95,13 +95,24 @@ export function writtenValueOf(db: Database, key: string): string | null {
  * The single expression a value was written as when the receiver behind
  * it is the instance one site made. An ivar two constructions fill
  * differently settles here and not context free.
+ *
+ * A question abandoned on its budget gives back nothing. The pair
+ * stays marked as asked, so a second caller gets the same nothing
+ * without paying for it again.
  */
 export function writtenValueUnder(
   db: Database,
   key: string,
   site: string,
 ): string | null {
-  askResolutionUnder(db, [[key, site]], resolutionUnderProgram(RUBY_RULES));
+  const outcome = askResolutionUnder(
+    db,
+    [[key, site]],
+    resolutionUnderProgram(RUBY_RULES),
+  );
+  if (outcome === "abandoned") {
+    return null;
+  }
   return sharedWrittenValueUnder(db, key, site);
 }
 

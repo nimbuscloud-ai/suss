@@ -43,6 +43,20 @@ import {
 const INLINE_DEPTH_CAP = 3;
 const STATEMENT_BUDGET = 20_000;
 
+/**
+ * How an outer read is put to the lowering.
+ *
+ * A read of a receiver's own state depends on which instance is reading
+ * it, so it goes under the site. An unfilled parameter does not: the
+ * site says which instance the method was called on and says nothing
+ * about what a caller passed, so the answer is the same under every
+ * site. Asking it per site costs a question per site for one answer,
+ * which is what made a wrapper method with ten callers expensive.
+ */
+const UNDER_SITE = "under site";
+const CONTEXT_FREE = "context free";
+type OuterAsk = typeof UNDER_SITE | typeof CONTEXT_FREE;
+
 interface State {
   readonly bindings: Map<string, Value>;
   readonly heap: Map<number, Value>;
@@ -725,7 +739,9 @@ export class Evaluator<N extends object> {
     }
     const value = deferred(
       () =>
-        throughScopes ? this.outerName(node, name) : this.outerValue(node),
+        throughScopes
+          ? this.outerName(node, name)
+          : this.outerValue(node, CONTEXT_FREE),
       name,
     );
     if (this.remembers()) {
@@ -759,7 +775,7 @@ export class Evaluator<N extends object> {
   }
 
   /** The value of the expression a name or member was written as. */
-  private outerValue(node: N): Value {
+  private outerValue(node: N, ask: OuterAsk = UNDER_SITE): Value {
     const id = this.idOf(node);
     if (this.computing.has(id)) {
       return hole(this.lowering.holeNameOf(node));
@@ -768,15 +784,18 @@ export class Evaluator<N extends object> {
     if (cached !== undefined) {
       return cached;
     }
-    const value = this.writtenValue(node, id);
+    const value = this.writtenValue(node, id, ask);
     if (this.remembers()) {
       this.writtenByNode.set(id, value);
     }
     return value;
   }
 
-  private writtenValue(node: N, id: unknown): Value {
-    const written = this.lowering.writtenTo(node, this.underSite);
+  private writtenValue(node: N, id: unknown, ask: OuterAsk): Value {
+    const written = this.lowering.writtenTo(
+      node,
+      ask === UNDER_SITE ? this.underSite : undefined,
+    );
     if (written === null || this.same(written, node)) {
       return hole(this.lowering.holeNameOf(node));
     }
