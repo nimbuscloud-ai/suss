@@ -233,6 +233,17 @@ first, the demand stays on `v` and the re-exports come off an index on
 `m2`. A body the head binds nothing in starts with its written first
 literal.
 
+A column some rule writes a constant into does not count as fixed. Such
+a column is a label, a kind or a mode with a handful of values, and a
+literal with only its labels bound is nearly the whole relation. Take
+`reachesUnder(x, c, a, c3, kind) <- reachesUnder(x, c, p, c2, kind),
+paramOf(f, i, p), entersUnder(r, f, c2, c3), callArg(r, i, a)` asked
+with everything but `a` bound. Counting the contexts, `entersUnder` has
+three columns fixed to `paramOf`'s one, and demand on it with `f` free
+asks for every call made under that context, which is every call. With
+the label columns left out, `paramOf` goes first, binds `f`, and the
+demand on `entersUnder` is for one function.
+
 This costs you two things. The companion relations are stored like any
 other, at a few tuples per value asked about, so a caller who asks about
 most of a program ends up deriving more rather than less. And the
