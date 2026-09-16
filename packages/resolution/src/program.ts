@@ -9,6 +9,8 @@
  */
 
 import {
+  BudgetExhausted,
+  chargeAbandoned,
   clearRelations,
   deriveOnDemand,
   evaluate,
@@ -175,15 +177,36 @@ export function askResolution(
 const askedUnderByDb = new WeakMap<Database, Set<string>>();
 
 /**
+ * How many rows the joins may read for one question under a site.
+ *
+ * The biggest question a project could answer read 200k rows on the
+ * largest public corpus target and 600k on the regression fixtures. A
+ * question that cannot be answered walks every node under every context
+ * and reads that much per rule, round after round, without settling.
+ * The gap is wide enough for thirty times the biggest healthy question,
+ * which is a few seconds before the walk is given up on.
+ */
+export const UNDER_QUESTION_ROW_BUDGET = 20_000_000;
+
+/** Whether a question was worked through, or given up on its budget. */
+export type UnderOutcome = "answered" | "abandoned";
+
+/**
  * `askResolution` for a value read under one allocation site. Each pair
  * is a question of its own, so asking about a value under two sites is
  * two rows, and asking the same pair twice costs nothing.
+ *
+ * A question that runs past `rowBudget` is abandoned: the rows it added
+ * come back out, the answer relations stay as empty as they were, and
+ * the caller is told so it can keep the context-free answer instead.
+ * The pair stays marked as asked, so nobody pays for it twice.
  */
 export function askResolutionUnder(
   db: Database,
   pairs: Iterable<readonly [string, string]>,
   program: OnDemandRules = resolutionUnderProgram(),
-): void {
+  rowBudget: number = UNDER_QUESTION_ROW_BUDGET,
+): UnderOutcome {
   let asked = askedUnderByDb.get(db);
   if (asked === undefined) {
     asked = new Set();
@@ -193,15 +216,35 @@ export function askResolutionUnder(
     ([key, site]) => !asked.has(tupleKey([key, site])),
   );
   if (fresh.length === 0) {
-    return;
+    return "answered";
   }
   for (const [key, site] of fresh) {
     asked.add(tupleKey([key, site]));
     db.add("wantedUnder", [key, site]);
   }
-  evaluate(db, program.rules);
   const forget = queryFacts(program);
-  if (forget.length > 0) {
-    clearRelations(db, program.rules, forget);
+  const clearDerived = (): void => {
+    if (forget.length > 0) {
+      clearRelations(db, program.rules, forget);
+    }
+  };
+
+  try {
+    evaluate(db, program.rules, undefined, rowBudget);
+  } catch (error) {
+    if (!(error instanceof BudgetExhausted)) {
+      throw error;
+    }
+    // Clearing covers these when the rules are demand-driven, and this
+    // covers them when they are not.
+    db.retract("wantedUnder", fresh);
+    clearDerived();
+    chargeAbandoned(
+      fresh.map(([key, site]) => `${key} under ${site}`).join(", "),
+      error.examined,
+    );
+    return "abandoned";
   }
+  clearDerived();
+  return "answered";
 }

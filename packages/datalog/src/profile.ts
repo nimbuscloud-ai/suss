@@ -22,8 +22,21 @@ export interface RuleCost {
   ms: number;
   /** Tuples this rule added that no earlier derivation had reached. */
   derived: number;
+  /**
+   * Rows the join read for this rule. A rule that examines a hundred
+   * thousand rows to derive a dozen tuples is doing a walk somebody
+   * meant to be a lookup, and `derived` alone never shows that.
+   */
+  examined: number;
   /** How many times the rule was evaluated, over all rounds and deltas. */
   attempts: number;
+}
+
+/** A question the engine gave up on, and how much it had read by then. */
+export interface AbandonedQuestion {
+  /** What the caller was asking, in whatever words the caller uses. */
+  question: string;
+  examined: number;
 }
 
 /**
@@ -65,6 +78,16 @@ export interface EvaluationProfile {
    * corpus size is worth more attention than the rule table.
    */
   evaluations: number;
+  /** Rows every join read, summed over every rule set. */
+  examined: number;
+  /**
+   * The most rows any one `evaluate` call read. A caller that asks a
+   * question at a time sizes a per-question budget off this, where the
+   * total only says how many questions it asked.
+   */
+  largestEvaluation: number;
+  /** Every question abandoned on its budget, in the order they were given up. */
+  abandoned: AbandonedQuestion[];
   /** Final tuple count per relation, largest first. */
   relations: RelationSize[];
   /** Per-rule cost across every rule set, most expensive first. */
@@ -88,6 +111,8 @@ interface Collector {
   relations: Map<string, number>;
   derivedRelations: Set<string>;
   ruleSets: Map<string, RuleSetCollector>;
+  abandoned: AbandonedQuestion[];
+  largestEvaluation: number;
 }
 
 // Every open scope, outermost first. A charge goes to all of them, so a
@@ -108,21 +133,23 @@ function addCost(
   body: string[],
   ms: number,
   derived: number,
+  examined: number,
 ): void {
   const existing = into.get(key);
   if (existing === undefined) {
-    into.set(key, { head, body, ms, derived, attempts: 1 });
+    into.set(key, { head, body, ms, derived, examined, attempts: 1 });
     return;
   }
   existing.ms += ms;
   existing.derived += derived;
+  existing.examined += examined;
   existing.attempts += 1;
 }
 
 /**
- * Charge `ms` and `derived` tuples to one rule. Called per rule attempt.
- * `ruleSet` says which rule set the rule belongs to, so the same relation
- * derived by two rule sets does not blur into one line.
+ * Charge `ms`, `derived` tuples and `examined` rows to one rule. Called
+ * per rule attempt. `ruleSet` says which rule set the rule belongs to, so
+ * the same relation derived by two rule sets does not blur into one line.
  */
 export function chargeRule(
   ruleSet: string,
@@ -130,11 +157,31 @@ export function chargeRule(
   body: string[],
   ms: number,
   derived: number,
+  examined: number,
 ): void {
   const key = ruleKey(head, body);
   for (const collector of open) {
-    addCost(collector.rules, key, head, body, ms, derived);
-    addCost(setIn(collector, ruleSet).rules, key, head, body, ms, derived);
+    addCost(collector.rules, key, head, body, ms, derived, examined);
+    addCost(
+      setIn(collector, ruleSet).rules,
+      key,
+      head,
+      body,
+      ms,
+      derived,
+      examined,
+    );
+  }
+}
+
+/**
+ * Note that a question was given up on. A caller reading this in a
+ * profile is looking at the reason an answer came back empty, so the
+ * question is recorded in the caller's own words.
+ */
+export function chargeAbandoned(question: string, examined: number): void {
+  for (const collector of open) {
+    collector.abandoned.push({ question, examined });
   }
 }
 
@@ -143,6 +190,15 @@ export function chargeEvaluation(ruleSet: string): void {
   for (const collector of open) {
     collector.evaluations += 1;
     setIn(collector, ruleSet).evaluations += 1;
+  }
+}
+
+/** Note how many rows one finished or abandoned evaluation read. */
+export function chargeEvaluationRows(examined: number): void {
+  for (const collector of open) {
+    if (examined > collector.largestEvaluation) {
+      collector.largestEvaluation = examined;
+    }
   }
 }
 
@@ -242,6 +298,8 @@ function openScope(): Collector {
     relations: new Map(),
     derivedRelations: new Set(),
     ruleSets: new Map(),
+    abandoned: [],
+    largestEvaluation: 0,
   };
   open.push(mine);
   return mine;
@@ -262,6 +320,14 @@ const totalMs = (rules: Iterable<RuleCost>): number => {
   return ms;
 };
 
+const totalExamined = (rules: Iterable<RuleCost>): number => {
+  let rows = 0;
+  for (const cost of rules) {
+    rows += cost.examined;
+  }
+  return rows;
+};
+
 const byCost = (a: RuleCost, b: RuleCost): number => b.ms - a.ms;
 
 function summarise(mine: Collector): EvaluationProfile {
@@ -270,6 +336,9 @@ function summarise(mine: Collector): EvaluationProfile {
     datalogMs: totalMs(mine.rules.values()),
     rounds: mine.rounds,
     evaluations: mine.evaluations,
+    examined: totalExamined(mine.rules.values()),
+    largestEvaluation: mine.largestEvaluation,
+    abandoned: [...mine.abandoned],
     relations: [...mine.relations]
       .map(([relation, tuples]) => ({
         relation,
@@ -297,7 +366,8 @@ function ruleLines(rules: RuleCost[], datalogMs: number): string[] {
   return rules.slice(0, 20).map((r) => {
     const ms = `${r.ms.toFixed(0)}ms`.padStart(8);
     const derived = String(r.derived).padStart(7);
-    return `    ${ms} ${share(r.ms, datalogMs)} ${derived} tuples  ${r.attempts} attempts  ${ruleKey(r.head, r.body)}`;
+    const examined = String(r.examined).padStart(9);
+    return `    ${ms} ${share(r.ms, datalogMs)} ${derived} tuples ${examined} rows read  ${r.attempts} attempts  ${ruleKey(r.head, r.body)}`;
   });
 }
 
@@ -305,8 +375,14 @@ function ruleLines(rules: RuleCost[], datalogMs: number): string[] {
 export function formatProfile(profile: EvaluationProfile): string {
   const lines: string[] = [];
   lines.push(
-    `datalog: ${profile.datalogMs.toFixed(0)}ms (${share(profile.datalogMs, profile.wallMs).trim()} of ${profile.wallMs.toFixed(0)}ms wall), ${profile.evaluations} evaluations, ${profile.rounds} rounds`,
+    `datalog: ${profile.datalogMs.toFixed(0)}ms (${share(profile.datalogMs, profile.wallMs).trim()} of ${profile.wallMs.toFixed(0)}ms wall), ${profile.evaluations} evaluations, ${profile.rounds} rounds, ${profile.examined} rows read (${profile.largestEvaluation} in the biggest evaluation)`,
   );
+
+  for (const given of profile.abandoned) {
+    lines.push(
+      `  gave up on ${given.question} after reading ${given.examined} rows`,
+    );
+  }
 
   const derivedTuples = profile.relations
     .filter((r) => r.derived)

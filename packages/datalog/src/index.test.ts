@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  BudgetExhausted,
   constant,
   Database,
   evaluate,
@@ -8,6 +9,7 @@ import {
   notLit,
   rule,
   stratify,
+  type TagAlgebra,
   tupleKey,
   tupleKeyParts,
   variable,
@@ -720,5 +722,87 @@ describe("evaluate: the order a round walks a rule body in", () => {
         rule("other", [V("x")], [lit("edge", V("x"), V("y"))]),
       ]),
     ).toThrow('unbound variable "z"');
+  });
+});
+
+describe("evaluate: a row budget", () => {
+  const CLOSURE = [
+    rule("path", [V("x"), V("y")], [lit("edge", V("x"), V("y"))]),
+    rule(
+      "path",
+      [V("x"), V("z")],
+      [lit("path", V("x"), V("y")), lit("edge", V("y"), V("z"))],
+    ),
+  ];
+
+  const chainOf = (nodes: number): Database => {
+    const db = new Database();
+    for (let i = 0; i < nodes; i++) {
+      db.add("edge", [i, i + 1]);
+    }
+    return db;
+  };
+
+  it("gives up once the joins have read more rows than the budget", () => {
+    const db = chainOf(200);
+    expect(() => evaluate(db, CLOSURE, undefined, 500)).toThrow(
+      BudgetExhausted,
+    );
+  });
+
+  it("says how much it read and what it was deriving", () => {
+    const db = chainOf(200);
+    try {
+      evaluate(db, CLOSURE, undefined, 500);
+      expect.unreachable("the budget should have run out");
+    } catch (error) {
+      expect(error).toBeInstanceOf(BudgetExhausted);
+      const gaveUp = error as BudgetExhausted;
+      expect(gaveUp.ruleSet).toBe("path");
+      expect(gaveUp.examined).toBeGreaterThan(500);
+    }
+  });
+
+  it("leaves the caller its own facts and none of its conclusions", () => {
+    const db = chainOf(200);
+    expect(() => evaluate(db, CLOSURE, undefined, 500)).toThrow(
+      BudgetExhausted,
+    );
+
+    expect(db.size("path")).toBe(0);
+    expect(db.size("edge")).toBe(200);
+  });
+
+  it("starts over rather than resuming a run it gave up on", () => {
+    const db = chainOf(200);
+    expect(() => evaluate(db, CLOSURE, undefined, 500)).toThrow(
+      BudgetExhausted,
+    );
+    evaluate(db, CLOSURE);
+
+    const complete = chainOf(200);
+    evaluate(complete, CLOSURE);
+    expect(db.size("path")).toBe(complete.size("path"));
+  });
+
+  it("derives what it would have without a budget when it fits", () => {
+    const db = chainOf(30);
+    evaluate(db, CLOSURE, undefined, 1_000_000);
+
+    const unbudgeted = chainOf(30);
+    evaluate(unbudgeted, CLOSURE);
+    expect(sorted(db.facts("path"))).toEqual(sorted(unbudgeted.facts("path")));
+  });
+
+  it("refuses a budget together with a tag algebra", () => {
+    const shortest: TagAlgebra<number> = {
+      asserted: 0,
+      absent: 0,
+      combine: (tags) => tags.reduce((sum, tag) => sum + tag, 1),
+      merge: (stored, incoming) => Math.min(stored, incoming),
+    };
+    expect(() => evaluate(chainOf(3), CLOSURE, shortest, 1_000)).toThrow(
+      "tag algebra and a row budget",
+    );
   });
 });

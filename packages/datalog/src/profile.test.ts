@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  chargeAbandoned,
   Database,
   evaluate,
   formatProfile,
@@ -41,6 +42,33 @@ describe("evaluation profiling", () => {
     // Every pair i < j in a 6-node chain is reachable: 5+4+3+2+1.
     expect(derived).toBe(15);
     expect(db.size("reaches")).toBe(15);
+  });
+
+  it("counts the rows the joins read, which outnumber the tuples won", () => {
+    const db = chain(5);
+    const { profile } = profileEvaluation(() => evaluate(db, REACHES));
+
+    const derived = profile.rules.reduce((sum, r) => sum + r.derived, 0);
+    expect(profile.examined).toBe(
+      profile.rules.reduce((sum, r) => sum + r.examined, 0),
+    );
+    expect(profile.examined).toBeGreaterThan(derived);
+  });
+
+  it("names the question it gave up on and how much it had read", () => {
+    const db = chain(200);
+    const { profile } = profileEvaluation(() => {
+      try {
+        evaluate(db, REACHES, undefined, 500);
+      } catch {
+        chargeAbandoned("n0 under n1", 501);
+      }
+    });
+
+    expect(profile.abandoned).toEqual([
+      { question: "n0 under n1", examined: 501 },
+    ]);
+    expect(formatProfile(profile)).toContain("gave up on n0 under n1");
   });
 
   it("names the body relations so a rule is recognisable in a report", () => {

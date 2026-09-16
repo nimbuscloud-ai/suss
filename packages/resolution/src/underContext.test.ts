@@ -100,6 +100,54 @@ describe("reading an answer under one allocation site", () => {
   });
 });
 
+describe("a question that runs past its budget", () => {
+  function factsDb(): Database {
+    const db = new Database();
+    for (const [relation, ...tuple] of TWO_CLIENTS) {
+      db.add(relation, tuple);
+    }
+    return db;
+  }
+
+  const askWithin = (db: Database, rows: number): string =>
+    askResolutionUnder(
+      db,
+      [["base", "v1Site"]],
+      resolutionUnderProgram(),
+      rows,
+    );
+
+  it("is given up on and says so", () => {
+    expect(askWithin(factsDb(), 1)).toBe("abandoned");
+  });
+
+  it("leaves no answer and no question behind", () => {
+    const db = factsDb();
+    askWithin(db, 1);
+
+    expect(isWrittenAsUnder(db, "base", "v1Site")).toEqual([]);
+    expect(writtenValueUnder(db, "base", "v1Site")).toBe(null);
+    expect(db.size("wantedUnder")).toBe(0);
+  });
+
+  it("is not asked again, even with room to answer it", () => {
+    const db = factsDb();
+    askWithin(db, 1);
+
+    expect(askWithin(db, 1_000_000)).toBe("answered");
+    expect(isWrittenAsUnder(db, "base", "v1Site")).toEqual([]);
+  });
+
+  it("leaves the next question able to answer", () => {
+    const db = factsDb();
+    askWithin(db, 1);
+
+    askResolutionUnder(db, [["base", "v2Site"]], resolutionUnderProgram());
+
+    expect(isWrittenAsUnder(db, "base", "v2Site")).toEqual(["urlB"]);
+  });
+});
+
 describe("where a class was made", () => {
   function sitesIn(facts: Array<[string, ...string[]]>): string[] {
     const db = new Database();

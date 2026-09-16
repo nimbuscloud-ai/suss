@@ -354,13 +354,19 @@ export class ResolutionStore {
     // `askAbout` reads it, and the under program runs over everything
     // the store already has rather than following its own demand.
     this.askAbout(target, "wanted", () => undefined);
-    askResolutionUnder(
+    const outcome = askResolutionUnder(
       this.db,
       [[key, site]],
       resolutionUnderProgram(JS_RULES),
     );
     // The under program cleared what the context-free one had derived.
     this.stale = true;
+    // A question nobody could finish is cached as no answer, so a second
+    // caller asking about the same pair does not start the walk again.
+    if (outcome === "abandoned") {
+      this.writtenUnderSite.set(`${key}|${site}`, null);
+      return null;
+    }
 
     const answer = writtenValueUnder(this.db, key, site);
     const node = answer === null ? null : (this.table.byId.get(answer) ?? null);

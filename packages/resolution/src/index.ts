@@ -40,6 +40,8 @@ export {
   queryFacts,
   resolutionProgram,
   resolutionUnderProgram,
+  UNDER_QUESTION_ROW_BUDGET,
+  type UnderOutcome,
 } from "./program.js";
 export { explainResolvedKey } from "./session.js";
 export {

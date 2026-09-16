@@ -106,7 +106,7 @@ suss extract [-p TSCONFIG | --dir DIR] [--lang typescript|python|ruby]
 | `--gaps MODE` | no | `permissive` (default) records gaps in the summary: returns and declared statuses the pack couldn't account for. `strict` records the same gaps, then exits non-zero if the run recorded any. `silent` skips gap detection entirely, recording none. |
 | `--explain` | no | Print the extraction funnel, file by file and pack by pack, so you can see where summaries came from. A run that produced nothing prints it either way. |
 | `--timing` | no | Print the per-phase wall-clock breakdown to stderr. |
-| `--datalog-profile` | no | Print what the Datalog evaluator spent its time on, rule by rule. Reach for it when `--timing` says the rules phase is the slow one. |
+| `--datalog-profile` | no | Print what the Datalog evaluator spent its time on, rule by rule, and how many rows its joins read. Reach for it when `--timing` says the rules phase is the slow one. A question the evaluator gave up on because it read too many rows is printed here too, with the value and the construction site it was asked under; the run keeps the answer it had without that site. |
 | `--no-cache` | no | Skip the on-disk extraction cache for this run. Normal runs benefit from it; reach for this when debugging cache invalidation. |
 | `--allow-empty` | no | Let a run that produced no summaries exit 0. Without it the run fails, since a silent zero looks the same as a passing check in CI. |
 | `--fail-on-pack-error` | no | Exit non-zero when a pack throws while it reads. By default the run reports the throw and continues with the other packs. |
