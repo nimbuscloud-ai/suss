@@ -143,6 +143,7 @@ export function deriveOnDemand(
   }
 
   const derives = (relation: string): boolean => rulesByHead.has(relation);
+  const labels = labelColumns(rules, derives);
 
   const asked = new Map<string, AdornedRelation>();
   const pending: AdornedRelation[] = [];
@@ -167,7 +168,7 @@ export function deriveOnDemand(
   while (pending.length > 0) {
     const adorned = pending.pop() as AdornedRelation;
     for (const written of rulesByHead.get(adorned.relation) ?? []) {
-      const r = boundFirst(written, adorned.adornment);
+      const r = boundFirst(written, adorned.adornment, labels);
       const adornments = bodyAdornments(r, adorned.adornment, derives);
       r.body.forEach((literal, at) => {
         const adornment = adornments[at];
@@ -219,7 +220,7 @@ export function deriveOnDemand(
       });
     }
     for (const written of rulesByHead.get(adorned.relation) ?? []) {
-      const r = boundFirst(written, adorned.adornment);
+      const r = boundFirst(written, adorned.adornment, labels);
       const guard = anyBound(adorned.adornment)
         ? [
             positiveLiteral(
@@ -273,13 +274,58 @@ const sameLiteral = (premises: Literal[], conclusion: Literal): boolean =>
   premises.length === 1 &&
   JSON.stringify(premises[0]) === JSON.stringify(conclusion);
 
+/** The columns of each derived relation that the rules put constants in. */
+type LabelColumns = ReadonlyMap<string, ReadonlySet<number>>;
+
+/**
+ * A column of a derived relation that some rule writes a constant into,
+ * or matches against one, is a label column: a kind or a mode with a
+ * handful of values, so fixing it narrows the relation little. Ordering
+ * by bound columns has to leave those out, or a derived literal with
+ * only its labels fixed gets demanded before the base literal that
+ * would fix its key, and the demand asks for every row under that
+ * label. A constant against a base relation is a filter on whatever the
+ * caller put there, a property name say, and still counts.
+ */
+function labelColumns(
+  rules: Rule[],
+  derives: (relation: string) => boolean,
+): LabelColumns {
+  const labels = new Map<string, Set<number>>();
+  const note = ({
+    relation,
+    terms,
+  }: Pick<Literal, "relation" | "terms">): void => {
+    if (!derives(relation)) {
+      return;
+    }
+    terms.forEach((term, column) => {
+      if (term.type === "constant") {
+        const columns = labels.get(relation) ?? new Set<number>();
+        columns.add(column);
+        labels.set(relation, columns);
+      }
+    });
+  };
+  for (const r of rules) {
+    note(r.head);
+    r.body.forEach(note);
+  }
+  return labels;
+}
+
 /**
  * The rule with its body in the order demand should travel: at each
- * step, the literal with the most columns already fixed, and written
- * order between equals. The README shows what written order costs when
- * the head binds a column the body's first literal does not mention.
+ * step, the literal with the most columns already fixed, label columns
+ * aside, and written order between equals. The README shows what
+ * written order costs when the head binds a column the body's first
+ * literal does not mention.
  */
-function boundFirst(r: Rule, headAdornment: Adornment): Rule {
+function boundFirst(
+  r: Rule,
+  headAdornment: Adornment,
+  labels: LabelColumns,
+): Rule {
   const bound = new Set<string>();
   r.head.terms.forEach((term, column) => {
     if (headAdornment[column] && term.type === "variable") {
@@ -288,7 +334,9 @@ function boundFirst(r: Rule, headAdornment: Adornment): Rule {
   });
   const boundColumns = (literal: Literal): number =>
     literal.terms.filter(
-      (term) => term.type === "constant" || bound.has(term.name),
+      (term, column) =>
+        !labels.get(literal.relation)?.has(column) &&
+        (term.type === "constant" || bound.has(term.name)),
     ).length;
 
   const remaining = [...r.body];

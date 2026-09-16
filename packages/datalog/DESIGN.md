@@ -25,8 +25,8 @@ index at all.
 
 The body is not always walked in the order it was written. A round draws
 one literal from the facts that arrived last round, and that list is
-usually short, so it goes first and everything after it starts with some
-variables already bound. Take `chain(x, z) :- chain(x, y), binds(y, z)`
+usually short and has no index, so it is read first, once, and
+everything after it starts with some variables already bound. Take `chain(x, z) :- chain(x, y), binds(y, z)`
 in the round where new `binds` facts arrive. Written order asks for
 `chain(x, y)` with nothing bound, which scans every chain fact and tries
 each one against every new binding. Leading with the new bindings binds
@@ -34,12 +34,18 @@ each one against every new binding. Leading with the new bindings binds
 sources that one reordering took the rule from 2.4 seconds to 55
 milliseconds.
 
-Once the delta leads, the rest of the body follows greedily: the next
-literal is one sharing a variable that is already bound, so it too comes
-off an index rather than scanning. A negated literal is a filter, so it
-is placed as soon as its variables are bound. A join produces the same
-rows whatever order it walks in, so this changes what a round costs and
-not what it derives.
+After that the order is chosen under each binding, not once per rule.
+At every step the join looks up what each remaining literal has under
+the variables bound so far and takes the literal with the fewest rows.
+A literal with nothing under its bindings ends the branch before any
+other literal is read. A rule like `out(x, y) :- asked(x), wide(x, y),
+narrow(x, y)` reads one narrow row and then one wide row, whichever way
+it was written, and a fixed order that put `wide` second would read every
+wide row for `x` and then reject all but one. A negated literal is a
+filter, so it is asked as soon as its variables are bound, and a literal
+sharing no bound variable is scanned only when nothing else is left. A
+join produces the same rows whatever order it walks in, so this changes
+what a round costs and not what it derives.
 
 `evaluate` picks up where it left off. Call it again with the same rules
 after adding facts and it starts from the facts you added rather than
@@ -232,6 +238,17 @@ per re-export per value asked about. With `moduleExport(m2, n2, v)`
 first, the demand stays on `v` and the re-exports come off an index on
 `m2`. A body the head binds nothing in starts with its written first
 literal.
+
+A column some rule writes a constant into does not count as fixed. Such
+a column is a label, a kind or a mode with a handful of values, and a
+literal with only its labels bound is nearly the whole relation. Take
+`reachesUnder(x, c, a, c3, kind) <- reachesUnder(x, c, p, c2, kind),
+paramOf(f, i, p), entersUnder(r, f, c2, c3), callArg(r, i, a)` asked
+with everything but `a` bound. Counting the contexts, `entersUnder` has
+three columns fixed to `paramOf`'s one, and demand on it with `f` free
+asks for every call made under that context, which is every call. With
+the label columns left out, `paramOf` goes first, binds `f`, and the
+demand on `entersUnder` is for one function.
 
 This costs you two things. The companion relations are stored like any
 other, at a few tuples per value asked about, so a caller who asks about

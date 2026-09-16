@@ -682,6 +682,54 @@ describe("evaluate: the order a round walks a rule body in", () => {
     ).toEqual(["a,b"]);
   });
 
+  // `wide` has a hundred rows for the asked value and `narrow` has one,
+  // and the second literal in written order is the wide one.
+  const NARROW_FIRST = [
+    rule(
+      "out",
+      [V("x"), V("y")],
+      [
+        lit("asked", V("x")),
+        lit("wide", V("x"), V("y")),
+        lit("narrow", V("x"), V("y")),
+      ],
+    ),
+  ];
+  const wideAndNarrow = (): Database => {
+    const db = new Database();
+    for (let i = 0; i < 100; i++) {
+      db.add("wide", ["a", `w${i}`]);
+    }
+    db.add("wide", ["a", "n"]);
+    db.add("narrow", ["a", "n"]);
+    db.add("asked", ["a"]);
+    return db;
+  };
+
+  it("takes the literal with the fewest facts under its bindings next", () => {
+    const db = wideAndNarrow();
+    const budget = rowBudget(Number.POSITIVE_INFINITY);
+    evaluate(db, NARROW_FIRST, undefined, budget);
+    expect(sorted(db.facts("out"))).toEqual(["a,n"]);
+    // One asked row, one narrow row, and the one wide row that matches
+    // both x and y.
+    expect(budget.examined).toBe(3);
+  });
+
+  it("stops a branch as soon as one literal has nothing under its bindings", () => {
+    const db = wideAndNarrow();
+    db.add("asked", ["b"]);
+    for (let i = 0; i < 100; i++) {
+      db.add("wide", ["b", `w${i}`]);
+    }
+    const budget = rowBudget(Number.POSITIVE_INFINITY);
+    evaluate(db, NARROW_FIRST, undefined, budget);
+    expect(sorted(db.facts("out"))).toEqual(["a,n"]);
+    // Nothing narrow is under b, so none of b's wide rows are read: the
+    // three rows a costs, and the asked row for b.
+    expect(budget.examined).toBe(4);
+  });
+
   it("reports a negated literal whose variable nothing binds", () => {
     const db = new Database();
     factsInto(db, [

@@ -408,6 +408,115 @@ describe("the rewrite itself", () => {
     expect(reached(db, "exporters")).toEqual(["barrel|fn", "lib|fn"]);
   });
 
+  it("does not count a label column as bound when ordering the body", () => {
+    // The head fixes three of entersUnder's columns, but two are contexts,
+    // and asking for every call under a context asks for every call.
+    const rules = [
+      rule(
+        "reachesUnder",
+        [v("x"), constant("none"), v("y"), constant("none"), v("kind")],
+        [lit("hop", v("x"), v("y"), v("kind"))],
+      ),
+      rule(
+        "reachesUnder",
+        [v("x"), v("c"), v("a"), v("c3"), v("kind")],
+        [
+          lit("reachesUnder", v("x"), v("c"), v("p"), v("c2"), v("kind")),
+          lit("paramOf", v("f"), v("i"), v("p")),
+          lit("entersUnder", v("r"), v("f"), v("c2"), v("c3")),
+          lit("callArg", v("r"), v("i"), v("a")),
+        ],
+      ),
+      rule(
+        "entersUnder",
+        [v("r"), v("f"), constant("none"), constant("none")],
+        [lit("calls", v("r"), v("f"))],
+      ),
+      rule(
+        "answer",
+        [v("x"), v("a")],
+        [
+          lit("asked", v("x")),
+          lit(
+            "reachesUnder",
+            v("x"),
+            constant("none"),
+            v("a"),
+            constant("none"),
+            constant("value"),
+          ),
+        ],
+      ),
+    ];
+    const { rules: rewritten, demandDriven } = deriveOnDemand(rules, [
+      "answer",
+    ]);
+    const argument = rewritten.find(
+      (r) => r.head.relation.startsWith("reachesUnder") && r.body.length === 5,
+    );
+    expect(argument?.body.map((l) => l.relation.replace(/:.*/, ""))).toEqual([
+      "wanted",
+      "reachesUnder",
+      "paramOf",
+      "entersUnder",
+      "callArg",
+    ]);
+    // Every variant asked for binds the key column: the value reached
+    // from, or the function entered.
+    expect(demandDriven.filter((name) => name.startsWith("wanted:"))).toEqual([
+      "wanted:reachesUnder:bbfbb",
+      "wanted:reachesUnder:bbffb",
+      "wanted:entersUnder:fbbb",
+      "wanted:entersUnder:fbbf",
+    ]);
+
+    const db = new Database();
+    db.add("hop", ["x", "p", "value"]);
+    db.add("paramOf", ["f", "0", "p"]);
+    db.add("calls", ["r", "f"]);
+    db.add("callArg", ["r", "0", "a"]);
+    db.add("calls", ["other", "g"]);
+    db.add("asked", ["x"]);
+    evaluate(db, rewritten);
+    expect(reached(db, "answer")).toEqual(["x|a", "x|p"]);
+    expect(db.facts("wanted:entersUnder:fbbf")).toEqual([["f", "none"]]);
+  });
+
+  it("still counts a base relation's column that another rule matches with a constant", () => {
+    // `readsProperty(c, o, "new")` in one rule does not make the name
+    // column a label: a name bound off the head still narrows the reads.
+    const rules = [
+      rule(
+        "constructs",
+        [v("r"), v("cls")],
+        [
+          lit("readsProperty", v("c"), v("cls"), constant("new")),
+          lit("call", v("r"), v("c")),
+        ],
+      ),
+      rule(
+        "reads",
+        [v("site"), v("name"), v("o")],
+        [
+          lit("call", v("site"), v("c")),
+          lit("readsProperty", v("c"), v("o"), v("name")),
+        ],
+      ),
+      rule(
+        "answer",
+        [v("name"), v("o")],
+        [lit("asked", v("name")), lit("reads", v("site"), v("name"), v("o"))],
+      ),
+    ];
+    const { rules: rewritten } = deriveOnDemand(rules, ["answer"]);
+    const reads = rewritten.find((r) => r.head.relation.startsWith("reads"));
+    expect(reads?.body.map((l) => l.relation)).toEqual([
+      "wanted:reads",
+      "readsProperty",
+      "call",
+    ]);
+  });
+
   it("says which columns each demand relation binds, so a caller can read what is wanted", () => {
     const rules = [
       rule(
