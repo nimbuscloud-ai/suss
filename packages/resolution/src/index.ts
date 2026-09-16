@@ -1142,16 +1142,43 @@ const STATED_RULES = [
     [lit("binds", v("g"), v("f")), lit("callsFunction", v("r"), v("g"))],
   ),
   // A function written on an object, called off it: `client.get(o)`.
-  // Every rule above joins on a name the callee binds to, and a read of
-  // a property binds to nothing.
+  // The receiver comes from the object through `refersToObject`, not from
+  // `objectOf`: a walk from every reader of the name was most of a run.
   rule(
     "callsFunction",
     [v("r"), v("f")],
     [
       lit("holdsProperty", v("obj"), v("n"), v("f")),
+      lit("refersToObject", v("o"), v("obj")),
       lit("readsProperty", v("c"), v("o"), v("n")),
-      lit("objectOf", v("o"), v("obj")),
       lit("call", v("r"), v("c")),
+    ],
+  ),
+
+  // The expressions that refer to an object literal by binding alone: the
+  // declaration written as it, a reference or import of that, and a
+  // fallback over any of those. Asked from the object, so it visits only them.
+  rule("refersToObject", [v("obj"), v("obj")], [lit("objectValue", v("obj"))]),
+  rule(
+    "refersToObject",
+    [v("x"), v("obj")],
+    [lit("refersToObject", v("y"), v("obj")), lit("binds", v("x"), v("y"))],
+  ),
+  rule(
+    "refersToObject",
+    [v("x"), v("obj")],
+    [
+      lit("refersToObject", v("y"), v("obj")),
+      lit("moduleExport", v("m"), v("n"), v("y")),
+      lit("imports", v("x"), v("m"), v("n")),
+    ],
+  ),
+  rule(
+    "refersToObject",
+    [v("x"), v("obj")],
+    [
+      lit("refersToObject", v("b"), v("obj")),
+      lit("fallbackBranch", v("x"), v("b")),
     ],
   ),
 

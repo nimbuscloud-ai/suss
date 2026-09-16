@@ -386,6 +386,100 @@ describe("an argument reaching a parameter", () => {
       ),
     ).toEqual(["handler"]);
   });
+
+  // const client = { get: (o) => ... }; the object literal is `clientObj`,
+  // its declaration `client`, and `get` is the function `client.get`.
+  const clientObject: Array<[string, ...string[]]> = [
+    ["func", "handler"],
+    ["binds", "handlerRef", "handler"],
+    ["objectValue", "clientObj"],
+    ["binds", "client", "clientObj"],
+    ["func", "client.get"],
+    ["holdsProperty", "clientObj", "get", "client.get"],
+    ["paramOf", "client.get", "0", "get#o"],
+  ];
+
+  it("follows an argument into a function written on an object literal, called off a name for it", () => {
+    // client.get(handler)
+    expect(
+      resolutionsOf(
+        [
+          ...clientObject,
+          ["binds", "clientRef", "client"],
+          ["readsProperty", "getRead", "clientRef", "get"],
+          ["call", "site", "getRead"],
+          ["callArg", "site", "0", "handlerRef"],
+        ],
+        "get#o",
+      ),
+    ).toEqual(["handler"]);
+  });
+
+  it("follows an argument into a function on an object literal the caller imported", () => {
+    // import { client } from "mod"; client.get(handler)
+    expect(
+      resolutionsOf(
+        [
+          ...clientObject,
+          ["exportsAs", "mod", "client", "client"],
+          ["imports", "clientImport", "mod", "client"],
+          ["binds", "clientRef", "clientImport"],
+          ["readsProperty", "getRead", "clientRef", "get"],
+          ["call", "site", "getRead"],
+          ["callArg", "site", "0", "handlerRef"],
+        ],
+        "get#o",
+      ),
+    ).toEqual(["handler"]);
+  });
+
+  it("follows an argument into a function on an object literal the caller reached through a fallback", () => {
+    // (options.client ?? client).get(handler)
+    expect(
+      resolutionsOf(
+        [
+          ...clientObject,
+          ["binds", "clientRef", "client"],
+          ["fallbackBranch", "either", "optionsClient"],
+          ["fallbackBranch", "either", "clientRef"],
+          ["readsProperty", "getRead", "either", "get"],
+          ["call", "site", "getRead"],
+          ["callArg", "site", "0", "handlerRef"],
+        ],
+        "get#o",
+      ),
+    ).toEqual(["handler"]);
+  });
+
+  it("does not look for a caller of a function on an object literal through a value walk", () => {
+    // make().get(handler), where make returns the object. Finding that
+    // caller meant walking from every `.get` read in the project, which
+    // was most of a whole run, so the caller is not found.
+    const facts: Array<[string, ...string[]]> = [
+      ...clientObject,
+      ["func", "make"],
+      ["returnsValue", "make", "clientObj"],
+      ["binds", "makeRef", "make"],
+      ["call", "made", "makeRef"],
+      ["readsProperty", "getRead", "made", "get"],
+      ["call", "site", "getRead"],
+      ["callArg", "site", "0", "handlerRef"],
+    ];
+    expect(resolutionsOf(facts, "get#o")).toEqual([]);
+
+    const db = new Database();
+    for (const [name, ...tuple] of facts) {
+      db.add(name, tuple);
+    }
+    askResolution(db, ["get#o"], "wanted", resolutionProgram());
+    const walked = db
+      .relationNames()
+      .filter((name) =>
+        /^wanted:(reaches|objectOf|comesTo|allocates)/.test(name),
+      )
+      .filter((name) => db.size(name) > 0);
+    expect(walked).toEqual([]);
+  });
 });
 
 describe("a class the caller makes one of", () => {
