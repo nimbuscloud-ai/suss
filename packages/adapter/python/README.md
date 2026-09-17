@@ -26,6 +26,7 @@ npx suss check --dir summaries/
 - FastAPI and flask-restx routes, including a decorator a project re-exports through a wrapper module, with `response_model` and `status_code` taken as the declared contract.
 - The path a route is served under, composed through `include_router` prefixes, however many mounts deep, including a mount written inside a function or spread out of a dictionary.
 - SQLAlchemy calls, `requests` / `httpx` / `aiohttp` call sites, what a file reads from the environment, and what a handler calls out to, as facts the checker's rules run over.
+- Environment reads written through a project helper: with `def env(key): return os.environ[key]`, a call to `env("DATABASE_URL")` is a read of `DATABASE_URL`, however many helpers the name is handed through on the way.
 
 How each of those is decided, and where it stops: [how the Python adapter reads a project](./DESIGN.md).
 

@@ -83,6 +83,19 @@ export function writtenNodeOf(
   return bound?.context.writtenTo(node) ?? null;
 }
 
+/**
+ * The key the rules join a read of this expression on, for a caller
+ * holding a node and no file path. Null until a project has been bound,
+ * and for a node in a file the run did not cover.
+ */
+export function resolutionKeyOf(
+  node: PyNode,
+  db: Database | undefined,
+): string | null {
+  const bound = db === undefined ? undefined : projects.get(db);
+  return bound?.keyOf(node) ?? null;
+}
+
 /** The call a value was built by, and where that call's callee came from. */
 export interface Construction {
   /** The value key of the call, which is the key a router index keys its constructions by. */
