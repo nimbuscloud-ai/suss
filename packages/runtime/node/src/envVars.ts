@@ -340,12 +340,14 @@ function readsThroughHelperCall(
     return reads;
   }
   call.getArguments().forEach((passed, at) => {
-    const literal = stringValueOf(passed, resolution);
-    if (literal === null || literal.length === 0) {
+    // Reachability is remembered per callee parameter; reading the
+    // argument's value is a question to the engine on every call.
+    const read = parameterReachesEnvRead(callee, at, resolution);
+    if (read === null) {
       return;
     }
-    const read = parameterReachesEnvRead(callee, at, resolution);
-    if (read !== null) {
+    const literal = stringValueOf(passed, resolution);
+    if (literal !== null && literal.length > 0) {
       reads.push({ name: literal, defaulted: read.defaulted, node: call });
     }
   });
