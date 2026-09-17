@@ -27,7 +27,10 @@ function makeProject(userSource: string): SourceFile {
  * which no query starting at the parameter reaches on its own.
  */
 function storeOver(project: Project): ResolutionStore {
-  const store = new ResolutionStore();
+  const store = new ResolutionStore(
+    [],
+    nodeRuntimePack().environmentObjects ?? [],
+  );
   const files = project
     .getSourceFiles()
     .filter((one) => !one.isInNodeModules());
@@ -823,6 +826,158 @@ describe("a helper call resolved from the caller's side", () => {
     expect(reads.map((read) => read.interaction.name)).toEqual(["QUEUE_URL"]);
   });
 
+  it("follows the literal through a helper in a second file into a third", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "env.ts",
+      `export function requireEnv(key: string): string {
+        return process.env[key] ?? "";
+      }`,
+    );
+    project.createSourceFile(
+      "settings.ts",
+      `import { requireEnv } from "./env.js";
+      export function setting(name: string): string {
+        return requireEnv(name);
+      }`,
+    );
+    const handler = project.createSourceFile(
+      "handler.ts",
+      `import { setting } from "./settings.js";
+      export const url = setting("DATABASE_URL");`,
+    );
+    const reads = configReadEffectsOf(recognizeWithStore(handler));
+    expect(reads.map((read) => read.interaction.name)).toEqual([
+      "DATABASE_URL",
+    ]);
+  });
+
+  it("reads a name kept in a constant another module exports", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "env.ts",
+      `export function requireEnv(key: string): string {
+        return process.env[key] ?? "";
+      }`,
+    );
+    project.createSourceFile("names.ts", `export const TABLE = "TABLE_NAME";`);
+    const handler = project.createSourceFile(
+      "handler.ts",
+      `import { requireEnv } from "./env.js";
+      import { TABLE } from "./names.js";
+      export const table = requireEnv(TABLE);`,
+    );
+    const reads = configReadEffectsOf(recognizeWithStore(handler));
+    expect(reads.map((read) => read.interaction.name)).toEqual(["TABLE_NAME"]);
+  });
+
+  it("reads a helper a file keeps to itself and exports nothing of", () => {
+    const project = createTestProject();
+    // A test file states no facts, since extraction reaches what a file
+    // exports, so the rules have nothing to say about `envInt`.
+    const knobs = project.createSourceFile(
+      "knobs.test.ts",
+      `const envInt = (name: string, fallback: number): number => {
+        const raw = process.env[name];
+        return raw === undefined ? fallback : Number.parseInt(raw, 10);
+      };
+      const runs = envInt("FUZZ_RUNS", 60);`,
+    );
+    const reads = configReadEffectsOf(recognizeWithStore(knobs));
+    expect(reads.map((read) => read.interaction.name)).toEqual(["FUZZ_RUNS"]);
+  });
+
+  it("follows the chain from a store that has read none of it yet", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "env.ts",
+      `export function requireEnv(key: string): string {
+        return process.env[key] ?? "";
+      }`,
+    );
+    project.createSourceFile(
+      "settings.ts",
+      `import { requireEnv } from "./env.js";
+      export function setting(name: string): string {
+        return requireEnv(name);
+      }`,
+    );
+    const handler = project.createSourceFile(
+      "handler.ts",
+      `import { setting } from "./settings.js";
+      export const url = setting("DATABASE_URL");`,
+    );
+    // The reader meets `setting("DATABASE_URL")` before anything has
+    // read `settings.ts` or `env.ts`, and gets the same answer.
+    const store = new ResolutionStore(
+      [],
+      nodeRuntimePack().environmentObjects ?? [],
+    );
+    const reads = configReadEffectsOf(
+      recognizeWith(envVarRecognizer(), handler, store),
+    );
+    expect(reads.map((read) => read.interaction.name)).toEqual([
+      "DATABASE_URL",
+    ]);
+  });
+
+  it("calls a name defaulted only where every read of it supplies one", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "env.ts",
+      `export function requireEnv(key: string): string {
+        if (process.env[key]) {
+          return process.env[key] ?? "";
+        }
+        return "";
+      }`,
+    );
+    const handler = project.createSourceFile(
+      "handler.ts",
+      `import { requireEnv } from "./env.js";
+      export const table = requireEnv("TABLE_NAME");`,
+    );
+    const reads = configReadEffectsOf(recognizeWithStore(handler));
+    expect(
+      reads.map((read) => [read.interaction.name, read.interaction.defaulted]),
+    ).toEqual([["TABLE_NAME", false]]);
+  });
+
+  it("calls a name defaulted when the call itself carries the fallback", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "env.ts",
+      `export function requireEnv(key: string): string | undefined {
+        return process.env[key];
+      }`,
+    );
+    const handler = project.createSourceFile(
+      "handler.ts",
+      `import { requireEnv } from "./env.js";
+      export const table = requireEnv("TABLE_NAME") ?? "local";`,
+    );
+    const reads = configReadEffectsOf(recognizeWithStore(handler));
+    expect(
+      reads.map((read) => [read.interaction.name, read.interaction.defaulted]),
+    ).toEqual([["TABLE_NAME", true]]);
+  });
+
+  it("says nothing for a name a helper takes off an options object", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "env.ts",
+      `export function requireEnv(options: { key: string }): string {
+        return process.env[options.key] ?? "";
+      }`,
+    );
+    const handler = project.createSourceFile(
+      "handler.ts",
+      `import { requireEnv } from "./env.js";
+      export const table = requireEnv({ key: "TABLE_NAME" });`,
+    );
+    expect(configReadEffectsOf(recognizeWithStore(handler))).toEqual([]);
+  });
+
   it("skips an unrelated call in the helper's body on the way to the forwarding one", () => {
     const project = createTestProject();
     project.createSourceFile(
@@ -844,7 +999,7 @@ describe("a helper call resolved from the caller's side", () => {
     expect(reads.map((read) => read.interaction.name)).toEqual(["QUEUE_URL"]);
   });
 
-  it("follows a forwarded call through a wrapper factory imported from another file", () => {
+  it("says nothing when a forwarding call's callee is a wrapper factory's result", () => {
     const project = createTestProject();
     project.createSourceFile(
       "env.ts",
@@ -872,8 +1027,10 @@ describe("a helper call resolved from the caller's side", () => {
       `import { getEnv } from "./helpers.js";
       export const table = getEnv("TABLE_NAME");`,
     );
-    const reads = configReadEffectsOf(recognizeWithStore(handler));
-    expect(reads.map((read) => read.interaction.name)).toEqual(["TABLE_NAME"]);
+    // `callsNamed` starts from the function and follows a name to it,
+    // so a callee that is a value the rules would have to resolve is
+    // where the forwarding rule stops. See the README.
+    expect(configReadEffectsOf(recognizeWithStore(handler))).toEqual([]);
   });
 
   it("skips an unrelated element access on the way to a direct read", () => {

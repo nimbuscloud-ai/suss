@@ -291,31 +291,57 @@ function emitCall(emitter: Emitter, call: PyNode): void {
     add(emitter, "callOutsideMethod", callKey);
   }
 
-  let position = 0;
-  for (const argument of children(args)) {
-    if (argument.type === "keyword_argument") {
-      const name = field(argument, "name");
-      const value = field(argument, "value");
-      if (name !== null && value !== null) {
-        add(
-          emitter,
-          "callKeywordArg",
-          callKey,
-          name.text,
-          valueKey(emitter, value),
-        );
-      }
+  for (const argument of callArguments(call)) {
+    if (argument.kind === "keyword") {
+      add(
+        emitter,
+        "callKeywordArg",
+        callKey,
+        argument.name,
+        valueKey(emitter, argument.node),
+      );
       continue;
     }
     add(
       emitter,
       "callArg",
       callKey,
-      String(position),
-      valueKey(emitter, argument),
+      String(argument.position),
+      valueKey(emitter, argument.node),
     );
+  }
+}
+
+/** One argument a call writes out, under the position or the name `passesArgument` joins it to a parameter on. */
+export type CallArgument =
+  | { kind: "positional"; position: number; node: PyNode }
+  | { kind: "keyword"; name: string; node: PyNode };
+
+/**
+ * The arguments a call writes out, in source order. A caller that wants
+ * the argument sitting at a parameter reads them the same way the facts
+ * were keyed, so the two never disagree about which one is at position 1.
+ */
+export function callArguments(call: PyNode): CallArgument[] {
+  const args = field(call, "arguments");
+  if (args === null) {
+    return [];
+  }
+  const written: CallArgument[] = [];
+  let position = 0;
+  for (const argument of children(args)) {
+    if (argument.type === "keyword_argument") {
+      const name = field(argument, "name");
+      const value = field(argument, "value");
+      if (name !== null && value !== null) {
+        written.push({ kind: "keyword", name: name.text, node: value });
+      }
+      continue;
+    }
+    written.push({ kind: "positional", position, node: argument });
     position += 1;
   }
+  return written;
 }
 
 /**

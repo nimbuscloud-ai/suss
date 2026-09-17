@@ -14,7 +14,7 @@
 import { nodeOfKey } from "@suss/resolution";
 import { Evaluator, force, literalOf, text } from "@suss/values";
 
-import { field } from "../ast.js";
+import { enclosingMethod, field, METHOD_TYPES } from "../ast.js";
 import {
   constructionSites,
   resolvedFunctions,
@@ -47,8 +47,6 @@ const contexts = new WeakMap<Database, EvaluationContext>();
 const withoutFacts = new WeakMap<object, Evaluator<RbNode>>();
 /** The file a parsed tree came from, for a reader that has only a node. */
 const filesByTree = new WeakMap<object, string>();
-
-const METHOD_TYPES = new Set(["method", "singleton_method"]);
 
 /** Register the parsed project, so reads through `db` can follow the facts back to nodes. */
 export function bindEvaluator(db: Database, nodes: ProjectNodes): void {
@@ -182,18 +180,6 @@ function evaluatorFor(
     withoutFacts.set(tree, local);
   }
   return local;
-}
-
-/** The method a node is written inside. A parameter read is keyed under it. */
-function enclosingMethod(node: RbNode): RbNode | null {
-  let current = node.parent;
-  while (current !== null) {
-    if (METHOD_TYPES.has(current.type)) {
-      return current;
-    }
-    current = current.parent;
-  }
-  return null;
 }
 
 function contextOver(db: Database, nodes: ProjectNodes): EvaluationContext {

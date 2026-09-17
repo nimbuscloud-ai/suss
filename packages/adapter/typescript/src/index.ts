@@ -44,6 +44,7 @@ export { createTsDiscoveryContext } from "./discoveryContext.js";
 // Exported so a pack's test harness can give recognizers the same
 // resolution the adapter threads through at extraction time.
 export {
+  type EnvironmentNamers,
   type ExplainCallableOptions,
   type ExplainedResolution,
   ResolutionStore,

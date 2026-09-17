@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { envReadEffects } from "./envReads.js";
+import { Database } from "@suss/datalog";
+
+import { emitEnvNameFacts, envReadEffects } from "./envReads.js";
+import {
+  collectFileConstants,
+  emitConstantBindings,
+} from "./facts/constants.js";
+import { emitValueFacts } from "./facts/values.js";
 import { parseRuby } from "./parser.js";
+import { bindEvaluator, methodDefinitionsIn } from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { RbNode } from "./parser.js";
@@ -62,6 +70,62 @@ function findMethodOrNull(node: RbNode, name: string): RbNode | null {
     return null;
   }
 }
+
+/** The facts a run over these files would have, with the evaluator bound to them. */
+async function projectFacts(files: Record<string, string>) {
+  const db = new Database();
+  const parsed: { file: string; root: RbNode }[] = [];
+  const constants = [];
+  const definitions = new Map<string, RbNode>();
+  for (const [file, source] of Object.entries(files)) {
+    const tree = await parseRuby(source);
+    parsed.push({ file, root: tree.rootNode });
+    emitValueFacts(db, file, tree.rootNode);
+    emitEnvNameFacts(db, file, tree.rootNode);
+    for (const [key, method] of methodDefinitionsIn(file, tree.rootNode)) {
+      definitions.set(key, method);
+    }
+    constants.push(collectFileConstants(file, tree.rootNode));
+  }
+  emitConstantBindings(db, constants);
+  bindEvaluator(db, { files: parsed, definitions });
+  return { db, parsed };
+}
+
+/** What `use.rb` reports when it loads, with every other file in the run beside it. */
+async function projectReads(files: Record<string, string>): Promise<Read[]> {
+  const { db, parsed } = await projectFacts(files);
+  const entry = parsed.find(({ file }) => file === "use.rb");
+  if (entry === undefined) {
+    throw new Error("no use.rb");
+  }
+  return readsOf(envReadEffects(entry.root, { db, file: "use.rb" }));
+}
+
+/** The same, for what one method of `use.rb` reads when it runs. */
+async function projectMethodReads(
+  files: Record<string, string>,
+  name: string,
+): Promise<Read[]> {
+  const { db, parsed } = await projectFacts(files);
+  const entry = parsed.find(({ file }) => file === "use.rb");
+  if (entry === undefined) {
+    throw new Error("no use.rb");
+  }
+  return readsOf(
+    envReadEffects(findMethod(entry.root, name), { db, file: "use.rb" }),
+  );
+}
+
+/** The helper from the issue: a module method that reads whatever name it is given. */
+const SETTINGS = [
+  "module Settings",
+  "  def self.setting(key)",
+  "    ENV.fetch(key)",
+  "  end",
+  "end",
+  "",
+].join("\n");
 
 describe("ENV spellings", () => {
   it('reads ENV["X"] as a read with no fallback', async () => {
@@ -160,5 +224,185 @@ describe("what a method body reads", () => {
         recognition: "ruby-env",
       },
     });
+  });
+});
+
+describe("a name handed to a project helper", () => {
+  it("reports the read at the call, with the name the caller wrote", async () => {
+    expect(
+      await projectReads({
+        "settings.rb": SETTINGS,
+        "use.rb": 'Redis.new(url: Settings.setting("REDIS_URL"))\n',
+      }),
+    ).toEqual([{ name: "REDIS_URL", defaulted: false }]);
+  });
+
+  it("takes defaulted from the read inside the helper", async () => {
+    expect(
+      await projectReads({
+        "settings.rb": [
+          "module Settings",
+          "  def self.setting(key, fallback)",
+          "    ENV.fetch(key, fallback)",
+          "  end",
+          "end",
+          "",
+        ].join("\n"),
+        "use.rb": 'URL = Settings.setting("REDIS_URL", "redis://localhost")\n',
+      }),
+    ).toEqual([{ name: "REDIS_URL", defaulted: true }]);
+  });
+
+  it("follows a helper that hands the name to another helper", async () => {
+    expect(
+      await projectReads({
+        "settings.rb": SETTINGS,
+        "wrap.rb": [
+          "module Config",
+          "  def self.get(name)",
+          "    Settings.setting(name)",
+          "  end",
+          "end",
+          "",
+        ].join("\n"),
+        "use.rb": 'URL = Config.get("DATABASE_URL")\n',
+      }),
+    ).toEqual([{ name: "DATABASE_URL", defaulted: false }]);
+  });
+
+  it("reads the name out of a keyword argument", async () => {
+    expect(
+      await projectReads({
+        "settings.rb": [
+          "module Settings",
+          "  def self.setting(key:)",
+          "    ENV[key]",
+          "  end",
+          "end",
+          "",
+        ].join("\n"),
+        "use.rb": 'URL = Settings.setting(key: "QUEUE_URL")\n',
+      }),
+    ).toEqual([{ name: "QUEUE_URL", defaulted: false }]);
+  });
+
+  it("follows an instance method called on self inside a class", async () => {
+    expect(
+      await projectMethodReads(
+        {
+          "use.rb": [
+            "class Loader",
+            "  def setting(key)",
+            "    ENV.fetch(key)",
+            "  end",
+            "",
+            "  def call",
+            '    setting("CACHE_URL")',
+            "  end",
+            "end",
+            "",
+          ].join("\n"),
+        },
+        "call",
+      ),
+    ).toEqual([{ name: "CACHE_URL", defaulted: false }]);
+  });
+
+  it("counts an || around the call as a default", async () => {
+    expect(
+      await projectReads({
+        "settings.rb": SETTINGS,
+        "use.rb":
+          'URL = Settings.setting("REDIS_URL") || "redis://localhost"\n',
+      }),
+    ).toEqual([{ name: "REDIS_URL", defaulted: true }]);
+  });
+
+  it("reads a name a constant in the caller's file holds", async () => {
+    expect(
+      await projectReads({
+        "settings.rb": SETTINGS,
+        "use.rb": [
+          'NAME = "SEARCH_URL"',
+          "URL = Settings.setting(NAME)",
+          "",
+        ].join("\n"),
+      }),
+    ).toEqual([{ name: "SEARCH_URL", defaulted: false }]);
+  });
+
+  it("reports one read when two sites in the helper share a name, defaulted only if both are", async () => {
+    expect(
+      await projectReads({
+        "settings.rb": [
+          "module Settings",
+          "  def self.setting(key)",
+          '    ENV.fetch(key, "d")',
+          "    ENV.fetch(key)",
+          "  end",
+          "end",
+          "",
+        ].join("\n"),
+        "use.rb": 'URL = Settings.setting("REDIS_URL")\n',
+      }),
+    ).toEqual([{ name: "REDIS_URL", defaulted: false }]);
+  });
+
+  it("says nothing for a callee that is a lambda rather than a method", async () => {
+    expect(
+      await projectReads({
+        "use.rb": [
+          "GET = ->(key) { ENV.fetch(key) }",
+          'URL = GET.call("SEARCH_URL")',
+          "",
+        ].join("\n"),
+      }),
+    ).toEqual([]);
+  });
+
+  it("says nothing for a call whose parameter never reaches an env read", async () => {
+    expect(
+      await projectReads({
+        "settings.rb": [
+          "module Settings",
+          "  def self.log(message)",
+          "    message",
+          "  end",
+          "end",
+          "",
+        ].join("\n"),
+        "use.rb": 'Settings.log("REDIS_URL")\n',
+      }),
+    ).toEqual([]);
+  });
+
+  it("says nothing when the argument is not a string the run can read", async () => {
+    expect(
+      await projectReads({
+        "settings.rb": SETTINGS,
+        "use.rb": "URL = Settings.setting(whatever)\n",
+      }),
+    ).toEqual([]);
+  });
+
+  it("states no readsEnvNamed for a project whose every read is a literal", async () => {
+    const { db } = await projectFacts({
+      "use.rb": 'A = ENV["A"]\nB = ENV.fetch("B", "d")\n',
+    });
+    expect(db.facts("readsEnvNamed")).toEqual([]);
+  });
+
+  it("states the site and the name expression for a read through a parameter", async () => {
+    const { db } = await projectFacts({ "settings.rb": SETTINGS });
+    const funcKey = [
+      ...methodDefinitionsIn(
+        "settings.rb",
+        (await parseRuby(SETTINGS)).rootNode,
+      ).keys(),
+    ];
+    expect(funcKey).toHaveLength(1);
+    expect(db.facts("readsEnvNamed").map((row) => String(row[1]))).toEqual([
+      `${funcKey[0]}#key`,
+    ]);
   });
 });

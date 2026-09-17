@@ -163,6 +163,8 @@ export type {
 //                               and t refers to the class n is about
 //   associationConstructor(mod, n)  a pack's word: a field given the n
 //                               module mod exports is an association
+//   readsEnvNamed(site, x)      site reads the environment variable
+//                               whose name is the value of x
 //
 // Node identity is the adapter's business. The rules only join on it.
 // Making one of a class is a call of the class, however the language
@@ -1006,6 +1008,46 @@ const STATED_RULES = [
     ],
   ),
 
+  // The expressions that refer to a parameter by binding alone. An
+  // adapter may key a read of the parameter as the parameter itself,
+  // or as its own node linked by binds; both arrive here.
+  rule(
+    "refersToParam",
+    [v("p"), v("p")],
+    [lit("paramOf", v("f"), v("k"), v("p"))],
+  ),
+  rule(
+    "refersToParam",
+    [v("p"), v("p")],
+    [lit("paramNamed", v("f"), v("n"), v("p"))],
+  ),
+  rule(
+    "refersToParam",
+    [v("x"), v("p")],
+    [lit("refersToParam", v("y"), v("p")), lit("binds", v("x"), v("y"))],
+  ),
+
+  // A parameter whose value is an environment variable's name: a read
+  // site takes its name from it, or it is handed on to a parameter that
+  // does. Asked from the site, so the recursion runs callee to caller.
+  rule(
+    "paramNamesEnv",
+    [v("p"), v("site")],
+    [
+      lit("readsEnvNamed", v("site"), v("x")),
+      lit("refersToParam", v("x"), v("p")),
+    ],
+  ),
+  rule(
+    "paramNamesEnv",
+    [v("p"), v("site")],
+    [
+      lit("refersToParam", v("a"), v("p")),
+      lit("passesArgument", v("r"), v("q"), v("a")),
+      lit("paramNamesEnv", v("q"), v("site")),
+    ],
+  ),
+
   // Which module's export a re-exported name forwards to, however
   // many barrels deep the forwarding runs.
   rule(
@@ -1587,6 +1629,13 @@ export const RESOLUTION_QUESTIONS = [
     "wantedReturnsCall",
     [v("f"), v("c")],
     [lit("wanted", v("f")), lit("returnsCall", v("f"), v("c"))],
+  ),
+  // Seeded with the read sites, a handful per project, so one question
+  // gives every parameter a reader at a call could meet.
+  rule(
+    "wantedParamNamesEnv",
+    [v("p"), v("site")],
+    [lit("wantedEnvSite", v("site")), lit("paramNamesEnv", v("p"), v("site"))],
   ),
   rule(
     "wantedComesFrom",

@@ -1313,6 +1313,14 @@ export interface PatternPack {
    */
   transparentWrappers?: TransparentWrapper[];
   /**
+   * Objects whose properties are the process environment, written as
+   * the dotted path the code spells, e.g. `"process.env"`. The adapter
+   * states a fact for a read off one of these whose index is not a
+   * literal, which is how a helper that takes the variable's name as a
+   * parameter gets its reads reported at the calls that named them.
+   */
+  environmentObjects?: string[];
+  /**
    * How this library's client object is constructed, so an operation
    * summary can say which endpoint its calls go to. Each entry is a
    * constructor or factory imported from `importModule`, with

@@ -43,6 +43,7 @@ import type { Database } from "@suss/datalog";
 import type {
   BinaryExpression,
   ClassDeclaration,
+  ElementAccessExpression,
   ParameterDeclaration,
   PropertyDeclaration,
   TypeNode,
@@ -65,15 +66,23 @@ export interface NodeTable {
   seenValues: Set<Node>;
   /** Classes whose facts are already emitted, per store. */
   seenClasses: Set<Node>;
+  /**
+   * Dotted paths the packs call the process environment. Nothing in
+   * this adapter knows which object that is; a pack says so.
+   */
+  environmentObjects: readonly string[];
 }
 
-export function createNodeTable(): NodeTable {
+export function createNodeTable(
+  environmentObjects: readonly string[] = [],
+): NodeTable {
   return {
     byId: new Map(),
     seenFunctions: new Set(),
     seenBindings: new Set(),
     seenValues: new Set(),
     seenClasses: new Set(),
+    environmentObjects,
   };
 }
 
@@ -345,6 +354,77 @@ function literalIndexOf(index: Expression | undefined): string | null {
   return null;
 }
 
+/**
+ * Whether an element access reads a property of the process
+ * environment. The check is on how the object is written, since a pack
+ * declares the environment as the dotted path a program spells, and the
+ * global it names has no declaration to resolve to.
+ */
+function readsEnvironment(
+  table: NodeTable,
+  access: ElementAccessExpression,
+): boolean {
+  if (table.environmentObjects.length === 0) {
+    return false;
+  }
+  const path = dottedPathOf(access.getExpression());
+  return path !== null && table.environmentObjects.includes(path);
+}
+
+/**
+ * A read off a declared environment object whose index is computed:
+ * the site the rules follow back to whoever wrote the variable's name.
+ * A literal index already spells the variable, so it stays a property
+ * read like any other.
+ */
+export function isEnvironmentNameRead(
+  table: NodeTable,
+  node: Node,
+): node is ElementAccessExpression {
+  if (!Node.isElementAccessExpression(node)) {
+    return false;
+  }
+  const argument = node.getArgumentExpression();
+  return (
+    argument !== undefined &&
+    literalIndexOf(argument) === null &&
+    readsEnvironment(table, node)
+  );
+}
+
+/**
+ * Every such read a file spells. A file that never writes a declared
+ * path cannot contain one, and reading its text costs far less than
+ * walking its syntax.
+ */
+export function environmentNameReadsIn(
+  table: NodeTable,
+  sourceFile: SourceFile,
+): ElementAccessExpression[] {
+  if (table.environmentObjects.length === 0) {
+    return [];
+  }
+  const text = sourceFile.getFullText();
+  if (!table.environmentObjects.some((path) => text.includes(path))) {
+    return [];
+  }
+  return sourceFile
+    .getDescendantsOfKind(SyntaxKind.ElementAccessExpression)
+    .filter((access) => isEnvironmentNameRead(table, access));
+}
+
+/** The dotted path an expression spells, when every part of it is an identifier. */
+function dottedPathOf(expression: Node): string | null {
+  if (Node.isIdentifier(expression)) {
+    return expression.getText();
+  }
+  if (!Node.isPropertyAccessExpression(expression)) {
+    return null;
+  }
+  const object = dottedPathOf(expression.getExpression());
+  return object === null ? null : `${object}.${expression.getName()}`;
+}
+
 /** `a || b` or `a ?? b`: an expression that is one of its branches. */
 function asFallbackExpression(expression: Expression): BinaryExpression | null {
   if (!Node.isBinaryExpression(expression)) {
@@ -457,6 +537,13 @@ export function emitValue(
         index,
       );
       return id;
+    }
+    // An index off the environment is stated even though it is
+    // computed, so the rules can follow it back to the parameter a
+    // caller wrote the variable's name in.
+    const argument = expression.getArgumentExpression();
+    if (argument !== undefined && readsEnvironment(table, expression)) {
+      fact(db, "readsEnvNamed", id, emitValue(db, table, argument));
     }
     fact(db, "writtenValue", id);
     return id;
@@ -1280,6 +1367,11 @@ function recordBodyCalls(
 
   if (!Node.isExpression(node)) {
     return false;
+  }
+  // The body walk records calls and nothing else, so an env read has to
+  // be picked out here or its fact is never stated.
+  if (isEnvironmentNameRead(table, node)) {
+    emitValue(db, table, node);
   }
   const call = unwrapExpression(node);
   if (Node.isCallExpression(call)) {

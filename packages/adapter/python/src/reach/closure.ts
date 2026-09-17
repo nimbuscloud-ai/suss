@@ -470,6 +470,7 @@ function libraryUnit(
     node,
     file.module,
     options.storageFor(file),
+    options.facts,
   );
   const range = rangeOf(node);
   return {

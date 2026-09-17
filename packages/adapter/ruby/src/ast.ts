@@ -115,6 +115,21 @@ export const OWN_BODY_TYPES = new Set([
 /** A class and a module both open a body a definition can be written inside. */
 export const NESTING_TYPES = new Set(["class", "module"]);
 
+/** The two ways Ruby writes a method, `def x` and `def self.x`. */
+export const METHOD_TYPES = new Set(["method", "singleton_method"]);
+
+/** The nearest method a node is written inside, or null outside one. A read of a parameter is keyed under it. */
+export function enclosingMethod(node: RbNode): RbNode | null {
+  let current = node.parent;
+  while (current !== null) {
+    if (METHOD_TYPES.has(current.type)) {
+      return current;
+    }
+    current = current.parent;
+  }
+  return null;
+}
+
 /**
  * Ruby's own module keywords. `extend` is not one: it adds class
  * methods, and a field is answered by an instance method. The syntactic

@@ -478,11 +478,40 @@ A module-level mount is never dropped this way. It runs whichever factory the ap
 | `os.getenv("X")`, `os.getenv("X", "d")` | a read of `X` | as above |
 | any of these followed by `or` (`os.environ.get("X") or "d"`) | a read of `X` | yes |
 | `import os as _os`, `from os import environ, getenv` | the same reads, through the alias | |
-| `os.environ[name]`, `os.environ.get(f"{prefix}_X")` | nothing: the name is not a literal | |
+| `os.environ[name]` where `name` is a parameter | nothing here, and a read at each call that supplies the name (below) | |
+| `os.environ.get(f"{prefix}_X")`, `os.environ[opts["key"]]` | nothing: nothing in the run says which variable that is | |
 | `os.environ["X"] = "1"`, `del os.environ["X"]`, `"X" in os.environ` | nothing: a write or a membership test | |
 | `os.environ.get("X") or os.environ.get("Y")` | `X` defaulted, `Y` not, since `Y` is the chain's last resort | |
 
 A read inside a route body goes on that route's summary. A read at module level, or in a class body, runs when the module is imported, so it goes on a `module-init` summary named after the file, one per file that has such a read. A read inside a function a route reaches through its calls goes on that function's own summary (see below). A read inside a function nothing discovered and nothing reaches is reported nowhere, because nothing says when that function runs.
+
+### A read through a project helper
+
+A service that reads its environment through one function of its own writes no variable name at the read:
+
+```python
+# settings.py
+def env(key, default=None):
+    return os.environ.get(key, default)
+
+# db.py
+DATABASE_URL = env("DATABASE_URL")
+POOL_SIZE = env("POOL_SIZE", 5)
+```
+
+The adapter states `readsEnvNamed(site, x)` for the read in `env`: the variable it reads is whatever `x` is, and `x` is a parameter rather than a literal. The shared rules in `@suss/resolution` then derive `paramNamesEnv(p, site)`, which says a parameter ends up as the name a read site looks up, either because the site reads it directly or because it is handed on to another helper's parameter that does. Forwarding through any number of helpers, across files, is that one rule.
+
+The question is keyed on the read sites, not on the parameters. A project has a handful of reads whose name it does not write out and thousands of parameters somebody could pass something to, so the run seeds `wantedEnvSite` once with every site it stated and keeps what comes back: for each parameter, the sites its value ends up naming. With the site bound, the recursion runs from a helper to its callers, which is the direction `callsFunction` is built for.
+
+At `env("DATABASE_URL")` the reader finds the callee, looks each of its parameters up in that one result, and reads the argument only at a parameter that is on it. The name is the argument's own value, as a literal or as whatever the evaluator folds it to.
+
+A variable has a fallback when every read the call reaches supplies one, or when the caller wrote an `or` of its own around the call. Both calls above are defaulted, since `os.environ.get(key, default)` returns `default`; so is `env("HOST") or "localhost"` against a helper that raises. Two reads inside the helper looking the same variable up give one read at the call, defaulted only if both of them are.
+
+The read is reported at the call, in the caller's unit, so a call at module level lands on that file's `module-init` summary and a helper called from two units gives each unit its own read.
+
+Out of scope: a name built out of a parameter (`env(f"{prefix}_URL")` reads nothing), a helper that takes the name off a dict or an options object rather than off a parameter, and a callee that is a value rather than a function the project declares (`env = make_reader()` then `env("A")`). The rules find a function's callers from the function, and bridging that to a call through `resolves` put extract past four minutes.
+
+A project where every read writes its own name states no site, and then the reader never asks anything at a call.
 
 ## What a route reaches
 

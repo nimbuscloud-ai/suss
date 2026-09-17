@@ -243,6 +243,16 @@ describe("a client method whose class is constructed more than once", () => {
 });
 
 describe("environment reads on a summary", () => {
+  const configReads = (summary: BehavioralSummary | undefined) =>
+    summary?.transitions.flatMap((t) =>
+      t.effects.flatMap((effect) =>
+        effect.type === "interaction" &&
+        effect.interaction.class === "config-read"
+          ? [effect.interaction]
+          : [],
+      ),
+    );
+
   it("puts a resolver body's reads on the field and a file's load-time reads on a module-init unit", async () => {
     const campaignType = write(
       "app/graphql/types/campaign_type.rb",
@@ -265,15 +275,6 @@ describe("environment reads on a summary", () => {
       workspaceRoot: tmpDir,
     });
 
-    const configReads = (summary: (typeof summaries)[number] | undefined) =>
-      summary?.transitions.flatMap((t) =>
-        t.effects.flatMap((effect) =>
-          effect.type === "interaction" &&
-          effect.interaction.class === "config-read"
-            ? [effect.interaction]
-            : [],
-        ),
-      );
     const field = summaries.find((s) => s.identity.name === "Campaign.banner");
     expect(configReads(field)).toEqual([
       { class: "config-read", name: "BANNER_BUCKET", defaulted: false },
@@ -286,6 +287,54 @@ describe("environment reads on a summary", () => {
     );
     expect(configReads(moduleInit)).toEqual([
       { class: "config-read", name: "PAGE_SIZE", defaulted: true },
+    ]);
+  });
+
+  it("reports a name handed to a settings helper in the unit that calls it", async () => {
+    const settings = write(
+      "app/graphql/settings.rb",
+      [
+        "module Settings",
+        "  def self.setting(key)",
+        "    ENV.fetch(key)",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const campaignType = write(
+      "app/graphql/types/campaign_type.rb",
+      [
+        'BUCKET = Settings.setting("BANNER_BUCKET")',
+        "",
+        "class Types::CampaignType < Types::BaseObject",
+        "  field :region, String, null: false",
+        "",
+        "  def region",
+        '    Settings.setting("AWS_REGION")',
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const { summaries } = await extractRubyProject({
+      files: [settings, campaignType],
+      packs: [graphqlRubyPack(path.join(tmpDir, "app", "graphql"))],
+      workspaceRoot: tmpDir,
+    });
+
+    const field = summaries.find((s) => s.identity.name === "Campaign.region");
+    expect(configReads(field)).toEqual([
+      { class: "config-read", name: "AWS_REGION", defaulted: false },
+    ]);
+
+    const moduleInit = summaries.find(
+      (s) =>
+        s.kind === "module-init" &&
+        s.location.file === "app/graphql/types/campaign_type.rb",
+    );
+    expect(configReads(moduleInit)).toEqual([
+      { class: "config-read", name: "BANNER_BUCKET", defaulted: false },
     ]);
   });
 });

@@ -30,6 +30,73 @@ suss extract -p tsconfig.json -f express -f node -o summaries/code.json
 boundary, which is how a deployable unit's configuration channel is
 described. The two options below say what that boundary is called.
 
+## Reads through a project's own helper
+
+Most services read their environment through one helper:
+
+```ts
+// env.ts
+export function requireEnv(name: string): string {
+  return process.env[name] ?? "";
+}
+
+// handler.ts
+const table = requireEnv("TABLE_NAME");
+```
+
+The pack reports `TABLE_NAME` at the call in `handler.ts`, not at the
+bracket read in `env.ts`, so the unit that named the variable is the
+unit that reads it.
+
+The pack declares `process.env` as the environment object. The adapter
+states a fact for a read off it whose index is not a literal, and the
+resolution rules say which parameters end up supplying the name at such
+a read, however many helpers forward it along the way.
+
+That question is asked once for a whole project, from the reads rather
+than from the parameters. A project has a handful of reads with a
+computed index and thousands of parameters some call could fill, so
+asking from each parameter meant ten thousand questions and seven
+minutes on a project the size of suss. With the read bound, the rules
+run from each callee out to its callers, which is the direction the
+call facts are built for. Standing at a call, the pack looks the
+callee's parameters up in that one answer and reads an argument only
+where one of them is in it.
+
+The store extracts files as questions demand them, so before the first
+env question it scans the project's sources for a read off a declared
+path with a computed index, and extracts the files that have one. That
+keeps the answer the same whatever order the readers happen to run in.
+The answer is true of the files extracted when it was worked out, so a
+later reader that has brought more of the project in asks again.
+
+Extraction reaches what a file exports, so a file that exports nothing
+states no facts, and the rules cannot speak about its parameters either
+way. The store says so rather than saying no, and the pack then looks
+for the read in the callee's own body. That covers the helper a module
+keeps to itself, which is how a test file spells its knobs
+(`const runs = envInt("FUZZ_RUNS", 60)`); a helper this way that
+forwards its name to another function is still out of reach.
+
+A read reports `defaulted` when every read site behind it supplies a
+fallback, or when the call itself is wrapped in one:
+`requireEnv("PORT") ?? "3000"`.
+
+On suss itself a cold `suss extract -f node -f fetch` runs in 26.5s,
+where the hand-written walk this replaces ran in 33.7s, and both report
+the same 101 config reads.
+
+Four spellings it says nothing about:
+
+- a name taken off an options object, `requireEnv({ key: "TABLE_NAME" })`
+- a name built at run time from something only the run knows
+- a name built by interpolation from a parameter, `process.env[prefix + "_URL"]`
+- a forwarding call whose callee is a value rather than a name, such as
+  a wrapper factory's result written into a const. The rules find a
+  function's callers from the function, and bridging that to a callee
+  the rules would have to resolve first put a cold extract past four
+  minutes.
+
 ## Options
 
 ```json

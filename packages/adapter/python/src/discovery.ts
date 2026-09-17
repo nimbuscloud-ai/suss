@@ -1263,7 +1263,12 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
   // status declares no response at all, so the library's default status has
   // nothing to apply to.
   const effects = invocationEffects(definitionNode, options.facts);
-  const extra = recognizedBodyEffects(definitionNode, module, storageLookup);
+  const extra = recognizedBodyEffects(
+    definitionNode,
+    module,
+    storageLookup,
+    options.facts,
+  );
   const perTerminal = branchesPerTerminal({
     definitionNode,
     effects,
@@ -1376,6 +1381,7 @@ export function recognizedBodyEffects(
   definitionNode: PyNode,
   module: ModuleBinding,
   storageLookup: StorageLookup | undefined,
+  facts: Database | undefined,
 ): Effect[] {
   const storage =
     storageLookup === undefined
@@ -1391,7 +1397,7 @@ export function recognizedBodyEffects(
             patterns: storageLookup.rawSql ?? [],
           }),
         ];
-  return [...envReadEffects(definitionNode, module), ...storage];
+  return [...envReadEffects(definitionNode, module, facts), ...storage];
 }
 
 /** The calls in a body that storage recognition already read the meaning of, by node id, so the reach walk does not report them as lost. */

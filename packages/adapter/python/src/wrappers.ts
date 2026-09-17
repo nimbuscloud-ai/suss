@@ -592,6 +592,7 @@ function wrapperUnit(
     node,
     file.module,
     options.storageFor(file),
+    options.facts,
   );
   const delegate = (at: PyNode): TerminalBranch => ({
     terminal: {

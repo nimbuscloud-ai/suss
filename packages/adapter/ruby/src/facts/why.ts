@@ -18,7 +18,7 @@ import path from "node:path";
 import { Database } from "@suss/datalog";
 import { explainResolvedKey, RESOLUTION_RULES } from "@suss/resolution";
 
-import { field } from "../ast.js";
+import { enclosingMethod, field } from "../ast.js";
 import { parseRubySync } from "../parser.js";
 import { findRubyFiles } from "../project.js";
 import { collectFileConstants, emitConstantBindings } from "./constants.js";
@@ -47,22 +47,8 @@ interface Located {
   node: RbNode;
 }
 
-const METHOD_TYPES = new Set(["method", "singleton_method"]);
-
 function namedChildrenOf(node: RbNode): RbNode[] {
   return node.namedChildren.filter((child): child is RbNode => child !== null);
-}
-
-/** The nearest method a node is written inside, or null outside one. */
-function enclosingMethod(node: RbNode): RbNode | null {
-  let current = node.parent;
-  while (current !== null) {
-    if (METHOD_TYPES.has(current.type)) {
-      return current;
-    }
-    current = current.parent;
-  }
-  return null;
 }
 
 /**

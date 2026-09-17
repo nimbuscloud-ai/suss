@@ -48,6 +48,7 @@ import { isFunctionRoot } from "../discovery/shared.js";
 import {
   createNodeTable,
   emitValue,
+  environmentNameReadsIn,
   extractFileFacts,
   factKeyOf,
   type NodeTable,
@@ -100,6 +101,7 @@ type Question =
   | "wantedCallOrigin"
   | "wantedAnchor"
   | "wantedSites"
+  | "wantedEnvSite"
   | "wantedSubject";
 
 /**
@@ -145,9 +147,25 @@ export interface PassedArgument {
   argument: Node;
 }
 
+/** See `ResolutionStore.envNamers`. */
+export interface EnvironmentNamers {
+  /**
+   * The environment reads that take their variable's name from this
+   * parameter, however many helpers forward it along the way. Empty for
+   * a parameter no read ever takes a name from, and null where the
+   * rules had nothing to go on: a file that exports nothing states no
+   * facts, so their silence about its parameters means neither yes nor
+   * no, and the asker settles what it can by reading the syntax.
+   */
+  sitesNaming(parameter: Node): readonly Node[] | null;
+}
+
+/** What every parameter gets in a project with no environment read to follow. */
+const NO_NAMERS: EnvironmentNamers = { sitesNaming: () => [] };
+
 export class ResolutionStore {
   private readonly db = new Database();
-  private readonly table: NodeTable = createNodeTable();
+  private readonly table: NodeTable;
   private readonly fullyExtracted = new Set<string>();
   private readonly seededValues = new Set<string>();
   private readonly importedNames = new Map<
@@ -191,6 +209,10 @@ export class ResolutionStore {
   private readonly constructionSites = new Map<string, string[]>();
   /** Files the most recent query read, for the memo to keep. */
   private lastQueryWalked: string[] = [];
+  /** See `environmentSiteFiles`; null until the first env question. */
+  private envSiteFiles: readonly SourceFile[] | null = null;
+  private envNamersAnswer: EnvironmentNamers = NO_NAMERS;
+  private envNamersExtractedAt = -1;
   private readonly declarations = new Map<Node, Node>();
   private readonly graph = new ModuleGraph();
   /** See `notePossibleCallers`. */
@@ -199,7 +221,11 @@ export class ResolutionStore {
 
   private stale = true;
 
-  constructor(wrappers: TransparentWrapper[] = []) {
+  constructor(
+    wrappers: TransparentWrapper[] = [],
+    environmentObjects: readonly string[] = [],
+  ) {
+    this.table = createNodeTable(environmentObjects);
     addPackWords(this.db, { unwrapsByName: wrappers });
   }
 
@@ -449,6 +475,105 @@ export class ResolutionStore {
         }
       }
     }
+    return found;
+  }
+
+  /**
+   * Which parameters an environment read takes its variable's name
+   * from, for a reader standing at a call. One question covers the
+   * whole project: a project has a handful of environment reads and
+   * thousands of parameters, and with the read bound the rules run from
+   * each callee to its callers.
+   *
+   * `definedIn` is the callee's own file, read into the store before
+   * the question so a helper nothing had extracted yet is among the
+   * facts the rules run over.
+   */
+  envNamers(definedIn: SourceFile): EnvironmentNamers {
+    const siteFiles = this.environmentSiteFiles(definedIn.getProject());
+    if (siteFiles.length === 0) {
+      return NO_NAMERS;
+    }
+    this.extractFile(definedIn);
+    // The answer was true of the files extracted when it was worked
+    // out, and a reader arriving later has read more of the project.
+    if (this.envNamersExtractedAt === this.fullyExtracted.size) {
+      return this.envNamersAnswer;
+    }
+
+    const answered = this.askEnvNamers([...siteFiles, definedIn]);
+    const siteFilePaths = new Set(siteFiles.map((one) => one.getFilePath()));
+    this.envNamersAnswer = {
+      sitesNaming: (parameter: Node) =>
+        this.sitesNamedBy(answered, siteFilePaths, parameter),
+    };
+    this.envNamersExtractedAt = this.fullyExtracted.size;
+    return this.envNamersAnswer;
+  }
+
+  private sitesNamedBy(
+    answered: ReadonlyMap<string, Node[]>,
+    siteFilePaths: ReadonlySet<string>,
+    parameter: Node,
+  ): readonly Node[] | null {
+    const key = nodeId(parameter);
+    const sites = answered.get(key);
+    if (sites !== undefined) {
+      return sites;
+    }
+    if (!siteFilePaths.has(parameter.getSourceFile().getFilePath())) {
+      return [];
+    }
+    return this.db.lookup("paramOf", 2, key).length > 0 ? [] : null;
+  }
+
+  /**
+   * Seed every read the store knows of, derive, and take the sites back
+   * per parameter. The question is dropped afterwards, so a later ask
+   * over a larger fact set derives it again.
+   */
+  private askEnvNamers(seeds: readonly SourceFile[]): Map<string, Node[]> {
+    const byParameter = new Map<string, Node[]>();
+    try {
+      for (const [site] of this.db.facts("readsEnvNamed")) {
+        this.wantKey("wantedEnvSite", String(site));
+      }
+      this.extractDemanded(seeds);
+      this.derive();
+      for (const [parameter, site] of this.db.facts("wantedParamNamesEnv")) {
+        const node = this.table.byId.get(String(site));
+        if (node === undefined) {
+          continue;
+        }
+        const sites = byParameter.get(String(parameter)) ?? [];
+        sites.push(node);
+        byParameter.set(String(parameter), sites);
+      }
+    } finally {
+      this.forgetQuery();
+    }
+    return byParameter;
+  }
+
+  /**
+   * The project's files that spell an environment read with a computed
+   * index, read into the store. Which files those are cannot depend on
+   * what a reader happened to ask about first, so the scan is over the
+   * project's own sources and it happens once.
+   */
+  private environmentSiteFiles(project: Project): readonly SourceFile[] {
+    if (this.envSiteFiles !== null) {
+      return this.envSiteFiles;
+    }
+    const found = project
+      .getSourceFiles()
+      .filter(
+        (one) =>
+          !one.isInNodeModules() &&
+          environmentNameReadsIn(this.table, one).length > 0,
+      );
+    this.envSiteFiles = found;
+    this.extractFiles(found);
     return found;
   }
 
@@ -980,7 +1105,12 @@ export class ResolutionStore {
   }
 
   private wantValue(question: Question, value: Node): void {
-    if (this.db.add(question, [nodeId(value)]) === "added") {
+    this.wantKey(question, nodeId(value));
+  }
+
+  /** For a question seeded with a fact key the store read out of the database. */
+  private wantKey(question: Question, key: string): void {
+    if (this.db.add(question, [key]) === "added") {
       this.stale = true;
     }
   }

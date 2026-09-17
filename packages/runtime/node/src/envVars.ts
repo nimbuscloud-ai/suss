@@ -334,24 +334,41 @@ function readsThroughHelperCall(
   call: CallExpression,
   resolution: ResolutionStore | undefined,
 ): EnvRead[] {
-  const reads: EnvRead[] = [];
   const callee = functionBehindCallee(call.getExpression());
   if (callee === null) {
-    return reads;
+    return [];
   }
+  const sitesNaming = namesReadAtSites(callee, resolution);
+  const parameters = callee.getParameters();
+  // One read per variable, however many sites end up reading it: a
+  // default only counts when every one of them supplies one.
+  const defaultedByName = new Map<string, boolean>();
   call.getArguments().forEach((passed, at) => {
-    // Reachability is remembered per callee parameter; reading the
-    // argument's value is a question to the engine on every call.
-    const read = parameterReachesEnvRead(callee, at, resolution);
-    if (read === null) {
+    const parameter = parameters[at];
+    if (parameter === undefined) {
+      return;
+    }
+    const sites = sitesNaming(parameter) ?? directEnvReads(callee, parameter);
+    if (sites.length === 0) {
       return;
     }
     const literal = stringValueOf(passed, resolution);
-    if (literal !== null && literal.length > 0) {
-      reads.push({ name: literal, defaulted: read.defaulted, node: call });
+    if (!namesSomething(literal)) {
+      return;
     }
+    const everywhere = sites.every(isDefaultedAt);
+    defaultedByName.set(
+      literal,
+      (defaultedByName.get(literal) ?? true) && everywhere,
+    );
   });
-  return reads;
+
+  const wrapped = isDefaultedAt(call);
+  return [...defaultedByName].map(([name, atSites]) => ({
+    name,
+    defaulted: atSites || wrapped,
+    node: call,
+  }));
 }
 
 /** The function a callee expression is written against, or null when nothing this reader follows defines one. */
@@ -365,85 +382,40 @@ function functionBehindCallee(callee: Node): FunctionLike | null {
   return functionTargetOf(nameNode)?.func ?? null;
 }
 
-/** Keyed on the compiler node, which a re-parse replaces, so an edited file never reads a stale answer. */
-const PARAM_ENV_READS = new WeakMap<
-  object,
-  Map<number, { defaulted: boolean } | null>
->();
-
-/**
- * Whether a function's parameter reaches a `process.env[...]` read,
- * through however many helpers forward it. The worklist mirrors
- * `callerLiteralReads` in the other direction: at each parameter, a
- * direct read inside its own function settles it, and `callsPassing`
- * gives the calls that hand it to another function instead. The taken
- * set ends a pair of helpers calling each other.
- */
-function parameterReachesEnvRead(
-  fn: FunctionLike,
-  at: number,
-  resolution: ResolutionStore | undefined,
-): { defaulted: boolean } | null {
-  const byParameter =
-    PARAM_ENV_READS.get(fn.compilerNode) ??
-    new Map<number, { defaulted: boolean } | null>();
-  PARAM_ENV_READS.set(fn.compilerNode, byParameter);
-  const remembered = byParameter.get(at);
-  if (remembered !== undefined) {
-    return remembered;
-  }
-
-  const found = reachesEnvRead(fn, at, resolution);
-  byParameter.set(at, found);
-  return found;
+/** Whether a value read back off an argument is a variable's name. */
+function namesSomething(value: string | null): value is string {
+  return value !== null && value.length > 0;
 }
 
 /**
- * Without a store, only the direct read at the starting parameter is
- * reachable: forwarding to another function is `callsPassing`'s
- * question, and there is nowhere to ask it.
+ * Where each of a callee's parameters is read as an environment
+ * variable's name, through however many helpers forward it along the
+ * way. The store works that out for a whole project in one question,
+ * asked from the reads rather than from the parameters, so a call whose
+ * callee reads nothing costs a lookup and no query.
+ *
+ * Null back from the store means the rules had no facts to go on, and
+ * without a store there is no question to ask at all. Both leave this
+ * reader the callee's own body, which is the case most services spell.
  */
-function reachesEnvRead(
+function namesReadAtSites(
   fn: FunctionLike,
-  at: number,
   resolution: ResolutionStore | undefined,
-): { defaulted: boolean } | null {
-  const pending: { fn: FunctionLike; at: number }[] = [{ fn, at }];
-  const taken = new Set<string>();
-  while (pending.length > 0) {
-    const wanted = pending.pop() as { fn: FunctionLike; at: number };
-    const key = `${wanted.fn.getPos()}:${wanted.at}`;
-    if (taken.has(key)) {
-      continue;
-    }
-    taken.add(key);
-    const parameter = wanted.fn.getParameters()[wanted.at];
-    if (parameter === undefined) {
-      continue;
-    }
-
-    const direct = directEnvRead(wanted.fn, parameter);
-    if (direct !== null) {
-      return direct;
-    }
-    if (resolution === undefined) {
-      continue;
-    }
-
-    for (const passed of resolution.callsPassing(parameter)) {
-      if (!N.isCallExpression(passed.call)) {
-        continue;
-      }
-      const position = passed.call.getArguments().indexOf(passed.argument);
-      const next = functionLikeOf(
-        resolution.resolveCallable(passed.call.getExpression()),
-      );
-      if (position >= 0 && next !== null && next !== wanted.fn) {
-        pending.push({ fn: next, at: position });
-      }
-    }
+): (parameter: ParameterDeclaration) => readonly Node[] | null {
+  if (resolution === undefined) {
+    return () => null;
   }
-  return null;
+  const namers = resolution.envNamers(fn.getSourceFile());
+  return (parameter) => namers.sitesNaming(parameter);
+}
+
+/** `process.env[name]` in the callee's own body, the one hop read from syntax. */
+function directEnvReads(
+  fn: FunctionLike,
+  parameter: ParameterDeclaration,
+): Node[] {
+  const direct = directEnvRead(fn, parameter);
+  return direct === null ? [] : [direct];
 }
 
 /**
@@ -454,7 +426,7 @@ function reachesEnvRead(
 function directEnvRead(
   fn: FunctionLike,
   parameter: ParameterDeclaration,
-): { defaulted: boolean } | null {
+): ElementAccessExpression | null {
   for (const access of fn.getDescendantsOfKind(
     SyntaxKind.ElementAccessExpression,
   )) {
@@ -467,23 +439,10 @@ function directEnvRead(
       N.isIdentifier(argument) &&
       symbolBehind(argument)?.getValueDeclaration() === parameter
     ) {
-      return { defaulted: isDefaultedAt(access) };
+      return access;
     }
   }
   return null;
-}
-
-/** Narrow a resolved value down to the function shapes this reader can recurse into. */
-function functionLikeOf(node: Node | null): FunctionLike | null {
-  if (node === null) {
-    return null;
-  }
-  return N.isFunctionDeclaration(node) ||
-    N.isArrowFunction(node) ||
-    N.isFunctionExpression(node) ||
-    N.isMethodDeclaration(node)
-    ? node
-    : null;
 }
 
 function configReadEffect(

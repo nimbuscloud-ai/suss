@@ -755,8 +755,12 @@ export function bodyOfMethod(
     bodyRead.facts,
   );
   const storage = bodyRead.storage;
+  const facts = bodyRead.facts;
   const extra = [
-    ...envReadEffects(method),
+    ...envReadEffects(
+      method,
+      facts === undefined ? undefined : { db: facts, file },
+    ),
     ...(storage === undefined
       ? []
       : storageEffects(callsUnder(method), file, storage, method)),
