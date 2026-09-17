@@ -9,6 +9,7 @@ import {
   bodyStatementsRun,
   field,
   INCLUDE_CALL,
+  METHOD_TYPES,
   NESTING_TYPES,
   NO_BODY_BLOCKS,
   OWN_BODY_TYPES,
@@ -840,8 +841,6 @@ function emitCandidates(
     add(emitter, "writesAllStated", key);
   }
 }
-
-const METHOD_TYPES = new Set(["method", "singleton_method"]);
 
 /** The method Ruby runs on a new instance. */
 const INITIALIZE_METHOD = "initialize";
