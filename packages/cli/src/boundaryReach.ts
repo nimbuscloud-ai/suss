@@ -14,7 +14,11 @@ import {
 } from "@suss/behavioral-ir";
 import { displayLabel } from "@suss/ir-core";
 
-import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  BoundaryBinding,
+  Interaction,
+} from "@suss/behavioral-ir";
 import type { Relation } from "@suss/ir-core";
 
 export { relationsOf } from "@suss/behavioral-ir";
@@ -32,12 +36,28 @@ export function boundarySpelling(binding: BoundaryBinding): string {
   return displayLabel(binding);
 }
 
+/**
+ * What the effect says past the boundary's own label. A store's label
+ * says which container, but a config read's label is only the
+ * recognizer, so the variable is the detail.
+ */
+export function interactionDetail(
+  interaction: Interaction,
+): string | undefined {
+  if (interaction.class === "config-read") {
+    return interaction.name;
+  }
+  return undefined;
+}
+
 export interface TouchedBoundary {
   label: string;
   binding: BoundaryBinding;
   relation: Relation;
   /** The call as the source writes it, when the effect recorded one. */
   callee: string | undefined;
+  /** What the effect says past the label; see `interactionDetail`. */
+  detail: string | undefined;
   transitionId: string | undefined;
 }
 
@@ -64,6 +84,7 @@ export function boundariesTouchedBy(
         binding: own,
         relation,
         callee: undefined,
+        detail: undefined,
         transitionId: undefined,
       });
     }
@@ -89,6 +110,7 @@ export function boundariesTouchedBy(
           binding: effect.binding,
           relation,
           callee: effect.callee,
+          detail: interactionDetail(effect.interaction),
           transitionId: transition.id,
         });
       }

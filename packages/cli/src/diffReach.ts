@@ -126,15 +126,16 @@ function reachedFrom(
           ) {
             continue;
           }
-          const key = effectKey(touch.relation, touch.label);
+          // Two variables read through one boundary are two lines.
+          const label =
+            touch.detail === undefined
+              ? touch.label
+              : `${touch.label} ${touch.detail}`;
+          const key = effectKey(touch.relation, label);
           if (reached.has(key)) {
             continue;
           }
-          reached.set(key, {
-            relation: touch.relation,
-            label: touch.label,
-            through,
-          });
+          reached.set(key, { relation: touch.relation, label, through });
         }
       }
       for (const edge of out.get(fn) ?? []) {
