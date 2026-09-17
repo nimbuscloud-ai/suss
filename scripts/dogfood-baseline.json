@@ -2,10 +2,10 @@
   "totals": {
     "packages": 75,
     "packagesWithExports": 75,
-    "exports": 997,
-    "internal": 3499,
-    "consumers": 2033,
-    "pairs": 2021,
+    "exports": 1002,
+    "internal": 3505,
+    "consumers": 2035,
+    "pairs": 2023,
     "unfollowedCalls": 515,
     "findingErrors": 0
   },
@@ -54,8 +54,8 @@
     },
     "packages/cli": {
       "name": "@suss/cli",
-      "exports": 30,
-      "internal": 539,
+      "exports": 35,
+      "internal": 547,
       "consumers": 355,
       "unfollowedCalls": 57
     },
@@ -475,8 +475,8 @@
     "packages/mcp": {
       "name": "@suss/mcp",
       "exports": 9,
-      "internal": 16,
-      "consumers": 10,
+      "internal": 14,
+      "consumers": 12,
       "unfollowedCalls": 2
     },
     "packages/packs": {
