@@ -1,5 +1,5 @@
 import { Node, type SourceFile } from "ts-morph";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { accessContextFor, ResolutionStore } from "@suss/adapter-typescript";
 import { createTestProject } from "@suss/test-project";
@@ -505,6 +505,21 @@ describe("node runtime pack — env-var wiring", () => {
       export const table = requireEnv(pickName());
     `);
     expect(configReadEffectsOf(recognizeWithStore(sourceFile))).toEqual([]);
+  });
+
+  it("never asks what an argument is worth when the callee reads no env var", () => {
+    const sourceFile = makeProject(`
+      function log(message: string): void { return; }
+      function label(): string { return "started"; }
+      log(label());
+    `);
+    const store = storeOver(sourceFile.getProject());
+    const asked = vi.spyOn(store, "resolveCallable");
+    const reads = configReadEffectsOf(
+      recognizeWith(envVarRecognizer(), sourceFile, store),
+    );
+    expect(reads).toEqual([]);
+    expect(asked).not.toHaveBeenCalled();
   });
 
   it("follows a literal across two helpers, each handing its parameter on", () => {
