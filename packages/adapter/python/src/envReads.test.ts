@@ -260,7 +260,7 @@ describe("a call to a helper that reads the environment", () => {
     ).toEqual([{ name: "DATABASE_URL", defaulted: false }]);
   });
 
-  it("takes the fallback from the helper's own read rather than from the call", async () => {
+  it("takes the fallback from the helper's own read", async () => {
     expect(
       await moduleReadsWithFacts(
         [
@@ -280,6 +280,55 @@ describe("a call to a helper that reads the environment", () => {
       { name: "DATABASE_URL", defaulted: true },
       { name: "POOL_SIZE", defaulted: true },
     ]);
+  });
+
+  it("takes the fallback from an or the caller wrote around the call", async () => {
+    expect(
+      await moduleReadsWithFacts(
+        `${SUBSCRIPT_HELPER}HOST = env("HOST") or "localhost"\n`,
+      ),
+    ).toEqual([{ name: "HOST", defaulted: true }]);
+  });
+
+  it("reports one read for a name two of the helper's reads look up, defaulted only when both are", async () => {
+    expect(
+      await moduleReadsWithFacts(
+        [
+          "import os",
+          "",
+          "",
+          "def env(key):",
+          '    first = os.environ.get(key, "d")',
+          "    return first or os.environ[key]",
+          "",
+          "",
+          'A = env("A")',
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual([{ name: "A", defaulted: false }]);
+  });
+
+  it("says nothing where the callee is a value a factory returned", async () => {
+    expect(
+      await moduleReadsWithFacts(
+        [
+          "import os",
+          "",
+          "",
+          "def make_reader():",
+          "    def read(key):",
+          "        return os.environ[key]",
+          "",
+          "    return read",
+          "",
+          "",
+          "env = make_reader()",
+          'A = env("A")',
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual([]);
   });
 
   it("reads a name the caller passes by keyword", async () => {

@@ -8,16 +8,16 @@
  *
  * `os` is the language's own module, so this belongs to the adapter and
  * not to a pack. A read whose name is a parameter states
- * `readsEnvNamed`, the shared rules say which parameters end up as a
- * variable's name, and a reader at a call reads the argument only where
- * a site comes back. The README lists the spellings.
+ * `readsEnvNamed`; one question keyed on those sites gives back the
+ * parameters that end up as a variable's name, and a reader at a call
+ * reads the argument only at one of those. The README lists the spellings.
  */
 
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
 import { SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
 
 import { enclosingFunction, field, stringLiteralValue } from "./ast.js";
-import { resolveCalls } from "./facts/resolve.js";
+import { resolveCalls, resolveEnvSites } from "./facts/resolve.js";
 import { callArguments, nodeId, readKey } from "./facts/values.js";
 import { resolveName } from "./scope.js";
 import { resolutionKeyOf, stringValueOf } from "./values/evaluator.js";
@@ -299,8 +299,15 @@ export function envNameSites(
   return sites;
 }
 
-/** The read sites each run knows about, so a reader at a call can say whether the one it landed on has a fallback. */
-const sitesByDb = new WeakMap<Database, Map<string, EnvNameSite>>();
+/** What one run knows about the reads whose variable name the source does not write out. */
+interface EnvSiteIndex {
+  /** Each site by its node id, so a reader at a call can say whether it has a fallback. */
+  byId: Map<string, EnvNameSite>;
+  /** Which sites each parameter ends up naming. Null until the rules have been asked. */
+  sitesByParameter: Map<string, string[]> | null;
+}
+
+const sitesByDb = new WeakMap<Database, EnvSiteIndex>();
 
 /**
  * State the sites for the shared rules and keep them, so a reader
@@ -314,15 +321,39 @@ export function bindEnvNameSites(
   if (sites.length === 0) {
     return;
   }
-  let known = sitesByDb.get(db);
-  if (known === undefined) {
-    known = new Map();
-    sitesByDb.set(db, known);
+  let index = sitesByDb.get(db);
+  if (index === undefined) {
+    index = { byId: new Map(), sitesByParameter: null };
+    sitesByDb.set(db, index);
   }
   for (const site of sites) {
     db.add("readsEnvNamed", [site.site, site.nameKey]);
-    known.set(site.site, site);
+    index.byId.set(site.site, site);
   }
+}
+
+/**
+ * Which sites each parameter ends up naming, from one question over
+ * every site the run stated. Asked the first time a reader reaches a
+ * call, by when every file's facts are in the database.
+ */
+function sitesEachParameterNames(
+  db: Database,
+  index: EnvSiteIndex,
+): ReadonlyMap<string, string[]> {
+  if (index.sitesByParameter !== null) {
+    return index.sitesByParameter;
+  }
+  resolveEnvSites(db, [...index.byId.keys()]);
+  const found = new Map<string, string[]>();
+  for (const row of db.facts("wantedParamNamesEnv")) {
+    const parameter = String(row[0]);
+    const named = found.get(parameter) ?? [];
+    named.push(String(row[1]));
+    found.set(parameter, named);
+  }
+  index.sitesByParameter = found;
+  return found;
 }
 
 /**
@@ -335,8 +366,12 @@ function helperReadsByCall(
   db: Database | undefined,
 ): Map<number, Effect[]> {
   const found = new Map<number, Effect[]>();
-  const sites = db === undefined ? undefined : sitesByDb.get(db);
-  if (db === undefined || sites === undefined || calls.length === 0) {
+  const index = db === undefined ? undefined : sitesByDb.get(db);
+  if (db === undefined || index === undefined || calls.length === 0) {
+    return found;
+  }
+  const named = sitesEachParameterNames(db, index);
+  if (named.size === 0) {
     return found;
   }
 
@@ -353,10 +388,6 @@ function helperReadsByCall(
   }
   resolveCalls(db, [...new Set(calleeKeys.values())]);
 
-  // Every parameter this body could be naming a variable at goes into
-  // one question, because the rules answer all of them in one run.
-  const argumentsByCall = new Map<number, Map<string, PyNode>>();
-  const asking = new Set<string>();
   for (const call of calls) {
     const key = calleeKeys.get(call.id);
     if (key === undefined) {
@@ -366,20 +397,9 @@ function helperReadsByCall(
     if (argumentAt.size === 0) {
       continue;
     }
-    argumentsByCall.set(call.id, argumentAt);
-    for (const parameter of argumentAt.keys()) {
-      asking.add(parameter);
-    }
-  }
-  if (asking.size === 0) {
-    return found;
-  }
-  resolveCalls(db, [...asking]);
-
-  for (const [id, argumentAt] of argumentsByCall) {
-    const reads = readsThroughHelper(db, argumentAt, sites);
+    const reads = readsThroughHelper(db, call, argumentAt, index.byId, named);
     if (reads.length > 0) {
-      found.set(id, reads);
+      found.set(call.id, reads);
     }
   }
   return found;
@@ -430,31 +450,39 @@ function argumentsByParameter(
 
 /**
  * What a call reads, given the argument it writes at each of the
- * callee's parameters. The name is the argument's own value and the
- * fallback is the site's, because the helper is what decides what
- * happens when the variable is unset.
+ * callee's parameters. The name is the argument's own value. A variable
+ * has a fallback when every read the call reaches supplies one, or when
+ * the caller wrote an `or` of its own around the call.
  */
 function readsThroughHelper(
   db: Database,
+  call: PyNode,
   argumentAt: ReadonlyMap<string, PyNode>,
-  sites: ReadonlyMap<string, EnvNameSite>,
+  siteById: ReadonlyMap<string, EnvNameSite>,
+  named: ReadonlyMap<string, string[]>,
 ): Effect[] {
-  const reads = new Map<string, EnvRead>();
+  const reads = new Map<string, boolean>();
   for (const [parameter, argument] of argumentAt) {
-    const answers = db.lookup("wantedParamNamesEnv", 0, parameter);
-    if (answers.length === 0) {
+    const sites = named.get(parameter);
+    if (sites === undefined) {
       continue;
     }
     const name = stringLiteralValue(argument) ?? stringValueOf(argument, db);
     if (name === null) {
       continue;
     }
-    for (const answer of answers) {
-      const site = sites.get(String(answer[1]));
+    for (const id of sites) {
+      const site = siteById.get(id);
       if (site !== undefined) {
-        reads.set(`${site.site} ${name}`, { name, defaulted: site.defaulted });
+        reads.set(name, (reads.get(name) ?? true) && site.defaulted);
       }
     }
   }
-  return [...reads.values()].map(configReadEffect);
+  if (reads.size === 0) {
+    return [];
+  }
+  const defaultedAtCall = isDefaultedAt(call);
+  return [...reads].map(([name, defaulted]) =>
+    configReadEffect({ name, defaulted: defaulted || defaultedAtCall }),
+  );
 }

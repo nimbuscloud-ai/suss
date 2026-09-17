@@ -499,13 +499,17 @@ DATABASE_URL = env("DATABASE_URL")
 POOL_SIZE = env("POOL_SIZE", 5)
 ```
 
-The adapter states `readsEnvNamed(site, x)` for the read in `env`: the variable it reads is whatever `x` is, and `x` is a parameter rather than a literal. The shared rules in `@suss/resolution` then answer `paramNamesEnv(p, site)`, which says a parameter ends up as the name a read site looks up, either because the site reads it directly or because it is handed on to another helper's parameter that does. Forwarding through any number of helpers, across files, is that one rule.
+The adapter states `readsEnvNamed(site, x)` for the read in `env`: the variable it reads is whatever `x` is, and `x` is a parameter rather than a literal. The shared rules in `@suss/resolution` then derive `paramNamesEnv(p, site)`, which says a parameter ends up as the name a read site looks up, either because the site reads it directly or because it is handed on to another helper's parameter that does. Forwarding through any number of helpers, across files, is that one rule.
 
-Standing at `env("DATABASE_URL")`, the reader finds the callee, asks about each parameter the call writes an argument at, and reads the argument only where a site comes back. The name is the argument's own value, as a literal or as whatever the evaluator folds it to. The defaulted flag comes from the site, because `env` is what decides what happens when the variable is unset: both calls above are defaulted, since `os.environ.get(key, default)` returns `default`.
+The question is keyed on the read sites, not on the parameters. A project has a handful of reads whose name it does not write out and thousands of parameters somebody could pass something to, so the run seeds `wantedEnvSite` once with every site it stated and keeps what comes back: for each parameter, the sites its value ends up naming. With the site bound, the recursion runs from a helper to its callers, which is the direction `callsFunction` is built for.
+
+At `env("DATABASE_URL")` the reader finds the callee, looks each of its parameters up in that one result, and reads the argument only at a parameter that is on it. The name is the argument's own value, as a literal or as whatever the evaluator folds it to.
+
+A variable has a fallback when every read the call reaches supplies one, or when the caller wrote an `or` of its own around the call. Both calls above are defaulted, since `os.environ.get(key, default)` returns `default`; so is `env("HOST") or "localhost"` against a helper that raises. Two reads inside the helper looking the same variable up give one read at the call, defaulted only if both of them are.
 
 The read is reported at the call, in the caller's unit, so a call at module level lands on that file's `module-init` summary and a helper called from two units gives each unit its own read.
 
-Out of scope: a name built out of a parameter (`env(f"{prefix}_URL")` reads nothing), and a helper that takes the name off a dict or an options object rather than off a parameter.
+Out of scope: a name built out of a parameter (`env(f"{prefix}_URL")` reads nothing), a helper that takes the name off a dict or an options object rather than off a parameter, and a callee that is a value rather than a function the project declares (`env = make_reader()` then `env("A")`). The rules find a function's callers from the function, and bridging that to a call through `resolves` put extract past four minutes.
 
 A project where every read writes its own name states no site, and then the reader never asks anything at a call.
 

@@ -20,6 +20,19 @@ export function resolveCalls(db: Database, callKeys: readonly string[]): void {
 }
 
 /**
+ * Ask which parameters end up naming the variable each of these
+ * environment reads looks up. A project has a handful of reads and
+ * thousands of parameters, so the sites are what the question is keyed
+ * on, and one of them covers every caller.
+ */
+export function resolveEnvSites(
+  db: Database,
+  siteIds: readonly string[],
+): void {
+  askResolution(db, siteIds, "wantedEnvSite");
+}
+
+/**
  * The single expression a value was written as when the receiver behind
  * it is the instance one site made. A field two constructions fill
  * differently settles here and not context free.
