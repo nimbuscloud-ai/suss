@@ -331,6 +331,35 @@ describe("a name handed to a project helper", () => {
     ).toEqual([{ name: "SEARCH_URL", defaulted: false }]);
   });
 
+  it("reports one read when two sites in the helper share a name, defaulted only if both are", async () => {
+    expect(
+      await projectReads({
+        "settings.rb": [
+          "module Settings",
+          "  def self.setting(key)",
+          '    ENV.fetch(key, "d")',
+          "    ENV.fetch(key)",
+          "  end",
+          "end",
+          "",
+        ].join("\n"),
+        "use.rb": 'URL = Settings.setting("REDIS_URL")\n',
+      }),
+    ).toEqual([{ name: "REDIS_URL", defaulted: false }]);
+  });
+
+  it("says nothing for a callee that is a lambda rather than a method", async () => {
+    expect(
+      await projectReads({
+        "use.rb": [
+          "GET = ->(key) { ENV.fetch(key) }",
+          'URL = GET.call("SEARCH_URL")',
+          "",
+        ].join("\n"),
+      }),
+    ).toEqual([]);
+  });
+
   it("says nothing for a call whose parameter never reaches an env read", async () => {
     expect(
       await projectReads({

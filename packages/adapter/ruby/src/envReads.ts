@@ -7,9 +7,10 @@
  *
  * `ENV` is the language's own object, so this belongs to the adapter and
  * not to a pack. A read whose name comes from a parameter is stated as
- * `readsEnvNamed`, and the shared rules say which parameters end up
- * naming a variable, so a body calling such a helper reports the read at
- * the call. The README lists every spelling that is and is not read.
+ * `readsEnvNamed`, and one question over the run's read sites gives back
+ * every parameter whose value ends up naming a variable, so a body
+ * calling such a helper reports the read at the call. The README lists
+ * every spelling that is and is not read.
  */
 
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
@@ -22,7 +23,11 @@ import {
   readCallArgs,
   stringLiteralValue,
 } from "./ast.js";
-import { resolvedFunctions, resolveValues } from "./facts/resolve.js";
+import {
+  resolvedFunctions,
+  resolveEnvSites,
+  resolveValues,
+} from "./facts/resolve.js";
 import { calleeKeyOf, nodeId, readKey } from "./facts/values.js";
 import { stringValueOf } from "./values/evaluator.js";
 
@@ -45,6 +50,12 @@ export interface EnvFacts {
   readonly file: string;
 }
 
+/** The same, once the run is known to have a helper read to look for. */
+interface HelperFacts extends EnvFacts {
+  /** Each parameter whose value names a variable, and the reads it names. */
+  readonly named: ReadonlyMap<string, readonly string[]>;
+}
+
 interface EnvRead {
   name: string;
   defaulted: boolean;
@@ -59,10 +70,10 @@ interface EnvSite {
   readonly defaulted: boolean;
 }
 
-/** A parameter of a call's callee, with what the caller passes there. */
-interface PassedArgument {
-  /** The key the rules are asked about. */
-  readonly param: string;
+/** What a caller passes at a parameter the rules came back with. */
+interface NamingArgument {
+  /** The reads the parameter's value supplies the name to. */
+  readonly sites: readonly string[];
   readonly argument: RbNode;
 }
 
@@ -81,8 +92,7 @@ const DEFERRED_BODY_TYPES = new Set(["method", "singleton_method", "lambda"]);
  * environment through one of its parameters reports the read here too.
  */
 export function envReadEffects(root: RbNode, facts?: EnvFacts): Effect[] {
-  const helpers =
-    facts !== undefined && hasHelperReads(facts.db) ? facts : null;
+  const helpers = helperFactsOf(facts);
   // The calls are answered in a batch once the walk is over, so what the
   // walk keeps is a place in source order for each of them.
   const slots: Slot[] = [];
@@ -113,9 +123,51 @@ export function envReadEffects(root: RbNode, facts?: EnvFacts): Effect[] {
   });
 }
 
-/** Whether anything in the run reads the environment under a name it is given. */
-function hasHelperReads(db: Database): boolean {
-  return db.facts("readsEnvNamed").length > 0;
+/**
+ * The run's facts with the parameters that name a variable, or null when
+ * no parameter in the run does, in which case the body's calls are left
+ * alone.
+ */
+function helperFactsOf(facts: EnvFacts | undefined): HelperFacts | null {
+  if (facts === undefined) {
+    return null;
+  }
+  const named = namedParameters(facts.db);
+  if (named.size === 0) {
+    return null;
+  }
+  return { ...facts, named };
+}
+
+/** The answer, kept per run, since the question covers the whole project. */
+const namedByDb = new WeakMap<Database, Map<string, string[]>>();
+
+/**
+ * Every parameter whose value ends up naming an environment variable,
+ * against the reads that name comes to. One question per run, seeded
+ * with the read sites, however many helpers deep the name is handed.
+ */
+function namedParameters(db: Database): ReadonlyMap<string, readonly string[]> {
+  const memo = namedByDb.get(db);
+  if (memo !== undefined) {
+    return memo;
+  }
+  const named = new Map<string, string[]>();
+  namedByDb.set(db, named);
+  const sites = db.facts("readsEnvNamed").map((row) => String(row[0]));
+  if (sites.length === 0) {
+    return named;
+  }
+  resolveEnvSites(db, sites);
+  for (const row of db.facts("wantedParamNamesEnv")) {
+    const found = named.get(String(row[0]));
+    if (found === undefined) {
+      named.set(String(row[0]), [String(row[1])]);
+      continue;
+    }
+    found.push(String(row[1]));
+  }
+  return named;
 }
 
 /**
@@ -160,15 +212,15 @@ function envNameSites(root: RbNode): EnvSite[] {
 
 /**
  * The environment reads each of a body's calls reaches through a project
- * helper. Every callee is resolved in one round and every parameter
- * asked in the next, so a body costs two questions rather than two per
- * call.
+ * helper. The callees are resolved in one round, so a body costs one
+ * question rather than one per call, and which parameters name a
+ * variable was settled once for the whole run.
  */
 function helperReads(
   calls: readonly RbNode[],
-  facts: EnvFacts,
+  facts: HelperFacts,
 ): NodeMap<EnvRead[]> {
-  const { db, file } = facts;
+  const { db, file, named } = facts;
   const callees = new NodeMap<string>();
   for (const call of calls) {
     const key = calleeKeyOf(file, call, enclosingMethod(call));
@@ -185,22 +237,11 @@ function helperReads(
     [...callees].map(([, callee]) => callee),
   );
 
-  const passed = new NodeMap<PassedArgument[]>();
-  const asked: string[] = [];
   for (const [call, callee] of callees) {
-    const args = argumentsByParameter(db, call, callee);
+    const args = namingArguments(db, named, call, callee);
     if (args.length === 0) {
       continue;
     }
-    passed.set(call, args);
-    asked.push(...args.map((arg) => arg.param));
-  }
-  if (asked.length === 0) {
-    return reads;
-  }
-  resolveValues(db, asked);
-
-  for (const [call, args] of passed) {
     const found = readsAtCall(db, call, args);
     if (found.length > 0) {
       reads.set(call, found);
@@ -209,25 +250,31 @@ function helperReads(
   return reads;
 }
 
-/** Each parameter of every function this call settles on, with the argument filling it. */
-function argumentsByParameter(
+/**
+ * The arguments this call passes at parameters that name a variable,
+ * taken over every function the callee settles on.
+ */
+function namingArguments(
   db: Database,
+  named: ReadonlyMap<string, readonly string[]>,
   call: RbNode,
   callee: string,
-): PassedArgument[] {
+): NamingArgument[] {
   const { positional, keyword } = readCallArgs(field(call, "arguments"));
-  const found: PassedArgument[] = [];
+  const found: NamingArgument[] = [];
   for (const func of resolvedFunctions(db, callee)) {
     for (const row of db.lookup("paramOf", 0, func)) {
+      const sites = named.get(String(row[2]));
       const argument = positional[Number(row[1])];
-      if (argument !== undefined) {
-        found.push({ param: String(row[2]), argument });
+      if (sites !== undefined && argument !== undefined) {
+        found.push({ sites, argument });
       }
     }
     for (const row of db.lookup("paramNamed", 0, func)) {
+      const sites = named.get(String(row[2]));
       const argument = keyword[String(row[1])];
-      if (argument !== undefined) {
-        found.push({ param: String(row[2]), argument });
+      if (sites !== undefined && argument !== undefined) {
+        found.push({ sites, argument });
       }
     }
   }
@@ -235,31 +282,25 @@ function argumentsByParameter(
 }
 
 /**
- * The variables this call reads, by asking what its callee's parameters
- * name and reading the matching argument as a string. One name read at
- * two sites is one read, defaulted only where every site supplies a
- * fallback.
+ * The variables this call reads, reading each naming argument as a
+ * string. One name read at two sites is one read, defaulted only where
+ * every site supplies a fallback.
  */
 function readsAtCall(
   db: Database,
   call: RbNode,
-  args: readonly PassedArgument[],
+  args: readonly NamingArgument[],
 ): EnvRead[] {
   const defaultedAtCall = isDefaultedAt(call);
   const byName = new Map<string, boolean>();
-  for (const { param, argument } of args) {
-    const sites = db.lookup("wantedParamNamesEnv", 0, param);
-    if (sites.length === 0) {
-      continue;
-    }
+  for (const { sites, argument } of args) {
     const name = stringLiteralValue(argument) ?? stringValueOf(argument, db);
     if (name === null) {
       continue;
     }
-    for (const row of sites) {
+    for (const site of sites) {
       const defaulted =
-        defaultedAtCall ||
-        db.lookup(ENV_DEFAULTED, 0, String(row[1])).length > 0;
+        defaultedAtCall || db.lookup(ENV_DEFAULTED, 0, site).length > 0;
       byName.set(name, (byName.get(name) ?? true) && defaulted);
     }
   }

@@ -74,6 +74,15 @@ export function resolveValues(db: Database, keys: readonly string[]): void {
 }
 
 /**
+ * Ask which parameters end up naming the variable each of these
+ * environment reads reads. A project has a handful of such reads and
+ * thousands of callee parameters, so one question covers them all.
+ */
+export function resolveEnvSites(db: Database, sites: readonly string[]): void {
+  askResolution(db, sites, "wantedEnvSite", RUBY_PROGRAM);
+}
+
+/**
  * What a value came down to, when the rules settled it on a function.
  * Asked once per call a body makes, so it joins on the index rather
  * than reading every answer the run has given.

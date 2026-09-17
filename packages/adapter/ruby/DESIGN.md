@@ -508,6 +508,7 @@ process the file runs in.
 | `ENV.fetch("X") { "d" }`, `ENV.fetch("X") do ... end` | a read of `X` | yes |
 | any of these followed by `\|\|` (`ENV["X"] \|\| "d"`) | a read of `X` | yes |
 | `Settings.setting("X")`, where the method reads `ENV[key]` or `ENV.fetch(key)` | a read of `X` at the call | whatever the read inside the method says, or yes when an `\|\|` follows the call |
+| `GET.call("X")`, where `GET` is a lambda reading `ENV.fetch(key)` | nothing: the callee is a value, not a method | |
 | `ENV[name]`, `ENV.fetch("#{prefix}_X")`, `ENV[:X]` | nothing: the name is not a string literal, and no caller supplies one | |
 | `ENV["X"] = "1"`, `ENV.key?("X")`, `Settings::ENV["X"]` | nothing: a write, a membership test, or another constant | |
 | `other \|\| ENV["X"]` | `X` not defaulted, since it is the chain's last resort | |
@@ -524,17 +525,28 @@ nowhere, because nothing says when it runs.
 A service that reads its environment through one method of its own writes the
 variable's name at the call and never beside `ENV`. So a read whose name is an
 expression states the fact `readsEnvNamed(site, x)`, and the rules in
-`@suss/resolution` answer which parameters end up naming a variable, following
-a name handed on from one helper to the next. Standing at a call, the reader
-asks about the callee's parameters and reads the argument at each one that
-comes back: the string literal first, then the value evaluator, so a constant
-in the caller's file resolves too. The read is reported in the unit the call is
-written in, so one helper called from two files gives each of them its own
-read.
+`@suss/resolution` say which parameters end up naming a variable, following a
+name handed on from one helper to the next.
+
+The question is asked once for the whole run, seeded with the read sites rather
+than with the parameters. A project has a handful of reads whose name is an
+expression and thousands of callee parameters, so seeding from the parameters
+meant a question per parameter; seeding from the read gives back every
+parameter, in any method, however many helpers deep. Standing at a call, the
+reader looks the callee's parameters up in that one answer and reads the
+argument at each hit: the string literal first, then the value evaluator, so a
+constant in the caller's file resolves too. The read is reported in the unit the
+call is written in, so one helper called from two files gives each of them its
+own read. When one name is reached at two sites from the same call it is one
+read, defaulted only when every site supplies a fallback, or when an `||`
+follows the call.
 
 Out of scope: a name the helper builds rather than uses whole, such as
 `ENV["#{prefix}_URL"]`, and a name it reads off a hash or an options object
-instead of taking as a parameter.
+instead of taking as a parameter. A callee that is a value rather than a method,
+a lambda in a constant called as `GET.call("X")`, is not followed either: the
+rules find a method's callers from the method, and bridging that to a call
+through the value it resolves to costs more than the case is worth.
 
 ## What a file depends on in the project
 
