@@ -42,6 +42,22 @@ export {
   type LoadedSummaries,
   loadedSummaries,
 } from "./loadedSummaries.js";
+export {
+  type ContractEntry,
+  type ExtractEntry,
+  PROJECT_FILE,
+  type ProjectFile,
+  readProjectFile,
+} from "./projectFile.js";
+export {
+  commandFor,
+  type DeclaredReads,
+  declaredReads,
+  type ProjectReadReport,
+  type ReadEntry,
+  readProjectInto,
+  whereReadsCameFrom,
+} from "./projectRead.js";
 export { runCli, USAGE } from "./run.js";
 export {
   draftYaml,

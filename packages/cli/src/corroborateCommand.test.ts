@@ -93,12 +93,14 @@ describe("runCli — corroborate", () => {
     expect(io.stderr).toContain("--experimental");
   });
 
-  it("rejects when no pack is given", async () => {
+  it("rejects when no pack is given and nothing in the directory matches one", async () => {
+    fs.writeFileSync(path.join(tmpDir, "pyproject.toml"), "[project]\n");
     const { exit, io } = await capture(() =>
-      runCli(["corroborate", "--experimental"]),
+      runCli(["corroborate", "--experimental", "--dir", tmpDir]),
     );
     expect(exit).toBe(1);
-    expect(io.stderr).toContain("-f");
+    expect(io.stderr).toContain("corroborate needs at least one pack");
+    expect(io.stderr).toContain("Try: suss corroborate --experimental -f");
   });
 
   it("runs a handler against its own claims and writes annotated summaries", async () => {

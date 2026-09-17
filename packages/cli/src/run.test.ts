@@ -18,6 +18,7 @@ const repoRoot = path.resolve(
 );
 const pythonFixture = path.join(repoRoot, "fixtures", "python-webapp");
 const rubyFixture = path.join(repoRoot, "fixtures", "ruby-graphql");
+const fetchFixture = path.join(repoRoot, "fixtures", "fetch");
 
 interface CapturedIO {
   stdout: string;
@@ -158,7 +159,11 @@ const mismatchedBodyConsumer: BehavioralSummary = {
 let tmpDir: string;
 
 beforeEach(() => {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-runcli-"));
+  // Resolved through the symlink macOS puts in front of its temp
+  // directory, so a path printed from process.cwd() matches this one.
+  tmpDir = fs.realpathSync(
+    fs.mkdtempSync(path.join(os.tmpdir(), "suss-runcli-")),
+  );
 });
 
 afterEach(() => {
@@ -169,6 +174,44 @@ function writeJson(name: string, data: unknown): string {
   const file = path.join(tmpDir, name);
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
   return file;
+}
+
+/**
+ * A TypeScript project that calls fetch, with a package.json so init's
+ * detection has something to read. Returns a path for the summaries.
+ */
+function fetchProjectIn(dir: string): string {
+  fs.copyFileSync(
+    path.join(fetchFixture, "consumer.ts"),
+    path.join(dir, "consumer.ts"),
+  );
+  fs.copyFileSync(
+    path.join(fetchFixture, "package.json"),
+    path.join(dir, "package.json"),
+  );
+  fs.writeFileSync(
+    path.join(dir, "tsconfig.json"),
+    JSON.stringify({ compilerOptions: { strict: true }, include: ["*.ts"] }),
+  );
+  return path.join(dir, "out", "summaries.json");
+}
+
+function summaryNamesIn(file: string): string[] {
+  const written = JSON.parse(fs.readFileSync(file, "utf8")) as Array<{
+    identity: { name: string };
+  }>;
+  return written.map((one) => one.identity.name);
+}
+
+/** Run with the directory as the working directory, and put it back after. */
+async function inDirectory<T>(dir: string, run: () => Promise<T>): Promise<T> {
+  const before = process.cwd();
+  process.chdir(dir);
+  try {
+    return await run();
+  } finally {
+    process.chdir(before);
+  }
 }
 
 describe("runCli top-level dispatch", () => {
@@ -305,12 +348,67 @@ describe("runCli extract", () => {
     expect(io.stderr).toContain("tsconfig");
   });
 
-  it("rejects when no --framework (-f) is given", async () => {
+  it("rejects when no --framework (-f) is given and nothing in the directory matches a pack", async () => {
+    // A Python project with no dependencies matches no pack, where a
+    // TypeScript one always gets fetch and node from the language itself.
+    fs.writeFileSync(path.join(tmpDir, "pyproject.toml"), "[project]\n");
     const { exit, io } = await capture(() =>
-      runCli(["extract", "-p", "tsconfig.json"]),
+      runCli(["extract", "--dir", tmpDir]),
     );
     expect(exit).toBe(1);
-    expect(io.stderr).toContain("-f");
+    expect(io.stderr).toContain(`nothing in ${tmpDir} matched one`);
+    expect(io.stderr).toContain("Try: suss extract -f fastapi");
+  });
+
+  it("reads the packs from suss.json when no -f is given", async () => {
+    const outFile = fetchProjectIn(tmpDir);
+    fs.writeFileSync(
+      path.join(tmpDir, "suss.json"),
+      JSON.stringify({
+        version: 1,
+        read: [{ kind: "extract", language: "typescript", packs: ["fetch"] }],
+      }),
+    );
+
+    const { exit, io } = await capture(() =>
+      runCli(["extract", "--dir", tmpDir, "-o", outFile]),
+    );
+    expect(exit).toBe(0);
+    expect(io.stderr).toContain("Reading what suss.json says.");
+    expect(io.stderr).toContain("-f fetch");
+    expect(summaryNamesIn(outFile)).toContain("getHealth");
+  });
+
+  it("picks the packs init would when there is no suss.json, and says so", async () => {
+    const outFile = fetchProjectIn(tmpDir);
+
+    const { exit, io } = await capture(() =>
+      runCli(["extract", "--dir", tmpDir, "-o", outFile]),
+    );
+    expect(exit).toBe(0);
+    expect(io.stderr).toContain(`No suss.json in ${tmpDir}`);
+    expect(io.stderr).toContain("Run `suss init` to write that down.");
+    expect(io.stderr).toContain("-f fetch");
+    expect(summaryNamesIn(outFile)).toContain("getHealth");
+  });
+
+  it("says which languages suss.json does cover when it has none for the one asked", async () => {
+    fetchProjectIn(tmpDir);
+    fs.writeFileSync(
+      path.join(tmpDir, "suss.json"),
+      JSON.stringify({
+        version: 1,
+        read: [{ kind: "extract", language: "typescript", packs: ["fetch"] }],
+      }),
+    );
+
+    const { exit, io } = await capture(() =>
+      runCli(["extract", "--dir", tmpDir, "--lang", "python"]),
+    );
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain(
+      "suss.json has no python packs, only typescript (-f fetch)",
+    );
   });
 
   it("rejects an invalid --gaps value", async () => {
@@ -645,10 +743,23 @@ describe("runCli inspect", () => {
     expect(io.stdout).toContain("/x");
   });
 
-  it("rejects inspect with no path", async () => {
-    const { exit, io } = await capture(() => runCli(["inspect"]));
+  it("reads the project it is run in when given nothing", async () => {
+    fetchProjectIn(tmpDir);
+    const { exit, io } = await inDirectory(tmpDir, () =>
+      capture(() => runCli(["inspect"])),
+    );
+    expect(exit).toBe(0);
+    expect(io.stderr).toContain(`No suss.json in ${tmpDir}`);
+    expect(io.stderr).toContain("-f fetch");
+    expect(io.stdout).toContain("/health");
+  });
+
+  it("says when the project it is run in matches nothing", async () => {
+    const { exit, io } = await inDirectory(tmpDir, () =>
+      capture(() => runCli(["inspect"])),
+    );
     expect(exit).toBe(1);
-    expect(io.stderr).toContain("summaries file");
+    expect(io.stderr).toContain(`Nothing in ${tmpDir} matched a pack`);
   });
 
   it("prints what a store is called and what it serves", async () => {
@@ -807,10 +918,22 @@ describe("runCli inspect", () => {
 });
 
 describe("runCli check", () => {
-  it("requires two positional files (or --dir)", async () => {
-    const { exit, io } = await capture(() => runCli(["check"]));
+  it("reads the project it is run in when given nothing", async () => {
+    fetchProjectIn(tmpDir);
+    const { exit, io } = await inDirectory(tmpDir, () =>
+      capture(() => runCli(["check", "--allow-empty"])),
+    );
+    expect(exit).toBe(0);
+    expect(io.stderr).toContain(`No suss.json in ${tmpDir}`);
+    expect(io.stderr).toContain("-f fetch");
+  });
+
+  it("says when the project it is run in matches nothing", async () => {
+    const { exit, io } = await inDirectory(tmpDir, () =>
+      capture(() => runCli(["check"])),
+    );
     expect(exit).toBe(1);
-    expect(io.stderr).toContain("--dir");
+    expect(io.stderr).toContain(`Nothing in ${tmpDir} matched a pack`);
   });
 
   it("rejects an invalid --fail-on value", async () => {
@@ -912,12 +1035,12 @@ describe("runCli check", () => {
 });
 
 describe("runCli check --at", () => {
-  it("needs --dir, and says so", async () => {
+  it("refuses to run alongside positional files", async () => {
     const { exit, io } = await capture(() =>
-      runCli(["check", "--at", "src/x.ts"]),
+      runCli(["check", "--at", "src/x.ts", "p.json", "c.json"]),
     );
     expect(exit).toBe(1);
-    expect(io.stderr).toContain("needs --dir");
+    expect(io.stderr).toContain("takes --dir or no files at all");
   });
 
   it("refuses to run alongside --intent", async () => {

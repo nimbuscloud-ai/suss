@@ -7,7 +7,14 @@
 // subprocess overhead, and without the runtime swallowing assertions
 // through process.exit.
 
-import { existsSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
@@ -16,34 +23,45 @@ import { check, checkDir } from "./check.js";
 import { checkAt } from "./checkAt.js";
 import { contract } from "./contract.js";
 import { corroborate } from "./corroborateCommand.js";
-import { extract } from "./extract.js";
+import { extract, languageOfRun } from "./extract.js";
 import { inspectFlow } from "./flow.js";
 import { initInteractive } from "./initInteractive.js";
 import { inspect, inspectDiff, inspectDir } from "./inspect.js";
 import { intentDraft } from "./intentDraftCommand.js";
 import { LANGUAGES, parseLanguage } from "./language.js";
 import { prdDraft } from "./prdDraftCommand.js";
+import { PROJECT_FILE } from "./projectFile.js";
+import {
+  commandFor,
+  declaredReads,
+  extractEntryFor,
+  extractLanguagesOf,
+  packFlags,
+  readProjectInto,
+  whereReadsCameFrom,
+} from "./projectRead.js";
 import { stubDraft } from "./stubDraftCommand.js";
 import { installedVersion, printUpdateNoticeIfBehind } from "./updateNotice.js";
 import { UsageError } from "./usageError.js";
 
 import type { ContractSource } from "./contract.js";
 import type { ExtractOptions } from "./extract.js";
+import type { Language } from "./language.js";
+import type { ReadEntry } from "./projectRead.js";
 
 export const USAGE = `
 Usage:
   suss init [directory] [--plain]
-  suss extract [-p <tsconfig> | --dir <directory>] [--lang typescript|python|ruby] -f <framework>[=<config.json>] [-f <framework>] [-o <output.json>] [--files <f1> <f2> ...] [--gaps strict|permissive|silent]
-  suss inspect <summaries.json>
-  suss inspect --dir <directory>
+  suss extract [-p <tsconfig> | --dir <directory>] [--lang typescript|python|ruby] [-f <framework>[=<config.json>] ...] [-o <output.json>] [--files <f1> <f2> ...] [--gaps strict|permissive|silent]
+  suss inspect [<summaries.json> | --dir <directory>]
   suss inspect --diff <before.json> <after.json>
   suss inspect --flow "<METHOD> <url>" [<summaries.json> | --dir <directory>] [--entry <name>] [--scope <document>] [--json]
+  suss check [--dir <directory>] [--intent <intent-dir>] [--all] [--json] [-o <output>]
   suss check <provider.json> <consumer.json> [--all] [--json] [-o <output>]
-  suss check --dir <directory> [--intent <intent-dir>] [--all] [--json] [-o <output>]
-  suss check --dir <directory> --at <file[:line] | boundary | summary-id> [--json]
+  suss check [--dir <directory>] --at <file[:line] | boundary | summary-id> [--json]
   suss ask "<question>" [--dir <directory> | <summaries.json>] [--all] [--json]
   suss contract --from <source> <spec> [-o <output.json>]
-  suss corroborate --experimental [-p <tsconfig> | --dir <directory>] -f <framework> [-o <output.json>]
+  suss corroborate --experimental [-p <tsconfig> | --dir <directory>] [-f <framework> ...] [-o <output.json>]
   suss infer stub <package> [-p <tsconfig> | --dir <directory>] [-o <file | ->]
   suss infer intent --from <summaries.json | directory> [-o <directory> | --into <directory>]
   suss infer prd --from <intent-directory> [-o <directory> | --into <directory>]
@@ -53,11 +71,16 @@ Commands:
   init      Work out which packs this project needs and offer to set them up.
             --plain prints the commands instead of asking. Piped or in CI,
             it prints either way.
-  extract   Read your source and describe what each boundary does
-  inspect   Read a summaries file back in a form meant for people
+  extract   Read your source and describe what each boundary does.
+            Without -f, it reads the packs from suss.json, or picks the
+            ones init would when there is no file.
+  inspect   Read a summaries file back in a form meant for people. Given
+            nothing, it reads the current project first and prints
+            what it found.
   check     Compare two sides of a boundary and report what disagrees.
-            --at reports on one file, line, boundary, or summary instead
-            of the whole folder
+            Given nothing, it reads the current project first. --at
+            reports on one file, line, boundary, or summary instead of
+            the whole folder
   ask       Answer one question about one boundary from summaries on disk
   contract  Describe boundaries from a schema or deploy template
   corroborate  Extract, then run each handler against its own claims
@@ -82,7 +105,9 @@ Options (extract):
   --lang           Which language suss reads this project as: typescript,
                    python, or ruby. Without it, suss works that out from
                    what the directory holds, and says so when it cannot.
-  -f, --framework  Which pack to use. Repeatable. Built in: hono, express,
+  -f, --framework  Which pack to use. Repeatable. Without it, suss reads
+                   the packs from suss.json, or picks the ones init
+                   would when there is no file. Built in: hono, express,
                    fastify, ts-rest, nestjs-rest, nestjs-graphql, apollo,
                    aws-lambda, react, react-router, fetch, axios,
                    apollo-client, node, and for the other two languages
@@ -309,7 +334,7 @@ async function dispatch(args: string[]): Promise<number> {
     return await runInspect(args.slice(1));
   }
   if (command === "check") {
-    return runCheck(args.slice(1));
+    return await runCheck(args.slice(1));
   }
   if (command === "ask") {
     return await runAsk(args.slice(1));
@@ -356,6 +381,114 @@ async function runInit(args: string[]): Promise<number> {
   });
 }
 
+/**
+ * The packs to read with when none were given: the project's own entry
+ * for the language, from `suss.json` or from what `init` would pick.
+ * Null after saying why there is none.
+ */
+async function packsFromProject(source: {
+  command: "extract" | "corroborate";
+  root: string;
+  tsconfig?: string;
+  lang?: Language;
+}): Promise<{ frameworks: string[]; tsconfig: string | undefined } | null> {
+  const language = languageOfRun({
+    frameworks: [],
+    dir: source.root,
+    ...(source.tsconfig !== undefined ? { tsconfig: source.tsconfig } : {}),
+    ...(source.lang !== undefined ? { lang: source.lang } : {}),
+  });
+  const { reads, declared } = await declaredReads(source.root);
+  const entry = extractEntryFor(reads, language);
+  if (entry === undefined) {
+    process.stderr.write(noPacksMessage(source, language, reads, declared));
+    return null;
+  }
+
+  const tsconfig =
+    source.tsconfig ??
+    (entry.project === undefined
+      ? undefined
+      : path.resolve(source.root, entry.project));
+  const running = {
+    ...entry,
+    ...(tsconfig === undefined
+      ? {}
+      : { project: path.relative(source.root, tsconfig) || "." }),
+  };
+  process.stderr.write(
+    `${whereReadsCameFrom(source.root, declared)}\n  ${commandFor(running)}\n`,
+  );
+  return { frameworks: entry.packs, tsconfig };
+}
+
+function noPacksMessage(
+  source: { command: "extract" | "corroborate"; root: string },
+  language: Language,
+  reads: readonly ReadEntry[],
+  declared: boolean,
+): string {
+  const others = extractLanguagesOf(reads).filter((one) => one !== language);
+  if (others.length > 0) {
+    const listed = others
+      .map(
+        (one) =>
+          `${one} (${packFlags(extractEntryFor(reads, one)?.packs ?? [])})`,
+      )
+      .join(", ");
+    const where = declared ? PROJECT_FILE : "What \`suss init\` finds here";
+    return `${where} has no ${language} packs, only ${listed}. Pass --lang for one of those, or -f to pick packs yourself.\n`;
+  }
+  if (declared) {
+    return `${PROJECT_FILE} has no packs to read code with. Pass -f, or run \`suss init\` again.\n`;
+  }
+  const flags = source.command === "corroborate" ? "--experimental " : "";
+  return `${source.command} needs at least one pack, so it knows what to look for, and nothing in ${source.root} matched one. Try: suss ${source.command} ${flags}${EXAMPLE_PACK_FLAGS[language]}\nRun \`suss --help\` for the built-in packs.\n`;
+}
+
+const EXAMPLE_PACK_FLAGS: Record<Language, string> = {
+  typescript: "-p tsconfig.json -f express",
+  python: "-f fastapi",
+  ruby: "-f rails",
+};
+
+/**
+ * Read the project into a directory of its own, say what ran, and hand
+ * the directory to a command that was given no summaries to read.
+ */
+async function withProjectRead(run: (dir: string) => number): Promise<number> {
+  const root = process.cwd();
+  const reads = await declaredReads(root);
+  if (reads.reads.length === 0) {
+    process.stderr.write(
+      `Nothing in ${root} matched a pack, so there is nothing to read. Run \`suss init\` to see what suss looked for, or pass a summaries file.\n`,
+    );
+    return 1;
+  }
+  process.stderr.write(
+    [
+      whereReadsCameFrom(root, reads.declared),
+      ...reads.reads.map((entry) => `  ${commandFor(entry)}`),
+      "",
+    ].join("\n"),
+  );
+
+  const dir = mkdtempSync(path.join(os.tmpdir(), "suss-read-"));
+  try {
+    const report = await readProjectInto(root, dir, reads);
+    for (const line of report.failed) {
+      process.stderr.write(`  failed: ${line}\n`);
+    }
+    if (report.ran.length === 0) {
+      return 1;
+    }
+    process.stderr.write("\n");
+    return run(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 async function runExtract(args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
@@ -382,16 +515,6 @@ async function runExtract(args: string[]): Promise<number> {
     refuseFailOnEmpty();
   }
 
-  const tsconfig = values.project;
-  const frameworks = values.framework ?? [];
-
-  if (frameworks.length === 0) {
-    process.stderr.write(
-      "extract needs at least one pack, so it knows what to look for. Try: suss extract -p tsconfig.json -f express\nRun `suss --help` for the built-in packs.\n",
-    );
-    return 1;
-  }
-
   const lang =
     values.lang === undefined ? undefined : parseLanguage(values.lang);
   if (values.lang !== undefined && lang === null) {
@@ -400,6 +523,21 @@ async function runExtract(args: string[]): Promise<number> {
     );
     return 1;
   }
+
+  const given = values.framework ?? [];
+  const picked =
+    given.length > 0
+      ? { frameworks: given, tsconfig: values.project }
+      : await packsFromProject({
+          command: "extract",
+          root: path.resolve(values.dir ?? process.cwd()),
+          ...(values.project !== undefined ? { tsconfig: values.project } : {}),
+          ...(lang !== undefined && lang !== null ? { lang } : {}),
+        });
+  if (picked === null) {
+    return 1;
+  }
+  const { frameworks, tsconfig } = picked;
 
   const gaps = values.gaps as "strict" | "permissive" | "silent" | undefined;
   if (
@@ -605,10 +743,14 @@ async function runInspect(argv: string[]): Promise<number> {
   }
   const file = args[0];
   if (file === undefined) {
-    process.stderr.write(
-      "inspect needs a summaries file to read. Try: suss inspect summaries/api.json, or --dir to read a whole folder.\n",
-    );
-    return 1;
+    // Given nothing to read, inspect reads the project it is run in and
+    // renders each file it produced, the same as being handed the file.
+    return await withProjectRead((dir) => {
+      for (const name of readdirSync(dir).sort()) {
+        inspect({ file: path.join(dir, name), ...(types ? { types } : {}) });
+      }
+      return 0;
+    });
   }
   inspect({ file, ...(types ? { types } : {}) });
   return 0;
@@ -644,7 +786,7 @@ async function runFlow(argv: string[]): Promise<number> {
   });
 }
 
-function runCheck(args: string[]): number {
+async function runCheck(args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
     options: {
@@ -709,13 +851,6 @@ function runCheck(args: string[]): number {
       : {}),
   };
 
-  if (values.at !== undefined && values.dir === undefined) {
-    process.stderr.write(
-      "--at narrows a run over a folder of summaries, so it needs --dir too. Try: suss check --dir summaries/ --at src/editions/dao.ts:43\n",
-    );
-    return 1;
-  }
-
   if (values.at !== undefined && values.intent !== undefined) {
     process.stderr.write(
       "--at reports on one thing and --intent scores every boundary intent against the code, so they cannot run together. Run them one at a time.\n",
@@ -723,24 +858,39 @@ function runCheck(args: string[]): number {
     return 1;
   }
 
-  if (values.dir !== undefined && values.at !== undefined) {
-    const scoped = checkAt({ dir: values.dir, at: values.at, ...shared });
-    return scoped.hasErrors ? 1 : 0;
-  }
-
-  if (values.dir !== undefined) {
+  const checkFolder = (dir: string): number => {
+    if (values.at !== undefined) {
+      const scoped = checkAt({ dir, at: values.at, ...shared });
+      return scoped.hasErrors ? 1 : 0;
+    }
     const result = checkDir({
-      dir: values.dir,
+      dir,
       ...shared,
       ...all,
       ...(values.intent !== undefined ? { intent: values.intent } : {}),
     });
     return result.hasErrors ? 1 : 0;
+  };
+
+  if (values.dir !== undefined) {
+    return checkFolder(values.dir);
+  }
+
+  // Given nothing to read, check reads the project it is run in.
+  if (positionals.length === 0) {
+    return await withProjectRead(checkFolder);
+  }
+
+  if (values.at !== undefined) {
+    process.stderr.write(
+      "--at narrows a run over a folder of summaries, so it takes --dir or no files at all. Try: suss check --at src/editions/dao.ts:43\n",
+    );
+    return 1;
   }
 
   if (values.intent !== undefined) {
     process.stderr.write(
-      "--intent checks your intent docs against code summaries, so it needs --dir too. Try: suss check --dir summaries/ --intent intent/\n",
+      "--intent checks your intent docs against code summaries, so it takes --dir or no files at all. Try: suss check --intent intent/\n",
     );
     return 1;
   }
@@ -830,18 +980,12 @@ async function runCorroborate(args: string[]): Promise<number> {
     return 1;
   }
 
-  const frameworks = values.framework ?? [];
-  if (frameworks.length === 0) {
+  if (
+    values.project !== undefined &&
+    !existsSync(path.resolve(values.project))
+  ) {
     process.stderr.write(
-      "corroborate needs at least one pack, so it knows what to look for. Try: suss corroborate --experimental -f express\n",
-    );
-    return 1;
-  }
-
-  const tsconfig = values.project;
-  if (tsconfig !== undefined && !existsSync(path.resolve(tsconfig))) {
-    process.stderr.write(
-      `No tsconfig at ${path.resolve(tsconfig)}. Leave -p off to read the current directory instead.\n`,
+      `No tsconfig at ${path.resolve(values.project)}. Leave -p off to read the current directory instead.\n`,
     );
     return 1;
   }
@@ -849,6 +993,20 @@ async function runCorroborate(args: string[]): Promise<number> {
     process.stderr.write(`No directory at ${path.resolve(values.dir)}.\n`);
     return 1;
   }
+
+  const given = values.framework ?? [];
+  const picked =
+    given.length > 0
+      ? { frameworks: given, tsconfig: values.project }
+      : await packsFromProject({
+          command: "corroborate",
+          root: path.resolve(values.dir ?? process.cwd()),
+          ...(values.project !== undefined ? { tsconfig: values.project } : {}),
+        });
+  if (picked === null) {
+    return 1;
+  }
+  const { frameworks, tsconfig } = picked;
 
   const runs = values.runs !== undefined ? Number(values.runs) : undefined;
   const attempts =
