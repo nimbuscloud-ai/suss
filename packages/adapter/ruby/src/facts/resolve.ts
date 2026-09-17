@@ -73,12 +73,13 @@ export function resolveValues(db: Database, keys: readonly string[]): void {
   askResolution(db, keys, "wanted", RUBY_PROGRAM);
 }
 
-/** What a value came down to, when the rules settled it on a function. */
+/**
+ * What a value came down to, when the rules settled it on a function.
+ * Asked once per call a body makes, so it joins on the index rather
+ * than reading every answer the run has given.
+ */
 export function resolvedFunctions(db: Database, key: string): string[] {
-  return db
-    .facts("wantedResolves")
-    .filter((row) => String(row[0]) === key)
-    .map((row) => String(row[1]));
+  return db.lookup("wantedResolves", 0, key).map((row) => String(row[1]));
 }
 
 /**
