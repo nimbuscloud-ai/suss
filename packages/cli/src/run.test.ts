@@ -379,6 +379,23 @@ describe("runCli extract", () => {
     expect(summaryNamesIn(outFile)).toContain("getHealth");
   });
 
+  it("says when suss.json has only contracts and no packs to read code with", async () => {
+    const outFile = fetchProjectIn(tmpDir);
+    fs.writeFileSync(
+      path.join(tmpDir, "suss.json"),
+      JSON.stringify({
+        version: 1,
+        read: [{ kind: "contract", from: "openapi", file: "openapi.json" }],
+      }),
+    );
+
+    const { exit, io } = await capture(() =>
+      runCli(["extract", "--dir", tmpDir, "-o", outFile]),
+    );
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain("suss.json has no packs to read code with");
+  });
+
   it("picks the packs init would when there is no suss.json, and says so", async () => {
     const outFile = fetchProjectIn(tmpDir);
 
@@ -760,6 +777,45 @@ describe("runCli inspect", () => {
     );
     expect(exit).toBe(1);
     expect(io.stderr).toContain(`Nothing in ${tmpDir} matched a pack`);
+  });
+
+  it("reports a contract it could not read and goes on with the rest", async () => {
+    fetchProjectIn(tmpDir);
+    fs.writeFileSync(
+      path.join(tmpDir, "suss.json"),
+      JSON.stringify({
+        version: 1,
+        read: [
+          { kind: "contract", from: "openapi", file: "missing.json" },
+          { kind: "extract", language: "typescript", packs: ["fetch"] },
+        ],
+      }),
+    );
+
+    const { exit, io } = await inDirectory(tmpDir, () =>
+      capture(() => runCli(["inspect"])),
+    );
+    expect(exit).toBe(0);
+    expect(io.stderr).toContain(
+      "failed: suss contract --from openapi missing.json:",
+    );
+    expect(io.stdout).toContain("/health");
+  });
+
+  it("fails when nothing it was told to read could be read", async () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "suss.json"),
+      JSON.stringify({
+        version: 1,
+        read: [{ kind: "contract", from: "openapi", file: "missing.json" }],
+      }),
+    );
+
+    const { exit, io } = await inDirectory(tmpDir, () =>
+      capture(() => runCli(["inspect"])),
+    );
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain("failed: suss contract --from openapi");
   });
 
   it("prints what a store is called and what it serves", async () => {
