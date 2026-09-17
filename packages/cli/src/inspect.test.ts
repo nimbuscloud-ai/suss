@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   restBinding,
+  runtimeConfigBinding,
   storageBinding,
   unitInvocationBinding,
   withWrapperMetadata,
@@ -757,6 +758,47 @@ describe("inspect --diff, human output", () => {
     });
   });
 
+  const readsEnv = (name: string): Effect => ({
+    type: "interaction",
+    binding: runtimeConfigBinding({
+      recognition: "python-env",
+      deploymentTarget: "lambda",
+      instanceName: "<unknown>",
+    }),
+    callee: `os.environ["${name}"]`,
+    interaction: { class: "config-read", name, defaulted: false },
+  });
+
+  it("says each variable a route now reads down a chain", () => {
+    const after = chain(1, [readsEnv("BUCKET"), readsEnv("REGION")]);
+    withFiles(chain(1, []), after, (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain(
+        "+ reads runtime-config:python-env BUCKET  through hop0",
+      );
+      expect(output).toContain(
+        "+ reads runtime-config:python-env REGION  through hop0",
+      );
+    });
+  });
+
+  it("says a variable the route itself reads once", () => {
+    const [before] = chain(1, []);
+    const after: BehavioralSummary = {
+      ...before,
+      transitions: before.transitions.map((transition) => ({
+        ...transition,
+        effects: [readsEnv("BUCKET")],
+      })),
+    };
+    withFiles([before], [after], (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      const line = "+ reads runtime-config:python-env BUCKET";
+      expect(output).toContain(line);
+      expect(output.indexOf(line)).toBe(output.lastIndexOf(line));
+    });
+  });
+
   /** A route the filter runs on, with or without the 401 it produces. */
   const behindFilter = (
     name: string,
@@ -1271,5 +1313,63 @@ describe("a Lambda the template declares no trigger for", () => {
     const output = inspectAll([lambdaSummary(["SQS"])]);
 
     expect(output).not.toContain("Nothing in the template");
+  });
+});
+
+describe("a config read in a body", () => {
+  const readsBucket: BehavioralSummary = {
+    kind: "handler",
+    location: {
+      file: "src/worker.ts",
+      range: { start: 1, end: 5 },
+      exportName: "handler",
+    },
+    identity: {
+      name: "Worker.handler",
+      exportPath: ["Worker.handler"],
+      boundaryBinding: unitInvocationBinding({
+        recognition: "aws-lambda",
+        deploymentTarget: "lambda",
+        instanceName: "Worker",
+      }),
+    },
+    inputs: [],
+    transitions: [
+      {
+        id: "t0",
+        conditions: [],
+        output: { type: "return", value: null },
+        effects: [
+          {
+            type: "interaction",
+            binding: runtimeConfigBinding({
+              recognition: "python-env",
+              deploymentTarget: "lambda",
+              instanceName: "<unknown>",
+            }),
+            callee: 'os.environ["BUCKET"]',
+            interaction: {
+              class: "config-read",
+              name: "BUCKET",
+              defaulted: false,
+            },
+          },
+        ],
+        location: { start: 1, end: 5 },
+        isDefault: false,
+      },
+    ],
+    gaps: [],
+    confidence: { source: "inferred_static", level: "high" },
+    metadata: {},
+  };
+
+  it("says which variable the body reads", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-config-"));
+    const file = path.join(dir, "code.json");
+    fs.writeFileSync(file, JSON.stringify([readsBucket]));
+    const { output } = captureStdout(() => inspect({ file }));
+
+    expect(output).toContain("+ reads runtime-config:python-env BUCKET");
   });
 });

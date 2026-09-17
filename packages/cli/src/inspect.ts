@@ -32,6 +32,7 @@ import {
   summaryWithDefinitionsInlined,
 } from "@suss/checker";
 
+import { interactionDetail } from "./boundaryReach.js";
 import { boundaryReach, entrypointKey, reachChanges } from "./diffReach.js";
 import { scopeLines, sharedCauses } from "./sharedCause.js";
 import { UsageError } from "./usageError.js";
@@ -2097,9 +2098,12 @@ const EFFECT_LABELS: DispatchTable<Effect, string | null> = {
     const [relation] = goesThroughRelation(effect.interaction)
       ? []
       : relationsOf(effect.interaction);
-    return relation === undefined
-      ? null
-      : `${relation} ${displayLabel(effect.binding)}`;
+    if (relation === undefined) {
+      return null;
+    }
+    const label = `${relation} ${displayLabel(effect.binding)}`;
+    const detail = interactionDetail(effect.interaction);
+    return detail === undefined ? label : `${label} ${detail}`;
   },
   mutation: (effect) => `${effect.operation}s ${effect.target}`,
   emission: (effect) => `emits ${effect.event}`,
@@ -2412,11 +2416,19 @@ function boundaryBlocks(
   }
 
   for (const change of reach) {
-    const effects = [
-      ...change.gained.map((effect) => reachLine(effect, "+", hops)),
-      ...change.lost.map((effect) => reachLine(effect, "-", hops)),
-    ];
     const already = blocks.get(change.key);
+    // A changed unit's own effects are in its block already, so only
+    // what it reaches through a call is added to one.
+    const wanted = (effect: ReachedEffect): boolean =>
+      already === undefined || effect.through.length > 0;
+    const effects = [
+      ...change.gained
+        .filter(wanted)
+        .map((effect) => reachLine(effect, "+", hops)),
+      ...change.lost
+        .filter(wanted)
+        .map((effect) => reachLine(effect, "-", hops)),
+    ];
     if (already === undefined) {
       blocks.set(change.key, {
         change: change.change,

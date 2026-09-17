@@ -104,6 +104,7 @@ export function groundedTouchesAt(
       binding: record.binding,
       relation: record.kind === "read" ? "reads" : "writes",
       callee: record.callee,
+      detail: undefined,
       transitionId: undefined,
     };
     const key = asTouchKey({ summary: record.summary, touched });
