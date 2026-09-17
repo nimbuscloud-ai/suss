@@ -99,6 +99,7 @@ export function nodeRuntimePack(
     terminals: [],
     inputMapping: { type: "positionalParams", params: [] },
     invocationRecognizers: [schedulingRecognizer],
+    environmentObjects: ["process.env"],
     accessRecognizers: [
       // `envRecognizer` owns `process.env.X`; `processRecognizer`
       // owns the rest of the process surface and skips env reads,

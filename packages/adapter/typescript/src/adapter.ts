@@ -2202,13 +2202,16 @@ export function createTypeScriptAdapter(
   const packWrappers = config.frameworks.flatMap(
     (pack) => pack.transparentWrappers ?? [],
   );
+  const packEnvironments = config.frameworks.flatMap(
+    (pack) => pack.environmentObjects ?? [],
+  );
 
   return {
     tsProject: project,
 
     async extractFromFiles(filePaths: string[]): Promise<BehavioralSummary[]> {
       const summaries: BehavioralSummary[] = [];
-      const resolution = new ResolutionStore(packWrappers);
+      const resolution = new ResolutionStore(packWrappers, packEnvironments);
       const claimedUnits = new Map<string, ClaimedUnit>();
 
       for (const fp of filePaths) {
@@ -2352,7 +2355,7 @@ export function createTypeScriptAdapter(
       );
       timer.time("warmExportChains", () => warmExportChains(deep.deepRoots));
 
-      const resolution = new ResolutionStore(packWrappers);
+      const resolution = new ResolutionStore(packWrappers, packEnvironments);
       const packsByFile = timer.time("preFilter", () =>
         computePackApplicability(sourceFiles, config.frameworks, resolution),
       );

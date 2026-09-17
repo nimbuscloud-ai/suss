@@ -339,16 +339,30 @@ function readsThroughHelperCall(
   if (callee === null) {
     return reads;
   }
+  const parameters = callee.getParameters();
   call.getArguments().forEach((passed, at) => {
-    // Reachability is remembered per callee parameter; reading the
-    // argument's value is a question to the engine on every call.
-    const read = parameterReachesEnvRead(callee, at, resolution);
-    if (read === null) {
+    const parameter = parameters[at];
+    if (parameter === undefined) {
+      return;
+    }
+    // Reading the argument without the store costs nothing and rules
+    // out most calls; asking about the parameter and reading it again
+    // with the store are the two expensive steps, in that order.
+    if (!namesSomething(stringValueOf(passed, undefined))) {
+      return;
+    }
+    const sites = parameterNamesEnvVar(callee, parameter, resolution);
+    if (sites.length === 0) {
       return;
     }
     const literal = stringValueOf(passed, resolution);
-    if (literal !== null && literal.length > 0) {
-      reads.push({ name: literal, defaulted: read.defaulted, node: call });
+    if (!namesSomething(literal)) {
+      return;
+    }
+    // Two sites that agree on whether a default is supplied are the
+    // same read of the same variable at this call.
+    for (const defaulted of new Set(sites.map(isDefaultedAt))) {
+      reads.push({ name: literal, defaulted, node: call });
     }
   });
   return reads;
@@ -366,84 +380,54 @@ function functionBehindCallee(callee: Node): FunctionLike | null {
 }
 
 /** Keyed on the compiler node, which a re-parse replaces, so an edited file never reads a stale answer. */
-const PARAM_ENV_READS = new WeakMap<
-  object,
-  Map<number, { defaulted: boolean } | null>
->();
+const PARAM_ENV_SITES = new WeakMap<object, Node[]>();
+
+/** Whether a value read back off an argument is a variable's name. */
+function namesSomething(value: string | null): value is string {
+  return value !== null && value.length > 0;
+}
 
 /**
- * Whether a function's parameter reaches a `process.env[...]` read,
- * through however many helpers forward it. The worklist mirrors
- * `callerLiteralReads` in the other direction: at each parameter, a
- * direct read inside its own function settles it, and `callsPassing`
- * gives the calls that hand it to another function instead. The taken
- * set ends a pair of helpers calling each other.
+ * Where a parameter's value is read as an environment variable's name,
+ * through however many helpers forward it along the way. The forwarding
+ * is a rule in the resolution store, asked from the parameter, so the
+ * store extracts whichever files it needs to settle the question.
  */
-function parameterReachesEnvRead(
+function parameterNamesEnvVar(
   fn: FunctionLike,
-  at: number,
+  parameter: ParameterDeclaration,
   resolution: ResolutionStore | undefined,
-): { defaulted: boolean } | null {
-  const byParameter =
-    PARAM_ENV_READS.get(fn.compilerNode) ??
-    new Map<number, { defaulted: boolean } | null>();
-  PARAM_ENV_READS.set(fn.compilerNode, byParameter);
-  const remembered = byParameter.get(at);
+): Node[] {
+  const remembered = PARAM_ENV_SITES.get(parameter.compilerNode);
   if (remembered !== undefined) {
     return remembered;
   }
 
-  const found = reachesEnvRead(fn, at, resolution);
-  byParameter.set(at, found);
+  const found = envSitesNamedBy(fn, parameter, resolution);
+  PARAM_ENV_SITES.set(parameter.compilerNode, found);
   return found;
 }
 
 /**
- * Without a store, only the direct read at the starting parameter is
- * reachable: forwarding to another function is `callsPassing`'s
- * question, and there is nowhere to ask it.
+ * Asking the rule costs a query, so a parameter read in the callee's
+ * own body, or handed to nobody, is answered here instead.
  */
-function reachesEnvRead(
+function envSitesNamedBy(
   fn: FunctionLike,
-  at: number,
+  parameter: ParameterDeclaration,
   resolution: ResolutionStore | undefined,
-): { defaulted: boolean } | null {
-  const pending: { fn: FunctionLike; at: number }[] = [{ fn, at }];
-  const taken = new Set<string>();
-  while (pending.length > 0) {
-    const wanted = pending.pop() as { fn: FunctionLike; at: number };
-    const key = `${wanted.fn.getPos()}:${wanted.at}`;
-    if (taken.has(key)) {
-      continue;
-    }
-    taken.add(key);
-    const parameter = wanted.fn.getParameters()[wanted.at];
-    if (parameter === undefined) {
-      continue;
-    }
-
-    const direct = directEnvRead(wanted.fn, parameter);
-    if (direct !== null) {
-      return direct;
-    }
-    if (resolution === undefined) {
-      continue;
-    }
-
-    for (const passed of resolution.callsPassing(parameter)) {
-      if (!N.isCallExpression(passed.call)) {
-        continue;
-      }
-      const position = passed.call.getArguments().indexOf(passed.argument);
-      const next = functionLikeOf(
-        resolution.resolveCallable(passed.call.getExpression()),
-      );
-      if (position >= 0 && next !== null && next !== wanted.fn) {
-        pending.push({ fn: next, at: position });
-      }
-    }
+): Node[] {
+  const direct = directEnvRead(fn, parameter);
+  if (direct !== null) {
+    return [direct];
   }
-  return null;
+  if (
+    resolution === undefined ||
+    resolution.callsPassing(parameter).length === 0
+  ) {
+    return [];
+  }
+  return resolution.envSitesNamedBy(parameter);
 }
 
 /**
@@ -454,7 +438,7 @@ function reachesEnvRead(
 function directEnvRead(
   fn: FunctionLike,
   parameter: ParameterDeclaration,
-): { defaulted: boolean } | null {
+): ElementAccessExpression | null {
   for (const access of fn.getDescendantsOfKind(
     SyntaxKind.ElementAccessExpression,
   )) {
@@ -467,23 +451,10 @@ function directEnvRead(
       N.isIdentifier(argument) &&
       symbolBehind(argument)?.getValueDeclaration() === parameter
     ) {
-      return { defaulted: isDefaultedAt(access) };
+      return access;
     }
   }
   return null;
-}
-
-/** Narrow a resolved value down to the function shapes this reader can recurse into. */
-function functionLikeOf(node: Node | null): FunctionLike | null {
-  if (node === null) {
-    return null;
-  }
-  return N.isFunctionDeclaration(node) ||
-    N.isArrowFunction(node) ||
-    N.isFunctionExpression(node) ||
-    N.isMethodDeclaration(node)
-    ? node
-    : null;
 }
 
 function configReadEffect(

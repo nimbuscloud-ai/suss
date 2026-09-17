@@ -147,7 +147,7 @@ export interface PassedArgument {
 
 export class ResolutionStore {
   private readonly db = new Database();
-  private readonly table: NodeTable = createNodeTable();
+  private readonly table: NodeTable;
   private readonly fullyExtracted = new Set<string>();
   private readonly seededValues = new Set<string>();
   private readonly importedNames = new Map<
@@ -199,7 +199,11 @@ export class ResolutionStore {
 
   private stale = true;
 
-  constructor(wrappers: TransparentWrapper[] = []) {
+  constructor(
+    wrappers: TransparentWrapper[] = [],
+    environmentObjects: readonly string[] = [],
+  ) {
+    this.table = createNodeTable(environmentObjects);
     addPackWords(this.db, { unwrapsByName: wrappers });
   }
 
@@ -450,6 +454,46 @@ export class ResolutionStore {
       }
     }
     return found;
+  }
+
+  /**
+   * The environment reads that take their variable's name from this
+   * parameter, however many helpers forward it along the way. A reader
+   * standing at a call asks about the callee's parameter and reads the
+   * argument only where a site comes back.
+   */
+  envSitesNamedBy(parameter: Node): Node[] {
+    return this.envSitesNamedByEach([parameter]).get(parameter) ?? [];
+  }
+
+  /**
+   * The same question for a set of parameters at once. Following a name
+   * forward through the calls that pass it reads much of a project's
+   * import graph, and one parameter's reading is mostly another's, so
+   * asking together is far less work than asking one at a time.
+   */
+  envSitesNamedByEach(parameters: readonly Node[]): Map<Node, Node[]> {
+    const found = new Map<Node, Node[]>();
+    if (parameters.length === 0) {
+      return found;
+    }
+    return this.askAboutEach(parameters, "wanted", () => {
+      this.derive();
+      for (const parameter of parameters) {
+        const sites: Node[] = [];
+        for (const siteId of this.answersFor(
+          "wantedParamNamesEnv",
+          nodeId(parameter),
+        )) {
+          const site = this.table.byId.get(siteId);
+          if (site !== undefined) {
+            sites.push(site);
+          }
+        }
+        found.set(parameter, sites);
+      }
+      return found;
+    });
   }
 
   /**
@@ -876,6 +920,24 @@ export class ResolutionStore {
       }
     }
     return namesFrom([...reached], modules);
+  }
+
+  /** One question asked of several values, settled in one pass. */
+  private askAboutEach<T>(
+    values: readonly Node[],
+    question: Question,
+    read: () => T,
+  ): T {
+    try {
+      for (const value of values) {
+        this.wantValue(question, value);
+        this.seedValue(value);
+      }
+      this.extractDemanded(values.map((one) => one.getSourceFile()));
+      return read();
+    } finally {
+      this.forgetQuery();
+    }
   }
 
   private askAbout<T>(

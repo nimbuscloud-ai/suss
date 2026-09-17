@@ -27,7 +27,10 @@ function makeProject(userSource: string): SourceFile {
  * which no query starting at the parameter reaches on its own.
  */
 function storeOver(project: Project): ResolutionStore {
-  const store = new ResolutionStore();
+  const store = new ResolutionStore(
+    [],
+    nodeRuntimePack().environmentObjects ?? [],
+  );
   const files = project
     .getSourceFiles()
     .filter((one) => !one.isInNodeModules());
@@ -823,6 +826,68 @@ describe("a helper call resolved from the caller's side", () => {
     expect(reads.map((read) => read.interaction.name)).toEqual(["QUEUE_URL"]);
   });
 
+  it("follows the literal through a helper in a second file into a third", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "env.ts",
+      `export function requireEnv(key: string): string {
+        return process.env[key] ?? "";
+      }`,
+    );
+    project.createSourceFile(
+      "settings.ts",
+      `import { requireEnv } from "./env.js";
+      export function setting(name: string): string {
+        return requireEnv(name);
+      }`,
+    );
+    const handler = project.createSourceFile(
+      "handler.ts",
+      `import { setting } from "./settings.js";
+      export const url = setting("DATABASE_URL");`,
+    );
+    const reads = configReadEffectsOf(recognizeWithStore(handler));
+    expect(reads.map((read) => read.interaction.name)).toEqual([
+      "DATABASE_URL",
+    ]);
+  });
+
+  it("says nothing for a name kept in a constant another module exports", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "env.ts",
+      `export function requireEnv(key: string): string {
+        return process.env[key] ?? "";
+      }`,
+    );
+    project.createSourceFile("names.ts", `export const TABLE = "TABLE_NAME";`);
+    const handler = project.createSourceFile(
+      "handler.ts",
+      `import { requireEnv } from "./env.js";
+      import { TABLE } from "./names.js";
+      export const table = requireEnv(TABLE);`,
+    );
+    // Reading the argument without the store is what decides whether to
+    // ask at all, and it stops at the importing file. See the README.
+    expect(configReadEffectsOf(recognizeWithStore(handler))).toEqual([]);
+  });
+
+  it("says nothing for a name a helper takes off an options object", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "env.ts",
+      `export function requireEnv(options: { key: string }): string {
+        return process.env[options.key] ?? "";
+      }`,
+    );
+    const handler = project.createSourceFile(
+      "handler.ts",
+      `import { requireEnv } from "./env.js";
+      export const table = requireEnv({ key: "TABLE_NAME" });`,
+    );
+    expect(configReadEffectsOf(recognizeWithStore(handler))).toEqual([]);
+  });
+
   it("skips an unrelated call in the helper's body on the way to the forwarding one", () => {
     const project = createTestProject();
     project.createSourceFile(
@@ -844,7 +909,7 @@ describe("a helper call resolved from the caller's side", () => {
     expect(reads.map((read) => read.interaction.name)).toEqual(["QUEUE_URL"]);
   });
 
-  it("follows a forwarded call through a wrapper factory imported from another file", () => {
+  it("says nothing when a forwarding call's callee is a wrapper factory's result", () => {
     const project = createTestProject();
     project.createSourceFile(
       "env.ts",
@@ -872,8 +937,10 @@ describe("a helper call resolved from the caller's side", () => {
       `import { getEnv } from "./helpers.js";
       export const table = getEnv("TABLE_NAME");`,
     );
-    const reads = configReadEffectsOf(recognizeWithStore(handler));
-    expect(reads.map((read) => read.interaction.name)).toEqual(["TABLE_NAME"]);
+    // `callsNamed` starts from the function and follows a name to it,
+    // so a callee that is a value the rules would have to resolve is
+    // where the forwarding rule stops. See the README.
+    expect(configReadEffectsOf(recognizeWithStore(handler))).toEqual([]);
   });
 
   it("skips an unrelated element access on the way to a direct read", () => {
