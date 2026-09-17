@@ -947,7 +947,9 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
           left.text,
           valueKey(emitter, right),
         );
-        emitExpressionFacts(emitter, statement);
+        // The right side runs in the class body, so a bare call written
+        // there is looked up on the class like any other body statement.
+        emitExpressionFacts(within, statement);
       }
       continue;
     }
