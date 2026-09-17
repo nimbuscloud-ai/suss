@@ -360,7 +360,7 @@ function literalIndexOf(index: Expression | undefined): string | null {
  * declares the environment as the dotted path a program spells, and the
  * global it names has no declaration to resolve to.
  */
-export function readsEnvironment(
+function readsEnvironment(
   table: NodeTable,
   access: ElementAccessExpression,
 ): boolean {
@@ -369,6 +369,48 @@ export function readsEnvironment(
   }
   const path = dottedPathOf(access.getExpression());
   return path !== null && table.environmentObjects.includes(path);
+}
+
+/**
+ * A read off a declared environment object whose index is computed:
+ * the site the rules follow back to whoever wrote the variable's name.
+ * A literal index already spells the variable, so it stays a property
+ * read like any other.
+ */
+export function isEnvironmentNameRead(
+  table: NodeTable,
+  node: Node,
+): node is ElementAccessExpression {
+  if (!Node.isElementAccessExpression(node)) {
+    return false;
+  }
+  const argument = node.getArgumentExpression();
+  return (
+    argument !== undefined &&
+    literalIndexOf(argument) === null &&
+    readsEnvironment(table, node)
+  );
+}
+
+/**
+ * Every such read a file spells. A file that never writes a declared
+ * path cannot contain one, and reading its text costs far less than
+ * walking its syntax.
+ */
+export function environmentNameReadsIn(
+  table: NodeTable,
+  sourceFile: SourceFile,
+): ElementAccessExpression[] {
+  if (table.environmentObjects.length === 0) {
+    return [];
+  }
+  const text = sourceFile.getFullText();
+  if (!table.environmentObjects.some((path) => text.includes(path))) {
+    return [];
+  }
+  return sourceFile
+    .getDescendantsOfKind(SyntaxKind.ElementAccessExpression)
+    .filter((access) => isEnvironmentNameRead(table, access));
 }
 
 /** The dotted path an expression spells, when every part of it is an identifier. */
@@ -1328,11 +1370,7 @@ function recordBodyCalls(
   }
   // The body walk records calls and nothing else, so an env read has to
   // be picked out here or its fact is never stated.
-  if (
-    Node.isElementAccessExpression(node) &&
-    readsEnvironment(table, node) &&
-    literalIndexOf(node.getArgumentExpression()) === null
-  ) {
+  if (isEnvironmentNameRead(table, node)) {
     emitValue(db, table, node);
   }
   const call = unwrapExpression(node);

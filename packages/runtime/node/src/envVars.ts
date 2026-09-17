@@ -334,24 +334,21 @@ function readsThroughHelperCall(
   call: CallExpression,
   resolution: ResolutionStore | undefined,
 ): EnvRead[] {
-  const reads: EnvRead[] = [];
   const callee = functionBehindCallee(call.getExpression());
   if (callee === null) {
-    return reads;
+    return [];
   }
+  const sitesNaming = namesReadAtSites(callee, resolution);
   const parameters = callee.getParameters();
+  // One read per variable, however many sites end up reading it: a
+  // default only counts when every one of them supplies one.
+  const defaultedByName = new Map<string, boolean>();
   call.getArguments().forEach((passed, at) => {
     const parameter = parameters[at];
     if (parameter === undefined) {
       return;
     }
-    // Reading the argument without the store costs nothing and rules
-    // out most calls; asking about the parameter and reading it again
-    // with the store are the two expensive steps, in that order.
-    if (!namesSomething(stringValueOf(passed, undefined))) {
-      return;
-    }
-    const sites = parameterNamesEnvVar(callee, parameter, resolution);
+    const sites = sitesNaming(parameter) ?? directEnvReads(callee, parameter);
     if (sites.length === 0) {
       return;
     }
@@ -359,13 +356,19 @@ function readsThroughHelperCall(
     if (!namesSomething(literal)) {
       return;
     }
-    // Two sites that agree on whether a default is supplied are the
-    // same read of the same variable at this call.
-    for (const defaulted of new Set(sites.map(isDefaultedAt))) {
-      reads.push({ name: literal, defaulted, node: call });
-    }
+    const everywhere = sites.every(isDefaultedAt);
+    defaultedByName.set(
+      literal,
+      (defaultedByName.get(literal) ?? true) && everywhere,
+    );
   });
-  return reads;
+
+  const wrapped = isDefaultedAt(call);
+  return [...defaultedByName].map(([name, atSites]) => ({
+    name,
+    defaulted: atSites || wrapped,
+    node: call,
+  }));
 }
 
 /** The function a callee expression is written against, or null when nothing this reader follows defines one. */
@@ -379,55 +382,40 @@ function functionBehindCallee(callee: Node): FunctionLike | null {
   return functionTargetOf(nameNode)?.func ?? null;
 }
 
-/** Keyed on the compiler node, which a re-parse replaces, so an edited file never reads a stale answer. */
-const PARAM_ENV_SITES = new WeakMap<object, Node[]>();
-
 /** Whether a value read back off an argument is a variable's name. */
 function namesSomething(value: string | null): value is string {
   return value !== null && value.length > 0;
 }
 
 /**
- * Where a parameter's value is read as an environment variable's name,
- * through however many helpers forward it along the way. The forwarding
- * is a rule in the resolution store, asked from the parameter, so the
- * store extracts whichever files it needs to settle the question.
+ * Where each of a callee's parameters is read as an environment
+ * variable's name, through however many helpers forward it along the
+ * way. The store works that out for a whole project in one question,
+ * asked from the reads rather than from the parameters, so a call whose
+ * callee reads nothing costs a lookup and no query.
+ *
+ * Null back from the store means the rules had no facts to go on, and
+ * without a store there is no question to ask at all. Both leave this
+ * reader the callee's own body, which is the case most services spell.
  */
-function parameterNamesEnvVar(
+function namesReadAtSites(
   fn: FunctionLike,
-  parameter: ParameterDeclaration,
   resolution: ResolutionStore | undefined,
-): Node[] {
-  const remembered = PARAM_ENV_SITES.get(parameter.compilerNode);
-  if (remembered !== undefined) {
-    return remembered;
+): (parameter: ParameterDeclaration) => readonly Node[] | null {
+  if (resolution === undefined) {
+    return () => null;
   }
-
-  const found = envSitesNamedBy(fn, parameter, resolution);
-  PARAM_ENV_SITES.set(parameter.compilerNode, found);
-  return found;
+  const namers = resolution.envNamers(fn.getSourceFile());
+  return (parameter) => namers.sitesNaming(parameter);
 }
 
-/**
- * Asking the rule costs a query, so a parameter read in the callee's
- * own body, or handed to nobody, is answered here instead.
- */
-function envSitesNamedBy(
+/** `process.env[name]` in the callee's own body, the one hop read from syntax. */
+function directEnvReads(
   fn: FunctionLike,
   parameter: ParameterDeclaration,
-  resolution: ResolutionStore | undefined,
 ): Node[] {
   const direct = directEnvRead(fn, parameter);
-  if (direct !== null) {
-    return [direct];
-  }
-  if (
-    resolution === undefined ||
-    resolution.callsPassing(parameter).length === 0
-  ) {
-    return [];
-  }
-  return resolution.envSitesNamedBy(parameter);
+  return direct === null ? [] : [direct];
 }
 
 /**

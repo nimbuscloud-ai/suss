@@ -7,7 +7,11 @@ import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
 
-import { createNodeTable, extractFileFacts } from "./extract.js";
+import {
+  createNodeTable,
+  environmentNameReadsIn,
+  extractFileFacts,
+} from "./extract.js";
 
 import type { NodeTable } from "./extract.js";
 
@@ -344,5 +348,49 @@ describe("a read off an object a pack calls the environment", () => {
     );
 
     expect(rows(db, table, "readsEnvNamed")).toEqual([]);
+  });
+});
+
+describe("finding the environment reads in a file", () => {
+  function readsIn(
+    source: string,
+    environmentObjects: readonly string[] = ["process.env"],
+  ): string[] {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const sourceFile = project.createSourceFile("/mod.ts", source);
+    return environmentNameReadsIn(
+      createNodeTable(environmentObjects),
+      sourceFile,
+    ).map((access) => access.getText());
+  }
+
+  it("finds a computed read wherever in the file it is written", () => {
+    expect(
+      readsIn(
+        [
+          "export function requireEnv(name: string): string {",
+          "  return process.env[name] ?? '';",
+          "}",
+          "export const port = process.env['PORT'];",
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual(["process.env[name]"]);
+  });
+
+  it("finds nothing in a file that never writes a declared path", () => {
+    expect(
+      readsIn(
+        [
+          "declare const settings: Record<string, string>;",
+          "export const one = settings['A'];",
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("finds nothing when no pack says which object is the environment", () => {
+    expect(readsIn("export const x = process.env[name];", [])).toEqual([]);
   });
 });

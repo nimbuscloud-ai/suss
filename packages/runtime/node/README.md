@@ -50,34 +50,52 @@ unit that reads it.
 
 The pack declares `process.env` as the environment object. The adapter
 states a fact for a read off it whose index is not a literal, and the
-resolution rules say which parameters end up naming a variable, however
-many helpers forward the name along the way. Standing at a call, the
-pack asks about the callee's parameter and reads the argument only where
-the rules say a read is behind it.
+resolution rules say which parameters end up supplying the name at such
+a read, however many helpers forward it along the way.
 
-A project has far more calls than it has env reads, and asking the rules
-costs a query, so three cases are settled before anything is asked. A
-call that passes nothing readable as a string cannot report a variable
-whatever the rules say, and reading an argument without the store is
-free, so that one goes first. A parameter read off `process.env` in the
-callee's own body is found by reading the body. A parameter the callee
-hands to no other call has nowhere else to be read. What is left is a
-parameter forwarded somewhere, which is what the rules answer.
+That question is asked once for a whole project, from the reads rather
+than from the parameters. A project has a handful of reads with a
+computed index and thousands of parameters some call could fill, so
+asking from each parameter meant ten thousand questions and seven
+minutes on a project the size of suss. With the read bound, the rules
+run from each callee out to its callers, which is the direction the
+call facts are built for. Standing at a call, the pack looks the
+callee's parameters up in that one answer and reads an argument only
+where one of them is in it.
 
-On this repository that pre-filter takes the parameters asked about from
-around ten thousand to around a thousand, and a cold `suss extract` runs
-in 31s where the hand-written walk it replaces ran in 38s. Asking about
-every callee parameter instead takes over ten minutes, so the filter is
-what makes the rule affordable here.
+The store extracts files as questions demand them, so before the first
+env question it scans the project's sources for a read off a declared
+path with a computed index, and extracts the files that have one. That
+keeps the answer the same whatever order the readers happen to run in.
+The answer is true of the files extracted when it was worked out, so a
+later reader that has brought more of the project in asks again.
+
+Extraction reaches what a file exports, so a file that exports nothing
+states no facts, and the rules cannot speak about its parameters either
+way. The store says so rather than saying no, and the pack then looks
+for the read in the callee's own body. That covers the helper a module
+keeps to itself, which is how a test file spells its knobs
+(`const runs = envInt("FUZZ_RUNS", 60)`); a helper this way that
+forwards its name to another function is still out of reach.
+
+A read reports `defaulted` when every read site behind it supplies a
+fallback, or when the call itself is wrapped in one:
+`requireEnv("PORT") ?? "3000"`.
+
+On suss itself a cold `suss extract -f node -f fetch` runs in 26.5s,
+where the hand-written walk this replaces ran in 33.7s, and both report
+the same 101 config reads.
 
 Four spellings it says nothing about:
 
 - a name taken off an options object, `requireEnv({ key: "TABLE_NAME" })`
 - a name built at run time from something only the run knows
-- a name no reading without the resolution store can settle, such as a
-  constant imported from another module
+- a name built by interpolation from a parameter, `process.env[prefix + "_URL"]`
 - a forwarding call whose callee is a value rather than a name, such as
-  a wrapper factory's result written into a const
+  a wrapper factory's result written into a const. The rules find a
+  function's callers from the function, and bridging that to a callee
+  the rules would have to resolve first put a cold extract past four
+  minutes.
 
 ## Options
 
