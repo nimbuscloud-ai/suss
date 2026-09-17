@@ -23,6 +23,12 @@ jobs:
           node-version: 22
       - run: npm ci
       - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@main
+```
+
+The action reads the packs from the project's `suss.json`, which `suss init` writes. Without one it picks the packs `init` would. Set `extract` to choose them yourself:
+
+```yaml
+      - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@main
         with:
           extract: -p tsconfig.json -f hono -f prisma
 ```
@@ -55,7 +61,7 @@ The comment looks like this:
 
 | Input | Default | What it is |
 | --- | --- | --- |
-| `extract` | required | The arguments to `suss extract`, after the command. `-p tsconfig.json -f express` for a TypeScript project, `--dir src -f fastapi` for Python, `--dir app -f rails` for Ruby. |
+| `extract` | empty | The arguments to `suss extract`, after the command. Empty reads the packs from `suss.json`, or the ones `suss init` would pick when there is no file. `-p tsconfig.json -f express` chooses them for a TypeScript project, `--dir src -f fastapi` for Python, `--dir app -f rails` for Ruby. |
 | `working-directory` | `.` | The directory to run `suss extract` in, relative to the repository root. |
 | `version` | `latest` | The version of `@suss/cli` to install. |
 | `install` | empty | A shell command that installs dependencies in the base checkout, such as `pnpm install --frozen-lockfile` or `npm ci && npm run build`. When it is empty the base checkout shares the head's `node_modules` directories, which is right when the pull request does not change dependencies. |

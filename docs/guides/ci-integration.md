@@ -34,16 +34,25 @@ jobs:
           node-version: 22
       - run: npm ci
       - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@main
-        with:
-          extract: -p tsconfig.json -f hono -f prisma
 ```
 
 The action runs `suss extract` at the head of the pull request, checks
 the base commit out beside it and runs the same extract there, then
 posts `suss inspect --diff` between the two as one comment. A later
-push edits the same comment. `extract` takes whatever you would type
-after `suss extract` on your own machine; for Python that is
-`--dir src -f fastapi`.
+push edits the same comment.
+
+The packs come from the project's `suss.json`, which `suss init`
+writes. Without one the action picks the packs `init` would. To choose
+them yourself, set `extract` to whatever you would type after
+`suss extract` on your own machine:
+
+```yaml
+      - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@main
+        with:
+          extract: -p tsconfig.json -f hono -f prisma
+```
+
+For Python that is `--dir src -f fastapi`.
 
 The `push` trigger is optional. On a push to `main` the action reads
 the commit and keeps its summaries in the actions cache, so a pull
