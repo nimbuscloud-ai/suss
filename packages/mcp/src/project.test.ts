@@ -108,7 +108,9 @@ describe("Project", () => {
     const report = await project.start();
 
     expect(report.configured).toBe(true);
-    expect(report.ran).toEqual(["extract --lang typescript -f express"]);
+    expect(report.ran).toEqual([
+      "suss extract --lang typescript -p tsconfig.json -f express",
+    ]);
     expect(report.failed).toEqual([]);
     expect(boundariesIn(report.summaryDir)).toEqual(["/orders"]);
 

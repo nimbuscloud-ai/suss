@@ -6,11 +6,14 @@ description: >
 inputs:
   extract:
     description: >
-      The arguments to `suss extract`, after the command. For a
-      TypeScript project that is the tsconfig and the packs, for
-      example `-p tsconfig.json -f hono -f prisma`. For Python or Ruby
-      it is `--dir src -f fastapi`.
-    required: true
+      The arguments to `suss extract`, after the command. Leave it
+      empty to read the packs from the project's `suss.json`, or the
+      ones `suss init` would pick when there is no file. Set it to
+      choose them yourself, for example `-p tsconfig.json -f hono -f
+      prisma` for a TypeScript project or `--dir src -f fastapi` for
+      Python.
+    required: false
+    default: ""
   working-directory:
     description: The directory to run `suss extract` in, relative to the repository root.
     required: false

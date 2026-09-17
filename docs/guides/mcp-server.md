@@ -17,7 +17,7 @@ Add this to the host's MCP config and point it at the project:
 
 For Claude Code that file is `.mcp.json` at the repository root. Cursor reads `.cursor/mcp.json`, and Claude Desktop reads `claude_desktop_config.json`. Each of them takes the block above unchanged.
 
-The project needs a `suss.json`, which says which packs read the code and where the contracts are. `npx @suss/cli init` writes it, and asks before it installs anything. Without one the server starts, says so on stderr, and every answer comes back empty.
+The server reads `suss.json`, which says which packs read the code and where the contracts are. `npx @suss/cli init` writes it, and asks before it installs anything. Without one the server picks the packs `init` would, from the project's dependencies, and says so on stderr. When nothing in the project matches a pack, every answer comes back empty, and `suss_status` says so.
 
 ## What the agent can ask
 
@@ -50,7 +50,7 @@ The other three tools:
 |---|---|
 | `suss_check` | Compares both sides of every boundary and reports where they disagree. Takes a boundary to narrow to. |
 | `suss_boundaries` | Lists the boundaries, split into the ones with both sides and the ones with only one. |
-| `suss_status` | Says which commands ran, which failed, and whether the project has a `suss.json`. |
+| `suss_status` | Says which commands ran, which failed, and whether a `suss.json` chose them or the server picked them itself. |
 
 All four are read-only, so a host never has to ask a person before calling one.
 

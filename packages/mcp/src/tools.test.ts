@@ -277,12 +277,36 @@ describe("the tools, on a project bigger than one answer", () => {
     await project.start();
 
     const text = textOf(statusTool(project));
-    expect(text).toContain("no suss.json");
+    expect(text).toContain("matched a pack");
     expect(text).toContain("suss init");
 
     project.close();
     fs.rmSync(root, { recursive: true, force: true });
   });
+
+  it("says it picked the packs itself when the project has no suss.json", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-tools-detect-"));
+    fs.writeFileSync(
+      path.join(root, "package.json"),
+      JSON.stringify({ name: "detected", private: true }),
+    );
+    fs.writeFileSync(path.join(root, "tsconfig.json"), "{}");
+    fs.writeFileSync(
+      path.join(root, "client.ts"),
+      'export const ping = () => fetch("/ping");\n',
+    );
+    const project = new Project({ root, watch: false });
+    const report = await project.start();
+
+    expect(report.configured).toBe(false);
+    expect(report.ran.some((one) => one.includes("-f fetch"))).toBe(true);
+    const text = textOf(statusTool(project));
+    expect(text).toContain("what `suss init` would pick");
+    expect(text).toContain("ran: suss extract");
+
+    project.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }, 60_000);
 });
 
 describe("attempt", () => {

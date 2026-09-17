@@ -7,9 +7,10 @@ Code is written faster than anyone can read it. A thousand-line pull request lan
 ## Read one service
 
 ```bash
-npx @suss/cli extract -f hono -o api.json
-npx @suss/cli inspect api.json
+npx @suss/cli inspect
 ```
+
+`inspect` reads the project it is run in. It works out which packs the project needs from its dependencies, the way `suss init` does, and says which ones it picked. `suss init` writes that choice down in `suss.json` so every later command reads the same thing.
 
 ```
 src/api.ts
@@ -99,9 +100,9 @@ suss ships as `@suss/cli`, with every pack inside it, so there is one install:
 npm install --save-dev @suss/cli
 ```
 
-A pack is reached by name, `suss extract -f ts-rest -f axios`, and a declared artifact by `suss contract --from openapi`. A Python or Ruby project is read with `--dir` instead of a tsconfig; see [Read a Python or Ruby project](docs/guides/python-and-ruby.md).
+A pack is reached by name, `suss extract -f ts-rest -f axios`, and a declared artifact by `suss contract --from openapi`. Without `-f`, `extract` reads the packs from `suss.json`, or picks the ones `init` would when there is no file. A Python or Ruby project is read with `--dir` instead of a tsconfig; see [Read a Python or Ruby project](docs/guides/python-and-ruby.md).
 
-`suss init` reads your project, works out which packs it needs, and offers to set them up:
+`suss init` reads your project, works out which packs it needs, writes them to `suss.json`, and offers to set them up:
 
 ```
 ┌  suss init

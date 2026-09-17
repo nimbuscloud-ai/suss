@@ -49,9 +49,15 @@ Work out which packs this project needs, then offer to install them.
 
 **What it does.** It reads `package.json`, looks for schemas and deploy
 templates on disk, and maps what it finds to packs. Then it asks whether
-to install them, whether to run the first extract and check, and whether
-to write a `.sussignore` and a CI workflow. Installing defaults to yes;
-writing files defaults to no. Nothing reaches disk unless you accept it.
+to install them, whether to write what it found to `suss.json`, whether
+to run the first extract and check, and whether to write a `.sussignore`
+and a CI workflow. Installing defaults to yes; writing files defaults
+to no. Nothing reaches disk unless you accept it.
+
+`suss.json` is what `extract` reads when it is given no `-f`, and what
+`inspect`, `check` and the MCP server read when they are given nothing.
+Without the file, those commands pick the same packs `init` would and
+say so, so `init` is the way to make the choice stick.
 
 At a monorepo root it reads the workspace declaration from
 `package.json` workspaces, `pnpm-workspace.yaml`, `lerna.json`, or
@@ -89,7 +95,7 @@ you never annotate it.
 
 ```
 suss extract [-p TSCONFIG | --dir DIR] [--lang typescript|python|ruby]
-             -f FRAMEWORK [-f FRAMEWORK ...]
+             [-f FRAMEWORK ...]
              [-o OUTPUT] [--files FILE ...]
              [--gaps strict|permissive|silent]
              [--explain] [--timing] [--no-cache] [--allow-empty]
@@ -97,7 +103,7 @@ suss extract [-p TSCONFIG | --dir DIR] [--lang typescript|python|ruby]
 
 | Flag | Required | Description |
 |---|---|---|
-| `-f`, `--framework NAME` | yes | Pack name. Repeatable. See [built-in packs](#built-in-packs) below. A name that is not built in resolves in three tries. A name starting with `@` or containing a `/` is imported exactly as you wrote it; otherwise suss tries `@suss/packs/NAME`, then `@suss/framework-NAME`, then `@suss/NAME`. |
+| `-f`, `--framework NAME` | no | Pack name. Repeatable. See [built-in packs](#built-in-packs) below. Leave it off and suss reads the packs for the language from `suss.json`, or picks the ones `init` would when there is no file, and prints the command it is running. A name that is not built in resolves in three tries. A name starting with `@` or containing a `/` is imported exactly as you wrote it; otherwise suss tries `@suss/packs/NAME`, then `@suss/framework-NAME`, then `@suss/NAME`. |
 | `-p`, `--project PATH` | no | Path to `tsconfig.json`, for the same type resolution your compiler sees. Leave it off and suss uses the nearest tsconfig or jsconfig above the working directory. |
 | `--dir PATH` | no | Read this directory directly, for a project with no tsconfig. |
 | `--lang NAME` | no | Which language to read this project as: `typescript`, `python`, or `ruby`. Leave it off and suss works that out from what the directory contains, from the packs you asked for, and from the nearest tsconfig, and it tells you when it cannot tell. |
@@ -379,13 +385,22 @@ suss check --dir DIR [--intent INTENT_DIR] [--all] [--json] [-o OUTPUT]
 
 # One thing out of that directory
 suss check --dir DIR --at TARGET [--json] [-o OUTPUT] [--fail-on THRESHOLD]
+
+# The project in the current directory, read first
+suss check [--at TARGET] [--intent INTENT_DIR] ...
 ```
+
+Given no files and no `--dir`, `check` reads the project it is run in
+first, the way the MCP server does: every entry in `suss.json`, or what
+`init` would pick when there is no file, into a temporary directory,
+then the directory form over that. It prints the commands it ran to
+stderr.
 
 | Flag | Description |
 |---|---|
 | `--dir PATH` | Directory containing summary JSON files. suss reads every `.json` in the dir and auto-pairs by boundary. Mutually exclusive with positional args. |
-| `--at TARGET` | Report on one thing instead of the whole folder. See [Reporting on one thing](#reporting-on-one-thing). Needs `--dir`, and does not run with `--intent`. |
-| `--intent PATH` | Directory of team-authored intent docs (`*.intent.yaml`, `*.intent.yml`, `*.intent.json`, and the same three for `*.prd`). Each boundary intent is paired against the summaries in `--dir`, adding intent-coverage findings to the report. Needs `--dir`. |
+| `--at TARGET` | Report on one thing instead of the whole folder. See [Reporting on one thing](#reporting-on-one-thing). Takes `--dir` or no files at all, and does not run with `--intent`. |
+| `--intent PATH` | Directory of team-authored intent docs (`*.intent.yaml`, `*.intent.yml`, `*.intent.json`, and the same three for `*.prd`). Each boundary intent is paired against the summaries in `--dir`, adding intent-coverage findings to the report. Takes `--dir` or no files at all. |
 | `--all` | Write out every finding and every list. See [What a run prints](#what-a-run-prints). |
 | `--json` | Emit findings as JSON rather than human-readable text. Default: human text. |
 | `-o`, `--output PATH` | Write findings to file. Default: stdout. |
@@ -704,6 +719,9 @@ self-describing enough to read cold, structurally aligned with the
 underlying IR.
 
 ```
+# The project in the current directory, read first
+suss inspect
+
 # A single summary file
 suss inspect SUMMARIES.json
 
@@ -716,6 +734,12 @@ suss inspect --diff BEFORE.json AFTER.json [--json] [--changed-files PATH] [--bu
 # Who serves a request, hop by hop
 suss inspect --flow "GET https://shop.example.com/api/orders/123" --dir DIR
 ```
+
+Given nothing, `inspect` reads the project it is run in first: every
+entry in `suss.json`, or what `init` would pick when there is no file,
+into a temporary directory, then renders each file it produced the way
+it renders a single summary file. It prints the commands it ran to
+stderr.
 
 | Flag | Description |
 |---|---|

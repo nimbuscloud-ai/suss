@@ -90,6 +90,11 @@ repo needs it, because its root `tsconfig.json` lists no files of its
 own and points at two project references instead, so the tsconfig that
 covers `src/` is `tsconfig.app.json`.
 
+The `-f` flags are spelled out here so you can see what each one
+reads. Once `init` has written `suss.json`, `npx suss extract -o
+summaries/code.json` reads the same packs, and `npx suss inspect` with
+nothing after it reads the whole project and prints it.
+
 ## Compare the sides that meet
 
 ```bash
