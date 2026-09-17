@@ -41,6 +41,9 @@ reExports(m, n, m2, n2)     m's n is m2's n2
 reExportsAll(m, m2)         m forwards everything m2 exports
 declaresName(c, n)          c declares a method n under a name the
                             source computes rather than writes out
+readsEnvNamed(site, x)      site reads the environment variable whose
+                            name is the value of x, and x is not a
+                            literal
 ```
 
 `declaresName` is the one fact an adapter states after asking these

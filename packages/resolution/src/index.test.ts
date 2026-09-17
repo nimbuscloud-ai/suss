@@ -482,6 +482,122 @@ describe("an argument reaching a parameter", () => {
   });
 });
 
+describe("a parameter that is an environment variable's name", () => {
+  /** The sites a parameter's value ends up naming, asked on demand. */
+  function sitesNamedBy(
+    facts: Array<[string, ...string[]]>,
+    parameter: string,
+  ): string[] {
+    const db = new Database();
+    for (const [name, ...tuple] of facts) {
+      db.add(name, tuple);
+    }
+    askResolution(db, [parameter], "wanted", resolutionProgram());
+    return db
+      .facts("wantedParamNamesEnv")
+      .filter((row) => row[0] === parameter)
+      .map((row) => String(row[1]))
+      .sort();
+  }
+
+  // def env(key): return os.environ.get(key), with the read keyed as the parameter
+  const helper: Array<[string, ...string[]]> = [
+    ["func", "env"],
+    ["paramOf", "env", "0", "env#key"],
+    ["readsEnvNamed", "envGet", "env#key"],
+  ];
+
+  it("lands on the site whose name is the parameter itself", () => {
+    expect(sitesNamedBy(helper, "env#key")).toEqual(["envGet"]);
+  });
+
+  it("lands on the site through a name declared as the parameter", () => {
+    // function env(key) { const name = key; return process.env[name]; }
+    expect(
+      sitesNamedBy(
+        [
+          ["func", "env"],
+          ["paramOf", "env", "0", "env#key"],
+          ["binds", "keyRef", "env#key"],
+          ["binds", "name", "keyRef"],
+          ["binds", "nameRef", "name"],
+          ["readsEnvNamed", "envIndex", "nameRef"],
+        ],
+        "env#key",
+      ),
+    ).toEqual(["envIndex"]);
+  });
+
+  it("follows a parameter handed on to the helper's parameter", () => {
+    // def setting(name): return env(name)
+    expect(
+      sitesNamedBy(
+        [
+          ...helper,
+          ["func", "setting"],
+          ["paramOf", "setting", "0", "setting#name"],
+          ["binds", "envRef", "env"],
+          ["call", "inner", "envRef"],
+          ["callArg", "inner", "0", "setting#name"],
+        ],
+        "setting#name",
+      ),
+    ).toEqual(["envGet"]);
+  });
+
+  it("follows a keyword argument by the name the caller wrote", () => {
+    // def setting(name): return env(key=name)
+    expect(
+      sitesNamedBy(
+        [
+          ...helper,
+          ["paramNamed", "env", "key", "env#key"],
+          ["func", "setting"],
+          ["paramOf", "setting", "0", "setting#name"],
+          ["binds", "envRef", "env"],
+          ["call", "inner", "envRef"],
+          ["callKeywordArg", "inner", "key", "setting#name"],
+        ],
+        "setting#name",
+      ),
+    ).toEqual(["envGet"]);
+  });
+
+  it("says nothing for a parameter the helper never reads the environment through", () => {
+    expect(
+      sitesNamedBy(
+        [
+          ...helper,
+          ["paramOf", "env", "1", "env#default"],
+          ["func", "log"],
+          ["paramOf", "log", "0", "log#message"],
+        ],
+        "log#message",
+      ),
+    ).toEqual([]);
+    expect(sitesNamedBy(helper, "env#default")).toEqual([]);
+  });
+
+  it("ends at a pair of helpers that hand the name to each other", () => {
+    expect(
+      sitesNamedBy(
+        [
+          ...helper,
+          ["func", "again"],
+          ["paramOf", "again", "0", "again#k"],
+          ["binds", "envRef", "env"],
+          ["binds", "againRef", "again"],
+          ["call", "toEnv", "envRef"],
+          ["callArg", "toEnv", "0", "again#k"],
+          ["call", "toAgain", "againRef"],
+          ["callArg", "toAgain", "0", "env#key"],
+        ],
+        "again#k",
+      ),
+    ).toEqual(["envGet"]);
+  });
+});
+
 describe("a class the caller makes one of", () => {
   it("follows a method read off an instance to the method the class declares", () => {
     // class Loader { load() {} }; new Loader().load
