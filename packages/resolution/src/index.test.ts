@@ -483,20 +483,33 @@ describe("an argument reaching a parameter", () => {
 });
 
 describe("a parameter that is an environment variable's name", () => {
-  /** The sites a parameter's value ends up naming, asked on demand. */
-  function sitesNamedBy(
+  /** The parameters whose value ends up naming the site, asked from it. */
+  function namersOf(
     facts: Array<[string, ...string[]]>,
-    parameter: string,
+    site: string,
   ): string[] {
     const db = new Database();
     for (const [name, ...tuple] of facts) {
       db.add(name, tuple);
     }
-    askResolution(db, [parameter], "wanted", resolutionProgram());
+    askResolution(db, [site], "wantedEnvSite", resolutionProgram());
     return db
       .facts("wantedParamNamesEnv")
-      .filter((row) => row[0] === parameter)
-      .map((row) => String(row[1]))
+      .filter((row) => row[1] === site)
+      .map((row) => String(row[0]))
+      .sort();
+  }
+
+  /** Whether the parameter is among the site's namers. */
+  function sitesNamedBy(
+    facts: Array<[string, ...string[]]>,
+    parameter: string,
+  ): string[] {
+    const sites = new Set(
+      facts.filter(([name]) => name === "readsEnvNamed").map((row) => row[1]),
+    );
+    return [...sites]
+      .filter((site) => namersOf(facts, site).includes(parameter))
       .sort();
   }
 
@@ -509,6 +522,32 @@ describe("a parameter that is an environment variable's name", () => {
 
   it("lands on the site whose name is the parameter itself", () => {
     expect(sitesNamedBy(helper, "env#key")).toEqual(["envGet"]);
+  });
+
+  it("gives every parameter that names the site from one question about it", () => {
+    // def setting(name): return env(name); def env(key): return os.environ.get(key)
+    expect(
+      namersOf(
+        [
+          ...helper,
+          ["func", "setting"],
+          ["paramOf", "setting", "0", "setting#name"],
+          ["binds", "envRef", "env"],
+          ["call", "inner", "envRef"],
+          ["callArg", "inner", "0", "setting#name"],
+        ],
+        "envGet",
+      ),
+    ).toEqual(["env#key", "setting#name"]);
+  });
+
+  it("answers nothing when asked from the parameter instead of the site", () => {
+    const db = new Database();
+    for (const [name, ...tuple] of helper) {
+      db.add(name, tuple);
+    }
+    askResolution(db, ["env#key"], "wanted", resolutionProgram());
+    expect(db.facts("wantedParamNamesEnv")).toEqual([]);
   });
 
   it("lands on the site through a name declared as the parameter", () => {

@@ -1029,7 +1029,7 @@ const STATED_RULES = [
 
   // A parameter whose value is an environment variable's name: a read
   // site takes its name from it, or it is handed on to a parameter that
-  // does. Asked from the parameter, by a reader standing at a call.
+  // does. Asked from the site, so the recursion runs callee to caller.
   rule(
     "paramNamesEnv",
     [v("p"), v("site")],
@@ -1630,12 +1630,12 @@ export const RESOLUTION_QUESTIONS = [
     [v("f"), v("c")],
     [lit("wanted", v("f")), lit("returnsCall", v("f"), v("c"))],
   ),
-  // Keyed by the callee's parameter, which is what a reader standing at
-  // a call has once it knows the callee.
+  // Seeded with the read sites, a handful per project, so one question
+  // gives every parameter a reader at a call could meet.
   rule(
     "wantedParamNamesEnv",
     [v("p"), v("site")],
-    [lit("wanted", v("p")), lit("paramNamesEnv", v("p"), v("site"))],
+    [lit("wantedEnvSite", v("site")), lit("paramNamesEnv", v("p"), v("site"))],
   ),
   rule(
     "wantedComesFrom",
