@@ -308,6 +308,31 @@ describe("a name handed to a project helper", () => {
     ).toEqual([{ name: "CACHE_URL", defaulted: false }]);
   });
 
+  it("reads a constant the module sets by calling its own helper", async () => {
+    expect(
+      await projectReads({
+        "use.rb": [
+          "module Settings",
+          "  def self.env(key, default = nil)",
+          "    ENV.fetch(key, default)",
+          "  end",
+          "",
+          "  def self.setting(name)",
+          "    Settings.env(name)",
+          "  end",
+          "",
+          '  DATABASE_URL = setting("DATABASE_URL")',
+          '  REGION = env("AWS_REGION", "us-east-1")',
+          "end",
+          "",
+        ].join("\n"),
+      }),
+    ).toEqual([
+      { name: "DATABASE_URL", defaulted: true },
+      { name: "AWS_REGION", defaulted: true },
+    ]);
+  });
+
   it("counts an || around the call as a default", async () => {
     expect(
       await projectReads({
