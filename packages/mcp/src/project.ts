@@ -24,25 +24,16 @@ import os from "node:os";
 import path from "node:path";
 
 import {
-  contract,
-  extract,
+  declaredReads,
   loadedSummaries,
+  readProjectInto,
   readSummariesFromDir,
 } from "@suss/cli";
 
-import type { ContractSource, Language, LoadedSummaries } from "@suss/cli";
+import type { LoadedSummaries } from "@suss/cli";
 
 /** How long the writes have to stop before a rebuild starts. */
 const DEFAULT_SETTLE_MS = 400;
-
-/** What `suss.json` says this project contains. */
-interface ProjectFile {
-  version: 1;
-  read: Array<
-    | { kind: "extract"; language: string; project?: string; packs: string[] }
-    | { kind: "contract"; from: string; file: string }
-  >;
-}
 
 export interface ProjectOptions {
   /** The project root, which is where `suss.json` is looked for. */
@@ -66,7 +57,7 @@ export interface BuildReport {
   ran: string[];
   /** Commands `suss.json` asked for that threw. */
   failed: string[];
-  /** Null when the project has no `suss.json`. */
+  /** False when the project has no `suss.json`, so detection picked the reads. */
   configured: boolean;
 }
 
@@ -74,7 +65,6 @@ export class Project {
   readonly root: string;
   readonly summaryDir: string;
 
-  private config: ProjectFile | null = null;
   private report: BuildReport;
   private watcher: fs.FSWatcher | null = null;
   private pending: NodeJS.Timeout | null = null;
@@ -174,31 +164,12 @@ export class Project {
    * about the code suss could read.
    */
   async build(): Promise<BuildReport> {
-    this.config = readProjectFile(this.root);
-    const ran: string[] = [];
-    const failed: string[] = [];
-
-    if (this.config === null) {
-      this.loaded = null;
-      this.everBuilt = true;
-      this.report = {
-        summaryDir: this.summaryDir,
-        ran,
-        failed,
-        configured: false,
-      };
-      return this.report;
-    }
-
-    for (const [index, entry] of this.config.read.entries()) {
-      const out = path.join(this.summaryDir, `${index}-${entry.kind}.json`);
-      try {
-        await runEntry(entry, this.root, out);
-        ran.push(describeEntry(entry));
-      } catch (error) {
-        failed.push(`${describeEntry(entry)}: ${messageOf(error)}`);
-      }
-    }
+    const reads = await declaredReads(this.root);
+    const { ran, failed } = await readProjectInto(
+      this.root,
+      this.summaryDir,
+      reads,
+    );
 
     // Dropped after the writes rather than before, so a question asked
     // during a build cannot leave a half-written directory cached.
@@ -208,7 +179,7 @@ export class Project {
       summaryDir: this.summaryDir,
       ran,
       failed,
-      configured: true,
+      configured: reads.declared,
     };
     return this.report;
   }
@@ -295,47 +266,6 @@ function realPath(candidate: string): string {
   } catch {
     return candidate;
   }
-}
-
-function readProjectFile(root: string): ProjectFile | null {
-  try {
-    const parsed = JSON.parse(
-      fs.readFileSync(path.join(root, "suss.json"), "utf8"),
-    ) as ProjectFile;
-    return Array.isArray(parsed?.read) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-async function runEntry(
-  entry: ProjectFile["read"][number],
-  root: string,
-  out: string,
-): Promise<void> {
-  if (entry.kind === "contract") {
-    await contract({
-      from: entry.from as ContractSource,
-      spec: path.resolve(root, entry.file),
-      output: out,
-    });
-    return;
-  }
-  await extract({
-    dir: root,
-    frameworks: entry.packs,
-    output: out,
-    lang: entry.language as Language,
-    ...(entry.project !== undefined
-      ? { tsconfig: path.resolve(root, entry.project) }
-      : {}),
-  });
-}
-
-function describeEntry(entry: ProjectFile["read"][number]): string {
-  return entry.kind === "contract"
-    ? `contract --from ${entry.from} ${entry.file}`
-    : `extract --lang ${entry.language} ${entry.packs.map((p) => `-f ${p}`).join(" ")}`;
 }
 
 /**

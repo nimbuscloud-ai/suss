@@ -16,6 +16,7 @@ import {
   checkDir,
   preloadForQuestion,
   stubDraftResult,
+  whereReadsCameFrom,
 } from "@suss/cli";
 
 import { omissionNote, SHOWN, trim } from "./budget.js";
@@ -73,9 +74,9 @@ Each list shows the first few; counts has the totals.
 
 To read what one boundary does, use suss_ask with "what can I project from <boundary>".`;
 
-export const STATUS_DESCRIPTION = `What this server is answering from: which extract and contract commands ran, which failed, and whether the project has a suss.json at all.
+export const STATUS_DESCRIPTION = `What this server is answering from: which extract and contract commands ran, which failed, and whether a suss.json chose them or suss picked them the way \`suss init\` would.
 
-Reach for this when an answer looks thinner than the code suggests it should be. A project with no suss.json has nothing configured, and a contract that failed to read means one side of every boundary it declares is missing from every answer.`;
+Reach for this when an answer looks thinner than the code suggests it should be. A project nothing matched has nothing extracted, and a contract that failed to read means one side of every boundary it declares is missing from every answer.`;
 
 export async function askTool(
   project: Project,
@@ -235,16 +236,22 @@ function statusText(
   if (building && !project.hasBuilt()) {
     return BUILDING_LINE;
   }
-  const lines = report.configured
-    ? [
-        `Answering from ${report.summaryDir}, rebuilt when a source file changes.`,
-        ...report.ran.map((one) => `  ran: ${one}`),
-        ...report.failed.map((one) => `  failed: ${one}`),
-      ]
-    : [
-        `${project.root} has no suss.json, so nothing was extracted and every answer will be empty. Run \`suss init\` in that directory.`,
-      ];
+  const lines = reportLines(project.root, report);
   return building ? [REBUILDING_LINE, ...lines].join("\n") : lines.join("\n");
+}
+
+function reportLines(root: string, report: BuildReport): string[] {
+  if (report.ran.length + report.failed.length === 0) {
+    return [
+      `Nothing in ${root} matched a pack, so nothing was extracted and every answer will be empty. Run \`suss init\` in that directory to see what suss looked for.`,
+    ];
+  }
+  return [
+    `Answering from ${report.summaryDir}, rebuilt when a source file changes.`,
+    ...(report.configured ? [] : [whereReadsCameFrom(root, false)]),
+    ...report.ran.map((one) => `  ran: ${one}`),
+    ...report.failed.map((one) => `  failed: ${one}`),
+  ];
 }
 
 /**

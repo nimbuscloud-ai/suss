@@ -8,7 +8,11 @@
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
+import { whereReadsCameFrom } from "@suss/cli";
+
 import { createServer } from "./index.js";
+
+import type { BuildReport } from "./project.js";
 
 async function main(): Promise<void> {
   const root = process.argv[2] ?? process.cwd();
@@ -21,13 +25,8 @@ async function main(): Promise<void> {
   // the handshake above never waits on a cold extract.
   await project.settled();
   const report = project.lastBuild();
-  if (!report.configured) {
-    process.stderr.write(
-      `[suss] ${root} has no suss.json, so every answer will be empty. Run \`suss init\` there.\n`,
-    );
-  }
-  for (const failure of report.failed) {
-    process.stderr.write(`[suss] ${failure}\n`);
+  for (const line of startupNotes(root, report)) {
+    process.stderr.write(`[suss] ${line}\n`);
   }
 
   const stop = (): void => {
@@ -36,6 +35,19 @@ async function main(): Promise<void> {
   };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
+}
+
+/** What a person should know about where the answers come from. */
+function startupNotes(root: string, report: BuildReport): string[] {
+  if (report.configured) {
+    return report.failed;
+  }
+  if (report.ran.length + report.failed.length === 0) {
+    return [
+      `Nothing in ${root} matched a pack, so every answer will be empty. Run \`suss init\` there to see what suss looked for.`,
+    ];
+  }
+  return [whereReadsCameFrom(root, false), ...report.failed];
 }
 
 main().catch((error: unknown) => {
