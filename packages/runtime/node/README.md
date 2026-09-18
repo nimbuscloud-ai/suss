@@ -86,16 +86,28 @@ On suss itself a cold `suss extract -f node -f fetch` runs in 26.5s,
 where the hand-written walk this replaces ran in 33.7s, and both report
 the same 101 config reads.
 
+The helper can be what a factory call gave back rather than a
+declaration: `const requireEnv = makeReader(prefix)` then
+`requireEnv("TABLE_NAME")` reads `TABLE_NAME`, and so does a second
+helper that forwards its own parameter into `requireEnv`. A name the
+source writes as a call is asked about twice, once for the declaration
+behind it and once for what calling it gives back, so a name that is
+already a function costs nothing extra.
+
 Four spellings it says nothing about:
 
 - a name taken off an options object, `requireEnv({ key: "TABLE_NAME" })`
 - a name built at run time from something only the run knows
 - a name built by interpolation from a parameter, `process.env[prefix + "_URL"]`
-- a forwarding call whose callee is a value rather than a name, such as
-  a wrapper factory's result written into a const. The rules find a
-  function's callers from the function, and bridging that to a callee
-  the rules would have to resolve first put a cold extract past four
-  minutes.
+- a helper built with `.bind`, `readEnv.bind(null, prefix)`. That is a
+  step to `readEnv` itself rather than to what calling it gives back,
+  and it moves every argument one place left, which the pack has no way
+  to undo.
+
+A helper that reads through an environment object it was handed as an
+argument is out of reach too: the pack states its fact for a read off a
+path it declares, and `env[name]` inside `makeReader(process.env)` is
+not one.
 
 ## Options
 

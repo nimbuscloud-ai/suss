@@ -333,6 +333,13 @@ are on the arrow the declaration was given. So `callsFunction` follows
 one binds hop out of what a call arrives at, and a function reached
 through a name is the same function as one reached directly.
 
+A callee a factory returned is the other half of that. `const requireEnv
+= makeReader(env)` gives the name no function at all, only a call, so
+one rule joins the two: `callsFunction(r, f) :- returnsValue(g, f),
+callsFunction(r0, g), callsNamed(r, r0)`. It is written from the
+factory's own call, which `callsFunction` has already settled, so
+nothing new starts from the call on the name.
+
 `returnsCall` is `isWrittenAs` asked of what a function returns, so a
 caller can tell a wrapper that hands the library's call straight back
 from one that hands back something of its own. A name the result was
