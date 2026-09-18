@@ -163,8 +163,9 @@ export type {
 //                               and t refers to the class n is about
 //   associationConstructor(mod, n)  a pack's word: a field given the n
 //                               module mod exports is an association
-//   readsEnvNamed(site, x)      site reads the environment variable
-//                               whose name is the value of x
+//   readsKeyed(site, o, x)      site reads the entry of o at the
+//                               value of x, not at a written key
+//   environmentObject(w)        w is the process environment
 //
 // Node identity is the adapter's business. The rules only join on it.
 // Making one of a class is a call of the class, however the language
@@ -1027,6 +1028,41 @@ const STATED_RULES = [
     [lit("refersToParam", v("y"), v("p")), lit("binds", v("x"), v("y"))],
   ),
 
+  // An expression whose value is the environment object w: the way a
+  // pack spells it, a name declared as that, or a parameter a caller
+  // handed one of those to, however many calls deep.
+  rule(
+    "environmentValue",
+    [v("w"), v("o")],
+    [lit("environmentObject", v("w")), lit("refersToObject", v("o"), v("w"))],
+  ),
+  rule(
+    "environmentValue",
+    [v("w"), v("o")],
+    [
+      lit("environmentValue", v("w"), v("a")),
+      lit("passesArgument", v("r"), v("p"), v("a")),
+      lit("refersToParam", v("o"), v("p")),
+    ],
+  ),
+
+  // Which environment object a keyed read takes its entry from. The
+  // object comes first because a project writes a handful of those and
+  // thousands of keyed reads, and the join starts at the small end.
+  rule(
+    "environmentRead",
+    [v("w"), v("site"), v("x")],
+    [
+      lit("environmentValue", v("w"), v("o")),
+      lit("readsKeyed", v("site"), v("o"), v("x")),
+    ],
+  ),
+  rule(
+    "readsEnvNamed",
+    [v("site"), v("x")],
+    [lit("environmentRead", v("w"), v("site"), v("x"))],
+  ),
+
   // A parameter whose value is an environment variable's name: a read
   // site takes its name from it, or it is handed on to a parameter that
   // does. Asked from the site, so the recursion runs callee to caller.
@@ -1209,10 +1245,13 @@ const STATED_RULES = [
     ],
   ),
 
-  // The expressions that refer to an object literal by binding alone: the
+  // The expressions that refer to an object by binding alone: the
   // declaration written as it, a reference or import of that, and a
   // fallback over any of those. Asked from the object, so it visits only them.
   rule("refersToObject", [v("obj"), v("obj")], [lit("objectValue", v("obj"))]),
+  // The process environment is an object nothing declares, so a pack
+  // saying which expression spells it is the only way in.
+  rule("refersToObject", [v("w"), v("w")], [lit("environmentObject", v("w"))]),
   rule(
     "refersToObject",
     [v("x"), v("obj")],
@@ -1648,6 +1687,18 @@ export const RESOLUTION_QUESTIONS = [
     "wantedParamNamesEnv",
     [v("p"), v("site")],
     [lit("wantedEnvSite", v("site")), lit("paramNamesEnv", v("p"), v("site"))],
+  ),
+  // The same question from the other end, for a caller that knows which
+  // expressions spell the environment and cannot list the reads: a read
+  // through a parameter is nowhere a scan of the source would find it.
+  rule(
+    "wantedParamNamesEnv",
+    [v("p"), v("site")],
+    [
+      lit("wantedEnvObject", v("w")),
+      lit("environmentRead", v("w"), v("site"), v("x")),
+      lit("paramNamesEnv", v("p"), v("site")),
+    ],
   ),
   rule(
     "wantedComesFrom",

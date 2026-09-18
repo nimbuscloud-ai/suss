@@ -500,24 +500,41 @@ describe("a parameter that is an environment variable's name", () => {
       .sort();
   }
 
+  /** The same, asked from the environment object rather than the site. */
+  function namersFromObject(
+    facts: Array<[string, ...string[]]>,
+    object: string,
+  ): Array<[string, string]> {
+    const db = new Database();
+    for (const [name, ...tuple] of facts) {
+      db.add(name, tuple);
+    }
+    askResolution(db, [object], "wantedEnvObject", resolutionProgram());
+    return db
+      .facts("wantedParamNamesEnv")
+      .map((row): [string, string] => [String(row[0]), String(row[1])])
+      .sort();
+  }
+
   /** Whether the parameter is among the site's namers. */
   function sitesNamedBy(
     facts: Array<[string, ...string[]]>,
     parameter: string,
   ): string[] {
     const sites = new Set(
-      facts.filter(([name]) => name === "readsEnvNamed").map((row) => row[1]),
+      facts.filter(([name]) => name === "readsKeyed").map((row) => row[1]),
     );
     return [...sites]
       .filter((site) => namersOf(facts, site).includes(parameter))
       .sort();
   }
 
-  // def env(key): return os.environ.get(key), with the read keyed as the parameter
+  // def env(key): return os.environ[key], with the read keyed as the parameter
   const helper: Array<[string, ...string[]]> = [
     ["func", "env"],
     ["paramOf", "env", "0", "env#key"],
-    ["readsEnvNamed", "envGet", "env#key"],
+    ["environmentObject", "environ"],
+    ["readsKeyed", "envGet", "environ", "env#key"],
   ];
 
   it("lands on the site whose name is the parameter itself", () => {
@@ -560,7 +577,8 @@ describe("a parameter that is an environment variable's name", () => {
           ["binds", "keyRef", "env#key"],
           ["binds", "name", "keyRef"],
           ["binds", "nameRef", "name"],
-          ["readsEnvNamed", "envIndex", "nameRef"],
+          ["environmentObject", "environ"],
+          ["readsKeyed", "envIndex", "environ", "nameRef"],
         ],
         "env#key",
       ),
@@ -624,7 +642,8 @@ describe("a parameter that is an environment variable's name", () => {
     ["func", "reader"],
     ["paramOf", "reader", "0", "reader#name"],
     ["returnsValue", "makeReader", "reader"],
-    ["readsEnvNamed", "readerIndex", "reader#name"],
+    ["environmentObject", "processEnv"],
+    ["readsKeyed", "readerIndex", "processEnv", "reader#name"],
     ["binds", "makeReaderRef", "makeReader"],
     ["call", "built", "makeReaderRef"],
     ["binds", "requireEnv", "built"],
@@ -690,6 +709,82 @@ describe("a parameter that is an environment variable's name", () => {
         "again#k",
       ),
     ).toEqual(["envGet"]);
+  });
+
+  // function makeReader(env) { return (name) => env[name]; }
+  // const requireEnv = makeReader(process.env);
+  const handedEnv: Array<[string, ...string[]]> = [
+    ["environmentObject", "processEnv"],
+    ["func", "makeReader"],
+    ["paramOf", "makeReader", "0", "makeReader#env"],
+    ["func", "reader"],
+    ["paramOf", "reader", "0", "reader#name"],
+    ["returnsValue", "makeReader", "reader"],
+    ["binds", "envRef", "makeReader#env"],
+    ["readsKeyed", "readerIndex", "envRef", "reader#name"],
+    ["binds", "makeReaderRef", "makeReader"],
+    ["call", "built", "makeReaderRef"],
+    ["callArg", "built", "0", "processEnv"],
+    ["binds", "requireEnv", "built"],
+  ];
+
+  it("reads off a parameter the factory was handed the environment in", () => {
+    expect(sitesNamedBy(handedEnv, "reader#name")).toEqual(["readerIndex"]);
+  });
+
+  it("gives that site back when the question starts at the object", () => {
+    expect(namersFromObject(handedEnv, "processEnv")).toEqual([
+      ["reader#name", "readerIndex"],
+    ]);
+  });
+
+  it("reads off a name declared as the environment object", () => {
+    // const env = process.env; function get(key) { return env[key]; }
+    expect(
+      sitesNamedBy(
+        [
+          ["environmentObject", "processEnv"],
+          ["binds", "envDecl", "processEnv"],
+          ["binds", "envRef", "envDecl"],
+          ["func", "get"],
+          ["paramOf", "get", "0", "get#key"],
+          ["readsKeyed", "envIndex", "envRef", "get#key"],
+        ],
+        "get#key",
+      ),
+    ).toEqual(["envIndex"]);
+  });
+
+  it("follows the environment object through two calls", () => {
+    // outer(process.env) hands it to makeReader(e), which closes over it
+    expect(
+      sitesNamedBy(
+        [
+          ...handedEnv.filter(([name]) => name !== "callArg"),
+          ["func", "outer"],
+          ["paramOf", "outer", "0", "outer#e"],
+          ["binds", "outerRef", "outer"],
+          ["call", "toOuter", "outerRef"],
+          ["callArg", "toOuter", "0", "processEnv"],
+          ["binds", "eRef", "outer#e"],
+          ["callArg", "built", "0", "eRef"],
+        ],
+        "reader#name",
+      ),
+    ).toEqual(["readerIndex"]);
+  });
+
+  it("says nothing when the factory is handed a plain object instead", () => {
+    expect(
+      sitesNamedBy(
+        [
+          ...handedEnv.filter(([name]) => name !== "callArg"),
+          ["objectValue", "settings"],
+          ["callArg", "built", "0", "settings"],
+        ],
+        "reader#name",
+      ),
+    ).toEqual([]);
   });
 });
 
