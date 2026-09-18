@@ -15,11 +15,13 @@ import {
   isPresent,
   joined,
   joinedPath,
+  literalOf,
   negated,
   operand,
   plus,
   type Row,
   readableFallback,
+  text,
   truthOf,
   type Value,
 } from "@suss/values";
@@ -141,12 +143,37 @@ const sequenceRows: Row[] = ["sequence", "unbounded"].flatMap((on): Row[] => [
   },
 ]);
 
+// Each spells its argument as text, so a path segment keeps the name of
+// the value it was built from. A literal goes through the function
+// itself, since `encodeURIComponent("a/b")` is one segment, not two.
+const TEXT_FUNCTIONS: Record<string, (literal: string) => string> = {
+  String: (literal) => literal,
+  encodeURIComponent,
+  encodeURI,
+  decodeURIComponent,
+  decodeURI,
+};
+
+function textOf(value: Value, fn: (literal: string) => string): Value {
+  const literal = literalOf(value);
+  if (literal === null) {
+    return concat([value]);
+  }
+  try {
+    return text(fn(literal));
+  } catch {
+    return concat([value]);
+  }
+}
+
 const calleeRows: Row[] = [
-  {
-    kind: "callee",
-    origin: { module: "global", name: "String" },
-    apply: ({ args }) => ({ result: concat([operand(args[0])]) }),
-  },
+  ...Object.entries(TEXT_FUNCTIONS).map(
+    ([name, fn]): Row => ({
+      kind: "callee",
+      origin: { module: "global", name },
+      apply: ({ args }) => ({ result: textOf(operand(args[0]), fn) }),
+    }),
+  ),
   ...PATH_MODULES.map(
     (module): Row => ({
       kind: "callee",

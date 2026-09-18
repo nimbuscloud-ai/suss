@@ -177,6 +177,45 @@ describe("string and array methods", () => {
     );
   });
 
+  it("encodes a literal and keeps the name of anything else", () => {
+    expect(
+      literal('export const subject = `/f/${encodeURIComponent("a/b")}`;'),
+    ).toBe("/f/a%2Fb");
+    expect(literal('export const subject = decodeURIComponent("a%2Fb");')).toBe(
+      "a/b",
+    );
+    expect(
+      piecesOf(
+        subjectOf(
+          "declare const id: string; export const subject = `/m/${encodeURIComponent(id)}`;",
+        ),
+      ),
+    ).toEqual([
+      { kind: "text", options: ["/m/"] },
+      { kind: "hole", name: "id", range: "one" },
+    ]);
+  });
+
+  it("leaves a call to a declaration without a body open", () => {
+    const value = subjectOf(`
+      declare function slug(s: string): string;
+      declare const id: string;
+      export const subject = \`/m/\${slug(id)}\`;
+    `);
+    expect(piecesOf(value)).toEqual([
+      { kind: "text", options: ["/m/"] },
+      { kind: "hole", name: "param", range: "one" },
+    ]);
+    expect(
+      subjectOf(`
+        function over(s: string): string;
+        function over(s: number): string;
+        function over(s: string | number): string { return "/x"; }
+        export const subject = over("a");
+      `).kind,
+    ).not.toBe("constant");
+  });
+
   it("sees a push through the name that joins", () => {
     expect(
       literal(`
