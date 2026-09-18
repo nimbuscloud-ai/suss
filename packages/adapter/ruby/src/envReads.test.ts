@@ -434,7 +434,7 @@ describe("a name handed to a project helper", () => {
     ).toEqual([{ name: "SEARCH_URL", defaulted: false }]);
   });
 
-  it("says nothing where the lambda a method returned reads no environment", async () => {
+  it("says nothing where the lambda a method returned never reads the environment", async () => {
     expect(
       await projectReads({
         "use.rb": [

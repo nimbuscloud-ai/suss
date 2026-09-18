@@ -651,7 +651,7 @@ describe("a parameter that is an environment variable's name", () => {
     ).toEqual(["readerIndex"]);
   });
 
-  it("says nothing when the function a factory returned reads no environment", () => {
+  it("says nothing when the function a factory returned never reads the environment", () => {
     // function makeLogger(out) { return (message) => out(message); }
     expect(
       sitesNamedBy(

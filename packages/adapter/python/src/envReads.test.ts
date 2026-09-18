@@ -378,7 +378,7 @@ describe("a call to a helper that reads the environment", () => {
     ).toEqual([{ name: "A", defaulted: false }]);
   });
 
-  it("says nothing where the function a factory returned reads no environment", async () => {
+  it("says nothing where the function a factory returned never reads the environment", async () => {
     expect(
       await moduleReadsWithFacts(
         [

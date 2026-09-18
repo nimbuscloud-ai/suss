@@ -1026,7 +1026,7 @@ describe("a helper call resolved from the caller's side", () => {
     expect(configReadEffectsOf(recognizeWithStore(handler))).toEqual([]);
   });
 
-  it("says nothing when the function a factory returned reads no environment", () => {
+  it("says nothing when the function a factory returned never reads the environment", () => {
     const project = createTestProject();
     project.createSourceFile(
       "env.ts",
