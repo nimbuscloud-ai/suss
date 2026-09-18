@@ -20,16 +20,16 @@ export function resolveCalls(db: Database, callKeys: readonly string[]): void {
 }
 
 /**
- * Ask which parameters end up naming the variable each of these
- * environment reads looks up. A project has a handful of reads and
- * thousands of parameters, so the sites are what the question is keyed
- * on, and one of them covers every caller.
+ * Ask which parameters end up naming a variable read off each of these
+ * environment objects. A project writes a handful of those and has
+ * thousands of parameters, so the objects are what the question is
+ * keyed on, and one of them covers every caller.
  */
-export function resolveEnvSites(
+export function resolveEnvObjects(
   db: Database,
-  siteIds: readonly string[],
+  objectKeys: readonly string[],
 ): void {
-  askResolution(db, siteIds, "wantedEnvSite");
+  askResolution(db, objectKeys, "wantedEnvObject");
 }
 
 /**

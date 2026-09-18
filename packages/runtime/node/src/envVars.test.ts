@@ -1199,4 +1199,99 @@ describe("a helper call resolved from the caller's side", () => {
     `);
     expect(configReadEffectsOf(recognizeAll(sourceFile))).toEqual([]);
   });
+
+  it("reads a name through a helper closed over an environment it was handed", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "reader.ts",
+      `export function makeReader(env: NodeJS.ProcessEnv) {
+        return (name: string) => env[name];
+      }`,
+    );
+    project.createSourceFile(
+      "env.ts",
+      `import { makeReader } from "./reader.js";
+      export const requireEnv = makeReader(process.env);`,
+    );
+    const handler = project.createSourceFile(
+      "handler.ts",
+      `import { requireEnv } from "./env.js";
+      export const table = requireEnv("TABLE_NAME");`,
+    );
+    // The helper's own file never writes `process.env`, so it arrives
+    // through the demand of the call that hands it the object.
+    const reads = configReadEffectsOf(recognizeWithStore(handler));
+    expect(
+      reads.map((read) => [read.interaction.name, read.interaction.defaulted]),
+    ).toEqual([["TABLE_NAME", false]]);
+  });
+
+  it("reads a name off a name declared as the environment object", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "env.ts",
+      `const env = process.env;
+      export function requireEnv(name: string): string {
+        return env[name] ?? "";
+      }`,
+    );
+    const handler = project.createSourceFile(
+      "handler.ts",
+      `import { requireEnv } from "./env.js";
+      export const table = requireEnv("TABLE_NAME");`,
+    );
+    const reads = configReadEffectsOf(recognizeWithStore(handler));
+    expect(
+      reads.map((read) => [read.interaction.name, read.interaction.defaulted]),
+    ).toEqual([["TABLE_NAME", true]]);
+  });
+
+  it("follows the environment object through two calls", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "reader.ts",
+      `export function makeReader(env: NodeJS.ProcessEnv) {
+        return (name: string) => env[name];
+      }
+      export function build(source: NodeJS.ProcessEnv) {
+        return makeReader(source);
+      }`,
+    );
+    project.createSourceFile(
+      "env.ts",
+      `import { build } from "./reader.js";
+      export const requireEnv = build(process.env);`,
+    );
+    const handler = project.createSourceFile(
+      "handler.ts",
+      `import { requireEnv } from "./env.js";
+      export const url = requireEnv("DATABASE_URL");`,
+    );
+    const reads = configReadEffectsOf(recognizeWithStore(handler));
+    expect(reads.map((read) => read.interaction.name)).toEqual([
+      "DATABASE_URL",
+    ]);
+  });
+
+  it("says nothing when the factory is handed a plain object instead", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "reader.ts",
+      `export function makeReader(source: Record<string, string>) {
+        return (name: string) => source[name];
+      }`,
+    );
+    project.createSourceFile(
+      "env.ts",
+      `import { makeReader } from "./reader.js";
+      const settings = { TABLE_NAME: "orders" };
+      export const requireEnv = makeReader(settings);`,
+    );
+    const handler = project.createSourceFile(
+      "handler.ts",
+      `import { requireEnv } from "./env.js";
+      export const table = requireEnv("TABLE_NAME");`,
+    );
+    expect(configReadEffectsOf(recognizeWithStore(handler))).toEqual([]);
+  });
 });

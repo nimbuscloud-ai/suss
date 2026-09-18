@@ -15,7 +15,14 @@
 
 import { writesRunInOrder } from "@suss/resolution";
 
-import { bodyStatements, field, NodeMap, OWN_BODY_TYPES } from "../ast.js";
+import {
+  bodyStatements,
+  enclosingDefinition,
+  field,
+  LAMBDA_TYPE,
+  NodeMap,
+  OWN_BODY_TYPES,
+} from "../ast.js";
 
 import type { NameReads, OrderedWrite } from "@suss/resolution";
 import type { RbNode, RbTree } from "../parser.js";
@@ -258,6 +265,26 @@ function namesOfFile(tree: RbTree): ScopeNames {
 }
 
 /**
+ * Every scope a name read here could be a local of, innermost first. A
+ * lambda runs inside the scope it is written in and keeps that scope's
+ * locals alive, so a name it never declared itself can still be one.
+ * Anything else owns its names outright, and the file closes the list.
+ */
+function scopesAround(enclosing: RbNode | null): (RbNode | null)[] {
+  const chain: (RbNode | null)[] = [];
+  let current = enclosing;
+  while (current !== null && current.type === LAMBDA_TYPE) {
+    chain.push(current);
+    current = enclosingDefinition(current);
+  }
+  chain.push(current);
+  return chain;
+}
+
+const namesOfScope = (scope: RbNode | null, node: RbNode): ScopeNames =>
+  scope === null ? namesOfFile(node.tree) : namesOfMethod(scope);
+
+/**
  * The node a name written or read at this point belongs to: the nearest block
  * that declares it as a parameter, else the method whose local it is, else
  * null for the file.
@@ -271,17 +298,21 @@ export function ownerOfName(
   if (node.type === "constant") {
     return null;
   }
-  const names =
-    enclosing === null ? namesOfFile(node.tree) : namesOfMethod(enclosing);
-  // Reading the parents costs a wrapper object per step, so the scope's own
-  // names settle every name no block declares before any of that happens.
-  if (names.blockParams.has(name)) {
-    const block = blockDeclaring(node, name);
-    if (block !== null) {
-      return block;
+  for (const scope of scopesAround(enclosing)) {
+    const names = namesOfScope(scope, node);
+    // Reading the parents costs a wrapper object per step, so the scope's own
+    // names settle every name no block declares before any of that happens.
+    if (names.blockParams.has(name)) {
+      const block = blockDeclaring(node, name);
+      if (block !== null) {
+        return block;
+      }
+    }
+    if (scope !== null && names.locals.has(name)) {
+      return scope;
     }
   }
-  return enclosing !== null && names.locals.has(name) ? enclosing : null;
+  return null;
 }
 
 /**
@@ -294,12 +325,16 @@ export function isLocalName(
   name: string,
   enclosing: RbNode | null,
 ): boolean {
-  const names =
-    enclosing === null ? namesOfFile(node.tree) : namesOfMethod(enclosing);
-  if (names.blockParams.has(name) && blockDeclaring(node, name) !== null) {
-    return true;
+  for (const scope of scopesAround(enclosing)) {
+    const names = namesOfScope(scope, node);
+    if (names.blockParams.has(name) && blockDeclaring(node, name) !== null) {
+      return true;
+    }
+    if (names.locals.has(name)) {
+      return true;
+    }
   }
-  return names.locals.has(name);
+  return false;
 }
 
 /** The nearest block around a node that declares the name as a parameter. */

@@ -6,11 +6,11 @@
  * checker pairs them against a template the same way.
  *
  * `ENV` is the language's own object, so this belongs to the adapter and
- * not to a pack. A read whose name comes from a parameter is stated as
- * `readsEnvNamed`, and one question over the run's read sites gives back
- * every parameter whose value ends up naming a variable, so a body
- * calling such a helper reports the read at the call. The README lists
- * every spelling that is and is not read.
+ * not to a pack. Every expression that spells `ENV` and hands it
+ * somewhere is stated as `environmentObject`, and one question over
+ * those gives back every parameter whose value ends up naming a
+ * variable, so a body calling such a helper reports the read at the
+ * call. The README lists every spelling that is and is not read.
  */
 
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
@@ -25,7 +25,7 @@ import {
 } from "./ast.js";
 import {
   resolvedFunctions,
-  resolveEnvSites,
+  resolveEnvObjects,
   resolveValues,
 } from "./facts/resolve.js";
 import { calleeKeyOf, invokedKeyOf, nodeId, readKey } from "./facts/values.js";
@@ -40,7 +40,8 @@ export const RUBY_ENV_RECOGNITION = "ruby-env";
 /**
  * Whether a read whose name is not a literal supplies a fallback. Ruby
  * says this at the read and the rules never carry it, so the run keeps
- * it beside the `readsEnvNamed` fact under a name of its own.
+ * it under a name of its own. A read the rules derived inside a helper
+ * has no row here, and the reader takes that as no fallback.
  */
 const ENV_DEFAULTED = "rbEnvDefaulted";
 
@@ -145,7 +146,9 @@ const namedByDb = new WeakMap<Database, Map<string, string[]>>();
 /**
  * Every parameter whose value ends up naming an environment variable,
  * against the reads that name comes to. One question per run, seeded
- * with the read sites, however many helpers deep the name is handed.
+ * with the expressions that spell `ENV`, however many helpers deep the
+ * name is handed. The reads cannot be the seed: one written through a
+ * parameter is off an object no scan of the source would pick out.
  */
 function namedParameters(db: Database): ReadonlyMap<string, readonly string[]> {
   const memo = namedByDb.get(db);
@@ -154,11 +157,11 @@ function namedParameters(db: Database): ReadonlyMap<string, readonly string[]> {
   }
   const named = new Map<string, string[]>();
   namedByDb.set(db, named);
-  const sites = db.facts("readsEnvNamed").map((row) => String(row[0]));
-  if (sites.length === 0) {
+  const objects = db.facts("environmentObject").map((row) => String(row[0]));
+  if (objects.length === 0) {
     return named;
   }
-  resolveEnvSites(db, sites);
+  resolveEnvObjects(db, objects);
   for (const row of db.facts("wantedParamNamesEnv")) {
     const found = named.get(String(row[0]));
     if (found === undefined) {
@@ -171,43 +174,46 @@ function namedParameters(db: Database): ReadonlyMap<string, readonly string[]> {
 }
 
 /**
- * State which reads take their name from an expression, so the shared
- * rules can say which parameters a caller's argument ends up naming.
+ * State which expressions spell `ENV` and hand it on, so the shared
+ * rules can say which parameters a caller's argument ends up naming,
+ * and keep the fallback flag they do not carry.
  */
-export function emitEnvNameFacts(
-  db: Database,
-  file: string,
-  root: RbNode,
-): void {
-  for (const site of envNameSites(root)) {
-    const key = nodeId(file, site.read);
-    db.add("readsEnvNamed", [
-      key,
-      readKey(file, site.name, enclosingDefinition(site.name)),
-    ]);
-    if (site.defaulted) {
-      db.add(ENV_DEFAULTED, [key]);
-    }
-  }
-}
-
-/**
- * Every `ENV` read under `root` whose name is an expression rather than
- * a string literal, method bodies included, since that is where a
- * helper's read is written.
- */
-function envNameSites(root: RbNode): EnvSite[] {
-  const sites: EnvSite[] = [];
+export function emitEnvFacts(db: Database, file: string, root: RbNode): void {
   walkDescendants<RbNode, null>(root, null, {
     at: (node) => {
+      if (isEnv(node) && handsOnward(node)) {
+        db.add("environmentObject", [
+          readKey(file, node, enclosingDefinition(node)),
+        ]);
+      }
       const site = envSiteAt(node);
-      if (site !== null && stringLiteralValue(site.name) === null) {
-        sites.push(site);
+      if (
+        site !== null &&
+        site.defaulted &&
+        stringLiteralValue(site.name) === null
+      ) {
+        db.add(ENV_DEFAULTED, [nodeId(file, site.read)]);
       }
     },
     into: () => null,
   });
-  return sites;
+}
+
+/**
+ * Whether anything but a read of one written-out variable is done with
+ * the object. A file whose every read spells its own variable hands
+ * `ENV` nowhere, so the rules have nothing to follow out of it.
+ */
+function handsOnward(node: RbNode): boolean {
+  const parent = node.parent;
+  if (parent === null) {
+    return true;
+  }
+  if (parent.type === "element_reference" || parent.type === "call") {
+    const site = envSiteAt(parent);
+    return site === null || stringLiteralValue(site.name) === null;
+  }
+  return true;
 }
 
 /**

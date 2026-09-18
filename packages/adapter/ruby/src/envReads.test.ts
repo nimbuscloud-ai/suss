@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
 
-import { emitEnvNameFacts, envReadEffects } from "./envReads.js";
+import { emitEnvFacts, envReadEffects } from "./envReads.js";
 import {
   collectFileConstants,
   emitConstantBindings,
@@ -81,7 +81,7 @@ async function projectFacts(files: Record<string, string>) {
     const tree = await parseRuby(source);
     parsed.push({ file, root: tree.rootNode });
     emitValueFacts(db, file, tree.rootNode);
-    emitEnvNameFacts(db, file, tree.rootNode);
+    emitEnvFacts(db, file, tree.rootNode);
     for (const [key, method] of methodDefinitionsIn(file, tree.rootNode)) {
       definitions.set(key, method);
     }
@@ -434,6 +434,76 @@ describe("a name handed to a project helper", () => {
     ).toEqual([{ name: "SEARCH_URL", defaulted: false }]);
   });
 
+  it("reads a name through a lambda closed over an environment it was handed", async () => {
+    expect(
+      await projectReads({
+        "use.rb": [
+          "def make_reader(env)",
+          "  ->(name) { env.fetch(name) }",
+          "end",
+          "",
+          "REQUIRE_ENV = make_reader(ENV)",
+          'TABLE = REQUIRE_ENV.call("TABLE_NAME")',
+          "",
+        ].join("\n"),
+      }),
+    ).toEqual([{ name: "TABLE_NAME", defaulted: false }]);
+  });
+
+  it("reads a name off a constant declared as the environment", async () => {
+    expect(
+      await projectReads({
+        "use.rb": [
+          "ENVIRONMENT = ENV",
+          "",
+          "def read(name)",
+          "  ENVIRONMENT[name]",
+          "end",
+          "",
+          'TABLE = read("TABLE_NAME")',
+          "",
+        ].join("\n"),
+      }),
+    ).toEqual([{ name: "TABLE_NAME", defaulted: false }]);
+  });
+
+  it("follows the environment through two calls", async () => {
+    expect(
+      await projectReads({
+        "use.rb": [
+          "def make_reader(env)",
+          "  ->(name) { env.fetch(name) }",
+          "end",
+          "",
+          "def build(source)",
+          "  make_reader(source)",
+          "end",
+          "",
+          "REQUIRE_ENV = build(ENV)",
+          'TABLE = REQUIRE_ENV.call("TABLE_NAME")',
+          "",
+        ].join("\n"),
+      }),
+    ).toEqual([{ name: "TABLE_NAME", defaulted: false }]);
+  });
+
+  it("says nothing when the factory is handed a plain hash instead", async () => {
+    expect(
+      await projectReads({
+        "use.rb": [
+          "def make_reader(source)",
+          "  ->(name) { source.fetch(name) }",
+          "end",
+          "",
+          'SETTINGS = { "TABLE_NAME" => "orders" }',
+          "REQUIRE_ENV = make_reader(SETTINGS)",
+          'TABLE = REQUIRE_ENV.call("TABLE_NAME")',
+          "",
+        ].join("\n"),
+      }),
+    ).toEqual([]);
+  });
+
   it("says nothing where the lambda a method returned never reads the environment", async () => {
     expect(
       await projectReads({
@@ -479,14 +549,15 @@ describe("a name handed to a project helper", () => {
     ).toEqual([]);
   });
 
-  it("states no readsEnvNamed for a project whose every read is a literal", async () => {
+  it("calls no object the environment in a project whose every read is a literal", async () => {
     const { db } = await projectFacts({
       "use.rb": 'A = ENV["A"]\nB = ENV.fetch("B", "d")\n',
     });
-    expect(db.facts("readsEnvNamed")).toEqual([]);
+    expect(db.facts("environmentObject")).toEqual([]);
+    expect(db.facts("readsKeyed")).toEqual([]);
   });
 
-  it("states the site and the name expression for a read through a parameter", async () => {
+  it("states the container and the name expression for a read through a parameter", async () => {
     const { db } = await projectFacts({ "settings.rb": SETTINGS });
     const funcKey = [
       ...methodDefinitionsIn(
@@ -495,8 +566,10 @@ describe("a name handed to a project helper", () => {
       ).keys(),
     ];
     expect(funcKey).toHaveLength(1);
-    expect(db.facts("readsEnvNamed").map((row) => String(row[1]))).toEqual([
-      `${funcKey[0]}#key`,
-    ]);
+    const object = db.facts("environmentObject").map((row) => String(row[0]));
+    expect(object).toHaveLength(1);
+    expect(
+      db.facts("readsKeyed").map((row) => [String(row[1]), String(row[2])]),
+    ).toEqual([[String(object[0]), `${funcKey[0]}#key`]]);
   });
 });

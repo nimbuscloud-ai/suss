@@ -355,52 +355,43 @@ function literalIndexOf(index: Expression | undefined): string | null {
 }
 
 /**
- * Whether an element access reads a property of the process
- * environment. The check is on how the object is written, since a pack
- * declares the environment as the dotted path a program spells, and the
- * global it names has no declaration to resolve to.
+ * Whether an expression spells the process environment. The check is on
+ * how it is written, since a pack declares the environment as the
+ * dotted path a program spells, and the global it names has no
+ * declaration to resolve to.
  */
-function readsEnvironment(
-  table: NodeTable,
-  access: ElementAccessExpression,
-): boolean {
+export function isEnvironmentObject(table: NodeTable, node: Node): boolean {
   if (table.environmentObjects.length === 0) {
     return false;
   }
-  const path = dottedPathOf(access.getExpression());
+  const path = dottedPathOf(node);
   return path !== null && table.environmentObjects.includes(path);
 }
 
 /**
- * A read off a declared environment object whose index is computed:
- * the site the rules follow back to whoever wrote the variable's name.
- * A literal index already spells the variable, so it stays a property
- * read like any other.
+ * An element access whose index the source computes: the read the rules
+ * follow back to whoever wrote the key. A literal index already spells
+ * it, so that stays a property read like any other.
  */
-export function isEnvironmentNameRead(
-  table: NodeTable,
-  node: Node,
-): node is ElementAccessExpression {
+export function isKeyedRead(node: Node): node is ElementAccessExpression {
   if (!Node.isElementAccessExpression(node)) {
     return false;
   }
   const argument = node.getArgumentExpression();
-  return (
-    argument !== undefined &&
-    literalIndexOf(argument) === null &&
-    readsEnvironment(table, node)
-  );
+  return argument !== undefined && literalIndexOf(argument) === null;
 }
 
 /**
- * Every such read a file spells. A file that never writes a declared
- * path cannot contain one, and reading its text costs far less than
- * walking its syntax.
+ * Every expression in a file that spells the environment. A dotted read
+ * off it is not one: `process.env.PORT` spells its variable outright
+ * and hands the object to nobody, so a file with only those has nothing for
+ * the rules to follow. A file that never writes a declared path cannot
+ * contain one, and reading its text costs far less than walking it.
  */
-export function environmentNameReadsIn(
+export function environmentObjectsIn(
   table: NodeTable,
   sourceFile: SourceFile,
-): ElementAccessExpression[] {
+): Node[] {
   if (table.environmentObjects.length === 0) {
     return [];
   }
@@ -409,8 +400,20 @@ export function environmentNameReadsIn(
     return [];
   }
   return sourceFile
-    .getDescendantsOfKind(SyntaxKind.ElementAccessExpression)
-    .filter((access) => isEnvironmentNameRead(table, access));
+    .getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)
+    .filter((node) => isEnvironmentObject(table, node) && flowsOnward(node));
+}
+
+/** Whether anything but a named read of one variable is done with the object. */
+function flowsOnward(node: Node): boolean {
+  const parent = node.getParent();
+  if (Node.isPropertyAccessExpression(parent)) {
+    return parent.getExpression() !== node;
+  }
+  if (Node.isElementAccessExpression(parent)) {
+    return parent.getExpression() !== node || isKeyedRead(parent);
+  }
+  return true;
 }
 
 /** The dotted path an expression spells, when every part of it is an identifier. */
@@ -513,6 +516,9 @@ export function emitValue(
       emitValue(db, table, expression.getExpression()),
       expression.getName(),
     );
+    if (isEnvironmentObject(table, expression)) {
+      fact(db, "environmentObject", id);
+    }
     emitReferenceFacts(db, table, expression);
     return id;
   }
@@ -524,9 +530,7 @@ export function emitValue(
 
   if (Node.isElementAccessExpression(expression)) {
     // `routes[0]` and `routes["list"]` say the same thing as
-    // `routes.list`: the value the container has under a name. A
-    // computed index gives the rules nothing to join on, so it is left
-    // as an expression that refers no further.
+    // `routes.list`: the value the container has under a name.
     const index = literalIndexOf(expression.getArgumentExpression());
     if (index !== null) {
       fact(
@@ -538,12 +542,18 @@ export function emitValue(
       );
       return id;
     }
-    // An index off the environment is stated even though it is
-    // computed, so the rules can follow it back to the parameter a
-    // caller wrote the variable's name in.
+    // A computed index states the container and the expression the key
+    // comes from. Which containers are the environment is the rules'
+    // business, so the fact says nothing about that either way.
     const argument = expression.getArgumentExpression();
-    if (argument !== undefined && readsEnvironment(table, expression)) {
-      fact(db, "readsEnvNamed", id, emitValue(db, table, argument));
+    if (argument !== undefined) {
+      fact(
+        db,
+        "readsKeyed",
+        id,
+        emitValue(db, table, expression.getExpression()),
+        emitValue(db, table, argument),
+      );
     }
     fact(db, "writtenValue", id);
     return id;
@@ -1368,9 +1378,9 @@ function recordBodyCalls(
   if (!Node.isExpression(node)) {
     return false;
   }
-  // The body walk records calls and nothing else, so an env read has to
-  // be picked out here or its fact is never stated.
-  if (isEnvironmentNameRead(table, node)) {
+  // The body walk records calls and nothing else, so a keyed read has
+  // to be picked out here or its fact is never stated.
+  if (isKeyedRead(node)) {
     emitValue(db, table, node);
   }
   const call = unwrapExpression(node);

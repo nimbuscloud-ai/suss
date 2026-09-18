@@ -972,4 +972,49 @@ describe("python value facts", () => {
         .sort(),
     ).toEqual(["built()", "plain_call()", "top()"]);
   });
+
+  it("states the container and the key of a read the source works out", async () => {
+    const source = [
+      "def read(settings, name):",
+      "    return settings[name]",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const [funcKey] = rows(db, "func")[0] ?? [];
+
+    expect(
+      rows(db, "readsKeyed").map((row) => [
+        textAt(source, row[0] as string),
+        row[1],
+        row[2],
+      ]),
+    ).toEqual([["settings[name]", `${funcKey}#settings`, `${funcKey}#name`]]);
+  });
+
+  it("states the same for the mapping read written as a call", async () => {
+    const source = [
+      "def read(settings, name):",
+      "    return settings.get(name)",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const [funcKey] = rows(db, "func")[0] ?? [];
+
+    expect(
+      rows(db, "readsKeyed").map((row) => [
+        textAt(source, row[0] as string),
+        row[1],
+        row[2],
+      ]),
+    ).toEqual([
+      ["settings.get(name)", `${funcKey}#settings`, `${funcKey}#name`],
+    ]);
+  });
+
+  it("states nothing for a key the source writes out", async () => {
+    const db = await factsFor(
+      'def read(settings):\n    return settings["name"], settings[0]\n',
+    );
+    expect(rows(db, "readsKeyed")).toEqual([]);
+  });
 });

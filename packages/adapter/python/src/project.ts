@@ -43,7 +43,7 @@ import {
   tallyUnit,
 } from "./diagnostics.js";
 import { discoverUnits } from "./discovery.js";
-import { bindEnvNameSites, envNameSites, envReadEffects } from "./envReads.js";
+import { bindEnvFacts, envFactsIn, envReadEffects } from "./envReads.js";
 import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitEntryFact, emitModuleImportFacts } from "./facts.js";
 import { importedDefinitionLookup } from "./importedDefinitions.js";
@@ -184,10 +184,7 @@ export function factsForFile(options: FileFactsOptions): Database {
     files: [{ file: options.file, root: options.root, module: options.module }],
     definitions,
   });
-  bindEnvNameSites(
-    db,
-    envNameSites(options.file, options.root, options.module),
-  );
+  bindEnvFacts(db, [envFactsIn(options.file, options.root, options.module)]);
   addPackWords(db, packWordsOf(options.packs));
   return db;
 }
@@ -276,16 +273,19 @@ export async function extractPythonProject(
     ),
   );
   // A helper reading the environment through a parameter is a read the
-  // caller writes the name of, so the sites are collected before the
-  // decision below rather than after it.
-  const envSites = bound.flatMap((boundFile) =>
-    envNameSites(boundFile.file, boundFile.root, boundFile.module),
+  // caller writes the name of, so what each file says about the
+  // environment is collected before the decision below rather than after.
+  const envFacts = bound.map((boundFile) =>
+    envFactsIn(boundFile.file, boundFile.root, boundFile.module),
+  );
+  const readsEnvThroughNames = envFacts.some(
+    (one) => one.sites.length > 0 || one.objects.length > 0,
   );
   const needsValues =
     discovers ||
     mountsRouters ||
     buildsReceivers ||
-    envSites.length > 0 ||
+    readsEnvThroughNames ||
     storagePatterns.length > 0 ||
     modelQueries.length > 0;
   // Which function a resolved key was written as, so a recognizer can read
@@ -301,7 +301,7 @@ export async function extractPythonProject(
     }
     if (needsValues) {
       bindEvaluator(db, { files: bound, definitions });
-      bindEnvNameSites(db, envSites);
+      bindEnvFacts(db, envFacts);
     }
     addPackWords(db, packWordsOf(options.packs));
   });

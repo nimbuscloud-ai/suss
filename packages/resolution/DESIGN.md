@@ -41,9 +41,11 @@ reExports(m, n, m2, n2)     m's n is m2's n2
 reExportsAll(m, m2)         m forwards everything m2 exports
 declaresName(c, n)          c declares a method n under a name the
                             source computes rather than writes out
-readsEnvNamed(site, x)      site reads the environment variable whose
-                            name is the value of x, and x is not a
-                            literal
+readsKeyed(site, o, x)      site reads the entry of o at the value of
+                            x, where the source does not write the key
+                            out. A written key is a readsProperty
+environmentObject(w)        w is written as the object a pack calls
+                            the process environment
 ```
 
 `declaresName` is the one fact an adapter states after asking these
@@ -372,6 +374,35 @@ where the callee is itself a call, `daoBuilder()()`, is one rule rather
 than a copy of every other. It differs from `callsFunction`, which
 starts from the function because a caller asking for call sites has the
 function in hand.
+
+## A read of the environment
+
+A service that reads its configuration through one helper writes no
+variable name at the read:
+
+```ts
+function makeReader(env: NodeJS.ProcessEnv) {
+  return (name: string) => env[name];
+}
+const requireEnv = makeReader(process.env);
+const table = requireEnv("TABLE_NAME");
+```
+
+An adapter cannot tell at emission time that `env[name]` reads the
+environment, so it states the two things it does know: `readsKeyed` for
+a read off any container, and `environmentObject` for the expression
+that spells `process.env`. `environmentValue(w, o)` walks out of the
+object, through the names declared as it and the parameters callers
+hand it to, however many calls deep. `environmentRead` joins that to a
+keyed read, `readsEnvNamed` drops the object column, and
+`paramNamesEnv` says which parameters end up as a variable's name.
+
+`wantedEnvObject` seeds the question, because a project writes the
+environment object in a handful of places and the read a helper makes
+is somewhere no scan of the source would look. Every join then runs in
+the direction it was built for: `refersToObject` from the object,
+`passesArgument` from the argument through `callArg`, and
+`paramNamesEnv` from the site to its callers.
 
 ## The anchor behind a receiver
 
