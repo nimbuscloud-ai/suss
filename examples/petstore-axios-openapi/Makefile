@@ -15,7 +15,7 @@ extract: $(OUT)
 
 # Derive the provider summary from the OpenAPI spec.
 contract: $(OUT)
-	$(SUSS) contract --from openapi petstore-openapi.json -o $(OUT)/provider.json
+	$(SUSS) contract --from openapi openapi.json -o $(OUT)/provider.json
 
 # Cross-boundary check both files together. The consumer's bugs are
 # warnings, so gate on warnings to fail the run on them.
