@@ -278,7 +278,7 @@ Turns an OpenAPI 3.x document into `BehavioralSummary[]` marked `confidence.sour
 
 <!-- suss:unchecked the command that writes the file it reads is in the prose above rather than in a block, so there is nothing to run first -->
 
-Over the Petstore document in `examples/petstore-axios-openapi`, `suss contract --from openapi petstore-openapi.json -o out/provider.json` writes 19 summaries, one per operation. Reading them back:
+Over the Petstore document in `examples/petstore-axios-openapi`, `suss contract --from openapi openapi.json -o out/provider.json` writes 19 summaries, one per operation. Reading them back:
 
 ```bash
 suss inspect out/provider.json
@@ -287,7 +287,7 @@ suss inspect out/provider.json
 The first two of the nineteen, with the rest cut:
 
 ```
-openapi:petstore-openapi.json
+openapi:openapi.json
 ├─ PUT /pet  (openapi handler | line 0)
 │    Contract: 200, 400, 404, 422, default
 │      -> 200 { id, name, category, photoUrls, ... }

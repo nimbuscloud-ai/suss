@@ -1,0 +1,8 @@
+{
+  "name": "petstore-axios-openapi-example",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "axios": "^1.7.0"
+  }
+}

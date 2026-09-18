@@ -15,7 +15,7 @@ make all
 `make all` runs three steps in order:
 
 1. `make extract` runs `suss extract -p tsconfig.json -f axios -o out/consumer.json`
-2. `make contract` runs `suss contract --from openapi petstore-openapi.json -o out/provider.json`
+2. `make contract` runs `suss contract --from openapi openapi.json -o out/provider.json`
 3. `make check` runs `suss check --dir out/ --fail-on warning` (intentionally exits non-zero on the warnings this consumer's bugs produce, so CI pipelines fail on regressions)
 
 Or inspect each side as a human-readable rendering:

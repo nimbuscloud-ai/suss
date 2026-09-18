@@ -72,7 +72,7 @@ Here is what a finding looks like, taken from the [runnable example](examples/pe
 ```
 [ERROR] unhandledProviderCase
   Provider produces status 400 but no consumer branch handles it
-  provider: openapi:petstore-openapi.json::findPetsByStatus (openapi:petstore-openapi.json:0)
+  provider: openapi:openapi.json::findPetsByStatus (openapi:openapi.json:0)
   consumer: src/petstore-client.ts::listPets (src/petstore-client.ts:48) (confidence: low)
   boundary: openapi (http) GET /pet/findByStatus
 ```
