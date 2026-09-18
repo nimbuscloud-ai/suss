@@ -43,7 +43,7 @@ import {
   tallyUnit,
 } from "./diagnostics.js";
 import { createFileCache, discoverUnits, routingGapUnit } from "./discovery.js";
-import { emitEnvNameFacts, envReadEffects } from "./envReads.js";
+import { emitEnvFacts, envReadEffects } from "./envReads.js";
 import {
   collectFileConstants,
   emitConstantBindings,
@@ -171,7 +171,7 @@ export function factsForFile(options: FileFactsOptions): Database {
   const db = new Database();
   const bodyBlocks = bodyBlocksIn(options.packs);
   emitValueFacts(db, options.file, options.root, bodyBlocks);
-  emitEnvNameFacts(db, options.file, options.root);
+  emitEnvFacts(db, options.file, options.root);
   emitConstantBindings(db, [
     collectFileConstants(
       options.file,
@@ -280,7 +280,7 @@ export async function extractRubyProject(
       }
       parsed.push({ file, root });
       emitValueFacts(db, file, root, bodyBlocks);
-      emitEnvNameFacts(db, file, root);
+      emitEnvFacts(db, file, root);
       for (const [key, method] of methodDefinitionsIn(file, root)) {
         definitions.set(key, method);
       }

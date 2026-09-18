@@ -517,7 +517,7 @@ A helper handed the environment itself works too: `make_reader(os.environ)` givi
 
 Out of scope: a name built out of a parameter (`env(f"{prefix}_URL")` reads nothing), a helper that takes the name off a dict or an options object rather than off a parameter, and a helper built by `functools.partial`.
 
-A project where every read writes its own name states no site, and then the reader never asks anything at a call.
+A project where every read writes its own name calls no expression the environment, and then the reader never asks anything at a call.
 
 ## What a route reaches
 

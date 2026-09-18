@@ -7,10 +7,10 @@
  * checker pairs them against a template the same way.
  *
  * `os` is the language's own module, so this belongs to the adapter and
- * not to a pack. A read whose name is a parameter states
- * `readsEnvNamed`; one question keyed on those sites gives back the
- * parameters that end up as a variable's name, and a reader at a call
- * reads the argument only at one of those. The README lists the spellings.
+ * not to a pack. Every expression that spells `os.environ` and hands it
+ * somewhere states `environmentObject`, the value facts state the read,
+ * and one question keyed on those objects gives back the parameters
+ * that end up as a variable's name. The README lists the spellings.
  */
 
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
@@ -20,7 +20,7 @@ import { enclosingFunction, field, stringLiteralValue } from "./ast.js";
 import {
   resolveCalls,
   resolvedFunctions,
-  resolveEnvSites,
+  resolveEnvObjects,
 } from "./facts/resolve.js";
 import { callArguments, nodeId, readKey } from "./facts/values.js";
 import { resolveName } from "./scope.js";
@@ -399,7 +399,7 @@ const sitesByDb = new WeakMap<Database, EnvSiteIndex>();
  * rules do not carry, so a reader standing at a call can ask whether one
  * of the callee's parameters is a variable's name.
  */
-export function bindEnvNameSites(
+export function bindEnvFacts(
   db: Database,
   found: readonly EnvFileFacts[],
 ): void {
@@ -442,7 +442,7 @@ function sitesEachParameterNames(
   if (index.sitesByParameter !== null) {
     return index.sitesByParameter;
   }
-  resolveEnvSites(db, [...index.objects]);
+  resolveEnvObjects(db, [...index.objects]);
   const found = new Map<string, string[]>();
   for (const row of db.facts("wantedParamNamesEnv")) {
     const parameter = String(row[0]);

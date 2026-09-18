@@ -25,7 +25,7 @@ export function resolveCalls(db: Database, callKeys: readonly string[]): void {
  * thousands of parameters, so the objects are what the question is
  * keyed on, and one of them covers every caller.
  */
-export function resolveEnvSites(
+export function resolveEnvObjects(
   db: Database,
   objectKeys: readonly string[],
 ): void {

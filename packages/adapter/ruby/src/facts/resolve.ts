@@ -78,7 +78,7 @@ export function resolveValues(db: Database, keys: readonly string[]): void {
  * environment objects. A project writes a handful of those and has
  * thousands of callee parameters, so one question covers them all.
  */
-export function resolveEnvSites(
+export function resolveEnvObjects(
   db: Database,
   objects: readonly string[],
 ): void {

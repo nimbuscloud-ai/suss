@@ -1681,16 +1681,9 @@ export const RESOLUTION_QUESTIONS = [
     [v("f"), v("c")],
     [lit("wanted", v("f")), lit("returnsCall", v("f"), v("c"))],
   ),
-  // Seeded with the read sites, a handful per project, so one question
-  // gives every parameter a reader at a call could meet.
-  rule(
-    "wantedParamNamesEnv",
-    [v("p"), v("site")],
-    [lit("wantedEnvSite", v("site")), lit("paramNamesEnv", v("p"), v("site"))],
-  ),
-  // The same question from the other end, for a caller that knows which
-  // expressions spell the environment and cannot list the reads: a read
-  // through a parameter is nowhere a scan of the source would find it.
+  // Seeded with the expressions that spell the environment, a handful
+  // per project. The reads cannot be the seed: one written through a
+  // parameter is nowhere a scan of the source looks.
   rule(
     "wantedParamNamesEnv",
     [v("p"), v("site")],

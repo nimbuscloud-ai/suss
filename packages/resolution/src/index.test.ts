@@ -483,49 +483,46 @@ describe("an argument reaching a parameter", () => {
 });
 
 describe("a parameter that is an environment variable's name", () => {
-  /** The parameters whose value ends up naming the site, asked from it. */
-  function namersOf(
+  /**
+   * Every parameter-and-site pair the rules derive, from one question
+   * over the environment objects, the way an adapter asks it.
+   */
+  function namersFromObjects(
     facts: Array<[string, ...string[]]>,
-    site: string,
-  ): string[] {
-    const db = new Database();
-    for (const [name, ...tuple] of facts) {
-      db.add(name, tuple);
-    }
-    askResolution(db, [site], "wantedEnvSite", resolutionProgram());
-    return db
-      .facts("wantedParamNamesEnv")
-      .filter((row) => row[1] === site)
-      .map((row) => String(row[0]))
-      .sort();
-  }
-
-  /** The same, asked from the environment object rather than the site. */
-  function namersFromObject(
-    facts: Array<[string, ...string[]]>,
-    object: string,
   ): Array<[string, string]> {
     const db = new Database();
     for (const [name, ...tuple] of facts) {
       db.add(name, tuple);
     }
-    askResolution(db, [object], "wantedEnvObject", resolutionProgram());
+    const objects = facts
+      .filter(([name]) => name === "environmentObject")
+      .map((row) => row[1] as string);
+    askResolution(db, objects, "wantedEnvObject", resolutionProgram());
     return db
       .facts("wantedParamNamesEnv")
       .map((row): [string, string] => [String(row[0]), String(row[1])])
       .sort();
   }
 
-  /** Whether the parameter is among the site's namers. */
+  /** The parameters whose value ends up naming one site. */
+  function namersOf(
+    facts: Array<[string, ...string[]]>,
+    site: string,
+  ): string[] {
+    return namersFromObjects(facts)
+      .filter(([, named]) => named === site)
+      .map(([parameter]) => parameter)
+      .sort();
+  }
+
+  /** The sites this parameter's value ends up naming. */
   function sitesNamedBy(
     facts: Array<[string, ...string[]]>,
     parameter: string,
   ): string[] {
-    const sites = new Set(
-      facts.filter(([name]) => name === "readsKeyed").map((row) => row[1]),
-    );
-    return [...sites]
-      .filter((site) => namersOf(facts, site).includes(parameter))
+    return namersFromObjects(facts)
+      .filter(([named]) => named === parameter)
+      .map(([, site]) => site)
       .sort();
   }
 
@@ -558,7 +555,7 @@ describe("a parameter that is an environment variable's name", () => {
     ).toEqual(["env#key", "setting#name"]);
   });
 
-  it("answers nothing when asked from the parameter instead of the site", () => {
+  it("answers nothing when asked from the parameter instead of the object", () => {
     const db = new Database();
     for (const [name, ...tuple] of helper) {
       db.add(name, tuple);
@@ -732,8 +729,8 @@ describe("a parameter that is an environment variable's name", () => {
     expect(sitesNamedBy(handedEnv, "reader#name")).toEqual(["readerIndex"]);
   });
 
-  it("gives that site back when the question starts at the object", () => {
-    expect(namersFromObject(handedEnv, "processEnv")).toEqual([
+  it("gives one pair back for the whole project from that one question", () => {
+    expect(namersFromObjects(handedEnv)).toEqual([
       ["reader#name", "readerIndex"],
     ]);
   });

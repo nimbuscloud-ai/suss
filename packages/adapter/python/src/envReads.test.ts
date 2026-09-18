@@ -651,7 +651,7 @@ describe("a project whose environment reads go through a helper", () => {
     ]);
   });
 
-  it("states no read site for a project whose reads all write their own name", async () => {
+  it("calls no object the environment when every read writes its own name", async () => {
     const only = write("myapp/settings.py", [
       "import os",
       "",
@@ -665,7 +665,8 @@ describe("a project whose environment reads go through a helper", () => {
       workspaceRoot: tmpDir,
     });
 
-    expect(facts.facts("readsEnvNamed")).toEqual([]);
+    expect(facts.facts("environmentObject")).toEqual([]);
+    expect(facts.facts("readsKeyed")).toEqual([]);
     expect(configReadsOf(summaries)).toEqual([
       { name: "TABLE_NAME", defaulted: false },
     ]);

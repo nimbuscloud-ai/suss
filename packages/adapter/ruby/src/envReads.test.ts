@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
 
-import { emitEnvNameFacts, envReadEffects } from "./envReads.js";
+import { emitEnvFacts, envReadEffects } from "./envReads.js";
 import {
   collectFileConstants,
   emitConstantBindings,
@@ -81,7 +81,7 @@ async function projectFacts(files: Record<string, string>) {
     const tree = await parseRuby(source);
     parsed.push({ file, root: tree.rootNode });
     emitValueFacts(db, file, tree.rootNode);
-    emitEnvNameFacts(db, file, tree.rootNode);
+    emitEnvFacts(db, file, tree.rootNode);
     for (const [key, method] of methodDefinitionsIn(file, tree.rootNode)) {
       definitions.set(key, method);
     }

@@ -43,7 +43,7 @@ import {
   tallyUnit,
 } from "./diagnostics.js";
 import { discoverUnits } from "./discovery.js";
-import { bindEnvNameSites, envFactsIn, envReadEffects } from "./envReads.js";
+import { bindEnvFacts, envFactsIn, envReadEffects } from "./envReads.js";
 import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitEntryFact, emitModuleImportFacts } from "./facts.js";
 import { importedDefinitionLookup } from "./importedDefinitions.js";
@@ -184,9 +184,7 @@ export function factsForFile(options: FileFactsOptions): Database {
     files: [{ file: options.file, root: options.root, module: options.module }],
     definitions,
   });
-  bindEnvNameSites(db, [
-    envFactsIn(options.file, options.root, options.module),
-  ]);
+  bindEnvFacts(db, [envFactsIn(options.file, options.root, options.module)]);
   addPackWords(db, packWordsOf(options.packs));
   return db;
 }
@@ -275,8 +273,8 @@ export async function extractPythonProject(
     ),
   );
   // A helper reading the environment through a parameter is a read the
-  // caller writes the name of, so the sites are collected before the
-  // decision below rather than after it.
+  // caller writes the name of, so what each file says about the
+  // environment is collected before the decision below rather than after.
   const envFacts = bound.map((boundFile) =>
     envFactsIn(boundFile.file, boundFile.root, boundFile.module),
   );
@@ -303,7 +301,7 @@ export async function extractPythonProject(
     }
     if (needsValues) {
       bindEvaluator(db, { files: bound, definitions });
-      bindEnvNameSites(db, envFacts);
+      bindEnvFacts(db, envFacts);
     }
     addPackWords(db, packWordsOf(options.packs));
   });

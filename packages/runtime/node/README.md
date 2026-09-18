@@ -106,7 +106,7 @@ Four spellings it says nothing about:
 
 A helper that reads through an environment object it was handed as an
 argument is covered. `makeReader(process.env)` giving back `(name) =>
-env[name]` reads whatever its callers name, and so does the same object
+env[name]` reads whatever its callers pass, and so does the same object
 handed through several calls, or written into a name first. What the
 helper is handed has to come down to `process.env`; a plain object
 reads nothing.

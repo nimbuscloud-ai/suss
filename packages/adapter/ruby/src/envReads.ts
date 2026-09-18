@@ -6,11 +6,11 @@
  * checker pairs them against a template the same way.
  *
  * `ENV` is the language's own object, so this belongs to the adapter and
- * not to a pack. A read whose name comes from a parameter is stated as
- * `readsEnvNamed`, and one question over the run's read sites gives back
- * every parameter whose value ends up naming a variable, so a body
- * calling such a helper reports the read at the call. The README lists
- * every spelling that is and is not read.
+ * not to a pack. Every expression that spells `ENV` and hands it
+ * somewhere is stated as `environmentObject`, and one question over
+ * those gives back every parameter whose value ends up naming a
+ * variable, so a body calling such a helper reports the read at the
+ * call. The README lists every spelling that is and is not read.
  */
 
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
@@ -25,7 +25,7 @@ import {
 } from "./ast.js";
 import {
   resolvedFunctions,
-  resolveEnvSites,
+  resolveEnvObjects,
   resolveValues,
 } from "./facts/resolve.js";
 import { calleeKeyOf, invokedKeyOf, nodeId, readKey } from "./facts/values.js";
@@ -40,7 +40,8 @@ export const RUBY_ENV_RECOGNITION = "ruby-env";
 /**
  * Whether a read whose name is not a literal supplies a fallback. Ruby
  * says this at the read and the rules never carry it, so the run keeps
- * it beside the `readsEnvNamed` fact under a name of its own.
+ * it under a name of its own. A read the rules derived inside a helper
+ * has no row here, and the reader takes that as no fallback.
  */
 const ENV_DEFAULTED = "rbEnvDefaulted";
 
@@ -160,7 +161,7 @@ function namedParameters(db: Database): ReadonlyMap<string, readonly string[]> {
   if (objects.length === 0) {
     return named;
   }
-  resolveEnvSites(db, objects);
+  resolveEnvObjects(db, objects);
   for (const row of db.facts("wantedParamNamesEnv")) {
     const found = named.get(String(row[0]));
     if (found === undefined) {
@@ -177,11 +178,7 @@ function namedParameters(db: Database): ReadonlyMap<string, readonly string[]> {
  * rules can say which parameters a caller's argument ends up naming,
  * and keep the fallback flag they do not carry.
  */
-export function emitEnvNameFacts(
-  db: Database,
-  file: string,
-  root: RbNode,
-): void {
+export function emitEnvFacts(db: Database, file: string, root: RbNode): void {
   walkDescendants<RbNode, null>(root, null, {
     at: (node) => {
       if (isEnv(node) && handsOnward(node)) {
