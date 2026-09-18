@@ -105,9 +105,11 @@ Four spellings it says nothing about:
   to undo.
 
 A helper that reads through an environment object it was handed as an
-argument is out of reach too: the pack states its fact for a read off a
-path it declares, and `env[name]` inside `makeReader(process.env)` is
-not one.
+argument is covered. `makeReader(process.env)` giving back `(name) =>
+env[name]` reads whatever its callers name, and so does the same object
+handed through several calls, or written into a name first. What the
+helper is handed has to come down to `process.env`; a plain object
+reads nothing.
 
 ## Options
 

@@ -48,7 +48,7 @@ import { isFunctionRoot } from "../discovery/shared.js";
 import {
   createNodeTable,
   emitValue,
-  environmentNameReadsIn,
+  environmentObjectsIn,
   extractFileFacts,
   factKeyOf,
   type NodeTable,
@@ -101,7 +101,7 @@ type Question =
   | "wantedCallOrigin"
   | "wantedAnchor"
   | "wantedSites"
-  | "wantedEnvSite"
+  | "wantedEnvObject"
   | "wantedSubject";
 
 /**
@@ -528,15 +528,19 @@ export class ResolutionStore {
   }
 
   /**
-   * Seed every read the store knows of, derive, and take the sites back
-   * per parameter. The question is dropped afterwards, so a later ask
-   * over a larger fact set derives it again.
+   * Seed every expression that spells the environment, derive, and take
+   * the sites back per parameter. The question is dropped afterwards, so
+   * a later ask over a larger fact set derives it again.
+   *
+   * The reads themselves cannot be the seed: one written through a
+   * parameter is off an object a scan of the source has no way to pick
+   * out, and the whole point of asking is to find those.
    */
   private askEnvNamers(seeds: readonly SourceFile[]): Map<string, Node[]> {
     const byParameter = new Map<string, Node[]>();
     try {
-      for (const [site] of this.db.facts("readsEnvNamed")) {
-        this.wantKey("wantedEnvSite", String(site));
+      for (const [object] of this.db.facts("environmentObject")) {
+        this.wantKey("wantedEnvObject", String(object));
       }
       this.extractDemanded(seeds);
       this.derive();
@@ -556,9 +560,9 @@ export class ResolutionStore {
   }
 
   /**
-   * The project's files that spell an environment read with a computed
-   * index, read into the store. Which files those are cannot depend on
-   * what a reader happened to ask about first, so the scan is over the
+   * The project's files that hand the environment object somewhere,
+   * read into the store. Which files those are cannot depend on what a
+   * reader happened to ask about first, so the scan is over the
    * project's own sources and it happens once.
    */
   private environmentSiteFiles(project: Project): readonly SourceFile[] {
@@ -570,7 +574,7 @@ export class ResolutionStore {
       .filter(
         (one) =>
           !one.isInNodeModules() &&
-          environmentNameReadsIn(this.table, one).length > 0,
+          environmentObjectsIn(this.table, one).length > 0,
       );
     this.envSiteFiles = found;
     this.extractFiles(found);

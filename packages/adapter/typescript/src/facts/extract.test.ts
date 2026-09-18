@@ -9,7 +9,7 @@ import { Database } from "@suss/datalog";
 
 import {
   createNodeTable,
-  environmentNameReadsIn,
+  environmentObjectsIn,
   extractFileFacts,
 } from "./extract.js";
 
@@ -285,8 +285,8 @@ describe("what a class's bodies store on the receiver", () => {
   });
 });
 
-describe("a read off an object a pack calls the environment", () => {
-  it("states the name expression of a computed read", () => {
+describe("a read whose key the source computes", () => {
+  it("states the container and the expression the key comes from", () => {
     const { db, table } = factsFor(
       {
         "/mod.ts": [
@@ -299,9 +299,30 @@ describe("a read off an object a pack calls the environment", () => {
       ["process.env"],
     );
 
-    expect(rows(db, table, "readsEnvNamed")).toEqual([
-      ["process.env[name]", "name"],
+    expect(rows(db, table, "readsKeyed")).toEqual([
+      ["process.env[name]", "process.env", "name"],
     ]);
+    expect(rows(db, table, "environmentObject")).toEqual([["process.env"]]);
+  });
+
+  it("states a read off any container, environment or not", () => {
+    const { db, table } = factsFor(
+      {
+        "/mod.ts": [
+          "declare const settings: Record<string, string>;",
+          "export function get(name: string): string {",
+          "  return settings[name] ?? '';",
+          "}",
+          "",
+        ].join("\n"),
+      },
+      ["process.env"],
+    );
+
+    expect(rows(db, table, "readsKeyed")).toEqual([
+      ["settings[name]", "settings", "name"],
+    ]);
+    expect(rows(db, table, "environmentObject")).toEqual([]);
   });
 
   it("states nothing for a literal index, which stays a property read", () => {
@@ -317,10 +338,10 @@ describe("a read off an object a pack calls the environment", () => {
       ["process.env"],
     );
 
-    expect(rows(db, table, "readsEnvNamed")).toEqual([]);
+    expect(rows(db, table, "readsKeyed")).toEqual([]);
   });
 
-  it("states nothing when no pack says which object is the environment", () => {
+  it("calls no object the environment until a pack says which one is", () => {
     const { db, table } = factsFor({
       "/mod.ts": [
         "export function requireEnv(name: string): string {",
@@ -330,16 +351,20 @@ describe("a read off an object a pack calls the environment", () => {
       ].join("\n"),
     });
 
-    expect(rows(db, table, "readsEnvNamed")).toEqual([]);
+    expect(rows(db, table, "environmentObject")).toEqual([]);
   });
 
-  it("states nothing for a computed read off some other object", () => {
+  it("states the environment object where a factory is handed it", () => {
     const { db, table } = factsFor(
       {
         "/mod.ts": [
-          "declare const settings: Record<string, string>;",
-          "export function get(name: string): string {",
-          "  return settings[name] ?? '';",
+          "import { makeReader } from './reader.js';",
+          "export const requireEnv = makeReader(process.env);",
+          "",
+        ].join("\n"),
+        "/reader.ts": [
+          "export function makeReader(env: NodeJS.ProcessEnv) {",
+          "  return (name: string) => env[name];",
           "}",
           "",
         ].join("\n"),
@@ -347,40 +372,56 @@ describe("a read off an object a pack calls the environment", () => {
       ["process.env"],
     );
 
-    expect(rows(db, table, "readsEnvNamed")).toEqual([]);
+    expect(rows(db, table, "environmentObject")).toEqual([["process.env"]]);
+    expect(rows(db, table, "readsKeyed")).toEqual([
+      ["env[name]", "env", "name"],
+    ]);
   });
 });
 
-describe("finding the environment reads in a file", () => {
-  function readsIn(
+describe("finding the environment objects in a file", () => {
+  function objectsIn(
     source: string,
     environmentObjects: readonly string[] = ["process.env"],
   ): string[] {
     const project = new Project({ useInMemoryFileSystem: true });
     const sourceFile = project.createSourceFile("/mod.ts", source);
-    return environmentNameReadsIn(
+    return environmentObjectsIn(
       createNodeTable(environmentObjects),
       sourceFile,
-    ).map((access) => access.getText());
+    ).map((node) => `${node.getStartLineNumber()}:${node.getText()}`);
   }
 
-  it("finds a computed read wherever in the file it is written", () => {
+  it("finds the object wherever the file hands it on", () => {
     expect(
-      readsIn(
+      objectsIn(
         [
           "export function requireEnv(name: string): string {",
           "  return process.env[name] ?? '';",
           "}",
-          "export const port = process.env['PORT'];",
+          "export const reader = makeReader(process.env);",
+          "export const all = { ...process.env };",
           "",
         ].join("\n"),
       ),
-    ).toEqual(["process.env[name]"]);
+    ).toEqual(["2:process.env", "4:process.env", "5:process.env"]);
+  });
+
+  it("skips a file whose every read spells its own variable", () => {
+    expect(
+      objectsIn(
+        [
+          "export const port = process.env.PORT;",
+          "export const host = process.env['HOST'];",
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual([]);
   });
 
   it("finds nothing in a file that never writes a declared path", () => {
     expect(
-      readsIn(
+      objectsIn(
         [
           "declare const settings: Record<string, string>;",
           "export const one = settings['A'];",
@@ -391,6 +432,6 @@ describe("finding the environment reads in a file", () => {
   });
 
   it("finds nothing when no pack says which object is the environment", () => {
-    expect(readsIn("export const x = process.env[name];", [])).toEqual([]);
+    expect(objectsIn("export const x = process.env[name];", [])).toEqual([]);
   });
 });
