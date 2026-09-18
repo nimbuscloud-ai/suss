@@ -38,7 +38,7 @@ export {
   stringValueOf,
   writtenNodeOf,
 } from "./discovery/resolveValue.js";
-export { findEnclosingFunction } from "./discovery/shared.js";
+export { findEnclosingFunction, toFunctionRoot } from "./discovery/shared.js";
 export { createTsDiscoveryContext } from "./discoveryContext.js";
 // The store behind the recognizer context's `resolveWrittenValue`.
 // Exported so a pack's test harness can give recognizers the same
@@ -74,7 +74,7 @@ export {
 } from "./resolve/invocationEffects.js";
 export { GENERIC_TERMINALS } from "./resolve/reachableClosure.js";
 export { type ReadNameOptions, readName } from "./resolve/readName.js";
-export { hasBody } from "./resolve/unfollowedCall.js";
+export { declarationsBehind, hasBody } from "./resolve/unfollowedCall.js";
 export { collectClientFieldAccesses } from "./shapes/fieldAccesses.js";
 export {
   type ObservedStubCall,

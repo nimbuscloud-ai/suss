@@ -59,11 +59,13 @@ type FunctionLike =
   | MethodDeclaration;
 
 import {
+  declarationsBehind,
   findEnclosingFunction,
   functionTargetOf,
   isDefaultedAt,
   stringValueOf,
   symbolBehind,
+  toFunctionRoot,
 } from "@suss/adapter-typescript";
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
 
@@ -334,7 +336,7 @@ function readsThroughHelperCall(
   call: CallExpression,
   resolution: ResolutionStore | undefined,
 ): EnvRead[] {
-  const callee = functionBehindCallee(call.getExpression());
+  const callee = functionBehindCallee(call.getExpression(), resolution);
   if (callee === null) {
     return [];
   }
@@ -372,14 +374,52 @@ function readsThroughHelperCall(
 }
 
 /** The function a callee expression is written against, or null when nothing this reader follows defines one. */
-function functionBehindCallee(callee: Node): FunctionLike | null {
+function functionBehindCallee(
+  callee: Node,
+  resolution: ResolutionStore | undefined,
+): FunctionLike | null {
   const nameNode = N.isPropertyAccessExpression(callee)
     ? callee.getNameNode()
     : callee;
   if (!N.isIdentifier(nameNode)) {
     return null;
   }
-  return functionTargetOf(nameNode)?.func ?? null;
+  const declared = functionTargetOf(nameNode)?.func;
+  if (declared !== undefined || resolution === undefined) {
+    return declared ?? null;
+  }
+  return factoryReturnedCallee(nameNode, callee, resolution);
+}
+
+/**
+ * The function behind `const requireEnv = makeReader(process.env)`,
+ * where no declaration is a function at all. Asking the store costs a
+ * query, so only a name the source writes as a call gets one.
+ */
+function factoryReturnedCallee(
+  nameNode: Identifier,
+  callee: Node,
+  resolution: ResolutionStore,
+): FunctionLike | null {
+  if (!isDeclaredAsCall(nameNode)) {
+    return null;
+  }
+  const returned = resolution.resolveReturnedCallable(callee);
+  return returned === null ? null : toFunctionRoot(returned);
+}
+
+/** Whether every declaration behind a name writes it as a call's result. */
+function isDeclaredAsCall(nameNode: Identifier): boolean {
+  const declarations = declarationsBehind(symbolBehind(nameNode));
+  return declarations.length > 0 && declarations.every(isVariableSetToCall);
+}
+
+function isVariableSetToCall(declaration: Node): boolean {
+  if (!N.isVariableDeclaration(declaration)) {
+    return false;
+  }
+  const initializer = declaration.getInitializer();
+  return initializer !== undefined && N.isCallExpression(initializer);
 }
 
 /** Whether a value read back off an argument is a variable's name. */

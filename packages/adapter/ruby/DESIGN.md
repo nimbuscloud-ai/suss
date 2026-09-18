@@ -541,12 +541,19 @@ own read. When one name is reached at two sites from the same call it is one
 read, defaulted only when every site supplies a fallback, or when an `||`
 follows the call.
 
+A lambda is read the same way a method is. `GET = ->(key) { ENV.fetch(key) }`
+then `GET.call("X")` reads `X`, and so does `GET.("X")`, because a lambda gets
+`func`, `paramOf` and `returnsValue` like a method and a call written either way
+runs whatever the receiver is worth rather than a method written as `call`. A
+lambda a method returned, `GET = make_reader`, is read too: the reader asks what
+the callee gives back as well as what it comes down to, and one rule says a call
+on a name a factory filled runs the function that factory returned.
+
 Out of scope: a name the helper builds rather than uses whole, such as
-`ENV["#{prefix}_URL"]`, and a name it reads off a hash or an options object
-instead of taking as a parameter. A callee that is a value rather than a method,
-a lambda in a constant called as `GET.call("X")`, is not followed either: the
-rules find a method's callers from the method, and bridging that to a call
-through the value it resolves to costs more than the case is worth.
+`ENV["#{prefix}_URL"]`, a name it reads off a hash or an options object instead
+of taking as a parameter, a proc written as `lambda { |k| ... }` or
+`proc { |k| ... }` rather than with `->`, and a helper that reads through an
+environment object it was handed as an argument rather than through `ENV`.
 
 ## What a file depends on in the project
 

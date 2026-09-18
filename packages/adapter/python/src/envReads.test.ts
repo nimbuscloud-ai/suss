@@ -309,7 +309,7 @@ describe("a call to a helper that reads the environment", () => {
     ).toEqual([{ name: "A", defaulted: false }]);
   });
 
-  it("says nothing where the callee is a value a factory returned", async () => {
+  it("reads a name passed to a callee a factory returned", async () => {
     expect(
       await moduleReadsWithFacts(
         [
@@ -325,6 +325,76 @@ describe("a call to a helper that reads the environment", () => {
           "",
           "env = make_reader()",
           'A = env("A")',
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual([{ name: "A", defaulted: false }]);
+  });
+
+  it("reads a name passed to a lambda a factory returned", async () => {
+    expect(
+      await moduleReadsWithFacts(
+        [
+          "import os",
+          "",
+          "",
+          "def make_reader():",
+          "    return lambda key: os.environ[key]",
+          "",
+          "",
+          "env = make_reader()",
+          'A = env("A")',
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual([{ name: "A", defaulted: false }]);
+  });
+
+  it("reads a name forwarded to a callee a factory returned", async () => {
+    expect(
+      await moduleReadsWithFacts(
+        [
+          "import os",
+          "",
+          "",
+          "def make_reader():",
+          "    def read(key):",
+          "        return os.environ[key]",
+          "",
+          "    return read",
+          "",
+          "",
+          "env = make_reader()",
+          "",
+          "",
+          "def setting(name):",
+          "    return env(name)",
+          "",
+          "",
+          'A = setting("A")',
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual([{ name: "A", defaulted: false }]);
+  });
+
+  it("says nothing where the function a factory returned never reads the environment", async () => {
+    expect(
+      await moduleReadsWithFacts(
+        [
+          "import os",
+          "",
+          "",
+          "def env(key):",
+          "    return os.environ[key]",
+          "",
+          "",
+          "def make_logger(tag):",
+          "    return lambda message: tag + message",
+          "",
+          "",
+          "log = make_logger('app')",
+          'SAID = log("A")',
           "",
         ].join("\n"),
       ),

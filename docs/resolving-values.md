@@ -51,7 +51,7 @@ Three layers do the work.
 
   <rect class="box" x="60" y="220" width="540" height="86" rx="6" />
   <text class="label" x="330" y="242" text-anchor="middle">2. One rule set joins the facts into a value graph</text>
-  <text class="note" x="330" y="260" text-anchor="middle">160 rules. 17 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
+  <text class="note" x="330" y="260" text-anchor="middle">161 rules. 17 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
   <text class="note" x="330" y="277" text-anchor="middle">reaches is the transitive closure of those hops, and it records</text>
   <text class="note" x="330" y="294" text-anchor="middle">the strongest kind of step the walk took.</text>
 
@@ -160,7 +160,7 @@ explanation each.
 
 ## Layer 2: one rule set makes a graph
 
-`packages/resolution/src/index.ts` contains 160 rules and no code.
+`packages/resolution/src/index.ts` contains 161 rules and no code.
 17 of them derive `stepsTo(x, y, kind)`, which says the value `x` leads
 to the value `y` in one hop. Fifteen of those are stated as `hop` and
 given a `stepsTo` twin, since a walk under a receiver context reads
@@ -398,6 +398,15 @@ Four base facts, from two different files, produce one edge that then
 produces a `stepsTo` hop. Nothing in the extractor knew that
 `bcrypt.hash`'s first parameter would ever contain `password`. The join
 found it.
+
+`callsFunction` also covers a callee a factory returned. With
+`const requireEnv = makeReader(prefix)`, a call on `requireEnv` runs
+what `makeReader` returns, so one more rule joins the call on the name
+to the call that filled it:
+
+```
+callsFunction(r, f) :- returnsValue(g, f), callsFunction(r0, g), callsNamed(r, r0).
+```
 
 That is also where multiple answers come from. bcryptjs declares `hash`
 twice, so the join fires against both declarations and `password`

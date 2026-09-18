@@ -83,12 +83,16 @@ export function resolveEnvSites(db: Database, sites: readonly string[]): void {
 }
 
 /**
- * What a value came down to, when the rules settled it on a function.
+ * Every function calling a value runs: what the value came down to, and
+ * what a factory handed back when the value is a name for a call.
  * Asked once per call a body makes, so it joins on the index rather
  * than reading every answer the run has given.
  */
 export function resolvedFunctions(db: Database, key: string): string[] {
-  return db.lookup("wantedResolves", 0, key).map((row) => String(row[1]));
+  return [
+    ...db.lookup("wantedResolves", 0, key),
+    ...db.lookup("wantedGivesBack", 0, key),
+  ].map((row) => String(row[1]));
 }
 
 /**

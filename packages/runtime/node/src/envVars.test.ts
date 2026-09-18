@@ -962,6 +962,90 @@ describe("a helper call resolved from the caller's side", () => {
     ).toEqual([["TABLE_NAME", true]]);
   });
 
+  /** A project whose env helper is what a factory call gave back. */
+  function projectWithFactory(): Project {
+    const project = createTestProject();
+    project.createSourceFile(
+      "env.ts",
+      `export function makeReader(prefix: string) {
+        return (name: string) => process.env[name] ?? prefix;
+      }
+      export const requireEnv = makeReader("");`,
+    );
+    return project;
+  }
+
+  it("reads a name passed to a helper a factory returned", () => {
+    const project = projectWithFactory();
+    const handler = project.createSourceFile(
+      "handler.ts",
+      `import { requireEnv } from "./env.js";
+      export const table = requireEnv("TABLE_NAME");`,
+    );
+    const reads = configReadEffectsOf(recognizeWithStore(handler));
+    expect(reads.map((read) => read.interaction.name)).toEqual(["TABLE_NAME"]);
+  });
+
+  it("reads a name forwarded through a helper to one a factory returned", () => {
+    const project = projectWithFactory();
+    project.createSourceFile(
+      "settings.ts",
+      `import { requireEnv } from "./env.js";
+      export function setting(name: string): string {
+        return requireEnv(name);
+      }`,
+    );
+    const handler = project.createSourceFile(
+      "handler.ts",
+      `import { setting } from "./settings.js";
+      export const url = setting("DATABASE_URL");`,
+    );
+    const reads = configReadEffectsOf(recognizeWithStore(handler));
+    expect(reads.map((read) => read.interaction.name)).toEqual([
+      "DATABASE_URL",
+    ]);
+  });
+
+  it("says nothing for a helper a bound call gave back", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "env.ts",
+      `export function readEnv(prefix: string, name: string): string {
+        return process.env[name] ?? prefix;
+      }
+      export const requireEnv = readEnv.bind(null, "");`,
+    );
+    const handler = project.createSourceFile(
+      "handler.ts",
+      `import { requireEnv } from "./env.js";
+      export const table = requireEnv("TABLE_NAME");`,
+    );
+    // `.bind` is a hop to `readEnv` itself rather than to what calling
+    // it gives back, and it moves every argument one place left, which
+    // this reader has no way to undo. See the README.
+    expect(configReadEffectsOf(recognizeWithStore(handler))).toEqual([]);
+  });
+
+  it("says nothing when the function a factory returned never reads the environment", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "env.ts",
+      `export function requireEnv(key: string): string {
+        return process.env[key] ?? "";
+      }
+      export function makeLogger(tag: string) {
+        return (message: string) => tag + message;
+      }
+      export const log = makeLogger("app");`,
+    );
+    const handler = project.createSourceFile(
+      "handler.ts",
+      `import { log } from "./env.js";
+      export const said = log("TABLE_NAME");`,
+    );
+    expect(configReadEffectsOf(recognizeWithStore(handler))).toEqual([]);
+  });
+
   it("says nothing for a name a helper takes off an options object", () => {
     const project = createTestProject();
     project.createSourceFile(
@@ -1027,9 +1111,8 @@ describe("a helper call resolved from the caller's side", () => {
       `import { getEnv } from "./helpers.js";
       export const table = getEnv("TABLE_NAME");`,
     );
-    // `callsNamed` starts from the function and follows a name to it,
-    // so a callee that is a value the rules would have to resolve is
-    // where the forwarding rule stops. See the README.
+    // The returned function calls `fn`, which is a parameter, so which
+    // function the name ends up at depends on who called `withLogging`.
     expect(configReadEffectsOf(recognizeWithStore(handler))).toEqual([]);
   });
 

@@ -509,7 +509,9 @@ A variable has a fallback when every read the call reaches supplies one, or when
 
 The read is reported at the call, in the caller's unit, so a call at module level lands on that file's `module-init` summary and a helper called from two units gives each unit its own read.
 
-Out of scope: a name built out of a parameter (`env(f"{prefix}_URL")` reads nothing), a helper that takes the name off a dict or an options object rather than off a parameter, and a callee that is a value rather than a function the project declares (`env = make_reader()` then `env("A")`). The rules find a function's callers from the function, and bridging that to a call through `resolves` put extract past four minutes.
+A callee that is a value rather than a name the project declares works too, as long as it is a call the project makes: `env = make_reader()` then `env("A")` reads `A`, whether `make_reader` returns a nested `def` or a lambda. The reader asks what the callee gives back as well as what it comes down to, and one rule says a call on a name a factory filled runs the function that factory returned.
+
+Out of scope: a name built out of a parameter (`env(f"{prefix}_URL")` reads nothing), a helper that takes the name off a dict or an options object rather than off a parameter, a helper built by `functools.partial`, and a helper that reads through an environment object it was handed as an argument rather than through `os.environ` itself.
 
 A project where every read writes its own name states no site, and then the reader never asks anything at a call.
 

@@ -14,7 +14,7 @@
 import { nodeOfKey } from "@suss/resolution";
 import { Evaluator, force, literalOf, text } from "@suss/values";
 
-import { enclosingMethod, field, METHOD_TYPES } from "../ast.js";
+import { enclosingDefinition, field, METHOD_TYPES } from "../ast.js";
 import {
   constructionSites,
   resolvedFunctions,
@@ -199,7 +199,7 @@ function contextOver(db: Database, nodes: ProjectNodes): EvaluationContext {
       if (file === null) {
         return null;
       }
-      const key = readKey(file, node, enclosingMethod(node));
+      const key = readKey(file, node, enclosingDefinition(node));
       const answer =
         site === undefined
           ? writtenValueOf(db, key)
@@ -215,7 +215,7 @@ function contextOver(db: Database, nodes: ProjectNodes): EvaluationContext {
       // The facts key a receiverless call by its name and a method call by the method node.
       const key =
         field(call, "receiver") === null
-          ? readKey(file, method, enclosingMethod(call))
+          ? readKey(file, method, enclosingDefinition(call))
           : nodeId(file, method);
       resolveValues(db, [key]);
       const resolved = resolvedFunctions(db, key);

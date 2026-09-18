@@ -89,6 +89,35 @@ describe("ruby value facts", () => {
     );
   });
 
+  it("says a lambda is a function, with its parameters and what it returns", async () => {
+    const source = "GET = ->(key) { ENV.fetch(key) }\n";
+    const db = await factsFor(source);
+    const lambda = keyOf(source, "->(key) { ENV.fetch(key) }");
+    expect(rows(db, "func").map((row) => row[0])).toEqual([lambda]);
+    expect(rows(db, "paramOf")).toEqual([[lambda, "0", `${lambda}#key`]]);
+    expect(rows(db, "paramNamed")).toEqual([[lambda, "key", `${lambda}#key`]]);
+    expect(rows(db, "returnsValue")).toEqual([
+      [lambda, keyOf(source, "ENV.fetch(key)")],
+    ]);
+  });
+
+  it("says a lambda a method returns is what that method gives back", async () => {
+    const source = "def make_reader\n  ->(key) { key }\nend\n";
+    const db = await factsFor(source);
+    expect(rows(db, "returnsValue").map((row) => row[1])).toContain(
+      keyOf(source, "->(key) { key }"),
+    );
+  });
+
+  it("runs the receiver for a call written as call or as bare parens", async () => {
+    const source = 'GET.call("A")\nGET.("B")\n';
+    const db = await factsFor(source);
+    expect(rows(db, "call").filter((row) => row[1] === "#GET")).toHaveLength(2);
+    expect(
+      rows(db, "callArg").map((row) => textAt(source, row[2] ?? "")),
+    ).toEqual(['"A"', '"B"']);
+  });
+
   it("keeps an array's elements under their positions", async () => {
     const source = "items = [first, second]\n";
     const db = await factsFor(source);

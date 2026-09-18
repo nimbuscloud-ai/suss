@@ -17,7 +17,11 @@ import { runtimeConfigBinding } from "@suss/behavioral-ir";
 import { SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
 
 import { enclosingFunction, field, stringLiteralValue } from "./ast.js";
-import { resolveCalls, resolveEnvSites } from "./facts/resolve.js";
+import {
+  resolveCalls,
+  resolvedFunctions,
+  resolveEnvSites,
+} from "./facts/resolve.js";
 import { callArguments, nodeId, readKey } from "./facts/values.js";
 import { resolveName } from "./scope.js";
 import { resolutionKeyOf, stringValueOf } from "./values/evaluator.js";
@@ -430,8 +434,7 @@ function argumentsByParameter(
   }
 
   const argumentAt = new Map<string, PyNode>();
-  for (const resolved of db.lookup("wantedResolves", 0, calleeKey)) {
-    const callee = String(resolved[1]);
+  for (const callee of resolvedFunctions(db, calleeKey)) {
     for (const row of db.lookup("paramOf", 0, callee)) {
       const at = positional.get(String(row[1]));
       if (at !== undefined) {

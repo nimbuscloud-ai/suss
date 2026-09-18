@@ -17,7 +17,7 @@ import { runtimeConfigBinding } from "@suss/behavioral-ir";
 import { SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
 
 import {
-  enclosingMethod,
+  enclosingDefinition,
   field,
   NodeMap,
   readCallArgs,
@@ -28,7 +28,7 @@ import {
   resolveEnvSites,
   resolveValues,
 } from "./facts/resolve.js";
-import { calleeKeyOf, nodeId, readKey } from "./facts/values.js";
+import { calleeKeyOf, invokedKeyOf, nodeId, readKey } from "./facts/values.js";
 import { stringValueOf } from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
@@ -183,7 +183,7 @@ export function emitEnvNameFacts(
     const key = nodeId(file, site.read);
     db.add("readsEnvNamed", [
       key,
-      readKey(file, site.name, enclosingMethod(site.name)),
+      readKey(file, site.name, enclosingDefinition(site.name)),
     ]);
     if (site.defaulted) {
       db.add(ENV_DEFAULTED, [key]);
@@ -221,11 +221,15 @@ function helperReads(
   facts: HelperFacts,
 ): NodeMap<EnvRead[]> {
   const { db, file, named } = facts;
-  const callees = new NodeMap<string>();
+  const callees = new NodeMap<string[]>();
   for (const call of calls) {
-    const key = calleeKeyOf(file, call, enclosingMethod(call));
-    if (key !== null) {
-      callees.set(call, key);
+    const enclosing = enclosingDefinition(call);
+    const keys = [
+      calleeKeyOf(file, call, enclosing),
+      invokedKeyOf(file, call, enclosing),
+    ].filter((key): key is string => key !== null);
+    if (keys.length > 0) {
+      callees.set(call, keys);
     }
   }
   const reads = new NodeMap<EnvRead[]>();
@@ -234,7 +238,7 @@ function helperReads(
   }
   resolveValues(
     db,
-    [...callees].map(([, callee]) => callee),
+    [...callees].flatMap(([, keys]) => keys),
   );
 
   for (const [call, callee] of callees) {
@@ -252,17 +256,18 @@ function helperReads(
 
 /**
  * The arguments this call passes at parameters that name a variable,
- * taken over every function the callee settles on.
+ * taken over every function the callee settles on. Ruby writes a call
+ * two ways, so a call comes with a key for each.
  */
 function namingArguments(
   db: Database,
   named: ReadonlyMap<string, readonly string[]>,
   call: RbNode,
-  callee: string,
+  callees: readonly string[],
 ): NamingArgument[] {
   const { positional, keyword } = readCallArgs(field(call, "arguments"));
   const found: NamingArgument[] = [];
-  for (const func of resolvedFunctions(db, callee)) {
+  for (const func of callees.flatMap((key) => resolvedFunctions(db, key))) {
     for (const row of db.lookup("paramOf", 0, func)) {
       const sites = named.get(String(row[2]));
       const argument = positional[Number(row[1])];

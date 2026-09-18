@@ -1196,6 +1196,18 @@ const STATED_RULES = [
       lit("call", v("r"), v("c")),
     ],
   ),
+  // A name bound to a factory's result, called: `const get =
+  // makeReader(env)` then `get(name)`. Written from the factory's call so
+  // the walk starts where `callsFunction` already has an answer.
+  rule(
+    "callsFunction",
+    [v("r"), v("f")],
+    [
+      lit("returnsValue", v("g"), v("f")),
+      lit("callsFunction", v("r0"), v("g")),
+      lit("callsNamed", v("r"), v("r0")),
+    ],
+  ),
 
   // The expressions that refer to an object literal by binding alone: the
   // declaration written as it, a reference or import of that, and a

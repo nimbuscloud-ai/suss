@@ -617,6 +617,62 @@ describe("a parameter that is an environment variable's name", () => {
     expect(sitesNamedBy(helper, "env#default")).toEqual([]);
   });
 
+  // function makeReader(env) { return (name) => env[name]; }
+  // const requireEnv = makeReader(process.env);
+  const returned: Array<[string, ...string[]]> = [
+    ["func", "makeReader"],
+    ["func", "reader"],
+    ["paramOf", "reader", "0", "reader#name"],
+    ["returnsValue", "makeReader", "reader"],
+    ["readsEnvNamed", "readerIndex", "reader#name"],
+    ["binds", "makeReaderRef", "makeReader"],
+    ["call", "built", "makeReaderRef"],
+    ["binds", "requireEnv", "built"],
+  ];
+
+  it("lands on the site inside a function a factory returned", () => {
+    expect(sitesNamedBy(returned, "reader#name")).toEqual(["readerIndex"]);
+  });
+
+  it("follows a parameter handed to a function a factory returned", () => {
+    // function setting(key) { return requireEnv(key); }
+    expect(
+      sitesNamedBy(
+        [
+          ...returned,
+          ["func", "setting"],
+          ["paramOf", "setting", "0", "setting#key"],
+          ["binds", "requireEnvRef", "requireEnv"],
+          ["call", "inner", "requireEnvRef"],
+          ["callArg", "inner", "0", "setting#key"],
+        ],
+        "setting#key",
+      ),
+    ).toEqual(["readerIndex"]);
+  });
+
+  it("says nothing when the function a factory returned never reads the environment", () => {
+    // function makeLogger(out) { return (message) => out(message); }
+    expect(
+      sitesNamedBy(
+        [
+          ...helper,
+          ["func", "makeLogger"],
+          ["func", "logger"],
+          ["paramOf", "logger", "0", "logger#message"],
+          ["returnsValue", "makeLogger", "logger"],
+          ["binds", "makeLoggerRef", "makeLogger"],
+          ["call", "builtLogger", "makeLoggerRef"],
+          ["binds", "log", "builtLogger"],
+          ["binds", "logRef", "log"],
+          ["call", "logged", "logRef"],
+          ["callArg", "logged", "0", "greeting"],
+        ],
+        "logger#message",
+      ),
+    ).toEqual([]);
+  });
+
   it("ends at a pair of helpers that hand the name to each other", () => {
     expect(
       sitesNamedBy(
