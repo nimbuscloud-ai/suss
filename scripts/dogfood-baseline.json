@@ -3,9 +3,9 @@
     "packages": 75,
     "packagesWithExports": 75,
     "exports": 1002,
-    "internal": 3506,
-    "consumers": 2039,
-    "pairs": 2027,
+    "internal": 3509,
+    "consumers": 2042,
+    "pairs": 2030,
     "unfollowedCalls": 515,
     "findingErrors": 0
   },
@@ -27,8 +27,8 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 114,
-      "internal": 865,
-      "consumers": 222,
+      "internal": 868,
+      "consumers": 223,
       "unfollowedCalls": 114
     },
     "packages/behavioral-ir": {
@@ -77,7 +77,7 @@
       "name": "@suss/client-axios",
       "exports": 2,
       "internal": 3,
-      "consumers": 41,
+      "consumers": 43,
       "unfollowedCalls": 0
     },
     "packages/client/faraday": {
