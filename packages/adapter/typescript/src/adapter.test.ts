@@ -4666,6 +4666,282 @@ describe("client-side contract resolution via fromClientMethod", () => {
   });
 });
 
+describe("the base an instance sends every request under", () => {
+  const basedPack: PatternPack = {
+    name: "axios",
+    protocol: "http",
+    languages: ["typescript"],
+    discovery: [
+      {
+        kind: "client",
+        match: {
+          type: "clientCall",
+          importModule: "axios",
+          importName: "axios",
+          methodFilter: ["get"],
+          factoryMethods: ["create"],
+          basePathOption: "baseURL",
+        },
+        bindingExtraction: {
+          method: { type: "literal", value: "GET" },
+          path: { type: "fromArgument", position: 0 },
+        },
+      },
+      {
+        kind: "client",
+        match: {
+          type: "clientCall",
+          importModule: "axios",
+          importName: "axios",
+          methodFilter: ["request"],
+          factoryMethods: ["create"],
+          basePathOption: "baseURL",
+        },
+        bindingExtraction: {
+          method: {
+            type: "fromArgumentProperty",
+            position: 0,
+            property: "method",
+            default: "GET",
+          },
+          path: { type: "fromArgumentProperty", position: 0, property: "url" },
+        },
+      },
+    ],
+    terminals: [
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+      { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
+    ],
+    inputMapping: { type: "positionalParams", params: [] },
+    responseSemantics: [
+      { name: "data", access: "property", semantics: { type: "body" } },
+      { name: "status", access: "property", semantics: { type: "statusCode" } },
+    ],
+  };
+
+  async function pathsOf(
+    files: Record<string, string>,
+  ): Promise<Record<string, string | null>> {
+    const project = createTestProject();
+    for (const [name, text] of Object.entries(files)) {
+      project.createSourceFile(name, text);
+    }
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [basedPack],
+    });
+    const summaries = await adapter.extractAll();
+    return Object.fromEntries(
+      summaries.map((s) => [s.identity.name, restPathOf(s)]),
+    );
+  }
+
+  it("puts a literal base in front of the path the call writes", async () => {
+    const found = await pathsOf({
+      "consumer.ts": `
+        import axios from "axios";
+        const api = axios.create({ baseURL: "/api/v3" });
+        export async function getPet(id: number) {
+          return api.get(\`/pet/\${id}\`);
+        }
+      `,
+    });
+    expect(found.getPet).toBe("/api/v3/pet/{id}");
+  });
+
+  it("keeps only the path of an absolute base URL", async () => {
+    const found = await pathsOf({
+      "consumer.ts": `
+        import axios from "axios";
+        const api = axios.create({ baseURL: "https://petstore3.swagger.io/api/v3" });
+        export async function getPet() {
+          return api.get("/pet/1");
+        }
+      `,
+    });
+    expect(found.getPet).toBe("/api/v3/pet/1");
+  });
+
+  it("joins a base written with a trailing slash without doubling it", async () => {
+    const found = await pathsOf({
+      "consumer.ts": `
+        import axios from "axios";
+        const api = axios.create({ baseURL: "/api/v3/" });
+        export async function getPet() {
+          return api.get("/pet/1");
+        }
+      `,
+    });
+    expect(found.getPet).toBe("/api/v3/pet/1");
+  });
+
+  it("reads a base the evaluator follows to a constant in another file", async () => {
+    const found = await pathsOf({
+      "config.ts": `export const BASE = "/api/v3";`,
+      "client.ts": `
+        import axios from "axios";
+        import { BASE } from "./config";
+        export const api = axios.create({ baseURL: BASE });
+      `,
+      "consumer.ts": `
+        import { api } from "./client";
+        export async function getPet() {
+          return api.get("/pet/1");
+        }
+      `,
+    });
+    expect(found.getPet).toBe("/api/v3/pet/1");
+  });
+
+  it("reads a base off a config object the factory call is handed by name", async () => {
+    const found = await pathsOf({
+      "consumer.ts": `
+        import axios from "axios";
+        const defaults = { baseURL: "/api/v3", timeout: 1000 };
+        const api = axios.create(defaults);
+        export async function getPet() {
+          return api.get("/pet/1");
+        }
+      `,
+    });
+    expect(found.getPet).toBe("/api/v3/pet/1");
+  });
+
+  it('adds nothing for a base of "/"', async () => {
+    const found = await pathsOf({
+      "consumer.ts": `
+        import axios from "axios";
+        const api = axios.create({ baseURL: "/" });
+        export async function getPet() {
+          return api.get("/pet/1");
+        }
+      `,
+    });
+    expect(found.getPet).toBe("/pet/1");
+  });
+
+  it("adds nothing when the call is on the import itself", async () => {
+    const found = await pathsOf({
+      "consumer.ts": `
+        import axios from "axios";
+        const api = axios.create({ baseURL: "/api/v3" });
+        export async function getPet() {
+          return axios.get("/pet/1");
+        }
+        export async function getStore() {
+          return api.get("/store/1");
+        }
+      `,
+    });
+    expect(found).toEqual({ getPet: "/pet/1", getStore: "/api/v3/store/1" });
+  });
+
+  it("adds nothing when the base is only known at runtime", async () => {
+    const found = await pathsOf({
+      "consumer.ts": `
+        import axios from "axios";
+        const api = axios.create({ baseURL: process.env.API_URL });
+        const built = axios.create({ baseURL: \`\${process.env.HOST}/api\` });
+        export async function getPet() {
+          return api.get("/pet/1");
+        }
+        export async function getStore() {
+          return built.get("/store/1");
+        }
+      `,
+    });
+    expect(found).toEqual({ getPet: "/pet/1", getStore: "/store/1" });
+  });
+
+  it("adds nothing when the factory call states no base at all", async () => {
+    const found = await pathsOf({
+      "consumer.ts": `
+        import axios from "axios";
+        const bare = axios.create();
+        const other = axios.create({ timeout: 1000 });
+        export async function getPet() {
+          return bare.get("/pet/1");
+        }
+        export async function getStore() {
+          return other.get("/store/1");
+        }
+      `,
+    });
+    expect(found).toEqual({ getPet: "/pet/1", getStore: "/store/1" });
+  });
+
+  it("puts the base in front of a request written as one config object", async () => {
+    const found = await pathsOf({
+      "consumer.ts": `
+        import axios from "axios";
+        const api = axios.create({ baseURL: "/api/v3" });
+        export async function getPet() {
+          return api.request({ url: "/pet/1" });
+        }
+      `,
+    });
+    expect(found.getPet).toBe("/api/v3/pet/1");
+  });
+
+  it("puts the base in front of every route a class states per construction", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      import axios, { AxiosInstance } from "axios";
+
+      export class Resource {
+        client: AxiosInstance;
+        constructor(private base: string) {
+          this.client = axios.create({ baseURL: "/api/v3" });
+        }
+        list() { return this.client.get(this.base); }
+      }
+
+      export const pets = new Resource("/pet");
+      export const stores = new Resource("/store");
+      `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [basedPack],
+    });
+    const summaries = await adapter.extractAll();
+    const paths = summaries
+      .filter((one) => one.identity.name === "list")
+      .map((one) => restPathOf(one))
+      .sort();
+    expect(paths).toEqual(["/api/v3/pet", "/api/v3/store"]);
+  });
+
+  it("leaves a forwarding wrapper stating no route and sends its callers under the base", async () => {
+    const found = await pathsOf({
+      "api.ts": `
+        import axios from "axios";
+        const api = axios.create({ baseURL: "/api/v3" });
+        export async function getJson<T>(path: string): Promise<T> {
+          const { data } = await api.get(path);
+          return data;
+        }
+      `,
+      "consumer.ts": `
+        import { getJson } from "./api";
+        export async function getPet(id: number) {
+          return getJson<unknown>(\`/pet/\${id}\`);
+        }
+        export async function listPets() {
+          return getJson<unknown>("/pet/findByStatus");
+        }
+      `,
+    });
+    expect(found).toEqual({
+      getJson: null,
+      getPet: "/api/v3/pet/{id}",
+      listPets: "/api/v3/pet/findByStatus",
+    });
+  });
+});
+
 describe("wrapper expansion", () => {
   const axiosLikePack: PatternPack = {
     name: "axios",

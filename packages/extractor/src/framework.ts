@@ -60,6 +60,15 @@ export type DiscoveryMatch =
        */
       factoryMethods?: string[];
       /**
+       * The property of the factory call's config object that every
+       * request through the instance is sent under, `baseURL` for axios.
+       * Both sides of a boundary have to read one route the same way,
+       * and a spec's `servers[0].url` already goes in front of the
+       * provider's paths, so a base written here goes in front of the
+       * consumer's.
+       */
+      basePathOption?: string;
+      /**
        * The import and every instance built from it can be called as a
        * function, so `axios(config)` and `api(config)` are requests the
        * same as a call through a method in `methodFilter`.

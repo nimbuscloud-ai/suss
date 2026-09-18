@@ -385,8 +385,26 @@ function resolvesToKnownInstance(
   match: ClientCallMatch,
   resolution: ResolutionStore | undefined,
 ): boolean {
+  return clientConstructionCall(subject, match, resolution) !== null;
+}
+
+/**
+ * The call that built the client `subject` refers to, wherever it was
+ * written, or null when nothing ties the subject to one. A caller that
+ * needs the construction itself, to read the config object it was
+ * given, asks here rather than following the name again on its own.
+ */
+export function clientConstructionCall(
+  subject: Node,
+  match: {
+    importModule: string;
+    importName: string;
+    factoryMethods?: string[];
+  },
+  resolution: ResolutionStore | undefined,
+): CallExpression | NewExpression | null {
   if (resolution === undefined || match.importModule === "global") {
-    return false;
+    return null;
   }
   const written = writtenNodeOf(subject, resolution);
   if (
@@ -395,10 +413,10 @@ function resolvesToKnownInstance(
   ) {
     // Null means not-my-call, and a subject the store never ties to a
     // construction is exactly that.
-    return false;
+    return null;
   }
 
-  return isCreationCall(written, match, resolution);
+  return isCreationCall(written, match, resolution) ? written : null;
 }
 
 /**
