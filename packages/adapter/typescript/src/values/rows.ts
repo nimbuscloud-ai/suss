@@ -144,34 +144,51 @@ const sequenceRows: Row[] = ["sequence", "unbounded"].flatMap((on): Row[] => [
 ]);
 
 // Each spells its argument as text, so a path segment keeps the name of
-// the value it was built from. A literal goes through the function
-// itself, since `encodeURIComponent("a/b")` is one segment, not two.
-const TEXT_FUNCTIONS: Record<string, (literal: string) => string> = {
-  String: (literal) => literal,
-  encodeURIComponent,
-  encodeURI,
-  decodeURIComponent,
-  decodeURI,
-};
+// the value it was built from.
+const TEXT_FUNCTIONS = [
+  "String",
+  "encodeURIComponent",
+  "encodeURI",
+  "decodeURIComponent",
+  "decodeURI",
+];
 
-function textOf(value: Value, fn: (literal: string) => string): Value {
+// A literal goes through the function itself, since
+// `encodeURIComponent("a/b")` is one segment, not two.
+function recoded(name: string, literal: string): string {
+  if (name === "encodeURIComponent") {
+    return encodeURIComponent(literal);
+  }
+  if (name === "encodeURI") {
+    return encodeURI(literal);
+  }
+  if (name === "decodeURIComponent") {
+    return decodeURIComponent(literal);
+  }
+  if (name === "decodeURI") {
+    return decodeURI(literal);
+  }
+  return literal;
+}
+
+function textOf(name: string, value: Value): Value {
   const literal = literalOf(value);
   if (literal === null) {
     return concat([value]);
   }
   try {
-    return text(fn(literal));
+    return text(recoded(name, literal));
   } catch {
     return concat([value]);
   }
 }
 
 const calleeRows: Row[] = [
-  ...Object.entries(TEXT_FUNCTIONS).map(
-    ([name, fn]): Row => ({
+  ...TEXT_FUNCTIONS.map(
+    (name): Row => ({
       kind: "callee",
       origin: { module: "global", name },
-      apply: ({ args }) => ({ result: textOf(operand(args[0]), fn) }),
+      apply: ({ args }) => ({ result: textOf(name, operand(args[0])) }),
     }),
   ),
   ...PATH_MODULES.map(
