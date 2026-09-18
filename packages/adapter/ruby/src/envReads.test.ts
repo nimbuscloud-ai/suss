@@ -373,12 +373,81 @@ describe("a name handed to a project helper", () => {
     ).toEqual([{ name: "REDIS_URL", defaulted: false }]);
   });
 
-  it("says nothing for a callee that is a lambda rather than a method", async () => {
+  it("reads a name passed to a lambda a constant holds", async () => {
     expect(
       await projectReads({
         "use.rb": [
           "GET = ->(key) { ENV.fetch(key) }",
           'URL = GET.call("SEARCH_URL")',
+          "",
+        ].join("\n"),
+      }),
+    ).toEqual([{ name: "SEARCH_URL", defaulted: false }]);
+  });
+
+  it("reads a name passed to a lambda run without writing call", async () => {
+    expect(
+      await projectReads({
+        "use.rb": [
+          "GET = ->(key) { ENV.fetch(key) }",
+          'URL = GET.("SEARCH_URL")',
+          "",
+        ].join("\n"),
+      }),
+    ).toEqual([{ name: "SEARCH_URL", defaulted: false }]);
+  });
+
+  it("reads a name passed to a lambda a method returned", async () => {
+    expect(
+      await projectReads({
+        "use.rb": [
+          "def make_reader",
+          "  ->(key) { ENV.fetch(key) }",
+          "end",
+          "",
+          "GET = make_reader",
+          'URL = GET.call("SEARCH_URL")',
+          "",
+        ].join("\n"),
+      }),
+    ).toEqual([{ name: "SEARCH_URL", defaulted: false }]);
+  });
+
+  it("reads a name forwarded to a lambda a method returned", async () => {
+    expect(
+      await projectReads({
+        "use.rb": [
+          "def make_reader",
+          "  ->(key) { ENV.fetch(key) }",
+          "end",
+          "",
+          "GET = make_reader",
+          "",
+          "def setting(name)",
+          "  GET.call(name)",
+          "end",
+          "",
+          'URL = setting("SEARCH_URL")',
+          "",
+        ].join("\n"),
+      }),
+    ).toEqual([{ name: "SEARCH_URL", defaulted: false }]);
+  });
+
+  it("says nothing where the lambda a method returned reads no environment", async () => {
+    expect(
+      await projectReads({
+        "use.rb": [
+          "def make_logger(tag)",
+          "  ->(message) { tag + message }",
+          "end",
+          "",
+          "def env(key)",
+          "  ENV.fetch(key)",
+          "end",
+          "",
+          "LOG = make_logger('app')",
+          'SAID = LOG.call("SEARCH_URL")',
           "",
         ].join("\n"),
       }),

@@ -33,6 +33,19 @@ export function resolveEnvSites(
 }
 
 /**
+ * Every function calling a value runs: what the value came down to, and
+ * what a factory handed back when the value is a name for a call.
+ * Asked once per call a body makes, so it joins on the index rather
+ * than reading every answer the run has given.
+ */
+export function resolvedFunctions(db: Database, key: string): string[] {
+  return [
+    ...db.lookup("wantedResolves", 0, key),
+    ...db.lookup("wantedGivesBack", 0, key),
+  ].map((row) => String(row[1]));
+}
+
+/**
  * The single expression a value was written as when the receiver behind
  * it is the instance one site made. A field two constructions fill
  * differently settles here and not context free.
