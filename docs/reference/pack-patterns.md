@@ -157,9 +157,14 @@ Find code units by file path and expected export names. Used by Next.js App Rout
   importModule: string;  // or "global" for built-ins like fetch
   importName: string;    // e.g. "initClient", "fetch"
   methodFilter?: string[];
+  factoryMethods?: string[];  // e.g. ["create"] for axios.create(...)
+  callable?: boolean;         // the client itself sends, as axios(config) does
+  basePathOption?: string;    // e.g. "baseURL" for axios.create({ baseURL })
 }
 ```
 Find client call sites, the consumer side of a boundary. The adapter finds imports of `importName` from `importModule`, resolves variables initialized from that import, and walks their method calls. For globals like `fetch`, all bare calls to `importName` match. If `methodFilter` is set, only calls to those methods are discovered. The enclosing function becomes the code unit (kind `"client"`).
+
+`basePathOption` says which property of the factory call's config object every request through the instance is sent under. The adapter reads it off the construction the call's receiver resolves to and puts it in front of the call's own path, so a client with a base pairs with a spec whose `servers[0].url` states the same prefix. An absolute base keeps only its path, a base of `/` adds nothing, and a base the evaluator cannot settle leaves the path as the call site wrote it.
 
 Used by ts-rest (`initClient` from `@ts-rest/core`), Apollo client (`useQuery` from `@apollo/client`), and `@suss/client-web` (`fetch` as global).
 

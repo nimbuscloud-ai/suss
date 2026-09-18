@@ -7,7 +7,7 @@ Client pack for the [axios](https://axios-http.com/) HTTP client. It discovers `
 `@suss/client-axios` returns a `PatternPack` object describing:
 
 - **Discovery** via `axios.get/post/put/delete/patch/head/options(url, ...)` call sites where `axios` is imported as the default export from `"axios"`, whether the call is made on the `axios` import itself, on a variable built by `axios.create(...)`, or on a name imported from wherever that variable was declared. A request written as one config object, `axios({ url, method })`, `api({ url })` on an instance, or `axios.request(config)`, is read the same way.
-- **Binding extraction**: HTTP method from the called method name, or from the `method` property of a config object (GET when it has none); URL path from the first argument, or from the `url` property of a config object. The argument is evaluated, so a name, a concatenation, or a spread from an object the evaluator can follow all come out with a path.
+- **Binding extraction**: HTTP method from the called method name, or from the `method` property of a config object (GET when it has none); URL path from the first argument, or from the `url` property of a config object, sent under the `baseURL` of the instance the call is made on. The argument is evaluated, so a name, a concatenation, or a spread from an object the evaluator can follow all come out with a path.
 - **Terminals**: `returnStatement` and `throwExpression`
 - **Response semantics**: `response.data` → body, `response.status` → status code, `response.headers` → headers
 
@@ -28,7 +28,7 @@ export async function getUser(id: string) {
 }
 ```
 
-`getUser` is discovered as a client boundary with the path extracted from its own call site, the same as if `api` had been built right there. The import can also come through a barrel that re-exports the instance, and resolution follows that chain back to where the instance was constructed. A hand-written wrapper around the instance works too, as long as the wrapper is a single method or function whose body passes its own path argument straight into one call on a resolved instance:
+`getUser` is discovered as a client boundary at `GET /api/users/{id}`, the same as if `api` had been built right there: the path comes from its own call site, and the instance's `baseURL` goes in front of it. A spec's `servers[0].url` already goes in front of the routes the provider declares, and the two sides only pair when they are read the same way. An absolute base keeps only its path, so `https://petstore3.swagger.io/api/v3` gives `/api/v3`; a base of `/` adds nothing; and a base computed at runtime leaves the path as the call site wrote it rather than guessing. The import can also come through a barrel that re-exports the instance, and resolution follows that chain back to where the instance was constructed. A hand-written wrapper around the instance works too, as long as the wrapper is a single method or function whose body passes its own path argument straight into one call on a resolved instance:
 
 ```ts
 class Api {
