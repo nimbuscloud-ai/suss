@@ -44,7 +44,7 @@ export async function safeGetPet(petId: number): Promise<Pet | null> {
 
 // Wrapper-call: getJson is in api-client.ts and forwards `path` to axios.
 // The wrapper expansion finds this call and synthesises a per-caller
-// summary with `GET /pet/findByStatus` so the checker can pair it.
+// summary with `GET /api/v3/pet/findByStatus` so the checker can pair it.
 export async function listPets(): Promise<Pet[]> {
   return getJson<Pet[]>("/pet/findByStatus");
 }
