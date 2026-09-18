@@ -118,11 +118,18 @@ export const NESTING_TYPES = new Set(["class", "module"]);
 /** The two ways Ruby writes a method, `def x` and `def self.x`. */
 export const METHOD_TYPES = new Set(["method", "singleton_method"]);
 
-/** The nearest method a node is written inside, or null outside one. A read of a parameter is keyed under it. */
-export function enclosingMethod(node: RbNode): RbNode | null {
+/** `->(x) { ... }`, a function a name can be written to and called later. */
+export const LAMBDA_TYPE = "lambda";
+
+/**
+ * The nearest method or lambda a node is written inside, or null
+ * outside both. A read of a parameter is keyed under it, so this has to
+ * stop where the fact emitter stops.
+ */
+export function enclosingDefinition(node: RbNode): RbNode | null {
   let current = node.parent;
   while (current !== null) {
-    if (METHOD_TYPES.has(current.type)) {
+    if (METHOD_TYPES.has(current.type) || current.type === LAMBDA_TYPE) {
       return current;
     }
     current = current.parent;

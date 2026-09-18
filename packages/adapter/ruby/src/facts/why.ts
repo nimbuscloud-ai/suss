@@ -18,7 +18,7 @@ import path from "node:path";
 import { Database } from "@suss/datalog";
 import { explainResolvedKey, RESOLUTION_RULES } from "@suss/resolution";
 
-import { enclosingMethod, field } from "../ast.js";
+import { enclosingDefinition, field } from "../ast.js";
 import { parseRubySync } from "../parser.js";
 import { findRubyFiles } from "../project.js";
 import { collectFileConstants, emitConstantBindings } from "./constants.js";
@@ -107,7 +107,7 @@ function width(node: RbNode): number {
  * runs is the answer somebody asking about a call wants.
  */
 function askedKey(value: RubyValueHandle): string {
-  const enclosing = enclosingMethod(value.node);
+  const enclosing = enclosingDefinition(value.node);
   return (
     calleeKeyOf(value.file, value.node, enclosing) ??
     readKey(value.file, value.node, enclosing)

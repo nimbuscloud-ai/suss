@@ -9,6 +9,7 @@ import {
   bodyStatementsRun,
   field,
   INCLUDE_CALL,
+  LAMBDA_TYPE,
   METHOD_TYPES,
   NESTING_TYPES,
   NO_BODY_BLOCKS,
@@ -236,20 +237,44 @@ export function calleeKeyOf(
     : nodeId(filePath, method);
 }
 
+/**
+ * The key of the value a call runs rather than sends a message to, or
+ * null when it sends one. A caller with a call in hand asks about this
+ * as well as about `calleeKeyOf`, since either can be the function.
+ */
+export function invokedKeyOf(
+  filePath: string,
+  node: RbNode,
+  enclosing: RbNode | null,
+): string | null {
+  const invoked = invokedValueOf(node);
+  return invoked === null ? null : readKey(filePath, invoked, enclosing);
+}
+
 function emitCall(emitter: Emitter, call: RbNode): void {
+  const callKey = nodeId(emitter.filePath, call);
   // A call is written out in the source, so a name bound to one ends its
   // chain there and `isWrittenAs` reads it back.
-  add(emitter, "writtenValue", nodeId(emitter.filePath, call));
+  add(emitter, "writtenValue", callKey);
+
+  const invoked = invokedValueOf(call);
+  if (invoked !== null) {
+    // `f.call(x)` and `f.(x)` run whatever the receiver is worth, so the
+    // callee is that value rather than a method written as `call`.
+    add(emitter, "call", callKey, valueKey(emitter, invoked));
+  }
 
   // A bare name Ruby runs is the whole call and its own method name.
   const method = call.type === "identifier" ? call : field(call, "method");
   const calleeKey = calleeKeyOf(emitter.filePath, call, emitter.enclosing);
   if (method === null || calleeKey === null) {
+    if (invoked !== null) {
+      emitCallArguments(emitter, call, callKey);
+    }
     return;
   }
 
   const receiver = field(call, "receiver");
-  const callKey = nodeId(emitter.filePath, call);
   add(emitter, "call", callKey, calleeKey);
   if (!emitter.insideMethod) {
     add(emitter, "callOutsideMethod", callKey);
@@ -268,6 +293,34 @@ function emitCall(emitter: Emitter, call: RbNode): void {
     add(emitter, "readsProperty", calleeKey, emitter.selfKey, method.text);
   }
 
+  emitCallArguments(emitter, call, callKey);
+}
+
+/** The method Ruby runs a proc through, `f.call(x)`. */
+const INVOKE_METHOD = "call";
+
+/**
+ * The value a call runs rather than sends a message to. `f.(x)` has no
+ * method at all, and `f.call(x)` is how every proc is run, so both of
+ * them run the receiver.
+ */
+function invokedValueOf(call: RbNode): RbNode | null {
+  if (call.type !== "call") {
+    return null;
+  }
+  const receiver = field(call, "receiver");
+  if (receiver === null) {
+    return null;
+  }
+  const method = field(call, "method");
+  return method === null || method.text === INVOKE_METHOD ? receiver : null;
+}
+
+function emitCallArguments(
+  emitter: Emitter,
+  call: RbNode,
+  callKey: string,
+): void {
   const args = field(call, "arguments");
   let position = 0;
   for (const argument of args === null ? [] : children(args)) {
@@ -642,6 +695,36 @@ function assignedValueOf(node: RbNode): RbNode | null {
 }
 
 /**
+ * A lambda is a function a name can be written to and called later, so
+ * it gets the facts a method gets. Emitting one walks its own body, so
+ * this stops where the next definition starts.
+ */
+function emitLambdasIn(emitter: Emitter, body: RbNode): void {
+  for (const child of children(body)) {
+    if (child.type === LAMBDA_TYPE) {
+      emitMethodFacts(emitter, child);
+      continue;
+    }
+    if (OWN_BODY_TYPES.has(child.type)) {
+      continue;
+    }
+    emitLambdasIn(emitter, child);
+  }
+}
+
+/**
+ * The statements a definition runs. A lambda writes its body inside a
+ * block, so its statements are one level further in than a method's.
+ */
+function definitionBody(definition: RbNode): RbNode | null {
+  const body = field(definition, "body");
+  if (body === null || definition.type !== LAMBDA_TYPE) {
+    return body;
+  }
+  return field(body, "body");
+}
+
+/**
  * Where a method's name goes is the caller's to say, because a method inside a
  * class belongs to that class and one at the top of a file belongs to the file.
  */
@@ -662,7 +745,7 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
 
   const inside: Emitter = { ...emitter, enclosing: method };
 
-  const body = field(method, "body");
+  const body = definitionBody(method);
   if (body === null) {
     return funcKey;
   }
@@ -701,6 +784,7 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
 
   emitExpressionFacts(inside, body);
   emitScopeWrites(inside, method, body);
+  emitLambdasIn(inside, body);
 
   return funcKey;
 }
@@ -992,6 +1076,9 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
     }
   }
   emitInstanceWrites(within, classKey, collected);
+  if (body !== null) {
+    emitLambdasIn(within, body);
+  }
 
   return classKey;
 }
@@ -1043,4 +1130,5 @@ export function emitValueFacts(
   walk(root);
   emitExpressionFacts(emitter, root);
   emitScopeWrites(emitter, null, root);
+  emitLambdasIn(emitter, root);
 }
