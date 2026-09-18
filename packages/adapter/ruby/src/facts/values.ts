@@ -15,6 +15,7 @@ import {
   NO_BODY_BLOCKS,
   OWN_BODY_TYPES,
   PREPEND_CALL,
+  readCallArgs,
 } from "../ast.js";
 import { spellsAName } from "../paths/bareCalls.js";
 import {
@@ -505,6 +506,63 @@ function walkExpressions(
   }
 }
 
+/** A key the source writes out, which `readsProperty` covers instead. */
+const WRITTEN_KEY_TYPES = new Set([
+  "string",
+  "integer",
+  "simple_symbol",
+  "bare_string",
+  "bare_symbol",
+]);
+
+/**
+ * `settings[name]` and `settings.fetch(name)`: the container, and the
+ * expression the key comes from. Which containers are the environment
+ * is the rules' business, so this says nothing about that either way.
+ */
+function emitKeyedRead(
+  emitter: Emitter,
+  site: RbNode,
+  container: RbNode,
+  key: RbNode,
+): void {
+  if (WRITTEN_KEY_TYPES.has(key.type)) {
+    return;
+  }
+  add(
+    emitter,
+    "readsKeyed",
+    nodeId(emitter.filePath, site),
+    valueKey(emitter, container),
+    valueKey(emitter, key),
+  );
+}
+
+function emitKeyedElement(emitter: Emitter, node: RbNode): void {
+  const object = field(node, "object");
+  if (object === null || isWriteTarget(node)) {
+    return;
+  }
+  const index = node.namedChildren.find(
+    (child): child is RbNode => child !== null && child.id !== object.id,
+  );
+  if (index !== undefined) {
+    emitKeyedRead(emitter, node, object, index);
+  }
+}
+
+function emitKeyedFetch(emitter: Emitter, call: RbNode): void {
+  const receiver = field(call, "receiver");
+  if (receiver === null || field(call, "method")?.text !== "fetch") {
+    return;
+  }
+  const { positional } = readCallArgs(field(call, "arguments"));
+  const key = positional[0];
+  if (key !== undefined) {
+    emitKeyedRead(emitter, call, receiver, key);
+  }
+}
+
 function emitExpressionFacts(emitter: Emitter, node: RbNode): void {
   // The walk below starts at the children, so a statement that is itself
   // a definition would go unseen.
@@ -513,6 +571,10 @@ function emitExpressionFacts(emitter: Emitter, node: RbNode): void {
     emitDynamicDefinition(emitter, child, turns);
     if (child.type === "call" || isBareCall(child, emitter.enclosing)) {
       emitCall(emitter, child);
+      emitKeyedFetch(emitter, child);
+    }
+    if (child.type === "element_reference") {
+      emitKeyedElement(emitter, child);
     }
     if (ARRAY_TYPES.has(child.type)) {
       emitArray(emitter, child);

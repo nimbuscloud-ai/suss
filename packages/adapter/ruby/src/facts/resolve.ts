@@ -74,12 +74,15 @@ export function resolveValues(db: Database, keys: readonly string[]): void {
 }
 
 /**
- * Ask which parameters end up naming the variable each of these
- * environment reads reads. A project has a handful of such reads and
+ * Ask which parameters end up naming a variable read off each of these
+ * environment objects. A project writes a handful of those and has
  * thousands of callee parameters, so one question covers them all.
  */
-export function resolveEnvSites(db: Database, sites: readonly string[]): void {
-  askResolution(db, sites, "wantedEnvSite", RUBY_PROGRAM);
+export function resolveEnvSites(
+  db: Database,
+  objects: readonly string[],
+): void {
+  askResolution(db, objects, "wantedEnvObject", RUBY_PROGRAM);
 }
 
 /**

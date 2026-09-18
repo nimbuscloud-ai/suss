@@ -1186,4 +1186,58 @@ describe("ruby value facts", () => {
         .sort(),
     ).toEqual(["built", "plain_call", "top"]);
   });
+
+  it("states the container and the key of a read the source works out", async () => {
+    const source = [
+      "def read(settings, name)",
+      "  settings[name]",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const [funcKey] = rows(db, "func")[0] ?? [];
+
+    expect(
+      rows(db, "readsKeyed").map((row) => [
+        textAt(source, row[0] as string),
+        row[1],
+        row[2],
+      ]),
+    ).toEqual([["settings[name]", `${funcKey}#settings`, `${funcKey}#name`]]);
+  });
+
+  it("states the same for a fetch, which is the other spelling", async () => {
+    const source = [
+      "def read(settings, name)",
+      "  settings.fetch(name)",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const [funcKey] = rows(db, "func")[0] ?? [];
+
+    expect(
+      rows(db, "readsKeyed").map((row) => [
+        textAt(source, row[0] as string),
+        row[1],
+        row[2],
+      ]),
+    ).toEqual([
+      ["settings.fetch(name)", `${funcKey}#settings`, `${funcKey}#name`],
+    ]);
+  });
+
+  it("states nothing for a key the source writes out", async () => {
+    const db = await factsFor(
+      'def read(settings)\n  [settings["name"], settings[0]]\nend\n',
+    );
+    expect(rows(db, "readsKeyed")).toEqual([]);
+  });
+
+  it("states nothing for an element the source writes to", async () => {
+    const db = await factsFor(
+      "def write(settings, name)\n  settings[name] = 1\nend\n",
+    );
+    expect(rows(db, "readsKeyed")).toEqual([]);
+  });
 });

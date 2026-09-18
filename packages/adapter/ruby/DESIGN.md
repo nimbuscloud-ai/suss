@@ -523,16 +523,21 @@ nowhere, because nothing says when it runs.
 ### A name handed to a project helper
 
 A service that reads its environment through one method of its own writes the
-variable's name at the call and never beside `ENV`. So a read whose name is an
-expression states the fact `readsEnvNamed(site, x)`, and the rules in
-`@suss/resolution` say which parameters end up naming a variable, following a
-name handed on from one helper to the next.
+variable's name at the call and never beside `ENV`. So the value facts state
+`readsKeyed(site, o, x)` for every read whose key an expression works out, off
+any container at all, the adapter states `environmentObject(w)` for every
+expression that spells `ENV` and hands it somewhere, and the rules in
+`@suss/resolution` put the two together and say which parameters end up naming
+a variable, following a name handed on from one helper to the next.
 
-The question is asked once for the whole run, seeded with the read sites rather
-than with the parameters. A project has a handful of reads whose name is an
-expression and thousands of callee parameters, so seeding from the parameters
-meant a question per parameter; seeding from the read gives back every
-parameter, in any method, however many helpers deep. Standing at a call, the
+The question is asked once for the whole run, seeded with the environment
+objects rather than with the read sites or the parameters. A project writes
+`ENV` in a handful of places and has thousands of callee parameters, so seeding
+from the parameters meant a question per parameter; seeding from the object
+gives back every parameter, in any method, however many helpers deep. It also
+reaches a read the source spells off something else, since `make_reader(ENV)`
+giving back `->(name) { env.fetch(name) }` never writes `ENV` beside the read.
+Standing at a call, the
 reader looks the callee's parameters up in that one answer and reads the
 argument at each hit: the string literal first, then the value evaluator, so a
 constant in the caller's file resolves too. The read is reported in the unit the
@@ -549,11 +554,16 @@ lambda a method returned, `GET = make_reader`, is read too: the reader asks what
 the callee gives back as well as what it comes down to, and one rule says a call
 on a name a factory filled runs the function that factory returned.
 
+A helper handed `ENV` itself is read too: `make_reader(ENV)` giving back
+`->(name) { env.fetch(name) }`, the same object handed through several calls, or
+a constant declared as it. What the helper is handed has to come down to `ENV`;
+a plain hash reads nothing. A lambda sees the locals of the scope it is written
+in, which is how it reaches the parameter its factory was handed.
+
 Out of scope: a name the helper builds rather than uses whole, such as
 `ENV["#{prefix}_URL"]`, a name it reads off a hash or an options object instead
-of taking as a parameter, a proc written as `lambda { |k| ... }` or
-`proc { |k| ... }` rather than with `->`, and a helper that reads through an
-environment object it was handed as an argument rather than through `ENV`.
+of taking as a parameter, and a proc written as `lambda { |k| ... }` or
+`proc { |k| ... }` rather than with `->`.
 
 ## What a file depends on in the project
 
