@@ -282,6 +282,33 @@ describe("a call to a helper that reads the environment", () => {
     ]);
   });
 
+  it("reads a helper written as os.getenv, under whichever name the file imported it", async () => {
+    expect(
+      await moduleReadsWithFacts(
+        [
+          "import os",
+          "from os import getenv",
+          "",
+          "",
+          "def env(key, default=None):",
+          "    return os.getenv(key, default)",
+          "",
+          "",
+          "def bare(key):",
+          "    return getenv(key)",
+          "",
+          "",
+          'DATABASE_URL = env("DATABASE_URL")',
+          'REGION = bare("REGION")',
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual([
+      { name: "DATABASE_URL", defaulted: true },
+      { name: "REGION", defaulted: false },
+    ]);
+  });
+
   it("takes the fallback from an or the caller wrote around the call", async () => {
     expect(
       await moduleReadsWithFacts(
