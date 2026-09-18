@@ -263,22 +263,33 @@ function emitCall(emitter: Emitter, call: RbNode): void {
     // callee is that value rather than a method written as `call`.
     add(emitter, "call", callKey, valueKey(emitter, invoked));
   }
+  if (!emitMessageSent(emitter, call, callKey) && invoked === null) {
+    return;
+  }
+  emitCallArguments(emitter, call, callKey);
+}
 
+/**
+ * The callee of a call that sends a message, and the receiver the name
+ * is read off. False for a call that sends none, which is `f.(x)`.
+ */
+function emitMessageSent(
+  emitter: Emitter,
+  call: RbNode,
+  callKey: string,
+): boolean {
   // A bare name Ruby runs is the whole call and its own method name.
   const method = call.type === "identifier" ? call : field(call, "method");
   const calleeKey = calleeKeyOf(emitter.filePath, call, emitter.enclosing);
   if (method === null || calleeKey === null) {
-    if (invoked !== null) {
-      emitCallArguments(emitter, call, callKey);
-    }
-    return;
+    return false;
   }
-
-  const receiver = field(call, "receiver");
   add(emitter, "call", callKey, calleeKey);
   if (!emitter.insideMethod) {
     add(emitter, "callOutsideMethod", callKey);
   }
+
+  const receiver = field(call, "receiver");
   if (receiver !== null) {
     add(
       emitter,
@@ -292,8 +303,7 @@ function emitCall(emitter: Emitter, call: RbNode): void {
     // a class it finds a method that class declares.
     add(emitter, "readsProperty", calleeKey, emitter.selfKey, method.text);
   }
-
-  emitCallArguments(emitter, call, callKey);
+  return true;
 }
 
 /** The method Ruby runs a proc through, `f.call(x)`. */
