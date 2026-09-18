@@ -73,6 +73,7 @@ function discoveryForVerb(
         importName: "axios",
         methodFilter: [verb],
         factoryMethods: ["create"],
+        basePathOption: "baseURL",
       },
       bindingExtraction: {
         method: { type: "literal", value: verb.toUpperCase() },
@@ -94,6 +95,7 @@ function discoveryForVerb(
         importModule: factory.module,
         importName: factory.export,
         methodFilter: [verb],
+        basePathOption: "baseURL",
       },
       bindingExtraction: {
         method: { type: "literal", value: verb.toUpperCase() },
@@ -153,6 +155,7 @@ function configCallDiscovery(
         methodFilter: ["request"],
         factoryMethods: ["create"],
         callable: true,
+        basePathOption: "baseURL",
       },
       bindingExtraction,
       requiresImport: ["axios"],
@@ -168,6 +171,7 @@ function configCallDiscovery(
         importModule: factory.module,
         importName: factory.export,
         methodFilter: ["request"],
+        basePathOption: "baseURL",
       },
       bindingExtraction,
       requiresImport: isPathShapedSpecifier(factory.module)

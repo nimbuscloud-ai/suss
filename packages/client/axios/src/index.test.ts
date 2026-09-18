@@ -138,10 +138,10 @@ describe("axiosPack — integration", () => {
     expect(summaries[0].transitions.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("matches calls on instances created via axios.create()", async () => {
-    // The dominant production pattern: per-service axios instances created
-    // with a baseURL. The pack declares factoryMethods: ["create"] so the
-    // adapter treats `api` as a client subject.
+  it("sends a call on an axios.create() instance under the instance's baseURL", async () => {
+    // The dominant production pattern: per-service axios instances
+    // created with a baseURL, which the provider's spec states in
+    // servers[0].url and both sides have to read the same way.
     const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
@@ -165,7 +165,7 @@ describe("axiosPack — integration", () => {
     expect(summaries[0].identity.name).toBe("getUser");
     expect(summaries[0].identity.boundaryBinding).toEqual({
       transport: "http",
-      semantics: { name: "rest", method: "GET", path: "/users/1" },
+      semantics: { name: "rest", method: "GET", path: "/api/users/1" },
       recognition: "axios",
     });
   });
@@ -201,6 +201,119 @@ describe("axiosPack — integration", () => {
     const del = summaries.find((s) => s.identity.name === "deleteUser");
     const delSem = del?.identity.boundaryBinding?.semantics;
     expect(delSem?.name === "rest" ? delSem.method : null).toBe("DELETE");
+  });
+});
+
+describe("axiosPack — an instance's baseURL", () => {
+  async function pathsOf(
+    files: Record<string, string>,
+  ): Promise<Record<string, string | null>> {
+    const project = createTestProject();
+    for (const [name, text] of Object.entries(files)) {
+      project.createSourceFile(name, text);
+    }
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosPack()],
+    });
+    const summaries = await adapter.extractAll();
+    return Object.fromEntries(
+      summaries.map((s) => {
+        const semantics = s.identity.boundaryBinding?.semantics;
+        return [
+          s.identity.name,
+          semantics?.name === "rest" ? semantics.path : null,
+        ];
+      }),
+    );
+  }
+
+  it("keeps the path of an absolute base and leaves the bare import alone", async () => {
+    const found = await pathsOf({
+      "consumer.ts": `
+        import axios from "axios";
+
+        const api = axios.create({
+          baseURL: "https://petstore3.swagger.io/api/v3",
+        });
+
+        export async function getPet(petId: number) {
+          return api.get(\`/pet/\${petId}\`);
+        }
+
+        export async function getHealth() {
+          return axios.get("/health");
+        }
+      `,
+    });
+    expect(found).toEqual({
+      getPet: "/api/v3/pet/{petId}",
+      getHealth: "/health",
+    });
+  });
+
+  it("reads a base written as a constant another file exports", async () => {
+    const found = await pathsOf({
+      "config.ts": `export const BASE_URL = "/api/v3";`,
+      "client.ts": `
+        import axios from "axios";
+        import { BASE_URL } from "./config";
+        export const api = axios.create({ baseURL: BASE_URL });
+      `,
+      "consumer.ts": `
+        import { api } from "./client";
+        export async function listPets() {
+          return api.get("/pet/findByStatus");
+        }
+      `,
+    });
+    expect(found.listPets).toBe("/api/v3/pet/findByStatus");
+  });
+
+  it('adds nothing for a base of "/"', async () => {
+    const found = await pathsOf({
+      "consumer.ts": `
+        import axios from "axios";
+        const api = axios.create({ baseURL: "/" });
+        export async function getPet() {
+          return api.get("/pet/1");
+        }
+      `,
+    });
+    expect(found.getPet).toBe("/pet/1");
+  });
+
+  it("sends each caller of a path-passthrough wrapper under the base", async () => {
+    const found = await pathsOf({
+      "api-client.ts": `
+        import axios from "axios";
+
+        const api = axios.create({
+          baseURL: "https://petstore3.swagger.io/api/v3",
+        });
+
+        export async function getJson<T>(path: string): Promise<T> {
+          const { data } = await api.get(path);
+          return data;
+        }
+      `,
+      "consumer.ts": `
+        import { getJson } from "./api-client";
+
+        export async function listPets() {
+          return getJson<unknown>("/pet/findByStatus");
+        }
+
+        export async function getPet(petId: number) {
+          return getJson<unknown>(\`/pet/\${petId}\`);
+        }
+      `,
+    });
+    expect(found).toEqual({
+      getJson: null,
+      listPets: "/api/v3/pet/findByStatus",
+      getPet: "/api/v3/pet/{petId}",
+    });
   });
 });
 
@@ -255,7 +368,7 @@ describe("axiosPack — a request written as one config object", () => {
     `);
     expect(found).toEqual({
       listUsers: { name: "rest", method: "GET", path: "/users" },
-      deleteUser: { name: "rest", method: "DELETE", path: "/users/1" },
+      deleteUser: { name: "rest", method: "DELETE", path: "/api/users/1" },
     });
   });
 
@@ -325,14 +438,14 @@ describe("axiosPack — instance built in another file", () => {
     expect(get?.kind).toBe("client");
     expect(get?.identity.boundaryBinding).toEqual({
       transport: "http",
-      semantics: { name: "rest", method: "GET", path: "/users/{id}" },
+      semantics: { name: "rest", method: "GET", path: "/api/users/{id}" },
       recognition: "axios",
     });
 
     const del = summaries.find((s) => s.identity.name === "deleteUser");
     expect(del?.identity.boundaryBinding).toEqual({
       transport: "http",
-      semantics: { name: "rest", method: "DELETE", path: "/users/{id}" },
+      semantics: { name: "rest", method: "DELETE", path: "/api/users/{id}" },
       recognition: "axios",
     });
   });
@@ -382,7 +495,7 @@ describe("axiosPack — instance built in another file", () => {
     expect(wrapper).toBeDefined();
     const wrapperSem = wrapper?.identity.boundaryBinding?.semantics;
     expect(wrapperSem?.name === "rest" ? wrapperSem.path : "unset").toBe(
-      "/users/{id}",
+      "/api/users/{id}",
     );
 
     // The caller, synthesised by wrapper expansion from its own
@@ -391,7 +504,7 @@ describe("axiosPack — instance built in another file", () => {
     expect(caller).toBeDefined();
     expect(caller?.identity.boundaryBinding).toEqual({
       transport: "http",
-      semantics: { name: "rest", method: "GET", path: "/users/{id}" },
+      semantics: { name: "rest", method: "GET", path: "/api/users/{id}" },
       recognition: "axios",
     });
     expect(
@@ -476,7 +589,7 @@ describe("axiosPack — instance built in another file", () => {
     expect(summary).toBeDefined();
     expect(summary?.identity.boundaryBinding).toEqual({
       transport: "http",
-      semantics: { name: "rest", method: "GET", path: "/users/{id}" },
+      semantics: { name: "rest", method: "GET", path: "/api/users/{id}" },
       recognition: "axios",
     });
   });
@@ -551,7 +664,7 @@ describe("axiosPack — instance built in another file", () => {
     expect(summary).toBeDefined();
     expect(summary?.identity.boundaryBinding).toEqual({
       transport: "http",
-      semantics: { name: "rest", method: "GET", path: "/users/{id}" },
+      semantics: { name: "rest", method: "GET", path: "/api/users/{id}" },
       recognition: "axios",
     });
   });
@@ -594,7 +707,7 @@ describe("axiosPack — instance built in another file", () => {
     expect(summary).toBeDefined();
     expect(summary?.identity.boundaryBinding).toEqual({
       transport: "http",
-      semantics: { name: "rest", method: "GET", path: "/users/{id}" },
+      semantics: { name: "rest", method: "GET", path: "/api/users/{id}" },
       recognition: "axios",
     });
   });
@@ -666,7 +779,7 @@ describe("axiosPack — a call whose receiver is itself a call", () => {
     const getUser = summaries.find((s) => s.identity.name === "getUser");
     expect(getUser?.identity.boundaryBinding).toEqual({
       transport: "http",
-      semantics: { name: "rest", method: "GET", path: "/users/1" },
+      semantics: { name: "rest", method: "GET", path: "/api/users/1" },
       recognition: "axios",
     });
   });
@@ -696,7 +809,7 @@ describe("axiosPack — a call whose receiver is itself a call", () => {
     const getUser = summaries.find((s) => s.identity.name === "getUser");
     expect(getUser?.identity.boundaryBinding).toEqual({
       transport: "http",
-      semantics: { name: "rest", method: "GET", path: "/users/1" },
+      semantics: { name: "rest", method: "GET", path: "/api/users/1" },
       recognition: "axios",
     });
   });
@@ -736,7 +849,7 @@ describe("axiosPack — a call whose receiver is itself a call", () => {
     const getUser = summaries.find((s) => s.identity.name === "getUser");
     expect(getUser?.identity.boundaryBinding).toEqual({
       transport: "http",
-      semantics: { name: "rest", method: "GET", path: "/users/1" },
+      semantics: { name: "rest", method: "GET", path: "/api/users/1" },
       recognition: "axios",
     });
   });
@@ -771,7 +884,7 @@ describe("axiosPack — a call whose receiver is itself a call", () => {
     const getUser = summaries.find((s) => s.identity.name === "getUser");
     expect(getUser?.identity.boundaryBinding).toEqual({
       transport: "http",
-      semantics: { name: "rest", method: "GET", path: "/users/1" },
+      semantics: { name: "rest", method: "GET", path: "/api/users/1" },
       recognition: "axios",
     });
   });
@@ -807,7 +920,7 @@ describe("axiosPack — a call whose receiver is itself a call", () => {
     const getUser = summaries.find((s) => s.identity.name === "getUser");
     expect(getUser?.identity.boundaryBinding).toEqual({
       transport: "http",
-      semantics: { name: "rest", method: "GET", path: "/users/1" },
+      semantics: { name: "rest", method: "GET", path: "/api/users/1" },
       recognition: "axios",
     });
   });
@@ -834,7 +947,7 @@ describe("axiosPack fixtures", () => {
     const summary = summaries.find((s) => s.identity.name === "getUser");
     expect(summary?.identity.boundaryBinding).toEqual({
       transport: "http",
-      semantics: { name: "rest", method: "GET", path: "/users/{id}" },
+      semantics: { name: "rest", method: "GET", path: "/api/users/{id}" },
       recognition: "axios",
     });
   });
@@ -843,7 +956,7 @@ describe("axiosPack fixtures", () => {
     const summary = summaries.find((s) => s.identity.name === "listOrders");
     expect(summary?.identity.boundaryBinding).toEqual({
       transport: "http",
-      semantics: { name: "rest", method: "GET", path: "/orders" },
+      semantics: { name: "rest", method: "GET", path: "/api/v2/orders" },
       recognition: "axios",
     });
   });
@@ -852,7 +965,7 @@ describe("axiosPack fixtures", () => {
     const summary = summaries.find((s) => s.identity.name === "createUser");
     expect(summary?.identity.boundaryBinding).toEqual({
       transport: "http",
-      semantics: { name: "rest", method: "POST", path: "/users" },
+      semantics: { name: "rest", method: "POST", path: "/api/users" },
       recognition: "axios",
     });
   });
@@ -861,17 +974,15 @@ describe("axiosPack fixtures", () => {
     const summary = summaries.find((s) => s.identity.name === "getReport");
     expect(summary?.identity.boundaryBinding).toEqual({
       transport: "http",
-      semantics: { name: "rest", method: "GET", path: "/reports/weekly" },
+      semantics: { name: "rest", method: "GET", path: "/api/reports/weekly" },
       recognition: "axios",
     });
   });
 
   it("keeps the call-site path, and only that, for a dynamic-base instance", () => {
     const summary = summaries.find((s) => s.identity.name === "getSettings");
-    // The base URL is a runtime value. The call site is still a
-    // boundary, and its path is the one written at the call site; the
-    // base never becomes part of the summary, the same as a literal
-    // base on the same-file shape.
+    // The base URL is a runtime value, so putting it in front of the
+    // path would move the boundary to a route nobody serves.
     expect(summary?.identity.boundaryBinding).toEqual({
       transport: "http",
       semantics: { name: "rest", method: "GET", path: "/settings" },
@@ -888,6 +999,6 @@ describe("axiosPack fixtures", () => {
       })
       .sort();
 
-    expect(paths).toEqual(["/orders", "/users"]);
+    expect(paths).toEqual(["/api/orders", "/api/users"]);
   });
 });

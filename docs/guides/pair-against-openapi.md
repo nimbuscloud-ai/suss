@@ -143,11 +143,15 @@ npx suss inspect --dir summaries/
 The output groups summaries by boundary key and shows which ones
 didn't match. Common root causes:
 
-- **Base URL prefix**: your client hits `/v1/users/123` but the
-  spec declares `/users/{id}` (no `/v1`). The axios pack doesn't
-  strip base URLs automatically. Fix it by either matching the
-  spec's path with a leading prefix, or by normalizing before
-  extraction.
+- **Base URL prefix**: the spec's `servers[0].url` (or a Swagger
+  2.0 `basePath`) goes in front of every route it declares, and a
+  `baseURL` on the axios instance goes in front of every path the
+  client writes, so `axios.create({ baseURL: "/v1" })` plus
+  `api.get("/users/1")` pairs with a spec serving `/users/{id}`
+  under `/v1`. An absolute base keeps only its path, and a base of
+  `/` adds nothing. A base suss cannot read, one computed at
+  runtime such as `process.env.API_URL`, leaves the path bare,
+  which is where the two sides can still disagree.
 - **Encoded segments**, `/search/{q}` vs
   `` axios.get(`/search/${encodeURIComponent(q)}`) ``. suss parses
   both the same way, so this isn't usually a problem.

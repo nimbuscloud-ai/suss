@@ -145,6 +145,7 @@ import {
 import { moduleInitSummary } from "./moduleInit.js";
 import { parameterReads } from "./parameterReads.js";
 import { createReferenceIndex } from "./referencedFiles.js";
+import { clientBasePath, underBasePath } from "./resolve/clientBasePath.js";
 import { runAccessRecognizersAtModuleScope } from "./resolve/invocationEffects.js";
 import {
   type ClosureFacts,
@@ -888,8 +889,16 @@ function extractConsumerBinding(
   }
 
   const method = extractBindingMethod(binding, callSite, pack, resolution);
-  const path = statedPath(
-    extractBindingPath(binding, callSite, pack, resolution),
+  // The base goes on after a path made only of holes has already been
+  // dropped, so a forwarding wrapper still states no route of its own.
+  const path = underBasePath(
+    clientBasePath(
+      callSite.callExpression,
+      pattern.match,
+      resolution,
+      callSite.under,
+    ),
+    statedPath(extractBindingPath(binding, callSite, pack, resolution)),
   );
 
   // Wrapper expansion looks for a null `path` to spot a forwarding
@@ -1737,6 +1746,13 @@ interface WrapperSink {
   extraction: BindingExtraction;
   /** What the wrapper's own binding says, for a pack that reads a contract. */
   statedMethod: string | null;
+  /**
+   * The base the instance this call is made on sends under. Kept out of
+   * the sink reading, which is what tells a wrapper apart from a caller
+   * that settles the path: a base in front of a hole would settle every
+   * wrapper on the first round.
+   */
+  basePath: string | undefined;
 }
 
 function expandWrapperCallers(
@@ -1822,9 +1838,9 @@ function sinkIn(
     discovered.set(key, units);
   }
   for (const unit of units) {
-    const extraction = (
-      unit.pattern ?? pack.discovery.find((d) => d.kind === unit.kind)
-    )?.bindingExtraction;
+    const pattern =
+      unit.pattern ?? pack.discovery.find((d) => d.kind === unit.kind);
+    const extraction = pattern?.bindingExtraction;
     if (
       unit.func !== func ||
       unit.callSite === undefined ||
@@ -1837,6 +1853,12 @@ function sinkIn(
       call: unit.callSite.callExpression,
       extraction,
       statedMethod: semantics?.name === "rest" ? semantics.method : null,
+      basePath: clientBasePath(
+        unit.callSite.callExpression,
+        pattern?.match,
+        resolution,
+        unit.callSite.under,
+      ),
     };
   }
   return null;
@@ -2021,7 +2043,7 @@ function buildCallerSummary(
   raw.boundaryBinding = restBinding({
     transport: wrapperBinding?.transport ?? "http",
     method: reading.method,
-    path: reading.path,
+    path: underBasePath(wrapper.sink.basePath, reading.path),
     recognition: wrapperBinding?.recognition ?? "unknown",
   });
 
