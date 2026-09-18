@@ -13,6 +13,7 @@
 
 import { Node, SyntaxKind } from "ts-morph";
 
+import { hasBody } from "../resolve/unfollowedCall.js";
 import { peelValue } from "../walk/unwrap.js";
 
 import type {
@@ -89,8 +90,10 @@ export function typescriptLowering(options: LoweringOptions): Lowering<Node> {
     if (first !== undefined) {
       return { module: first.module, name };
     }
-    const local =
-      resolution !== undefined && resolution.resolveCallable(callee) !== null;
+    // A lib declaration such as `encodeURIComponent` resolves too, but
+    // only a callable with a body is the project's own.
+    const target = resolution?.resolveCallable(callee) ?? null;
+    const local = target !== null && hasBody(target);
     if (chain.names.length > 1 || local) {
       return null;
     }
@@ -476,8 +479,10 @@ function functionOf(node: Node): FunctionShape<Node> | null {
     : Node.isBodyable(node)
       ? node.getBody()
       : undefined;
+  // A declaration without a body says nothing about what a call is
+  // worth; run as an empty body it would spell the result "undefined".
   if (body === undefined) {
-    return { parameters, body: [] };
+    return null;
   }
   return Node.isBlock(body)
     ? { parameters, body: body.getStatements() }

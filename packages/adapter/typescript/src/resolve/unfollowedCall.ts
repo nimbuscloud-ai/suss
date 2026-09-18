@@ -44,17 +44,10 @@ export function isInExternalCode(sourceFile: SourceFile): boolean {
   return sourceFile.getFilePath().includes("/node_modules/");
 }
 
-export function hasBody(fn: FunctionRoot): boolean {
+export function hasBody(fn: Node): boolean {
   // Ambient declarations and overload signatures have no body node, and
   // walking into one would summarize a signature as if it were code.
-  if (
-    Node.isFunctionDeclaration(fn) ||
-    Node.isMethodDeclaration(fn) ||
-    Node.isFunctionExpression(fn)
-  ) {
-    return fn.getBody?.() !== undefined;
-  }
-  return true;
+  return !Node.isBodyable(fn) || fn.getBody() !== undefined;
 }
 
 /**
