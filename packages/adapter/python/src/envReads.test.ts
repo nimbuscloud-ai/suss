@@ -401,6 +401,90 @@ describe("a call to a helper that reads the environment", () => {
     ).toEqual([]);
   });
 
+  it("reads a name through a lambda closed over an environment it was handed", async () => {
+    expect(
+      await moduleReadsWithFacts(
+        [
+          "import os",
+          "",
+          "",
+          "def make_reader(env):",
+          "    return lambda name: env[name]",
+          "",
+          "",
+          "require_env = make_reader(os.environ)",
+          'TABLE = require_env("TABLE_NAME")',
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual([{ name: "TABLE_NAME", defaulted: false }]);
+  });
+
+  it("reads a name off a name declared as the environment", async () => {
+    expect(
+      await functionReadsWithFacts(
+        [
+          "import os",
+          "",
+          "env = os.environ",
+          "",
+          "",
+          "def read(name):",
+          "    return env[name]",
+          "",
+          "",
+          "def load():",
+          '    return read("TABLE_NAME")',
+          "",
+        ].join("\n"),
+        "load",
+      ),
+    ).toEqual([{ name: "TABLE_NAME", defaulted: false }]);
+  });
+
+  it("follows the environment through two calls", async () => {
+    expect(
+      await moduleReadsWithFacts(
+        [
+          "import os",
+          "",
+          "",
+          "def make_reader(env):",
+          "    return lambda name: env[name]",
+          "",
+          "",
+          "def build(source):",
+          "    return make_reader(source)",
+          "",
+          "",
+          "require_env = build(os.environ)",
+          'TABLE = require_env("TABLE_NAME")',
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual([{ name: "TABLE_NAME", defaulted: false }]);
+  });
+
+  it("says nothing when the factory is handed a plain dict instead", async () => {
+    expect(
+      await moduleReadsWithFacts(
+        [
+          "import os",
+          "",
+          "",
+          "def make_reader(source):",
+          "    return lambda name: source[name]",
+          "",
+          "",
+          'settings = {"TABLE_NAME": "orders"}',
+          "require_env = make_reader(settings)",
+          'TABLE = require_env("TABLE_NAME")',
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual([]);
+  });
+
   it("reads a name the caller passes by keyword", async () => {
     expect(
       await moduleReadsWithFacts(
@@ -533,6 +617,37 @@ describe("a project whose environment reads go through a helper", () => {
     expect(loadTime.map((s) => s.location.file)).toEqual(["myapp/db.py"]);
     expect(configReadsOf(loadTime)).toEqual([
       { name: "DATABASE_URL", defaulted: true },
+    ]);
+  });
+
+  it("reads through a helper in a file that never writes os.environ", async () => {
+    const reader = write("myapp/reader.py", [
+      "def make_reader(env):",
+      "    return lambda name: env[name]",
+    ]);
+    const settings = write("myapp/settings.py", [
+      "import os",
+      "",
+      "from myapp.reader import make_reader",
+      "",
+      "require_env = make_reader(os.environ)",
+    ]);
+    const db = write("myapp/db.py", [
+      "from myapp.settings import require_env",
+      "",
+      'DATABASE_URL = require_env("DATABASE_URL")',
+    ]);
+
+    const { summaries } = await extractPythonProject({
+      files: [reader, settings, db],
+      packs: [],
+      roots: [tmpDir],
+      workspaceRoot: tmpDir,
+    });
+
+    const loadTime = summaries.filter((s) => s.kind === "module-init");
+    expect(configReadsOf(loadTime)).toEqual([
+      { name: "DATABASE_URL", defaulted: false },
     ]);
   });
 

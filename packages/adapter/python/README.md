@@ -26,7 +26,7 @@ npx suss check --dir summaries/
 - FastAPI and flask-restx routes, including a decorator a project re-exports through a wrapper module, with `response_model` and `status_code` taken as the declared contract.
 - The path a route is served under, composed through `include_router` prefixes, however many mounts deep, including a mount written inside a function or spread out of a dictionary.
 - SQLAlchemy calls, `requests` / `httpx` / `aiohttp` call sites, what a file reads from the environment, and what a handler calls out to, as facts the checker's rules run over.
-- Environment reads written through a project helper: with `def env(key): return os.environ[key]`, a call to `env("DATABASE_URL")` is a read of `DATABASE_URL`, however many helpers the name is handed through on the way. The helper can be what a factory returned, as in `env = make_reader()`. Not covered: a name built with an f-string (`env(f"{prefix}_URL")`), a name the helper takes off a dict, a helper built by `functools.partial`, and a helper that reads through an environment object it was handed as an argument.
+- Environment reads written through a project helper: with `def env(key): return os.environ[key]`, a call to `env("DATABASE_URL")` is a read of `DATABASE_URL`, however many helpers the name is handed through on the way. The helper can be what a factory returned, as in `env = make_reader()`, and it can read through an environment object it was handed, as in `make_reader(os.environ)` giving back `lambda name: env[name]`. Not covered: a name built with an f-string (`env(f"{prefix}_URL")`), a name the helper takes off a dict, and a helper built by `functools.partial`.
 
 How each of those is decided, and where it stops: [how the Python adapter reads a project](./DESIGN.md).
 

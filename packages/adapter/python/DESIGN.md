@@ -499,9 +499,11 @@ DATABASE_URL = env("DATABASE_URL")
 POOL_SIZE = env("POOL_SIZE", 5)
 ```
 
-The adapter states `readsEnvNamed(site, x)` for the read in `env`: the variable it reads is whatever `x` is, and `x` is a parameter rather than a literal. The shared rules in `@suss/resolution` then derive `paramNamesEnv(p, site)`, which says a parameter ends up as the name a read site looks up, either because the site reads it directly or because it is handed on to another helper's parameter that does. Forwarding through any number of helpers, across files, is that one rule.
+The adapter states two plain facts and lets the rules put them together. `readsKeyed(site, o, x)` says the read at `site` takes the entry of `o` that `x` works out, for any container at all, and `environmentObject(w)` says `w` is written as `os.environ`. The shared rules in `@suss/resolution` derive `readsEnvNamed(site, x)` from the pair, then `paramNamesEnv(p, site)`, which says a parameter ends up as the name a read site looks up, either because the site reads it directly or because it is handed on to another helper's parameter that does. Forwarding through any number of helpers, across files, is that one rule.
 
-The question is keyed on the read sites, not on the parameters. A project has a handful of reads whose name it does not write out and thousands of parameters somebody could pass something to, so the run seeds `wantedEnvSite` once with every site it stated and keeps what comes back: for each parameter, the sites its value ends up naming. With the site bound, the recursion runs from a helper to its callers, which is the direction `callsFunction` is built for.
+Splitting the fact is what lets a read off something other than `os.environ` count. `make_reader(os.environ)` returning `lambda name: env[name]` reads the environment through a parameter, and no scan of the helper's file would know it: the file never writes `os.environ`. `environmentValue(w, o)` walks out of the object instead, through the names declared as it and the parameters callers hand it to, and a keyed read off any of those is an environment read.
+
+The question is keyed on the environment objects, not on the read sites and not on the parameters. A project writes `os.environ` in a handful of places and has thousands of parameters somebody could pass something to, so the run seeds `wantedEnvObject` once with every object it stated and keeps what comes back: for each parameter, the sites its value ends up naming. `os.getenv(name)` has no container to state, so the adapter states the `os.getenv` reference as the environment object and the read against it.
 
 At `env("DATABASE_URL")` the reader finds the callee, looks each of its parameters up in that one result, and reads the argument only at a parameter that is on it. The name is the argument's own value, as a literal or as whatever the evaluator folds it to.
 
@@ -511,7 +513,9 @@ The read is reported at the call, in the caller's unit, so a call at module leve
 
 A callee that is a value rather than a name the project declares works too, as long as it is a call the project makes: `env = make_reader()` then `env("A")` reads `A`, whether `make_reader` returns a nested `def` or a lambda. The reader asks what the callee gives back as well as what it comes down to, and one rule says a call on a name a factory filled runs the function that factory returned.
 
-Out of scope: a name built out of a parameter (`env(f"{prefix}_URL")` reads nothing), a helper that takes the name off a dict or an options object rather than off a parameter, a helper built by `functools.partial`, and a helper that reads through an environment object it was handed as an argument rather than through `os.environ` itself.
+A helper handed the environment itself works too: `make_reader(os.environ)` giving back `lambda name: env[name]`, and the same through any number of calls. What the helper is handed has to come down to `os.environ`; a plain dict reads nothing. A read written in the helper's own body supplies no fallback as far as the reader is concerned, since nothing scanned that body for one.
+
+Out of scope: a name built out of a parameter (`env(f"{prefix}_URL")` reads nothing), a helper that takes the name off a dict or an options object rather than off a parameter, and a helper built by `functools.partial`.
 
 A project where every read writes its own name states no site, and then the reader never asks anything at a call.
 

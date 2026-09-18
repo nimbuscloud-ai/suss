@@ -273,40 +273,121 @@ export interface EnvNameSite {
   /** The key of the expression the name comes from, which the rules join to a parameter. */
   nameKey: string;
   defaulted: boolean;
+  /**
+   * The environment reference a read written as a call goes through.
+   * The value facts state the container of `os.environ[name]`;
+   * `os.getenv(name)` has no container for them to state.
+   */
+  functionKey: string | null;
+}
+
+/** What one file says about the environment, for the shared rules. */
+export interface EnvFileFacts {
+  sites: EnvNameSite[];
+  /** Keys of the expressions that spell the environment and hand it on. */
+  objects: string[];
 }
 
 /**
- * Every read in a file whose variable name is not a string literal,
- * function bodies included. A helper's own body is one of those, which
- * is why this walk does not stop where `envReadEffects` does.
+ * What a file says about the environment: every read whose variable
+ * name is not a string literal, and every expression that spells the
+ * environment object and hands it somewhere. Function bodies are
+ * included, since a helper's own read is written in one, which is why
+ * this walk does not stop where `envReadEffects` does.
  */
-export function envNameSites(
+export function envFactsIn(
   filePath: string,
   root: PyNode,
   module: ModuleBinding,
-): EnvNameSite[] {
-  const sites: EnvNameSite[] = [];
+): EnvFileFacts {
+  const found: EnvFileFacts = { sites: [], objects: [] };
   walkDescendants<PyNode, Scope>(root, module.moduleScope, {
     at: (node, scope) => {
+      if (isEnviron(node, scope) && handsOnward(node)) {
+        found.objects.push(keyOf(filePath, node));
+      }
       const syntax = envReadSyntaxAt(node, scope);
       if (syntax === null || stringLiteralValue(syntax.name) !== null) {
         return;
       }
-      sites.push({
+      found.sites.push({
         site: nodeId(filePath, node),
-        nameKey: readKey(filePath, syntax.name, enclosingFunction(syntax.name)),
+        nameKey: keyOf(filePath, syntax.name),
         defaulted: syntax.defaulted,
+        functionKey: functionReadKey(filePath, node, scope),
       });
     },
     into: (node, scope) => module.scopeFor.get(node.id) ?? scope,
   });
-  return sites;
+  return found;
 }
 
-/** What one run knows about the reads whose variable name the source does not write out. */
+/** The key the value facts give an expression, so the rules join on one key. */
+const keyOf = (filePath: string, node: PyNode): string =>
+  readKey(filePath, node, enclosingFunction(node));
+
+/**
+ * The `os.getenv` reference a read goes through, when the source writes
+ * the read as a bare function call. `os.environ.get(name)` reads a
+ * container the value facts already state.
+ */
+function functionReadKey(
+  filePath: string,
+  node: PyNode,
+  scope: Scope,
+): string | null {
+  if (node.type !== "call") {
+    return null;
+  }
+  const callee = field(node, "function");
+  if (callee === null || isEnviron(field(callee, "object") ?? callee, scope)) {
+    return null;
+  }
+  return keyOf(filePath, callee);
+}
+
+/**
+ * Whether anything but a read of one written-out variable is done with
+ * the object. A file whose every read spells its own variable hands the
+ * environment nowhere, so the rules have nothing to follow out of it.
+ */
+function handsOnward(node: PyNode): boolean {
+  const parent = node.parent;
+  if (parent === null) {
+    return true;
+  }
+  if (parent.type === "subscript" && field(parent, "value")?.id === node.id) {
+    return !writesTheKey(field(parent, "subscript"));
+  }
+  if (parent.type === "attribute" && field(parent, "object")?.id === node.id) {
+    const call = parent.parent;
+    return (
+      field(parent, "attribute")?.text === "get" &&
+      call !== null &&
+      call.type === "call" &&
+      !writesTheKey(firstArgumentOf(call))
+    );
+  }
+  return true;
+}
+
+/** Whether the source spells the variable at this read rather than working it out. */
+const writesTheKey = (key: PyNode | null): boolean =>
+  key !== null && stringLiteralValue(key) !== null;
+
+function firstArgumentOf(call: PyNode): PyNode | null {
+  const first = callArguments(call).find(
+    (argument) => argument.kind === "positional" && argument.position === 0,
+  );
+  return first?.node ?? null;
+}
+
+/** What one run knows about the environment before the rules are asked. */
 interface EnvSiteIndex {
   /** Each site by its node id, so a reader at a call can say whether it has a fallback. */
   byId: Map<string, EnvNameSite>;
+  /** Every expression the run says spells the environment, which is what the question is seeded with. */
+  objects: Set<string>;
   /** Which sites each parameter ends up naming. Null until the rules have been asked. */
   sitesByParameter: Map<string, string[]> | null;
 }
@@ -314,32 +395,45 @@ interface EnvSiteIndex {
 const sitesByDb = new WeakMap<Database, EnvSiteIndex>();
 
 /**
- * State the sites for the shared rules and keep them, so a reader
- * standing at a call can ask whether one of the callee's parameters is
- * a variable's name.
+ * State what the files said about the environment and keep the part the
+ * rules do not carry, so a reader standing at a call can ask whether one
+ * of the callee's parameters is a variable's name.
  */
 export function bindEnvNameSites(
   db: Database,
-  sites: readonly EnvNameSite[],
+  found: readonly EnvFileFacts[],
 ): void {
-  if (sites.length === 0) {
+  const sites = found.flatMap((one) => one.sites);
+  const objects = found.flatMap((one) => one.objects);
+  if (sites.length === 0 && objects.length === 0) {
     return;
   }
   let index = sitesByDb.get(db);
   if (index === undefined) {
-    index = { byId: new Map(), sitesByParameter: null };
+    index = { byId: new Map(), objects: new Set(), sitesByParameter: null };
     sitesByDb.set(db, index);
   }
+  for (const object of objects) {
+    db.add("environmentObject", [object]);
+    index.objects.add(object);
+  }
   for (const site of sites) {
-    db.add("readsEnvNamed", [site.site, site.nameKey]);
     index.byId.set(site.site, site);
+    if (site.functionKey === null) {
+      continue;
+    }
+    db.add("environmentObject", [site.functionKey]);
+    db.add("readsKeyed", [site.site, site.functionKey, site.nameKey]);
+    index.objects.add(site.functionKey);
   }
 }
 
 /**
  * Which sites each parameter ends up naming, from one question over
- * every site the run stated. Asked the first time a reader reaches a
- * call, by when every file's facts are in the database.
+ * every expression the run says spells the environment. Asked the first
+ * time a reader reaches a call, by when every file's facts are in the
+ * database. The reads cannot be the seed: one written through a
+ * parameter is off an object no scan of the source would pick out.
  */
 function sitesEachParameterNames(
   db: Database,
@@ -348,7 +442,7 @@ function sitesEachParameterNames(
   if (index.sitesByParameter !== null) {
     return index.sitesByParameter;
   }
-  resolveEnvSites(db, [...index.byId.keys()]);
+  resolveEnvSites(db, [...index.objects]);
   const found = new Map<string, string[]>();
   for (const row of db.facts("wantedParamNamesEnv")) {
     const parameter = String(row[0]);
@@ -475,10 +569,10 @@ function readsThroughHelper(
       continue;
     }
     for (const id of sites) {
-      const site = siteById.get(id);
-      if (site !== undefined) {
-        reads.set(name, (reads.get(name) ?? true) && site.defaulted);
-      }
+      // A site the rules derived is a read in a helper's own body, and
+      // nothing scanned it for a fallback, so it supplies none.
+      const defaulted = siteById.get(id)?.defaulted ?? false;
+      reads.set(name, (reads.get(name) ?? true) && defaulted);
     }
   }
   if (reads.size === 0) {

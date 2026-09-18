@@ -428,10 +428,71 @@ function walkExpressions(
   }
 }
 
+/** A key the source writes out, which `readsProperty` covers instead. */
+const WRITTEN_KEY_TYPES = new Set(["string", "integer", "concatenated_string"]);
+
+/**
+ * `settings[name]` and `settings.get(name)`: the container, and the
+ * expression the key comes from. Which containers are the environment
+ * is the rules' business, so this says nothing about that either way.
+ */
+function emitKeyedRead(
+  emitter: Emitter,
+  site: PyNode,
+  container: PyNode,
+  key: PyNode,
+): void {
+  if (WRITTEN_KEY_TYPES.has(key.type)) {
+    return;
+  }
+  add(
+    emitter,
+    "readsKeyed",
+    nodeId(emitter.filePath, site),
+    valueKey(emitter, container),
+    valueKey(emitter, key),
+  );
+}
+
+/** The subscript of `a[i]`, when the source writes exactly one. */
+function singleSubscript(node: PyNode): PyNode | null {
+  const written = fields(node, "subscript");
+  return written.length === 1 ? (written[0] ?? null) : null;
+}
+
+/** The container and key of `d.get(name)`, the mapping read written as a call. */
+function mappingGetRead(
+  call: PyNode,
+): { container: PyNode; key: PyNode } | null {
+  const callee = field(call, "function");
+  if (callee === null || callee.type !== "attribute") {
+    return null;
+  }
+  const container = field(callee, "object");
+  if (container === null || field(callee, "attribute")?.text !== "get") {
+    return null;
+  }
+  const first = callArguments(call).find(
+    (argument) => argument.kind === "positional" && argument.position === 0,
+  );
+  return first === undefined ? null : { container, key: first.node };
+}
+
 /** What one expression says about itself, whichever walk reached it. */
 function emitExpressionFact(emitter: Emitter, child: PyNode): void {
   if (child.type === "call") {
     emitCall(emitter, child);
+    const mapping = mappingGetRead(child);
+    if (mapping !== null) {
+      emitKeyedRead(emitter, child, mapping.container, mapping.key);
+    }
+  }
+  if (child.type === "subscript") {
+    const index = singleSubscript(child);
+    const container = field(child, "value");
+    if (index !== null && container !== null) {
+      emitKeyedRead(emitter, child, container, index);
+    }
   }
   if (child.type === "dictionary") {
     emitDictionary(emitter, child);
@@ -528,6 +589,12 @@ function emitFunctionFacts(
   /* v8 ignore stop */
 
   emitNestedDefinitions(inside, body);
+
+  // A lambda's body is one expression rather than a block, and the walk
+  // below reaches only that expression's children.
+  if (fn.type === "lambda") {
+    emitExpressionFact(inside, body);
+  }
 
   // One walk for both, since this function's own facts and the expression
   // facts want the same nodes and the walk is the expensive part.
