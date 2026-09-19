@@ -759,10 +759,3 @@ Without the flag the file is skipped with a warning on stderr and the run exits 
 **Legitimate when:** the directory deliberately mixes summaries with other JSON a different tool reads. Move the other files, or leave the flag off.
 
 **A bug when:** the skipped file was written by extract. A truncated output means the extract was interrupted, and a report written back into the summaries directory means an `-o` path pointed at the wrong place.
-
-## What this page is not
-
-- **Not every tool's finding.** A tool built on `@suss/behavioral-ir` can emit kinds of its own, and those are not here.
-- **Not the spec.** `FindingKindSchema` is. This page tracks it, and `npm run check:findings` fails when it drifts.
-- **Not the last word on severity.** These are the defaults the checker emits. A `.sussignore` rule can downgrade or hide any of them; see [Accept a finding](/guides/accept-a-finding).
-- **Not a roadmap.** A reserved kind is a name in the enum with no emitter, and nothing promises one is coming soon.
