@@ -348,8 +348,18 @@ const ThrowsOutcomeSchema = z.object({
 // and `returns: {}` mean the same body-less thing, instead of failing
 // with "expected object, received null".
 function emptyIfNull<T extends z.ZodTypeAny>(schema: T) {
-  return z.preprocess((v) => (v === null ? {} : v), schema);
+  return z
+    .preprocess((v) => (v === null ? {} : v), schema)
+    .meta({ [ACCEPTS_NULL]: true });
 }
+
+/**
+ * The meta key `emptyIfNull` leaves on a field for the JSON Schema
+ * generator, which rewrites the field to accept null and takes the key
+ * back out. JSON Schema has no word for a preprocess, so without this
+ * the published schema would reject a bare `returns:` that suss takes.
+ */
+export const ACCEPTS_NULL = "x-suss-accepts-null";
 
 /** One effect, written `- writes: postgresql:invoices`. */
 export type DeclaredEffect = Partial<Record<EffectRelation, string>> & {

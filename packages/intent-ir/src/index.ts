@@ -20,6 +20,7 @@ export {
   IntentRefSchema,
 } from "./findings.js";
 export {
+  ACCEPTS_NULL,
   BodyShapeSchema,
   BoundarySchema,
   blanksLeftEmpty,

@@ -1088,88 +1088,109 @@
               },
               "response": {
                 "description": "This outcome sends an HTTP response.",
-                "type": "object",
-                "properties": {
-                  "status": {
-                    "type": "integer",
-                    "minimum": 100,
-                    "maximum": 599,
-                    "description": "The HTTP status code the response carries."
-                  },
-                  "body": {
-                    "anyOf": [
-                      {
-                        "$ref": "#/$defs/__schema0"
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "integer",
+                        "minimum": 100,
+                        "maximum": 599,
+                        "description": "The HTTP status code the response carries."
                       },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "properties": {
-                            "type": "object",
-                            "propertyNames": {
-                              "type": "string"
-                            },
-                            "additionalProperties": {
-                              "$ref": "#/$defs/__schema0"
-                            }
+                      "body": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/$defs/__schema0"
                           },
-                          "required": {
-                            "type": "array",
-                            "items": {
-                              "type": "string"
+                          {
+                            "type": "object",
+                            "properties": {
+                              "properties": {
+                                "type": "object",
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "additionalProperties": {
+                                  "$ref": "#/$defs/__schema0"
+                                }
+                              },
+                              "required": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
                             }
                           }
-                        }
+                        ],
+                        "description": "The shape of the response body."
                       }
-                    ],
-                    "description": "The shape of the response body."
+                    },
+                    "required": ["status"]
+                  },
+                  {
+                    "type": "null"
                   }
-                },
-                "required": ["status"]
+                ]
               },
               "returns": {
                 "description": "This outcome returns a value to its caller.",
-                "type": "object",
-                "properties": {
-                  "body": {
-                    "anyOf": [
-                      {
-                        "$ref": "#/$defs/__schema0"
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "properties": {
-                            "type": "object",
-                            "propertyNames": {
-                              "type": "string"
-                            },
-                            "additionalProperties": {
-                              "$ref": "#/$defs/__schema0"
-                            }
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "body": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/$defs/__schema0"
                           },
-                          "required": {
-                            "type": "array",
-                            "items": {
-                              "type": "string"
+                          {
+                            "type": "object",
+                            "properties": {
+                              "properties": {
+                                "type": "object",
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "additionalProperties": {
+                                  "$ref": "#/$defs/__schema0"
+                                }
+                              },
+                              "required": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
                             }
                           }
-                        }
+                        ],
+                        "description": "The shape of the returned value."
                       }
-                    ],
-                    "description": "The shape of the returned value."
+                    }
+                  },
+                  {
+                    "type": "null"
                   }
-                }
+                ]
               },
               "throws": {
                 "description": "This outcome raises an error.",
-                "type": "object",
-                "properties": {
-                  "errorType": {
-                    "type": "string",
-                    "description": "The name of the error class this outcome raises."
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "errorType": {
+                        "type": "string",
+                        "description": "The name of the error class this outcome raises."
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
                   }
-                }
+                ]
               },
               "results": {
                 "minItems": 1,

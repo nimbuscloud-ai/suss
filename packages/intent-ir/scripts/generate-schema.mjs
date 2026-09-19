@@ -8,16 +8,41 @@ import { fileURLToPath } from "node:url";
 
 import { z } from "zod";
 
-import { IntentDocSchema } from "../dist/index.js";
+import { ACCEPTS_NULL, IntentDocSchema } from "../dist/index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const outPath = resolve(__dirname, "../schema/intent-doc.schema.json");
+
+/**
+ * Rewrite a field `emptyIfNull` marked so it accepts null as well as the
+ * object, which is the preprocess that JSON Schema has no word for. The
+ * description stays at the top so an editor still shows it on hover.
+ */
+function alsoAcceptNull(jsonSchema) {
+  delete jsonSchema[ACCEPTS_NULL];
+  if (Array.isArray(jsonSchema.anyOf)) {
+    return;
+  }
+  const { description, ...object } = jsonSchema;
+  for (const key of Object.keys(jsonSchema)) {
+    delete jsonSchema[key];
+  }
+  if (description !== undefined) {
+    jsonSchema.description = description;
+  }
+  jsonSchema.anyOf = [object, { type: "null" }];
+}
 
 // The input side, so a field with a default stays optional the way it
 // is for somebody writing the file by hand.
 const jsonSchema = z.toJSONSchema(IntentDocSchema, {
   target: "draft-2020-12",
   io: "input",
+  override: (ctx) => {
+    if (ctx.jsonSchema[ACCEPTS_NULL] === true) {
+      alsoAcceptNull(ctx.jsonSchema);
+    }
+  },
 });
 
 const wrapped = {
