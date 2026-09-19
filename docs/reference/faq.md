@@ -1,73 +1,109 @@
 ---
 title: FAQ
-description: What suss reads, what a boundary is, which languages and frameworks it covers, and what it leaves out.
+description: The questions that come up in the first week of running suss.
 ---
 
 # FAQ
 
-You have a stack that already type-checks, lints, tests and traces. Most of what people ask about suss comes down to where it fits next to those, and what it tells you that they do not.
-
 ## What is suss, in one sentence?
 
-suss works out every path through every function in your code, pairs those descriptions across the places where two units meet (an HTTP call, a GraphQL field, a queue, a table, a function call), and reports where the two sides disagree.
+suss works out every path through every function in your code, pairs those descriptions across the places where two units meet, and reports where the two sides disagree.
+
+A place where two units meet is an HTTP call, a GraphQL field, a queue, a database table, an environment variable, or a function call across a package boundary.
 
 ## What does it look like when it finds something?
 
-An Express route grew a branch for admins. The caller was written before that branch existed:
+A route returns an order as the database has it, and the panel that draws the order reads a field the route never sends.
 
 ```ts
-// src/routes.ts
-if (user.role === "admin") {
-  res.json({ ...user, admin: true });
-  return;
-}
+// src/api.ts
+app.get("/orders/:id", (req, res) => {
+  const order = orders[req.params.id];
+  if (!order) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  res.status(200).json(order);   // { id, customer, total }
+});
 
-res.json(user);
+// src/orderPanel.ts
+export function loadOrder(id: string) {
+  return fetch(`/orders/${id}`)
+    .then((res) => res.json())
+    .then((data) => data.customerName);
+}
 ```
 
 ```bash
-suss extract -f express -f axios -o summaries/all.json
-suss check --dir summaries/ --all
+suss extract -f express -f fetch -o summaries/code.json
+suss check --dir summaries/
 ```
 
-That run reports three findings. This is the second of them:
-
 ```
-[WARNING] unhandledProviderCase
-  Provider returns status 200 in 2 different situations, and the consumer treats them all the same
-  provider: src/routes.ts::get (src/routes.ts:5)
-  consumer: src/userCard.ts::getUser (src/userCard.ts:5)
-  boundary: express (http) GET /users/:id
-  to silence this one, add to the rules in .sussignore.yml:
-    - kind: unhandledProviderCase
-      boundary: "GET /users/{id}"
-      provider: { transitionId: "get:response:200:24f5fd8" }
-      reason: TODO say why you accept this
+[ERROR] misreadProviderResponse
+  The consumer's fall-through path reads "customerName", but the 200 body the provider sends does not include it, and neither does any other response.
+  provider: src/api.ts::get (src/api.ts:13)
+  consumer: src/orderPanel.ts::loadOrder (src/orderPanel.ts:1)
+  boundary: express (http) GET /orders/:id
 ```
 
-Both files typecheck, both sides pass their tests, and the two 200s mean different things. [Cross-boundary checking](/why/cross-boundary-checking) shows all three findings and the code behind them.
+Both files typecheck. Nobody wrote a shared type between them, and `customerName` comes back undefined at runtime with no error to say so.
 
-## How is it different from the tools I already run?
+## How do I run it for the first time?
 
-[Compared to other tools](/why/compared) takes the linter, the type checker, the spec, the contract test and the tracing one at a time.
+Run `suss init` in your project. It reads your dependencies, works out which packs your stack needs, and prints or runs the commands.
 
-## What does "behavioral drift" mean?
+[Quickstart](/start/quickstart) walks through the first run end to end.
 
-Two pieces of code, or one piece of code and one declared contract, that used to agree about what crosses a boundary and now do not. The agreement was about behavior rather than types, and the types may not have changed at all.
+## Do I need to install anything besides the CLI?
 
-- A handler used to return `404` for soft-deleted users and now returns `200 { status: "deleted" }`. The caller still takes `200` to mean the user exists and is usable.
-- A Prisma write used to set `email` and the schema dropped the column. The type-checker does not catch it because the field is still in the input type. Only the database rejects it, at runtime.
-- A queue producer used to send `{ userId: string }` and the consumer parses `userId` as a number. Both compile, both run, until the wrong value gets stored.
+No. Every pack ships inside `@suss/cli`, so `npx @suss/cli init` is the whole installation.
+
+You do need your project's own dependencies installed, because some packs resolve types through them. [Compatibility](/reference/compatibility#dependencies) says which.
 
 ## Does it require annotations or changes to my code?
 
-No. suss reads your source as it is today, with no decorators, no JSDoc tags, no comments to add and no rewrites. It does want two things from you: your `tsconfig.json`, so type resolution matches what your compiler sees, and the packs for your stack.
+No. suss reads your source as it is, with no decorators, no JSDoc tags and no comments to add.
+
+It wants two things from you: your `tsconfig.json`, so type resolution matches what your compiler sees, and the packs for your stack.
+
+## What is a "boundary"?
+
+Any place where two units of code meet across a contract: an HTTP request from a client to a handler, a function exported from one package and called from another, a query against a database schema, a message on a queue, a React parent rendering a child.
+
+The contract can be implicit, such as a function signature, or written down, such as an OpenAPI document or a Prisma schema. Every boundary has a provider side that produces the value and a consumer side that acts on it, even when both are in one process. `suss check --all` opens by printing what it paired at each one:
+
+```
+Compared 2 boundaries:
+  GET /orders/{id}
+    proj::src/api.ts::get <-> proj::src/client.ts::loadOrder
+    openapi:openapi.yaml::GET /orders/{id} <-> proj::src/client.ts::loadOrder
+    proj::src/api.ts::get <-> openapi:openapi.yaml::GET /orders/{id}
+  POST /orders
+    proj::src/api.ts::post <-> openapi:openapi.yaml::POST /orders
+```
+
+## What boundaries are modelled?
+
+HTTP, GraphQL, storage, message buses, runtime configuration, deployed-unit invocation, metrics, and in-process function calls across a package export.
+
+Which libraries suss reads at each of those comes from the packs, and [Pack catalog](/packs/catalog) is the list. Adding a boundary means adding a pack, and nothing around it changes.
+
+## What does "behavioral drift" mean?
+
+Two pieces of code, or one piece of code and one written contract, that used to agree about what crosses a boundary and now do not.
+
+The agreement was about behavior rather than types, so the types may not have changed at all:
+
+- A handler used to return `404` for soft-deleted users and now returns `200 { status: "deleted" }`. The caller still takes `200` to mean the user exists.
+- A Prisma write used to set `email` and the schema dropped the column. The field is still in the input type, so the type checker says nothing and only the database refuses it.
+- A queue producer used to send `{ userId: string }` and the consumer parses `userId` as a number. Both compile, both run, and the wrong value gets stored.
 
 ## What languages does it support?
 
-suss reads TypeScript and JavaScript through `@suss/adapter-typescript`, which uses ts-morph. It reads Python through `@suss/adapter-python` and Ruby through `@suss/adapter-ruby`, and those two parse with tree-sitter compiled to WASM, so neither needs an installed interpreter. `suss extract --lang python` and `--lang ruby` pick them, and a directory with a `pyproject.toml` or a `Gemfile.lock` in it is recognized without the flag.
+TypeScript and JavaScript through ts-morph, Python and Ruby through tree-sitter compiled to WASM.
 
-On the Python side it reads FastAPI and flask-restx routes and SQLAlchemy queries. On the Ruby side it reads Rails controller actions and their routes, graphql-ruby's class-based `field` DSL, and ActiveRecord queries. Over this repository's own `fixtures/python-webapp`, `suss extract --dir fixtures/python-webapp -f fastapi -f flask-restx` finds eight routes. Two of them, with the other six cut:
+Neither Python nor Ruby needs an installed interpreter. `suss extract --lang python` and `--lang ruby` pick those adapters, and a directory with a `pyproject.toml` or a `Gemfile.lock` in it is recognized without the flag. Over this repository's own `fixtures/python-webapp`, `suss extract --dir fixtures/python-webapp -f fastapi -f flask-restx` writes 14 summaries, 8 of them routes with a path. Two of those, with the rest cut:
 
 ```
 myapp/fastapi_app.py
@@ -78,55 +114,49 @@ myapp/fastapi_app.py
        -> 201 TodoResponse
 ```
 
-The IR (`@suss/behavioral-ir`) and the checker (`@suss/checker`) know nothing about any of this. They consume `BehavioralSummary[]` JSON, so a Python service and a TypeScript client compare against each other in one `check` run. See [Read Python or Ruby](/guides/python-and-ruby) for what each adapter reads and where it stops.
-
-## What is a "boundary"?
-
-Any place where two units of code meet across a contract: an HTTP request going from a client to a handler, a function exported from one module and called from another, a SQL query running against a database schema, a message put on a queue and read by a consumer, a React parent rendering a child with props. The contract can be implicit, a function signature, or explicit, an OpenAPI document or a Prisma schema.
-
-Every boundary has a *provider* side, which produces the output, and a *consumer* side, which acts on it, even when both live in the same process. `suss check --all` opens by printing which summaries it paired at each one. On an Express and Prisma API, the first three of the eleven pairs at one boundary:
-
-```
-Compared 4 boundaries:
-  postgresql:Article
-    src/prisma/schema.prisma::Article <-> @api/source::src/app/routes/article/article.service.ts::getArticles
-    src/prisma/schema.prisma::Article <-> @api/source::src/app/routes/article/article.service.ts::getFeed
-    src/prisma/schema.prisma::Article <-> @api/source::src/app/routes/article/article.service.ts::createArticle
-```
-
-There the provider is a Prisma model and the consumers are the queries against it. The full run lists all four boundaries with every pair under them, then the findings.
-
-## What boundaries are modelled?
-
-suss reads HTTP through Express, Hono, Fastify, NestJS REST, Next.js route handlers, ts-rest, AWS Lambda, Cloudflare Workers and Rails controller actions, and it reads the calling side through `fetch` and axios. It reads GraphQL through Apollo Server, NestJS GraphQL, AppSync and graphql-ruby, with Apollo Client on the calling side. On the front end it reads React components, event handlers and `useEffect` bodies, plus React Router loaders and actions. For storage it reads Prisma, Drizzle, Mongoose, DynamoDB, S3, GCS, Redis, SQLAlchemy and ActiveRecord. For the message bus it reads SQS and EventBridge producers, and takes the consumer side from CloudFormation event-source mappings. It reads runtime configuration from `process.env` and from the `Environment` blocks that supply it.
-
-The contract readers turn a declared artifact into the same summaries: OpenAPI 3.x, CloudFormation and SAM, Serverless Framework, AppSync, Terraform, wrangler, GraphQL SDL and operation documents, Storybook CSF3, and Prisma schemas. Adding a boundary means adding a pack, and nothing around it changes. See [What a pack is](/packs/what-a-pack-is) for the model and [Pack catalog](/packs/catalog) for the current list.
+The IR and the checker know nothing about any of this. They read `BehavioralSummary[]` JSON, so a Python service and a TypeScript client compare against each other in one `check` run. [Read Python or Ruby](/guides/python-and-ruby) covers what each adapter reads and where it stops.
 
 ## Does it work in monorepos?
 
-Yes. Run `suss extract` once per package with that package's `tsconfig.json`, then `suss check --dir` pairs across the resulting files. The contract commands, `suss contract --from openapi` and the rest, are independent of the source repo, so a spec that lives elsewhere still pairs.
+Yes. Run `suss extract` once per package with that package's `tsconfig.json`, then `suss check --dir` pairs across the files.
+
+The contract commands are independent of the source repo, so a spec that lives somewhere else still pairs. [Work across services](/guides/work-across-services) has the commands.
+
+## Why did my run find nothing?
+
+Almost always because the pack list does not match the stack, or because a pack needs a dependency that is not installed.
+
+The run says where it stopped, file by file and pack by pack. [Fix a run that found nothing](/guides/fix-an-empty-run) reads that output case by case.
 
 ## Does it produce false positives?
 
-Sometimes, and it says out loud where it is unsure. Three things show up in the output:
+Sometimes, and the output says where it is unsure.
 
-- **Opaque predicates.** When a branch condition cannot be resolved statically, the predicate is labeled `opaque` with the source text kept. A downstream tool decides whether to count an opaque branch as covered.
-- **Unresolved subjects.** When a value's origin cannot be traced, the subject is labeled `unresolved` instead of being dropped.
-- **Confidence.** Every summary includes a `confidence` block recording how well the extractor did.
-
-Alongside those, every `check` run ends with a line saying how much of the code it could not follow:
+Three things show up in a summary. A branch condition suss could not resolve becomes an `opaque` predicate with the source text kept. A value whose origin it could not trace becomes an `unresolved` subject rather than being dropped. And every summary has a `confidence` block. On top of those, each `check` run ends with a line saying how much of the code it could not follow:
 
 ```
-suss met a call it could not follow in 19 units, of 50, so those are described in part. `suss inspect` says which calls.
+suss met a call it could not follow in one unit, of 6, so that one is described in part. `suss inspect` says which calls.
 ```
 
-Findings are graded `error | warning | info`, and `--fail-on` sets the CI gate. You will also get outright false positives sometimes, findings about something the code does not do. The usual cause is a pack that does not know about a wrapper or a recognition pattern, and adding the pattern to the pack is the fix.
+You will get outright false positives sometimes, findings about something the code does not do. The usual cause is a pack that does not know about a wrapper you wrote, and adding that pattern to the pack is the fix.
+
+## How do I silence a finding I have accepted?
+
+Put a rule in `.sussignore.yml`. Every finding prints the rule that would silence it, so you can copy the block out of the output.
+
+A rule can mark a finding (still shown, dropped from the exit code), downgrade it one severity, or hide it. [Accept a finding](/guides/accept-a-finding) has the format.
+
+## Will it fail my build?
+
+It can. `suss check` exits non-zero when it reports any `error`-severity finding, and `--fail-on warning` or `--fail-on info` moves the gate.
+
+[Exit codes](/reference/cli/exit-codes) lists every code, and [Run it in CI](/guides/ci-integration) has a workflow to copy.
 
 ## What is the difference between `suss extract` and `suss contract`?
 
-`extract` reads source and derives summaries from the implementation. `contract` reads a declared artifact and emits summaries in the same form: an OpenAPI document, a CloudFormation template, a Serverless service file, a Prisma schema, a GraphQL SDL or operation document, or a Storybook CSF3 file. Both feed `suss check`, which pairs them.
+One reads code and one reads a document. `extract` derives summaries from the implementation, and `contract` reads a written artifact and emits summaries in the same form.
 
-Sometimes `contract` tells you something no handler does. Reading a SAM template gives 32 summaries, six of them routes. Here is one route, with the other 31 cut:
+Both feed `suss check`, which pairs them. Sometimes `contract` tells you something no handler does. Reading `fixtures/aws-lambda/template.yaml` gives 29 summaries, six of them routes. Here is one route, with the other 28 cut:
 
 ```
 cloudformation:fixtures/aws-lambda/template.yaml:ListWidgetsFunction:List
@@ -142,19 +172,33 @@ API Gateway produces those two itself, on an integration timeout and an integrat
 
 ## Can library authors publish suss summaries with their package?
 
-Yes. The [summary format](/reference/summary-format) is versioned and documented, and the `packageExports` discovery variant produces one provider summary per public export, resolved through your `package.json` entry points, so you never list the exports by hand. Run `suss extract` at publish time, ship the JSON in `dist/`, and consumers pair against it without needing your source. On the consumer side the `packageImport` variant finds every call site of an imported binding, and the two sides pair by `fn:<package>::<exportPath>`.
+Yes. Run `suss extract` at publish time and ship the JSON in `dist/`, and consumers pair against it without needing your source.
+
+The `packageExports` discovery variant writes one provider summary per public export, resolved through your `package.json` entry points, so you never list the exports by hand. On the consumer side the `packageImport` variant finds every call site of an imported binding, and the two sides pair by `fn:<package>::<exportPath>`. [Publish summaries](/guides/publish-summaries) has the convention.
 
 ## Is the format stable?
 
-The IR (`@suss/behavioral-ir`) and its JSON Schema are versioned. A breaking change gets a major version bump and a migration note. The CLI surface and the `inspect` output are still settling, so a tool built on the JSON is on firmer ground than one parsing the rendered text.
+The IR (`@suss/behavioral-ir`) and its JSON Schema are versioned, and a breaking change gets a major version bump.
+
+The CLI surface and the `inspect` rendering are still settling, so a tool built on the JSON is on firmer ground than one parsing the text. [Summary format](/reference/summary-format#what-a-consumer-can-rely-on) says what is guaranteed.
+
+## How is it different from the tools I already run?
+
+Your linter, type checker and tests each read one side of a boundary, and suss reads both sides and compares them.
+
+[Compared to other tools](/why/compared) takes the linter, the type checker, the spec, the contract test and the tracing one at a time.
 
 ## What is out of scope?
 
+Anything that needs a running system, a database of history, or a server.
+
 - Cross-service aggregation, dashboards and historical drift tracking. Those consume summaries rather than producing them.
 - Continuous monitoring. suss runs on demand, locally or in CI, and never as a daemon.
-- Authorial intent, mostly. suss derives what the code does rather than what it should do. Declared contracts express some of it, and the checker compares them against derivation. Team-authored [intent docs](/guides/check-against-intent) are their own stream.
-- Runtime instrumentation. Nothing suss reads comes from your running system: no agents, no sampling, no production data. `suss corroborate --experimental` does run handlers, locally, against inputs it generates, and it records what it saw beside the derived claim rather than in place of it.
+- Authorial intent, mostly. suss derives what the code does rather than what it should do. Written contracts express some of it, and team-authored [intent docs](/guides/check-against-intent) are their own stream.
+- Runtime instrumentation. Nothing suss reads comes from your running system. `suss corroborate --experimental` does run handlers, locally, against inputs it generates, and it records what it saw beside the derived claim rather than in place of it.
 
 ## How do I add a new framework?
 
-Write a `PatternPack`: declarative configuration that says how the framework registers handlers, where a status code attaches to a response, and what counts as an effect. Most packs are 100 to 300 lines of data and none of them fork the analyzer. See [Write a pack](/packs/write-a-pack).
+Write a `PatternPack`: declarative configuration saying how the framework registers handlers, where a status code attaches to a response, and what counts as an effect.
+
+Most packs are 100 to 300 lines of data and none of them forks the analyzer. [Write a pack](/packs/write-a-pack) walks through one.
