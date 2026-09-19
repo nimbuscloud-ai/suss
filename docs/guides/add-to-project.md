@@ -1,66 +1,50 @@
 ---
-title: Add suss to a project you already have
-description: Run suss against an existing repo and get something to act on from the first run, without annotating anything first.
+title: Add suss to a project
+description: Install suss in a repository you already have, run it once, and read what came back.
 ---
 
 # Add suss to a project
 
-Point suss at a repo you already have and get something you can act on
-out of the first run: which of your queries disagree with the schema
-they run against, which of your callers miss a status their provider
-returns. You annotate nothing first and you start nothing, and the only
-thing written to disk is a folder of summary files.
-
-For a Python or Ruby project, start at
-[Read Python or Ruby](/guides/python-and-ruby), which covers
-the same ground for those two languages.
-
-<!-- suss:unchecked it runs against gothinkster/node-express-realworld-example-app, which this repository does not check in -->
-
-## The first run
+Install suss in a repository you already have and get a first answer out of it. You annotate nothing, you start nothing, and the only things written to disk are a folder of summary files and a small `suss.json`.
 
 ```bash
-npx @suss/cli init
+npm install --save-dev @suss/cli
+npx suss init
 ```
 
-`init` reads your `package.json`, looks for schemas and deploy
-templates on disk, and offers to install the packs for what it found.
-Here it is on
-[gothinkster/node-express-realworld-example-app](https://github.com/gothinkster/node-express-realworld-example-app):
+Everything ships inside `@suss/cli`. There is one install, and each pack is reached by name after that.
+
+## What `init` finds
+
+<!-- suss:unchecked it runs in a repository of your own, and this one checks none in -->
+
+`init` reads your dependency list, looks for schemas and deploy templates on disk, and prints what it can read. On a small Express service with a web client in the same repository:
 
 ```
-✓ Found 4 things to read in node-express-realworld-example-app
+✓ Found 3 things to read in articles
 
   Your code
     express          express in dependencies
-    axios            axios in dependencies
+    fetch            TypeScript sources, and fetch reads what the language itself ships
 
   What your code reaches
-    prisma           @prisma/client in dependencies
-
-  Declared contracts
-    prisma           a Prisma schema at src/prisma/schema.prisma
+    node             TypeScript sources, and node reads what the language itself ships
 ```
 
-Then it walks you through the rest, one question at a time:
+Then it asks five questions, one at a time:
 
-- **Install N packages as devDependencies?** Defaults to yes. If npm
-  fails, it stops there, prints what npm said, and leaves you the
-  command to run.
-- **Read the code now and compare what it finds?** Defaults to yes, and
-  runs the `extract`, `contract`, and `check` commands for you.
-- **Add a `.sussignore` for findings you decide to accept?** Defaults to
-  no.
-- **Add a GitHub Actions workflow that runs this on every pull
-  request?** Defaults to no.
+- **Install N packages as devDependencies?** Yes by default. If npm fails it stops there, prints what npm said, and leaves you the command.
+- **Read the code now and compare what it finds?** Yes by default. It runs `extract`, `contract` and `check` for you.
+- **Add a `.sussignore` for findings you decide to accept?** No by default.
+- **Add a GitHub Actions workflow that runs this on every pull request?** No by default.
+- **Write `suss.json`, so later runs know what this project declares?** Yes by default.
 
-Nothing reaches disk unless you accept it.
+Nothing reaches disk unless you say yes.
 
-Run piped, in CI, or with `--plain`, `init` prints the commands instead
-of asking:
+Piped, in CI, or with `--plain`, `init` prints the commands instead of asking:
 
 ```bash
-npx @suss/cli init --plain
+npx suss init --plain
 ```
 
 ```
@@ -70,257 +54,139 @@ npx @suss/cli init --plain
 
 2. Read each side into one folder
 
-   suss extract -f express -f axios -f prisma -o summaries/code.json
-   suss contract --from prisma src/prisma/schema.prisma -o summaries/prisma.json
+   suss extract -f express -f fetch -f node -o summaries/code.json
 
 3. Compare them
 
    suss check --dir summaries/
 ```
 
-On this repo those commands produce 46 summaries from the source, 4
-from the Prisma schema, and three warnings about fields the schema
-declares that no query ever asks for. The
-[Get started walkthrough](/start/quickstart) goes through that
-output line by line.
+Two more steps follow, on accepting a finding and on running the same two commands in CI.
 
-Three pieces, in order: a **pack** per library you want read, an
-**extract** that writes down what each unit does, and a **check** that
-compares the summaries on either side of each boundary. Extract is
-useful on its own if all you want is a description of what your
-handlers do.
+## What `init` writes
 
-### In a monorepo
-
-At a repo root, `init` reads the workspace declaration and asks which
-packages to set up. [Work across services](/guides/work-across-services)
-covers that, and what happens when two services serve the same path.
-
-When the first run turns up nothing, every command says where it
-stopped. [Fix a run that found nothing](/guides/fix-an-empty-run) covers
-each case.
-
-## Reading a run that did compare something
-
-`check --dir` prints a count of what it left out as well as what it
-found:
-
-```
-Compared 4 boundaries.
-
-  20 provider-side boundaries have no client to compare against.
-  5 boundaries had nothing to pair with, so nothing was checked across them.
-  Run the same command with --all to list them.
-```
-
-`--all` lists every pair it made and every boundary it skipped, which
-is how you find out whether "no findings" means agreement or means
-nothing got compared. `--at src/dao.ts:43` narrows a run to one file,
-line, boundary, or summary.
-
-## Which packs to name
-
-Every pack ships inside the CLI, so there is one install and nothing
-else to add:
-
-```bash
-npm install --save-dev @suss/cli
-```
-
-After that a pack is reached by name. `init` picks the names for you;
-the table is for when you want to choose by hand. A pack is named with
-`-f`, and a declared artifact is read by `suss contract --from`.
-
-| Name | What it handles | How to reach it |
-|---|---|---|
-| `ts-rest` | ts-rest providers + clients (contract-backed) | `-f ts-rest` |
-| `express` | Express `app.get(...)` / `router.get(...)` handlers | `-f express` |
-| `fastify` | Fastify `fastify.get(...)` handlers | `-f fastify` |
-| `hono` | Hono `app.get(...)` handlers, including `c.json(body, status)` | `-f hono` |
-| `nextjs` | Next.js route handlers and pages; the route comes from where the file is | `-f nextjs` |
-| `nestjs-rest` | NestJS REST controllers (`@Controller` / `@Get`) | `-f nestjs-rest` |
-| `nestjs-graphql` | NestJS GraphQL resolvers (`@Resolver` / `@Query` / `@Mutation`) | `-f nestjs-graphql` |
-| `react-router` | React Router v6+ loaders / actions | `-f react-router` |
-| `react` | React components + event handlers + `useEffect` | `-f react` |
-| `apollo` | Apollo Server resolvers (code-first) | `-f apollo` |
-| `aws-lambda` | AWS Lambda HTTP handlers, paired to SAM / CloudFormation-declared routes | `-f aws-lambda` |
-| `prisma` | Prisma client calls, emits storage-access interactions | `-f prisma` |
-| `drizzle` | Drizzle query-builder and relational-query calls, with SQL table names | `-f drizzle` |
-| `aws-sqs` | AWS SDK v3 SQS producer calls, emits message-send interactions | `-f aws-sqs` |
-| `aws-sns` | AWS SDK v3 SNS `Publish` and `PublishBatch` calls, emits message-send interactions | `-f aws-sns` |
-| `aws-secrets-manager` | AWS Secrets Manager calls, emits storage-access interactions against the secret | `-f aws-secrets-manager` |
-| `aws-ssm` | AWS SSM Parameter Store calls, emits storage-access interactions against the parameter | `-f aws-ssm` |
-| `aws-eventbridge` | EventBridge `PutEvents` calls, emits message-bus interactions | `-f aws-eventbridge` |
-| `node` | Node runtime surface, scheduling, `process.*` (incl. `process.env.X` config-read interactions), module-loading globals | `-f node` |
-| `fetch` | Global `fetch` call sites | `-f fetch` |
-| `axios` | axios call sites + `axios.create` factories | `-f axios` |
-| `apollo-client` | `@apollo/client` hooks + imperative `client.query` | `-f apollo-client` |
-| `openapi` | OpenAPI 3.x spec → provider summaries | `contract --from openapi` |
-| `graphql` | GraphQL SDL → resolver summaries, and committed `.graphql` operation documents → client summaries | `contract --from graphql` |
-| `aws-apigateway` | API Gateway REST/HTTP API resource semantics → summaries | `contract --from aws-apigateway` |
-| `cloudformation` | CFN / SAM templates → summaries (delegates to OpenAPI + API Gateway; also reads SQS event-source mappings + Lambda Environment) | `contract --from cloudformation` |
-| `serverless` | Serverless Framework service files → summaries, read through the same structures the CFN reader handles | `contract --from serverless` |
-| `appsync` | AppSync schema + resolver mapping templates → summaries | `contract --from appsync` |
-| `storybook` | Storybook CSF3 stories → component contract summaries | `contract --from storybook` |
-| `prisma` | Prisma schema → storage provider summaries | `contract --from prisma` |
-| `intent` | Team-authored `*.intent` / `*.prd` docs, read by `suss check --intent` | `contract --from intent` |
-
-Common combinations:
-
-- **ts-rest full-stack:** `-f ts-rest`, which reads the provider and the client through the contract.
-- **Express API and a fetch client:** `-f express -f fetch`.
-- **React and GraphQL:** `-f react -f apollo-client`.
-- **GraphQL server:** `-f apollo`. Add `contract --from appsync` if you also deploy through CloudFormation.
-- **Lambda, SQS and Postgres:** `-f aws-sqs -f prisma -f node`, with `contract --from cloudformation` and `contract --from prisma`. The CloudFormation reader picks up the env var on the producer side and resolves it to the queue resource. Prisma's schema becomes the storage provider summaries, and those pair with the query call sites read out of your source.
-
-## Point suss at your tsconfig
-
-`suss extract` reads your `tsconfig.json` to get the same type
-resolution your compiler sees, same `paths` aliases, same
-`moduleResolution`, same `lib` set. Without that, references that
-cross package boundaries (`@app/lib/db`, monorepo workspace
-imports) wouldn't resolve and most type information would be lost.
-
-Use the tsconfig that matches the source you want analyzed, usually
-the app's `tsconfig.json`, but for monorepos you'll
-typically run it per-package.
-
-```bash
-# Provider side: ts-rest handlers
-npx suss extract -p tsconfig.json -f ts-rest -o summaries/provider.json
-
-# Consumer side: axios clients
-npx suss extract -p apps/web/tsconfig.json -f axios -o summaries/consumer.json
-```
-
-`-f` can be repeated to run multiple packs in one invocation:
-
-```bash
-npx suss extract -p tsconfig.json -f ts-rest -f axios -o summaries/all.json
-```
-
-## A Python or Ruby project
-
-There is no tsconfig to point at, so point suss at the directory. It
-works out which language it is reading from what the directory contains
-(`pyproject.toml`, `requirements.txt`, a `Gemfile`, or the source
-files themselves), and `--lang` lets you say which language it is when
-you would rather not leave it to that.
-
-```bash
-# FastAPI and flask-restx routes
-npx suss extract --lang python --dir services/orders -f fastapi -o summaries/orders.json
-
-# graphql-ruby fields
-npx suss extract --lang ruby --dir . -f graphql-ruby=suss.graphql-ruby.json -o summaries/schema.json
-
-# Rails controller actions and their routes
-npx suss extract --lang ruby --dir . -f rails -o summaries/controllers.json
-```
-
-`rails` needs nothing from you: it reads `app` and `config/routes.rb`
-by default, the paths `rails new` scaffolds, and `-f
-rails=suss.rails.json` overrides either. graphql-ruby needs the
-directory a `mutation:` or `resolver:` field's class is looked up
-under, and it reads nothing without one:
+`suss.json` at the repository root is the one file to commit. It says which packs this project needs and which documents it declares:
 
 ```json
-{ "root": "app/graphql" }
+{
+  "version": 1,
+  "read": [
+    {
+      "kind": "extract",
+      "language": "typescript",
+      "project": "tsconfig.json",
+      "packs": ["express", "fetch", "node"]
+    },
+    {
+      "kind": "contract",
+      "from": "openapi",
+      "file": "openapi.yaml"
+    }
+  ]
+}
 ```
 
-A relative path here is read relative to the config file itself, so a
-config file that lives beside `app/` means the same directory whichever
-directory you run the command from.
+Commit it, because it says what the project contains, and that is the same for everybody working on it. It also means a later run reports a document that stopped being compared, rather than letting it go unpaired and unnoticed.
 
-Write that to a JSON file and give the file name on the flag:
-`-f graphql-ruby=suss.graphql-ruby.json`.
+`init` can also write `.sussignore.json` with one example rule ([Accept a finding](/guides/accept-a-finding) has the syntax) and `.github/workflows/suss.yml` ([Run suss in CI](/guides/ci-integration) has the whole thing). Both are off by default.
 
-If your routes import the route decorator or the router constructor
-from a module of your own rather than from flask-restx or FastAPI
-directly, say so in a [dependency stub](/guides/teach-a-dependency) instead:
+## Run it
 
-```yaml
-# suss/stubs/restx-wrapper.yaml
-package: myapp.wrappers.restx
-statements:
-  - kind: re-exports
-    of: flask_restx
-```
-
-If your service imports a shared framework from a git submodule, check
-the submodule out before extracting. suss reads `.gitmodules`, treats
-each submodule as part of this project, and resolves imports into it.
-An empty one gets a line saying so, because the routes that depend on
-it would otherwise go missing with no explanation.
-
-## Pair them
+With `suss.json` in place, `extract`, `inspect` and `check` need no flags. Each one prints the command it worked out before it runs it:
 
 ```bash
-# Two explicit files
-npx suss check summaries/provider.json summaries/consumer.json
-
-# A whole directory, auto-pairs by (method, normalized path)
-npx suss check --dir summaries/
+npx suss check
 ```
 
-`check` reads the JSON files, groups summaries into provider /
-consumer pairs by their boundary key (e.g. `(GET, /users/:id)`),
-and runs each pair through the agreement checks. It prints a list
-of findings, and each one gives the boundary, both sides, and what
-disagrees. There's no aggregate score. Every finding is a concrete
-fact about one pair, and you can act on it.
+```
+Reading what suss.json says.
+  suss extract --lang typescript -p tsconfig.json -f express -f fetch -f node
+  suss contract --from openapi openapi.yaml
+```
 
-Findings print to stdout, and the command exits non-zero when there
-are errors. Flags:
+Without a `suss.json` they pick what `init` would have picked and say so, so the first run works before you have written anything down:
 
-- `--fail-on warning`: treat warnings as errors for exit code purposes
-- `--json`: emit findings as JSON (useful in CI; see the
-  [Run suss in CI](/guides/ci-integration))
+```
+No suss.json in articles, so this reads what `suss init` would pick. Run `suss init` to write that down.
+  suss extract --lang typescript -p tsconfig.json -f express -f fetch -f node
+```
 
-## Add a third-party spec
+## Read the first run
 
-When you consume an API you don't own (Stripe, an internal team,
-a third-party), you don't have the source, so `extract` can't run
-on it. Instead, run `contract` over the API's specification. It
-produces summaries in the same format as `extract`'s output,
-describing what the spec says happens. Once the contract summary
-exists, `check` pairs it with your client the same way it would
-pair two extracted summaries.
+`inspect` describes what each unit does, with no findings to triage:
+
+```
+src/articles.ts
+└─ GET /articles/{slug}  (express handler | line 14)
+       if  !db.bySlug()
+         -> 404 { error }
+           + db.bySlug
+       elif  db.bySlug().archivedAt
+         -> 410 { error }
+           + db.bySlug
+       else
+         -> 200 { id, slug, title }
+           + db.bySlug
+
+     Could not follow:
+       The call to db.bySlug lands on a declaration with no body, so whatever runs there is missing from this summary
+```
+
+`check` compares the two sides of each boundary and prints what disagrees:
+
+```
+Compared 1 boundary.
+
+────────────────────────────────────────────────────────────
+[WARNING] unhandledProviderCase
+  Provider produces status 404 but no consumer branch handles it
+  provider: src/articles.ts::get (src/articles.ts:14)
+  consumer: web/articleView.ts::loadArticle (web/articleView.ts:1)
+  boundary: express (http) GET /articles/:slug
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: unhandledProviderCase
+      boundary: "GET /articles/{slug}"
+      provider: { transitionId: "get:response:404:6405be7" }
+      reason: TODO say why you accept this
+────────────────────────────────────────────────────────────
+2 findings: 0 error, 2 warning, 0 info
+```
+
+Errors fail the run and warnings do not, so a first pass over an old codebase is not all or nothing. `--all` lists every pair it made and every boundary it skipped, which is how you tell "no findings" apart from "nothing got compared". `--at src/articles.ts:14` narrows a run to one file, line, boundary or summary.
+
+When the run turns up nothing, every command says where it stopped. [Fix a run that found nothing](/guides/fix-an-empty-run) goes through each case.
+
+## Choose the packs yourself
+
+`-f` says which pack to read with, and you can repeat it. `-p` points at the tsconfig covering the code you want read, which gives suss the same type resolution your compiler has: the same `paths` aliases, the same `moduleResolution`, the same `lib` set. Without it, an import that crosses a package boundary does not resolve and most of the type information is lost.
 
 ```bash
-npx suss contract --from openapi stripe-openapi.json -o summaries/stripe.json
-npx suss check summaries/stripe.json summaries/your-client.json
+# The service
+npx suss extract -p tsconfig.json -f express -o summaries/api.json
+
+# The web client that calls it, from its own tsconfig
+npx suss extract -p apps/web/tsconfig.json -f fetch -o summaries/web.json
 ```
 
-AWS API Gateway? The CloudFormation contract reader reads the template:
+`suss contract --from` reads a document you already keep and produces summaries in the same format:
 
 ```bash
-npx suss contract --from cloudformation template.yaml -o summaries/api.json
+npx suss contract --from openapi openapi.yaml -o summaries/contract.json
+npx suss contract --from cloudformation template.yaml -o summaries/infra.json
 ```
 
-GraphQL via AppSync? Same idea:
+The [pack catalog](/packs/catalog) lists every `-f` name and every `--from` source with what each one reads.
 
-```bash
-npx suss contract --from appsync template.yaml -o summaries/appsync.json
-```
+A Python or Ruby project has no tsconfig, so point suss at the directory with `--dir` instead. [Read Python or Ruby](/guides/python-and-ruby) covers both.
 
-## Commit or not?
+## Where the files go
 
-The summaries themselves are derived artifacts, so you don't need
-to check them in. Most projects commit a `.suss/` directory only
-if they're publishing summaries for downstream consumers
-(library authors shipping summaries alongside their package).
+`summaries/` is derived, so leave it out of the repository and let CI regenerate it. The exception is a library publishing summaries for whoever consumes it, which [Publish summaries](/guides/publish-summaries) covers.
 
-For a normal app, run extract + check as a CI step
-([guide](/guides/ci-integration)) and keep summary files out of
-the repo.
+`suss.json` and `.sussignore` are both committed. One says what the project contains, the other is the list of findings the team decided to accept.
 
-## What you can skip
+## Next
 
-- **You don't need to build the app.** suss reads TypeScript
-  source via ts-morph. If your code compiles, suss can read it.
-- **You don't need a runtime.** No dev server to start, no Docker
-  containers. All analysis is static.
-- **You don't need every pack.** Start with one pair
-  (provider + consumer), add more when a new boundary gets
-  interesting.
+At a repository root with a workspace declaration, `init` asks which packages to set up. [Work across services](/guides/work-across-services) covers that, and what happens when two services serve the same path.
+
+For where to take it after the first run, [Adopt it step by step](/guides/adopting-suss) walks from reading one service to gating pull requests.
