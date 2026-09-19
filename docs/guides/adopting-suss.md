@@ -72,7 +72,7 @@ usually a response written through a helper the pack does not know. A
 `Could not follow` line under a route means one call in it landed
 somewhere suss could not read, so the paths behind that call are
 missing. Neither is silent. If most routes look like this, [Why a pack
-found nothing](/guides/pack-health) says how to tell whether it is the
+found nothing](/guides/fix-an-empty-run) says how to tell whether it is the
 setup or the stack, and `extract --explain` prints what each pack
 matched, file by file.
 
@@ -163,7 +163,7 @@ What compares against what, today:
   warning, since documents often declare the 401 the middleware sends.
 - An OpenAPI document against the clients that call it. The document
   is the provider; see step 4 and [Pair against
-  OpenAPI](/guides/pair-against-openapi).
+  OpenAPI](/guides/check-against-openapi).
 
 **What you get.** The first findings. A status the handler produces
 that its contract does not declare, a status the contract declares
@@ -234,7 +234,7 @@ handles every non-2xx status in one shared interceptor handles it,
 and suss reports the warning anyway when it could not follow the
 interceptor to the branch. This is the most common accepted finding,
 and a suppression rule scoped to the finding kind and the boundary
-covers it. [Suppress a finding](/guides/suppress-findings) has the
+covers it. [Accept a finding](/guides/accept-a-finding) has the
 three patterns.
 
 ## 5. Gate on it
@@ -253,7 +253,7 @@ error-severity finding:
   run: npx suss check --dir summaries/ --fail-on error
 ```
 
-[Set up CI checking](/guides/ci-integration) has the whole workflow,
+[Run suss in CI](/guides/ci-integration) has the whole workflow,
 and the action's README lists its inputs.
 
 **What you get.** The diff is the thing a reviewer reads first on a
@@ -301,7 +301,7 @@ else:
   the predicate is the setup and the transition is the assertion. A
   route with five paths and two tests has three uncovered.
 
-The format is in [Summary format](/behavioral-summary-format), and it
+The format is in [Summary format](/reference/summary-format), and it
 is stable.
 
 ## Where things live and who runs what
@@ -318,16 +318,10 @@ is stable.
 
 ### Several services in one repository
 
-Run one `extract` per service, each into its own file in the same
-directory, and one `check --dir` over the directory. Pairing is by
-boundary, so a handler in one file and a client in another compare
-against each other whichever service produced them. At a monorepo root
-`suss init` reads the workspace declaration and asks which packages to
-set up, and writes one `suss.json` for the lot.
-
-The team that owns a service owns its extract command, and the
-pipeline runs all of them. There is no order to worry about; `check`
-reads whatever is in the directory.
+One `extract` per service into the same directory, then one
+`check --dir` over it. [Work across services](/guides/work-across-services)
+covers the commands and what happens when two services serve the same
+path.
 
 ### Triaging a finding
 

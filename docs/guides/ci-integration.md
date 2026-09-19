@@ -1,9 +1,9 @@
 ---
-title: Run suss in GitHub Actions on every pull request
-description: Post what a pull request changes about each boundary as a comment, and fail the job when a caller and its provider disagree.
+title: Run suss in CI
+description: Post what a pull request changes about each boundary as a comment, fail the job when a caller and its provider disagree, and every input the GitHub Action takes.
 ---
 
-# Set up CI checking
+# Run suss in CI
 
 Two jobs. The first posts what the pull request changes about each
 boundary as a comment, so the reviewer reads the behavior instead of
@@ -67,10 +67,51 @@ through the `package-exports` pack;
 is the whole workflow.
 
 A pull request from a fork gets a read-only token, so the comment
-cannot be posted there and the diff stays in the job log. The
-[action's README](https://github.com/nimbuscloud-ai/suss/blob/main/.github/actions/inspect-diff/README.md)
-lists every input, the outputs a later step can read, and how to turn
-the comment off for forks.
+cannot be posted there and the diff stays in the job log. Set
+`comment: false` on fork pull requests if the failure is unwelcome:
+
+```yaml
+        with:
+          extract: -p tsconfig.json -f hono
+          comment: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+```
+
+### The action's inputs
+
+| Input | Default | What it is |
+| --- | --- | --- |
+| `extract` | empty | The arguments to `suss extract`, after the command. Empty reads the packs from `suss.json`, or the ones `suss init` would pick when there is no file. `-p tsconfig.json -f express` chooses them for a TypeScript project, `--dir src -f fastapi` for Python, `--dir app -f rails` for Ruby. |
+| `working-directory` | `.` | The directory to run `suss extract` in, relative to the repository root. |
+| `version` | `latest` | The version of `@suss/cli` to install. |
+| `install` | empty | A shell command that installs dependencies in the base checkout, such as `pnpm install --frozen-lockfile` or `npm ci && npm run build`. When it is empty the base checkout shares the head's `node_modules` directories, which is right when the pull request does not change dependencies. |
+| `comment` | `true` | Whether to post the comment. Set it to `false` to read the outputs and do something else with them. |
+| `artifact-name` | `suss-diff` | The name of the run artifact that keeps both summary files and the diff. Two uses of the action in one workflow need two names. |
+| `cache` | `true` | Whether to keep suss's per-file cache and each commit's summaries in the repository's actions cache. |
+| `token` | `github.token` | The token used to post the comment. It needs `pull-requests: write`. |
+
+### The action's outputs
+
+| Output | What it is |
+| --- | --- |
+| `changed` | How many units changed behavior, as a number. |
+| `diff` | The path of the rendered diff. |
+| `before` | The path of the summaries read from the base commit. |
+| `after` | The path of the summaries read from the head commit. |
+
+`changed` is what a job condition reads:
+
+```yaml
+      - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@main
+        id: suss
+        with:
+          extract: -p tsconfig.json -f hono
+      - if: steps.suss.outputs.changed != '0'
+        run: echo "::notice::${{ steps.suss.outputs.changed }} units changed behavior"
+```
+
+The [action's README](https://github.com/nimbuscloud-ai/suss/blob/main/.github/actions/inspect-diff/README.md)
+covers how it reads the base commit, how the two caches are keyed, and
+how the comment is organized.
 
 ## Run the same commands before you push
 
@@ -87,7 +128,7 @@ npx suss inspect --diff summaries/before.json summaries/after.json
 `after.json` is one from the working tree.
 
 If an agent writes the code, put those commands in the instructions
-it reads, or set up the [MCP server](/guides/mcp-server) so it can
+it reads, or set up the [MCP server](/start/give-your-agent-suss) so it can
 ask before it edits. Keep the CI jobs as well; they are what catches
 the change that skipped the local run.
 
@@ -191,7 +232,7 @@ rules:
     reason: planned work in JIRA-1234
 ```
 
-See the [Suppressions guide](/suppressions) for the full rule
+See [Accept a finding](/guides/accept-a-finding) for the full rule
 syntax and the three effects (`mark` / `downgrade` / `hide`).
 
 ## What NOT to do

@@ -9,7 +9,7 @@ description: The languages and project layouts suss reads today, and what it doe
 same files and the same module resolution your compiler does. The rest
 of this page is about that command. Python and Ruby are read by
 separate adapters with their own rules; see
-[Read a Python or Ruby project](/guides/python-and-ruby).
+[Read Python or Ruby](/guides/python-and-ruby).
 
 ## Languages
 
@@ -149,20 +149,9 @@ walk reached, under `Could not follow:` in `suss inspect`.
 
 suss identifies an HTTP boundary by its method and path, and nothing
 else. Two services that both expose `GET /users` count as one boundary,
-so a client of either pairs against both:
-
-```
-Providers with no client to compare against:
-  GET /users
-    get, get      <- two unrelated services, one entry
-```
-
-Check one service at a time until this is fixed:
-
-```bash
-suss extract -p services/auth/tsconfig.json -f hono -o auth/api.json
-suss check --dir auth/
-```
+so a client of either pairs against both. Check one service at a time
+until this is fixed; [Work across services](/guides/work-across-services#two-services-that-serve-the-same-path)
+has the commands.
 
 ## Not supported
 

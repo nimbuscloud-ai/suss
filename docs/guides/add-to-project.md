@@ -12,7 +12,7 @@ returns. You annotate nothing first and you start nothing, and the only
 thing written to disk is a folder of summary files.
 
 For a Python or Ruby project, start at
-[Read a Python or Ruby project](/guides/python-and-ruby), which covers
+[Read Python or Ruby](/guides/python-and-ruby), which covers
 the same ground for those two languages.
 
 <!-- suss:unchecked it runs against gothinkster/node-express-realworld-example-app, which this repository does not check in -->
@@ -81,7 +81,7 @@ npx @suss/cli init --plain
 On this repo those commands produce 46 summaries from the source, 4
 from the Prisma schema, and three warnings about fields the schema
 declares that no query ever asks for. The
-[Get started walkthrough](/tutorial/get-started) goes through that
+[Get started walkthrough](/start/quickstart) goes through that
 output line by line.
 
 Three pieces, in order: a **pack** per library you want read, an
@@ -92,135 +92,13 @@ handlers do.
 
 ### In a monorepo
 
-At a repo root, `init` reads the workspace declaration, from
-`package.json` workspaces, `pnpm-workspace.yaml`, `lerna.json`, or
-`turbo.json`, and then asks which packages to set up:
+At a repo root, `init` reads the workspace declaration and asks which
+packages to set up. [Work across services](/guides/work-across-services)
+covers that, and what happens when two services serve the same path.
 
-```
-◆  Which should suss set up?
-│  ◼ @acme/auth        aws-lambda, cloudformation
-│  ◼ @acme/web         react, apollo-client
-│  ◻ @acme/tooling     node
-```
-
-One thing to know before you check several services at once: suss tells
-HTTP boundaries apart by method and path alone, so two services that
-both serve `GET /users` look like a single boundary. See
-[Compatibility](/reference/compatibility#several-services-in-one-folder).
-
-## When the first run turns up nothing
-
-Every command that comes up empty says where it stopped. These four
-cover most first runs.
-
-### That tsconfig matched no source files
-
-```
-No summaries to write in 0.00s.
-  That tsconfig matched no source files.
-  Check its `include` and `files` patterns against where your source actually lives.
-
-  Where it stopped:
-    0  files in the tsconfig
-    0  files read
-```
-
-suss took the nearest `tsconfig.json`, and that one covers no source.
-Nx, project references, and solution-style configs all do this: the
-root config lists `"files": []` and points at the configs that do the
-work. Pass the one that covers your source:
-
-```bash
-npx suss extract -p tsconfig.app.json -f express -o summaries/code.json
-```
-
-### No file imports anything the pack looks for
-
-```
-No summaries to write in 0.02s.
-  No file imports anything hono looks for.
-  Either this project does not use it, or your code reaches it through a local wrapper module. suss only recognizes direct imports today.
-
-  Where it stopped:
-    26  files in the tsconfig
-     0  files read
-     0  files importing hono and @hono/zod-openapi
-```
-
-The tsconfig is right and the pack is wrong for this project. Re-run
-`init` to see which packs match your dependencies. If the library is in
-`package.json` but your code imports a wrapper module of your own
-rather than the library directly, suss stops at the wrapper.
-
-### A pack found the library and matched nothing
-
-```
-Wrote 46 summaries to summaries/code.json in 0.60s
-
-Pack health:
-  a pack dropped everything it was holding
-    prisma: its import gate found the library and it matched nothing in the bodies it saw (20 unit bodies to look inside, 0 effects recognized)
-```
-
-The run succeeded and one pack contributed nothing to it. The usual
-cause is a library that is installed but not yet in a usable state.
-Prisma is the common one: `@prisma/client` is in `node_modules`, but
-until `npx prisma generate` runs, the package exports no model types,
-so every `prisma.article.findUnique` call is treated as a call on an opaque
-value and the pack classifies none of them.
-
-```bash
-npx prisma generate
-npx suss extract -p tsconfig.app.json -f express -f prisma -o summaries/code.json
-```
-
-Anything with a codegen step behaves the same way: run the generator
-first, then extract. The pack-health block appears whenever a pack you
-asked for contributes nothing, so it is the line to read before you
-conclude that suss cannot see your storage layer.
-
-### Nothing was compared
-
-```
-Nothing was compared.
-
-  These summaries cover 20 boundaries on the provider side and none on the client side, so there was no other side to compare against.
-  Extract both sides of the boundary into the same folder, then check them together:
-    suss extract -p <tsconfig> -f <pack> -o summaries/<name>.json
-    suss check --dir summaries/
-
-  26 boundaries had nothing to pair with, so nothing was checked across them.
-```
-
-`check` compares two sides, so one side on its own gives it nothing to
-do. Twenty Express routes with no `fetch` or axios call sites beside
-them means the callers were never extracted, either because they live
-in a separate repository or because the pack that reads them was left
-off the command.
-
-Extract the other side into the same folder and check them together:
-
-```bash
-npx suss extract -p apps/web/tsconfig.json -f fetch -o summaries/web.json
-npx suss check --dir summaries/
-```
-
-Where the other side is a schema or a spec rather than code, `contract`
-produces it in the same format. A Prisma schema becomes the provider
-for your query call sites, an OpenAPI document becomes the provider for
-your client. An OpenAPI document beside the handlers it describes is
-compared with them too, so a service with its own spec and no client
-in the run still gets checked:
-
-```bash
-npx suss contract --from prisma prisma/schema.prisma -o summaries/prisma.json
-npx suss check --dir summaries/
-```
-
-Where the front end really does live in another repository, extract it
-there and copy its summary file in. Summaries are portable JSON, and
-`check --dir` pairs whatever it reads in a folder regardless of which
-run produced it.
+When the first run turns up nothing, every command says where it
+stopped. [Fix a run that found nothing](/guides/fix-an-empty-run) covers
+each case.
 
 ## Reading a run that did compare something
 
@@ -359,7 +237,7 @@ Write that to a JSON file and give the file name on the flag:
 
 If your routes import the route decorator or the router constructor
 from a module of your own rather than from flask-restx or FastAPI
-directly, say so in a [dependency stub](/dependency-stubs) instead:
+directly, say so in a [dependency stub](/guides/teach-a-dependency) instead:
 
 ```yaml
 # suss/stubs/restx-wrapper.yaml
@@ -397,7 +275,7 @@ are errors. Flags:
 
 - `--fail-on warning`: treat warnings as errors for exit code purposes
 - `--json`: emit findings as JSON (useful in CI; see the
-  [CI guide](/guides/ci-integration))
+  [Run suss in CI](/guides/ci-integration))
 
 ## Add a third-party spec
 
