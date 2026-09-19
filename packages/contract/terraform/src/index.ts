@@ -17,8 +17,6 @@
 import fs from "node:fs";
 import path from "node:path";
 
-// The parser ships CommonJS, so ESM reaches it through the default.
-import hcl2 from "hcl2-parser";
 import semver from "semver";
 
 import {
@@ -29,6 +27,7 @@ import {
 } from "@suss/behavioral-ir";
 
 import { filterValuesFor, parseFilterQuery } from "./filterQuery.js";
+import { parseHclDocument } from "./hclDocument.js";
 import { jsonAttributeValue } from "./jsonAttribute.js";
 import { referenceScope, resolveReferences } from "./references.js";
 
@@ -180,16 +179,7 @@ function summariesForFiles(
 
 /** What one file states, or null when the parser could not read it. */
 function parseSource(file: SourceFile): ParsedFile | null {
-  let read: unknown;
-  try {
-    // The parser gives back what it read and what stopped it, and a
-    // file it could not read comes back as nothing.
-    const [parsed] = hcl2.parseToObject(file.source);
-    read = parsed;
-  } catch {
-    return null;
-  }
-  const document = asRecord(read);
+  const document = parseHclDocument(file.source);
   if (document === null) {
     return null;
   }

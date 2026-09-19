@@ -13,8 +13,7 @@
  * nothing rather than guessing.
  */
 
-// The parser ships CommonJS, so ESM reaches it through the default.
-import hcl2 from "hcl2-parser";
+import { parseHclDocument } from "./hclDocument.js";
 
 /** `${jsonencode(<expression>)}`, and nothing else around it. */
 const JSON_ENCODE = /^\$\{\s*jsonencode\((.*)\)\s*\}$/s;
@@ -54,10 +53,5 @@ function parseJson(text: string): unknown {
  * is the same hole a name keeps.
  */
 function parseHclExpression(expression: string): unknown {
-  try {
-    const [parsed] = hcl2.parseToObject(`${WRAPPER} = ${expression}`);
-    return (parsed as Record<string, unknown> | undefined)?.[WRAPPER] ?? null;
-  } catch {
-    return null;
-  }
+  return parseHclDocument(`${WRAPPER} = ${expression}`)?.[WRAPPER] ?? null;
 }
