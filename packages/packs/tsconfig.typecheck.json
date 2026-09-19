@@ -63,6 +63,9 @@
       "path": "../framework/aws-ssm/tsconfig.typecheck.json"
     },
     {
+      "path": "../framework/bigquery/tsconfig.typecheck.json"
+    },
+    {
       "path": "../framework/aws-sqs/tsconfig.typecheck.json"
     },
     {
@@ -103,6 +106,9 @@
     },
     {
       "path": "../framework/nextjs/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/pg/tsconfig.typecheck.json"
     },
     {
       "path": "../framework/prisma/tsconfig.typecheck.json"
