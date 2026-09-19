@@ -5,7 +5,7 @@ description: Paste the rule suss prints under a finding into .sussignore, give i
 
 # Accept a finding
 
-Some findings are true and you accept them anyway: a legacy route retiring next quarter, a status the caller deliberately leaves to a retry it already has. Paste the rule suss prints under the finding into a `.sussignore` file, and give it a reason.
+Some findings are true and you accept them anyway, such as a status the caller deliberately leaves to a retry it already has. Paste the rule suss prints under the finding into a `.sussignore` file, and give it a reason.
 
 `check` prints the rule for you:
 
@@ -34,7 +34,7 @@ rules:
     reason: the nightly batch is the only caller and the scheduler retries the whole job
 ```
 
-Run `check` again and the finding is still there, marked, with your reason under it, and it no longer counts toward the exit code:
+Run `check` again. The finding is still there, marked, with your reason under it, and it no longer counts toward the exit code:
 
 ```
 [WARNING, suppressed] unhandledProviderCase
@@ -47,7 +47,7 @@ Run `check` again and the finding is still there, marked, with your reason under
 
 ## Where the file goes
 
-The project root is the usual home for it, beside `package.json`. `suss check --dir summaries/` starts looking inside `summaries/` and walks up, taking the nearest file it finds; `suss check provider.json consumer.json` starts in the working directory and walks up the same way. Either walk stops at the first directory with a `package.json` or a `.git` in it, so a file outside the project is never picked up.
+Most people keep it at the project root, beside `package.json`. `suss check --dir summaries/` starts looking inside `summaries/` and walks up until it finds one. `suss check provider.json consumer.json` starts in the working directory and walks up the same way. Either search stops at the first directory that has a `package.json` or a `.git` in it, so suss never picks up a file from outside your project.
 
 In each directory suss takes the first of these it finds:
 
@@ -58,11 +58,11 @@ In each directory suss takes the first of these it finds:
 
 A `.sussignore.json` in the summaries directory is read as suppression config, not as a summaries file.
 
-Two flags override the search. `--sussignore <path>` points at a file directly. `--no-suppressions` ignores every file, which is how you audit what would fire if the list were empty.
+Two flags override the search. `--sussignore <path>` points at a file directly. `--no-suppressions` ignores every file, so you can see what the run would report if the list were empty.
 
 ## Effects
 
-A rule's `effect` says what happens when it matches. The default is `mark`.
+A rule's `effect` decides what happens when it matches. The default is `mark`.
 
 | Effect | In the report | In the exit code |
 |---|---|---|
@@ -70,7 +70,7 @@ A rule's `effect` says what happens when it matches. The default is `mark`.
 | `downgrade` | shown one severity lower, with both severities printed | yes, at the lower severity |
 | `hide` | removed from the report and from `--json` | no |
 
-`downgrade` is the one to reach for while a fix is planned. The finding keeps showing and stops blocking the build:
+Use `downgrade` while a fix is planned. The finding still shows up, and it stops blocking the build:
 
 ```yaml
 version: 1
@@ -109,7 +109,7 @@ rules:
 
 | Field | Required | Notes |
 |---|---|---|
-| `version` | yes | Always `1`. A file without it does not load, and `check` says which line to add. |
+| `version` | yes | Always `1`. A file without it does not load, and `check` prints the line to add. |
 | `kind` | see matching | Any behavioral or intent finding kind. The [findings catalog](/reference/findings) lists them. An unknown kind is rejected when the file loads. |
 | `boundary` | see matching | `"METHOD /path"`, with `:id` and `{id}` both accepted, or a non-REST key verbatim (`"fn:@acme/api::getUser"`, `"gql:Query.user"`). |
 | `consumer.transitionId` | optional | Matches the consumer side's branch. |
@@ -139,23 +139,23 @@ rules:
     reason: low-confidence meta-findings are informational; inspect still shows them
 ```
 
-A broad rule silences future regressions in that category too, so the `reason` is the only trace of why when one turns up six months later.
+A broad rule also silences regressions in that category later on, so the `reason` is all anyone will have to go on.
 
 Intent findings from `suss check --intent` take the same rules. `kind` and `boundary` match the same way; `consumer` and `provider` never match an intent finding, which has neither side. A PRD scenario finding that resolves to no boundary is keyed `prd:<title>`, so match it on that string or with `scope: broad`.
 
 ## When a rule stops matching
 
-Nothing expires. What changes underneath a rule is the transition id, which is built from the enclosing function's name, the terminal kind, the status, and a hash of the branch's conditions. Edit the body of a branch and the id stays the same. Rename the function, change the status, or change a guard, and the id is new, so the rule no longer matches and the finding comes back. The branch you accepted is not the branch that is there now, and you get to look at it again.
+Nothing expires. The thing that changes under a rule is the transition id. suss builds that id from the enclosing function's name, the terminal kind, the status and a hash of the branch's conditions. If you edit the body of a branch, the id stays the same. If you rename the function, change the status or change a guard, the id is new, the rule stops matching, and the finding comes back so you can look at the branch again.
 
-The other case worth knowing is a rule that points at a summary read from a deploy template. Those summaries are named with the document's path, `cloudformation:services/orders/template.yaml::GetOrders`. A rule written the older way, with the file name alone, still matches, across every document of that reader with that file name, and suss says so on stderr. Write the path to pin the rule to one document.
+The other case to know about is a rule that points at a summary read from a deploy template. The name of one of those summaries includes the document's path, as in `cloudformation:services/orders/template.yaml::GetOrders`. A rule written the older way, with the file name alone, still matches, and it matches every document that reader reads with that file name. suss prints a note on stderr when that happens. Write the full path to tie the rule to one document.
 
 ## The review habit
 
 An accepted finding is a piece of context the next maintainer has to read, so keep the list short and go back to it.
 
-- **Write the reason for a stranger.** "legacy" says nothing. "the load balancer is the only caller and it does not read the body" says why.
-- **Audit with `--no-suppressions`.** It reports everything the rules currently take out, which is what you want before a release or when the file has grown.
+- **Write the reason for a stranger.** "legacy" tells them nothing. "the load balancer is the only caller and it does not read the body" tells them why you accepted it.
+- **Audit with `--no-suppressions`.** It reports everything the rules currently take out. Run it before a release, or whenever the file has grown.
 - **Delete the rule with the fix.** When the migration ships or the endpoint goes away, the rule goes with it. Nothing prompts you, so the pull request that does the work is the place to do it.
-- **Watch the count.** A suppressed finding is still in the report and still in `--json`, so CI can publish how many there are. A number that only grows is the signal.
+- **Watch the count.** A suppressed finding is still in the report and still in `--json`, so CI can publish how many there are. If that number only ever goes up, the list needs attention.
 
-If you cannot write a reason, the finding is not accepted. Fix it instead. Suppression is for drift you have decided to live with. For a whole severity you are not ready for, `--fail-on error` is the knob.
+If you cannot write a reason, you have not accepted the finding. Fix it instead. Suppression is for drift you have decided to live with. If you are not ready for a whole severity yet, use `--fail-on error`.

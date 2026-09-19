@@ -1,8 +1,8 @@
 # @suss/cli
 
-Read a codebase and check what it does at every boundary, a route, a table or a queue, against the clients, specs and infrastructure on the other side. TypeScript, Python and Ruby.
+Read a codebase and check what it does at every boundary, such as a route or a table, against the clients, specs and infrastructure on the other side. It works on TypeScript, Python and Ruby.
 
-This is the command line for [suss](https://github.com/nimbuscloud-ai/suss). It is deterministic and has no model in it.
+This is the command line for [suss](https://github.com/nimbuscloud-ai/suss). It runs the same way every time, and there is no model in it.
 
 ## Read one service
 
@@ -28,7 +28,7 @@ src/api.ts
          -> 201 { id, name }
 ```
 
-That is every path each handler can take, with the status and the body fields it produces. Where suss could not follow a call, it says so under the handler instead of leaving the path out.
+That is every path each handler can take, with the status and the body fields it produces. Where suss could not follow a call, it reports that under the handler instead of leaving the path out.
 
 ## Install
 
@@ -45,15 +45,15 @@ Every pack ships inside the CLI, so `-f hono` and `-f rails` need nothing else i
 | `suss init` | Reads the project and prints the commands to run, or walks you through them |
 | `suss extract` | Reads code into summaries, one pack per framework, client or ORM |
 | `suss contract` | Reads a declared artifact, an OpenAPI document or a SAM template, into the same summaries |
-| `suss check` | Compares every provider against every consumer and reports where they disagree |
+| `suss check` | Compares every provider against every consumer and reports where the two disagree |
 
-Two more read what is already on disk: `suss inspect` renders summaries, including `--diff` between two runs and `--flow` for one request hop by hop, and `suss ask` answers one question about one boundary.
+Two more commands read what is already on disk. `suss inspect` renders summaries, including `--diff` between two runs and `--flow` for one request hop by hop, and `suss ask` answers one question about one boundary.
 
-Every command and flag: the [CLI reference](https://nimbuscloud-ai.github.io/suss/reference/cli/).
+The [CLI reference](https://nimbuscloud-ai.github.io/suss/reference/cli/) covers every command and flag.
 
 ## In a coding agent
 
-The same summaries reach an agent over MCP, so it can ask what a route reaches or what writes a table before it edits either:
+Your agent reaches the same summaries over MCP, so it can ask what a route reaches or what writes a table before it edits either:
 
 ```json
 {

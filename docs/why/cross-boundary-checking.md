@@ -5,11 +5,11 @@ description: How the checker pairs two summaries across a boundary and reports w
 
 # Cross-boundary checking
 
-`suss check` reads the handler on one side of a boundary and the call site on the other, and reports where they disagree. Each side becomes a behavioral summary, and the checker compares the two. No spec is needed, and where one exists it is compared against both sides as well.
+`suss check` reads the handler on one side of a boundary and the call site on the other, and reports where the two disagree. Each side becomes a behavioral summary, and the checker compares them. You do not need a spec, and if you have one, suss compares it against both sides as well.
 
 ## An example
 
-The handler, an Express route:
+Here is the handler, an Express route:
 
 ```ts
 // src/routes.ts
@@ -36,7 +36,7 @@ declare const db: {
 };
 ```
 
-The caller, written before either branch existed:
+Here is the caller, written before either of those branches existed:
 
 ```ts
 // src/userCard.ts
@@ -101,15 +101,15 @@ Compared 1 boundary:
 suss met a call it could not follow in one unit, of 2, so that one is described in part. `suss inspect` says which calls.
 ```
 
-Three comparisons produced those three findings. The first compares status codes: the handler can send a 404 and the caller has no branch for one. The second compares sub-cases within a status: two 200s leave the handler and one path in the caller receives both. The third compares a body field the handler varies against the conditions the caller tests, and finds nothing testing `admin`.
+Three comparisons produced those three findings. The first one compares status codes: the handler can send a 404 and the caller has no branch for one. The second compares sub-cases within a status: the handler returns 200 in two different situations, and one path in the caller receives both. The third compares a body field the handler varies against the conditions the caller tests, and finds nothing that tests `admin`.
 
 Each finding gives you the file and the line on both sides, plus a `.sussignore.yml` rule to paste for any one you decide to live with. See [Accept a finding](/guides/accept-a-finding) for that format.
 
-`db.findById` is declared here and never defined, so the last line says part of the handler went unread, rather than reporting three findings as though suss had seen everything.
+`db.findById` is declared here and never defined. That is why the last line of the run reports that part of the handler went unread.
 
 ## Which summaries face each other
 
-Two summaries pair when they sit on the same boundary, and what that means depends on the kind of boundary:
+Two summaries pair up when they are on the same boundary, and what that means depends on the kind of boundary:
 
 | Boundary | The two sides pair on | Example |
 |---|---|---|
@@ -120,25 +120,25 @@ Two summaries pair when they sit on the same boundary, and what that means depen
 | Message bus | bus and channel subject | an SQS send and the handler the deploy template wires to that queue |
 | Runtime config | deployment target and instance name | the env vars a Lambda reads and the ones its template sets |
 
-[Boundary semantics](/theory/boundary-semantics) says how the pairing key is built for each of them.
+[Boundary semantics](/theory/boundary-semantics) explains how the pairing key is built for each of them.
 
 ## What gets compared
 
 For each pair the checker runs seven checks. Each one reads nothing but that pair, and none of them can see what another found.
 
 - **Provider coverage.** A status the provider produces that no consumer branch handles, and sub-cases within one status that the consumer treats as one. Those are the first two findings above.
-- **Consumer satisfaction.** A consumer branch for a status the provider never produces, which is a dead branch.
-- **Misread responses.** A consumer path that reads a field off a response that does not include it, with nothing on that path telling it apart from the response that does.
-- **Contract consistency.** A handler that never produces a status its contract declares, or produces one the contract never declared.
-- **Consumer contract.** A consumer that reads a field the declared contract never promised, so it depends on an implementation detail.
+- **Consumer satisfaction.** A consumer branch for a status the provider never produces. That branch is dead.
+- **Misread responses.** A consumer path that reads a field off a response that does not include it, when nothing on that path tells it apart from the response that does.
+- **Contract consistency.** A handler that never produces a status its contract declares, or that produces one the contract never declared.
+- **Consumer contract.** A consumer that reads a field the declared contract never promised, so the consumer depends on an implementation detail.
 - **Body compatibility.** The consumer's body-field reads against the bodies the provider produces, per status.
-- **Semantic bridging.** A provider puts `admin: true` in a 200 body on the `user.role === "admin"` branch, and the consumer never tests `admin`. That is the third finding above.
+- **Semantic bridging.** The provider puts `admin: true` in a 200 body on the `user.role === "admin"` branch, and the consumer never tests `admin`. That is the third finding above.
 
 All seven compare subjects rather than source text, so a condition written on an intermediate variable still counts: `const data = result.body` resolves back to the response before anything is compared.
 
 Where several sources describe one boundary, say an OpenAPI document and a CloudFormation template for the same endpoint, `checkContractAgreement` compares those declarations against each other and emits `contractDisagreement` when they differ.
 
-The [findings catalog](/reference/findings) lists every finding kind by domain, with its severity and an example. [Kinds of contract](/why/kinds-of-contract#severity-follows-the-kind-of-truth) says where each severity comes from.
+The [findings catalog](/reference/findings) lists every finding kind by domain, with its severity and an example. [Kinds of contract](/why/kinds-of-contract#severity-follows-the-kind-of-truth) explains where each severity comes from.
 
 ## The three contracts at a boundary
 
@@ -189,8 +189,8 @@ Every boundary has three behavioral contracts: the declared one, which somebody 
 
 ## What the checker abstains from
 
-Each comparison rests on a claim about how the protocol behaves. Reporting an unhandled 404 treats the status the handler wrote as the status the caller receives, and a middleware or an API gateway can make that false. [Protocol assumptions](/theory/protocol-assumptions) lists those claims per protocol, says what a finding means once one of them stops being true, and points at the test that pins today's behaviour.
+Every comparison rests on a claim about how the protocol behaves. When suss reports an unhandled 404, it is treating the status the handler wrote as the status the caller receives, and a middleware or an API gateway can make that untrue. [Protocol assumptions](/theory/protocol-assumptions) lists those claims per protocol and explains what a finding means once one of them is no longer true.
 
-Where the extractor could not take a condition apart, the checker emits `lowConfidence` at info severity rather than a finding it cannot stand behind. A gap that says a `return` matched none of the pack's terminal patterns comes out the same way, because the handler may be returning exactly the right thing and suss could not read it.
+Where the extractor could not take a condition apart, the checker emits `lowConfidence` at info severity instead of a finding it cannot support. A gap that records a `return` matching none of the pack's terminal patterns comes out the same way: the handler may well be returning the right thing, and suss could not read it.
 
-The checker compares two summaries at a time. Aggregating summaries across an organization, tracking a boundary over commits, and working out which pull request breaks which consumer are layers above it, and they take `BehavioralSummary[]` and pairwise findings as their input.
+The checker compares two summaries at a time. Anything above that, such as aggregating summaries across an organization or tracking one boundary over a series of commits, is a separate layer, and that layer takes `BehavioralSummary[]` and pairwise findings as its input.

@@ -13,7 +13,7 @@ npx suss extract -p apps/storefront/tsconfig.json -f fetch -o summaries/storefro
 npx suss check --dir summaries/
 ```
 
-suss pairs by boundary, so a handler in one service and the client that calls it in another are compared against each other, whichever run wrote them. There is no order to worry about: `check` reads whatever is in the folder. The team that owns a service owns its extract command, and the pipeline runs all of them.
+suss pairs by boundary, so a handler in one service and the client that calls it in another are compared against each other, whichever run wrote them. You do not have to worry about ordering, because `check` reads whatever is in the folder. The team that owns a service owns its extract command, and the pipeline runs all of them.
 
 ## Two repos
 
@@ -36,7 +36,7 @@ npx suss check --dir summaries/
 
 `extract` writes file paths relative to the project it read, and the format has nothing machine-specific in it, so the file means the same thing in the consumer's repo as it did in the provider's. [Publish summaries](/guides/publish-summaries) covers shipping the file inside the package instead of copying it.
 
-Naming both files works too, when the folder has more in it than the pair you want:
+You can also pass both files, when the folder has more in it than the pair you want:
 
 ```bash
 npx suss check summaries/catalog.json summaries/storefront.json
@@ -119,11 +119,11 @@ At a repo root, `init` reads the workspace declaration, from `package.json` work
    suss extract -f hono -f fetch -f node -o summaries/code.json
 ```
 
-One block per package, each with the extract command that package needs. Run without `--plain` and it asks which of them to set up, then writes one `suss.json` for the lot. Piped or in CI it prints the commands either way.
+You get one block per package, each with the extract command that package needs. Run it without `--plain` and it asks which of them to set up, then writes one `suss.json` for the lot. If the output is piped or the run is in CI, it prints the commands either way.
 
 ## Two services that serve the same path
 
-Two services that both serve `GET /users` look like one boundary, so a client of either is compared against both. `check` says so:
+Two services that both serve `GET /users` look like one boundary, so a client of either is compared against both. `check` reports that:
 
 ```
 1 boundary is claimed by more than one file:

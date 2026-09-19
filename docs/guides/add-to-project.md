@@ -5,14 +5,14 @@ description: Install suss in a repository you already have, run it once, and rea
 
 # Add suss to a project
 
-Install suss in a repository you already have and get a first answer out of it. You annotate nothing, you start nothing, and the only things written to disk are a folder of summary files and a small `suss.json`.
+Install suss in a repository you already have and get a first answer out of it. You do not annotate anything and you do not start any servers. The only things written to disk are a folder of summary files and a small `suss.json`.
 
 ```bash
 npm install --save-dev @suss/cli
 npx suss init
 ```
 
-Everything ships inside `@suss/cli`. There is one install, and each pack is reached by name after that.
+Everything ships inside `@suss/cli`, so there is one install, and you refer to each pack by name after that.
 
 ## What `init` finds
 
@@ -41,7 +41,7 @@ Then it asks five questions, one at a time:
 
 Nothing reaches disk unless you say yes.
 
-Piped, in CI, or with `--plain`, `init` prints the commands instead of asking:
+If the output is piped, if the run is in CI, or if you pass `--plain`, `init` prints the commands instead of asking:
 
 ```bash
 npx suss init --plain
@@ -61,11 +61,11 @@ npx suss init --plain
    suss check --dir summaries/
 ```
 
-Two more steps follow, on accepting a finding and on running the same two commands in CI.
+Two more steps follow: accepting a finding, and running the same two commands in CI.
 
 ## What `init` writes
 
-`suss.json` at the repository root is the one file to commit. It says which packs this project needs and which documents it declares:
+`suss.json` at the repository root is the one file to commit. It lists which packs this project needs and which documents it declares:
 
 ```json
 {
@@ -86,7 +86,7 @@ Two more steps follow, on accepting a finding and on running the same two comman
 }
 ```
 
-Commit it, because it says what the project contains, and that is the same for everybody working on it. It also means a later run reports a document that stopped being compared, rather than letting it go unpaired and unnoticed.
+Commit it. It records what the project contains, and that is the same for everybody working on it. It also means that when a document stops being compared, a later run tells you, instead of leaving it unpaired and unnoticed.
 
 `init` can also write `.sussignore.json` with one example rule ([Accept a finding](/guides/accept-a-finding) has the syntax) and `.github/workflows/suss.yml` ([Run suss in CI](/guides/ci-integration) has the whole thing). Both are off by default.
 
@@ -104,7 +104,7 @@ Reading what suss.json says.
   suss contract --from openapi openapi.yaml
 ```
 
-Without a `suss.json` they pick what `init` would have picked and say so, so the first run works before you have written anything down:
+If there is no `suss.json`, they pick what `init` would have picked and print that, so your first run works before you have written anything down:
 
 ```
 No suss.json in articles, so this reads what `suss init` would pick. Run `suss init` to write that down.
@@ -152,13 +152,13 @@ Compared 1 boundary.
 2 findings: 0 error, 2 warning, 0 info
 ```
 
-Errors fail the run and warnings do not, so a first pass over an old codebase is not all or nothing. `--all` lists every pair it made and every boundary it skipped, which is how you tell "no findings" apart from "nothing got compared". `--at src/articles.ts:14` narrows a run to one file, line, boundary or summary.
+Errors fail the run and warnings do not, so a first pass over an old codebase does not have to be all or nothing. `--all` lists every pair suss made and every boundary it skipped, so you can tell "no findings" apart from "nothing got compared". `--at src/articles.ts:14` narrows a run to one file, line, boundary or summary.
 
-When the run turns up nothing, every command says where it stopped. [Fix a run that found nothing](/guides/fix-an-empty-run) goes through each case.
+When a run turns up nothing, every command prints where it stopped. [Fix a run that found nothing](/guides/fix-an-empty-run) goes through each case.
 
 ## Choose the packs yourself
 
-`-f` says which pack to read with, and you can repeat it. `-p` points at the tsconfig covering the code you want read, which gives suss the same type resolution your compiler has: the same `paths` aliases, the same `moduleResolution`, the same `lib` set. Without it, an import that crosses a package boundary does not resolve and most of the type information is lost.
+`-f` picks a pack to read with, and you can repeat it. `-p` points at the tsconfig that covers the code you want read, which gives suss the same type resolution your compiler has, including your `paths` aliases and your `lib` set. Without it, an import that crosses a package boundary does not resolve, and most of the type information is lost.
 
 ```bash
 # The service
@@ -181,9 +181,9 @@ A Python or Ruby project has no tsconfig, so point suss at the directory with `-
 
 ## Where the files go
 
-`summaries/` is derived, so leave it out of the repository and let CI regenerate it. The exception is a library publishing summaries for whoever consumes it, which [Publish summaries](/guides/publish-summaries) covers.
+`summaries/` is derived, so leave it out of the repository and let CI regenerate it. The exception is a library that publishes its summaries for whoever consumes it, and [Publish summaries](/guides/publish-summaries) covers that.
 
-`suss.json` and `.sussignore` are both committed. One says what the project contains, the other is the list of findings the team decided to accept.
+Commit both `suss.json` and `.sussignore`. The first records what the project contains, and the second is the list of findings your team decided to accept.
 
 ## Next
 

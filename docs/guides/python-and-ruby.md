@@ -12,7 +12,7 @@ npx suss extract --dir services/shop -f fastapi -o summaries/shop.json
 npx suss inspect summaries/shop.json
 ```
 
-The summaries are the same format a TypeScript run writes, so `check` compares a Python handler against a TypeScript client in one pass. Neither adapter needs an installed interpreter, a virtualenv or a bundle: parsing is tree-sitter compiled to WASM and shipped inside the CLI.
+The summaries are the same format a TypeScript run writes, so `check` compares a Python handler against a TypeScript client in one pass. Neither adapter needs an installed interpreter, a virtualenv or a bundle. Both parse with tree-sitter compiled to WASM, which ships inside the CLI.
 
 ## Let init pick the packs
 
@@ -38,16 +38,16 @@ For a Python project it reads `requirements.txt` and the other requirements file
    suss extract --lang python -f fastapi -f flask-restx -o summaries/code.json
 ```
 
-Where it looked and could not read something, it says so on its own line. A `setup.py` that computes its dependency list, a conda environment file, and a `Gemfile` with no lock file beside it each get one, because a library that only appears in one of those is a pack suss cannot suggest.
+When `init` looked somewhere and could not read it, it prints that on its own line. A `setup.py` that computes its dependency list, a conda environment file, or a `Gemfile` with no lock file beside it each get one of those lines, because suss cannot suggest a pack for a library that only appears there.
 
 ## Which packs read which language
 
 The [pack catalog](/packs/catalog) lists every pack and what it reads. In short:
 
-- **Python** reads routes with `fastapi` or `flask-restx`, database calls with `sqlalchemy` or `sqlmodel`, and outbound HTTP with `requests`, `httpx` or `aiohttp`.
-- **Ruby** reads GraphQL fields with `graphql-ruby`, Rails controller actions with `rails`, database calls with `activerecord`, and outbound HTTP with `faraday` or `net-http`.
+- **In Python**, suss reads routes with `fastapi` or `flask-restx`, database calls with `sqlalchemy` or `sqlmodel`, and outbound HTTP with `requests`, `httpx` or `aiohttp`.
+- **In Ruby**, suss reads GraphQL fields with `graphql-ruby`, Rails controller actions with `rails`, database calls with `activerecord`, and outbound HTTP with `faraday` or `net-http`.
 
-A pack for one language cannot run alongside a pack for another in the same command. Compose the ones for your language freely: `-f rails -f activerecord=suss.activerecord.json` gives you the controller actions and the tables each one touches.
+A pack for one language cannot run alongside a pack for another in the same command. Within one language you can combine them freely: `-f rails -f activerecord=suss.activerecord.json` gives you the controller actions and the tables each one touches.
 
 ## Python
 
@@ -95,9 +95,9 @@ Three things in there are worth pointing at.
 
 `/api/items/{item_id}` is whole even though no file writes it whole. The router declares `prefix="/items"` and `app.include_router(items_router, prefix="/api")` mounts it under another, and the pack composes the two, one mount hop deep, when both are string literals.
 
-`read_stock` shows what the adapter does with a body. Each return is a branch with its status and the conditions that reach it, and `raise HTTPException(status_code=404, ...)` is the 404. `Depends(current_user)` on `create_item` is resolved by FastAPI rather than sent by the caller, so it is no part of the request.
+`read_stock` shows what the adapter does with a body. Each return becomes a branch with its status and the conditions that reach it, and `raise HTTPException(status_code=404, ...)` is the 404. FastAPI resolves `Depends(current_user)` on `create_item` itself, and the caller never sends it, so it is no part of the request.
 
-The two `GET ?` lines are routes whose path the source does not state: one reads its path from settings, the other is mounted under a prefix that comes from the environment. They keep their names, get no path, and say why. A route with no path pairs with nothing. A guessed path would pair it with some other team's handler, and every finding that came back would be about the wrong one.
+The two `GET ?` lines are routes whose path the source does not state. One reads its path from settings, and the other is mounted under a prefix that comes from the environment. They keep their names, they get no path, and the output explains why. A route with no path pairs with nothing, and a guessed path would pair it with somebody else's handler, so every finding about it would be about the wrong route.
 
 What `extract` reads, and from where:
 
@@ -105,7 +105,7 @@ What `extract` reads, and from where:
 - **The directory you pointed at, plus each checked-out submodule**, as the roots an absolute import resolves against. That is the closest thing a Python project has to a tsconfig's `paths`. A module found under two roots comes back ambiguous rather than resolved, because which one wins is a `sys.path` fact only a running interpreter has. A submodule that was never checked out is reported, and with `-o` it is also written to a note beside the summaries, so a CI job reading the summaries can tell the run was incomplete.
 - **The packs.** No other part of the adapter has a decorator name in it.
 
-suss works out that a directory is Python from a `pyproject.toml`, a requirements file, `setup.py`, `Pipfile`, or failing those the `.py` files themselves. The packs you ask for settle it too. `--lang python` says it outright.
+suss works out that a directory is Python from a `pyproject.toml`, a requirements file, `setup.py` or `Pipfile`, and failing those from the `.py` files themselves. The packs you ask for decide it too, and `--lang python` states it directly.
 
 ### flask-restx
 
@@ -123,7 +123,7 @@ class OrderDetail:
     def get(self, order_id): ...
 ```
 
-With `api.add_namespace(ns)` somewhere in the files the run reads, that comes out as `GET /orders/{order_id}`. For the composition to happen the namespace has to be constructed with a literal `path` and mounted once, through a variable, by an `add_namespace` that gives no path of its own. Written any other way the route is still discovered under its name, with no path and a recorded reason. `@suss/adapter-python`'s README has the grid of what every spelling means at each site, checked against a running app.
+With `api.add_namespace(ns)` somewhere in the files the run reads, that comes out as `GET /orders/{order_id}`. For the composition to happen, the namespace has to be constructed with a literal `path` and mounted once, through a variable, by an `add_namespace` that gives no path of its own. Written any other way, the route is still discovered under its name, with no path and a recorded reason. The README of `@suss/adapter-python` has the grid of what every spelling means at each site.
 
 ### FastAPI
 
@@ -142,7 +142,7 @@ npx suss extract --dir fixtures/ruby-rails -f rails -f activerecord=suss.activer
 npx suss inspect summaries/rails.json
 ```
 
-`suss.activerecord.json` says which database is behind the connection, because ActiveRecord talks to several and only `database.yml` settles it:
+`suss.activerecord.json` tells suss which database is behind the connection. ActiveRecord talks to several of them, and only `database.yml` decides which one:
 
 ```json
 { "storageSystem": "postgresql" }
@@ -177,7 +177,7 @@ config/routes.rb
        !! config/routes.rb also declares mount, which this pack does not read; whatever those declarations route is missing from what suss reports
 ```
 
-Every instance method a controller extending `ApplicationController` defines directly is one of its actions, and `config/routes.rb` decides the method and path. `before_action` filters come through as wrappers: the 401 on both actions belongs to `require_login`, and the summary says so. `Reaches:` follows the call into the service object and reports the table on the other end, with the chain that got there.
+Every instance method a controller extending `ApplicationController` defines directly is one of its actions, and `config/routes.rb` decides the method and path. `before_action` filters come through as wrappers, so the 401 on both actions belongs to `require_login`, and the summary records that. `Reaches:` follows the call into the service object and reports the table at the other end, with the chain that got there.
 
 The pack reads most of the routes grammar:
 
@@ -193,7 +193,7 @@ The pack reads most of the routes grammar:
 - `draw(:name)`, read from `config/routes/name.rb` under the scope the draw was written in
 - `mount`, for an engine the project keeps in its own tree, which the `engineRoots` option points at
 
-Anything it does not read it records instead of guessing at. That is the `mount Sidekiq::Web` line above: a gem's engine is outside `engineRoots`, so the gap says which call went unread. `direct`, `param:` on a resource, and a gem routing call like `devise_for` go the same way.
+Anything the pack does not read, it records instead of guessing at. That is the `mount Sidekiq::Web` line above: a gem's engine is outside `engineRoots`, so the gap tells you which call went unread. `direct`, `param:` on a resource and a gem routing call like `devise_for` go the same way.
 
 An action the routes file does not reach is still discovered, with its calls followed, only with no boundary. When the routes file is missing altogether, every action named for one of Rails' seven conventional actions is bound at the path Rails' own naming convention gives it, and the run records that it did so.
 
@@ -214,11 +214,11 @@ npx suss extract --dir . -f graphql-ruby=suss.graphql-ruby.json -o summaries/sch
 
 A class extending one of graphql-ruby's generated base classes has each `field` call in its body turned into a resolver, named `Campaign.id` from the class's short name with a trailing `Type` stripped. The binding is `graphql-resolver(typeName, fieldName)`, so it pairs against a client operation exactly as a NestJS or Apollo resolver summary does. The adapter follows a class's whole ancestry, so an intermediate base of yours needs nothing said about it.
 
-`field :campaign_update, mutation: Mutations::CampaignUpdate` is followed one hop: the referenced class is located under `root`, and its own `field` and `argument` calls become the payload and the arguments. An `argument` counts as required unless it says otherwise.
+`field :campaign_update, mutation: Mutations::CampaignUpdate` is followed one hop: the referenced class is located under `root`, and its own `field` and `argument` calls become the payload and the arguments. An `argument` counts as required unless it declares otherwise.
 
-Ruby abstains per field the same way Python does per route. `field :status, status_label_for(:organizer)` is discovered as `Organizer.status` with no declared contract at all, rather than one claiming the type is unknown. A `mutation:` reference pointing at a file that is not where the convention says it should be gives you the field and no payload.
+In Ruby suss abstains per field, the same way it abstains per route in Python. `field :status, status_label_for(:organizer)` is discovered as `Organizer.status` with no declared contract at all, instead of one claiming the type is unknown. A `mutation:` reference pointing at a file that is not where the convention says it should be gives you the field and no payload.
 
-A `Gemfile`, a `Gemfile.lock` or a Rails `config/application.rb` is enough for suss to read a directory as Ruby, and `--lang ruby` says it outright. The walk reads every `.rb` file, skipping `vendor`, `node_modules`, `tmp` and `.git`. Ruby constants resolve through class and module nesting, and suss does not follow `require`, so there is nothing here matching Python's import roots.
+A `Gemfile`, a `Gemfile.lock` or a Rails `config/application.rb` is enough for suss to read a directory as Ruby, and `--lang ruby` states it directly. The walk reads every `.rb` file, skipping `vendor`, `node_modules`, `tmp` and `.git`. Ruby constants resolve through class and module nesting, and suss does not follow `require`, so Ruby has no equivalent of Python's import roots.
 
 ## Configuring a pack
 
@@ -228,9 +228,9 @@ Most packs need nothing from you, because everything they match on is something 
 npx suss extract --lang ruby --dir . -f graphql-ruby=suss.graphql-ruby.json
 ```
 
-A pack that cannot work without a value says so and stops, rather than reading half a project quietly. A relative path in an option is read against the config file itself, so the same file works whichever directory you run from.
+A pack that cannot work without a value tells you and stops, instead of reading half a project quietly. A relative path in an option is read against the config file itself, so the same file works whichever directory you run from.
 
-A pack config says something about your own project. A fact about a package you depend on, a module of yours that re-exports a framework among them, goes in a [dependency stub](/guides/teach-a-dependency) instead.
+A pack config states something about your own project. A fact about a package you depend on, such as a module of yours that re-exports a framework, goes in a [dependency stub](/guides/teach-a-dependency) instead.
 
 ## Your own wrapper around a route decorator
 
@@ -266,7 +266,7 @@ statements:
     of: flask_restx
 ```
 
-The pack then accepts a `route` decorator imported from your wrapper alongside one imported from `flask_restx` itself. An aliased import (`from myapp.wrappers.restx import route as api_route`) resolves the same way. The pack hardcodes only what flask-restx defines; your wrapper's name is your project's choice, so it arrives in the stub.
+The pack then accepts a `route` decorator imported from your wrapper alongside one imported from `flask_restx` itself. An aliased import (`from myapp.wrappers.restx import route as api_route`) resolves the same way. The pack hardcodes only what flask-restx defines. What you called your wrapper is your own choice, so it comes in through the stub.
 
 `suss infer stub myapp` reads the project's own imports and drafts it, one file per wrapper module it finds. The fastapi pack reads the same `re-exports` statement, for a module of yours that re-exports FastAPI's own constructors.
 
@@ -281,7 +281,7 @@ statements:
     extends: Acme::GraphQL::BaseObject
 ```
 
-`extends:` picks which pack is fed: a graphql-ruby root class sends it to graphql-ruby, a Rails root class to rails, and a class in neither list to both.
+`extends:` decides which pack receives the class. A graphql-ruby root class sends it to graphql-ruby, a Rails root class sends it to rails, and a class in neither list goes to both.
 
 ## What a file reads from the environment
 
@@ -312,7 +312,7 @@ shop/main.py
          + reads runtime-config:python-env SHOP_TIER
 ```
 
-The variable names come back on the route, not on the helper. Ruby reads the same way through `ENV["X"]`, `ENV.fetch("X")` and a helper in front of either:
+The variable names come back on the route, not on the helper. suss reads Ruby the same way, through `ENV["X"]`, `ENV.fetch("X")` and a helper in front of either:
 
 ```
 app/controllers/health_controller.rb

@@ -18,23 +18,24 @@ Add this to the host's MCP config and point it at the project:
 }
 ```
 
-Claude Code reads `.mcp.json` at the repository root. Cursor reads
-`.cursor/mcp.json`. Both take that block unchanged, and dropping the path
-argument makes the server read the directory the host started it in.
+Claude Code reads `.mcp.json` at the repository root and Cursor reads
+`.cursor/mcp.json`, and both take that block unchanged. If you drop the
+path argument, the server reads whichever directory the host started it
+in.
 
-The server reads `suss.json`, which says which packs to read the code
-with and where the contracts are. `npx @suss/cli init` writes it. Without
-one the server picks the packs `init` would and says on stderr that it
-did. When nothing in the project matches a pack, every answer comes back
-empty and `suss_status` says why.
+The server reads `suss.json`. That file lists which packs to read the code
+with and where your contracts are, and `npx @suss/cli init` writes it. If
+you do not have one, the server picks the packs `init` would have picked
+and prints a note on stderr. When nothing in the project matches a pack,
+every answer comes back empty, and `suss_status` explains why.
 
 ## The five tools
 
 `suss_ask` takes one question about one boundary and works the answer out
 from the code as it is right now. The `question` has to be one of ten
 forms, and an optional `limit` sets how many results come back before the
-rest are counted and left out. This is the one an agent reaches for
-before it changes a route, a table or a function signature:
+rest are counted and left out. Your agent calls this one before it
+changes a route, a table or a function signature:
 
 ```
 what can I project from <boundary>   the statuses a route returns, the fields a store serves
@@ -49,11 +50,11 @@ why does <unit> reach <boundary>     the call chain, with each hop proved from s
 why does <name> at <file>:<line> resolve to <target>
 ```
 
-`suss_check` compares both sides of every boundary and reports where they
-disagree: a caller reading a field the provider never returns, or a
-status no caller handles. An agent runs it after writing
-code that crosses a boundary. Pass a `boundary` to narrow a whole-project
-report down to one thing.
+`suss_check` compares both sides of every boundary and reports where the
+two disagree, such as a caller reading a field the provider never returns
+or a status no caller handles. An agent runs it after writing code that
+crosses a boundary. Pass a `boundary` to narrow a whole-project report
+down to one thing.
 
 `suss_boundaries` lists the boundaries in three groups: the ones with
 both sides present, the ones only something serves, and the ones only
@@ -61,19 +62,19 @@ something calls. An agent uses it to get oriented in an unfamiliar
 project, and to tell "the two sides agreed" apart from "nothing was
 compared" after `suss_check` comes back with no findings.
 
-`suss_stub_draft` takes a `package` the project uses but suss cannot read
-into, a compiled binding or a private wrapper, and drafts a stub for it
-from the project's own call sites. The semantic blanks are for a person
-or the agent to fill from the package's source. [Teach suss a
-dependency](/guides/teach-a-dependency) covers the file it writes.
+`suss_stub_draft` handles a `package` your project uses that suss cannot
+read into, such as a compiled binding or a private wrapper. It drafts a
+stub for that package from your own call sites and leaves the semantic
+blanks for you or the agent to fill in from the package's source. [Teach
+suss a dependency](/guides/teach-a-dependency) covers the file it writes.
 
-`suss_status` says which extract and contract commands ran, which failed,
-and whether a `suss.json` chose them or the server picked them itself.
-It is the thing to call when an answer looks thinner than the code
-suggests it should be.
+`suss_status` shows which extract and contract commands ran, which of
+them failed, and whether they came from a `suss.json` or the server
+picked them itself. Call it when an answer looks thinner than you would
+expect from the code.
 
-All five are marked read-only and every one of them leaves the tree
-alone, so a host never has to ask a person before calling one.
+All five are marked read-only and none of them changes anything in your
+tree, so the host does not have to ask you before it calls one.
 
 ## What an answer looks like
 
@@ -104,23 +105,23 @@ suss_ask { "question": "what can I project from GET /orders/{reference}" }
 }
 ```
 
-Read `found` first. When it is false, `needs` says which input would let
-suss answer, and that is usually the thing to act on. `caveats` is where
-a call suss could not follow shows up, one `warning:` line per unit with
-its file and line, so an agent can tell a complete answer from one that
-stops partway.
+Read `found` first. When it is false, `needs` lists the input that would
+let suss answer, and that is usually what to go and fix. `caveats`
+contains one `warning:` line for every call suss could not follow, with
+the file and line of the unit it was in. That is how an agent can tell a
+complete answer from one that stopped partway.
 
 ## Staying current
 
-The server runs one extract when it starts and watches the tree after
-that. When a source file changes it re-runs the affected part, so an
-answer describes the working tree rather than whatever was last
-extracted. An edit to one file rebuilds one file's worth of work.
+The server runs one extract when it starts, then watches the tree. When a
+source file changes it re-runs the part of the extract that file affects,
+so every answer describes your working tree as it is now. Editing one
+file only costs one file's worth of work.
 
 ## Telling the agent to use it
 
-The agent has to be told to reach for it. A line in the project's agent
-instructions (`CLAUDE.md`, `.cursorrules`, or the equivalent) is enough:
+You have to tell the agent to use it. One line in your project's agent
+instructions (`CLAUDE.md`, `.cursorrules` or the equivalent) is enough:
 
 ```
 Before changing a table, a route or a function's signature, ask the suss MCP
@@ -128,4 +129,4 @@ server what reads, writes or calls it, and check the result before editing.
 ```
 
 The [MCP package README](https://github.com/nimbuscloud-ai/suss/tree/main/packages/mcp)
-says how to mount the server on a transport of your own.
+covers how to mount the server on a transport of your own.

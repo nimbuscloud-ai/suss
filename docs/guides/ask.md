@@ -24,7 +24,7 @@ The [`suss ask` reference](/reference/cli/ask) has the question grammar and the 
 
 ## What does this route touch?
 
-The question before you change a handler.
+Ask this before you change a handler.
 
 ```bash
 suss ask 'what does GET /orders/{customer} reach' --dir summaries/
@@ -35,11 +35,11 @@ GET /orders/{customer}, 1 summary, reaches 1 boundary:
   reads aws.dynamodb:{location.table}  through client.send, by calling readRow
 ```
 
-The route itself never says which table. The name comes out of an argument its storage layer is handed, and `by calling readRow` is the hop that gets there.
+The route itself never mentions a table. The name comes from an argument its storage layer is handed, and `by calling readRow` is the hop that gets there.
 
 ## Who reads this table?
 
-The question before you rename a column or retire a table.
+Ask this before you rename a column or retire a table.
 
 ```bash
 suss ask 'what reads aws.dynamodb:OrdersTable' --dir summaries/
@@ -52,11 +52,11 @@ suss ask 'what reads aws.dynamodb:OrdersTable' --dir summaries/
 aws.dynamodb:OrdersTable is provided by cloudformation:fixtures/storage-wrapper/template.yaml::OrdersTable.
 ```
 
-The table has two spellings here: `OrdersTable`, the resource in the template, and `{location.table}`, the argument the storage layer reads. Either spelling finds the same unit, and the answer says how the two connect. Ask `what writes` the same way for the other direction.
+The table has two spellings here: `OrdersTable`, the resource in the template, and `{location.table}`, the argument the storage layer reads. Either spelling finds the same unit, and the answer shows how the two connect. Ask `what writes` the same way for the other direction.
 
 ## Who calls this file?
 
-The question before you change a signature.
+Ask this before you change a signature.
 
 ```bash
 suss ask 'what calls src/orderStore.ts' --dir summaries/
@@ -67,7 +67,7 @@ suss ask 'what calls src/orderStore.ts' --dir summaries/
   storage-wrapper::src/orders.ts::GetOrderFunction.getOrder (src/orders.ts:6, provides GET /orders/{customer}) calls readRow
 ```
 
-Each caller says which boundary it serves, so you can see the route the change reaches without following the call chain yourself. A unit is spelled the way `--at` spells one: a file, a `file:line`, a summary id, or a function name. A bare name that is two functions in two places is refused, with both listed.
+Each caller comes with the boundary it serves, so you can see which route the change reaches without following the call chain yourself. You spell a unit the way `--at` spells one: a file, a `file:line`, a summary id or a function name. If a bare name matches two functions in two places, suss refuses the question and lists both.
 
 ## Which boundaries would I break?
 
@@ -84,7 +84,7 @@ suss ask 'what reaches readRow' --dir summaries/
 warning: 3 calls here resolved to no unit, so a boundary reaching readRow through one of them is missing from this answer.
 ```
 
-`what calls` is one hop and `what reaches` is every hop, so the answer here is routes and queues rather than the functions between them. The warning is the part worth reading: the answer is complete as far as suss could follow the calls, and it says how far that was.
+`what calls` follows one hop and `what reaches` follows every hop, so this answer gives you routes and queues instead of the functions in between. Read the warning at the end. The answer is complete as far as suss could follow the calls, and the warning tells you how far that was.
 
 ## What can I ask this table for?
 
@@ -97,9 +97,9 @@ aws.dynamodb:OrdersTable declares 1 thing you can ask it for:
   field orderId (S)  from cloudformation:fixtures/storage-wrapper/template.yaml::OrdersTable
 ```
 
-The attributes a DynamoDB table declares live in terraform or a SAM template, where TypeScript cannot see them. Put a contract in place of the table and you get the statuses it declares; put a runtime there and you get the environment variables it takes.
+The attributes a DynamoDB table declares are in terraform or in a SAM template, where TypeScript cannot see them. Ask the same question about a contract and you get the statuses it declares. Ask it about a runtime and you get the environment variables it takes.
 
-When nothing on disk declares the answer, suss says which file would give it rather than assembling one out of what the call sites happen to ask for.
+When nothing on disk declares the answer, suss tells you which file would, and it does not assemble an answer out of what the call sites happen to ask for.
 
 ## How does it get there?
 
@@ -117,9 +117,9 @@ GetOrderFunction.getOrder reaches aws.dynamodb:
   readRow reads aws.dynamodb:{location.table} through client.send (src/orderStore.ts:14)
 ```
 
-The chain comes from the summaries and the steps under each hop are proved from the source, which the question re-reads for the occasion. That is the one question that goes back to the files, so it takes `--project` to say where they are. Each hop is proved through the adapter for its own language, so a project mixing TypeScript, Python and Ruby proves each hop the right way.
+The chain comes from the summaries, and the steps under each hop are proved from the source, which this question re-reads. It is the one question that goes back to the files, so it takes `--project` to tell suss where they are. Each hop is proved through the adapter for its own language, so in a project that mixes TypeScript, Python and Ruby, each hop is proved the right way.
 
-A hop that only an import records, with no written call behind it, prints without resolution steps. A hop through a wrapper a pack declares says what it rests on, as `assuming a pack declares that withSentry from @sentry/serverless passes argument 0 through to its result`. [How suss follows a value](/theory/resolving-values) walks through the facts and the rules behind one of these chains.
+A hop that only an import records, with no written call behind it, prints without resolution steps. A hop through a wrapper that a pack declares prints what it depends on, as `assuming a pack declares that withSentry from @sentry/serverless passes argument 0 through to its result`. [How suss follows a value](/theory/resolving-values) walks through the facts and the rules behind one of these chains.
 
 ## The same questions in symbols
 
@@ -144,11 +144,11 @@ suss ask 'r<- aws.dynamodb:OrdersTable' --dir summaries/
 aws.dynamodb:OrdersTable is provided by cloudformation:fixtures/storage-wrapper/template.yaml::OrdersTable.
 ```
 
-Both forms take the same spellings and give the same answer, in text and under `--json`. The parts separate on spaces, since `<-`, `->` and a trailing `?` are characters no key, id or path contains.
+Both forms take the same spellings and give the same answer, in text and under `--json`. suss splits the parts on spaces, because no key, id or path contains `<-`, `->` or a trailing `?`.
 
 ## Long answers, and answers for something other than a person
 
-A long answer stops after ten items and says how many are left:
+A long answer stops after ten items and prints how many are left:
 
 <!-- suss:unchecked it runs over summaries of the suss workspace itself, which are built by npm run check:self rather than by a command on this page -->
 
@@ -163,4 +163,4 @@ A long answer stops after ten items and says how many are left:
 
 ## From an agent
 
-The same questions arrive over MCP, where an agent asks before it edits a table or changes a signature rather than after. [Give your agent suss](/start/give-your-agent-suss) sets that up. The server keeps its summaries current as files change, so an answer describes the working tree rather than whatever was last extracted.
+Your agent asks the same questions over MCP, before it edits a table or changes a signature. [Give your agent suss](/start/give-your-agent-suss) sets that up. The server keeps its summaries current as files change, so every answer describes your working tree as it is now.

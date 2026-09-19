@@ -99,8 +99,8 @@ export default app;
 npx @suss/cli init
 ```
 
-suss reads code through a pack per library. `init` looks at the
-dependency manifest and at the schemas and deploy templates on disk, and
+suss reads code through one pack per library. `init` looks at your
+dependency manifest and at the schemas and deploy templates on disk, then
 lists what it can read:
 
 <!-- suss:excerpt -->
@@ -118,8 +118,9 @@ lists what it can read:
     prisma           a Prisma schema at prisma/schema.prisma
 ```
 
-Then it prints the commands for what it found. In a terminal it offers to
-set them up for you; piped or in CI it prints and stops.
+Then it prints the commands for what it found. If you are sitting at a
+terminal, it offers to set them up for you. If the output is piped
+somewhere or the run is in CI, it prints the commands and stops.
 
 <!-- suss:excerpt -->
 
@@ -138,13 +139,13 @@ npx suss extract -f hono -f fetch -f prisma -f node -o summaries/code.json
 Wrote 2 summaries to summaries/code.json in 0.24s
 ```
 
-A summary is one unit suss read: a route handler here, a queue consumer or
-a Lambda in another project. The file is JSON, and `inspect` prints it in
-a form meant for people.
+A summary is one unit of code that suss read. Here that is a route
+handler; in another project it might be a queue consumer or a Lambda. The
+file is JSON, and `inspect` prints it in a form you can read.
 
-Those `-f` flags are the ones `init` printed. Leave them off and `extract`
-reads the packs from `suss.json`, or picks the same ones `init` would when
-there is no file.
+Those `-f` flags are the ones `init` printed. If you leave them off,
+`extract` reads the packs from `suss.json`, and when there is no such file
+it picks the same ones `init` would have.
 
 ## Print what it found
 
@@ -176,16 +177,16 @@ src/api.ts
 2 summaries.
 ```
 
-Each route comes with the branches it takes, the condition that leads to
-each one, and the status and body that branch returns. The `+` lines are
-the calls that path makes, so `POST /orders` writes to Prisma on its 201
-and not on its 400.
+Under each route you get the branches it takes, the condition that leads
+to each one, and the status and body it returns there. The `+` lines are
+the calls that branch makes. `POST /orders` only writes to Prisma on the
+branch that returns 201.
 
 ## Compare it against the schema
 
-`check` needs both sides of a boundary in the same folder. `init` printed
-the command that turns `schema.prisma` into the other side of every
-Prisma query, and this project has one caller of its own.
+`check` needs both sides of a boundary in the same folder. `init` already
+printed the command that turns `schema.prisma` into the other side of
+every Prisma query, and this project has a caller of its own too.
 
 `src/client.ts`:
 
@@ -235,15 +236,16 @@ Nothing in this run paired with this boundary, so nothing was checked across it:
 1 finding: 0 error, 1 warning, 0 info
 ```
 
-One boundary had both sides, and across it `loadOrder` treats every
-status other than 200 alike, so a missing order and a failed request
-reach the screen as the same thing. The two entries above the finding
-had only one side in this run, which is why an empty finding list on its
-own never means the two sides agreed.
+One boundary had both sides in this run. Across it, `loadOrder` treats
+every status other than 200 the same way, so a missing order and a failed
+request both end up on the screen as one generic error. The two entries
+above the finding had only one side here, and suss compared nothing for
+them. An empty finding list on its own does not mean the two sides
+agreed.
 
 Every finding gives you the boundary, both sides, a file and line to
 open, and a rule you can paste if you decide to live with it. The
-[findings catalog](/reference/findings) says what each kind means.
+[findings catalog](/reference/findings) explains what each kind means.
 
 ## Next
 
@@ -255,5 +257,5 @@ open, and a rule you can paste if you decide to live with it. The
   runs and posts what changed as a comment.
 - [Give your agent suss](/start/give-your-agent-suss) lets a coding agent
   ask the same questions over MCP.
-- [Four ideas](/start/four-ideas) is the vocabulary the rest of the
-  documentation uses.
+- [Four ideas](/start/four-ideas) explains the four words the rest of the
+  documentation leans on.
