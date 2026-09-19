@@ -257,6 +257,15 @@ export function honoFramework(_options: HonoPackOptions = {}): PatternPack {
       type: "positionalParams",
       params: [{ position: 0, role: "context" }],
     },
+
+    // `c.req.header("x-tenant-id")` puts the field in the argument, and
+    // a read records the method without it, so no read says which field.
+    requestSpelling: {
+      headers: { path: ["context", "req", "header"], saysWhichField: false },
+      query: { path: ["context", "req", "query"], saysWhichField: false },
+      params: { path: ["context", "req", "param"], saysWhichField: false },
+      body: { path: ["context", "req", "json"], saysWhichField: false },
+    },
   };
 }
 

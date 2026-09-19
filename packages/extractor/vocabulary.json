@@ -92,6 +92,7 @@
   "object": "JavaScript value kind",
   "objectParam": "suss: InputMappingPattern variant tag",
   "opaque": "suss: match strength",
+  "param": "suss: what a name the source fills in at run time is written as",
   "parameter": "expression kind the extractor records",
   "parameterMethodCall": "suss: TerminalMatch variant tag",
   "path": "suss: RestSemantics field",

@@ -5,6 +5,7 @@
   "status": "fastify: reply method setting the status code, Express compatible alias",
   "send": "fastify: reply method sending a body",
   "redirect": "fastify: reply method sending a redirect",
+  "params": "fastify: request property with the path parameters the route matched",
   "request": "suss: input role",
   "reply": "suss: input role"
 }

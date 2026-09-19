@@ -19,6 +19,7 @@
   "links": "express: response method setting the Link header, returns the response",
   "attachment": "express: response method setting Content-Disposition, returns the response",
   "use": "express: router method mounting a sub-router under a prefix, and registering middleware and error handlers",
+  "params": "express: request property with the path parameters the route matched",
   "request": "suss: input role",
   "next": "suss: input role"
 }

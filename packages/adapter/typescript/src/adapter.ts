@@ -1328,6 +1328,7 @@ function extractFromSourceFile(
           method: unit.routeInfo.method,
           path: unit.routeInfo.path,
         });
+        stampRequestSpelling(raw, pack);
       } else if (unit.channelInfo !== undefined) {
         raw.boundaryBinding = messageBusBinding({
           recognition: pack.name,
@@ -1566,6 +1567,21 @@ function stampWrappers(
   for (const wrapper of applied) {
     recordFileDependency(wrapper.file);
   }
+}
+
+/**
+ * Say how this route's framework spells the parts of a request, so a
+ * checker comparing the route's reads against a declared `receives`
+ * block knows which read is a header and which is a query parameter.
+ *
+ * Only a route needs it. The middleware around one takes the same
+ * parameters, and the checker applies the route's spelling to it.
+ */
+function stampRequestSpelling(raw: RawCodeStructure, pack: PatternPack): void {
+  if (pack.requestSpelling === undefined) {
+    return;
+  }
+  raw.requestSpelling = pack.requestSpelling;
 }
 
 /**
