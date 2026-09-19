@@ -2,11 +2,11 @@
   "totals": {
     "packages": 78,
     "packagesWithExports": 78,
-    "exports": 1036,
-    "internal": 3607,
-    "consumers": 2098,
-    "pairs": 2086,
-    "unfollowedCalls": 530,
+    "exports": 1039,
+    "internal": 3615,
+    "consumers": 2128,
+    "pairs": 2116,
+    "unfollowedCalls": 531,
     "findingErrors": 0
   },
   "packages": {
@@ -33,7 +33,7 @@
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 135,
+      "exports": 137,
       "internal": 50,
       "consumers": 20,
       "unfollowedCalls": 13
@@ -42,7 +42,7 @@
       "name": "@suss/checker",
       "exports": 43,
       "internal": 217,
-      "consumers": 191,
+      "consumers": 192,
       "unfollowedCalls": 42
     },
     "packages/checker-intent": {
@@ -181,9 +181,9 @@
     "packages/contract/terraform": {
       "name": "@suss/contract-terraform",
       "exports": 7,
-      "internal": 49,
-      "consumers": 23,
-      "unfollowedCalls": 3
+      "internal": 55,
+      "consumers": 35,
+      "unfollowedCalls": 4
     },
     "packages/contract/wrangler": {
       "name": "@suss/contract-wrangler",
@@ -481,7 +481,7 @@
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",
-      "exports": 83,
+      "exports": 84,
       "internal": 27,
       "consumers": 0,
       "unfollowedCalls": 15
@@ -490,7 +490,7 @@
       "name": "@suss/manifest-aws",
       "exports": 16,
       "internal": 25,
-      "consumers": 1,
+      "consumers": 2,
       "unfollowedCalls": 1
     },
     "packages/mcp": {
@@ -538,15 +538,15 @@
     "packages/terraform/aws": {
       "name": "@suss/terraform-aws",
       "exports": 2,
-      "internal": 2,
-      "consumers": 9,
+      "internal": 3,
+      "consumers": 16,
       "unfollowedCalls": 0
     },
     "packages/terraform/gcp": {
       "name": "@suss/terraform-gcp",
       "exports": 2,
-      "internal": 3,
-      "consumers": 19,
+      "internal": 4,
+      "consumers": 28,
       "unfollowedCalls": 0
     },
     "packages/values": {
