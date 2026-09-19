@@ -21,6 +21,14 @@ import sqlite from "node-sql-parser/build/sqlite.js";
 /** One table a statement touches, and what it does to it. */
 export interface SqlAccess {
   table: string;
+  /**
+   * The namespaces the statement put in front of the table, outermost
+   * first. BigQuery writes `project.dataset.table`, so a reader that
+   * kept the whole string would record a container no provider spells.
+   * A part the caller could not settle is left out rather than carried
+   * through as a parameter.
+   */
+  qualifier: string[];
   kind: "read" | "write";
   /** The fields the statement states, or `["*"]` for a whole row. */
   fields: string[];
@@ -73,7 +81,40 @@ export function readSqlAccess(
     return [];
   }
   const statements = Array.isArray(parsed) ? parsed : [parsed];
-  return statements.flatMap((statement) => accessesIn(statement, new Set()));
+  return statements
+    .flatMap((statement) => accessesIn(statement, new Set()))
+    .map(qualified)
+    .filter((access): access is SqlAccess => access !== null);
+}
+
+/** What separates the namespaces in front of a table from the table. */
+const QUALIFIER_SEPARATOR = ".";
+
+/**
+ * A table split from the namespaces written in front of it, or nothing
+ * when the table itself came through as a parameter. The README says
+ * why the BigQuery parser needs this and the others do not.
+ */
+function qualified(access: SqlAccess): SqlAccess | null {
+  const parts = access.table.split(QUALIFIER_SEPARATOR);
+  const table = parts[parts.length - 1] ?? access.table;
+  if (isParameter(table)) {
+    return null;
+  }
+  return {
+    ...access,
+    table,
+    qualifier: parts.slice(0, -1).filter((part) => !isParameter(part)),
+  };
+}
+
+/**
+ * Whether a piece of a name is a parameter this module wrote. A hole
+ * the caller could not settle comes through `sqlFromParts` as `$1`, and
+ * the parse cannot tell that from a name somebody chose.
+ */
+function isParameter(part: string): boolean {
+  return /^\$\d+$/.test(part);
 }
 
 /**
@@ -91,16 +132,38 @@ export function readSqlAccess(
 export function sqlFromParts(
   parts: readonly string[],
   substitutions: ReadonlyArray<string | null> = [],
+  settled: ReadonlyArray<string | null> = [],
 ): string {
+  let closing: string | null = null;
   return parts
     .map((part, index) => {
-      if (index === 0) {
-        return part;
-      }
-      const settled = substitutions[index - 1];
-      return `${settled ?? `$${index}`}${part}`;
+      const inHole =
+        index === 0
+          ? null
+          : (substitutions[index - 1] ??
+            (closing === null ? null : (settled[index - 1] ?? null)));
+      closing = quoteAfter(closing, part);
+      return index === 0 ? part : `${inHole ?? `$${index}`}${part}`;
     })
     .join("");
+}
+
+/** What closes a quoted name, by the character that opened it. */
+const NAME_QUOTES: Record<string, string> = { '"': '"', "`": "`", "[": "]" };
+
+/** The quote still open after a piece of a template, or null for none. */
+function quoteAfter(open: string | null, part: string): string | null {
+  let closing = open;
+  for (const character of part) {
+    if (closing === null) {
+      closing = NAME_QUOTES[character] ?? null;
+      continue;
+    }
+    if (character === closing) {
+      closing = null;
+    }
+  }
+  return closing;
 }
 
 interface Node {
@@ -162,9 +225,9 @@ function deletedTable(node: Node): string | null {
 /** A statement whose table this could not read touches nothing. */
 function oneAccess(
   table: string | null,
-  rest: Omit<SqlAccess, "table">,
+  rest: Omit<SqlAccess, "table" | "qualifier">,
 ): SqlAccess[] {
-  return table === null ? [] : [{ table, ...rest }];
+  return table === null ? [] : [{ table, qualifier: [], ...rest }];
 }
 
 /**
@@ -230,6 +293,7 @@ function selectAccesses(statement: Node, outer: Set<string>): SqlAccess[] {
     .filter((table) => !names.has(table))
     .map((table) => ({
       table,
+      qualifier: [],
       kind: "read" as const,
       fields: [...(fields.get(table) ?? [])],
       selector: [...(selectors.get(table) ?? [])],

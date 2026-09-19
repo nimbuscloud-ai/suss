@@ -12,7 +12,14 @@ A reader, not a pack. A pattern pack that meets a query written as SQL rather th
 import { readSqlAccess } from "@suss/sql";
 
 readSqlAccess("SELECT id, email FROM users WHERE tenant_id = $1");
-// [{ table: "users", kind: "read", fields: ["id", "email"], selector: ["tenant_id"] }]
+// [{ table: "users", qualifier: [], kind: "read", fields: ["id", "email"], selector: ["tenant_id"] }]
+```
+
+`qualifier` is the namespaces written in front of the table, outermost first. Postgres and MySQL hand the schema back separately and it never reaches the table, so those are always empty. BigQuery addresses a table as `` `project.dataset.table` `` and the parser hands back the whole quoted string, so this splits it: the table is the one a provider declares, and the dataset is the namespace to record the access under.
+
+```ts
+readSqlAccess("SELECT id FROM `analytics.core.dim_account`", { dialect: "bigquery" });
+// [{ table: "dim_account", qualifier: ["analytics", "core"], ... }]
 ```
 
 The statement is parsed rather than pattern-matched, so a join contributes every table it reads:
@@ -23,6 +30,18 @@ readSqlAccess("SELECT u.email, o.total FROM users u JOIN orders o ON o.user_id =
 ```
 
 A query written as a tagged template becomes readable through `sqlFromParts`, which writes each interpolation as a parameter. What a query interpolates is a value nearly every time, and a parameter is how the statement would supply one anyway.
+
+Two things override that. A caller who knows a hole is a table passes it in `substitutions`, which is how a Drizzle query that interpolates a schema object reaches the statement as a table name. And a caller who ran the source's own evaluator over each hole passes the results in `settled`, which are used only where the statement wrote the hole inside a quoted name:
+
+```ts
+// `SELECT id FROM \`${TABLE}\`` with TABLE = "analytics.core.dim_account"
+sqlFromParts(["SELECT id FROM `", "`"], [], ["analytics.core.dim_account"]);
+// SELECT id FROM `analytics.core.dim_account`
+```
+
+A hole in a value position is left alone even when the evaluator settled it. `WHERE tier = ${TIER}` with `TIER = "gold"` would parse as a column called `gold` and put it in the selector, which is worse than the parameter the reader would otherwise see. Inside a quoted name there is no such ambiguity: whatever the hole came to is part of the name.
+
+A part of a quoted name nothing settled stays a parameter, and then that part is dropped: `` `${project}.${dataset}.dim_account` `` reads as the table `dim_account` with no qualifier, rather than as a dataset somebody invented. A whole table nothing settled produces nothing at all.
 
 It reads Postgres, MySQL, SQLite, and BigQuery. Pass the dialect the way a pack states its store:
 
