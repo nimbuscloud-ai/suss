@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 5636,
-      "covered": 5317,
+      "total": 5667,
+      "covered": 5347,
       "skipped": 0,
-      "pct": 94.33
+      "pct": 94.35
     },
     "statements": {
-      "total": 5791,
-      "covered": 5465,
+      "total": 5822,
+      "covered": 5495,
       "skipped": 0,
-      "pct": 94.37
+      "pct": 94.38
     },
     "functions": {
-      "total": 1314,
-      "covered": 1255,
+      "total": 1319,
+      "covered": 1260,
       "skipped": 0,
-      "pct": 95.5
+      "pct": 95.52
     },
     "branches": {
-      "total": 4004,
-      "covered": 3358,
+      "total": 4025,
+      "covered": 3376,
       "skipped": 0,
-      "pct": 83.86
+      "pct": 83.87
     },
     "branchesTrue": {
       "total": 0,
@@ -631,8 +631,8 @@
   },
   "src/intentDraftCommand.ts": {
     "lines": {
-      "total": 226,
-      "covered": 223,
+      "total": 227,
+      "covered": 224,
       "skipped": 0,
       "pct": 98.67
     },
@@ -643,8 +643,8 @@
       "pct": 100
     },
     "statements": {
-      "total": 231,
-      "covered": 228,
+      "total": 232,
+      "covered": 229,
       "skipped": 0,
       "pct": 98.7
     },
@@ -657,28 +657,28 @@
   },
   "src/intentReceives.ts": {
     "lines": {
-      "total": 53,
-      "covered": 53,
+      "total": 83,
+      "covered": 82,
       "skipped": 0,
-      "pct": 100
+      "pct": 98.79
     },
     "functions": {
-      "total": 9,
-      "covered": 9,
+      "total": 14,
+      "covered": 14,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 53,
-      "covered": 53,
+      "total": 83,
+      "covered": 82,
       "skipped": 0,
-      "pct": 100
+      "pct": 98.79
     },
     "branches": {
-      "total": 51,
-      "covered": 49,
+      "total": 72,
+      "covered": 66,
       "skipped": 0,
-      "pct": 96.07
+      "pct": 91.66
     }
   },
   "src/intentWhen.ts": {
@@ -988,9 +988,9 @@
     },
     "branches": {
       "total": 378,
-      "covered": 327,
+      "covered": 328,
       "skipped": 0,
-      "pct": 86.5
+      "pct": 86.77
     }
   },
   "src/sharedCause.ts": {
