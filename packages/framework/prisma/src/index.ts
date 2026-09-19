@@ -5,9 +5,9 @@
 // Recognition is AST-based via ts-morph: walks the call's receiver
 // chain back to its root identifier, resolves that identifier's type
 // via the type checker, and verifies the type's symbol declaration is
-// in `@prisma/client` (or `.prisma/client`: Prisma's generated
-// client lives under `node_modules/.prisma/client/` for projects
-// using the standard generator output).
+// in `@prisma/client`, in `.prisma/client` (where the generator puts
+// the client by default), or in a directory holding a `schema.prisma`
+// (where a generator with its own `output` put it).
 //
 // Three-segment chain: `<receiver>.<modelDelegate>.<method>(args)`.
 // `<modelDelegate>` is the lowercase-first-letter Prisma client
@@ -44,6 +44,9 @@
 //
 // Out of scope for v0:
 //   - findUniqueOrThrow and findFirstOrThrow, which would be easy to add.
+
+import fs from "node:fs";
+import path from "node:path";
 
 import {
   type CallExpression,
@@ -515,8 +518,9 @@ function fieldsOfRows(read: { rows: ObjectArg[]; written: boolean }): string[] {
 /**
  * Verify an expression's TYPE resolves to a PrismaClient: i.e. its
  * symbol declaration lives in `@prisma/client` (the package's API
- * surface) or `.prisma/client` (the generated client output Prisma
- * puts at `node_modules/.prisma/client/` by default).
+ * surface), in `.prisma/client` (the generated client output Prisma
+ * puts at `node_modules/.prisma/client/` by default), or in whatever
+ * directory a generator's own `output` sent the client to.
  *
  * Checking the type rather than the expression's own declaration
  * covers both `const db = new PrismaClient()` (decl is a
@@ -549,11 +553,21 @@ function extendsPrismaClient(type: Type, seen: Set<Type>): boolean {
   return type.getBaseTypes().some((base) => extendsPrismaClient(base, seen));
 }
 
+/**
+ * The schema Prisma copies into whatever directory the generator wrote
+ * the client to, the default output and a project's own alike.
+ */
+const GENERATED_CLIENT_MARKER = "schema.prisma";
+
 function isPrismaClientPath(filePath: string): boolean {
-  return (
+  if (
     filePath.includes("/@prisma/client/") ||
     filePath.includes("/.prisma/client/")
-  );
+  ) {
+    return true;
+  }
+  const beside = path.join(path.dirname(filePath), GENERATED_CLIENT_MARKER);
+  return fs.existsSync(beside);
 }
 
 function capitalizeFirst(name: string): string | null {
@@ -716,6 +730,9 @@ export function prismaFramework(
     // Skip files that don't import from @prisma/client: the
     // recognizer's type-resolution check would reject them anyway.
     requiresImport: ["@prisma/client"],
+    // A generator with its own `output` puts the client in the project,
+    // where the only way to reach it is a relative path.
+    generatedModuleMarkers: [GENERATED_CLIENT_MARKER],
     invocationRecognizers: [makeRecognizer(options)],
     // A tagged template is not an invocation, so the raw chain runs on
     // the access walk, which visits calls as well.
