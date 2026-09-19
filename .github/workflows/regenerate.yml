@@ -75,11 +75,25 @@ jobs:
         if: steps.guard.outputs.skip == 'false'
         run: npm ci
 
-      # No turbo cache is restored here, but --force says so directly
-      # rather than relying on a fresh runner having nothing to hit.
+      # This job builds and tests all of main, so what it saves is the
+      # entry every CI job wants to start from. Each CI job restores
+      # entries saved under its own name, so this saves under all three.
+      - uses: ./.github/actions/turbo-cache
+        if: steps.guard.outputs.skip == 'false'
+        with:
+          name: checks
+      - uses: ./.github/actions/turbo-cache
+        if: steps.guard.outputs.skip == 'false'
+        with:
+          name: test
+      - uses: ./.github/actions/turbo-cache
+        if: steps.guard.outputs.skip == 'false'
+        with:
+          name: behaviour
+
       - name: Build
         if: steps.guard.outputs.skip == 'false'
-        run: npm run build -- --force
+        run: npm run build
 
       - name: Dogfood
         if: steps.guard.outputs.skip == 'false'
