@@ -5,7 +5,7 @@ description: Six steps from reading one service to gating pull requests, with th
 
 # Adopt it step by step
 
-Start on one service, with nothing to triage, and take the next step only when the last one paid for itself. Each step below has its command, what you get, what it costs, and what a wrong answer looks like there so you recognize one when you see it.
+Start on one service, where there is nothing to triage, and take the next step only when the last one has paid for itself. Each step gives you the command, what you get back, what it costs, and what a wrong answer looks like at that step.
 
 1. Read one service with `extract` and `inspect`.
 2. Question it with `suss ask` or from your agent.
@@ -14,7 +14,7 @@ Start on one service, with nothing to triage, and take the next step only when t
 5. Gate on it in CI and on pull requests.
 6. Reuse the summaries.
 
-[Add suss to a project](/guides/add-to-project) covers the install and the first run. This page is about where to take it after that.
+[Add suss to a project](/guides/add-to-project) covers the install and the first run. The steps below pick up after that.
 
 ## 1. Read one service
 
@@ -45,9 +45,9 @@ src/handlers/paidWorker.ts
          -> return { recorded }
 ```
 
-There is nothing to triage at this step. You get a description of the service that came out of the code rather than out of somebody's head, and an answer to whether suss reads your stack at all before you invest further in it.
+There is nothing to triage at this step. You get a description of the service that came out of the code, and you find out whether suss reads your stack before you put any more time into it.
 
-**What it costs.** A cold run over a few hundred units takes seconds. Later runs read a per-file cache, so a run after editing one file is faster than the first. Nothing is built and nothing is started.
+**What it costs.** A cold run over a few hundred units takes seconds. Later runs read a per-file cache, so a run after editing one file is faster than the first. suss builds nothing and starts nothing.
 
 **What a wrong answer looks like.** A unit with this line under it:
 
@@ -55,7 +55,7 @@ There is nothing to triage at this step. You get a description of the service th
 !! Nothing this unit's body does matches a shape this pack looks for, so what it does is not described here
 ```
 
-means suss found the unit and could not read its body, usually because the response goes through a helper the pack has never seen. A `Could not follow` line under a unit means one call in it landed somewhere suss could not read, so whatever is behind that call is missing. Neither case is silent. When most units look like this, [Fix a run that found nothing](/guides/fix-an-empty-run) says how to tell the setup apart from the stack, and `extract --explain` prints what each pack matched, file by file.
+means suss found the unit and could not read its body, usually because the response goes through a helper the pack has never seen. A `Could not follow` line under a unit means one call in it landed somewhere suss could not read, so whatever is behind that call is missing. In both cases suss tells you. When most of your units look like this, [Fix a run that found nothing](/guides/fix-an-empty-run) explains how to tell a setup problem from a stack suss cannot read, and `extract --explain` prints what each pack matched, file by file.
 
 ## 2. Question it
 
@@ -65,9 +65,9 @@ npx suss ask 'what calls src/lib/recordRefund.ts' --dir summaries/
 npx suss ask 'what reaches recordRefund' --dir summaries/
 ```
 
-[Ask about a codebase](/guides/ask) works through the questions and the answers. From a coding agent the same questions arrive over MCP, which [Give your agent suss](/start/give-your-agent-suss) sets up.
+[Ask about a codebase](/guides/ask) works through the questions and the answers. A coding agent asks the same questions over MCP, and [Give your agent suss](/start/give-your-agent-suss) sets that up.
 
-**What you get.** The file and the line for every unit that reads or writes a store, every boundary a route reaches, and every caller of a function, followed through as many hops as the calls take. An agent that asks before it edits a table or changes a signature knows what it is about to affect, and the person reviewing that change can ask the same question. A team shipping with agents gets the most here for the least, because this step needs nothing beyond step 1.
+**What you get.** The file and the line for every unit that reads or writes a store, every boundary a route reaches, and every caller of a function, followed through as many hops as the calls take. An agent that asks before it edits a table or changes a signature knows what it is about to affect, and the person reviewing that change can ask the same question. If your team works with agents, this is the cheapest step to take, because it needs nothing beyond step 1.
 
 **What it costs.** Nothing beyond step 1 from the shell. The MCP server runs one extract when it starts and re-reads the affected part whenever a file changes.
 
@@ -77,18 +77,18 @@ npx suss ask 'what reaches recordRefund' --dir summaries/
 warning: 3 calls here resolved to no unit, so a boundary reaching readRow through one of them is missing from this answer.
 ```
 
-is complete as far as suss could read, and it says where it stopped. An answer with no such line and a unit you know is missing is a bug in suss or in a pack; see [Is it a miss or a bug](#is-it-a-miss-or-a-bug) below.
+That answer is complete as far as suss could read, and it tells you where it stopped. If an answer has no such line and a unit you know about is missing from it, that is a bug in suss or in a pack; see [Is it a miss or a bug](#is-it-a-miss-or-a-bug) below.
 
 ## 3. Compare it against a document you already keep
 
-Most services keep one document that says what they do: a Prisma schema, a CloudFormation or SAM template, a ts-rest router, an OpenAPI file. `suss contract` reads it into the same form as the code, and `check` compares the two:
+Most services keep at least one document that describes what they do, such as a Prisma schema or a CloudFormation template. `suss contract` reads that document into the same form as the code, and `check` compares the two:
 
 ```bash
 npx suss contract --from cloudformation template.yaml -o summaries/template.json
 npx suss check --dir summaries/
 ```
 
-**What you get.** The first findings, and they are about the two halves of one deployment disagreeing:
+**What you get.** Your first findings. They are about two halves of one deployment disagreeing:
 
 ```
 [ERROR] boundarySelectorMismatch
@@ -98,9 +98,9 @@ npx suss check --dir summaries/
   boundary: cloudformation (aws-sdk)
 ```
 
-The template declares the table's key attributes and the code picks rows by something else. Neither file is wrong on its own, and TypeScript has nothing to say about it, because what the storage layer is handed is a string.
+The template declares the table's key attributes, and the code picks rows by something else. Neither file is wrong on its own, and TypeScript cannot catch it, because the storage layer is handed a string.
 
-What compares against what, today:
+Today, suss compares these:
 
 - A Prisma schema against every query. The `prisma` pack reads the schema during `extract`, so this one needs no `contract` command at all. The schema is the provider and each query is a consumer, so a column no query reads, or a field no model declares, is a finding.
 - A CloudFormation or SAM template against the code it deploys. The routes, the queues and the environment variables it wires all get compared against what the handler does with them.
@@ -108,13 +108,13 @@ What compares against what, today:
 - An OpenAPI document against the handlers that serve it and the clients that call it. [Check against OpenAPI](/guides/check-against-openapi) covers both directions.
 - A document your team wrote about what the code should do. [Check against your intent](/guides/check-against-intent) covers that one.
 
-**What it costs.** One more command, and the first decisions. A finding is a bug in the code, a document that fell behind, or something you accept, and the third kind goes in `.sussignore.yml` with a reason so it does not come back.
+**What it costs.** One more command, and your first decisions. Each finding is a bug in the code, a document that fell behind, or something you accept. The third kind goes in `.sussignore.yml` with a reason, so it does not come back.
 
-**What a wrong answer looks like.** The contract declares a `401` and suss says no path produces it. Usually the `401` comes from middleware or an error handler registered around the route rather than from the handler itself. suss composes those in when it can see the registration, and when it cannot, because the middleware is built by a call it could not follow, the route looks as though it never produces the status. Accept it with a suppression rule, or open an issue with the `inspect` output for that route, since a wrapper suss cannot see is a pack gap and gets fixed.
+**What a wrong answer looks like.** The contract declares a `401` and suss reports that no path produces it. Usually that `401` comes from middleware or from an error handler registered around the route, not from the handler itself. suss composes those in when it can see the registration. When it cannot, because the middleware is built by a call it could not follow, the route looks as though it never produces the status. Accept it with a suppression rule, or open an issue with the `inspect` output for that route. A wrapper suss cannot see is a gap in a pack, and those get fixed.
 
 ## 4. Add the other side of a boundary
 
-Read the code on the other side into the same directory: the frontend that calls the API, the worker that drains the queue, the other service.
+Read the code on the other side into the same directory, such as the frontend that calls the API or the worker that drains the queue.
 
 ```bash
 # the web client that calls the API
@@ -126,9 +126,9 @@ npx suss extract --dir services/billing -f aws-lambda -f aws-sqs -o summaries/bi
 npx suss check --dir summaries/
 ```
 
-A client pairs with a handler when the method and the path match, so a client in `apps/web` and a handler in `services/api` compare against each other with nothing declared anywhere. On a queue the template is what says which consumer a producer reaches.
+A client pairs with a handler when the method and the path match, so a client in `apps/web` and a handler in `services/api` are compared against each other without anyone declaring anything. For a queue, the template is what tells suss which consumer a producer reaches.
 
-**What you get.** A finding that says which caller breaks:
+**What you get.** A finding that points at the caller that breaks:
 
 ```
 [WARNING] boundaryFieldUnknown
@@ -138,11 +138,11 @@ A client pairs with a handler when the method and the path match, so a client in
   boundary: cloudformation (aws_sqs)
 ```
 
-Before you remove a field or change a status, run this and read the list. An empty list, with every caller in the repository, means the change is safe as far as the code can say.
+Before you remove a field or change a status, run this and read the list. If the list is empty and every caller is in the repository, the change is safe as far as the code can show.
 
-**What it costs.** One extract per consumer, and a bigger pile of findings the first time. Expect a first run over an old codebase to produce more than you want to read in one sitting. `check --at 'GET /users/:id'` narrows to one boundary, and the severity split is there so that first run is not all or nothing: errors fail, warnings print.
+**What it costs.** One extract per consumer, and a bigger pile of findings the first time. Expect a first run over an old codebase to produce more than you want to read in one sitting. `check --at 'GET /users/:id'` narrows a run to one boundary. The severity split means that first run does not have to be all or nothing: errors fail the build and warnings only print.
 
-**What a wrong answer looks like.** `unhandledProviderCase` says a client never branches on a status the handler produces. A client that handles every non-2xx status in one shared interceptor does handle it, and suss reports the warning anyway when it could not follow the interceptor to the branch. This is the most commonly accepted finding, and a suppression rule scoped to the kind and the boundary covers it. [Accept a finding](/guides/accept-a-finding) has the three patterns.
+**What a wrong answer looks like.** `unhandledProviderCase` reports that a client never branches on a status the handler produces. A client that handles every non-2xx status in one shared interceptor does handle it, and suss still reports the warning when it could not follow the interceptor through to the branch. This is the finding teams accept most often, and a suppression rule scoped to the kind and the boundary covers it. [Accept a finding](/guides/accept-a-finding) has the patterns.
 
 ## 5. Gate on it
 
@@ -173,21 +173,21 @@ Two things go into CI. The `inspect-diff` action reads the base and the head of 
     - throw Error  when  typeof invoiceId !== "string"
 ```
 
-Two lines say that a message with no `invoiceId` now comes back as a successful `{ shipped }` rather than throwing, whichever of the changed lines did it. A quiet diff says the change altered nothing any unit does. That is what a reviewer wants to hear about a refactor.
+Those two lines tell you that a message with no `invoiceId` now comes back as a successful `{ shipped }` instead of throwing, whichever of the changed lines did it. When the diff is quiet, no unit changed what it does. For a refactor, that is the result you want.
 
 **What it costs.** Two extracts per pull request instead of one, and the decision of what fails the build. Start at `error`. Tighten to `warning` once every accepted finding is in `.sussignore.yml` and a new warning means something.
 
-**What a wrong answer looks like.** A quiet diff after a change you know altered behavior. The changed code is behind a call suss could not follow, and step 1's `Could not follow` line under that unit says which call.
+**What a wrong answer looks like.** A quiet diff after a change you know altered behavior. The changed code is behind a call suss could not follow, and the `Could not follow` line from step 1 tells you which call.
 
 ## 6. Reuse the summaries
 
-Everything above reads one JSON file per extract, and so can anything else.
+Every command above reads one JSON file per extract, and anything else you write can read the same file.
 
 - **Agent context.** Hand `AGENTS.md` to the agent (it ships in the package, at `node_modules/@suss/cli/AGENTS.md`), or run the MCP server from step 2. The agent learns what a route does without reading the handler.
 - **Endpoint documentation.** `inspect` over a service describes every route, and re-running it keeps that current. `suss infer intent` drafts a behavior document from the summaries for people to edit.
 - **Test cases.** Each path in a summary is a case a test could cover: the predicate is the setup and the transition is the assertion. A route with five paths and two tests has three that nothing exercises.
 
-[Summary format](/reference/summary-format) documents the file, and it is stable.
+[Summary format](/reference/summary-format) documents that file, and the format is stable.
 
 ## Triaging a finding
 
@@ -195,16 +195,16 @@ A finding has a kind, a severity, a provider, a consumer and a boundary. Read it
 
 - A bug in the code. Fix the code, and the finding goes away on the next run.
 - A document that fell behind. Fix the document.
-- Something you accept. Add a rule to `.sussignore.yml` with a `reason`. The finding prints the rule, so this is a paste.
+- Something you accept. Add a rule to `.sussignore.yml` with a `reason`. suss prints the rule under the finding, so you can paste it.
 
 Errors are findings where the code on one side cannot work against the other, such as reading a field the other side never sends. Warnings are judgement calls, such as a status with no branch for it. `check --json` writes the same findings for tooling to read, and `--at` narrows a run to one boundary while you work through it.
 
 ## Is it a miss or a bug
 
-suss says when it could not read something, and that is the first thing to look for.
+suss tells you when it could not read something, and that is the first thing to look for.
 
-- A `Could not follow` line under a unit in `inspect` output, or a `could not follow` sentence at the end of an `ask` answer, means a call landed somewhere suss could not read. Whatever is behind it is missing from the answer, and the answer says so.
-- `confidence: low` on a summary or a finding says the same thing about the summary as a whole.
+- A `Could not follow` line under a unit in `inspect` output, or a `could not follow` sentence at the end of an `ask` answer, means a call landed somewhere suss could not read. Whatever is behind it is missing from the answer, and the answer tells you so.
+- `confidence: low` on a summary or a finding means the same thing about the summary as a whole.
 - `extract --explain` prints what each pack matched, file by file, so a service that came out thin shows where the reading stopped.
 
 A miss is an absence with one of those markers on it. A bug is a path in the output the code does not have, or an absence with no marker at all. The [issue tracker](https://github.com/nimbuscloud-ai/suss/issues) is the place for one, with the `inspect` output for the unit pasted in.

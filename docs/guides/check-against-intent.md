@@ -13,16 +13,16 @@ npx suss check --dir summaries/ --intent intent/
 
 An intent document is a YAML file your team writes and commits. There are two kinds:
 
-- **Boundary intent** (`*.intent.yaml`) says what one boundary should do: `POST /auth/login` returns 429 with `{ error, retryAfter }`. Structural, and the checker compares it against the code directly.
-- **A PRD** (`*.prd.yaml`) says what should happen for the person using it, as scenarios, and each scenario links to an outcome a boundary document declares.
+- **Boundary intent** (`*.intent.yaml`) states what one boundary should do, as in `POST /auth/login` returns 429 with `{ error, retryAfter }`. It is structural, and the checker compares it against the code directly.
+- **A PRD** (`*.prd.yaml`) states what should happen for the person using the system, written as scenarios, and each scenario links to an outcome a boundary document declares.
 
-An OpenAPI document or a Prisma schema expresses some of this, but it was written as a wire contract or a data model, not as a statement of what the team wanted. Intent documents are open specifications: they say what must exist, not what is allowed. Code that does more than the document says is reported as info rather than as a violation.
+An OpenAPI document or a Prisma schema expresses some of this, but somebody wrote it as a wire contract or a data model, not as a statement of what the team wanted. An intent document is an open specification: it states what must exist, and it does not limit what else the code may do. When the code does more than the document states, suss reports that as info.
 
 ## Write one from the code
 
 <!-- suss:example fixtures=storage-wrapper -->
 
-On a codebase that already exists, `suss infer intent` writes one starting document per boundary from what the code does today. The example below is a small Lambda service, `GET /orders/{customer}` over a DynamoDB table, read from both its source and its SAM template:
+On a codebase that already exists, `suss infer intent` writes one starting document per boundary from what the code does today. The example here is a small Lambda service that serves `GET /orders/{customer}` over a DynamoDB table, read from both its source and its SAM template:
 
 ```bash
 suss extract --dir fixtures/storage-wrapper -f aws-lambda -f aws-dynamodb -o summaries/code.json
@@ -39,7 +39,7 @@ No document for 3 boundaries:
   - aws.dynamodb:OrdersTable: it has no key the checker could pair intent against: a store has no key at all: write it as `- writes: <store>` on an outcome of the boundary that touches it instead
 ```
 
-A boundary that could not be drafted is reported with the reason rather than passed over. The draft it did write:
+When suss cannot draft a boundary, it reports the reason instead of passing over it. Here is the draft it did write:
 
 ```yaml
 kind: boundary
@@ -71,7 +71,7 @@ transitions:
       status: 200
 ```
 
-`purpose` and `audience` are blank on purpose. Why the boundary exists and who it is for cannot be read out of code, and an empty string does not satisfy the schema, so a check over the folder refuses the draft and says which files are waiting:
+`purpose` and `audience` are blank on purpose. Nobody can read out of the code why the boundary exists or who it is for. An empty string does not satisfy the schema either, so a check over the folder refuses the draft and lists the files that are waiting:
 
 ```bash
 suss check --dir summaries --intent intent/
@@ -121,7 +121,7 @@ transitions:
       status: 200
 ```
 
-`source` is what the checker reads to decide severity. A finding against bare `inferred` intent is downgraded one level, since the declaration is still a guess read off the code rather than something a person confirmed. Curation restores the full severity.
+The checker reads `source` to decide severity. It downgrades a finding against bare `inferred` intent by one level, because that declaration is still a guess read off the code and nobody has confirmed it. Curating the document restores the full severity.
 
 Now the check has something to compare:
 
@@ -136,7 +136,7 @@ Intent:
   1 boundary intent checked against code
 ```
 
-Intent findings travel in their own list, under `intent` in the JSON rather than under `findings`, because one side is a document rather than code. A parser reading only `findings` never sees them.
+Intent findings come back in their own list, under `intent` in the JSON instead of under `findings`, because one side of the comparison is a document and not code. A parser that reads only `findings` never sees them.
 
 ## When the code and the document disagree
 
@@ -195,9 +195,9 @@ Intent:
   [error] GET /orders/{customer}: Intent "get-orders-customer" declares status 410 at GET /orders/{customer}; GetOrderFunction.getOrder has no transition that produces it.
 ```
 
-That is `uncoveredOutcome`. It stays until the branch exists, and it reads the same whether the outcome was never built or was built once and then removed.
+That is `uncoveredOutcome`. It stays until the branch exists, and it reads the same whether nobody ever built the outcome or somebody built it and then took it out.
 
-An outcome can also declare what it did rather than what it returned, with `results`. A queue consumer whose intent says an outcome results in `- writes: aws.dynamodb:Invoices`, where no transition of it writes that table, produces the same finding. The key is the verb and the value is the boundary spelled the way `suss ask` takes one, so the question and the assertion use the same words.
+An outcome can also declare what it did, not only what it returned, using `results`. Take a queue consumer whose intent has an outcome that results in `- writes: aws.dynamodb:Invoices`. If no transition of that consumer writes the table, you get the same finding. The key is the verb, and the value is the boundary spelled the way `suss ask` takes one, so the question and the assertion use the same words.
 
 ## Write the PRD from the curated intent
 
@@ -229,9 +229,9 @@ scenarios:
     link: get-orders-customer.archived-order
 ```
 
-The link is the half a machine can supply: the boundary document's `name` and the outcome's `id`. The words are the half it cannot.
+suss can supply the link, which is the boundary document's `name` plus the outcome's `id`. You write the words.
 
-`infer prd` reads intent rather than summaries, and refuses a folder with uncurated boundary documents in it. Drafting both at once would link to `200-ok`, which renaming is the first thing curation does, and the PRD would then point at an id nothing declares.
+`infer prd` reads intent documents, not summaries, and it refuses a folder that still has uncurated boundary documents in it. If it drafted both at once, it would link to an id like `200-ok`, and renaming those ids is the first thing curation does, so the PRD would end up pointing at an id nothing declares.
 
 A boundary intent that a scenario already points at is left alone, so running this again after adding an endpoint writes only what is missing.
 
@@ -264,17 +264,17 @@ A REST boundary accepts a block with a section per part of the request (`headers
 
 ## What the checker reports
 
-The intent finding kinds, each with what makes it legitimate and what makes it a bug, are in the [findings catalog](/reference/findings#intent-findings). The severity follows what is being compared:
+The [findings catalog](/reference/findings#intent-findings) lists the intent finding kinds, with what makes each one legitimate and what makes it a bug. The severity follows what is being compared:
 
 - **Error**: the code does not do what an authored document says. `unimplementedBoundary`, `uncoveredOutcome`, `outcomeShapeMismatch`, `renamedBoundary`.
-- **Warning**: the documents have a gap, or nothing reads a field the document says the boundary needs. An intent nothing can be paired against, a scenario linking to an outcome that does not exist, a link that resolves to two documents, `unreadInputField` on a required field.
+- **Warning**: the documents have a gap, or nothing reads a field the document declares the boundary needs. An intent nothing can be paired against, a scenario linking to an outcome that does not exist, a link that resolves to two documents, `unreadInputField` on a required field.
 - **Info**: the code does more than the documents claim. A status no outcome mentions, a store no outcome mentions, an input field no `receives` block lists, an outcome no scenario explains.
 
 ## A boundary with no key to pair on
 
-Some boundaries have no identity the checker can match a document against, and it says so rather than going quiet. A function-call boundary needs a package and an export path. A message-bus boundary needs a channel. `unkeyableBoundary` is the warning for both, and the message says what that protocol would need.
+Some boundaries have no identity the checker can match a document against, and suss reports that instead of going quiet. A function-call boundary needs a package and an export path, and a message-bus boundary needs a channel. `unkeyableBoundary` is the warning for both, and the message tells you what that protocol would need.
 
-A store is the one case where filling fields in does not help, because a container name can be a pattern only a caller or the deployment settles. Say what the store is for by putting `- writes: aws.dynamodb:Invoices` on an outcome of the boundary that touches it, and the checker compares that.
+A store is the one case where filling in fields does not help, because a container name can be a pattern that only a caller or the deployment resolves. Instead, put `- writes: aws.dynamodb:Invoices` on an outcome of the boundary that touches the store, and the checker compares that.
 
 ## suss checks its own intent
 
@@ -314,7 +314,7 @@ transitions:
             severity: { type: string }
 ```
 
-`source: author` rather than `inferred, curated`, because a person wrote it rather than editing a draft. On a green run the tail reads:
+This one says `source: author` instead of `inferred, curated`, because a person wrote it from scratch rather than editing a draft. On a green run the tail reads:
 
 ```
 Intent:

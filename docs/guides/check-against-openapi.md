@@ -14,14 +14,14 @@ npx suss check --dir summaries/
 
 Everything ships inside `@suss/cli`, so `npm install --save-dev @suss/cli` is the only install.
 
-Two directions, and they catch different things:
+There are two directions, and they catch different things:
 
-- **You call the API.** The document is the provider. A status it declares that your client never branches on is a case your client will meet in production.
-- **You serve the API.** The document is the promise. A status your handler produces that the document leaves out is one no client written against the document will handle.
+- **You call the API.** The document is the provider. If it declares a status your client never branches on, your client will meet that status in production.
+- **You serve the API.** The document is the promise you made. If your handler produces a status the document leaves out, no client written against the document will handle it.
 
 <!-- suss:example -->
 
-The rest of this page runs against one small project: a document, a client that calls it, and a handler that serves it.
+Every example below runs against one small project, which has a document, a client that calls it and a handler that serves it.
 
 `openapi.yaml`, the document:
 
@@ -105,7 +105,7 @@ openapi:openapi.yaml
 1 summary.
 ```
 
-A URL works in place of the file path, which is useful when the vendor publishes the document on GitHub or a docs site: `suss contract --from openapi https://example.com/openapi/spec3.yaml -o summaries/vendor.json`.
+You can pass a URL in place of the file path, which helps when the vendor publishes the document on GitHub or on a docs site: `suss contract --from openapi https://example.com/openapi/spec3.yaml -o summaries/vendor.json`.
 
 Now read the client and compare:
 
@@ -114,7 +114,7 @@ suss extract --dir . -f fetch -o consumer/client.json
 suss check --dir consumer/ --all
 ```
 
-`--all` writes out every pair and every finding rather than counting the quiet ones. There is one pair here, the document against the client, and two things wrong with it:
+`--all` writes out every pair and every finding, instead of only counting the quiet ones. There is one pair here, the document against the client, and two things are wrong with it:
 
 <!-- suss:excerpt -->
 
@@ -183,7 +183,7 @@ app.get("/users/:id", async (req, res) => {
 export default app;
 ```
 
-Same two commands, pointed at the handler instead of the client:
+Run the same two commands, pointed at the handler instead of the client:
 
 ```bash
 suss extract --dir . -f express -o provider/backend.json
@@ -213,7 +213,7 @@ Not shown: 1 providerContractViolation (warning). Run the same command with --al
 suss met a call it could not follow in one unit, of 2, so that one is described in part. `suss inspect` says which calls.
 ```
 
-A status the handler produces that the document leaves out is an error, because a client written against the document has no branch for it. The other direction is a warning, and it is the finding this run counted without printing: the document declares a 429 and no path in the handler produces it. A warning rather than an error, because documents routinely declare the 401 that middleware sends.
+A status the handler produces that the document leaves out is an error, because a client written against the document has no branch for it. The other direction is a warning, and that is the finding this run counted without printing: the document declares a 429 and no path in the handler produces it. suss keeps that one at warning because documents routinely declare a 401 that middleware sends.
 
 ## Both at once
 
@@ -247,9 +247,9 @@ Not shown: 2 unhandledProviderCase (warning), 1 consumerContractViolation (warni
 suss met a call it could not follow in one unit, of 3, so that one is described in part. `suss inspect` says which calls.
 ```
 
-Five findings out of three pairs. Each of the two runs above found two, and the fifth comes from the pair neither of them had: the handler against the client. The 410 is now reported twice, once because the document does not declare it and once because the client has no branch for it. `also from:` on a finding says where each side came from when several sources agree on one boundary.
+Three pairs produced five findings. Each of the two runs above found two, and the fifth comes from the pair neither of them had, the handler against the client. suss now reports the 410 twice, once because the document does not declare it and once because the client has no branch for it. When several sources agree on one boundary, the `also from:` line on a finding tells you where each side came from.
 
-The handler and the client share no types here. The client is a `fetch` call site in a browser bundle and the handler is Express in Node, and nothing imports anything across that line. suss reads both into the same format and pairs them on `(method, path)`, which is why the 410 shows up against the client as well as against the document.
+The handler and the client share no types here. The client is a `fetch` call site in a browser bundle, the handler is Express in Node, and nothing imports anything across that line. suss reads both into the same format and pairs them on `(method, path)`, so the 410 shows up against the client as well as against the document.
 
 ## When a pair does not form
 
@@ -263,7 +263,7 @@ suss inspect --dir summaries/
 
 The usual causes, in order:
 
-- **A base URL in front of the path.** The document's `servers[0].url` (or a Swagger 2.0 `basePath`) goes in front of every route it declares, and a `baseURL` on an axios instance goes in front of every path the client writes. So `axios.create({ baseURL: "/v1" })` plus `api.get("/users/1")` pairs with a document serving `/users/{id}` under `/v1`. An absolute base keeps only its path, and a base of `/` adds nothing. A base suss cannot read, one computed at runtime such as `process.env.API_URL`, leaves the path bare, and that is where the two sides can still disagree.
+- **A base URL in front of the path.** The document's `servers[0].url` (or a Swagger 2.0 `basePath`) goes in front of every route it declares, and a `baseURL` on an axios instance goes in front of every path the client writes. So `axios.create({ baseURL: "/v1" })` plus `api.get("/users/1")` pairs with a document serving `/users/{id}` under `/v1`. An absolute base keeps only its path, and a base of `/` adds nothing. When suss cannot read the base, because it is computed at run time from something like `process.env.API_URL`, the path stays bare, and that is where the two sides can still disagree.
 - **The path is a parameter rather than a literal.** `axios.get(url)` where `url` is an argument leaves the pack nothing to read.
 - **Encoded segments.** `/search/{q}` against ``axios.get(`/search/${encodeURIComponent(q)}`)`` parses the same on both sides, so this one is rarely the problem.
 
@@ -271,7 +271,7 @@ The usual causes, in order:
 
 <!-- suss:unchecked the vendor document it filters is not one this repository checks in -->
 
-You hit five of a vendor's two hundred operations. Run the whole pair anyway. The provider summaries that match nothing land in `unmatched.providers` and do not fail the build, so there is nothing to tune.
+Your client may use only a handful of a vendor's operations. Run the whole pair anyway. The provider summaries that match nothing land in `unmatched.providers` and they do not fail the build, so there is nothing to tune.
 
 To be strict about what is in use, filter the summaries before checking:
 
@@ -285,6 +285,6 @@ The filtering happens before the check, so every check flag still applies.
 
 ## Against a contract test
 
-A contract test (Pact, dredd, an OpenAPI validator) sends requests and inspects responses at runtime. It is authoritative about the traffic it generates and it needs the code running. suss reads the source instead and asks a coverage question: does every declared status have a branch, does every declared field get read, does every field the code reads get declared.
+A contract test, such as Pact or dredd, sends requests and inspects the responses at run time. It is authoritative about the traffic it generates, and it needs your code running. suss reads the source instead and asks a coverage question: does every declared status have a branch, does every declared field get read, and does every field the code reads get declared?
 
 Run both if you can. They answer different questions, and the static one runs on a pull request in seconds.

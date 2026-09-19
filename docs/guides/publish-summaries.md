@@ -12,7 +12,7 @@ npx suss extract -p tsconfig.json -f hono -o suss/catalog.json
 git add suss/catalog.json
 ```
 
-The file travels because `extract` writes every path in it relative to the package root, and nothing else in it depends on the machine that wrote it:
+The file moves between machines because `extract` writes every path in it relative to the package root, and nothing else in it depends on the machine that wrote it:
 
 ```json
 {
@@ -40,7 +40,7 @@ npx suss extract -p tsconfig.json -f fetch -o summaries/web.json
 npx suss check --dir summaries/
 ```
 
-`check --dir` pairs by boundary, so it does not matter which run wrote which file, or whether the two sides were extracted from the same repository, the same language, or the same day. Naming both files does the same for one pair:
+`check --dir` pairs by boundary, so it does not matter which run wrote which file, or whether the two sides came from the same repository, the same language or the same day. You can also pass both files to check one pair:
 
 ```bash
 npx suss check node_modules/@acme/catalog/suss/catalog.json summaries/web.json
@@ -61,7 +61,7 @@ Transition ids are deterministic per branch, built from the function name, the t
 
 ## A library with no framework in it
 
-A package whose public API is plain functions has a boundary too: everything its `exports` makes reachable. The `package-exports` pack reads that side without a list of exports from you.
+A package whose public API is plain functions has a boundary as well, and that boundary is everything its `exports` makes reachable. The `package-exports` pack reads that side without you listing the exports.
 
 ```bash
 npx suss extract -p tsconfig.json -f package-exports -o suss/summaries.json
@@ -91,13 +91,13 @@ packages/app/src/checkout.ts
          + packages/ledger/src/index.postEntry →
 ```
 
-Both sides come from the workspace manifest, so the caller side is discovered for a sibling package in the same workspace and not for a dependency under `node_modules`. Publishing the provider side of a library and pairing it from a separate repository does not work yet.
+Both sides come from the workspace manifest, so suss finds the caller side for a sibling package in the same workspace, and not for a dependency under `node_modules`. You cannot yet publish the provider side of a library and pair it from a separate repository.
 
 An API built on a framework uses that framework's pack instead of `package-exports`, and produces REST or GraphQL bindings the same way.
 
 ## A summary with no code behind it
 
-Where there is no source to read, a summary can be written by hand or generated from documentation. `confidence` says which, and how much to trust it:
+Where there is no source to read, you can write a summary by hand or generate one from documentation. `confidence` records which of those it was, and how much to trust it:
 
 ```json
 {
@@ -107,4 +107,4 @@ Where there is no source to read, a summary can be written by hand or generated 
 
 `source` is `inferred_static` for anything `extract` derived, `declared` for a hand-written claim, `derived` for one generated from a contract or a document, and `inferred_ai` for one a model produced. `level` is `high`, `medium` or `low`. A reader can weigh a summary by both.
 
-For a library that publishes nothing of its own, a community repository can maintain summaries the way DefinitelyTyped maintains type definitions. The format is the same; only where the summaries came from differs.
+For a library that publishes nothing of its own, a community repository can maintain summaries the way DefinitelyTyped maintains type definitions. The format is the same, and the only difference is where the summaries came from.

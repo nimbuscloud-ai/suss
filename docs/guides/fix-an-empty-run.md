@@ -5,7 +5,7 @@ description: What each empty-run message means when extract wrote no summaries, 
 
 # Fix a run that found nothing
 
-Read the message. Every command that comes up empty says which stage it stopped at, and the stage is the fix.
+Read the message. Every command that comes up empty tells you which stage it stopped at, and that stage is where you fix it.
 
 Run the command again with `--explain` for the full funnel, pack by pack:
 
@@ -35,7 +35,7 @@ suss took the nearest `tsconfig.json` and that one covers no source. In an Nx or
 npx suss extract -p tsconfig.app.json -f express -o summaries/code.json
 ```
 
-A solution-style root, `"files": []` with a `references` array, is followed on its own: suss reads the union of what the referenced configs list. It is the root with neither files nor references that produces this.
+suss follows a solution-style root on its own, the kind with `"files": []` and a `references` array, and it reads the union of what the referenced configs list. This message comes from a root that has neither files nor references.
 
 ## A package the pack needs is not installed
 
@@ -46,7 +46,7 @@ No summaries to write in 0.43s.
   Install this project's dependencies, then run the command again.
 ```
 
-Several packs resolve symbols through the library's own types, so they need the package on disk. Install the project's dependencies and run it again. Packs that read a file rather than a symbol, the AWS pack reading your SAM template among them, work without an install.
+Several packs resolve symbols through the library's own types, so they need the package on disk. Install the project's dependencies and run it again. Packs that read a file instead of a symbol work without an install, including the AWS pack reading your SAM template.
 
 ## No file imports anything the pack looks for
 
@@ -66,11 +66,11 @@ The tsconfig is right and the pack is wrong for this project. Re-run `init` to s
 npx suss init --plain
 ```
 
-suss reads a module of your own in front of the framework. The module imports the framework itself, so it is counted in the line above, and suss follows the app through it: a route written inside `registerHealth(app)` comes out as a route. Where the framework import lives in a package suss cannot read at all, a [dependency stub](/guides/teach-a-dependency) bridges it.
+suss reads through a module of your own that wraps the framework. That module imports the framework itself, so it counts in the line above, and suss follows the app through it, which means a route written inside `registerHealth(app)` still comes out as a route. When the framework import is inside a package suss cannot read at all, a [dependency stub](/guides/teach-a-dependency) bridges the gap.
 
 ## A pack read your code and recognized none of it
 
-A run can write summaries, exit 0, and still have a pack in it that read your code and matched nothing. The pack health block says so:
+A run can write summaries, exit 0, and still have a pack in it that read your code and matched nothing. The pack health block reports that:
 
 ```
 Wrote 1 summary to summaries/code.json in 0.57s
@@ -92,7 +92,7 @@ The `prisma` pack matches a call by the type of the thing it is called on, so it
 
 - **A cast on the receiver.** `(db as any).user.findUnique(...)` is a call on an opaque value, so the pack has nothing to match even with the client generated.
 
-Check separately for a client generated somewhere else, which goes wrong more quietly. The pack takes a type as Prisma's when the file declaring it is under `@prisma/client/` or `.prisma/client/`, and it only looks at files that import `@prisma/client` in the first place. A generator block with an `output` of its own, imported by relative path, satisfies neither. There is no health line at all in that case: the run succeeds and the calls come back as plain calls with no table under them.
+Check separately for a client generated somewhere else, because that goes wrong more quietly. The pack treats a type as Prisma's when the file declaring it is under `@prisma/client/` or `.prisma/client/`, and it only looks at files that import `@prisma/client` in the first place. A generator block with an `output` of its own, imported by relative path, satisfies neither of those. In that case there is no health line at all. The run succeeds, and the calls come back as plain calls with no table under them.
 
 ```
        -> 200 { id, email }
@@ -100,22 +100,22 @@ Check separately for a client generated somewhere else, which goes wrong more qu
            + db.user.findUnique
 ```
 
-`+ reads postgresql:User` under that call is what the pack adds when it does match, so its absence is the thing to look for.
+When the pack does match, it adds `+ reads postgresql:User` under that call, so that is the line to look for.
 
-The other frequent line is a recognizer pack asked for on its own:
+The other line you see often comes from asking for a recognizer pack on its own:
 
 ```
 Pack health (1):
   no-units  prisma  1 gated files, and no pack in this run discovered a unit in them. prisma reads calls inside units another pack finds, so add the pack that finds this project's handlers (-f express, -f fastify, ...), or run suss init to work out which.
 ```
 
-A recognizer pack labels the calls inside boundaries some other pack discovers, so running it alone walks nothing. Add the framework pack for this project.
+A recognizer pack labels the calls inside boundaries that some other pack discovers, so on its own it has nothing to look at. Add the framework pack for this project.
 
 ### Every health code
 
 Six codes are about the run in front of you and always print. Four more are addressed to whoever wrote the pack and wait for `--explain`.
 
-| Code | Prints | What it says |
+| Code | Prints | What it means |
 |---|---|---|
 | `threw` | always | A pack's hook threw on a file, and that file was skipped. Every count for the pack is a floor. |
 | `no-output` | always | A pack got as far as one stage and produced nothing at the next. |
@@ -128,7 +128,7 @@ Six codes are about the run in front of you and always print. Four more are addr
 | `ast-link` | `--explain` | A declared pack reaches into the syntax tree, with the same consequence. |
 | `no-example` | `--explain` | A declaration ships with nothing that runs when it stops matching. |
 
-`no-output` prints a pair of counts with an arrow, and the arrow says where the pack stopped:
+`no-output` prints a pair of counts with an arrow, and the arrow shows where the pack stopped:
 
 | Detail | Meaning |
 |---|---|
@@ -137,9 +137,9 @@ Six codes are about the run in front of you and always print. Four more are addr
 | `N units -> 0 summaries` | It recognized units and bound none of them to a boundary. |
 | `N summaries -> 0 transitions` | It wrote summaries and recorded nothing in any of them. |
 
-The usual cause of a `no-output` is that your code uses the library in a shape the pack does not cover, or a version it predates. `threw`, `double-match` and `no-helper` are bugs in the pack rather than in your project, and are worth an issue with the code that triggered them.
+Usually a `no-output` means your code uses the library in a way the pack does not cover, or in a version the pack predates. `threw`, `double-match` and `no-helper` are bugs in the pack and not in your project, so open an issue with the code that triggered them.
 
-A pack whose library is not installed is left out of this block, because the empty run already says the dependencies are missing and saying it twice reads as two problems.
+A pack whose library is not installed is left out of this block. The empty run already tells you the dependencies are missing, and saying it twice looks like two problems.
 
 ## Nothing was compared
 
@@ -156,7 +156,7 @@ error: nothingPaired
   Check that both sides of at least one boundary are in the directory. A provider extracted from code needs its consumer extracted too, or its contract read with `suss contract`. `suss inspect --dir` over the same files lists the boundaries each side claims, and two spellings of one boundary is the usual cause.
 ```
 
-`check` compares two sides, so one side on its own gives it nothing to do. Twenty Express routes with no `fetch` or axios call site beside them means the callers were never extracted, either because they live in another repository or because the pack that reads them was left off the command.
+`check` compares two sides, so one side on its own gives it nothing to do. If you have Express routes and no `fetch` or axios call site beside them, the callers were never extracted, either because they live in another repository or because the pack that reads them was left off the command.
 
 Extract the other side into the same folder:
 

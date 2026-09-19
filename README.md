@@ -1,8 +1,8 @@
 # suss
 
-Reads your code and checks what it does at every boundary, a route, a table or a queue, against the clients, specs and infrastructure on the other side. TypeScript, Python and Ruby.
+suss reads your code and checks what it does at every boundary, such as a route or a table, against the clients, specs and infrastructure on the other side. It works on TypeScript, Python and Ruby.
 
-Code is written faster than anyone can read it. A thousand-line pull request lands several times a day, and a reviewer cannot keep all of it in their head. Reading the diff says what the text changed, not what the service now does, and tests written alongside the change check what its author meant. suss reads the code and writes down what it does on every path, from the request or message that comes in to the table or queue it touches, so a reviewer, a pipeline or an agent can read that instead. It is deterministic and has no model in it.
+Code is written faster than anyone can read it. Large pull requests land all day, and no reviewer can keep one of them in their head. A diff shows you which lines of text changed, and you still have to work out what the service does now. Tests written alongside the change only check what their author meant. suss reads the code and writes down what it does on every path, from the request or message that comes in to the table or queue it touches, so you can read that instead. It runs the same way every time, and there is no model in it.
 
 ## Read one service
 
@@ -10,7 +10,7 @@ Code is written faster than anyone can read it. A thousand-line pull request lan
 npx @suss/cli inspect
 ```
 
-`inspect` reads the project it is run in. It works out which packs the project needs from its dependencies, the way `suss init` does, and says which ones it picked. `suss init` writes that choice down in `suss.json` so every later command reads the same thing.
+`inspect` reads the project you run it in. It works out which packs the project needs from its dependencies, the way `suss init` does, and tells you which ones it picked. `suss init` writes that choice down in `suss.json`, so every later command reads the same thing.
 
 ```
 src/api.ts
@@ -29,7 +29,7 @@ src/api.ts
          -> 201 { id, name }
 ```
 
-That is every path each handler can take, with the status and the body fields it produces. Where suss could not follow a call, it says so under the handler instead of leaving the path out.
+That is every path each handler can take, with the status and the body fields it produces. Where suss could not follow a call, it reports that under the handler instead of leaving the path out.
 
 The same summaries are available to a coding agent over MCP, so it can ask what a route reaches or what writes a table before it edits either:
 
@@ -41,7 +41,7 @@ The same summaries are available to a coding agent over MCP, so it can ask what 
 }
 ```
 
-`suss init` writes the `suss.json` the server reads. From the shell, `suss ask 'what writes postgresql:Article'` takes the same questions.
+`suss init` writes the `suss.json` the server reads. You can ask the same questions from the shell with `suss ask 'what writes postgresql:Article'`.
 
 ## Read what a change did
 
@@ -57,15 +57,15 @@ handler:GET /users/{id}
       -> 200 { id, name }  (default)
 ```
 
-A deleted account used to get a `410` and now gets a `200` with `status: "deleted"`, and `email` left the response. Both compile, the types still line up, and every caller that treats a `200` as a usable account is now wrong. This is the output to read first on a large pull request.
+A deleted account used to get a `410` and now gets a `200` with `status: "deleted"`, and `email` has left the response. Both versions compile and the types still line up, and every caller that treats a `200` as a usable account is now wrong. On a large pull request, read this output first.
 
 ## What you use it for
 
 - A service you did not write, or one an agent changed an hour ago. `inspect` prints what each handler, consumer and query does on every path, in a page, without reading the source.
-- A pull request too large to read. `inspect --diff` on the base and the head says which units changed behavior and how.
+- A pull request too large to read. `inspect --diff` on the base and the head tells you which units changed behavior and how.
 - An agent about to edit something. Over MCP it asks what a route reaches, what writes a table, or what calls a function, and gets file and line for each.
 - A spec that drifted. `suss contract` reads an OpenAPI document, a Prisma schema or a CloudFormation template into the same form, and `check` reports where the code and the document disagree.
-- A field you want to remove. `check` pairs every handler with the clients that call it and says which client reads the field, or never handles a status the handler produces.
+- A field you want to remove. `check` pairs every handler with the clients that call it and tells you which client reads the field, or never handles a status the handler produces.
 
 Here is what a finding looks like, taken from the [runnable example](examples/petstore-axios-openapi/) in this repo:
 
@@ -84,13 +84,13 @@ Each step costs a little more and asks a little more of the codebase. Stop at wh
 1. Read one service with `extract` and `inspect`. Nothing to triage.
 2. Question it with `suss ask` or the MCP server.
 3. Compare it against a document you already keep with `suss contract` and `check`. `suss init` sets this up.
-4. Add the consumer side, so a finding says which caller breaks.
+4. Add the consumer side, so a finding points at the caller that breaks.
 5. Gate on it: `check --fail-on error` in CI, `inspect --diff` on every pull request.
 6. Reuse the summaries: agent context, endpoint docs, the list of paths a test suite should cover.
 
 ## What it reads
 
-TypeScript is the furthest along: Express, Fastify, Hono, NestJS, Next.js and ts-rest on the server, fetch, axios and Apollo on the client, Prisma, Drizzle and Mongoose for storage, Lambda handlers, and the AWS clients for SQS, SNS, EventBridge, DynamoDB and S3. Python reads FastAPI and flask-restx routes and SQLAlchemy queries. Ruby reads Rails controllers, graphql-ruby schemas and ActiveRecord. The full list is in [Packs](#packs) below. A boundary is checked inside one repository; summaries from two repositories can be compared by putting the files in one directory, but nothing does that for you yet.
+TypeScript is the furthest along: Express, Fastify, Hono, NestJS, Next.js and ts-rest on the server, fetch, axios and Apollo on the client, Prisma, Drizzle and Mongoose for storage, Lambda handlers, and the AWS clients for SQS, SNS, EventBridge, DynamoDB and S3. In Python, suss reads FastAPI and flask-restx routes and SQLAlchemy queries. In Ruby, it reads Rails controllers, graphql-ruby schemas and ActiveRecord. The full list is in [Packs](#packs) below. suss checks a boundary inside one repository. You can compare summaries from two repositories by putting the files in one directory, and nothing does that for you yet.
 
 ## Install
 
@@ -100,7 +100,7 @@ suss ships as `@suss/cli`, with every pack inside it, so there is one install:
 npm install --save-dev @suss/cli
 ```
 
-A pack is reached by name, `suss extract -f ts-rest -f axios`, and a declared artifact by `suss contract --from openapi`. Without `-f`, `extract` reads the packs from `suss.json`, or picks the ones `init` would when there is no file. A Python or Ruby project is read with `--dir` instead of a tsconfig; see [Read Python or Ruby](docs/guides/python-and-ruby.md).
+You reach a pack by name, as in `suss extract -f ts-rest -f axios`, and a declared artifact with `suss contract --from openapi`. Without `-f`, `extract` reads the packs from `suss.json`, and when there is no such file it picks the ones `init` would have. A Python or Ruby project is read with `--dir` instead of a tsconfig; see [Read Python or Ruby](docs/guides/python-and-ruby.md).
 
 `suss init` reads your project, works out which packs it needs, writes them to `suss.json`, and offers to set them up:
 
@@ -141,7 +141,7 @@ All four work on the same `BehavioralSummary[]`:
 - `suss extract` derives summaries from source.
 - `suss contract` derives summaries from a declared artifact: OpenAPI, CloudFormation and SAM, Serverless Framework, Terraform, AppSync, GraphQL SDL and committed `.graphql` operation documents, Prisma schema, Storybook, Wrangler.
 - `suss check` pairs providers with consumers and emits findings where they disagree. It exits nonzero when a finding crosses the `--fail-on error|warning|info|none` threshold.
-- `suss inspect` renders summaries as text. `--diff BEFORE AFTER` reports what a change added, removed, or altered. `--flow "GET https://..."` says who serves a request, hop by hop.
+- `suss inspect` renders summaries as text. `--diff BEFORE AFTER` reports what a change added, removed, or altered. `--flow "GET https://..."` shows who serves a request, hop by hop.
 
 `extract` and `contract` produce the same format, so a TypeScript handler compares directly against the OpenAPI document for it, a CloudFormation template against the Lambda code it deploys, or a Storybook file against the React component it documents.
 
