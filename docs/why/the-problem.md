@@ -1,114 +1,110 @@
 ---
 title: The problem
-description: Why a change can pass review, the type checker and the tests, and still break somebody else's code.
+description: Code arrives faster than anyone can read it, and a change that passes review, the type checker and the tests can still break a caller.
 ---
 
 # The problem
 
-## The change that breaks somebody else
+Code arrives faster than anyone can read it. A team shipping with a coding agent merges pull requests of a thousand lines several times a day, and the thing that wrote each one will not be in the room when it breaks.
 
-Somebody makes `getUser` return `200` with `status: "deleted"` where it used to return `404`. It is a reasonable change. The response is a valid `User`, `200` is a valid status, the OpenAPI document still says `200 | 404`, and TypeScript is happy on both sides. Tests pass.
+The two things a reviewer falls back on do not close that gap. The diff tells you what the text changed, not what the service now does: a field dropped from one response object is one line out of a thousand. Tests share their author's assumptions, so when the model that wrote the change also wrote the tests, they check that the change does what the model meant.
 
-Every caller that read a `200` as "this account is usable" is now wrong. Nothing in the pipeline says so, and the first sign of it is in production.
+What the reviewer needs is a description of what the change does that did not come from whoever wrote it. suss reads the source and produces that description. It runs the same way every time, and there is no model in it.
 
-The same thing happens without a network hop:
+## A change that breaks a caller
 
-- A `useUser()` hook returns `null` for a deleted user, and its caller reads `null` as "still loading".
-- The middleware behind `context.user` stops setting `email` for OAuth sessions, and a resolver still reads it.
-- A helper starts returning `[]`, and its caller assumed non-empty.
+This Express route grew a branch. While a payment is pending, the response leaves `receiptUrl` out.
 
-Every one of these is two pieces of code that agree on types and disagree about behavior. There is one of those pairs at every call site, and nobody writes down what either side assumes.
+```ts
+// src/routes.ts
+router.get("/orders/:id", async (req, res) => {
+  const order = await db.findOrder(req.params.id);
 
-## What suss does about it
-
-suss reads each function and works out what it produces on each path it can take: which branches, under what conditions, with what effects. Then it compares that against what the code on the other side of the boundary does with it. A caller that never handles a status the handler returns is a finding. A query that reads a column the schema does not declare is a finding.
-
-Nothing runs, nothing is instrumented, and nothing has to be annotated. The comparison happens over the source you already have.
-
-Every layer below suss describes something true about the code, and none of them compares what one side does against what the other side expects. [Compared to other tools](/why/compared) goes through them one at a time.
-
-## What suss derives
-
-suss reads source code and produces a structured description of what each function does under what conditions. Given this handler:
-
-```typescript
-export const getUser = async ({ params }) => {
-  const user = await db.findById(params.id);
-  if (!user) {
-    return { status: 404, body: { error: "not found" } };
+  if (order.status === "pending") {
+    res.json({ id: order.id, status: order.status });
+    return;
   }
-  if (user.deletedAt) {
-    return { status: 200, body: { ...user, status: "deleted" } };
-  }
-  return { status: 200, body: user };
-};
+
+  res.json({ id: order.id, status: order.status, receiptUrl: order.receipt });
+});
 ```
 
-suss extracts:
+The caller reads `receiptUrl` off every 200:
 
-- **Three transitions**: one per execution path.
-- **Predicates** that gate each transition (`!user`, `user.deletedAt`, default).
-- **Subjects** that trace `user` back to its origin (`db.findById`), stable across rename boundaries.
-- **Outputs** with status codes and body type references.
-- **Effects** with structured arguments, objects keep their fields, so `logger.error({ userId, pullRequestId }, "not found")` comes through as the named fields it had, not as something opaque.
-- **Gaps**: e.g. if the ts-rest contract declares `200 | 404 | 500` but the handler never produces 500.
+```ts
+// src/receiptLink.ts
+export async function receiptLink(id: string) {
+  const response = await client.get(`/orders/${id}`);
 
-That's enough for a downstream tool to say: "the consumer at this call site assumes `200` means `isActive`, but the provider's `200` branch fires when `user.deletedAt` is truthy, these don't match."
+  if (response.status === 200) {
+    return response.data.receiptUrl;
+  }
 
-The handler is one kind of code unit; the same kind of summary comes out of React components (what each branch renders under what prop/state conditions), GraphQL resolvers, client call sites (what status codes each site expects), and function-to-function calls within a process. A summary is `(unit, boundary, transitions)`; everything else, framework, transport, semantics, is metadata the pairing layer reads. Terms used here, transition, predicate, subject, effect, gap, have canonical definitions in the [Glossary](/reference/glossary).
+  throw new Error("could not load the order");
+}
+```
 
-**Closure over entry points.** Framework packs find a service's entry points (handlers, components, resolvers, call sites). Every function statically reachable from there, orchestrators, helpers, internal library code, is summarised too, as a `library` unit. Internal behavior that no framework pattern recognises still appears, as long as *some* pack-recognised entry point calls into it. Unused utilities never reached from any entry point are skipped; the closure filters down to the code that matters.
+Both files compile, and they will keep compiling however many branches the route grows. `response.data` is `any`, both replies are valid JSON, and no test covers a pending order. The link comes back `undefined` for the customers who most want to click it.
 
-## Why this is the next layer
+## What suss says about it
 
-Every codebase has one central question: *what does this code do under what conditions?* Every nontrivial task, debugging, reviewing, extending, onboarding, integrating, ends up answering some version of it. Over time, parts of that question got cheaper to answer:
+Read both files, then print what suss found:
 
-- Compilation removed "do the shapes line up" from human attention.
-- Unit tests made "does this specific case work" machine-answerable.
-- CI removed "did anyone run the tests."
-- Types pushed structural checking into the code itself.
-- Static analysis made classes of bugs visible without executing anything.
+```bash
+suss extract -f express -f axios -o summaries/all.json
+suss inspect summaries/all.json
+```
 
-Each step moved a question from *needs a human to read and think* into *derivable from the code*. Each was strange until it was normal, and then its absence was the new strangeness. People still work out by hand, every time, the conditional structure of what code produces: which cases, under what predicates, with what effects. Nobody writes it down at scale because hand-authoring it is intractable; every review works it out again, every onboarding rebuilds it, every AI-agent interaction pays for that rebuilding in tokens. suss derives it once, and the summary stays in sync with the source by construction.
+```
+src/routes.ts
+└─ GET /orders/{id}  (express handler | line 5)
+       if  db.findOrder().status === "pending"
+         -> 200 { id, status }
+           + db.findOrder
+       else
+         -> 200 { id, status, receiptUrl }
+           + db.findOrder
 
-Having the layer in place enables:
+     Could not follow:
+       The call to db.findOrder lands on a declaration with no body, so whatever runs there is missing from this summary
 
-- **Behavioral diffs on pull requests**: not *forty lines changed*, but *one 404 case removed, one throw path added, one condition inverted*.
-- **Cross-boundary checking**: does the caller at this site handle every status the provider produces? A machine can answer that before anything runs.
-- **Contract consistency**: the spec says X, the code does Y; the disagreement becomes a finding rather than a runtime surprise.
-- **Publishing**: ship summaries with a package so downstream teams verify against actual behavior, not the README.
-- **Cross-codebase reasoning for AI agents**: a twenty-service monorepo's behavior fits in a few hundred KB of summaries; its source doesn't fit in a context window. Summaries are the compact, verifiable index; source is the fallback. The same substrate verifies an agent's claims: if it asserts "X returns 404 only when the user is missing" and the summary says otherwise, the disagreement is observable.
+src/receiptLink.ts
+└─ GET /orders/{id}  (axios client | line 5)
+       if  client.get().status === 200
+         -> return
+           + client.get
+       else
+         -> throw Error
+           + client.get
 
-None of the existing layers go away, each approximates derived behavior from a different angle, and keeping them separate is the point. Different kinds of truth, compared against each other, catch different failures. The taxonomy behind this is in [Kinds of contract](/why/kinds-of-contract).
+2 summaries.
+```
 
-## What suss produces (and what it doesn't)
+That description is the thing no reviewer wrote, and it says where suss fell short as well: `db.findOrder` is declared here with no body, so part of the route went unread. Two 200s leave the route with different bodies, and one branch in the caller receives both. `suss check` says so:
 
-suss's product is the `BehavioralSummary[]`, structured JSON describing what each code unit does under what conditions. The CLI bundles four kinds of work over those summaries:
+```bash
+suss check --dir summaries/ --all
+```
 
-- `suss extract`: derive summaries from source. TypeScript and JavaScript by default; Python and Ruby through adapters of their own, which the same command reaches with `--lang`. See [Read Python or Ruby](/guides/python-and-ruby).
-- `suss contract`: produce summaries from declared contracts (OpenAPI, CloudFormation and SAM, Serverless Framework service files, AppSync, GraphQL SDL, committed `.graphql` operation documents, Prisma schema, Storybook CSF3).
-- `suss check`: pair providers with consumers (two files, or a whole directory) and report cross-boundary findings. See [Cross-boundary checking](/why/cross-boundary-checking).
-- `suss inspect`: render a summary file or directory as text, or `--diff BEFORE AFTER` to see which behavioral cases a change added, removed, or altered.
+```
+[WARNING] unhandledProviderCase
+  Provider transition get:response:200:667e122 for status 200 has body field receiptUrl that other transitions lack, but no consumer branch tests for this field
+  provider: src/routes.ts::get (src/routes.ts:5)
+  consumer: src/receiptLink.ts::receiptLink (src/receiptLink.ts:5)
+  boundary: express (http) GET /orders/:id
+```
 
-See the [CLI reference](/reference/cli/) for the full flag and exit-code surface.
+Two more warnings come out of the same run, about the two 200s being told apart by `status` that the caller never reads.
 
-Deliberately out of scope for this repository:
+## Beyond a route
 
-- **Cross-service aggregation.** Ingesting summaries from many services, maintaining a cross-org view, tracking evolution over time, alerting on regressions. The summary format is what lets such tools exist without sharing suss's internals.
-- **Continuous monitoring.** suss runs on demand (locally, in CI). It doesn't run as a daemon or push findings to external systems.
-- **Authorial intent, mostly.** suss derives what the code does; it doesn't invent what the code *should* do. Team-authored intent docs are the one exception: they're a separate artifact stream compared against derivation rather than replacing it. See the [intent section of Contracts](/guides/check-against-intent).
+A route is one kind of boundary. suss reads the same description off a queue consumer or a table a query selects from, and compares it against whatever is on the other side: the deploy template that wires the queue, or the schema that declares the table. [Cross-boundary checking](/why/cross-boundary-checking) is how the comparison works.
 
-The scope is narrow on purpose: produce comparable, language-agnostic data, and provide enough built-in pairing and rendering to demonstrate the data is useful. Any further analysis layer, cross-service, continuous, organisation-scoped, consumes summaries as input. The value of every such layer scales with how many projects produce summaries, so suss's priority is that producing summaries is cheap, universal, and configuration-free.
+## Where suss stops
 
-## What suss is not
+- TypeScript is the furthest along. Python and Ruby read routes and fewer ORMs. See [Read Python or Ruby](/guides/python-and-ruby).
+- A boundary is checked inside one repository. Comparing summaries across repositories, tracking a boundary over time, and alerting on a regression are left to whatever consumes the summaries.
+- suss describes what the code does and does not decide whether that is correct. A handler that returns 200 on every path when it should return 404 produces a summary its caller agrees with. Intent documents your team writes are the way to state what should happen; see [Check against your intent](/guides/check-against-intent).
+- Some code is too dynamic to read statically. suss marks a condition it could not take apart as opaque and says which calls it could not follow, rather than leaving the gap out of the output.
 
-- **Not a runtime.** Everything is static. No instrumentation, no production data, no sampling.
-- **Not a type checker.** It consumes type information (via the compiler API) but doesn't produce type errors.
-- **Not a verifier.** It doesn't prove the code is correct. It describes what the code does and lets you compare descriptions.
-- **Not a linter.** It doesn't flag style issues. The output is structured data, not warnings.
-- **Not a within-unit correctness tool.** suss finds divergence *between* units, not wrongness *within* one. A handler whose logic is internally consistent but semantically wrong (returns `200` when it should `404`, on every path) produces a summary the consumer agrees with, there's nothing to diff. Team-authored intent is how a team's stated intent becomes an artifact you can compare against derivation; see the [intent section of Contracts](/guides/check-against-intent).
-- **Not complete.** Some code is too dynamic to statically analyze. suss is explicit about that, opaque predicates and low confidence are normal, not failures.
-
-## Where this goes
-
-Coverage today is schema-shaped: status codes, response bodies, call signatures, conditional rendering, resolver argument structures, storage access, message-bus producers. Near-term work deepens subject tracing and closes gaps where summaries fall back to opaque. Further out, the same boundary gets checked against more kinds of truth at once, a spec, a test, a snapshot, an observed trace, and the derived behavior of the code, compared pairwise. Team-authored intent is the first of those additional kinds to ship. The pattern at every step is the one unit tests established: turn something that required human reading into something a tool can derive, compare, and act on.
+[Compared to other tools](/why/compared) goes through what your type checker, linter, specs and contract tests each see, and what suss adds.
