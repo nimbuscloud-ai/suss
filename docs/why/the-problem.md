@@ -5,11 +5,11 @@ description: Code arrives faster than anyone can read it, and a change that pass
 
 # The problem
 
-Code arrives faster than anyone can read it. A team shipping with a coding agent merges pull requests of a thousand lines several times a day.
+Code arrives faster than anyone can read it. Once a team is working with coding agents, the pull requests get bigger and they arrive more often.
 
-The two things a reviewer falls back on do not close that gap. The diff tells you what the text changed, not what the service now does: a field dropped from one response object is one line out of a thousand. Tests share their author's assumptions, so when the model that wrote the change also wrote the tests, they check that the change does what the model meant.
+A reviewer falls back on the diff and on the tests, and neither one closes that gap. A diff shows you which lines of text changed, and you still have to work out what the service does now. A field dropped from one response object looks like a single edited line among all the rest. A test only checks what its author thought to check, so when the model that wrote the change also wrote the tests, all they confirm is that the change does what the model meant.
 
-What the reviewer needs is a description of what the change does that did not come from whoever wrote it. suss reads the source and produces that description. It runs the same way every time, and there is no model in it.
+The reviewer needs a description of what the change does that did not come from whoever wrote it. suss reads the source and writes that description. It runs the same way every time and there is no model in it.
 
 ## A change that breaks a caller
 
@@ -44,9 +44,9 @@ export async function receiptLink(id: string) {
 }
 ```
 
-Both files compile, and they will keep compiling however many branches the route grows. `response.data` is `any`, both replies are valid JSON, and no test covers a pending order. The link comes back `undefined` for every pending order.
+Both files compile, and they will keep compiling however many branches the route grows. `response.data` is `any`, both replies are valid JSON, and no test covers a pending order. So `receiptLink` returns `undefined` for every pending order.
 
-## What suss says about it
+## What suss reports about it
 
 Read both files, then print what suss found:
 
@@ -80,7 +80,7 @@ src/receiptLink.ts
 2 summaries.
 ```
 
-That description came out of the source rather than out of the pull request, and it says where suss fell short too: `db.findOrder` is declared here with no body, so part of the route went unread. Two 200s leave the route with different bodies, and one branch in the caller receives both. `suss check` reports that:
+suss worked that description out from the source, and it also reports where it fell short: `db.findOrder` is declared here with no body, so part of the route went unread. The route returns 200 with two different bodies, and the caller handles both of them in one branch. `suss check` reports that:
 
 ```bash
 suss check --dir summaries/ --all
@@ -94,17 +94,17 @@ suss check --dir summaries/ --all
   boundary: express (http) GET /orders/:id
 ```
 
-Two more warnings come out of the same run, about the two 200s being told apart by `status` that the caller never reads.
+The same run produces two more warnings. Those are about `status`, the field that tells the two 200s apart, which the caller never reads.
 
 ## Beyond a route
 
-A route is one kind of boundary. suss reads the same description off a queue consumer or a table a query selects from, and compares it against whatever is on the other side: the deploy template that wires the queue, or the schema that declares the table. [Cross-boundary checking](/why/cross-boundary-checking) is how the comparison works.
+A route is one kind of boundary. suss reads the same sort of description from a queue consumer or from a table a query selects from, then compares it against whatever is on the other side, such as the deploy template that wires up the queue or the schema that declares the table. [Cross-boundary checking](/why/cross-boundary-checking) explains how that comparison works.
 
 ## Where suss stops
 
-- TypeScript is the furthest along. Python and Ruby read routes and fewer ORMs. See [Read Python or Ruby](/guides/python-and-ruby).
-- One run reads one repository. Checking across two repositories means publishing one side's summaries and handing them to the other's run; see [Work across services](/guides/work-across-services). Tracking a boundary over time and alerting on a regression are left to whatever consumes the summaries.
-- suss describes what the code does and does not decide whether that is correct. A handler that returns 200 on every path when it should return 404 produces a summary its caller agrees with. Intent documents your team writes are the way to state what should happen; see [Check against your intent](/guides/check-against-intent).
-- Some code is too dynamic to read statically. suss marks a condition it could not take apart as opaque and says which calls it could not follow, rather than leaving the gap out of the output.
+- TypeScript is the furthest along. In Python and Ruby, suss reads routes and a smaller set of ORMs. See [Read Python or Ruby](/guides/python-and-ruby).
+- One run reads one repository. To check across two repositories, you publish one side's summaries and hand them to the other side's run; see [Work across services](/guides/work-across-services). Tracking a boundary over time and alerting on a regression are up to whatever you build on top of the summaries.
+- suss describes what the code does, and it does not decide whether that is correct. If a handler returns 200 on every path where it should return 404, suss produces a summary that its caller agrees with. To state what should happen, your team writes an intent document; see [Check against your intent](/guides/check-against-intent).
+- Some code is too dynamic to read statically. suss marks a condition it could not take apart as opaque, and it lists the calls it could not follow, so the gap shows up in the output.
 
 [Compared to other tools](/why/compared) goes through what your type checker, linter, specs and contract tests each see, and what suss adds.

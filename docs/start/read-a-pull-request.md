@@ -10,7 +10,8 @@ from after, and prints the boundaries whose behavior moved.
 
 <!-- suss:example -->
 
-`src/routes/users.ts` on the base commit, one route with three outcomes:
+Here is `src/routes/users.ts` on the base commit. It has one route with
+three outcomes:
 
 ```ts
 import { Hono } from "hono";
@@ -39,9 +40,9 @@ users.get("/users/:id", async (c) => {
 npx suss extract -f hono -o summaries/before.json
 ```
 
-The pull request rewrites two of those returns. A deleted account gets a
-`200` that says so instead of a `410`, and `email` comes off the success
-body:
+The pull request rewrites two of those returns. A deleted account now
+gets a `200` with a status field in it where it used to get a `410`, and
+`email` comes off the success body:
 
 <!-- suss:file src/routes/users.ts -->
 
@@ -88,21 +89,22 @@ src/routes/users.ts
   ~ get
 ```
 
-The text diff is two edited lines in one file. Those two lines changed
-what callers get: one that treated `200` as a usable account now gets
-deleted accounts too, and one that read `email` gets `undefined`. The
-response still matches the `User` type and the OpenAPI document still
-says `200 | 404 | 410`, so the compiler and the schema both pass.
+The text diff is two edited lines in one file, and those two lines change
+what callers get. A caller that treated `200` as a usable account now
+receives deleted accounts as well, and a caller that read `email` gets
+`undefined`. The response still matches the `User` type and the OpenAPI
+document still lists `200 | 404 | 410`, so the compiler and the schema
+both pass.
 
-`--diff` reports the units whose behavior moved, whichever lines the pull
-request touched. A thousand-line change with one behavior change in it
-gets a report of one line.
+`--diff` reports the units whose behavior moved, whatever lines the pull
+request touched. When a large change moves the behavior of one unit, you
+get a report about that one unit.
 
 ## Put it on every pull request
 
-The action runs those two extracts for you, on the base commit and on the
-head, and posts the diff as one comment. A later push edits the same
-comment rather than adding another.
+The action runs those two extracts for you, one on the base commit and
+one on the head, and posts the diff as a comment. When you push again, it
+edits that same comment.
 
 ```yaml
 name: suss
@@ -127,23 +129,23 @@ jobs:
       - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@main
 ```
 
-The packs come from the project's `suss.json`, which `suss init` writes.
-Without one the action picks the packs `init` would. Four inputs cover
-most projects:
+The action reads the packs from your `suss.json`, the file `suss init`
+writes. If you do not have one, it picks the packs `init` would have
+picked. Four inputs cover most projects:
 
-- `extract` takes the arguments to `suss extract`, after the command, for
-  a project that wants to choose its own packs: `-p tsconfig.json -f hono
-  -f prisma`.
+- `extract` takes the arguments you would pass to `suss extract` after the
+  command, so you can choose your own packs: `-p tsconfig.json -f hono -f
+  prisma`.
 - `working-directory` is the directory to run `suss extract` in, for a
   service kept in a subdirectory of the repository.
 - `install` is a shell command that installs dependencies in the base
-  checkout, such as `pnpm install --frozen-lockfile`. Leave it empty and
-  the base checkout shares the head's `node_modules`, which is right when
-  the pull request does not change dependencies.
+  checkout, such as `pnpm install --frozen-lockfile`. If you leave it
+  empty, the base checkout shares the head checkout's `node_modules`, and
+  that works as long as the pull request does not change dependencies.
 - `comment` is `true` by default. A pull request from a fork gets a
-  read-only token and the comment step fails there. The diff is still in
-  the job log and in the run's artifact, so turn the comment off on fork
-  pull requests if that failure is unwelcome:
+  read-only token, so the comment step fails there. You can still read the
+  diff in the job log and in the run's artifact, so if you would rather
+  not see that failure, turn the comment off for pull requests from forks:
 
 ```yaml
         with:

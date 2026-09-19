@@ -5,13 +5,13 @@ description: What kind of truth an artifact about code can tell you, the three c
 
 # Kinds of contract
 
-"Contract" is the most overloaded word in suss. It means three different things at one boundary, and which one a finding compares against is what decides how bad the finding is.
+"Contract" is the most overloaded word in suss. At one boundary it means three different things, and the severity of a finding depends on which of the three it was compared against.
 
-Take an invoice endpoint. The API document says `GET /invoices/:id` returns 200, 404 or 500. The handler has never produced a 500, and somebody in the web app wrote a retry path for one anyway. The panel that renders the invoice treats every 200 as a live invoice, and since last quarter the handler has been sending voided invoices back as 200 as well. Each of those is true on its own, and the trouble only shows up when two of them are put side by side.
+Take an invoice endpoint. The API document declares that `GET /invoices/:id` returns 200, 404 or 500. The handler never produces a 500, and somebody in the web app wrote a retry path for one anyway. The panel that renders the invoice treats every 200 as a live invoice, and the handler returns voided invoices as 200 too. Each of those statements is true on its own. The trouble shows up when you put two of them side by side.
 
 ## The three contracts, in one run
 
-Here is that endpoint as three files. The contract is a ts-rest router, so the declaration lives in the repo beside the code. An OpenAPI document read with `suss contract --from openapi` plays the same part.
+Here is that endpoint as three files. The contract is a ts-rest router, so the declaration lives in the repository beside the code. An OpenAPI document read with `suss contract --from openapi` does the same job.
 
 ```ts
 // src/contract.ts
@@ -103,7 +103,7 @@ src/db.ts
 3 summaries.
 ```
 
-All three contracts are in that output. `Contract: 200, 404, 500` is the declaration, read off the router. Under the handler are the branches it takes. Under the client are the ones the panel depends on. `check` compares them pairwise:
+All three contracts are in that output. `Contract: 200, 404, 500` is the declaration, read off the router. The lines under the handler are the branches it takes, and the lines under the client are the ones the panel depends on. `check` compares them pairwise:
 
 ```bash
 suss check --dir summaries/
@@ -129,11 +129,11 @@ Not shown: 4 unhandledProviderCase (warning), 2 consumerContractViolation (warni
 suss met a call it could not follow in one unit, of 3, so that one is described in part. `suss inspect` says which calls.
 ```
 
-The 500 is an error and the other six findings are warnings. That difference comes from what each side of each comparison is: a specification, an observation, or a derivation.
+The 500 is an error and the other six findings are warnings. The difference comes from what each side of the comparison is: a specification, an observation or a derivation.
 
 ## Three kinds of truth
 
-An artifact about code can tell you one sort of thing, and which sort it is decides everything below.
+Any artifact about code tells you one sort of thing, and which sort it is decides how suss treats it.
 
 | Kind of truth | What it tells you | Examples | Completeness |
 |---|---|---|---|
@@ -147,22 +147,22 @@ The findings come from comparing one kind against another:
 
 - **Derivation ⊄ Specification**: the code takes a path the specification never declares. The handler produces a 500 that OpenAPI does not mention.
 - **Specification ⊄ Derivation**: the specification declares a case the code cannot reach. That is the error in the run above.
-- **Observation ⊄ Derivation**: something happened that the code should not be able to produce. Rare, high signal, usually a bug.
-- **Derivation ⊄ Observation**: the code reaches paths no test covered. A coverage signal rather than a finding.
+- **Observation ⊄ Derivation**: something happened that the code should not be able to produce. This is rare, and it is usually a bug.
+- **Derivation ⊄ Observation**: the code reaches paths no test covered. That tells you where your coverage is thin.
 
 ## The three contracts at a boundary
 
-Every boundary has these three whether or not anyone writes them down. Which checker function fires for which comparison is in [Cross-boundary checking](/why/cross-boundary-checking).
+Every boundary has all three of these, whether or not anyone writes them down. [Cross-boundary checking](/why/cross-boundary-checking) lists which checker function fires for which comparison.
 
-**The declared contract** is authored and optional: ts-rest `responses`, an OpenAPI schema, a GraphQL SDL. It says which statuses and body structures are supposed to exist. This is a specification, and it is what most tools check against. A person wrote it, so it can be wrong, incomplete, or a year out of date. Where it exists, it is the one thing the provider team and the consumer team both point at. In the run above it is `Contract: 200, 404, 500`, read straight off the router.
+**The declared contract** is the one a person wrote, and a project does not have to have one. It might be ts-rest `responses` or an OpenAPI schema, and it declares which statuses and body structures are supposed to exist. This is a specification, and it is what most tools check against. Because a person wrote it, it can be wrong, incomplete or out of date. Where it does exist, it is the one artifact the provider team and the consumer team both point at. In the run above it is `Contract: 200, 404, 500`, read straight off the router.
 
-**The provider's inferred contract** is a derivation: the transitions the handler produces, under condition A output X and under condition B output Y. It says more than the declaration in three ways. It separates sub-cases inside one status code, so 200 is `{ total: 0, state: "void" }` when `invoice.voidedAt` is set and `{ total, state: "open" }` otherwise, where the declaration collapses both into one. Each transition has its own body. And it turns up gaps, either a declared 500 no branch produces or a 418 the declaration never mentions.
+**The provider's inferred contract** is a derivation. It is the set of transitions the handler produces: under condition A it returns X, and under condition B it returns Y. It covers more ground than the declaration. It separates sub-cases inside one status code, so 200 is `{ total: 0, state: "void" }` when `invoice.voidedAt` is set and `{ total, state: "open" }` otherwise, where the declaration collapses both of those into a single entry with one body. It also turns up gaps, such as a declared 500 that no branch produces, or a 418 the declaration never mentions.
 
-**The consumer's inferred contract** is the other derivation: which status codes the caller branches on, which body fields it reads, which conditions it tests on the response. It is written down nowhere. It is not in OpenAPI, not in the types, and not in a Pact test unless somebody wrote that exact example, and it is the contract that causes an incident when it breaks. suss reads it out of the consumer's own source. `if (response.status === 200)` says the consumer expects 200 and, in the run above, nothing else. `invoice.total` says it depends on `total` being there. A test like `if (invoice.state === "void")` would say it tells a sub-case apart by a body field; this consumer does not, which is why the run reports the two 200s as one.
+**The consumer's inferred contract** is the other derivation. It is which status codes the caller branches on, which body fields it reads and which conditions it tests on the response. Nobody writes this one down. The only place it exists is the consumer's own source, and that is where suss reads it from. `if (response.status === 200)` means the consumer expects 200 and, in the run above, nothing else. Reading `invoice.total` means it depends on `total` being there. Had the code tested `if (invoice.state === "void")`, suss would have recorded that the consumer separates a sub-case by a body field. This consumer does not test the body, so the run reports the two 200s as one.
 
 ## Contract shapes
 
-The three contracts above are HTTP-flavoured. Across domains, contracts arrive in more shapes than "schema", and a substantial domain usually uses several. Each shape is one of the three kinds of truth.
+The three contracts above are all HTTP. In other domains, contracts come in more shapes than a schema, and a large domain usually uses several of them. Each shape is one of the three kinds of truth.
 
 | Shape | What it declares | Kind of truth |
 |---|---|---|
@@ -174,7 +174,7 @@ The three contracts above are HTTP-flavoured. Across domains, contracts arrive i
 
 Everything suss reads today is schema-shaped, across the HTTP, GraphQL, AppSync, message-bus, storage and component domains. Point `suss contract --from <source>` at one and you get summaries in the same form `extract` produces; [Contract sources](/packs/contract-sources) lists the readers that ship.
 
-The other shapes have no reader. `suss corroborate --experimental` is the one observation that reaches a summary, and it comes from running the code: it generates inputs that satisfy a claim's own conditions, runs the handler on them, and records the verdict in `confidence.corroboration` as `observed`, `refuted` with the input that disagreed, or `untested`. Design shapes are left out on purpose, because design files rarely live in the repo and the API integration costs more than the signal is worth.
+The other shapes have no reader. The one observation that reaches a summary comes from `suss corroborate --experimental`, which runs your code. It generates inputs that satisfy a claim's own conditions, runs the handler on them, and records the verdict in `confidence.corroboration` as `observed`, as `refuted` along with the input that disagreed, or as `untested`. Design shapes are left out on purpose. Design files rarely live in the repository, and integrating with those APIs would cost more than the result is worth.
 
 Team-authored intent is a kind of truth of its own, with an artifact stream separate from the contract sources. [Check against your intent](/guides/check-against-intent) covers the two document kinds and the commands that read them.
 
@@ -183,9 +183,9 @@ Team-authored intent is a kind of truth of its own, with an artifact stream sepa
 A finding's severity comes from the kinds of truth being compared, not from the file format the contract arrived in:
 
 - A derivation violates a specification: `error`. The code has drifted from what it promised. That is the `providerContractViolation` in the invoice run, where the router promises a 500 and no branch produces one.
-- An observation violates a specification: `warning`. Something happened that the spec said could not.
-- An observation is missing for a specification case: `info`. A coverage gap rather than a bug.
+- An observation violates a specification: `warning`. Something happened that the specification said could not happen.
+- An observation is missing for a specification case: `info`. That is a gap in coverage and not a bug.
 - Two specifications disagree: `warning`. Somebody has to reconcile them. This is the `contractDisagreement` finding.
-- Two derivations disagree: `warning`. That is why the other six findings in the invoice run are warnings. Whether an uncovered status is a defect depends on intent the code does not state, so the run reports it and leaves the call to you.
+- Two derivations disagree: `warning`. That is why the other six findings in the invoice run are warnings. Whether an uncovered status is a bug depends on intent the code does not state, so the run reports it and leaves the call to you.
 
 The same rule assigns intent severities: a derivation that violates declared system intent is an error, and a derivation that exceeds open intent is info.

@@ -5,14 +5,14 @@ description: "Boundary, summary, check and pack: the four words the rest of the 
 
 # Four ideas
 
-Four words cover the tool.
+Almost everything suss does comes down to four words.
 
 ## Boundary
 
 A boundary is where two units of code meet and neither one can see the
-other: a route and the client that calls it, a query and the table it
-reads, a queue and whatever consumes it. suss spells a boundary the same
-way everywhere, and `check` prints the two sides it paired on one:
+other. A route and the client that calls it are a boundary, and so are a
+query and the table it reads. suss writes every boundary down the same
+way, and `check` prints the two sides it paired up on one:
 
 ```
 Compared 1 boundary:
@@ -22,9 +22,10 @@ Compared 1 boundary:
 
 ## Summary
 
-A summary is what suss worked out about one unit: which branches it
-takes, under what conditions, what each branch produces, and what it
-touched on the way. `inspect` prints one per unit:
+A summary is what suss worked out about one unit of code. It records the
+branches the code takes and the condition that picks each one, what each
+branch produces, and everything the code touched along the way.
+`inspect` prints one summary per unit:
 
 ```
 └─ POST /orders  (hono handler | line 20)
@@ -40,8 +41,8 @@ touched on the way. `inspect` prints one per unit:
 ## Check
 
 A check compares the summaries on either side of one boundary and reports
-where they disagree. Every finding gives you the boundary, both sides,
-and a file and line to open:
+where the two disagree. Every finding gives you the boundary, both sides
+of it, and a file and line to open:
 
 ```
 [WARNING] unhandledProviderCase
@@ -53,17 +54,18 @@ and a file and line to open:
 
 ## Pack
 
-A pack teaches suss one library: which calls make a route, which make a
-query, and what each one does. `-f` says which packs a run reads with,
-and `suss init` works out which ones a project needs:
+A pack teaches suss one library. It describes which calls in that library
+make a route and which make a query, and what each of those calls does.
+You pick the packs for a run with `-f`, and `suss init` works out which
+ones your project needs:
 
 ```bash
 suss extract -f hono -f prisma -o summaries/code.json
 ```
 
 The [pack catalog](/packs/catalog) lists everything that ships inside
-`@suss/cli`, and [Write a pack](/packs/write-a-pack) covers a library
-nothing there recognizes.
+`@suss/cli`. If your library is missing from that list, [Write a
+pack](/packs/write-a-pack) walks you through adding it.
 
 ## Where next
 
