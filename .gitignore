@@ -34,6 +34,9 @@ scripts/dogfood-report.json
 # Per-package extraction cache (local to each working tree)
 **/.suss/
 
+# The Prisma client the generated-client fixture's test generates.
+/fixtures/prisma-generated-client/generated/
+
 # External dogfood targets, cloned to the repo root for ad-hoc
 # end-to-end runs. Clone them under this directory so they stay ignored
 # without anyone editing this file to name one.

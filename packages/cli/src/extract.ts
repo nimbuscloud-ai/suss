@@ -1208,7 +1208,7 @@ const EMPTY_STAGE_COPY: Record<
   candidateFiles: (report) => ({
     problem: `No file imports anything ${listOf(report.packs.map((p) => p.pack))} looks for.`,
     cause:
-      "Either this project does not use it, or your code reaches it through a local wrapper module. suss only recognizes direct imports today.",
+      "suss follows the project's own imports to get there, through a barrel or a module that builds the client, and into a directory the library's generator wrote. So either this project does not use it, or the code reaches it some way no import shows.",
   }),
   discovery: (report) => ({
     problem: `suss read ${report.filesWalked} ${report.filesWalked === 1 ? "file" : "files"} but recognized no boundaries in them.`,

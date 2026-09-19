@@ -1286,6 +1286,16 @@ export interface PatternPack {
    */
   requiresImport?: string[];
   /**
+   * Files this library's code generator writes beside the module it
+   * generates, e.g. `["schema.prisma"]`. A project can point the
+   * generator at a directory of its own, and then every consumer
+   * imports the module by relative path and `requiresImport` matches
+   * nothing. A directory containing one of these files counts as the
+   * gated package, so those consumers reach the pack the way an
+   * ordinary import would.
+   */
+  generatedModuleMarkers?: string[];
+  /**
    * Functions the project itself wrote in front of this library, read
    * once across the whole project before any file is walked. What the
    * pack makes of them joins its own patterns and recognizers for the

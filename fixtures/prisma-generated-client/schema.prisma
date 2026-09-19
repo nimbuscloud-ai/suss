@@ -1,0 +1,18 @@
+// A generator with its own `output`, so nothing in the project imports
+// "@prisma/client" and the client's types live under the project.
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "./generated/client"
+}
+
+model User {
+  id    Int     @id @default(autoincrement())
+  email String  @unique
+  name  String?
+}

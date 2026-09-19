@@ -190,7 +190,7 @@ describe("formatExtractionReport", () => {
     );
 
     expect(output).toContain("No file imports anything");
-    expect(output).toContain("local wrapper module");
+    expect(output).toContain("through a barrel or a module that builds");
   });
 
   it("says the pack read files and recognized nothing", () => {

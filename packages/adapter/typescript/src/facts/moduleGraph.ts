@@ -14,6 +14,8 @@
 
 import { Database, evaluate, lit, rule, variable as v } from "@suss/datalog";
 
+import { GeneratedModules } from "./generatedModules.js";
+
 import type { SourceFile } from "ts-morph";
 
 /**
@@ -57,6 +59,12 @@ const REACH_RULES = [
 export interface FileSetQuery {
   sourceFiles: ReadonlyArray<SourceFile>;
   packages: ReadonlyArray<string>;
+  /**
+   * Files the asking pack's code generator leaves beside a module it
+   * wrote into the project. A relative import into such a directory
+   * counts as an import of the package.
+   */
+  generatedMarkers?: ReadonlyArray<string>;
 }
 
 /** One question: which of these files reach that one. */
@@ -103,10 +111,11 @@ export class ModuleGraph {
   filesReachingAnyPackage(
     fileSets: ReadonlyArray<FileSetQuery>,
   ): ReadonlyArray<ReadonlySet<SourceFile>> {
-    for (const { sourceFiles, packages } of fileSets) {
+    for (const { sourceFiles, packages, generatedMarkers } of fileSets) {
+      const generated = new GeneratedModules(generatedMarkers ?? []);
       for (const name of packages) {
         for (const sourceFile of sourceFiles) {
-          this.settle(sourceFile, name);
+          this.settle(sourceFile, name, generated);
         }
       }
     }
@@ -201,8 +210,12 @@ export class ModuleGraph {
    * expensive half of the walk for something already known. A file an
    * earlier walk settled stops it for the same reason.
    */
-  private settle(root: SourceFile, name: string): void {
-    const settled = this.settledOf(name);
+  private settle(
+    root: SourceFile,
+    name: string,
+    generated: GeneratedModules,
+  ): void {
+    const settled = this.settledOf([name, generated.key].join(" "));
     if (settled.has(root.getFilePath())) {
       return;
     }
@@ -215,7 +228,13 @@ export class ModuleGraph {
         continue;
       }
       walked.add(currentPath);
-      if (namesPackage(this.specifiersOf(current), name)) {
+      const specifiers = this.specifiersOf(current);
+      // An import into a directory the package's own generator wrote is
+      // an import of the package, whatever the specifier says.
+      if (
+        namesPackage(specifiers, name) ||
+        generated.reachedFrom(currentPath, specifiers)
+      ) {
         this.assert("importsPackage", [currentPath, name]);
         continue;
       }

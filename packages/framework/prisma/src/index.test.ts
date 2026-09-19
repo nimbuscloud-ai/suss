@@ -1,9 +1,13 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
 import { type CallExpression, Node, type SourceFile } from "ts-morph";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { callOpsFor } from "@suss/adapter-typescript";
 import { runExamples } from "@suss/recognize";
-import { createTestProject } from "@suss/test-project";
+import { createFixtureProject, createTestProject } from "@suss/test-project";
 
 import { prismaFramework } from "./index.js";
 
@@ -820,6 +824,52 @@ describe("prisma pack metadata", () => {
     expect(pack.discovery).toEqual([]);
     expect(pack.terminals).toEqual([]);
     expect(pack.invocationRecognizers).toHaveLength(1);
+  });
+
+  it("says which file its generator leaves beside a client it wrote", () => {
+    expect(prismaFramework().generatedModuleMarkers).toEqual(["schema.prisma"]);
+  });
+});
+
+describe("a client a generator wrote into the project", () => {
+  // The schema beside the client is a file on disk, so this cannot be
+  // an in-memory project.
+  let root: string;
+
+  beforeAll(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-prisma-generated-"));
+    fs.mkdirSync(path.join(root, "src"), { recursive: true });
+    fs.mkdirSync(path.join(root, "generated/client"), { recursive: true });
+    fs.writeFileSync(path.join(root, "generated/client/schema.prisma"), "");
+    fs.writeFileSync(
+      path.join(root, "generated/client/index.d.ts"),
+      `export interface UserDelegate {
+         findUnique(args: { where: { id?: number }; select?: Record<string, boolean> }): Promise<unknown>;
+       }
+       export declare class PrismaClient { readonly user: UserDelegate; }`,
+    );
+    fs.writeFileSync(
+      path.join(root, "src/api.ts"),
+      `import { PrismaClient } from "../generated/client/index.js";
+       const db = new PrismaClient();
+       export const read = () => db.user.findUnique({ where: { id: 1 }, select: { id: true } });`,
+    );
+  });
+
+  it("recognizes a read through the client the generator wrote", () => {
+    const project = createFixtureProject(root, "src/*.ts");
+    const sourceFile = project.getSourceFileOrThrow(
+      path.join(root, "src/api.ts"),
+    );
+    const effects = recognizeAll(sourceFile);
+
+    expect(effects).toHaveLength(1);
+    const effect = effects[0] as Effect;
+    if (effect.type !== "interaction") {
+      throw new Error(`expected an interaction, got ${effect.type}`);
+    }
+    expect(effect.binding.semantics).toMatchObject({ container: "User" });
+    expect(effect.interaction).toMatchObject({ kind: "read", fields: ["id"] });
   });
 });
 

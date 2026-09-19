@@ -113,13 +113,14 @@ A recognizer pack labels the calls inside boundaries some other pack discovers, 
 
 ### Every health code
 
-Five codes are about the run in front of you and always print. Four more are addressed to whoever wrote the pack and wait for `--explain`.
+Six codes are about the run in front of you and always print. Four more are addressed to whoever wrote the pack and wait for `--explain`.
 
 | Code | Prints | What it says |
 |---|---|---|
 | `threw` | always | A pack's hook threw on a file, and that file was skipped. Every count for the pack is a floor. |
 | `no-output` | always | A pack got as far as one stage and produced nothing at the next. |
 | `double-match` | always | Two of a pack's own patterns claimed the same unit. suss kept the first. |
+| `no-files` | always | The pack's library is installed and no file in the run imports it, through the project's own modules included. |
 | `no-units` | always | A recognizer pack had nothing to look inside, because no pack in the run discovers units. |
 | `no-helper` | always | A registration helper the pack read matched no call in the run, so whatever it registers is missing. |
 | `no-version` | `--explain` | The pack declares no version, so a cache entry cannot tell two builds of it apart. |

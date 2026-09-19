@@ -174,6 +174,31 @@ function recognizersWithNoUnits(
 }
 
 /**
+ * The pack's library is installed and no file in the run reaches it.
+ *
+ * Every later count starts at zero, so no other check has anything to
+ * compare, and the run says nothing at all about the pack somebody
+ * asked for. The gate follows imports through a project's own modules,
+ * so this means the code here really does not use the library, or it
+ * reaches it a way the gate cannot follow.
+ */
+function gatedPacksWithNoFiles(
+  packs: ReadonlyArray<PackFunnel>,
+): HealthViolation[] {
+  return packs
+    .filter(
+      (funnel) =>
+        funnel.gates.length > 0 &&
+        funnel.unresolvedGates.length === 0 &&
+        funnel.candidateFiles === 0,
+    )
+    .map((funnel) => ({
+      label: funnel.pack,
+      detail: `${funnel.gates.join(", ")} is installed and no file in this run imports it, directly or through a module of the project's own. Either this code does not use the library, or it reaches it some way the import gate does not follow.`,
+    }));
+}
+
+/**
  * A registration helper the config asked for that no call matched.
  *
  * The routes that helper registers are missing, and nothing else in
@@ -358,6 +383,12 @@ export function evaluatePackHealth(report: ExtractionReport): HealthCheck[] {
       code: "no-output",
       audience: "run",
       violations: funnelDrops(report.packs),
+    },
+    {
+      name: "every pack whose library is installed had files to read",
+      code: "no-files",
+      audience: "run",
+      violations: gatedPacksWithNoFiles(report.packs),
     },
     {
       name: "every recognizer had units to look inside",

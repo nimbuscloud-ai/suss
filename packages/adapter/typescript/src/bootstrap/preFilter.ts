@@ -14,6 +14,7 @@
 // from `"@foo/bar"` AND `"@foo/bar/sub-path"`. Empty array (or
 // undefined) means "no gate": the pattern applies to every file.
 
+import { GeneratedModules } from "../facts/generatedModules.js";
 import { namesAnyPackage } from "../facts/moduleGraph.js";
 
 import type { PatternPack } from "@suss/extractor";
@@ -38,13 +39,24 @@ export function computePackApplicability(
   // or gated (needs an import match). Lets the per-file inner loop
   // skip ungated packs from the import scan entirely.
   const ungatedPacks: PatternPack[] = [];
-  const gatedPacks: Array<{ pack: PatternPack; gates: string[] }> = [];
+  const gatedPacks: Array<{
+    pack: PatternPack;
+    gates: string[];
+    markers: string[];
+    generated: GeneratedModules;
+  }> = [];
   for (const pack of packs) {
     if (packIsUngated(pack)) {
       ungatedPacks.push(pack);
-    } else {
-      gatedPacks.push({ pack, gates: collectPackGates(pack) });
+      continue;
     }
+    const markers = pack.generatedModuleMarkers ?? [];
+    gatedPacks.push({
+      pack,
+      gates: collectPackGates(pack),
+      markers,
+      generated: new GeneratedModules(markers),
+    });
   }
 
   const importsByFile = new Map<SourceFile, string[]>();
@@ -64,14 +76,23 @@ export function computePackApplicability(
   // out go to it together rather than one at a time. Files the scan
   // already settled stay out of it, since reading their import closure
   // would be work nobody needs.
+  const gateMatches = (
+    sf: SourceFile,
+    gates: string[],
+    generated: GeneratedModules,
+  ): boolean =>
+    namesAnyPackage(importsOf(sf), gates) ||
+    generated.reachedFrom(sf.getFilePath(), importsOf(sf));
+
   const reachingByPack = new Map<PatternPack, ReadonlySet<SourceFile>>();
   if (resolution !== undefined && gatedPacks.length > 0) {
     const answers = resolution.filesImportingTransitively(
-      gatedPacks.map(({ gates }) => ({
+      gatedPacks.map(({ gates, markers, generated }) => ({
         sourceFiles: sourceFiles.filter(
-          (sf) => !namesAnyPackage(importsOf(sf), gates),
+          (sf) => !gateMatches(sf, gates, generated),
         ),
         packages: gates,
+        generatedMarkers: markers,
       })),
     );
     gatedPacks.forEach(({ pack }, i) => {
@@ -82,9 +103,9 @@ export function computePackApplicability(
   const result = new Map<SourceFile, PatternPack[]>();
   for (const sf of sourceFiles) {
     const applicable: PatternPack[] = [...ungatedPacks];
-    for (const { pack, gates } of gatedPacks) {
+    for (const { pack, gates, generated } of gatedPacks) {
       if (
-        namesAnyPackage(importsOf(sf), gates) ||
+        gateMatches(sf, gates, generated) ||
         reachingByPack.get(pack)?.has(sf) === true
       ) {
         applicable.push(pack);
