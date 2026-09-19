@@ -1,11 +1,11 @@
 {
   "totals": {
-    "packages": 75,
-    "packagesWithExports": 75,
-    "exports": 1018,
-    "internal": 3558,
-    "consumers": 2074,
-    "pairs": 2062,
+    "packages": 76,
+    "packagesWithExports": 76,
+    "exports": 1023,
+    "internal": 3572,
+    "consumers": 2078,
+    "pairs": 2066,
     "unfollowedCalls": 528,
     "findingErrors": 0
   },
@@ -13,8 +13,8 @@
     "packages/adapter/python": {
       "name": "@suss/adapter-python",
       "exports": 59,
-      "internal": 405,
-      "consumers": 230,
+      "internal": 417,
+      "consumers": 232,
       "unfollowedCalls": 69
     },
     "packages/adapter/ruby": {
@@ -276,6 +276,13 @@
       "consumers": 1,
       "unfollowedCalls": 0
     },
+    "packages/framework/bigquery-python": {
+      "name": "@suss/framework-bigquery-python",
+      "exports": 4,
+      "internal": 0,
+      "consumers": 2,
+      "unfollowedCalls": 0
+    },
     "packages/framework/cloudflare-workers": {
       "name": "@suss/framework-cloudflare-workers",
       "exports": 7,
@@ -481,8 +488,8 @@
     },
     "packages/packs": {
       "name": "@suss/packs",
-      "exports": 53,
-      "internal": 175,
+      "exports": 54,
+      "internal": 176,
       "consumers": 0,
       "unfollowedCalls": 7
     },
@@ -510,7 +517,7 @@
     "packages/sql": {
       "name": "@suss/sql",
       "exports": 2,
-      "internal": 13,
+      "internal": 14,
       "consumers": 0,
       "unfollowedCalls": 1
     },
