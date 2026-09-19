@@ -610,6 +610,7 @@ describe("boundaryInputPathOf", () => {
       storageBinding({
         recognition: "code",
         storageSystem: "aws.dynamodb",
+        scope: "default",
         container: "Invoices",
       }),
       { type: "input", inputRef: "row", path: ["id"] },
