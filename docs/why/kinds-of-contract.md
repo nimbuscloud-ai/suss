@@ -129,7 +129,7 @@ Not shown: 4 unhandledProviderCase (warning), 2 consumerContractViolation (warni
 suss met a call it could not follow in one unit, of 3, so that one is described in part. `suss inspect` says which calls.
 ```
 
-The 500 is an error and the other six findings are warnings. The reason is what each side of each comparison is.
+The 500 is an error and the other six findings are warnings. That difference comes from what each side of each comparison is: a specification, an observation, or a derivation.
 
 ## Three kinds of truth
 

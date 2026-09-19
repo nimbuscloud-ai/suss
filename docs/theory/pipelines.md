@@ -48,7 +48,7 @@ suss extract -p tsconfig.app.json -f express -f axios -f prisma --explain -o sum
 
 Above that, `extract` prints one success line, `Wrote 46 summaries to <path> in 0.88s`, with the absolute path of the file it wrote and an elapsed time that moves from run to run.
 
-Read the funnel from the top. 26 files were in the tsconfig and 13 survived the pre-filter, which skips a file when it imports nothing any pack is looking for. Seven of those import express, and express found 20 routes in them. The axios column is all zeroes because this repository lists axios in its `package.json` and never calls it. That is how a pack that found nothing prints. Prisma discovers no boundaries of its own, because it is made of recognizers: it looked inside the 20 units express found and recognized 79 database calls in them.
+Read the funnel from the top. 26 files were in the tsconfig and 13 survived the pre-filter, which skips a file when it imports nothing any pack is looking for. Seven of those import express, and express found 20 routes in them. The axios column is all zeroes, in the shape a pack that found nothing always prints, because this repository lists axios in its `package.json` and never calls it. Prisma discovers no boundaries of its own, because it is made of recognizers: it looked inside the 20 units express found and recognized 79 database calls in them.
 
 `--timing` says where the time went, one row per phase, ordered by cost. The milliseconds differ on every run and the rows below a millisecond swap places, so read the shares rather than the numbers:
 

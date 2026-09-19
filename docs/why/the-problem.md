@@ -5,7 +5,7 @@ description: Code arrives faster than anyone can read it, and a change that pass
 
 # The problem
 
-Code arrives faster than anyone can read it. A team shipping with a coding agent merges pull requests of a thousand lines several times a day, and the thing that wrote each one will not be in the room when it breaks.
+Code arrives faster than anyone can read it. A team shipping with a coding agent merges pull requests of a thousand lines several times a day.
 
 The two things a reviewer falls back on do not close that gap. The diff tells you what the text changed, not what the service now does: a field dropped from one response object is one line out of a thousand. Tests share their author's assumptions, so when the model that wrote the change also wrote the tests, they check that the change does what the model meant.
 
@@ -44,7 +44,7 @@ export async function receiptLink(id: string) {
 }
 ```
 
-Both files compile, and they will keep compiling however many branches the route grows. `response.data` is `any`, both replies are valid JSON, and no test covers a pending order. The link comes back `undefined` for the customers who most want to click it.
+Both files compile, and they will keep compiling however many branches the route grows. `response.data` is `any`, both replies are valid JSON, and no test covers a pending order. The link comes back `undefined` for every pending order.
 
 ## What suss says about it
 
@@ -80,7 +80,7 @@ src/receiptLink.ts
 2 summaries.
 ```
 
-That description is the thing no reviewer wrote, and it says where suss fell short as well: `db.findOrder` is declared here with no body, so part of the route went unread. Two 200s leave the route with different bodies, and one branch in the caller receives both. `suss check` says so:
+That description came out of the source rather than out of the pull request, and it says where suss fell short too: `db.findOrder` is declared here with no body, so part of the route went unread. Two 200s leave the route with different bodies, and one branch in the caller receives both. `suss check` reports that:
 
 ```bash
 suss check --dir summaries/ --all

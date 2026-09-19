@@ -358,8 +358,8 @@ The chain either leaves the source suss can read, or more than one value can end
 `new PrismaClient()` is a construction, neither a function nor an
 object literal, so a question that stops only at those two walks past
 it and off the end. A question that stops at anything written out in
-source lands on it. Both questions walked the same edges to the same
-place, and only one of them had a reason to stop there.
+source lands on it. Both questions walk the same edges to the same
+place, and they differ only in where they are allowed to stop.
 
 ## Most edges come out of a join
 
@@ -395,9 +395,9 @@ passesArgument(bcrypt.hash(password, 10)@58, s: string@50, password@58)   [passe
 ```
 
 Four base facts, from two different files, produce one edge that then
-produces a `stepsTo` hop. The extractor never worked out that
-`bcrypt.hash`'s first parameter would contain `password`; the join did
-that.
+produces a `stepsTo` hop. The join is what connects `password` to
+`bcrypt.hash`'s first parameter. The extractor emitted the four facts
+without working that out.
 
 `callsFunction` also covers a callee a factory returned. With
 `const requireEnv = makeReader(prefix)`, a call on `requireEnv` runs
@@ -464,7 +464,8 @@ A witness is that missing record. Give a derived fact a witness and the
 fact stores the rule that produced it and the facts that rule matched.
 Each of those is a derived fact with a witness of its own, so following
 them down arrives at the facts the adapter emitted from source. The
-database ends up containing its own reasoning.
+database then contains the derivation of every fact in it alongside
+the fact itself.
 
 What to record is a choice, so the engine takes it as a parameter. A
 tag algebra is three things: what tag a base fact starts with, how to

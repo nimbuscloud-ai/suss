@@ -362,11 +362,10 @@ measurement covers. The conventions also miss several stores and buses:
 is a suss axis too, since a span does not report the wire behind an AWS
 SDK call.
 
-That gap is most of what makes suss useful. A boundary that nothing
-crosses at run time never gets a span, so no convention outside suss
-has had to give it a name. When you add a protocol, fill in its
-`semconv`, empty included, and the compiler makes you answer the
-question.
+A boundary that nothing crosses at run time never gets a span, so no
+convention outside suss has had to give it a name, and suss reads
+plenty of those. When you add a protocol, fill in its `semconv`, empty
+included, and the compiler makes you answer the question.
 
 ## Dispatching on semantics
 

@@ -178,7 +178,7 @@ somewhere; the *somewhere* is where quality gets negotiated.
 ### Audience
 
 Quality is role-indexed, same as the OP test in
-[Prior art](../../docs/theory/prior-art.md).
+[`concept-design.md`](../concept-design.md#audience-indexing).
 
 - A rate limiter is **L2 quality for operators**: it protects
   the system's availability and cost envelope.
@@ -288,8 +288,8 @@ A map of reach, same format as
 ## Aspirational implications
 
 Ordered by leverage per unit of engineering lift. Direct analogue
-to the aspirational items in
-[the backlog](../backlog.md).
+to the aspirational section of
+[`concept-design.md`](../concept-design.md#aspirational-implications).
 
 1. **L2-shaped pattern packs.** Recognise common resilience
    patterns (`retry`, `circuitBreaker`, `withTimeout`, `fallback`)
@@ -317,8 +317,8 @@ to the aspirational items in
    has to be stable and extensible. It probably follows the same
    pattern as the contract-shape taxonomy.
 4. **Audience tagging.** Already listed in
-   [the backlog](../backlog.md).
-   It doubles as the axis that indexes quality, and it
+   [`concept-design.md`](../concept-design.md#aspirational-implications)
+   §2. It doubles as the axis that indexes quality, and it
    unblocks multi-audience quality reports (the same system,
    judged differently by each audience).
 5. **PRD as quality specification, not capability specification
