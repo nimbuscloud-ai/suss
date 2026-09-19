@@ -1,406 +1,195 @@
 ---
 title: Quickstart
-description: Run init, extract and check against the repo you already have, then walk a worked example that produces a finding.
+description: Work out which packs a project needs, read its source, and print what every route, query and queue does on each path.
 ---
 
 # Quickstart
 
-Point suss at the project you already have. `init` works out which
-packs your stack needs, `extract` reads your source, and `check`
-compares the sides that meet. Nothing runs, and nothing has to be
-annotated first.
-
-If your first run turns up nothing to compare, the
-[worked example](#an-example-with-a-finding-in-it) at the bottom of
-this page builds two files that disagree, so you have a finding in
-front of you while you work out what your own project needs.
-
-<!-- suss:unchecked it runs against gothinkster/node-express-realworld-example-app, which this repository does not check in -->
-
-## Work out which packs you need
+Three commands read a project and print what it does on every path.
 
 ```bash
-npx @suss/cli init --plain
+npx @suss/cli init
+npx suss extract -o summaries/code.json
+npx suss inspect summaries/code.json
 ```
 
-`init` reads the dependency manifest (`package.json`, `requirements.txt`,
-`pyproject.toml`, `Pipfile` or `Gemfile.lock`), looks for schemas and
-deploy templates on disk (a Prisma schema, an OpenAPI document, a
-GraphQL schema, a SAM or Serverless template), and prints the commands
-for what it found. Without `--plain` it asks before it installs
-anything.
-
-Here it is on
-[gothinkster/node-express-realworld-example-app](https://github.com/gothinkster/node-express-realworld-example-app),
-an Express and Prisma API of about fifty units:
-
-```
-✓ Found 4 things to read in node-express-realworld-example-app
-
-  Your code
-    express          express in dependencies
-    axios            axios in dependencies
-
-  What your code reaches
-    prisma           @prisma/client in dependencies
-
-  Declared contracts
-    prisma           a Prisma schema at src/prisma/schema.prisma
-
-1. Install suss
-
-   npm install --save-dev @suss/cli
-
-2. Read each side into one folder
-
-   suss extract -f express -f axios -f prisma -o summaries/code.json
-   suss contract --from prisma src/prisma/schema.prisma -o summaries/prisma.json
-
-3. Compare them
-
-   suss check --dir summaries/
-```
-
-One pack per library. `framework-express` for the routes,
-`client-axios` for the outbound calls, `framework-prisma` for the
-queries, and `contract-prisma` to turn `schema.prisma` into the other
-side of those queries.
-
-## Read the code
-
-```bash
-npm install --save-dev @suss/cli
-
-npx suss extract -p tsconfig.app.json -f express -f axios -f prisma -o summaries/code.json
-npx suss contract --from prisma src/prisma/schema.prisma -o summaries/prisma.json
-```
-
-```
-Wrote 46 summaries to summaries/code.json in 0.94s
-Wrote 4 summaries to summaries/prisma.json
-```
-
-A summary is what suss worked out about one unit: which branches it
-takes, under what conditions, what each one produces, and what it
-touched on the way. `suss inspect summaries/code.json` prints them.
-
-`-p` picks the tsconfig covering the code you want read. Leave it off
-and suss takes the nearest one, which is right for most projects. This
-repo needs it, because its root `tsconfig.json` lists no files of its
-own and points at two project references instead, so the tsconfig that
-covers `src/` is `tsconfig.app.json`.
-
-The `-f` flags are spelled out here so you can see what each one
-reads. Once `init` has written `suss.json`, `npx suss extract -o
-summaries/code.json` reads the same packs, and `npx suss inspect` with
-nothing after it reads the whole project and prints it.
-
-## Compare the sides that meet
-
-```bash
-npx suss check --dir summaries/
-```
-
-```
-Compared 4 boundaries.
-
-  20 provider-side boundaries have no client to compare against.
-  5 boundaries had nothing to pair with, so nothing was checked across them.
-  Run the same command with --all to list them.
-
-3 findings: 0 error, 3 warning, 0 info
-
-Not shown: 3 boundaryFieldUnused (warning). Run the same command with --all to see them.
-
-suss met a call it could not follow in 19 units, of 50, so those are described in part. `suss inspect` says which calls.
-```
-
-The four boundaries compared are the four Prisma models, each against
-every query that reads or writes it. The twenty HTTP routes went
-uncompared because the front end for this API lives in a separate
-repository, so the other side of those routes was never extracted.
-[Add suss to a project](/guides/add-to-project) covers what to do about
-that.
-
-`--all` prints all three in full. Here is the first:
-
-```
-[WARNING] boundaryFieldUnused
-  Comment declares "articleId" and code here writes to it, but no query reads it. suss counts a column as read only when a query selects it, so before you treat the write as pointless, look for code that takes "articleId" off a record it already fetched.
-  provider: src/prisma/schema.prisma::Comment (src/prisma/schema.prisma:1)
-  consumer: src/prisma/schema.prisma::Comment (src/prisma/schema.prisma:1)
-  boundary: prisma (postgresql)
-```
-
-Every finding gives you the boundary, both sides, and a file and line
-to open. There is no aggregate score. See the
-[findings catalog](/reference/findings) for what each kind means.
-
-## Ask it something
-
-The same summaries answer questions about your code without you
-reading it:
-
-```bash
-npx suss ask 'what writes postgresql:Article' --dir summaries/
-```
-
-```
-6 units write postgresql:Article:
-  createArticle (src/app/routes/article/article.service.ts:162) through prisma.article.create
-  updateArticle (src/app/routes/article/article.service.ts:289) through prisma.article.update
-  deleteArticle (src/app/routes/article/article.service.ts:385) through prisma.article.delete
-  favoriteArticle (src/app/routes/article/article.service.ts:562) through prisma.article.update
-  unfavoriteArticle (src/app/routes/article/article.service.ts:608) through prisma.article.update
-  disconnectArticlesTags (src/app/routes/article/article.service.ts:276) through prisma.article.update
-
-postgresql:Article is provided by src/prisma/schema.prisma::Article.
-
-suss could not follow next, so a writer could be hiding behind it.
-```
-
-That last line matters as much as the list. Six writers are the six
-suss could follow, and it says outright that there might be another one
-inside a call it could not. [`ask`](/reference/cli/ask) takes the other
-question forms too: what an endpoint reaches, why it reaches it, and
-who calls a given function.
-
-## An example with a finding in it
-
-Two files, one endpoint and its caller, that disagree about a status
-code. Useful when your own first run had nothing to compare, or when
-you want to see what a cross-boundary finding looks like before you go
-hunting for one.
+Your code never runs and nothing has to be annotated first. The output
+below comes from a small Hono API with a Prisma schema behind it.
 
 <!-- suss:example -->
 
-### Set up a workspace
-
-```bash
-mkdir suss-example && cd suss-example
-npm init -y
-npm pkg set type=module
-
-npm install hono
-npm install --save-dev @suss/cli typescript
-```
-
-`tsconfig.json`:
+`package.json`:
 
 ```json
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "noEmit": true
-  },
-  "include": ["src"]
+  "name": "orders-api",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@prisma/client": "^5.0.0",
+    "hono": "^4.0.0"
+  }
 }
 ```
 
-### Write the two sides
+`prisma/schema.prisma`:
 
-`src/api.ts`, an endpoint with two outcomes, 404 when there is no such
-user and 200 with the user otherwise:
+<!-- suss:file prisma/schema.prisma -->
+
+```prisma
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Order {
+  id        Int      @id @default(autoincrement())
+  reference String   @unique
+  total     Int
+  placedAt  DateTime
+}
+```
+
+`src/api.ts`:
 
 ```ts
+import { PrismaClient } from "@prisma/client";
 import { Hono } from "hono";
 
 const app = new Hono();
+const db = new PrismaClient();
 
-app.get("/users/:id", async (c) => {
-  const user = await findUser(c.req.param("id"));
+app.get("/orders/:reference", async (c) => {
+  const order = await db.order.findUnique({
+    where: { reference: c.req.param("reference") },
+    select: { id: true, reference: true, total: true },
+  });
 
-  if (!user) {
-    return c.json({ error: "not found" }, 404);
+  if (!order) {
+    return c.json({ error: "no such order" }, 404);
   }
 
-  return c.json({ id: user.id, name: user.name });
+  return c.json(order);
 });
 
-declare function findUser(
-  id: string,
-): Promise<{ id: string; name: string } | null>;
+app.post("/orders", async (c) => {
+  const body = await c.req.json();
+
+  if (typeof body.total !== "number") {
+    return c.json({ error: "total is required" }, 400);
+  }
+
+  const order = await db.order.create({
+    data: {
+      reference: body.reference,
+      total: body.total,
+      placedAt: new Date(),
+    },
+  });
+
+  return c.json({ reference: order.reference }, 201);
+});
 
 export default app;
 ```
 
-`src/client.ts`, a caller that checks for 200 and treats everything
-else the same way:
-
-```ts
-export async function loadUser(id: string) {
-  const response = await fetch(`/users/${id}`);
-
-  if (response.status === 200) {
-    const user = await response.json();
-    return { state: "ready", name: user.name };
-  }
-
-  return { state: "error" };
-}
-```
-
-### Read both sides
+## Work out which packs the project needs
 
 ```bash
-npx suss extract -f hono -o summaries/api.json
-npx suss extract -f fetch -o summaries/web.json
-npx suss inspect summaries/api.json
+npx @suss/cli init
+```
+
+suss reads code through a pack per library. `init` looks at the
+dependency manifest and at the schemas and deploy templates on disk, and
+lists what it can read:
+
+<!-- suss:excerpt -->
+
+```
+  Your code
+    hono             hono in dependencies
+    fetch            TypeScript sources, and fetch reads what the language itself ships
+
+  What your code reaches
+    prisma           @prisma/client in dependencies
+    node             TypeScript sources, and node reads what the language itself ships
+
+  Declared contracts
+    prisma           a Prisma schema at prisma/schema.prisma
+```
+
+Then it prints the commands for what it found. In a terminal it offers to
+set them up for you; piped or in CI it prints and stops.
+
+<!-- suss:excerpt -->
+
+```
+   suss extract -f hono -f fetch -f prisma -f node -o summaries/code.json
+   suss contract --from prisma prisma/schema.prisma -o summaries/prisma.json
+```
+
+## Read the code
+
+```bash
+npx suss extract -f hono -f fetch -f prisma -f node -o summaries/code.json
+```
+
+```
+Wrote 2 summaries to summaries/code.json in 0.24s
+```
+
+A summary is one unit suss read: a route handler here, a queue consumer or
+a Lambda in another project. The file is JSON, and `inspect` prints it in
+a form meant for people.
+
+Those `-f` flags are the ones `init` printed. Leave them off and `extract`
+reads the packs from `suss.json`, or picks the same ones `init` would when
+there is no file.
+
+## Print what it found
+
+```bash
+npx suss inspect summaries/code.json
 ```
 
 ```
 src/api.ts
-└─ GET /users/{id}  (hono handler | line 5)
-       if  !findUser()
-         -> 404 { error }
-           + c.req.param
-           + findUser
+├─ GET /orders/{reference}  (hono handler | line 7)
+│      if  !db.order.findUnique()
+│        -> 404 { error }
+│          + c.req.param
+│          + db.order.findUnique
+│      else
+│        -> 200 order
+│          + c.req.param
+│          + db.order.findUnique
+│
+└─ POST /orders  (hono handler | line 20)
+       if  typeof body.total !== "number"
+         -> 400 { error }
+           + c.req.json
        else
-         -> 200 { id, name }
-           + c.req.param
-           + findUser
+         -> 201 { reference }
+           + c.req.json
+           + db.order.create
 
-     Could not follow:
-       The call to findUser lands on a declaration with no body, so whatever runs there is missing from this summary
-
-1 summary.
+2 summaries.
 ```
 
-That is the endpoint's behaviour rather than its types: which condition
-leads to which status, and what the body contains in each case. And
-`c.json(body, status)` was read correctly without anyone telling suss
-which argument is which. `findUser` runs in the condition itself, so it
-shows up on both paths, and so does `c.req.param`, the call that feeds
-it. `findUser` is declared and never defined here,
-so suss says it could not follow the call rather than reporting the
-handler as fully read.
-
-### Compare them
-
-```bash
-npx suss check --dir summaries/ --fail-on warning
-```
-
-An uncovered status is a warning, because whether the fall-through is
-the intended handling is your call to make, and a default run only
-fails on errors. `--fail-on warning` fails on them too, which is what
-this example wants: the disagreement is the point.
-
-```
-Compared 1 boundary.
-
-────────────────────────────────────────────────────────────
-[WARNING] unhandledProviderCase
-  Provider produces status 404 but no consumer branch handles it
-  provider: src/api.ts::get (src/api.ts:5)
-  consumer: src/client.ts::loadUser (src/client.ts:1)
-  boundary: hono (http) GET /users/:id
-  to silence this one, add to the rules in .sussignore.yml:
-    - kind: unhandledProviderCase
-      boundary: "GET /users/{id}"
-      provider: { transitionId: "get:response:404:afd032b" }
-      reason: TODO say why you accept this
-────────────────────────────────────────────────────────────
-1 finding: 0 error, 1 warning, 0 info
-
-suss met a call it could not follow in one unit, of 2, so that one is described in part. `suss inspect` says which calls.
-```
-
-The endpoint separates "no such user" from every other failure. The
-caller does not, so a missing user and a database outage both reach the
-screen as `{ state: "error" }`. Both files typecheck, so nothing else
-was going to tell you.
-
-The last lines are a rule you can paste, for when you decide to live
-with a finding. It matches this finding and no other. See
-[Accept a finding](/guides/accept-a-finding).
-
-Give the caller its own branch:
-
-<!-- suss:file src/client.ts -->
-
-```ts
-export async function loadUser(id: string) {
-  const response = await fetch(`/users/${id}`);
-
-  if (response.status === 404) {
-    return { state: "missing" };
-  }
-
-  if (response.status === 200) {
-    const user = await response.json();
-    return { state: "ready", name: user.name };
-  }
-
-  return { state: "error" };
-}
-```
-
-```bash
-npx suss extract -f fetch -o summaries/web.json
-npx suss check --dir summaries/ --fail-on warning
-```
-
-```
-Compared 1 boundary.
-
-No findings. Every compared boundary agreed.
-
-suss met a call it could not follow in one unit, of 2, so that one is described in part. `suss inspect` says which calls.
-```
-
-<!-- suss:unchecked the step below is an edit to paste into a file rather than the whole file, so the run cannot apply it -->
-
-### Change the endpoint and watch it break
-
-A deleted user should look different from a missing one, so add a case
-for them:
-
-```ts
-  if (user.deletedAt) {
-    return c.json({ error: "gone" }, 410);
-  }
-```
-
-with `findUser` now returning `deletedAt: string | null`. Read the
-endpoint again and compare:
-
-```bash
-npx suss extract -f hono -o summaries/api.json
-npx suss check --dir summaries/ --fail-on warning
-```
-
-```
-────────────────────────────────────────────────────────────
-[WARNING] unhandledProviderCase
-  Provider produces status 410 but no consumer branch handles it
-  provider: src/api.ts::get (src/api.ts:5)
-  consumer: src/client.ts::loadUser (src/client.ts:1)
-  boundary: hono (http) GET /users/:id
-  to silence this one, add to the rules in .sussignore.yml:
-    - kind: unhandledProviderCase
-      boundary: "GET /users/{id}"
-      provider: { transitionId: "get:response:410:3b915da" }
-      reason: TODO say why you accept this
-────────────────────────────────────────────────────────────
-1 finding: 0 error, 1 warning, 0 info
-
-suss met a call it could not follow in one unit, of 2, so that one is described in part. `suss inspect` says which calls.
-```
-
-Nobody touched the caller, and the caller is now wrong. With
-`--fail-on warning` the run exits non-zero, so this fails on the pull
-request that adds the 410 rather than in a bug report a week later.
+Each route comes with the branches it takes, the condition that leads to
+each one, and the status and body that branch returns. The `+` lines are
+the calls that path makes, so `POST /orders` writes to Prisma on its 201
+and not on its 400.
 
 ## Next
 
-- [Add suss to a project](/guides/add-to-project)
-- [Fix a run that found nothing](/guides/fix-an-empty-run), when the
-  first run turns up nothing
-- [Run suss in CI](/guides/ci-integration)
-- [Compatibility](/reference/compatibility), for languages, module
-  systems, and where suss stops
-- [Findings catalog](/reference/findings), for every finding kind
+- [Add suss to a project](/guides/add-to-project) for a repository with
+  more than one service, or a language other than TypeScript.
+- [Fix a run that found nothing](/guides/fix-an-empty-run) if `init` did
+  not match a pack, or `extract` came back empty.
+- [Read a pull request](/start/read-a-pull-request) diffs two of these
+  runs and posts what changed as a comment.
+- [Give your agent suss](/start/give-your-agent-suss) lets a coding agent
+  ask the same questions over MCP.
+- [Four ideas](/start/four-ideas) is the vocabulary the rest of the
+  documentation uses.
