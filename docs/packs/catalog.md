@@ -5,22 +5,27 @@ description: Every pack suss ships, what each one reads, and which ones the fram
 
 # Pack catalog
 
-suss ships as `@suss/cli` plus opt-in packs for the frameworks, runtimes, and contract sources a project uses. Install the CLI and only the packs you need; nothing pulls in the whole set.
-
-Forty-four packs read code today, across thirty-five frameworks, eight HTTP and GraphQL clients, and the Node runtime. Ten contract readers turn a declared artifact into the same summary structure. Team-authored intent docs are their own stream, read by `@suss/contract-intent`.
-
-Most of that is TypeScript and JavaScript, which is what `suss extract` reads. Some of the framework packs are not: flask-restx and FastAPI read Python through `@suss/adapter-python`, and graphql-ruby and rails read Ruby through `@suss/adapter-ruby`. `suss extract` reaches those two adapters as well; the [Python and Ruby guide](/guides/python-and-ruby) shows how.
-
-## What to run, by stack
-
-Every pack ships inside the CLI, so there is one install:
+Every pack ships inside the CLI, so there is one install and nothing else to add:
 
 ```bash
 npm install --save-dev @suss/cli
 ```
 
-After that a pack is reached by name, and the names are what `-f` takes.
-A declared artifact is read by `suss contract` rather than by a pack.
+Forty-four packs read code today, across thirty-five frameworks, eight HTTP and GraphQL clients, and the Node runtime. Ten contract readers turn a declared artifact into the same summary structure. Team-authored intent docs are their own stream, read by `@suss/contract-intent`.
+
+Most of that is TypeScript and JavaScript. Some of it is not: flask-restx and FastAPI read Python through `@suss/adapter-python`, and graphql-ruby and rails read Ruby through `@suss/adapter-ruby`. `suss extract` reaches those two adapters as well, and the [Python and Ruby guide](/guides/python-and-ruby) shows how.
+
+The quickest way to find your packs is to let suss look:
+
+```bash
+suss init
+```
+
+It reads your dependencies, says which packs match, and offers to write them into `suss.json`. The [add-to-project guide](/guides/add-to-project) walks the whole setup.
+
+## What to run, by stack
+
+The first column of every table below is the name `-f` takes, and `-f` is repeatable. A declared artifact is read by `suss contract --from <source>` rather than by a pack.
 
 | Stack | What to run |
 |---|---|
@@ -35,41 +40,9 @@ A declared artifact is read by `suss contract` rather than by a pack.
 | Postgres through Drizzle | add `-f drizzle` |
 | MongoDB through Mongoose | add `-f mongoose` |
 
-`suss init` reads your dependencies and writes these out for your own
-project. The [add-to-project guide](/guides/add-to-project) walks the
-integration end-to-end.
-
-## Core
-
-![combined](../../.github/badges/coverage.svg)
-
-| Package | Description | Coverage |
-|---------|-------------|----------|
-| [`@suss/ir-core`](../../packages/ir-core) | Shared IR primitives, type shapes, boundary bindings + constructors, source locations, confidence. Base for `behavioral-ir` and `intent-ir`. | ![](../../.github/badges/coverage-ir-core.svg) |
-| [`@suss/behavioral-ir`](../../packages/behavioral-ir) | zod schemas, types, parsers, and generated [JSON Schema](../../packages/behavioral-ir/schema/behavioral-summary.schema.json). Install this to consume summaries. | ![](../../.github/badges/coverage-ir.svg) |
-| [`@suss/intent-ir`](../../packages/intent-ir) | Team-authored intent: system intent (what a boundary should do) + PRD outcome intent, paired against derived summaries. | ![](../../.github/badges/coverage-intent-ir.svg) |
-| [`@suss/datalog`](../../packages/datalog) | Small semi-naive Datalog evaluator with stratified negation; the rules engine behind derived program facts. | ![](../../.github/badges/coverage-datalog.svg) |
-| [`@suss/resolution`](../../packages/resolution) | Datalog rules for following a value back to the function it resolves to: a factory's argument, a re-exported wrapper, a closure three levels down. Language-neutral, so an adapter supplies facts and inherits the rules. | ![](../../.github/badges/coverage-resolution.svg) |
-| [`@suss/values`](../../packages/values) | Bounded evaluator over an abstract value domain: strings as pieces with named holes, sequences, records. An adapter supplies a lowering of its AST and a row table for its operators and library methods, and readers ask what an expression is worth instead of matching one spelling at a time. | ![](../../.github/badges/coverage-values.svg) |
-| [`@suss/extractor`](../../packages/extractor) | Assembly engine. It converts raw extracted structure into `BehavioralSummary`. | ![](../../.github/badges/coverage-extractor.svg) |
-| [`@suss/recognize`](../../packages/recognize) | Write a pack as data: a chain of named links, compiled to the recognizer hooks, run by any adapter that implements the executor ops. | ![](../../.github/badges/coverage-recognize.svg) |
-| [`@suss/packs`](../../packages/packs) | Every pack, one subpath each, so `@suss/packs/express` reaches the Express pack. The CLI resolves `-f` names to these on its own. | tested through each pack |
-| [`@suss/adapter-typescript`](../../packages/adapter/typescript) | TypeScript language adapter via ts-morph. | ![](../../.github/badges/coverage-typescript.svg) |
-| [`@suss/adapter-python`](../../packages/adapter/python) | Python language adapter: tree-sitter (WASM) parsing, a lexical binder, repo-scoped module resolution. v0, no path-engine work yet. | ![](../../.github/badges/coverage-python.svg) |
-| [`@suss/adapter-ruby`](../../packages/adapter/ruby) | Ruby language adapter: tree-sitter (WASM) parsing, a lexical binder over class/module nesting, Rails' constant-to-path convention for `mutation:` / `resolver:` wiring and controller discovery. v0, graphql-ruby and rails, no path-engine work yet. | ![](../../.github/badges/coverage-ruby.svg) |
-| [`@suss/checker`](../../packages/checker) | Pairwise cross-boundary checker (behavioral). | ![](../../.github/badges/coverage-checker.svg) |
-| [`@suss/checker-intent`](../../packages/checker-intent) | Pairs team-authored intent against derived code; emits `IntentFinding` coverage. | ![](../../.github/badges/coverage-checker-intent.svg) |
-| [`@suss/cli`](../../packages/cli) | CLI wrapper. | ![](../../.github/badges/coverage-cli.svg) |
-| [`@suss/mcp`](../../packages/mcp) | An MCP server over the CLI, so a coding agent can ask about a boundary while it works. Keeps its summaries current as files change. | ![](../../.github/badges/coverage-mcp.svg) |
-| [`@suss/sql`](../../packages/sql) | Reads what a SQL statement touches, for packs that meet a raw query. | ![](../../.github/badges/coverage-sql.svg) |
-| [`@suss/terraform-aws`](../../packages/terraform/aws) | What AWS's Terraform provider declares, as data for that reader. | ![](../../.github/badges/coverage-terraform-aws.svg) |
-| [`@suss/terraform-gcp`](../../packages/terraform/gcp) | What Google Cloud's Terraform provider declares, as data for that reader. | ![](../../.github/badges/coverage-terraform-gcp.svg) |
-
 ## Frameworks
 
-Each of these ships inside `@suss/packs` rather than on its own, so the
-first column is the name `suss extract -f` takes and the link goes to
-the source.
+A framework pack finds the units a framework defines: a route handler, a component, a resolver, a queue consumer. Run one of these and `suss extract` has something to describe.
 
 <!-- generated from what each pack declares: framework -->
 
@@ -99,9 +72,7 @@ the source.
 
 ## Clients
 
-Each of these ships inside `@suss/packs` rather than on its own, so the
-first column is the name `suss extract -f` takes and the link goes to
-the source.
+A client pack finds the other side, the call sites, and binds each one to the method and path it sends. That is what lets the checker pair a call against whoever serves the route.
 
 <!-- generated from what each pack declares: client -->
 
@@ -120,9 +91,7 @@ the source.
 
 ## What your code reaches
 
-These read the calls inside a unit another pack discovered: a query, a
-publish, a read of the environment. On its own an effects pack comes
-back empty, so it is run alongside the pack that finds the units.
+An effects pack reads the calls inside a unit another pack discovered: a query, a publish, a read of the environment. On its own it comes back empty, so run it alongside the pack that finds the units.
 
 <!-- generated from what each pack declares: effects -->
 
@@ -150,24 +119,55 @@ back empty, so it is run alongside the pack that finds the units.
 
 ## Contract sources
 
-| Package | Description | Coverage |
+These are not packs. A contract source reads something the project already declares and writes the same summaries the extractor writes, and it is reached through `suss contract --from <name>` rather than through `-f`. [Contract sources](/packs/contract-sources) has a command and the output for each one.
+
+| Reader | `--from` | What it reads | Coverage |
+|---|---|---|---|
+| [`@suss/contract-openapi`](../../packages/contract/openapi) | `openapi` | An OpenAPI 3.x document, JSON or YAML. | ![](../../.github/badges/coverage-contract-openapi.svg) |
+| [`@suss/contract-graphql`](../../packages/contract/graphql) | `graphql`, `graphql-documents` | A GraphQL SDL file becomes one resolver-kind summary per Query, Mutation and Subscription field. Committed `.graphql` and `.gql` operation documents become one client-kind summary per operation, with fragment spreads inlined, so a repo that keeps its queries in files pairs against its resolvers without any call site being traced. | ![](../../.github/badges/coverage-contract-graphql.svg) |
+| [`@suss/contract-cloudformation`](../../packages/contract/cloudformation) | `cloudformation` | CloudFormation and SAM templates. It delegates to the OpenAPI and API Gateway readers, and handles SQS event-source mappings and a function's `Environment` itself. | ![](../../.github/badges/coverage-contract-cloudformation.svg) |
+| [`@suss/contract-serverless`](../../packages/contract/serverless) | `serverless` | A Serverless Framework service file. The reader restates the functions block in SAM's forms and hands it to the CloudFormation reader, so a route, a queue consumer or an environment contract comes out the same whichever manifest language declared it. `${self:}` resolves against the document, and a deploy-time reference keeps its token. | ![](../../.github/badges/coverage-contract-serverless.svg) |
+| [`@suss/contract-terraform`](../../packages/contract/terraform) | `terraform` | A `.tf` file or the directory a module lives in. The AWS and Google Cloud provider vocabularies both load. | ![](../../.github/badges/coverage-contract-terraform.svg) |
+| [`@suss/contract-wrangler`](../../packages/contract/wrangler) | `wrangler` | A Cloudflare Worker's `wrangler.toml` or `wrangler.jsonc`. The Worker comes out as a deployable with the configuration it is given, values included, so a store addressed through a variable resolves, plus a summary per KV namespace, R2 bucket, D1 database and Queues channel it is bound to. | ![](../../.github/badges/coverage-contract-wrangler.svg) |
+| [`@suss/contract-appsync`](../../packages/contract/appsync) | `appsync` | An AppSync GraphQL schema and its resolver mapping templates. | ![](../../.github/badges/coverage-contract-appsync.svg) |
+| [`@suss/contract-prisma`](../../packages/contract/prisma) | `prisma` | A `schema.prisma` file, one storage provider summary per model. | ![](../../.github/badges/coverage-contract-prisma.svg) |
+| [`@suss/contract-storybook`](../../packages/contract/storybook) | `storybook` | Storybook CSF3 stories, one component contract summary per story. | ![](../../.github/badges/coverage-contract-storybook.svg) |
+| [`@suss/contract-aws-apigateway`](../../packages/contract/aws-apigateway) | (through the readers above) | API Gateway resource semantics for REST and HTTP APIs, including the transitions the platform injects. The CloudFormation, Serverless and Terraform readers all delegate to it. | ![](../../.github/badges/coverage-contract-aws-apigateway.svg) |
+| [`@suss/contract-intent`](../../packages/contract/intent) | (through `check --intent`) | Team-authored intent specs, `*.intent` and `*.prd`. | ![](../../.github/badges/coverage-contract-intent.svg) |
+
+## Asking for a pack
+
+If the framework you use is not in a table above, [open an issue](https://github.com/nimbuscloud-ai/suss/issues/new) with the library, a link to its docs, and ten or fifteen lines of code showing how your project registers a handler and returns a response. That is what a pack is written from, and a snippet from a project that actually uses the library settles questions the library's own docs leave open.
+
+You do not have to wait for one. A pack is a data object of about a hundred lines, it lives in a package of your own, and `-f @your-scope/your-pack` loads it with nothing else to configure. [Write a pack](/packs/write-a-pack) builds one start to finish.
+
+If a pack exists and comes back with nothing, that is a different problem: [Fix a run that found nothing](/guides/fix-an-empty-run).
+
+## Everything else in the box
+
+The rest of what `@suss/cli` installs: the IR the summaries are written in, the language adapters, the checker, the shared machinery the packs run on.
+
+![combined](../../.github/badges/coverage.svg)
+
+| Package | What it is | Coverage |
 |---------|-------------|----------|
-| [`@suss/contract-terraform`](../../packages/contract/terraform) | Reads the boundaries a Terraform configuration declares. | ![](../../.github/badges/coverage-contract-terraform.svg) |
-| [`@suss/contract-openapi`](../../packages/contract/openapi) | OpenAPI 3.x → behavioral summaries. | ![](../../.github/badges/coverage-contract-openapi.svg) |
-| [`@suss/contract-graphql`](../../packages/contract/graphql) | Two readers. A plain GraphQL SDL file becomes one resolver-kind summary per Query / Mutation / Subscription field. Committed `.graphql` / `.gql` operation documents become one client-kind summary per operation, with fragment spreads inlined, so a repo that keeps its queries in files pairs against its resolvers without suss having to trace any call site. | ![](../../.github/badges/coverage-contract-graphql.svg) |
-| [`@suss/contract-aws-apigateway`](../../packages/contract/aws-apigateway) | API Gateway resource semantics, REST / HTTP API configs → summaries with platform-injected transitions. | ![](../../.github/badges/coverage-contract-aws-apigateway.svg) |
-| [`@suss/contract-cloudformation`](../../packages/contract/cloudformation) | CloudFormation / SAM templates → summaries (delegates to contract-openapi + contract-aws-apigateway; also handles SQS event-source mappings + Lambda Environment). | ![](../../.github/badges/coverage-contract-cloudformation.svg) |
-| [`@suss/contract-serverless`](../../packages/contract/serverless) | Serverless Framework service files → summaries. The reader restates the functions block in SAM's forms and hands it to contract-cloudformation, so a route, a queue consumer or an environment contract comes out the same whichever manifest language declared it. `${self:}` resolves against the document; a deploy-time reference keeps its token. | ![](../../.github/badges/coverage-contract-serverless.svg) |
-| [`@suss/contract-wrangler`](../../packages/contract/wrangler) | A Cloudflare Worker's `wrangler.toml` or `wrangler.jsonc` → the Worker as a deployable with the configuration it is given (values included, so a store addressed through a variable resolves), plus a summary per KV namespace, R2 bucket, D1 database and Queues channel it is bound to. | ![](../../.github/badges/coverage-contract-wrangler.svg) |
-| [`@suss/contract-appsync`](../../packages/contract/appsync) | AppSync GraphQL schema + resolver mapping templates. | ![](../../.github/badges/coverage-contract-appsync.svg) |
-| [`@suss/contract-storybook`](../../packages/contract/storybook) | Storybook CSF3 stories → component contract summaries. | ![](../../.github/badges/coverage-contract-storybook.svg) |
-| [`@suss/contract-prisma`](../../packages/contract/prisma) | Prisma schema → storage provider summaries. | ![](../../.github/badges/coverage-contract-prisma.svg) |
-| [`@suss/contract-intent`](../../packages/contract/intent) | Team-authored intent specs (`*.intent` / `*.prd`) → intent summaries. | ![](../../.github/badges/coverage-contract-intent.svg) |
-
-## Manifests
-
-| Package | Description | Coverage |
-|---------|-------------|----------|
-| [`@suss/manifest-aws`](../../packages/manifest/aws) | Parse CloudFormation / SAM templates into a shared facts layer that contract readers and manifest-driven framework packs both consume. | ![](../../.github/badges/coverage-manifest-aws.svg) |
-
-Adding a framework is one pack file (~100-300 lines of declarative `PatternPack` configuration); adding a contract source is one reader. The IR is protocol-agnostic, so new boundary kinds slot in without architectural change. See [What a pack is](/packs/what-a-pack-is) for the model and [Write a pack](/packs/write-a-pack) for the how-to.
+| [`@suss/ir-core`](../../packages/ir-core) | Shared IR primitives, type shapes, boundary bindings + constructors, source locations, confidence. Base for `behavioral-ir` and `intent-ir`. | ![](../../.github/badges/coverage-ir-core.svg) |
+| [`@suss/behavioral-ir`](../../packages/behavioral-ir) | zod schemas, types, parsers, and generated [JSON Schema](../../packages/behavioral-ir/schema/behavioral-summary.schema.json). Install this to consume summaries. | ![](../../.github/badges/coverage-ir.svg) |
+| [`@suss/intent-ir`](../../packages/intent-ir) | Team-authored intent: system intent (what a boundary should do) + PRD outcome intent, paired against derived summaries. | ![](../../.github/badges/coverage-intent-ir.svg) |
+| [`@suss/datalog`](../../packages/datalog) | Small semi-naive Datalog evaluator with stratified negation; the rules engine behind derived program facts. | ![](../../.github/badges/coverage-datalog.svg) |
+| [`@suss/resolution`](../../packages/resolution) | Datalog rules for following a value back to the function it resolves to: a factory's argument, a re-exported wrapper, a closure three levels down. Language-neutral, so an adapter supplies facts and inherits the rules. | ![](../../.github/badges/coverage-resolution.svg) |
+| [`@suss/values`](../../packages/values) | Bounded evaluator over an abstract value domain: strings as pieces with named holes, sequences, records. An adapter supplies a lowering of its AST and a row table for its operators and library methods, and readers ask what an expression is worth instead of matching one spelling at a time. | ![](../../.github/badges/coverage-values.svg) |
+| [`@suss/extractor`](../../packages/extractor) | Assembly engine. It converts raw extracted structure into `BehavioralSummary`. | ![](../../.github/badges/coverage-extractor.svg) |
+| [`@suss/recognize`](../../packages/recognize) | Write a pack as data: a chain of named links, compiled to the recognizer hooks, run by any adapter that implements the executor ops. | ![](../../.github/badges/coverage-recognize.svg) |
+| [`@suss/packs`](../../packages/packs) | Every pack, one subpath each, so `@suss/packs/express` reaches the Express pack. The CLI resolves `-f` names to these on its own. | tested through each pack |
+| [`@suss/adapter-typescript`](../../packages/adapter/typescript) | TypeScript language adapter via ts-morph. | ![](../../.github/badges/coverage-typescript.svg) |
+| [`@suss/adapter-python`](../../packages/adapter/python) | Python language adapter: tree-sitter (WASM) parsing, a lexical binder, repo-scoped module resolution. v0, no path-engine work yet. | ![](../../.github/badges/coverage-python.svg) |
+| [`@suss/adapter-ruby`](../../packages/adapter/ruby) | Ruby language adapter: tree-sitter (WASM) parsing, a lexical binder over class/module nesting, Rails' constant-to-path convention for `mutation:` / `resolver:` wiring and controller discovery. v0, graphql-ruby and rails, no path-engine work yet. | ![](../../.github/badges/coverage-ruby.svg) |
+| [`@suss/checker`](../../packages/checker) | Pairwise cross-boundary checker (behavioral). | ![](../../.github/badges/coverage-checker.svg) |
+| [`@suss/checker-intent`](../../packages/checker-intent) | Pairs team-authored intent against derived code; emits `IntentFinding` coverage. | ![](../../.github/badges/coverage-checker-intent.svg) |
+| [`@suss/cli`](../../packages/cli) | CLI wrapper. | ![](../../.github/badges/coverage-cli.svg) |
+| [`@suss/mcp`](../../packages/mcp) | An MCP server over the CLI, so a coding agent can ask about a boundary while it works. Keeps its summaries current as files change. | ![](../../.github/badges/coverage-mcp.svg) |
+| [`@suss/sql`](../../packages/sql) | Reads what a SQL statement touches, for packs that meet a raw query. | ![](../../.github/badges/coverage-sql.svg) |
+| [`@suss/manifest-aws`](../../packages/manifest/aws) | Parses CloudFormation and SAM templates into a shared facts layer that the contract readers and the manifest-driven framework packs both read. | ![](../../.github/badges/coverage-manifest-aws.svg) |
+| [`@suss/terraform-aws`](../../packages/terraform/aws) | What AWS's Terraform provider declares, as data for that reader. | ![](../../.github/badges/coverage-terraform-aws.svg) |
+| [`@suss/terraform-gcp`](../../packages/terraform/gcp) | What Google Cloud's Terraform provider declares, as data for that reader. | ![](../../.github/badges/coverage-terraform-gcp.svg) |
