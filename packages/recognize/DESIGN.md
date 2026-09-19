@@ -412,14 +412,23 @@ A project keeps a table name in a module constant and interpolates it:
 ```ts
 const TABLE = "analytics-prod.core.dim_account";
 bigquery.query(`SELECT id, name FROM \`${TABLE}\``);
+
+const USERS = "users";
+pool.query(`SELECT id FROM ${USERS} WHERE id = $1`, [id]);
 ```
 
 No pack knows that hole is a table, and the hole is a name rather than a
 call, so `interpolating` cannot reach it. The compiled chain asks the
 evaluator what each hole comes to and passes that to `@suss/sql`, which
-writes a hole in only where the statement quoted it as a name.
-A value position stays a parameter, since a constant written there would
-parse as a column and land in the selector.
+writes a hole in where the statement writes a name: inside a quoted
+name, as BigQuery addresses a table, and straight after `FROM`, `JOIN`,
+`INTO`, `UPDATE` or `TABLE`, which is how Postgres code nearly always
+writes one.
+
+A hole anywhere else stays a parameter, since a constant written in a
+value position would parse as a column and land in the selector. A hole
+in a name position that nothing settled stays a parameter too, and the
+access is then dropped rather than recorded against a table called `$1`.
 
 ## The example every declaration states
 

@@ -166,15 +166,28 @@ export function sqlFromParts(
   let closing: string | null = null;
   return parts
     .map((part, index) => {
+      const names = namePosition(closing, parts[index - 1] ?? "");
       const inHole =
         index === 0
           ? null
           : (substitutions[index - 1] ??
-            (closing === null ? null : (settled[index - 1] ?? null)));
+            (names ? (settled[index - 1] ?? null) : null));
       closing = quoteAfter(closing, part);
       return index === 0 ? part : `${inHole ?? `$${index}`}${part}`;
     })
     .join("");
+}
+
+/**
+ * The words a statement writes a table's name after, and nothing else.
+ * Postgres code leaves a table unquoted nearly every time, so the quote
+ * alone would miss the commonest way a project interpolates one.
+ */
+const TABLE_KEYWORD = /\b(?:from|join|into|update|table)\s+$/i;
+
+/** Whether the statement writes a name where this hole goes. */
+function namePosition(closing: string | null, before: string): boolean {
+  return closing !== null || TABLE_KEYWORD.test(before);
 }
 
 /** What closes a quoted name, by the character that opened it. */

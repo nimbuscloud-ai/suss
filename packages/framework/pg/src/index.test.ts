@@ -165,6 +165,23 @@ describe("a query on a node-postgres client", () => {
     expect(storageOf(effects[0]).semantics.container).toBe("users");
   });
 
+  it("reads a module constant written as the table without quotes", () => {
+    const effects = effectsIn(`
+      ${POOL}
+      const USERS = "users";
+      export async function find(id: string) {
+        return pool.query(\`SELECT id, email FROM \${USERS} WHERE id = $1\`, [id]);
+      }
+    `);
+
+    const { semantics, interaction } = storageOf(effects[0]);
+    expect(semantics.container).toBe("users");
+    expect(interaction).toMatchObject({
+      fields: ["id", "email"],
+      selector: ["id"],
+    });
+  });
+
   it("says nothing about a statement whose table nothing settles", () => {
     expect(
       effectsIn(`

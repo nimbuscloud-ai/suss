@@ -293,6 +293,54 @@ describe("a hole the source settled", () => {
   });
 });
 
+describe("a hole the statement writes a table name into", () => {
+  it("reads an unquoted table after FROM", () => {
+    const sql = sqlFromParts(
+      ["SELECT id FROM ", " WHERE id = $1"],
+      [],
+      ["users"],
+    );
+
+    expect(sql).toBe("SELECT id FROM users WHERE id = $1");
+    expect(readSqlAccess(sql)[0]).toMatchObject({
+      table: "users",
+      kind: "read",
+      fields: ["id"],
+    });
+  });
+
+  it("reads the second table of a join out of a hole after JOIN", () => {
+    const sql = sqlFromParts(
+      ["SELECT u.id, o.total FROM users u JOIN ", " o ON o.user_id = u.id"],
+      [],
+      ["orders"],
+    );
+
+    expect(readSqlAccess(sql).map((access) => access.table)).toEqual([
+      "users",
+      "orders",
+    ]);
+  });
+
+  it("leaves a hole after WHERE the parameter it was", () => {
+    const sql = sqlFromParts(
+      ["SELECT id FROM users WHERE tier = ", ""],
+      [],
+      ["gold"],
+    );
+
+    expect(sql).toBe("SELECT id FROM users WHERE tier = $1");
+    expect(readSqlAccess(sql)[0]?.selector).toEqual(["tier"]);
+  });
+
+  it("says nothing where the table after FROM settled nothing", () => {
+    const sql = sqlFromParts(["SELECT id FROM ", ""], [], []);
+
+    expect(sql).toBe("SELECT id FROM $1");
+    expect(readSqlAccess(sql)).toEqual([]);
+  });
+});
+
 describe("a table name a caller read off an argument", () => {
   it("splits it the way a table in a statement is split", () => {
     expect(splitQualifiedTable("analytics-prod.core.dim_account")).toEqual({

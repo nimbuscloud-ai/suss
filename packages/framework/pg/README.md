@@ -46,10 +46,11 @@ A statement built from a template reads too, when the source settles what goes i
 
 ```ts
 const USERS_TABLE = "users";
+await pool.query(`SELECT id FROM ${USERS_TABLE} WHERE id = $1`, [id]);
 await pool.query(`SELECT id FROM "${USERS_TABLE}"`);
 ```
 
-The hole is written inside a quoted name, so it becomes part of the table. A hole in a value position stays a parameter, since a constant written there would parse as a column and land in the selector.
+Both holes are where the statement writes a name, straight after `FROM` in the first and inside a quoted name in the second, so what the source settled becomes the table. A hole anywhere else stays a parameter, since a constant written in a value position would parse as a column and land in the selector.
 
 A query built with `pg-template-tag` reads as well, because the text of a tagged template comes back through the tag:
 

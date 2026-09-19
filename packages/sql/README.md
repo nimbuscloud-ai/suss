@@ -38,7 +38,9 @@ readSqlAccess("SELECT u.email, o.total FROM users u JOIN orders o ON o.user_id =
 
 A query written as a tagged template becomes readable through `sqlFromParts`, which writes each interpolation as a parameter. What a query interpolates is a value nearly every time, and a parameter is how the statement would supply one anyway.
 
-Two things override that. A caller who knows a hole is a table passes it in `substitutions`, which is how a Drizzle query that interpolates a schema object reaches the statement as a table name. And a caller who ran the source's own evaluator over each hole passes the results in `settled`, which are used only where the statement wrote the hole inside a quoted name:
+Two things override that. A caller who knows a hole is a table passes it in `substitutions`, which is how a Drizzle query that interpolates a schema object reaches the statement as a table name. And a caller who ran the source's own evaluator over each hole passes the results in `settled`, which are used where the statement writes a name.
+
+There are two of those places. One is inside a quoted name, which is how BigQuery addresses a table:
 
 ```ts
 // `SELECT id FROM \`${TABLE}\`` with TABLE = "analytics.core.dim_account"
@@ -46,7 +48,15 @@ sqlFromParts(["SELECT id FROM `", "`"], [], ["analytics.core.dim_account"]);
 // SELECT id FROM `analytics.core.dim_account`
 ```
 
-A hole in a value position is left alone even when the evaluator settled it. `WHERE tier = ${TIER}` with `TIER = "gold"` would parse as a column called `gold` and put it in the selector, which is worse than the parameter the reader would otherwise see. Inside a quoted name there is no such ambiguity: whatever the hole came to is part of the name.
+The other is straight after `FROM`, `JOIN`, `INTO`, `UPDATE` or `TABLE`, in any case. Postgres code leaves the table unquoted nearly every time, so the quote alone would miss the commonest way a project interpolates one:
+
+```ts
+// `SELECT id FROM ${TABLE} WHERE id = $1` with TABLE = "users"
+sqlFromParts(["SELECT id FROM ", " WHERE id = $1"], [], ["users"]);
+// SELECT id FROM users WHERE id = $1
+```
+
+A hole anywhere else is left alone even when the evaluator settled it. `WHERE tier = ${TIER}` with `TIER = "gold"` would parse as a column called `gold` and put it in the selector, which is worse than the parameter the reader would otherwise see. Where the statement writes a name there is no such ambiguity: whatever the hole came to is part of the name.
 
 A part of a name nothing settled stays a parameter, and the qualifier is then read from the table outward and stops there. The part beside the table is the one a scope comes from, so a project read as though it were a dataset would place the access somewhere it never went:
 
