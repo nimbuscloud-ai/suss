@@ -633,7 +633,7 @@
                 },
                 "scope": {
                   "default": "default",
-                  "description": "The ORM, schema or deployment scope the container sits in. A setup with one database uses default.",
+                  "description": "The ORM, schema or deployment scope the container is in. A setup with one database uses default.",
                   "type": "string"
                 },
                 "container": {

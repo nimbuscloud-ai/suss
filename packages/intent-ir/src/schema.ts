@@ -278,7 +278,7 @@ const StorageBoundarySchema = z.strictObject({
   scope: StorageSemanticsSchema.shape.scope
     .default("default")
     .describe(
-      "The ORM, schema or deployment scope the container sits in. A setup with one database uses default.",
+      "The ORM, schema or deployment scope the container is in. A setup with one database uses default.",
     ),
   container: StorageSemanticsSchema.shape.container
     .default(null)

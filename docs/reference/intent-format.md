@@ -5,9 +5,9 @@ description: The two kinds of intent document, field by field, and the JSON Sche
 
 # Intent format
 
-An intent document is a file your team writes and commits, saying what a piece of the system should do. `suss check --intent <dir>` reads every `*.intent.yaml` and `*.prd.yaml` under that directory and compares each one against the summaries of what the code does. `.yml` and `.json` work as well, and the `kind` at the top of a file decides which shape it has, not the file name.
+An intent document is a file your team writes and commits, saying what a piece of the system should do. `suss check --intent <dir>` reads every `*.intent.yaml` and `*.prd.yaml` under that directory and compares each one against the summaries of what the code does. `.yml` and `.json` work as well, and the `kind` at the top of a file decides which shape it has, whatever the file is called.
 
-There are two kinds. Boundary intent (`kind: boundary`) says what one boundary should do: every outcome it can produce, what each one turns on, and what each one sends back or does. An engineer writes it, and the checker compares it against the code. A PRD (`kind: prd`) says what should happen for the person using the feature, as scenarios in that person's terms. A scenario can link to an outcome a boundary document declares, which is what ties the words to the code.
+There are two kinds. Boundary intent (`kind: boundary`) says what one boundary should do: every outcome it can produce, what each one turns on, and what each one sends back or does. An engineer writes it, and the checker compares it against the code. A PRD (`kind: prd`) says what should happen for the person using the feature, as scenarios in that person's terms. A scenario can link to an outcome a boundary document declares, and that link ties the words to the code.
 
 [Check against your intent](/guides/check-against-intent) walks through writing both from a codebase that already exists, and [the findings catalog](/reference/findings#intent-findings) says what the checker reports when the two disagree.
 
@@ -23,7 +23,7 @@ There are two kinds. Boundary intent (`kind: boundary`) says what one boundary s
 | `boundary` | yes | Which boundary in the code the document is about. |
 | `transitions` | yes | Every outcome the boundary can produce, at least one. |
 
-Nothing else can appear at the top level. A key suss does not recognize stops the run, so `transition:` written for `transitions:` is reported instead of being dropped in silence.
+Nothing else can appear at the top level. Write `transition:` for `transitions:` and suss reports the key and stops. The same goes inside a transition and inside a scenario.
 
 Here is a whole document, the worked REST example from `design/proposals/intent-layer-examples/fastify-users`:
 
@@ -73,7 +73,7 @@ transitions:
 
 `semantics` says which sort of boundary this is, and the rest of the block follows from it. A GraphQL field, a runtime-config read and a metric have no block yet.
 
-A block that leaves out what the checker pairs on is still valid. The checker reports it as `unkeyableBoundary` and puts it under the unchecked count, so intent you wrote ahead of the code is a valid state to be in.
+A block can leave out what the checker pairs on. The checker reports it as `unkeyableBoundary` and puts it under the unchecked count, so you can write intent ahead of the code.
 
 #### `semantics: rest`
 
@@ -114,7 +114,7 @@ The checker pairs a function-call boundary on `package` and `exportPath`. A docu
 |---|---|---|
 | `semantics` | yes | `storage`. |
 | `storageSystem` | yes | Which store this is: `postgresql`, `aws.dynamodb`, `s3`. |
-| `scope` | no | The ORM, schema or deployment scope the container is in. Defaults to `default`. |
+| `scope` | no | The ORM, schema or deployment scope the container is in. A setup with one database uses `default`, which is also the default value. |
 | `container` | no | The table, bucket, collection or index. Defaults to null. |
 | `accessPath` | no | A secondary way into the container, such as a DynamoDB index or an Elasticsearch alias. Defaults to null. |
 | `receives` | no | The fields the access is handed. |
@@ -165,7 +165,7 @@ Each field takes:
 | `items` | no | The shape of an element, when `type` is `array`. |
 | `properties` | no | The fields under it, when `type` is `object`. |
 
-Naming a field is a complete declaration on its own, so `consumer: {}` says the field is there and says nothing more about it. The block lists the fields you want checked, and it is never a full description of the input: a field the code reads that the block leaves out is reported at info.
+Naming a field is a complete declaration on its own, so `consumer: {}` says the field is there and says nothing more about it. The block lists the fields you want checked, and it can leave the rest out. A field the code reads that the block does not list is reported at info.
 
 ### Transitions
 
@@ -184,7 +184,7 @@ A transition ends one way, so it takes at most one of `response`, `returns` and 
 
 `response` takes a `status` between 100 and 599, required, and an optional `body`. `returns` takes an optional `body`. `throws` takes an optional `errorType`, the name of the error class.
 
-A `body` takes `type`, plus `items` when it is an array and `properties` when it is an object. `properties:` with no `type:` above it is shorthand for an object. `required` inside a body shape is the list of property names that have to be there, which is a different thing from the `required` boolean on a `receives` field.
+A `body` takes `type`, plus `items` when it is an array and `properties` when it is an object. `properties:` with no `type:` above it is shorthand for an object. `required` inside a body shape is the list of property names that have to be there. The `required` on a `receives` field is a boolean, and the two are unrelated.
 
 #### `when`
 
@@ -209,7 +209,7 @@ when:
 
 A clause says at most one of `finds`, `is`, `equals` and `has`. A guard that maps to none of this stays the sentence you wrote, and a whole `when` written as one string is valid.
 
-A fall-through branch states its own condition rather than pointing at the branches above it, because inserting a transition over it would otherwise change what it claims.
+A fall-through branch states its own condition. Pointing at the branches above it would change what the branch claims as soon as somebody inserts a transition over it.
 
 #### `results`
 
@@ -224,11 +224,11 @@ results:
 
 | Key | Required | What it means |
 |---|---|---|
-| `reads`, `writes`, `invokes` | one of the three | The boundary the outcome touches, written the string every report prints and `suss ask` takes. |
+| `reads`, `writes`, `invokes` | one of the three | The boundary the outcome touches, written the way every report prints it and `suss ask` takes it. |
 | `fields` | no | The columns the access touches. |
 | `by` | no | What the access picks the item out by. One name or a list of them. |
 
-`suss ask "what writes aws.dynamodb:Invoices"` is the question and a `results` line is the assertion, spelled the same way. The checker asks that the access cover every column the line stated, so "the customer's contact details are erased" stops being satisfied by any write at all to that table.
+`suss ask "what writes aws.dynamodb:Invoices"` is the question and a `results` line is the assertion, spelled the same way. Where a line has a `fields` list, the checker requires that the access cover every column on it.
 
 ## A PRD
 
@@ -286,7 +286,7 @@ link:
   - order-intake.queued-for-processing
 ```
 
-A scenario with no `link` is a valid state to be in. The words read on their own, and nothing has tied them to an outcome yet. The checker reports that as `unlinkedScenario` at info. A link to an outcome nothing declares is `danglingScenarioLink` at warning, and a name two boundary documents share is `ambiguousScenarioLink`, also at warning.
+A scenario can have no `link`. The words read on their own, and nothing has tied them to an outcome yet. The checker reports that as `unlinkedScenario` at info. A link to an outcome nothing declares is `danglingScenarioLink` at warning. A link to a name that two boundary documents share is `ambiguousScenarioLink`, also at warning.
 
 ## Where a document came from
 
@@ -298,7 +298,7 @@ A scenario with no `link` is a valid state to be in. The words read on their own
 | `inferred` | `suss infer` drafted it from the code and nobody has been through it. |
 | `inferred, curated` | `suss infer` drafted it and somebody has been through it. |
 
-The checker reads `source` to decide how loudly to report. A finding against bare `inferred` intent is downgraded one level, because the declaration there is still a guess read off the code rather than something a person confirmed. Curating restores the full severity.
+The checker reads `source` to decide how loudly to report. A finding against bare `inferred` intent is downgraded one level, because nobody has confirmed the declaration yet. Curating restores the full severity.
 
 Curating a boundary document means writing the `purpose` and `audience` that `suss infer` left blank, renaming the outcome ids to what your team calls them, and setting `source` to `"inferred, curated"`. Curating a PRD means writing the `when` and `expect` of every scenario. A draft with a blank still in it does not satisfy the schema, so a run over the folder refuses it and says which files are waiting.
 
@@ -320,6 +320,4 @@ audience: web-client
 
 Every field has a description in the schema, so hovering over one says what it means, and completion offers the keys the document kind takes.
 
-The schema is generated from the authoring side of the zod schemas, so a field with a default is optional in it, the way it is for somebody writing the file by hand.
-
-There is one thing suss accepts that the schema rejects. A bare `returns:` with nothing under it parses as null in YAML, and suss reads that as an outcome with no body, while the schema wants an object there. Write `returns: {}` and the schema takes it too.
+The schema is generated from the authoring side of the zod schemas, so a field with a default is optional in it, the way it is for somebody writing the file by hand. A test in `@suss/intent-ir` runs both the schema and the parser over every intent document in this repository and fails when the two disagree.
