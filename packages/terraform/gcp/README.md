@@ -25,12 +25,51 @@ const summaries = terraformFileToSummaries("infra/terraform/monitoring", {
 | --- | --- |
 | `google_storage_bucket` | a store whose objects have no fields to compare against, under the name code passes to `bucket()` |
 | `google_redis_instance` | a Redis store with no container to pair on; see below |
+| `google_bigquery_dataset` | a BigQuery store; the dataset is a namespace rather than something a query addresses |
+| `google_bigquery_table` | a BigQuery table in that dataset, with every column its `schema` states |
+| `google_sql_database_instance` | a PostgreSQL or MySQL store, whichever its `database_version` picks |
+| `google_spanner_database` | a Spanner store with no container to pair on |
+| `google_firestore_database` | a Firestore store, when its `type` is `FIRESTORE_NATIVE` |
+| `google_bigtable_table` | a Bigtable table, under the id code passes to `table()` |
+| `google_pubsub_topic` | a channel |
+| `google_pubsub_subscription` | a channel of its own, since a subscriber asks for the subscription |
 | `google_logging_metric` | a metric, identified by the type Cloud Monitoring gives it, `logging.googleapis.com/user/<name>` |
 | `google_monitoring_alert_policy` | one consumer of a metric per `condition_threshold`, identified by the `metric.type` its filter states |
 
 Everything else a configuration declares is skipped.
 
-A bucket pairs by name: `@suss/framework-gcs` records the bucket an access reaches, and the `name` attribute is the same string, so `suss check` compares the two sides. A Memorystore instance does not: code addresses Redis by key namespace, no attribute of the instance declares one, and a match on the instance's own name would be a coincidence, so the summary declares the store with no container name and the storage check claims no access for it. The `@suss/terraform-aws` README walks through the same decision for ElastiCache.
+A bucket pairs by name: `@suss/framework-gcs` records the bucket an access reaches, and the `name` attribute is the same string, so `suss check` compares the two sides. A Memorystore instance does not: code addresses Redis by key namespace, no attribute of the instance declares one, and a match on the instance's own name would be a coincidence, so the summary declares the store with no container name and the storage check claims no access for it. The `@suss/terraform-aws` README walks through the same decision for ElastiCache. Spanner, Firestore and Cloud SQL are the same case: the tables or collections are inside the database, and nothing on the resource lists them.
+
+## A BigQuery table states its columns
+
+A query against a table is a read of named columns, so the table is the one Google resource here with a field contract:
+
+```hcl
+resource "google_bigquery_dataset" "analytics" {
+  dataset_id = "analytics"
+  location   = "US"
+}
+
+resource "google_bigquery_table" "orders" {
+  dataset_id = google_bigquery_dataset.analytics.dataset_id
+  table_id   = "orders"
+
+  schema = jsonencode([
+    { name = "order_id", type = "STRING", mode = "REQUIRED" },
+    { name = "placed_at", type = "TIMESTAMP", mode = "NULLABLE" },
+  ])
+}
+```
+
+A table is always addressed through its dataset, so two tables called `orders` in two datasets are two containers, and the dataset goes on the boundary as its namespace. The reference to the dataset resource resolves, so the table lands under `analytics` whether the configuration writes the string or points at the resource that states it.
+
+A schema written in the configuration is every column the table has, so the contract says `exhaustive` and the checker can call a column it does not declare unknown. `mode` says whether a column is always set: `REQUIRED` and `REPEATED` are, and everything else is nullable, which is what BigQuery does with a mode nobody wrote. A schema a file or a variable supplies is not written down anywhere the reader can see, so the table records no columns and says `none` rather than guessing.
+
+Both spellings of the schema are read, the literal above and a heredoc of JSON, because `jsonencode` over an HCL value and a JSON string end up the same once deployed.
+
+## What Pub/Sub pairs with
+
+Nothing yet: no code pack records a publish or a subscribe on Pub/Sub, so a topic and a subscription show up as declared channels nothing paired with. They are separate channels on purpose. A publisher asks for the topic and a subscriber asks for the subscription, so those are the two strings code spells, and pairing them with each other would report the wrong side.
 
 ## The pair the provider refuses
 
@@ -70,6 +109,10 @@ A condition that states one of the percentile aligners is left alone, as is a co
 - **A metric the platform publishes**, `run.googleapis.com/request_latencies` and everything like it, states its value type in Google's documentation rather than in any configuration. Judging a condition on one of those needs a catalog this does not ship.
 - **A `BOOL`, `STRING`, or `MONEY` metric** is left out of the value-type table, because none of suss's words describe one, and a metric this pack says nothing about is compared against nothing.
 - **`for_each` and `count`** state one block for many resources, and the reader takes the block as written.
+- **`google_sql_database`**, the named database inside a Cloud SQL instance, states no engine of its own. Which store it is lives on the instance its `instance` attribute points at, and an entry has no way to read an attribute through a reference to another resource, so the database goes unread and the instance is what declares the store.
+- **`google_monitoring_uptime_check_config`** is a probe rather than a reading: it makes its own requests on a schedule and publishes a result, so it never reads a metric type back and `checkMetric` has nothing to compare. It would fit a kind for a synthetic check, which suss does not have.
+- **A Spanner database's `ddl`** statements state the tables, and reading SQL out of a Terraform attribute is a job for the SQL readers rather than for this pack.
+- **A Firestore database in Datastore mode** speaks a different API from the Firestore one, so the entry's gate turns it down rather than reading it as something it may not be.
 
 ## How the identity is built
 
@@ -78,3 +121,7 @@ Cloud Monitoring puts every metric a project defines for itself under `logging.g
 ## Where it fits in suss
 
 Depends on `@suss/contract-terraform` for the shape of an entry and on `@suss/behavioral-ir` for the words a translation table is allowed to use. The reader knows nothing about Google, and neither does the checker: Google's vocabulary starts and stops in the entries here.
+
+## More
+
+- [Which provider versions the entries describe](./DESIGN.md), and the pages they came from
