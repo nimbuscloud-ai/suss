@@ -117,6 +117,10 @@ export default defineConfig({
   lastUpdated: true,
 
   head: [
+    [
+      "link",
+      { rel: "icon", type: "image/svg+xml", href: `${BASE}favicon.svg` },
+    ],
     ["link", { rel: "icon", href: `${BASE}favicon.ico` }],
     [
       "meta",
@@ -169,6 +173,10 @@ export default defineConfig({
   },
 
   themeConfig: {
+    // VitePress runs logo through withBase itself, so this stays
+    // base-relative rather than interpolating BASE.
+    logo: "/mark.svg",
+
     // Top-level nav stays small on purpose, most of the site
     // lives in the sidebar.
     nav: [
