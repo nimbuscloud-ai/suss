@@ -1154,3 +1154,153 @@ describe("drafted effects", () => {
     expect(parsed.transitions[0].results).toBeUndefined();
   });
 });
+
+const checkPairBinding: BoundaryBinding = {
+  transport: "in-process",
+  semantics: {
+    name: "function-call",
+    package: "@suss/checker",
+    exportPath: ["checkPair"],
+  },
+  recognition: "test",
+};
+
+/** A library export, which is how a package-exports run records one. */
+function libraryExport(
+  name: string,
+  inputs: BehavioralSummary["inputs"],
+  transitions: Transition[],
+  reads: Array<{ input: string; path: string[] }>,
+): BehavioralSummary {
+  return {
+    kind: "library",
+    location: {
+      file: "src/index.ts",
+      range: { start: 1, end: 9 },
+      exportName: name,
+    },
+    identity: { name, exportPath: null, boundaryBinding: checkPairBinding },
+    inputs,
+    transitions,
+    gaps: [],
+    confidence: { source: "inferred_static", level: "high" },
+    inputReads: reads,
+  };
+}
+
+function param(
+  name: string,
+  role: string,
+  position: number,
+): BehavioralSummary["inputs"][number] {
+  return { type: "parameter", name, position, role, shape: null };
+}
+
+describe("drafted receives", () => {
+  it("writes every parameter the unit reads, under the name the caller uses", () => {
+    const { parsed } = firstDocOf([
+      libraryExport(
+        "checkPair",
+        [param("provider", "provider", 0), param("c", "consumer", 1)],
+        [returnsWriting("t-return")],
+        [
+          { input: "provider", path: [] },
+          { input: "c", path: ["identity"] },
+        ],
+      ),
+    ]);
+
+    expect(parsed.boundary.receives).toEqual({
+      provider: {},
+      "consumer.identity": {},
+    });
+  });
+
+  it("marks a field required when a branch rejects on it being missing", () => {
+    const rejecting: Transition = {
+      id: "t-throw",
+      conditions: [
+        {
+          type: "truthinessCheck",
+          subject: { type: "input", inputRef: "provider", path: [] },
+          negated: true,
+        },
+      ],
+      output: { type: "throw", exceptionType: "TypeError", message: null },
+      effects: [],
+      location: { start: 1, end: 2 },
+      isDefault: false,
+    };
+    const { parsed } = firstDocOf([
+      libraryExport(
+        "checkPair",
+        [param("provider", "provider", 0), param("c", "consumer", 1)],
+        [rejecting, returnsWriting("t-return")],
+        [
+          { input: "provider", path: [] },
+          { input: "c", path: [] },
+        ],
+      ),
+    ]);
+
+    expect(parsed.boundary.receives).toEqual({
+      provider: { required: true },
+      consumer: {},
+    });
+  });
+
+  it("takes the field's shape from what the extractor said the branch expects", () => {
+    const withShape: Transition = {
+      ...returnsWriting("t-return"),
+      expectedInput: {
+        type: "record",
+        properties: { options: { type: "record", properties: {} } },
+      },
+    };
+    const { parsed } = firstDocOf([
+      libraryExport(
+        "checkPair",
+        [param("o", "options", 0)],
+        [withShape],
+        [{ input: "o", path: [] }],
+      ),
+    ]);
+
+    expect(parsed.boundary.receives).toEqual({
+      options: { type: "object", properties: {} },
+    });
+  });
+
+  it("writes no block for a REST boundary, whose sections are not mapped yet", () => {
+    const { parsed } = firstDocOf([
+      {
+        ...restProvider("GET", "/users/:id", [found]),
+        inputs: [param("req", "request", 0)],
+        inputReads: [{ input: "req", path: ["params", "id"] }],
+      },
+    ]);
+
+    expect(parsed.boundary.receives).toBeUndefined();
+  });
+
+  it("writes no block when the unit reads nothing off what it was handed", () => {
+    const { parsed } = firstDocOf([
+      libraryExport("checkPair", [], [returnsWriting("t-return")], []),
+    ]);
+
+    expect(parsed.boundary.receives).toBeUndefined();
+  });
+
+  it("stays a document the reader takes once the blanks are filled", () => {
+    const { doc } = firstDocOf([
+      libraryExport(
+        "checkPair",
+        [param("provider", "provider", 0)],
+        [returnsWriting("t-return")],
+        [{ input: "provider", path: [] }],
+      ),
+    ]);
+
+    expect(() => loadIntentDoc(curated(doc.yaml))).not.toThrow();
+  });
+});
