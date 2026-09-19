@@ -41,6 +41,7 @@ import {
   relationsOf,
   summaryRef,
   withDeclaredDelivery,
+  wrappersAround,
 } from "@suss/behavioral-ir";
 import {
   applySuppressionsToFindings,
@@ -182,6 +183,7 @@ export function checkIntentAgreement(
   // it back has to put the same ones in. `deploymentOf` is the step
   // the drafter and the behavioural checker both go through.
   const deploymentOfUnit = deploymentOf(code);
+  const wrappersOfUnit = wrappersAround(code);
 
   for (const intent of intents) {
     if (intent.kind === "prd") {
@@ -194,6 +196,7 @@ export function checkIntentAgreement(
       intent,
       codeByBoundary,
       deploymentOfUnit,
+      wrappersOfUnit,
     );
     findings.push(...withProvenance(result.findings, intent.source));
     checked.push(...result.checked);
@@ -259,6 +262,7 @@ function checkBoundaryIntent(
   intent: BoundaryIntentSummary,
   codeByBoundary: Map<string, BehavioralSummary[]>,
   deploymentOfUnit: (code: BehavioralSummary) => Deployment,
+  wrappersOfUnit: (code: BehavioralSummary) => BehavioralSummary[],
 ): IntentPassResult {
   const key = pairingKey(intent.boundary);
   if (key === null) {
@@ -323,7 +327,13 @@ function checkBoundaryIntent(
   const findings: IntentFinding[] = [];
   for (const impl of impls) {
     findings.push(
-      ...compareIntentToImpl(intent, impl, label, deploymentOfUnit(impl)),
+      ...compareIntentToImpl(
+        intent,
+        impl,
+        label,
+        deploymentOfUnit(impl),
+        wrappersOfUnit(impl),
+      ),
     );
   }
   return {
@@ -611,6 +621,7 @@ function compareIntentToImpl(
   impl: BehavioralSummary,
   boundary: string,
   deployment: Deployment,
+  wrappers: readonly BehavioralSummary[],
 ): IntentFinding[] {
   const findings: IntentFinding[] = [];
   const ref = codeRef(impl);
@@ -811,7 +822,9 @@ function compareIntentToImpl(
     undeclared.push({ finding, boundary: made.label, does: made.does });
   }
 
-  findings.push(...checkReceivesBlock({ intent, impl, boundary, code: ref }));
+  findings.push(
+    ...checkReceivesBlock({ intent, impl, wrappers, boundary, code: ref }),
+  );
 
   return foldRenamedBoundaries(
     intent,

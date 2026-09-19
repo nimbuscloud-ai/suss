@@ -31,6 +31,7 @@ import {
   nameReference,
   relationsOf,
   withDeclaredDelivery,
+  wrappersAround,
 } from "@suss/behavioral-ir";
 import { summaryWithDefinitionsInlined } from "@suss/checker";
 import { whatWouldKeyIt } from "@suss/checker-intent";
@@ -575,6 +576,7 @@ function draftDocument(
   names: Set<string>,
   from: string,
   deploymentOfUnit: (code: BehavioralSummary) => Deployment,
+  wrappersOf: (unit: BehavioralSummary) => BehavioralSummary[],
 ): DraftedIntent | UndraftedBoundary {
   const transitions = group.summaries.flatMap((s) => s.transitions);
   const outcomeIds = new Set<string>();
@@ -605,7 +607,7 @@ function draftDocument(
   }
 
   const name = unique(slug(group.key) || "boundary", names);
-  const receives = draftedReceives(group.summaries, group.binding);
+  const receives = draftedReceives(group.summaries, group.binding, wrappersOf);
   const doc = {
     kind: "boundary" as const,
     name,
@@ -679,9 +681,12 @@ export function intentDraftResult(
   // them, so a name only a template settles is settled the same way
   // here as it is when the checker reads the document back.
   const deployment = deploymentOf(summaries);
+  // A route's middleware reads the request too, and the checker reads
+  // the document back against both, so the draft is written from both.
+  const wrappersOf = wrappersAround(summaries);
 
   for (const group of groups) {
-    const result = draftDocument(group, names, from, deployment);
+    const result = draftDocument(group, names, from, deployment, wrappersOf);
     if ("file" in result) {
       drafted.push(result);
       continue;

@@ -109,6 +109,19 @@ export function awsLambdaFramework(
       ],
     },
 
+    // A proxy integration hands the handler API Gateway's event. The
+    // body arrives on it as a string the handler parses, so a read of
+    // it says the body was taken whole and never which field.
+    requestSpelling: {
+      headers: { path: ["event", "headers"], saysWhichField: true },
+      query: {
+        path: ["event", "queryStringParameters"],
+        saysWhichField: true,
+      },
+      params: { path: ["event", "pathParameters"], saysWhichField: true },
+      body: { path: ["event", "body"], saysWhichField: false },
+    },
+
     // The powertools read their configuration from inside node_modules,
     // so a template that declares these has a reader no walk ever sees.
     libraryEnvVars: [

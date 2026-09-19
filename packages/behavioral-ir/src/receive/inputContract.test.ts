@@ -4,9 +4,11 @@ import {
   functionCallBinding,
   messageBusBinding,
   restBinding,
+  storageBinding,
 } from "@suss/ir-core";
 
 import {
+  boundaryInputPathOf,
   boundaryInputReads,
   type CarriesPayload,
   carriesPayloadFor,
@@ -380,7 +382,7 @@ describe("boundaryInputReads", () => {
     expect(result).toEqual({ read: false, reason: "platform-envelope" });
   });
 
-  it("declines for REST, whose sections no framework has spelled out here", () => {
+  it("declines for a REST route whose pack never said how it spells a request", () => {
     const result = boundaryInputReads(
       receiver({
         inputs: [parameter("req", "request")],
@@ -394,6 +396,226 @@ describe("boundaryInputReads", () => {
       }),
     );
     expect(result).toEqual({ read: false, reason: "unmapped-protocol" });
+  });
+});
+
+const GET_INVOICES = restBinding({
+  transport: "http",
+  method: "GET",
+  path: "/invoices/:id",
+  recognition: "express",
+});
+
+/** Where an Express handler reads each part of the request. */
+const EXPRESS_SPELLING = {
+  headers: { path: ["request", "headers"], saysWhichField: true },
+  query: { path: ["request", "query"], saysWhichField: true },
+  params: { path: ["request", "params"], saysWhichField: true },
+  body: { path: ["request", "body"], saysWhichField: true },
+};
+
+function route(
+  reads: Array<{ input: string; path: string[] }>,
+  spelling: unknown = EXPRESS_SPELLING,
+): BehavioralSummary {
+  return {
+    ...receiver({
+      inputs: [
+        parameter("req", "request"),
+        parameter("res", "response", 1),
+        parameter("next", "next", 2),
+      ],
+      reads,
+    }),
+    metadata: { requestSpelling: spelling },
+  };
+}
+
+describe("boundaryInputReads on a REST route", () => {
+  it("writes a read as the section the author declares it under", () => {
+    const result = boundaryInputReads(
+      route([
+        { input: "req", path: ["headers", "x-tenant-id"] },
+        { input: "req", path: ["query", "dryRun"] },
+        { input: "req", path: ["params", "id"] },
+      ]),
+      GET_INVOICES,
+    );
+    expect(result).toEqual({
+      read: true,
+      reads: {
+        paths: [
+          ["headers", "x-tenant-id"],
+          ["query", "dryRun"],
+          ["params", "id"],
+        ],
+        rootedAtPayload: true,
+      },
+    });
+  });
+
+  it("drops a read that falls under no part of the request", () => {
+    const result = boundaryInputReads(
+      route([
+        { input: "req", path: ["user", "id"] },
+        { input: "res", path: ["json"] },
+        { input: "req", path: ["params", "id"] },
+      ]),
+      GET_INVOICES,
+    );
+    expect(result).toEqual({
+      read: true,
+      reads: { paths: [["params", "id"]], rootedAtPayload: true },
+    });
+  });
+
+  it("declines when nothing the route read is part of the request", () => {
+    const result = boundaryInputReads(
+      route([{ input: "res", path: ["json"] }]),
+      GET_INVOICES,
+    );
+    expect(result).toEqual({ read: false, reason: "no-reads" });
+  });
+
+  it("reads a section whole when the route handed it to a validator", () => {
+    const result = boundaryInputReads(
+      route([{ input: "req", path: ["body"] }]),
+      GET_INVOICES,
+    );
+    expect(result).toEqual({
+      read: true,
+      reads: { paths: [["body"]], rootedAtPayload: true },
+    });
+  });
+
+  it("takes the named read of a destructured section over the bare one", () => {
+    const result = boundaryInputReads(
+      route([
+        { input: "req", path: ["params"] },
+        { input: "req", path: ["params", "id"] },
+      ]),
+      GET_INVOICES,
+    );
+    expect(result).toEqual({
+      read: true,
+      reads: { paths: [["params", "id"]], rootedAtPayload: true },
+    });
+  });
+
+  it("stands down when a rest parameter could be taking anything else", () => {
+    const withRest: BehavioralSummary = {
+      ...receiver({
+        inputs: [parameter("args", "rest")],
+        reads: [{ input: "args", path: ["0", "headers"] }],
+      }),
+      metadata: { requestSpelling: EXPRESS_SPELLING },
+    };
+    expect(boundaryInputReads(withRest, GET_INVOICES)).toEqual({
+      read: false,
+      reason: "rest-parameter",
+    });
+  });
+
+  it("counts what the middleware around the route reads as the route's", () => {
+    const middleware = receiver({
+      inputs: [parameter("req", "request"), parameter("res", "response", 1)],
+      reads: [{ input: "req", path: ["headers", "x-tenant-id"] }],
+    });
+    const result = boundaryInputReads(
+      route([{ input: "req", path: ["params", "id"] }]),
+      GET_INVOICES,
+      [middleware],
+    );
+    expect(result).toEqual({
+      read: true,
+      reads: {
+        paths: [
+          ["params", "id"],
+          ["headers", "x-tenant-id"],
+        ],
+        rootedAtPayload: true,
+      },
+    });
+  });
+
+  it("compares a section whole when no read of it says which field", () => {
+    const hono = {
+      headers: { path: ["context", "req", "header"], saysWhichField: false },
+    };
+    const result = boundaryInputReads(
+      {
+        ...receiver({
+          inputs: [parameter("c", "context")],
+          reads: [{ input: "c", path: ["req", "header"] }],
+        }),
+        metadata: { requestSpelling: hono },
+      },
+      GET_INVOICES,
+    );
+    expect(result).toEqual({
+      read: true,
+      reads: { paths: [["headers"]], rootedAtPayload: true },
+    });
+  });
+});
+
+describe("boundaryInputPathOf", () => {
+  it("spells a guard on a header the way a read of it is spelled", () => {
+    const path = boundaryInputPathOf(
+      route([{ input: "req", path: ["headers", "x-tenant-id"] }]),
+      GET_INVOICES,
+      { type: "input", inputRef: "req", path: ["headers", "x-tenant-id"] },
+    );
+    expect(path).toEqual(["headers", "x-tenant-id"]);
+  });
+
+  it("gives nothing for a guard on something the request does not carry", () => {
+    const path = boundaryInputPathOf(route([]), GET_INVOICES, {
+      type: "input",
+      inputRef: "req",
+      path: ["user", "id"],
+    });
+    expect(path).toBeNull();
+  });
+
+  it("puts the parameter's role first on a function-call boundary", () => {
+    const path = boundaryInputPathOf(
+      receiver({ inputs: [parameter("c", "consumer")] }),
+      functionCallBinding({
+        transport: "in-process",
+        recognition: "code",
+        package: "@suss/checker",
+      }),
+      { type: "input", inputRef: "c", path: ["identity"] },
+    );
+    expect(path).toEqual(["consumer", "identity"]);
+  });
+
+  it("starts at the message body on a message-bus boundary", () => {
+    const path = boundaryInputPathOf(
+      receiver({ inputs: [parameter("event", "event")] }),
+      messageBusBinding({
+        recognition: "code",
+        messageBus: "aws_sqs",
+        channel: "orders",
+      }),
+      { type: "input", inputRef: "event", path: ["orderId"] },
+    );
+    expect(path).toEqual(["orderId"]);
+  });
+
+  it("gives nothing on a protocol that has not said how it spells a read", () => {
+    const path = boundaryInputPathOf(
+      receiver({ inputs: [parameter("row", "row")] }),
+      storageBinding({
+        recognition: "code",
+        storageSystem: "aws.dynamodb",
+        scope: "default",
+        container: "Invoices",
+      }),
+      { type: "input", inputRef: "row", path: ["id"] },
+    );
+    expect(path).toBeNull();
   });
 });
 

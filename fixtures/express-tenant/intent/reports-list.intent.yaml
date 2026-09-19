@@ -1,0 +1,28 @@
+kind: boundary
+
+name: reports-list
+purpose: GET /reports/:id lists the reports under one id.
+audience: web-client
+source: author
+
+boundary:
+  transport: http
+  semantics: rest
+  method: GET
+  path: /reports/:id
+  receives:
+    headers:
+      x-tenant-id: { type: string, required: true }
+    params:
+      id: { type: string, required: true }
+
+transitions:
+  - id: no-tenant
+    when: the request carries no tenant header
+    response:
+      status: 401
+
+  - id: listed
+    when: the caller named a tenant
+    response:
+      status: 200

@@ -612,5 +612,9 @@ export type BodyShape = z.infer<typeof BodyShapeSchema>;
 export type AuthoredInputField = z.infer<typeof InputFieldSchema>;
 /** One `receives` block as somebody writes it, before defaults are put in. */
 export type AuthoredReceives = Record<string, z.input<typeof InputFieldSchema>>;
+/** The same, in the four sections a REST boundary writes it under. */
+export type AuthoredRestReceives = NonNullable<
+  z.input<typeof RestReceivesSchema>
+>;
 export type IntentSource = z.infer<typeof IntentSourceSchema>;
 export type PrimitiveTypeName = z.infer<typeof PrimitiveTypeName>;

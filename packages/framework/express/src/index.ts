@@ -197,6 +197,15 @@ export function expressFramework(
         { position: 2, role: "next" },
       ],
     },
+
+    // Express puts all four parts on the request object, and a handler
+    // reads a field of each by name.
+    requestSpelling: {
+      headers: { path: ["request", "headers"], saysWhichField: true },
+      query: { path: ["request", "query"], saysWhichField: true },
+      params: { path: ["request", "params"], saysWhichField: true },
+      body: { path: ["request", "body"], saysWhichField: true },
+    },
   };
 }
 

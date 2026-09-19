@@ -9,6 +9,8 @@
   "context": "AWS Lambda: second parameter of the handler signature",
   "statusCode": "API Gateway: proxy response envelope field",
   "body": "API Gateway: proxy response envelope field",
+  "queryStringParameters": "API Gateway: proxy request event field with the query string",
+  "pathParameters": "API Gateway: proxy request event field with the path parameters",
   "batchItemFailures": "AWS Lambda: partial batch response field",
   "POWERTOOLS_": "@aws-lambda-powertools: env-var prefix the library's configuration reads",
   "s3": "AWS S3: message-bus technology behind a SAM S3 event",

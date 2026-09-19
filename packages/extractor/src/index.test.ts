@@ -222,6 +222,9 @@ describe("assembleSummary: optional metadata plumbing", () => {
       wrappers: [
         { file: "src/requireCaller.ts", name: "requireCaller", scope: "/v1/*" },
       ],
+      requestSpelling: {
+        headers: { path: ["request", "headers"], saysWhichField: true },
+      },
     };
 
     const summary = assembleSummary(raw);
@@ -245,6 +248,9 @@ describe("assembleSummary: optional metadata plumbing", () => {
       applied: [
         { file: "src/requireCaller.ts", name: "requireCaller", scope: "/v1/*" },
       ],
+    });
+    expect(summary.metadata?.requestSpelling).toEqual({
+      headers: { path: ["request", "headers"], saysWhichField: true },
     });
     const effect = summary.transitions[0].effects[0];
     expect(effect.type).toBe("invocation");

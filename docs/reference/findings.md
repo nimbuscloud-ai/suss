@@ -628,9 +628,11 @@ The intent's `receives` block declares a field, and no transition of the unit re
 [warning] fn:@suss/checker::checkPair: Intent "checker-check-pair" says fn:@suss/checker::checkPair receives consumer and needs it; checkPair never reads it.
 ```
 
-A read that goes deeper satisfies the declaration, and so does a read of the object the field belongs to: declaring `pair.provider` is satisfied by a unit that reads `pair` whole. The comparison is skipped altogether when the read set could be shorter than what the unit really reads, which is a rest parameter, a payload used whole, or a summary that recorded nothing. REST, storage and unit-invocation boundaries accept a block and compare nothing against it yet.
+A read that goes deeper satisfies the declaration, and so does a read of the object the field belongs to: declaring `pair.provider` is satisfied by a unit that reads `pair` whole. The comparison is skipped altogether when the read set could be shorter than what the unit really reads, which is a rest parameter, a payload used whole, or a summary that recorded nothing.
 
-**Legitimate when:** the field was written ahead of the code that will read it, or a middleware reads it before the unit sees it.
+On a REST route, what every wrapper registered around the route reads counts as what the route reads, so a header checked in middleware satisfies the declaration. A handler that passes the body to a validator has used it whole, and no declared body field is reported against it. Storage and unit-invocation boundaries accept a block and compare nothing against it yet.
+
+**Legitimate when:** the field was written ahead of the code that will read it.
 
 **A bug when:** the field was renamed on one side. The declaration says the caller must supply it and nothing uses it, so either the code stopped reading it or the document has the old name.
 
@@ -645,6 +647,8 @@ The unit reads a path off what it was handed that the `receives` block does not 
 ```
 
 Reported only when the doc has a `receives` block: a doc without one says nothing about the input, the same way a doc without `results` says nothing about effects. One finding per path, so a field read in three branches is one.
+
+On a REST route, a read under `body` is never reported when the block declares a body, since the shape is where the body gets described. Header names compare case-insensitively.
 
 Info rather than warning because a block lists the fields the author wanted checked and is never a full description of the input. A handler often reads a header for logging or tracing that no author would write down.
 
