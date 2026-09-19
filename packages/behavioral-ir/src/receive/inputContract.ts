@@ -13,12 +13,20 @@
  * rather than guess. The README lists every such case.
  */
 
+import { readRequestSpellingMetadata } from "../metadata.js";
+
 import type {
   BoundaryBinding,
   MessageBusTechnology,
   Semantics,
 } from "@suss/ir-core";
-import type { BehavioralSummary, Input, ValueRef } from "../index.js";
+import type {
+  BehavioralSummary,
+  Input,
+  RequestSectionSpelling,
+  RequestSpellingMetadata,
+  ValueRef,
+} from "../index.js";
 
 /** True when the sender's whole value arrives through this input. */
 export type CarriesPayload = (input: Input) => boolean;
@@ -279,29 +287,177 @@ export function carriesPayloadFor(
   return PAYLOAD_INPUT[binding.semantics.name];
 }
 
-/** Read nothing, for a protocol that has not said which input the caller's value arrives through. */
-const UNMAPPED = (): ReadSetResult => ({
-  read: false,
-  reason: "unmapped-protocol",
+/** The parts of a request an author declares under `receives`. */
+type RequestSection = "headers" | "query" | "params" | "body";
+
+type DeclaredSection = [RequestSection, RequestSectionSpelling];
+
+/** The sections the handler's pack said how to spell. */
+function sectionsOf(spelling: RequestSpellingMetadata): DeclaredSection[] {
+  // Spelled out one section at a time, rather than looped over the
+  // names, because `check:metadata-wiring` finds a reader by reading
+  // these accesses and a computed key hides all four from it.
+  const declared: Array<[RequestSection, RequestSectionSpelling | undefined]> =
+    [
+      ["headers", spelling.headers],
+      ["query", spelling.query],
+      ["params", spelling.params],
+      ["body", spelling.body],
+    ];
+  return declared.flatMap(([section, how]) =>
+    how === undefined ? [] : [[section, how] as DeclaredSection],
+  );
+}
+
+/** Which part of the request a read went to, and which field of it. */
+interface SectionRead {
+  section: RequestSection;
+  /** Empty when the read said no field, which is the section taken whole. */
+  field: string[];
+}
+
+/** Which section a read path falls under, or null when it falls under none. */
+function underSection(
+  path: readonly string[],
+  sections: readonly DeclaredSection[],
+): SectionRead | null {
+  for (const [section, how] of sections) {
+    if (!startsWith(path, how.path)) {
+      continue;
+    }
+    const field = path.slice(how.path.length);
+    return {
+      section,
+      field: how.saysWhichField ? field : [],
+    };
+  }
+  return null;
+}
+
+function spell(read: SectionRead): string[] {
+  return [read.section, ...read.field];
+}
+
+function startsWith(
+  path: readonly string[],
+  prefix: readonly string[],
+): boolean {
+  return (
+    path.length >= prefix.length &&
+    prefix.every((segment, index) => path[index] === segment)
+  );
+}
+
+/**
+ * What a route and the middleware around it read off the request, in
+ * the words an author writes under `receives`. A read that falls under
+ * no section is dropped, because a handler reading `request.user` is
+ * reading what middleware put there rather than part of the request.
+ *
+ * A section nothing named a field of, that something read bare, was
+ * taken whole: `schema.parse(req.body)` is the case. A destructure
+ * records the bare read beside the named one, and the named one is
+ * what the handler meant.
+ */
+function requestReadSet(
+  handler: BehavioralSummary,
+  sections: readonly DeclaredSection[],
+  alsoRead: readonly BehavioralSummary[],
+): ReadSetResult {
+  const own = readSetOf(handler, EVERY_PARAMETER);
+  // A rest parameter on the route hides reads from every side of this.
+  // A wrapper standing down is one witness fewer, not a reason to stop.
+  if (!own.read && own.reason !== "no-reads") {
+    return own;
+  }
+
+  const reads = [own, ...alsoRead.map((w) => readSetOf(w, EVERY_PARAMETER))]
+    .flatMap((result) => (result.read ? result.reads.paths : []))
+    .flatMap((path) => underSection(path, sections) ?? []);
+
+  const named = reads.filter((read) => read.field.length > 0);
+  const sawField = new Set(named.map((read) => read.section));
+  const whole = [...new Set(reads.map((read) => read.section))]
+    .filter((section) => !sawField.has(section))
+    .map((section) => [section]);
+
+  const paths = [...named.map(spell), ...whole];
+  if (paths.length === 0) {
+    return { read: false, reason: "no-reads" };
+  }
+  return { read: true, reads: { paths, rootedAtPayload: true } };
+}
+
+/**
+ * How one protocol spells what a unit reads off the value it is
+ * handed, so a read and a guard on the same field come out alike.
+ */
+interface InputSpelling {
+  /**
+   * Every path the unit was seen asking for, or why the list could be
+   * short. `alsoRead` are units that read the same value without being
+   * the boundary: the middleware around a route.
+   */
+  reads: (alsoRead: readonly BehavioralSummary[]) => ReadSetResult;
+  /** One value reference, spelled the way `reads` spells a read. */
+  pathOf: (ref: ValueRef) => string[] | null;
+}
+
+/** Reads nothing, for a protocol that has not said which input the caller's value arrives through. */
+const UNMAPPED = (): InputSpelling => ({
+  reads: () => ({ read: false, reason: "unmapped-protocol" }),
+  pathOf: () => null,
 });
 
-/** Per protocol, which input the caller's value arrives through. */
-type BoundaryInputReads = {
+/** One predicate settles both halves for a protocol whose value arrives through named inputs. */
+function through(
+  summary: BehavioralSummary,
+  carriesPayload: CarriesPayload,
+): InputSpelling {
+  return {
+    reads: () => readSetOf(summary, carriesPayload),
+    pathOf: (ref) => readPathOf(summary, ref, carriesPayload),
+  };
+}
+
+/**
+ * A request is split across headers, query, path and body, and which
+ * of a handler's reads is which part is the framework's vocabulary. The
+ * pack that recognized the handler wrote that down at extract time, and
+ * a summary from a pack that has not says so.
+ */
+function restSpelling(summary: BehavioralSummary): InputSpelling {
+  const spelling = readRequestSpellingMetadata(summary);
+  if (spelling === undefined) {
+    return UNMAPPED();
+  }
+  const sections = sectionsOf(spelling);
+  return {
+    reads: (alsoRead) => requestReadSet(summary, sections, alsoRead),
+    pathOf: (ref) => {
+      const path = readPathOf(summary, ref, EVERY_PARAMETER);
+      const read = path === null ? null : underSection(path, sections);
+      return read === null ? null : spell(read);
+    },
+  };
+}
+
+type BoundaryInputSpellings = {
   [K in Semantics["name"]]: (
     summary: BehavioralSummary,
     semantics: Extract<Semantics, { name: K }>,
-  ) => ReadSetResult;
+  ) => InputSpelling;
 };
 
-const BOUNDARY_INPUT_READS: BoundaryInputReads = {
+const BOUNDARY_INPUT_SPELLINGS: BoundaryInputSpellings = {
   // A read of one argument already comes back under that parameter's
   // name, which is the word a declared field is written under.
-  "function-call": (summary) => readSetOf(summary, EVERY_PARAMETER),
-  "message-bus": (summary, semantics) =>
-    messageBodyReadSet(summary, semantics.messageBus),
-  // A request is split across headers, query, path and body, and which
-  // of a handler's reads is which part is the framework's vocabulary.
-  rest: UNMAPPED,
+  "function-call": (summary) => through(summary, EVERY_PARAMETER),
+  "message-bus": (summary, semantics) => ({
+    reads: () => messageBodyReadSet(summary, semantics.messageBus),
+    pathOf: (ref) => readPathOf(summary, ref, isTheMessageParameter),
+  }),
+  rest: (summary) => restSpelling(summary),
   storage: UNMAPPED,
   "unit-invocation": UNMAPPED,
   "graphql-resolver": UNMAPPED,
@@ -310,21 +466,44 @@ const BOUNDARY_INPUT_READS: BoundaryInputReads = {
   metric: UNMAPPED,
 };
 
+function spellingFor(
+  summary: BehavioralSummary,
+  binding: BoundaryBinding,
+): InputSpelling {
+  // The one cast joins the per-protocol table, which narrows, to the
+  // runtime lookup, the same way dispatchByType does it.
+  const spelling = BOUNDARY_INPUT_SPELLINGS[binding.semantics.name] as (
+    summary: BehavioralSummary,
+    semantics: Semantics,
+  ) => InputSpelling;
+  return spelling(summary, binding.semantics);
+}
+
 /**
  * What a unit reads off the value its boundary hands it, for the
  * protocols that have said which input that value arrives through.
+ * `alsoRead` are units reading the same value beside it, which for a
+ * route is the middleware registered around it.
  */
 export function boundaryInputReads(
   summary: BehavioralSummary,
   binding: BoundaryBinding,
+  alsoRead: readonly BehavioralSummary[] = [],
 ): ReadSetResult {
-  // The one cast joins the per-protocol table, which narrows, to the
-  // runtime lookup, the same way dispatchByType does it.
-  const reads = BOUNDARY_INPUT_READS[binding.semantics.name] as (
-    summary: BehavioralSummary,
-    semantics: Semantics,
-  ) => ReadSetResult;
-  return reads(summary, binding.semantics);
+  return spellingFor(summary, binding).reads(alsoRead);
+}
+
+/**
+ * Which path off that value a reference points at, spelled the way
+ * `boundaryInputReads` spells a read, so a guard on a field and a read
+ * of it compare. Null when the reference is not one this rule follows.
+ */
+export function boundaryInputPathOf(
+  summary: BehavioralSummary,
+  binding: BoundaryBinding,
+  ref: ValueRef,
+): string[] | null {
+  return spellingFor(summary, binding).pathOf(ref);
 }
 
 /**

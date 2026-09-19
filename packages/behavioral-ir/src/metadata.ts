@@ -834,6 +834,70 @@ export function readHttpMetadata(
   return readNamespace(HttpMetadataSchema, carrier.metadata?.http);
 }
 
+const RequestSectionSpellingSchema = z.object({
+  /** Where the section is read, the handler parameter's role first. */
+  path: z.array(z.string()),
+  /**
+   * False when a read under that path never says which field it
+   * wanted, so the section can only be compared whole.
+   */
+  saysWhichField: z.boolean(),
+});
+
+export type RequestSectionSpelling = z.infer<
+  typeof RequestSectionSpellingSchema
+>;
+
+/**
+ * How a REST handler spells each part of the request, as the pack that
+ * recognized the handler says. `readSetOf` gives a read as the
+ * parameter's role and then the property path, and these are the same
+ * words: Express reads a header at `request.headers`, Lambda at
+ * `event.headers`. The intent pass rewrites a read from this spelling
+ * into the one an author writes under `receives`.
+ *
+ * A section left out is one the framework has no path for. A section
+ * with `saysWhichField: false` is one whose reads never say which field
+ * they wanted: Lambda hands the body over as a string the handler
+ * parses, and Hono puts the header name in a call argument, which no
+ * read records.
+ */
+export const RequestSpellingMetadataSchema = z.object({
+  headers: RequestSectionSpellingSchema.optional(),
+  query: RequestSectionSpellingSchema.optional(),
+  params: RequestSectionSpellingSchema.optional(),
+  body: RequestSectionSpellingSchema.optional(),
+});
+
+export type RequestSpellingMetadata = z.infer<
+  typeof RequestSpellingMetadataSchema
+>;
+
+/**
+ * A metadata bag with the request-spelling namespace set. Writes are
+ * strict: a field the schema does not name throws here, next to its
+ * cause. Reads stay lenient so older artifacts keep reading.
+ */
+export function withRequestSpellingMetadata(
+  metadata: Record<string, unknown> | undefined,
+  value: RequestSpellingMetadata,
+): Record<string, unknown> {
+  return {
+    ...(metadata ?? {}),
+    requestSpelling: RequestSpellingMetadataSchema.strict().parse(value),
+  };
+}
+
+/** The summary's request-spelling namespace, or undefined when absent or not an object. */
+export function readRequestSpellingMetadata(
+  summary: BehavioralSummary,
+): RequestSpellingMetadata | undefined {
+  return readNamespace(
+    RequestSpellingMetadataSchema,
+    summary.metadata?.requestSpelling,
+  );
+}
+
 const LibraryEnvReadsSchema = z.object({
   /** Module-specifier prefix of the library that does the reading. */
   module: z.string(),

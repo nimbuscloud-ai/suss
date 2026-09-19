@@ -34,11 +34,13 @@ const READER_PACKAGES = ["checker", "checker-intent", "cli"];
 /**
  * Directories inside a package whose reads count even though the rest
  * of that package's do not. `behavioral-ir/src/deployment` works out
- * what a deployment fills a variable in with, and both checkers and
- * the CLI go through it, so a field it reads has a consumer.
+ * what a deployment fills a variable in with, and `src/receive` works
+ * out what a unit read off the value it was handed. Both checkers and
+ * the CLI go through them, so a field either one reads has a consumer.
  */
 const READER_DIRECTORIES = [
   path.join(ROOT, "packages", "behavioral-ir", "src", "deployment"),
+  path.join(ROOT, "packages", "behavioral-ir", "src", "receive"),
 ];
 
 /**

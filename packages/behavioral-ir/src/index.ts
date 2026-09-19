@@ -174,6 +174,9 @@ export {
   MetricValueShapeSchema,
   type MountMetadata,
   type ReactMetadata,
+  type RequestSectionSpelling,
+  type RequestSpellingMetadata,
+  RequestSpellingMetadataSchema,
   type RoutingMetadata,
   RoutingMetadataSchema,
   type RuntimeContractMetadata,
@@ -188,6 +191,7 @@ export {
   readModuleImports,
   readMountMetadata,
   readReactMetadata,
+  readRequestSpellingMetadata,
   readRoutingMetadata,
   readRuntimeContractMetadata,
   readSourceDocumentMetadata,
@@ -204,6 +208,7 @@ export {
   withHttpMetadata,
   withMessageBusMetadata,
   withMountMetadata,
+  withRequestSpellingMetadata,
   withRoutingMetadata,
   withRuntimeContractMetadata,
   withSourceDocumentMetadata,
@@ -247,6 +252,7 @@ export {
   wrapperChain,
   wrapperFor,
   wrapperIndex,
+  wrappersAround,
 } from "./wrapperChain.js";
 
 export type {
@@ -555,6 +561,7 @@ export {
 // ---------------------------------------------------------------------------
 
 export {
+  boundaryInputPathOf,
   boundaryInputReads,
   type CarriesPayload,
   type ComparisonResult,

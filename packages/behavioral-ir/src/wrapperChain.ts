@@ -60,3 +60,19 @@ export function wrapperChain(
 ): readonly WrapperReference[] {
   return readWrapperMetadata(summary)?.applied ?? [];
 }
+
+/**
+ * The summaries of the wrappers around each unit, for a whole run. A
+ * reference the run has no summary for is left out, which is what a
+ * middleware imported from a package the walk never entered looks like.
+ */
+export function wrappersAround(
+  summaries: readonly BehavioralSummary[],
+): (unit: BehavioralSummary) => BehavioralSummary[] {
+  const index = wrapperIndex(summaries);
+  return (unit) =>
+    wrapperChain(unit).flatMap((reference) => {
+      const found = wrapperFor(index, reference);
+      return found === undefined ? [] : [found];
+    });
+}
