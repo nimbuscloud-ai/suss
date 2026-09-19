@@ -351,6 +351,177 @@ describe("intentDocToSummary — REST boundary", () => {
   });
 });
 
+/** The doc with a different boundary block, everything else left alone. */
+function withBoundary(boundary: unknown) {
+  return { ...fnIntent, boundary };
+}
+
+function receivesOf(doc: unknown) {
+  return (
+    intentDocToSummary(IntentDocSchema.parse(doc)) as BoundaryIntentSummary
+  ).receives;
+}
+
+describe("a boundary block that rejects what it does not recognise", () => {
+  it("says which key it did not recognise when receives is misspelt", () => {
+    const result = IntentDocSchema.safeParse(
+      withBoundary({
+        semantics: "function-call",
+        package: "@suss/checker",
+        exportPath: ["checkPair"],
+        recieves: { provider: {} },
+      }),
+    );
+    expect(result.success).toBe(false);
+    const said = result.error?.issues.map((issue) => issue.message).join("\n");
+    expect(said).toContain("recieves");
+  });
+
+  it("leaves the fields that were optional optional", () => {
+    const result = IntentDocSchema.safeParse(
+      withBoundary({ semantics: "function-call", module: "src/check.ts" }),
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects an unknown key inside a declared field", () => {
+    const result = IntentDocSchema.safeParse(
+      withBoundary({
+        semantics: "function-call",
+        package: "@suss/checker",
+        exportPath: ["checkPair"],
+        receives: { provider: { type: "object", requred: true } },
+      }),
+    );
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("receives, normalised to a field list", () => {
+  it("splits a dotted parameter name into a path", () => {
+    expect(
+      receivesOf(
+        withBoundary({
+          semantics: "function-call",
+          package: "@suss/checker",
+          exportPath: ["checkPair"],
+          receives: {
+            "pair.provider": { type: "object", required: true },
+            "options.stream": { type: "string" },
+          },
+        }),
+      ),
+    ).toEqual([
+      {
+        path: ["pair", "provider"],
+        shape: { type: "record", properties: {} },
+        required: true,
+      },
+      { path: ["options", "stream"], shape: { type: "text" }, required: false },
+    ]);
+  });
+
+  it("takes a field with no shape at all, and defaults it to optional", () => {
+    expect(
+      receivesOf(
+        withBoundary({
+          semantics: "function-call",
+          package: "@suss/checker",
+          exportPath: ["checkPair"],
+          receives: { provider: {}, consumer: { required: true } },
+        }),
+      ),
+    ).toEqual([
+      { path: ["provider"], shape: null, required: false },
+      { path: ["consumer"], shape: null, required: true },
+    ]);
+  });
+
+  it("keeps the item shape of an array field", () => {
+    expect(
+      receivesOf({
+        ...busIntent,
+        boundary: {
+          semantics: "message-bus",
+          messageBus: "aws_sqs",
+          channel: "orders",
+          receives: {
+            orderId: { type: "string", required: true },
+            items: { type: "array", items: { type: "object" } },
+          },
+        },
+      }),
+    ).toEqual([
+      { path: ["orderId"], shape: { type: "text" }, required: true },
+      {
+        path: ["items"],
+        shape: { type: "array", items: { type: "record", properties: {} } },
+        required: false,
+      },
+    ]);
+  });
+
+  it("puts the section first for each part of a request", () => {
+    expect(
+      receivesOf({
+        ...restIntent,
+        boundary: {
+          semantics: "rest",
+          method: "POST",
+          path: "/invoices/:id/settle",
+          receives: {
+            headers: { "x-tenant-id": { type: "string", required: true } },
+            query: { dryRun: { type: "boolean" } },
+            params: { id: { type: "string" } },
+            body: {
+              type: "object",
+              properties: { note: { type: "string" } },
+              required: ["note"],
+            },
+          },
+        },
+      }),
+    ).toEqual([
+      {
+        path: ["headers", "x-tenant-id"],
+        shape: { type: "text" },
+        required: true,
+      },
+      {
+        path: ["query", "dryRun"],
+        shape: { type: "boolean" },
+        required: false,
+      },
+      { path: ["params", "id"], shape: { type: "text" }, required: false },
+      { path: ["body", "note"], shape: { type: "text" }, required: true },
+    ]);
+  });
+
+  it("keeps a body the vocabulary spells as one value as the body field", () => {
+    expect(
+      receivesOf({
+        ...restIntent,
+        boundary: {
+          semantics: "rest",
+          method: "POST",
+          path: "/invoices",
+          receives: { body: { type: "array", items: { type: "string" } } },
+        },
+      }),
+    ).toEqual([
+      {
+        path: ["body"],
+        shape: { type: "array", items: { type: "text" } },
+        required: false,
+      },
+    ]);
+  });
+
+  it("is empty for a doc that says nothing about what it is handed", () => {
+    expect(receivesOf(fnIntent)).toEqual([]);
+  });
+});
+
 describe("intentDocToSummary — function-call boundary", () => {
   it("builds a function-call binding and return/throw outcomes", () => {
     const summary = intentDocToSummary(

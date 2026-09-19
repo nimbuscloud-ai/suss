@@ -92,6 +92,46 @@ The outcome id stays free-form on purpose. That is where a person writes what th
 
 Adding `results` changes nothing about `response`, `returns` and `throws`. A doc that states only those parses and pairs the way it always did.
 
+## What a boundary receives
+
+A `receives` block lists the fields of the value the boundary is handed. A function-call boundary writes its arguments by parameter name, and a dot reaches inside one:
+
+```yaml
+boundary:
+  semantics: function-call
+  package: "@suss/checker"
+  exportPath: ["checkPair"]
+  receives:
+    provider: { type: object, required: true }
+    consumer: { type: object, required: true }
+```
+
+A message-bus boundary lists the fields of the message body the same way. A REST boundary has a section per part of the request, because a sender fills the four parts separately:
+
+```yaml
+boundary:
+  semantics: rest
+  method: POST
+  path: /invoices/:id/settle
+  receives:
+    headers:
+      x-tenant-id: { type: string, required: true }
+    query:
+      dryRun: { type: boolean }
+    body:
+      type: object
+      properties:
+        note: { type: string }
+```
+
+Naming a field is a complete declaration on its own, so `x-tenant-id: { required: true }` and a bare `orderId: {}` both say something a check can use. `required` defaults to false. Inside a `receives` field, `required` is the boolean "the boundary needs this field"; the list of property names an object shape takes under the same word still works for nested properties.
+
+The block lists only the fields the author wants checked. It is never a full description of the input, so a field the code reads that the block leaves out is reported at info and no higher. A document with no `receives` block says nothing about the input, the same way a document with no `results` says nothing about effects.
+
+Every spelling normalises to the same list on `BoundaryIntentSummary.receives`: a path, a shape or null, and whether the field is required. `pair.provider` becomes `["pair", "provider"]`, and a REST section becomes the first segment of the path, so `["headers", "x-tenant-id"]` and `["body", "note"]`. The checker has one pass over that list and never looks at the boundary kind.
+
+Every boundary block is a `z.strictObject`, so a misspelt `recieves:` stops the run with `boundary: Unrecognized key: "recieves"` rather than being dropped in silence. That rejects unknown keys only; the fields that were optional stay optional, so a module-level function-call boundary is still authorable.
+
 ## Which boundaries pair, and which are pending
 
 A boundary intent pairs when its boundary has a key. REST has one from its method and path, a function-call export has one from its package and export path, a message-bus boundary has one from its channel, and an invoked unit has one from its deployment target and the name the platform knows it by. A unit whose name only the runtime settles has none, so a document for one is authorable and reported `unkeyableBoundary`.

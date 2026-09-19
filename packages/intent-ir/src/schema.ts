@@ -129,14 +129,64 @@ export const BodyShapeSchema = z.union([
 ]);
 
 // ---------------------------------------------------------------------------
+// receives: the fields of the value the boundary is handed. See DESIGN.md.
+// ---------------------------------------------------------------------------
+
+/**
+ * One declared field. Naming it is a complete declaration on its own,
+ * so `{}` and `{ required: true }` are both valid; the shape keys say
+ * more about it when the author wants to.
+ *
+ * `required` here is the boolean "the boundary needs this field", not
+ * the list of property names an object shape takes under the same word.
+ * Nested properties go through ShapeSchema, where that list still works.
+ */
+const REQUIRED = { required: z.boolean().default(false) };
+
+const InputFieldSchema = z.union([
+  z.strictObject({ ...REQUIRED, type: PrimitiveTypeName }),
+  z.strictObject({
+    ...REQUIRED,
+    type: z.literal("array"),
+    items: ShapeSchema.optional(),
+  }),
+  z.strictObject({
+    ...REQUIRED,
+    type: z.literal("object"),
+    properties: z.record(z.string(), ShapeSchema).optional(),
+  }),
+  z.strictObject(REQUIRED),
+]);
+
+/** Field name to field. On a function-call it is a parameter, on a bus a body field. */
+const ReceivesSchema = z.record(z.string().min(1), InputFieldSchema).optional();
+
+/**
+ * A request comes in four parts the sender fills separately, so the
+ * REST spelling has a section per part. `body` is a shape rather than a
+ * map of fields, because a body is one value with properties under it.
+ */
+const RestReceivesSchema = z
+  .strictObject({
+    headers: z.record(z.string().min(1), InputFieldSchema).optional(),
+    query: z.record(z.string().min(1), InputFieldSchema).optional(),
+    params: z.record(z.string().min(1), InputFieldSchema).optional(),
+    body: BodyShapeSchema.optional(),
+  })
+  .optional();
+
+// ---------------------------------------------------------------------------
 // Boundary: REST or function-call, in @suss/ir-core's vocabulary.
 // ---------------------------------------------------------------------------
 
-const RestBoundarySchema = z.object({
+// Strict, so a misspelt key stops the run instead of vanishing. That
+// rejects unknown keys only; the optional fields below stay optional.
+const RestBoundarySchema = z.strictObject({
   transport: z.literal("http").default("http"),
   semantics: z.literal("rest"),
   method: z.string().min(1),
   path: z.string().min(1),
+  receives: RestReceivesSchema,
 });
 
 // Deliberately permissive: a function-call boundary is pairable today
@@ -146,7 +196,7 @@ const RestBoundarySchema = z.object({
 // unlinked PRD scenario. The checker reports such intent as unchecked
 // (unkeyableBoundary) rather than this schema rejecting it; don't
 // tighten this without also shipping module-level keying.
-const FunctionCallBoundarySchema = z.object({
+const FunctionCallBoundarySchema = z.strictObject({
   transport: z.string().default("in-process"),
   semantics: z.literal("function-call"),
   /** Repo-relative module path, when the boundary is an intra-repo unit. */
@@ -157,35 +207,41 @@ const FunctionCallBoundarySchema = z.object({
   package: z.string().optional(),
   /** Path to the export within the package (sub-path + nested names). */
   exportPath: z.array(z.string()).optional(),
+  /** The arguments it needs, by parameter name: `options.stream: {}`. */
+  receives: ReceivesSchema,
 });
 
 // Both fields come off the ir-core schema, so a bus added there is
 // authorable here with no edit. A doc that leaves the channel out is
 // authorable and unpairable, and the checker is what says so.
-const MessageBusBoundarySchema = z.object({
+const MessageBusBoundarySchema = z.strictObject({
   semantics: z.literal("message-bus"),
   messageBus: MessageBusSemanticsSchema.shape.messageBus,
   channel: MessageBusSemanticsSchema.shape.channel.default(null),
+  /** The fields of the message body the consumer depends on. */
+  receives: ReceivesSchema,
 });
 
 // Same reuse, and the same pending state for a different reason: a
 // store has no identity key at all, so every storage boundary intent
 // is authorable and unpairable. See the README.
-const StorageBoundarySchema = z.object({
+const StorageBoundarySchema = z.strictObject({
   semantics: z.literal("storage"),
   storageSystem: StorageSemanticsSchema.shape.storageSystem,
   scope: StorageSemanticsSchema.shape.scope.default("default"),
   container: StorageSemanticsSchema.shape.container.default(null),
   accessPath: StorageSemanticsSchema.shape.accessPath.default(null),
+  receives: ReceivesSchema,
 });
 
 // Both fields come off the ir-core schema, the same reuse the bus and
 // the store get. A doc that leaves the name out is authorable and
 // unpairable, and the checker is what says so.
-const UnitInvocationBoundarySchema = z.object({
+const UnitInvocationBoundarySchema = z.strictObject({
   semantics: z.literal("unit-invocation"),
   deploymentTarget: UnitInvocationSemanticsSchema.shape.deploymentTarget,
   instanceName: UnitInvocationSemanticsSchema.shape.instanceName.default(null),
+  receives: ReceivesSchema,
 });
 
 export const BoundarySchema = z.discriminatedUnion("semantics", [
@@ -412,5 +468,8 @@ export type AuthoredBoundary = z.input<typeof BoundarySchema>;
 export type BoundaryTransition = z.infer<typeof BoundaryTransitionSchema>;
 export type EffectOutcome = z.infer<typeof EffectOutcomeSchema>;
 export type BodyShape = z.infer<typeof BodyShapeSchema>;
+export type AuthoredInputField = z.infer<typeof InputFieldSchema>;
+/** One `receives` block as somebody writes it, before defaults are put in. */
+export type AuthoredReceives = Record<string, z.input<typeof InputFieldSchema>>;
 export type IntentSource = z.infer<typeof IntentSourceSchema>;
 export type PrimitiveTypeName = z.infer<typeof PrimitiveTypeName>;
