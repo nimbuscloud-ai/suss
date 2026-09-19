@@ -264,7 +264,7 @@ A REST boundary accepts a block with a section per part of the request (`headers
 
 ## What the checker reports
 
-Twelve intent finding kinds, each with what makes it legitimate and what makes it a bug, are in the [findings catalog](/reference/findings#intent-findings). The severity follows what is being compared:
+The intent finding kinds, each with what makes it legitimate and what makes it a bug, are in the [findings catalog](/reference/findings#intent-findings). The severity follows what is being compared:
 
 - **Error**: the code does not do what an authored document says. `unimplementedBoundary`, `uncoveredOutcome`, `outcomeShapeMismatch`, `renamedBoundary`.
 - **Warning**: the documents have a gap, or nothing reads a field the document says the boundary needs. An intent nothing can be paired against, a scenario linking to an outcome that does not exist, a link that resolves to two documents, `unreadInputField` on a required field.
