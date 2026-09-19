@@ -1,733 +1,702 @@
 ---
-title: Every finding suss can report, and what each one means
-description: "The lookup for a finding that surfaced: what it says, whether it is a bug or noise, and which of the three lists it belongs to."
+title: Findings catalog
+description: Every finding suss can report, what it means, and what to do about it.
 ---
 
 # Findings catalog
 
-Every finding kind suss emits. Use this as the lookup when a finding surfaces and you want to know whether it's a bug or noise.
+A run produces up to three lists, and they have different shapes.
 
-A run produces up to three lists and they have different shapes. Most of this page is the behavioural findings, under `findings` in the JSON, which say that two sides of a boundary disagree. [Intent findings](#intent-findings) go under `intent` and say that code and a document your team wrote disagree. [Run findings](#run-findings) go under `run` and say the run could not get far enough to compare anything. A parser that reads only `findings` misses the other two.
+Most of this page is the behavioral findings, under `findings` in the JSON, which say that two sides of a boundary disagree. [Intent findings](#intent-findings) go under `intent` and say that code and a document your team wrote disagree. [Run findings](#run-findings) go under `run` and say the run could not get far enough to compare anything. A parser that reads only `findings` misses the other two.
 
-The authoritative sources are `FindingKindSchema` in [`packages/behavioral-ir/src/schemas.ts`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/behavioral-ir/src/schemas.ts) and `IntentFindingKindSchema` in [`packages/intent-ir/src/findings.ts`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/intent-ir/src/findings.ts). Every kind below appears in one of them with the same wording.
+`FindingKindSchema` in [`packages/behavioral-ir/src/schemas.ts`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/behavioral-ir/src/schemas.ts) and `IntentFindingKindSchema` in [`packages/intent-ir/src/findings.ts`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/intent-ir/src/findings.ts) are the authoritative lists, and `npm run check:findings` fails when this page and those enums disagree.
 
-## Finding shape
-
-Every finding follows the same JSON shape:
+## What a finding looks like
 
 | Field | Type | Meaning |
 |---|---|---|
-| `kind` | string (one of the values below) | Which failure mode this is. |
-| `severity` | `error` \| `warning` \| `info` | Default severity. `.sussignore` rules can downgrade. |
-| `boundary` | `BoundaryBinding` | Which boundary the finding is about (REST endpoint, storage table, message-bus channel, runtime-config scope, etc.). The kind of binding depends on the finding's domain. |
-| `provider` | `FindingSide` | The summary on the provider side: `{ summary, transitionId?, location }`. `summary` is `${file}::${name}`. `transitionId` is set when the finding is about a specific branch. |
-| `consumer` | `FindingSide` | The summary on the consumer side. Always populated, even for self-inconsistency findings (provider-against-its-own-contract); in that case provider and consumer often resolve to the same summary. |
-| `description` | string | One-line human-readable text. |
-| `aspect` | `BoundaryAspect?` | For generic boundary findings, this says which side of the field the finding concerns: `read` / `write` / `send` / `receive` / `construct` / `selector`. Absent on findings where the aspect is irrelevant or spans multiple aspects. |
-| `sources` | `string[]?` | Present only when two or more identical findings from different providers were collapsed by the dedupe pass. Each entry is a `${file}::${name}` matching `FindingSide.summary`. |
-| `suppressed` | `FindingSuppression?` | Present only when a `.sussignore` rule matched. It contains `{ reason, effect, originalSeverity? }`, see [Accept a finding](/guides/accept-a-finding). |
+| `kind` | string | Which failure mode this is, one of the values below. |
+| `severity` | `error` \| `warning` \| `info` | The default. A `.sussignore` rule can downgrade it. |
+| `boundary` | `BoundaryBinding` | Which boundary this is about: a REST endpoint, a table, a channel, a runtime's config, and so on. |
+| `provider` | `FindingSide` | The provider's summary, as `{ summary, transitionId?, location }`, where `summary` reads `${file}::${name}`. |
+| `consumer` | `FindingSide` | The consumer's summary. Always set, even where the finding is about a provider against its own contract; there the two often resolve to the same summary. |
+| `description` | string | One line of human-readable text. |
+| `aspect` | `BoundaryAspect?` | Which side of the field this concerns: `read`, `write`, `send`, `receive`, `construct` or `selector`. Absent where the aspect is irrelevant or spans several. |
+| `sources` | `string[]?` | Set only when the dedupe pass collapsed identical findings from several providers. |
+| `suppressed` | `FindingSuppression?` | Set only when a `.sussignore` rule matched. See [Accept a finding](/guides/accept-a-finding). |
 
 ## How a kind gets its severity
 
-One principle decides every default severity.
+One test decides every default severity: can you name an input and the wrong result it produces?
 
-- **Error: the code will misread or lose data on an input that the other side produces.** The claim is about behavior, both sides are in the run, and the corpus says the kind is usually right when it fires.
-- **Warning: the two sides disagree in a way that needs a person to judge.** The disagreement is there in the files, and whether it is a defect depends on intent the repository does not state.
-- **Info: suss is reporting on itself.** Confidence, coverage, something it could not read. Never about the code being wrong.
+- **Error: the code will misread or lose data on an input the other side produces.** The claim is about behavior, both sides are in the run, and the corpus says the kind is usually right when it fires.
+- **Warning: the two sides disagree and a person has to judge it.** The disagreement is there in the files, and whether it is a defect turns on intent the repository does not state.
+- **Info: suss is reporting on itself.** Confidence, coverage, something it could not read. Never a claim that the code is wrong.
 
-The test for error is outcome-shaped: name the input and the wrong result. Every kind below states that sentence next to its severity. A kind for which no such sentence can be written is a warning by construction. A kind at error whose measured precision over the pinned corpus falls under half moves down until its model improves; that is how `unhandledProviderCase` moved to warning.
+A kind with no such sentence to write is a warning by construction. A kind at error whose measured precision over the pinned corpus falls under half moves down until its model improves, which is how `unhandledProviderCase` became a warning.
 
----
+## Generic boundary findings
 
-Three of the kinds below, `boundaryFieldUnknown`, `boundaryFieldUnused`, and `boundaryShapeMismatch`, are **generic** and emitted by every per-domain checker. The boundary's `binding.semantics.name` gives you the domain context (storage, runtime-config, graphql-resolver, message-bus, etc.), and the `aspect` field says which direction the failure runs in. The remaining kinds are domain-specific or meta.
+These four kinds are not tied to one protocol. The first three come out of every per-domain checker, and the fourth so far only out of the storage one. Read `binding.semantics.name` to see which domain you are in (`storage`, `runtime-config`, `graphql-operation`, `message-bus`), and `aspect` to see which direction the failure runs in.
 
-The behavioural catalog is organised: **shipped generic kinds**, then **shipped domain-specific kinds** grouped by domain, then **reserved kinds** (in the IR enum, awaiting an emitter), then **meta kinds**. The intent and run kinds follow at the end.
-
----
-
-## Generic boundary findings (shipped)
-
-These three kinds replace the per-domain field-mismatch enums earlier versions used (`storageReadFieldUnknown`, `envVarUnprovided`, `graphqlSelectionFieldUnknown`, `scenarioArgUnknown`, etc. all collapsed into `boundaryFieldUnknown` with an aspect).
+They replaced the per-domain enums earlier versions had, where `storageReadFieldUnknown`, `envVarUnprovided` and `graphqlSelectionFieldUnknown` were three names for one thing.
 
 ### `boundaryFieldUnknown`
 
-**Severity:** error (read / write aspects against a contract in the run), warning (construct / send aspects, or a provider suss did not extract) • **Emitted by:** every domain pairing pass
+**Severity:** error for a read or a write against a contract in the run, warning for a construct or send aspect, or where suss never extracted the provider.
 
-A read of a field the contract does not declare comes back with nothing, no error says so, and the code branches on what is not there. That is the error sentence; the construct / send aspects and the missing-provider case cannot state one, so they stay warnings.
+The consumer references a field the provider's contract does not declare. A read of a missing field comes back with nothing, no error says so, and the code branches on what is not there. The construct and send aspects and the missing-provider case cannot state that outcome, so they stay warnings.
 
-The consumer references a field the provider's contract doesn't declare. Per-domain instances:
+Runtime config:
 
-- **Storage** (`binding.semantics.name = "storage"`, aspect `read` or `write`)
-  ```
-  [ERROR] boundaryFieldUnknown (aspect: read)
-    loadUser selects "deltedAt" on User (postgresql) but the schema declares
-    no deltedAt column. At runtime this resolves to undefined on reads,
-    changing which execution paths the function takes downstream.
-    provider: prisma/schema.prisma::User
-    consumer: src/loadUser.ts::loadUser
-    boundary: prisma (in-process) storage:postgresql:default:User
-  ```
+```
+[ERROR] boundaryFieldUnknown
+  process.env.STRIPE_API_KEY read by Checkout.handler (lambda/Checkout scope) but Checkout declares no STRIPE_API_KEY in its environment. At runtime this resolves to undefined, changing which execution paths the function takes.
+```
 
-- **Runtime config** (`binding.semantics.name = "runtime-config"`, aspect `read`)
-  ```
-  [ERROR] boundaryFieldUnknown (aspect: read)
-    process.env.DATABASE_URL read by createConnection but OrderHandler
-    declares no DATABASE_URL in its environment.
-    provider: template.yaml::OrderHandler
-    consumer: src/db.ts::createConnection
-    boundary: cloudformation (aws-https) runtime-config:OrderHandler
-  ```
+GraphQL:
 
-- **GraphQL** (`binding.semantics.name = "graphql-operation"`, aspect `read`)
-  ```
-  [ERROR] boundaryFieldUnknown (aspect: read)
-    GraphQL operation "usePet.GetPet" selects "Pet.deletedAt" but the
-    provider's schema doesn't declare that field on "Pet". Likely a
-    stale selection after a schema change.
-    provider: Pet.deletedAt (undeclared)
-    consumer: src/usePet.ts::usePet.GetPet
-    boundary: apollo-client (http) query GetPet
-  ```
-  The server rejects the whole operation at validation, so every operation using the selection fails, not only the one field. A selection kept in a shared fragment breaks every operation that spreads it.
+```
+[ERROR] boundaryFieldUnknown
+  GraphQL operation "GetUser" selects "User.email" but the provider's schema doesn't declare that field on "User". Likely a stale selection after a schema change.
+```
 
-  *(Also fires at warning for a missing root resolver, operation selects `Query.deletedAt` but no extracted resolver implements it. That resolver may live in a repository suss did not read, so the provider side is not in the run and no outcome can be stated.)*
+The server rejects the whole operation at validation, so every operation using that selection fails, not only the one field. A selection kept in a shared fragment breaks every operation that spreads it.
 
-- **React / Storybook** (`binding.semantics.name = "function-call"`, aspect `construct`)
-  ```
-  [WARNING] boundaryFieldUnknown (aspect: construct)
-    Story "Broken" provides arg "disabled" but component "Button" does
-    not declare it as an input.
-  ```
+A message bus, where the consumer reads a field off the message body:
 
-- **Message bus** (`binding.semantics.name = "message-bus"`, aspect `receive`)
-  ```
-  [WARNING] boundaryFieldUnknown (aspect: receive)
-    PaidWorkerFunction.handler reads "data.invoiceId" off a message on
-    aws_sqs channel "PaidQueue" but no producer in the analysed scope
-    sends "data.invoiceId".
-    provider: template.yaml::PaidWorkerFunction.FromPaid
-    consumer: src/handlers/paidWorker.ts::PaidWorkerFunction.handler
-  ```
-  A queue takes a string, so nothing on either side type-checks the payload and the consumer throws on every message. The read comes from the fields the consumer destructured out of the parsed body, or from what it reaches for off its handler parameter when the framework parsed the message for it. A producer whose body suss cannot read into takes the channel out of the comparison altogether, so a missing finding here is not agreement.
+```
+[WARNING] boundaryFieldUnknown
+  OrderConsumer.handler reads "totalAmount" off a message on aws_sqs channel "OrdersQueue" but no producer in the analysed scope sends "totalAmount". Likely a producer/consumer drift: the producer renamed or removed the field, or the consumer expects a field that was never sent.
+```
 
-**Legitimate when:** the provider lives in a service / contract source you haven't extracted (microservice boundary, multi-repo). Suppress with `.sussignore` `effect: mark`.
+A queue takes a string, so nothing on either side type-checks the payload and the consumer throws on every message. A producer whose body suss cannot read takes the channel out of the comparison, so the absence of a finding here is not agreement.
 
-**Bug when:** typo, rename without follow-through, or stale code referencing a removed field. Fix the consumer or restore the contract.
+**Legitimate when:** the provider is in a service or a contract source you have not extracted. Suppress with `.sussignore` and `effect: mark`.
+
+**A bug when:** a typo, a rename nobody finished, or stale code reading a field that was removed. Fix the consumer, or restore the contract.
 
 ### `boundaryFieldUnused`
 
-**Severity:** warning, and info for a write of a field the store serves rather than keeps • **Emitted by:** every domain pairing pass
+**Severity:** warning, and info where suss is saying it could not check rather than that something is unread.
 
-No input produces a wrong result here: an unread field breaks nothing at runtime, and whether it is dead or reserved for future use is intent the repository does not state.
-
-The provider declares a field that no consumer references. Per-domain instances:
-
-- **Storage** (no aspect = "no reader and no writer")
-  ```
-  [WARNING] boundaryFieldUnused
-    User declares "deletedAt". No query here reads it and nothing
-    writes to it. suss counts a column as read only when a query
-    selects it, so before you treat the column as dead, look for code
-    that takes "deletedAt" off a record it already fetched.
-    boundary: prisma (in-process) storage:postgresql:default:User
-  ```
-  suss suppresses this when ANY caller uses default-shape (`["*"]`) reads on the table, because then we can't tell whether default-shape consumers actually use the column. A query that asks for some columns is not default-shape, so a Prisma call with a `select` or an `include` still leaves the check running over the columns it did not ask for.
-
-One instance of this kind is about suss rather than about the code. A store serves a relation without keeping a column of that name, so a write of one cannot happen, and a run that records one was given it by a pack that read a relation as a field. That comes back at info severity, says which pack surface got it wrong, and leaves the write out of what the run claims about that container. Reading a served field stays legitimate, since a query can ask for a relation.
-
-- **Storage write-only** (aspect `read` = "the read aspect of this field is unused, but writers exist")
-  ```
-  [WARNING] boundaryFieldUnused (aspect: read)
-    User declares "lastWriteAt" and code here writes to it, but no
-    query reads it. suss counts a column as read only when a query
-    selects it, so before you treat the write as pointless, look for
-    code that takes "lastWriteAt" off a record it already fetched.
-  ```
-
-- **Runtime config** (no aspect)
-  ```
-  [WARNING] boundaryFieldUnused
-    OrderHandler declares environment variable LEGACY_FLAG but no code
-    in its codeScope reads process.env.LEGACY_FLAG.
-    boundary: cloudformation (aws-https) runtime-config:OrderHandler
-  ```
-
-**Legitimate when:** the field is reserved for future use, or read by code outside the analyzed scope (different repo). Suppress.
-
-**Bug when:** dead config left from a removed feature, or a renamed field the contract still references. Remove from the contract, or restore the consumer.
-
-### `boundaryShapeMismatch` *(shipped)*
-
-**Severity:** per-emitter (typically warning for read-side coercions, error for write-side type mismatches) • **Emitted by:** `checkMetric`
-
-The error sentence for the one shipped emitter: the alert compares each window against a single number, the metric records a spread of buckets, so the comparison never runs against what the metric actually measures and the alert never fires.
-
-Both sides declare the value but disagree about its form (type, nullability, content-type, etc.). The `aspect` says which side discovered the disagreement (read / write / send / receive / construct / selector).
-
-`checkMetric` is the one emitter today. A monitoring system's alert compares a series against a single number, and the resource that declares the series says its measurements are a histogram of buckets, so the comparison has nothing to run against:
+The provider declares a field no consumer references. No input produces a wrong result here: an unread field breaks nothing at runtime, and whether it is dead or reserved is intent the repository does not state.
 
 ```
-[ERROR] boundaryShapeMismatch (aspect: read)
-  google_monitoring_alert_policy.sweep_refused_sustained#0 compares
-  logging.googleapis.com/user/sweep-refused against a single number, and
-  google_logging_metric.sweep_refused declares that metric's measurements
-  as a histogram of buckets, so the comparison has nothing to run against
-  unless the reading reduces each window to a single number first, by
-  setting aggregations.per_series_aligner to one of ALIGN_PERCENTILE_99,
-  ALIGN_PERCENTILE_95, ALIGN_PERCENTILE_50, ALIGN_PERCENTILE_05.
-  provider: monitoring.tf::google_logging_metric.sweep_refused
-  consumer: monitoring.tf::google_monitoring_alert_policy.sweep_refused_sustained#0
-  boundary: terraform (cloud-monitoring)
+[WARNING] boundaryFieldUnused
+  Checkout declares environment variable STRIPE_KEY but no code in its codeScope reads process.env.STRIPE_KEY.
+```
+
+The info form says the run could not check, rather than that the field is unread:
+
+```
+[INFO] boundaryFieldUnused
+  cloudformation:template.yaml declares environment variables and these summaries record no environment read anywhere, so whether code reads them was not checked. If the code reads process.env, extract with the node pack in the framework list (-f node) so the reads are in the summaries.
+```
+
+For storage, suss stays quiet when any caller reads the table with a default shape (`["*"]`), because then it cannot tell whether those callers use the column. A query that asks for some columns is not default-shape, so a Prisma call with a `select` or an `include` still leaves the check running over the columns it did not ask for. An `aspect` of `read` means the field has writers and no reader.
+
+**Legitimate when:** the field is reserved for something that has not landed, or read by code outside the extracted scope. Suppress.
+
+**A bug when:** it is dead config from a removed feature, or a renamed field the contract still declares. Take it out of the contract, or restore the consumer.
+
+### `boundaryShapeMismatch`
+
+**Severity:** per emitter.
+
+Both sides declare the value and disagree about its form: its type, its nullability, its content type. The `aspect` says which side found the disagreement.
+
+One emitter ships today, the metric one. A monitoring alert compares a series against a single number, and the resource declaring that series says its measurements are a histogram of buckets, so the comparison has nothing to run against:
+
+```
+[ERROR] boundaryShapeMismatch
+  google_monitoring_alert_policy.sweep_refused_sustained#0 compares logging.googleapis.com/user/sweep-refused against a single number, and google_logging_metric.sweep_refused declares that metric's measurements as a histogram of buckets, so the comparison has nothing to run against unless the reading reduces each window to a single number first, by setting aggregations.per_series_aligner to one of ALIGN_PERCENTILE_99, ALIGN_PERCENTILE_95, ALIGN_PERCENTILE_50, ALIGN_PERCENTILE_05.
 ```
 
 Both sides have to say what the value is. A metric whose summary states no `metadata.metricContract.values`, and a reading that states no `metadata.metricReading.comparesTo`, claim nothing here.
 
-The kind is also where the message-bus body-shape pairing will report, along with the type-aware extensions of the storage / runtime-config / graphql checkers. It subsumes the per-domain shape-mismatch kinds earlier versions reserved (`storageTypeMismatch`, `storageNullableViolation`, `storageSelectorIndexMismatch`, `envVarTypeCoercionMissing`, `graphqlVariableTypeMismatch`, `requestBodyShapeMismatch`, `componentPropTypeMismatch`, `contentTypeMismatch`).
+This kind is where the message-bus body-shape pairing will report, along with the type-aware storage, runtime-config and GraphQL checks. It takes the place of the per-domain shape kinds earlier versions reserved: `storageTypeMismatch`, `graphqlVariableTypeMismatch`, `requestBodyShapeMismatch` and the rest.
 
-**Legitimate when:** the consumer coerces the value itself before using it, so the difference never reaches anything that cares.
+**Legitimate when:** the consumer coerces the value before using it, so the difference never reaches anything that cares.
 
-**Bug when:** it does not. The two sides disagree about the form of a value they both name, and the side that reads it will act on something other than what arrives.
+**A bug when:** it does not. The side that reads the value will act on something other than what arrives.
 
-### `boundaryFieldRequired`
+### `boundarySelectorMismatch`
 
-**Severity:** error
+**Severity:** error.
 
-A request sent without the required field is rejected by the provider, so the call fails every time it runs: a 4xx, or a component that fails to render.
-
-The provider declares a field as required and the consumer doesn't supply it. The `aspect` usually points at the payload (`send` / `construct`).
-
-No emitter ships today. This kind subsumes earlier per-domain reserved kinds: `requiredHeaderMissing`, `requiredQueryParamMissing`, `componentRequiredPropMissing`, `graphqlRequiredArgMissing`.
-
-**Legitimate when:** something between the two supplies the field, a gateway or a middleware the run does not read.
-
-**Bug when:** nothing does. Send the field, or drop the requirement if the provider no longer needs it.
-
-### `boundaryConstraintViolation`
-
-**Severity:** per-emitter
-
-Each emitter states its own outcome sentence when it ships: a value the store refuses loses the write, while a value the store silently truncates loses part of it.
-
-The value supplied for a field violates a value-level constraint the provider declared, enum membership, declared length, etc. This is distinct from `boundaryShapeMismatch` because the value's *type* is correct; only the value itself violates the constraint.
-
-No emitter ships today. This kind subsumes earlier per-domain reserved kinds: `storageLengthConstraintViolation`, `storageEnumConstraintViolation`, `graphqlEnumValueUnknown`.
-
-**Legitimate when:** the value is settled somewhere the run cannot see, so what suss read is a placeholder rather than what is sent.
-
-**Bug when:** the value is what the source writes. The store refuses it, or takes it and loses part of it.
-
-### `boundarySelectorMismatch` *(shipped)*
-
-**Severity:** error • **Emitted by:** `checkStorage`
-
-The consumer picks items by something the provider does not key on. A store that only accepts its key attributes in a query refuses the request, so every run of this query fails rather than returning nothing.
+The consumer picks items by something the provider does not key on. A store that accepts only its key attributes refuses the request, so every run of this query fails rather than returning nothing.
 
 ```
-[ERROR] boundarySelectorMismatch (aspect: read)
-  listByCustomer picks items on Orders by "customerId", which is not one
-  of its key attributes (orderId). DynamoDB refuses a request keyed on
-  anything else, so this fails when it runs.
-  provider: template.yaml::Orders
-  consumer: src/listByCustomer.ts::listByCustomer
-  boundary: cloudformation (aws-sdk) storage:aws.dynamodb:default:Orders
+[ERROR] boundarySelectorMismatch
+  InvoiceListFunction.handler picks items on InvoicesTable by "customerId", which is not one of its key attributes (invoiceId). aws.dynamodb refuses a request keyed on anything else, so this fails when it runs.
 ```
 
-A contract that does not state `metadata.storageContract.identifies` claims nothing here, and neither does an access that states no selector. A query through a secondary index pairs against that index's own summary, so it is checked against the index's key rather than the table's.
+A contract that states no `metadata.storageContract.identifies` claims nothing here, and neither does an access that states no selector. A query through a secondary index pairs against that index's own summary, so it is checked against the index's key rather than the table's.
 
----
+**Legitimate when:** never. The store refuses the query outright.
+
+**A bug when:** always. Query by an attribute the store keys on, or add an index for the one you want.
 
 ## REST findings
 
-**Legitimate when:** nothing here. A store that accepts only its key attributes refuses the query outright.
+### `unhandledProviderCase`
 
-**Bug when:** always, on the shipped emitter. Query by an attribute the store keys on, or add an index for the one you want.
+**Severity:** warning.
 
-### `unhandledProviderCase` *(shipped)*
-
-**Severity:** warning • **Emitted by:** `checkProviderCoverage`, `checkSemanticBridging`
-
-No outcome sentence can be written: the fall-through may be the intended handling, and over the pinned corpus the uncovered-status form was wrong far more often than right. The error-worthy core of the old kind, a path that will actually misread a response, is `misreadProviderResponse` below.
-
-The provider produces a status code (or a body case within a status) that no consumer branch tells apart. The consumer hits its fall-through path, throwing, returning undefined, or silently ignoring, when the provider returns that status.
+The provider produces a status, or a body case within a status, that no consumer branch tells apart. The consumer hits its fall-through path, throwing, returning undefined, or ignoring the answer.
 
 ```
 [WARNING] unhandledProviderCase
   Provider produces status 404 but no consumer branch handles it
-  provider: src/handler.ts::getUser
-  consumer: src/client.ts::loadUser
-  boundary: ts-rest (http) GET /users/:id
+  provider: src/api.ts::get (src/api.ts:13)
+  consumer: src/orderPanel.ts::loadOrder (src/orderPanel.ts:1)
+  boundary: express (http) GET /orders/:id
 ```
 
-A provider response declared as a range (an OpenAPI `4XX`) is one declared response that may arrive with any status in it. It counts as covered when the consumer covers any member (a branch on 404, a `!res.ok` guard, a catch on a throwing client), and when nothing covers any member it reports once:
+No outcome sentence can be written: the fall-through may be the intended handling, and over the pinned corpus the uncovered-status form was wrong far more often than right. The error-worthy core of the old kind, a path that will actually misread a response, is `misreadProviderResponse` below.
 
-```
-[WARNING] unhandledProviderCase
-  Provider produces statuses in the 4XX range but no consumer branch handles any of them
-```
+A provider response declared as a range, such as an OpenAPI `4XX`, is one declared response that may arrive with any status in it. It counts as covered when the consumer covers any member, whether that is a branch on 404, a `!res.ok` guard, or a catch on a throwing client. When nothing covers any member it reports once, saying `Provider produces statuses in the 4XX range but no consumer branch handles any of them`.
 
-**Legitimate when:** the consumer truly doesn't care (it has a `try/catch`, or the throw path is correct).
+**Legitimate when:** the consumer does not care, because it has a `try`/`catch` or because the throw path is right.
 
-**Bug when:** the consumer silently ignores the status. Add a branch (e.g. `if (res.status === 404) return null`).
+**A bug when:** the consumer ignores the status. Add a branch, such as `if (res.status === 404) return null`.
 
-### `misreadProviderResponse` *(shipped)*
+### `misreadProviderResponse`
 
-**Severity:** error • **Emitted by:** `checkResponseMisread`
+**Severity:** error.
 
 The path runs on a response the provider sends, reads a field that response's body does not include, and nothing on the path tells that response apart from one that does include it. Whatever the path does with the value runs on undefined.
 
 ```
-[ERROR] misreadProviderResponse (aspect: read)
-  The consumer's fall-through path reads "name", but the 200 body the
-  provider sends does not include it, and neither does any other
-  response. The read comes back undefined and no error says so.
-  provider: backend/src/server.ts::get
-  consumer: frontend/src/loadUser.ts::loadUser
-  boundary: express (http) GET /users/:id
+[ERROR] misreadProviderResponse
+  The consumer's fall-through path reads "customerName", but the 200 body the provider sends does not include it, and neither does any other response.
+  provider: src/api.ts::get (src/api.ts:13)
+  consumer: src/orderPanel.ts::loadOrder (src/orderPanel.ts:1)
+  boundary: express (http) GET /orders/:id
 ```
 
-This is `unhandledProviderCase` restated as a behavior claim rather than a coverage claim, and it is the same question the storage and GraphQL read checks ask: does the code read something the other side does not supply. It stays narrow on purpose:
+This is `unhandledProviderCase` restated as a claim about behavior rather than about coverage, and it is the same question the storage and GraphQL read checks ask: does the code read something the other side does not supply. It stays narrow on purpose.
 
-- A field any of the consumer's guards test is never reported. `if (res.error)` is how the consumer tells the failure body apart, so `error` coming back undefined on the 200 is an answer, not a misread.
+- A field any of the consumer's guards test is never reported. `if (res.error)` is how the consumer tells the failure body apart, so `error` coming back undefined on the 200 is an answer rather than a misread.
 - A body with spreads or an opaque shape claims nothing, and a status the provider returns with several bodies fires only when every one of them lacks the field.
-- The branch has to run on the response: a status guard, a range like `!res.ok`, or the fall-through over the 2xx class. A branch guarded on a body field never runs on a response whose body cannot satisfy the guard.
-- A response declared as a range (an OpenAPI `4XX`) is one response that may arrive with any status in it, so a branch on 404 is judged against the `4XX` body, and the finding says which (`the 4XX body the provider sends`).
+- The branch has to run on the response: a status guard, a range such as `!res.ok`, or the fall-through over the 2xx class. A branch guarded on a body field never runs on a response whose body cannot satisfy the guard.
+- A response declared as a range is one response that may arrive with any status in it, so a branch on 404 is judged against the `4XX` body and the finding says which.
 
-**Legitimate when:** the provider sends the field through a path suss could not read (a wrapper, a spread it flattened away). Suppress with `.sussignore`.
+**Legitimate when:** the provider sends the field through a path suss could not read, a wrapper or a spread it flattened away. Suppress.
 
-**Bug when:** a rename or a copy-paste left the consumer reading a field this endpoint never sends. Fix the read, or the provider.
+**A bug when:** a rename or a copy-paste left the consumer reading a field this endpoint never sends. Fix the read, or fix the provider.
 
-### `deadConsumerBranch` *(shipped)*
+### `deadConsumerBranch`
 
-**Severity:** warning • **Emitted by:** `checkConsumerSatisfaction`
+**Severity:** warning.
 
-The branch never runs, and nothing misreads at runtime because of it, so no outcome sentence can be written. Whether to delete it or to fix the provider is a judgement.
+The consumer has a branch for a status the provider never produces. It usually comes from a consumer copy-pasted off another endpoint.
 
-The consumer has a branch that reads a status the provider never produces. It usually comes from a consumer copy-pasted from another endpoint.
+```
+[WARNING] deadConsumerBranch
+  Consumer expects status 410 but provider never produces it
+  provider: src/api.ts::get (src/api.ts:5)
+  consumer: src/client.ts::loadOrder (src/client.ts:1)
+  boundary: express (http) GET /orders/:id
+```
+
+The branch never runs and nothing misreads because of it, so no outcome sentence can be written. Whether to delete the branch or fix the provider is a judgement.
 
 A status inside a range the provider declares (404 against an OpenAPI `4XX`) is produced, and a provider with a `default` response produces any status, so neither makes a branch dead.
 
-**Fix:** delete the branch, or add the missing status to the provider contract.
+**Fix:** delete the branch, or add the missing status to the provider's contract.
 
-### `providerContractViolation` *(shipped)*
+### `providerContractViolation`
 
-**Severity:** error, or warning for a declared status the handler never produces • **Emitted by:** `checkContractConsistency`, `checkContractImplementation`
+**Severity:** error, and warning for a declared status the handler never produces.
 
-A caller built to the declared contract meets a status or a body the contract never told it about, and takes a path written for something else.
-
-The provider produces a status code (or body shape) its declared contract doesn't include. When the contract is written in the handler's own code (ts-rest, hono-openapi), the provider and consumer fields point at the same summary. The checker skips that comparison when the contract source is itself derived from the implementation.
-
-Every `unhandledCase` gap on the provider surfaces here. An `unreadOutcome` gap does not; it comes out as `lowConfidence` at info instead, because it means the pack has no form for what the handler returns, rather than meaning the handler is wrong.
-
-When the contract is a separate document read with `suss contract` (an OpenAPI file beside the code), the document is the consumer side of the finding. A status the handler produces that the document leaves out is an error. A status the document declares that no path in the handler produces is a warning, because documents routinely declare the 401 the middleware sends or the 404 the router sends, and a declared 5XX is not reported at all.
+The provider produces a status or a body its declared contract does not include. A caller built to the contract meets something the contract never told it about and takes a path written for something else.
 
 ```
 [ERROR] providerContractViolation
   Handler produces status 422 which the openapi document does not declare
-  provider: src/api.ts::post (src/api.ts:19)
-  consumer: openapi:openapi.yaml::POST /users (openapi:openapi.yaml:0)
-  boundary: hono (http) POST /users
-
-[WARNING] providerContractViolation
-  The openapi document declares response 410, and no path in the handler produces it
-  provider: src/api.ts::get (src/api.ts:5)
-  consumer: openapi:openapi.yaml::GET /users/{id} (openapi:openapi.yaml:0)
-  boundary: hono (http) GET /users/:id
+  provider: src/api.ts::post (src/api.ts:14)
+  consumer: openapi:openapi.yaml::POST /orders (openapi:openapi.yaml:0)
+  boundary: express (http) POST /orders
 ```
 
-**Fix:** add the status to the contract, or remove it from the handler. For a declared status the handler never produces, suppress it when something in front of the handler sends it.
+The other direction is a warning, because a document routinely declares the 401 the middleware sends or the 404 the router sends:
 
-### `consumerContractViolation` *(shipped)*
+```
+[WARNING] providerContractViolation
+  The openapi document declares response 410, and no path in the handler produces it
+```
 
-**Severity:** warning (info for a read of a field the contract declares optional) • **Emitted by:** `checkContractConsistency`, `checkConsumerContract`, `checkBodyCompatibility`
+Where the contract is written in the handler's own code, as with ts-rest or hono-openapi, the provider and consumer fields point at one summary, and the checker skips the comparison when the contract source is derived from the implementation. Where the contract is a separate document read with `suss contract`, the document is the consumer side. A declared 5XX is not reported at all.
 
-No outcome can be stated against a contract alone: a branch for an undeclared status never runs, and a missing branch may be the intended fall-through. Which side is right, the branch or the contract, is a judgement.
+Every `unhandledCase` gap on the provider surfaces here. An `unreadOutcome` gap does not: it comes out as `lowConfidence` at info, because it means the pack has no form for what the handler returns rather than that the handler is wrong.
 
-The consumer's expected statuses or body-field reads disagree with the contract. It handles a status the contract doesn't declare, fails to handle one the contract requires, or reads a body field the contract doesn't promise.
+**Fix:** add the status to the contract, or take it out of the handler. For a declared status the handler never produces, suppress it when something in front of the handler sends it.
 
-A contract's range and `default` entries widen what is declared: a branch on 404 agrees with a declared `4XX`, and nothing is undeclared against a contract with a `default`. A declared range the consumer handles no member of reports once (`Contract declares 4XX responses but consumer handles none of them`).
+### `consumerContractViolation`
 
-**Legitimate when:** the consumer genuinely does not care about the status, because a wrapper throws on it and something above catches, or because the declared response never arrives on the path this caller uses.
+**Severity:** warning, and info for a read of a field the contract declares optional.
 
-**Bug when:** the consumer falls through to a path written for a different answer. Handle the status, or take it out of the contract if nothing serves it.
+The consumer's expected statuses or body reads disagree with the contract. It handles a status the contract does not declare, fails to handle one the contract requires, or reads a body field the contract does not promise.
 
-### `contractDisagreement` *(shipped)*
+```
+[WARNING] consumerContractViolation
+  Contract declares response 404 but consumer does not handle it
+  provider: openapi:openapi.yaml::GET /orders/{id} (openapi:openapi.yaml:0)
+  consumer: src/client.ts::loadOrder (src/client.ts:1)
+  boundary: openapi (http) GET /orders/{id}
+```
 
-**Severity:** warning • **Emitted by:** `checkContractAgreement`
+No outcome can be stated against a contract alone: a branch for an undeclared status never runs, and a missing branch may be the intended fall-through. A contract's range and `default` entries widen what is declared, so a branch on 404 agrees with a declared `4XX`, and nothing is undeclared against a contract with a `default`. A declared range the consumer handles no member of reports once.
 
-Two contract sources disagree and at most one of them is right; which one is a judgement the repository does not settle.
+**Legitimate when:** the consumer does not care, because a wrapper throws on the status and something above catches, or because the declared response never arrives on this caller's path.
 
-Two or more providers at the same boundary (e.g. an OpenAPI spec and a CFN template) declare contracts that disagree. `sources` lists every contributor.
+**A bug when:** the consumer falls through to a path written for a different answer. Handle the status, or take it out of the contract if nothing serves it.
+
+### `contractDisagreement`
+
+**Severity:** warning.
+
+Two or more contract sources describe the same boundary and declare different things. `sources` lists every contributor.
 
 ```
 [WARNING] contractDisagreement
-  OpenAPI declares {200, 404} but CFN template MethodResponses declares {200, 404, 500}
-  sources: ["petstore.yaml::getPet", "template.yaml::getPet"]
-  boundary: openapi (http) GET /pets/:id
+  Sources disagree on status 500 at GET /pets/{id}: declared by [GetPet], not declared by [GET /pets/{id}]
+    also from: openapi:public.yaml::GET /pets/{id}
+  boundary: apigateway (http) GET /pets/{id}
 ```
+
+At most one of them is right, and which one is a judgement the repository does not settle.
 
 **Legitimate when:** the sources describe different deployments of the same route, so one really does serve a status the other cannot.
 
-**Bug when:** they describe one deployment. One of them is stale, and the run cannot say which, so this needs somebody who knows which document is maintained.
+**A bug when:** they describe one deployment. One of them is stale and the run cannot say which, so somebody who knows which document is maintained has to decide.
 
-### `contractOperationUnimplemented` *(shipped)*
+### `contractOperationUnimplemented`
 
-**Severity:** warning • **Emitted by:** `checkContractCompleteness`
+**Severity:** warning.
 
-The handler may live in a repository suss did not read, so no outcome can be stated; whether the operation is missing or elsewhere is a judgement.
-
-A contract source (an OpenAPI document, a CFN template) declares an operation and no extracted provider implements it.
+A contract source declares an operation and no extracted provider implements it.
 
 ```
 [WARNING] contractOperationUnimplemented
-  The openapi contract declares DELETE /pets/{petId} and no extracted
-  provider implements it.
+  The openapi contract declares POST /orders/{id}/refunds and no extracted provider implements it.
+  boundary: openapi (http) POST /orders/{id}/refunds
 ```
 
-**Legitimate when:** the handler lives in another repository or service. Suppress.
+The handler may be in a repository suss did not read, so no outcome can be stated.
 
-**Bug when:** the operation was removed from the code and the contract still declares it. Remove it from the contract.
+**Legitimate when:** the handler is in another repository or another service. Suppress.
 
----
+**A bug when:** the operation was removed from the code and the contract still declares it. Take it out of the contract.
 
 ## GraphQL findings
 
-Most GraphQL failure modes surface through the generic kinds (`boundaryFieldUnknown` with a `graphql-resolver` boundary, `ambiguousProvider` across two services). This kind is specific to how GraphQL clients ship documents.
+Most GraphQL failures come through the generic kinds: `boundaryFieldUnknown` for a selection the schema does not declare, `ambiguousProvider` for one field two services implement. This kind is about how GraphQL clients ship documents.
 
-### `graphqlUnknownFragment` *(shipped)*
+### `graphqlUnknownFragment`
 
-**Severity:** error • **Emitted by:** `pairGraphqlOperations`
+**Severity:** error.
 
-This operation ships a document spreading a fragment with no definition, and no fragment registry is configured, so the query throws `Unknown fragment` when it runs.
+The operation ships a document spreading a fragment nothing defines, and no fragment registry is configured, so the query throws when it runs.
 
 ```
 [ERROR] graphqlUnknownFragment
-  GraphQL operation "<anon>.CheckOrderInvoicesStatus" ships a document
-  spreading "...Invoice" with no definition, and no fragment registry is
-  configured, so the query throws `Unknown fragment: Invoice` when it runs.
-  consumer: src/containers/BackgroundTasks/BackgroundTasksProvider.tsx::<anon>.CheckOrderInvoicesStatus
+  GraphQL operation "<anon>.CheckOrderInvoicesStatus" ships a document spreading "...Invoice" with no definition, and no fragment registry is configured, so the query throws `Unknown fragment: Invoice` when it runs.
+  consumer: fixtures/apollo-client/dangling-fragment/provider.tsx::<anon>.CheckOrderInvoicesStatus
   boundary: apollo-client (http)
 ```
 
-Three readings line up before it fires:
+Three readings line up before it fires. The document that reaches the call site is the one with the dangling spread, so a codegen-composed version that defines the fragment never fires it. Every client construction in the project was read and none installs a fragment registry, the one runtime mechanism that could supply the definition; a client whose construction the pack cannot see counts as unknown, and unknown gives the info-level `lowConfidence` finding instead. And the spread has no definition anywhere in the shipped document.
 
-- The document that reaches the call site is the one with the dangling spread. A codegen-composed version that defines the fragment never fires it, because the finding attaches to the document that is used.
-- Every client construction in the project was read and none installs a fragment registry (`createFragmentRegistry` on the cache's `fragments` option), the one runtime mechanism that could supply the definition. A client the pack cannot see the construction of counts as unknown, and unknown means the info-level `lowConfidence` finding instead, never this one.
-- The spread has no definition anywhere in the shipped document.
+**Legitimate when:** the call site never runs, as with dead code behind a disabled flag. Suppress, or delete the code.
 
-**Legitimate when:** the call site never runs (dead code behind a disabled flag). Suppress with `.sussignore`, or delete the code.
+**A bug when:** the import points at the raw source document instead of the codegen output, which is the shape that produced this kind. Import the composed document, or register the fragment on the cache.
 
-**Bug when:** the import points at the raw source document instead of the codegen output, which is the shape that produced the kind. Import the composed document, or register the fragment on the cache.
+## React and Storybook findings
 
----
+### `scenarioCoverageGap`
 
-## React / Storybook findings
+**Severity:** warning.
 
-### `scenarioCoverageGap` *(shipped)*
+A component has a conditional branch that turns on a prop, and no story supplies that prop.
 
-**Severity:** warning • **Emitted by:** `checkComponentStoryAgreement`
+```
+[WARNING] scenarioCoverageGap
+  Component "Badge" has a conditional branch on prop "urgent" but no story supplies it (stories: Plain). The branches depending on "urgent" have no declared scenario exercising them.
+  provider: src/Badge.tsx::Badge (src/Badge.tsx:1)
+  boundary: react (in-process)
+```
 
-Nothing misbehaves at runtime; the branch is merely undeclared in the stories, and whether it deserves one is a judgement.
-
-A component has a conditional branch that depends on a prop, but no story supplies that prop. The branch exists with no declared coverage, so a change can break it silently.
+Nothing misbehaves at runtime. The branch is undeclared in the stories, and whether it deserves one is a judgement.
 
 **Fix:** add a story that exercises the branch.
 
----
-
 ## Message-bus findings
 
-### `messageBusProducerOrphan` *(shipped)*
+### `messageBusProducerOrphan`
 
-**Severity:** warning • **Emitted by:** `checkMessageBus`
+**Severity:** warning.
+
+Code sends to a queue or a topic that no provider in the analyzed scope declares.
+
+```
+[WARNING] messageBusProducerOrphan
+  handler sends to aws_sqs channel "https://sqs.us-east-1.amazonaws.com/123456789012/AuditQueue" but nothing in the analysed scope declares this channel, and no handler answers it. Likely cases: (a) the queue is declared in another stack we don't analyse (multi-repo); (b) work-in-progress before infra is wired up; (c) a real misconfiguration. Severity is warning rather than error because (a) and (b) are common false-positive sources.
+```
 
 The queue may be declared in a stack suss did not read, so the provider side is not in the run and no outcome can be stated.
 
-Code sends a message to a queue / topic that no provider in the analyzed scope declares. Common false-positives: multi-repo deployments (queue declared in another stack); work-in-progress before infra is wired up.
-
 **Fix:** add the contract source that declares the queue, or suppress.
 
-### `messageBusConsumerOrphan` *(shipped)*
+### `messageBusConsumerOrphan`
 
-**Severity:** warning • **Emitted by:** `checkMessageBus`
+**Severity:** warning.
 
-A consumer Lambda is wired to receive from a channel but no code in the project sends to that channel. It could be dead infra, or the producer may live in a different repo; which of the two needs a person.
+A consumer is wired to receive from a channel that no code in the project sends to.
+
+```
+[WARNING] messageBusConsumerOrphan
+  ChargeWorkerFunction.FromCharges is wired to receive messages from aws_sqs channel "ChargesQueue" but no code in the project sends to this channel. Either dead infra or the producer lives outside this repo.
+  boundary: cloudformation (aws_sqs)
+```
 
 **Legitimate when:** the producer is in another repository, which one run cannot see.
 
-**Bug when:** the producer was meant to be here. Nothing sends on the channel, so the consumer never runs and nothing says so at deploy time.
+**A bug when:** the producer was meant to be here. Nothing sends on the channel, so the consumer never runs and nothing says so at deploy time.
 
-### `messageBusUnused` *(shipped)*
+### `messageBusUnused`
 
-**Severity:** warning • **Emitted by:** `checkMessageBus`
+**Severity:** warning.
 
-A queue / topic is declared in infrastructure but neither produced to nor consumed from anywhere in the project. Nothing breaks at runtime; it is probably an orphan resource left over from a removed feature, and removing it is a judgement.
+A queue or a topic is declared in infrastructure and neither produced to nor consumed from anywhere in the project.
 
-**Legitimate when:** something outside the project uses it, or it is kept deliberately for a consumer that has not landed.
+```
+[WARNING] messageBusUnused
+  aws_sqs channel "LeftoverQueue" is declared in infrastructure but has no identified producer or consumer. Likely orphan resource left over from a removed feature.
+  boundary: cloudformation (aws_sqs)
+```
 
-**Bug when:** the feature it belonged to is gone. Nothing breaks either way, so this is cleanup rather than a defect.
+Nothing breaks at runtime, so removing it is a judgement.
 
-### `messageBusConsumerDisabled` *(shipped)*
+**Legitimate when:** something outside the project uses it, or it is kept on purpose for a consumer that has not landed.
 
-**Severity:** info • **Emitted by:** `checkMessageBus`
+**A bug when:** the feature it belonged to is gone. This is cleanup rather than a defect.
 
-A rule or subscription deploys switched off (`State: DISABLED`), so its target receives nothing until someone enables it. The subscription is not counted as a consumer anywhere in the pass: a producer whose only subscriber is disabled is reported as `messageBusProducerOrphan`, the disabled rule is never reported as a waiting `messageBusConsumerOrphan`, and its channel is not reported as `messageBusUnused` (switched off on purpose is not left over).
+### `messageBusConsumerDisabled`
 
-### `repeatUnsafeConsumer` *(shipped)*
+**Severity:** info.
 
-**Severity:** warning • **Emitted by:** `checkMessageBus`
+A rule or a subscription deploys switched off, so its target receives nothing until somebody enables it.
+
+```
+[INFO] messageBusConsumerDisabled
+  ChargeWorkerFunction.NightlyRule is wired to eventbridge channel "schedule:NightlyRule" through "NightlyRule", which is deployed disabled. It receives nothing until someone switches it on, so it is not counted as a consumer of the channel.
+  boundary: cloudformation (eventbridge)
+```
+
+The subscription counts as a consumer nowhere in this pass. A producer whose only subscriber is disabled comes out as `messageBusProducerOrphan`, the disabled rule is never reported as a waiting `messageBusConsumerOrphan`, and its channel is not reported as `messageBusUnused`, because switched off on purpose is not left over.
+
+**Legitimate when:** it is switched off on purpose, which is why this is info.
+
+**A bug when:** somebody meant to enable it and did not. No other finding will say so.
+
+### `repeatUnsafeConsumer`
+
+**Severity:** warning.
 
 An SQS queue that is not FIFO can deliver one message more than once, and the handler draining it makes a `POST` to another service while handling it. A second delivery makes that call again, which is a second charge or a second order.
 
-A call that sends an idempotency key is safe and still reported, because a summary does not record the headers a call sends. Suppress those. A FIFO queue is left alone, and so is a `GET`, a `PUT`, a `PATCH` or a `DELETE`, which land on the same resource twice. A storage write is left alone as well: whether a repeat overwrites the same row or appends a new one turns on where the key's value came from, and a summary does not say that today.
+```
+[WARNING] repeatUnsafeConsumer
+  SQS queue "ChargesQueue" can deliver one message more than once, and handler makes POST POST /v1/charges while handling it. A second delivery makes that call again. If the far side takes an idempotency key and this call sends one, it is safe and worth suppressing: a summary does not record the headers a call sends, so this cannot tell.
+  consumer: src/handlers/chargeWorker.ts::handler (src/handlers/chargeWorker.ts:3)
+  boundary: cloudformation (aws_sqs)
+```
 
-Both gaps come down to a summary being able to state that a call is idempotent, and what it is idempotent on. #516 has the shape.
+A call that sends an idempotency key is safe and still reported, because a summary does not record the headers a call sends. Suppress those. A FIFO queue is left alone, and so are `GET`, `PUT`, `PATCH` and `DELETE`, which land on the same resource twice. A storage write is left alone as well: whether a repeat overwrites the same row or appends a new one turns on where the key's value came from, and a summary does not say that today.
 
----
+Both gaps come down to a summary being able to state that a call is idempotent, and on what. Issue #516 has the shape.
 
 ## Unit-invocation findings
 
-### `unitInvocationTargetUnknown` *(shipped)*
+### `unitInvocationTargetUnknown`
 
-**Severity:** warning • **Emitted by:** `checkUnitInvocation`
+**Severity:** warning.
 
-Code invokes a deployed unit by name, and no deployment source in the run declares a unit by that name. The name is read off the call: a literal, the resource segment of an ARN, or whatever the invoking unit's environment points the variable at.
+Code invokes a deployed unit by name and no deployment source in the run declares a unit by that name. The name is read off the call: a literal, the resource segment of an ARN, or whatever the invoking unit's environment points the variable at.
 
-**Legitimate when:** the callee is deployed by another stack, which one run cannot see, or the infrastructure has not landed yet.
+```
+[WARNING] unitInvocationTargetUnknown
+  OrderApi.handler invokes the lambda "legacy-pricing", and nothing in the analysed scope deploys a unit by that name. Likely cases: (a) it is deployed by another stack we don't analyse; (b) work-in-progress before the infrastructure is wired up; (c) a name that no longer exists. Severity is warning rather than error because (a) and (b) are common.
+```
 
-**Bug when:** the name is stale. The call fails at runtime with `ResourceNotFoundException` and nothing at deploy time says so.
+**Legitimate when:** the callee is deployed by another stack, or the infrastructure has not landed yet.
 
-**Fix:** add the contract source that declares the callee, or suppress.
-
----
+**A bug when:** the name is stale. The call fails at runtime with `ResourceNotFoundException` and nothing at deploy time says so.
 
 ## Runtime-config findings
 
-**Legitimate when:** it is switched off on purpose, which is why this is info and why the pass does not report the channel as unused.
+### `runtimeScopeUnknown`
 
-**Bug when:** somebody meant to enable it and did not. The target receives nothing, and no other finding will say so, because a disabled subscription is left out of the producer and channel checks on purpose.
+**Severity:** info.
 
-### `runtimeScopeUnknown` *(shipped)*
+suss could not tell which code a runtime runs, so it paired that runtime's environment contract against nothing. This says verification was skipped rather than that the code is wrong.
 
-**Severity:** info • **Emitted by:** `checkRuntimeConfig`
+```
+[INFO] runtimeScopeUnknown
+  ReportBuilder (lambda) has no codeScope; cannot verify whether code in this runtime reads its declared environment variables. Add Metadata.SussCodeScope to the resource (or use SAM CodeUri) to enable env-var pairing.
+  boundary: cloudformation (os)
+```
 
-suss could not tell which code a runtime runs, so it paired that runtime's env-var contract against none. This tells you verification was skipped; it is not a defect in the code itself. There are two ways to get here.
+There are two ways to get here. The provider declares no `codeScope`, or one that resolved to no source files, which is what raw CloudFormation with an S3-built artifact looks like. **Fix:** add `Metadata: { SussCodeScope: { CodeUri: "src/handlers/x" } }` to the resource, or wire `CodeUri` through.
 
-The provider declares no `codeScope`, or one we couldn't resolve to source files. Common cause: raw CloudFormation that uses S3-built artifacts (no `CodeUri`).
-
-**Fix:** add `Metadata: { SussCodeScope: { CodeUri: "src/handlers/x" } }` to the resource, or wire CodeUri through.
-
-Or several providers declare a directory containing the same source file, and the code in that file does not say which deployable unit it belongs to. A service that builds every one of its functions from the service root gives them all the same directory, and then nothing says which function runs a shared helper. Attributing the helper to all of them would report one `process.env` read once per function.
-
-**Fix:** let a pack discover the code under a template entry so it comes with a deployable unit, or give each function a `CodeUri` covering only its own sources.
-
----
-
-## Reserved kinds *(in IR enum, no emitter yet)*
-
-These kinds exist in the enum but no checker emits them today. They cover failure modes distinct enough not to fold into the generic `boundaryField*` / `boundaryShapeMismatch` family.
-
-- `restMethodOnUnknownPath`: error. Every call to the missing endpoint returns a 404 the caller wrote no branch for. The consumer's call targets a `(method, path)` the provider doesn't expose. This is distinct from `boundaryFieldUnknown` because the mismatch is at the boundary identity level (the endpoint itself), not at field level. Today's pairing layer leaves both summaries unmatched, which quietly obscures what is probably a typo. The emitter ships once the pairing layer adds a "consumer with no provider" finding distinct from "unmatched / no boundary binding."
-- `authPolicyMismatch`: error. Every call without the credential the provider requires is rejected, so the consumer's request fails whenever it runs. The provider requires authentication and the consumer's call doesn't supply it correctly. This one is boundary-level (auth policy) rather than field-level, so it is kept distinct from the generic kinds. It needs auth-policy modeling on both sides (OpenAPI security schemes plus the client-side header / interceptor patterns).
-- `envVarRequiredButUnmarked`: warning. Nothing misreads while the var is set; the contract merely understates what the code needs, and tightening it is a judgement. The code treats `process.env.X` as definitely-required (`if (!process.env.X) throw …`) but the runtime contract doesn't mark it required. This is about contract-side metadata rather than a disagreement over a field or its form. The emitter waits for the runtime contract to grow a "required" attribute on env-var entries.
-
----
+Or several providers declare a directory containing the same source file, and nothing in that file says which deployed unit it belongs to. A service that builds every function from the service root gives them all one directory, and attributing a shared helper to all of them would report one `process.env` read once per function. **Fix:** let a pack discover the code under a template entry so it comes with a deployed unit, or give each function a `CodeUri` covering only its own sources.
 
 ## Meta findings
 
-### `lowConfidence` *(shipped)*
+### `lowConfidence`
 
-**Severity:** info • **Emitted by:** any check, as a meta-finding
+**Severity:** info.
 
 suss could not finish reading one side, so it says so rather than guessing. Predicates stayed opaque, type resolution failed, or confidence dropped below `medium`.
 
-It also reports every `unreadOutcome` gap on the provider. That gap means a `return` in the handler matched none of the terminal shapes the pack looks for:
-
 ```
 [INFO] lowConfidence
-  One return in this function matches none of the terminal shapes this
-  pack looks for, so what it produces is not described here
+  GraphQL operation "<anon>.CheckOrderInvoicesStatus" spreads "...Invoice" but no fragment definition with that name was found, so the fields selected through it were not checked.
+  boundary: apollo-client (http)
 ```
 
-**Fix:** teach the pack that terminal shape. Until then the handler is under-described, not wrong, which is why this is info and not an error.
+It also reports every `unreadOutcome` gap on the provider, which means a `return` in the handler matched none of the terminal shapes the pack looks for.
 
-### `unsupportedSemantics` *(shipped)*
+**Fix:** teach the pack that terminal shape. Until then the handler is under-described rather than wrong, which is why this is info.
 
-**Severity:** info • **Emitted by:** `checkMessageBus`
+### `unsupportedSemantics`
 
-A pack identifies a boundary it cannot work out the other side of. The
-shipped emitter is the message-bus one: a subscription whose channel
-nothing in the run resolves, and the finding says which reading gave
-up. It also covers a boundary no pack knows how to summarise, a
-WebSocket subscription handler or a gRPC streaming method among them.
+**Severity:** info.
 
-**Legitimate when:** the channel is settled outside the code, by a
-deploy-time value or a console change, so the source could not have
-said it.
+A pack identified a boundary it cannot work out the other side of, and the finding says which reading gave up.
 
-**Bug when:** the source does say it and the pack could not follow it.
-That is a gap in suss rather than in the project, and the reason on the
-finding says where.
+```
+[INFO] unsupportedSemantics
+  SNS subscription "FromEvents" on topic "EventsTopic" routes to AuditFunction.FromEvents, but subscription declares a FilterPolicy; v0 pairs on the whole topic only, filter-policy reduction is out of scope. It's surfaced as unpaired-unresolvable rather than dropped.
+  boundary: cloudformation (aws.sns)
+```
 
-### `opaquePredicateBlocking` *(reserved)*
+It also covers a boundary no pack knows how to summarise, such as a WebSocket subscription handler or a gRPC streaming method.
 
-**Severity:** info
+**Legitimate when:** the channel is settled outside the code, by a deploy-time value or a change somebody made in a console, so the source could not have said it.
 
-A pairing pass refused to emit substantive findings because too many predicates on the relevant transitions are opaque. This one is per-pair, in contrast to `lowConfidence`, which is per-summary.
-
-**Nothing emits this today.** It is a name reserved in the schema, so a
-run never produces it and there is nothing to act on until the emitter
-lands.
+**A bug when:** the source does say it and the pack could not follow it. That is a gap in suss rather than in your project, and the reason on the finding says where.
 
 ### `ambiguousProvider`
 
-**Severity:** warning
-
-Which of the colliding providers the code reaches needs a person; the run itself cannot settle it, and nothing is known to misbehave.
+**Severity:** warning.
 
 One consumer matched two providers where at most one of them can be right.
 
-Two GraphQL services in one repo can each declare `Query.user`, and the key has no endpoint identity to tell them apart, so the operation pairs with both and some of those pairs are wrong. The finding says which services collided so you can see where the extra pairs came from.
+```
+[WARNING] ambiguousProvider
+  GraphQL operation "GetUser" selects "Query.user", which 2 resolvers implement across 2 services (accounts-service, directory-service). The pairing key has no endpoint identity, so this operation pairs with all of them and some of those pairs are wrong.
+  boundary: graphql-documents (http-graphql)
+```
 
-Storage says it for a container. A table declared as `{StageName}-orders-blue` and one declared as `prod-orders-{Colour}` are both called something that covers `prod-orders-blue`, and each states as much of its name as the other, so nothing in the run says which one the code reaches. The access pairs with neither and this finding says which two were in the way. When one of the two states more of its name, that one takes the access and no finding is emitted.
+Storage says it for a container. A table declared as `{StageName}-orders-blue` and one declared as `prod-orders-{Colour}` both cover `prod-orders-blue`, and each states as much of its own name as the other, so nothing in the run says which one the code reaches. The access pairs with neither and the finding says which two were in the way. Where one states more of its name, that one takes the access and no finding is emitted.
 
----
+**Legitimate when:** the two providers are the same route in two documents, so whichever the consumer reaches behaves the same.
+
+**A bug when:** they are different services that happen to share a method and a path. The consumer is being checked against an API it never calls, so every finding on that pair is suspect until the collision is settled.
+
+## Reserved kinds
+
+These six are in the enum and no checker emits them today. They cover failure modes distinct enough not to fold into the generic family.
+
+- `restMethodOnUnknownPath`: error. The consumer's call targets a `(method, path)` the provider does not expose, so every call to the missing endpoint returns a 404 the caller wrote no branch for. It is at boundary-identity level rather than field level, which is why it is separate from `boundaryFieldUnknown`. Today's pairing layer leaves both summaries unmatched, which quietly hides what is probably a typo. The emitter ships once pairing has a "consumer with no provider" finding distinct from "unmatched".
+- `authPolicyMismatch`: error. The provider requires authentication and the consumer's call does not supply it, so the request is rejected whenever it runs. It needs auth-policy modeling on both sides, OpenAPI security schemes against the client's own header or interceptor patterns.
+- `boundaryFieldRequired`: error. The provider declares a field as required and the consumer does not supply it, so the provider rejects the request every time: a 4xx, or a component that fails to render. The `aspect` would point at the payload. It takes the place of `requiredHeaderMissing`, `componentRequiredPropMissing` and `graphqlRequiredArgMissing`.
+- `boundaryConstraintViolation`: error. The value has the type the provider declared and breaks a value-level rule it declared, such as enum membership or a length. It takes the place of `storageEnumConstraintViolation` and `graphqlEnumValueUnknown`.
+- `envVarRequiredButUnmarked`: warning. The code treats `process.env.X` as required (`if (!process.env.X) throw …`) and the runtime contract does not mark it required. Nothing misreads while the variable is set, so tightening the contract is a judgement. The emitter waits for the runtime contract to grow a required attribute on env-var entries.
+- `opaquePredicateBlocking`: info. A pairing pass refused to emit substantive findings because too many predicates on the relevant transitions are opaque. It is per pair, where `lowConfidence` is per summary.
 
 ## Intent findings
 
-These come from a second checker and travel in a second list. `suss check --intent DIR` pairs the intent docs your team writes against the same code summaries, and puts what it found under `intent` in the JSON rather than in `findings`. A parser that reads only `findings` will never see one of these.
+These come from a second checker and travel in a second list. `suss check --intent DIR` pairs the intent docs your team writes against the same code summaries and puts what it found under `intent` in the JSON rather than under `findings`.
 
-They have a different shape from a behavioural finding. There is no `provider` and no `consumer`, because one side is a document rather than code:
+They have a different shape, because one side is a document rather than code, so there is no `provider` and no `consumer`:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `kind` | string (one of the ten below) | Which failure mode this is. |
-| `severity` | `error` \| `warning` \| `info` | Default severity. |
-| `boundary` | string | A readable label, `GET /users/:id` or `fn:@suss/cli::contract`. The key the intent and the code paired on. |
-| `intent` | `{ name, outcomeId? }` | The intent doc's `name` (boundary intent) or `title` (PRD), and the declared outcome when the finding is about one. |
+| `kind` | string | One of the ten below. |
+| `severity` | `error` \| `warning` \| `info` | The default. |
+| `boundary` | string | A readable label, such as `GET /users/:id` or `fn:@suss/cli::contract`. The key the intent and the code paired on. |
+| `intent` | `{ name, outcomeId? }` | The document's `name` for a boundary intent or `title` for a PRD, plus the declared outcome where the finding is about one. |
 | `code` | string? | The matched summary as `${file}::${name}`. Absent on `unimplementedBoundary`, where no code matched. |
-| `scenario` | `{ title?, link }`? | Present only on the three scenario kinds. |
+| `scenario` | `{ title?, link }`? | Set only on the three scenario kinds. |
 | `message` | string | One line of human-readable text. |
-| `suppressed` | `IntentFindingSuppression?` | Present only when a `.sussignore` rule matched. |
+| `suppressed` | `IntentFindingSuppression?` | Set only when a `.sussignore` rule matched. |
 
-One rule cuts across all ten: **a finding against intent suss inferred rather than a person wrote is downgraded one level.** An intent doc has a `source` field, and `inferred` means suss guessed the declaration from the code. Curating the doc restores the full severity. So an `error` you see at `warning` may mean nobody has confirmed the intent yet, not that the problem is smaller.
+One rule cuts across all ten: **a finding against intent suss inferred rather than a person wrote is downgraded one level.** An intent doc has a `source` field, and `inferred` means suss guessed the declaration from the code. Curating the document restores the full severity, so an `error` you see at `warning` may mean nobody has confirmed the intent yet rather than that the problem is smaller.
 
-The severity split follows from what an intent doc is. A person sat down and wrote it, so code that does not satisfy it is a defect and reads as an error. An intent that cannot be checked, or a scenario that points at nothing, is a gap in the documents and reads as a warning. Code that does more than the document claims reads as info.
+The severity split follows from what an intent doc is. A person sat down and wrote it, so code that does not satisfy it is a defect and reads as an error. An intent that cannot be checked, or a scenario pointing at nothing, is a gap in the documents and reads as a warning. Code that does more than the document claims reads as info.
 
-### `unimplementedBoundary` *(shipped)*
+### `unimplementedBoundary`
 
-**Severity:** error • **Emitted by:** `checkBoundaryIntent`
+**Severity:** error.
 
-Someone declared a boundary in an intent doc and no code in the run produces it.
+Somebody declared a boundary in an intent doc and no code in the run produces it.
 
-**Legitimate when:** the intent is written ahead of the code on purpose, or the implementation lives in a repository this run did not read.
+```
+[error] DELETE /users/{id}: Intent "delete-users-id" declares boundary DELETE /users/{id} with 1 outcome(s); no code produces this boundary.
+```
 
-**Bug when:** the code is supposed to be here. Either the boundary was never built, or it is built under a key that does not match what the intent declares, and a spelling that differs by one path parameter is the usual cause. Run `suss inspect --dir` and compare the key the code claims against the one the intent declares.
+**Legitimate when:** the intent was written ahead of the code on purpose, or the implementation is in a repository this run did not read.
 
-### `uncoveredOutcome` *(shipped)*
+**A bug when:** the code is supposed to be here. Either the boundary was never built, or it is built under a key that does not match the one the intent declares, and a spelling that differs by one path parameter is the usual cause. Run `suss inspect --dir` and compare the key the code claims against the one the intent declares.
 
-**Severity:** error • **Emitted by:** `compareIntentToImpl`
+### `uncoveredOutcome`
 
-The code implements the boundary, and none of its transitions produce one of the outcomes the intent declares. A route declared to return 409 on a duplicate has no branch that returns 409.
+**Severity:** error.
+
+The code implements the boundary and none of its transitions produce one of the outcomes the intent declares.
+
+```
+[error] GET /users/{id}: Intent "get-users-id" declares status 410 at GET /users/{id}; get has no transition that produces it.
+```
 
 An outcome can also declare the effects it results in, and the same finding covers those: a queue consumer whose intent says an outcome results in a write to `aws.dynamodb:Invoices`, where no transition of it writes that table.
 
-**Legitimate when:** the outcome is produced somewhere suss cannot follow, in a shared error handler or a framework layer the pack does not read. Check the summary's gaps before treating it as missing. For a declared effect, an access whose container the code gets handed as an argument is one the storage pass grounds and this pass does not, so it matches nothing here.
+**Legitimate when:** the outcome is produced somewhere suss cannot follow, in a shared error handler or a framework layer the pack does not read. Check the summary's gaps before treating it as missing. For a declared effect, an access whose container the code is handed as an argument is one the storage pass grounds and this pass does not, so it matches nothing here.
 
-**Bug when:** the branch is genuinely absent. The declared behaviour is not implemented, which is the case this checker exists for.
+**A bug when:** the branch is absent. The declared behavior is not implemented, which is the case this checker exists for.
 
-### `outcomeShapeMismatch` *(shipped)*
+### `outcomeShapeMismatch`
 
-**Severity:** error • **Emitted by:** `compareIntentToImpl`
+**Severity:** error.
 
 A branch produces the declared outcome and the body it returns disagrees with the body the intent declares.
 
+```
+[error] GET /users/{id}: Body shape for status 200 at GET /users/{id} disagrees with intent "get-users-id": get produces an incompatible shape.
+```
+
 Several branches can produce one status with different bodies, so the check is satisfied when any matching branch produces a conforming shape. This fires only when none of them does.
 
-**Legitimate when:** the intent doc describes the body loosely and the code is correct. Fix the document.
+**Legitimate when:** the intent doc describes the body loosely and the code is right. Fix the document.
 
-**Bug when:** a caller reading the field the intent promised gets something else. This is the same failure as `boundaryShapeMismatch`, with a written declaration on one side instead of a second piece of code.
+**A bug when:** a caller reading the field the intent promised gets something else. This is the same failure as `boundaryShapeMismatch`, with a written declaration on one side instead of a second piece of code.
 
-### `undeclaredOutcome` *(shipped)*
+### `undeclaredOutcome`
 
-**Severity:** info • **Emitted by:** `compareIntentToImpl`
+**Severity:** info.
 
-The code returns a REST status the intent never mentions, or it reaches a boundary no outcome mentions. One finding per status, so two catch arms both returning 500 produce one finding rather than two, and one per verb and boundary, so a unit writing the same table twice produces one.
+The code returns a REST status the intent never mentions, or it reaches a boundary no outcome mentions.
 
-Statuses are limited to REST on purpose. Function-call returns are too numerous for every undeclared one to mean something.
+```
+[info] GET /users/{id}: get produces status 404 at GET /users/{id}; intent "get-users-id" does not declare it.
+```
+
+One finding per status, so two catch arms both returning 500 produce one, and one per verb and boundary, so a unit writing the same table twice produces one. Statuses are limited to REST on purpose, because function-call returns are too numerous for every undeclared one to mean something.
 
 **Legitimate when:** the status is a framework default or an infrastructure response nobody intended to write down. A 500 from an unhandled throw is not a promise anybody made. For a boundary, the intent may be scoped to one part of what the unit does.
 
-**Bug when:** the status is part of the contract callers depend on and the document does not say so, or the unit writes a store the document never mentions. Add it to the intent, since a person reading the document will not know about it.
+**A bug when:** the status is part of the contract callers depend on and the document does not say so, or the unit writes a store the document never mentions. Add it, since a person reading the document will not know about it.
 
-### `renamedBoundary` *(shipped)*
+### `renamedBoundary`
 
-**Severity:** error • **Emitted by:** `compareIntentToImpl`
+**Severity:** error.
 
-A declared store the unit never touches anywhere, paired with an undeclared store of the same system the unit touches instead, with the exact same verbs and outcomes. Renaming a store without updating the intent doc otherwise produces an `uncoveredOutcome` for every verb and outcome declared against the old store plus an `undeclaredOutcome` for every verb the code touches the new one with; this finding replaces that whole set with one. Pairing requires the two boundaries to share a system prefix, their verbs to match exactly, the new one to satisfy every declared use the old one had, and each side to have exactly one candidate on the other.
+A declared store the unit never touches, paired with an undeclared store of the same system that the unit touches instead, with the same verbs and outcomes.
+
+```
+[error] bus:aws_sqs InvoicesQueue: Intent "bus-aws-sqs-invoices-queue" declares aws.dynamodb:PaidInvoices; InvoiceWorkerFunction.handler writes aws.dynamodb:Invoices instead, with the same outcomes. If the store was renamed, update the intent.
+```
+
+Renaming a store without updating the intent doc would otherwise produce an `uncoveredOutcome` for every verb and outcome declared against the old store, plus an `undeclaredOutcome` for every verb the code touches the new one with. This replaces that whole set with one finding. Pairing requires the two boundaries to share a system prefix, their verbs to match exactly, the new one to satisfy every declared use the old one had, and each side to have exactly one candidate on the other.
 
 **Legitimate when:** never. The document and the code disagree either way, and the pairing is a guess about the cause rather than a change in whether that disagreement matters.
 
-**Bug when:** always. Update the intent if the store was renamed, and fix the code if it was not.
+**A bug when:** always. Update the intent if the store was renamed, and fix the code if it was not.
 
-### `unkeyableBoundary` *(shipped)*
+### `unkeyableBoundary`
 
-**Severity:** warning • **Emitted by:** `checkBoundaryIntent`
+**Severity:** warning.
 
-The intent doc is well-formed and its boundary cannot be keyed for pairing, so nothing was checked against it. A function-call boundary needs a package and an export path, a message-bus boundary needs a channel, and without them there is nothing to match the code against. The message says what the boundary's own protocol would need.
+The intent doc is well-formed and its boundary cannot be keyed for pairing, so nothing was checked against it.
 
-A store is the one case where filling fields in does not help. Storage has no identity key by design, because a container name can be a pattern that only a caller or the deployment settles, and the storage pass grounds it before pairing. Say what the store is for by putting `- writes: aws.dynamodb:Invoices` on an outcome of the boundary that touches it, and the checker compares that.
+```
+[warning] function-call:intent: Intent "user-cache" has a function-call boundary that can't be keyed for pairing (a function-call boundary needs package + exportPath); it was not checked against code.
+```
 
-**Legitimate when:** the boundary is a store, or the intent is written ahead of the keying suss can do. The author declared coverage they are not getting either way, so the finding is worth reading.
+A function-call boundary needs a package and an export path, a message-bus boundary needs a channel, and without those there is nothing to match the code against. The message says what the boundary's own protocol would need.
 
-**Bug when:** the missing part is a field the author could write. Add it and the boundary starts being checked.
+A store is the one case where filling the fields in does not help. Storage has no identity key by design, because a container name can be a pattern only a caller or the deployment settles, and the storage pass grounds it before pairing. Say what the store is for by putting `- writes: aws.dynamodb:Invoices` on an outcome of the boundary that touches it, and the checker compares that.
 
-### `unlinkedScenario` *(shipped)*
+**Legitimate when:** the boundary is a store, or the intent was written ahead of the keying suss can do. The author declared coverage they are not getting either way, so the finding is worth reading.
 
-**Severity:** info • **Emitted by:** the PRD pass
+**A bug when:** the missing part is a field the author could write. Add it and the boundary starts being checked.
 
-A scenario in a PRD is not linked to any system-intent outcome. It reads fine on its own, and nothing checks whether the behaviour it describes exists.
+### `unlinkedScenario`
+
+**Severity:** info.
+
+A scenario in a PRD is not linked to any system-intent outcome. It reads fine on its own, and nothing checks whether the behavior it describes exists.
+
+```
+[info] prd:Reading a user: Scenario #3 in PRD "Reading a user" has no structured link to a system-intent outcome; it reads on its own, but its coverage can't be checked until a link is added.
+```
 
 **Legitimate when:** the PRD is still being written, or the scenario describes something outside any one boundary. This is a valid pending state rather than a defect.
 
-**Bug when:** never on its own. Treat the count as a coverage number: how much of what the PRD describes is connected to something suss can check.
+**A bug when:** never on its own. Treat the count as a coverage number: how much of what the PRD describes is connected to something suss can check.
 
-### `danglingScenarioLink` *(shipped)*
+### `danglingScenarioLink`
 
-**Severity:** warning • **Emitted by:** the PRD pass
+**Severity:** warning.
 
-A scenario links to an intent or an outcome nothing declares. Either no boundary intent goes by that name, or the intent exists and never declares an outcome with that id. The message lists the outcomes it does declare.
+A scenario links to an intent or an outcome nothing declares. Either no boundary intent goes by that name, or the intent exists and declares no outcome with that id. The message lists the outcomes it does declare.
 
-**Legitimate when:** the boundary intent lives in a directory this run did not read. Point `--intent` at both.
+```
+[warning] GET /users/{id}: Scenario #4 in PRD "Reading a user" links to "get-users-id.301-moved", but boundary intent "get-users-id" declares no outcome "301-moved" (known outcomes: 410-gone, 200-ok).
+```
 
-**Bug when:** the name is wrong or the intent was renamed and the link was not. The scenario claims coverage of something that does not exist.
+**Legitimate when:** the boundary intent is in a directory this run did not read. Point `--intent` at both.
 
-### `ambiguousScenarioLink` *(shipped)*
+**A bug when:** the name is wrong, or the intent was renamed and the link was not. The scenario claims coverage of something that does not exist.
 
-**Severity:** warning • **Emitted by:** the PRD pass
+### `ambiguousScenarioLink`
+
+**Severity:** warning.
 
 A scenario links to a name two or more boundary intents share, so the link resolves to more than one and suss will not pick.
 
-**Legitimate when:** never. Two intent docs sharing a name is a problem regardless of the link.
+```
+[warning] prd:Reading a user: Scenario #1 in PRD "Reading a user" links to "get-users-id.410-gone", but 2 boundary intents are named "get-users-id"; rename them so the link resolves to one.
+```
 
-**Bug when:** it fires. Rename the intents so the link resolves to one.
+**Legitimate when:** never. Two intent docs sharing a name is a problem whatever the link does.
 
-### `undescribedOutcome` *(shipped)*
+**A bug when:** it fires. Rename the intents so the link resolves to one.
 
-**Severity:** info • **Emitted by:** the PRD pass
+### `undescribedOutcome`
 
-A boundary intent declares an outcome and no PRD scenario links to it. The other three scenario kinds ask whether a scenario points at something that exists; this asks it the other way, which is the question a product reader has: which of these behaviours has nobody written down a reason for.
+**Severity:** info.
 
-It stays quiet until at least one PRD is loaded. Before that the answer is every outcome, which tells nobody anything. `suss infer prd` writes a scenario per outcome, so a fresh set of drafts starts with none of these.
+A boundary intent declares an outcome and no PRD scenario links to it.
 
-**Legitimate when:** the outcome is one nobody needs a reason for, a 500 from an unhandled throw or a branch that exists for a library's sake. Treat the count as a coverage number rather than a list to empty.
+```
+[info] DELETE /users/{id}: Intent "delete-users-id" declares 204-deleted and no PRD scenario says why it is there.
+```
 
-**Bug when:** never on its own. It becomes one when the outcome turns out to be behaviour nobody meant to ship, which is what reading the list is for.
+The other three scenario kinds ask whether a scenario points at something that exists. This asks it the other way, which is the question a product reader has: which of these behaviors has nobody written down a reason for. It stays quiet until at least one PRD is loaded, because before that the answer is every outcome, which tells nobody anything. `suss infer prd` writes a scenario per outcome, so a fresh set of drafts starts with none of these.
 
----
+**Legitimate when:** the outcome is one nobody needs a reason for, such as a 500 from an unhandled throw. Treat the count as a coverage number rather than a list to empty.
+
+**A bug when:** never on its own. It becomes one when the outcome turns out to be behavior nobody meant to ship, which is what reading the list is for.
 
 ## Run findings
 
-A third list, under `run` in the JSON. These are about the run rather than about a boundary, so they have no two sides and no boundary key at all:
+A third list, under `run` in the JSON. These are about the run rather than about a boundary, so they have no two sides and no boundary key:
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -736,47 +705,64 @@ A third list, under `run` in the JSON. These are about the run rather than about
 | `description` | string | What happened. |
 | `remedy` | string | What to do about it. A run-level problem has no boundary to point at, so it says the next step instead. |
 
-### `nothingPaired` *(shipped)*
+### `nothingPaired`
 
-**Severity:** error • **Emitted by:** `suss check --dir`, by default, unless `--allow-empty` was passed
+**Severity:** error. Emitted by `suss check --dir` unless `--allow-empty` was passed.
 
-The run read summaries and paired none of them. No boundary had both a provider and a consumer, so nothing was compared, and the report would otherwise say the same thing it says when both sides agree.
+The run read summaries and paired none of them. No boundary had both a provider and a consumer, so nothing was compared, and without this the report would say what it says when both sides agree.
 
-It fires only when there was something to compare, and only without `--allow-empty`. A run over no summaries at all says so on its own. A run with `--intent` that checked at least one intent doc did compare something, so it does not fire there either.
+```
+error: nothingPaired
+  Read 6 summaries and paired nothing. No boundary in this run had both a provider and a consumer, so nothing was compared.
+  Check that both sides of at least one boundary are in the directory. A provider extracted from code needs its consumer extracted too, or its contract read with `suss contract`. `suss inspect --dir` over the same files lists the boundaries each side claims, and two spellings of one boundary is the usual cause.
+```
+
+It fires only when there was something to compare. A run over no summaries at all says so on its own, and a run with `--intent` that checked at least one intent doc did compare something.
 
 **Legitimate when:** you meant to extract one side. Checking a service against a contract you have not read yet pairs nothing, correctly.
 
-**Bug when:** both sides are in the directory and still nothing paired. The two sides are spelling the boundary differently, and `suss inspect --dir` over the same files shows both spellings side by side.
+**A bug when:** both sides are in the directory and still nothing paired. The two sides are spelling the boundary differently, and `suss inspect --dir` over the same files shows both spellings side by side.
 
-### `mostlyUnpaired` *(shipped)*
+### `mostlyUnpaired`
 
-**Severity:** error • **Emitted by:** `suss check --dir` under `--fail-on-unpaired`
+**Severity:** error. Emitted under `--fail-on-unpaired`.
 
-More boundaries had nothing to pair with than the floor allows. A run that pairs three boundaries out of hundreds otherwise exits the same as one that paired everything, and a CI gate on it goes green. The finding gives the counts and the floor; the report's unmatched lists say which side each boundary is missing.
+More boundaries had nothing to pair with than the floor allows. A run that pairs three boundaries out of hundreds otherwise exits the same as one that paired everything, and a CI gate on it goes green.
+
+```
+error: mostlyUnpaired
+  4 of 5 boundaries had nothing to pair with, over the --fail-on-unpaired floor of 1. 1 paired.
+  The unmatched lists in this report say which side each boundary is missing. Extract the missing side, read its contract with `suss contract`, or raise the floor if this share is expected.
+```
+
+The floor takes a count (`25`) or a share (`50%`).
 
 **Legitimate when:** the corpus is one-sided on purpose and the floor was set for a different mix. Raise the floor, or drop the flag for that run.
 
-**Bug when:** both sides were extracted and the share is still high. The usual causes are unpathed providers (their routes have a gap message saying why) and two spellings of one boundary.
+**A bug when:** both sides were extracted and the share is still high. The usual causes are unpathed providers, whose routes have a gap message saying why, and two spellings of one boundary.
 
-### `unreadableInput` *(shipped)*
+### `unreadableInput`
 
-**Severity:** error • **Emitted by:** `suss check --dir` under `--fail-on-unreadable`
+**Severity:** error. Emitted under `--fail-on-unreadable`.
 
-A file in the summaries directory could not be read as summaries. Without the flag the file is skipped with a stderr warning and the run exits by findings alone, so a truncated extract output reads as a pass. The `--json` body lists the skipped files whether or not the flag is on.
+A file in the summaries directory could not be read as summaries.
+
+```
+error: unreadableInput
+  1 file in the directory could not be read as summaries: report.json: suss could not read [...] as summaries. It should be the output of `suss extract` or `suss contract`. What did not fit:
+      - <root>: Invalid input: expected array, received object
+  Fix or remove the files, or write summaries somewhere reports are not written back to. A truncated extract output and a report saved into the summaries directory are the usual causes.
+```
+
+Without the flag the file is skipped with a warning on stderr and the run exits by findings alone, so a truncated extract output reads as a pass. The `--json` body lists the skipped files whether or not the flag is on.
 
 **Legitimate when:** the directory deliberately mixes summaries with other JSON a different tool reads. Move the other files, or leave the flag off.
 
-**Bug when:** the skipped file was written by extract. A truncated output means the extract was interrupted; a report written back into the summaries directory means an `-o` path pointed at the wrong place.
+**A bug when:** the skipped file was written by extract. A truncated output means the extract was interrupted, and a report written back into the summaries directory means an `-o` path pointed at the wrong place.
 
----
+## What this page is not
 
-## What this catalog is *not*
-
-- **Not every tool's finding.** Downstream tools built on top of `@suss/behavioral-ir` can emit their own kinds; those aren't listed here.
-- **Not a spec.** The authoritative list is `FindingKindSchema` in [`packages/behavioral-ir/src/schemas.ts`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/behavioral-ir/src/schemas.ts).
-- **Not exhaustive for severity mapping.** Severities shown are the defaults the checker emits. `.sussignore` rules can downgrade or hide any finding, see [Accept a finding](/guides/accept-a-finding).
-- **Not a roadmap.** The *reserved* tag means the kind exists in the IR enum but no checker emits it yet; it doesn't promise an emitter will land soon.
-
-**Legitimate when:** the two providers are the same route in two documents, so whichever the consumer reaches behaves the same.
-
-**Bug when:** they are different services that happen to share a method and a path. The consumer is being checked against an API it never calls, so every finding on that pair is suspect until the collision is settled.
+- **Not every tool's finding.** A tool built on `@suss/behavioral-ir` can emit kinds of its own, and those are not here.
+- **Not the spec.** `FindingKindSchema` is. This page tracks it, and `npm run check:findings` fails when it drifts.
+- **Not the last word on severity.** These are the defaults the checker emits. A `.sussignore` rule can downgrade or hide any of them; see [Accept a finding](/guides/accept-a-finding).
+- **Not a roadmap.** A reserved kind is a name in the enum with no emitter, and nothing promises one is coming soon.
