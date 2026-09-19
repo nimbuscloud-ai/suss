@@ -211,6 +211,21 @@ describe("the dialects it reads", () => {
     expect(access.fields).toEqual(["event_name"]);
   });
 
+  it("reads a BigQuery delete, whose grammar puts the table in the alias", () => {
+    expect(
+      readSqlAccess("DELETE FROM `proj.dataset.events` WHERE id = @id", {
+        dialect: "bigquery",
+      }),
+    ).toEqual([
+      {
+        table: "proj.dataset.events",
+        kind: "write",
+        fields: [],
+        selector: ["id"],
+      },
+    ]);
+  });
+
   it("reads Postgres under the one name the store goes by", () => {
     const [access] = readSqlAccess("SELECT id FROM users", {
       dialect: "postgresql",

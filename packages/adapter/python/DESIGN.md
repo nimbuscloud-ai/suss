@@ -326,6 +326,63 @@ the keywords every other call in the chain picks rows by, `id` in
 `filter_by(id=user_id)`. Raw SQL handed to `text` is read as its own effect,
 with the kind and table taken from the statement.
 
+## A statement the project wrote as SQL
+
+Some libraries take a statement the project wrote rather than building one.
+SQLAlchemy exports a function for it, and a pack lists the function and the
+module it comes from:
+
+```ts
+rawSql: [{ module: "sqlalchemy", functions: ["text"], storageSystem: "postgresql" }]
+```
+
+A cloud warehouse hands the project a client object instead, and the statement
+goes to a method on it. `sqlClients` says which class, from which module, and
+where each method takes what it is given:
+
+```ts
+sqlClients: [
+  {
+    module: "google.cloud.bigquery",
+    clientTypes: ["Client"],
+    statements: [{ method: "query", argument: 0, keyword: "query" }],
+    tables: [{ method: "get_table", argument: 0, keyword: "table", kind: "read" }],
+    handsBack: [{ method: "get_client", module: "...", name: "Client" }],
+    storageSystem: "gcp.bigquery",
+    dialect: "bigquery",
+  },
+]
+```
+
+The class of the value a call is read off comes from `receiverTypes.ts`, which
+is the same reader the ORM chains use. It takes the annotation the source
+states beside the name, and where there is none it asks the rules what call
+wrote the name, so a client built in one module and called in another still
+matches, as does one a project factory hands back. The class may be written as
+a plain name the file imported, `Client`, or as an attribute on an imported
+module, `bigquery.Client`, and both arrive at the same module and name.
+
+`statements` reads the argument through the value evaluator, so an f-string,
+a `+`, and a constant another module writes all read the same as a statement
+written out at the call. A piece the evaluator cannot settle becomes a
+parameter, which is what the statement would have carried anyway. A `path`
+says which keys to follow when the statement travels inside a dictionary,
+`["query", "query"]` for a method taking `configuration={"query": {"query":
+sql}}`. `tables` is for a method that says which table rather than writing
+SQL, and it reads the argument as a string and nothing more.
+
+`handsBack` is the one hop a pack can declare between two of its own classes.
+Only the library knows what one of its methods gives back, so nothing here
+infers it, and a chain like `hook.get_client().query(sql)` matches because the
+hook's pattern says `get_client` gives back the warehouse client.
+
+A table addressed as `project.dataset.table` or `dataset.table` puts the last
+part in `container` and the one before it in `scope`. A part the statement
+left as a parameter says nothing, so a name whose group is unsettled keeps
+`scope` at `default`, and a statement whose table itself is unsettled never
+produces an effect. Neither do `BEGIN`, `COMMIT` and the rest of the
+statements that touch a table nowhere.
+
 ## What a model query gives back
 
 A query is also how a handler gets one of a project's own model classes,

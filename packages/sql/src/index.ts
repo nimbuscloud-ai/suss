@@ -136,13 +136,27 @@ function accessesIn(statement: unknown, defined: Set<string>): SqlAccess[] {
     });
   }
   if (node.type === "delete") {
-    return oneAccess(firstTable(node.from) ?? firstTable(node.table), {
+    return oneAccess(deletedTable(node), {
       kind: "write",
       fields: [],
       selector: selectorFields(node.where),
     });
   }
   return [];
+}
+
+/**
+ * The table a `DELETE` removes rows from. The BigQuery grammar reads the
+ * `FROM` keyword itself as the table and leaves the name in the alias, so
+ * the alias is the answer wherever that happened.
+ */
+function deletedTable(node: Node): string | null {
+  const first = asNode(Array.isArray(node.table) ? node.table[0] : null);
+  const aliased = first === null ? null : stringOf(first.as);
+  if (first !== null && stringOf(first.table) === "FROM" && aliased !== null) {
+    return aliased;
+  }
+  return firstTable(node.from) ?? firstTable(node.table);
 }
 
 /** A statement whose table this could not read touches nothing. */

@@ -65,6 +65,7 @@ export const coveragePackages = [
   ["packages/framework/fastapi", "fastapi"],
   ["packages/framework/sqlalchemy", "sqlalchemy"],
   ["packages/framework/sqlmodel", "sqlmodel"],
+  ["packages/framework/bigquery-python", "bigquery-python"],
   ["packages/framework/activerecord", "activerecord"],
   ["packages/framework/graphql-ruby", "graphql-ruby"],
   ["packages/framework/rails", "rails"],

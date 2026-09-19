@@ -59,7 +59,7 @@ import {
   returnedResponseStatus,
 } from "./paths/raisedResponses.js";
 import { returnedBodyShape } from "./paths/returnedShape.js";
-import { rawSqlEffects } from "./rawSql.js";
+import { type RawSqlOptions, rawSqlCallIds, rawSqlEffects } from "./rawSql.js";
 import {
   type StorageLookup,
   storageCallIds,
@@ -1391,13 +1391,19 @@ export function recognizedBodyEffects(
             ...storageLookup,
             filePath: storageLookup.factsPath,
           }),
-          ...rawSqlEffects(bodyCalls(definitionNode), {
-            facts: storageLookup.facts,
-            filePath: storageLookup.factsPath,
-            patterns: storageLookup.rawSql ?? [],
-          }),
+          ...rawSqlEffects(bodyCalls(definitionNode), rawSqlOf(storageLookup)),
         ];
   return [...envReadEffects(definitionNode, module, facts), ...storage];
+}
+
+/** What the raw-SQL reader is asked with, out of what discovery already looked up for the file. */
+function rawSqlOf(storageLookup: StorageLookup): RawSqlOptions {
+  return {
+    facts: storageLookup.facts,
+    filePath: storageLookup.factsPath,
+    patterns: storageLookup.rawSql ?? [],
+    clients: storageLookup.sqlClients ?? [],
+  };
 }
 
 /** The calls in a body that storage recognition already read the meaning of, by node id, so the reach walk does not report them as lost. */
@@ -1408,10 +1414,14 @@ export function recognizedCallIds(
   if (storageLookup === undefined) {
     return new Set();
   }
-  return storageCallIds(bodyCalls(definitionNode), {
-    ...storageLookup,
-    filePath: storageLookup.factsPath,
-  });
+  const calls = bodyCalls(definitionNode);
+  return new Set([
+    ...storageCallIds(calls, {
+      ...storageLookup,
+      filePath: storageLookup.factsPath,
+    }),
+    ...rawSqlCallIds(calls, rawSqlOf(storageLookup)),
+  ]);
 }
 
 /** Whether a body contains only a docstring and/or a bare `pass`, or something more. */
