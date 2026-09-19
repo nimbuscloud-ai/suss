@@ -1,71 +1,208 @@
 ---
 title: What a pack is
-description: A pack teaches suss to read a framework, a client, a runtime or a contract source, as declarative patterns rather than code.
+description: A pack is a data object that tells suss how one library is written, so the adapter can read a project's handlers, clients and effects through it.
 ---
 
 # What a pack is
 
-A pack teaches suss how to find and interpret code written for a specific framework, runtime, or library, for example, ts-rest for HTTP handlers, or runtime-node for Node's scheduling primitives. Packs are **declarative data**: a `PatternPack` object describing patterns. The language adapter interprets the patterns against the AST.
+A pack is a data object that says how one library is written: where it registers handlers, what returning a response looks like, which calls reach a database. The language adapter reads your source through the packs a run loads, so teaching suss a new framework means adding data rather than changing the analyzer.
 
-For the type-by-type pattern catalogue, see [Pack patterns](/packs/patterns). For step-by-step instructions on writing a new pack, see [Write a pack](/packs/write-a-pack).
+Take a Hono route:
 
-## Pack kinds
+```ts
+// src/orders.ts
+import { Hono } from "hono";
 
-Four kinds of pack feed the extractor, all using the `PatternPack` interface:
+const app = new Hono();
 
-- **Framework packs** discover handlers, components, resolvers, and consumers, the units a framework defines and the kinds of output they produce. Fifteen ship: ts-rest, Express, Fastify, Hono, Next.js, NestJS REST and GraphQL, Apollo Server, AWS Lambda, React, React Router, Prisma, Drizzle, SQS, and EventBridge. [Pack catalog](/packs/catalog) has the table.
-- **Client packs** discover the consumer side: HTTP clients, GraphQL clients, and RPC clients. Today's three are web (`fetch`), axios, and Apollo client.
-- **Runtime packs** recognize behavior the runtime defines (not the language spec, not a framework). For Node, `@suss/runtime-node` covers scheduling primitives like `setTimeout` and the `process.*` surface, including `process.env.X` reads, which emit config-read interactions the runtime-config checker pairs against a deployable unit's declared env-var contract. These packs are recognizer-only: they do no top-level discovery.
-- **Contract packs** translate external specifications into `BehavioralSummary[]` directly: OpenAPI documents, GraphQL SDL, committed `.graphql` operation documents, CloudFormation and SAM templates, AppSync resources, Prisma schemas, Storybook stories. They don't use `PatternPack` and aren't covered here, see [Contract sources](/packs/contract-sources).
+app.post("/orders/:id/refund", async (c) => {
+  const order = await loadOrder(c.req.param("id"));
+  if (!order) {
+    return c.json({ error: "no such order" }, 404);
+  }
+  if (order.refundedAt) {
+    return c.text("already refunded", 409);
+  }
+  const refund = await refundOrder(order);
+  return c.json(refund, 201);
+});
+```
 
-The first three share one interface, and the rest of this document applies to all of them. They differ in which fields they emphasize.
+Run the Hono pack over it:
 
-## What a pack describes
+```bash
+suss extract --dir src -f hono -o summaries.json
+suss inspect summaries.json
+```
 
-A pack answers up to six questions about a framework or runtime:
+```
+src/orders.ts
+└─ POST /orders/{id}/refund  (hono handler | line 7)
+       if  !loadOrder()
+         -> 404 { error }
+           + c.req.param
+           + src/orders-store.loadOrder →
+       elif  loadOrder().refundedAt
+         -> 409 "already refunded"
+           + c.req.param
+           + src/orders-store.loadOrder →
+       else
+         -> 201 Refund (src/orders-store.ts)
+           + c.req.param
+           + src/orders-store.loadOrder →
+           + src/orders-store.refundOrder →
+```
 
-1. **Discovery**: How do I find handlers / components / call sites in source files? (Framework + client packs.)
-2. **Terminals**: What does an output look like? (Framework + client packs.)
-3. **Inputs**: How are inputs delivered to the unit? (Framework + client packs.)
-4. **Contracts** *(optional)*: If the framework has declared contracts, how do I read them? (Framework packs only.)
-5. **Recognizers**: What library calls or property accesses inside *any* unit produce typed effects? (Any pack, primary mechanism for runtime packs.)
-6. **Sub-units** *(optional)*: What inline callbacks inside a unit's body should be synthesized as their own units? (Any pack, used by runtime packs and React's pack.)
+The pack contributed three facts about Hono. Routes are registered as `app.post(path, handler)`, so the method comes from the registration and the path from its first argument. A handler responds by calling `c.json(body, status)` on its first parameter, and Hono sends 200 when the status is left off. The handler takes one parameter, the context.
 
-`PatternPack` looks like this (simplified, see [Pack patterns](/packs/patterns) for the full, annotated interface):
+Everything else in that output came from reading the code: the two guards, the calls into `orders-store`, the shape of what each branch returns.
 
-```typescript
-interface PatternPack {
-  name: string;
-  protocol: string;             // wire transport: "http", "in-process", "queue", ...
-  languages: string[];
-  discovery: DiscoveryPattern[];
-  terminals: TerminalPattern[];
-  inputMapping: InputMappingPattern;
-  contractReading?: ContractPattern;
-  invocationRecognizers?: InvocationRecognizer[];
-  accessRecognizers?: AccessRecognizer[];
-  subUnits?: (parent, ctx) => DiscoveredSubUnit[];
-  // ...plus version, responseSemantics, discoverUnits, requiresImport
+## What a pack declares
+
+The three facts above are the three required fields of a `PatternPack`. Here they are as [`@suss/framework-hono`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/framework/hono/src/index.ts) writes them, shortened to one verb and one response method:
+
+```ts
+export function honoFramework(): PatternPack {
+  return {
+    name: "hono",
+    protocol: "http",
+    languages: ["typescript", "javascript"],
+
+    discovery: httpRouteDiscovery({
+      importModule: "hono",
+      importNames: ["Hono", "OpenAPIHono"],
+      methods: [".get", ".post" /* ... */],
+      mount: { method: "route", prefixPosition: 0, targetPosition: 1 },
+    }),
+
+    terminals: [
+      {
+        kind: "response",
+        match: {
+          type: "parameterMethodCall",
+          parameterPosition: 0,
+          methodChain: ["json"],
+        },
+        extraction: {
+          statusCode: { from: "argument", position: 1 },
+          body: { from: "argument", position: 0 },
+          defaultStatusCode: 200,
+        },
+      },
+    ],
+
+    inputMapping: {
+      type: "positionalParams",
+      params: [{ position: 0, role: "context" }],
+    },
+  };
 }
 ```
 
-## Asking what a value is
+`discovery` finds the units. `terminals` says what producing an output looks like. `inputMapping` says how the unit's arguments arrive. `protocol` says which transport the boundary crosses, and `name` is what a summary records as the pack that recognized it. [Pack patterns](/packs/patterns) has every variant of each field.
 
-A pattern gives the adapter a position: this argument, this property, this loop's iterable. When a pack needs the value at that position, it asks the adapter's exported resolvers rather than reading the AST at the position. `@suss/adapter-typescript` exports `stringValueOf` for a string, `objectLiteralOf` and `propertiesOf` for an object, `functionValueOf` for a function, `arrayLiteralOf` for an array, and `writtenNodeOf` for the expression a name was written as; each of them follows the name through a property read, an array element, an alias, an import and a barrel, which reading the syntax cannot do. `npm run check:readers` rejects a pack that reaches for ts-morph itself, so `getInitializer`, `getSymbol`, `getDeclarations` and `getLiteralValue` all fail the build. [The style record](https://github.com/nimbuscloud-ai/suss/blob/main/design/docs-internal/style.md#reading-a-value) has the rule and the Python and Ruby equivalents.
+A pack can also declare optional fields for things a library does that the three required ones do not cover: `contractReading` for a framework with declared response schemas, `invocationRecognizers` and `accessRecognizers` for calls that produce an effect, `subUnits` for callbacks the runtime schedules, `requiresImport` to skip files that never import the library.
 
-## Discovery-driven vs recognizer-only
+Beside the pattern object, a pack exports a one-line description of itself:
 
-Packs come in two structural kinds, told apart by whether they discover units themselves or only fire on calls inside units other packs discovered.
+```ts
+export const declares: PackDeclaration = {
+  kind: "framework",
+  package: "@suss/framework-hono",
+  dependencies: [{ ecosystem: "npm", name: "hono" }],
+  reads: "Hono handlers, including the `c.json(body, status)` argument order.",
+};
+```
 
-**Discovery-driven packs** populate `discovery`, `terminals`, and `inputMapping`. They tell the adapter "here's how to find handlers, here's how their outputs look, here's how their inputs are delivered." Most framework packs (ts-rest, Express, React) and all client packs (web, axios, apollo) are this kind. They may also declare recognizers and sub-units, but those are secondary.
+`suss init` reads `dependencies` to work out which packs a project needs, and the tables in the [pack catalog](/packs/catalog) are generated from `reads`.
 
-**Recognizer-only packs** leave `discovery: []` and `terminals: []`. They populate `invocationRecognizers` / `accessRecognizers` / `subUnits` plus `requiresImport` if scoped to a specific library. Their job is to fire on calls and property accesses inside whatever units other packs discovered. Runtime packs (runtime-node) and library-specific framework packs (aws-sqs, prisma, drizzle) are this kind.
+## Kinds of pack
 
-The distinction matters because the two kinds serve different needs:
+`kind` on the declaration puts a pack in one of three groups, and the catalog has a table per group.
 
-- A discovery-driven pack defines a *new boundary type*, Express endpoints become discoverable and pairable units. Without the pack, suss doesn't know Express handlers exist.
-- A recognizer-only pack adds *typed semantics to existing units*, runtime-node attaches "this is a scheduling effect" to a `setTimeout` call inside any unit, without claiming the call site as its own unit.
+**Framework packs** find the units a framework defines: a route handler, a React component, a GraphQL resolver, a queue consumer. Without a framework pack for your server, suss does not know your handlers exist.
 
-A single pack can do both, but most don't. That separation is what lets recognizers fire across pack boundaries, runtime-node's `schedulingRecognizer` works inside an Express handler, a React component, a CLI entry point, anywhere.
+**Client packs** find the other side, the call sites: `fetch`, axios, the Apollo hooks, Python's `requests`, Ruby's Net::HTTP. They bind a call to the method and path it sends, so the checker can pair it against whoever serves that route.
 
-For the full pattern catalogue and interface contracts, continue to [Pack patterns](/packs/patterns). For step-by-step instructions on writing a new pack, see [Write a pack](/packs/write-a-pack).
+**Effects packs** fire on calls inside units another pack already found. `-f prisma` alone comes back empty; run beside `-f hono` it attaches a storage read to the query inside the handler. Because effects packs fire wherever the call is, they work across framework boundaries without any pack knowing about any other.
+
+Contract readers are a fourth thing, and not a `PatternPack` at all. They read something the project declares rather than the code: `suss contract --from openapi orders.yaml` turns a spec into the same summaries the extractor writes. [Contract sources](/packs/contract-sources) lists all ten.
+
+## Which packs a run uses
+
+`suss init` reads a project's dependencies and says which packs match:
+
+```bash
+$ suss init
+✓ Found 3 things to read in /projects/orders-api
+
+  Your code
+    hono             hono in dependencies
+    fetch            TypeScript sources, and fetch reads what the language itself ships
+
+  What your code reaches
+    node             TypeScript sources, and node reads what the language itself ships
+```
+
+Run in a terminal it then offers to write `suss.json` at the project root. Piped or in CI it prints the commands instead, and `--plain` prints them either way.
+
+```json
+{
+  "version": 1,
+  "read": [
+    {
+      "kind": "extract",
+      "language": "typescript",
+      "packs": ["hono", "fetch", "node"]
+    }
+  ]
+}
+```
+
+`suss extract` with no `-f` reads that file and says what it decided:
+
+```
+$ suss extract -o summaries.json
+Reading what suss.json says.
+  suss extract --lang typescript -f hono -f fetch -f node
+Wrote 5 summaries to /projects/orders-api/summaries.json in 0.30s
+```
+
+`-f` overrides the file for one run, and it is repeatable: `suss extract -f hono -f prisma`. A `-f` name the CLI does not ship resolves as a package, so a pack you wrote yourself is `-f @acme/suss-pack-itty-router`. Commit `suss.json`, since which packs the project needs is the same for everybody working on it.
+
+## What a pack can see
+
+A pack states positions, and the adapter resolves what is at them. That resolution follows a value through a property read, an array element, an alias, an import and a barrel, so `app.get(USERS, handler)` finds `/users` and `` app.get(`${BASE}/items/:id`, handler) `` finds `/api/items/:id` when `BASE` is `"/api"`. A pack never reads the syntax tree to do it. `npm run check:readers` fails a pack that reaches for ts-morph, so `getInitializer`, `getSymbol` and `getLiteralValue` do not build.
+
+What a pack cannot do is invent a value the code settles at run time. This handler passes the upstream response's status straight through:
+
+```ts
+app.post("/webhooks/inbound", async (c) => {
+  const result = await forward(await c.req.json());
+  return c.json(result.body, result.status);
+});
+```
+
+The terminal matched, and the status did not resolve:
+
+```
+src/webhooks.ts
+└─ POST /webhooks/inbound  (hono handler | line 7)
+       -> result.status any
+         + c.req.json
+         + src/upstream.forward →
+   
+     Reaches:
+       reads POST /inbound  through forward
+       writes POST /inbound  through forward
+```
+
+`any` is the summary saying the status is whatever `forward` returns, and the `Reaches` block shows the outbound call the fetch pack found behind it. A field the pack could not read stays null; the crossing is still recorded. That matters on the other side of the boundary, because a consumer pairing against `result.status any` is told the provider did not commit to a code rather than being told nothing happened.
+
+A pack also sees only one library. Hono's pack knows nothing about Prisma, and Prisma's knows nothing about Hono. What joins them is the run: every pack in the run fires on every unit any of them found.
+
+## Next
+
+- [Pack catalog](/packs/catalog), every pack that ships and what each one reads
+- [Write a pack](/packs/write-a-pack), building one for a framework that has none
+- [Pack patterns](/packs/patterns), every pattern variant and the code it matches
