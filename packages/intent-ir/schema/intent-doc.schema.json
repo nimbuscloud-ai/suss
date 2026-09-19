@@ -1298,7 +1298,8 @@
         "audience",
         "boundary",
         "transitions"
-      ]
+      ],
+      "additionalProperties": false
     },
     {
       "type": "object",
@@ -1373,7 +1374,8 @@
           "description": "The situations the feature covers, one entry each."
         }
       },
-      "required": ["kind", "title", "purpose", "audience", "scenarios"]
+      "required": ["kind", "title", "purpose", "audience", "scenarios"],
+      "additionalProperties": false
     }
   ],
   "$defs": {

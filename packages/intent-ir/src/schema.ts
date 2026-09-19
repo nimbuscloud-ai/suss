@@ -495,7 +495,9 @@ function endingsOf(t: {
 // kind: boundary: system intent for one boundary.
 // ---------------------------------------------------------------------------
 
-const BoundaryIntentSchema = z.object({
+// Strict for the same reason the boundary blocks are: `scenario:`
+// written for `scenarios:` stops the run instead of vanishing.
+const BoundaryIntentSchema = z.strictObject({
   kind: z
     .literal("boundary")
     .describe("Makes this document boundary intent for one boundary."),
@@ -560,7 +562,7 @@ const PrdScenarioSchema = z.object({
     .optional(),
 });
 
-const PrdSchema = z.object({
+const PrdSchema = z.strictObject({
   kind: z
     .literal("prd")
     .describe("Makes this document a PRD, a set of scenarios for a feature."),
