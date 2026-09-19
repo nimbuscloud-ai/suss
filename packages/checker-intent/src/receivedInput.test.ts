@@ -309,31 +309,162 @@ describe("a read set too short to compare against", () => {
     expect(aboutInput(result)).toEqual([]);
   });
 
-  it("reports nothing on a REST boundary, whose sections are not mapped yet", () => {
-    const restIntentBinding = restBinding({
-      transport: "http",
-      method: "GET",
-      path: "/invoices",
-      recognition: "intent",
-    });
+  it("reports nothing on a REST route whose pack never spelled a request", () => {
     const result = checkIntentAgreement(
       [intent(restIntentBinding, [field(["headers", "x-tenant-id"], true)])],
       [
-        code({
-          boundary: restBinding({
-            transport: "http",
-            method: "GET",
-            path: "/invoices",
-            recognition: "express",
-          }),
-          inputs: [parameter("req", "request")],
+        route({
           reads: [{ input: "req", path: ["headers", "x-tenant"] }],
-          name: "list",
-          kind: "handler",
+          spelled: false,
         }),
       ],
     );
     expect(aboutInput(result)).toEqual([]);
+  });
+});
+
+const restIntentBinding = restBinding({
+  transport: "http",
+  method: "GET",
+  path: "/invoices",
+  recognition: "intent",
+});
+
+const restCodeBinding = restBinding({
+  transport: "http",
+  method: "GET",
+  path: "/invoices",
+  recognition: "express",
+});
+
+/** Where an Express handler reads each part of the request. */
+const EXPRESS_SPELLING = {
+  headers: { path: ["request", "headers"], saysWhichField: true },
+  query: { path: ["request", "query"], saysWhichField: true },
+  params: { path: ["request", "params"], saysWhichField: true },
+  body: { path: ["request", "body"], saysWhichField: true },
+};
+
+function route(opts: {
+  reads: Array<{ input: string; path: string[] }>;
+  name?: string;
+  spelled?: boolean;
+  wrappers?: Array<{ file: string; name: string }>;
+}): BehavioralSummary {
+  const summary = code({
+    boundary: restCodeBinding,
+    inputs: [parameter("req", "request"), parameter("res", "response", 1)],
+    reads: opts.reads,
+    name: opts.name ?? "list",
+    kind: "handler",
+  });
+  const metadata = {
+    ...(opts.spelled === false ? {} : { requestSpelling: EXPRESS_SPELLING }),
+    ...(opts.wrappers === undefined
+      ? {}
+      : { wrappers: { applied: opts.wrappers } }),
+  };
+  return Object.keys(metadata).length === 0
+    ? summary
+    : { ...summary, metadata };
+}
+
+describe("a REST boundary, read through the pack's request spelling", () => {
+  it("compares a declared header against the header the route reads", () => {
+    const result = checkIntentAgreement(
+      [
+        intent(restIntentBinding, [
+          field(["headers", "x-tenant-id"], true),
+          field(["query", "dryRun"]),
+        ]),
+      ],
+      [
+        route({
+          reads: [{ input: "req", path: ["headers", "x-tenant-id"] }],
+        }),
+      ],
+    );
+    expect(aboutInput(result).map((f) => [f.kind, f.severity])).toEqual([
+      ["unreadInputField", "info"],
+    ]);
+  });
+
+  it("treats a header name as case-insensitive, the way HTTP does", () => {
+    const result = checkIntentAgreement(
+      [intent(restIntentBinding, [field(["headers", "X-Tenant-Id"], true)])],
+      [
+        route({
+          reads: [{ input: "req", path: ["headers", "x-tenant-id"] }],
+        }),
+      ],
+    );
+    expect(aboutInput(result)).toEqual([]);
+  });
+
+  it("counts a header the middleware reads as one the route reads", () => {
+    const middleware = code({
+      boundary: functionCallBinding({
+        transport: "in-process",
+        recognition: "express",
+      }),
+      inputs: [parameter("req", "request"), parameter("res", "response", 1)],
+      reads: [{ input: "req", path: ["headers", "x-tenant-id"] }],
+      name: "requireTenant",
+    });
+    const result = checkIntentAgreement(
+      [intent(restIntentBinding, [field(["headers", "x-tenant-id"], true)])],
+      [
+        route({
+          reads: [{ input: "res", path: ["json"] }],
+          wrappers: [{ file: "src/index.ts", name: "requireTenant" }],
+        }),
+        middleware,
+      ],
+    );
+    expect(aboutInput(result)).toEqual([]);
+  });
+
+  it("leaves a body read alone when the block declares a body shape", () => {
+    const result = checkIntentAgreement(
+      [intent(restIntentBinding, [field(["body", "note"])])],
+      [
+        route({
+          reads: [
+            { input: "req", path: ["body", "note"] },
+            { input: "req", path: ["body", "amount"] },
+          ],
+        }),
+      ],
+    );
+    expect(aboutInput(result)).toEqual([]);
+  });
+
+  it("still asks for a declared body property nothing reads", () => {
+    const result = checkIntentAgreement(
+      [intent(restIntentBinding, [field(["body", "note"], true)])],
+      [route({ reads: [{ input: "req", path: ["body", "amount"] }] })],
+    );
+    expect(aboutInput(result).map((f) => [f.kind, f.severity])).toEqual([
+      ["unreadInputField", "warning"],
+    ]);
+  });
+
+  it("compares the other sections when the body went to a validator whole", () => {
+    const result = checkIntentAgreement(
+      [
+        intent(restIntentBinding, [
+          field(["body", "note"], true),
+          field(["headers", "x-tenant-id"], true),
+        ]),
+      ],
+      [route({ reads: [{ input: "req", path: ["body"] }] })],
+    );
+    expect(
+      aboutInput(result).map((f) => [
+        f.kind,
+        f.message.includes("x-tenant-id"),
+      ]),
+    ).toEqual([["unreadInputField", true]]);
   });
 });
 
