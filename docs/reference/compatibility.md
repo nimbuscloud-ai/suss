@@ -1,15 +1,11 @@
 ---
-title: What TypeScript, JavaScript, Python and Ruby code suss reads
-description: The languages and project layouts suss reads today, and what it does not read yet.
+title: Compatibility and limits
+description: The languages, project layouts and frameworks suss reads today, and the places it stops.
 ---
 
 # Compatibility
 
-`suss extract` reads your project through its tsconfig, so it sees the
-same files and the same module resolution your compiler does. The rest
-of this page is about that command. Python and Ruby are read by
-separate adapters with their own rules; see
-[Read Python or Ruby](/guides/python-and-ruby).
+`suss extract` reads a TypeScript or JavaScript project through its tsconfig, so it sees the same files and the same module resolution your compiler does. Python and Ruby have adapters of their own with their own rules; [Read Python or Ruby](/guides/python-and-ruby) covers those.
 
 ## Languages
 
@@ -17,9 +13,15 @@ separate adapters with their own rules; see
 |---|---|
 | TypeScript | Yes |
 | JavaScript | Yes, with `allowJs` in your tsconfig |
-| Python | Yes: `suss extract --lang python`. flask-restx and FastAPI routes with their branches and effects, SQLAlchemy and SQLModel calls with the sqlalchemy or sqlmodel pack composed in, and the requests calls a project makes with the requests pack composed in. |
-| Ruby | Yes: `suss extract --lang ruby`. graphql-ruby fields with their resolver bodies, Rails controller actions with the routes `config/routes.rb` gives them, ActiveRecord calls with the activerecord pack composed in, and the Faraday calls a project makes with the faraday pack composed in. |
+| Python | Yes: `suss extract --lang python` |
+| Ruby | Yes: `suss extract --lang ruby` |
 | Anything else | No |
+
+The Python and Ruby adapters parse with tree-sitter compiled to WASM, so neither needs an installed interpreter. A directory with a `pyproject.toml` or a `Gemfile.lock` in it is recognized without the flag.
+
+## Frameworks and libraries
+
+Everything suss recognizes comes from a pack, and the packs ship inside `@suss/cli`. [Pack catalog](/packs/catalog) lists them all, with the libraries each one reads. `suss init` matches your dependencies against that list and prints the commands for your project.
 
 ## Modules and resolution
 
@@ -31,7 +33,7 @@ separate adapters with their own rules; see
 | `moduleResolution: "bundler"` | Yes |
 | `paths` aliases (`~/*`, `@app/*`) | Yes |
 | A tsconfig that `extends` a base | Yes |
-| Project references (`composite`) | Not tested |
+| Project references (`composite`) | Yes. A tsconfig with no files of its own takes its file list from the union of its references. |
 
 ## Type declarations
 
@@ -43,54 +45,36 @@ separate adapters with their own rules; see
 
 ## Dependencies
 
-Install your project's dependencies before running suss. Some packs
-need them; the rest do not.
+Install your project's dependencies before running suss. Some packs need them and the rest do not.
 
 | | What happens |
 |---|---|
 | Dependencies installed | Everything works |
 | Not installed, pack reads a file on disk | Works. The AWS pack finds handlers through your SAM template. |
-| Not installed, pack resolves symbols | Finds nothing, and tells you why |
-| A library with no pack | suss marks the call unknown. The rest of the handler still comes through. |
+| Not installed, pack resolves symbols | Finds nothing, and says which package is missing |
+| A library with no pack | suss marks the call unknown and reads the rest of the unit |
 
-If a pack needs a package you have not installed, suss tells you which one:
+When a pack needs a package you have not installed, the run says which one:
 
 ```
-No summaries to write.
-
-  102 files import @apollo/client, but that package is not installed
-  here, so suss cannot see what those calls do.
+No summaries to write in 0.02s.
+  1 file imports @prisma/client, but that package is not installed here.
+  suss cannot see what a call does without the package behind it.
   Install this project's dependencies, then run the command again.
-```
-
-If there is no pack for a library, suss marks that call unknown and
-reads the rest of the handler normally:
-
-```ts
-const thing = await someInternalLib.lookup(id);  // unknown
-if (!id) {
-  return json(400, { error: "missing id" });     // read
-}
-return json(200, { id, name: thing.name });      // read
 ```
 
 ## Your own response helpers
 
-Most handlers build a response through a helper rather than at the
-return site. suss follows the call and reads the helper, so it works
-with whatever argument order you wrote:
+Most handlers build a response through a helper rather than at the return site. suss follows the call and reads the helper, so it works with whatever argument order you wrote:
 
 ```ts
 return json(200, { status: "ok" });   // json(statusCode, payload)
 return json({ status: "ok" }, 200);   // json(payload, statusCode)
 ```
 
-Both come out as 200 with a body of `{ status }`. The name does not
-matter either, so `respond`, `ok`, and `send` all work.
+Both come out as 200 with a body of `{ status }`. The name does not matter either, so `respond`, `ok` and `send` all work.
 
-suss reads a helper that branches one branch at a time. Each branch that
-can run becomes its own outcome, and a branch the caller's arguments
-cannot reach is left out:
+A helper that branches is read one branch at a time. Each branch the caller's arguments can reach becomes its own outcome, and the ones they cannot reach are left out:
 
 ```ts
 function json(statusCode, payload) {
@@ -105,13 +89,9 @@ return json(500, "boom");             // 500 only, with an error body.
 return json(code, payload);           // both, since `code` is unknown here.
 ```
 
-One thing it will not do yet: follow a helper reached through an
-object, like `responses.json(...)`. It does read a helper called by name.
-
 ## Your own route helpers
 
-A service that outgrows one file hands its app to functions of its own,
-and those functions write the routes:
+A service that outgrows one file hands its app to functions of its own, and those functions write the routes:
 
 ```ts
 // src/routes.ts
@@ -124,39 +104,25 @@ const app = express();
 registerHealth(app);
 ```
 
-suss reads `GET /health` here. The receiver is a parameter, the
-parameter comes from whatever each caller passed, and the walk ends at
-the `express()` that built the app. It follows the app through as many
-helpers as it is handed through, and the path and the handler resolve
-the same way, so `registerCrud(app, "users", handlers)` gives
-`GET /users` when the helper writes `app.get(\`/${name}\`, handlers.list)`.
+suss reads `GET /health` here. The receiver is a parameter, the parameter comes from whatever each caller passed, and the walk ends at the `express()` that built the app. It follows the app through as many helpers as it is handed through, and the path and the handler resolve the same way.
 
-A helper called from more than one place with different arguments
-leaves each of those with two values, so following the parameters back
-settles on nothing. Those routes come from the other direction: before
-extraction suss reads every function the code hands its app to, writes
-down what each one registers in terms of its own parameters, and fills
-those in at each call site. `registerCrud(app, "users", handlers)` and
-`registerCrud(app, "orders", handlers)` give `GET /users` and
-`GET /orders`. The helper's own file need not mention express for this,
-so a parameter typed with an interface of the project's own is read too.
+A helper called from more than one place with different arguments would leave those values undecided, so suss reads it from the other direction: before extraction it writes down what each such function registers in terms of its own parameters, then fills those in at every call site. `registerCrud(app, "users", handlers)` gives `GET /users` and `POST /users` where the helper writes ``app.get(`/${name}`, handlers.list)``. The helper's own file need not mention express for this, so a parameter typed with an interface of your own is read too.
 
-One limit is left. When it is the app itself that has two values, the
-summary of the handler says which call was refused and how many apps the
-walk reached, under `Could not follow:` in `suss inspect`.
+## Where it stops
 
-## Several services in one folder
+**A helper reached through an object.** suss follows a helper called by its own name. `responses.json(200, payload)` is not followed, and the handler comes back with a low-confidence summary saying the return matched no terminal shape the pack knows.
 
-suss identifies an HTTP boundary by its method and path, and nothing
-else. Two services that both expose `GET /users` count as one boundary,
-so a client of either pairs against both. Check one service at a time
-until this is fixed; [Work across services](/guides/work-across-services#two-services-that-serve-the-same-path)
-has the commands.
+**An app with two values.** When the app itself is built twice and handed to one helper, nothing says which app the helper registered on, so the route is left out. The handler's summary says so under `Could not follow:` in `suss inspect`:
 
-## Not supported
+```
+Could not follow:
+  The call to target.get is made on a receiver this run reads as 2 different
+  values, so nothing says which one it registers on and the registration is
+  left out
+```
 
-| | |
-|---|---|
-| Other languages | Go, Java, C# and the rest are invisible. The adapter interface is language-agnostic, so one could be written; Python and Ruby were. |
-| Routes registered at runtime | `registerRoutes(configBuiltAtRuntime)`. suss reads what the code says without running it. |
-| Your own wrapper around a library | A project that wraps `useQuery` in a hook of its own is invisible to the Apollo pack, which looks for the library call itself. |
+**Two services in one folder.** suss identifies an HTTP boundary by its method and path and nothing else, so two services that both expose `GET /users` count as one boundary and a client of either pairs against both. Check one service at a time until this is fixed; [Work across services](/guides/work-across-services#two-services-that-serve-the-same-path) has the commands.
+
+**Routes registered at runtime.** `registerRoutes(configBuiltAtRuntime)` reads nothing. suss reads what the code says without running it.
+
+**Other languages.** Go, Java, C# and the rest are invisible. The adapter interface does not care which language it is fed, so one could be written; Python and Ruby were.
