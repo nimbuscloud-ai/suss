@@ -10,32 +10,32 @@
 // spaces turned into hyphens).
 
 export const glossary: Record<string, string> = {
-  // IR types: /ir-reference
-  BehavioralSummary: "/ir-reference#behavioralsummary",
-  CodeUnitKind: "/ir-reference#codeunitkind",
-  SourceLocation: "/ir-reference#sourcelocation-and-codeunitidentity",
-  CodeUnitIdentity: "/ir-reference#sourcelocation-and-codeunitidentity",
-  BoundaryBinding: "/ir-reference#boundarybinding",
-  Transition: "/ir-reference#transition",
-  Predicate: "/ir-reference#predicate",
-  ValueRef: "/ir-reference#valueref",
-  Output: "/ir-reference#output",
-  TypeShape: "/ir-reference#typeshape",
-  Effect: "/ir-reference#effect",
-  Input: "/ir-reference#input",
-  Gap: "/ir-reference#gap",
-  ConfidenceInfo: "/ir-reference#confidenceinfo",
-  Finding: "/ir-reference#finding",
-  RawCodeStructure: "/ir-reference#rawcodestructure",
+  // IR types: /reference/ir
+  BehavioralSummary: "/reference/ir#behavioralsummary",
+  CodeUnitKind: "/reference/ir#codeunitkind",
+  SourceLocation: "/reference/ir#sourcelocation-and-codeunitidentity",
+  CodeUnitIdentity: "/reference/ir#sourcelocation-and-codeunitidentity",
+  BoundaryBinding: "/reference/ir#boundarybinding",
+  Transition: "/reference/ir#transition",
+  Predicate: "/reference/ir#predicate",
+  ValueRef: "/reference/ir#valueref",
+  Output: "/reference/ir#output",
+  TypeShape: "/reference/ir#typeshape",
+  Effect: "/reference/ir#effect",
+  Input: "/reference/ir#input",
+  Gap: "/reference/ir#gap",
+  ConfidenceInfo: "/reference/ir#confidenceinfo",
+  Finding: "/reference/ir#finding",
+  RawCodeStructure: "/reference/ir#rawcodestructure",
 
-  // Boundary-semantics concepts: /boundary-semantics
-  BoundarySemantics: "/boundary-semantics",
+  // Boundary-semantics concepts: /theory/boundary-semantics
+  BoundarySemantics: "/theory/boundary-semantics",
 
-  // Pack pattern types: /reference/pack-patterns
-  PatternPack: "/reference/pack-patterns#the-patternpack-interface",
-  DiscoveryMatch: "/reference/pack-patterns#discoverymatch-variants",
-  BindingExtraction: "/reference/pack-patterns#bindingextraction",
-  TerminalMatch: "/reference/pack-patterns#terminalmatch-variants",
-  TerminalExtraction: "/reference/pack-patterns#terminalextraction",
-  InputMappingPattern: "/reference/pack-patterns#inputmappingpattern-variants",
+  // Pack pattern types: /packs/patterns
+  PatternPack: "/packs/patterns#the-patternpack-interface",
+  DiscoveryMatch: "/packs/patterns#discoverymatch-variants",
+  BindingExtraction: "/packs/patterns#bindingextraction",
+  TerminalMatch: "/packs/patterns#terminalmatch-variants",
+  TerminalExtraction: "/packs/patterns#terminalextraction",
+  InputMappingPattern: "/packs/patterns#inputmappingpattern-variants",
 };

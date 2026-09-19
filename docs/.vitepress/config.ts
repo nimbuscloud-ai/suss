@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -7,6 +8,7 @@ import { glossary } from "./glossary.js";
 import { glossaryLinkPlugin } from "./plugins/glossary-link.js";
 import { pageTitleLinkPlugin } from "./plugins/page-title-link.js";
 import { sourceFileLinkPlugin } from "./plugins/source-file-link.js";
+import { sidebar } from "./sidebar.js";
 
 const docsRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -19,6 +21,15 @@ const SITE_ORIGIN = "https://nimbuscloud-ai.github.io/suss/";
 
 const OG_IMAGE = `${SITE_ORIGIN}og.png`;
 
+const REPOSITORY = "https://github.com/nimbuscloud-ai/suss";
+
+const BASE = process.env.SUSS_DOCS_BASE ?? "/suss/";
+
+// The license is a fact about the package, so read it rather than restate it.
+const { license } = JSON.parse(
+  fs.readFileSync(path.join(docsRoot, "..", "package.json"), "utf8"),
+) as { license: string };
+
 function firstWithText(...candidates: (string | undefined)[]): string {
   return candidates.find((candidate) => (candidate ?? "").trim() !== "") ?? "";
 }
@@ -30,28 +41,83 @@ function pageUrl(relativePath: string): string {
   return `${SITE_ORIGIN}${withoutIndex}`;
 }
 
-// VitePress config: the site reads straight from docs/*.md, so
-// every existing markdown file is already a routeable page. The
-// sidebar below is the editorial grouping. It orders what's
-// "start here" vs "reference" vs "internals" rather than dumping
-// every file in a flat list.
+const SITE_DESCRIPTION =
+  "Reads your code and checks what it does at every boundary, a route, a table or a queue, against the clients, specs and infrastructure on the other side. TypeScript, Python and Ruby.";
+
+/** Question-and-answer pairs from the FAQ page's H2 headings. */
+function faqQuestions() {
+  const source = fs.readFileSync(
+    path.join(docsRoot, "reference", "faq.md"),
+    "utf8",
+  );
+  const questions = [];
+
+  for (const section of source.split(/^## /m).slice(1)) {
+    const [heading, ...body] = section.split("\n");
+    const answer = body
+      .join("\n")
+      .split("\n\n")
+      .map((block) => block.trim())
+      .find((block) => block !== "" && !/^[`|>*-]/.test(block));
+
+    if (!heading.trim().endsWith("?") || answer === undefined) {
+      continue;
+    }
+
+    questions.push({
+      "@type": "Question",
+      name: heading.trim(),
+      acceptedAnswer: { "@type": "Answer", text: answer },
+    });
+  }
+
+  return questions;
+}
+
+/** The JSON-LD for a page, for the two pages that have any. */
+function structuredData(relativePath: string): object | null {
+  if (relativePath === "index.md") {
+    return {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      name: "suss",
+      description: SITE_DESCRIPTION,
+      applicationCategory: "DeveloperApplication",
+      license: `https://spdx.org/licenses/${license}.html`,
+      codeRepository: REPOSITORY,
+    };
+  }
+
+  if (relativePath === "reference/faq.md") {
+    return {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      mainEntity: faqQuestions(),
+    };
+  }
+
+  return null;
+}
+
+// The site reads straight from docs/*.md, so every markdown file is
+// already a routeable page. sidebar.ts is the editorial ordering on top
+// of that.
 
 export default defineConfig({
   title: "suss",
-  description:
-    "Reads your code and checks what it does at every boundary, a route, a table or a queue, against the clients, specs and infrastructure on the other side. TypeScript, Python and Ruby.",
+  description: SITE_DESCRIPTION,
   lang: "en-US",
   sitemap: { hostname: SITE_ORIGIN },
   // GitHub Pages serves from /<repo>/, so assets + links resolve
   // relative to that prefix. Easiest toggle for local dev is
   // SUSS_DOCS_BASE: unset for root serving, set to "/suss/" for
   // project-pages deploy.
-  base: process.env.SUSS_DOCS_BASE ?? "/suss/",
+  base: BASE,
   cleanUrls: true,
   lastUpdated: true,
 
   head: [
-    ["link", { rel: "icon", href: "/favicon.ico" }],
+    ["link", { rel: "icon", href: `${BASE}favicon.ico` }],
     [
       "meta",
       {
@@ -76,6 +142,8 @@ export default defineConfig({
       siteData.description,
     );
 
+    const data = structuredData(pageData.relativePath);
+
     return [
       ["link", { rel: "canonical", href: url }],
       ["meta", { property: "og:type", content: "website" }],
@@ -88,6 +156,15 @@ export default defineConfig({
       ["meta", { name: "twitter:title", content: title }],
       ["meta", { name: "twitter:description", content: description }],
       ["meta", { name: "twitter:image", content: OG_IMAGE }],
+      ...(data === null
+        ? []
+        : [
+            [
+              "script",
+              { type: "application/ld+json" },
+              JSON.stringify(data),
+            ] as [string, Record<string, string>, string],
+          ]),
     ];
   },
 
@@ -95,123 +172,18 @@ export default defineConfig({
     // Top-level nav stays small on purpose, most of the site
     // lives in the sidebar.
     nav: [
-      { text: "Tutorial", link: "/tutorial/get-started" },
-      { text: "Guides", link: "/guides/adopting-suss" },
-      { text: "Reference", link: "/reference/cli" },
-      { text: "Explanation", link: "/motivation" },
+      { text: "Get started", link: "/start/quickstart" },
+      { text: "Guides", link: "/guides/add-to-project" },
+      { text: "Reference", link: "/reference/cli/" },
+      { text: "Packs", link: "/packs/catalog" },
+      { text: "Why suss", link: "/why/the-problem" },
       {
         text: "GitHub",
         link: "https://github.com/nimbuscloud-ai/suss",
       },
     ],
 
-    // Sidebar organized along Diátaxis lines:
-    //   Tutorial: learn by doing (one concrete walkthrough)
-    //   How-to: task recipes for users who know what they need
-    //   Reference: dry, complete factual information (CLI, findings, IR)
-    //   Explanation: why the tool is shaped this way
-    //   Internals: how the pieces are built, for contributors
-    //     (de-emphasized at the bottom)
-    //
-    // See diataxis.fr for the framework; mixing modes on one page is
-    // the most common docs anti-pattern and this structure keeps them
-    // separate.
-    sidebar: [
-      {
-        text: "Tutorial",
-        collapsed: false,
-        items: [
-          { text: "Get started", link: "/tutorial/get-started" },
-          {
-            text: "Pair a frontend with a backend",
-            link: "/tutorial/pair-frontend-backend",
-          },
-        ],
-      },
-      {
-        text: "How-to guides",
-        collapsed: false,
-        items: [
-          {
-            text: "Adopt suss one step at a time",
-            link: "/guides/adopting-suss",
-          },
-          { text: "Add suss to a project", link: "/guides/add-to-project" },
-          { text: "Set up CI checking", link: "/guides/ci-integration" },
-          { text: "Set up the MCP server", link: "/guides/mcp-server" },
-          {
-            text: "Pair against OpenAPI",
-            link: "/guides/pair-against-openapi",
-          },
-          {
-            text: "Read a Python or Ruby project",
-            link: "/guides/python-and-ruby",
-          },
-          { text: "Suppress a finding", link: "/guides/suppress-findings" },
-          { text: "Write a pack", link: "/guides/writing-a-pack" },
-          { text: "Why a pack found nothing", link: "/guides/pack-health" },
-        ],
-      },
-      {
-        text: "Reference",
-        collapsed: false,
-        items: [
-          { text: "CLI commands & flags", link: "/reference/cli" },
-          { text: "Findings catalog", link: "/reference/findings" },
-          { text: "Packages & packs", link: "/reference/packages" },
-          { text: "Summary format", link: "/behavioral-summary-format" },
-          { text: "IR types & schemas", link: "/ir-reference" },
-          { text: "Pack patterns", link: "/reference/pack-patterns" },
-          { text: "Compatibility", link: "/reference/compatibility" },
-          { text: "FAQ", link: "/faq" },
-        ],
-      },
-      {
-        text: "Understanding suss",
-        collapsed: false,
-        items: [
-          { text: "What's new", link: "/whats-new" },
-          { text: "Motivation", link: "/motivation" },
-          { text: "Glossary", link: "/glossary" },
-          { text: "Contracts", link: "/contracts" },
-          { text: "Cross-boundary checking", link: "/cross-boundary-checking" },
-          { text: "Suppressions (model)", link: "/suppressions" },
-          { text: "Dependency stubs", link: "/dependency-stubs" },
-        ],
-      },
-      {
-        // Contributor / maintainer material, how the pieces are built,
-        // not what a user needs to run suss. Design records live in
-        // design/ at the repository root instead, because everything
-        // under docs/ is a published page whether the sidebar lists it
-        // or not.
-        text: "Internals",
-        collapsed: true,
-        items: [
-          { text: "Architecture", link: "/architecture" },
-          { text: "Packs", link: "/packs" },
-          { text: "Boundary semantics", link: "/boundary-semantics" },
-          { text: "Pipelines", link: "/pipelines" },
-          { text: "Extraction algorithm", link: "/extraction-algorithm" },
-          { text: "How suss follows a value", link: "/resolving-values" },
-          { text: "Facts and rules", link: "/internal/facts-and-rules" },
-          {
-            text: "Protocol assumptions",
-            link: "/internal/protocol-assumptions",
-          },
-          {
-            text: "Differential fuzzing",
-            link: "/internal/differential-fuzzing",
-          },
-          { text: "Contract sources", link: "/contract-sources" },
-          { text: "Concept design", link: "/internal/concept-design" },
-          { text: "Quality", link: "/internal/quality" },
-          { text: "Style guide", link: "/internal/style" },
-          { text: "Dogfooding", link: "/internal/dogfooding" },
-          { text: "Releasing", link: "/internal/releasing" },
-        ],
-      },
-    ],
+    sidebar,
 
     search: {
       provider: "local",
@@ -262,10 +234,7 @@ export default defineConfig({
     },
   },
 
-  // The existing docs cross-link to source files via relative
-  // paths like `../packages/framework/ts-rest/`: those render
-  // fine on GitHub but produce 404s on the site. Skip the link
-  // check for paths that escape the docs root; anything inside
-  // the docs tree still gets validated.
-  ignoreDeadLinks: [/packages\//, /fixtures\//, /\/\.\.\//, /^\.\.?\//],
+  // The pack tables link a pack to its package directory and its coverage
+  // badge, both outside the site. Everything else is checked.
+  ignoreDeadLinks: [/\.\.\/\.\.\/packages\//, /\.\.\/\.\.\/\.github\//],
 });
