@@ -66,6 +66,26 @@ const AWS: TerraformPack = {
         fieldSet: "partial",
       },
     },
+    // A provider that writes a bare exported name and its variables as
+    // repeated blocks, which is what Cloud Run and Cloud Functions do.
+    {
+      resource: "example_service",
+      providerVersions: ">=4 <7",
+      boundary: {
+        kind: "deployable",
+        deploymentTarget: "container",
+        env: [
+          {
+            style: "entries",
+            block: "env",
+            nameAttribute: "name",
+            valueAttribute: "value",
+          },
+        ],
+        code: { handler: { attribute: "entry_point", spelling: "name" } },
+        platformEnvVars: ["PORT"],
+      },
+    },
   ],
 };
 
@@ -258,6 +278,50 @@ resource "aws_lambda_function" "bare" {
   handler       = "index.handler"
 }
 `;
+
+const BARE_NAME = `
+resource "example_service" "thumbnails" {
+  entry_point = "makeThumbnail"
+
+  env {
+    name  = "LOG_LEVEL"
+    value = "info"
+  }
+  env {
+    value = "nobody asked for this"
+  }
+  env {
+    name  = "STAGE"
+    value = "\${local.environment}"
+  }
+}
+`;
+
+describe("a deployable whose provider writes its variables as blocks", () => {
+  const [unit] = deployables(terraformToSummaries(BARE_NAME, "main.tf", PACKS));
+  const contract = readRuntimeContractMetadata(unit as BehavioralSummary);
+
+  it("records a bare entry point without claiming which file it is in", () => {
+    expect(contract?.entryPoint).toBe("makeThumbnail");
+    expect((unit as BehavioralSummary).metadata?.codeScope).toEqual({
+      kind: "unknown",
+    });
+  });
+
+  it("takes the platform list the entry states over the target's", () => {
+    expect(contract?.envVarSources?.PORT).toBe("platform");
+    expect(contract?.envVars).not.toContain("AWS_REGION");
+  });
+
+  it("skips an entry that says what it is set to but not what it is called", () => {
+    expect(contract?.envVars).toEqual(["LOG_LEVEL", "PORT", "STAGE"]);
+  });
+
+  it("points a variable at no resource when the reference is not one", () => {
+    expect(contract?.envVarValues?.STAGE).toBe("{local.environment}");
+    expect(contract?.envVarTargets).toBeUndefined();
+  });
+});
 
 describe("a function that declares no environment", () => {
   it("still declares a contract, of the variables the platform injects", () => {

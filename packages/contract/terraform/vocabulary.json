@@ -21,6 +21,5 @@
   "term": "filter grammar: one comparison, the leaf of what a filter reads as",
   "value": "terraform: the attribute a bare expression is hung on to read it back",
   "terraform": "reader name, HashiCorp Terraform",
-  "value": "terraform: the name an attribute written as a document is parsed back under",
   "word": "filter grammar: a bare run of text, a key or an unquoted value"
 }
