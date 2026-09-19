@@ -5,6 +5,12 @@
  * its code is. Working out which summaries that covers is the same
  * question whether you are checking that a variable is supplied or
  * asking what a variable is set to, so both passes ask it here.
+ *
+ * Two things can say where the code is, and either will do. A handler
+ * entry that matches a module gives the import closure, which is the
+ * exact answer. A source directory gives a prefix, which is the rough
+ * one. A Terraform configuration states only the handler, since the
+ * zip it deploys is built somewhere the configuration never says.
  */
 
 import { bindingIs } from "@suss/ir-core";
@@ -55,21 +61,22 @@ export function placeRuntimes(summaries: BehavioralSummary[]): Placement {
     }
     /* v8 ignore stop */
     const codeScope = readCodeScope(runtime);
-    if (codeScope.kind === "unknown" || codeScope.path === undefined) {
-      unplaced.push({ runtime, binding });
-      continue;
-    }
-
     const closure =
       codeScope.entry !== undefined
         ? entryClosure(codeScope.entry, graph)
         : null;
+    // Falling back to the directory needs one to have been stated.
+    if (closure === null && codeScope.path === undefined) {
+      unplaced.push({ runtime, binding });
+      continue;
+    }
+
     placed.push({
       runtime,
       binding,
       scope: {
         unit: runtime.identity.deployableUnit,
-        codeScope: codeScope.path,
+        codeScope: codeScope.path ?? "",
         ...(closure !== null ? { closure } : {}),
       },
     });

@@ -80,6 +80,15 @@ function runtime(opts: {
   };
 }
 
+/** What a Terraform configuration states: a handler and no directory. */
+function handlerOnly(name: string, entry: string): BehavioralSummary {
+  const declared = runtime({ name });
+  return {
+    ...declared,
+    metadata: { ...declared.metadata, codeScope: { kind: "unknown", entry } },
+  };
+}
+
 const scopeOf = (path: string, unit?: string): UnitScope => ({
   unit: unit === undefined ? undefined : lambda(unit),
   codeScope: path,
@@ -261,5 +270,30 @@ describe("placeRuntimes", () => {
 
     expect(placed).toEqual([]);
     expect(unplaced.map((one) => one.runtime.identity.name)).toEqual(["Api"]);
+  });
+
+  it("places a runtime that states a handler entry and no directory", () => {
+    const { placed } = placeRuntimes([
+      handlerOnly("Confirm", "src/handlers/confirm"),
+      importing("src/handlers/confirm.ts", ["src/shared/log.ts"]),
+      importing("src/shared/log.ts", []),
+    ]);
+
+    expect([...(placed[0]?.scope.closure ?? [])].sort()).toEqual([
+      "src/handlers/confirm.ts",
+      "src/shared/log.ts",
+    ]);
+  });
+
+  it("reports a runtime whose entry matches no module and states no directory", () => {
+    const { placed, unplaced } = placeRuntimes([
+      handlerOnly("Confirm", "dist/confirm"),
+      importing("src/handlers/confirm.ts", []),
+    ]);
+
+    expect(placed).toEqual([]);
+    expect(unplaced.map((one) => one.runtime.identity.name)).toEqual([
+      "Confirm",
+    ]);
   });
 });
