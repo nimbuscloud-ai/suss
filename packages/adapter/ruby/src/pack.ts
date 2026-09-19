@@ -211,15 +211,8 @@ export interface RbRawSqlPattern {
    * tables without saying so.
    */
   dialect: string;
-  /** Which namespace the calls reach when nothing along the chain says. Defaults to "default". */
+  /** Which namespace the calls reach when neither the chain nor the table name says. Defaults to "default". */
   scope?: string;
-  /**
-   * The separator a qualified table name is written with, for a store
-   * that addresses a table through its namespace: BigQuery writes
-   * `project.dataset.table`. The last part is the container and the one
-   * before it the scope. Leave it out where a table is written on its own.
-   */
-  qualifiedNameSeparator?: string;
 }
 
 /** A call that says which part of the store the calls after it reach, `bigquery.dataset("core")`. */

@@ -438,10 +438,12 @@ which table. Give the argument in `container` and the chain's own is used
 whenever that argument settles on no string, so both spellings of `insert` come
 from one declaration.
 
-A store whose table names carry their namespace sets `qualifiedNameSeparator`,
-and then a name the statement spells in parts is split: the last part is the
-container and the one before it the scope. A name written on its own belongs to
-whatever the chain addressed, and to `scope` when the chain addressed nothing.
+A table written with namespaces in front of it, BigQuery's
+`project.dataset.table`, is split by `@suss/sql`, and the namespace nearest the
+table is the scope. A table a call was given by name goes through
+`splitQualifiedTable` for the same split, so a call and a statement say the same
+thing. A table written on its own belongs to whatever the chain addressed, and
+to `scope` when the chain addressed nothing.
 
 ## What a read picked and what a write set
 

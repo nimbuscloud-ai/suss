@@ -42,12 +42,11 @@ const STORE: RbRawSqlPattern = {
   dialect: "postgresql",
 };
 
-/** The same library over a store whose table names carry their namespace. */
+/** The same library over a store that writes namespaces in front of a table. */
 const QUALIFIED: RbRawSqlPattern = {
   ...STORE,
   storageSystem: "warehouse.cloud",
   dialect: "bigquery",
-  qualifiedNameSeparator: ".",
 };
 
 function callsIn(node: RbNode, found: RbNode[] = []): RbNode[] {

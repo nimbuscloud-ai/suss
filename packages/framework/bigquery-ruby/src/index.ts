@@ -18,9 +18,6 @@ const STORAGE_SYSTEM = "gcp.bigquery";
 /** BigQuery's own SQL, which is none of the three the other stores write. */
 const DIALECT = "bigquery";
 
-/** BigQuery addresses a table as `project.dataset.table`. */
-const QUALIFIED_NAME_SEPARATOR = ".";
-
 /** The calls that narrow a client down to a dataset and a table. */
 const ADDRESSING: NonNullable<RbRawSqlPattern["addressing"]> = {
   dataset: { says: "scope", at: 0 },
@@ -60,7 +57,6 @@ export function bigqueryRawSql(): RbRawSqlPattern[] {
     rowCalls: ROW_CALLS,
     storageSystem: STORAGE_SYSTEM,
     dialect: DIALECT,
-    qualifiedNameSeparator: QUALIFIED_NAME_SEPARATOR,
   };
   return [
     {

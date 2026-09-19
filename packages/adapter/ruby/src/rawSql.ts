@@ -14,7 +14,7 @@
  */
 
 import { storageBinding } from "@suss/ir-core";
-import { readSqlAccess, sqlFromParts } from "@suss/sql";
+import { readSqlAccess, splitQualifiedTable, sqlFromParts } from "@suss/sql";
 import { piecesOf } from "@suss/values";
 
 import { field, readCallArgs } from "./ast.js";
@@ -102,12 +102,25 @@ function statementEffects(
   }
 
   return readSqlAccess(statement, { dialect: pattern.dialect }).map((access) =>
-    effectOf(call, pattern, addressOfTable(access.table, address, pattern), {
-      kind: access.kind,
-      fields: access.fields,
-      selector: access.selector,
-    }),
+    effectOf(
+      call,
+      pattern,
+      {
+        scope: innermost(access.qualifier) ?? address.scope,
+        container: access.table,
+      },
+      {
+        kind: access.kind,
+        fields: access.fields,
+        selector: access.selector,
+      },
+    ),
   );
+}
+
+/** The namespace a table belongs to, which is the last of the ones written in front of it. */
+function innermost(qualifier: readonly string[]): string | null {
+  return qualifier[qualifier.length - 1] ?? null;
 }
 
 /**
@@ -132,13 +145,15 @@ function rowCallEffects(
   const given =
     rowCall.container === undefined
       ? null
-      : stringAt(args, rowCall.container, options.facts);
-  const container = given ?? address.container;
-  if (container === null) {
+      : namedTable(stringAt(args, rowCall.container, options.facts));
+  const reached = {
+    scope: given?.scope ?? address.scope,
+    container: given?.container ?? address.container,
+  };
+  if (reached.container === null) {
     return [];
   }
 
-  const reached = { scope: address.scope, container };
   return [
     effectOf(call, pattern, reached, {
       kind: rowCall.kind,
@@ -149,32 +164,22 @@ function rowCallEffects(
 }
 
 /**
- * Which part of the store a table name in the statement refers to. A
- * library whose names carry their namespace spells the scope in the
- * name itself, and a name written without one belongs to whatever the
- * chain addressed.
+ * A table a call was given by name, split the way one written into a
+ * statement is, so a call and a statement say the same namespace and
+ * the same table. Null for a name that settled on nothing.
  */
-function addressOfTable(
-  table: string,
-  address: Address,
-  pattern: RbRawSqlPattern,
-): Address {
-  const separator = pattern.qualifiedNameSeparator;
-  if (separator === undefined) {
-    return { scope: address.scope, container: table };
-  }
-
-  const parts = table.split(separator);
-  const container = parts[parts.length - 1] ?? table;
-  const spelled = parts.length > 1 ? (parts[parts.length - 2] ?? null) : null;
-  return { scope: spelled ?? address.scope, container };
+function namedTable(name: string | null): Address | null {
+  const split = name === null ? null : splitQualifiedTable(name);
+  return split === null
+    ? null
+    : { scope: innermost(split.qualifier), container: split.table };
 }
 
 function effectOf(
   call: RbNode,
   pattern: RbRawSqlPattern,
   address: Address,
-  access: Omit<SqlAccess, "table">,
+  access: Pick<SqlAccess, "kind" | "fields" | "selector">,
 ): Effect {
   const operation = field(call, "method")?.text ?? "";
   return {
@@ -241,9 +246,17 @@ function addressBehind(
     addressing,
     options.facts,
   );
-  return addressing.says === "scope"
-    ? { scope: named ?? behind.scope, container: behind.container }
-    : { scope: behind.scope, container: named ?? behind.container };
+  if (addressing.says === "scope") {
+    return { scope: named ?? behind.scope, container: behind.container };
+  }
+
+  // A table named on the chain is split the way one named in a statement
+  // is, so `dataset.table("core.accounts")` says the dataset it spells.
+  const table = namedTable(named);
+  return {
+    scope: table?.scope ?? behind.scope,
+    container: table?.container ?? behind.container,
+  };
 }
 
 /** Whether this receiver is the constant the pack said, `PG` or `Google::Cloud::Bigquery`. */
