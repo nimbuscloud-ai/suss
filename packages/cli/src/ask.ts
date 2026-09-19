@@ -728,7 +728,7 @@ function answerReachedBy(subject: string, loaded: LoadedSummaries): Answer {
   return {
     shape: "reachedBy",
     subject,
-    headline: `${items.length} boundar${items.length === 1 ? "y" : "ies"} reach ${subject}:`,
+    headline: `${items.length} boundar${items.length === 1 ? "y reaches" : "ies reach"} ${subject}:`,
     items,
     needs: [],
     caveats: [...walkCaveats, ...gapCaveats(target.summaries)],

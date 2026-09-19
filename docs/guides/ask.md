@@ -78,7 +78,7 @@ suss ask 'what reaches readRow' --dir summaries/
 ```
 
 ```
-1 boundary reach readRow:
+1 boundary reaches readRow:
   GET /orders/{customer}, by calling readRow
 
 warning: 3 calls here resolved to no unit, so a boundary reaching readRow through one of them is missing from this answer.
