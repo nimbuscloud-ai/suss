@@ -4,7 +4,10 @@
 
 import { describe, expect, it } from "vitest";
 
-import { readStorageContractMetadata } from "@suss/behavioral-ir";
+import {
+  readMetricReadingMetadata,
+  readStorageContractMetadata,
+} from "@suss/behavioral-ir";
 import { terraformToSummaries } from "@suss/contract-terraform";
 
 import { awsTerraform } from "./index.js";
@@ -75,6 +78,54 @@ resource "aws_elasticache_cluster" "sessions_member" {
 resource "aws_elasticache_replication_group" "editions" {
   replication_group_id = "editions-v1"
   description          = "edition cache"
+}
+
+resource "aws_rds_cluster" "ledger" {
+  cluster_identifier = "\${local.environment}-ledger"
+  engine             = "aurora-postgresql"
+  database_name      = "ledger"
+}
+
+resource "aws_db_instance" "reporting" {
+  identifier = "reporting"
+  engine     = "mariadb"
+}
+
+resource "aws_db_instance" "archive" {
+  identifier = "archive"
+  engine     = "sqlserver-ex"
+}
+
+resource "aws_kinesis_stream" "clicks" {
+  name = "\${local.environment}-clicks"
+}
+
+resource "aws_kinesis_firehose_delivery_stream" "clicks_archive" {
+  name        = "\${local.environment}-clicks-archive"
+  destination = "extended_s3"
+}
+
+resource "aws_cloudwatch_log_metric_filter" "refusals" {
+  name           = "refusals"
+  pattern        = "{ $.outcome = \\"refused\\" }"
+  log_group_name = "/aws/lambda/orders"
+
+  metric_transformation {
+    name      = "Refusals"
+    namespace = "OrderService"
+    value     = "1"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "refusals_climbing" {
+  alarm_name          = "refusals-climbing"
+  namespace           = "OrderService"
+  metric_name         = "Refusals"
+  comparison_operator = "GreaterThanThreshold"
+  threshold           = 5
+  statistic           = "Sum"
+  period              = 60
+  evaluation_periods  = 1
 }
 
 resource "aws_iam_role" "runner" {
@@ -187,6 +238,62 @@ describe("what the AWS entries read", () => {
       boundary("aws_elasticache_replication_group.editions").identity
         .boundaryBinding?.semantics,
     ).toMatchObject({ storageSystem: "redis", container: null });
+  });
+
+  it("reads an Aurora cluster as the PostgreSQL store its engine picks", () => {
+    const cluster = boundary("aws_rds_cluster.ledger");
+    expect(cluster.identity.boundaryBinding?.semantics).toMatchObject({
+      name: "storage",
+      storageSystem: "postgresql",
+      container: null,
+    });
+    expect(readStorageContractMetadata(cluster)?.fieldSet).toBe("none");
+  });
+
+  it("reads a MariaDB instance as a MySQL store, which is what its driver speaks", () => {
+    expect(
+      boundary("aws_db_instance.reporting").identity.boundaryBinding?.semantics,
+    ).toMatchObject({ storageSystem: "mysql" });
+  });
+
+  it("skips an engine no entry describes", () => {
+    expect(
+      read().some((s) => s.identity.name === "aws_db_instance.archive"),
+    ).toBe(false);
+  });
+
+  it("reads a stream and a delivery stream as channels of their own", () => {
+    expect(
+      boundary("aws_kinesis_stream.clicks").identity.boundaryBinding?.semantics,
+    ).toMatchObject({ messageBus: "aws_kinesis", channel: "clicks" });
+    expect(
+      boundary("aws_kinesis_firehose_delivery_stream.clicks_archive").identity
+        .boundaryBinding?.semantics,
+    ).toMatchObject({ messageBus: "aws_firehose" });
+  });
+
+  it("identifies a log-based metric by its namespace and its name together", () => {
+    expect(
+      boundary("aws_cloudwatch_log_metric_filter.refusals").identity
+        .boundaryBinding?.semantics,
+    ).toMatchObject({
+      name: "metric",
+      metricSystem: "cloudwatch",
+      metricType: "OrderService/Refusals",
+    });
+  });
+
+  it("reads an alarm as a reading of that same metric", () => {
+    const alarm = boundary("aws_cloudwatch_metric_alarm.refusals_climbing#0");
+    expect(alarm.kind).toBe("consumer");
+    expect(alarm.identity.boundaryBinding?.semantics).toMatchObject({
+      metricSystem: "cloudwatch",
+      metricType: "OrderService/Refusals",
+    });
+    expect(readMetricReadingMetadata(alarm)).toMatchObject({
+      comparesTo: "number",
+      reducesTo: "number",
+    });
   });
 
   it("leaves everything that is deployment wiring alone", () => {
