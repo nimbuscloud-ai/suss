@@ -1,6 +1,7 @@
 /**
- * A message bus (SQS, SNS, S3, EventBridge, BullMQ, Kafka, NATS,
- * Cloudflare Queues) as a boundary. A trigger that delivers events
+ * A message bus (SQS, SNS, S3, EventBridge, Kinesis, Firehose, Pub/Sub,
+ * BullMQ, Kafka, NATS, Cloudflare Queues) as a boundary. A trigger that
+ * delivers events
  * nobody published is here too: a Cloudflare cron trigger and a tail
  * Worker each receive on a wire with no producer, the same way an
  * EventBridge schedule does.
@@ -31,6 +32,12 @@ export const MessageBusSemanticsSchema = z.object({
     "aws.sns",
     "s3",
     "eventbridge",
+    // A Kinesis stream and a Firehose delivery stream are different
+    // APIs with different destinations, so a stream named `orders` and
+    // a delivery stream named `orders` are not the same channel.
+    "aws_kinesis",
+    "aws_firehose",
+    "gcp_pubsub",
     "bullmq",
     "kafka",
     "nats",
