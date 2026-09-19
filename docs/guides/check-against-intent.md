@@ -260,7 +260,31 @@ Rename the read in `checkPair` from `consumer` to something else and the run say
 [warning] fn:@suss/checker::checkPair: Intent "checker-check-pair" says fn:@suss/checker::checkPair receives consumer and needs it; checkPair never reads it.
 ```
 
-A REST boundary accepts a block with a section per part of the request (`headers`, `query`, `params` and `body`), and nothing is compared against it yet, because which of a handler's reads is which part of a request is the framework's vocabulary and no pack says it.
+A REST boundary writes its block in a section per part of the request. `headers`, `query` and `params` are maps from a name to a field; `body` is a shape, because a body is one value with properties under it:
+
+```yaml
+boundary:
+  transport: http
+  semantics: rest
+  method: GET
+  path: /invoices/:id
+  receives:
+    headers:
+      x-tenant-id: { type: string, required: true }
+    query:
+      dryRun: { type: boolean }
+    body:
+      properties:
+        note: { type: string }
+```
+
+Header names compare case-insensitively, since HTTP treats them that way and Node lowercases them before a handler sees one.
+
+Which of a handler's reads is which part of a request is the framework's vocabulary, so each pack says how its handlers spell one. Express, Fastify and AWS Lambda under a proxy integration all say it field by field. Hono reads a field through a method with the name in the argument (`c.req.header("x-tenant-id")`), and a read records the method without the argument, so a Hono section can only be compared whole: reading any header satisfies every declared header, and no read of one is reported as undeclared. A route from a pack that says nothing about its request is not compared, the same way a document with no block is not.
+
+Two things a REST route does are not a mismatch. A handler that passes the body to a validator (`schema.parse(req.body)`) has used it whole, so the block's body fields are not reported against it, and the other sections still compare. A read under `body` is never `undeclaredInputRead` when the block declares a body, because the shape is where the body gets described.
+
+A required header is often checked in middleware rather than in the handler. The reads of every wrapper registered around a route count as the route's, so a route that never touches the header its middleware demands is quiet.
 
 ## What the checker reports
 

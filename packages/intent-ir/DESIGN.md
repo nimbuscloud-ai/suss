@@ -130,6 +130,8 @@ The block lists only the fields the author wants checked. It is never a full des
 
 Every spelling normalises to the same list on `BoundaryIntentSummary.receives`: a path, a shape or null, and whether the field is required. `pair.provider` becomes `["pair", "provider"]`, and a REST section becomes the first segment of the path, so `["headers", "x-tenant-id"]` and `["body", "note"]`. The checker has one pass over that list and never looks at the boundary kind.
 
+Reaching those paths from a REST handler takes one more step, which lives outside this package. A handler reads a header at `request.headers` under Express and at `event.headers` under an AWS Lambda proxy integration, so each pack says where its handlers read the four parts, the adapter stamps that on every route it recognizes, and `@suss/behavioral-ir` rewrites a read into the section an author wrote. Header names compare case-insensitively.
+
 Every boundary block is a `z.strictObject`, so a misspelt `recieves:` stops the run with `boundary: Unrecognized key: "recieves"` instead of disappearing. The two document shapes, a transition and a scenario are all strict for the same reason, so `scenario:` for `scenarios:`, `respones:` on a transition and `titel:` on a scenario each stop the run. That rejects unknown keys only; the fields that were optional stay optional, so a module-level function-call boundary is still authorable and `source:` can still be left off.
 
 ## Which boundaries pair, and which are pending
