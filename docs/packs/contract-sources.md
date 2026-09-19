@@ -30,11 +30,11 @@ openapi:orders.yaml
        -> 409
 ```
 
-The `Contract:` line is what the spec declared, which is what a handler gets compared against. A response with no schema comes out with no body rather than a guess at one.
+The `Contract:` line is what the spec declared, and that is what a handler gets compared against. A response with no schema comes out with no body rather than a guess at one.
 
 ## `graphql`
 
-A plain GraphQL SDL file. Every Query, Mutation and Subscription field becomes a resolver-kind summary, which is the provider side. These pair against the resolvers the Apollo and NestJS GraphQL packs find in code.
+A plain GraphQL SDL file. Every Query, Mutation and Subscription field becomes a resolver-kind summary on the provider side. These pair against the resolvers the Apollo and NestJS GraphQL packs find in code.
 
 ```bash
 $ suss contract --from graphql schema.graphql -o gql.json
@@ -49,7 +49,7 @@ schema.graphql:Mutation.refundOrder
 
 ## `graphql-documents`
 
-Committed `.graphql` and `.gql` operation documents, one file or a directory walked recursively. Every query, mutation and subscription becomes a client-kind summary, which is the consumer side. This is for a repo that keeps its operations in files rather than in tagged templates at the call site, so nothing has to be traced through the code.
+Committed `.graphql` and `.gql` operation documents, one file or a directory walked recursively. Every query, mutation and subscription becomes a client-kind summary on the consumer side. Use this when your repo keeps its operations in files rather than in tagged templates at the call site, since then nothing has to be traced through the code.
 
 ```bash
 $ suss contract --from graphql-documents src/queries -o operations.json
@@ -64,7 +64,7 @@ src/queries/productList.graphql
        !! Fragment spread "...ProductListItem" has no matching fragment definition in the read set; its selections are not part of this summary.
 ```
 
-Fragment spreads resolve against every fragment definition in the read set and are inlined into the stored document, so the pairing pass sees the selected fields directly. A spread the reader cannot expand stays in the document as written and becomes a gap on that summary, which is the warning above. Pass the directory rather than one file and the fragment is found.
+Fragment spreads resolve against every fragment definition in the read set and are inlined into the stored document, so the pairing pass sees the selected fields directly. A spread the reader cannot expand stays in the document as written and becomes a gap on that summary. That is the warning in the output above. Pass the directory rather than one file and the fragment is found.
 
 Each operation summary stores its document text at `metadata.graphql.document`, the same place the TypeScript adapter puts documents it recovers from call sites, so moving an operation from a call site into a file changes no findings.
 
@@ -84,7 +84,7 @@ cloudformation:template.yaml:WidgetItemFunction:Get
          -> 502  !! undeclared
 ```
 
-Those two transitions are the platform's, not the handler's: API Gateway returns 504 on an integration timeout and 502 when the Lambda errors, whatever the code does. A configured authorizer adds 401 and 403, a request validator adds 400, and throttling adds 429. `!! undeclared` says the handler's own code does not account for them.
+API Gateway produces those two itself, whatever the handler's code does: 504 on an integration timeout and 502 when the Lambda errors. A configured authorizer adds 401 and 403, a request validator adds 400, and throttling adds 429. `!! undeclared` marks the ones the handler's own code doesn't account for.
 
 ## `serverless`
 
@@ -106,7 +106,7 @@ serverless:serverless.yml
 └─ processOrders.sqs1 → aws_sqs env:AUDIT_QUEUE_ARN  (serverless consumer | line 1)
 ```
 
-`${self:...}` resolves against the document. A reference the deploy supplies keeps its token, which is what `env:AUDIT_QUEUE_ARN` above is: the queue is known, its name is not, and the consumer pairs on that basis rather than being dropped.
+`${self:...}` resolves against the document. A reference that only the deploy supplies keeps its token, as `env:AUDIT_QUEUE_ARN` does above. suss knows there is a queue there without knowing its name, and it pairs the consumer on that basis instead of dropping it.
 
 ## `terraform`
 
@@ -214,7 +214,7 @@ suss check --dir summaries/ --intent intent/
 
 Every transition a contract source emits is marked `confidence: { source: "derived", level }`. `derived` tells inspect and diff that the transition came from a declaration rather than from code, and `level` reflects how precisely the source said it. An OpenAPI `200` with a typed body schema is `high`; a `2XX` range expansion, or a body described with `additionalProperties: true`, is lower.
 
-`derived` is not a statement about trustworthiness. A well-formed OpenAPI document is often more precise than the TypeScript behind it. The checker pairs by method and normalized path whatever the source, so `:id` on one side matches `{id}` on the other, and `confidence.source` survives on both sides for anybody who wants to filter by it.
+Read `derived` as a note about where the summary came from. A well-formed OpenAPI document is often more precise than the TypeScript behind it, so a derived summary can be the better description of the two. The checker pairs by method and normalized path whatever the source, so `:id` on one side matches `{id}` on the other, and `confidence.source` survives on both sides for anybody who wants to filter by it.
 
 Four things a contract source deliberately does not do:
 
@@ -227,9 +227,9 @@ Four things a contract source deliberately does not do:
 
 A new reader is one package, `@suss/contract-<format>`, plus a loader entry in `packages/cli/src/contract.ts`. Two decisions come first.
 
-**Where the truth is.** A spec (OpenAPI, GraphQL SDL), a deploy manifest (CloudFormation, Terraform, wrangler), a vendor's documented behavior, or a file the team writes by hand. That settles the package's name and what it depends on.
+**Where the truth is.** A spec (OpenAPI, GraphQL SDL), a deploy manifest (CloudFormation, Terraform, wrangler), a vendor's documented behavior, or a file the team writes by hand. That decides the package's name and what it depends on.
 
-**Whether the resource has more than one manifest language.** An API Gateway route can be written in CloudFormation, in a Serverless service file, or in Terraform, so the resource semantics live in `@suss/contract-aws-apigateway` and each manifest reader normalizes its own format and delegates. Adding the Terraform reader did not reimplement API Gateway behavior. Where there is no plausible second reader, as with a single OpenAPI document, one package is enough.
+**Whether the resource has more than one manifest language.** An API Gateway route can be written in CloudFormation, in a Serverless service file, or in Terraform, so the resource semantics live in `@suss/contract-aws-apigateway` and each manifest reader normalizes its own format and delegates to it. The Terraform reader does not reimplement API Gateway behavior. Where there is no plausible second reader, as with a single OpenAPI document, one package is enough.
 
 Then, for each behavioral knob the format expresses, decide what statuses, headers or bodies it can produce, whether it interacts with the handler's own transitions or is a transition of its own, and what attribution to record.
 
@@ -243,6 +243,6 @@ stripe:cards:card_declined     // vendor contract
 
 Stable namespacing lets inspect and diff group related transitions across readers instead of each one inventing labels.
 
-When several knobs produce the same status, emit one transition and aggregate the contributors in `metadata.causes`. An authorizer and an API key requirement both produce 403, and a consumer cannot tell which fired and should not have to. Multiple transitions for one status mean something different to the checker: sub-cases the consumer is expected to disambiguate.
+When several knobs produce the same status, emit one transition and aggregate the contributors in `metadata.causes`. An authorizer and an API key requirement both produce 403, and a consumer has no way to tell which one fired. Multiple transitions for one status mean something different to the checker: sub-cases the consumer is expected to disambiguate.
 
 Where the platform creates a boundary rather than modifying one, emit a standalone summary and set `metadata.synthetic` to the rule. API Gateway with CORS configured responds to OPTIONS on every CORS-enabled path with no handler code behind it, and a consumer calling `fetch(path, { method: "OPTIONS" })` pairs with that summary through the ordinary matching rules.
