@@ -213,6 +213,12 @@ looking in.
 `accessPath` is the way in the call took, which pairs against a
 declared index rather than against the container itself.
 
+`scope` is for a client that names its namespace on the call rather
+than on the connection. Most do not, and those state the scope once on
+`storageCalls`. A BigQuery caller writes `bigquery.dataset(d).table(t)`,
+so `.scope({ of: [DATASET_STEP], at: 0 })` records each access under the
+dataset it went to instead of putting both datasets under one name.
+
 `containersIn` is for a call that reaches several containers at once. A
 batch states them as a map, one entry per container, and the chain then
 yields one effect per entry: the entry's key is what the container is
@@ -356,6 +362,21 @@ The invocation walk never reaches a tagged template, so `pack` puts a
 chain with this ending on the access walk instead. That walk visits
 calls as well, so it catches the unsafe form too.
 
+Some libraries take the statement either as the argument or under a key
+of an options object, and the two are the same call. A method states
+both picks and they are tried in order until one reaches text:
+
+```ts
+.methods({ query: { statement: [{ at: 0 }, { at: 0, property: ["query"] }] } })
+```
+
+### The namespace a statement states
+
+A BigQuery table is written `` `project.dataset.table` ``. `@suss/sql`
+splits that, so the container is the table a provider declares and the
+dataset becomes the scope of the access. A statement that qualifies
+nothing records the scope the pack was built with.
+
 ### A hole that is a table rather than a value
 
 `parts()` gives the text either side of each hole, and by default what
@@ -383,6 +404,22 @@ declares and `named` reads the name off it the way any other pick reads
 an argument. `from` keeps the pack from reading a hole the library did
 not make; a hole that is not a call, or that came from somewhere else,
 stays the parameter it was.
+
+### A hole the source itself settled
+
+A project keeps a table name in a module constant and interpolates it:
+
+```ts
+const TABLE = "analytics-prod.core.dim_account";
+bigquery.query(`SELECT id, name FROM \`${TABLE}\``);
+```
+
+No pack knows that hole is a table, and the hole is a name rather than a
+call, so `interpolating` cannot reach it. The compiled chain asks the
+evaluator what each hole comes to and passes that to `@suss/sql`, which
+writes a hole in only where the statement quoted it as a name.
+A value position stays a parameter, since a constant written there would
+parse as a column and land in the selector.
 
 ## The example every declaration states
 

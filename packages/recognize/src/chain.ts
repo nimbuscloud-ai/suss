@@ -156,6 +156,18 @@ export interface AccessPathLink {
 }
 
 /**
+ * Which of the store's namespaces a call reached, when the call says
+ * rather than the pack. Most clients connect to one namespace and the
+ * pack states it once, but a BigQuery caller names the dataset on the
+ * way to the table, so a project reading two datasets would otherwise
+ * record both accesses under the same scope.
+ */
+export interface ScopeLink {
+  readonly asks: "scope";
+  readonly argument: ArgumentPick;
+}
+
+/**
  * Where a call states the containers it reached, for a call that
  * reaches several at once. A batch or a transaction states them as a
  * map, one entry per container, so the chain yields one effect per
@@ -211,6 +223,7 @@ export type Link<TMeaning> =
   | CallsLink<TMeaning>
   | ContainerLink
   | AccessPathLink
+  | ScopeLink
   | ContainersLink
   | InputLink
   | InterpolatesLink;
@@ -368,8 +381,13 @@ export interface SqlMethod {
    * Where the call states the statement. The pick's steps reach a call
    * beside this one, which is how a pack reads a statement handed to
    * `execute` as a tagged template rather than written on the call.
+   *
+   * A list is tried in order until one of the picks reaches text. One
+   * library takes the statement either way round: `query(sql)` and
+   * `query({ query: sql })` are the same call, and the pack says both
+   * rather than picking whichever its author happened to meet first.
    */
-  readonly statement: OneArgument;
+  readonly statement: OneArgument | readonly OneArgument[];
 }
 
 /** What one method table can say a method does. */
