@@ -95,6 +95,7 @@ export const sidebar: SidebarItem[] = [
             link: "/reference/cli/corroborate",
           },
           { text: "suss infer", link: "/reference/cli/infer" },
+          { text: "suss intent", link: "/reference/cli/intent" },
           { text: "Exit codes", link: "/reference/cli/exit-codes" },
         ],
       },

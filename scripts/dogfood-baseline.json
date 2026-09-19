@@ -2,11 +2,11 @@
   "totals": {
     "packages": 76,
     "packagesWithExports": 76,
-    "exports": 1024,
-    "internal": 3585,
-    "consumers": 2089,
-    "pairs": 2077,
-    "unfollowedCalls": 529,
+    "exports": 1028,
+    "internal": 3597,
+    "consumers": 2093,
+    "pairs": 2081,
+    "unfollowedCalls": 530,
     "findingErrors": 0
   },
   "packages": {
@@ -54,10 +54,10 @@
     },
     "packages/cli": {
       "name": "@suss/cli",
-      "exports": 35,
-      "internal": 560,
-      "consumers": 367,
-      "unfollowedCalls": 59
+      "exports": 37,
+      "internal": 568,
+      "consumers": 369,
+      "unfollowedCalls": 60
     },
     "packages/client/aiohttp": {
       "name": "@suss/client-aiohttp",
@@ -145,9 +145,9 @@
     },
     "packages/contract/intent": {
       "name": "@suss/contract-intent",
-      "exports": 3,
-      "internal": 5,
-      "consumers": 4,
+      "exports": 4,
+      "internal": 8,
+      "consumers": 5,
       "unfollowedCalls": 0
     },
     "packages/contract/openapi": {
@@ -460,7 +460,7 @@
     },
     "packages/intent-ir": {
       "name": "@suss/intent-ir",
-      "exports": 4,
+      "exports": 5,
       "internal": 14,
       "consumers": 5,
       "unfollowedCalls": 2
@@ -482,8 +482,8 @@
     "packages/mcp": {
       "name": "@suss/mcp",
       "exports": 9,
-      "internal": 14,
-      "consumers": 12,
+      "internal": 15,
+      "consumers": 13,
       "unfollowedCalls": 2
     },
     "packages/packs": {

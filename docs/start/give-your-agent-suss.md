@@ -29,7 +29,7 @@ you do not have one, the server picks the packs `init` would have picked
 and prints a note on stderr. When nothing in the project matches a pack,
 every answer comes back empty, and `suss_status` explains why.
 
-## The five tools
+## The tools
 
 `suss_ask` takes one question about one boundary and works the answer out
 from the code as it is right now. The `question` has to be one of ten
@@ -68,12 +68,20 @@ stub for that package from your own call sites and leaves the semantic
 blanks for you or the agent to fill in from the package's source. [Teach
 suss a dependency](/guides/teach-a-dependency) covers the file it writes.
 
+`suss_intent_outcomes` lists the outcomes your boundary intent documents
+declare, each as the `<intent-name>.<outcome-id>` a PRD scenario puts in
+its `link`. An agent calls it before it writes or edits a `link`, since
+both halves of one are written inside a document somebody else wrote and
+a link nothing declares comes back from `suss_check` as
+`danglingScenarioLink`. Pass an `intentDir` when the documents are
+somewhere other than `intent/`.
+
 `suss_status` shows which extract and contract commands ran, which of
 them failed, and whether they came from a `suss.json` or the server
 picked them itself. Call it when an answer looks thinner than you would
 expect from the code.
 
-All five are marked read-only and none of them changes anything in your
+Every one is marked read-only and none of them changes anything in your
 tree, so the host does not have to ask you before it calls one.
 
 ## What an answer looks like

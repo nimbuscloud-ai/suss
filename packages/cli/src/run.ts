@@ -28,6 +28,7 @@ import { inspectFlow } from "./flow.js";
 import { initInteractive } from "./initInteractive.js";
 import { inspect, inspectDiff, inspectDir } from "./inspect.js";
 import { intentDraft } from "./intentDraftCommand.js";
+import { intentOutcomesCommand } from "./intentOutcomes.js";
 import { LANGUAGES, parseLanguage } from "./language.js";
 import { prdDraft } from "./prdDraftCommand.js";
 import { PROJECT_FILE } from "./projectFile.js";
@@ -65,6 +66,7 @@ Usage:
   suss infer stub <package> [-p <tsconfig> | --dir <directory>] [-o <file | ->]
   suss infer intent --from <summaries.json | directory> [-o <directory> | --into <directory>]
   suss infer prd --from <intent-directory> [-o <directory> | --into <directory>]
+  suss intent outcomes --from <intent-directory> [--json]
   suss --version
 
 Commands:
@@ -97,6 +99,9 @@ Commands:
             meant. "infer prd" reads those once they are curated and
             writes a PRD per boundary, one scenario per outcome, for you
             to say why each is there.
+  intent    Read the intent documents a folder holds. "intent outcomes"
+            lists every outcome a boundary document declares, as the
+            <intent-name>.<outcome-id> a PRD scenario links to.
 
 Options (extract):
   -p, --project    Path to the tsconfig covering the code to read. Without it,
@@ -253,12 +258,22 @@ Options (infer intent):
                    from what you have curated: it refuses to write where
                    intent docs already are.
 
+Options (intent outcomes):
+  --from           The folder of intent docs to read. A PRD in it is
+                   skipped, since a PRD links to outcomes rather than
+                   declaring any.
+  --json           Write the outcomes as JSON instead of prose. An
+                   outcome an inferred draft declares is left out, and
+                   a line on stderr says how many.
+
 Exit codes:
   check exits non-zero when it finds anything at error severity.
   corroborate exits non-zero when a claim is refuted by execution.
   infer stub exits non-zero when the project shows no evidence of the
   package: no calls, no imports, no requires, no superclass.
   infer intent exits non-zero when no boundary could be drafted.
+  intent outcomes exits non-zero when the folder declares no outcome a
+  PRD can link to yet.
 
 An interactive run ends with one line on stderr when a newer suss is on
 the registry. Piped output and CI never see it, and setting
@@ -348,8 +363,11 @@ async function dispatch(args: string[]): Promise<number> {
   if (command === "infer") {
     return await runInfer(args.slice(1));
   }
+  if (command === "intent") {
+    return runIntent(args.slice(1));
+  }
   process.stderr.write(
-    `There is no "${command}" command. suss has init, extract, inspect, check, ask, contract, corroborate, and infer.\n`,
+    `There is no "${command}" command. suss has init, extract, inspect, check, ask, contract, corroborate, infer, and intent.\n`,
   );
   process.stderr.write(`${USAGE}\n`);
   return 1;
@@ -1154,6 +1172,47 @@ function runInferIntent(args: string[]): number {
     from: values.from,
     ...(values.out !== undefined ? { out: values.out } : {}),
     ...(values.into !== undefined ? { into: values.into } : {}),
+  });
+}
+
+function runIntent(args: string[]): number {
+  const sub = args[0];
+  const read = sub === undefined ? undefined : INTENT_READS[sub];
+  if (read === undefined) {
+    process.stderr.write(
+      sub === undefined
+        ? "intent needs what to read. Try: suss intent outcomes --from intent/\n"
+        : `There is no "intent ${sub}". intent has outcomes.\n`,
+    );
+    return 1;
+  }
+
+  return read(args.slice(1));
+}
+
+const INTENT_READS: Record<string, (args: string[]) => number> = {
+  outcomes: runIntentOutcomes,
+};
+
+function runIntentOutcomes(args: string[]): number {
+  const { values } = parseArgs({
+    args,
+    options: {
+      from: { type: "string" },
+      json: { type: "boolean" },
+    },
+  });
+
+  if (values.from === undefined) {
+    process.stderr.write(
+      "intent outcomes needs --from, the folder of intent docs to read. Try: suss intent outcomes --from intent/\n",
+    );
+    return 1;
+  }
+
+  return intentOutcomesCommand({
+    from: values.from,
+    ...(values.json === true ? { json: true } : {}),
   });
 }
 

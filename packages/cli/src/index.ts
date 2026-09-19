@@ -37,6 +37,14 @@ export {
   intentDraftResult,
   type UndraftedBoundary,
 } from "./intentDraftCommand.js";
+export {
+  type IntentOutcomeListing,
+  type IntentOutcomeRow,
+  type IntentOutcomesCommandOptions,
+  type IntentOutcomesOptions,
+  intentOutcomes,
+  intentOutcomesCommand,
+} from "./intentOutcomes.js";
 export { LANGUAGES, type Language } from "./language.js";
 export {
   type LoadedSummaries,

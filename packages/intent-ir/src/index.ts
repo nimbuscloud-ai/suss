@@ -24,6 +24,7 @@ export {
   BodyShapeSchema,
   BoundarySchema,
   blanksLeftEmpty,
+  fillBlanks,
   IntentDocSchema,
   IntentSourceSchema,
 } from "./schema.js";

@@ -23,6 +23,7 @@ import YAML from "yaml";
 
 import {
   blanksLeftEmpty,
+  fillBlanks,
   IntentDocSchema,
   intentDocToSummary,
 } from "@suss/intent-ir";
@@ -109,6 +110,12 @@ function validated(raw: unknown, where: string) {
  */
 export function loadIntentFile(filepath: string): IntentSummary {
   const resolved = path.resolve(filepath);
+  return intentDocToSummary(validated(parseIntentFile(resolved), resolved));
+}
+
+/** The file's own data, before the schema has had a look at it. */
+function parseIntentFile(filepath: string): unknown {
+  const resolved = path.resolve(filepath);
   if (!fs.existsSync(resolved)) {
     throw new Error(`Intent spec not found: ${resolved}`);
   }
@@ -124,15 +131,43 @@ export function loadIntentFile(filepath: string): IntentSummary {
   if (parsed === null || typeof parsed !== "object") {
     throw new Error(`Intent spec ${resolved} is not an object`);
   }
-  return intentDocToSummary(validated(parsed, resolved));
+  return parsed;
+}
+
+/** One intent document, and where in the folder it was read from. */
+export interface LoadedIntentDoc {
+  /** The absolute path of the file. */
+  file: string;
+  summary: IntentSummary;
+  /** The line each outcome's id is written on, by id. Empty for a PRD. */
+  outcomeLines: Record<string, number>;
+  /**
+   * The fields the file leaves blank, empty for one that loads as
+   * written. Each blank is filled with a placeholder, so `purpose` and
+   * the rest of them contain that placeholder rather than what
+   * anybody wrote.
+   */
+  blanks: string[];
+}
+
+export interface IntentDirectoryRead {
+  /** Every document in the folder, in file order. */
+  docs: LoadedIntentDoc[];
+  /** One message per file that could not be read at all. */
+  broken: string[];
 }
 
 /**
  * Walk `dir` recursively for `*.intent.{yaml,yml,json}` and
  * `*.prd.{yaml,yml,json}` files and normalise each. Specs can live
  * anywhere under the root, organised however the team prefers.
+ *
+ * An inferred draft comes back with a placeholder in each blank, so a
+ * reader that only wants the outcome ids can still have them. A caller
+ * that needs finished documents reads `blanks` and refuses the ones
+ * that have any.
  */
-export function loadIntentDirectory(dir: string): IntentSummary[] {
+export function readIntentDirectory(dir: string): IntentDirectoryRead {
   const resolved = path.resolve(dir);
   if (!fs.existsSync(resolved)) {
     throw new Error(`Intent directory not found: ${resolved}`);
@@ -141,26 +176,118 @@ export function loadIntentDirectory(dir: string): IntentSummary[] {
     throw new Error(`Intent path is not a directory: ${resolved}`);
   }
 
-  const loaded: IntentSummary[] = [];
-  const waiting: string[] = [];
-  const broken: string[] = [];
+  const read: IntentDirectoryRead = { docs: [], broken: [] };
   for (const file of walkIntentFiles(resolved)) {
-    try {
-      loaded.push(loadIntentFile(file));
-    } catch (err) {
-      const rejected = err instanceof IntentDocRejected ? err : null;
-      if (rejected !== null && rejected.blanks.length > 0) {
-        waiting.push(path.relative(resolved, file));
-        continue;
-      }
+    const one = readOneDoc(file);
+    if (one.doc !== null) {
+      read.docs.push(one.doc);
+      continue;
+    }
 
-      broken.push(err instanceof Error ? err.message : String(err));
+    read.broken.push(one.broken);
+  }
+  return read;
+}
+
+/**
+ * Walk `dir` and normalise every document in it, refusing the whole
+ * folder when a file is an uncurated draft or does not read at all.
+ */
+export function loadIntentDirectory(dir: string): IntentSummary[] {
+  const resolved = path.resolve(dir);
+  const read = readIntentDirectory(resolved);
+  const waiting = read.docs
+    .filter((doc) => doc.blanks.length > 0)
+    .map((doc) => path.relative(resolved, doc.file));
+  if (waiting.length > 0 || read.broken.length > 0) {
+    throw new Error(everyRejection(resolved, waiting, read.broken));
+  }
+  return read.docs.map((doc) => doc.summary);
+}
+
+/** One document, or the message saying why it could not be read. */
+type DocRead =
+  | { doc: LoadedIntentDoc; broken: null }
+  | { doc: null; broken: string };
+
+/**
+ * A draft is read a second time with a placeholder in each blank. One
+ * that still does not validate is broken rather than unfinished, so it
+ * comes back with the message the first read produced.
+ */
+function readOneDoc(file: string): DocRead {
+  try {
+    return {
+      doc: {
+        file,
+        summary: loadIntentFile(file),
+        outcomeLines: outcomeLines(file),
+        blanks: [],
+      },
+      broken: null,
+    };
+  } catch (err) {
+    const rejected = err instanceof IntentDocRejected ? err : null;
+    const broken = err instanceof Error ? err.message : String(err);
+    if (rejected === null || rejected.blanks.length === 0) {
+      return { doc: null, broken };
+    }
+
+    const draft = readDraft(file, rejected.blanks);
+    return draft === null
+      ? { doc: null, broken }
+      : { doc: draft, broken: null };
+  }
+}
+
+function readDraft(file: string, blanks: string[]): LoadedIntentDoc | null {
+  try {
+    return {
+      file,
+      summary: loadIntentDoc(fillBlanks(parseIntentFile(file), blanks)),
+      outcomeLines: outcomeLines(file),
+      blanks,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The line each outcome's id is written on, by id.
+ *
+ * A listing of outcome ids is something a person opens the file at, so
+ * the line has to come from the text rather than from the normalised
+ * document, which has no positions in it. JSON goes through the same
+ * parser, since YAML takes JSON syntax.
+ */
+function outcomeLines(file: string): Record<string, number> {
+  const counter = new YAML.LineCounter();
+  const doc = YAML.parseDocument(fs.readFileSync(file, "utf-8"), {
+    lineCounter: counter,
+  });
+  const transitions = doc.get("transitions");
+  if (!YAML.isSeq(transitions)) {
+    return {};
+  }
+
+  const lines: Record<string, number> = {};
+  for (const item of transitions.items) {
+    if (!YAML.isMap(item)) {
+      continue;
+    }
+
+    const id = item.get("id", true);
+    if (!YAML.isScalar(id) || typeof id.value !== "string") {
+      continue;
+    }
+
+    const start = id.range?.[0];
+    if (start !== undefined) {
+      lines[id.value] = counter.linePos(start).line;
     }
   }
-  if (waiting.length > 0 || broken.length > 0) {
-    throw new Error(everyRejection(resolved, waiting, broken));
-  }
-  return loaded;
+  return lines;
 }
 
 /** How many rejected files get written out before a count takes over. */
@@ -201,9 +328,13 @@ function everyRejection(
   return parts.join("\n\n");
 }
 
+/** Sorted, so a listing of a folder comes out the same on every machine. */
 function walkIntentFiles(dir: string): string[] {
   const out: string[] = [];
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+  const entries = fs
+    .readdirSync(dir, { withFileTypes: true })
+    .sort((a, b) => a.name.localeCompare(b.name));
+  for (const entry of entries) {
     const full = path.join(dir, entry.name);
     if (entry.isFile()) {
       if (/\.(intent|prd)\.(yaml|yml|json)$/.test(entry.name)) {
