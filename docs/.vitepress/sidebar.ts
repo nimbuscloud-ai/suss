@@ -100,6 +100,7 @@ export const sidebar: SidebarItem[] = [
       },
       { text: "Findings catalog", link: "/reference/findings" },
       { text: "Summary format", link: "/reference/summary-format" },
+      { text: "Intent format", link: "/reference/intent-format" },
       { text: "IR types", link: "/reference/ir" },
       { text: "Compatibility", link: "/reference/compatibility" },
       { text: "Glossary", link: "/reference/glossary" },
