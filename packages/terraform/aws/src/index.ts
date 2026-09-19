@@ -213,6 +213,51 @@ export function awsTerraform(): TerraformPack {
           reducesTo: { attribute: "statistic", means: STATISTICS },
         },
       },
+      {
+        resource: "aws_lambda_function",
+        providerVersions: CURRENT,
+        boundary: {
+          kind: "deployable",
+          deploymentTarget: "lambda",
+          runtimeAttribute: "runtime",
+          env: [{ style: "map", attribute: "environment.variables" }],
+          // Lambda writes the module and the exported name into one
+          // string, split at the last dot.
+          code: {
+            handler: { attribute: "handler", spelling: "module.export" },
+          },
+        },
+      },
+      {
+        resource: "aws_ecs_task_definition",
+        providerVersions: CURRENT,
+        boundary: {
+          kind: "deployable",
+          deploymentTarget: "ecs-task",
+          // One task definition runs several containers, each starting
+          // with an environment of its own, and the JSON they are
+          // written in is read the same way a block would be.
+          containers: {
+            blocks: ["container_definitions"],
+            nameAttribute: "name",
+          },
+          env: [
+            {
+              style: "entries",
+              block: "environment",
+              nameAttribute: "name",
+              valueAttribute: "value",
+            },
+            {
+              style: "entries",
+              block: "secrets",
+              nameAttribute: "name",
+              secretAttribute: "valueFrom",
+            },
+          ],
+          code: { imageAttribute: "image" },
+        },
+      },
     ],
   };
 }

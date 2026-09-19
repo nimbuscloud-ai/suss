@@ -36,6 +36,9 @@ const SUB_TOKEN = /\$\{([^}]*)\}/g;
 const RESOURCE_ATTRIBUTE =
   /^([A-Za-z][\w-]*)\.([A-Za-z_][\w-]*)\.([A-Za-z_][\w-]*)$/;
 
+/** A value that is one interpolation and no text of its own. */
+const WHOLE_REFERENCE = /^\$\{([^}]*)\}$/;
+
 /** `local.name`, which a `locals` block states in the same configuration. */
 const LOCAL_VALUE = /^local\.([A-Za-z_][\w-]*)$/;
 
@@ -73,6 +76,36 @@ export function referenceScope(
   }
   scope.set(LOCALS, stated);
   return scope;
+}
+
+/**
+ * The resource a value refers to and nothing else, by the label the
+ * rest of the configuration refers to it as.
+ *
+ * A queue URL and a table ARN exist only once the configuration is
+ * applied, so a variable set to one of them states a reference and no
+ * text at all. The two sides mean one resource, and the label is what
+ * both the deployable and the resource's own summary spell, so the
+ * chain from a variable to a resource collapses on it.
+ *
+ * Null when the value has text of its own around the reference, or
+ * when it refers to a local or a variable rather than to a resource
+ * this configuration states.
+ */
+export function referencedResource(
+  value: string,
+  scope: ReferenceScope,
+): string | null {
+  const whole = WHOLE_REFERENCE.exec(value.trim());
+  if (whole === null) {
+    return null;
+  }
+  const parsed = RESOURCE_ATTRIBUTE.exec((whole[1] as string).trim());
+  if (parsed === null) {
+    return null;
+  }
+  const [, resourceType, label] = parsed;
+  return scope.has(`${resourceType}.${label}`) ? (label as string) : null;
 }
 
 /**

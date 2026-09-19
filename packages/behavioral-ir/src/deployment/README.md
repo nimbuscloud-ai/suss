@@ -65,6 +65,13 @@ Next best are the files the runtime's handler entry reaches through imports.
 decides: a shared helper runs in every runtime whose closure loads it, and a
 file outside every closure runs in none.
 
+Either of the last two will place a runtime on its own. A Terraform
+configuration says which handler runs and never which directory the zip was
+built from, so the entry is all there is, and a runtime whose entry matches a
+module is placed by its closure with no directory stated. A runtime that
+matches no module and states no directory is not placed at all, which is
+better than claiming the repository.
+
 Last comes the template's source directory, and only when it is the one
 directory that could contain the file. A monorepo service builds every function
 from the service root, so that directory covers all of them at once and says

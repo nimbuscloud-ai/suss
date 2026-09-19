@@ -247,8 +247,10 @@ function unclaimedReadNames(
       continue;
     }
 
-    const underSomeDirectory = placed.some((p) =>
-      fileInCodeScope(file, p.scope.codeScope),
+    const underSomeDirectory = placed.some(
+      (p) =>
+        p.scope.codeScope !== undefined &&
+        fileInCodeScope(file, p.scope.codeScope),
     );
     const inSomeScope = placed.some((p) =>
       runsIn(read.summary, p.scope, byFile),
@@ -669,7 +671,24 @@ function makeScopeUnknownFinding(
     boundary: binding,
     provider: makeSide(runtime),
     consumer: makeSide(runtime),
-    description: `${semantics.instanceName} (${semantics.deploymentTarget}) has no codeScope; cannot verify whether code in this runtime reads its declared environment variables. Add Metadata.SussCodeScope to the resource (or use SAM CodeUri) to enable env-var pairing.`,
+    description: `${semantics.instanceName} (${semantics.deploymentTarget}) has no codeScope; cannot verify whether code in this runtime reads its declared environment variables. ${whyUnplaced(runtime)}`,
     severity: "info",
   };
+}
+
+/**
+ * Why nothing placed this runtime, in terms of what it did say. A unit
+ * that named an image or a handler said something, and repeating the
+ * template advice at it sends the reader somewhere there is nothing to
+ * change.
+ */
+function whyUnplaced(runtime: BehavioralSummary): string {
+  const contract = readRuntimeContractMetadata(runtime);
+  if (contract?.image !== undefined) {
+    return `It runs the image ${contract.image}, which is built outside this repository, so no code here is known to be its own.`;
+  }
+  if (contract?.entryPoint !== undefined) {
+    return `Its entry point is ${contract.entryPoint}, which matches no module in this run. Extracting the code the deployment packages would place it.`;
+  }
+  return "Add Metadata.SussCodeScope to the resource (or use SAM CodeUri) to enable env-var pairing.";
 }

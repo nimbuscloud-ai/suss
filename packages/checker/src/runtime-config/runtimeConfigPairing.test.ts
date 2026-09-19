@@ -58,6 +58,24 @@ function makeRuntimeProvider(opts: {
   };
 }
 
+/** The same provider, with more of the runtime contract filled in. */
+function withContract(
+  runtime: BehavioralSummary,
+  extra: Record<string, unknown>,
+): BehavioralSummary {
+  const metadata = runtime.metadata as Record<string, unknown>;
+  return {
+    ...runtime,
+    metadata: {
+      ...metadata,
+      runtimeContract: {
+        ...(metadata.runtimeContract as Record<string, unknown>),
+        ...extra,
+      },
+    },
+  };
+}
+
 function calleeOf(
   varName: string,
   callee: string | null | undefined,
@@ -289,6 +307,42 @@ describe("checkRuntimeConfig", () => {
     expect(findings).toHaveLength(1);
     expect(findings[0].kind).toBe("runtimeScopeUnknown");
     expect(findings[0].severity).toBe("info");
+    expect(findings[0].description).toContain("SussCodeScope");
+  });
+
+  it("names the image a container runs instead of asking for a CodeUri", () => {
+    const runtime = withContract(
+      makeRuntimeProvider({
+        instanceName: "api",
+        envVars: ["X"],
+        codeScope: { kind: "unknown" },
+      }),
+      { image: "example/api:3" },
+    );
+    const [finding] = checkRuntimeConfig([
+      runtime,
+      makeCodeSummary({ name: "h", file: "src/index.ts", envReads: ["X"] }),
+    ]);
+
+    expect(finding?.description).toContain("example/api:3");
+    expect(finding?.description).not.toContain("SussCodeScope");
+  });
+
+  it("names the entry point that matched no module", () => {
+    const runtime = withContract(
+      makeRuntimeProvider({
+        instanceName: "confirm",
+        envVars: ["X"],
+        codeScope: { kind: "unknown", entry: "dist/confirm" },
+      }),
+      { entryPoint: "dist/confirm.handler" },
+    );
+    const [finding] = checkRuntimeConfig([
+      runtime,
+      makeCodeSummary({ name: "h", file: "src/index.ts", envReads: ["X"] }),
+    ]);
+
+    expect(finding?.description).toContain("dist/confirm.handler");
   });
 
   it("scopes reads by file-path prefix; out-of-scope reads do not pair", () => {

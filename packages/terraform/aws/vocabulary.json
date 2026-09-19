@@ -48,5 +48,19 @@
   "none": "suss: a storage contract with no fields to compare against",
   "projection_type": "Terraform AWS provider: the attribute stating which copy of an item an index keeps",
   "non_key_attributes": "Terraform AWS provider: the attribute listing what an INCLUDE index copies",
-  "ALL": "Terraform AWS provider: the projection type of an index that copies the whole item"
+  "ALL": "Terraform AWS provider: the projection type of an index that copies the whole item",
+  "aws_lambda_function": "Terraform AWS provider: resource type, a Lambda function",
+  "aws_ecs_task_definition": "Terraform AWS provider: resource type, an ECS task definition",
+  "runtime": "Terraform AWS provider: the attribute stating which language runtime a function runs on",
+  "handler": "Terraform AWS provider: the attribute stating which function Lambda calls",
+  "environment": "Terraform AWS provider: the block a function's variables are written in, and the ECS key listing a container's",
+  "container_definitions": "Terraform AWS provider: the attribute stating the containers a task runs, written as JSON",
+  "secrets": "Amazon ECS: the container definition key listing variables a secret supplies",
+  "valueFrom": "Amazon ECS: the container definition key stating which secret supplies a variable",
+  "image": "Amazon ECS: the container definition key stating which image a container runs",
+  "value": "Amazon ECS: the container definition key stating what a variable is set to",
+  "deployable": "suss: boundary kind for something that gets deployed and runs",
+  "lambda": "suss: the deployment target of an AWS Lambda function",
+  "map": "suss: an environment written as one attribute whose keys are the variable names",
+  "entries": "suss: an environment written as repeated entries, one per variable"
 }

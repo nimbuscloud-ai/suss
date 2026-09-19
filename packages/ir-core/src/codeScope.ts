@@ -1,14 +1,16 @@
 /**
  * One convention for the source directory a deployable unit is built
- * from, and one test for whether a file is inside it.
+ * from, one test for whether a file is inside it, and one reading of
+ * the handler string that says which code the platform calls.
  *
  * A deploy template gives a directory per unit, and a summary stores it
  * as `metadata.codeScope.path`. Producers write that path and the
  * checker reads it back as a prefix test, so the two sides have to
- * agree on whether it ends in a slash. Normalizing it in one place is
- * what keeps them agreeing. The test also has to stop at a segment
- * boundary, or `src/foo` would cover `src/foobar` and a handler would
- * pair with the wrong function.
+ * agree on whether it ends in a slash. The test also has to stop at a
+ * segment boundary, or `src/foo` would cover `src/foobar` and a handler
+ * would pair with the wrong function. A CloudFormation template and a
+ * Terraform configuration spell a handler the same way, so they read it
+ * through the same function rather than through two of them.
  */
 
 /**
@@ -35,4 +37,27 @@ export function fileInCodeScope(file: string, scope: string): boolean {
   }
   const path = codeScopePath(file);
   return path === prefix || path.startsWith(`${prefix}/`);
+}
+
+export interface ParsedHandler {
+  modulePath: string;
+  exportName: string;
+}
+
+/**
+ * Split a handler string into its module path and exported symbol.
+ * The final dot separates them: `"src/handlers/confirmToken.handler"` →
+ * `{ modulePath: "src/handlers/confirmToken", exportName: "handler" }`.
+ * Returns null when there's no dot, since there's no export to bind to.
+ */
+export function parseHandler(handler: string): ParsedHandler | null {
+  const trimmed = handler.trim();
+  const lastDot = trimmed.lastIndexOf(".");
+  if (lastDot <= 0 || lastDot === trimmed.length - 1) {
+    return null;
+  }
+  return {
+    modulePath: trimmed.slice(0, lastDot),
+    exportName: trimmed.slice(lastDot + 1),
+  };
 }

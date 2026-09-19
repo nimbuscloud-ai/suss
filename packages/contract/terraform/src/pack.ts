@@ -12,6 +12,7 @@
  */
 
 import type {
+  DeployableUnit,
   MessageBusTechnology,
   MetricAccumulation,
   MetricValueShape,
@@ -166,11 +167,87 @@ export interface MetricReadingResource {
   reducesTo?: AttributeMeaning<MetricValueShape>;
 }
 
+/**
+ * Where a provider writes one process's environment. A map attribute
+ * gives the names as its keys; repeated entries each say what one
+ * variable is called and then what supplies it, a literal or a secret.
+ */
+export type EnvDeclaration =
+  | { style: "map"; attribute: string }
+  | {
+      style: "entries";
+      /** The block one entry is written as, as a dotted path. */
+      block: string;
+      /** The attribute stating what the variable is called. */
+      nameAttribute: string;
+      /** The attribute stating the value, for an entry that writes one. */
+      valueAttribute?: string;
+      /** The attribute stating which secret supplies the value. */
+      secretAttribute?: string;
+    };
+
+/**
+ * How a platform spells the string that says which code it calls.
+ * `"module.export"` is a module path and an exported name split at the
+ * last dot, which is what Lambda takes. `"name"` is an exported name on
+ * its own, which says nothing about which file it is in.
+ */
+export type HandlerSpelling = "module.export" | "name";
+
+/** What the provider says one process runs. */
+export interface DeployableCode {
+  /** The attribute that says which function the platform calls. */
+  handler?: { attribute: string; spelling: HandlerSpelling };
+  /** The attribute that says which image a container runs. */
+  imageAttribute?: string;
+}
+
+/** A resource that deploys several processes, each with its own environment. */
+export interface DeployableContainers {
+  /** The blocks one container is written inside, outermost first. */
+  blocks: string[];
+  /** The attribute inside a container that says what it is called. */
+  nameAttribute?: string;
+}
+
+/**
+ * Something that gets deployed and runs: a function, a container, a
+ * job. What it declares is the environment the process starts with, so
+ * code reading a variable the deployment never sets is a defect either
+ * side can be shown.
+ *
+ * The unit is the resource's label rather than the name it deploys
+ * under. The label is what the rest of the configuration refers to it
+ * as, the way a logical id is in CloudFormation, and it is what a
+ * variable pointing at the resource resolves to.
+ */
+export interface DeployableResource {
+  kind: "deployable";
+  /** Which medium runs it, in the words a deployable unit is keyed by. */
+  deploymentTarget: DeployableUnit["deploymentTarget"];
+  /** Where each process is written, for a resource that deploys several. */
+  containers?: DeployableContainers;
+  /** Where the environment is written, inside the process. */
+  env?: EnvDeclaration[];
+  /** What the provider says the process runs. */
+  code?: DeployableCode;
+  /** The attribute stating the language runtime, verbatim. */
+  runtimeAttribute?: string;
+  /**
+   * Names the platform sets whatever the configuration says. An entry
+   * that states none takes the list for its deployment target, which
+   * is the one every other reader of that target uses. A product with
+   * a list of its own, Cloud Run against a bare container, states it.
+   */
+  platformEnvVars?: readonly string[];
+}
+
 export type TerraformResource =
   | StorageResource
   | MessageBusResource
   | MetricResource
-  | MetricReadingResource;
+  | MetricReadingResource
+  | DeployableResource;
 
 /** One resource type, as one version range of one provider declares it. */
 export interface TerraformResourcePattern {

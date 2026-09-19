@@ -282,6 +282,20 @@ export const RuntimeContractMetadataSchema = z.object({
    * or "python3.12". Absent when the manifest does not say.
    */
   runtime: z.string().optional(),
+  /**
+   * The function the platform calls, verbatim: a Lambda `handler`, a
+   * Cloud Functions `entry_point`. `codeScope.entry` is the file this
+   * resolves to; this is what the configuration wrote, which is the
+   * only thing to show a reader when nothing resolved.
+   */
+  entryPoint: z.string().optional(),
+  /**
+   * The image a container unit runs, verbatim. A container states no
+   * handler, so this is the only thing the deployment says about which
+   * code it is, and an image built elsewhere leaves the unit with no
+   * code in this repository at all.
+   */
+  image: z.string().optional(),
 });
 
 export type RuntimeContractMetadata = z.infer<

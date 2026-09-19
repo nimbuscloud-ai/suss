@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { codeScopePath, fileInCodeScope } from "./codeScope.js";
+import { codeScopePath, fileInCodeScope, parseHandler } from "./codeScope.js";
 
 describe("codeScopePath", () => {
   it("drops a leading ./ so a scope reads like a summary's file path", () => {
@@ -55,5 +55,32 @@ describe("fileInCodeScope", () => {
     for (const scope of ["", ".", "./", "/"]) {
       expect(fileInCodeScope("src/orders/handler.ts", scope)).toBe(true);
     }
+  });
+});
+
+describe("parseHandler", () => {
+  it("splits a handler at the last dot", () => {
+    expect(parseHandler("src/handlers/confirmToken.handler")).toEqual({
+      modulePath: "src/handlers/confirmToken",
+      exportName: "handler",
+    });
+  });
+
+  it("reads a Python module written with dots as one module path", () => {
+    expect(parseHandler("shop.app.lambda_handler")).toEqual({
+      modulePath: "shop.app",
+      exportName: "lambda_handler",
+    });
+  });
+
+  it("ignores the whitespace a manifest wrote around it", () => {
+    expect(parseHandler("  index.handler  ")?.modulePath).toBe("index");
+  });
+
+  it("says nothing for a string with no export to bind to", () => {
+    expect(parseHandler("index")).toBeNull();
+    expect(parseHandler("index.")).toBeNull();
+    expect(parseHandler(".handler")).toBeNull();
+    expect(parseHandler("")).toBeNull();
   });
 });

@@ -21,7 +21,11 @@ import {
   runtimeConfigBinding,
   withRuntimeContractMetadata,
 } from "@suss/behavioral-ir";
-import { codeScopePath, ecsContainerInstanceName } from "@suss/ir-core";
+import {
+  codeScopePath,
+  ecsContainerInstanceName,
+  PLATFORM_INJECTED_ENV_VARS,
+} from "@suss/ir-core";
 import { parseHandler, refTarget } from "@suss/manifest-aws";
 
 import type { BehavioralSummary, DeployableUnit } from "@suss/behavioral-ir";
@@ -31,55 +35,6 @@ interface CloudFormationResource {
   Properties?: Record<string, unknown>;
   Metadata?: Record<string, unknown>;
 }
-
-/**
- * Env vars the runtime injects into the process automatically,
- * regardless of what the template declares. Sourced from each
- * platform's documentation:
- *
- *   Lambda: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
- *           "Reserved environment variables"
- *   ECS:    https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_metadata.html
- *           plus the AWS_DEFAULT_REGION the Fargate runtime sets.
- */
-const PLATFORM_INJECTED: Record<
-  "lambda" | "ecs-task" | "container" | "k8s-deployment",
-  ReadonlyArray<string>
-> = {
-  lambda: [
-    "AWS_REGION",
-    "AWS_DEFAULT_REGION",
-    "AWS_LAMBDA_FUNCTION_NAME",
-    "AWS_LAMBDA_FUNCTION_VERSION",
-    "AWS_LAMBDA_FUNCTION_MEMORY_SIZE",
-    "AWS_LAMBDA_LOG_GROUP_NAME",
-    "AWS_LAMBDA_LOG_STREAM_NAME",
-    "AWS_LAMBDA_RUNTIME_API",
-    "AWS_EXECUTION_ENV",
-    "AWS_ACCESS_KEY_ID",
-    "AWS_SECRET_ACCESS_KEY",
-    "AWS_SESSION_TOKEN",
-    "LAMBDA_TASK_ROOT",
-    "LAMBDA_RUNTIME_DIR",
-    "_HANDLER",
-    "_X_AMZN_TRACE_ID",
-    "TZ",
-  ],
-  "ecs-task": [
-    "AWS_DEFAULT_REGION",
-    "AWS_REGION",
-    "ECS_CONTAINER_METADATA_URI",
-    "ECS_CONTAINER_METADATA_URI_V4",
-    "ECS_AGENT_URI",
-  ],
-  container: [],
-  "k8s-deployment": [
-    "KUBERNETES_SERVICE_HOST",
-    "KUBERNETES_SERVICE_PORT",
-    "KUBERNETES_PORT",
-    "HOSTNAME",
-  ],
-};
 
 /**
  * Walk the template's resources and emit one runtime-config provider
@@ -238,7 +193,7 @@ function buildSummary(opts: {
     deploymentTarget: opts.deploymentTarget,
     instanceName: opts.logicalId,
   };
-  const platformVars = PLATFORM_INJECTED[opts.deploymentTarget] ?? [];
+  const platformVars = PLATFORM_INJECTED_ENV_VARS[opts.deploymentTarget] ?? [];
   const inherited = new Set(opts.inheritedVars ?? []);
   const merged = new Set<string>();
   const sources: Record<string, "template" | "globals" | "platform"> = {};

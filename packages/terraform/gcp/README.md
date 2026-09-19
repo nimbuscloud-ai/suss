@@ -35,41 +35,15 @@ const summaries = terraformFileToSummaries("infra/terraform/monitoring", {
 | `google_pubsub_subscription` | a channel of its own, since a subscriber asks for the subscription |
 | `google_logging_metric` | a metric, identified by the type Cloud Monitoring gives it, `logging.googleapis.com/user/<name>` |
 | `google_monitoring_alert_policy` | one consumer of a metric per `condition_threshold`, identified by the `metric.type` its filter states |
+| `google_cloud_run_v2_service` | a deployable per container, with that container's variables, secrets and image |
+| `google_cloud_run_v2_job` | the same, with the containers one template deeper |
+| `google_cloudfunctions2_function` | a deployable, with `service_config`'s variables and secrets and the entry point it calls |
 
 Everything else a configuration declares is skipped.
 
-A bucket pairs by name: `@suss/framework-gcs` records the bucket an access reaches, and the `name` attribute is the same string, so `suss check` compares the two sides. A Memorystore instance does not: code addresses Redis by key namespace, no attribute of the instance declares one, and a match on the instance's own name would be a coincidence, so the summary declares the store with no container name and the storage check claims no access for it. The `@suss/terraform-aws` README walks through the same decision for ElastiCache. Spanner, Firestore and Cloud SQL are the same case: the tables or collections are inside the database, and nothing on the resource lists them.
+A bucket pairs by name: `@suss/framework-gcs` records the bucket an access reaches, and the `name` attribute is the same string, so `suss check` compares the two sides. A Memorystore instance does not: code addresses Redis by key namespace, no attribute of the instance declares one, and a match on the instance's own name would be a coincidence, so the summary declares the store with no container name and the storage check claims no access for it. The `@suss/terraform-aws` DESIGN walks through the same decision for ElastiCache. Spanner, Firestore and Cloud SQL are the same case: the tables or collections are inside the database, and nothing on the resource lists them.
 
-## A BigQuery table states its columns
-
-A query against a table is a read of named columns, so the table is the one Google resource here with a field contract:
-
-```hcl
-resource "google_bigquery_dataset" "analytics" {
-  dataset_id = "analytics"
-  location   = "US"
-}
-
-resource "google_bigquery_table" "orders" {
-  dataset_id = google_bigquery_dataset.analytics.dataset_id
-  table_id   = "orders"
-
-  schema = jsonencode([
-    { name = "order_id", type = "STRING", mode = "REQUIRED" },
-    { name = "placed_at", type = "TIMESTAMP", mode = "NULLABLE" },
-  ])
-}
-```
-
-A table is always addressed through its dataset, so two tables called `orders` in two datasets are two containers, and the dataset goes on the boundary as its namespace. The reference to the dataset resource resolves, so the table lands under `analytics` whether the configuration writes the string or points at the resource that states it.
-
-A schema written in the configuration is every column the table has, so the contract says `exhaustive` and the checker can call a column it does not declare unknown. `mode` says whether a column is always set: `REQUIRED` and `REPEATED` are, and everything else is nullable, which is what BigQuery does with a mode nobody wrote. A schema a file or a variable supplies is not written down anywhere the reader can see, so the table records no columns and says `none` rather than guessing.
-
-Both spellings of the schema are read, the literal above and a heredoc of JSON, because `jsonencode` over an HCL value and a JSON string end up the same once deployed.
-
-## What Pub/Sub pairs with
-
-Nothing yet: no code pack records a publish or a subscribe on Pub/Sub, so a topic and a subscription show up as declared channels nothing paired with. They are separate channels on purpose. A publisher asks for the topic and a subscriber asks for the subscription, so those are the two strings code spells, and pairing them with each other would report the wrong side.
+A BigQuery table is the one resource here with a field contract, since a query against it reads named columns. A Cloud Run service, a job and a function each declare the environment their containers start with. A Pub/Sub topic and subscription pair with nothing yet, because no code pack records a publish or a subscribe. [What each entry decided](./DESIGN.md) says how each of those is read.
 
 ## The pair the provider refuses
 
@@ -124,4 +98,4 @@ Depends on `@suss/contract-terraform` for the shape of an entry and on `@suss/be
 
 ## More
 
-- [Which provider versions the entries describe](./DESIGN.md), and the pages they came from
+- [What each entry decided](./DESIGN.md), the provider versions it was written against, and the pages it came from
