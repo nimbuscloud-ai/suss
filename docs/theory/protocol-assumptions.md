@@ -13,17 +13,15 @@ receives. Where a claim like that stops being true, the finding stops
 meaning what its description says, and nothing in the output shows the
 difference.
 
-Two bugs in one week came out of that gap. The OpenAPI reader took
-whichever media type a document listed first, so a JSON caller was
-compared against an XML schema and reported as agreeing
-([#389](https://github.com/nimbuscloud-ai/suss/pull/389),
+Two bugs in one week came out of that gap, and no test caught either.
+The OpenAPI reader took whichever media type a document listed first,
+so a JSON caller was compared against an XML schema and reported as
+agreeing ([#389](https://github.com/nimbuscloud-ai/suss/pull/389),
 [#387](https://github.com/nimbuscloud-ai/suss/issues/387)). Storage
 treated a table name plus the scope `default` as enough to identify a
-table, so two services each keeping a `users` table checked their
-queries against each other's schema at error severity
-([#388](https://github.com/nimbuscloud-ai/suss/pull/388)). No test
-caught either one. Someone read a comment and asked whether it was
-true.
+table, so two services each keeping a `users` table had their queries
+checked against each other's schema at error severity
+([#388](https://github.com/nimbuscloud-ai/suss/pull/388)).
 
 Each entry below says where the checker relies on the claim, what a
 finding means once the claim stops being true, and which test pins
@@ -154,9 +152,9 @@ Every finding about a status says this. A middleware that maps an error,
 or an API gateway response mapping, can change the number between the
 two sides, and neither of them is in the pair.
 
-When it fails, a finding reports a status nobody receives, or stays
-quiet about one everybody does. Summaries cannot settle this: the
-rewriting unit is one the pairing never puts between the two sides.
+When it fails, a finding reports a status no caller receives, or stays
+quiet about one every caller receives. Summaries cannot settle this:
+the pairing never puts the rewriting unit between the two sides.
 Answering it needs the chain of hops `flow/` already builds for routing,
 with each hop's own effect on the status attached, and nothing reads
 that chain for statuses today.
@@ -408,9 +406,9 @@ every `boundaryFieldUnknown` at that runtime a false one.
 A dynamic import and a `require` call are both absent from the module
 graph, so a read that no entry closure claims may still run somewhere.
 `unclaimedReadNames` gives such a read to every scoped runtime, which
-keeps the unused warning away from a variable that has a reader nobody
-could place. It also stops the warning when the only code reading that
-name belongs to a different runtime in the same template.
+keeps the unused warning away from a variable whose reader the run
+could not place. It also stops the warning when the only code reading
+that name belongs to a different runtime in the same template.
 
 ## GraphQL
 

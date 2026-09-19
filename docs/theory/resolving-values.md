@@ -15,10 +15,10 @@ the name comes down to is most of what an extraction run does, and
 The machinery is a graph query. The nodes are values written in the
 source, the edges are single hops from one value to another, and a
 question is a walk over those edges with a rule about where to stop.
-The part that trips people up is that nobody stores the edges. Nothing
-writes down "this parameter comes from that argument". A rule joins
-three facts and the edge appears, and it appears only if some question
-needed it.
+No pass ever stores an edge. Nothing in the database says "this
+parameter comes from that argument" until a rule joins three facts and
+derives it, and the rule only fires where some question needed the
+answer.
 
 Three layers do the work.
 
@@ -152,8 +152,8 @@ all.
 Some of them take both. Python's `with httpx.Client() as client` gives
 `entersAs(client, the call)` from the adapter, which says only that the
 block opened over that call. What `__enter__` gave back is the
-library's to decide, so the pack says `entersAsSelf(httpx, Client)` and
-the rule that joins the two is what makes `client` the client.
+library's to decide, so the pack says `entersAsSelf(httpx, Client)`. A
+rule joins the two and `client` resolves to the client.
 
 `packages/resolution/README.md` lists the vocabulary with a line of
 explanation each.
@@ -355,11 +355,11 @@ suss cannot follow prisma at src/app/routes/auth/auth.service.ts:10 down to one 
 The chain either leaves the source suss can read, or more than one value can end it.
 ```
 
-`new PrismaClient()` is a construction. It is not a function and it is
-not an object literal, so a question that stops only at those two walks
-past it and off the end. A question that stops at anything written out
-in source lands on it. Both questions walked the same edges to the
-same place. Only one of them had a reason to stop there.
+`new PrismaClient()` is a construction, neither a function nor an
+object literal, so a question that stops only at those two walks past
+it and off the end. A question that stops at anything written out in
+source lands on it. Both questions walked the same edges to the same
+place, and only one of them had a reason to stop there.
 
 ## Most edges come out of a join
 
@@ -395,9 +395,9 @@ passesArgument(bcrypt.hash(password, 10)@58, s: string@50, password@58)   [passe
 ```
 
 Four base facts, from two different files, produce one edge that then
-produces a `stepsTo` hop. Nothing in the extractor knew that
-`bcrypt.hash`'s first parameter would ever contain `password`. The join
-found it.
+produces a `stepsTo` hop. The extractor never worked out that
+`bcrypt.hash`'s first parameter would contain `password`; the join did
+that.
 
 `callsFunction` also covers a callee a factory returned. With
 `const requireEnv = makeReader(prefix)`, a call on `requireEnv` runs
@@ -413,13 +413,13 @@ twice, so the join fires against both declarations and `password`
 reaches two different parameter nodes. A caller that needs the call
 sites told apart asks `paramAt`, which keeps the call in the tuple.
 
-## The graph forms around the question
+## Deriving only what a question needs
 
-Deriving every conclusion the facts support is fine on a fixture. On a
-project it is not. Profiling these rules turned up one rule attempting
-a hundred and fifty joins to produce fourteen tuples, and for every
-tuple a question went on to read, roughly ten more were derived that
-nobody looked at.
+Deriving every conclusion the facts support is affordable on a fixture
+and not on a project. Profiling these rules turned up one rule
+attempting a hundred and fifty joins to produce fourteen tuples, and
+for every tuple a question went on to read, roughly ten more were
+derived that no question ever touched.
 
 So `deriveOnDemand` in `packages/datalog/src/onDemand.ts` rewrites the
 program before it ever runs. This is the magic sets transform. Each
@@ -452,7 +452,7 @@ Setting `SUSS_RESOLUTION_ON_DEMAND=0` runs the rules unrewritten, which
 is how that comparison was taken. Both settings give the same answer to
 every question. They differ in how much never gets computed.
 
-## Every derived fact keeps a witness
+## Witnesses, and the proof behind an answer
 
 A Datalog engine normally hands back a set of facts and nothing else.
 `resolves(createUser@16, createUser@38)` is either in the database or
@@ -461,17 +461,15 @@ which rule put it there or which facts that rule matched, because it
 never wrote any of that down.
 
 A witness is that missing record. Give a derived fact a witness and the
-fact contains the rule that produced it and the facts that rule
-matched. Each of those is a derived fact with a witness of its own, so
-following them down arrives at the facts the adapter emitted from
-source. The database then contains its own reasoning alongside its
-conclusions.
+fact stores the rule that produced it and the facts that rule matched.
+Each of those is a derived fact with a witness of its own, so following
+them down arrives at the facts the adapter emitted from source. The
+database ends up containing its own reasoning.
 
-What to record is a choice, so the engine takes it as a parameter. You
-define a tag algebra by saying three things: what tag a base fact starts
-with,
-how to combine the tags of a rule's body into a tag for its head, and
-what to do when two derivations produce the same fact.
+What to record is a choice, so the engine takes it as a parameter. A
+tag algebra is three things: what tag a base fact starts with, how to
+combine the tags of a rule's body into a tag for its head, and what to
+do when two derivations produce the same fact.
 `packages/datalog/src/witness.ts` supplies one where the tag is the
 derivation itself. `confidence.ts` supplies another where the tag is
 how far to trust the fact, combining as the weakest link along a rule
@@ -600,10 +598,10 @@ The three highlighted rows are the `stepsTo` nodes, and they are the
 three lines the command printed. The other twelve are the joins that
 produced those hops and the facts they rest on.
 
-A proof node marked `fact` is a leaf: nobody derived it, the adapter
-emitted it. That is the property that makes an answer checkable. Follow
-the tree down and you arrive at lines of source, and if the answer is
-wrong the tree says which fact to doubt.
+A proof node marked `fact` is a leaf. No rule derived it; the adapter
+emitted it from source. That is what makes an answer checkable: follow
+the tree down and you arrive at lines of source, and where the answer
+is wrong the tree says which fact to doubt.
 
 ## Where to look next
 

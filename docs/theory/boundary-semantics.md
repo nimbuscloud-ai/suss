@@ -12,10 +12,11 @@ source code (recognition).
 
 Nine semantics variants ship today: `rest`, `function-call`,
 `graphql-resolver`, `graphql-operation`, `runtime-config`,
-`storage`, `message-bus`, `metric`, and `unit-invocation`, each as its own module under
-`packages/ir-core/src/semantics/`. If you came to ask whether a protocol
-already works, go to [What's shipped vs what's deferred](#whats-shipped-vs-whats-deferred);
-everything else explains the model those variants share.
+`storage`, `message-bus`, `metric`, and `unit-invocation`, each as its
+own module under `packages/ir-core/src/semantics/`. To find out whether
+a protocol already works, jump to
+[What's shipped vs what's deferred](#whats-shipped-vs-whats-deferred).
+The rest is the model those nine variants share.
 
 ## The three layers
 
@@ -113,7 +114,7 @@ interface BoundaryBinding {
    * What the participants think they're doing. The checker dispatches
    * on the discriminator (`semantics.name`).
    */
-  semantics: Semantics; // discriminated union — see below
+  semantics: Semantics; // discriminated union, see below
 
   /** Pack-level recognition identity ("axios", "ts-rest", "openapi", …). */
   recognition: string;
@@ -253,7 +254,7 @@ packageExportBinding({ recognition, packageName, exportPath, transport? })
 graphqlResolverBinding({ transport, recognition, typeName /* string | null */, fieldName })
 graphqlOperationBinding({ transport, recognition, operationType, operationName? })
 runtimeConfigBinding({ recognition, deploymentTarget, instanceName })
-storageRelationalBinding({ recognition, storageSystem, scope, table })
+storageBinding({ recognition, storageSystem, scope, container /* string | null */, accessPath?, transport? })
 messageBusBinding({ recognition, messageBus, channel /* string | null */ })
 metricBinding({ recognition, metricSystem, metricType /* string | null */ })
 unitInvocationBinding({ recognition, deploymentTarget, instanceName /* string | null */ })
@@ -275,7 +276,7 @@ in a binding, suss writes their word, and the rest of the vocabulary is
 ours. A span stays a record of one execution and a summary stays a
 statement about a unit, and suss does not emit traces.
 
-### The values are theirs
+### Values suss borrows
 
 | suss field | values | OpenTelemetry attribute |
 | --- | --- | --- |
@@ -302,7 +303,7 @@ prisma or drizzle pack writes `postgresql` instead. The CLI parses a
 pack config against the pack's own declaration, so the old spelling
 stops the run with a sentence rather than pairing with nothing.
 
-### The field names are ours
+### Field names suss keeps
 
 An attribute name is a flat namespaced key (`db.system.name`), and an
 identity field is a member of a union that `semantics.name` already
@@ -326,11 +327,11 @@ semconvAttributes(binding);
 //   "db.collection.name": "users" }
 ```
 
-A field is in that projection only when our value is the value a span
-gets, so a consumer joining a summary against a trace compares strings
-and keeps no table of its own.
+A field is in that projection only when suss's value is the value a
+span gets, so a consumer joining a summary against a trace compares
+strings and keeps no table of its own.
 
-### Where it stops
+### What stays out of the projection
 
 Three kinds of field stay out of the projection, and every protocol
 module says which case it is in:
@@ -339,31 +340,33 @@ module says which case it is in:
   (`storage.accessPath`) is one. A `graphql-resolver` is another: the
   conventions describe the operation a client sent, not the resolver the
   server ran for one field of it.
-- **The value is ours because no source stated one.** `storage.scope` is
-  `"default"` when nothing said which database, and `rest.method` is
-  `"*"` for a route that responds to every method. A span says neither,
-  so emitting them would only ever produce a mismatch.
+- **suss supplied the value because no source stated one.**
+  `storage.scope` is `"default"` when nothing said which database, and
+  `rest.method` is `"*"` for a route that responds to every method. A
+  span says neither, so emitting them would only ever produce a
+  mismatch.
 - **The same thing under a different string.** `service.name` and
   `cloud.resource_id` both point at the deployable that a
   `runtime-config` boundary belongs to, but `instanceName` is the
   deployment template's logical id, which is neither of those strings.
 
-Whole protocols stay ours as well. A `function-call` boundary is a call
-that never leaves the process, and a `metric` has a system and a type
-string the conventions never covered. A metric's measurement words in
-its contract metadata do come from OpenTelemetry, though from the
+Whole protocols are suss's own as well. A `function-call` boundary is a
+call that never leaves the process, and a `metric` has a system and a
+type string the conventions never covered. A metric's measurement words
+in its contract metadata do come from OpenTelemetry, though from the
 metrics data model rather than an attribute registry: `histogram` for a
 bucketed measurement, and `gauge`, `delta`, `cumulative` for what one
-measurement covers. Nor did the conventions cover every store or
-bus: `s3`, `gcs`, `r2`, `d1` and `cloudflare-kv` on one side,
-`eventbridge`, `bullmq`, `nats` and the Cloudflare triggers on the
-other. `transport` is our own axis too, since the wire behind an
-AWS SDK call is not something a span reports.
+measurement covers. The conventions also miss several stores and buses:
+`s3`, `gcs`, `r2`, `d1` and `cloudflare-kv` on one side, `eventbridge`,
+`bullmq`, `nats` and the Cloudflare triggers on the other. `transport`
+is a suss axis too, since a span does not report the wire behind an AWS
+SDK call.
 
-That is most of what makes suss useful: a boundary nobody crosses at run
-time never gets a span, so nobody outside has had to give it a name. When you
-add a protocol, fill in its `semconv`, empty included, and the compiler
-makes you answer the question.
+That gap is most of what makes suss useful. A boundary that nothing
+crosses at run time never gets a span, so no convention outside suss
+has had to give it a name. When you add a protocol, fill in its
+`semconv`, empty included, and the compiler makes you answer the
+question.
 
 ## Dispatching on semantics
 
@@ -413,10 +416,11 @@ template says what that variable is. Two more behaviors cover that:
 
 `groundBinding` in `packages/ir-core/src/boundaryKey.ts` is the lookup,
 and `deploymentOf` in `@suss/behavioral-ir` supplies the values. Everything
-that reads a boundary name for somebody to see goes through the pair:
+that reads a boundary name for a person to see goes through the pair:
 the pairing pass, `suss infer intent` when it writes a document, and
-`checkIntentAgreement` when it reads one back. A step only one of them
-took would have the drafter write a name the checker then argued with.
+`checkIntentAgreement` when it reads one back. If only one of them took
+that step, the drafter would write a name the checker then disagreed
+with.
 
 A run with no template in it grounds nothing, and so does a run where
 two deployments of the same code set a variable differently. Both leave
@@ -459,8 +463,9 @@ one identity per cloud and per published copy of a function, and the
 thing both sides of an invoke can spell is the platform and the name.
 
 Each one ships as another discriminated-union variant, and none of them
-reshape the existing variants. If something would move REST's method/path out
-of `semantics`, it does not belong retrofitted onto an existing variant.
+reshape the variants already there. Anything that would move REST's
+method and path out of `semantics` needs its own variant rather than a
+retrofit onto an existing one.
 
 ## Boundaries compose
 
@@ -493,12 +498,12 @@ rejected. Transformation is a continuum, so the right way to model it is a
 transformation descriptor (path-rewrite rules, header-add list, etc.) rather
 than a category enum.
 
-Assembling multi-hop chains belongs in the query layer, not inside suss. Once
-pairing works two sides at a time over binding identities detailed enough to describe
-the details, walking a chain is graph traversal over the pairing results, the
-kind of thing an MCP tool or a query CLI does over the summary store. The IR
-additions (a transformation descriptor, and richer contract packs for the
-consumer side of each infrastructure component) are the work ahead.
+Assembling multi-hop chains belongs in the query layer rather than inside suss.
+Once pairing works two sides at a time over binding identities detailed enough
+to describe each hop, walking a chain is graph traversal over the pairing
+results, which an MCP tool or a query CLI can do over the summary store. The
+work ahead is in the IR: a transformation descriptor, and contract packs that
+emit the consumer side of each infrastructure component.
 
 ## What's shipped vs what's deferred
 

@@ -235,7 +235,7 @@ code do what the spec says?), and against observations (do the
 tests cover the intent?).
 
 Jackson gives another way to look at this (see
-[`concept-design.md`](../docs/theory/prior-art.md#prds-and-intent-specifications)):
+[Prior art](../docs/theory/prior-art.md)):
 a PRD or intent spec is a *top-down concept declaration indexed
 to an audience*. It states a purpose, an operational principle,
 state, actions, and a role. The same well-formedness failure
@@ -269,7 +269,7 @@ operator-only CLI, internal SDK package); others have to be
 declared from outside. This unblocks a multi-audience feature
 taxonomy and the "same behaviour, different OPs per audience"
 case from
-[`concept-design.md`](../docs/theory/prior-art.md#audience-indexing). It
+[Prior art](../docs/theory/prior-art.md). It
 also doubles as the index axis for
 [`quality.md`](./docs-internal/quality.md#audience).
 
@@ -289,7 +289,7 @@ in the quality doc.
 
 Heuristics over the shared-state graph for smeared / fused /
 phantom concepts (see
-[`concept-design.md`](../docs/theory/prior-art.md#failure-modes-of-bottom-up-derivation)):
+[Prior art](../docs/theory/prior-art.md)):
 
 - Smeared → many units sharing state lineage without a pairing
   binding between them.
@@ -309,7 +309,7 @@ piece of work is that the IR has no notion of time, and pairing
 on an event name works differently from the pairing suss has
 shipped for in-process, HTTP, and GraphQL. This closes the reach
 gap listed in
-[`concept-design.md`](../docs/theory/prior-art.md#what-suss-can-and-cant-reach-yet).
+[Prior art](../docs/theory/prior-art.md).
 
 ### L2-shaped pattern packs {#l2-patterns}
 

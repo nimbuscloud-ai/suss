@@ -5,9 +5,9 @@ description: Trace extract, contract, check and ask end to end, with a run at ea
 
 # Pipelines
 
-A run gave you something you did not expect: a summary with no branches in it, or a route that paired with nothing. The cause is nearly always one step between your files and the output, and working out which step should not need a trip through the source. Each command below is traced end to end, with a run at each stage to compare yours against.
+A run gave you something you did not expect: a summary with no branches in it, or a route that paired with nothing. One step between your files and the output is nearly always the cause, and working out which step should not mean reading the source. Each command below goes end to end, with a run at each stage to compare yours against.
 
-For the static package picture, see [Architecture](/theory/architecture). For what a finding means, see [Cross-boundary checking](/why/cross-boundary-checking).
+[Architecture](/theory/architecture) has the static package picture, and [Cross-boundary checking](/why/cross-boundary-checking) says what a finding means.
 
 ## `suss extract`
 
@@ -48,7 +48,7 @@ suss extract -p tsconfig.app.json -f express -f axios -f prisma --explain -o sum
 
 Above that, `extract` prints one success line, `Wrote 46 summaries to <path> in 0.88s`, with the absolute path of the file it wrote and an elapsed time that moves from run to run.
 
-Read the funnel from the top. 26 files were in the tsconfig and 13 survived the pre-filter, which skips a file when it imports nothing any pack is looking for. Seven of those import express, and express found 20 routes in them. The axios column is all zeroes because this repository lists axios in its `package.json` and never calls it, which is what a pack that found nothing looks like. Prisma discovers no boundaries of its own, because it is made of recognizers: it looked inside the 20 units express found and recognized 79 database calls in them.
+Read the funnel from the top. 26 files were in the tsconfig and 13 survived the pre-filter, which skips a file when it imports nothing any pack is looking for. Seven of those import express, and express found 20 routes in them. The axios column is all zeroes because this repository lists axios in its `package.json` and never calls it. That is how a pack that found nothing prints. Prisma discovers no boundaries of its own, because it is made of recognizers: it looked inside the 20 units express found and recognized 79 database calls in them.
 
 `--timing` says where the time went, one row per phase, ordered by cost. The milliseconds differ on every run and the rows below a millisecond swap places, so read the shares rather than the numbers:
 
@@ -110,7 +110,7 @@ User
 BehavioralSummary[] → write out.json
 ```
 
-The adapter and extractor split is the invariant this pipeline is built on: the adapter owns everything that touches the AST, and the extractor never sees a node. Adding a language means writing a new adapter that emits `RawCodeStructure`, and the extractor does not change. That is how Python and Ruby arrived.
+The whole pipeline rests on the split between the two: the adapter owns everything that touches the AST, and the extractor never sees a node. Adding a language means writing a new adapter that emits `RawCodeStructure`, and the extractor does not change. That is how Python and Ruby arrived.
 
 ## `suss inspect`
 
@@ -139,7 +139,7 @@ A line starting `+` is an **effect**: something the branch does besides producin
 
 A **Reaches** block appears under a handler when something it calls touches a store, a bus or another service. `reads postgresql:invoices  through findInvoice` says the read happens inside `findInvoice`, so you can see what a request touches without reading down the chain of calls.
 
-A line starting `!!` is a **gap**: something suss could not settle, written down instead of dropped. This one is the contract promising a 500 that no branch produces. A gap in the output is the difference between "there is nothing here" and "suss could not tell", and keeping them apart is why an empty answer never looks like an all-clear.
+A line starting `!!` is a **gap**: something suss could not settle, written down rather than dropped. This one is the contract promising a 500 that no branch produces. Gaps are what keeps "there is nothing here" apart from "suss could not tell", so an empty answer never reads as an all-clear.
 
 `suss inspect --diff before.json after.json` and `suss inspect --dir summaries/` are variants over the same load-and-parse plumbing. The first uses `diffSummaries` to compute added, removed and changed transitions per summary pair. The second uses `pairSummaries` to show which summaries face which, and which ones matched nothing.
 
@@ -214,9 +214,9 @@ Not shown: 3 boundaryFieldUnused (warning). Run the same command with --all to s
 suss met a call it could not follow in 19 units, of 50, so those are described in part. `suss inspect` says which calls.
 ```
 
-The four boundaries compared are the four Prisma models, each against every query that reads or writes it. The 20 uncompared providers are the HTTP routes: the front end for this API is in another repository, so nothing in this run is on the other side of them. The five that paired with nothing are `function-call:reachable` helpers, functions a route reaches and nobody imports, so no boundary key addresses them. Each of those three lines is a different reason for silence, which is why the run keeps them apart.
+The four boundaries compared are the four Prisma models, each against every query that reads or writes it. The 20 uncompared providers are the HTTP routes: the front end for this API is in another repository, so nothing in this run is on the other side of them. The five that paired with nothing are `function-call:reachable` helpers, functions a route reaches and no file imports, so no boundary key addresses them. Those three lines are three different reasons for silence, and the run keeps them apart.
 
-The grouping in `pairSummaries` only knows the method and the path, so a store, a queue and a runtime's configuration all come back unpaired from it. Each of those has a pass of its own, and each records what it compared into the same `pairs` list. `checkAll` drops those from the unmatched buckets afterwards, which is what stops one table being reported as compared and unpaired in the same run.
+The grouping in `pairSummaries` reads the method and the path and nothing else, so a store, a queue and a runtime's configuration all come back unpaired from it. Each of those has a pass of its own, and each records what it compared into the same `pairs` list. `checkAll` then drops those from the unmatched buckets, so one table is never reported as compared and unpaired in the same run.
 
 <svg class="suss-diagram" viewBox="0 0 660 356" role="img" aria-labelledby="check-title check-desc">
   <title id="check-title">How a folder of summaries becomes findings</title>
@@ -268,7 +268,7 @@ The grouping in `pairSummaries` only knows the method and the path, so a store, 
   <text class="label" x="220" y="352" text-anchor="middle">Findings</text>
 </svg>
 
-A boundary's **semantics** is what kind of meeting point it is: a REST route, a GraphQL field, a queue subject, a database table. Each kind knows two things about itself. It knows what key its two sides pair by, and it knows what counts as those two sides agreeing. Pairing asks the semantics for both rather than branching on the protocol, which is why adding a kind of boundary never touches the pairing code. See [Boundary semantics](/theory/boundary-semantics).
+A boundary's **semantics** is what kind of meeting point it is: a REST route, a GraphQL field, a queue subject, a database table. Each kind declares two things: the key its two sides pair by, and what counts as those two sides agreeing. Pairing asks the semantics for both rather than branching on the protocol, so adding a kind of boundary never touches the pairing code. See [Boundary semantics](/theory/boundary-semantics).
 
 ## `suss contract --from openapi`
 
@@ -341,7 +341,7 @@ cloudformation:fixtures/aws-lambda/template.yaml:ListWidgetsFunction:List
          -> 502  !! undeclared
 ```
 
-Neither status is in the Lambda. API Gateway produces the 504 on an integration timeout and the 502 on an integration failure, and a caller receives both the same as any other response. The template is the only place they are written down, which is the whole reason this reader exists. `Contract:` is empty because this route declares no responses of its own, and `!! undeclared` on each line says the same thing from the other side: the status is one the declaration never mentions.
+Neither status is in the Lambda. API Gateway produces the 504 on an integration timeout and the 502 on an integration failure, and a caller receives both the same as any other response. The template is the only place they are written down, and reading it is why this reader exists. `Contract:` is empty because this route declares no responses of its own, and `!! undeclared` on each line says the same thing from the other side: the declaration never mentions the status.
 
 The other 23 are the template's own resources, printed as one tree under the template's name. Here is where that tree starts:
 
@@ -418,13 +418,13 @@ One level below `suss extract`: what `assembleSummary` does.
 
 It reads the raw branches and produces one `Transition` per branch. Structured predicates pass through, and a condition it could not take apart is wrapped as `opaque`, which keeps the source text and marks the branch as one suss read but did not understand.
 
-Each transition gets an ID minted from `(function, terminal kind, status, conditionHash)`. Hashing the condition into the ID is what makes reordering two branches a no-op and rewriting one condition a change, which is the behaviour the `--diff` above shows.
+Each transition gets an ID minted from `(function, terminal kind, status, conditionHash)`. Hashing the condition into the ID makes reordering two branches a no-op and rewriting one condition a change, which is the behaviour the `--diff` above shows.
 
 Then it looks for gaps, and there are two kinds worth telling apart. An `unhandledCase` gap means the contract and the code disagree, in either direction: a declared response the handler never produces, or a produced response the contract never declared. That is a fact about the code, and the checker reports it as an error. An `unreadOutcome` gap means a `return` matched none of the pack's terminal patterns, so suss could not tell what that path produces. That is a fact about suss, it forces confidence to `low`, and the checker reports it as info, because failing a build over what the analyzer could not read would punish working code.
 
 With no `unreadOutcome` gap, confidence comes from the ratio of opaque predicates to structured ones. Finally it assembles the summary object, nesting any HTTP-scoped metadata under `metadata.http.*` per the [boundary-semantics](/theory/boundary-semantics) namespacing convention.
 
-Each step is small, pure over `RawCodeStructure`, and independently testable, which is why the extractor test suite runs in milliseconds and takes no compiler dependency.
+Every step here is pure over `RawCodeStructure` and testable on its own, so the extractor test suite runs in milliseconds and takes no compiler dependency.
 
 ## Internal: cross-boundary pairing
 

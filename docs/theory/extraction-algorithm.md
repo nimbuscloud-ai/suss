@@ -1,15 +1,13 @@
 ---
-title: How the TypeScript adapter turns a function into a summary
+title: Extraction algorithm
 description: "The five steps that take one function AST to a raw code structure: terminals, paths, conditions, predicates and assembly."
 ---
 
-# Extraction Algorithm
+# Extraction algorithm
 
-How the TypeScript adapter turns a function AST into a `RawCodeStructure`. Everything downstream assumes this pipeline produces correct output.
+The TypeScript adapter turns one function's AST into a `RawCodeStructure`, and every stage below it trusts that structure to be right.
 
-## Overview
-
-For each code unit, extraction runs in five composable steps:
+For each code unit, extraction runs in five steps that compose:
 
 <svg class="suss-diagram" viewBox="0 0 660 388" role="img" aria-labelledby="algo-title algo-desc">
   <title id="algo-title">The five extraction steps</title>
@@ -52,13 +50,13 @@ For each code unit, extraction runs in five composable steps:
 
 </svg>
 
-Steps 2 and 3 are pure AST traversal, no framework knowledge, no symbol resolution. They can be tested in isolation with tiny fixture functions.
+Steps 2 and 3 walk the AST and nothing else: no framework knowledge, no symbol resolution. Each can be tested on its own with a tiny fixture function.
 
-Step 4 is where symbol resolution kicks in via ts-morph's type checker. It's the most language-specific piece and the most expensive in terms of compiler calls.
+Step 4 resolves symbols through ts-morph's type checker. It is the most language-specific step and the one that makes the most compiler calls.
 
-Each step lives in its own file (`paths/pathConditions.ts` for the path engine, `conditions.ts` for the expression-level walker it composes, `predicates.ts`, `subjects.ts`, `terminals/`). They compose, but they don't call each other directly. `assembly.ts` is what puts them together.
+Each step lives in its own file: `paths/pathConditions.ts` for the path engine, `conditions.ts` for the expression-level walker it composes, then `predicates.ts`, `subjects.ts` and `terminals/`. None of them calls another directly. `assembly.ts` puts them together.
 
-Everything here is about extracting one function at a time. The whole-program passes that run after it (reachable closure, re-throw enrichment, boundary effects) are rules over a shared fact database, documented in [Facts and rules](/theory/facts-and-rules).
+This page covers one function at a time. The whole-program passes that run afterward, the reachable closure, re-throw enrichment and boundary effects, are rules over a shared fact database; see [Facts and rules](/theory/facts-and-rules).
 
 ## Step 1: `findTerminals`
 
@@ -104,44 +102,44 @@ Response bodies and return values are extracted into `TypeShape` (see [IR types]
 
 3. **Type-checker fallback.** Anything the first two passes can't resolve is handed to ts-morph's type checker via `shapeFromNodeType`. This catches identifiers whose declarations live in other modules, generics, and types without literal initializers. The type checker sees flow narrowing at the reference site, so narrowed unions collapse correctly here. Opaque named types (`Date`, `Promise`, `Map`, `Error`, …) stop at `{ type: "ref", name: "Date" }` instead of expanding their structural properties, because the wire form depends on the codec and the structural expansion would mislead the reader. Index-signature types (`Record<string, T>`, `{ [key: string]: T }`) with no named properties become `{ type: "dictionary", values: ... }`.
 
-**Spreads.** `{ ...user, admin: true }` runs the spread expression through the same three-pass pipeline. A resolvable `record` result is merged in source order (later keys and later spreads override earlier ones), and only unresolvable spreads fall through to the `record.spreads[]` escape hatch. We currently treat `union` spreads as unresolvable too (say, a value narrowed to `record | null` where the caller would have flow-narrowed it to `record`), which matches the conservative "some extra fields could be anything" semantics.
+**Spreads.** `{ ...user, admin: true }` runs the spread expression through the same three-pass pipeline. A resolvable `record` result is merged in source order, so later keys and later spreads override earlier ones, and only an unresolvable spread falls through to the `record.spreads[]` escape hatch. A `union` spread counts as unresolvable too, say a value narrowed to `record | null` where the caller would have flow-narrowed it to `record`, which keeps the conservative reading that some extra fields could be anything.
 
 **Recursion and cycles.** Both the type-checker walk and the AST walker bound recursion: the type walker caps at depth 6 and tracks already-expanded type identities; the AST walker caps at 8 hops and tracks node identities. Cyclic `const a = a` (and deeper variants) terminate at a `ref`.
 
 ## Steps 2+3: CFG path conditions
 
-Steps 2 and 3 are computed by the path engine (`paths/pathConditions.ts`), the only condition engine. It enumerates every entry→terminal control-flow path over the function's statement flow and emits **one RawBranch per path**: a terminal reached along several paths becomes several transitions, each with its own true condition conjunction. This is correctness principle #1 implemented literally, and it is what closed the nested-guard and loop-return soundness gaps. The engine replaced a set of hand-written condition collectors that were unsound on exactly the shapes they still served, and those collectors have since been deleted, so there is one condition engine and no fallback:
+The path engine (`paths/pathConditions.ts`) computes steps 2 and 3, and it is the only condition engine. It enumerates every entry-to-terminal control-flow path over the function's statement flow and emits **one RawBranch per path**, so a terminal reached along several paths becomes several transitions, each with its own conjunction of conditions. That is the exhaustiveness principle below, implemented literally, and it closed the nested-guard and loop-return gaps. The hand-written condition collectors it replaced were unsound on the shapes they still served, and they have been deleted, so there is no fallback path:
 
 - `if (a) { if (b) return X; } Y` → Y gets the paths `[¬a]` and `[a, ¬b]`, never a fabricated `¬a ∧ ¬b` or an empty list;
 - sibling guards inside a block gate their tails (`if (a) { if (b) return X; T }` → T gets `[a, ¬b]`);
 - `if (a) {…} else { return; } T` → T gets `[a]` (else-exit closure);
-- terminals inside loops get an opaque "some iteration" condition, and post-loop terminals get an opaque "loop exited" negation. Nothing can decide statically what held on every iteration, so the engine under-specifies rather than fabricates;
-- dead-code terminals (no entry path) produce no transitions.
+- terminals inside loops get an opaque "some iteration" condition, and post-loop terminals get an opaque "loop exited" negation. No static reader can decide what held on every iteration, so the engine says less rather than guessing;
+- a dead-code terminal, one that no entry path reaches, never produces a transition.
 
-Expression-level branching *below* a statement (ternaries, `&&`/`||`, case clauses inside nested callbacks) is appended from the scoped ancestor walker in `conditions.ts`: the path engine walks statements, and the walker covers the expression tree beneath them.
+Expression-level branching *below* a statement (ternaries, `&&` and `||`, case clauses inside nested callbacks) is appended from the scoped ancestor walker in `conditions.ts`. The path engine walks statements, and the walker covers the expression tree beneath them.
 
 The engine's fidelity is verified mechanically by the differential fuzzer (`tools/differential`; see [the differential-fuzzing record](https://github.com/nimbuscloud-ai/suss/blob/main/design/docs-internal/differential-fuzzing.md)).
 
 ### What the engine models
 
-It models the whole structured statement language: `if`/`else`, `switch` (case groups, trailing breaks, fallthrough into an empty clause), all loop forms, `try`/`catch` (plus `finally` when it is only cleanup), `break`/`continue`, `return`/`throw`, and expression-bodied arrows. On two constructs it deliberately abstains rather than claim anything:
+It models the whole structured statement language: `if`/`else`, `switch` (case groups, trailing breaks, fallthrough into an empty clause), every loop form, `try`/`catch` (plus `finally` where it is only cleanup), `break`/`continue`, `return`/`throw`, and expression-bodied arrows. On two constructs it says nothing rather than guessing:
 
-- **Loops.** Nothing can decide statically whether a condition held *on some iteration*, so in-loop terminals get an opaque "some iteration of:" condition and post-loop terminals get an opaque "loop exited" negation. The engine under-specifies here; it never fabricates.
-- **Catch blocks.** Nothing can decide statically which statement threw, so catch-body terminals get a single opaque `catch` condition (`source: "catchBlock"`).
+- **Loops.** No static reader can decide whether a condition held *on some iteration*, so an in-loop terminal gets an opaque "some iteration of:" condition and a post-loop terminal gets an opaque "loop exited" negation.
+- **Catch blocks.** No static reader can decide which statement threw, so a catch-body terminal gets a single opaque `catch` condition (`source: "catchBlock"`).
 
 ### Callbacks the unit hands to its own calls
 
 A nested arrow or function expression is part of the unit that wrote it unless a pack claimed it as a sub-unit. `walk/descent.ts` decides that once, and every pass asks it there: the recognizer walk, the invocation-effect walk, terminal discovery, and the statement lowering. So a `.then`, `.map`, or promise-executor callback contributes its branches to the unit the same way its calls already contributed their effects, and a route handler or event subscription a pack declared stays a unit of its own.
 
-Its exits are its own, though. A `return` or a `throw` inside a callback ends the callback, not the unit, so the enclosing path picks up again past the call and the code after it stays reachable. The callback's `return` never becomes one of the unit's terminals: `fetch(u).then((r) => r.json())` resolves the promise the unit returns, and calling that a second exit would invent a transition nobody wrote.
+Its exits are its own, though. A `return` or a `throw` inside a callback ends the callback rather than the unit, so the enclosing path picks up again past the call and the code after it stays reachable. The callback's `return` never becomes one of the unit's terminals. In `fetch(u).then((r) => r.json())` the callback resolves the promise the unit returns, and treating that as a second exit would invent a transition that is not in the source.
 
 ### When a branch reaches the summary
 
-A branch that rejoins leaves nothing behind on the terminals after it: `if (a) { log() } return X` gives X one unconditional path, because X is reached either way. `mergeRejoined` is what does that, and it is also what stops a run of guards multiplying. The paths a body hands back are the exception. No statement follows those, so nothing merges them, and `if (res.ok) { toast.success() } else { toast.error() }` at the end of a function leaves two fall-through branches rather than one. That is what lets the checker see a consumer discriminate on a status when neither arm returns.
+A branch that rejoins leaves nothing behind on the terminals after it. `if (a) { log() } return X` gives X one unconditional path, because X is reached either way. `mergeRejoined` does that, and it is also what stops a run of guards multiplying. The paths a body hands back at the end are the exception: no statement follows them, so nothing merges them, and `if (res.ok) { toast.success() } else { toast.error() }` at the end of a function leaves two fall-through branches. The checker needs both to see a consumer discriminating on a status when neither arm returns.
 
-### Declined shapes degrade, never lie
+### Shapes the engine declines
 
-A few constructs the engine does not model: labeled statements, `finally` blocks that exit or contain terminals, `switch` fallthrough into a non-empty clause, non-trailing `switch` breaks, and functions exceeding the 256-path budget. There is no second engine behind these. They **degrade**: each terminal keeps its enclosure conditions (the ancestor branches it is inside, which gate it no matter how the flow weaves) plus one opaque `unmodeled control flow (<reason>)` conjunct, so the transition abstains from claiming a complete condition set. Under-specification over occasionally-wrong claims is correctness principle #2.
+The engine does not model labeled statements, `finally` blocks that exit or contain terminals, `switch` fallthrough into a non-empty clause, non-trailing `switch` breaks, or a function past the 256-path budget. There is no second engine behind these. Each terminal keeps its enclosure conditions, the ancestor branches it is inside, which gate it however the flow weaves, plus one opaque `unmodeled control flow (<reason>)` conjunct. The transition then makes no claim to a complete condition set, which is the second correctness principle below.
 
 ### Below statements: the expression-level walker
 
@@ -277,7 +275,7 @@ resolveSubject(expr):
                         derivation: { type: "destructured", field: decl.getName() },
                     }
 
-                // Other initializer — fall through to unresolved
+                // Other initializer: fall through to unresolved
                 return { type: "unresolved", sourceText: expr.getText() }
 
             return { type: "unresolved", sourceText: expr.getText() }
@@ -297,7 +295,7 @@ resolveSubject(expr):
             return { type: "unresolved", sourceText: expr.getText() }
 ```
 
-**Why the result stays shallow:** `resolveSubject` doesn't try to understand what `db.findById` does or what it returns. It records "this value came from calling `db.findById`, and then we accessed `.repository.lastAnalyzedCommitHash`". That is enough for cross-boundary comparison to work. Two predicates on different sides of a boundary can be recognized as testing the same thing, and the extractor never has to understand Prisma query semantics.
+**Why the result stays shallow:** `resolveSubject` makes no attempt to understand what `db.findById` does or what it returns. It records that the value came from calling `db.findById` and that `.repository.lastAnalyzedCommitHash` was then read off it. Cross-boundary comparison needs no more than that: two predicates on either side of a boundary can be seen to test the same thing without the extractor understanding Prisma query semantics.
 
 **Dependency on the compiler:** this is the most expensive step. Every identifier lookup goes through the symbol table. For a 500-line handler with 50 conditions, this can dominate extraction time. Two optimizations worth knowing about:
 
@@ -351,7 +349,7 @@ collectClientFieldAccesses(callExpr, func, branchLocations):
         // e.g. res.body.name → ["body", "name"]
         //      res.body.email → ["body", "email"]
 
-        // Filter out status/ok/headers — we only want body-related accesses
+        // Keep only the body-related accesses, dropping status/ok/headers
         bodyAccesses = accesses.filter(not status/ok/headers)
 
         branch.expectedInput = buildShapeFromPaths(bodyAccesses)
@@ -359,7 +357,7 @@ collectClientFieldAccesses(callExpr, func, branchLocations):
         //     properties: { name: { type: "unknown" }, email: { type: "unknown" } } } } }
 ```
 
-`expectedInput` flows through `RawBranch` → `assembleSummary` → `Transition.expectedInput`, where the checker's `checkBodyCompatibility` compares it against the provider's output body shape. Leaf types are `unknown` because we only track *which* fields are accessed, not what types the consumer expects. The comparison is about which fields are present, not whether their types line up.
+`expectedInput` flows through `RawBranch` to `assembleSummary` to `Transition.expectedInput`, where the checker's `checkBodyCompatibility` compares it against the provider's output body shape. Every leaf type is `unknown`, because the adapter records which fields a branch reads and stops there. What the comparison settles is field presence.
 
 ## Testing strategy
 
@@ -375,7 +373,7 @@ The five steps correspond to five independently testable units:
 
 Each test uses its own small fixture, and unit tests never run end to end. Full extraction integration tests live in three places: the adapter's own integration test (`packages/adapter/typescript/src/*.test.ts` against `fixtures/ts-rest`), each framework pack's integration test (the adapter run against fixtures for that framework), and the CLI test suite (deep-equal assertions on representative summaries per framework, plus `-o` round-trip).
 
-Beyond fixtures, a differential fuzzer (`tools/differential`) verifies the correctness principles below *mechanically*: it extracts generated handler programs through the actual pipeline, runs them against batteries of requests, and shrinks any disagreement between the summary's claims and the observed behavior down to a minimal counterexample. Constructs with documented soundness gaps run inverted properties that must keep rediscovering the gap until it's fixed. See [the differential-fuzzing record](https://github.com/nimbuscloud-ai/suss/blob/main/design/docs-internal/differential-fuzzing.md).
+Beyond fixtures, a differential fuzzer (`tools/differential`) checks the correctness principles below mechanically. It extracts generated handler programs through the shipping pipeline, runs them against batteries of requests, and shrinks any disagreement between the summary's claims and the observed behavior down to a minimal counterexample. A construct with a documented soundness gap runs an inverted property that has to keep rediscovering the gap until somebody fixes it. See [the differential-fuzzing record](https://github.com/nimbuscloud-ai/suss/blob/main/design/docs-internal/differential-fuzzing.md).
 
 ## Correctness principles
 

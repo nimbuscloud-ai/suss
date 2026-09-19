@@ -5,18 +5,18 @@ description: How suss's whole-program analyses are written, as Datalog rules ove
 
 # Facts and rules
 
-How extraction's whole-program analyses are structured, for anyone adding or changing one. The short version: they are Datalog rules over a shared fact database, and a strict three-layer boundary keeps them auditable.
+Extraction's whole-program analyses are Datalog rules over a shared fact database, and a three-layer boundary keeps each one reviewable on its own. This page is for anyone adding or changing one.
 
-Value resolution is the largest rule set over this engine and has a page of its own: [How suss follows a value](/theory/resolving-values) covers the fact vocabulary, the closure the rules build over it, and the proof `suss ask why` prints.
+Value resolution is the largest rule set over this engine and has a page of its own. [How suss follows a value](/theory/resolving-values) covers the fact vocabulary, the closure the rules build over it, and the proof `suss ask why` prints.
 
 ## Why rules
 
-Every whole-program analysis in extraction works the same way underneath: start from some seed facts, apply a step repeatedly, stop when nothing new appears. Reachability and re-throw resolution both work that way. Rules state it once, and you get four properties from that:
+Every whole-program analysis in extraction works the same way underneath. Start from some seed facts, apply a step repeatedly, stop when nothing new appears. Reachability and re-throw resolution both do that. Writing it as rules states the pattern once and gives you four properties:
 
-- **Termination comes from the engine.** The evaluator (`@suss/datalog`) runs semi-naive fixpoint iteration. Every analysis written in it terminates by construction, because there are only finitely many possible facts and rules only add.
+- **Termination comes from the engine.** The evaluator (`@suss/datalog`) runs semi-naive fixpoint iteration. Every analysis written in it terminates by construction, because there are finitely many possible facts and rules only add.
 - **Negation is sound.** Rules are stratified before evaluation, and a cycle through negation is a hard error at evaluation time.
-- **The logic is data.** A rule is a plain object you can print, test, and review in isolation. What you audit is the facts a pass emits and the rules it runs.
-- **The analyses become language-independent.** A rule joins kinds of fact (`calls`, `entry`, `throwsDirect`, and so on), never AST nodes. A second language adapter that emits the same facts gets every analysis for free. This is the concrete mechanism behind "the IR is the product": the facts are a second, lower-level IR.
+- **The logic is data.** A rule is a plain object you can print, test and review on its own, so what you review is the facts a pass emits and the rules it runs.
+- **The analyses are language-independent.** A rule joins kinds of fact (`calls`, `entry`, `throwsDirect`, and so on) rather than AST nodes, so a second language adapter that emits the same facts gets every analysis without writing one. The facts are a second IR, below the summaries.
 
 ## The three layers
 
@@ -55,7 +55,7 @@ Read it as: `reachable(callee) :- reachable(caller), calls(caller, callee).`
 
 ## Worked derivations
 
-The production rule sets are small enough to trace by hand. Here are three walks, each one over facts that an actual extraction emits.
+The shipping rule sets are small enough to trace by hand. Here are three walks, each over facts an extraction run emits.
 
 ### Reachability, round by round
 
@@ -123,7 +123,7 @@ untested(u) :- entry(u), not covered(u).
 
 Two requirements apply. First, a positive literal (`entry`) must bind the variable `u` before the negated literal uses it, so the rule asks a closed question about units it already knows. Second, the rule set must stratify: every rule that derives `covered` must run before any rule that reads its absence. The evaluator enforces that by running strata in order and rejecting rule sets where negation forms a cycle.
 
-One rule in value resolution needs a shape like this. A name whose writes nothing orders should step to each of its writes, but only when the adapter read a value out of every one of them, which is the absence of `writesUnstated`. The resolution rules cannot say that. `deriveOnDemand` rejects a negated literal outright, because a relation derived only where somebody asked is smaller than the one `not p(x)` was written against, which makes the literal match where it should not. And a rule set with any negation in it makes the evaluator retract what it derived and start from the base facts on every pass, which the resolution store runs once per wave of files. So the adapter states `writesAllStated` and the rule joins on it.
+One rule in value resolution wants this shape and cannot have it. A name written in several places, with nothing ordering the writes, should step to each write, but only where the adapter managed to read a value out of every one of them, which is the absence of `writesUnstated`. Two things block writing it that way. `deriveOnDemand` rejects a negated literal outright, because a relation derived only where somebody asked is smaller than the one `not p(x)` was written against, so the literal matches where it should not. And any negation in a rule set makes the evaluator retract what it derived and start from the base facts on every pass, which the resolution store does once per wave of files. So the adapter states `writesAllStated` outright and the rule joins on it.
 
 ## The shared fact store
 
@@ -173,6 +173,6 @@ Two kinds of work do not belong here. Per-function local analysis stays in the p
 
 ## Where this is going
 
-- **CFG edges as facts.** What the path engine enumerates is the same thing a query over the lowered control-flow graph would return. If we put `cfgEdge` facts into the shared store, someone could write path-sensitive analyses (`mayThrow` through plain calls, path-scoped effect attribution) as rules instead of as new traversals.
-- **Cascade checking.** Joining what each boundary reaches (the walk `inspect --diff` does) against the other boundaries' identities tells you which boundaries' promises depend on which other boundaries. Nobody has written the checker-side join yet.
-- **A second language.** From this layer, all we ask an adapter to do is discover units, emit summaries, and emit these facts. Layers 2 and 3 come along unchanged.
+- **CFG edges as facts.** What the path engine enumerates is what a query over the lowered control-flow graph would return. Put `cfgEdge` facts into the shared store and a path-sensitive analysis, `mayThrow` through plain calls or path-scoped effect attribution, becomes a rule rather than a new traversal.
+- **Cascade checking.** Joining what each boundary reaches, which is the walk `inspect --diff` does, against the other boundaries' identities would tell you which boundary's promises depend on which other boundary. The checker-side join is unwritten.
+- **A second language.** This layer asks an adapter for three things: discover units, emit summaries, emit these facts. Layers 2 and 3 come along unchanged.
