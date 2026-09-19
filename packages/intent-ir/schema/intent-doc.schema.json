@@ -1286,7 +1286,8 @@
                 "description": "The effects this outcome has, written in the same verbs suss ask uses: reads, writes, invokes."
               }
             },
-            "required": ["id", "when"]
+            "required": ["id", "when"],
+            "additionalProperties": false
           },
           "description": "Every outcome the boundary can produce, one entry each."
         }
@@ -1369,7 +1370,8 @@
                 "description": "The boundary-intent outcomes this scenario is about, each written <intent-name>.<outcome-id>."
               }
             },
-            "required": ["when", "expect"]
+            "required": ["when", "expect"],
+            "additionalProperties": false
           },
           "description": "The situations the feature covers, one entry each."
         }

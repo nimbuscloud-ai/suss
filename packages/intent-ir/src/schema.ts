@@ -447,7 +447,7 @@ const WhenSchema = z.union([
 ]);
 
 const BoundaryTransitionSchema = z
-  .object({
+  .strictObject({
     id: z
       .string()
       .min(1)
@@ -495,8 +495,8 @@ function endingsOf(t: {
 // kind: boundary: system intent for one boundary.
 // ---------------------------------------------------------------------------
 
-// Strict for the same reason the boundary blocks are: `scenario:`
-// written for `scenarios:` stops the run instead of vanishing.
+// Strict for the same reason the boundary blocks are: suss reports
+// `scenario:` written for `scenarios:` and stops.
 const BoundaryIntentSchema = z.strictObject({
   kind: z
     .literal("boundary")
@@ -529,7 +529,7 @@ const BoundaryIntentSchema = z.strictObject({
 // kind: prd: outcome intent (human scenarios).
 // ---------------------------------------------------------------------------
 
-const PrdScenarioSchema = z.object({
+const PrdScenarioSchema = z.strictObject({
   title: z
     .string()
     .min(1)
