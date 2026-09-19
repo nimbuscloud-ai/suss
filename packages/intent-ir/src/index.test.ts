@@ -517,6 +517,76 @@ describe("receives, normalised to a field list", () => {
     ]);
   });
 
+  it("takes a request block that declares no body at all", () => {
+    expect(
+      receivesOf({
+        ...restIntent,
+        boundary: {
+          semantics: "rest",
+          method: "GET",
+          path: "/invoices",
+          receives: { query: { dryRun: { type: "boolean" } } },
+        },
+      }),
+    ).toEqual([
+      {
+        path: ["query", "dryRun"],
+        shape: { type: "boolean" },
+        required: false,
+      },
+    ]);
+  });
+
+  it("leaves a body property optional when the shape names none as required", () => {
+    expect(
+      receivesOf({
+        ...restIntent,
+        boundary: {
+          semantics: "rest",
+          method: "POST",
+          path: "/invoices",
+          receives: {
+            body: { type: "object", properties: { note: { type: "string" } } },
+          },
+        },
+      }),
+    ).toEqual([
+      { path: ["body", "note"], shape: { type: "text" }, required: false },
+    ]);
+  });
+
+  it("takes a body written with nothing under it as saying nothing", () => {
+    expect(
+      receivesOf({
+        ...restIntent,
+        boundary: {
+          semantics: "rest",
+          method: "POST",
+          path: "/invoices",
+          receives: { body: {} },
+        },
+      }),
+    ).toEqual([]);
+  });
+
+  it("takes a receives block on a store and on an invoked unit", () => {
+    expect(
+      receivesOf({
+        ...storeIntent,
+        boundary: {
+          ...storeIntent.boundary,
+          receives: { invoiceId: { required: true } },
+        },
+      }),
+    ).toEqual([{ path: ["invoiceId"], shape: null, required: true }]);
+    expect(
+      receivesOf({
+        ...unitIntent,
+        boundary: { ...unitIntent.boundary, receives: { orderId: {} } },
+      }),
+    ).toEqual([{ path: ["orderId"], shape: null, required: false }]);
+  });
+
   it("is empty for a doc that says nothing about what it is handed", () => {
     expect(receivesOf(fnIntent)).toEqual([]);
   });

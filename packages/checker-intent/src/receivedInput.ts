@@ -53,11 +53,10 @@ export function checkReceivesBlock(pairing: Pairing): IntentFinding[] {
   if (declared.length === 0) {
     return [];
   }
-  const binding = pairing.impl.identity.boundaryBinding;
-  if (binding === null) {
-    return [];
-  }
-  const result = boundaryInputReads(pairing.impl, binding);
+  // The intent's own boundary says which protocol this is, and pairing
+  // already settled that the code agrees, so the document is the side
+  // to ask rather than an implementation whose binding could be null.
+  const result = boundaryInputReads(pairing.impl, pairing.intent.boundary);
   if (!result.read) {
     return [];
   }

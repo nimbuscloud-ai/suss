@@ -83,6 +83,51 @@ describe("readSetOf", () => {
     });
   });
 
+  it("knows a hook return by its hook, and leaves a parameter's role alone", () => {
+    const carriesHook: CarriesPayload = (input) => input.type === "hookReturn";
+    const result = readSetOf(
+      receiver({
+        inputs: [
+          { type: "hookReturn", hook: "useQuery", destructuredFields: [] },
+          parameter("props", "props"),
+        ],
+        reads: [
+          { input: "useQuery", path: ["data", "id"] },
+          { input: "props", path: ["label"] },
+        ],
+      }),
+      carriesHook,
+    );
+    expect(result).toEqual({
+      read: true,
+      reads: {
+        paths: [
+          ["data", "id"],
+          ["props", "label"],
+        ],
+        rootedAtPayload: false,
+      },
+    });
+  });
+
+  it("knows a context value by its context", () => {
+    const carriesContext: CarriesPayload = (input) =>
+      input.type === "contextValue";
+    const result = readSetOf(
+      receiver({
+        inputs: [
+          { type: "contextValue", context: "Tenant", accessedFields: [] },
+        ],
+        reads: [{ input: "Tenant", path: ["id"] }],
+      }),
+      carriesContext,
+    );
+    expect(result).toEqual({
+      read: true,
+      reads: { paths: [["id"]], rootedAtPayload: false },
+    });
+  });
+
   it("declines when the summary recorded no reads", () => {
     const result = readSetOf(
       receiver({ inputs: [parameter("message", "event")] }),
@@ -142,6 +187,11 @@ describe("compareSupplied", () => {
       compared: true,
       unsupplied: [["data", "invoiceId"]],
     });
+  });
+
+  it("declines when a sender passed something with no fields to read", () => {
+    const result = compareSupplied(readsInvoiceId, ["a bare string"]);
+    expect(result).toEqual({ compared: false, reason: "sender-opaque" });
   });
 
   it("reports nothing when the sender sets the path", () => {
@@ -265,6 +315,14 @@ describe("messageBodyReadSet", () => {
       read: true,
       reads: { paths: [["orderId"]], rootedAtPayload: true },
     });
+  });
+
+  it("passes a read set too short to compare straight through", () => {
+    const result = messageBodyReadSet(
+      receiver({ inputs: [parameter("event", "event")] }),
+      "aws_sqs",
+    );
+    expect(result).toEqual({ read: false, reason: "no-reads" });
   });
 
   it("leaves the read set alone for a bus with no envelope of its own", () => {
