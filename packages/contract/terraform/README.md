@@ -55,5 +55,5 @@ Depends on `@suss/behavioral-ir` for the summaries it produces and `hcl2-parser`
 ## More
 
 - [How it resolves a reference](./DESIGN.md)
-- [Documentation](https://nimbuscloud-ai.github.io/suss/)
+- [Documentation](https://suss.sh/)
 - [Source and issues](https://github.com/nimbuscloud-ai/suss)

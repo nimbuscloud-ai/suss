@@ -153,7 +153,7 @@ For every function reachable from a recognized entry point, suss emits a `Behavi
 
 ## Docs
 
-The documentation site is at [nimbuscloud-ai.github.io/suss](https://nimbuscloud-ai.github.io/suss/).
+The documentation site is at [suss.sh](https://suss.sh/).
 
 - [Quickstart](./docs/start/quickstart.md): the smallest end-to-end example.
 - [Adopt it step by step](docs/guides/adopting-suss.md): the steps above, one at a time.

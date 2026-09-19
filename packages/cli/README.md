@@ -49,7 +49,7 @@ Every pack ships inside the CLI, so `-f hono` and `-f rails` need nothing else i
 
 Two more commands read what is already on disk. `suss inspect` renders summaries, including `--diff` between two runs and `--flow` for one request hop by hop, and `suss ask` answers one question about one boundary.
 
-The [CLI reference](https://nimbuscloud-ai.github.io/suss/reference/cli/) covers every command and flag.
+The [CLI reference](https://suss.sh/reference/cli/) covers every command and flag.
 
 ## In a coding agent
 
@@ -67,9 +67,9 @@ The package ships its own `AGENTS.md`, at `node_modules/@suss/cli/AGENTS.md`, so
 
 ## More
 
-- [Documentation](https://nimbuscloud-ai.github.io/suss/)
-- [Add suss to a project](https://nimbuscloud-ai.github.io/suss/guides/add-to-project)
-- [Every pack suss ships](https://nimbuscloud-ai.github.io/suss/packs/catalog)
+- [Documentation](https://suss.sh/)
+- [Add suss to a project](https://suss.sh/guides/add-to-project)
+- [Every pack suss ships](https://suss.sh/packs/catalog)
 - [What init reads before it suggests anything](./DESIGN.md)
 - [Source and issues](https://github.com/nimbuscloud-ai/suss)
 

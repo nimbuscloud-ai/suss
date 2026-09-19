@@ -24,8 +24,8 @@ The file format is also published as a [JSON Schema](schema/intent-doc.schema.js
 ## More
 
 - [What an intent document states](./DESIGN.md)
-- [Documentation](https://nimbuscloud-ai.github.io/suss/)
-- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/packs/catalog)
+- [Documentation](https://suss.sh/)
+- [Every package and pack suss ships](https://suss.sh/packs/catalog)
 - [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ## Coverage

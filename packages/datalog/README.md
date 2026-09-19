@@ -48,7 +48,7 @@ second language adapter only has to emit the same facts.
 ## More
 
 - [How the engine evaluates](./DESIGN.md)
-- [Documentation](https://nimbuscloud-ai.github.io/suss/)
+- [Documentation](https://suss.sh/)
 - [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ![coverage](../../.github/badges/coverage-datalog.svg)

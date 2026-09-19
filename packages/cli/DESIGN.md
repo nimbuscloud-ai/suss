@@ -1,6 +1,6 @@
 # What the CLI reads before it extracts
 
-How `suss init` reads a project's dependency manifests, and how a run treats a nested repository. Every command and every flag is in the [CLI reference](https://nimbuscloud-ai.github.io/suss/reference/cli/).
+How `suss init` reads a project's dependency manifests, and how a run treats a nested repository. Every command and every flag is in the [CLI reference](https://suss.sh/reference/cli/).
 
 ## Reading a project's declared dependencies
 
