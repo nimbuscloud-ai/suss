@@ -139,6 +139,9 @@ jobs:
       - name: Markdown links
         run: npm run check:doc-links
 
+      - name: Contract source lists match contract.ts
+        run: npm run check:contract-sources
+
       - name: Findings catalog covers every kind
         run: npm run check:findings
 

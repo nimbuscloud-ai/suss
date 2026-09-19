@@ -46,6 +46,7 @@
     "check:ask-shapes": "node scripts/checkAskShapes.mjs",
     "check:corpus": "node scripts/checkCorpusBaseline.mjs",
     "check:coverage": "node scripts/checkCoverageBaseline.mjs",
+    "check:contract-sources": "node scripts/checkContractSources.mjs",
     "check:coverage-packages": "node scripts/checkCoveragePackages.mjs",
     "check:diagrams": "node scripts/checkDiagrams.mjs",
     "check:dispatch": "node scripts/checkProtocolDispatch.mjs",
