@@ -200,9 +200,15 @@ export {
   type ParsedChannel,
   parseChannel,
 } from "./channel.js";
-export { codeScopePath, fileInCodeScope } from "./codeScope.js";
+export {
+  codeScopePath,
+  fileInCodeScope,
+  type ParsedHandler,
+  parseHandler,
+} from "./codeScope.js";
 export { type Deployment, NOTHING_DEPLOYED } from "./deployment.js";
 export { type DispatchTable, dispatchByType } from "./dispatch.js";
+export { PLATFORM_INJECTED_ENV_VARS } from "./platformEnvVars.js";
 export {
   type EffectRelation,
   EffectRelationSchema,

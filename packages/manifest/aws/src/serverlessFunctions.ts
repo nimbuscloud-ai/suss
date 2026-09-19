@@ -11,7 +11,7 @@
  * Events) stay here rather than being reconstructed in a framework pack.
  */
 
-import { codeScopePath } from "@suss/ir-core";
+import { codeScopePath, parseHandler } from "@suss/ir-core";
 
 import { resourcesWithGlobals } from "./globals.js";
 import { type CloudFormationTemplate, refTarget } from "./templateLoader.js";
@@ -60,28 +60,10 @@ export interface ServerlessFunctionInfo {
   nonHttpEvents: ServerlessNonHttpEvent[];
 }
 
-export interface ParsedHandler {
-  modulePath: string;
-  exportName: string;
-}
-
-/**
- * Split a SAM Handler string into its module path and exported symbol.
- * The final dot separates them: `"src/handlers/confirmToken.handler"` →
- * `{ modulePath: "src/handlers/confirmToken", exportName: "handler" }`.
- * Returns null when there's no dot, since there's no export to bind to.
- */
-export function parseHandler(handler: string): ParsedHandler | null {
-  const trimmed = handler.trim();
-  const lastDot = trimmed.lastIndexOf(".");
-  if (lastDot <= 0 || lastDot === trimmed.length - 1) {
-    return null;
-  }
-  return {
-    modulePath: trimmed.slice(0, lastDot),
-    exportName: trimmed.slice(lastDot + 1),
-  };
-}
+// Every AWS reader spells a Handler the same way, and a Terraform
+// configuration spells it that way too, so the reading lives in
+// `@suss/ir-core` and this re-exports it.
+export { type ParsedHandler, parseHandler } from "@suss/ir-core";
 
 function readCodeUri(resource: {
   Properties?: Record<string, unknown>;
