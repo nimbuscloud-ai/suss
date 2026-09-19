@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
-import { createTestProject } from "@suss/test-project";
+import { beforeAll, describe, expect, it } from "vitest";
+
+import { createFixtureProject, createTestProject } from "@suss/test-project";
 
 import { ResolutionStore } from "../facts/store.js";
 import { computePackApplicability } from "./preFilter.js";
@@ -164,5 +168,82 @@ describe("computePackApplicability with the fact layer", () => {
     );
     expect(withFacts.get(service)).toEqual([sqsPack]);
     expect(withFacts.get(unrelated)).toBeUndefined();
+  });
+});
+
+describe("computePackApplicability with a generated module", () => {
+  // The marker is a file on disk, so these fixtures cannot be in memory.
+  let root: string;
+  let project: Project;
+
+  beforeAll(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-prefilter-"));
+    fs.mkdirSync(path.join(root, "src"), { recursive: true });
+    fs.mkdirSync(path.join(root, "generated/client"), { recursive: true });
+    fs.writeFileSync(path.join(root, "generated/client/schema.prisma"), "");
+    fs.writeFileSync(
+      path.join(root, "generated/client/index.d.ts"),
+      "export declare class PrismaClient {}\n",
+    );
+    fs.writeFileSync(
+      path.join(root, "src/db.ts"),
+      `import { PrismaClient } from "../generated/client/index.js";
+       export const db = new PrismaClient();`,
+    );
+    fs.writeFileSync(
+      path.join(root, "src/api.ts"),
+      `import { db } from "./db.js";
+       export const read = () => db;`,
+    );
+    fs.writeFileSync(
+      path.join(root, "src/unrelated.ts"),
+      "export const x = 1;",
+    );
+    project = createFixtureProject(root, "src/*.ts");
+  });
+
+  const prismaPack = (): PatternPack =>
+    basePack({
+      name: "prisma",
+      requiresImport: ["@prisma/client"],
+      generatedModuleMarkers: ["schema.prisma"],
+      invocationRecognizers: [noopInvocation],
+    });
+
+  it("applies the pack to the file importing the generated client", () => {
+    const pack = prismaPack();
+    const files = project.getSourceFiles();
+    const db = project.getSourceFileOrThrow(path.join(root, "src/db.ts"));
+
+    expect(computePackApplicability(files, [pack]).get(db)).toEqual([pack]);
+  });
+
+  it("applies it to a file reaching the generated client through that module", () => {
+    const pack = prismaPack();
+    const files = project.getSourceFiles();
+    const api = project.getSourceFileOrThrow(path.join(root, "src/api.ts"));
+    const unrelated = project.getSourceFileOrThrow(
+      path.join(root, "src/unrelated.ts"),
+    );
+
+    const applicable = computePackApplicability(
+      files,
+      [pack],
+      new ResolutionStore(),
+    );
+    expect(applicable.get(api)).toEqual([pack]);
+    expect(applicable.get(unrelated)).toBeUndefined();
+  });
+
+  it("leaves a pack that declares no marker where it was", () => {
+    const pack = basePack({
+      name: "prisma",
+      requiresImport: ["@prisma/client"],
+      invocationRecognizers: [noopInvocation],
+    });
+    const files = project.getSourceFiles();
+    const db = project.getSourceFileOrThrow(path.join(root, "src/db.ts"));
+
+    expect(computePackApplicability(files, [pack]).get(db)).toBeUndefined();
   });
 });

@@ -63,6 +63,35 @@ The answer is memoized against the declaration, since one wrapper is
 applied across hundreds of files and the question is about the wrapper
 rather than about any use of it.
 
+## A module a generator wrote into the project
+
+A pack's import gate asks whether a file reaches the pack's package.
+`filesImportingTransitively` decides it by following the project's own
+imports, so a file that gets the library through a barrel, or through a
+module that built the library's client and exported it, is selected the
+same as one that imports the package itself.
+
+A code generator breaks that, because there is no package to import.
+Prisma's generator takes an `output` directory, and a project that
+points it inside its own tree then writes `import { PrismaClient } from
+"../generated/client"`. No specifier anywhere says `@prisma/client`, so
+the gate rules every file out and the pack never runs.
+
+`generatedModules.ts` closes that. A pack declares
+`generatedModuleMarkers`, the files its generator leaves beside the
+module it wrote, and a relative import into a directory containing one
+of them counts as an import of the package. Prisma declares
+`schema.prisma`, which its generator copies into the output directory
+for both the default location under `node_modules/.prisma/client` and a
+project's own. The check is one `existsSync` per directory a relative
+import points at, memoised for the run, and it runs only for packs that
+declare a marker.
+
+The same marker decides the pack's own question, which is whether a
+receiver's type came from Prisma. Its declaration file is in the
+directory the generator wrote, so a directory containing a
+`schema.prisma` is what makes the type Prisma's.
+
 ## Cost
 
 A query extracts the file its value lives in, evaluates the rules, and

@@ -19,6 +19,10 @@ import path from "node:path";
 
 import { type Project, type SourceFile, ts } from "ts-morph";
 
+import {
+  collectGeneratedMarkers,
+  GeneratedModules,
+} from "../facts/generatedModules.js";
 import { namesAnyPackage } from "../facts/moduleGraph.js";
 import {
   collectPackGates,
@@ -392,14 +396,19 @@ async function selectCandidateFiles(
   }
   const gates = collectAllGates(packs);
   const marks = collectAllMarks(packs);
-  if (gates.length === 0 && marks.length === 0) {
+  const generated = new GeneratedModules(collectGeneratedMarkers(packs));
+  if (gates.length === 0 && marks.length === 0 && !generated.declared) {
     return [];
   }
 
   const fileImports = await readImportsConcurrently(allFiles, marks);
   const matched = new Set<string>();
   for (const { path: p, importedModules, marked } of fileImports) {
-    if (marked || namesAnyPackage(importedModules, gates)) {
+    if (
+      marked ||
+      namesAnyPackage(importedModules, gates) ||
+      generated.reachedFrom(p, importedModules)
+    ) {
       matched.add(p);
     }
   }
