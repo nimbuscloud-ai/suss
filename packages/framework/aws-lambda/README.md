@@ -13,6 +13,7 @@ Framework pack for AWS Lambda handlers. The SAM or CloudFormation template says 
 - **Invoke recognizers** for `InvokeCommand` and `InvokeAsyncCommand` from `@aws-sdk/client-lambda`, declared through `@suss/recognize`. Each one records which function the call reaches and what it hands over. See [How an invoke meets the function it reaches](#how-an-invoke-meets-the-function-it-reaches).
 - **Terminals**: `return { statusCode, body }` (with `JSON.stringify(x)` unwrapped to the shape of `x`), `return { batchItemFailures }`, and `throw`. A non-HTTP unit reads those plus any object it returns and a fall off the end of the body, since no envelope constrains what it hands back and a queue consumer acknowledges a batch by not throwing.
 - **Input mapping**: `(event, context)` positionally.
+- **Request spelling**, for a route behind a proxy integration: `event.headers`, `event.queryStringParameters` and `event.pathParameters`, each read by the field it wants, and `event.body`, which arrives as a string the handler parses, so a read of it says the body was taken whole. A boundary intent with a `receives` block is compared against those reads.
 - **Transparent wrapper**: `Sentry.wrapHandler` from `@sentry/aws-serverless`, whose handler is argument 0. A project-local wrapper needs no declaration, because the adapter reads the factory body.
 - **Library env vars**: the `POWERTOOLS_` prefixed variables that `@aws-lambda-powertools/` reads from inside `node_modules`, where no walk over the project would find the reader.
 

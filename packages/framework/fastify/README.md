@@ -9,6 +9,7 @@ Framework pack for [Fastify](https://fastify.dev/) handlers. Declarative pattern
 - **Discovery** via `Fastify().get/post/put/delete/patch/head/options(path, handler)` registration calls (both default and named imports)
 - **Terminals**: `reply.code(N).send(body)`, `reply.status(N).send(body)`, `reply.send(body)`, `reply.redirect(...)`, `throw`, and a return with a value (`return user`), which Fastify serializes as the body of a 200
 - **Input mapping**: positional parameters `(request, reply)` with semantic roles
+- **Request spelling**: where a handler reads each part of the request, `request.headers`, `request.query`, `request.params` and `request.body`, each read by the field it wants. A boundary intent with a `receives` block is compared against those reads.
 - **Project helpers**: a function the code hands its app to is read before extraction, and what it registers is filled in at each call site, so `registerCrud(app, "users", h)` and `registerCrud(app, "orders", h)` give both routes
 
 ## Options

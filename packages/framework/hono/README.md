@@ -12,6 +12,7 @@ Framework pack for [Hono](https://hono.dev/) handlers. A Hono handler takes one 
 - **Terminals**: `c.json(body, status?)`, `c.text(body, status?)`, `c.body(data, status?)`, `c.redirect(location, status?)`, `c.notFound()`, and `throw new HTTPException(status, ...)`. A handler that leaves the status off gets 200, except for `redirect` (302) and `notFound` (404).
 - **Contract reading** from the `responses` property of the `createRoute` object registered alongside the handler, so a handler returning a status the route never declares comes out as a contract finding.
 - **Input mapping**: one positional parameter, the context, carrying the request and the response methods together.
+- **Request spelling**: where a handler reads each part of the request, `c.req.header`, `c.req.query`, `c.req.param` and `c.req.json`. Hono puts the field in the argument (`c.req.header("x-tenant-id")`) and a read records the method without it, so a `receives` block on a Hono route is compared a section at a time rather than a field at a time.
 - **Transparent wrapper**: `createRoute` from `@hono/zod-openapi` hands its config back unchanged, so the call is the route object. The pack has to say so because the wrapper's body lives in the library, where nobody can read it.
 
 ## Options
