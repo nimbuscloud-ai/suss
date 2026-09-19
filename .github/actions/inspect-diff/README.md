@@ -55,7 +55,7 @@ The comment looks like this:
 >   ~ serializeUser  1 outcome
 > ```
 >
-> <sub>Read by suss at 3f2a1c9. The summaries it compared are the `suss-diff` artifact of the run.</sub>
+> <sub>Read by suss at 3f2a1c9. The summaries it compared are the `suss-diff` artifact of the run; `suss inspect after.json` on them says where suss could not follow a call.</sub>
 
 ## Inputs
 

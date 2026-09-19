@@ -264,7 +264,7 @@ suss inspect --dir summaries/
 The usual causes, in order:
 
 - **A base URL in front of the path.** The document's `servers[0].url` (or a Swagger 2.0 `basePath`) goes in front of every route it declares, and a `baseURL` on an axios instance goes in front of every path the client writes. So `axios.create({ baseURL: "/v1" })` plus `api.get("/users/1")` pairs with a document serving `/users/{id}` under `/v1`. An absolute base keeps only its path, and a base of `/` adds nothing. A base suss cannot read, one computed at runtime such as `process.env.API_URL`, leaves the path bare, and that is where the two sides can still disagree.
-- **The path is a parameter rather than a literal.** `axios.get(url)` where `url` is an argument leaves the pack nothing to read. Wrapper expansion follows one hop; anything deeper does not pair on its own.
+- **The path is a parameter rather than a literal.** `axios.get(url)` where `url` is an argument leaves the pack nothing to read.
 - **Encoded segments.** `/search/{q}` against ``axios.get(`/search/${encodeURIComponent(q)}`)`` parses the same on both sides, so this one is rarely the problem.
 
 ## A slice of a large document

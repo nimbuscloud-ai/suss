@@ -36,12 +36,12 @@ In a host that reads a config file:
 
 | Tool | What to use it for |
 |---|---|
-| `suss_ask` | One question about one boundary. The seven question forms are in the tool description. |
+| `suss_ask` | One question about one boundary. The question forms are in the tool description. |
 | `suss_check` | Compare both sides of every boundary and report where they disagree. Takes a boundary to narrow to. |
 | `suss_boundaries` | The boundaries, split into the ones with both sides and the ones with only one. |
 | `suss_status` | Which commands ran, which failed, and whether the project has a `suss.json`. |
 
-Every tool reads. None of them change a file, and all four are marked
+Every tool reads. None of them change a file, and each is marked
 read-only, so a host never has to ask a person before calling one.
 
 An answer is trimmed to leave the model room to act on it. `suss_check`
