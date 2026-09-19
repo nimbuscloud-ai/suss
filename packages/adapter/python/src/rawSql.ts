@@ -13,7 +13,7 @@
  */
 
 import { storageBinding } from "@suss/ir-core";
-import { readSqlAccess, sqlFromParts } from "@suss/sql";
+import { readSqlAccess, splitQualifiedTable, sqlFromParts } from "@suss/sql";
 import { force } from "@suss/values";
 
 import { children, field } from "./ast.js";
@@ -89,12 +89,8 @@ function matchesIn(
   return matched;
 }
 
-/** One effect, or none for a table the statement left as a parameter. */
+/** One effect for a table the reader settled. */
 function effectFor(match: RawSqlMatch, access: SqlAccess): Effect[] {
-  const placed = tablePlacement(access.table);
-  if (placed === null) {
-    return [];
-  }
   const operation = field(match.call, "function")?.text ?? "";
   return [
     {
@@ -102,8 +98,8 @@ function effectFor(match: RawSqlMatch, access: SqlAccess): Effect[] {
       binding: storageBinding({
         recognition: match.recognition,
         storageSystem: match.storageSystem,
-        scope: placed.scope,
-        container: placed.container,
+        scope: access.qualifier[access.qualifier.length - 1] ?? NO_GROUP,
+        container: access.table,
       }),
       callee: operation,
       interaction: {
@@ -117,32 +113,8 @@ function effectFor(match: RawSqlMatch, access: SqlAccess): Effect[] {
   ];
 }
 
-/** A parameter the statement kept where the evaluator settled nothing. */
-const PARAMETER = /^\$\d+$/;
-
 /** The scope a table addressed by its name alone is in. */
 const NO_GROUP = "default";
-
-/**
- * Where a table name puts the boundary. A store that groups its tables
- * addresses one as `project.dataset.table` or `dataset.table`, and the
- * group becomes the binding's scope. A part the statement left as a
- * parameter says nothing, so a table written as one is no table at all.
- */
-function tablePlacement(
-  table: string,
-): { scope: string; container: string } | null {
-  const parts = table.split(".");
-  const container = parts[parts.length - 1] ?? "";
-  if (container === "" || PARAMETER.test(container)) {
-    return null;
-  }
-  const group = parts.length > 1 ? (parts[parts.length - 2] ?? "") : "";
-  return {
-    scope: group === "" || PARAMETER.test(group) ? NO_GROUP : group,
-    container,
-  };
-}
 
 /**
  * The pattern a call matches because the file imported that name from the
@@ -239,11 +211,14 @@ function accessesOf(
       continue;
     }
     const written = argumentNode(call, takes);
-    const table =
+    const name =
       written === null ? null : stringValueOf(written, options.facts);
-    return table === null
+    // A table named on the call is split the way one named in a
+    // statement is, so the two say the same dataset and table.
+    const split = name === null ? null : splitQualifiedTable(name);
+    return split === null
       ? []
-      : [{ table, kind: takes.kind, fields: [], selector: [] }];
+      : [{ ...split, kind: takes.kind, fields: [], selector: [] }];
   }
   return null;
 }

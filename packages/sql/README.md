@@ -22,6 +22,13 @@ readSqlAccess("SELECT id FROM `analytics.core.dim_account`", { dialect: "bigquer
 // [{ table: "dim_account", qualifier: ["analytics", "core"], ... }]
 ```
 
+A pack that reads a table off a call's argument rather than out of a statement, the way `client.get_table("analytics.core.dim_account")` states one, splits it through `splitQualifiedTable` so both spellings land on the same table and the same namespace. It gives back nothing for a table that came through as a parameter.
+
+```ts
+splitQualifiedTable("analytics.core.dim_account");
+// { table: "dim_account", qualifier: ["analytics", "core"] }
+```
+
 The statement is parsed rather than pattern-matched, so a join contributes every table it reads:
 
 ```ts

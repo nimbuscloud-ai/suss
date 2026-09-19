@@ -90,22 +90,35 @@ export function readSqlAccess(
 /** What separates the namespaces in front of a table from the table. */
 const QUALIFIER_SEPARATOR = ".";
 
+/** A table name, split from the namespaces written in front of it. */
+export interface QualifiedTable {
+  table: string;
+  /** The namespaces in front of the table, outermost first. */
+  qualifier: string[];
+}
+
 /**
  * A table split from the namespaces written in front of it, or nothing
- * when the table itself came through as a parameter. The README says
- * why the BigQuery parser needs this and the others do not.
+ * when the table itself came through as a parameter. A pack that reads
+ * a table off an argument splits it through here too, so it agrees with
+ * a table read out of a statement. The README says more.
  */
-function qualified(access: SqlAccess): SqlAccess | null {
-  const parts = access.table.split(QUALIFIER_SEPARATOR);
-  const table = parts[parts.length - 1] ?? access.table;
+export function splitQualifiedTable(name: string): QualifiedTable | null {
+  const parts = name.split(QUALIFIER_SEPARATOR);
+  const table = parts[parts.length - 1] ?? name;
   if (isParameter(table)) {
     return null;
   }
   return {
-    ...access,
     table,
     qualifier: parts.slice(0, -1).filter((part) => !isParameter(part)),
   };
+}
+
+/** One parsed access, with its table split the same way. */
+function qualified(access: SqlAccess): SqlAccess | null {
+  const split = splitQualifiedTable(access.table);
+  return split === null ? null : { ...access, ...split };
 }
 
 /**

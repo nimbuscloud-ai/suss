@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { readSqlAccess, sqlFromParts } from "./index.js";
+import { readSqlAccess, splitQualifiedTable, sqlFromParts } from "./index.js";
 
 describe("what a statement touches", () => {
   it("reads the table, the fields, and what a select picks rows by", () => {
@@ -274,6 +274,33 @@ describe("a hole the source settled", () => {
   });
 });
 
+describe("a table name a caller read off an argument", () => {
+  it("splits it the way a table in a statement is split", () => {
+    expect(splitQualifiedTable("analytics-prod.core.dim_account")).toEqual({
+      table: "dim_account",
+      qualifier: ["analytics-prod", "core"],
+    });
+  });
+
+  it("gives a bare name no qualifier", () => {
+    expect(splitQualifiedTable("dim_account")).toEqual({
+      table: "dim_account",
+      qualifier: [],
+    });
+  });
+
+  it("drops a namespace nothing settled and keeps the table", () => {
+    expect(splitQualifiedTable("$1.$2.dim_account")).toEqual({
+      table: "dim_account",
+      qualifier: [],
+    });
+  });
+
+  it("says nothing about a table nothing settled", () => {
+    expect(splitQualifiedTable("$1")).toBeNull();
+  });
+});
+
 describe("the dialects it reads", () => {
   it("reads MySQL, where a name is quoted with backticks", () => {
     expect(
@@ -341,7 +368,8 @@ describe("the dialects it reads", () => {
       }),
     ).toEqual([
       {
-        table: "proj.dataset.events",
+        table: "events",
+        qualifier: ["proj", "dataset"],
         kind: "write",
         fields: [],
         selector: ["id"],
