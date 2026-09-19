@@ -1,5 +1,5 @@
 ---
-title: How suss describes a boundary between two units of code
+title: Boundary semantics
 description: The transport, semantics and recognition layers of a boundary binding, and the nine kinds of boundary that ship today.
 ---
 

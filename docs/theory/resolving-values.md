@@ -1,5 +1,5 @@
 ---
-title: How suss follows a name to the function it comes from
+title: How suss follows a value
 description: The graph query behind value resolution, the hops it walks, and what suss ask why prints when you want to see the working.
 ---
 

@@ -1,5 +1,5 @@
 ---
-title: What each suss command does, step by step
+title: Pipelines
 description: Trace extract, contract, check and ask end to end, with a run at each stage to compare your own output against.
 ---
 
