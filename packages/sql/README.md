@@ -48,7 +48,16 @@ sqlFromParts(["SELECT id FROM `", "`"], [], ["analytics.core.dim_account"]);
 
 A hole in a value position is left alone even when the evaluator settled it. `WHERE tier = ${TIER}` with `TIER = "gold"` would parse as a column called `gold` and put it in the selector, which is worse than the parameter the reader would otherwise see. Inside a quoted name there is no such ambiguity: whatever the hole came to is part of the name.
 
-A part of a quoted name nothing settled stays a parameter, and then that part is dropped: `` `${project}.${dataset}.dim_account` `` reads as the table `dim_account` with no qualifier, rather than as a dataset somebody invented. A whole table nothing settled produces nothing at all.
+A part of a name nothing settled stays a parameter, and the qualifier is then read from the table outward and stops there. The part beside the table is the one a scope comes from, so a project read as though it were a dataset would place the access somewhere it never went:
+
+```
+analytics.core.dim_account   → dim_account, ["analytics", "core"]
+$1.core.dim_account          → dim_account, ["core"]
+analytics.$1.dim_account     → dim_account, []
+$1                           → nothing
+```
+
+A whole table nothing settled produces nothing at all.
 
 It reads Postgres, MySQL, SQLite, and BigQuery. Pass the dialect the way a pack states its store:
 

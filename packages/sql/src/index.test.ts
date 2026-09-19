@@ -272,6 +272,25 @@ describe("a hole the source settled", () => {
 
     expect(readSqlAccess(sql, { dialect: "bigquery" })).toEqual([]);
   });
+
+  it("keeps the dataset when only the project was built at run time", () => {
+    const sql = sqlFromParts(
+      ["SELECT id FROM `", ".core.dim_account`"],
+      [],
+      [],
+    );
+
+    expect(sql).toBe("SELECT id FROM `$1.core.dim_account`");
+    expect(readSqlAccess(sql, { dialect: "bigquery" })).toEqual([
+      {
+        table: "dim_account",
+        qualifier: ["core"],
+        kind: "read",
+        fields: ["id"],
+        selector: [],
+      },
+    ]);
+  });
 });
 
 describe("a table name a caller read off an argument", () => {
@@ -294,6 +313,24 @@ describe("a table name a caller read off an argument", () => {
       table: "dim_account",
       qualifier: [],
     });
+  });
+
+  it("stops at the first unsettled part, reading outward from the table", () => {
+    expect(splitQualifiedTable("analytics.$1.dim_account")?.qualifier).toEqual(
+      [],
+    );
+  });
+
+  it("keeps a dataset the source settled when only the project is unsettled", () => {
+    expect(splitQualifiedTable("$1.core.dim_account")?.qualifier).toEqual([
+      "core",
+    ]);
+  });
+
+  it("keeps both namespaces when the source settled the whole name", () => {
+    expect(
+      splitQualifiedTable("analytics.core.dim_account")?.qualifier,
+    ).toEqual(["analytics", "core"]);
   });
 
   it("says nothing about a table nothing settled", () => {

@@ -106,13 +106,29 @@ export interface QualifiedTable {
 export function splitQualifiedTable(name: string): QualifiedTable | null {
   const parts = name.split(QUALIFIER_SEPARATOR);
   const table = parts[parts.length - 1] ?? name;
-  if (isParameter(table)) {
+  if (!isSettled(table)) {
     return null;
   }
-  return {
-    table,
-    qualifier: parts.slice(0, -1).filter((part) => !isParameter(part)),
-  };
+  return { table, qualifier: namespacesAround(parts.slice(0, -1)) };
+}
+
+/**
+ * The namespaces a reader can stand behind, read from the table
+ * outward. A part nothing settled leaves everything further out
+ * unplaceable: the part beside the table is the one a scope is read
+ * from, so a project read as though it were a dataset would put the
+ * access somewhere it never went.
+ */
+function namespacesAround(namespaces: readonly string[]): string[] {
+  const found: string[] = [];
+  for (let index = namespaces.length - 1; index >= 0; index -= 1) {
+    const part = namespaces[index];
+    if (part === undefined || !isSettled(part)) {
+      break;
+    }
+    found.unshift(part);
+  }
+  return found;
 }
 
 /** One parsed access, with its table split the same way. */
@@ -122,12 +138,12 @@ function qualified(access: SqlAccess): SqlAccess | null {
 }
 
 /**
- * Whether a piece of a name is a parameter this module wrote. A hole
- * the caller could not settle comes through `sqlFromParts` as `$1`, and
- * the parse cannot tell that from a name somebody chose.
+ * Whether a piece of a name says anything. A hole the caller could not
+ * settle comes through `sqlFromParts` as `$1`, and the parse cannot
+ * tell that from a name somebody chose.
  */
-function isParameter(part: string): boolean {
-  return /^\$\d+$/.test(part);
+function isSettled(part: string): boolean {
+  return part !== "" && !/^\$\d+$/.test(part);
 }
 
 /**
