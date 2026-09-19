@@ -5,7 +5,7 @@ description: Pair the two sides of every boundary and report where they disagree
 
 # `suss check`
 
-Pair the two sides of every boundary and report what disagrees.
+`suss check` takes the summaries you already extracted, puts the two sides of each boundary together, and reports where they disagree. This is the command you run in CI, and the one you run while editing a file to see whether a call lines up with what it reaches.
 
 ```
 # A folder of summary files, paired by boundary
@@ -25,7 +25,7 @@ suss check --dir <directory> --at <file[:line] | boundary | summary-id> [--json]
 suss check [--at <target>] [--intent <intent-dir>] ...
 ```
 
-`--dir` reads every summary file in a folder and pairs them by boundary key, so a provider and its consumer meet whichever file each arrived in. Two positional files skip the pairing and compare every provider in the first against every consumer in the second, which is why a two-file run has no unpaired count.
+`--dir` reads every summary file in a folder and pairs them by boundary key, so a provider and its consumer meet whichever file each arrived in. Two positional files skip the pairing and compare every provider in the first against every consumer in the second. Nothing goes unpaired in that form, so a two-file run doesn't report an unpaired count.
 
 Given no files and no `--dir`, `check` reads the project it is run in: every entry in `suss.json`, or what `init` would pick when there is no file, into a temporary folder, then the `--dir` form over that. It prints the commands it ran to stderr.
 
@@ -38,13 +38,13 @@ Given no files and no `--dir`, `check` reads the project it is run in: every ent
 | `--json` | off | Write findings as JSON instead of text. |
 | `-o`, `--output <path>` | stdout | Write the report to a file. |
 | `--fail-on <severity>` | `error` | Which severity fails the run: `error`, `warning`, `info`, or `none` to never fail. |
-| `--allow-empty` | off | Exit `0` from a `--dir` run that paired nothing. Without it that run fails: it has nothing to report, which reads the same as both sides agreeing, so the report gets a `nothingPaired` run finding and the run exits non-zero. Needs `--dir`; a two-file check has no pairing count and refuses the flag. |
+| `--allow-empty` | off | Exit `0` from a `--dir` run that paired nothing. Without it that run fails, because a report with nothing in it looks exactly like a report where both sides agreed. The run gets a `nothingPaired` run finding and exits non-zero. Needs `--dir`; a two-file check never counts pairings, so it refuses the flag. |
 | `--fail-on-unpaired <N\|N%>` | off | Fail when more boundaries went unpaired than this: a count (`25`) or a share of all boundaries (`50%`). Needs `--dir`. The report gets a `mostlyUnpaired` run finding with the numbers. |
 | `--fail-on-unreadable` | off | Fail when a file in `--dir` could not be read as summaries, instead of skipping it with a warning. The report gets an `unreadableInput` run finding, and `--json` lists the skipped files either way. |
 | `--sussignore <path>` | the nearest `.sussignore` | Read this suppressions file instead of searching for one. |
 | `--no-suppressions` | off | Report every finding, ignoring any `.sussignore`. |
 
-`--fail-on-empty` is gone. A run that pairs nothing now fails by default, and passing the old flag stops the run and says so.
+`--fail-on-empty` is gone. A run that pairs nothing now fails by default, and passing the old flag stops the run and points you at `--allow-empty`.
 
 A finding that points at one transition prints a `.sussignore` rule for it, ready to paste under `rules:`. See [Accept a finding](/guides/accept-a-finding), and [the findings catalog](/reference/findings) for every kind.
 
@@ -102,9 +102,9 @@ Compared 1 boundary here:
 No findings here.
 ```
 
-A target whose unit suss could not fully read ends with a paragraph saying so, whether or not anything was found: "no findings here" means less when part of the unit is missing from the summary.
+When suss could not fully read the unit a target covers, the report ends with a paragraph telling you so, whether or not it found anything. Otherwise you would take "no findings here" at face value while part of the unit was missing from the summary.
 
-A target that matches nothing prints what it could not find and exits `1`. An empty report would read as agreement.
+A target that matches nothing prints what it could not find and exits `1`, so you don't mistake it for a target where both sides agreed.
 
 ## JSON output
 
@@ -118,4 +118,4 @@ with `intent` added when `--intent` was passed. Two positional files write the b
 
 `--at --json` writes `{ at, matched, target, touches, findings, pairs, unmatched, gaps }`, where `touches` is one entry per unit and boundary (`{ boundary, relations, unit, via }`). A target that matched nothing writes `{ at, matched: false, message }`.
 
-[Exit codes](/reference/cli/exit-codes) says what `check` returns to the shell, and how a suppression changes the count.
+[Exit codes](/reference/cli/exit-codes) lists what `check` returns to the shell, and how a suppression changes the count.

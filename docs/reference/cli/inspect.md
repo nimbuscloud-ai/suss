@@ -5,7 +5,7 @@ description: Print what summaries say as text, diff two of them to see what a ch
 
 # `suss inspect`
 
-Print what a summary file says, in a form meant for a person.
+`suss inspect` renders a summary file as text you can read. Run it to see what suss made of your code, to compare two extractions and see what a change did, or to follow one request through your routing hop by hop.
 
 ```
 # The project in the working directory, read first
@@ -77,7 +77,7 @@ fixtures/express/handlers.ts
 
 ## Reading a diff
 
-`--diff` reports behavior, not text. Two runs over the same code with a comment added produce transitions at different offsets, and the diff stays quiet, because which line a handler starts on is not something it does.
+`--diff` reports what the code now does differently. Add a comment to a file and the transitions come out at new offsets, but the diff prints nothing, because the line a handler starts on has nothing to do with how it behaves.
 
 ```
 $ suss inspect --diff before.json after.json
@@ -99,13 +99,13 @@ The first line counts what moved. Then comes a block per boundary, with up to tw
 
 A path whose body moved under the same status and the same test prints as one line with a marker on each field: `{ id, ~total: string -> number, +currency: string, -email }`. Anything else prints as a `~ was` line and a `now` line. `otherwise` marks the path taken when none of the tests above it matched.
 
-An outcome that several boundaries got from the same wrapper is said once, under a `From <wrapper>` heading, with how many of the boundaries it runs on have it and which ones do not. The files whose units moved come last.
+When several boundaries got the same outcome from one wrapper, the report prints it once under a `From <wrapper>` heading, with how many of the boundaries that wrapper runs on have that outcome and which ones are missing it. The files whose units moved come last.
 
 `--diff --json` writes `{ version, changed, summaries }`, with each entry marked `added`, `removed` or `changed`, and the added and removed transitions written out in full.
 
 ## `suss inspect --flow`
 
-Ask who serves a request, and get the chain back.
+You give `--flow` a request, and it works out which code ends up serving it and prints the chain of hops that get it there.
 
 `--flow` walks the routing a set of summaries declares, hop by hop. It reads both sides of the question, so point it at a folder containing both: a deploy template read with [`suss contract`](/reference/cli/contract) for the wiring, and [`suss extract`](/reference/cli/extract) over the code for the handlers that respond.
 
@@ -124,23 +124,23 @@ What serves it, as the declarations settle it:
     all answers it: * /api/orders/*   (src/orders-app/middleware/dispatch.ts)
 ```
 
-A bare path works too (`"GET /api/orders/123"`), and then suss cannot settle a host-header rule, and says so.
+A bare path works too (`"GET /api/orders/123"`). With no host in the request, suss cannot decide a host-header rule, and it tells you where that left it.
 
-The answer says how certain each hop is. A hop whose rule takes the request outright is certain. A hop gated on something the declarations leave open, an unevaluated condition field or a tie between two rules, is only possible. suss puts the chain containing that hop under its own heading and says which hop is unsettled.
+The answer marks how certain each hop is. A hop whose rule takes the request outright is certain. A hop gated on something the declarations leave open, such as an unevaluated condition field or a tie between two rules, is only possible. suss puts the chain containing that hop under its own heading and points at the hop it could not decide.
 
-When nothing serves the request, the answer says where the walk stopped: the response a listener's own default action gives it, or the last node the walk reached along with the rules there that refused the request, or a rule that took the request and sent it somewhere nothing here resolved. In that last case the output shows the reference the document wrote and the reason the reader stopped, such as a target another template declares.
+When nothing serves the request, the answer tells you where the walk stopped. That might be the response a listener's own default action gives it, or the last node the walk reached together with the rules there that refused the request, or a rule that took the request and sent it somewhere suss could not resolve. In that last case the output shows the reference the document wrote and why the reader stopped, such as a target that another template declares.
 
 If the wiring branches wider than the answer prints, the output ends with how many chains were left out.
 
-Two documents that both declare a listener called `HttpListener` are two listeners, and neither one's rules may serve the other's question. Ask about a name they share and suss refuses and lists the documents, so `--entry HttpListener --scope cloudformation:services/beta/template.yaml` says which stack you meant.
+Two documents that both declare a listener called `HttpListener` are two different listeners, and neither one's rules may serve the other's question. Ask about a name they share and suss refuses, listing the documents it found. Add `--entry HttpListener --scope cloudformation:services/beta/template.yaml` to tell it which stack you meant.
 
 `--flow --json` writes `{ request, entry, chains, omitted }`. Each chain is `{ entry, hops, end, certainty }`, and each hop is `{ from, to, edge, certainty }` plus a `match` describing the rule that admitted it.
 
 ## Reading the output
 
-Summaries group by source file, and within each group they render in source order with elbow and pipe decoration, so two summaries living in the same file look like it.
+Summaries group by source file, and within each group they render in source order with elbow and pipe decoration, so you can see at a glance that two summaries came out of the same file.
 
-Five things to read for, in order: the file path, the header line for each summary, the branch tree, the effect lines under each output, and the `→` markers pointing at other summaries.
+Read the output in this order: the file path, the header line for each summary, the branch tree, the effect lines under each output, and the `→` markers pointing at other summaries.
 
 ### Header line
 
@@ -148,7 +148,7 @@ Five things to read for, in order: the file path, the header line for each summa
 ├─ <name>  (<recognition> <kind> | line N [| <metadata>])
 ```
 
-| Field | What it says |
+| Field | What it means |
 |---|---|
 | `<name>` | `METHOD /path` for a REST endpoint, `<package>::<exportPath>` for a package export, the bare function name otherwise. A generic or colliding name is path-qualified (`app/routes/_app.tsx.loader`). |
 | `<recognition>` | Which pack produced this summary: `react`, `react-router`, `ts-rest`, `reachable`, and so on. |
@@ -179,11 +179,11 @@ Outputs come after `-> `:
 - `-> render` followed by an indented JSX-style subtree, for React component output. A self-closing leaf (`<X />`) collapses inline; an element with children expands to open and close tags.
 - `-> delegate -> <target>`, `-> emit "<event>"`, and `-> void`.
 
-An `elif` line with no `->` underneath it means the decision tree walked past that predicate and the leaf lives deeper inside a nested `if`. The source branch is not empty.
+An `elif` line with nothing under it means the decision tree walked past that predicate and the leaf turned up deeper inside a nested `if`. The branch in your source does have something in it.
 
 ### Effect lines
 
-Under each output, a line starting with `+ ` says what that branch also does on the way: a call, a mutation, an emission, a state change.
+Under each output, a line starting with `+ ` records what that branch also does on the way, such as a call or a state change.
 
 ```
         -> return { files }
@@ -210,7 +210,7 @@ A summary longer than about 50 body lines re-emits a compact `↳ <file> (cont.)
 
 ## Format stability
 
-`inspect` output is meant for reading, not for parsing. To consume what suss extracted from a program, read the summary JSON instead: `inspect` renders it, and the JSON is the artifact. [Summary format](/reference/summary-format) has its stability guarantees.
+`inspect` output is meant to be read by a person. If you want to feed what suss extracted into another program, read the summary JSON instead. `inspect` only renders that JSON, and [Summary format](/reference/summary-format) has its stability guarantees.
 
 Within v0, these parts of the rendering stay put across minor versions:
 
@@ -223,4 +223,4 @@ Within v0, these parts of the rendering stay put across minor versions:
 
 These change without warning: the tree-decoration characters (`├─`, `└─`, `│`), whitespace and column alignment, predicate rendering (operator precedence, parenthesization, identifier truncation), which `<metadata>` fields appear and in what order, the continuation marker text, line-wrap thresholds, and colour codes.
 
-[Exit codes](/reference/cli/exit-codes) says what `inspect` returns to the shell.
+[Exit codes](/reference/cli/exit-codes) lists what `inspect` returns to the shell.
