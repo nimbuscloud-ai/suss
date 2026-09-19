@@ -402,11 +402,9 @@ describe("packs for the other two languages", () => {
     return written.join("");
   };
 
-  // 0.20.0 told everyone setting one of these to write a dependency
-  // stub. For a helper the project wrote itself that was the wrong
-  // instruction and the reading that replaces it only arrived in
-  // 0.21.0, so these three are read past with a warning until 0.22.0
-  // rather than refused like the nine that state a dependency fact.
+  // These three describe the project's own code, which suss now reads
+  // itself, so they are read past with a warning rather than refused
+  // like the nine that state a dependency fact.
   it("warns and keeps going when a config still describes a helper", async () => {
     const helper = writeConfig(
       JSON.stringify({
@@ -425,7 +423,7 @@ describe("packs for the other two languages", () => {
 
     expect(said).toContain("ignores registrationHelpers");
     expect(said).toContain("reads the helper itself");
-    expect(said).toContain("0.22.0");
+    expect(said).toContain("Delete it from your config");
     expect(said).not.toContain("suss infer stub");
   });
 
@@ -438,7 +436,7 @@ describe("packs for the other two languages", () => {
 
     expect(said).toContain("ignores subjectFactories");
     expect(said).toContain("SAM template's event source");
-    expect(said).toContain("0.22.0");
+    expect(said).toContain("Delete it from your config");
     // A retired option describes the project's own code, so nothing
     // here should send somebody off to write a dependency stub.
     expect(said).not.toContain("suss infer stub");

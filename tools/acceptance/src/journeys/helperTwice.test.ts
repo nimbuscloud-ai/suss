@@ -72,12 +72,11 @@ describe("read a helper called twice from a file with no import", () => {
       "-o",
       summariesFile,
     ]);
-    // 0.20.0 told everyone setting this to write a dependency stub,
-    // which was the wrong instruction for a first-party helper, so the
-    // key is read past with a warning until 0.22.0 rather than refused.
+    // A retired option that describes the project's own code is read
+    // past with a warning rather than refused.
     expect(run.status, run.stderr).toBe(0);
     expect(run.stderr).toContain("ignores registrationHelpers");
-    expect(run.stderr).toContain("0.22.0");
+    expect(run.stderr).toContain("Delete it from your config");
     expect(run.stderr).not.toContain("suss infer stub");
   });
 });

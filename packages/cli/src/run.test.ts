@@ -590,12 +590,11 @@ describe("runCli extract", () => {
         "--allow-empty",
       ]),
     );
-    // The warning this option got in 0.20.0 told people to write a
-    // dependency stub, which cannot spell a helper the project wrote,
-    // so it is read past until 0.22.0 rather than refused.
+    // A retired option that describes the project's own code is read
+    // past with a warning rather than refused.
     expect(exit).toBe(0);
     expect(io.stderr).toContain("ignores registrationHelpers");
-    expect(io.stderr).toContain("0.22.0");
+    expect(io.stderr).toContain("Delete it from your config");
   });
 
   it("stops on an option a dependency stub states, and says where it goes", async () => {

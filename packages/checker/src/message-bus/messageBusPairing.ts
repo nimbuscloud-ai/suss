@@ -357,9 +357,8 @@ function redelivers(
   );
 }
 
-/** One call in this unit that a second delivery would make again. */
+/** One call in this unit that a second delivery would make again; the label already spells the method. */
 interface RepeatedCall {
-  method: string;
   callee: string | undefined;
   label: string;
 }
@@ -381,13 +380,7 @@ function repeatedCalls(summary: BehavioralSummary): RepeatedCall[] {
     own.semantics.method !== null &&
     REPEATS_HARM.has(own.semantics.method.toUpperCase())
   ) {
-    return [
-      {
-        method: own.semantics.method.toUpperCase(),
-        callee: undefined,
-        label: displayLabel(own) ?? own.semantics.method,
-      },
-    ];
+    return [{ callee: undefined, label: displayLabel(own) }];
   }
 
   const found: RepeatedCall[] = [];
@@ -401,16 +394,12 @@ function repeatedCalls(summary: BehavioralSummary): RepeatedCall[] {
       ) {
         continue;
       }
-      const label = displayLabel(effect.binding) ?? effect.interaction.method;
+      const label = displayLabel(effect.binding);
       if (seen.has(label)) {
         continue;
       }
       seen.add(label);
-      found.push({
-        method: effect.interaction.method.toUpperCase(),
-        callee: effect.callee,
-        label,
-      });
+      found.push({ callee: effect.callee, label });
     }
   }
   return found;
@@ -429,7 +418,7 @@ function makeRepeatUnsafeFinding(
     boundary: binding,
     provider: makeSide(consumer),
     consumer: makeSide(handler),
-    description: `SQS queue "${semantics.channel}" can deliver one message more than once, and ${handler.identity.name} makes ${call.method} ${call.label}${through} while handling it. A second delivery makes that call again. If the far side takes an idempotency key and this call sends one, it is safe and worth suppressing: a summary does not record the headers a call sends, so this cannot tell.`,
+    description: `SQS queue "${semantics.channel}" can deliver one message more than once, and ${handler.identity.name} makes ${call.label}${through} while handling it. A second delivery makes that call again. If the far side takes an idempotency key and this call sends one, it is safe and worth suppressing: a summary does not record the headers a call sends, so this cannot tell.`,
     severity: "warning",
   };
 }

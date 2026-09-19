@@ -15,7 +15,7 @@ suss contract --from <source> <spec> [-o <output.json>]
 
 | Flag or argument | Default | What it does |
 |---|---|---|
-| `--from <source>` | required | Which kind of source to read. One of the ten below. |
+| `--from <source>` | required | Which kind of source to read. One of the sources below. |
 | `<spec>` | required | A local path or an `http(s)` URL. |
 | `-o`, `--output <path>` | stdout | Write the summary JSON to a file. |
 
