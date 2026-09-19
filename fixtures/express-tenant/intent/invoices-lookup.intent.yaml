@@ -1,0 +1,33 @@
+kind: boundary
+
+name: invoices-lookup
+purpose: GET /invoices/:id returns one invoice, for the tenant the caller names.
+audience: web-client
+source: author
+
+boundary:
+  transport: http
+  semantics: rest
+  method: GET
+  path: /invoices/:id
+  receives:
+    headers:
+      x-tenant-id: { type: string, required: true }
+    params:
+      id: { type: string, required: true }
+
+transitions:
+  - id: no-tenant
+    when: the request carries no tenant header
+    response:
+      status: 401
+
+  - id: not-found
+    when: no invoice with that id belongs to the tenant
+    response:
+      status: 404
+
+  - id: found
+    when: the invoice exists
+    response:
+      status: 200
