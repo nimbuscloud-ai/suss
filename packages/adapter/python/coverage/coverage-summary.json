@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 4281,
-      "covered": 4145,
-      "skipped": 0,
-      "pct": 96.82
-    },
-    "statements": {
-      "total": 4341,
-      "covered": 4205,
+      "total": 4272,
+      "covered": 4138,
       "skipped": 0,
       "pct": 96.86
     },
+    "statements": {
+      "total": 4332,
+      "covered": 4198,
+      "skipped": 0,
+      "pct": 96.9
+    },
     "functions": {
-      "total": 890,
-      "covered": 886,
+      "total": 889,
+      "covered": 885,
       "skipped": 0,
       "pct": 99.55
     },
     "branches": {
-      "total": 3450,
-      "covered": 3050,
+      "total": 3438,
+      "covered": 3041,
       "skipped": 0,
-      "pct": 88.4
+      "pct": 88.45
     },
     "branchesTrue": {
       "total": 0,
@@ -397,28 +397,28 @@
   },
   "src/rawSql.ts": {
     "lines": {
-      "total": 124,
-      "covered": 118,
+      "total": 115,
+      "covered": 111,
       "skipped": 0,
-      "pct": 95.16
+      "pct": 96.52
     },
     "functions": {
-      "total": 25,
-      "covered": 25,
+      "total": 24,
+      "covered": 24,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 127,
-      "covered": 121,
+      "total": 118,
+      "covered": 114,
       "skipped": 0,
-      "pct": 95.27
+      "pct": 96.61
     },
     "branches": {
-      "total": 133,
-      "covered": 109,
+      "total": 121,
+      "covered": 100,
       "skipped": 0,
-      "pct": 81.95
+      "pct": 82.64
     }
   },
   "src/receiverTypes.ts": {

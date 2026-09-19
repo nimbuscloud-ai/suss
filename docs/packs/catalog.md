@@ -11,7 +11,7 @@ Every pack ships inside the CLI, so there is one install and nothing else to add
 npm install --save-dev @suss/cli
 ```
 
-Forty-seven packs read code today, across thirty-eight frameworks, eight HTTP and GraphQL clients, and the Node runtime. Ten contract readers turn a declared artifact into the same summary structure. Team-authored intent docs are their own stream, read by `@suss/contract-intent`.
+Forty-nine packs read code today, across forty frameworks, eight HTTP and GraphQL clients, and the Node runtime. Ten contract readers turn a declared artifact into the same summary structure. Team-authored intent docs are their own stream, read by `@suss/contract-intent`.
 
 Most of that is TypeScript and JavaScript. Four of the packs read another language: flask-restx and FastAPI read Python through `@suss/adapter-python`, and graphql-ruby and rails read Ruby through `@suss/adapter-ruby`. `suss extract` reaches those two adapters as well, and the [Python and Ruby guide](/guides/python-and-ruby) shows how.
 
@@ -107,11 +107,13 @@ An effects pack reads the calls inside a unit another pack discovered: a query, 
 | [`aws-ssm`](../../packages/framework/aws-ssm) | AWS SSM Parameter Store calls, emits storage-access interactions against the parameter. | ![](../../.github/badges/coverage-aws-ssm.svg) |
 | [`bigquery`](../../packages/framework/bigquery) | BigQuery queries and table calls, emits storage-access interactions with the dataset as the scope. | ![](../../.github/badges/coverage-bigquery.svg) |
 | [`bigquery-python`](../../packages/framework/bigquery-python) | BigQuery calls (Python): the statement a client or an Airflow hook is handed, read for the tables it touches, and the calls that say which table without writing SQL. | ![](../../.github/badges/coverage-bigquery-python.svg) |
+| [`bigquery-ruby`](../../packages/framework/bigquery-ruby) | google-cloud-bigquery calls (Ruby): a call matches when its receiver follows back to a client the gem handed out, and the statement it was given is parsed for the tables it touches. | ![](../../.github/badges/coverage-bigquery-ruby.svg) |
 | [`drizzle`](../../packages/framework/drizzle) | Drizzle ORM query-builder and relational-query calls, emits storage-access interactions with SQL table names. | ![](../../.github/badges/coverage-drizzle.svg) |
 | [`gcs`](../../packages/framework/gcs) | Google Cloud Storage calls, emits storage-access interactions. | ![](../../.github/badges/coverage-gcs.svg) |
 | [`mongoose`](../../packages/framework/mongoose) | Mongoose model calls, emits storage-access interactions against the collection a model's `.model(...)` call declares. | ![](../../.github/badges/coverage-mongoose.svg) |
 | [`node`](../../packages/runtime/node) | Node.js runtime primitives, scheduling, the `process` surface (incl. `process.env.X` config-read interactions), module-loading globals, emitted as interaction effects. | ![](../../.github/badges/coverage-runtime-node.svg) |
 | [`pg`](../../packages/framework/pg) | node-postgres queries, emits storage-access interactions with the tables each statement touches. | ![](../../.github/badges/coverage-pg.svg) |
+| [`pg-ruby`](../../packages/framework/pg-ruby) | pg gem calls (Ruby): a call matches when its receiver follows back to a connection the gem handed out, and the statement it was given is parsed for the tables it touches. | ![](../../.github/badges/coverage-pg-ruby.svg) |
 | [`prisma`](../../packages/framework/prisma) | Prisma client calls, emits storage-access interactions per read / write. | ![](../../.github/badges/coverage-prisma.svg) |
 | [`redis`](../../packages/framework/redis) | Redis, Valkey and node-redis commands, emits storage-access interactions. | ![](../../.github/badges/coverage-redis.svg) |
 | [`sqlalchemy`](../../packages/framework/sqlalchemy) | SQLAlchemy calls (Python): says which types a query comes back as and which methods write, and the adapter matches a call chain by resolving through a project's own base class to what the method behind it says it returns. | ![](../../.github/badges/coverage-sqlalchemy.svg) |
