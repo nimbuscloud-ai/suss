@@ -1802,8 +1802,9 @@ describe("what message-bus pairing takes for granted", () => {
     const repeat = findings.filter((f) => f.kind === "repeatUnsafeConsumer");
     expect(repeat).toHaveLength(1);
     expect(repeat[0]?.severity).toBe("warning");
-    expect(repeat[0]?.description).toContain("POST");
-    expect(repeat[0]?.description).toContain("stripe.charges.create");
+    expect(repeat[0]?.description).toContain(
+      "handler makes POST /v1/charges through stripe.charges.create while handling it",
+    );
   });
 
   it("says nothing when the queue is FIFO", () => {
@@ -1878,7 +1879,9 @@ describe("what message-bus pairing takes for granted", () => {
 
     const repeat = findings.filter((f) => f.kind === "repeatUnsafeConsumer");
     expect(repeat).toHaveLength(1);
-    expect(repeat[0]?.description).toContain("POST /v1/charges");
+    expect(repeat[0]?.description).toContain(
+      "charge_order makes POST /v1/charges while handling it",
+    );
   });
 
   it("says nothing about a method that lands on the same resource twice", () => {

@@ -410,7 +410,7 @@ An SQS queue that is not FIFO can deliver one message more than once, and the ha
 
 ```
 [WARNING] repeatUnsafeConsumer
-  SQS queue "ChargesQueue" can deliver one message more than once, and handler makes POST POST /v1/charges while handling it. A second delivery makes that call again. If the far side takes an idempotency key and this call sends one, it is safe and worth suppressing: a summary does not record the headers a call sends, so this cannot tell.
+  SQS queue "ChargesQueue" can deliver one message more than once, and handler makes POST /v1/charges while handling it. A second delivery makes that call again. If the far side takes an idempotency key and this call sends one, it is safe and worth suppressing: a summary does not record the headers a call sends, so this cannot tell.
   consumer: src/handlers/chargeWorker.ts::handler (src/handlers/chargeWorker.ts:3)
   boundary: cloudformation (aws_sqs)
 ```
