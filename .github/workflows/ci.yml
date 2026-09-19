@@ -94,15 +94,16 @@ jobs:
 
       # One `tsc --build` over the project graph, not one process per
       # package. The incremental state under each package's .tsbuild is
-      # cached, so an unchanged package costs nothing.
+      # cached, so an unchanged package costs nothing. The key moves
+      # with the same sources as the turbo cache, so a run over sources
+      # already typechecked saves nothing.
       - name: Cache the typecheck graph
         if: steps.prepare.outputs.docs_only != 'true'
         uses: actions/cache@v4
         with:
           path: "**/.tsbuild"
-          key: tsbuild-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+          key: tsbuild-${{ runner.os }}-${{ steps.prepare.outputs.inputs }}
           restore-keys: |
-            tsbuild-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
             tsbuild-${{ runner.os }}-
 
       - name: Typecheck

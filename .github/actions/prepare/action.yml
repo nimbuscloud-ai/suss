@@ -8,6 +8,9 @@ outputs:
   docs_only:
     description: Whether every changed path is documentation, markdown, a badge, or an issue template.
     value: ${{ steps.diff.outputs.docs_only }}
+  inputs:
+    description: The hash of the sources turbo reads, for other caches that move with them.
+    value: ${{ steps.turbo.outputs.inputs }}
 
 runs:
   using: composite
@@ -62,15 +65,8 @@ runs:
 
     # Turbo persists task outputs under .turbo/. Caching it between runs
     # lets the turbo tasks hit "FULL TURBO" for packages whose hashed
-    # inputs did not change. The key includes the commit SHA so each run
-    # writes its own entry; restore-keys walk back to the nearest
-    # previous one. Dependency churn changes package-lock.json, which
-    # changes the key and drops the stale entries.
-    - name: Cache turbo
-      uses: actions/cache@v4
+    # inputs did not change.
+    - uses: ./.github/actions/turbo-cache
+      id: turbo
       with:
-        path: .turbo
-        key: turbo-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
-        restore-keys: |
-          turbo-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
-          turbo-${{ runner.os }}-
+        name: ${{ github.job }}
