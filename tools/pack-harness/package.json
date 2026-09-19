@@ -23,8 +23,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@suss/adapter-ruby": "*",
     "@suss/adapter-typescript": "*",
     "@suss/behavioral-ir": "*",
+    "@suss/datalog": "*",
     "@suss/extractor": "*",
     "@suss/test-project": "*",
     "ts-morph": "^23.0.0"
