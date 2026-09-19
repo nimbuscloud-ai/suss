@@ -644,6 +644,22 @@ describe("a statement a call was handed as a tagged template", () => {
 
     expect(ops.valueAt(0)?.holes()).toEqual([]);
   });
+
+  it("gives each hole as a value, so a name the program settled reads", () => {
+    const ops = opsForLastCall(`
+      import Deck from "tapedeck";
+      declare const deck: Deck;
+      const SIDE_TABLE = "archive.sides";
+      export function play(side: string) {
+        return deck.queryText(\`SELECT id FROM \${SIDE_TABLE} WHERE side = \${side}\`);
+      }
+    `);
+    const values = ops.valueAt(0)?.interpolated?.() ?? [];
+
+    expect(values).toHaveLength(2);
+    expect(values[0]?.name("nothing")).toBe("archive.sides");
+    expect(values[1]?.name("nothing")).toBeNull();
+  });
 });
 
 describe("a bare call of a bound name", () => {

@@ -132,6 +132,17 @@ export interface ValueOps {
    * there, so a query that hands over a table object can still be read.
    */
   holes(): readonly (CallOps | null)[];
+  /**
+   * The same holes as values, in the same order, for a reader that
+   * wants what the source settled a hole to rather than what call was
+   * written there. A table kept in a module constant is the case: the
+   * hole is a name, not a call, so `holes` gives null for it and this
+   * gives the constant.
+   *
+   * An adapter that has not implemented this leaves it out, and a
+   * reader then has only the calls.
+   */
+  interpolated?(): readonly ValueOps[];
 }
 
 /** One entry of an object a call states. */

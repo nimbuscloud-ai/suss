@@ -318,6 +318,7 @@ function valueOpsFor(value: Node, resolve: Resolve): ValueOps {
     },
     parts: () => literalParts(written()),
     holes: () => templateHoles(written(), resolve),
+    interpolated: () => interpolatedValues(written(), resolve),
   };
 }
 
@@ -356,6 +357,17 @@ function templateHoles(
   return written
     .getTemplateSpans()
     .map((span) => opsOverCall(span.getExpression(), resolve));
+}
+
+/** What the source interpolated between those pieces, as values. */
+function interpolatedValues(value: Node, resolve: Resolve): ValueOps[] {
+  const written = untagged(value);
+  if (!Node.isTemplateExpression(written)) {
+    return [];
+  }
+  return written
+    .getTemplateSpans()
+    .map((span) => valueOpsFor(span.getExpression(), resolve));
 }
 
 /**
