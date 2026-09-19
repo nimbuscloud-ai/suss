@@ -9,7 +9,7 @@
 // calls count as the unit's cannot have branches that do not.
 //
 // This is ECMAScript knowledge, not runtime or framework knowledge, so
-// it lives in the adapter (see docs/architecture.md, "Adapter vs pack
+// it lives in the adapter (see docs/theory/architecture.md, "Adapter vs pack
 // ownership"). A nested `FunctionExpression` / `ArrowFunction` is
 // lexical scope: a Promise executor, a `.then` callback, an
 // `array.forEach` body, an IIFE. The behavior inside it (calls, config

@@ -1,4 +1,4 @@
-// The rule counts docs/resolving-values.md quotes, checked against the
+// The rule counts docs/theory/resolving-values.md quotes, checked against the
 // rule list itself rather than trusting a number someone moved by hand.
 import fs from "node:fs";
 import path from "node:path";
@@ -13,6 +13,7 @@ const DOC_PATH = path.join(
   "..",
   "..",
   "docs",
+  "theory",
   "resolving-values.md",
 );
 
@@ -20,7 +21,7 @@ const DOC_PATH = path.join(
 const RULE_COUNTS =
   /(\d+)\s+rules[\s\S]{0,80}?(\d+)\s+of them derive `?stepsTo/g;
 
-describe("docs/resolving-values.md", () => {
+describe("docs/theory/resolving-values.md", () => {
   it("quotes the rule count and the stepsTo count the source actually has", () => {
     const doc = fs.readFileSync(DOC_PATH, "utf8");
     const matches = [...doc.matchAll(RULE_COUNTS)];

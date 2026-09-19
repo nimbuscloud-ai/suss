@@ -32,7 +32,7 @@ How each of those is decided, and where it stops: [how the Python adapter reads 
 
 ## Reading a value
 
-Nothing outside the facility reads a node's text to find out what a value is. `values/evaluator.ts` is the evaluator: `evaluatedValue` runs the statements ahead of an expression and says what it comes to, and `stringValueOf` gives the string when it settles to one, so a path built out of an f-string or a module constant reads the same as one written out. `facts/resolve.ts` says where a name came from, with `writtenValueOf` and `originsOf`, and the literal readers in `ast.ts` (`stringLiteralValue`, `booleanLiteralValue`) are for the places a literal really is written out. When one of them cannot read a spelling, the case goes into the evaluator's lowering or the resolution rules; `npm run check:readers` at the repo root fails on a reader written beside a call site instead. [`docs/internal/style.md#reading-a-value`](../../../docs/internal/style.md#reading-a-value) has the rule.
+Nothing outside the facility reads a node's text to find out what a value is. `values/evaluator.ts` is the evaluator: `evaluatedValue` runs the statements ahead of an expression and says what it comes to, and `stringValueOf` gives the string when it settles to one, so a path built out of an f-string or a module constant reads the same as one written out. `facts/resolve.ts` says where a name came from, with `writtenValueOf` and `originsOf`, and the literal readers in `ast.ts` (`stringLiteralValue`, `booleanLiteralValue`) are for the places a literal really is written out. When one of them cannot read a spelling, the case goes into the evaluator's lowering or the resolution rules; `npm run check:readers` at the repo root fails on a reader written beside a call site instead. [`design/docs-internal/style.md#reading-a-value`](../../../design/docs-internal/style.md#reading-a-value) has the rule.
 
 ## Where it fits
 
@@ -44,7 +44,7 @@ It depends on `@suss/extractor`, `@suss/behavioral-ir`, `@suss/datalog` and `web
 
 - [Documentation](https://nimbuscloud-ai.github.io/suss/)
 - [Python and Ruby](https://nimbuscloud-ai.github.io/suss/guides/python-and-ruby)
-- [Every pack suss ships](https://nimbuscloud-ai.github.io/suss/reference/packages)
+- [Every pack suss ships](https://nimbuscloud-ai.github.io/suss/packs/catalog)
 - [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ![coverage](../../../.github/badges/coverage-python.svg)

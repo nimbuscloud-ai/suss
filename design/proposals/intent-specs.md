@@ -142,7 +142,7 @@ finding.
    The purpose it serves, the state it owns, the actions it exposes,
    and the canonical scenario that demonstrates the purpose. The
    long-form mapping to Daniel Jackson's concept-design vocabulary
-   lives in [`concept-design.md`](../../docs/internal/concept-design.md), and this
+   lives in [`concept-design.md`](../../docs/theory/prior-art.md), and this
    proposal points there rather than arguing it again. v0.3 ships this.
 
 Outcome intent (PRDs) is a level above all three: a PRD's scenarios link to
@@ -771,10 +771,10 @@ The Fastify worked example is also the v0.1 integration test:
 - New: `docs/guides/author-intent-specs.md`, a how-to for the v0.1
   authoring workflow (PRD + system intent file shapes).
 - New: `docs/reference/intent-schema.md`, the schema reference.
-- Updated: `docs/contracts.md`. "intent" becomes a fourth source
+- Updated: `docs/why/kinds-of-contract.md`. "intent" becomes a fourth source
   alongside specification / observation / derivation, and it should show
   the split between PM-authored and engineer-authored intent.
-- Updated: `docs/internal/concept-design.md`. The PRD section links
+- Updated: `docs/theory/prior-art.md`. The PRD section links
   to this proposal, and says what has shipped once v0.1 ships.
 - Updated: `design/backlog.md`. `#intent-specs` moves to
   "in flight" with the v0.x sequencing.

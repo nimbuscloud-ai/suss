@@ -10,7 +10,7 @@
  *
  * EXEMPT lists the files that already fail. Entries come out as the
  * copies are deleted, and one goes in only with a reason on the line.
- * The rule is in docs/internal/style.md#reading-a-value.
+ * The rule is in design/docs-internal/style.md#reading-a-value.
  */
 
 import fs from "node:fs";
@@ -499,7 +499,7 @@ function main() {
       "A value is read through the evaluator or the resolution store, never off the syntax at the position.",
     );
     console.error(
-      "See docs/internal/style.md#reading-a-value. Call the facility, or add an EXEMPT entry here with a reason:",
+      "See design/docs-internal/style.md#reading-a-value. Call the facility, or add an EXEMPT entry here with a reason:",
     );
     for (const offense of offenses) {
       console.error(`  - ${offense}`);

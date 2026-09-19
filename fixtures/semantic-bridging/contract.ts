@@ -1,4 +1,4 @@
-// The motivating example from docs/motivation.md.
+// The motivating example from docs/why/the-problem.md.
 // Provider returns 200 with status: "deleted" for soft-deleted users,
 // but consumer assumes 200 means active.
 

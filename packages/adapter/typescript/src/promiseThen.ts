@@ -2,7 +2,7 @@
 // callback parameters.
 //
 // ECMAScript defines what `Promise.prototype.then` resolves to, so this
-// binding lives in the adapter (docs/architecture.md, "Adapter vs pack
+// binding lives in the adapter (docs/theory/architecture.md, "Adapter vs pack
 // ownership"). In `expr.then(cb)` the first parameter of `cb` is the
 // resolved value of `expr`. The proposal
 // (design/proposals/adapter-ecmascript-spec.md) describes a

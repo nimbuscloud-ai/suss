@@ -24,7 +24,7 @@ seen still folds when the pieces it is made of do.
 
 So a value in this repository is read here and nowhere else. [The rule
 and each adapter's entry
-points](../../docs/internal/style.md#reading-a-value) say where to call
+points](../../design/docs-internal/style.md#reading-a-value) say where to call
 in from, and `npm run check:readers` fails on a reader written beside a
 call site instead.
 

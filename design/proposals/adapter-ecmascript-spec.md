@@ -21,7 +21,7 @@ Two costs:
 
 Both fall on the adapter, not on packs, because both are language-level. ECMAScript defines what a nested function expression is and what `Promise.then` resolves to. Runtime packs should only own runtime-specific behavior: timer semantics, the `process` surface, module loading.
 
-We hit this when dogfooding `runtime-node` against Twenty, where the recognizer scope-isolation gap surfaced, and again when drafting `docs/tutorial/pair-frontend-backend.md`: the `.then(res => res.json()).then(data => setName(data.name))` chain produced no findings against the OpenAPI contract.
+We hit this when dogfooding `runtime-node` against Twenty, where the recognizer scope-isolation gap surfaced, and again when drafting `docs/guides/check-against-openapi.md`: the `.then(res => res.json()).then(data => setName(data.name))` chain produced no findings against the OpenAPI contract.
 
 ## Scope (v0)
 
@@ -124,13 +124,13 @@ Recognizers already handle opacity. The new annotation either gives them a resol
    - Promise parameter binding for `fetch(url).then(r => r.json()).then(data => ...)`
 2. `runtime-node` migration test: existing `setTimeout` / `setImmediate` fixtures pass with the body-walking deleted from the pack.
 3. Re-extract Twenty, and confirm that scheduled paths which previously dropped now appear in coverage.
-4. Re-run the pair-frontend-backend tutorial end-to-end (`docs/tutorial/pair-frontend-backend.md`). The expected findings (`unhandledProviderCase` for 404, `consumerFieldMismatch` for `.name` vs `.fullName`) should fire. If they do, the tutorial unblocks.
+4. Re-run the pair-frontend-backend tutorial end-to-end (`docs/guides/check-against-openapi.md`). The expected findings (`unhandledProviderCase` for 404, `consumerFieldMismatch` for `.name` vs `.fullName`) should fire. If they do, the tutorial unblocks.
 
 ## Doc impact
 
-- `docs/architecture.md`: the "Adapter vs pack ownership" section already states the principle; add a sentence giving walker descent and Promise binding as the concrete examples.
-- `docs/packs.md`: cross-reference in the "what belongs in a pack" section.
-- `docs/guides/writing-a-pack.md`: the runtime-node anatomy needs an update saying that body-walking is no longer the pack's concern.
+- `docs/theory/architecture.md`: the "Adapter vs pack ownership" section already states the principle; add a sentence giving walker descent and Promise binding as the concrete examples.
+- `docs/packs/what-a-pack-is.md`: cross-reference in the "what belongs in a pack" section.
+- `docs/packs/write-a-pack.md`: the runtime-node anatomy needs an update saying that body-walking is no longer the pack's concern.
 - `design/proposals/runtime-node.md`: add a note saying that body-walking moved to the adapter.
 
 ## Cost estimate

@@ -48,7 +48,7 @@ under `run` saying what happened and what to do, so a fixer reacting to
 the red exit has something to act on. Pass `--allow-empty` when an
 empty run is expected.
 
-Full flags for every command: [docs/reference/cli.md](https://github.com/nimbuscloud-ai/suss/blob/main/docs/reference/cli.md).
+Full flags for every command: [docs/reference/cli/index.md](https://github.com/nimbuscloud-ai/suss/blob/main/docs/reference/cli/index.md).
 
 ## Asking one question
 
@@ -75,7 +75,7 @@ Ten questions, in these words:
 Run `suss ask` with no question and it prints this list back.
 
 Five have a symbol form: `<- <unit>`, `<unit> ->`, and the rest under
-[`suss ask`](https://github.com/nimbuscloud-ai/suss/blob/main/docs/reference/cli.md#suss-ask),
+[`suss ask`](https://github.com/nimbuscloud-ai/suss/blob/main/docs/reference/cli/ask.md),
 which also gives the spellings a boundary accepts.
 
 `--dir` says which summaries to read. `--project` says where the
@@ -155,7 +155,7 @@ findings rather than on the exit code.
 
 The summary format is versioned. Pin to `v0` and check the schema
 version before parsing:
-[docs/behavioral-summary-format.md](https://github.com/nimbuscloud-ai/suss/blob/main/docs/behavioral-summary-format.md).
+[docs/reference/summary-format.md](https://github.com/nimbuscloud-ai/suss/blob/main/docs/reference/summary-format.md).
 
 Human text from `inspect` and `check` is not a stable interface. Use
 `--json` on `check`, `ask`, `inspect --diff`, and `inspect --flow`.
@@ -184,13 +184,13 @@ An empty report has three causes and they are distinguishable.
   expected.
 - A pack read your files and recognised none of them. The pack health
   block says so; see
-  [docs/guides/pack-health.md](https://github.com/nimbuscloud-ai/suss/blob/main/docs/guides/pack-health.md).
+  [docs/guides/fix-an-empty-run.md](https://github.com/nimbuscloud-ai/suss/blob/main/docs/guides/fix-an-empty-run.md).
 - Both sides agree. This is the only one that means what it looks like.
 
 ## Where the rest lives
 
 - [Docs site](https://nimbuscloud-ai.github.io/suss/)
-- [What a boundary is](https://github.com/nimbuscloud-ai/suss/blob/main/docs/boundary-semantics.md)
-- [Writing a pack](https://github.com/nimbuscloud-ai/suss/blob/main/docs/guides/writing-a-pack.md) for a framework suss
+- [What a boundary is](https://github.com/nimbuscloud-ai/suss/blob/main/docs/theory/boundary-semantics.md)
+- [Write a pack](https://github.com/nimbuscloud-ai/suss/blob/main/docs/packs/write-a-pack.md) for a framework suss
   does not read yet
-- [Suppressions](https://github.com/nimbuscloud-ai/suss/blob/main/docs/suppressions.md)
+- [Accept a finding](https://github.com/nimbuscloud-ai/suss/blob/main/docs/guides/accept-a-finding.md)

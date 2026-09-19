@@ -201,6 +201,6 @@ on is deliberately left out.
    reorder.
 3. **Publish scope + versioning**: all packages vs consumer
    surface; changesets vs manual.
-4. **Draft tutorial** (`docs/tutorial/pair-frontend-backend.md`,
+4. **Draft tutorial** (`docs/guides/check-against-openapi.md`,
    currently untracked): finish and wire into the docs nav during
    step 1, or drop.

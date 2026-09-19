@@ -14,7 +14,7 @@ import path from "node:path";
 import { marker, packTables } from "./packTables.mjs";
 import { PACKAGES_DIR } from "./workspacePackages.mjs";
 
-const PAGE = path.join(PACKAGES_DIR, "..", "docs", "reference", "packages.md");
+const PAGE = path.join(PACKAGES_DIR, "..", "docs", "packs", "catalog.md");
 
 const before = fs.readFileSync(PAGE, "utf8");
 let after = before;
@@ -24,7 +24,7 @@ for (const [kind, table] of Object.entries(packTables())) {
   const between = new RegExp(`${escaped(start)}[\\s\\S]*?${escaped(end)}`, "m");
   if (!between.test(after)) {
     process.stderr.write(
-      `docs/reference/packages.md has no ${kind} section to write. Put ${start} and ${end} around the table.\n`,
+      `docs/packs/catalog.md has no ${kind} section to write. Put ${start} and ${end} around the table.\n`,
     );
     process.exit(1);
   }
@@ -42,10 +42,10 @@ if (after === before) {
 
 if (process.argv.includes("--check")) {
   process.stderr.write(
-    "docs/reference/packages.md is out of date with what the packs declare. Run `npm run docs:packs`.\n",
+    "docs/packs/catalog.md is out of date with what the packs declare. Run `npm run docs:packs`.\n",
   );
   process.exit(1);
 }
 
 fs.writeFileSync(PAGE, after);
-process.stdout.write("Wrote the pack tables in docs/reference/packages.md.\n");
+process.stdout.write("Wrote the pack tables in docs/packs/catalog.md.\n");

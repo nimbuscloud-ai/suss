@@ -16,7 +16,7 @@ Zero dependencies: `@suss/behavioral-ir` is the foundation everyone else imports
 
 ## Status
 
-Stable. The IR types and `diffSummaries` are the public API. The format is also published as a [JSON Schema](schema/behavioral-summary.schema.json) and a [spec document](../../docs/behavioral-summary-format.md) so consumers in any language can validate and interpret summaries without taking a runtime dependency on this package.
+Stable. The IR types and `diffSummaries` are the public API. The format is also published as a [JSON Schema](schema/behavioral-summary.schema.json) and a [spec document](../../docs/reference/summary-format.md) so consumers in any language can validate and interpret summaries without taking a runtime dependency on this package.
 
 ## Minimal usage
 
@@ -31,7 +31,7 @@ function firstTransition(summary: BehavioralSummary): Transition | undefined {
 ## More
 
 - [Documentation](https://nimbuscloud-ai.github.io/suss/)
-- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/reference/packages)
+- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/packs/catalog)
 - [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ## Coverage
@@ -44,4 +44,4 @@ Licensed under Apache 2.0. See [LICENSE](../../LICENSE).
 
 ---
 
-For the canonical design, see [docs/architecture.md](../../docs/architecture.md).
+For the canonical design, see [docs/theory/architecture.md](../../docs/theory/architecture.md).

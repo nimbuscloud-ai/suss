@@ -16,7 +16,7 @@ It imports `@suss/behavioral-ir` for type references and `@suss/extractor` for t
 
 ## Reading a value
 
-Nothing outside the facility reads the syntax to find out what a value is. `discovery/resolveValue.ts` is the entry point most callers want: `stringValueOf` folds a template and follows a name to the string it was written as, `objectLiteralOf` and `propertiesOf` read an object through whatever name it arrived under and fold a spread into it, `functionValueOf` and `writtenNodeOf` say which function or which expression a reference comes to. Under those sit the `ResolutionStore` in `facts/store.ts` (`resolveWrittenValue`, `resolveObject`, `resolveCallable`, `argumentsPassedTo`, `importedNamesOf`, `importOriginsOf`, `exportsOf`), `resolve/functionBehind.ts`, `walk/unwrap.ts` for casts and parentheses, and `discovery/importScan.ts` for imports. Packs reach all of it through this package's exports. When the facility cannot read a spelling, the case goes into the facility; `npm run check:readers` at the repo root fails on a reader written beside a call site instead. [`docs/internal/style.md#reading-a-value`](../../../docs/internal/style.md#reading-a-value) has the rule.
+Nothing outside the facility reads the syntax to find out what a value is. `discovery/resolveValue.ts` is the entry point most callers want: `stringValueOf` folds a template and follows a name to the string it was written as, `objectLiteralOf` and `propertiesOf` read an object through whatever name it arrived under and fold a spread into it, `functionValueOf` and `writtenNodeOf` say which function or which expression a reference comes to. Under those sit the `ResolutionStore` in `facts/store.ts` (`resolveWrittenValue`, `resolveObject`, `resolveCallable`, `argumentsPassedTo`, `importedNamesOf`, `importOriginsOf`, `exportsOf`), `resolve/functionBehind.ts`, `walk/unwrap.ts` for casts and parentheses, and `discovery/importScan.ts` for imports. Packs reach all of it through this package's exports. When the facility cannot read a spelling, the case goes into the facility; `npm run check:readers` at the repo root fails on a reader written beside a call site instead. [`design/docs-internal/style.md#reading-a-value`](../../../design/docs-internal/style.md#reading-a-value) has the rule.
 
 ## How a project is loaded
 
@@ -46,12 +46,12 @@ This adapter uses the extraction cache shared across every language adapter, fro
 
 ## Status
 
-Stable. Public API: `createTypeScriptAdapter` returns an adapter with `extractFromFiles` and `extractAll` methods. Provider-side extraction (handlers, terminals, contracts, body shapes) and client-side extraction (call sites, response field tracking) are both supported. See [`docs/extraction-algorithm.md`](../../../docs/extraction-algorithm.md) for the algorithm and [`design/status.md`](../../../design/status.md) for the capability matrix.
+Stable. Public API: `createTypeScriptAdapter` returns an adapter with `extractFromFiles` and `extractAll` methods. Provider-side extraction (handlers, terminals, contracts, body shapes) and client-side extraction (call sites, response field tracking) are both supported. See [`docs/theory/extraction-algorithm.md`](../../../docs/theory/extraction-algorithm.md) for the algorithm and [`design/status.md`](../../../design/status.md) for the capability matrix.
 
 ## More
 
 - [Documentation](https://nimbuscloud-ai.github.io/suss/)
-- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/reference/packages)
+- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/packs/catalog)
 - [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ## Coverage
@@ -64,4 +64,4 @@ Licensed under Apache 2.0. See [LICENSE](../../../LICENSE).
 
 ---
 
-For the canonical design, see [docs/architecture.md](../../../docs/architecture.md).
+For the canonical design, see [docs/theory/architecture.md](../../../docs/theory/architecture.md).

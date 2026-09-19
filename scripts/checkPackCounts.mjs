@@ -103,37 +103,37 @@ const claims = [
     about: "contract sources `--from` takes",
   },
   {
-    file: "docs/reference/packages.md",
+    file: "docs/packs/catalog.md",
     pattern: /^([\w-]+) packs read code today/im,
     expected: packs.length,
     about: "packs the CLI ships",
   },
   {
-    file: "docs/reference/packages.md",
+    file: "docs/packs/catalog.md",
     pattern: /packs read code today, across ([\w-]+) frameworks/i,
     expected: frameworks.length,
     about: "packages under packages/framework",
   },
   {
-    file: "docs/reference/packages.md",
+    file: "docs/packs/catalog.md",
     pattern: /([\w-]+) HTTP and GraphQL clients/i,
     expected: clients.length,
     about: "packages under packages/client",
   },
   {
-    file: "docs/reference/packages.md",
+    file: "docs/packs/catalog.md",
     pattern: /([\w-]+) contract readers turn a declared artifact/i,
     expected: contractSources().length,
     about: "contract sources `--from` takes",
   },
   {
-    file: "docs/internal/releasing.md",
+    file: "design/docs-internal/releasing.md",
     pattern: /All ([\w-]+) packages share one version/i,
     expected: publishedPackages().length,
     about: "packages a release publishes",
   },
   {
-    file: "docs/internal/releasing.md",
+    file: "design/docs-internal/releasing.md",
     pattern: /- ([\w-]+) packages on the registry at the new version/i,
     expected: publishedPackages().length,
     about: "packages a release publishes",
@@ -160,7 +160,7 @@ for (const claim of claims) {
 }
 
 // checkPacks.mjs applies the same rule to the README.
-const reference = "docs/reference/packages.md";
+const reference = "docs/packs/catalog.md";
 const text = fs.readFileSync(path.join(ROOT, reference), "utf8");
 const missing = packs.filter(
   (name) => !new RegExp(`\`[^\`]*\\b${name}\\b[^\`]*\``).test(text),

@@ -6,12 +6,12 @@ workspace package under `tools/`, never published.
 Full reference (architecture, adjudication semantics, tier/corpus
 protocol, per-pack extension checklist, the JSX/render-boundary
 design, second-language path):
-[`docs/internal/differential-fuzzing.md`](../../docs/internal/differential-fuzzing.md).
+[`design/docs-internal/differential-fuzzing.md`](../../design/docs-internal/differential-fuzzing.md).
 
 ## In one paragraph
 
 The extraction algorithm promises exhaustiveness and "no false
-conditions" ([`docs/extraction-algorithm.md`](../../docs/extraction-algorithm.md)).
+conditions" ([`docs/theory/extraction-algorithm.md`](../../docs/theory/extraction-algorithm.md)).
 This package checks both mechanically. fast-check generates
 handler-shaped programs from a small framework-neutral DSL. Each
 program is extracted through the real pipeline (an in-memory ts-morph

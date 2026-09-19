@@ -5,7 +5,7 @@
 // spelled, how a handler is registered) and the response stub the vm
 // needs. A `FuzzTarget` bundles exactly that variation, so pointing
 // the fuzzer at another HTTP pack is: one renderer, one stub, one
-// pack import. See docs/internal/differential-fuzzing.md for the
+// pack import. See design/docs-internal/differential-fuzzing.md for the
 // extension checklist (including the JSX/render-boundary design).
 
 import expressFramework from "@suss/framework-express";

@@ -2,7 +2,7 @@
 // checkStyle.mjs: the conventions Biome has no rule for.
 //
 // Biome covers formatting and most lint rules. Two conventions in
-// docs/internal/style.md it cannot express live here instead, so they
+// design/docs-internal/style.md it cannot express live here instead, so they
 // fail a build rather than waiting for someone to spot them in review.
 
 import fs from "node:fs";
@@ -115,6 +115,6 @@ for (const violation of violations) {
   );
 }
 process.stderr.write(
-  `${violations.length} ${violations.length === 1 ? "line breaks" : "lines break"} a convention in docs/internal/style.md.\n`,
+  `${violations.length} ${violations.length === 1 ? "line breaks" : "lines break"} a convention in design/docs-internal/style.md.\n`,
 );
 process.exit(1);

@@ -12,9 +12,9 @@ It depends on `@suss/behavioral-ir` and a YAML parser, and it produces data rath
 
 ## More
 
-- [Contract sources](https://nimbuscloud-ai.github.io/suss/contract-sources)
+- [Contract sources](https://nimbuscloud-ai.github.io/suss/packs/contract-sources)
 - [Documentation](https://nimbuscloud-ai.github.io/suss/)
-- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/reference/packages)
+- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/packs/catalog)
 - [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ![coverage](../../../.github/badges/coverage-manifest-aws.svg)

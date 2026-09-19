@@ -100,7 +100,7 @@ suss ships as `@suss/cli`, with every pack inside it, so there is one install:
 npm install --save-dev @suss/cli
 ```
 
-A pack is reached by name, `suss extract -f ts-rest -f axios`, and a declared artifact by `suss contract --from openapi`. Without `-f`, `extract` reads the packs from `suss.json`, or picks the ones `init` would when there is no file. A Python or Ruby project is read with `--dir` instead of a tsconfig; see [Read a Python or Ruby project](docs/guides/python-and-ruby.md).
+A pack is reached by name, `suss extract -f ts-rest -f axios`, and a declared artifact by `suss contract --from openapi`. Without `-f`, `extract` reads the packs from `suss.json`, or picks the ones `init` would when there is no file. A Python or Ruby project is read with `--dir` instead of a tsconfig; see [Read Python or Ruby](docs/guides/python-and-ruby.md).
 
 `suss init` reads your project, works out which packs it needs, writes them to `suss.json`, and offers to set them up:
 
@@ -155,17 +155,18 @@ For every function reachable from a recognized entry point, suss emits a `Behavi
 
 The documentation site is at [nimbuscloud-ai.github.io/suss](https://nimbuscloud-ai.github.io/suss/).
 
-- [Get started](docs/tutorial/get-started.md): the smallest end-to-end example.
-- [Adopting suss](docs/guides/adopting-suss.md): the steps above, one at a time.
+- [Quickstart](./docs/start/quickstart.md): the smallest end-to-end example.
+- [Adopt it step by step](docs/guides/adopting-suss.md): the steps above, one at a time.
 - [AGENTS.md](AGENTS.md): driving suss from a coding agent, and which docs answer what. [`@suss/mcp`](packages/mcp) puts the same questions in front of a model as MCP tools. `npm install @suss/cli` ships the same file at `node_modules/@suss/cli/AGENTS.md`. Run `suss ask` with no question and it prints the questions it takes.
-- [Motivation](docs/motivation.md): the problem, why existing tools miss it, prior art, design principles.
-- [Glossary](docs/glossary.md): one canonical definition per term.
-- [FAQ](docs/faq.md): how suss relates to linters, types, OpenAPI, tests, observability.
-- [Contracts](docs/contracts.md): the kinds of contract, how much each one can tell you, and how that decides what a finding means. Intent docs your team writes are the [intent section](docs/contracts.md#intent).
-- [Cross-boundary checking](docs/cross-boundary-checking.md): how the pairwise checker works.
-- [Suppressions](docs/suppressions.md): the `.sussignore` file format.
+- [The problem](./docs/why/the-problem.md): the problem, and why existing tools miss it.
+- [Compared to other tools](./docs/why/compared.md): what your linter, types, OpenAPI, tests and tracing each tell you, and what suss adds.
+- [Glossary](./docs/reference/glossary.md): one canonical definition per term.
+- [FAQ](./docs/reference/faq.md): what suss reads, what a boundary is, and what it leaves out.
+- [Kinds of contract](./docs/why/kinds-of-contract.md): the kinds of contract, how much each one can tell you, and how that decides what a finding means. Intent docs your team writes get [their own guide](./docs/guides/check-against-intent.md).
+- [Cross-boundary checking](./docs/why/cross-boundary-checking.md): how the pairwise checker works.
+- [Accept a finding](./docs/guides/accept-a-finding.md): the `.sussignore` file format.
 
-Reference and internals: [Summary format](docs/behavioral-summary-format.md), [IR reference](docs/ir-reference.md), [Architecture](docs/architecture.md), [Packs](docs/packs.md), [Contract sources](docs/contract-sources.md).
+Reference and theory: [Summary format](./docs/reference/summary-format.md), [IR types](./docs/reference/ir.md), [Architecture](./docs/theory/architecture.md), [What a pack is](./docs/packs/what-a-pack-is.md), [Contract sources](./docs/packs/contract-sources.md).
 
 ## Packs
 

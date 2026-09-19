@@ -450,6 +450,6 @@ for (const problem of problems) {
   process.stderr.write(`${problem}\n\n`);
 }
 process.stderr.write(
-  `${problems.length} vocabulary ${problems.length === 1 ? "problem" : "problems"}. See docs/internal/style.md.\n`,
+  `${problems.length} vocabulary ${problems.length === 1 ? "problem" : "problems"}. See design/docs-internal/style.md.\n`,
 );
 process.exit(1);

@@ -27,7 +27,7 @@ const wrapped = {
   $id: "https://suss.dev/schemas/behavioral-summary.schema.json",
   title: "BehavioralSummaryArray",
   description:
-    "Array of behavioral summaries, see https://github.com/nimbuscloud-ai/suss/blob/main/docs/behavioral-summary-format.md",
+    "Array of behavioral summaries, see https://github.com/nimbuscloud-ai/suss/blob/main/docs/reference/summary-format.md",
   ...jsonSchema,
 };
 

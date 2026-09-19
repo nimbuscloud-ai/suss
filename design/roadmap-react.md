@@ -2,7 +2,7 @@
 
 Strategic plan for React as suss's first non-HTTP boundary. Writing the direction down means the context survives compaction and the implementation stays on-thesis. Phases we have shipped are marked ✅. Everything else is design until the phase before it has answered its forcing-function questions.
 
-Related: [`boundary-semantics.md`](../docs/boundary-semantics.md) (transport / semantics / recognition layering), [`contracts.md`](../docs/contracts.md) (the five-shape contract taxonomy).
+Related: [`boundary-semantics.md`](../docs/theory/boundary-semantics.md) (transport / semantics / recognition layering), [`contracts.md`](../docs/why/kinds-of-contract.md) (the five-shape contract taxonomy).
 
 ## Where this fits in the bigger picture
 
@@ -43,7 +43,7 @@ Two deliberate divergences from Jackson worth stating:
 1. **Intent is absent.** A Jackson concept declares its purpose top-down, while suss infers behavior bottom-up. The nearest stand-in is a `contractDisagreement` finding: it fires when observed behavior contradicts a declared contract, which is as close as suss gets to "purpose violated."
 2. **Genericity is absent.** Jackson concepts are reusable design primitives (like `Upvote`, `Follow`). Suss summaries are instance-specific. The goal of reducing opaqueness recursively leaves open a path where recurring clusters show up as concept candidates, but that's future work, not v0.
 
-Further reading: Daniel Jackson, [*Concept Design Moves*](https://people.csail.mit.edu/dnj/publications/nfm-design-moves-22.pdf) (NFM 2022); Eagon Meng & Daniel Jackson, [*What You See Is What It Does*](https://arxiv.org/abs/2508.14511) (SPLASH Onward! 2025); Jackson, [*The Essence of Software*](https://essenceofsoftware.com/) (Princeton, 2021). The long-form mapping (audience indexing, failure modes, PRDs as concept declarations) is in [`concept-design.md`](../docs/internal/concept-design.md).
+Further reading: Daniel Jackson, [*Concept Design Moves*](https://people.csail.mit.edu/dnj/publications/nfm-design-moves-22.pdf) (NFM 2022); Eagon Meng & Daniel Jackson, [*What You See Is What It Does*](https://arxiv.org/abs/2508.14511) (SPLASH Onward! 2025); Jackson, [*The Essence of Software*](https://essenceofsoftware.com/) (Princeton, 2021). The long-form mapping (audience indexing, failure modes, PRDs as concept declarations) is in [`concept-design.md`](../docs/theory/prior-art.md).
 
 ## The boundary React actually has
 
@@ -123,7 +123,7 @@ Each phase is scoped to answer specific forcing-function questions about the IR 
 
 ### Phase 0: Foundation docs ✅
 
-`docs/contracts.md` sets out the contract-shape taxonomy and epistemic character. `docs/roadmap-react.md` (this doc) sets out the React plan. `docs/boundary-semantics.md` sets out the transport / semantics / recognition layering.
+`docs/why/kinds-of-contract.md` sets out the contract-shape taxonomy and epistemic character. `docs/roadmap-react.md` (this doc) sets out the React plan. `docs/theory/boundary-semantics.md` sets out the transport / semantics / recognition layering.
 
 ### Phase 1: Inferred summaries for React components (in progress)
 
@@ -236,7 +236,7 @@ These are written down here so the refactor work is visible rather than incident
 
 4. **Multi-unit discovery in `PatternPack`.** The current pack says "a default export gives one component." Phase 1.5 needs "a default export gives one component unit AND one handler unit for every `onClick`-like prop in the render tree." Either the pack interface grows a case for discovering several units, or the adapter builds the sibling units from the render tree. We prefer the second, because it keeps the pack declarative.
 
-5. **Tagging the contract shape in metadata.** `metadata.component.storybook.*`, `metadata.component.snapshot.*`, and so on, all sitting alongside `metadata.http.*`. This extends the pattern from `docs/behavioral-summary-format.md`.
+5. **Tagging the contract shape in metadata.** `metadata.component.storybook.*`, `metadata.component.snapshot.*`, and so on, all sitting alongside `metadata.http.*`. This extends the pattern from `docs/reference/summary-format.md`.
 
 ## What we're explicitly deferring
 

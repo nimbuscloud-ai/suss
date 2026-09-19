@@ -264,7 +264,7 @@ stay written as they are and the rewrite happens inside the engine.
 **Is it over-designed?** A rewrite pass and one relation. It leaves out
 subsumption, provenance, and any cost model.
 
-**Is the naming consistent with `docs/internal/style.md`?** `wanted(x)`
+**Is the naming consistent with `design/docs-internal/style.md`?** `wanted(x)`
 states what is true of a value rather than instructing the engine.
 
 **Was it verified against code somebody actually wrote?** Seven corpora,
