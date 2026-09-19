@@ -91,6 +91,8 @@ function valueOps(stated: unknown): ValueOps {
       object === null || !(name in object) ? null : valueOps(object[name]),
     parts: () => interpolated(stated)?.parts ?? partsOf(stated),
     holes: () => interpolated(stated)?.holes ?? [],
+    interpolated: () =>
+      (interpolated(stated)?.settled ?? []).map((hole) => valueOps(hole)),
   };
 }
 
@@ -98,6 +100,8 @@ function valueOps(stated: unknown): ValueOps {
 interface Interpolated {
   readonly parts: string[];
   readonly holes: (CallOps | null)[];
+  /** What the source settled each hole to, for the holes it settled. */
+  readonly settled?: (string | null)[];
 }
 
 /** Whether a test wrote a statement with the holes spelled out. */
@@ -262,6 +266,34 @@ describe("a storage chain", () => {
 
   it("matches nothing where the call reaches for no method at all", () => {
     expect(run(store(), callOps({ method: null }))).toBeNull();
+  });
+});
+
+describe("a namespace the call says rather than the pack", () => {
+  it("records the scope the call reached", () => {
+    const effects = run(
+      store().scope({ at: 1 }),
+      callOps({
+        method: "get",
+        from: ["tapedeck"],
+        args: ["side_a:1", "archive"],
+      }),
+    );
+
+    expect(effects?.[0]).toMatchObject({
+      binding: { semantics: { scope: "archive" } },
+    });
+  });
+
+  it("keeps the pack's own scope where the call names none", () => {
+    const effects = run(
+      store().scope({ at: 1 }),
+      callOps({ method: "get", from: ["tapedeck"], args: ["side_a:1"] }),
+    );
+
+    expect(effects?.[0]).toMatchObject({
+      binding: { semantics: { scope: "default" } },
+    });
   });
 });
 
@@ -1070,6 +1102,73 @@ describe("a chain over statements written as SQL", () => {
 
     expect(effects?.[0]).toMatchObject({
       binding: { semantics: { container: "tapes" } },
+    });
+  });
+
+  it("tries each pick a method states until one reaches a statement", () => {
+    const eitherWay = sqlStatements({
+      system: "postgresql",
+      dialect: "postgresql",
+      client: declaredBy("tapedeck"),
+    }).methods({
+      query: { statement: [{ at: 0 }, { at: 0, property: ["text"] }] },
+    });
+    const config = runQuery(
+      eitherWay,
+      callOps({
+        method: "query",
+        from: ["tapedeck"],
+        values: { 0: { text: "SELECT id FROM tapes WHERE side = $1" } },
+      }),
+    );
+    const plain = runQuery(
+      eitherWay,
+      callOps({
+        method: "query",
+        from: ["tapedeck"],
+        values: { 0: "SELECT id FROM tapes WHERE side = $1" },
+      }),
+    );
+
+    expect(containerOf(config?.[0])).toBe("tapes");
+    expect(containerOf(plain?.[0])).toBe("tapes");
+  });
+
+  it("writes what the source settled a hole to into a quoted name", () => {
+    const effects = runQuery(
+      queries({ dialect: "bigquery" }),
+      callOps({
+        method: "query",
+        from: ["tapedeck"],
+        values: {
+          0: {
+            parts: ["SELECT id FROM `", "`"],
+            holes: [],
+            settled: ["analytics-prod.core.dim_account"],
+          },
+        },
+      }),
+    );
+
+    expect(effects?.[0]).toMatchObject({
+      binding: {
+        semantics: { container: "dim_account", scope: "core" },
+      },
+    });
+  });
+
+  it("falls back to the pack's scope where the statement qualifies nothing", () => {
+    const effects = runQuery(
+      queries({ dialect: "bigquery" }),
+      callOps({
+        method: "query",
+        from: ["tapedeck"],
+        values: { 0: "SELECT id FROM dim_account" },
+      }),
+    );
+
+    expect(effects?.[0]).toMatchObject({
+      binding: { semantics: { container: "dim_account", scope: "default" } },
     });
   });
 

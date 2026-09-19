@@ -73,6 +73,10 @@
       "types": "./dist/axios.d.ts",
       "import": "./dist/axios.js"
     },
+    "./bigquery": {
+      "types": "./dist/bigquery.d.ts",
+      "import": "./dist/bigquery.js"
+    },
     "./bigquery-python": {
       "types": "./dist/bigquery-python.d.ts",
       "import": "./dist/bigquery-python.js"
@@ -160,6 +164,10 @@
     "./package-exports": {
       "types": "./dist/package-exports.d.ts",
       "import": "./dist/package-exports.js"
+    },
+    "./pg": {
+      "types": "./dist/pg.d.ts",
+      "import": "./dist/pg.js"
     },
     "./prisma": {
       "types": "./dist/prisma.d.ts",
@@ -252,6 +260,7 @@
     "@suss/framework-aws-sns": "*",
     "@suss/framework-aws-sqs": "*",
     "@suss/framework-aws-ssm": "*",
+    "@suss/framework-bigquery": "*",
     "@suss/framework-bigquery-python": "*",
     "@suss/framework-cloudflare-workers": "*",
     "@suss/framework-drizzle": "*",
@@ -268,6 +277,7 @@
     "@suss/framework-nestjs-rest": "*",
     "@suss/framework-nextjs": "*",
     "@suss/framework-package-exports": "*",
+    "@suss/framework-pg": "*",
     "@suss/framework-prisma": "*",
     "@suss/framework-rails": "*",
     "@suss/framework-react": "*",

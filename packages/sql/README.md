@@ -12,7 +12,21 @@ A reader, not a pack. A pattern pack that meets a query written as SQL rather th
 import { readSqlAccess } from "@suss/sql";
 
 readSqlAccess("SELECT id, email FROM users WHERE tenant_id = $1");
-// [{ table: "users", kind: "read", fields: ["id", "email"], selector: ["tenant_id"] }]
+// [{ table: "users", qualifier: [], kind: "read", fields: ["id", "email"], selector: ["tenant_id"] }]
+```
+
+`qualifier` is the namespaces written in front of the table, outermost first. Postgres and MySQL hand the schema back separately and it never reaches the table, so those are always empty. BigQuery addresses a table as `` `project.dataset.table` `` and the parser hands back the whole quoted string, so this splits it: the table is the one a provider declares, and the dataset is the namespace to record the access under.
+
+```ts
+readSqlAccess("SELECT id FROM `analytics.core.dim_account`", { dialect: "bigquery" });
+// [{ table: "dim_account", qualifier: ["analytics", "core"], ... }]
+```
+
+A pack that reads a table off a call's argument rather than out of a statement, the way `client.get_table("analytics.core.dim_account")` states one, splits it through `splitQualifiedTable` so both spellings land on the same table and the same namespace. It gives back nothing for a table that came through as a parameter.
+
+```ts
+splitQualifiedTable("analytics.core.dim_account");
+// { table: "dim_account", qualifier: ["analytics", "core"] }
 ```
 
 The statement is parsed rather than pattern-matched, so a join contributes every table it reads:
@@ -23,6 +37,37 @@ readSqlAccess("SELECT u.email, o.total FROM users u JOIN orders o ON o.user_id =
 ```
 
 A query written as a tagged template becomes readable through `sqlFromParts`, which writes each interpolation as a parameter. What a query interpolates is a value nearly every time, and a parameter is how the statement would supply one anyway.
+
+Two things override that. A caller who knows a hole is a table passes it in `substitutions`, which is how a Drizzle query that interpolates a schema object reaches the statement as a table name. And a caller who ran the source's own evaluator over each hole passes the results in `settled`, which are used where the statement writes a name.
+
+There are two of those places. One is inside a quoted name, which is how BigQuery addresses a table:
+
+```ts
+// `SELECT id FROM \`${TABLE}\`` with TABLE = "analytics.core.dim_account"
+sqlFromParts(["SELECT id FROM `", "`"], [], ["analytics.core.dim_account"]);
+// SELECT id FROM `analytics.core.dim_account`
+```
+
+The other is straight after `FROM`, `JOIN`, `INTO`, `UPDATE` or `TABLE`, in any case. Postgres code leaves the table unquoted nearly every time, so the quote alone would miss the commonest way a project interpolates one:
+
+```ts
+// `SELECT id FROM ${TABLE} WHERE id = $1` with TABLE = "users"
+sqlFromParts(["SELECT id FROM ", " WHERE id = $1"], [], ["users"]);
+// SELECT id FROM users WHERE id = $1
+```
+
+A hole anywhere else is left alone even when the evaluator settled it. `WHERE tier = ${TIER}` with `TIER = "gold"` would parse as a column called `gold` and put it in the selector, which is worse than the parameter the reader would otherwise see. Where the statement writes a name there is no such ambiguity: whatever the hole came to is part of the name.
+
+A part of a name nothing settled stays a parameter, and the qualifier is then read from the table outward and stops there. The part beside the table is the one a scope comes from, so a project read as though it were a dataset would place the access somewhere it never went:
+
+```
+analytics.core.dim_account   → dim_account, ["analytics", "core"]
+$1.core.dim_account          → dim_account, ["core"]
+analytics.$1.dim_account     → dim_account, []
+$1                           → nothing
+```
+
+A whole table nothing settled produces nothing at all.
 
 It reads Postgres, MySQL, SQLite, and BigQuery. Pass the dialect the way a pack states its store:
 

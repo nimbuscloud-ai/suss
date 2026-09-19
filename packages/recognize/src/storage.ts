@@ -75,6 +75,12 @@ export interface StorageCalls {
   /** Which way into the container the call took, when it states one. */
   accessPath(says: ArgumentPick): StorageCalls;
   /**
+   * Which namespace the call reached, when the call says rather than
+   * the pack. Without this every access records the scope the chain
+   * was built with.
+   */
+  scope(says: ArgumentPick): StorageCalls;
+  /**
    * Where a call that reaches several containers at once states them.
    * Each entry becomes one effect, against the container its key says,
    * or against the name itself where the call lists names alone.
@@ -134,6 +140,7 @@ function chainFrom(declared: Chain<StorageMethod>): StorageCalls {
           : { asks: "container", argument: says },
       ),
     accessPath: (says) => adding({ asks: "accessPath", argument: says }),
+    scope: (says) => adding({ asks: "scope", argument: says }),
     containersIn: (says, options) =>
       adding({
         asks: "containers",

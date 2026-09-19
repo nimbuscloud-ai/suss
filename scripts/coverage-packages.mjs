@@ -35,6 +35,8 @@ export const coveragePackages = [
   ["packages/framework/react-query", "react-query"],
   ["packages/framework/express", "express"],
   ["packages/framework/gcs", "gcs"],
+  ["packages/framework/bigquery", "bigquery"],
+  ["packages/framework/pg", "pg"],
   ["packages/framework/fastify", "fastify"],
   ["packages/framework/hono", "hono"],
   ["packages/framework/nextjs", "nextjs"],

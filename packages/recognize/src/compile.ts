@@ -46,6 +46,7 @@ import type {
   MethodMeaning,
   MethodsLink,
   OneArgument,
+  ScopeLink,
   SqlEnding,
   SqlMethod,
   StatedInputs,
@@ -348,7 +349,7 @@ function accessEffect(matched: Matched, access: Access): Effect {
       ...(ending.transport === undefined
         ? {}
         : { transport: ending.transport }),
-      scope: ending.scope,
+      scope: scopeOf(chain, subject, unsettled) ?? ending.scope,
       container: reached.stated
         ? reached.container
         : containerOf(chain, selector, subject, unsettled),
@@ -440,6 +441,18 @@ function accessPathOf(
   unsettled: UnsettledName,
 ): string | null {
   const link: AccessPathLink | null = linkIn(chain, "accessPath");
+  return link === null
+    ? null
+    : (namesAt(subject, link.argument, unsettled)[0] ?? null);
+}
+
+/** Which namespace the call reached, when the chain says where it says so. */
+function scopeOf(
+  chain: Chain<MethodMeaning>,
+  subject: CallOps,
+  unsettled: UnsettledName,
+): string | null {
+  const link: ScopeLink | null = linkIn(chain, "scope");
   return link === null
     ? null
     : (namesAt(subject, link.argument, unsettled)[0] ?? null);
@@ -765,12 +778,15 @@ function payloadOf(
 function sqlAccess(matched: Matched): Effect[] | null {
   const { ops, subject, method, chain, recognition } = matched;
   const ending = chain.ending as SqlEnding;
-  const stated = statedValue(subject, (matched.meaning as SqlMethod).statement);
-  const parts = stated?.parts() ?? null;
-  if (stated === null || parts === null) {
+  const stated = statementIn(subject, (matched.meaning as SqlMethod).statement);
+  if (stated === null) {
     return null;
   }
-  const statement = sqlFromParts(parts, namesInHoles(chain, stated));
+  const statement = sqlFromParts(
+    stated.parts,
+    namesInHoles(chain, stated.value),
+    settledHoles(stated.value),
+  );
   const accesses = readSqlAccess(statement, { dialect: ending.dialect });
   return accesses.length === 0
     ? null
@@ -782,7 +798,10 @@ function sqlAccess(matched: Matched): Effect[] | null {
           ...(ending.transport === undefined
             ? {}
             : { transport: ending.transport }),
-          scope: ending.scope,
+          // A statement that qualifies its table says which namespace
+          // the access is in, and the pack's own scope is the fallback
+          // for a statement that leaves it out.
+          scope: access.qualifier[access.qualifier.length - 1] ?? ending.scope,
           container: access.table,
         }),
         callee: ops.calleeText(),
@@ -794,6 +813,41 @@ function sqlAccess(matched: Matched): Effect[] | null {
           operation: method,
         },
       }));
+}
+
+/** The statement one of a method's picks reaches, in the pieces it was written in. */
+interface Statement {
+  readonly value: ValueOps;
+  readonly parts: readonly string[];
+}
+
+/**
+ * The first of a method's picks that reaches text. A pick that lands on
+ * something with no text in it is the wrong spelling of the call rather
+ * than a call with no statement, so the next pick gets a turn.
+ */
+function statementIn(
+  subject: CallOps,
+  says: SqlMethod["statement"],
+): Statement | null {
+  const picks = Array.isArray(says) ? says : [says as OneArgument];
+  for (const pick of picks) {
+    const value = statedValue(subject, pick);
+    const parts = value?.parts() ?? null;
+    if (value !== null && parts !== null) {
+      return { value, parts };
+    }
+  }
+  return null;
+}
+
+/**
+ * What the source itself settled each hole to. A table kept in a module
+ * constant reads here, and `@suss/sql` uses it only where the statement
+ * quoted the hole as a name.
+ */
+function settledHoles(stated: ValueOps): (string | null)[] {
+  return (stated.interpolated?.() ?? []).map((hole) => hole.name("nothing"));
 }
 
 /**

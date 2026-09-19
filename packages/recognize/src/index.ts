@@ -51,6 +51,7 @@ export type {
   MethodsLink,
   OneArgument,
   OneMessage,
+  ScopeLink,
   SelectorParamPick,
   SqlEnding,
   SqlMethod,

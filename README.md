@@ -90,7 +90,7 @@ Each step costs a little more and asks a little more of the codebase. Stop at wh
 
 ## What it reads
 
-TypeScript is the furthest along: Express, Fastify, Hono, NestJS, Next.js and ts-rest on the server, fetch, axios and Apollo on the client, Prisma, Drizzle and Mongoose for storage, Lambda handlers, and the AWS clients for SQS, SNS, EventBridge, DynamoDB and S3. In Python, suss reads FastAPI and flask-restx routes and SQLAlchemy queries. In Ruby, it reads Rails controllers, graphql-ruby schemas and ActiveRecord. The full list is in [Packs](#packs) below. suss checks a boundary inside one repository. You can compare summaries from two repositories by putting the files in one directory, and nothing does that for you yet.
+TypeScript is the furthest along: Express, Fastify, Hono, NestJS, Next.js and ts-rest on the server, fetch, axios and Apollo on the client, Prisma, Drizzle, Mongoose, node-postgres and BigQuery for storage, Lambda handlers, and the AWS clients for SQS, SNS, EventBridge, DynamoDB and S3. In Python, suss reads FastAPI and flask-restx routes and SQLAlchemy queries. In Ruby, it reads Rails controllers, graphql-ruby schemas and ActiveRecord. The full list is in [Packs](#packs) below. suss checks a boundary inside one repository. You can compare summaries from two repositories by putting the files in one directory, and nothing does that for you yet.
 
 ## Install
 
@@ -172,7 +172,7 @@ Reference and theory: [Summary format](./docs/reference/summary-format.md), [IR 
 
 The behavioral summary format and the IR types in `@suss/behavioral-ir` are stable. The extraction pipeline and the cross-boundary checker are in active development against a growing set of packs.
 
-Forty-five packs read code today, reached by name with `-f`:
+Forty-seven packs read code today, reached by name with `-f`:
 
 | What it reads | Packs |
 |---|---|
@@ -183,8 +183,8 @@ Forty-five packs read code today, reached by name with `-f`:
 | Serverless and edge | `aws-lambda` `cloudflare-workers` |
 | UI | `react` `react-router` `react-query` |
 | HTTP and GraphQL clients | `fetch` `axios` `apollo-client` `requests` `httpx` `aiohttp` `faraday` `net-http` |
-| Databases and ORMs | `prisma` `drizzle` `mongoose` `sqlalchemy` `sqlmodel` `activerecord` `redis` |
-| Warehouses | `bigquery-python` |
+| Databases and ORMs | `prisma` `drizzle` `mongoose` `pg` `sqlalchemy` `sqlmodel` `activerecord` `redis` |
+| Warehouses | `bigquery` `bigquery-python` |
 | Client state | `zustand` |
 | Object and key-value storage | `aws-s3` `gcs` `aws-dynamodb` |
 | Secrets and parameters | `aws-secrets-manager` `aws-ssm` |

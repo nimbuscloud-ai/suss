@@ -1,0 +1,8 @@
+{
+  "bigquery": "@google-cloud/bigquery: the dialect its statements are written in",
+  "dataset": "@google-cloud/bigquery: the call that says which dataset",
+  "query": "@google-cloud/bigquery: the options key the statement travels under",
+  "read": "suss: access kind",
+  "table": "@google-cloud/bigquery: the call that says which table",
+  "write": "suss: access kind"
+}
