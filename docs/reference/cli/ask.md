@@ -5,7 +5,7 @@ description: The ten questions suss answers about a codebase from summaries on d
 
 # `suss ask`
 
-Put one question to a set of summaries and get one answer back.
+`suss ask` takes one question about a codebase and works out the answer from the summaries `suss extract` already wrote. You write the question in one of the ten forms below, naming a boundary or a unit, and you get one answer back.
 
 ```
 suss ask "<question>" [--dir <directory> | <summaries.json>] [--project <directory>]
@@ -17,8 +17,8 @@ suss ask "<question>" [--dir <directory> | <summaries.json>] [--project <directo
 | `"<question>"` | none | One of the ten forms below. Run `suss ask` with no question to print the list and exit `0`. |
 | `--dir <path>` | none | The folder of summary files to read. |
 | `<summaries.json>` | none | One summary file, as a second positional argument after the question. |
-| `--project <path>` | the working directory | Where the source is, for a why question. A why question reads source as well as summaries, and says so when the two do not line up. |
-| `--all` | off | List every unit the answer picked out. Without it a long answer stops after ten and says how many are left. |
+| `--project <path>` | the working directory | Where the source is, for a why question. A why question reads source as well as summaries, and reports it when the two do not line up. |
+| `--all` | off | List every unit the answer picked out. Without it a long answer stops after ten and reports how many are left. |
 | `--json` | off | Write the answer as JSON instead of text. Unaffected by `--all`: it always lists every item. |
 | `-o`, `--output <path>` | stdout | Write the answer to a file. |
 
@@ -34,7 +34,7 @@ Each one is written in these words. The placeholders are yours; everything else 
 | `what invokes <boundary>` | Every unit that calls a deployed unit by name, such as one Lambda invoking another. |
 | `what calls <unit>` | Every unit whose calls the run resolved to it, with the file, the line and the call. |
 | `what does <unit> reach` | Every boundary a file or a summary goes through, and whether it reads, writes or invokes each. |
-| `what reaches <target>` | Every boundary whose unit ends up going through the target, however many calls away, and the calls it took to get there. A unit is listed only when it serves a boundary of its own, so the answer is routes, queues and package exports rather than the functions in between. It also says how many calls resolved to no unit, since a boundary reaching the target through one of those is missing from it. |
+| `what reaches <target>` | Every boundary whose unit ends up going through the target, however many calls away, and the calls it took to get there. A unit appears only when it serves a boundary of its own, so you get routes, queues and package exports, not the functions in between. The answer also counts the calls that didn't resolve to a unit, because a boundary that reaches the target through one of those is missing from the list. |
 | `what does <package or unit> provide` | Every boundary it provides, one per line, sorted by boundary key. A package is spelled by its name, `@suss/checker`, and the answer gathers its exports wherever they are in the run. Also written `what does <package> export`. |
 | `why does <unit> reach <target>` | The shortest call chain from the unit to a boundary, a function or a package export, with each written hop's resolution proved from source. |
 | `why does <name> at <file>:<line> resolve to <target>` | The chain from a written name to the function it comes down to, one reason per hop. |
@@ -56,7 +56,7 @@ suss ask 'why does handler at src/app.ts:12 resolve to createHandler'
 
 ### Symbol shorthand
 
-Five of the forms have a symbol spelling, for a question you type often. Operators are symbols because a boundary key contains `:`, `.`, `#` and `/`, so nothing that could appear inside an operand can be the thing that splits it.
+Five of the forms have a symbol spelling, for a question you type often. The operators are symbols such as `<-` and `->` because a boundary key already contains `:`, `.`, `#` and `/`, and suss needs a separator that can never turn up inside the subject you are asking about.
 
 | Shorthand | The question it means |
 |---|---|
@@ -68,13 +68,13 @@ Five of the forms have a symbol spelling, for a question you type often. Operato
 
 ### Spelling the subject
 
-A boundary is spelled the way reports spell it, and a shorter spelling covers more, exactly as under [`check --at`](/reference/cli/check#reporting-on-one-thing): `dynamodb:editions` covers every index on that table. When a spelling covers several boundaries at once, suss says which ones rather than picking one, and a spelling that is exactly one boundary's name takes that one, so `GET /articles` is the collection route and not the comments route under it.
+A boundary is spelled the way reports spell it, and a shorter spelling covers more, exactly as under [`check --at`](/reference/cli/check#reporting-on-one-thing): `dynamodb:editions` covers every index on that table. When a spelling covers several boundaries at once, suss lists them instead of picking one for you. A spelling that exactly matches one boundary's name takes that boundary, so `GET /articles` is the collection route and not the comments route under it.
 
 A unit is spelled the way `--at` spells one: a file, a `file:line`, a summary id, or a function name. A package export such as `fn:@suss/datalog::evaluate` resolves to the function behind it, so that spelling, the bare name, and `what reads` on the export all give one answer. A bare name that is two functions in different places is refused, with both listed.
 
 A service call counts as both a read and a write, since a request sends a body out and gets a response back. Calling a deployed unit by name does the same two things and is reported as `invokes`, because a service made of Lambdas would otherwise read as every function reading and writing every other one.
 
-When the unit an item is about provides a boundary itself, the item says which one after the location: `discoverUnits (src/discovery.ts:150, provides fn:@suss/adapter-python::discoverUnits) calls builtSubjects`. Read that rather than the summary id, which only spells the boundary when two summaries share a name.
+When the unit an item is about provides a boundary itself, the item gives that boundary after the location: `discoverUnits (src/discovery.ts:150, provides fn:@suss/adapter-python::discoverUnits) calls builtSubjects`. Read the boundary from there. The summary id only spells it out when two summaries share a name.
 
 ## Example
 
@@ -112,8 +112,8 @@ s3:acme-archive is provided by main.tf::aws_s3_bucket.archive.
 }
 ```
 
-`shape` is which of the ten was asked: `declares`, `reads`, `writes`, `invokes`, `calls`, `reaches`, `reachedBy`, `provides`, `whyReaches` or `whyResolves`. `found` is false when the subject is not in these summaries at all. Each entry in `items` has the fields that shape reports, plus `provides` when the unit serves a boundary of its own. `needs` says what this run would need in order to say more, and `caveats` says what could make the answer wrong, such as a unit suss could not fully read. A why answer adds the chain, the hops with their resolution steps, and what the re-evaluation cost.
+`shape` is which of the ten was asked: `declares`, `reads`, `writes`, `invokes`, `calls`, `reaches`, `reachedBy`, `provides`, `whyReaches` or `whyResolves`. `found` is false when the subject is not in these summaries at all. Each entry in `items` has the fields that shape reports, plus `provides` when the unit serves a boundary of its own. `needs` lists what this run would need in order to report more. `caveats` lists what could make the answer wrong, such as a unit suss could not fully read. A why answer adds the chain, the hops with their resolution steps, and what the re-evaluation cost.
 
 A question suss does not recognize writes `{ question, answer: null, message }` instead.
 
-[Exit codes](/reference/cli/exit-codes) says what `ask` returns to the shell.
+[Exit codes](/reference/cli/exit-codes) lists what `ask` returns to the shell.

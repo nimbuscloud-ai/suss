@@ -5,7 +5,7 @@ description: Work out which packs a project needs, install them, and write suss.
 
 # `suss init`
 
-Work out which packs this project needs, then offer to set them up.
+`suss init` looks at a project, works out which packs it needs, and offers to install them and write the configuration. Run it once when you add suss to a repository, so the later commands need no flags.
 
 ```
 suss init [<directory>] [--plain]
@@ -24,7 +24,7 @@ suss init [<directory>] [--plain]
 
 Interactively it asks four things: whether to install the packs, whether to write what it found to `suss.json`, whether to run the first extract and check, and whether to write a `.sussignore` and a CI workflow. Installing defaults to yes and writing files defaults to no, so nothing reaches disk unless you accept it.
 
-`suss.json` is what [`extract`](/reference/cli/extract) reads when it is given no `-f`, and what [`inspect`](/reference/cli/inspect), [`check`](/reference/cli/check) and the MCP server read when they are given nothing. Without the file, those commands pick the same packs `init` would and say so on stderr.
+`suss.json` is what [`extract`](/reference/cli/extract) reads when it is given no `-f`, and what [`inspect`](/reference/cli/inspect), [`check`](/reference/cli/check) and the MCP server read when they are given nothing. Without the file, those commands pick the same packs `init` would have picked, and print their choice on stderr.
 
 ## Example
 

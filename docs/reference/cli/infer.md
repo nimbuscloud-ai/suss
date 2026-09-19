@@ -5,9 +5,13 @@ description: "Draft a file for a person to finish: a dependency stub, one bounda
 
 # `suss infer`
 
-Write a first draft for a person to finish. Three subcommands: `stub`, `intent` and `prd`.
+`suss infer` writes a first draft of a file that you then finish by hand. There are three subcommands, and each one drafts a different kind of file.
 
-Every draft leaves blanks, one for each thing reading code cannot tell you. The reader rejects a file that still has one, so an uncurated draft never passes for finished.
+- [`suss infer stub`](#suss-infer-stub) drafts a [dependency stub](/guides/teach-a-dependency), a YAML file that describes what a third-party package's exports do so suss can follow calls into a library whose source it cannot read. The draft goes to `suss/stubs/<package>.yaml`. You fill in what each call reaches and what its arguments mean.
+- [`suss infer intent`](#suss-infer-intent) drafts one [boundary intent doc](/guides/check-against-intent) per boundary in a set of summaries, describing what that boundary does today. The drafts go to `intent/`. You fill in what the boundary is for and who observes it, then rename the outcome ids to what your team calls them.
+- [`suss infer prd`](#suss-infer-prd) drafts a product-level document from boundary intent you have already curated, with one scenario per outcome, written beside the intent it read. You write the scenarios themselves; suss supplies the link from each one to the outcome it covers.
+
+Each draft has a placeholder everywhere reading code cannot tell you the answer, and suss refuses to read a file that still has one.
 
 ## `suss infer stub`
 
@@ -60,7 +64,7 @@ suss infer intent --from <summaries.json | directory> [-o <directory> | --into <
 
 | Flag | Default | What it does |
 |---|---|---|
-| `--from <path>` | required | The summaries to read, from `suss extract`. A folder works too, and every `.json` in it is read, which is what a project with one file per pack has. |
+| `--from <path>` | required | The summaries to read, from `suss extract`. Point it at a folder and it reads every `.json` in there, which suits a project that extracts one file per pack. |
 | `-o`, `--out <path>` | `intent/` | Where the docs go. Docs already there are written over, with a warning first. |
 | `--into <path>` | none | The same folder, for a re-inference kept apart from what you have curated. It refuses to write where intent docs already are. |
 
@@ -107,7 +111,7 @@ transitions:
 
 An outcome id comes from the status code, and the body from the shape the handler produces. A body shape the intent schema has no spelling for is left out rather than guessed at.
 
-`when` says what the branch turned on, in the same verbs `results` takes. The subject is a boundary verb whose value is the boundary's name, or `input:` with the path the caller sent; the check is one of `finds`, `is`, `equals` or `has`, and `where` narrows it:
+`when` describes what the branch turned on, using the same verbs `results` takes. The subject is a boundary verb whose value is the boundary's name, or `input:` with the path the caller sent. The check is one of `finds`, `is`, `equals` or `has`, and `where` narrows it:
 
 ```yaml
   - id: 404-not-found
@@ -121,7 +125,7 @@ An outcome id comes from the status code, and the body from the shape the handle
         where: settledAt is set
 ```
 
-The last branch states its own condition rather than saying `otherwise`, since the summary records its guards as the negations of the ones above it. A word meaning "not the branches above" would change what it claims the moment somebody inserts a transition over it, and these files are hand-edited. `otherwise` is left for a default branch whose guards the summary never recorded. A guard that maps to none of that keeps a sentence, and a `when` written as one plain string stays valid.
+The last branch spells out its own condition instead of saying `otherwise`. The summary already records its guards as the negations of the ones above it, and these files get hand-edited, so a word meaning "none of the branches above" would quietly change what the document claims as soon as somebody inserts a transition ahead of it. `otherwise` is reserved for a default branch whose guards the summary never recorded. When a guard fits none of these forms, suss writes it out as a sentence, and a `when` you write as one plain string is valid too.
 
 A boundary that is not HTTP gets a doc the same way, and then `results` says what the transition did at other boundaries:
 
@@ -131,7 +135,7 @@ A boundary that is not HTTP gets a doc the same way, and then `results` says wha
         by: [invoiceId]
 ```
 
-The key is the verb and the value is the boundary's own name, which is the same string [`suss ask`](/reference/cli/ask) takes. A clause can also say `fields`, the columns the access touches, and `by`, what it picks the item out by; both are drafted when the summary has them. The checker compares `results` both ways: a declared write the code never makes is an error, and a boundary the code reaches that no outcome mentions is info.
+The key is the verb and the value is the boundary's own name, spelled the same way [`suss ask`](/reference/cli/ask) spells it. A clause can also give `fields`, the columns the access touches, and `by`, what it picks the item out by. suss drafts both when the summary has them. The checker compares `results` both ways: a declared write the code never makes is an error, and a boundary the code reaches that no outcome mentions is info.
 
 Boundary intent covers REST, function-call, message-bus, storage and unit-invocation boundaries. Anything else, a GraphQL, runtime-config or metric boundary, or a boundary whose summaries never record a transition producing a response, a return, a throw or an effect, is reported with the reason instead of drafted:
 
@@ -143,11 +147,11 @@ No document for 1 boundary:
   - function-call:reachable: it has no key the checker could pair intent against: a function-call boundary needs package + exportPath
 ```
 
-A store is reported too, for a different reason: storage has no identity key, so a doc naming one could never be paired. The reported reason points at the alternative, which is to write `- writes: aws.dynamodb:Invoices` on an outcome of the boundary that touches the store.
+A store is reported too, for a different reason. Storage has no identity key, so the checker could never pair a document written against one. The report tells you what to do instead: write `- writes: aws.dynamodb:Invoices` on an outcome of the boundary that touches the store.
 
 Curating a doc means filling in purpose and audience, renaming the outcome ids to what your team calls them, and setting `source: "inferred, curated"`. `source` is what the checker reads to decide severity: a finding against bare `inferred` intent is downgraded one level, and curation restores it. Until then `suss check --intent` reports the drafts still waiting rather than checking them.
 
-Re-inference is naive. It writes the docs again from the current code and takes any curation with them. `--into` is there so you can put a fresh run beside the curated one and reconcile the two by hand.
+Re-inference is naive. It writes the docs again from the current code and overwrites whatever you had curated. Use `--into` to put a fresh run beside the curated one so you can reconcile the two by hand.
 
 ## `suss infer prd`
 
@@ -161,7 +165,7 @@ suss infer prd --from <intent-directory> [-o <directory> | --into <directory>]
 | `-o`, `--out <path>` | the folder they were read from | Where the PRDs go. |
 | `--into <path>` | none | The same folder, for a re-draft kept apart. It refuses to write where PRDs already are. |
 
-It writes one PRD per curated boundary intent, with a scenario per outcome and the link already filled in. The link is the part a machine can supply, since it is the boundary document's `name` and the outcome's `id`. The words are not.
+It writes one PRD per curated boundary intent, with a scenario per outcome and the link already filled in. suss can supply the link because it is the boundary document's `name` plus the outcome's `id`, and nothing more. Everything else on a scenario is yours to write.
 
 ```bash
 suss infer intent --from summaries/code.json --out intent/
@@ -200,8 +204,8 @@ Write them and set source to "inferred, curated", or take those files out of the
 A PRD links to outcome ids, so everything in the folder has to load before this can write one.
 ```
 
-Drafting both at once would link to `200-ok`, and renaming that outcome is the first thing curation does. The PRD would then point at an id nothing declares, and `danglingScenarioLink` would fire on a file suss wrote itself. Reading intent also means the command needs no summaries at all, which matches what the checker does: a PRD can be checked before any code exists.
+Drafting intent and a PRD in one go would link the scenario to `200-ok`, and renaming that outcome is the first thing you do when you curate. The PRD would then point at an id nothing declares, and `danglingScenarioLink` would fire on a file suss wrote itself. Reading intent instead of summaries also means the command needs no extracted code, and neither does the checker: you can check a PRD before the code exists.
 
 A boundary intent a scenario already points at is left alone, so running this again after adding an endpoint writes only what is missing.
 
-[Exit codes](/reference/cli/exit-codes) says what each `infer` subcommand returns to the shell.
+[Exit codes](/reference/cli/exit-codes) lists what each `infer` subcommand returns to the shell.

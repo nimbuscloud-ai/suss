@@ -46,7 +46,7 @@ In a synopsis, `<...>` marks a required value and `[...]` an optional one.
 
 `extract`, `inspect` and `check` run with no arguments at all. Each one reads `suss.json`, or picks the packs `init` would pick when there is no file, and prints the commands it ran to stderr.
 
-The summary JSON is the artifact every other command works from. `inspect` renders it and `check` compares two of them, so you can read anything either one reports out of the JSON yourself. Two forms work out an answer that is in no file: [`inspect --flow`](/reference/cli/inspect#suss-inspect-flow) walks the routing a set of summaries declares, and [`ask`](/reference/cli/ask) takes a question about one boundary and replies from the summaries.
+The summary JSON is the artifact every other command works from. `inspect` renders it and `check` compares two of them, so anything either one reports is also there in the JSON for you to read yourself. Two commands compute an answer that isn't in any file. [`inspect --flow`](/reference/cli/inspect#suss-inspect-flow) walks the routing a set of summaries declares, and [`ask`](/reference/cli/ask) takes a question about one boundary and works out the answer from the summaries.
 
 ## Top-level flags
 
@@ -57,7 +57,7 @@ The summary JSON is the artifact every other command works from. `inspect` rende
 
 ## Environment variables
 
-An interactive run ends with one line on stderr when a newer suss is on the registry. Piped output never sees it, and two variables turn it off everywhere.
+An interactive run ends with one line on stderr when a newer suss is on the registry. You never get that line when the output is piped, and two variables turn it off everywhere.
 
 | Variable | Effect |
 |---|---|
