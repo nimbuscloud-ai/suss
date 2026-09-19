@@ -1036,6 +1036,18 @@ const WAREHOUSE: TerraformPack = {
       },
     },
     {
+      resource: "warehouse_ledger",
+      providerVersions: ">=1 <2",
+      boundary: {
+        kind: "storage",
+        storageSystem: "warehouse",
+        nameAttribute: "table_id",
+        fieldSet: "none",
+        // A provider whose schema gives a column a name and no more.
+        fieldsFromJson: { attribute: "schema", nameKey: "name" },
+      },
+    },
+    {
       resource: "warehouse_server",
       providerVersions: ">=1 <2",
       appliesWhen: { attribute: "release", startsWith: ["FLINT_"] },
@@ -1083,8 +1095,35 @@ resource "warehouse_table" "sessions" {
   schema     = file("schema/sessions.json")
 }
 
+resource "warehouse_table" "partial" {
+  table_id = "partial"
+
+  schema = <<EOF
+[
+  "order_id",
+  { "type": "STRING" },
+  { "name": "placed_at" }
+]
+EOF
+}
+
+resource "warehouse_table" "unreadable" {
+  dataset_id = "analytics"
+  table_id   = "unreadable"
+  schema     = "[1, 2, 3]"
+}
+
+resource "warehouse_ledger" "entries" {
+  table_id = "entries"
+  schema   = "[{ \\"name\\": \\"entry_id\\" }]"
+}
+
 resource "warehouse_server" "reporting" {
   release = "EMBER_8_0_31"
+}
+
+resource "warehouse_server" "counting" {
+  release = 8
 }
 `;
 
@@ -1134,6 +1173,38 @@ describe("a store whose fields and namespace are attributes", () => {
     expect(
       named("warehouse_server.reporting").identity.boundaryBinding?.semantics,
     ).toMatchObject({ storageSystem: "ember" });
+  });
+
+  it("skips a resource whose gate attribute is not text", () => {
+    expect(named("warehouse_server.counting")).toBeUndefined();
+  });
+
+  it("puts a table that states no namespace in the default one", () => {
+    expect(
+      named("warehouse_table.partial").identity.boundaryBinding?.semantics,
+    ).toMatchObject({ scope: "default" });
+  });
+
+  it("keeps the columns of a schema it can read and drops the rest", () => {
+    const contract = readStorageContractMetadata(
+      named("warehouse_table.partial"),
+    );
+    expect(contract?.fieldSet).toBe("exhaustive");
+    expect(contract?.fields).toEqual([{ name: "placed_at", nullable: true }]);
+  });
+
+  it("records no columns when nothing in the schema names one", () => {
+    const contract = readStorageContractMetadata(
+      named("warehouse_table.unreadable"),
+    );
+    expect(contract?.fieldSet).toBe("none");
+    expect(contract?.fields).toBeUndefined();
+  });
+
+  it("gives a column no type and no nullability when the entry asks for neither", () => {
+    expect(
+      readStorageContractMetadata(named("warehouse_ledger.entries"))?.fields,
+    ).toEqual([{ name: "entry_id" }]);
   });
 });
 
