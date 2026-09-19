@@ -1,0 +1,60 @@
+name: Turbo cache
+description: >
+  Restore the turbo cache a job of this name saved last, and save this
+  job's cache when the inputs changed. Runs after checkout and before
+  the first turbo task.
+
+  The key is the git tree of everything turbo hashes: the workspace
+  packages, the root manifests and the tsconfig files. Two runs over
+  the same sources share a key, so the second one finds an exact hit
+  and saves nothing. A run over changed sources misses the exact key,
+  restores the newest entry for this job name, replays whatever turbo
+  still recognises, and saves one new entry.
+
+  The name keeps the jobs of one run from racing for a single key. The
+  cache action lets the first job to finish reserve a key and refuses
+  the rest, so with one shared key only the fastest job ever saved and
+  the test outputs were never kept. Each job name has its own line of
+  entries; the nightly regenerate job saves under every name so a new
+  branch starts from last night's main.
+
+inputs:
+  name:
+    description: Which line of entries to restore and save. Usually the job name.
+    required: true
+
+outputs:
+  inputs:
+    description: The hash of the sources turbo reads, for other caches that move with them.
+    value: ${{ steps.inputs.outputs.hash }}
+
+runs:
+  using: composite
+  steps:
+    - name: Hash the sources turbo reads
+      id: inputs
+      shell: bash
+      run: |
+        HASH=$(git rev-parse \
+          HEAD:packages HEAD:tools \
+          HEAD:package.json HEAD:package-lock.json HEAD:turbo.json \
+          HEAD:tsconfig.base.json HEAD:tsconfig.typecheck.json \
+          | sha256sum | cut -c1-16)
+        echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/cache@v4
+      with:
+        path: .turbo
+        key: turbo-${{ inputs.name }}-${{ runner.os }}-${{ steps.inputs.outputs.hash }}
+        restore-keys: |
+          turbo-${{ inputs.name }}-${{ runner.os }}-
+
+    # A restored entry is saved back whole, so artifacts would pile up
+    # across the chain of runs. A package untouched for two weeks gets
+    # rebuilt once and saved fresh, which bounds the entry.
+    - name: Drop stale artifacts
+      shell: bash
+      run: |
+        if [ -d .turbo/cache ]; then
+          find .turbo/cache -type f -mtime +14 -delete
+        fi
