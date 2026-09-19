@@ -10,8 +10,8 @@ from after, and prints the boundaries whose behavior moved.
 
 <!-- suss:example -->
 
-Here is `src/routes/users.ts` on the base commit. It has one route with
-three outcomes:
+`src/routes/users.ts` on the base commit has one route with three
+outcomes:
 
 ```ts
 import { Hono } from "hono";
