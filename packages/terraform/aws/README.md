@@ -34,6 +34,8 @@ terraformFileToSummaries("infra/terraform/dynamodb", { packs: [awsTerraform()] }
 | `aws_kinesis_firehose_delivery_stream` | a channel |
 | `aws_cloudwatch_log_metric_filter` | a metric, identified by its namespace and its name together |
 | `aws_cloudwatch_metric_alarm` | one consumer of that metric, identified the same way |
+| `aws_lambda_function` | a deployable, with the variables it sets and the handler it calls |
+| `aws_ecs_task_definition` | a deployable per container, with that container's variables, secrets and image |
 
 Everything else a configuration declares, a security group, a subnet, an IAM policy, is how the deployment is wired rather than something a caller addresses, so nothing reads it.
 
@@ -86,6 +88,15 @@ The shape check `checkMetric` runs never fires here, and cannot: a metric filter
 - **`aws_rds_cluster_instance`** is a compute node of the cluster `aws_rds_cluster` already declares, so reading it would count one store twice.
 - **`aws_mq_broker`** runs ActiveMQ or RabbitMQ, and suss has no bus word for either, nor any pack that records a send to one. A bus value nothing produces would pair with nothing and say nothing.
 - **An alarm written as `metric_query` blocks** states its metric inside a block while its threshold stays on the resource, and the entry reads one reading at a time, so only the direct form is read.
+- **`filename` and `s3_key` on a function.** Both point at a deployed artifact rather than at source, so neither says where the code is, and the handler is what places the unit.
+
+## What a deployable entry says
+
+A function's variables are one map, `environment.variables`, and the entry says so. A task definition's are per container, inside `container_definitions`, which the provider takes as JSON; the reader reads what is inside a `jsonencode` call, so a task written the way the docs show it is read.
+
+Both entries take the variables AWS injects on its own from the list every suss reader of an AWS deployment uses, so `AWS_REGION` is never reported as a variable nothing supplies. The lists come from [Lambda's reserved environment variables](https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html) and [the ECS task metadata endpoint](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_metadata.html).
+
+A container's `secrets` entry says which parameter or secret supplies a variable, and that resource is recorded. What the secret contains is not in the configuration, so nothing is recorded for the value.
 
 ## Why a Redis cluster pairs with nothing
 
