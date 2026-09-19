@@ -67,7 +67,7 @@
     "check:self": "turbo check:self",
     "check:style": "node scripts/checkStyle.mjs",
     "check:vocabulary": "node scripts/checkPackVocabulary.mjs",
-    "predocs:build": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/generateLlmsTxt.ts",
+    "predocs:build": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/generateLlmsTxt.ts && node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/generateDocRedirects.ts",
     "docs:build": "vitepress build docs",
     "docs:packs": "node scripts/generatePackTables.mjs",
     "docs:dev": "vitepress dev docs",

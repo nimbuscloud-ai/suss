@@ -33,7 +33,7 @@ const MAX_RESOLVE_DEPTH = 8;
 // Promise `.then` / `.catch` parameter binding
 //
 // ECMAScript defines what `Promise.prototype.then` resolves to, so this
-// binding lives in the adapter (docs/architecture.md, "Adapter vs pack
+// binding lives in the adapter (docs/theory/architecture.md, "Adapter vs pack
 // ownership"). In `expr.then(cb)` the first parameter of `cb` is the
 // resolved value of `expr`; resolving that parameter as a subject
 // follows the chain back to the upstream expression's value rather than

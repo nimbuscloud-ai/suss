@@ -137,4 +137,4 @@ A comment stops at 65,536 characters, so the action renders it with `--budget` a
 
 ## Where the diff comes from
 
-`suss extract` reads every unit a pack recognizes, a route handler or a queue consumer or a Lambda, into a summary of what it produces on each path. `suss inspect --diff` compares two sets of summaries by unit and prints the paths that differ. Nothing runs and no model is involved, so the same source produces the same diff every time. The [reference for `inspect`](https://github.com/nimbuscloud-ai/suss/blob/main/docs/reference/cli.md) says what each line of the rendering means.
+`suss extract` reads every unit a pack recognizes, a route handler or a queue consumer or a Lambda, into a summary of what it produces on each path. `suss inspect --diff` compares two sets of summaries by unit and prints the paths that differ. Nothing runs and no model is involved, so the same source produces the same diff every time. The [reference for `inspect`](https://github.com/nimbuscloud-ai/suss/blob/main/docs/reference/cli/inspect.md) says what each line of the rendering means.

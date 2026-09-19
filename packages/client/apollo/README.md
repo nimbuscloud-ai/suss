@@ -62,4 +62,4 @@ Licensed under Apache 2.0. See [LICENSE](../../../LICENSE).
 
 ---
 
-For how client packs work, see [`docs/packs.md`](../../../docs/packs.md).
+For how client packs work, see [`docs/packs/what-a-pack-is.md`](../../../docs/packs/what-a-pack-is.md).

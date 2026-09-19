@@ -6,7 +6,7 @@ Pairwise cross-boundary checker. Given two `BehavioralSummary` objects (one prov
 
 ## What this package is
 
-`@suss/checker` implements the algorithm specified in [`docs/cross-boundary-checking.md`](../../docs/cross-boundary-checking.md). Two entry points:
+`@suss/checker` implements the algorithm specified in [`docs/why/cross-boundary-checking.md`](../../docs/why/cross-boundary-checking.md). Two entry points:
 
 ```ts
 import { checkPair, checkAll } from "@suss/checker";
@@ -23,7 +23,7 @@ The checker does no I/O, keeps nothing on disk, and takes no view on where the s
 
 ## Where it fits in suss
 
-The checker depends only on `@suss/behavioral-ir`. The extractor, adapters, and framework packs produce the summaries it consumes, but the checker has no runtime dependency on them. It works on the serialized IR rather than on the AST or compiler state. See [`docs/architecture.md`](../../docs/architecture.md).
+The checker depends only on `@suss/behavioral-ir`. The extractor, adapters, and framework packs produce the summaries it consumes, but the checker has no runtime dependency on them. It works on the serialized IR rather than on the AST or compiler state. See [`docs/theory/architecture.md`](../../docs/theory/architecture.md).
 
 ## Flow reachability
 
@@ -38,7 +38,7 @@ Walking those edges is the opposite situation. You follow an edge to a node, the
 Comparing two sides of a boundary means taking a position on how the
 protocol behaves. Reporting an unhandled 404 treats the status the
 handler wrote as the status the caller receives, and a middleware or a
-gateway can make that false. [`docs/internal/protocol-assumptions.md`](../../docs/internal/protocol-assumptions.md)
+gateway can make that false. [`docs/theory/protocol-assumptions.md`](../../docs/theory/protocol-assumptions.md)
 lists every such claim per protocol, says what a finding means once the
 claim stops being true, and points at the test that pins today's
 behaviour.
@@ -50,7 +50,7 @@ The checker runs six checks: provider coverage (with sub-case analysis), consume
 ## More
 
 - [Documentation](https://nimbuscloud-ai.github.io/suss/)
-- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/reference/packages)
+- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/packs/catalog)
 - [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ## Coverage
@@ -63,4 +63,4 @@ Licensed under Apache 2.0. See [LICENSE](../../LICENSE).
 
 ---
 
-For the checker's algorithm and finding semantics, see [`docs/cross-boundary-checking.md`](../../docs/cross-boundary-checking.md).
+For the checker's algorithm and finding semantics, see [`docs/why/cross-boundary-checking.md`](../../docs/why/cross-boundary-checking.md).

@@ -101,7 +101,7 @@ It does **not** depend on
 ## More
 
 - [Documentation](https://nimbuscloud-ai.github.io/suss/)
-- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/reference/packages)
+- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/packs/catalog)
 - [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ## Coverage

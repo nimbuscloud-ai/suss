@@ -14,7 +14,7 @@
 // carrying `private: true` is skipped here, though preparePublish will
 // object to it separately, since under packages/ everything ships.
 //
-// The package table in docs/reference/packages.md is the same kind of
+// The package table in docs/packs/catalog.md is the same kind of
 // hand-kept list against the same workspace, so it is checked here too:
 // a package readers cannot find is a milder version of the same
 // omission.
@@ -109,7 +109,7 @@ for (const [dir, slug] of coveragePackages) {
   slugOwners.set(slug, dir);
 }
 
-const DOCS_TABLE = path.join(ROOT, "docs", "reference", "packages.md");
+const DOCS_TABLE = path.join(ROOT, "docs", "packs", "catalog.md");
 const docsTable = fs.readFileSync(DOCS_TABLE, "utf8");
 
 for (const pkg of workspace) {
@@ -117,7 +117,7 @@ for (const pkg of workspace) {
     continue;
   }
   problems.push(
-    `${pkg.name} has no row in docs/reference/packages.md, so nobody reading the docs knows it exists.`,
+    `${pkg.name} has no row in docs/packs/catalog.md, so nobody reading the docs knows it exists.`,
   );
 }
 
@@ -126,7 +126,7 @@ for (const [dir, slug] of coveragePackages) {
     continue;
   }
   problems.push(
-    `${dir} has a badge at .github/badges/coverage-${slug}.svg that docs/reference/packages.md never shows.`,
+    `${dir} has a badge at .github/badges/coverage-${slug}.svg that docs/packs/catalog.md never shows.`,
   );
 }
 
@@ -137,8 +137,8 @@ for (const [dir, slug] of coveragePackages) {
 // one run measured, and correcting one would falsify it.
 const COUNT_CLAIMS = [
   "CONTRIBUTING.md",
-  "docs/internal/releasing.md",
-  "docs/internal/dogfooding.md",
+  "design/docs-internal/releasing.md",
+  "design/docs-internal/dogfooding.md",
 ];
 
 /**
@@ -190,7 +190,7 @@ if (problems.length > 0) {
     process.stderr.write(`  ${problem}\n`);
   }
   process.stderr.write(
-    "\nAdd each package to scripts/coverage-packages.mjs as [dir, badgeSlug], give it a row in docs/reference/packages.md, run \`npm run test:badges\`, and commit the badge. If a package cannot be measured at all, add it to EXEMPT in scripts/checkCoveragePackages.mjs with a reason.\n",
+    "\nAdd each package to scripts/coverage-packages.mjs as [dir, badgeSlug], give it a row in docs/packs/catalog.md, run \`npm run test:badges\`, and commit the badge. If a package cannot be measured at all, add it to EXEMPT in scripts/checkCoveragePackages.mjs with a reason.\n",
   );
   process.exit(1);
 }

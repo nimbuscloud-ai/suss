@@ -9,8 +9,8 @@
 // doesn't match the filename pattern, so it's a no-op.
 //
 // Behaviour 2: inline-code auto-link:
-//   - `docs/architecture.md` → <a href="/architecture">Architecture</a>
-//   - `boundary-semantics.md` → <a href="/boundary-semantics">Boundary semantics</a>
+//   - `docs/theory/architecture.md` → <a href="/theory/architecture">Architecture</a>
+//   - `theory/boundary-semantics.md` → <a href="/theory/boundary-semantics">Boundary semantics</a>
 // Triggers only when the code content resolves to a file inside docs/
 // and the target has a readable title. Prose authors don't have to
 // reach for full markdown link syntax to get a titled link.

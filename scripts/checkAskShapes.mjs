@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // checkAskShapes.mjs: every question shape ask.ts and askWhy.ts answer
-// has a matching phrase in AGENTS.md and in docs/reference/cli.md, so a
+// has a matching phrase in AGENTS.md and in docs/reference/cli/ask.md, so a
 // shape added to one and left out of the other fails the build.
 
 import fs from "node:fs";
@@ -12,7 +12,7 @@ const ASK = path.join(ROOT, "packages/cli/src/ask.ts");
 const WHY = path.join(ROOT, "packages/cli/src/askWhy.ts");
 const DOCS = {
   "AGENTS.md": path.join(ROOT, "AGENTS.md"),
-  "docs/reference/cli.md": path.join(ROOT, "docs/reference/cli.md"),
+  "docs/reference/cli/ask.md": path.join(ROOT, "docs/reference/cli/ask.md"),
 };
 
 const shapes = new Set(
@@ -43,7 +43,7 @@ const PATTERN_BY_SHAPE = {
 // different numbers at once.
 const COUNTED = {
   "AGENTS.md": path.join(ROOT, "AGENTS.md"),
-  "docs/reference/cli.md": path.join(ROOT, "docs/reference/cli.md"),
+  "docs/reference/cli/ask.md": path.join(ROOT, "docs/reference/cli/ask.md"),
   "packages/cli/src/ask.ts": ASK,
   "packages/cli/src/run.ts": path.join(ROOT, "packages/cli/src/run.ts"),
   "packages/mcp/src/tools.ts": path.join(ROOT, "packages/mcp/src/tools.ts"),
@@ -113,5 +113,5 @@ if (problems.length > 0) {
 }
 
 process.stdout.write(
-  `All ${shapes.size} suss ask question shapes are documented in AGENTS.md and docs/reference/cli.md.\n`,
+  `All ${shapes.size} suss ask question shapes are documented in AGENTS.md and docs/reference/cli/ask.md.\n`,
 );

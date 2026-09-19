@@ -1,5 +1,7 @@
 ---
 layout: home
+title: suss, a behavioral analysis tool for TypeScript, Python and Ruby
+description: suss reads your code and writes down what it does on every path, then checks that against the clients, specs and infrastructure on the other side. Deterministic, no model in it.
 
 hero:
   name: suss
@@ -7,11 +9,11 @@ hero:
   tagline: "It reads your code and writes down what it does on every path, from the request or message that comes in to the table or queue it touches. Read that on a pull request instead of the diff, hand it to your agent before it edits, or check it against the spec you published. Deterministic, no model in it, TypeScript, Python and Ruby."
   actions:
     - theme: brand
-      text: Run it on one service
-      link: /guides/adopting-suss
+      text: Quickstart
+      link: /start/quickstart
     - theme: alt
-      text: Tutorial
-      link: /tutorial/get-started
+      text: Read a pull request
+      link: /start/read-a-pull-request
     - theme: alt
       text: GitHub
       link: https://github.com/nimbuscloud-ai/suss
@@ -19,27 +21,27 @@ hero:
 features:
   - title: What did this pull request do
     details: "Run inspect --diff on the base and the head. It reports which units changed behavior and how, whichever lines the diff touched. A field that left one response branch is one line here and one line in a thousand there."
-    link: /guides/ci-integration
+    link: /start/read-a-pull-request
     linkText: Put it on pull requests
   - title: Let the agent ask first
     details: "Over MCP the agent can ask what a route reaches, what writes a table and what calls a function, and get file and line for each, from the working tree as it is now. It asks before it changes something instead of grepping and guessing."
-    link: /guides/mcp-server
-    linkText: Set up the MCP server
+    link: /start/give-your-agent-suss
+    linkText: Give your agent suss
   - title: Did I break a caller
     details: "You changed what a handler returns. suss compares it against every caller it can see and reports the ones that read a field you stopped sending, or never handle a status you started returning."
-    link: /cross-boundary-checking
+    link: /why/cross-boundary-checking
     linkText: How checking works
   - title: Does the code match the spec
     details: "Point suss at an OpenAPI document, a GraphQL schema, a Prisma schema or a CloudFormation template. It compares the code against what you published and reports where they drifted apart."
-    link: /guides/pair-against-openapi
-    linkText: Pair against OpenAPI
+    link: /guides/check-against-openapi
+    linkText: Check against OpenAPI
   - title: Reads what you already wrote
     details: "Thirty-eight packs cover Express, Hono, NestJS, Fastify, Next.js, FastAPI, Rails, Apollo, Prisma, Drizzle, DynamoDB, S3, SQS and more. Point it at a tsconfig or a directory and it works out the rest."
-    link: /reference/packages
+    link: /packs/catalog
     linkText: Packs by stack
   - title: Says when it cannot tell
     details: "A call suss could not follow shows up as a gap in the output rather than as silence, so an empty answer never looks like nothing being wrong."
-    link: /faq
+    link: /reference/faq
     linkText: FAQ
 ---
 
@@ -134,15 +136,17 @@ One of the three warnings:
     ~ responds 200 { id, name, -email }  otherwise
 ```
 
-A deleted account used to get a `410` and now gets a `200` with `status: "deleted"`, and `email` left the response. The response is still a valid `User`, the OpenAPI document still says `200 | 404 | 410`, TypeScript is happy, and every caller that read a `200` as a usable account is now wrong. Types describe structure, and tests cover the cases somebody thought of. suss works out what each path produces and compares that against what the other side does with it, which is where this kind of bug lives. [Motivation](/motivation) goes through the comparison with the tools you already run.
+A deleted account used to get a `410` and now gets a `200` with `status: "deleted"`, and `email` left the response. The response is still a valid `User`, the OpenAPI document still says `200 | 404 | 410`, TypeScript is happy, and every caller that read a `200` as a usable account is now wrong. Types describe structure, and tests cover the cases somebody thought of. suss works out what each path produces and compares that against what the other side does with it, which is where this kind of bug lives. [Compared to other tools](/why/compared) goes through the comparison with the tools you already run.
 
-## What you need to know
+[Read a pull request](/start/read-a-pull-request) puts that diff on every pull request as a comment.
 
-Four words are the whole tool. A **boundary** is where two units of code meet: an endpoint and its caller, a query and a table, a resolver and a schema. A **summary** is what suss worked out about one unit. A **check** compares the summaries on either side of a boundary. A **pack** teaches suss a library, and one ships for most of the stack already.
+## Where to start
 
-- **Adopting it one step at a time:** [Adopting suss](/guides/adopting-suss), then [Set up CI](/guides/ci-integration).
-- **Seeing it work end to end first:** [Get started](/tutorial/get-started) builds a small example.
-- **Looking something up:** [CLI reference](/reference/cli) · [Findings catalog](/reference/findings) · [Glossary](/glossary) · [FAQ](/faq).
-- **Python or Ruby:** [Read a Python or Ruby project](/guides/python-and-ruby).
-- **Your framework is missing:** [Write a pack](/guides/writing-a-pack).
-- **Consuming the output:** [Summary format](/behavioral-summary-format), then [IR reference](/ir-reference).
+[Four ideas](/start/four-ideas) is the vocabulary the rest of the documentation uses: boundary, summary, check, pack.
+
+- **Running it for the first time:** [Quickstart](/start/quickstart).
+- **Adopting it one step at a time:** [Adopt it step by step](/guides/adopting-suss), then [Run suss in CI](/guides/ci-integration).
+- **Looking something up:** [CLI reference](/reference/cli/) · [Findings catalog](/reference/findings) · [Glossary](/reference/glossary) · [FAQ](/reference/faq).
+- **Python or Ruby:** [Read Python or Ruby](/guides/python-and-ruby).
+- **Your framework is missing:** [Write a pack](/packs/write-a-pack).
+- **Consuming the output:** [Summary format](/reference/summary-format), then [IR types](/reference/ir).

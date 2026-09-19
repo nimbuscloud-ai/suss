@@ -1,5 +1,6 @@
-// pairFrontendBackendIntegration.test.ts: the docs/tutorial/pair-frontend-backend
-// flow as an end-to-end check. An Express provider and a fetch consumer
+// pairFrontendBackendIntegration.test.ts: the three-way flow in
+// docs/guides/check-against-openapi.md as an end-to-end check.
+// An Express provider and a fetch consumer
 // share no types; the only joining artifact is the OpenAPI document. The
 // consumer reads the body in `.then` chain form
 // (`fetch(url).then(res => res.json()).then(data => data.name)`), the case

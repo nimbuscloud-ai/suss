@@ -4,7 +4,7 @@
 // (the `component` being storied) and (b) named exports, each a story
 // object whose `args` describe one canonical scenario. For cross-shape
 // contract checking, each story is a *specification* of "this component
-// supports this prop configuration" (docs/contracts.md). Comparing an
+// supports this prop configuration" (docs/why/kinds-of-contract.md). Comparing an
 // inferred component summary against its stories answers: does the
 // component accept the args every story supplies? Does every inferred
 // branch have a story that reaches it?

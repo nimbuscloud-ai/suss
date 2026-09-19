@@ -6,7 +6,7 @@
 // All three live under `metadata.http.*` so the namespace is explicitly
 // HTTP-scoped; a future GraphQL / Lambda-invoke / queue pack would use
 // its own sibling namespace (`metadata.graphql`, `metadata.lambda`, …).
-// See `docs/boundary-semantics.md`.
+// See `docs/theory/boundary-semantics.md`.
 
 import { readHttpMetadata } from "@suss/behavioral-ir";
 

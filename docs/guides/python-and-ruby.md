@@ -176,7 +176,7 @@ file works whichever directory you run the command from.
 
 A pack config says something about your own project. A fact about a
 package you depend on, such as a module of yours that re-exports a
-framework, goes in a [dependency stub](/dependency-stubs) instead.
+framework, goes in a [dependency stub](/guides/teach-a-dependency) instead.
 
 You can still drive the adapters from a Node script, which is what to
 do when you want something the CLI does not expose. `extractPythonProject`
@@ -208,7 +208,7 @@ class TodoList:
     def post(self): ...
 ```
 
-A [dependency stub](/dependency-stubs) points at that module:
+A [dependency stub](/guides/teach-a-dependency) points at that module:
 
 ```yaml
 # suss/stubs/restx-wrapper.yaml
@@ -335,7 +335,7 @@ graphql:install` generates, the interface base included, and the
 adapter follows a class's whole ancestry, so an intermediate base of
 yours that leads to a generated one needs nothing said about it. A base
 class that comes from a gem is one you add in a
-[dependency stub](/dependency-stubs):
+[dependency stub](/guides/teach-a-dependency):
 
 ```yaml
 # suss/stubs/acme-graphql.yaml

@@ -4,7 +4,7 @@
 // body against a deterministic request battery, and check the summary's
 // claims against each observation. Two verdicts, mapped one-to-one onto
 // the extraction algorithm's correctness principles
-// (docs/extraction-algorithm.md §Correctness principles):
+// (docs/theory/extraction-algorithm.md §Correctness principles):
 //
 // - `falseClaim` (principle #2, "no false conditions"): a transition
 //   whose conditions all evaluate concretely true promised a status

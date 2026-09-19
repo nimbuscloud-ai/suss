@@ -1,7 +1,7 @@
 /**
  * The DispatchTable idiom: dispatch on a discriminated union through a
  * mapped-type Record, so a missing variant is a type error rather than a
- * runtime fall-through. It is decision #8 in docs/internal/style.md.
+ * runtime fall-through. It is decision #8 in design/docs-internal/style.md.
  *
  * It is here rather than in one package because the decision applies
  * repo-wide, and every package that walks an IR union needs it. Three

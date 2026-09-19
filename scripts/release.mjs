@@ -319,7 +319,7 @@ function checkPublishCredential({ fatal }) {
  * writes nothing, so every package can be asked before the first
  * publish and a release that cannot finish publishes nothing.
  *
- * Documented in docs/internal/releasing.md, including what to do with
+ * Documented in design/docs-internal/releasing.md, including what to do with
  * the packages a run turns down.
  */
 async function packagesMissingAPublisher(names) {

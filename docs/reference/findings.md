@@ -25,7 +25,7 @@ Every finding follows the same JSON shape:
 | `description` | string | One-line human-readable text. |
 | `aspect` | `BoundaryAspect?` | For generic boundary findings, this says which side of the field the finding concerns: `read` / `write` / `send` / `receive` / `construct` / `selector`. Absent on findings where the aspect is irrelevant or spans multiple aspects. |
 | `sources` | `string[]?` | Present only when two or more identical findings from different providers were collapsed by the dedupe pass. Each entry is a `${file}::${name}` matching `FindingSide.summary`. |
-| `suppressed` | `FindingSuppression?` | Present only when a `.sussignore` rule matched. It contains `{ reason, effect, originalSeverity? }`, see [Suppressions](/suppressions). |
+| `suppressed` | `FindingSuppression?` | Present only when a `.sussignore` rule matched. It contains `{ reason, effect, originalSeverity? }`, see [Accept a finding](/guides/accept-a-finding). |
 
 ## How a kind gets its severity
 
@@ -774,7 +774,7 @@ A file in the summaries directory could not be read as summaries. Without the fl
 
 - **Not every tool's finding.** Downstream tools built on top of `@suss/behavioral-ir` can emit their own kinds; those aren't listed here.
 - **Not a spec.** The authoritative list is `FindingKindSchema` in [`packages/behavioral-ir/src/schemas.ts`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/behavioral-ir/src/schemas.ts).
-- **Not exhaustive for severity mapping.** Severities shown are the defaults the checker emits. `.sussignore` rules can downgrade or hide any finding, see [Suppressions](/suppressions).
+- **Not exhaustive for severity mapping.** Severities shown are the defaults the checker emits. `.sussignore` rules can downgrade or hide any finding, see [Accept a finding](/guides/accept-a-finding).
 - **Not a roadmap.** The *reserved* tag means the kind exists in the IR enum but no checker emits it yet; it doesn't promise an emitter will land soon.
 
 **Legitimate when:** the two providers are the same route in two documents, so whichever the consumer reaches behaves the same.

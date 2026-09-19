@@ -1,6 +1,6 @@
 # Contributing to suss
 
-For design conventions, see [`docs/internal/style.md`](docs/internal/style.md).
+For design conventions, see [`design/docs-internal/style.md`](./design/docs-internal/style.md).
 
 ## Getting set up
 
@@ -25,7 +25,7 @@ npm run dogfood    # run suss over every package in this repo
 
 `npm run dogfood` is the widest check here. It runs discovery, extraction, resolution and the checker over every package in this repo rather than over a fixture, and it fails when a package declares an export that produces no summary. It writes the per-package counts to `scripts/dogfood-baseline.json`, which is committed, and CI runs `npm run check:dogfood` to fail when a count comes out below the committed one. Each package gets three counts: `exports` for the summaries that describe its declared public surface, `internal` for the ones behind that surface, and `consumers` for its calls into other packages.
 
-So if your change deletes exports, moves them between packages, inlines a private helper, or narrows a recognizer that was firing too often, run `npm run dogfood` and commit the refreshed baseline. The drop then appears in your pull request diff, where a reviewer can see it and agree you meant it. Counts going up need no refresh. `docs/internal/dogfooding.md` has the full table of what fails and what to do about it.
+So if your change deletes exports, moves them between packages, inlines a private helper, or narrows a recognizer that was firing too often, run `npm run dogfood` and commit the refreshed baseline. The drop then appears in your pull request diff, where a reviewer can see it and agree you meant it. Counts going up need no refresh. `design/docs-internal/dogfooding.md` has the full table of what fails and what to do about it.
 
 Line coverage works the same way. Each package under the coverage gate commits a `coverage/coverage-summary.json`, and `npm run check:coverage` fails when a package comes out below the number your commit records. Lowering coverage on purpose means running `npm run test:badges` and committing the refreshed summaries and badges, so the drop appears in your diff.
 
@@ -52,35 +52,35 @@ It rebases the branch onto `origin/main` in a temporary worktree, never in the c
 
 ## Commit messages
 
-[Conventional Commits](https://www.conventionalcommits.org/), with a scope for the affected package: `ir`, `extractor`, `adapter`, `cli`, `checker`, `express`, `react-router`, `ts-rest`, and so on. Omit the scope for changes that cut across the repo. [`docs/internal/style.md#commits`](docs/internal/style.md#commits) has the rest.
+[Conventional Commits](https://www.conventionalcommits.org/), with a scope for the affected package: `ir`, `extractor`, `adapter`, `cli`, `checker`, `express`, `react-router`, `ts-rest`, and so on. Omit the scope for changes that cut across the repo. [`design/docs-internal/style.md#commits`](./design/docs-internal/style.md#commits) has the rest.
 
 ## Naming
 
-Name a thing for the job it does, and let a package's directory spell out the name it publishes: `@suss/framework-hono` lives in `packages/framework/hono`. [`docs/internal/style.md#naming`](docs/internal/style.md#naming) covers package, directory, function, Datalog-relation, and concept names.
+Name a thing for the job it does, and let a package's directory spell out the name it publishes: `@suss/framework-hono` lives in `packages/framework/hono`. [`design/docs-internal/style.md#naming`](./design/docs-internal/style.md#naming) covers package, directory, function, Datalog-relation, and concept names.
 
 ## Tests
 
-Vitest, with each test file next to its source (`foo.ts` and `foo.test.ts`). A test that parses fixture source takes its ts-morph project from `@suss/test-project`, so every test reads the same language the adapter reads. See [`docs/internal/style.md#tests`](docs/internal/style.md#tests).
+Vitest, with each test file next to its source (`foo.ts` and `foo.test.ts`). A test that parses fixture source takes its ts-morph project from `@suss/test-project`, so every test reads the same language the adapter reads. See [`design/docs-internal/style.md#tests`](./design/docs-internal/style.md#tests).
 
 ## Reading a value
 
 Ask the evaluator or the resolution store what a value is; don't read the syntax at the position. In the TypeScript adapter that means `discovery/resolveValue.ts`, the `ResolutionStore` in `facts/store.ts`, `resolve/functionBehind.ts`, `walk/unwrap.ts` and `discovery/importScan.ts`. In the Python and Ruby adapters it means `values/evaluator.ts`, `facts/resolve.ts` and the literal readers in `ast.ts`. A pack calls what its adapter exports.
 
-A reader you write beside the call site handles the spellings you had in front of you and gives up on a template or a constant from another file. So when the facility cannot read a spelling, add the case there rather than reading the syntax yourself. `npm run check:readers` fails on the textual tells of a second reader, and the files that already fail are listed in `EXEMPT` in [`scripts/checkReaders.mjs`](scripts/checkReaders.mjs). [`docs/internal/style.md#reading-a-value`](docs/internal/style.md#reading-a-value) has the entry points and two before-and-after examples.
+A reader you write beside the call site handles the spellings you had in front of you and gives up on a template or a constant from another file. So when the facility cannot read a spelling, add the case there rather than reading the syntax yourself. `npm run check:readers` fails on the textual tells of a second reader, and the files that already fail are listed in `EXEMPT` in [`scripts/checkReaders.mjs`](scripts/checkReaders.mjs). [`design/docs-internal/style.md#reading-a-value`](./design/docs-internal/style.md#reading-a-value) has the entry points and two before-and-after examples.
 
 ## Adding a new framework pack
 
-A framework pack is a set of patterns you declare in configuration rather than write as code. See [`docs/packs.md`](docs/packs.md) for the full guide, and copy from the packs that already exist under `packages/framework/` and `packages/client/`.
+A framework pack is a set of patterns you declare in configuration rather than write as code. See [`docs/packs/what-a-pack-is.md`](./docs/packs/what-a-pack-is.md) for the full guide, and copy from the packs that already exist under `packages/framework/` and `packages/client/`.
 
-A pack may hardcode an identifier only when the library that pack is about defines it. An identifier that comes from one particular codebase belongs in per-project configuration instead. If you ship it as a default, other users get false matches on it, and coverage measured against the codebase the name came from looks better than it is, because discovery found those units by name rather than by pattern. List every identifier your pack hardcodes in its `vocabulary.json`, or `npm run check:vocabulary` will fail. [`docs/internal/style.md#identifiers-a-pack-names`](docs/internal/style.md#identifiers-a-pack-names) has the detail.
+A pack may hardcode an identifier only when the library that pack is about defines it. An identifier that comes from one particular codebase belongs in per-project configuration instead. If you ship it as a default, other users get false matches on it, and coverage measured against the codebase the name came from looks better than it is, because discovery found those units by name rather than by pattern. List every identifier your pack hardcodes in its `vocabulary.json`, or `npm run check:vocabulary` will fail. [`design/docs-internal/style.md#identifiers-a-pack-names`](./design/docs-internal/style.md#identifiers-a-pack-names) has the detail.
 
 ## Adding a metadata field
 
-A field on a metadata namespace needs a writer and a reader before it does anything. Both halves are usually written weeks apart, and the test on each side passes whether or not the other side exists, so `npm run check:metadata-wiring` compares the two lists instead. A field with a writer and no reader, or a reader and no writer, fails the build. If the consumer is genuinely still to come, add the field to `EXEMPT` in [`scripts/checkMetadataWiring.mjs`](scripts/checkMetadataWiring.mjs) with the reason and the issue that tracks it. [`docs/internal/style.md#both-sides-of-a-metadata-field`](docs/internal/style.md#both-sides-of-a-metadata-field) has the detail.
+A field on a metadata namespace needs a writer and a reader before it does anything. Both halves are usually written weeks apart, and the test on each side passes whether or not the other side exists, so `npm run check:metadata-wiring` compares the two lists instead. A field with a writer and no reader, or a reader and no writer, fails the build. If the consumer is genuinely still to come, add the field to `EXEMPT` in [`scripts/checkMetadataWiring.mjs`](scripts/checkMetadataWiring.mjs) with the reason and the issue that tracks it. [`design/docs-internal/style.md#both-sides-of-a-metadata-field`](./design/docs-internal/style.md#both-sides-of-a-metadata-field) has the detail.
 
 ## Documentation that shows a command and its output
 
-`npm run check:examples` runs the commands the pages show and compares what comes back to what the page says comes back. It exists because `docs/tutorial/get-started.md` promised a finding count the tool had stopped producing, twice in one week, and nothing noticed until somebody sat down and followed the tutorial.
+`npm run check:examples` runs the commands the pages show and compares what comes back to what the page says comes back. It exists because `docs/start/quickstart.md` promised a finding count the tool had stopped producing, twice in one week, and nothing noticed until somebody sat down and followed the tutorial.
 
 A command needs a project to run in, and not every page builds one, so a page opts in with HTML comments the rendered site drops:
 

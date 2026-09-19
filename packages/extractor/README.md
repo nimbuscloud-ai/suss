@@ -64,7 +64,7 @@ const summary = assembleSummary(raw);
 
 - [How the extractor assembles a summary](./DESIGN.md)
 - [Documentation](https://nimbuscloud-ai.github.io/suss/)
-- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/reference/packages)
+- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/packs/catalog)
 - [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ## Coverage
@@ -77,4 +77,4 @@ Licensed under Apache 2.0. See [LICENSE](../../LICENSE).
 
 ---
 
-For the canonical design, see [docs/architecture.md](../../docs/architecture.md).
+For the canonical design, see [docs/theory/architecture.md](../../docs/theory/architecture.md).
