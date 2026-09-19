@@ -103,7 +103,7 @@ A route is one kind of boundary. suss reads the same description off a queue con
 ## Where suss stops
 
 - TypeScript is the furthest along. Python and Ruby read routes and fewer ORMs. See [Read Python or Ruby](/guides/python-and-ruby).
-- A boundary is checked inside one repository. Comparing summaries across repositories, tracking a boundary over time, and alerting on a regression are left to whatever consumes the summaries.
+- One run reads one repository. Checking across two repositories means publishing one side's summaries and handing them to the other's run; see [Work across services](/guides/work-across-services). Tracking a boundary over time and alerting on a regression are left to whatever consumes the summaries.
 - suss describes what the code does and does not decide whether that is correct. A handler that returns 200 on every path when it should return 404 produces a summary its caller agrees with. Intent documents your team writes are the way to state what should happen; see [Check against your intent](/guides/check-against-intent).
 - Some code is too dynamic to read statically. suss marks a condition it could not take apart as opaque and says which calls it could not follow, rather than leaving the gap out of the output.
 
