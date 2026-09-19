@@ -20,25 +20,39 @@ import path from "node:path";
 import semver from "semver";
 
 import {
+  ecsContainerInstanceName,
   messageBusBinding,
   metricBinding,
   namePatternFromSub,
+  PLATFORM_INJECTED_ENV_VARS,
+  parseHandler,
+  runtimeConfigBinding,
   storageBinding,
+  withRuntimeContractMetadata,
 } from "@suss/behavioral-ir";
 
 import { filterValuesFor, parseFilterQuery } from "./filterQuery.js";
 import { parseHclDocument } from "./hclDocument.js";
 import { jsonAttributeValue } from "./jsonAttribute.js";
-import { referenceScope, resolveReferences } from "./references.js";
+import {
+  referencedResource,
+  referenceScope,
+  resolveReferences,
+} from "./references.js";
 
 import type {
   BehavioralSummary,
+  DeployableUnit,
+  EnvVarSource,
   MetricContractMetadata,
   MetricReadingMetadata,
   StorageContractMetadata,
 } from "@suss/behavioral-ir";
 import type {
   AttributeMeaning,
+  DeployableResource,
+  EnvDeclaration,
+  HandlerSpelling,
   MessageBusResource,
   MetricIdentity,
   MetricReadingResource,
@@ -64,6 +78,11 @@ export { jsonAttributeValue } from "./jsonAttribute.js";
 
 export type {
   AttributeMeaning,
+  DeployableCode,
+  DeployableContainers,
+  DeployableResource,
+  EnvDeclaration,
+  HandlerSpelling,
   MessageBusResource,
   MetricIdentity,
   MetricReadingResource,
@@ -318,6 +337,7 @@ const READERS: ResourceReaders = {
   "message-bus": (site, boundary) => [busSummary({ ...site, boundary })],
   metric: (site, boundary) => [metricSummary({ ...site, boundary })],
   "metric-reading": (site, boundary) => readingSummaries({ ...site, boundary }),
+  deployable: (site, boundary) => deployableSummaries({ ...site, boundary }),
 };
 
 function summariesFor(
@@ -729,6 +749,283 @@ function metricReading(
   };
 }
 
+/** One process a resource deploys, and what it is called inside it. */
+interface DeployedProcess {
+  body: Record<string, unknown>;
+  /** The container's own name, or null when the resource is one process. */
+  containerName: string | null;
+}
+
+/** What a deployment gives one process, in the terms the checker asks in. */
+interface DeclaredEnv {
+  names: string[];
+  values: Record<string, string>;
+  targets: Record<string, { kind: "ref"; logicalId: string }>;
+}
+
+/**
+ * One summary per process a resource deploys. A function is one; a task
+ * definition or a service with a sidecar is one per container, since
+ * each container starts with an environment of its own.
+ */
+function deployableSummaries(
+  opts: ResourceSite & { boundary: DeployableResource },
+): BehavioralSummary[] {
+  const { boundary, label } = opts;
+  return deployedProcesses(opts.body, boundary).map((process) =>
+    deployableSummary({
+      ...opts,
+      boundary,
+      process,
+      instanceName:
+        process.containerName === null
+          ? label
+          : ecsContainerInstanceName(label, process.containerName),
+    }),
+  );
+}
+
+function deployableSummary(
+  opts: ResourceSite & {
+    boundary: DeployableResource;
+    process: DeployedProcess;
+    instanceName: string;
+  },
+): BehavioralSummary {
+  const { boundary, instanceName, process } = opts;
+  const declared = declaredEnv(process.body, boundary.env ?? [], opts.scope);
+  const platform =
+    boundary.platformEnvVars ??
+    PLATFORM_INJECTED_ENV_VARS[boundary.deploymentTarget];
+  const code = codePointer(process.body, boundary);
+  const image = attributeText(process.body, boundary.code?.imageAttribute);
+  const runtime = attributeText(process.body, boundary.runtimeAttribute);
+  const deployableUnit: DeployableUnit = {
+    deploymentTarget: boundary.deploymentTarget,
+    instanceName,
+  };
+
+  return {
+    kind: "library",
+    location: {
+      file: opts.sourceFile,
+      range: { start: 1, end: 1 },
+      exportName: null,
+    },
+    identity: {
+      name: `${opts.resourceType}.${instanceName.replace("/", "#")}`,
+      exportPath: null,
+      boundaryBinding: runtimeConfigBinding({
+        recognition: "terraform",
+        ...deployableUnit,
+      }),
+      deployableUnit,
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "declared", level: "high" },
+    metadata: withRuntimeContractMetadata(
+      // A configuration says which handler runs and never which
+      // directory the artifact was built from, so the entry is all the
+      // checker gets to place the unit by.
+      {
+        codeScope: {
+          kind: "unknown",
+          ...(code.entry !== null ? { entry: code.entry } : {}),
+        },
+      },
+      {
+        envVars: [...new Set([...declared.names, ...platform])].sort(),
+        envVarSources: envVarSources(declared.names, platform),
+        ...(Object.keys(declared.targets).length > 0
+          ? { envVarTargets: declared.targets }
+          : {}),
+        ...(Object.keys(declared.values).length > 0
+          ? { envVarValues: declared.values }
+          : {}),
+        ...(code.entryPoint !== null ? { entryPoint: code.entryPoint } : {}),
+        ...(image !== null ? { image } : {}),
+        ...(runtime !== null ? { runtime } : {}),
+      },
+    ),
+  };
+}
+
+/** Where each variable came from: the configuration, or the platform. */
+function envVarSources(
+  declared: string[],
+  platform: readonly string[],
+): Record<string, EnvVarSource> {
+  const sources: Record<string, EnvVarSource> = {};
+  for (const name of declared) {
+    sources[name] = "template";
+  }
+  for (const name of platform) {
+    sources[name] ??= "platform";
+  }
+  return sources;
+}
+
+/** Each process the resource deploys, or the resource itself when it is one. */
+function deployedProcesses(
+  body: Record<string, unknown>,
+  boundary: DeployableResource,
+): DeployedProcess[] {
+  const containers = boundary.containers;
+  if (containers === undefined) {
+    return [{ body, containerName: null }];
+  }
+  return blocksAt(body, containers.blocks).map((container) => ({
+    body: container,
+    containerName:
+      containers.nameAttribute === undefined
+        ? null
+        : stringOf(container[containers.nameAttribute]),
+  }));
+}
+
+/** Which code the platform calls, as the configuration writes it. */
+interface CodePointer {
+  /** The handler string, verbatim, or null when the resource states none. */
+  entryPoint: string | null;
+  /** The file that handler is in, for a spelling that says which. */
+  entry: string | null;
+}
+
+/**
+ * How each spelling says which module the handler is in. A bare
+ * exported name says nothing about a file, so nothing is claimed for
+ * it and the unit is placed by whatever else the run knows.
+ */
+const HANDLER_MODULE: Record<
+  HandlerSpelling,
+  (written: string) => string | null
+> = {
+  "module.export": (written) => parseHandler(written)?.modulePath ?? null,
+  name: () => null,
+};
+
+function codePointer(
+  body: Record<string, unknown>,
+  boundary: DeployableResource,
+): CodePointer {
+  const spec = boundary.code?.handler;
+  const written = attributeText(body, spec?.attribute);
+  if (spec === undefined || written === null) {
+    return { entryPoint: null, entry: null };
+  }
+  return { entryPoint: written, entry: HANDLER_MODULE[spec.spelling](written) };
+}
+
+/** One reader per way a provider writes an environment. */
+type EnvReaders = {
+  [K in EnvDeclaration["style"]]: (
+    body: Record<string, unknown>,
+    declaration: Extract<EnvDeclaration, { style: K }>,
+    into: DeclaredEnv,
+    scope: ReferenceScope,
+  ) => void;
+};
+
+const ENV_READERS: EnvReaders = {
+  map: (body, declaration, into, scope) => {
+    const stated = asRecord(valueAt(body, declaration.attribute)) ?? {};
+    for (const [name, value] of Object.entries(stated)) {
+      setVariable(into, name, stringOf(value), scope);
+    }
+  },
+  entries: (body, declaration, into, scope) => {
+    for (const entry of blocksAt(body, declaration.block.split("."))) {
+      const name = stringOf(entry[declaration.nameAttribute]);
+      if (name === null) {
+        continue;
+      }
+      setVariable(
+        into,
+        name,
+        attributeText(entry, declaration.valueAttribute),
+        scope,
+      );
+      setTarget(
+        into,
+        name,
+        attributeText(entry, declaration.secretAttribute),
+        scope,
+      );
+    }
+  },
+};
+
+function declaredEnv(
+  body: Record<string, unknown>,
+  declarations: EnvDeclaration[],
+  scope: ReferenceScope,
+): DeclaredEnv {
+  const declared: DeclaredEnv = { names: [], values: {}, targets: {} };
+  for (const declaration of declarations) {
+    // The one cast joining a table that narrows per style to a lookup
+    // that does not, the way the resource readers above do it.
+    const read = ENV_READERS[declaration.style] as (
+      body: Record<string, unknown>,
+      declaration: EnvDeclaration,
+      into: DeclaredEnv,
+      scope: ReferenceScope,
+    ) => void;
+    read(body, declaration, declared, scope);
+  }
+  return declared;
+}
+
+/**
+ * A variable the process starts with, and what the configuration sets
+ * it to. A value that is one reference says both what the resource
+ * states and which resource it was, so both go on.
+ */
+function setVariable(
+  into: DeclaredEnv,
+  name: string,
+  written: string | null,
+  scope: ReferenceScope,
+): void {
+  if (!into.names.includes(name)) {
+    into.names.push(name);
+  }
+  if (written === null) {
+    return;
+  }
+  const pattern = namePattern(written, scope);
+  if (pattern !== null) {
+    into.values[name] = pattern;
+  }
+  setTarget(into, name, written, scope);
+}
+
+/**
+ * The resource a variable's value refers to. A secret comes through
+ * here alone: what the process reads is the secret's contents, which no
+ * configuration writes down, so only the resource goes on.
+ */
+function setTarget(
+  into: DeclaredEnv,
+  name: string,
+  written: string | null,
+  scope: ReferenceScope,
+): void {
+  const target = written === null ? null : referencedResource(written, scope);
+  if (target !== null) {
+    into.targets[name] = { kind: "ref", logicalId: target };
+  }
+}
+
+/** The attribute's value as text, or null when the entry states none. */
+function attributeText(
+  body: Record<string, unknown>,
+  attribute: string | undefined,
+): string | null {
+  return attribute === undefined ? null : stringOf(valueAt(body, attribute));
+}
+
 /**
  * What the pack says the value at that attribute means, or undefined
  * when the resource states nothing there, or states something the pack
@@ -771,13 +1068,21 @@ function blocksAt(
 ): Array<Record<string, unknown>> {
   let found: Array<Record<string, unknown>> = [body];
   for (const block of blocks) {
-    found = found.flatMap((record) =>
-      arrayOf(record[block])
-        .map(asRecord)
-        .filter((nested): nested is Record<string, unknown> => nested !== null),
-    );
+    found = found.flatMap((record) => nestedRecords(record[block]));
   }
   return found;
+}
+
+/**
+ * Every record a value states. A provider that takes a whole structure
+ * as one attribute, ECS's container definitions above all, writes it
+ * inside a string, and the same deployed value comes back either way.
+ */
+function nestedRecords(value: unknown): Array<Record<string, unknown>> {
+  const stated = typeof value === "string" ? jsonAttributeValue(value) : value;
+  return arrayOf(stated)
+    .map(asRecord)
+    .filter((nested): nested is Record<string, unknown> => nested !== null);
 }
 
 /**
