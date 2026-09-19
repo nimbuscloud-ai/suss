@@ -21,7 +21,7 @@ and a handler factory in TypeScript.
 ## More
 
 - [How the rules follow a value](./DESIGN.md)
-- [Documentation](https://nimbuscloud-ai.github.io/suss/)
+- [Documentation](https://suss.sh/)
 - [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ![coverage](../../.github/badges/coverage-resolution.svg)

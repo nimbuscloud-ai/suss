@@ -20,9 +20,9 @@ const ROOT = path.resolve(import.meta.dirname, "..");
 // VitePress copies docs/public into the build output as it is.
 const OUTPUT_DIR = path.join(ROOT, "docs", "public");
 
-const BASE = process.env.SUSS_DOCS_BASE ?? "/suss/";
+const BASE = process.env.SUSS_DOCS_BASE ?? "/";
 
-const SITE_ORIGIN = "https://nimbuscloud-ai.github.io/suss/";
+const SITE_ORIGIN = "https://suss.sh/";
 
 const REPOSITORY_BLOB = "https://github.com/nimbuscloud-ai/suss/blob/main";
 

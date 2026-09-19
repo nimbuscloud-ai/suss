@@ -35,10 +35,10 @@ implement the ops.
 
 ## More
 
-- [Write a pack](https://nimbuscloud-ai.github.io/suss/packs/write-a-pack)
-- [How packs work](https://nimbuscloud-ai.github.io/suss/packs/what-a-pack-is)
+- [Write a pack](https://suss.sh/packs/write-a-pack)
+- [How packs work](https://suss.sh/packs/what-a-pack-is)
 - [What a declaration compiles to](./DESIGN.md)
-- [Documentation](https://nimbuscloud-ai.github.io/suss/)
+- [Documentation](https://suss.sh/)
 - [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ![coverage](../../.github/badges/coverage-recognize.svg)

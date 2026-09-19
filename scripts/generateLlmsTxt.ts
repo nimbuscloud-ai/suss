@@ -24,7 +24,7 @@ const DOCS_DIR = path.join(ROOT, "docs");
 const OUTPUT = path.join(DOCS_DIR, "public", "llms.txt");
 const FULL_OUTPUT = path.join(DOCS_DIR, "public", "llms-full.txt");
 
-const SITE_ORIGIN = "https://nimbuscloud-ai.github.io/suss/";
+const SITE_ORIGIN = "https://suss.sh/";
 
 const SITE_NAME = "suss";
 

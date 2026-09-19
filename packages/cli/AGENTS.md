@@ -189,7 +189,7 @@ An empty report has three causes and they are distinguishable.
 
 ## Where the rest lives
 
-- [Docs site](https://nimbuscloud-ai.github.io/suss/)
+- [Docs site](https://suss.sh/)
 - [What a boundary is](https://github.com/nimbuscloud-ai/suss/blob/main/docs/theory/boundary-semantics.md)
 - [Write a pack](https://github.com/nimbuscloud-ai/suss/blob/main/docs/packs/write-a-pack.md) for a framework suss
   does not read yet

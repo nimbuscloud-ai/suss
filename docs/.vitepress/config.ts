@@ -17,13 +17,16 @@ const docsRoot = path.resolve(
 
 // The sitemap, the canonical link and the Open Graph tags each need an
 // absolute URL, which none of them can work out from `base` alone.
-const SITE_ORIGIN = "https://nimbuscloud-ai.github.io/suss/";
+const SITE_ORIGIN = "https://suss.sh/";
 
 const OG_IMAGE = `${SITE_ORIGIN}og.png`;
 
 const REPOSITORY = "https://github.com/nimbuscloud-ai/suss";
 
-const BASE = process.env.SUSS_DOCS_BASE ?? "/suss/";
+// The site is served from the root of suss.sh. SUSS_DOCS_BASE is for a
+// build that has to live under a prefix, such as a preview of the site
+// at a project-pages URL.
+const BASE = process.env.SUSS_DOCS_BASE ?? "/";
 
 // The license is a fact about the package, so read it rather than restate it.
 const { license } = JSON.parse(
@@ -108,10 +111,6 @@ export default defineConfig({
   description: SITE_DESCRIPTION,
   lang: "en-US",
   sitemap: { hostname: SITE_ORIGIN },
-  // GitHub Pages serves from /<repo>/, so assets + links resolve
-  // relative to that prefix. Easiest toggle for local dev is
-  // SUSS_DOCS_BASE: unset for root serving, set to "/suss/" for
-  // project-pages deploy.
   base: BASE,
   cleanUrls: true,
   lastUpdated: true,

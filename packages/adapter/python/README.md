@@ -43,9 +43,9 @@ It depends on `@suss/extractor`, `@suss/behavioral-ir`, `@suss/datalog` and `web
 
 ## More
 
-- [Documentation](https://nimbuscloud-ai.github.io/suss/)
-- [Python and Ruby](https://nimbuscloud-ai.github.io/suss/guides/python-and-ruby)
-- [Every pack suss ships](https://nimbuscloud-ai.github.io/suss/packs/catalog)
+- [Documentation](https://suss.sh/)
+- [Python and Ruby](https://suss.sh/guides/python-and-ruby)
+- [Every pack suss ships](https://suss.sh/packs/catalog)
 - [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ![coverage](../../../.github/badges/coverage-python.svg)

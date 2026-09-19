@@ -29,8 +29,8 @@ These transitions are emitted with `confidence.source: "derived"` and an opaque 
 
 ## More
 
-- [Documentation](https://nimbuscloud-ai.github.io/suss/)
-- [Every package and pack suss ships](https://nimbuscloud-ai.github.io/suss/packs/catalog)
+- [Documentation](https://suss.sh/)
+- [Every package and pack suss ships](https://suss.sh/packs/catalog)
 - [Source and issues](https://github.com/nimbuscloud-ai/suss)
 
 ## Coverage

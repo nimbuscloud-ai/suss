@@ -118,5 +118,5 @@ about a name never resolves it.
 ## More
 
 - [How an adapter teaches the evaluator its language](./DESIGN.md)
-- [Documentation](https://nimbuscloud-ai.github.io/suss/)
+- [Documentation](https://suss.sh/)
 - [Source and issues](https://github.com/nimbuscloud-ai/suss)
