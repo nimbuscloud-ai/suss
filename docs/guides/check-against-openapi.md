@@ -1,246 +1,290 @@
 ---
 title: Check against OpenAPI
-description: Read an OpenAPI 3.x document into summaries and compare it against the code that calls the API, or the handlers that serve it.
+description: Read an OpenAPI 3.x document into summaries and compare it against the client that calls the API, the handler that serves it, or both at once.
 ---
 
 # Check against OpenAPI
 
-You call an API somebody else owns and you have its OpenAPI 3.x
-document. Find out which statuses it declares that your client never
-handles, and get told when the vendor publishes a new version and your
-code drifts away from it.
-
-You don't have the vendor's source, so `extract` has nothing to read.
-`contract` reads the spec instead and produces summaries in the same
-format, which `check` then compares against your call sites.
-
-## What gets compared
-
-<svg class="suss-diagram" viewBox="0 0 660 268" role="img" aria-labelledby="openapi-title openapi-desc">
-  <title id="openapi-title">A vendor's spec and your code, read into the same shape</title>
-  <desc id="openapi-desc">The vendor's OpenAPI file goes through the OpenAPI contract reader, and your client code goes through the axios pack. Both produce summary files in the same format, which suss check compares against each other.</desc>
-
-  <defs>
-    <marker id="openapi-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-      <path class="arrow-head" d="M0,1 L7,4 L0,7 Z" />
-    </marker>
-  </defs>
-
-  <text class="axis" x="95" y="16" text-anchor="middle">Theirs</text>
-  <rect class="box" x="10" y="26" width="170" height="42" rx="6" />
-  <text class="label-mono" x="95" y="45" text-anchor="middle">stripe-openapi.yaml</text>
-  <text class="note" x="95" y="61" text-anchor="middle">what they say they return</text>
-
-  <text class="axis" x="95" y="112" text-anchor="middle">Yours</text>
-  <rect class="box" x="10" y="122" width="170" height="42" rx="6" />
-  <text class="label-mono" x="95" y="141" text-anchor="middle">src/payments.ts</text>
-  <text class="note" x="95" y="157" text-anchor="middle">what you handle</text>
-
-  <line class="arrow" x1="180" y1="47" x2="212" y2="47" marker-end="url(#openapi-arrow)" />
-  <line class="arrow" x1="180" y1="143" x2="212" y2="143" marker-end="url(#openapi-arrow)" />
-
-  <rect class="box" x="216" y="26" width="184" height="42" rx="6" />
-  <text class="label-mono" x="308" y="52" text-anchor="middle">contract --from openapi</text>
-
-  <rect class="box" x="216" y="122" width="184" height="42" rx="6" />
-  <text class="label-mono" x="308" y="148" text-anchor="middle">extract -f axios</text>
-
-  <line class="arrow" x1="400" y1="47" x2="432" y2="47" marker-end="url(#openapi-arrow)" />
-  <line class="arrow" x1="400" y1="143" x2="432" y2="143" marker-end="url(#openapi-arrow)" />
-
-  <rect class="box-data" x="436" y="26" width="150" height="42" rx="6" />
-  <text class="label-mono" x="511" y="52" text-anchor="middle">stripe.json</text>
-
-  <rect class="box-data" x="436" y="122" width="150" height="42" rx="6" />
-  <text class="label-mono" x="511" y="148" text-anchor="middle">client.json</text>
-
-  <path class="arrow" d="M586,47 L616,47 L616,240 L468,240" marker-end="url(#openapi-arrow)" />
-  <path class="arrow" d="M586,143 L616,143" />
-
-  <rect class="box" x="204" y="220" width="260" height="40" rx="6" />
-  <text class="label-mono" x="334" y="245" text-anchor="middle">suss check --dir summaries/</text>
-</svg>
-
-Both sides come out in the same format, and the checker pairs them by
-`(method, normalizedPath)`. It does not care that one side was written
-by Stripe and the other was read out of your code.
-
-## Step 1. Turn the spec into a contract
+Compare an OpenAPI 3.x document against the code on either side of it. `suss contract` reads the document into the same form `extract` produces from source, and `check` compares the two.
 
 ```bash
-npm install -D @suss/contract-openapi
-npx suss contract --from openapi stripe-openapi.yaml -o summaries/stripe.json
-```
-
-A URL works in place of the file path, useful when the vendor
-publishes their spec on GitHub or a docs site:
-
-```bash
-npx suss contract --from openapi \
-  https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.yaml \
-  -o summaries/stripe.json
-```
-
-One summary per operation. Each one has:
-- Method + path
-- Inputs for every declared parameter (path, query, header, cookie)
-  + request body
-- One transition per declared response status, with the body
-  `TypeShape` derived from the OpenAPI schema
-
-Quick check it worked:
-
-```bash
-npx suss inspect summaries/stripe.json | head -30
-```
-
-## Step 2. Extract your client code
-
-```bash
-npm install -D @suss/cli   # the axios, fetch and apollo packs ship with it
-npx suss extract -p tsconfig.json -f axios -o summaries/client.json
-```
-
-Each `axios.get("/v1/charges", ...)` call becomes a client-kind
-summary. The axios pack recognizes both the direct forms
-(`axios.get(...)`) and factory-bound forms
-(`const api = axios.create({ baseURL }); api.get(...)`).
-
-## Step 3. Pair them
-
-```bash
-npx suss check summaries/stripe.json summaries/client.json
-```
-
-Typical findings:
-
-- **unhandledProviderCase**, Stripe's spec declares a status
-  your client doesn't handle. Either add the branch, or suppress
-  with a `.sussignore` entry if the path is unreachable for
-  your use case.
-- **deadConsumerBranch**: your client reads a status Stripe
-  doesn't declare. Often drift from a copy-pasted client:
-  delete the branch.
-- **lowConfidence**: your client branches on something the
-  analyzer can't decompose (dynamic predicate, complex chain).
-  It's informational, and it means the finding below it may be
-  incomplete.
-
-## Handling path mismatches
-
-OpenAPI paths use `{id}` syntax; different clients use `:id`
-(Express-style) or template literals `` `${id}` ``. The pairing
-layer normalizes these, `GET /users/:id`, `GET /users/{id}`,
-and `` axios.get(`/users/${id}`) `` all pair.
-
-If pairs aren't matching, inspect what boundaries suss is seeing
-on each side:
-
-```bash
-npx suss inspect --dir summaries/
-```
-
-The output groups summaries by boundary key and shows which ones
-didn't match. Common root causes:
-
-- **Base URL prefix**: the spec's `servers[0].url` (or a Swagger
-  2.0 `basePath`) goes in front of every route it declares, and a
-  `baseURL` on the axios instance goes in front of every path the
-  client writes, so `axios.create({ baseURL: "/v1" })` plus
-  `api.get("/users/1")` pairs with a spec serving `/users/{id}`
-  under `/v1`. An absolute base keeps only its path, and a base of
-  `/` adds nothing. A base suss cannot read, one computed at
-  runtime such as `process.env.API_URL`, leaves the path bare,
-  which is where the two sides can still disagree.
-- **Encoded segments**, `/search/{q}` vs
-  `` axios.get(`/search/${encodeURIComponent(q)}`) ``. suss parses
-  both the same way, so this isn't usually a problem.
-- **Path as a parameter, not a literal**: if you do
-  `axios.get(url)` where `url` is a parameter, the pack can't see
-  the path. Wrapper expansion handles one hop, and anything deeper
-  doesn't pair automatically.
-
-## Pair against a subset
-
-Sometimes you only use a slice of a large vendor spec (you hit 5
-of Stripe's 200 endpoints). Run the full pair. The provider
-summaries that don't match land in `unmatched.providers` and don't
-fail the build. [Run suss in CI](/guides/ci-integration) shows the
-`--fail-on error` default that makes this work without tuning.
-
-If you want to be strict about what's *in use*, filter the
-summaries file before checking:
-
-```bash
-# Keep only /v1/charges and /v1/refunds
-jq '[.[] | select(.identity.boundaryBinding.semantics.path | test("^/v1/(charges|refunds)"))]' \
-  summaries/stripe.json > summaries/stripe-subset.json
-npx suss check summaries/stripe-subset.json summaries/client.json
-```
-
-Alternatively, commit a filter config as part of your CI setup.
-The filtering happens before the check, so all the check flags
-still apply.
-
-## Check your own handlers against the document
-
-The other direction: you serve the API and you keep the OpenAPI
-document for it. `extract` reads the handlers, `contract` reads the
-document, and `check` compares the two.
-
-```bash
-npx suss extract -p tsconfig.json -f express -o summaries/backend.json
 npx suss contract --from openapi openapi.yaml -o summaries/contract.json
-npx suss check --dir summaries --fail-on warning
+npx suss check --dir summaries/
 ```
 
-A status a handler produces that the document leaves out is an error. A
-status the document declares that no path in the handler produces is a
-warning, since documents often declare the 401 the middleware sends.
+Everything ships inside `@suss/cli`, so `npm install --save-dev @suss/cli` is the only install.
 
-Put the client summaries in the same folder and all three sides are
-compared in one run: what the handler does, what the client expects,
-and what the document promises. A single bug is then reported twice,
-once from pairing the two summaries and once from checking the client
-against the declared contract. `also from:` on a finding says where
-each side came from.
+Two directions, and they catch different things:
+
+- **You call the API.** The document is the provider. A status it declares that your client never branches on is a case your client will meet in production.
+- **You serve the API.** The document is the promise. A status your handler produces that the document leaves out is one no client written against the document will handle.
+
+<!-- suss:example -->
+
+The rest of this page runs against one small project: a document, a client that calls it, and a handler that serves it.
+
+`openapi.yaml`, the document:
+
+```yaml
+openapi: 3.0.3
+info:
+  title: Accounts
+  version: "1.0.0"
+paths:
+  /users/{id}:
+    get:
+      operationId: getUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+                  email: { type: string }
+        "404":
+          description: No such user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+        "429":
+          description: Too many requests
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+                  retryAfter: { type: integer }
+```
+
+## The consumer side
+
+`src/loadUser.ts`, a client that handles the 404 and nothing else:
+
+```ts
+export async function loadUser(id: string) {
+  const res = await fetch(`https://accounts.example.com/users/${id}`);
+
+  if (res.status === 404) {
+    return null;
+  }
+
+  const body = (await res.json()) as { id: string; email: string };
+  return body.email;
+}
+```
+
+Read both sides into one folder. The document becomes one summary per operation, with the declared parameters as inputs and one transition per declared status:
+
+```bash
+suss contract --from openapi openapi.yaml -o consumer/contract.json
+suss inspect consumer/contract.json
+```
 
 ```
-[ERROR] misreadProviderResponse
-  The consumer's fall-through path reads "name", but the 200 body the provider sends does not include it, and neither does any other response.
-  provider: backend/src/server.ts::get (backend/src/server.ts:14)
-    also from: openapi:openapi.yaml::GET /users/{id}
-  consumer: frontend/src/loadUser.ts::loadUser (frontend/src/loadUser.ts:1)
+openapi:openapi.yaml
+└─ GET /users/{id}  (openapi handler | line 0)
+     Contract: 200, 404, 429
+       -> 200 { id, name, email }
+       -> 404 { error }
+       -> 429 { error, retryAfter }
+
+1 summary.
+```
+
+A URL works in place of the file path, which is useful when the vendor publishes the document on GitHub or a docs site: `suss contract --from openapi https://example.com/openapi/spec3.yaml -o summaries/vendor.json`.
+
+Now read the client and compare:
+
+```bash
+suss extract --dir . -f fetch -o consumer/client.json
+suss check --dir consumer/ --all
+```
+
+`--all` writes out every pair and every finding rather than counting the quiet ones. There is one pair here, the document against the client, and two things wrong with it:
+
+<!-- suss:excerpt -->
+
+```
+────────────────────────────────────────────────────────────
+[WARNING] unhandledProviderCase
+  Provider produces status 429 but no consumer branch handles it
+  provider: openapi:openapi.yaml::getUser (openapi:openapi.yaml:0)
+  consumer: src/loadUser.ts::loadUser (src/loadUser.ts:1)
+  boundary: openapi (http) GET /users/{id}
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: unhandledProviderCase
+      boundary: "GET /users/{id}"
+      provider: { transitionId: "getUser:response:429:stub" }
+      reason: TODO say why you accept this
+────────────────────────────────────────────────────────────
+[WARNING] consumerContractViolation
+  Contract declares response 429 but consumer does not handle it
+  provider: openapi:openapi.yaml::getUser (openapi:openapi.yaml:0)
+  consumer: src/loadUser.ts::loadUser (src/loadUser.ts:1)
+  boundary: openapi (http) GET /users/{id}
+────────────────────────────────────────────────────────────
+2 findings: 0 error, 2 warning, 0 info
+```
+
+The client falls through to `res.json()` on a 429 and reads `body.email` off a rate-limit payload that has no `email` in it. Add the branch, or accept the finding with a `.sussignore` rule when the path is unreachable for your use of the API.
+
+Re-run this when the vendor publishes a new version of the document and you will see what your client stopped covering.
+
+The axios and Apollo packs work the same way: `-f axios` recognizes both `axios.get(...)` and a factory-bound `const api = axios.create({ baseURL }); api.get(...)`, and `-f apollo-client` reads the hooks and `client.query`.
+
+## The provider side
+
+`src/server.ts`, the handler that serves it:
+
+```ts
+import express from "express";
+
+declare const db: {
+  findById(id: string): Promise<{
+    id: string;
+    name: string;
+    email: string;
+    deletedAt: string | null;
+  } | null>;
+};
+
+const app = express();
+
+app.get("/users/:id", async (req, res) => {
+  const user = await db.findById(req.params.id);
+
+  if (!user) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+
+  if (user.deletedAt) {
+    res.status(410).json({ error: "gone" });
+    return;
+  }
+
+  res.status(200).json({ id: user.id, name: user.name });
+});
+
+export default app;
+```
+
+Same two commands, pointed at the handler instead of the client:
+
+```bash
+suss extract --dir . -f express -o provider/backend.json
+suss contract --from openapi openapi.yaml -o provider/contract.json
+suss check --dir provider/
+```
+
+```
+Compared 1 boundary.
+
+────────────────────────────────────────────────────────────
+[ERROR] providerContractViolation
+  Handler produces status 410 which the openapi document does not declare
+  provider: src/server.ts::get (src/server.ts:14)
+  consumer: openapi:openapi.yaml::getUser (openapi:openapi.yaml:0)
   boundary: express (http) GET /users/:id
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: providerContractViolation
+      boundary: "GET /users/{id}"
+      provider: { transitionId: "get:response:410:3b915da" }
+      reason: TODO say why you accept this
+────────────────────────────────────────────────────────────
+2 findings: 1 error, 1 warning, 0 info
+
+Not shown: 1 providerContractViolation (warning). Run the same command with --all to see it.
+
+suss met a call it could not follow in one unit, of 2, so that one is described in part. `suss inspect` says which calls.
 ```
 
-## What a three-way run exercises
+A status the handler produces that the document leaves out is an error, because a client written against the document has no branch for it. The other direction is a warning, and it is the finding this run counted without printing: the document declares a 429 and no path in the handler produces it. A warning rather than an error, because documents routinely declare the 401 that middleware sends.
 
-**Cross-stack pairing.** Express on one side, `fetch` on the other, no
-shared types. suss read each side into the same format and paired them
-on `(method, path)`.
+## Both at once
 
-**Field-level body matching.** The loader's `.name` read went through
-two `.then` callbacks before it reached a comparison against
-`{ id, fullName }`. TypeScript never sees this, because the frontend
-never imports the backend's types.
+Put all three summaries in one folder and every pair gets compared: the handler against the client, the handler against the document, and the document against the client.
 
-**Status handling.** suss finds the missing 404 branch by checking the
-loader against the handler's transitions, asking which of them the
-loader can reach. It reports this whether or not any test exercises the
-404.
+```bash
+suss extract --dir . -f express -f fetch -o summaries/code.json
+suss contract --from openapi openapi.yaml -o summaries/contract.json
+suss check --dir summaries/
+```
 
-**Status checks have to be visible.** suss reads the branch on
-`res.status` at the top of the loader. A status check buried in a
-callback whose value nobody returns leaves no transition for suss to
-read, so keep the branch where the loader returns from.
+```
+Compared 1 boundary.
 
-## When to use this vs writing a contract test
+────────────────────────────────────────────────────────────
+[ERROR] providerContractViolation
+  Handler produces status 410 which the openapi document does not declare
+  provider: src/server.ts::get (src/server.ts:14)
+  consumer: openapi:openapi.yaml::getUser (openapi:openapi.yaml:0)
+  boundary: express (http) GET /users/:id
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: providerContractViolation
+      boundary: "GET /users/{id}"
+      provider: { transitionId: "get:response:410:3b915da" }
+      reason: TODO say why you accept this
+────────────────────────────────────────────────────────────
+5 findings: 1 error, 4 warning, 0 info
 
-Contract tests (Pact, dredd, openapi-validator) verify requests
-and responses at runtime. They're authoritative but require
-running the code. suss analyzes the code statically and cares
-about *coverage*, does every declared status have a handler?
-Every prop, a scenario? Every field, a resolver?
+Not shown: 2 unhandledProviderCase (warning), 1 consumerContractViolation (warning), 1 providerContractViolation (warning). Run the same command with --all to see them.
 
-Run both if you can. They answer different questions.
+suss met a call it could not follow in one unit, of 3, so that one is described in part. `suss inspect` says which calls.
+```
+
+Five findings out of three pairs. Each of the two runs above found two, and the fifth comes from the pair neither of them had: the handler against the client. The 410 is now reported twice, once because the document does not declare it and once because the client has no branch for it. `also from:` on a finding says where each side came from when several sources agree on one boundary.
+
+The handler and the client share no types here. The client is a `fetch` call site in a browser bundle and the handler is Express in Node, and nothing imports anything across that line. suss reads both into the same format and pairs them on `(method, path)`, which is why the 410 shows up against the client as well as against the document.
+
+## When a pair does not form
+
+OpenAPI writes path parameters as `{id}`, Express writes them as `:id`, and a client writes a template literal. All three normalize to the same key, so `GET /users/:id`, `GET /users/{id}` and ``fetch(`/users/${id}`)`` pair.
+
+When something is not pairing, look at what each side claims:
+
+```bash
+suss inspect --dir summaries/
+```
+
+The usual causes, in order:
+
+- **A base URL in front of the path.** The document's `servers[0].url` (or a Swagger 2.0 `basePath`) goes in front of every route it declares, and a `baseURL` on an axios instance goes in front of every path the client writes. So `axios.create({ baseURL: "/v1" })` plus `api.get("/users/1")` pairs with a document serving `/users/{id}` under `/v1`. An absolute base keeps only its path, and a base of `/` adds nothing. A base suss cannot read, one computed at runtime such as `process.env.API_URL`, leaves the path bare, and that is where the two sides can still disagree.
+- **The path is a parameter rather than a literal.** `axios.get(url)` where `url` is an argument leaves the pack nothing to read. Wrapper expansion follows one hop; anything deeper does not pair on its own.
+- **Encoded segments.** `/search/{q}` against ``axios.get(`/search/${encodeURIComponent(q)}`)`` parses the same on both sides, so this one is rarely the problem.
+
+## A slice of a large document
+
+<!-- suss:unchecked the vendor document it filters is not one this repository checks in -->
+
+You hit five of a vendor's two hundred operations. Run the whole pair anyway. The provider summaries that match nothing land in `unmatched.providers` and do not fail the build, so there is nothing to tune.
+
+To be strict about what is in use, filter the summaries before checking:
+
+```bash
+jq '[.[] | select(.identity.boundaryBinding.semantics.path | test("^/v1/(charges|refunds)"))]' \
+  summaries/vendor.json > summaries/vendor-subset.json
+npx suss check summaries/vendor-subset.json summaries/client.json
+```
+
+The filtering happens before the check, so every check flag still applies.
+
+## Against a contract test
+
+A contract test (Pact, dredd, an OpenAPI validator) sends requests and inspects responses at runtime. It is authoritative about the traffic it generates and it needs the code running. suss reads the source instead and asks a coverage question: does every declared status have a branch, does every declared field get read, does every field the code reads get declared.
+
+Run both if you can. They answer different questions, and the static one runs on a pull request in seconds.
