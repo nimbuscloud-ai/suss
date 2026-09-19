@@ -22,7 +22,9 @@ import {
   CHECK_DESCRIPTION,
   checkTool,
   INSPECT_DESCRIPTION,
+  INTENT_OUTCOMES_DESCRIPTION,
   inspectTool,
+  intentOutcomesTool,
   STATUS_DESCRIPTION,
   STUB_DRAFT_DESCRIPTION,
   statusTool,
@@ -128,6 +130,31 @@ export function createServer(options: ProjectOptions): {
       },
     },
     (args) => attempt("suss_stub_draft", () => stubDraftTool(project, args)),
+  );
+
+  server.registerTool(
+    "suss_intent_outcomes",
+    {
+      title: "List the outcome ids a PRD scenario can link to",
+      description: INTENT_OUTCOMES_DESCRIPTION,
+      annotations: READ_ONLY,
+      inputSchema: {
+        intentDir: z
+          .string()
+          .optional()
+          .describe(
+            'The folder of intent documents, relative to the project root. Defaults to "intent", which is where suss check --intent reads.',
+          ),
+        boundary: z
+          .string()
+          .optional()
+          .describe(
+            'Keep only the documents whose boundary contains this text, such as "orders" or "@suss/checker". Leave it out for the whole folder.',
+          ),
+      },
+    },
+    (args) =>
+      attempt("suss_intent_outcomes", () => intentOutcomesTool(project, args)),
   );
 
   server.registerTool(

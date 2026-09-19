@@ -10,10 +10,14 @@
  * Every tool reads. None of them change a file.
  */
 
+import fs from "node:fs";
+import path from "node:path";
+
 import {
   answerQuestion,
   checkAt,
   checkDir,
+  intentOutcomes,
   preloadForQuestion,
   stubDraftResult,
   whereReadsCameFrom,
@@ -308,6 +312,66 @@ export async function attempt(
 export const STUB_DRAFT_DESCRIPTION = `Draft a dependency stub for a package this project uses but suss cannot read into: a compiled binding, a private wrapper, anything without readable source.
 
 For TypeScript the draft is built from the project's own call sites: one performs-call skeleton per export the code reaches, with the argument shapes observed at each site. For a Python project whose routes go through a wrapper module, it drafts a re-exports skeleton per imported module instead. For Ruby it drafts an extends-base skeleton from every require and every class whose superclass is spelled from the package. The semantic blanks are yours to fill from the package's own source, then save the file where the answer says and re-run extract.`;
+
+export const INTENT_OUTCOMES_DESCRIPTION = `List every outcome the project's boundary intent documents declare, as the \`<intent-name>.<outcome-id>\` a PRD scenario puts in its \`link\`.
+
+Call this before writing or editing a \`link\` in a PRD. The two halves of a link are written inside boundary intent documents, so a link composed from the feature description instead of from this list is a guess, and \`suss_check\` reports a wrong one as \`danglingScenarioLink\`.
+
+Each row says:
+  link         what to write in the scenario's \`link\`, verbatim.
+  intent       the boundary document's own name, the part before the dot.
+  boundary     the boundary that document is about, spelled the way reports spell it: "POST /orders/{id}/archive", "fn:@suss/checker::checkAll".
+  outcomeId    the outcome's id, the part after the dot.
+  description  how the outcome ends and what it turns on: "responds 404 when reads aws.dynamodb:Orders finds nothing".
+  file, line   where the id is written, for reading the document itself.
+
+Pass \`boundary\` to keep only the documents whose boundary contains that text.
+
+An outcome an uncurated draft declares is left out and counted in \`note\` instead. Renaming the outcome ids is the first thing curation does, so a link to one of those breaks as soon as somebody picks the draft up.`;
+
+/** The folder `suss check --intent` reads when the caller gives none. */
+const DEFAULT_INTENT_DIR = "intent";
+
+export function intentOutcomesTool(
+  project: Project,
+  args: { intentDir?: string | undefined; boundary?: string | undefined },
+): ToolResult {
+  const dir = path.resolve(project.root, args.intentDir ?? DEFAULT_INTENT_DIR);
+  if (!fs.existsSync(dir)) {
+    return failure(
+      `There is no folder at ${dir}. Boundary intent lives in intent/ by default; pass intentDir when this project keeps it somewhere else.`,
+    );
+  }
+
+  const listing = intentOutcomes({
+    from: dir,
+    ...(args.boundary !== undefined ? { boundary: args.boundary } : {}),
+  });
+  const trimmed = trim(listing.outcomes, (row) => row.intent);
+  const notes = [
+    omissionNote(
+      trimmed.omitted,
+      "outcomes",
+      "countsByIntent has every document and how many each declares. Pass a boundary to narrow to one.",
+    ),
+    draftNote(listing.drafts.length),
+  ].filter((note) => note !== undefined);
+
+  return said({
+    intentDir: dir,
+    outcomes: trimmed.shown,
+    total: listing.outcomes.length,
+    countsByIntent: trimmed.byKind,
+    ...(notes.length > 0 ? { note: notes.join(" ") } : {}),
+  });
+}
+
+function draftNote(drafts: number): string | undefined {
+  if (drafts === 0) {
+    return undefined;
+  }
+  return `${drafts} more outcome(s) are in uncurated drafts and are left out, since curation renames those ids.`;
+}
 
 export async function stubDraftTool(
   project: Project,

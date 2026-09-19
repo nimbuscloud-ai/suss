@@ -56,6 +56,27 @@ function writeProject(root: string): void {
       "}",
     ].join("\n"),
   );
+  fs.mkdirSync(path.join(root, "intent"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "intent/get-order.intent.yaml"),
+    [
+      "kind: boundary",
+      "name: get-order",
+      "purpose: Serve one order to the storefront.",
+      "audience: the storefront",
+      "source: author",
+      "boundary:",
+      "  transport: http",
+      "  semantics: rest",
+      "  method: GET",
+      "  path: /orders/:id",
+      "transitions:",
+      "  - id: served",
+      "    when: the order exists",
+      "    response:",
+      "      status: 200",
+    ].join("\n"),
+  );
   fs.writeFileSync(
     path.join(root, "suss.json"),
     JSON.stringify({
@@ -110,12 +131,13 @@ describe("the suss MCP server", () => {
     expect(info?.version).not.toBe("0.0.0-dev");
   });
 
-  it("offers the five tools", async () => {
+  it("offers the six tools", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "suss_ask",
       "suss_boundaries",
       "suss_check",
+      "suss_intent_outcomes",
       "suss_status",
       "suss_stub_draft",
     ]);
@@ -168,6 +190,32 @@ describe("the suss MCP server", () => {
     expect(text).toContain("Save this to");
     expect(text).toContain("publishEntry");
     expect(text).toContain("performs-call");
+  });
+
+  it("lists the outcome ids a PRD scenario can link to", async () => {
+    const result = await client.callTool({
+      name: "suss_intent_outcomes",
+      arguments: {},
+    });
+    const payload = result.structuredContent as {
+      outcomes: Array<{ link: string; boundary: string; description: string }>;
+      total: number;
+    };
+    expect(payload.total).toBe(1);
+    expect(payload.outcomes[0].link).toBe("get-order.served");
+    expect(payload.outcomes[0].boundary).toBe("GET /orders/{id}");
+    expect(payload.outcomes[0].description).toBe(
+      "responds 200 when the order exists",
+    );
+  });
+
+  it("says which folder to pass when there is no intent folder", async () => {
+    const result = await client.callTool({
+      name: "suss_intent_outcomes",
+      arguments: { intentDir: "specs" },
+    });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toContain("pass intentDir");
   });
 
   it("says there is nothing to draft for a package the project never calls", async () => {
