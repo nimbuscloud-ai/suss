@@ -5,63 +5,27 @@ description: What each suss command returns to the shell, so a CI job can tell a
 
 # Exit codes
 
-What each command returns to the shell, command by command.
+Every code is `0` or `1`. There is no third code to branch on: a command either did what you asked or it did not.
 
-## `suss init`
+| Command | Exits `0` | Exits `1` |
+|---|---|---|
+| `suss --help`, `suss --version`, `suss` with no command | Always. Any command given `--help` prints the usage and exits `0` too. | Never, though a command name suss does not have makes it print the usage and exit `1`. |
+| [`init`](/reference/cli/init) | Always. Declining every question, cancelling, and a failed install all end the same way. A failed install prints what npm said and leaves you the command to retry. | Never. |
+| [`extract`](/reference/cli/extract) | It produced at least one summary, or ran with `--allow-empty`, and neither `--gaps strict` nor `--fail-on-pack-error` found something to fail on. | It produced nothing and `--allow-empty` was not passed; `--gaps strict` recorded a gap; a pack threw while `--fail-on-pack-error` was on; an unknown pack, a `-p` path with no tsconfig, a `--dir` that does not exist, a bad `--lang` or `--gaps` value, a pack config the pack cannot read; or extraction threw. |
+| [`contract`](/reference/cli/contract) | The source loaded, even when it declares no boundary suss could read. | No `--from`, a source that is not one of the ten, no path, a fetch that failed, or a file suss could not parse. |
+| [`check`](/reference/cli/check) | Nothing at or above `--fail-on` (`error` by default), after suppressions. | Something at or above the threshold; `--at` matched nothing; a `--dir` run paired nothing without `--allow-empty`; `--fail-on-unpaired` or `--fail-on-unreadable` fired; or the arguments do not make a form (one positional file, `--at` with two files, `--allow-empty` without `--dir`, `--at` together with `--intent`). |
+| [`inspect`](/reference/cli/inspect) | It rendered. | The file is missing or is not valid summary JSON; a flag `inspect` does not take; `--changed-files`, `--budget` or `--chain` without `--diff`; `--diff` with fewer than two files; or, given nothing, a project where nothing matched a pack. |
+| [`inspect --flow`](/reference/cli/inspect#suss-inspect-flow) | It worked out an answer, including when nothing serves the request. | The request would not parse, there were no summaries to read, or the entry node is ambiguous. |
+| [`ask`](/reference/cli/ask) | The question is one of the ten and its subject is in the summaries it read, even when the answer is empty. Running `suss ask` with no question prints the list and exits `0`. | The question is not one of the ten, nothing in the summaries is at the boundary it asked about, or a why question's chain is not one the run contains. |
+| [`corroborate`](/reference/cli/corroborate) | Every claim that could be tried held up, or nothing was in scope. | A claim was refuted by execution; `--experimental` was left off; `--runs` or `--attempts` was not a positive whole number; or the project has no packs to read with. |
+| [`infer stub`](/reference/cli/infer#suss-infer-stub) | A draft was written, or printed with `-o -`. | The project shows no evidence of the package: no calls, no imports, no requires, no superclass. Also when the target file already exists, or `-o` points at one path for a Python package that drafts several. |
+| [`infer intent`](/reference/cli/infer#suss-infer-intent) | At least one doc was written. | No boundary in the summaries could be drafted as intent, or `--into` points at a folder that already has intent docs. |
+| [`infer prd`](/reference/cli/infer#suss-infer-prd) | At least one PRD was written. | Every boundary intent already has a scenario pointing at it, a document in the folder is still an uncurated draft, or `--into` points at a folder that already has PRDs. |
 
-`0`, always. Declining every question, cancelling, and a failed install
-all end the same way. A failed install stops there, prints what npm said,
-and leaves you the command so you can retry it yourself.
+When `--json` is among the arguments, the reason for a usage failure arrives on stdout as `{"error": "..."}` as well as on stderr, so a caller parsing stdout gets it rather than a truncated stream.
 
-## `suss extract`
+`--fail-on-empty` is gone from both `extract` and `check`. A run that finds or pairs nothing now fails by default; passing the old flag exits `1` and says to use `--allow-empty` instead.
 
-- `0`: extraction succeeded, produced at least one summary or ran with `--allow-empty`, and neither `--fail-on-pack-error` nor `--gaps strict` found something to fail on.
-- Non-zero: extraction threw (invalid tsconfig, unknown framework, missing files), it produced no summaries and `--allow-empty` was not passed, or one of those flags fired.
+## Suppressions and the check threshold
 
-## `suss contract`
-
-- `0`: contract source loaded.
-- `1`: unknown source, file not found, parse error.
-
-## `suss check`
-
-- `0`: no findings at or above the threshold (after suppressions).
-- `1`: at least one finding at or above the threshold, or, under `--at`,
-  a target that matched nothing.
-
-Suppressions (`.sussignore`) affect counting: `mark` and `hide`
-effects don't count toward the threshold; `downgrade` counts at
-the downgraded severity. See [Accept a finding](/guides/accept-a-finding).
-
-## `suss ask`
-
-- `0`: the question was one of the ten and its subject is in these
-  summaries, including when the answer is empty.
-- `1`: the question was not one of the ten, nothing here is at the
-  boundary it asked about, or a why question's chain is not one the
-  run contains.
-
-## `suss inspect`
-
-- `0`: rendered successfully.
-- Non-zero, input file missing or not valid summary JSON.
-
-## `suss corroborate`
-
-- `0`: every claim that could be tried held up (or nothing was in scope).
-- Non-zero: at least one claim was refuted by execution.
-
-## `suss infer stub`
-
-- `0`: a draft was written (or printed).
-- `1`: no calls into the package were found, so there was nothing to draft.
-
-## `suss infer intent`
-
-- `0`: at least one doc was written.
-- `1`: no boundary in the summaries could be drafted as intent.
-
-## `suss infer prd`
-
-- `0`: at least one PRD was written.
-- `1`: every boundary intent already has a scenario pointing at it.
+A `.sussignore` rule changes what counts toward `--fail-on`. A finding suppressed with `mark` or `hide` does not count; one suppressed with `downgrade` counts at the downgraded severity. See [Accept a finding](/guides/accept-a-finding).
