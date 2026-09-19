@@ -13,7 +13,11 @@ import type {
   BoundaryBinding,
   Input,
 } from "@suss/behavioral-ir";
-import type { IntentInputField, IntentSummary } from "@suss/intent-ir";
+import type {
+  IntentFinding,
+  IntentInputField,
+  IntentSummary,
+} from "@suss/intent-ir";
 
 const checkerIntentBinding = functionCallBinding({
   transport: "in-process",
@@ -97,7 +101,7 @@ function code(opts: {
 }
 
 /** Every finding about what the boundary is handed, and nothing else. */
-function aboutInput(result: { findings: Array<{ kind: string }> }) {
+function aboutInput(result: { findings: IntentFinding[] }): IntentFinding[] {
   return result.findings.filter(
     (f) => f.kind === "unreadInputField" || f.kind === "undeclaredInputRead",
   );

@@ -6,6 +6,7 @@ export {
   boundaryInputReads,
   type CarriesPayload,
   type ComparisonResult,
+  carriesPayloadFor,
   checkReceivedInput,
   compareSupplied,
   formatPath,

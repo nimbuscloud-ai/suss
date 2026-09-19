@@ -14,8 +14,8 @@
 
 import {
   boundaryInputReads,
+  carriesPayloadFor,
   formatPath,
-  isTheMessageParameter,
   readPathOf,
 } from "@suss/behavioral-ir";
 
@@ -31,15 +31,6 @@ import type {
 } from "@suss/behavioral-ir";
 import type { AuthoredInputField, AuthoredReceives } from "@suss/intent-ir";
 
-/** Which input the caller's value arrives through, per protocol. */
-const NOTHING_IS_THE_PAYLOAD: CarriesPayload = () => false;
-
-function carriesPayloadFor(binding: BoundaryBinding): CarriesPayload {
-  return binding.semantics.name === "message-bus"
-    ? isTheMessageParameter
-    : NOTHING_IS_THE_PAYLOAD;
-}
-
 /**
  * The block, or null when nothing readable came back. A boundary whose
  * protocol has not said which input the caller's value arrives through
@@ -50,13 +41,17 @@ export function draftedReceives(
   summaries: BehavioralSummary[],
   binding: BoundaryBinding,
 ): AuthoredReceives | null {
+  const carriesPayload = carriesPayloadFor(binding);
+  if (carriesPayload === null) {
+    return null;
+  }
   const receives: AuthoredReceives = {};
   for (const summary of summaries) {
     const result = boundaryInputReads(summary, binding);
     if (!result.read) {
       continue;
     }
-    const rejected = rejectedPaths(summary, carriesPayloadFor(binding));
+    const rejected = rejectedPaths(summary, carriesPayload);
     for (const path of result.reads.paths) {
       const spelled = formatPath(path);
       if (receives[spelled] !== undefined) {

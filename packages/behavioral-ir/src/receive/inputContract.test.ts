@@ -9,6 +9,7 @@ import {
 import {
   boundaryInputReads,
   type CarriesPayload,
+  carriesPayloadFor,
   checkReceivedInput,
   compareSupplied,
   formatPath,
@@ -291,7 +292,11 @@ describe("boundaryInputReads", () => {
           { input: "c", path: ["identity"] },
         ],
       }),
-      functionCallBinding({ recognition: "code", package: "@suss/checker" }),
+      functionCallBinding({
+        transport: "in-process",
+        recognition: "code",
+        package: "@suss/checker",
+      }),
     );
     expect(result).toEqual({
       read: true,
@@ -331,6 +336,44 @@ describe("boundaryInputReads", () => {
       }),
     );
     expect(result).toEqual({ read: false, reason: "unmapped-protocol" });
+  });
+});
+
+describe("carriesPayloadFor", () => {
+  it("says the event parameter for a message-bus boundary", () => {
+    const carriesPayload = carriesPayloadFor(
+      messageBusBinding({
+        recognition: "code",
+        messageBus: "aws_sqs",
+        channel: "orders",
+      }),
+    );
+    expect(carriesPayload?.(parameter("event", "event"))).toBe(true);
+    expect(carriesPayload?.(parameter("ctx", "context"))).toBe(false);
+  });
+
+  it("says no input at all for a function-call boundary", () => {
+    const carriesPayload = carriesPayloadFor(
+      functionCallBinding({
+        transport: "in-process",
+        recognition: "code",
+        package: "@suss/checker",
+      }),
+    );
+    expect(carriesPayload?.(parameter("provider", "provider"))).toBe(false);
+  });
+
+  it("has nothing to say for a protocol that never settled it", () => {
+    expect(
+      carriesPayloadFor(
+        restBinding({
+          transport: "http",
+          method: "GET",
+          path: "/invoices",
+          recognition: "code",
+        }),
+      ),
+    ).toBeNull();
   });
 });
 

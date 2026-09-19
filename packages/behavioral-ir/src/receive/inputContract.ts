@@ -255,6 +255,30 @@ export function messageBodyReadSet(
 /** Every parameter is part of what the caller sent, so none of them is the payload. */
 const EVERY_PARAMETER: CarriesPayload = () => false;
 
+/** Per protocol, which input the caller's value arrives through. */
+const PAYLOAD_INPUT: Record<Semantics["name"], CarriesPayload | null> = {
+  "function-call": EVERY_PARAMETER,
+  "message-bus": isTheMessageParameter,
+  rest: null,
+  storage: null,
+  "unit-invocation": null,
+  "graphql-resolver": null,
+  "graphql-operation": null,
+  "runtime-config": null,
+  metric: null,
+};
+
+/**
+ * Which of a unit's inputs its caller sends the value through, so a
+ * guard on that value and a read of it are spelled the same way. Null
+ * for a protocol that has not said which input that is.
+ */
+export function carriesPayloadFor(
+  binding: BoundaryBinding,
+): CarriesPayload | null {
+  return PAYLOAD_INPUT[binding.semantics.name];
+}
+
 /** Read nothing, for a protocol that has not said which input the caller's value arrives through. */
 const UNMAPPED = (): ReadSetResult => ({
   read: false,

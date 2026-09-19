@@ -44,6 +44,8 @@ An index in the middle of a read path is dropped rather than recorded: `event.Re
 
 `boundaryInputReads(summary, binding)` picks the `carriesPayload` for the boundary's protocol so a caller with a binding to hand does not have to. A function-call boundary treats every parameter as part of what the caller sent, so a read comes back under that parameter's role. A message-bus boundary goes through `messageBodyReadSet`. Every other protocol declines with `unmapped-protocol`.
 
+`carriesPayloadFor(binding)` gives the same answer on its own, for a caller that needs the predicate rather than the read set, and null for a protocol that has not said.
+
 `readPathOf(summary, ref, carriesPayload)` spells a `ValueRef` the way `readSetOf` spells a read, so a guard on a value and a read of the same value line up. `suss infer intent` uses it to tell which declared field a rejecting branch tests.
 
 ## Not done here
