@@ -416,3 +416,29 @@ describe("the recognizer-with-no-units check", () => {
     ).toEqual([]);
   });
 });
+
+describe("the no-files check", () => {
+  const noFiles = (packs: PackFunnel[]) =>
+    firedBy("every pack whose library is installed had files to read", packs);
+
+  it("fires when the library resolves and no file in the run reaches it", () => {
+    const found = noFiles([funnel({ candidateFiles: 0 })]);
+    expect(found).toHaveLength(1);
+    expect(found[0]?.label).toBe("demo");
+    expect(found[0]?.detail).toContain("@scope/lib is installed");
+  });
+
+  it("stays quiet once the gate selected a file", () => {
+    expect(noFiles([funnel({ candidateFiles: 1 })])).toEqual([]);
+  });
+
+  it("stays quiet while the library is not installed, which has its own report", () => {
+    expect(
+      noFiles([funnel({ candidateFiles: 0, unresolvedGates: ["@scope/lib"] })]),
+    ).toEqual([]);
+  });
+
+  it("stays quiet for an ungated pack, which is handed every file anyway", () => {
+    expect(noFiles([funnel({ candidateFiles: 0, gates: [] })])).toEqual([]);
+  });
+});
