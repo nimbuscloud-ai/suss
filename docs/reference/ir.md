@@ -136,8 +136,9 @@ type Semantics =
       instanceName: string | null };
 
 type MessageBus =
-  | "aws_sqs" | "aws.sns" | "s3" | "eventbridge" | "bullmq"
-  | "kafka" | "nats"
+  | "aws_sqs" | "aws.sns" | "s3" | "eventbridge"
+  | "aws_kinesis" | "aws_firehose" | "gcp_pubsub"
+  | "bullmq" | "kafka" | "nats"
   | "cloudflare-queues" | "cloudflare-cron" | "cloudflare-tail";
 ```
 
