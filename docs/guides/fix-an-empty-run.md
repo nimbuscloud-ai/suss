@@ -81,14 +81,17 @@ Pack health (1):
 
 Every line is three columns: what happened, the pack it happened to, and the numbers behind it. The codes are a fixed list, so `grep no-output` over a CI log finds every one with its counts on the same line.
 
-`prisma` here is the common case. `@prisma/client` is in `node_modules`, but until `npx prisma generate` runs the package exports no model types, so every `prisma.report.findUnique` call is a call on an opaque value and the pack classifies none of them:
+The `prisma` pack matches a call by the type of the thing it is called on, so it classifies `db.user.findUnique(...)` only when `db` resolves to the generated `PrismaClient` with a `user` model on it. Anything that breaks that resolution produces this line, whatever else is right about the run. Two things do it:
+
+- **The `@prisma/client` your code imports has no model types in it.** Either `npx prisma generate` has not run, or it generated somewhere that import does not resolve to: an `output` in the generator block, or a pnpm layout where the copy your code reaches is not the copy that was generated into. Check the `index.d.ts` under the package the import resolves to and look for your models in it.
+- **A cast on the receiver.** `(db as any).user.findUnique(...)` is a call on an opaque value, so the pack has nothing to match even with the client generated.
+
+Rule the first out before the second, because it is the one with a one-command fix:
 
 ```bash
 npx prisma generate
 npx suss extract -p tsconfig.json -f hono -f prisma -o summaries/code.json
 ```
-
-Anything with a codegen step behaves the same way: run the generator first, then extract.
 
 The other frequent line is a recognizer pack asked for on its own:
 
