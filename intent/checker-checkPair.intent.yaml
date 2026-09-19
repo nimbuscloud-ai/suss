@@ -16,6 +16,9 @@ boundary:
   semantics: function-call
   package: "@suss/checker"
   exportPath: ["checkPair"]
+  receives:
+    provider: { type: object, required: true }
+    consumer: { type: object, required: true }
 
 transitions:
   - id: findings

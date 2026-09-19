@@ -618,6 +618,40 @@ Renaming a store without updating the intent doc would otherwise produce an `unc
 
 **A bug when:** always. Update the intent if the store was renamed, and fix the code if it was not.
 
+### `unreadInputField`
+
+**Severity:** warning when the field is `required`, info otherwise.
+
+The intent's `receives` block declares a field, and no transition of the unit reads that path or anything under it.
+
+```
+[warning] fn:@suss/checker::checkPair: Intent "checker-check-pair" says fn:@suss/checker::checkPair receives consumer and needs it; checkPair never reads it.
+```
+
+A read that goes deeper satisfies the declaration, and so does a read of the object the field belongs to: declaring `pair.provider` is satisfied by a unit that reads `pair` whole. The comparison is skipped altogether when the read set could be shorter than what the unit really reads, which is a rest parameter, a payload used whole, or a summary that recorded nothing. REST, storage and unit-invocation boundaries accept a block and compare nothing against it yet.
+
+**Legitimate when:** the field was written ahead of the code that will read it, or a middleware reads it before the unit sees it.
+
+**A bug when:** the field was renamed on one side. The declaration says the caller must supply it and nothing uses it, so either the code stopped reading it or the document has the old name.
+
+### `undeclaredInputRead`
+
+**Severity:** info.
+
+The unit reads a path off what it was handed that the `receives` block does not list.
+
+```
+[info] fn:@suss/checker::checkPair: checkPair reads options.stream off what it was handed at fn:@suss/checker::checkPair; intent "checker-check-pair" does not declare it under receives.
+```
+
+Reported only when the doc has a `receives` block: a doc without one says nothing about the input, the same way a doc without `results` says nothing about effects. One finding per path, so a field read in three branches is one.
+
+Info rather than warning because a block lists the fields the author wanted checked and is never a full description of the input. A handler often reads a header for logging or tracing that no author would write down.
+
+**Legitimate when:** the field is one the document deliberately leaves out. Treat the list as what the code asks for beyond what anybody wrote down.
+
+**A bug when:** the code reads a field callers were never told to send. Add it to the block, or stop reading it.
+
 ### `unkeyableBoundary`
 
 **Severity:** warning.

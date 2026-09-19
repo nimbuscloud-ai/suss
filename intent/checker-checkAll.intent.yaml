@@ -25,6 +25,8 @@ boundary:
   semantics: function-call
   package: "@suss/checker"
   exportPath: ["checkAll"]
+  receives:
+    summaries: { type: array, required: true }
 
 transitions:
   - id: result

@@ -25,6 +25,9 @@ boundary:
   semantics: function-call
   package: "@suss/checker-intent"
   exportPath: ["checkIntentAgreement"]
+  receives:
+    intents: { type: array, required: true }
+    code: { type: array, required: true }
 
 transitions:
   - id: result

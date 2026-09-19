@@ -16,6 +16,8 @@ boundary:
   semantics: function-call
   package: "@suss/checker"
   exportPath: ["dedupeFindings"]
+  receives:
+    findings: { type: array, required: true }
 
 transitions:
   - id: deduped
