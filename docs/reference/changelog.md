@@ -5,7 +5,7 @@ description: What changed in each suss release, newest first.
 
 # Changelog
 
-One section per release, newest first. Each one opens with what the release is about, then the changes worth looking at, then the smaller fixes with their pull request numbers.
+One section per release, newest first.
 
 ## 0.32.0 (2026-09-17)
 
