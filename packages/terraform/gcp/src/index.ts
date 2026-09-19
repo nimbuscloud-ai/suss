@@ -15,13 +15,49 @@
  */
 
 import type { MetricAccumulation, MetricValueShape } from "@suss/behavioral-ir";
-import type { TerraformPack } from "@suss/contract-terraform";
+import type {
+  TerraformPack,
+  TerraformResourcePattern,
+} from "@suss/contract-terraform";
 
 /** The versions each entry below was written against. */
 const CURRENT = ">=4 <8";
 
 /** The system a log-based metric and an alert policy are both part of. */
 const METRIC_SYSTEM = "cloud-monitoring";
+
+/** The store a dataset and the tables in it are both part of. */
+const BIGQUERY = "gcp.bigquery";
+
+/**
+ * The store each `database_version` prefix picks. The attribute states
+ * an engine and a release together, `POSTGRES_15` and `MYSQL_8_0_31`,
+ * and the releases change every quarter, so the entry matches the
+ * engine part and leaves the rest alone.
+ */
+const SQL_VERSIONS = [
+  { storageSystem: "postgresql", prefix: "POSTGRES_" },
+  { storageSystem: "mysql", prefix: "MYSQL_" },
+];
+
+/**
+ * One entry per SQL engine an instance can run. Code addresses tables
+ * inside the database, which no attribute of the instance lists, so
+ * each entry declares the store and claims no access.
+ */
+function sqlStores(): TerraformResourcePattern[] {
+  return SQL_VERSIONS.map(({ storageSystem, prefix }) => ({
+    resource: "google_sql_database_instance",
+    providerVersions: CURRENT,
+    appliesWhen: { attribute: "database_version", startsWith: [prefix] },
+    boundary: {
+      kind: "storage" as const,
+      storageSystem,
+      declares: "store" as const,
+      fieldSet: "none" as const,
+    },
+  }));
+}
 
 /**
  * What each value type measures. BOOL, STRING, and MONEY are left out:
@@ -73,6 +109,98 @@ export function googleTerraform(): TerraformPack {
         },
       },
       {
+        resource: "google_bigquery_dataset",
+        providerVersions: CURRENT,
+        boundary: {
+          kind: "storage",
+          storageSystem: BIGQUERY,
+          // A dataset is the namespace a table is addressed through
+          // rather than something a query reads on its own.
+          declares: "store",
+          fieldSet: "none",
+        },
+      },
+      {
+        resource: "google_bigquery_table",
+        providerVersions: CURRENT,
+        boundary: {
+          kind: "storage",
+          storageSystem: BIGQUERY,
+          nameAttribute: "table_id",
+          scopeAttribute: "dataset_id",
+          // A schema written in the configuration is every column the
+          // table has; one a file or a variable supplies says nothing.
+          fieldSet: "none",
+          fieldsFromJson: {
+            attribute: "schema",
+            nameKey: "name",
+            typeKey: "type",
+            requires: { key: "mode", values: ["REQUIRED", "REPEATED"] },
+          },
+        },
+      },
+      {
+        resource: "google_spanner_database",
+        providerVersions: CURRENT,
+        boundary: {
+          kind: "storage",
+          storageSystem: "gcp.spanner",
+          // The tables are in the `ddl` statements rather than in an
+          // attribute, so the database declares the store and no more.
+          declares: "store",
+          fieldSet: "none",
+        },
+      },
+      {
+        resource: "google_firestore_database",
+        providerVersions: CURRENT,
+        // A database in Datastore mode speaks a different API, so it is
+        // not the store this entry describes.
+        appliesWhen: { attribute: "type", equals: ["FIRESTORE_NATIVE"] },
+        boundary: {
+          kind: "storage",
+          storageSystem: "gcp.firestore",
+          // Code addresses collections, which no attribute of the
+          // database lists.
+          declares: "store",
+          fieldSet: "none",
+        },
+      },
+      {
+        resource: "google_bigtable_table",
+        providerVersions: CURRENT,
+        boundary: {
+          kind: "storage",
+          storageSystem: "gcp.bigtable",
+          // A table id is what code passes to `instance.table()`, so
+          // the declared name and the accessed name meet.
+          nameAttribute: "name",
+          // Column families are not the fields of a row.
+          fieldSet: "none",
+        },
+      },
+      ...sqlStores(),
+      {
+        resource: "google_pubsub_topic",
+        providerVersions: CURRENT,
+        boundary: {
+          kind: "message-bus",
+          messageBus: "gcp_pubsub",
+          nameAttribute: "name",
+        },
+      },
+      {
+        resource: "google_pubsub_subscription",
+        providerVersions: CURRENT,
+        boundary: {
+          kind: "message-bus",
+          messageBus: "gcp_pubsub",
+          // A subscriber asks for the subscription rather than the
+          // topic, so the subscription is its own channel.
+          nameAttribute: "name",
+        },
+      },
+      {
         resource: "google_redis_instance",
         providerVersions: CURRENT,
         boundary: {
@@ -91,7 +219,6 @@ export function googleTerraform(): TerraformPack {
         boundary: {
           kind: "metric",
           metricSystem: METRIC_SYSTEM,
-          nameAttribute: "name",
           // Cloud Monitoring puts every metric a project defines for
           // itself under this prefix, and an alert policy spells the
           // whole string, so the whole string is the shared identity.
@@ -113,8 +240,11 @@ export function googleTerraform(): TerraformPack {
           kind: "metric-reading",
           metricSystem: METRIC_SYSTEM,
           readingBlocks: ["conditions", "condition_threshold"],
-          queryAttribute: "filter",
-          queryIdentityKey: "metric.type",
+          identifies: {
+            from: "query",
+            attribute: "filter",
+            key: "metric.type",
+          },
           comparesTo: { attribute: "threshold_value", whenSet: "number" },
           reducesTo: {
             attribute: "aggregations.per_series_aligner",

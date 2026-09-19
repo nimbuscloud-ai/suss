@@ -129,6 +129,76 @@ resource "google_redis_instance" "sessions" {
   name           = "sessions-v1"
   memory_size_gb = 1
 }
+
+resource "google_bigquery_dataset" "analytics" {
+  dataset_id = "analytics"
+  location   = "US"
+}
+
+resource "google_bigquery_table" "orders" {
+  dataset_id = google_bigquery_dataset.analytics.dataset_id
+  table_id   = "orders"
+
+  schema = jsonencode([
+    { name = "order_id", type = "STRING", mode = "REQUIRED" },
+    { name = "placed_at", type = "TIMESTAMP", mode = "NULLABLE" },
+  ])
+}
+
+resource "google_bigquery_table" "sessions" {
+  dataset_id = google_bigquery_dataset.analytics.dataset_id
+  table_id   = "sessions"
+  schema     = file("schema/sessions.json")
+}
+
+resource "google_sql_database_instance" "ledger" {
+  name             = "ledger"
+  database_version = "POSTGRES_15"
+  region           = "us-central1"
+}
+
+resource "google_sql_database_instance" "reporting" {
+  name             = "reporting"
+  database_version = "MYSQL_8_0_31"
+  region           = "us-central1"
+}
+
+resource "google_sql_database_instance" "legacy" {
+  name             = "legacy"
+  database_version = "SQLSERVER_2019_STANDARD"
+  region           = "us-central1"
+}
+
+resource "google_spanner_database" "ledger" {
+  name     = "ledger"
+  instance = "spanner-main"
+}
+
+resource "google_firestore_database" "documents" {
+  name        = "(default)"
+  location_id = "nam5"
+  type        = "FIRESTORE_NATIVE"
+}
+
+resource "google_firestore_database" "legacy_documents" {
+  name        = "legacy"
+  location_id = "nam5"
+  type        = "DATASTORE_MODE"
+}
+
+resource "google_bigtable_table" "events" {
+  name          = "events"
+  instance_name = "bigtable-main"
+}
+
+resource "google_pubsub_topic" "orders" {
+  name = "orders"
+}
+
+resource "google_pubsub_subscription" "orders_worker" {
+  name  = "orders-worker"
+  topic = google_pubsub_topic.orders.name
+}
 `;
 
 describe("what the storage entries read", () => {
@@ -154,6 +224,105 @@ describe("what the storage entries read", () => {
     expect(
       readStorageContractMetadata(instance)?.physicalTable,
     ).toBeUndefined();
+  });
+
+  it("reads a BigQuery table in the dataset its reference resolves to", () => {
+    const table = boundary(STORES, "google_bigquery_table.orders");
+    expect(table.identity.boundaryBinding?.semantics).toMatchObject({
+      name: "storage",
+      storageSystem: "gcp.bigquery",
+      scope: "analytics",
+      container: "orders",
+    });
+    expect(readStorageContractMetadata(table)?.physicalTable).toBe("orders");
+  });
+
+  it("reads every column a table's schema states, and calls the list complete", () => {
+    const contract = readStorageContractMetadata(
+      boundary(STORES, "google_bigquery_table.orders"),
+    );
+    expect(contract?.fieldSet).toBe("exhaustive");
+    expect(contract?.fields).toEqual([
+      { name: "order_id", type: "STRING", nullable: false },
+      { name: "placed_at", type: "TIMESTAMP", nullable: true },
+    ]);
+  });
+
+  it("records no columns for a schema a file supplies", () => {
+    const contract = readStorageContractMetadata(
+      boundary(STORES, "google_bigquery_table.sessions"),
+    );
+    expect(contract?.fieldSet).toBe("none");
+    expect(contract?.fields).toBeUndefined();
+  });
+
+  it("reads a dataset as the store its tables live in", () => {
+    expect(
+      boundary(STORES, "google_bigquery_dataset.analytics").identity
+        .boundaryBinding?.semantics,
+    ).toMatchObject({ storageSystem: "gcp.bigquery", container: null });
+  });
+
+  it("reads a Cloud SQL instance as the store its database_version picks", () => {
+    expect(
+      boundary(STORES, "google_sql_database_instance.ledger").identity
+        .boundaryBinding?.semantics,
+    ).toMatchObject({ storageSystem: "postgresql", container: null });
+    expect(
+      boundary(STORES, "google_sql_database_instance.reporting").identity
+        .boundaryBinding?.semantics,
+    ).toMatchObject({ storageSystem: "mysql" });
+  });
+
+  it("skips a Cloud SQL engine no entry describes", () => {
+    expect(
+      read(STORES).some(
+        (s) => s.identity.name === "google_sql_database_instance.legacy",
+      ),
+    ).toBe(false);
+  });
+
+  it("reads Spanner and Firestore as stores with no container to pair on", () => {
+    expect(
+      boundary(STORES, "google_spanner_database.ledger").identity
+        .boundaryBinding?.semantics,
+    ).toMatchObject({ storageSystem: "gcp.spanner", container: null });
+    expect(
+      boundary(STORES, "google_firestore_database.documents").identity
+        .boundaryBinding?.semantics,
+    ).toMatchObject({ storageSystem: "gcp.firestore", container: null });
+  });
+
+  it("skips a Firestore database in Datastore mode, which speaks another API", () => {
+    expect(
+      read(STORES).some(
+        (s) => s.identity.name === "google_firestore_database.legacy_documents",
+      ),
+    ).toBe(false);
+  });
+
+  it("reads a Bigtable table under the id code passes to table()", () => {
+    const table = boundary(STORES, "google_bigtable_table.events");
+    expect(table.identity.boundaryBinding?.semantics).toMatchObject({
+      storageSystem: "gcp.bigtable",
+      container: "events",
+    });
+    expect(readStorageContractMetadata(table)?.physicalTable).toBe("events");
+  });
+
+  it("reads a topic and a subscription as channels of their own", () => {
+    expect(
+      boundary(STORES, "google_pubsub_topic.orders").identity.boundaryBinding
+        ?.semantics,
+    ).toMatchObject({
+      name: "message-bus",
+      messageBus: "gcp_pubsub",
+      channel: "orders",
+    });
+    expect(
+      boundary(STORES, "google_pubsub_subscription.orders_worker").identity
+        .boundaryBinding?.semantics,
+    ).toMatchObject({ messageBus: "gcp_pubsub", channel: "orders_worker" });
   });
 });
 

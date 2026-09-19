@@ -2,11 +2,11 @@
   "totals": {
     "packages": 76,
     "packagesWithExports": 76,
-    "exports": 1023,
-    "internal": 3572,
-    "consumers": 2078,
-    "pairs": 2066,
-    "unfollowedCalls": 528,
+    "exports": 1024,
+    "internal": 3585,
+    "consumers": 2089,
+    "pairs": 2077,
+    "unfollowedCalls": 529,
     "findingErrors": 0
   },
   "packages": {
@@ -180,10 +180,10 @@
     },
     "packages/contract/terraform": {
       "name": "@suss/contract-terraform",
-      "exports": 6,
-      "internal": 38,
-      "consumers": 18,
-      "unfollowedCalls": 2
+      "exports": 7,
+      "internal": 49,
+      "consumers": 23,
+      "unfollowedCalls": 3
     },
     "packages/contract/wrangler": {
       "name": "@suss/contract-wrangler",
@@ -524,15 +524,15 @@
     "packages/terraform/aws": {
       "name": "@suss/terraform-aws",
       "exports": 2,
-      "internal": 1,
-      "consumers": 7,
+      "internal": 2,
+      "consumers": 9,
       "unfollowedCalls": 0
     },
     "packages/terraform/gcp": {
       "name": "@suss/terraform-gcp",
       "exports": 2,
-      "internal": 2,
-      "consumers": 15,
+      "internal": 3,
+      "consumers": 19,
       "unfollowedCalls": 0
     },
     "packages/values": {

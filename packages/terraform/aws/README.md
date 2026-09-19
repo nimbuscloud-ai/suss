@@ -25,11 +25,67 @@ terraformFileToSummaries("infra/terraform/dynamodb", { packs: [awsTerraform()] }
 | `aws_s3_bucket` | a store whose objects have no fields to compare against |
 | `aws_elasticache_cluster` | a Redis store, when `engine` is `redis` or `valkey`; a Memcached cluster is skipped |
 | `aws_elasticache_replication_group` | a Redis store |
+| `aws_rds_cluster` | a PostgreSQL or MySQL store, whichever its `engine` picks |
+| `aws_db_instance` | the same, and `mariadb` counts as MySQL |
 | `aws_sqs_queue` | a channel |
 | `aws_sns_topic` | a channel |
 | `aws_cloudwatch_event_bus` | a channel |
+| `aws_kinesis_stream` | a channel |
+| `aws_kinesis_firehose_delivery_stream` | a channel |
+| `aws_cloudwatch_log_metric_filter` | a metric, identified by its namespace and its name together |
+| `aws_cloudwatch_metric_alarm` | one consumer of that metric, identified the same way |
 
 Everything else a configuration declares, a security group, a subnet, an IAM policy, is how the deployment is wired rather than something a caller addresses, so nothing reads it.
+
+## Why a database instance pairs with nothing
+
+`aws_rds_cluster` and `aws_db_instance` declare that a PostgreSQL or a MySQL store exists, and no more. Code addresses tables inside the database, and no attribute of either resource lists one, so the same reasoning as for ElastiCache applies: the summary declares the store with no container name, and the storage check claims no access for it. What you get is visibility, a store the run saw, and the tables keep pairing between an ORM schema and the code that queries it.
+
+The `engine` attribute decides which store the resource is, so the pack states one entry per engine and the gate picks between them. An engine outside those lists, `oracle-ee` or `sqlserver-ex`, is a store suss has no word for, so the resource goes unread rather than read as something it may not be.
+
+## What Kinesis pairs with
+
+Nothing yet. A stream and a delivery stream each become a channel, and no code pack records a send to either, so they show up as declared channels nothing paired with. They stay separate buses because the two are different APIs: a producer puts records on a stream and consumers read from it, while a delivery stream has no reader at all, it writes into a destination. Giving them one bus name would let a stream and a delivery stream called the same thing pair with each other.
+
+## What an alarm and a metric filter share
+
+CloudWatch identifies a metric by its namespace and its name together, and both sides of the pair write both:
+
+```hcl
+resource "aws_cloudwatch_log_metric_filter" "refusals" {
+  name           = "refusals"
+  log_group_name = "/aws/lambda/orders"
+  pattern        = "{ $.outcome = \"refused\" }"
+
+  metric_transformation {
+    name      = "Refusals"
+    namespace = "OrderService"
+    value     = "1"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "refusals_climbing" {
+  alarm_name          = "refusals-climbing"
+  namespace           = "OrderService"
+  metric_name         = "Refusals"
+  comparison_operator = "GreaterThanThreshold"
+  threshold           = 5
+  statistic           = "Sum"
+  period              = 60
+  evaluation_periods  = 1
+}
+```
+
+Both become `OrderService/Refusals`, so `suss check` reports an alarm on a metric nothing publishes, and a metric nothing watches.
+
+The shape check `checkMetric` runs never fires here, and cannot: a metric filter only ever publishes a number, and an alarm only ever compares against one, so the two sides never disagree about shape. The pair is worth recording so the missing-side report can name it, rather than for a shape finding. An alarm that states `extended_statistic` rather than `statistic` does not record a reduction, because a percentile is written as `pNN.NN` and no fixed table can list those.
+
+## What the AWS entries leave out
+
+- **`aws_s3_bucket_versioning` and `aws_s3_bucket_lifecycle_configuration`**, and the rest of the v4 split resources, say how a bucket is administered rather than what a caller can address, so nothing reads them. The bucket itself is the boundary.
+- **`aws_rds_cluster_instance`** is a compute node of the cluster `aws_rds_cluster` already declares, so reading it would count one store twice.
+- **`aws_mq_broker`** runs ActiveMQ or RabbitMQ, and suss has no bus word for either, nor any pack that records a send to one. A bus value nothing produces would pair with nothing and say nothing.
+- **An alarm written as `metric_query` blocks** states its metric inside a block while its threshold stays on the resource, and the entry reads one reading at a time, so only the direct form is read.
 
 ## Why a Redis cluster pairs with nothing
 
@@ -52,6 +108,15 @@ terraform {
 ```
 
 The reader takes that pin and hands it to the pack. A configuration that pins nothing is read by every entry, since nothing said otherwise.
+
+Every entry here was written against `>=4 <7`, from these pages of the provider's own documentation:
+
+- [`aws_dynamodb_table`](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/dynamodb_table), [`aws_s3_bucket`](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket)
+- [`aws_elasticache_cluster`](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/elasticache_cluster), [`aws_elasticache_replication_group`](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/elasticache_replication_group)
+- [`aws_rds_cluster`](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/rds_cluster), [`aws_db_instance`](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/db_instance)
+- [`aws_sqs_queue`](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/sqs_queue), [`aws_sns_topic`](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/sns_topic), [`aws_cloudwatch_event_bus`](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/cloudwatch_event_bus)
+- [`aws_kinesis_stream`](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kinesis_stream), [`aws_kinesis_firehose_delivery_stream`](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kinesis_firehose_delivery_stream)
+- [`aws_cloudwatch_log_metric_filter`](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/cloudwatch_log_metric_filter), [`aws_cloudwatch_metric_alarm`](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/cloudwatch_metric_alarm)
 
 ## Where it fits in suss
 

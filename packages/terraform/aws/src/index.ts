@@ -8,10 +8,56 @@
  * the bucket entry starts there.
  */
 
-import type { TerraformPack } from "@suss/contract-terraform";
+import type { MetricValueShape } from "@suss/behavioral-ir";
+import type {
+  TerraformPack,
+  TerraformResourcePattern,
+} from "@suss/contract-terraform";
 
 /** The versions each entry below was written against. */
 const CURRENT = ">=4 <7";
+
+/** The system a metric filter and an alarm are both part of. */
+const METRIC_SYSTEM = "cloudwatch";
+
+/**
+ * What each statistic leaves behind. A percentile is written under
+ * `extended_statistic` as `pNN.NN`, which no fixed table can list, so
+ * an alarm using one states no reduction here.
+ */
+const STATISTICS: Record<string, MetricValueShape> = {
+  SampleCount: "number",
+  Average: "number",
+  Sum: "number",
+  Minimum: "number",
+  Maximum: "number",
+};
+
+/** The store each value of an `engine` attribute picks. */
+const SQL_ENGINES = [
+  { storageSystem: "postgresql", engines: ["postgres", "aurora-postgresql"] },
+  { storageSystem: "mysql", engines: ["mysql", "aurora-mysql", "mariadb"] },
+];
+
+/**
+ * One entry per SQL engine a resource can run, since the engine decides
+ * which store it is. Code addresses tables inside the database, which
+ * no attribute of the resource lists, so each entry declares the store
+ * and claims no access, the same as an ElastiCache cluster.
+ */
+function sqlStores(resource: string): TerraformResourcePattern[] {
+  return SQL_ENGINES.map(({ storageSystem, engines }) => ({
+    resource,
+    providerVersions: CURRENT,
+    appliesWhen: { attribute: "engine", equals: engines },
+    boundary: {
+      kind: "storage" as const,
+      storageSystem,
+      declares: "store" as const,
+      fieldSet: "none" as const,
+    },
+  }));
+}
 
 export function awsTerraform(): TerraformPack {
   return {
@@ -90,6 +136,8 @@ export function awsTerraform(): TerraformPack {
           fieldSet: "none",
         },
       },
+      ...sqlStores("aws_rds_cluster"),
+      ...sqlStores("aws_db_instance"),
       {
         resource: "aws_sqs_queue",
         providerVersions: CURRENT,
@@ -115,6 +163,54 @@ export function awsTerraform(): TerraformPack {
           kind: "message-bus",
           messageBus: "eventbridge",
           nameAttribute: "name",
+        },
+      },
+      {
+        resource: "aws_kinesis_stream",
+        providerVersions: CURRENT,
+        boundary: {
+          kind: "message-bus",
+          messageBus: "aws_kinesis",
+          nameAttribute: "name",
+        },
+      },
+      {
+        resource: "aws_kinesis_firehose_delivery_stream",
+        providerVersions: CURRENT,
+        boundary: {
+          kind: "message-bus",
+          messageBus: "aws_firehose",
+          nameAttribute: "name",
+        },
+      },
+      {
+        resource: "aws_cloudwatch_log_metric_filter",
+        providerVersions: CURRENT,
+        boundary: {
+          kind: "metric",
+          metricSystem: METRIC_SYSTEM,
+          // CloudWatch identifies a metric by its namespace and its
+          // name together, and an alarm spells both, so both are the
+          // identity the two sides share.
+          metricTypeTemplate:
+            "{metric_transformation.namespace}/{metric_transformation.name}",
+        },
+      },
+      {
+        resource: "aws_cloudwatch_metric_alarm",
+        providerVersions: CURRENT,
+        boundary: {
+          kind: "metric-reading",
+          metricSystem: METRIC_SYSTEM,
+          // An alarm on a single metric is one reading, written in the
+          // resource itself rather than in a block.
+          readingBlocks: [],
+          identifies: {
+            from: "attributes",
+            template: "{namespace}/{metric_name}",
+          },
+          comparesTo: { attribute: "threshold", whenSet: "number" },
+          reducesTo: { attribute: "statistic", means: STATISTICS },
         },
       },
     ],

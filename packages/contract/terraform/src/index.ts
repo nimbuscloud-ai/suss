@@ -17,8 +17,6 @@
 import fs from "node:fs";
 import path from "node:path";
 
-// The parser ships CommonJS, so ESM reaches it through the default.
-import hcl2 from "hcl2-parser";
 import semver from "semver";
 
 import {
@@ -29,16 +27,20 @@ import {
 } from "@suss/behavioral-ir";
 
 import { filterValuesFor, parseFilterQuery } from "./filterQuery.js";
+import { parseHclDocument } from "./hclDocument.js";
+import { jsonAttributeValue } from "./jsonAttribute.js";
 import { referenceScope, resolveReferences } from "./references.js";
 
 import type {
   BehavioralSummary,
   MetricContractMetadata,
   MetricReadingMetadata,
+  StorageContractMetadata,
 } from "@suss/behavioral-ir";
 import type {
   AttributeMeaning,
   MessageBusResource,
+  MetricIdentity,
   MetricReadingResource,
   MetricResource,
   StorageResource,
@@ -58,12 +60,15 @@ export {
   filterValuesFor,
   parseFilterQuery,
 } from "./filterQuery.js";
+export { jsonAttributeValue } from "./jsonAttribute.js";
 
 export type {
   AttributeMeaning,
   MessageBusResource,
+  MetricIdentity,
   MetricReadingResource,
   MetricResource,
+  MetricTypeTemplate,
   StorageResource,
   TerraformPack,
   TerraformResource,
@@ -152,8 +157,8 @@ function summariesForFiles(
   for (const file of parsed) {
     for (const [resourceType, label, body] of file.resources) {
       for (const pack of options.packs) {
-        const pattern = patternFor(pack, resourceType, file.constraints);
-        if (pattern === undefined || !entryApplies(pattern, body)) {
+        const pattern = patternFor(pack, resourceType, file.constraints, body);
+        if (pattern === undefined) {
           continue;
         }
         summaries.push(
@@ -174,16 +179,7 @@ function summariesForFiles(
 
 /** What one file states, or null when the parser could not read it. */
 function parseSource(file: SourceFile): ParsedFile | null {
-  let read: unknown;
-  try {
-    // The parser gives back what it read and what stopped it, and a
-    // file it could not read comes back as nothing.
-    const [parsed] = hcl2.parseToObject(file.source);
-    read = parsed;
-  } catch {
-    return null;
-  }
-  const document = asRecord(read);
+  const document = parseHclDocument(file.source);
   if (document === null) {
     return null;
   }
@@ -224,33 +220,47 @@ function providerConstraints(
 }
 
 /**
- * The entry a pack has for this resource type, when the configuration's
- * own provider pin allows it. A pin outside the entry's range means the
- * entry describes a different version of the provider, so it says
- * nothing about this configuration.
+ * The entry a pack has for this resource, when the configuration's own
+ * provider pin allows it and the entry's own gate lets it read the
+ * resource. A pin outside the entry's range means the entry describes a
+ * different version of the provider, so it says nothing here.
+ *
+ * A pack states several entries for one resource type when the provider
+ * spells it differently across versions, and again when one attribute
+ * decides which store it is: `aws_db_instance` is a PostgreSQL store or
+ * a MySQL one depending on its `engine`. Both are settled here, so an
+ * entry whose gate turns it down does not stop a later entry reading
+ * the same resource.
  */
 function patternFor(
   pack: TerraformPack,
   resourceType: string,
   constraints: Map<string, string>,
+  body: Record<string, unknown>,
 ): TerraformResourcePattern | undefined {
   const pinned = constraints.get(pack.provider);
-  return pack.resources.find((pattern) => {
-    if (pattern.resource !== resourceType) {
-      return false;
-    }
-    if (pinned === undefined) {
-      return true;
-    }
-    try {
-      return semver.intersects(pinned, pattern.providerVersions, {
-        loose: true,
-      });
-    } catch {
-      // A pin nobody can read settles nothing, so the entry is read.
-      return true;
-    }
-  });
+  return pack.resources.find(
+    (pattern) =>
+      pattern.resource === resourceType &&
+      versionAllows(pinned, pattern.providerVersions) &&
+      entryApplies(pattern, body),
+  );
+}
+
+/** Whether a configuration's pin and an entry's range have versions in common. */
+function versionAllows(
+  pinned: string | undefined,
+  providerVersions: string,
+): boolean {
+  if (pinned === undefined) {
+    return true;
+  }
+  try {
+    return semver.intersects(pinned, providerVersions, { loose: true });
+  } catch {
+    // A pin nobody can read settles nothing, so the entry is read.
+    return true;
+  }
 }
 
 /**
@@ -271,7 +281,13 @@ function entryApplies(
     return gate.whenUnset === "read";
   }
   const text = stringOf(value);
-  return text !== null && gate.equals.includes(text);
+  if (text === null) {
+    return false;
+  }
+  return (
+    (gate.equals ?? []).includes(text) ||
+    (gate.startsWith ?? []).some((prefix) => text.startsWith(prefix))
+  );
 }
 
 /** Where in the configuration one resource was written. */
@@ -336,6 +352,7 @@ function storageSummary(
     !declaresContainer || boundary.nameAttribute === undefined
       ? null
       : namePattern(opts.body[boundary.nameAttribute], opts.scope);
+  const listedFields = jsonFields(opts.body, boundary);
 
   return {
     kind: "library",
@@ -354,7 +371,7 @@ function storageSummary(
         ...(boundary.transport !== undefined
           ? { transport: boundary.transport }
           : {}),
-        scope: "default",
+        scope: containerScope(opts.body, boundary, opts.scope),
         container: declaresContainer ? label : null,
         accessPath: shape.accessPath,
       }),
@@ -365,23 +382,110 @@ function storageSummary(
     confidence: { source: "declared", level: "high" },
     metadata: {
       storageContract: {
-        // A way in that copies part of an item has every field it will
-        // ever have, whatever the container itself stores.
-        fieldSet: shape.serves === null ? boundary.fieldSet : "exhaustive",
-        ...(boundary.identifies === undefined
-          ? {}
-          : {
-              identifies: { kind: "keyFields", fields: shape.keyFields },
-              fields: (shape.serves ?? shape.keyFields).map((field) => ({
-                name: field,
-                ...(types.has(field) ? { type: types.get(field) } : {}),
-                ...(shape.keyFields.includes(field) ? { primary: true } : {}),
-              })),
-            }),
+        fieldSet: declaredFieldSet(boundary, shape, listedFields),
+        ...contractFields(boundary, shape, types, listedFields),
         ...(physicalTable !== null ? { physicalTable } : {}),
       },
     },
   };
+}
+
+/** The fields a store declares, from its key blocks or from its JSON schema. */
+function contractFields(
+  boundary: StorageResource,
+  shape: KeyedShape,
+  types: Map<string, string>,
+  listedFields: StorageContractMetadata["fields"] | null,
+): Pick<StorageContractMetadata, "identifies" | "fields"> {
+  if (boundary.identifies !== undefined) {
+    return {
+      identifies: { kind: "keyFields", fields: shape.keyFields },
+      fields: (shape.serves ?? shape.keyFields).map((field) => ({
+        name: field,
+        ...(types.has(field) ? { type: types.get(field) } : {}),
+        ...(shape.keyFields.includes(field) ? { primary: true } : {}),
+      })),
+    };
+  }
+  return listedFields === null ? {} : { fields: listedFields };
+}
+
+/** Whether what the summary declares is every field an item has. */
+function declaredFieldSet(
+  boundary: StorageResource,
+  shape: KeyedShape,
+  listedFields: StorageContractMetadata["fields"] | null,
+): StorageResource["fieldSet"] {
+  // A way in that copies part of an item has every field it will ever
+  // have, whatever the container itself stores.
+  if (shape.serves !== null) {
+    return "exhaustive";
+  }
+  return listedFields === null ? boundary.fieldSet : "exhaustive";
+}
+
+/**
+ * Every field a resource states as JSON, or null when it states none
+ * there. A schema a file or a variable supplies is not written in the
+ * configuration, so nothing is recorded rather than a guess.
+ */
+function jsonFields(
+  body: Record<string, unknown>,
+  boundary: StorageResource,
+): StorageContractMetadata["fields"] | null {
+  const spec = boundary.fieldsFromJson;
+  if (spec === undefined) {
+    return null;
+  }
+  const stated = jsonAttributeValue(valueAt(body, spec.attribute));
+  if (!Array.isArray(stated)) {
+    return null;
+  }
+  const fields = stated.flatMap((entry) => {
+    const field = asRecord(entry);
+    const name = field === null ? null : stringOf(field[spec.nameKey]);
+    if (field === null || name === null) {
+      return [];
+    }
+    const type =
+      spec.typeKey === undefined ? null : stringOf(field[spec.typeKey]);
+    return [
+      {
+        name,
+        ...(type !== null ? { type } : {}),
+        ...(spec.requires === undefined
+          ? {}
+          : { nullable: !alwaysSet(field, spec.requires) }),
+      },
+    ];
+  });
+  return fields.length === 0 ? null : fields;
+}
+
+/** Whether a field entry says the store always has a value for it. */
+function alwaysSet(
+  field: Record<string, unknown>,
+  requires: { key: string; values: string[] },
+): boolean {
+  const stated = stringOf(field[requires.key]);
+  return stated !== null && requires.values.includes(stated);
+}
+
+/**
+ * The namespace the container belongs to, `"default"` when the entry
+ * says a store has only one.
+ */
+function containerScope(
+  body: Record<string, unknown>,
+  boundary: StorageResource,
+  scope: ReferenceScope,
+): string {
+  if (boundary.scopeAttribute === undefined) {
+    return "default";
+  }
+  return (
+    namePattern(valueAt(body, boundary.scopeAttribute), scope) ?? "default"
+  );
 }
 
 function busSummary(
@@ -423,21 +527,40 @@ function busSummary(
   };
 }
 
-/** Where a metric type template leaves room for the declared name. */
-const NAME_HOLE = "{name}";
+/** Where a metric type template leaves room for an attribute's value. */
+const TEMPLATE_HOLE = /\{([^{}]+)\}/g;
+
+/**
+ * The string a template spells, or null when the resource leaves any of
+ * its holes unset. Half an identity pairs with the wrong metric as
+ * readily as with the right one, so nothing is recorded instead.
+ */
+function metricTypeFrom(
+  template: string,
+  body: Record<string, unknown>,
+  scope: ReferenceScope,
+): string | null {
+  let missing = false;
+  const spelled = template.replace(TEMPLATE_HOLE, (_whole, path: string) => {
+    const stated = namePattern(valueAt(body, path), scope);
+    if (stated === null) {
+      missing = true;
+      return "";
+    }
+    return stated;
+  });
+  return missing ? null : spelled;
+}
 
 function metricSummary(
   opts: ResourceSite & { boundary: MetricResource },
 ): BehavioralSummary {
   const { boundary } = opts;
-  const declaredName = namePattern(
-    opts.body[boundary.nameAttribute],
+  const metricType = metricTypeFrom(
+    boundary.metricTypeTemplate,
+    opts.body,
     opts.scope,
   );
-  const metricType =
-    declaredName === null
-      ? null
-      : boundary.metricTypeTemplate.replace(NAME_HOLE, declaredName);
   return {
     kind: "library",
     location: {
@@ -487,10 +610,9 @@ function readingSummaries(
   const { boundary } = opts;
   const summaries: BehavioralSummary[] = [];
   for (const reading of blocksAt(opts.body, boundary.readingBlocks)) {
-    const query = stringOf(valueAt(reading, boundary.queryAttribute));
-    for (const metricType of metricTypesIn(
-      query,
-      boundary.queryIdentityKey,
+    for (const metricType of metricsRead(
+      reading,
+      boundary.identifies,
       opts.scope,
     )) {
       summaries.push({
@@ -518,6 +640,45 @@ function readingSummaries(
     }
   }
   return summaries;
+}
+
+/** One reader per way a pack says a reading spells its metric. */
+const READING_IDENTITIES: {
+  [K in MetricIdentity["from"]]: (
+    reading: Record<string, unknown>,
+    identity: Extract<MetricIdentity, { from: K }>,
+    scope: ReferenceScope,
+  ) => Array<string | null>;
+} = {
+  attributes: (reading, identity, scope) => [
+    metricTypeFrom(identity.template, reading, scope),
+  ],
+  query: (reading, identity, scope) =>
+    metricTypesIn(
+      stringOf(valueAt(reading, identity.attribute)),
+      identity.key,
+      scope,
+    ),
+};
+
+/**
+ * Every metric one reading is about, or one null when it spells none
+ * this could read. A resource watching something nobody can spell is
+ * still worth seeing, and it pairs with nothing.
+ */
+function metricsRead(
+  reading: Record<string, unknown>,
+  identity: MetricIdentity,
+  scope: ReferenceScope,
+): Array<string | null> {
+  // The one cast joining a table that narrows per kind to a lookup that
+  // does not, the way the resource readers above do it.
+  const read = READING_IDENTITIES[identity.from] as (
+    reading: Record<string, unknown>,
+    identity: MetricIdentity,
+    scope: ReferenceScope,
+  ) => Array<string | null>;
+  return read(reading, identity, scope);
 }
 
 /**
