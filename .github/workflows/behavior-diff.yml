@@ -10,8 +10,12 @@ name: behavior diff
 # On a push to main the same job reads the commit and saves its
 # summaries, so a pull request branching from it compares against
 # those instead of reading the base again.
+#
+# A draft pull request gets no comment until it is marked ready, the
+# same way CI waits for that.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - packages/**
       - tools/**
@@ -32,6 +36,7 @@ concurrency:
 jobs:
   self:
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    if: ${{ !github.event.pull_request.draft }}
     permissions:
       contents: read
       pull-requests: write

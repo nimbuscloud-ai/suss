@@ -9,8 +9,8 @@
 // Through npm it is `npm run land`, with npm's "--" separator before
 // the arguments.
 //
-// After a branch is verified, main tends to move under it: every merge
-// makes the regenerate workflow refresh the dogfood baseline, the
+// After a branch is verified, main tends to move under it: the nightly
+// regenerate workflow refreshes the dogfood baseline, the
 // coverage summaries, and the badges, and the branch's copies of those
 // files now conflict. Nothing about the branch is wrong, but someone
 // still has to rebase it, rerun the generators, and push. This script
