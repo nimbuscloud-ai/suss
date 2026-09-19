@@ -283,6 +283,21 @@ describe("placeRuntimes", () => {
       "src/handlers/confirm.ts",
       "src/shared/log.ts",
     ]);
+    expect(placed[0]?.scope.codeScope).toBeUndefined();
+  });
+
+  it("places a file by the closure alone when no directory was stated", () => {
+    const { placed } = placeRuntimes([
+      handlerOnly("Confirm", "src/handlers/confirm"),
+      importing("src/handlers/confirm.ts", ["src/shared/log.ts"]),
+      importing("src/shared/log.ts", []),
+      importing("src/other/unrelated.ts", []),
+    ]);
+    const scope = placed[0]?.scope as UnitScope;
+    const byFile = unitsByFile([]);
+
+    expect(runsIn(code("src/shared/log.ts"), scope, byFile)).toBe(true);
+    expect(runsIn(code("src/other/unrelated.ts"), scope, byFile)).toBe(false);
   });
 
   it("reports a runtime whose entry matches no module and states no directory", () => {

@@ -44,8 +44,12 @@ export type UnitsByFile = ReadonlyMap<string, DeployableUnit[]>;
 export interface UnitScope {
   /** The unit the declaring side describes, when it gives one. */
   unit: DeployableUnit | undefined;
-  /** The source directory to fall back on when neither side gives a unit. */
-  codeScope: string;
+  /**
+   * The source directory to fall back on when neither side gives a
+   * unit. Absent where nothing stated one, which is what a Terraform
+   * configuration does, and then only the closure places a file.
+   */
+  codeScope?: string;
   /**
    * The files the runtime's handler entry reaches through imports.
    * When set, membership decides instead of the directory: a shared
@@ -111,7 +115,7 @@ export function contestedFiles(
 
     let containing = 0;
     for (const scope of scopes) {
-      if (scope.closure !== undefined) {
+      if (scope.closure !== undefined || scope.codeScope === undefined) {
         continue;
       }
 
@@ -144,5 +148,10 @@ export function runsIn(
   if (scope.closure !== undefined) {
     return scope.closure.has(code.location.file);
   }
-  return fileInCodeScope(code.location.file, scope.codeScope);
+  // Nothing said which directory, so nothing places this file. A scope
+  // with neither a closure nor a directory was never built.
+  return (
+    scope.codeScope !== undefined &&
+    fileInCodeScope(code.location.file, scope.codeScope)
+  );
 }

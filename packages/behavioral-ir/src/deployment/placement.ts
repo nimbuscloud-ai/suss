@@ -76,7 +76,7 @@ export function placeRuntimes(summaries: BehavioralSummary[]): Placement {
       binding,
       scope: {
         unit: runtime.identity.deployableUnit,
-        codeScope: codeScope.path ?? "",
+        ...(codeScope.path !== undefined ? { codeScope: codeScope.path } : {}),
         ...(closure !== null ? { closure } : {}),
       },
     });
