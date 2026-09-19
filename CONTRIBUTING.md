@@ -29,7 +29,9 @@ So if your change deletes exports, moves them between packages, inlines a privat
 
 Line coverage works the same way. Each package under the coverage gate commits a `coverage/coverage-summary.json`, and `npm run check:coverage` fails when a package comes out below the number your commit records. Lowering coverage on purpose means running `npm run test:badges` and committing the refreshed summaries and badges, so the drop appears in your diff.
 
-Neither check reads `main`. Both compare a fresh run against the tree they ran on, so a merge landing on `main` while your branch is open cannot fail your build on a package you never opened. Your branch also never needs to touch `scripts/dogfood-baseline.json`, a `coverage-summary.json`, or a badge unless it is lowering a number. After every merge, `.github/workflows/regenerate.yml` reruns the dogfood pass and the test suite on `main` and commits whatever moved, so those three files catch up with the source on their own.
+Neither check reads `main`. Both compare a fresh run against the tree they ran on, so a merge landing on `main` while your branch is open cannot fail your build on a package you never opened. Your branch also never needs to touch `scripts/dogfood-baseline.json`, a `coverage-summary.json`, or a badge unless it is lowering a number. Once a night, `.github/workflows/regenerate.yml` reruns the dogfood pass and the test suite on `main` and commits whatever moved, so those three files catch up with the source on their own. Start it from the Actions tab when a branch needs the fresh numbers sooner.
+
+Open a pull request as a draft while it is still being reviewed or rebased. CI and the behavior diff do not run on a draft; marking it ready starts the first run. A push whose tree already passed, such as a reword or a squash of the same commits, does not run the jobs again.
 
 The pre-push hook typechecks, runs the full test suite with coverage, rebuilds the badges, and runs the same `check:coverage` gate CI does. Don't bypass it unless you've coordinated with a maintainer.
 
@@ -41,7 +43,7 @@ Keep a pull request to a single intent. If you find yourself writing "and also" 
 
 ## Landing a branch that has gone stale
 
-Every merge into `main` runs the regenerate workflow, which refreshes the dogfood baseline, the coverage summaries and the badges. So a branch that was verified yesterday can conflict on those files today even though there is nothing wrong with it. `npm run land` does that round for you:
+The nightly regenerate workflow refreshes the dogfood baseline, the coverage summaries and the badges on `main`. So a branch that was verified yesterday can conflict on those files today even though there is nothing wrong with it. `npm run land` does that round for you:
 
 ```bash
 node scripts/land.mjs 123           # the pull request number

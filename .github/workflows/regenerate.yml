@@ -13,11 +13,18 @@ name: Regenerate baselines
 # differ from what is committed. It is also the only run on main, since
 # CI runs on pull requests alone, so a build or test failure here is the
 # signal that a merge broke main.
+#
+# It runs once a night rather than on every merge. A day with several
+# merges used to regenerate after each one, and each of those runs
+# rebuilt and retested the whole tree. Run it by hand when a branch
+# needs the fresh numbers sooner. A night with nothing merged costs a
+# checkout and nothing more, since the guard below stops it.
 on:
-  push:
-    branches: [main]
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch:
 
-# One run at a time; a newer push to main waits for the run in
+# One run at a time; a run started by hand waits for the run in
 # progress instead of cancelling it. Deliberately no cancel-in-progress
 # here: a cancelled run throws away a finished regeneration right
 # before it pushes, and could interrupt the commit-and-push step
