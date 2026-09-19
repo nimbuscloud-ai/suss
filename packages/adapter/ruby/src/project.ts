@@ -305,9 +305,15 @@ export async function extractRubyProject(
 
   const storagePatterns = options.packs.flatMap((pack) => pack.storage ?? []);
   const loaderPatterns = options.packs.flatMap((pack) => pack.loaders ?? []);
+  const rawSqlPatterns = options.packs.flatMap((pack) => pack.rawSql ?? []);
   const storage =
-    storagePatterns.length > 0
-      ? { facts: db, patterns: storagePatterns, loaders: loaderPatterns }
+    storagePatterns.length > 0 || rawSqlPatterns.length > 0
+      ? {
+          facts: db,
+          patterns: storagePatterns,
+          loaders: loaderPatterns,
+          rawSql: rawSqlPatterns,
+        }
       : undefined;
   const inheritedMethods = inheritedMethodsIn(options.packs);
   const reachContext = await timer.timeAsync("discover", () =>

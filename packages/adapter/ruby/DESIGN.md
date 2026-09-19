@@ -377,6 +377,72 @@ in with `include` is in that ancestry, so a `def save` in a concern is stepped
 into rather than recorded here as a write. A block parameter is not bound in
 the facts, so `orders.each { |o| o.save }` says nothing.
 
+## A statement the project wrote itself
+
+A model call says what it touches in the call. A statement says it in the text,
+so the text goes to `@suss/sql` and the parse says which tables, which columns,
+and what the statement picks rows by. A pack declares the library that takes
+the statement:
+
+```ts
+rawSql: [
+  {
+    constantName: "PG",
+    clientBuilders: ["connect"],
+    statements: { exec: { at: 0 }, prepare: { at: 1 } },
+    storageSystem: "postgresql",
+    dialect: "postgresql",
+  },
+]
+```
+
+Ruby writes no types, so the receiver is typed by following it back to the call
+that produced it. The chain starts at `constantName`, one of `clientBuilders`
+gives back a client, and `writtenNodeOf` takes each step, so a connection kept
+in a local, an instance variable or a method all read the same:
+
+```ruby
+conn = PG.connect(ENV["DATABASE_URL"])
+conn.exec("SELECT id, name FROM accounts WHERE tier = $1")  # read, picking by tier
+conn.exec("BEGIN")                                          # nothing: no table
+other.exec("SELECT id FROM accounts")                       # nothing: PG never gave `other` out
+```
+
+The statement goes through the value evaluator first, so one built by
+interpolation or held in a constant another file wrote reads the same as one
+written out at the call. Whatever the evaluator could not settle becomes a
+parameter, which is what an interpolated value would have been on the wire:
+
+```ruby
+conn.exec("SELECT name FROM accounts WHERE id = #{id}")   # read, picking by id
+conn.exec("SELECT id FROM #{params[:table]}")             # nothing: no table settled
+```
+
+Some libraries address part of the store before the statement arrives, and some
+reach rows with no statement at all. `addressing` declares the calls in the
+middle, and `rowCalls` the ones at the end:
+
+```ts
+addressing: { dataset: { says: "scope", at: 0 }, table: { says: "container", at: 0 } },
+rowCalls: { insert: { kind: "write" }, data: { kind: "read" } },
+```
+
+```ruby
+bigquery.dataset("core").query("SELECT id FROM accounts")   # read of accounts in core
+bigquery.dataset("core").table("accounts").insert(rows)     # write to accounts in core
+bigquery.dataset("core").insert("accounts", rows)           # the same write
+```
+
+A row call can take the container itself, which is how the last of those says
+which table. Give the argument in `container` and the chain's own is used
+whenever that argument settles on no string, so both spellings of `insert` come
+from one declaration.
+
+A store whose table names carry their namespace sets `qualifiedNameSeparator`,
+and then a name the statement spells in parts is split: the last part is the
+container and the one before it the scope. A name written on its own belongs to
+whatever the chain addressed, and to `scope` when the chain addressed nothing.
+
 ## What a read picked and what a write set
 
 `selector` is what the chain was given to pick rows by: the keywords of every

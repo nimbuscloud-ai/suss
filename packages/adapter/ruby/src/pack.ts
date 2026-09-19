@@ -68,6 +68,8 @@ export interface RubyPack {
   clients?: RbClientCall[];
   /** What the library's own database calls look like. The README says how one is matched. */
   storage?: RbStoragePattern[];
+  /** The calls the library gives a project for handing the store a statement it wrote itself. */
+  rawSql?: RbRawSqlPattern[];
   /** Calls the library gives a project for reading a model through a batching loader, rather than on the model itself. */
   loaders?: RbLoaderPattern[];
   /** Calls the library gives a class or module body whose block runs as part of that body. */
@@ -179,6 +181,72 @@ export interface RbStoragePattern {
   associations?: RbAssociationCalls;
   /** Which database is behind the connection, which the project settles. */
   storageSystem: "postgresql" | "mysql" | "sqlite";
+}
+
+/**
+ * A library whose calls take SQL the project wrote, rather than
+ * building it from a model. Ruby writes no types, so the receiver is
+ * typed by following it back to the library call that produced it: the
+ * chain starts at `constantName`, one of `clientBuilders` gives back a
+ * client, and `addressing` calls narrow that client to a part of the
+ * store before the statement or the row call arrives.
+ */
+export interface RbRawSqlPattern {
+  /** The constant the library's calls start at, `PG` or `Google::Cloud::Bigquery`. */
+  constantName: string;
+  /** Methods on that constant that give back a client, `connect` for the pg gem. */
+  clientBuilders: string[];
+  /** Calls that narrow a client to part of the store and give back something the rest of the calls can be made on. */
+  addressing?: Record<string, RbAddressingCall>;
+  /** Calls that take a statement, and where each one takes it. */
+  statements?: Record<string, RbArgumentPlace>;
+  /** Calls that read or write rows of an addressed container with no statement, `insert` on a BigQuery table. */
+  rowCalls?: Record<string, RbRowCall>;
+  /** Which store is behind the calls, in the words OpenTelemetry's semantic conventions use: `postgresql`, `gcp.bigquery`. */
+  storageSystem: string;
+  /**
+   * Which dialect the statements are written in, which is a separate
+   * answer from the store: BigQuery's store is `gcp.bigquery` and its
+   * statements are `bigquery`, and a default here would read the wrong
+   * tables without saying so.
+   */
+  dialect: string;
+  /** Which namespace the calls reach when nothing along the chain says. Defaults to "default". */
+  scope?: string;
+  /**
+   * The separator a qualified table name is written with, for a store
+   * that addresses a table through its namespace: BigQuery writes
+   * `project.dataset.table`. The last part is the container and the one
+   * before it the scope. Leave it out where a table is written on its own.
+   */
+  qualifiedNameSeparator?: string;
+}
+
+/** A call that says which part of the store the calls after it reach, `bigquery.dataset("core")`. */
+export interface RbAddressingCall extends RbArgumentPlace {
+  /** Which part of the address this call states. */
+  says: "scope" | "container";
+}
+
+/** A call that reads or writes rows without a statement. */
+export interface RbRowCall {
+  kind: "read" | "write";
+  /**
+   * Where the call may say which container, for a library that gives
+   * the same call on the container and one level above it: BigQuery's
+   * `table.insert(rows)` and `dataset.insert("accounts", rows)`. The
+   * chain's own container is used when this argument settles on no
+   * string, which is what a row argument does.
+   */
+  container?: RbArgumentPlace;
+}
+
+/** Where a call writes one of its arguments. A call that takes it both ways is matched on the keyword first. */
+export interface RbArgumentPlace {
+  /** The index of the positional argument. */
+  at: number;
+  /** The keyword the argument may travel under instead. */
+  keyword?: string;
 }
 
 /** Which methods take the primary key positionally, and what that column is called. */
