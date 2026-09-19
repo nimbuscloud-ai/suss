@@ -1,68 +1,62 @@
 ---
 title: suss contract
-description: Turn an OpenAPI document, a CloudFormation template, a Prisma schema or another declared source into summaries that pair with extracted ones.
+description: Turn an OpenAPI document, a deploy template, a schema or another declared source into summaries that pair with extracted ones.
 ---
 
 # `suss contract`
 
-Generate summaries from a declared contract instead of from code.
-
-**What it does.** It reads a specification (OpenAPI, CloudFormation,
-Storybook stories, AppSync schema) and emits the same
-`BehavioralSummary` structure that `extract` produces. The point is not
-to render the spec as JSON. The point is to produce a summary with
-declared behavior, so the cross-boundary checker can pair it with an
-extracted summary the same way it would pair two extracted
-summaries.
-
-Use cases:
-- A third-party API ships an OpenAPI spec. You want to verify your
-  client handles every status the spec declares.
-- Your CloudFormation template declares an API Gateway route. You
-  want to check that the Lambda handler implements every method the
-  template registers.
-- A Storybook story declares the props it passes to a component.
-  You want to check that the component handles every prop variant
-  the stories cover.
+Read a declared source into summaries.
 
 ```
-suss contract --from SOURCE SPEC [-o OUTPUT]
+suss contract --from <source> <spec> [-o <output.json>]
 ```
 
-`SPEC` is either a local file path or an `http(s)` URL. Given a URL,
-suss fetches the document, writes it to a temp file, and parses it
-the same way as a local spec. That helps with vendor specs hosted on
-GitHub or a docs site, e.g.
-`https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.yaml`.
-The extension on the fetched file decides which parser suss uses
-(`.json` → JSON, anything else including no extension → YAML).
+`contract` writes the same summary JSON that [`extract`](/reference/cli/extract) writes, so [`check`](/reference/cli/check) pairs a declared boundary with an extracted one the same way it pairs two extracted ones.
 
-| Flag | Description |
-|---|---|
-| `--from SOURCE` | Contract source kind. See [contract sources](/reference/cli/contract#contract-sources) below. |
-| `-o`, `--output PATH` | Write JSON to file. Default: stdout. |
-
-## Contract sources
-
-| Source | Package | Input |
+| Flag or argument | Default | What it does |
 |---|---|---|
-| `openapi` | `@suss/contract-openapi` | OpenAPI 3.x JSON or YAML |
-| `cloudformation` | `@suss/contract-cloudformation` | CFN / SAM template (JSON or YAML) with API Gateway REST / HTTP API resources |
-| `serverless` | `@suss/contract-serverless` | A Serverless Framework service file. The path points at the file or at the directory containing it. The reader restates the service in SAM's forms and hands them to the CloudFormation reader, so a route, a queue consumer or an environment contract comes out the same whichever manifest declared it. `${self:...}` resolves against the document; a reference that a deploy supplies keeps its token. |
-| `storybook` | `@suss/contract-storybook` | CSF3 `.stories.ts` / `.stories.tsx` file or directory of stories |
-| `appsync` | `@suss/contract-appsync` | CFN template with `AWS::AppSync::*` resources |
-| `prisma` | `@suss/contract-prisma` | `schema.prisma` file (Postgres / MySQL / SQLite datasources) |
-| `graphql` | `@suss/contract-graphql` | Plain GraphQL SDL file. Each Query / Mutation / Subscription field becomes a resolver-kind summary. |
-| `graphql-documents` | `@suss/contract-graphql` | Committed `.graphql` / `.gql` operation documents, a single file or a directory walked recursively. Each query / mutation / subscription becomes a client-kind summary, so a repo that keeps its operations in files pairs against its resolvers without suss having to trace any call site. Fragment spreads are inlined across the whole read set. |
+| `--from <source>` | required | Which kind of source to read. One of the ten below. |
+| `<spec>` | required | A local path or an `http(s)` URL. |
+| `-o`, `--output <path>` | stdout | Write the summary JSON to a file. |
 
-Team-authored intent specs are not a `--from` source. They are their own
-artifact stream, read directly by `suss check`:
+## Sources
+
+| `--from` | What the path points at |
+|---|---|
+| `openapi` | An OpenAPI 3.x document, JSON or YAML. |
+| `cloudformation` | A CloudFormation or SAM template, JSON or YAML: API Gateway routes, SQS event source mappings, Lambda environment. |
+| `terraform` | One `.tf` file, or the directory a module lives in, since a module states its resources across several files. AWS and Google resources are both read. |
+| `serverless` | A Serverless Framework service file, or the directory it is in. `${self:...}` resolves against the document; a reference a deploy supplies keeps its token. |
+| `wrangler` | A Cloudflare Worker's `wrangler.toml` or `wrangler.jsonc`, or the directory the Worker lives in. |
+| `appsync` | A CloudFormation template with `AWS::AppSync::*` resources. |
+| `prisma` | A `schema.prisma` file. |
+| `graphql` | A GraphQL SDL file. Each Query, Mutation and Subscription field becomes a resolver-kind summary. |
+| `graphql-documents` | Committed `.graphql` or `.gql` operation documents, one file or a directory walked recursively. Each operation becomes a client-kind summary, and fragment spreads are inlined across the whole read set. |
+| `storybook` | A CSF3 `.stories.ts` or `.stories.tsx` file, or a directory of them walked recursively. |
+
+[Contract sources](/packs/contract-sources) says what each reader produces.
+
+Team-authored intent docs are not a `--from` source. `suss check` reads them directly:
 
 ```bash
 suss check --dir summaries/ --intent intent/
 ```
 
-[Contract sources](/packs/contract-sources) describes what each reader
-takes and what it produces. [Exit codes](/reference/cli/exit-codes#suss-contract)
-says what `contract` returns to the shell.
+## Reading from a URL
 
+Given an `http(s)` URL, suss fetches the document, writes it to a temp file, parses it the way it would parse a local file, and deletes the temp file. That covers a vendor spec hosted on GitHub or a docs site. The extension on the URL path decides the parser: `.json` gets the JSON parser, anything else, including no extension at all, gets YAML.
+
+A summary read from a URL is labelled by the URL rather than by the temp path, so the identity survives the fetch.
+
+## What it writes
+
+Without `-o`, the summary JSON goes to stdout. With `-o`, the JSON goes to the file and one line goes to stderr: `Wrote 19 summaries to /path/provider.json`. A source that declares nothing suss could read writes `<spec> declares no boundaries suss could read.` instead.
+
+## Example
+
+```bash
+$ suss contract --from openapi openapi.json -o summaries/provider.json
+Wrote 19 summaries to /home/dana/petstore/summaries/provider.json
+```
+
+[Exit codes](/reference/cli/exit-codes) says what `contract` returns to the shell.

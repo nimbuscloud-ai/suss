@@ -1,79 +1,78 @@
 ---
 title: suss CLI reference
-description: Every suss command with a page of its own, plus the top-level flags, the environment variables and where each command writes.
+description: Every suss command, the top-level flags, the environment variables it reads, and where each command writes.
 ---
 
 # CLI reference
 
-Every command, every flag. For prose-style usage see the
-[Quickstart](/start/quickstart) and the [guides](/guides/add-to-project).
+Everything ships in one package:
 
-Placeholder notation: `<...>` marks a required value, `[...]` marks
-optional. Example: `suss extract -f FRAMEWORK [-o OUTPUT]`.
+```bash
+npm install --save-dev @suss/cli
+```
 
-## What each command is for
+```
+suss init [<directory>] [--plain]
+suss extract [-p <tsconfig> | --dir <directory>] [--lang typescript|python|ruby] [-f <pack>[=<config.json>] ...] [-o <output.json>] [--files <f1> <f2> ...] [--gaps strict|permissive|silent]
+suss inspect [<summaries.json> | --dir <directory>]
+suss inspect --diff <before.json> <after.json>
+suss inspect --flow "<METHOD> <url>" [<summaries.json> | --dir <directory>] [--entry <name>] [--scope <document>] [--json]
+suss check [--dir <directory>] [--intent <intent-dir>] [--all] [--json] [-o <output>]
+suss check <provider.json> <consumer.json> [--all] [--json] [-o <output>]
+suss check [--dir <directory>] --at <file[:line] | boundary | summary-id> [--json]
+suss ask "<question>" [--dir <directory> | <summaries.json>] [--all] [--json]
+suss contract --from <source> <spec> [-o <output.json>]
+suss corroborate --experimental [-p <tsconfig> | --dir <directory>] [-f <pack> ...] [-o <output.json>]
+suss infer stub <package> [-p <tsconfig> | --dir <directory>] [-o <file | ->]
+suss infer intent --from <summaries.json | directory> [-o <directory> | --into <directory>]
+suss infer prd --from <intent-directory> [-o <directory> | --into <directory>]
+suss --version
+```
 
-suss has four commands. They form one pipeline:
+In a synopsis, `<...>` marks a required value and `[...]` an optional one.
 
-| Command | Inputs | Output | When you reach for it |
-|---|---|---|---|
-| [`extract`](/reference/cli/extract) | TypeScript or JavaScript source + a framework pack | `BehavioralSummary[]` JSON | You have code and want a structured description of every execution path. |
-| [`contract`](/reference/cli/contract) | A specification (OpenAPI, CFN, Storybook, ...) | `BehavioralSummary[]` JSON | You have a spec instead of code, or want to compare code against a spec. Contract summaries have the same structure as `extract`'s output, so they pair against extracted summaries. |
-| [`check`](/reference/cli/check) | One or more summary files | Findings (text or JSON) | You have summaries from two sides of a boundary, provider + consumer, contract + handler, and want to know where they disagree. |
-| [`inspect`](/reference/cli/inspect) | A summary file | Human-readable text | You want to read what the summaries say without parsing JSON. The output is the form you paste into a code review or an AI prompt. |
+## Commands
 
-The summary JSON is the canonical artifact. `inspect` is a renderer
-over it; `check` is a comparator. Anything you can do in `inspect` or
-`check` you can also do by reading the JSON yourself, they're
-conveniences, not parsing layers. The one command that computes an
-answer rather than rendering one is
-[`inspect --flow`](/reference/cli/inspect#suss-inspect-flow), which walks
-the routing a set of summaries declares to work out who serves a request.
+| Command | Reads | Writes |
+|---|---|---|
+| [`init`](/reference/cli/init) | `package.json`, schemas and deploy templates on disk | The commands to run, and `suss.json` if you accept it |
+| [`extract`](/reference/cli/extract) | TypeScript, Python or Ruby source, through the packs you name | Summary JSON |
+| [`contract`](/reference/cli/contract) | One of ten declared sources: an OpenAPI document, a deploy template, a database schema, and so on | Summary JSON, the same structure `extract` writes |
+| [`check`](/reference/cli/check) | Summary files, and optionally a folder of intent docs | Findings, as text or JSON |
+| [`inspect`](/reference/cli/inspect) | A summary file, a folder of them, or two of them | Text for a person, or JSON under `--diff` and `--flow` |
+| [`ask`](/reference/cli/ask) | Summary files, and the source for a why question | One answer, as text or JSON |
+| [`corroborate`](/reference/cli/corroborate) | Source, through the express or fastify packs | Summaries annotated with what execution said |
+| [`infer`](/reference/cli/infer) | Observed calls, summaries, or curated intent docs | A YAML draft for you to finish |
 
-Five more commands are outside the pipeline:
+`extract`, `inspect` and `check` run with no arguments at all. Each one reads `suss.json`, or picks the packs `init` would pick when there is no file, and prints the commands it ran to stderr.
 
-| Command | What it does |
-|---|---|
-| [`init`](/reference/cli/init) | Works out which packs your project needs and offers to set them up. |
-| [`ask`](/reference/cli/ask) | Answers one question about one boundary from summaries already on disk. |
-| [`corroborate`](/reference/cli/corroborate) | Experimental. Executes handlers against their own summaries. |
-| [`infer`](/reference/cli/infer) | Writes a draft for a person to curate: a [dependency stub](/guides/teach-a-dependency) from the project's calls into a package extraction cannot read, an intent doc per boundary, or a PRD from intent docs that have been curated. |
-
-[Exit codes](/reference/cli/exit-codes) collects what every command
-returns to the shell.
+The summary JSON is the artifact every other command works from. `inspect` renders it and `check` compares two of them, so you can read anything either one reports out of the JSON yourself. Two forms work out an answer that is in no file: [`inspect --flow`](/reference/cli/inspect#suss-inspect-flow) walks the routing a set of summaries declares, and [`ask`](/reference/cli/ask) takes a question about one boundary and replies from the summaries.
 
 ## Top-level flags
 
-| Flag | Description |
+| Flag | What it does |
 |---|---|
-| `-h`, `--help` | Print usage and exit 0. Running `suss` with no command does the same. |
-| `-v`, `--version` | Print the installed version and exit 0. |
-
-Every exit code is `0` or `1`. There is no third code to branch on: a
-command either did what you asked or it did not.
+| `-h`, `--help` | Print the usage above and exit `0`. Running `suss` with no command, or any command with `--help`, prints the same thing. |
+| `-v`, `--version` | Print the installed version and exit `0`. |
 
 ## Environment variables
 
-Two affect how output looks. Nothing else is configured this way.
+An interactive run ends with one line on stderr when a newer suss is on the registry. Piped output never sees it, and two variables turn it off everywhere.
 
 | Variable | Effect |
 |---|---|
-| `NO_COLOR` | Set it to anything and suss writes plain text with no ANSI colour. |
-| `TERM=dumb` | Same effect. Colour is also off whenever stdout is not a TTY, so a piped or redirected run is plain without you asking. |
+| `NO_COLOR` | Set it to anything and output is plain text with no ANSI colour. |
+| `TERM=dumb` | The same. Colour is also off whenever stdout is not a TTY, so a piped or redirected run is plain without you asking. |
+| `CI` | Set it to anything and the update notice is off. `suss init` detects CI separately and prints its commands rather than prompting, the same as `--plain`. |
+| `SUSS_NO_UPDATE_NOTICE` | Set it to anything and the update notice is off. |
 
-`suss init` also notices when it is running in CI and prints the
-commands rather than prompting, the same as `--plain`.
+## Where output goes
 
-## Where each command writes
-
-| Target | Default |
+| Stream | What arrives there |
 |---|---|
-| stdout | Summary JSON (`extract`, `contract`), human text (`inspect`, `check`, `ask`), finding JSON (`check --json`) |
-| stderr | "Wrote N summaries to PATH" acknowledgements, extraction warnings, error messages |
-| exit code | The per-command threshold in [Exit codes](/reference/cli/exit-codes) |
+| stdout | Summary JSON from `extract` and `contract`, the report from `inspect`, `check` and `ask`, and the JSON those write under `--json` |
+| stderr | "Wrote N summaries to PATH", extraction warnings, the commands a no-argument run chose, error messages |
 
-Output destinations are composable: `suss extract ... -o file.json` writes
-summaries to the file AND a one-line acknowledgement to stderr.
-`suss check ... -o findings.txt` writes the formatted report to the file,
-nothing to stdout. Piping (`suss extract ... | jq '...'`) works because
-non-`-o` mode writes JSON to stdout with nothing else.
+A run without `-o` puts nothing but JSON on stdout, so `suss extract ... | jq` works. `-o PATH` moves that JSON into the file; `extract` and `contract` then write one acknowledgement line to stderr.
+
+[Exit codes](/reference/cli/exit-codes) lists what every command returns to the shell.
