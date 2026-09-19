@@ -8,9 +8,9 @@
  * defines, and every other call is left to the reach walk. The README says
  * why ancestry.
  *
- * The class behind the receiver comes from the constant bindings for a chain
- * written from a constant and from the resolution rules otherwise. A loader
- * pattern adds calls given the model as an argument, tested the same way.
+ * The class behind the receiver comes from the constant bindings, or from the
+ * resolution rules. A loader pattern adds calls given the model, and a raw
+ * SQL pattern adds calls handed a statement, both reported through here.
  */
 
 import { storageBinding } from "@suss/ir-core";
