@@ -4,25 +4,23 @@
 
 import { storageBinding } from "@suss/ir-core";
 
-import { genericTypeArgs } from "./annotations.js";
+import { children, enclosingFunction, field } from "./ast.js";
+import { originsOf, resolveCalls } from "./facts/resolve.js";
+import { readKey } from "./facts/values.js";
 import {
-  children,
-  enclosingFunction,
-  field,
-  parameterNameAndType,
-  stringLiteralValue,
-} from "./ast.js";
-import {
-  originsOf,
-  resolveCalls,
-  subjectConstructions,
-} from "./facts/resolve.js";
-import { nameKeyIn, readKey } from "./facts/values.js";
+  firstInBody,
+  receiverTypeOrigins,
+  statedTypeName,
+  typeNameOf,
+} from "./receiverTypes.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { SubjectOrigin } from "./facts/resolve.js";
-import type { RawSqlPattern, StoragePattern } from "./pack.js";
+import type {
+  RawSqlPattern,
+  SqlClientPattern,
+  StoragePattern,
+} from "./pack.js";
 import type { PyNode } from "./parser.js";
 
 /** One call chain, from the call that starts it to the call that ends it. */
@@ -144,112 +142,13 @@ function importedQueryFunction(
 }
 
 /** The name a chain's first call is read off, `db` in `db.add(order)`, or null when it starts anywhere else. */
-function receiverName(chain: Chain): string | null {
+function receiverName(chain: Chain): PyNode | null {
   const callee = field(chain.root, "function");
   if (callee === null || callee.type !== "attribute") {
     return null;
   }
   const object = field(callee, "object");
-  return object !== null && object.type === "identifier" ? object.text : null;
-}
-
-/** The class an annotation refers to, read through the quotes of a forward reference, the first argument of an `Annotated` or `Optional`, the `X` of `X | None`, and the outer name of any other generic. */
-function typeNameOf(annotation: PyNode): string | null {
-  // The grammar wraps every annotation in a `type` node.
-  if (annotation.type === "type" && annotation.namedChildren[0]) {
-    return typeNameOf(annotation.namedChildren[0]);
-  }
-  if (annotation.type === "identifier") {
-    return annotation.text;
-  }
-  const quoted = stringLiteralValue(annotation);
-  if (quoted !== null) {
-    return quoted;
-  }
-  if (annotation.type === "binary_operator") {
-    const named = [field(annotation, "left"), field(annotation, "right")].find(
-      (side) => side !== null && side.type !== "none",
-    );
-    return named === undefined || named === null ? null : typeNameOf(named);
-  }
-  if (annotation.type === "generic_type") {
-    const outer = annotation.namedChildren[0];
-    const first = genericTypeArgs(annotation)[0];
-    if (
-      (outer?.text === "Annotated" || outer?.text === "Optional") &&
-      first !== undefined
-    ) {
-      return typeNameOf(first);
-    }
-    return outer?.type === "identifier" ? outer.text : null;
-  }
-  return null;
-}
-
-/**
- * The class the source states a name is where the chain is written: the
- * annotation on a parameter of the enclosing function, the annotation on
- * an assignment to the name, or the class a `with ... as name` opens.
- * Each of those states a type beside the name, and a type is not a value,
- * so the resolution facts say nothing about any of them.
- */
-function statedTypeName(name: string, from: PyNode): string | null {
-  const fn = enclosingFunction(from);
-  if (fn === null) {
-    return null;
-  }
-  const params = field(fn, "parameters");
-  for (const param of params === null ? [] : children(params)) {
-    const info = parameterNameAndType(param);
-    if (info?.name === name && info.typeNode !== null) {
-      return typeNameOf(info.typeNode);
-    }
-  }
-  const body = field(fn, "body");
-  return body === null
-    ? null
-    : firstInBody(body, (statement) => statedBy(statement, name));
-}
-
-/** The first answer `read` gives for a statement in a body, past the nested functions, which bind a name of their own. */
-function firstInBody(
-  node: PyNode,
-  read: (statement: PyNode) => string | null,
-): string | null {
-  const here = read(node);
-  if (here !== null) {
-    return here;
-  }
-  for (const child of children(node)) {
-    if (child.type === "function_definition" || child.type === "lambda") {
-      continue;
-    }
-    const found = firstInBody(child, read);
-    if (found !== null) {
-      return found;
-    }
-  }
-  return null;
-}
-
-/** The type one statement states for `name`: the annotation on an assignment to it, or the class a `with ... as` opens. */
-function statedBy(statement: PyNode, name: string): string | null {
-  if (statement.type === "assignment") {
-    const annotation = field(statement, "type");
-    return field(statement, "left")?.text === name && annotation !== null
-      ? typeNameOf(annotation)
-      : null;
-  }
-  if (statement.type === "as_pattern") {
-    const alias = field(statement, "alias");
-    // The grammar gives the alias a field and leaves the value bare.
-    const value = statement.namedChildren[0] ?? null;
-    const callee = value?.type === "call" ? field(value, "function") : null;
-    return alias?.text === name && callee?.type === "identifier"
-      ? callee.text
-      : null;
-  }
-  return null;
+  return object !== null && object.type === "identifier" ? object : null;
 }
 
 /**
@@ -354,35 +253,13 @@ function typedReceiverPattern(
   if (receiver === null) {
     return undefined;
   }
-  for (const origin of receiverTypeOrigins(options, receiver, chain.root)) {
+  for (const origin of receiverTypeOrigins(receiver, options)) {
     const pattern = queryTypePattern(options, origin.module, origin.name);
     if (pattern !== undefined) {
       return pattern;
     }
   }
   return undefined;
-}
-
-/**
- * Where the class a receiver is came from. A stated type is a name and
- * nothing more, so the rules say where that name came from, which is how
- * `db: SessionDep` with `SessionDep = Annotated[Session, ...]` in another
- * module still reaches the library. Where the source states no type the
- * receiver is a name bound to a value, and the rules answer that whole:
- * `session = Session()`, and `session = open_session()` with the project
- * function returning one.
- */
-function receiverTypeOrigins(
-  options: StorageOptions,
-  name: string,
-  from: PyNode,
-): readonly SubjectOrigin[] {
-  const stated = statedTypeName(name, from);
-  if (stated !== null) {
-    return originsOf(options.facts, `${options.filePath}#${stated}`);
-  }
-  const key = nameKeyIn(options.filePath, enclosingFunction(from), name);
-  return subjectConstructions(options.facts, [key]).get(key)?.origins ?? [];
 }
 
 /** The pattern whose module exports `name` as one of its query types. */
@@ -639,6 +516,8 @@ export interface StorageLookup {
   readonly couldMatch: ReadonlySet<string>;
   /** What a pack says about statements a project writes as SQL itself. */
   readonly rawSql?: readonly RawSqlPattern[];
+  /** What a pack says about the client objects its library hands a project. */
+  readonly sqlClients?: readonly SqlClientPattern[];
 }
 
 /**

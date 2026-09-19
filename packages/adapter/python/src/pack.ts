@@ -51,6 +51,8 @@ export interface PythonPack {
   contextManagers?: PyContextManager[];
   /** How the library lets a project hand the database SQL it wrote itself. */
   rawSql?: RawSqlPattern[];
+  /** The client objects the library hands a project, and the calls on one that reach the database. */
+  sqlClients?: SqlClientPattern[];
 }
 
 /**
@@ -153,6 +155,71 @@ export interface RawSqlPattern {
   functions: string[];
   /** Which database the library is talking to, for the boundary binding. */
   storageSystem: "postgresql" | "mysql" | "sqlite";
+}
+
+/**
+ * A client object a library hands a project, and the calls on one that
+ * reach the database. `RawSqlPattern` matches a function the file
+ * imported; this matches a method on a value whose class came out of
+ * the library, which is how a client built in one module and called in
+ * another still reads.
+ *
+ * Every field here is the library's own: the module, the class names,
+ * the method names, and where each method takes what it is given.
+ */
+export interface SqlClientPattern {
+  /** The module the client class comes from, `google.cloud.bigquery`. */
+  module: string;
+  /** The class names whose instances take these calls, `Client`. */
+  clientTypes: string[];
+  /** The methods that hand the database a statement, and where each takes it. */
+  statements?: SqlStatementCall[];
+  /** The methods that say which table rather than writing SQL, and what each does to it. */
+  tables?: SqlTableCall[];
+  /** The methods that hand back one of another library class, so a chain off one reaches its calls. */
+  handsBack?: SqlClientHandoff[];
+  /** Which database the client is talking to, for the boundary binding. */
+  storageSystem: string;
+  /** Which SQL dialect the statements are written in, when that is not the storage system's own name. */
+  dialect?: string;
+}
+
+/** Where one method takes what it is given: a position, a keyword, or both. */
+export interface SqlCallArgument {
+  /** The position it is written at. */
+  argument?: number;
+  /** The keyword it may be written under instead. */
+  keyword?: string;
+}
+
+/** One method that takes a statement written as SQL. */
+export interface SqlStatementCall extends SqlCallArgument {
+  /** The method name, `query`. */
+  method: string;
+  /**
+   * The keys down to the statement when it travels inside a dictionary
+   * rather than as the argument itself, the `["query", "query"]` of
+   * `insert_job(configuration={"query": {"query": sql}})`.
+   */
+  path?: string[];
+}
+
+/** One method that says which table it works on, and what it does to it. */
+export interface SqlTableCall extends SqlCallArgument {
+  /** The method name, `get_table`. */
+  method: string;
+  /** Whether the call changes what is stored. */
+  kind: "read" | "write";
+}
+
+/** One method that hands back an object of another of the library's classes. */
+export interface SqlClientHandoff {
+  /** The method name, Airflow's `get_client`. */
+  method: string;
+  /** The module the class it hands back comes from. */
+  module: string;
+  /** That class's name. */
+  name: string;
 }
 
 export type PythonDiscoveryPattern =

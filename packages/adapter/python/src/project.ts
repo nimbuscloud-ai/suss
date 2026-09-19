@@ -264,6 +264,7 @@ export async function extractPythonProject(
   );
   const storagePatterns = options.packs.flatMap((pack) => pack.storage ?? []);
   const rawSqlPatterns = options.packs.flatMap((pack) => pack.rawSql ?? []);
+  const sqlClients = options.packs.flatMap((pack) => pack.sqlClients ?? []);
   const modelQueries = options.packs.flatMap((pack) => pack.models ?? []);
   const discovers = options.packs.some((pack) => pack.discovery.length > 0);
   // A client pattern with a receiver asks the rules what built it.
@@ -287,7 +288,11 @@ export async function extractPythonProject(
     buildsReceivers ||
     readsEnvThroughNames ||
     storagePatterns.length > 0 ||
-    modelQueries.length > 0;
+    modelQueries.length > 0 ||
+    // A statement written as SQL is a value, and so is the client the
+    // call that hands it over is read off.
+    rawSqlPatterns.length > 0 ||
+    sqlClients.length > 0;
   // Which function a resolved key was written as, so a recognizer can read
   // what it says it returns and the call walk can start from a route.
   const definitions = new Map<string, PyNode>();
@@ -324,7 +329,9 @@ export async function extractPythonProject(
   );
 
   const storageFor = (file: BoundPythonFile): StorageLookup | undefined =>
-    storagePatterns.length > 0 || rawSqlPatterns.length > 0
+    storagePatterns.length > 0 ||
+    rawSqlPatterns.length > 0 ||
+    sqlClients.length > 0
       ? {
           facts: db,
           factsPath: file.file,
@@ -332,6 +339,7 @@ export async function extractPythonProject(
           definitionAt: (key: string) => definitions.get(key),
           couldMatch,
           rawSql: rawSqlPatterns,
+          sqlClients,
         }
       : undefined;
 
