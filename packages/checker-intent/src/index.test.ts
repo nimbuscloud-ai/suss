@@ -24,6 +24,7 @@ import type {
   IntentCondition,
   IntentEffect,
   IntentFinding,
+  IntentInputField,
   IntentOutcome,
   IntentSource,
   IntentSummary,
@@ -47,6 +48,7 @@ function boundaryIntent(
   boundary: BoundaryBinding,
   outcomes: IntentOutcome[],
   name = "users-lookup",
+  receives: IntentInputField[] = [],
 ): IntentSummary {
   return {
     kind: "boundary",
@@ -55,6 +57,7 @@ function boundaryIntent(
     audience: "web-client",
     source: "author",
     boundary,
+    receives,
     outcomes,
   };
 }

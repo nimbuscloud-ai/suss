@@ -21,9 +21,11 @@
 //   warning: the intent itself can't be checked (unkeyableBoundary), or a
 //             scenario refers to an outcome no system intent declares
 //             (danglingScenarioLink / ambiguousScenarioLink: a planning
-//             gap). Surfaced for the author, never silent.
+//             gap), or nothing reads a field the author said the
+//             boundary needs (unreadInputField). Never silent.
 //   info: the code exceeds the declaration (undeclaredOutcome, a status
-//             or a boundary the intent never mentions), a scenario
+//             or a boundary the intent never mentions, or a field it
+//             reads that nobody declared: undeclaredInputRead), a scenario
 //             isn't linked yet (unlinkedScenario), or an outcome has no
 //             scenario (undescribedOutcome). A valid pending state.
 // Findings against `source: "inferred"` (not-yet-curated) intent are
@@ -52,6 +54,8 @@ import {
   ruleBoundaryMatchesKey,
   semanticsAgree,
 } from "@suss/ir-core";
+
+import { checkReceivesBlock } from "./receivedInput.js";
 
 import type {
   BehavioralSummary,
@@ -806,6 +810,8 @@ function compareIntentToImpl(
     findings.push(finding);
     undeclared.push({ finding, boundary: made.label, does: made.does });
   }
+
+  findings.push(...checkReceivesBlock({ intent, impl, boundary, code: ref }));
 
   return foldRenamedBoundaries(
     intent,
