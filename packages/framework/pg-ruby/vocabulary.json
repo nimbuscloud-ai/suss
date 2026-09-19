@@ -3,7 +3,7 @@
   "async_exec": "pg: PG::Connection#async_exec runs a statement without blocking the thread",
   "async_exec_params": "pg: PG::Connection#async_exec_params does the same with bind parameters",
   "async_prepare": "pg: PG::Connection#async_prepare stores a statement under a name without blocking",
-  "connect": "pg: PG.connect and PG::Connection.connect open a connection",
+  "connect": "pg: PG.connect and PG::Connection.connect each open a connection",
   "exec": "pg: PG::Connection#exec runs a statement",
   "exec_params": "pg: PG::Connection#exec_params runs a statement with bind parameters",
   "new": "language: Ruby spells Class#new the same way. PG::Connection.new opens a connection",

@@ -36,8 +36,8 @@ const STATEMENTS: NonNullable<RbRawSqlPattern["statements"]> = {
 
 /**
  * The two constants the gem hands a connection out from. `PG.connect`
- * and `PG::Connection.new` are the same call, and a project writes
- * either.
+ * and the three calls on `PG::Connection` all open the same thing, and
+ * a project writes whichever it likes.
  */
 export function pgRawSql(): RbRawSqlPattern[] {
   const calls = {
@@ -46,14 +46,10 @@ export function pgRawSql(): RbRawSqlPattern[] {
     dialect: STORAGE_SYSTEM,
   };
   return [
-    {
-      constantName: "PG",
-      clientBuilders: ["connect", "open", "new"],
-      ...calls,
-    },
+    { constantName: "PG", clientBuilders: ["connect"], ...calls },
     {
       constantName: "PG::Connection",
-      clientBuilders: ["connect", "open", "new"],
+      clientBuilders: ["new", "connect", "open"],
       ...calls,
     },
   ];
