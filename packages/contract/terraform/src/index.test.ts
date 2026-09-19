@@ -588,7 +588,6 @@ const SIGNALS: TerraformPack = {
       boundary: {
         kind: "metric",
         metricSystem: "signals",
-        nameAttribute: "name",
         metricTypeTemplate: "signals.example/counters/{name}",
         values: {
           attribute: "shape.value_type",
@@ -607,8 +606,7 @@ const SIGNALS: TerraformPack = {
         kind: "metric-reading",
         metricSystem: "signals",
         readingBlocks: ["rules", "over_threshold"],
-        queryAttribute: "selector",
-        queryIdentityKey: "signal.id",
+        identifies: { from: "query", attribute: "selector", key: "signal.id" },
         comparesTo: { attribute: "limit", whenSet: "number" },
         reducesTo: {
           attribute: "window.reducer",
@@ -751,15 +749,17 @@ describe("a pack that only wants the metric's identity", () => {
               ? {
                   kind: "metric",
                   metricSystem: "signals",
-                  nameAttribute: "name",
                   metricTypeTemplate: "signals.example/counters/{name}",
                 }
               : {
                   kind: "metric-reading",
                   metricSystem: "signals",
                   readingBlocks: ["rules", "over_threshold"],
-                  queryAttribute: "selector",
-                  queryIdentityKey: "signal.id",
+                  identifies: {
+                    from: "query",
+                    attribute: "selector",
+                    key: "signal.id",
+                  },
                 },
         })),
       },
@@ -1006,5 +1006,206 @@ describe("a name a locals block states", () => {
 
   it("keeps a hole for a local the configuration never states", () => {
     expect(physical("missing")).toBe("{local.never_stated}");
+  });
+});
+
+/**
+ * A provider that writes a table's columns as JSON, keeps its tables in
+ * a namespace, and decides which store a resource is from an attribute
+ * that states an engine and a release together.
+ */
+const WAREHOUSE: TerraformPack = {
+  name: "test-warehouse",
+  provider: "warehouse",
+  resources: [
+    {
+      resource: "warehouse_table",
+      providerVersions: ">=1 <2",
+      boundary: {
+        kind: "storage",
+        storageSystem: "warehouse",
+        nameAttribute: "table_id",
+        scopeAttribute: "dataset_id",
+        fieldSet: "none",
+        fieldsFromJson: {
+          attribute: "schema",
+          nameKey: "name",
+          typeKey: "type",
+          requires: { key: "mode", values: ["REQUIRED"] },
+        },
+      },
+    },
+    {
+      resource: "warehouse_server",
+      providerVersions: ">=1 <2",
+      appliesWhen: { attribute: "release", startsWith: ["FLINT_"] },
+      boundary: {
+        kind: "storage",
+        storageSystem: "flint",
+        declares: "store",
+        fieldSet: "none",
+      },
+    },
+    {
+      resource: "warehouse_server",
+      providerVersions: ">=1 <2",
+      appliesWhen: { attribute: "release", startsWith: ["EMBER_"] },
+      boundary: {
+        kind: "storage",
+        storageSystem: "ember",
+        declares: "store",
+        fieldSet: "none",
+      },
+    },
+  ],
+};
+
+const WAREHOUSE_CONFIGURATION = `
+resource "warehouse_dataset" "analytics" {
+  dataset_id = "analytics"
+}
+
+resource "warehouse_table" "orders" {
+  dataset_id = warehouse_dataset.analytics.dataset_id
+  table_id   = "orders"
+
+  schema = <<EOF
+[
+  { "name": "order_id", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "placed_at", "type": "TIMESTAMP" }
+]
+EOF
+}
+
+resource "warehouse_table" "sessions" {
+  dataset_id = "\${var.environment}_analytics"
+  table_id   = "sessions"
+  schema     = file("schema/sessions.json")
+}
+
+resource "warehouse_server" "reporting" {
+  release = "EMBER_8_0_31"
+}
+`;
+
+describe("a store whose fields and namespace are attributes", () => {
+  const summaries = terraformToSummaries(
+    WAREHOUSE_CONFIGURATION,
+    "warehouse.tf",
+    { packs: [WAREHOUSE] },
+  );
+  const named = (name: string) =>
+    summaries.find(
+      (summary) => summary.identity.name === name,
+    ) as BehavioralSummary;
+
+  it("reads every column a JSON schema states, and calls the list complete", () => {
+    const contract = readStorageContractMetadata(
+      named("warehouse_table.orders"),
+    );
+    expect(contract?.fieldSet).toBe("exhaustive");
+    expect(contract?.fields).toEqual([
+      { name: "order_id", type: "STRING", nullable: false },
+      { name: "placed_at", type: "TIMESTAMP", nullable: true },
+    ]);
+  });
+
+  it("puts the table in the namespace its dataset reference resolves to", () => {
+    expect(
+      named("warehouse_table.orders").identity.boundaryBinding?.semantics,
+    ).toMatchObject({ scope: "analytics", container: "orders" });
+  });
+
+  it("keeps a namespace hole the deploy fills in", () => {
+    expect(
+      named("warehouse_table.sessions").identity.boundaryBinding?.semantics,
+    ).toMatchObject({ scope: "{var.environment}_analytics" });
+  });
+
+  it("records no columns for a schema a file supplies", () => {
+    const contract = readStorageContractMetadata(
+      named("warehouse_table.sessions"),
+    );
+    expect(contract?.fieldSet).toBe("none");
+    expect(contract?.fields).toBeUndefined();
+  });
+
+  it("picks the entry whose prefix the release matches", () => {
+    expect(
+      named("warehouse_server.reporting").identity.boundaryBinding?.semantics,
+    ).toMatchObject({ storageSystem: "ember" });
+  });
+});
+
+/** A provider whose alarm writes the metric it watches in attributes. */
+const SIGNALS_BY_ATTRIBUTE: TerraformPack = {
+  name: "test-signals-attributes",
+  provider: "signals",
+  resources: [
+    {
+      resource: "signals_filter",
+      providerVersions: ">=1 <2",
+      boundary: {
+        kind: "metric",
+        metricSystem: "signals",
+        metricTypeTemplate: "{publishes.space}/{publishes.counter}",
+      },
+    },
+    {
+      resource: "signals_alarm",
+      providerVersions: ">=1 <2",
+      boundary: {
+        kind: "metric-reading",
+        metricSystem: "signals",
+        readingBlocks: [],
+        identifies: { from: "attributes", template: "{space}/{counter}" },
+        comparesTo: { attribute: "limit", whenSet: "number" },
+      },
+    },
+  ],
+};
+
+const ATTRIBUTE_IDENTITY = `
+resource "signals_filter" "refusals" {
+  publishes {
+    space   = "OrderService"
+    counter = "Refusals"
+  }
+}
+
+resource "signals_alarm" "refusals_climbing" {
+  space   = "OrderService"
+  counter = "Refusals"
+  limit   = 5
+}
+
+resource "signals_alarm" "unnamed" {
+  limit = 5
+}
+`;
+
+describe("a metric identity built from attributes", () => {
+  const summaries = terraformToSummaries(ATTRIBUTE_IDENTITY, "signals.tf", {
+    packs: [SIGNALS_BY_ATTRIBUTE],
+  });
+  const metricType = (name: string) => {
+    const semantics = summaries.find((summary) =>
+      summary.identity.name.startsWith(name),
+    )?.identity.boundaryBinding?.semantics;
+    return semantics?.name === "metric" ? semantics.metricType : undefined;
+  };
+
+  it("spells the declaring side from the attributes the template names", () => {
+    expect(metricType("signals_filter.refusals")).toBe("OrderService/Refusals");
+  });
+
+  it("spells the reading side the same way, so the two pair", () => {
+    expect(metricType("signals_alarm.refusals_climbing")).toBe(
+      "OrderService/Refusals",
+    );
+  });
+
+  it("leaves a reading that fills only part of the template with no metric", () => {
+    expect(metricType("signals_alarm.unnamed")).toBeNull();
   });
 });

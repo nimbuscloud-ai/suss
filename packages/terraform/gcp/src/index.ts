@@ -91,7 +91,6 @@ export function googleTerraform(): TerraformPack {
         boundary: {
           kind: "metric",
           metricSystem: METRIC_SYSTEM,
-          nameAttribute: "name",
           // Cloud Monitoring puts every metric a project defines for
           // itself under this prefix, and an alert policy spells the
           // whole string, so the whole string is the shared identity.
@@ -113,8 +112,11 @@ export function googleTerraform(): TerraformPack {
           kind: "metric-reading",
           metricSystem: METRIC_SYSTEM,
           readingBlocks: ["conditions", "condition_threshold"],
-          queryAttribute: "filter",
-          queryIdentityKey: "metric.type",
+          identifies: {
+            from: "query",
+            attribute: "filter",
+            key: "metric.type",
+          },
           comparesTo: { attribute: "threshold_value", whenSet: "number" },
           reducesTo: {
             attribute: "aggregations.per_series_aligner",

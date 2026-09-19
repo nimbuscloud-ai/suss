@@ -37,6 +37,12 @@ export interface StorageResource {
   declares?: "container" | "store";
   /** The attribute that says what the resource is called once deployed. */
   nameAttribute?: string;
+  /**
+   * The attribute naming the namespace a container belongs to. A
+   * BigQuery table is always addressed through its dataset, so two
+   * tables called `orders` in two datasets are two containers.
+   */
+  scopeAttribute?: string;
   /** Whether the fields it declares are every field an item has. */
   fieldSet: "exhaustive" | "partial" | "none";
   /** The attributes that state what identifies an item, in key order. */
@@ -45,6 +51,21 @@ export interface StorageResource {
   accessPathBlocks?: string[];
   /** The block that gives each field a type, and its two attributes. */
   fieldTypes?: { block: string; nameAttribute: string; typeAttribute: string };
+  /**
+   * An attribute stating every field as JSON, one object per field. A
+   * schema written this way is every field the item has, so reading one
+   * makes the contract exhaustive whatever `fieldSet` says.
+   */
+  fieldsFromJson?: {
+    /** The attribute whose value is a JSON list of field objects. */
+    attribute: string;
+    /** The key of one entry that says what the field is called. */
+    nameKey: string;
+    /** The key of one entry that gives the field its type. */
+    typeKey?: string;
+    /** The key that says a field is always set, and the values that do. */
+    requires?: { key: string; values: string[] };
+  };
   /**
    * How another way in says what it can serve. A DynamoDB index copies
    * some of an item rather than all of it, and a reader asking for
@@ -81,24 +102,44 @@ export interface AttributeMeaning<T extends string> {
   means: Record<string, T>;
 }
 
+/**
+ * How the deployed metric type is spelled, with each `{...}` standing
+ * for the value at that attribute. A CloudWatch metric is identified by
+ * its namespace and its name together, so a template says where both
+ * come from: `"{metric_transformation.namespace}/{metric_transformation.name}"`.
+ * A hole the resource leaves unset makes the whole identity unknown, so
+ * the summary pairs with nothing rather than with a half-spelled name.
+ */
+export type MetricTypeTemplate = string;
+
 /** A named series of measurements a resource declares. */
 export interface MetricResource {
   kind: "metric";
   /** Which system the series lives in: cloud-monitoring. */
   metricSystem: string;
-  /** The attribute that says what the metric is called. */
-  nameAttribute: string;
-  /**
-   * How the deployed metric type is spelled, with `{name}` standing
-   * for the declared name. That string is what a resource reading the
-   * metric spells, so it is the identity the two sides share.
-   */
-  metricTypeTemplate: string;
+  /** How the string both sides spell is built from the resource. */
+  metricTypeTemplate: MetricTypeTemplate;
   /** Which attribute says whether one measurement is a number or a histogram. */
   values?: AttributeMeaning<MetricValueShape>;
   /** Which attribute says what a measurement covers. */
   accumulates?: AttributeMeaning<MetricAccumulation>;
 }
+
+/**
+ * How a reading says which metric it is about. A CloudWatch alarm
+ * writes the namespace and the name in attributes of its own; a Cloud
+ * Monitoring condition states a query, and the metric is one value
+ * inside it.
+ */
+export type MetricIdentity =
+  | { from: "attributes"; template: MetricTypeTemplate }
+  | {
+      from: "query";
+      /** The attribute whose query says which metric this is about. */
+      attribute: string;
+      /** The key inside that query whose value is the metric's type. */
+      key: string;
+    };
 
 /**
  * A resource that reads a metric another resource declares. One
@@ -108,12 +149,13 @@ export interface MetricResource {
 export interface MetricReadingResource {
   kind: "metric-reading";
   metricSystem: string;
-  /** The blocks one reading is written inside, outermost first. */
+  /**
+   * The blocks one reading is written inside, outermost first. An empty
+   * list means the resource is itself one reading.
+   */
   readingBlocks: string[];
-  /** The attribute whose query says which metric the reading is about. */
-  queryAttribute: string;
-  /** The key inside that query whose value is the metric's type. */
-  queryIdentityKey: string;
+  /** How the reading spells the metric it is about. */
+  identifies: MetricIdentity;
   /**
    * The attribute whose presence means the reading compares the series
    * against a value of this shape. A condition states a threshold, so
@@ -145,7 +187,13 @@ export interface TerraformResourcePattern {
    */
   appliesWhen?: {
     attribute: string;
-    equals: string[];
+    /** The values that mean the entry describes this resource. */
+    equals?: string[];
+    /**
+     * The prefixes that do, for an attribute stating an engine and a
+     * release together: Cloud SQL writes `POSTGRES_15`.
+     */
+    startsWith?: string[];
     whenUnset?: "read" | "skip";
   };
   /**

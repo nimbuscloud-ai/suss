@@ -42,6 +42,26 @@ Each secondary index becomes its own boundary, because a query through an index 
 
 A table declares its keys and lets every other attribute vary, so the contract says `fieldSet: "partial"` and the checker never calls an ordinary attribute unknown.
 
+## A structure written as JSON
+
+Several providers take a structure as a string rather than as blocks: a BigQuery table's schema, an ECS task's container definitions, an IAM policy document. Terraform gives an author two ways to write one, and both mean the same thing once deployed:
+
+```hcl
+schema = jsonencode([
+  { name = "order_id", type = "STRING", mode = "REQUIRED" },
+])
+
+schema = <<EOF
+[{ "name": "order_id", "type": "STRING", "mode": "REQUIRED" }]
+EOF
+```
+
+`jsonAttributeValue` reads both, and a pack asks for one through `fieldsFromJson` on a storage entry, saying which attribute the JSON is at and which keys of an entry give the field its name, its type, and whether it is always set. A schema written this way is every field the item has, so the contract comes out `exhaustive`. One a file or a variable supplies is not written down anywhere the reader can see, so nothing is recorded rather than guessed.
+
+## Several entries for one resource type
+
+A pack states more than one entry for a resource type when the provider spells it differently across versions, and again when one attribute decides what the resource is. `aws_db_instance` is a PostgreSQL store or a MySQL one depending on its `engine`, and `google_sql_database_instance` on its `database_version`, so each has an entry per engine and a gate that picks between them. A gate matches whole values through `equals`, or the start of a value through `startsWith`, which is what Cloud SQL needs: `database_version` states an engine and a release together, `POSTGRES_15` and `MYSQL_8_0_31`, and the releases change every quarter.
+
 ## What it will not tell you
 
 - **Only what a loaded pack describes.** A resource no entry covers, an IAM policy or a subnet, is skipped.
