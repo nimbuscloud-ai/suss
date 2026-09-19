@@ -1,6 +1,6 @@
 ---
 title: suss intent
-description: List the outcome ids a PRD scenario can link to, from the boundary intent documents a folder holds.
+description: List the outcome ids a PRD scenario can link to, from the boundary intent documents in a folder.
 ---
 
 # `suss intent`
@@ -109,7 +109,7 @@ Curating a document means filling in its `purpose` and `audience`, renaming its 
 | Code | When |
 |---|---|
 | 0 | At least one curated boundary intent document declares an outcome. |
-| 1 | The folder has no boundary intent, or everything in it is still an uncurated draft. A person who ran this to find a link has nothing to write either way. |
+| 1 | The folder has no boundary intent, or everything in it is still an uncurated draft. |
 | 1 | There is no folder at the path `--from` gives. |
 
 A file in the folder that cannot be read at all is reported on stderr and passed over, so one broken document does not hide the rest.
