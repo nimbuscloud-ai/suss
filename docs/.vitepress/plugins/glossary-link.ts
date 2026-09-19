@@ -29,6 +29,14 @@ export interface GlossaryLinkOptions {
 
 const MEMBER_ACCESS = /^([A-Z][A-Za-z0-9]*)\.[A-Za-z_][A-Za-z0-9_]*$/;
 
+/** A key the glossary declares itself, so `constructor` never links to Object.prototype's. */
+function termUrl(
+  glossary: Record<string, string>,
+  key: string,
+): string | undefined {
+  return Object.hasOwn(glossary, key) ? glossary[key] : undefined;
+}
+
 export function glossaryLinkPlugin(
   md: MarkdownIt,
   options: GlossaryLinkOptions,
@@ -95,18 +103,13 @@ function linkifyChildren(
     // Case 1: inline code (`BoundaryBinding` or `BoundaryBinding.protocol`)
     if (child.type === "code_inline") {
       const content = child.content;
-      let termKey: string | undefined;
-      if (glossary[content]) {
-        termKey = content;
-      } else {
-        const member = content.match(MEMBER_ACCESS);
-        if (member && glossary[member[1]]) {
-          termKey = member[1];
-        }
-      }
+      const member = content.match(MEMBER_ACCESS);
+      const url =
+        termUrl(glossary, content) ??
+        (member ? termUrl(glossary, member[1]) : undefined);
 
-      if (termKey) {
-        result.push(...wrap(child, glossary[termKey], className, state));
+      if (url) {
+        result.push(...wrap(child, url, className, state));
         index += 1;
         continue;
       }
@@ -124,7 +127,7 @@ function linkifyChildren(
       children[index + 2]?.type === "strong_close"
     ) {
       const textToken = children[index + 1];
-      const target = glossary[textToken.content];
+      const target = termUrl(glossary, textToken.content);
       if (target) {
         const open = new state.Token("link_open", "a", 1);
         open.attrs = [
