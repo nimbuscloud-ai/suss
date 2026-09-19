@@ -19,6 +19,8 @@ It is a peer of `@suss/behavioral-ir`; both build on `@suss/ir-core`. Readers (e
 
 v0: REST, function-call, message-bus, storage and unit-invocation system intent, effects as outcomes, PRD outcome intent with optional links. GraphQL, runtime-config and metric boundaries have no block yet.
 
+The file format is also published as a [JSON Schema](schema/intent-doc.schema.json), generated from the zod schemas at build time, so an editor can check a document and a tool in another language can read one without depending on this package. [Intent format](../../docs/reference/intent-format.md) goes through both document kinds field by field.
+
 ## More
 
 - [What an intent document states](./DESIGN.md)

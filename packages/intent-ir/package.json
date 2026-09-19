@@ -30,15 +30,19 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
-    }
+    },
+    "./schema/intent-doc.schema.json": "./schema/intent-doc.schema.json",
+    "./package.json": "./package.json"
   },
   "files": [
     "dist",
+    "schema",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && node scripts/generate-schema.mjs && npx biome format --write schema/intent-doc.schema.json",
+    "schema:generate": "node scripts/generate-schema.mjs && npx biome format --write schema/intent-doc.schema.json",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "lint": "biome check .",

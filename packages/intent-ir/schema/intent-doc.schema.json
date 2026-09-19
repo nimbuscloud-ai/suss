@@ -1,0 +1,1440 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://suss.dev/schemas/intent-doc.schema.json",
+  "title": "IntentDoc",
+  "description": "One suss intent document, either boundary intent or a PRD, see https://github.com/nimbuscloud-ai/suss/blob/main/docs/reference/intent-format.md",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "boundary",
+          "description": "Makes this document boundary intent for one boundary."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What this document is called. A PRD scenario links to an outcome of it as <name>.<outcome-id>."
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What the boundary is for, in the author's own words."
+        },
+        "audience": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Who calls this boundary and depends on what it does."
+        },
+        "source": {
+          "default": "author",
+          "description": "Where the document came from: somebody wrote it, suss inferred it, or suss inferred it and somebody has since curated it.",
+          "type": "string",
+          "enum": ["author", "inferred", "inferred, curated"]
+        },
+        "boundary": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "transport": {
+                  "default": "http",
+                  "type": "string",
+                  "const": "http"
+                },
+                "semantics": {
+                  "type": "string",
+                  "const": "rest"
+                },
+                "method": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The HTTP method the route handles."
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The route path, written the way the framework declares it."
+                },
+                "receives": {
+                  "type": "object",
+                  "properties": {
+                    "headers": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "additionalProperties": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "required": {
+                                "default": false,
+                                "description": "Whether the boundary needs this field.",
+                                "type": "boolean"
+                              },
+                              "type": {
+                                "type": "string",
+                                "enum": [
+                                  "string",
+                                  "integer",
+                                  "number",
+                                  "boolean",
+                                  "null",
+                                  "unknown"
+                                ]
+                              }
+                            },
+                            "required": ["type"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "required": {
+                                "default": false,
+                                "description": "Whether the boundary needs this field.",
+                                "type": "boolean"
+                              },
+                              "type": {
+                                "type": "string",
+                                "const": "array"
+                              },
+                              "items": {
+                                "$ref": "#/$defs/__schema0"
+                              }
+                            },
+                            "required": ["type"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "required": {
+                                "default": false,
+                                "description": "Whether the boundary needs this field.",
+                                "type": "boolean"
+                              },
+                              "type": {
+                                "type": "string",
+                                "const": "object"
+                              },
+                              "properties": {
+                                "type": "object",
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "additionalProperties": {
+                                  "$ref": "#/$defs/__schema0"
+                                }
+                              }
+                            },
+                            "required": ["type"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "required": {
+                                "default": false,
+                                "description": "Whether the boundary needs this field.",
+                                "type": "boolean"
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        ]
+                      },
+                      "description": "The request headers the boundary depends on, by name."
+                    },
+                    "query": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "additionalProperties": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "required": {
+                                "default": false,
+                                "description": "Whether the boundary needs this field.",
+                                "type": "boolean"
+                              },
+                              "type": {
+                                "type": "string",
+                                "enum": [
+                                  "string",
+                                  "integer",
+                                  "number",
+                                  "boolean",
+                                  "null",
+                                  "unknown"
+                                ]
+                              }
+                            },
+                            "required": ["type"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "required": {
+                                "default": false,
+                                "description": "Whether the boundary needs this field.",
+                                "type": "boolean"
+                              },
+                              "type": {
+                                "type": "string",
+                                "const": "array"
+                              },
+                              "items": {
+                                "$ref": "#/$defs/__schema0"
+                              }
+                            },
+                            "required": ["type"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "required": {
+                                "default": false,
+                                "description": "Whether the boundary needs this field.",
+                                "type": "boolean"
+                              },
+                              "type": {
+                                "type": "string",
+                                "const": "object"
+                              },
+                              "properties": {
+                                "type": "object",
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "additionalProperties": {
+                                  "$ref": "#/$defs/__schema0"
+                                }
+                              }
+                            },
+                            "required": ["type"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "required": {
+                                "default": false,
+                                "description": "Whether the boundary needs this field.",
+                                "type": "boolean"
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        ]
+                      },
+                      "description": "The query-string parameters the boundary depends on, by name."
+                    },
+                    "params": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "additionalProperties": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "required": {
+                                "default": false,
+                                "description": "Whether the boundary needs this field.",
+                                "type": "boolean"
+                              },
+                              "type": {
+                                "type": "string",
+                                "enum": [
+                                  "string",
+                                  "integer",
+                                  "number",
+                                  "boolean",
+                                  "null",
+                                  "unknown"
+                                ]
+                              }
+                            },
+                            "required": ["type"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "required": {
+                                "default": false,
+                                "description": "Whether the boundary needs this field.",
+                                "type": "boolean"
+                              },
+                              "type": {
+                                "type": "string",
+                                "const": "array"
+                              },
+                              "items": {
+                                "$ref": "#/$defs/__schema0"
+                              }
+                            },
+                            "required": ["type"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "required": {
+                                "default": false,
+                                "description": "Whether the boundary needs this field.",
+                                "type": "boolean"
+                              },
+                              "type": {
+                                "type": "string",
+                                "const": "object"
+                              },
+                              "properties": {
+                                "type": "object",
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "additionalProperties": {
+                                  "$ref": "#/$defs/__schema0"
+                                }
+                              }
+                            },
+                            "required": ["type"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "required": {
+                                "default": false,
+                                "description": "Whether the boundary needs this field.",
+                                "type": "boolean"
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        ]
+                      },
+                      "description": "The path parameters the boundary depends on, by name."
+                    },
+                    "body": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/__schema0"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "properties": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {
+                                "$ref": "#/$defs/__schema0"
+                              }
+                            },
+                            "required": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      ],
+                      "description": "The shape of the request body the boundary depends on."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "The parts of the request the boundary depends on."
+                }
+              },
+              "required": ["semantics", "method", "path"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "transport": {
+                  "default": "in-process",
+                  "type": "string"
+                },
+                "semantics": {
+                  "type": "string",
+                  "const": "function-call"
+                },
+                "module": {
+                  "type": "string",
+                  "description": "The repo-relative module path, when the boundary is a unit inside this repository."
+                },
+                "exportName": {
+                  "type": "string",
+                  "description": "The name the module or package exports the function under."
+                },
+                "package": {
+                  "type": "string",
+                  "description": "The package name, when the boundary is something a package publishes."
+                },
+                "exportPath": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "The path to the export inside the package: the sub-path, then any nested names."
+                },
+                "receives": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "required": {
+                            "default": false,
+                            "description": "Whether the boundary needs this field.",
+                            "type": "boolean"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "string",
+                              "integer",
+                              "number",
+                              "boolean",
+                              "null",
+                              "unknown"
+                            ]
+                          }
+                        },
+                        "required": ["type"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "required": {
+                            "default": false,
+                            "description": "Whether the boundary needs this field.",
+                            "type": "boolean"
+                          },
+                          "type": {
+                            "type": "string",
+                            "const": "array"
+                          },
+                          "items": {
+                            "$ref": "#/$defs/__schema0"
+                          }
+                        },
+                        "required": ["type"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "required": {
+                            "default": false,
+                            "description": "Whether the boundary needs this field.",
+                            "type": "boolean"
+                          },
+                          "type": {
+                            "type": "string",
+                            "const": "object"
+                          },
+                          "properties": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "$ref": "#/$defs/__schema0"
+                            }
+                          }
+                        },
+                        "required": ["type"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "required": {
+                            "default": false,
+                            "description": "Whether the boundary needs this field.",
+                            "type": "boolean"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "description": "The fields the boundary is handed, by field name. On a function-call boundary a name is a parameter, on a message bus it is a field of the message body."
+                }
+              },
+              "required": ["semantics"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "semantics": {
+                  "type": "string",
+                  "const": "message-bus"
+                },
+                "messageBus": {
+                  "type": "string",
+                  "enum": [
+                    "aws_sqs",
+                    "aws.sns",
+                    "s3",
+                    "eventbridge",
+                    "bullmq",
+                    "kafka",
+                    "nats",
+                    "cloudflare-queues",
+                    "cloudflare-cron",
+                    "cloudflare-tail"
+                  ],
+                  "description": "Which bus carries the message, in the name suss gives that bus."
+                },
+                "channel": {
+                  "default": null,
+                  "description": "The queue or topic the message travels on. Null when the document does not name one.",
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "receives": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "required": {
+                            "default": false,
+                            "description": "Whether the boundary needs this field.",
+                            "type": "boolean"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "string",
+                              "integer",
+                              "number",
+                              "boolean",
+                              "null",
+                              "unknown"
+                            ]
+                          }
+                        },
+                        "required": ["type"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "required": {
+                            "default": false,
+                            "description": "Whether the boundary needs this field.",
+                            "type": "boolean"
+                          },
+                          "type": {
+                            "type": "string",
+                            "const": "array"
+                          },
+                          "items": {
+                            "$ref": "#/$defs/__schema0"
+                          }
+                        },
+                        "required": ["type"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "required": {
+                            "default": false,
+                            "description": "Whether the boundary needs this field.",
+                            "type": "boolean"
+                          },
+                          "type": {
+                            "type": "string",
+                            "const": "object"
+                          },
+                          "properties": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "$ref": "#/$defs/__schema0"
+                            }
+                          }
+                        },
+                        "required": ["type"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "required": {
+                            "default": false,
+                            "description": "Whether the boundary needs this field.",
+                            "type": "boolean"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "description": "The fields the boundary is handed, by field name. On a function-call boundary a name is a parameter, on a message bus it is a field of the message body."
+                }
+              },
+              "required": ["semantics", "messageBus"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "semantics": {
+                  "type": "string",
+                  "const": "storage"
+                },
+                "storageSystem": {
+                  "type": "string",
+                  "description": "Which store this is: postgresql, aws.dynamodb, s3, and so on."
+                },
+                "scope": {
+                  "default": "default",
+                  "description": "The ORM, schema or deployment scope the container sits in. A setup with one database uses default.",
+                  "type": "string"
+                },
+                "container": {
+                  "default": null,
+                  "description": "The table, bucket, collection or index. Null when the document does not name one.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "accessPath": {
+                  "default": null,
+                  "description": "A secondary way into the container, such as a DynamoDB index or an Elasticsearch alias. Null means the container's own primary way in.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "receives": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "required": {
+                            "default": false,
+                            "description": "Whether the boundary needs this field.",
+                            "type": "boolean"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "string",
+                              "integer",
+                              "number",
+                              "boolean",
+                              "null",
+                              "unknown"
+                            ]
+                          }
+                        },
+                        "required": ["type"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "required": {
+                            "default": false,
+                            "description": "Whether the boundary needs this field.",
+                            "type": "boolean"
+                          },
+                          "type": {
+                            "type": "string",
+                            "const": "array"
+                          },
+                          "items": {
+                            "$ref": "#/$defs/__schema0"
+                          }
+                        },
+                        "required": ["type"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "required": {
+                            "default": false,
+                            "description": "Whether the boundary needs this field.",
+                            "type": "boolean"
+                          },
+                          "type": {
+                            "type": "string",
+                            "const": "object"
+                          },
+                          "properties": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "$ref": "#/$defs/__schema0"
+                            }
+                          }
+                        },
+                        "required": ["type"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "required": {
+                            "default": false,
+                            "description": "Whether the boundary needs this field.",
+                            "type": "boolean"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "description": "The fields the boundary is handed, by field name. On a function-call boundary a name is a parameter, on a message bus it is a field of the message body."
+                }
+              },
+              "required": ["semantics", "storageSystem"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "semantics": {
+                  "type": "string",
+                  "const": "unit-invocation"
+                },
+                "deploymentTarget": {
+                  "type": "string",
+                  "enum": [
+                    "lambda",
+                    "ecs-task",
+                    "container",
+                    "k8s-deployment",
+                    "worker"
+                  ],
+                  "description": "What sort of deployed thing this is: a Lambda function, an ECS task's container, a plain container, a k8s deployment or an edge worker."
+                },
+                "instanceName": {
+                  "default": null,
+                  "description": "The name the deployment medium knows the unit by, such as a CloudFormation logical id. Null when the document does not name one.",
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "receives": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "required": {
+                            "default": false,
+                            "description": "Whether the boundary needs this field.",
+                            "type": "boolean"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "string",
+                              "integer",
+                              "number",
+                              "boolean",
+                              "null",
+                              "unknown"
+                            ]
+                          }
+                        },
+                        "required": ["type"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "required": {
+                            "default": false,
+                            "description": "Whether the boundary needs this field.",
+                            "type": "boolean"
+                          },
+                          "type": {
+                            "type": "string",
+                            "const": "array"
+                          },
+                          "items": {
+                            "$ref": "#/$defs/__schema0"
+                          }
+                        },
+                        "required": ["type"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "required": {
+                            "default": false,
+                            "description": "Whether the boundary needs this field.",
+                            "type": "boolean"
+                          },
+                          "type": {
+                            "type": "string",
+                            "const": "object"
+                          },
+                          "properties": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "$ref": "#/$defs/__schema0"
+                            }
+                          }
+                        },
+                        "required": ["type"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "required": {
+                            "default": false,
+                            "description": "Whether the boundary needs this field.",
+                            "type": "boolean"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "description": "The fields the boundary is handed, by field name. On a function-call boundary a name is a parameter, on a message bus it is a field of the message body."
+                }
+              },
+              "required": ["semantics", "deploymentTarget"],
+              "additionalProperties": false
+            }
+          ],
+          "description": "Which boundary in the code the document is about."
+        },
+        "transitions": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The outcome's name. A PRD scenario links to it as <intent-name>.<id>."
+              },
+              "when": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "reads": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "where": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "finds": {
+                              "type": "string",
+                              "enum": ["nothing", "something"]
+                            },
+                            "is": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "equals": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "has": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": ["reads"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "writes": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "where": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "finds": {
+                              "type": "string",
+                              "enum": ["nothing", "something"]
+                            },
+                            "is": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "equals": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "has": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": ["writes"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "invokes": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "where": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "finds": {
+                              "type": "string",
+                              "enum": ["nothing", "something"]
+                            },
+                            "is": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "equals": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "has": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": ["invokes"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "input": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "where": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "finds": {
+                              "type": "string",
+                              "enum": ["nothing", "something"]
+                            },
+                            "is": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "equals": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "has": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": ["input"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "description": "What has to hold for this outcome, either as a list of clauses or as one sentence."
+              },
+              "response": {
+                "description": "This outcome sends an HTTP response.",
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 599,
+                    "description": "The HTTP status code the response carries."
+                  },
+                  "body": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "properties": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "$ref": "#/$defs/__schema0"
+                            }
+                          },
+                          "required": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "description": "The shape of the response body."
+                  }
+                },
+                "required": ["status"]
+              },
+              "returns": {
+                "description": "This outcome returns a value to its caller.",
+                "type": "object",
+                "properties": {
+                  "body": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "properties": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "$ref": "#/$defs/__schema0"
+                            }
+                          },
+                          "required": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "description": "The shape of the returned value."
+                  }
+                }
+              },
+              "throws": {
+                "description": "This outcome raises an error.",
+                "type": "object",
+                "properties": {
+                  "errorType": {
+                    "type": "string",
+                    "description": "The name of the error class this outcome raises."
+                  }
+                }
+              },
+              "results": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "reads": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "fields": {
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "by": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "minItems": 1,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["reads"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "writes": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "fields": {
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "by": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "minItems": 1,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["writes"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "invokes": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "fields": {
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "by": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "minItems": 1,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["invokes"],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "description": "The effects this outcome has, written in the same verbs suss ask uses: reads, writes, invokes."
+              }
+            },
+            "required": ["id", "when"]
+          },
+          "description": "Every outcome the boundary can produce, one entry each."
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "purpose",
+        "audience",
+        "boundary",
+        "transitions"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "prd",
+          "description": "Makes this document a PRD, a set of scenarios for a feature."
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What this document is called."
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What the feature is for, in the author's own words."
+        },
+        "audience": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Who the feature is for."
+        },
+        "source": {
+          "default": "author",
+          "description": "Where the document came from: somebody wrote it, suss inferred it, or suss inferred it and somebody has since curated it.",
+          "type": "string",
+          "enum": ["author", "inferred", "inferred, curated"]
+        },
+        "scenarios": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "description": "A short name for the scenario."
+              },
+              "when": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The condition the scenario covers, in the author's own words."
+              },
+              "expect": {
+                "type": "string",
+                "minLength": 1,
+                "description": "What should happen then, in the author's own words."
+              },
+              "link": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                ],
+                "description": "The boundary-intent outcomes this scenario is about, each written <intent-name>.<outcome-id>."
+              }
+            },
+            "required": ["when", "expect"]
+          },
+          "description": "The situations the feature covers, one entry each."
+        }
+      },
+      "required": ["kind", "title", "purpose", "audience", "scenarios"]
+    }
+  ],
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "string",
+                "integer",
+                "number",
+                "boolean",
+                "null",
+                "unknown"
+              ]
+            }
+          },
+          "required": ["type"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "array"
+            },
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            }
+          },
+          "required": ["type"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "object"
+            },
+            "properties": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              }
+            },
+            "required": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": ["type"]
+        }
+      ]
+    }
+  }
+}
