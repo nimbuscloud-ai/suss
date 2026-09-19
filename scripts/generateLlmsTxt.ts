@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 /**
- * generateLlmsTxt.ts: write docs/public/llms.txt, the index of the site
- * an agent reads before it fetches any page.
+ * generateLlmsTxt.ts: write docs/public/llms.txt, the index of the site an
+ * agent reads before it fetches any page, and docs/public/llms-full.txt, the
+ * whole site as one file so an agent can skip the fetching.
  *
- * Every markdown file under docs/ is a published page, so the list is the
- * docs tree itself. A page with no frontmatter description falls back to
- * the first sentence of its opening paragraph, so a page nobody has given
- * frontmatter still gets a usable line.
+ * The index lists every markdown file under docs/, since each one is a
+ * published page. A page with no frontmatter description falls back to the
+ * first sentence of its opening paragraph. The full file follows the sidebar
+ * instead, so the pages arrive in the order a reader meets them.
  *
  * `npm run docs:build` runs this through `predocs:build`. On its own:
  *
@@ -16,9 +17,12 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { type SidebarItem, sidebar } from "../docs/.vitepress/sidebar.ts";
+
 const ROOT = path.resolve(import.meta.dirname, "..");
 const DOCS_DIR = path.join(ROOT, "docs");
 const OUTPUT = path.join(DOCS_DIR, "public", "llms.txt");
+const FULL_OUTPUT = path.join(DOCS_DIR, "public", "llms-full.txt");
 
 const SITE_ORIGIN = "https://nimbuscloud-ai.github.io/suss/";
 
@@ -143,3 +147,68 @@ fs.writeFileSync(OUTPUT, lines.join("\n"), "utf8");
 console.log(
   `llms.txt: ${pages.length} pages -> ${path.relative(ROOT, OUTPUT)}`,
 );
+
+/** Every page link in the sidebar, depth first, in the order it is listed. */
+function sidebarLinks(items: SidebarItem[], found: string[] = []): string[] {
+  for (const item of items) {
+    if (item.link !== undefined) {
+      found.push(item.link);
+    }
+    if (item.items !== undefined) {
+      sidebarLinks(item.items, found);
+    }
+  }
+  return found;
+}
+
+/** The markdown file a sidebar link points at. */
+function fileForLink(link: string): string {
+  const slug = link.replace(/^\//, "");
+  const candidate = path.join(DOCS_DIR, `${slug.replace(/\/$/, "")}.md`);
+  return slug.endsWith("/") || slug === ""
+    ? path.join(DOCS_DIR, slug, "index.md")
+    : candidate;
+}
+
+function withoutFrontmatter(content: string): string {
+  return content.replace(/^---\n[\s\S]*?\n---\n/, "").trim();
+}
+
+const sidebarOrder = ["/", ...sidebarLinks(sidebar)];
+const seen = new Set<string>();
+const fullSections: string[] = [];
+const missing: string[] = [];
+
+for (const link of sidebarOrder) {
+  const file = fileForLink(link);
+  if (seen.has(file)) {
+    continue;
+  }
+  seen.add(file);
+
+  if (!fs.existsSync(file)) {
+    missing.push(link);
+    continue;
+  }
+
+  const page = readPage(file);
+  const body = withoutFrontmatter(fs.readFileSync(file, "utf8"));
+  fullSections.push(`# ${page.url}\n\n${body}`);
+}
+
+fs.writeFileSync(
+  FULL_OUTPUT,
+  `${[`# ${SITE_NAME}`, "", `> ${SITE_SUMMARY}`, "", ...fullSections].join("\n")}\n`,
+  "utf8",
+);
+
+console.log(
+  `llms-full.txt: ${fullSections.length} pages -> ${path.relative(ROOT, FULL_OUTPUT)}`,
+);
+
+if (missing.length > 0) {
+  console.error(
+    `The sidebar points at ${missing.length} pages that do not exist: ${missing.join(", ")}`,
+  );
+  process.exit(1);
+}
