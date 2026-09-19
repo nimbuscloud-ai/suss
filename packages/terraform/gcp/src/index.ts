@@ -16,6 +16,7 @@
 
 import type { MetricAccumulation, MetricValueShape } from "@suss/behavioral-ir";
 import type {
+  EnvDeclaration,
   TerraformPack,
   TerraformResourcePattern,
 } from "@suss/contract-terraform";
@@ -89,6 +90,48 @@ const ALIGNERS: Record<string, MetricValueShape> = {
   ALIGN_PERCENTILE_50: "number",
   ALIGN_PERCENTILE_05: "number",
 };
+
+/**
+ * How a Cloud Run container writes one variable. The value is either
+ * written out or supplied by a secret, and a secret's contents are not
+ * in the configuration, so only the secret it comes from is read.
+ */
+const CONTAINER_ENV: EnvDeclaration = {
+  style: "entries",
+  block: "env",
+  nameAttribute: "name",
+  valueAttribute: "value",
+  secretAttribute: "value_source.secret_key_ref.secret",
+};
+
+/**
+ * What each product puts in the environment on its own. Google's
+ * container runtime contract states them, and the pack README says
+ * which page each list comes from. A service and a job get different
+ * ones, so the target alone cannot say.
+ */
+const CLOUD_RUN_SERVICE_ENV = [
+  "PORT",
+  "K_SERVICE",
+  "K_REVISION",
+  "K_CONFIGURATION",
+];
+
+const CLOUD_RUN_JOB_ENV = [
+  "CLOUD_RUN_JOB",
+  "CLOUD_RUN_EXECUTION",
+  "CLOUD_RUN_TASK_INDEX",
+  "CLOUD_RUN_TASK_ATTEMPT",
+  "CLOUD_RUN_TASK_COUNT",
+];
+
+const CLOUD_FUNCTION_ENV = [
+  "PORT",
+  "K_SERVICE",
+  "K_REVISION",
+  "FUNCTION_TARGET",
+  "FUNCTION_SIGNATURE_TYPE",
+];
 
 export function googleTerraform(): TerraformPack {
   return {
@@ -231,6 +274,61 @@ export function googleTerraform(): TerraformPack {
             attribute: "metric_descriptor.metric_kind",
             means: METRIC_KINDS,
           },
+        },
+      },
+      {
+        resource: "google_cloud_run_v2_service",
+        providerVersions: CURRENT,
+        boundary: {
+          kind: "deployable",
+          deploymentTarget: "container",
+          containers: { blocks: ["template", "containers"] },
+          env: [CONTAINER_ENV],
+          code: { imageAttribute: "image" },
+          platformEnvVars: CLOUD_RUN_SERVICE_ENV,
+        },
+      },
+      {
+        resource: "google_cloud_run_v2_job",
+        providerVersions: CURRENT,
+        boundary: {
+          kind: "deployable",
+          deploymentTarget: "container",
+          // A job's containers sit one template deeper than a
+          // service's: an execution template around a task template.
+          containers: { blocks: ["template", "template", "containers"] },
+          env: [CONTAINER_ENV],
+          code: { imageAttribute: "image" },
+          platformEnvVars: CLOUD_RUN_JOB_ENV,
+        },
+      },
+      {
+        resource: "google_cloudfunctions2_function",
+        providerVersions: CURRENT,
+        boundary: {
+          kind: "deployable",
+          // A second-generation function is deployed as a Cloud Run
+          // service, so it runs on the same medium as one.
+          deploymentTarget: "container",
+          runtimeAttribute: "build_config.runtime",
+          env: [
+            { style: "map", attribute: "service_config.environment_variables" },
+            {
+              style: "entries",
+              block: "service_config.secret_environment_variables",
+              nameAttribute: "key",
+              secretAttribute: "secret",
+            },
+          ],
+          // The entry point is an exported name and says nothing about
+          // which file it is in.
+          code: {
+            handler: {
+              attribute: "build_config.entry_point",
+              spelling: "name",
+            },
+          },
+          platformEnvVars: CLOUD_FUNCTION_ENV,
         },
       },
       {

@@ -35,6 +35,9 @@ const summaries = terraformFileToSummaries("infra/terraform/monitoring", {
 | `google_pubsub_subscription` | a channel of its own, since a subscriber asks for the subscription |
 | `google_logging_metric` | a metric, identified by the type Cloud Monitoring gives it, `logging.googleapis.com/user/<name>` |
 | `google_monitoring_alert_policy` | one consumer of a metric per `condition_threshold`, identified by the `metric.type` its filter states |
+| `google_cloud_run_v2_service` | a deployable per container, with that container's variables, secrets and image |
+| `google_cloud_run_v2_job` | the same, with the containers one template deeper |
+| `google_cloudfunctions2_function` | a deployable, with `service_config`'s variables and secrets and the entry point it calls |
 
 Everything else a configuration declares is skipped.
 
@@ -70,6 +73,18 @@ Both spellings of the schema are read, the literal above and a heredoc of JSON, 
 ## What Pub/Sub pairs with
 
 Nothing yet: no code pack records a publish or a subscribe on Pub/Sub, so a topic and a subscription show up as declared channels nothing paired with. They are separate channels on purpose. A publisher asks for the topic and a subscriber asks for the subscription, so those are the two strings code spells, and pairing them with each other would report the wrong side.
+
+## What a deployable entry says
+
+A Cloud Run container writes each variable as its own `env` block, with either a `value` or a `value_source.secret_key_ref`. A variable whose value refers to another resource records that resource, so code reading it to address a bucket reaches the bucket. A variable a secret supplies records the secret and no value, because the configuration does not contain one.
+
+A service's containers are under `template`, a job's under `template.template`, and the entries say so. A function's variables are a map under `service_config.environment_variables`, with each secret one `secret_environment_variables` block.
+
+Each entry states what its own product puts in the environment, because the deployment target does not say: a service gets `PORT`, `K_SERVICE`, `K_REVISION` and `K_CONFIGURATION`, a job gets `CLOUD_RUN_JOB` and the four `CLOUD_RUN_TASK_*` variables instead, and a function gets `FUNCTION_TARGET` and `FUNCTION_SIGNATURE_TYPE` on top of a service's. The lists come from [the Cloud Run container runtime contract](https://cloud.google.com/run/docs/container-contract#services-env-vars), [the jobs contract](https://cloud.google.com/run/docs/container-contract#jobs-env-vars) and [Cloud Run functions' configured environment variables](https://cloud.google.com/functions/docs/configuring/env-var).
+
+A second-generation function is deployed as a Cloud Run service, so its entry uses the same deployment target a service does.
+
+A container states no handler, so what says which code it runs is its image, recorded as the configuration writes it. An image built elsewhere means the unit has no code in this repository, and the unit is reported as one whose code could not be placed.
 
 ## The pair the provider refuses
 
