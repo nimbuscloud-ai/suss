@@ -219,13 +219,13 @@ the two by code scope.
 **`metric`** is a named series of measurements: one side declares it, another
 side reads it back by the type string the monitoring system gives it. Neither
 side can see the other's declaration, so the type string is the whole identity.
-Pairing key: `(metricSystem, metricType)`. What only the declaring side knows,
-whether a measurement is one number or a histogram, goes on its summary's
-metadata, the way a storage contract's field list does.
+Pairing key: `(metricSystem, metricType)`. Whether a measurement is one number
+or a histogram is something only the declaring side can state, so it goes on
+that summary's metadata, the way a storage contract's field list does.
 
 **`unit-invocation`** is a deployed unit something else calls by name: a
 Lambda another Lambda invokes, a Cloud Function, a state machine. Its
-identity is the platform plus the name that platform knows the unit by,
+identity is the platform plus the name that platform calls the unit by,
 which is exactly a `DeployableUnit`, so the two fields come from
 `DeployableUnitSchema` and a unit's config channel and its invoke
 channel key the same way. Pairing key: `(deploymentTarget,
@@ -421,10 +421,10 @@ the pairing pass, `suss infer intent` when it writes a document, and
 that step, the drafter would write a name the checker then disagreed
 with.
 
-A run with no template in it grounds nothing, and so does a run where
-two deployments of the same code set a variable differently. Both leave
-the boundary spelled as the source spells it, which is what a document
-then says.
+A run with no template in it resolves nothing, and neither does a run
+where two deployments of the same code set a variable differently. Both
+leave the boundary spelled the way the source spells it, and a document
+drafted from that run spells it the same way.
 
 ### Metadata namespaced by semantics
 

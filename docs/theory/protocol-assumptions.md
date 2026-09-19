@@ -84,8 +84,8 @@ does no harm there. BullMQ takes an arbitrary string, and a queue called
 equality, matches the container through `namesAgree` so a name built at
 deploy time can cover what the code reached, and then asks
 `sameService`, which reads `location.workspace`. A summary that states no workspace is
-treated as a single-project run and pairs with anything, which is what
-keeps a shared utility file working. Two databases behind one scope, a
+treated as a single-project run and pairs with anything, and that is
+what keeps a shared utility file working. Two databases behind one scope, a
 staging instance and a production instance, are one store here; that
 half is [#412](https://github.com/nimbuscloud-ai/suss/issues/412).
 

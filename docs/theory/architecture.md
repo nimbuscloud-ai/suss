@@ -25,7 +25,7 @@ The terms used here, code unit, boundary, terminal, transition, predicate, subje
 
 ## What counts as a boundary
 
-The example above is HTTP, and suss treats a boundary generally: anywhere code meets something whose other side might disagree with it. A package export is a boundary too. You publish `parseConfig(input: string)`, somebody imports it, and the consumers are every call site in every package that imports it. The machinery is the same either way. Discover the producer, discover the consumers, extract behavior from both, pair the two sides, compare them. Because every summary comes out in one format, the comparisons compose, and the checker does not ask which framework produced its inputs.
+The example above is HTTP, and suss treats a boundary generally: anywhere code meets something whose other side might disagree with it. A package export is a boundary too. You publish `parseConfig(input: string)`, somebody imports it, and the consumers are every call site in every package that imports it. The machinery is the same either way. suss discovers the producer, discovers the consumers, extracts behavior from both, pairs the two sides and compares them. Because every summary comes out in one format, the comparisons compose, and the checker never has to ask which framework produced its inputs.
 
 ## Data flow
 
@@ -151,13 +151,13 @@ The extractor never sees an AST node. It works on `RawCodeStructure`, which is p
 - `@suss/checker-intent`: depends on both IRs, since it compares them, plus `ir-core`. It exposes one pure function, `checkIntentAgreement(intents, code)`, returning findings plus the checked and unchecked accounting. It is a peer of `@suss/checker` rather than a dependency of it.
 - `@suss/extractor`: depends only on the IR. Defines `RawCodeStructure` and `PatternPack`. Never imports ts-morph or any compiler API.
 - `@suss/adapter-typescript`: depends on the IR, the extractor, ts-morph, `@suss/datalog` for its whole-program passes, `@suss/resolution` for the rules those passes join on, and `@suss/values`. The heavyweight package.
-- `@suss/datalog`: zero dependencies. A semi-naive Datalog evaluator with stratified negation, where rules are plain data. It knows nothing about the IR or the AST, so an analysis written against fact patterns stays language-independent.
+- `@suss/datalog`: zero dependencies. A semi-naive Datalog evaluator with stratified negation, where rules are plain data. Nothing in it refers to the IR or the AST, so an analysis written against fact patterns stays language-independent.
 - `@suss/resolution`: a list of Datalog rules and nothing else. No parser, no language, no files. The rules answer one question, which function a value comes down to, and they compose one hop at a time, so a factory handing off to another factory, or a barrel re-exporting a wrapper, resolves without a rule written for that case. An adapter reads source into facts (`binds`, `paramOf`, `callArg`, `reExports`, and a handful more), concatenates its own rules, and evaluates on `@suss/datalog`. When an answer comes back empty, suspect the facts before the rules. `packages/resolution/README.md` has the fact vocabulary and the cases left unresolved on purpose, and [How suss follows a value](/theory/resolving-values) works through one example end to end.
 - **Packs** depend on `@suss/extractor` for the `PatternPack` type, and on `@suss/recognize` where they describe an effect a library performs rather than a boundary it serves, plus a `@suss/manifest-*` package where discovery is manifest-driven. They are data rather than logic.
 - `@suss/manifest-*`: parse deploy manifests (SAM and CloudFormation templates, and the rest) into plain data. No IR, no other `@suss` dependency. Contract readers (manifest as specification) and framework packs (manifest as a discovery index) both read through them, so the parsing happens once and neither side depends on the other.
 - `@suss/contract-*`: depend on the IR, plus on each other where they compose (`cloudformation` delegates to `openapi` and `aws-apigateway`). They produce `BehavioralSummary[]` from specs, manifests and schemas, and mark what they produce `confidence.source: "derived"`. See [Contract sources](/packs/contract-sources).
-- `@suss/checker`: depends on the IR and on `@suss/datalog`. Pairwise comparison is a pure function over two `BehavioralSummary` values returning `Finding[]`. It knows nothing about extraction, the AST or packs, and works on the serialized IR.
-- `@suss/cli`: depends on everything, and imports the adapter dynamically so startup does not pay the ts-morph cost unless extraction runs. It is the one place that loads both summary streams and sends each to its checker, which is what keeps the two checkers from depending on each other.
+- `@suss/checker`: depends on the IR and on `@suss/datalog`. Pairwise comparison is a pure function over two `BehavioralSummary` values returning `Finding[]`. Nothing in it touches extraction, the AST or packs, and it works on the serialized IR.
+- `@suss/cli`: depends on everything, and imports the adapter dynamically so startup does not pay the ts-morph cost unless extraction runs. It is the one place that loads both summary streams and sends each to its checker, and that is what keeps the two checkers from depending on each other.
 
 ### Ownership rules
 
@@ -202,7 +202,7 @@ Per-function extraction says what one function does. Two passes answer whole-pro
 
 What an entry point reaches transitively is not stamped on it. The CLI walks the invocation effects across summaries where a command needs that answer, so it comes out the same for every language.
 
-The layering is strict. Extraction emits facts, rules derive new facts, and assembly stamps derived results onto summaries as additive metadata. Rules never touch the AST, which is what makes the analyses language-independent. [Facts and rules](/theory/facts-and-rules) is the working reference, with the relation table and a checklist for adding an analysis.
+The layering is strict. Extraction emits facts, rules derive new facts, and assembly stamps derived results onto summaries as additive metadata. Rules never touch the AST, and that is what makes the analyses language-independent. [Facts and rules](/theory/facts-and-rules) is the working reference, with the relation table and a checklist for adding an analysis.
 
 ## Verification: the differential fuzzer
 
@@ -210,10 +210,10 @@ Extraction's correctness principles are checked mechanically rather than by revi
 
 ## Degradation
 
-Static analysis of production code is always imperfect, and suss says where it fell short rather than guessing:
+Static analysis of production code is always imperfect, and suss records where it fell short rather than guessing:
 
 - **Opaque predicates.** Where the adapter cannot decompose a condition, it keeps the source text and marks the predicate `opaque`. A downstream tool sees an explicit "suss could not tell" rather than a fabricated decomposition.
-- **Gaps.** Two kinds, saying different things. An `unhandledCase` is about the code: the contract declares a 500 the handler never produces, or the handler produces a 418 the contract never declared. An `unreadOutcome` is about how much suss could read: a `return` matched none of the pack's terminal patterns, so what it produces went undescribed. Both are top-level output rather than errors.
+- **Gaps.** There are two kinds, and they mean different things. An `unhandledCase` is about the code: the contract declares a 500 the handler never produces, or the handler produces a 418 the contract never declared. An `unreadOutcome` is about how much suss could read: a `return` didn't match any of the pack's terminal patterns, so what it produces went undescribed. Both are top-level output rather than errors.
 - **Confidence levels** (`high`, `medium`, `low`). A return nobody could read drops the summary straight to `low`, because a function whose returns all went unread has no conditions either and would otherwise score as certain. Otherwise the level comes from the ratio of opaque to structured predicates.
 - **Layered dependency resolution.** In-project code gets full extraction, a typed external dependency gets its type information, and an untyped one becomes opaque predicates. Nothing needs configuring.
 
@@ -225,7 +225,7 @@ The IR types are mostly protocol-agnostic. Every `Output` is a typed structure a
 - **`graphql-resolver`**: the parent type name plus the field (`Query.user`, and also `User.posts`), with contract derivation from inline SDL. Metadata under `metadata.graphql.*`. **`graphql-operation`** describes the client side, and the contract checker pairs it rather than the key engine.
 - **`message-bus`**: the key is built from the channel's subject, so a template that writes `default#order.placed` and a handler that writes `order.placed` land in one bucket, and the buses have to agree inside it.
 - **`function-call`**: keyed by package and export path where both are known.
-- **`storage`**, **`runtime-config`**, **`metric`** and **`unit-invocation`**: each with its own identity. `storage` and `runtime-config` declare no identity key, and their checkers pair by container and by deployable unit instead.
+- **`storage`**, **`runtime-config`**, **`metric`** and **`unit-invocation`**: each with its own identity. `storage` and `runtime-config` don't declare an identity key, and their checkers pair by container and by deployable unit instead.
 
 Each variant declares its identity key, its pairing key, and how two sides agree. The pairing engine in `@suss/checker` dispatches through the registry rather than assuming a protocol, so a new boundary type adds a variant. [Boundary semantics](/theory/boundary-semantics) covers what a variant looks like and what adding one involves.
 
@@ -233,7 +233,7 @@ Each variant declares its identity key, its pairing key, and how two sides agree
 
 - **A full control flow graph.** suss identifies terminals and the conditions that gate them. Building a CFG and running data-flow analysis over it would capture more and cost orders of magnitude more.
 - **Cross-service aggregation.** `@suss/checker` compares two summaries at a time. Aggregating across an organization, tracking boundaries over commits, and alerting on regressions are separate concerns that take pairwise findings as input. See [Cross-boundary checking](/why/cross-boundary-checking).
-- **Runtime tracing.** Everything is static. No instrumentation, no production data.
+- **Runtime tracing.** Everything is static. suss never instruments your code and never reads anything from your running system.
 - **Semantics for a dependency's calls.** Seeing `await db.findById(id)`, the extractor records that the subject is the result of `db.findById`. It does not know what Prisma's `findById` does, and cross-boundary comparison needs subjects to be stable rather than understood.
 - **A shared adapter abstraction layer.** Three adapters ship, and each has its own analysis logic over its own parser. What they share is the layer above them: `assembleSummary` turns a `RawCodeStructure` into a summary for all three, so gap detection and confidence scoring have one implementation. Some tree-walking patterns are conceptually language-agnostic, such as finding every property access on a variable within a subtree, and a shared `@suss/adapter-core` waits until the same pattern has been written twice for a reason.
 - **A linter.** A finding describes what two sides of a contract disagree on. It is not a style rule or a code-quality opinion.

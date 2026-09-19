@@ -47,4 +47,4 @@ Each term is defined once here, and the other pages link to it.
 
 **Suppression**, a `.sussignore` rule that marks, downgrades or hides a finding you have accepted, without touching the summaries. It works on behavioral and intent findings alike. See [Accept a finding](/guides/accept-a-finding).
 
-**Epistemic character**, what kind of truth a contract asserts: a *specification* says what should happen, an *observation* says what happened once, and a *derivation* says what the code does on every path. The findings worth reading are the ones that cross two of these. See [Kinds of contract](/why/kinds-of-contract).
+**Epistemic character**, what kind of truth a contract asserts: a *specification* says what should happen, an *observation* says what happened once, and a *derivation* says what the code does on every path. The findings that matter are the ones that cross two of these. See [Kinds of contract](/why/kinds-of-contract).

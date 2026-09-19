@@ -139,7 +139,7 @@ A branch that rejoins leaves nothing behind on the terminals after it. `if (a) {
 
 ### Shapes the engine declines
 
-The engine does not model labeled statements, `finally` blocks that exit or contain terminals, `switch` fallthrough into a non-empty clause, non-trailing `switch` breaks, or a function past the 256-path budget. There is no second engine behind these. Each terminal keeps its enclosure conditions, the ancestor branches it is inside, which gate it however the flow weaves, plus one opaque `unmodeled control flow (<reason>)` conjunct. The transition then makes no claim to a complete condition set, which is the second correctness principle below.
+The engine does not model labeled statements, `finally` blocks that exit or contain terminals, `switch` fallthrough into a non-empty clause, non-trailing `switch` breaks, or a function past the 256-path budget. There is no second engine behind these. Each terminal keeps its enclosure conditions, the ancestor branches it is inside, which gate it however the flow weaves, plus one opaque `unmodeled control flow (<reason>)` conjunct. The transition then stops claiming a complete condition set, and that is the second correctness principle below.
 
 ### Below statements: the expression-level walker
 
@@ -297,7 +297,7 @@ resolveSubject(expr):
 
 **Why the result stays shallow:** `resolveSubject` makes no attempt to understand what `db.findById` does or what it returns. It records that the value came from calling `db.findById` and that `.repository.lastAnalyzedCommitHash` was then read off it. Cross-boundary comparison needs no more than that: two predicates on either side of a boundary can be seen to test the same thing without the extractor understanding Prisma query semantics.
 
-**Dependency on the compiler:** this is the most expensive step. Every identifier lookup goes through the symbol table. For a 500-line handler with 50 conditions, this can dominate extraction time. Two optimizations worth knowing about:
+**Dependency on the compiler:** this is the most expensive step. Every identifier lookup goes through the symbol table. For a 500-line handler with 50 conditions, this can dominate extraction time. Two optimizations keep it down:
 
 1. **Cache per function.** Within a single function, the same variable may be tested repeatedly, so cache `Identifier → ValueRef` lookups by node identity.
 2. **Avoid project-wide reference search.** `findReferencesAsNodes()` walks the entire project and is quadratic in project size. Don't use it here; `getSymbol().getDeclarations()` is local and fast.
@@ -357,7 +357,7 @@ collectClientFieldAccesses(callExpr, func, branchLocations):
         //     properties: { name: { type: "unknown" }, email: { type: "unknown" } } } } }
 ```
 
-`expectedInput` flows through `RawBranch` to `assembleSummary` to `Transition.expectedInput`, where the checker's `checkBodyCompatibility` compares it against the provider's output body shape. Every leaf type is `unknown`, because the adapter records which fields a branch reads and stops there. What the comparison settles is field presence.
+`expectedInput` flows through `RawBranch` to `assembleSummary` to `Transition.expectedInput`, where the checker's `checkBodyCompatibility` compares it against the provider's output body shape. Every leaf type is `unknown`, because the adapter records which fields a branch reads and stops there. So the comparison decides field presence and nothing more.
 
 ## Testing strategy
 

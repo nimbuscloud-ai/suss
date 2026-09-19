@@ -72,7 +72,7 @@ Write `-f <pack>=<config.json>` and the file's contents go to the pack as its op
 
 A pack config describes your own project: which database is behind a connection, or which directory your schema lives in. A fact about a package you depend on goes in a [dependency stub](/guides/teach-a-dependency) instead, and every pack in the run reads it from there.
 
-Most packs have nothing to configure. `aws-dynamodb` takes `requiresImport`, the modules whose presence, directly or through a file the project imports, makes a file worth reading. `react-router` takes `errorHelpers`, the project's own helpers that turn an error into a response.
+Most packs have nothing to configure. `aws-dynamodb` takes `requiresImport`, the modules whose presence, directly or through a file the project imports, makes a file one the pack should read. `react-router` takes `errorHelpers`, the project's own helpers that turn an error into a response.
 
 Five option names describe a dependency rather than your own project, so they belong in a stub and a config file may not set them. Setting one stops the run and tells you which stub kind takes it over:
 

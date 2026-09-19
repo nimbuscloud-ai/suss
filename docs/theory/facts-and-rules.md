@@ -5,7 +5,7 @@ description: How suss's whole-program analyses are written, as Datalog rules ove
 
 # Facts and rules
 
-Extraction's whole-program analyses are Datalog rules over a shared fact database, and a three-layer boundary keeps each one reviewable on its own. This page is for anyone adding or changing one.
+Extraction's whole-program analyses are Datalog rules over a shared fact database, and a three-layer boundary keeps each one reviewable on its own.
 
 Value resolution is the largest rule set over this engine and has a page of its own. [How suss follows a value](/theory/resolving-values) covers the fact vocabulary, the closure the rules build over it, and the proof `suss ask why` prints.
 
@@ -26,7 +26,7 @@ Layer 2: rules        derive new facts from facts. No AST, no ts-morph.
 Layer 3: assembly     reads derived facts, stamps results onto summaries.
 ```
 
-The boundary rules, in force now:
+Three boundary rules keep the layers apart:
 
 1. **Only Layer 1 touches the AST.** A rule never gets a node, a `Project`, or anything from ts-morph. If a rule needs information, Layer 1 emits it as a fact.
 2. **One owner per relation.** Exactly one pass writes each relation name (see the table below). Consumers join against it; they never add to it.
@@ -34,7 +34,7 @@ The boundary rules, in force now:
 
 ## The engine: `@suss/datalog`
 
-Published package, zero dependencies. There is not much API to learn:
+It is a published package with no dependencies, and there is not much API to learn:
 
 - `Database`: a set of facts, keyed by relation name. `add`, `has`, `facts`, `size`.
 - `rule(head, headTerms, body)` with `lit` / `notLit` / `variable` / `constant`: rules as plain data.
@@ -115,7 +115,7 @@ The chain resolves bottom-up in as many rounds as it is deep, and `A`'s re-throw
 
 ### Negation, when it arrives
 
-No production rule uses negation yet, but the engine supports it and the pattern is worth knowing. A hypothetical "handlers with no test coverage" analysis:
+No production rule uses negation yet, but the engine supports it, and here is what the pattern looks like. Take a hypothetical "handlers with no test coverage" analysis:
 
 ```
 untested(u) :- entry(u), not covered(u).
@@ -123,7 +123,7 @@ untested(u) :- entry(u), not covered(u).
 
 Two requirements apply. First, a positive literal (`entry`) must bind the variable `u` before the negated literal uses it, so the rule asks a closed question about units it already knows. Second, the rule set must stratify: every rule that derives `covered` must run before any rule that reads its absence. The evaluator enforces that by running strata in order and rejecting rule sets where negation forms a cycle.
 
-One rule in value resolution wants this shape and cannot have it. A name written in several places, with nothing ordering the writes, should step to each write, but only where the adapter managed to read a value out of every one of them, which is the absence of `writesUnstated`. Two things block writing it that way. `deriveOnDemand` rejects a negated literal outright, because a relation derived only where somebody asked is smaller than the one `not p(x)` was written against, so the literal matches where it should not. And any negation in a rule set makes the evaluator retract what it derived and start from the base facts on every pass, which the resolution store does once per wave of files. So the adapter states `writesAllStated` outright and the rule joins on it.
+One rule in value resolution would be written this way if it could be. Take a name written in several places with nothing ordering the writes. The rule should step to each write, but only where the adapter managed to read a value out of every one of them, and the natural way to say that is the absence of `writesUnstated`. Two things get in the way. `deriveOnDemand` rejects a negated literal outright, because a relation derived only where somebody asked for it is smaller than the one `not p(x)` was written against, so the literal matches where it should not. And any negation in a rule set makes the evaluator retract what it derived and start again from the base facts on every pass, which the resolution store runs once per wave of files. So the adapter states `writesAllStated` outright and the rule joins on that instead.
 
 ## The shared fact store
 
@@ -174,5 +174,5 @@ Two kinds of work do not belong here. Per-function local analysis stays in the p
 ## Where this is going
 
 - **CFG edges as facts.** What the path engine enumerates is what a query over the lowered control-flow graph would return. Put `cfgEdge` facts into the shared store and a path-sensitive analysis, `mayThrow` through plain calls or path-scoped effect attribution, becomes a rule rather than a new traversal.
-- **Cascade checking.** Joining what each boundary reaches, which is the walk `inspect --diff` does, against the other boundaries' identities would tell you which boundary's promises depend on which other boundary. The checker-side join is unwritten.
+- **Cascade checking.** `inspect --diff` already walks what each boundary reaches. Joining that against the other boundaries' identities would tell you which boundary's promises depend on which other boundary. The checker-side join is unwritten.
 - **A second language.** This layer asks an adapter for three things: discover units, emit summaries, emit these facts. Layers 2 and 3 come along unchanged.
