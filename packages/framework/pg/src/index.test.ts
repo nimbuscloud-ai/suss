@@ -187,6 +187,34 @@ describe("a query on a node-postgres client", () => {
     ).toEqual([]);
   });
 
+  it("reads a statement handed over as a tagged template", () => {
+    const effects = pg.effectsAcross(
+      {
+        "/node_modules/pg-template-tag/index.d.ts":
+          "export declare function sql(parts: TemplateStringsArray, ...values: unknown[]): { text: string; values: unknown[] };",
+        "/node_modules/pg-template-tag/package.json": JSON.stringify({
+          name: "pg-template-tag",
+          types: "index.d.ts",
+        }),
+        "/repo.ts": `
+          ${POOL}
+          import sql from "pg-template-tag";
+          export async function findUser(id: string) {
+            return pool.query(sql\`SELECT id, email FROM users WHERE id = \${id}\`);
+          }
+        `,
+      },
+      "/repo.ts",
+    );
+
+    const { semantics, interaction } = storageOf(effects[0]);
+    expect(semantics.container).toBe("users");
+    expect(interaction).toMatchObject({
+      fields: ["id", "email"],
+      selector: ["id"],
+    });
+  });
+
   it("leaves a same-named method on something else alone", () => {
     expect(
       effectsIn(`
