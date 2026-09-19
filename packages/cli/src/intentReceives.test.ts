@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { functionCallBinding, messageBusBinding } from "@suss/ir-core";
+import {
+  functionCallBinding,
+  messageBusBinding,
+  restBinding,
+} from "@suss/ir-core";
 
 import { draftedReceives } from "./intentReceives.js";
 
@@ -71,6 +75,9 @@ function unit(opts: {
   };
 }
 
+/** A boundary with no middleware registered around it. */
+const noWrappers = () => [];
+
 /** A guard that the value at this parameter is missing. */
 function missing(inputRef: string, path: string[] = []): Predicate {
   return {
@@ -103,6 +110,7 @@ describe("which fields a draft calls required", () => {
         }),
       ],
       fnBinding,
+      noWrappers,
     );
     expect(receives).toEqual({ "request.id": { required: true } });
   });
@@ -128,6 +136,7 @@ describe("which fields a draft calls required", () => {
         }),
       ],
       fnBinding,
+      noWrappers,
     );
     expect(receives).toEqual({ "request.id": {} });
   });
@@ -154,6 +163,7 @@ describe("which fields a draft calls required", () => {
         }),
       ],
       fnBinding,
+      noWrappers,
     );
     expect(receives).toEqual({ "options.stream": { required: true } });
   });
@@ -187,6 +197,7 @@ describe("which fields a draft calls required", () => {
         }),
       ],
       fnBinding,
+      noWrappers,
     );
     expect(receives).toEqual({
       "options.a": { required: true },
@@ -214,6 +225,7 @@ describe("which fields a draft calls required", () => {
         }),
       ],
       fnBinding,
+      noWrappers,
     );
     expect(receives).toEqual({ "options.a": { required: true } });
   });
@@ -250,6 +262,7 @@ describe("which fields a draft calls required", () => {
         }),
       ],
       fnBinding,
+      noWrappers,
     );
     expect(receives).toEqual({ "options.a": {} });
   });
@@ -272,6 +285,7 @@ describe("the shape a draft writes beside a field", () => {
         }),
       ],
       fnBinding,
+      noWrappers,
     );
     expect(receives).toEqual({ "options.stream": {} });
   });
@@ -295,8 +309,118 @@ describe("the shape a draft writes beside a field", () => {
         }),
       ],
       fnBinding,
+      noWrappers,
     );
     expect(receives).toEqual({ options: {} });
+  });
+});
+
+describe("the block a REST route drafts", () => {
+  const routeBinding = restBinding({
+    transport: "http",
+    method: "GET",
+    path: "/invoices/:id",
+    recognition: "express",
+  });
+
+  /** Where an Express handler reads each part of the request. */
+  const EXPRESS_SPELLING = {
+    headers: { path: ["request", "headers"], saysWhichField: true },
+    query: { path: ["request", "query"], saysWhichField: true },
+    params: { path: ["request", "params"], saysWhichField: true },
+    body: { path: ["request", "body"], saysWhichField: true },
+  };
+
+  function route(opts: {
+    transitions: Transition[];
+    reads: Array<{ input: string; path: string[] }>;
+  }): BehavioralSummary {
+    return {
+      ...unit({
+        inputs: [param("req", "request"), param("res", "response", 1)],
+        transitions: opts.transitions,
+        reads: opts.reads,
+      }),
+      metadata: { requestSpelling: EXPRESS_SPELLING },
+    };
+  }
+
+  it("writes each read under the section of the request it came from", () => {
+    const receives = draftedReceives(
+      [
+        route({
+          transitions: [
+            transition({
+              id: "t401",
+              conditions: [missing("req", ["headers", "x-tenant-id"])],
+              output: {
+                type: "response",
+                statusCode: { type: "literal", value: 401 },
+                body: null,
+                headers: {},
+              },
+            }),
+            transition({ id: "t-ok", output: RETURNS }),
+          ],
+          reads: [
+            { input: "req", path: ["headers", "x-tenant-id"] },
+            { input: "req", path: ["query", "dryRun"] },
+            { input: "req", path: ["params", "id"] },
+          ],
+        }),
+      ],
+      routeBinding,
+      noWrappers,
+    );
+    expect(receives).toEqual({
+      headers: { "x-tenant-id": { required: true } },
+      query: { dryRun: {} },
+      params: { id: {} },
+    });
+  });
+
+  it("writes a body read as a property of the body shape", () => {
+    const receives = draftedReceives(
+      [
+        route({
+          transitions: [transition({ id: "t-ok", output: RETURNS })],
+          reads: [{ input: "req", path: ["body", "note"] }],
+        }),
+      ],
+      routeBinding,
+      noWrappers,
+    );
+    expect(receives).toEqual({
+      body: { properties: { note: { type: "unknown" } } },
+    });
+  });
+
+  it("says the route takes a body when it read one without naming a field", () => {
+    const receives = draftedReceives(
+      [
+        route({
+          transitions: [transition({ id: "t-ok", output: RETURNS })],
+          reads: [{ input: "req", path: ["body"] }],
+        }),
+      ],
+      routeBinding,
+      noWrappers,
+    );
+    expect(receives).toEqual({ body: { type: "unknown" } });
+  });
+
+  it("writes nothing for a route that reads no part of the request", () => {
+    const receives = draftedReceives(
+      [
+        route({
+          transitions: [transition({ id: "t-ok", output: RETURNS })],
+          reads: [{ input: "res", path: ["json"] }],
+        }),
+      ],
+      routeBinding,
+      noWrappers,
+    );
+    expect(receives).toBeNull();
   });
 });
 
@@ -307,7 +431,11 @@ describe("what a draft leaves out", () => {
       transitions: [transition({ id: "t-ok", output: RETURNS })],
       reads: [{ input: "o", path: ["stream"] }],
     };
-    const receives = draftedReceives([unit(reading), unit(reading)], fnBinding);
+    const receives = draftedReceives(
+      [unit(reading), unit(reading)],
+      fnBinding,
+      noWrappers,
+    );
     expect(receives).toEqual({ "options.stream": {} });
   });
 
@@ -326,6 +454,7 @@ describe("what a draft leaves out", () => {
         }),
       ],
       busBinding,
+      noWrappers,
     );
     expect(receives).toEqual({ orderId: {} });
   });

@@ -44,6 +44,7 @@ export type {
   AuthoredBoundary,
   AuthoredInputField,
   AuthoredReceives,
+  AuthoredRestReceives,
   AuthoredShape,
   BodyShape,
   Boundary,
