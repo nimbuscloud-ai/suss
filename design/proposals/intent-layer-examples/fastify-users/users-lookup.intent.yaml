@@ -19,6 +19,9 @@ boundary:
   semantics: rest
   method: GET
   path: /users/:id
+  receives:
+    params:
+      id: { type: string, required: true }
 
 transitions:
   - id: missing-id

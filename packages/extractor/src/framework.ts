@@ -18,6 +18,7 @@ import type {
   DeployableUnit,
   Effect,
   MessageBusSemantics,
+  RequestSpellingMetadata,
 } from "@suss/behavioral-ir";
 import type { ProjectHelpers } from "./projectHelpers.js";
 
@@ -1119,6 +1120,18 @@ export interface PatternPack {
   terminals: TerminalPattern[];
   contractReading?: ContractPattern;
   inputMapping: InputMappingPattern;
+  /**
+   * For a REST pack, where in the handler each part of the request is
+   * read, in the same words `inputMapping` gives the parameters: an
+   * Express handler reads a header at `request.headers`, a Lambda
+   * handler at `event.headers`. The adapter stamps this on every route
+   * the pack recognizes, and the intent pass rewrites the route's reads
+   * from it into the sections an author writes under `receives`.
+   *
+   * Leave it out on a pack whose handlers do not take a request, and
+   * leave a section out when the framework has no path for it.
+   */
+  requestSpelling?: RequestSpellingMetadata;
   /**
    * Transport (wire protocol) used in the `BoundaryBinding.transport`
    * of discovered units. Every pack has to say what its transport is

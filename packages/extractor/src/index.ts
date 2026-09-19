@@ -17,6 +17,7 @@ import {
   withGraphqlMetadata,
   withHttpMetadata,
   withMountMetadata,
+  withRequestSpellingMetadata,
   withSourceDocumentMetadata,
   withWrapperMetadata,
 } from "@suss/behavioral-ir";
@@ -41,6 +42,7 @@ import type {
   Output,
   Predicate,
   RenderNode,
+  RequestSpellingMetadata,
   Transition,
   TypeShape,
   ValueRef,
@@ -372,6 +374,8 @@ export interface RawCodeStructure {
   mount?: { siblings: number; prefix: string };
   /** The wrappers registered around this unit: middleware, error handlers. */
   wrappers?: WrapperReference[];
+  /** Where a REST pack's handlers read each part of the request, from the pack. */
+  requestSpelling?: RequestSpellingMetadata;
   /** The extractor cannot derive this. An adapter that has the SDL and knows
    * which field the resolver serves fills it in. */
   graphqlDeclaredContract?: GraphqlDeclaredContract;
@@ -658,6 +662,9 @@ function buildMetadata(raw: RawCodeStructure): Record<string, unknown> | null {
   }
   if (raw.wrappers !== undefined && raw.wrappers.length > 0) {
     metadata = withWrapperMetadata(metadata, { applied: raw.wrappers });
+  }
+  if (raw.requestSpelling !== undefined) {
+    metadata = withRequestSpellingMetadata(metadata, raw.requestSpelling);
   }
   return Object.keys(metadata).length > 0 ? metadata : null;
 }

@@ -16,6 +16,9 @@
   "defaultHook": "@hono/zod-openapi: OpenAPIHono constructor option, the hook that runs after every route's validation",
   "responses": "@hono/zod-openapi: createRoute config key with the declared responses",
   "registrationArgument": "suss: ContractPattern endpoint location, the contract as the handler's sibling argument",
+  "req": "hono: context property, the request",
+  "header": "hono: request method returning one header by name",
+  "param": "hono: request method returning one path parameter by name",
   "context": "suss: input role",
   "HTTPException": "hono/http-exception: the exception the framework sends as its status"
 }
