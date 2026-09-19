@@ -1,11 +1,11 @@
 {
   "totals": {
-    "packages": 78,
-    "packagesWithExports": 78,
-    "exports": 1039,
-    "internal": 3615,
-    "consumers": 2128,
-    "pairs": 2116,
+    "packages": 80,
+    "packagesWithExports": 80,
+    "exports": 1051,
+    "internal": 3625,
+    "consumers": 2133,
+    "pairs": 2121,
     "unfollowedCalls": 531,
     "findingErrors": 0
   },
@@ -19,9 +19,9 @@
     },
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
-      "exports": 71,
-      "internal": 378,
-      "consumers": 182,
+      "exports": 73,
+      "internal": 386,
+      "consumers": 187,
       "unfollowedCalls": 77
     },
     "packages/adapter/typescript": {
@@ -290,6 +290,13 @@
       "consumers": 2,
       "unfollowedCalls": 0
     },
+    "packages/framework/bigquery-ruby": {
+      "name": "@suss/framework-bigquery-ruby",
+      "exports": 4,
+      "internal": 0,
+      "consumers": 0,
+      "unfollowedCalls": 0
+    },
     "packages/framework/cloudflare-workers": {
       "name": "@suss/framework-cloudflare-workers",
       "exports": 7,
@@ -402,6 +409,13 @@
       "consumers": 2,
       "unfollowedCalls": 0
     },
+    "packages/framework/pg-ruby": {
+      "name": "@suss/framework-pg-ruby",
+      "exports": 4,
+      "internal": 0,
+      "consumers": 0,
+      "unfollowedCalls": 0
+    },
     "packages/framework/prisma": {
       "name": "@suss/framework-prisma",
       "exports": 2,
@@ -502,8 +516,8 @@
     },
     "packages/packs": {
       "name": "@suss/packs",
-      "exports": 56,
-      "internal": 176,
+      "exports": 58,
+      "internal": 178,
       "consumers": 0,
       "unfollowedCalls": 7
     },
