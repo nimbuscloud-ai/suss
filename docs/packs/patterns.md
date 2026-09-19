@@ -45,7 +45,7 @@ The strings shipped packs use:
 
 - `"http"`, any HTTP-transported boundary: REST providers and clients, GraphQL over HTTP, OpenAPI and CloudFormation contracts.
 - `"in-process"`, boundaries with no network hop: React components, package-export call sites, Node's own runtime surface.
-- `"queue"`, message-queue boundaries, which pair by channel rather than by URL.
+- `"queue"`, message-queue boundaries, which pair by channel.
 - `"storage"`, database and object-store access.
 
 Reuse a string when your pack pairs the way an existing protocol pairs and its payloads mean the same things. Otherwise pick a new one that describes a transport rather than a library. React is not a protocol, because it has no wire format, so a React boundary uses `"in-process"`. [Boundary semantics](/theory/boundary-semantics) covers the transport-and-semantics split.
@@ -169,7 +169,7 @@ The path comes from both decorators together, so the pair above gives `/users/:i
 }
 ```
 
-GraphQL resolvers written as decorated methods, the way NestJS declares them. It selects units the same way `decoratedRoute` does and reads a resolver out of them rather than a route.
+GraphQL resolvers written as decorated methods, the way NestJS declares them. It selects units the same way `decoratedRoute` does, and reads a resolver out of them.
 
 ```ts
 @Resolver(() => User)
@@ -184,7 +184,7 @@ class UserResolver {
 
 `methodDecoratorTypeMap` is for the decorators that decide their own type. `@Query` puts its field on the root `Query` type however the class is decorated, so it goes in the map. `@ResolveField` needs the class to say which type, so it is left out and `@Resolver(() => User)` supplies it. The field name is the method's name unless the decorator overrides it with `@Query(() => User, { name: "foo" })`.
 
-Python decorators go through `decoratedFunctionRoute` and `decoratedClassRoute`, which the Python adapter defines rather than sharing these. See [Read Python or Ruby](/guides/python-and-ruby).
+Python decorators go through `decoratedFunctionRoute` and `decoratedClassRoute`, which the Python adapter defines for itself. See [Read Python or Ruby](/guides/python-and-ruby).
 
 ### `clientCall`
 
@@ -228,7 +228,7 @@ const GET_USER = gql`query GetUser($id: ID!) { user(id: $id) { id } }`;
 const { data } = useQuery(GET_USER, { variables: { id } });
 ```
 
-The document can be an inline `gql` template, a const in this module or an imported one, a `.graphql` file import, or a generated `TypedDocumentNode`. When the body cannot be read, the operation header falls back to the `TypedDocumentNode` type arguments, and the per-hook `operationType` supplies the type. A document that still cannot be resolved is kept on the summary as `metadata.graphql.unresolvedDocument` rather than dropped. The Apollo client pack uses it.
+The document can be an inline `gql` template, a const in this module or an imported one, a `.graphql` file import, or a generated `TypedDocumentNode`. When the body cannot be read, the operation header falls back to the `TypedDocumentNode` type arguments, and the per-hook `operationType` supplies the type. A document that still cannot be resolved is kept on the summary as `metadata.graphql.unresolvedDocument`. The Apollo client pack uses it.
 
 ### `graphqlImperativeCall`
 
@@ -241,7 +241,7 @@ The document can be an inline `gql` template, a const in this module or an impor
 }
 ```
 
-The imperative form, where the document is on a configuration property rather than the first positional argument.
+The imperative form, where the document arrives on a configuration property.
 
 ```ts
 const client = new ApolloClient({ uri });
@@ -299,7 +299,7 @@ Routes declared as JSX elements, the way client-side routers write them.
 </Routes>
 ```
 
-It covers the nested tree form, where a child path joins its parent's and an index route takes the parent's path, and the object-array form, where a factory call takes an array of route objects using the same property names. A route whose component cannot be read is still reported, as a boundary with nothing behind it. A route whose path cannot be read gets no path, and suss records a gap saying so rather than guessing. React Router uses it.
+It covers the nested tree form, where a child path joins its parent's and an index route takes the parent's path, and the object-array form, where a factory call takes an array of route objects using the same property names. A route whose component cannot be read is still reported, as a boundary with nothing behind it. A route whose path cannot be read gets no path, and suss records a gap saying why. React Router uses it.
 
 ### `packageExports`
 
@@ -315,7 +315,7 @@ It covers the nested tree form, where a child path joins its parent's and an ind
 
 A package's public export surface as a boundary. The adapter reads the manifest, resolves every reachable entry point (the root `.` plus any sub-path in `exports`), follows barrel re-exports, and emits one `library`-kind unit per exported function, the provider side of an in-process `function-call` boundary.
 
-`workspaces: true` applies the pattern once per package the workspace manifest declares, since the package list belongs to the project rather than to any library. The bindings identify as `{ package, exportPath }`, so a sub-path export comes out as `@suss/behavioral-ir/schemas::BehavioralSummarySchema`. Root exports leave the sub-path segment out. The package-exports pack uses it.
+`workspaces: true` applies the pattern once per package the workspace manifest declares, since the package list is a property of the project itself. The bindings identify as `{ package, exportPath }`, so a sub-path export comes out as `@suss/behavioral-ir/schemas::BehavioralSummarySchema`. Root exports leave the sub-path segment out. The package-exports pack uses it.
 
 It resolves the `types`, `default` and `import` conditions on `exports`, and falls back to `types`, `main` and `module` when there is no `exports` field. Pattern exports (`./utils/*`) and `development`-conditional resolution are not done yet, and come back as warnings on the resolver result.
 
@@ -350,7 +350,7 @@ Pass exact module specifiers, sub-path included. Several call sites inside one f
 |---|---|
 | `{ type: "fromArgument"; position }` | The argument at that position, on either side of the boundary. `app.get("/users", h)` and `fetch("/users")` both give `/users`. A name bound to a string is followed to what it was written as, so `app.get(USERS, h)` gives `/users`, and a template is read hole by hole, so `` `${BASE}/items/:id` `` with `BASE = "/api"` gives `/api/items/:id`. A hole nobody can follow becomes `{name}`, which the path normalizer treats the same way as `:name`. |
 | `{ type: "fromArgumentProperty"; position; property }` | A property on the argument, the way a route object built by Hono's `createRoute` stores its path. |
-| `{ type: "fromFilename"; root; dropBasenames?; dynamic?; dropParenthesized?; flat? }` | Where the file is on disk. `root` says where a route path starts, `dropBasenames` lists filenames that say what kind of file it is rather than adding a segment, and `dynamic` says how the framework writes a parameter (`"brackets"` for Next.js's `[id]`, `"dollarPrefix"` for `$id`). `app/api/orders/[id]/route.ts` under `{ root: "app", dropBasenames: ["route"], dynamic: "brackets" }` gives `/api/orders/{id}`, which pairs with an Express provider writing `/api/orders/:id`. Next.js uses it. |
+| `{ type: "fromFilename"; root; dropBasenames?; dynamic?; dropParenthesized?; flat? }` | Where the file is on disk. `root` says where a route path starts, `dropBasenames` lists filenames that only say what kind of file it is and contribute no path segment, and `dynamic` says how the framework writes a parameter (`"brackets"` for Next.js's `[id]`, `"dollarPrefix"` for `$id`). `app/api/orders/[id]/route.ts` under `{ root: "app", dropBasenames: ["route"], dynamic: "brackets" }` gives `/api/orders/{id}`, which pairs with an Express provider writing `/api/orders/:id`. Next.js uses it. |
 | `{ type: "fromContract" }` / `{ type: "fromClientMethod" }` | As above. |
 
 ### A binding the pattern states outright
@@ -436,7 +436,7 @@ Set `producesResponse: true` on the terminal when the framework turns the thrown
 { type: "functionCall"; functionName: string; requiresImport?: string[] }
 ```
 
-A call to a named function rather than a method on an object. Only a bare identifier callee matches, so `res.json(...)` will not match `functionName: "json"`.
+A call to a named function. Only a bare identifier callee matches, so `res.json(...)` will not match `functionName: "json"`.
 
 ```ts
 return json(user);
@@ -539,7 +539,7 @@ export async function loader(args: LoaderFunctionArgs) { ... }
 { type: "componentProps"; paramPosition: number; wholeParamRole?: string }
 ```
 
-Component props, where the prop names are whatever the component author wrote rather than anything the pack can list. A destructured parameter gives one input per bound name, with the name as its role; an undestructured one gives a single input roled `wholeParamRole`, which defaults to `"props"`. Each input records the prop's type text, which a component's shape comparison reads. The React pack uses it.
+Component props, where the prop names are whatever the component author wrote, which no pack can list in advance. A destructured parameter gives one input per bound name, with the name as its role; an undestructured one gives a single input roled `wholeParamRole`, which defaults to `"props"`. Each input records the prop's type text, which a component's shape comparison reads. The React pack uses it.
 
 ### `decoratedParams`
 
@@ -658,13 +658,13 @@ wraps?:
   | { constructorOption: string; targetPosition: number; ... }
 ```
 
-How the framework registers a function that runs around a handler rather than as one: middleware, an error handler, a validation hook. The registered function becomes a unit of its own, and every unit registered on the same routable records a reference to it.
+How the framework registers a function that runs around a handler: middleware, an error handler, a validation hook. The registered function becomes a unit of its own, and every unit registered on the same routable records a reference to it.
 
 Three parameter positions say how the framework invokes it. `continuationParam` is the one it calls to hand control on, absent for a wrapper that always responds. `throwParam` receives what the wrapped unit threw, and a wrapper declaring one runs only on the throwing path. `resultParam` receives a value the framework worked out first, such as the outcome of validating a request. Express tells its error handlers from its middleware by `arity` alone, both being `app.use(fn)`. Express and Hono use this, through `wrapperDiscovery`.
 
 ### `projectHelpers`
 
-Functions the project itself wrote in front of the library, read once across the whole project before any file is walked. Whatever the pack makes of them is used alongside its own patterns for the rest of the run. `routeHelperIndex` is the shipped one: Express, Fastify and Hono ask for their own route helpers to be read, so what each helper registers is a fact about the code rather than something the project restates in configuration.
+Functions the project itself wrote in front of the library, read once across the whole project before any file is walked. Whatever the pack makes of them is used alongside its own patterns for the rest of the run. `routeHelperIndex` is the shipped one: Express, Fastify and Hono ask for their own route helpers to be read, so suss learns what each helper registers from the code itself.
 
 ### `transparentWrappers`
 
@@ -699,7 +699,7 @@ responseSemantics?: Array<{
 failureDelivery?: "response" | "exception";
 ```
 
-`responseSemantics` describes what a property on the client's response object means, so the adapter turns `.ok` into a status range and `.json()` into a body instead of leaving them opaque. The fetch, axios and ts-rest packs declare it.
+`responseSemantics` describes what a property on the client's response object means, so the adapter turns `.ok` into a status range and `.json()` into a body. The fetch, axios and ts-rest packs declare it.
 
 `failureDelivery` records how the client hands back a refused request. `fetch` returns a response and the caller reads the status off it, which is the `"response"` default. axios, requests, httpx, Faraday and Net::HTTP reject or raise instead, so every non-2xx reaches the caller through a `catch` and there is no status for a guard to read.
 
@@ -716,6 +716,6 @@ contractReading?: {
 }
 ```
 
-Where a framework's own declared responses live, so a handler returning a status the contract never declares becomes a finding rather than a style choice.
+Where a framework's own declared responses live, so a handler returning a status the contract never declares becomes a finding.
 
-Leave `endpoint` out and the ts-rest arrangement applies: one contract object contains every endpoint keyed by handler name, and the reader walks up from the handler to the enclosing router call. Set it and the zod-openapi arrangement applies instead, where `app.openapi(route, handler)` passes the endpoint's own contract as the handler's sibling argument. `methodProperty` and `pathProperty` are the library's own words for those keys, so the pack supplies them rather than the adapter guessing.
+Leave `endpoint` out and the ts-rest arrangement applies: one contract object contains every endpoint keyed by handler name, and the reader walks up from the handler to the enclosing router call. Set it and the zod-openapi arrangement applies instead, where `app.openapi(route, handler)` passes the endpoint's own contract as the handler's sibling argument. `methodProperty` and `pathProperty` are the library's own words for those keys, so the pack supplies them.

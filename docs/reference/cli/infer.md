@@ -109,7 +109,7 @@ transitions:
             type: string
 ```
 
-An outcome id comes from the status code, and the body from the shape the handler produces. A body shape the intent schema has no spelling for is left out rather than guessed at.
+An outcome id comes from the status code, and the body from the shape the handler produces. A body shape the intent schema has no spelling for is left out.
 
 `when` describes what the branch turned on, using the same verbs `results` takes. The subject is a boundary verb whose value is the boundary's name, or `input:` with the path the caller sent. The check is one of `finds`, `is`, `equals` or `has`, and `where` narrows it:
 
@@ -149,7 +149,7 @@ No document for 1 boundary:
 
 A store is reported too, for a different reason. Storage has no identity key, so the checker could never pair a document written against one. The report tells you what to do instead: write `- writes: aws.dynamodb:Invoices` on an outcome of the boundary that touches the store.
 
-Curating a doc means filling in purpose and audience, renaming the outcome ids to what your team calls them, and setting `source: "inferred, curated"`. `source` is what the checker reads to decide severity: a finding against bare `inferred` intent is downgraded one level, and curation restores it. Until then `suss check --intent` reports the drafts still waiting rather than checking them.
+Curating a doc means filling in purpose and audience, renaming the outcome ids to what your team calls them, and setting `source: "inferred, curated"`. `source` is what the checker reads to decide severity: a finding against bare `inferred` intent is downgraded one level, and curation restores it. Until then `suss check --intent` reports which drafts are still waiting.
 
 Re-inference is naive. It writes the docs again from the current code and overwrites whatever you had curated. Use `--into` to put a fresh run beside the curated one so you can reconcile the two by hand.
 
@@ -190,7 +190,7 @@ scenarios:
     link: archive-order.order-accepted-for-archiving
 ```
 
-It reads intent rather than summaries, and refuses the whole folder when any document in it is still an uncurated draft:
+It reads the intent folder, and refuses the whole folder when any document in it is still an uncurated draft:
 
 ```
 $ suss infer prd --from intent/

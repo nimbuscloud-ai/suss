@@ -1,6 +1,6 @@
 ---
 title: Facts and rules
-description: How suss's whole-program analyses are written, as Datalog rules over a shared fact database rather than as another walk of the AST.
+description: How suss's whole-program analyses are written, as Datalog rules over a shared fact database that any language adapter can fill.
 ---
 
 # Facts and rules

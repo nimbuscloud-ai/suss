@@ -139,7 +139,7 @@ A line starting `+` is an **effect**: something the branch does besides producin
 
 A **Reaches** block appears under a handler when something it calls touches a store, a bus or another service. `reads postgresql:invoices  through findInvoice` says the read happens inside `findInvoice`, so you can see what a request touches without reading down the chain of calls.
 
-A line starting `!!` is a **gap**: something suss could not work out, written down rather than dropped. This one is the contract promising a 500 that no branch produces. Gaps are what separate "there is nothing here" from "suss could not tell", so you never mistake an empty answer for an all-clear.
+A line starting `!!` is a **gap**: something suss could not work out, written down where you can see it. This one is the contract promising a 500 that no branch produces. Gaps are what separate "there is nothing here" from "suss could not tell", so you never mistake an empty answer for an all-clear.
 
 `suss inspect --diff before.json after.json` and `suss inspect --dir summaries/` are variants over the same load-and-parse plumbing. The first uses `diffSummaries` to compute added, removed and changed transitions per summary pair. The second uses `pairSummaries` to show which summaries face which, and which ones matched nothing.
 
@@ -430,7 +430,7 @@ Every step here is pure over `RawCodeStructure` and testable on its own, so the 
 
 Before `suss check --dir` runs `checkPair`, it has to work out which summaries face each other. `pairSummaries` does that in three passes.
 
-1. Bucket each summary. `pairingKey(binding)` gives the bucket. A summary with no boundary binding at all goes to `unmatched.unpairable` with the reason `noBoundary`. A binding whose semantics declares no key goes there too, with `unnamedBoundary`, rather than being forced through a REST-style key. `BOUNDARY_ROLE[summary.kind]` then says which side it is on: provider for a handler, loader, action, middleware, resolver, worker, component or hook, and consumer for a client or a consumer. An unrecognized kind goes to `unpairable` with `unknownKind` rather than crashing, and that guard stays until the zod IR migration makes it unreachable.
+1. Bucket each summary. `pairingKey(binding)` gives the bucket. A summary with no boundary binding at all goes to `unmatched.unpairable` with the reason `noBoundary`. A binding whose semantics declares no key goes there too, with `unnamedBoundary`. `BOUNDARY_ROLE[summary.kind]` then says which side it is on: provider for a handler, loader, action, middleware, resolver, worker, component or hook, and consumer for a client or a consumer. An unrecognized kind goes to `unpairable` with `unknownKind`, and that guard stays until the zod IR migration makes it unreachable.
 
 2. Within a bucket, decide the rest. Sharing a key is not enough on its own: two REST sides can share a normalized path and use different methods, and two message-bus sides can share a subject and use different buses. `semanticsAgree` decides that, per semantics variant. A consumer that several services all serve produces an `ambiguousProvider` finding and no pair, because pairing it with one of them would compare a caller against a handler it may never reach.
 

@@ -113,7 +113,7 @@ The path engine (`paths/pathConditions.ts`) computes steps 2 and 3, and it is th
 - `if (a) { if (b) return X; } Y` → Y gets the paths `[¬a]` and `[a, ¬b]`, never a fabricated `¬a ∧ ¬b` or an empty list;
 - sibling guards inside a block gate their tails (`if (a) { if (b) return X; T }` → T gets `[a, ¬b]`);
 - `if (a) {…} else { return; } T` → T gets `[a]` (else-exit closure);
-- terminals inside loops get an opaque "some iteration" condition, and post-loop terminals get an opaque "loop exited" negation. No static reader can decide what held on every iteration, so the engine says less rather than guessing;
+- terminals inside loops get an opaque "some iteration" condition, and post-loop terminals get an opaque "loop exited" negation. No static reader can decide what held on every iteration, so the engine keeps the condition opaque;
 - a dead-code terminal, one that no entry path reaches, never produces a transition.
 
 Expression-level branching *below* a statement (ternaries, `&&` and `||`, case clauses inside nested callbacks) is appended from the scoped ancestor walker in `conditions.ts`. The path engine walks statements, and the walker covers the expression tree beneath them.
@@ -122,7 +122,7 @@ The engine's fidelity is verified mechanically by the differential fuzzer (`tool
 
 ### What the engine models
 
-It models the whole structured statement language: `if`/`else`, `switch` (case groups, trailing breaks, fallthrough into an empty clause), every loop form, `try`/`catch` (plus `finally` where it is only cleanup), `break`/`continue`, `return`/`throw`, and expression-bodied arrows. On two constructs it says nothing rather than guessing:
+It models the whole structured statement language: `if`/`else`, `switch` (case groups, trailing breaks, fallthrough into an empty clause), every loop form, `try`/`catch` (plus `finally` where it is only cleanup), `break`/`continue`, `return`/`throw`, and expression-bodied arrows. Two constructs defeat it:
 
 - **Loops.** No static reader can decide whether a condition held *on some iteration*, so an in-loop terminal gets an opaque "some iteration of:" condition and a post-loop terminal gets an opaque "loop exited" negation.
 - **Catch blocks.** No static reader can decide which statement threw, so a catch-body terminal gets a single opaque `catch` condition (`source: "catchBlock"`).

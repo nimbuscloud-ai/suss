@@ -119,7 +119,7 @@ An effects pack reads the calls inside a unit another pack discovered: a query, 
 
 ## Contract sources
 
-These are not packs. A contract source reads something the project already declares and writes the same summaries the extractor writes, and it is reached through `suss contract --from <name>` rather than through `-f`. [Contract sources](/packs/contract-sources) has a command and the output for each one.
+These are not packs. A contract source reads something the project already declares and writes the same summaries the extractor writes, and you reach it through `suss contract --from <name>`. [Contract sources](/packs/contract-sources) has a command and the output for each one.
 
 | Reader | `--from` | What it reads | Coverage |
 |---|---|---|---|

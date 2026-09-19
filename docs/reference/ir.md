@@ -62,7 +62,7 @@ The kind decides how inputs arrive and what counts as output. A handler takes a 
 
 **`library` and `caller`** are the two sides of an in-process `function-call` boundary. The `packageExports` discovery variant produces the `library` side, one per function reachable through the package's `package.json` entry points. The `packageImport` variant produces the `caller` side, one per (enclosing function, consumed binding). They pair by `fn:<package>::<exportPath>`.
 
-**`module-init`** is what a source file does at import time, one per file, and it is always a consumer: it reads channels other units declare. **`scheduled-callback`** is a function the runtime calls later rather than a request, so what it reaches is recorded on it rather than on the unit that scheduled it.
+**`module-init`** is what a source file does at import time, one per file, and it is always a consumer: it reads channels other units declare. **`scheduled-callback`** is a function the runtime calls at some later point, and what it reaches is recorded on its own summary.
 
 The union is closed. A pack cannot invent a kind, because each kind comes with assumptions the rest of extraction makes, and a new framework that needs a new kind needs an IR change first.
 
@@ -98,9 +98,9 @@ Location tells you where the code is. Identity tells you what it is, whatever fi
 - **`workspace`** is the name the project being extracted calls itself. Paths are relative to wherever the extract ran, so two services in one repository both report `src/handlers.ts`, and the workspace is what tells them apart once their summaries are merged.
 - **`id`** is workspace, file and export path together. A name on its own collides with other names too often to identify a unit.
 - **`nameKind`** records where the name came from. `"binding"` means other code can call the unit by it. `"label"` means discovery coined it, and a label is never used as a binding.
-- **`exportPath`** is an array rather than a dotted string, because deep module namespaces (`namespace.submodule.getUser`) turn up in some frameworks and arrays are easier to compare.
+- **`exportPath`** is an array, because deep module namespaces (`namespace.submodule.getUser`) turn up in some frameworks and an array is easier to compare than a dotted string.
 - **`boundaryBinding`** is nullable on purpose. A utility function or an internal helper doesn't take part in any contract. An explicit `null` forces a consumer to handle that case.
-- **`deployableUnit`** records what runs this code, where the pack can work it out: the Lambda's logical id from a SAM template, or the container or deployment name elsewhere. The checker joins on it. Several Lambdas can each subscribe to one channel with their own handler, and the channel alone doesn't tell you which handler runs where. The field is optional rather than nullable, because a React component or a library export is never deployed on its own, so there is nothing to record.
+- **`deployableUnit`** records what runs this code, where the pack can work it out: the Lambda's logical id from a SAM template, or the container or deployment name elsewhere. The checker joins on it. Several Lambdas can each subscribe to one channel with their own handler, and the channel alone doesn't tell you which handler runs where. The field is optional, because a React component or a library export is never deployed on its own, so there is nothing to record.
 
 ## Boundaries
 
@@ -114,7 +114,7 @@ interface BoundaryBinding {
 }
 ```
 
-`recognition: "reachable"` marks a unit found through the transitive closure of a unit a pack recognised, rather than by a pack pattern of its own. Such a unit has no pairing identity, so nothing cross-checks it, and its transitions and effects are extracted in full.
+`recognition: "reachable"` marks a unit found through the transitive closure of a unit a pack recognised. No pack pattern matched it directly. Such a unit has no pairing identity, so nothing cross-checks it, and its transitions and effects are extracted in full.
 
 Each protocol is one module under `packages/ir-core/src/semantics`, carrying its own schema, its pairing key and its agreement rule:
 
@@ -171,7 +171,7 @@ One transition records that when all of these conditions hold, this output comes
 
 - **`conditions` is a flat AND.** `OR` composition happens inside a `Predicate`, through the `compound` variant. Two transitions then have the same precondition when their condition lists are structurally equal, with nothing else to work out.
 - **`isDefault`** marks the fall-through case, the one with no explicit conditions or only early-return guards. Most handlers have one. Some have none, because every path is gated, and some have several, one per early return.
-- **`id` is content-addressed**, not an index. It reads `${functionName}:${terminalKind}:${statusKey}:${hash7}`, where the hash is the first seven hex characters of a SHA-1 over the ordered condition chain's canonical source text. `diffSummaries` then survives branch reordering, while changing a status, a condition or a terminal kind gives you a new id. Condition order is part of the identity, because short-circuit evaluation makes `a && b` and `b && a` behave differently. Source offsets are left out, so reformatting a file doesn't change an id.
+- **`id` is content-addressed.** It reads `${functionName}:${terminalKind}:${statusKey}:${hash7}`, where the hash is the first seven hex characters of a SHA-1 over the ordered condition chain's canonical source text. `diffSummaries` then survives branch reordering, while changing a status, a condition or a terminal kind gives you a new id. Condition order is part of the identity, because short-circuit evaluation makes `a && b` and `b && a` behave differently. Source offsets are left out, so reformatting a file doesn't change an id.
 - **`expectedInput`** is set on `client` transitions. After branching on a status the client reads fields off the body, `result.body.name` and the like, and those reads are collected into a `TypeShape` saying what this client expects for this status. The checker compares it against the provider's body:
 
 ```json
@@ -217,7 +217,7 @@ Each variant has exactly the fields it needs.
 
 - **`truthinessCheck` against `nullCheck`.** JavaScript's `if (x)` tests truthiness, which is a different test from `x != null`, since `0`, `""` and `false` are falsy too. A nullness check is about whether the value is there at all. Treating the two as one condition would pair up branches that guard against different things.
 - **`compound` against `negation`.** `compound` covers `and` and `or`, and leaves `not` to its own variant. A `not` of a `not` collapses to the operand, and keeping negation separate makes that rewrite straightforward. `compound` takes any number of operands, so there is no separate binary form.
-- **`opaque` is a normal variant.** When the extractor cannot take a condition apart, it keeps the source text and records why, instead of failing the run. A downstream tool then knows the branch exists and decides for itself how to treat it.
+- **`opaque` is a normal variant.** When the extractor cannot take a condition apart, it keeps the source text and records why. A downstream tool then knows the branch exists and decides for itself how to treat it.
 
 ### `Output`
 
@@ -236,7 +236,7 @@ type Output =
 
 What a terminal produces. The pack decides which variants matter for its framework; the union itself is framework-agnostic.
 
-- **`response`** is an HTTP response. `statusCode` is a `ValueRef` rather than a number because it can be dynamic (`res.status(code).json(...)`). A literal 200 arrives as `{ "type": "literal", "value": 200 }`.
+- **`response`** is an HTTP response. `statusCode` is a `ValueRef`, because the status can be dynamic (`res.status(code).json(...)`). A literal 200 arrives as `{ "type": "literal", "value": 200 }`.
 - **`throw`** keeps the constructor expression as text (`"HttpError.NotFound"`), because the class itself cannot be resolved statically in general.
 - **`render`** is a component render result. `component` is the root element's name. `root` is the whole tree, filled in by packs that understand their language's render form, so a checker can compare structural output against a contract source such as a Storybook story.
 - **`return`** is a plain return. `value` is a `TypeShape`, because for a hook or a utility the shape is the contract.
@@ -285,7 +285,7 @@ What a transition does besides producing a value. There are two layers.
 
 **Coarse effects** (`mutation`, `invocation`, `emission`, `stateChange`) record that something happened: a call fired, a state variable was set, an event went out. They are there for impact analysis, the kind where you want to say "this change edits a handler that writes `users`, and here is who reads `users`".
 
-On an `invocation`, `summary` is the summary this call reaches, the one whose unit is declared where the type checker resolved `callee`. It is absent when the callee is declared outside the run, when more than one summary describes that unit, or when nothing resolved and no summary in the same file has that name. suss leaves the field off rather than guessing. `declaredAt` and `argsDeclaredAt` are the raw declaration places an adapter sets while extracting; naming turns them into `summary` and `argsSummary` and removes them, so you see them only in the extraction cache. `calleeParameter` is set when the callee is one of this unit's own parameters, and gives its index among them, so a caller that passes a function into that parameter reaches this call through it.
+On an `invocation`, `summary` is the summary this call reaches, the one whose unit is declared where the type checker resolved `callee`. It is absent when the callee is declared outside the run, when more than one summary describes that unit, or when nothing resolved and no summary in the same file has that name. `declaredAt` and `argsDeclaredAt` are the raw declaration places an adapter sets while extracting; naming turns them into `summary` and `argsSummary` and removes them, so you see them only in the extraction cache. `calleeParameter` is set when the callee is one of this unit's own parameters, and gives its index among them, so a caller that passes a function into that parameter reaches this call through it.
 
 **`interaction` effects** are the typed boundary crossings. Each one includes the `BoundaryBinding` of the thing it talks to, plus a payload discriminated on `class`:
 
@@ -333,7 +333,7 @@ type Input =
 
 How values reach a code unit. An HTTP handler usually has only `parameter` inputs; the rest are mostly for components and hooks.
 
-`role` records what the parameter means to the framework (`"request"`, `"response"`, `"pathParams"`, `"requestBody"`), and `InputMappingPattern` in the pack sets it. When suss cannot work out a parameter's role it writes null rather than guessing, and the summary gets a gap explaining why. A role often depends on something the reader had to work out first. If the route's path went unread, for instance, there is no way to separate a path parameter from a query parameter.
+`role` records what the parameter means to the framework (`"request"`, `"response"`, `"pathParams"`, `"requestBody"`), and `InputMappingPattern` in the pack sets it. When suss cannot work out a parameter's role, it writes null and records a gap saying why. A role often depends on something the reader had to work out first. If the route's path went unread, for instance, there is no way to separate a path parameter from a query parameter.
 
 `const [user, setUser] = useUser()` produces a `hookReturn` input with `destructuredFields: ["user", "setUser"]`. The React pack discovers components, hooks and event handlers and fills these in.
 
@@ -349,7 +349,7 @@ interface Gap {
 }
 ```
 
-Something the summary could not account for. suss records a gap in the output instead of failing the run, so you can see that a case exists even where suss could not work out what happens in it.
+Something the summary could not account for. The run keeps going and the gap goes into the output, so you can see that a case exists even where suss could not work out what happens in it.
 
 **`unhandledCase`** is about the code. The declared contract lists a response no transition produces, or a transition produces a status the contract never declared. The checker turns each one into a `providerContractViolation` at error severity.
 
@@ -363,7 +363,7 @@ Something the summary could not account for. suss records a gap in the output in
 }
 ```
 
-The handler may well be responding correctly, in a form nobody has taught the pack yet, so the checker reports `lowConfidence` at info severity instead of reporting a problem with the code. Teach the pack that terminal shape and the gap goes away.
+The handler may well be responding correctly, in a form nobody has taught the pack yet, so the checker reports `lowConfidence` at info severity. Teach the pack that terminal shape and the gap goes away.
 
 **`unfollowedCall`** is the other one about how suss read the code. The walk met a call it could not resolve to a function with a body, so whatever runs behind it is missing from this summary and from every effect derived from it. `callee` gives the call as the source writes it:
 
@@ -444,7 +444,7 @@ Enough structure to describe a response body or a return value, without reproduc
 
 **Numeric precision.** JavaScript's `number` is an IEEE 754 double. Integers past `Number.MAX_SAFE_INTEGER`, high-precision decimals, hex and scientific notation, and underscore separators all lose information through it. A numeric `literal` keeps the exact source text in `raw`, so a consumer that needs the precision never has to guess. Strings and booleans round-trip and have no `raw`.
 
-**Types with no wire form.** `BigInt`, `Date`, `Map`, `Set`, `Buffer`, a regex: none of these has a canonical JSON representation. The extractor surfaces them as `ref` with the declared name rather than inventing a structural expansion. What goes on the wire is up to the producer and consumer: a `Date` may be an ISO string from `toJSON`, an epoch number, or absent.
+**Types with no wire form.** `BigInt`, `Date`, `Map`, `Set`, `Buffer`, a regex: none of these has a canonical JSON representation. The extractor surfaces them as `ref` with the declared name. What goes on the wire is up to the producer and consumer: a `Date` may be an ISO string from `toJSON`, an epoch number, or absent.
 
 **`undefined`.** It is modelled for source fidelity, for optional fields and explicit `undefined` returns, and JSON omits it. A record with `email: undefined` serializes to a body where `email` is absent, so a contract checker should treat `{ value: T | undefined }` and `{ value?: T }` as the same thing at the wire boundary.
 
@@ -472,7 +472,7 @@ How much of the behavior suss read, and where the claim came from.
 - **`inferred_static`**, structural analysis of the source, which is the common case.
 - **`inferred_ai`**, reserved for LLM-assisted labels on opaque predicates. Nothing writes it today.
 - **`declared`**, a summary somebody wrote by hand, such as a stub for a dependency suss cannot read.
-- **`derived`**, produced from a contract source rather than from code.
+- **`derived`**, produced by a contract source such as an OpenAPI document.
 
 A return the pack could not read sets the level to `low` on its own, and suss applies that rule before any other. A function whose returns all went unread has no conditions either, and counting zero opaque predicates out of zero would otherwise come out `high`. Where no return went unread, the level is the share of predicates that came out opaque: `0` gives `high`, under half gives `medium`, and half or more gives `low`.
 
@@ -515,12 +515,12 @@ type BoundaryAspect =
 
 What the pairwise checker emits. The [findings catalog](/reference/findings) lists every `kind` with its severity, when it fires and what to do about it; `FindingKindSchema` in `packages/behavioral-ir/src/schemas.ts` is the authoritative enumeration.
 
-- **Both sides are always named.** Even when only the provider is at fault, as with `providerContractViolation`, the finding still points at a consumer summary, often the same one, used as the pairing anchor. Tooling can then attribute the finding to a pairing rather than to a free-floating provider.
-- **`aspect`** records which side of a field the finding concerns. `send` and `receive` are a payload's two directions, `construct` is a scenario setting an input, and `selector` is a query's `where` rather than its data. It is absent where the aspect is irrelevant or spans several.
+- **Both sides are always named.** Even when only the provider is at fault, as with `providerContractViolation`, the finding still points at a consumer summary, often the same one, used as the pairing anchor. Tooling can then attribute every finding to a pairing.
+- **`aspect`** records which side of a field the finding concerns. `send` and `receive` are a payload's two directions, `construct` is a scenario setting an input, and `selector` is a query's `where` clause. It is absent where the aspect is irrelevant or spans several.
 - **`sources`** is set when the dedupe pass collapses identical findings from several providers. Each entry matches a `FindingSide.summary`, so a tool can surface every contributor without re-running the checker.
 - **`suppressed`** is set when a `.sussignore` rule matched. `mark` keeps the finding visible and drops it from the exit code, `downgrade` drops the severity one level and still counts it, `hide` keeps it out of both and survives only in the JSON. See [Accept a finding](/guides/accept-a-finding).
 
-Findings live in `@suss/behavioral-ir` rather than in the checker, because diff viewers, aggregation layers and other downstream tools read findings the same way they read summaries, and none of them should have to depend on `@suss/checker` to do it.
+Findings live in `@suss/behavioral-ir`, because diff viewers, aggregation layers and other downstream tools read findings the same way they read summaries, and none of them should have to depend on `@suss/checker` to do it.
 
 Severity drives the exit code. `suss check` exits non-zero when any `error` finding is present; `--fail-on warning` or `--fail-on info` raises the gate. See [Exit codes](/reference/cli/exit-codes).
 
@@ -553,7 +553,7 @@ What `diffSummaries` returns for one unit. A transition counts as changed when i
 
 ### `RawCodeStructure`
 
-An adapter reads source and produces this; the extractor turns it into a `BehavioralSummary`. It is defined in `@suss/extractor` rather than in the IR, because it is a boundary inside the pipeline rather than part of the published output, and it changes more often than the IR does.
+An adapter reads source and produces this; the extractor turns it into a `BehavioralSummary`. It is defined in `@suss/extractor`, because it is a boundary inside the pipeline and it changes more often than the published output does.
 
 ```typescript
 interface RawCodeStructure {

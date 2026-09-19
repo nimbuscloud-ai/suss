@@ -30,7 +30,7 @@ openapi:orders.yaml
        -> 409
 ```
 
-The `Contract:` line is what the spec declared, and that is what a handler gets compared against. A response with no schema comes out with no body rather than a guess at one.
+The `Contract:` line is what the spec declared, and that is what a handler gets compared against. A response with no schema comes out with no body.
 
 ## `graphql`
 
@@ -49,7 +49,7 @@ schema.graphql:Mutation.refundOrder
 
 ## `graphql-documents`
 
-Committed `.graphql` and `.gql` operation documents, one file or a directory walked recursively. Every query, mutation and subscription becomes a client-kind summary on the consumer side. Use this when your repo keeps its operations in files rather than in tagged templates at the call site, since then nothing has to be traced through the code.
+Committed `.graphql` and `.gql` operation documents, one file or a directory walked recursively. Every query, mutation and subscription becomes a client-kind summary on the consumer side. Use this when your repo keeps its operations in files, since then nothing has to be traced through the code.
 
 ```bash
 $ suss contract --from graphql-documents src/queries -o operations.json
@@ -64,7 +64,7 @@ src/queries/productList.graphql
        !! Fragment spread "...ProductListItem" has no matching fragment definition in the read set; its selections are not part of this summary.
 ```
 
-Fragment spreads resolve against every fragment definition in the read set and are inlined into the stored document, so the pairing pass sees the selected fields directly. A spread the reader cannot expand stays in the document as written and becomes a gap on that summary. That is the warning in the output above. Pass the directory rather than one file and the fragment is found.
+Fragment spreads resolve against every fragment definition in the read set and are inlined into the stored document, so the pairing pass sees the selected fields directly. A spread the reader cannot expand stays in the document as written and becomes a gap on that summary. That is the warning in the output above. Pass the whole directory and the fragment is found.
 
 Each operation summary stores its document text at `metadata.graphql.document`, the same place the TypeScript adapter puts documents it recovers from call sites, so moving an operation from a call site into a file changes no findings.
 
@@ -106,7 +106,7 @@ serverless:serverless.yml
 └─ processOrders.sqs1 → aws_sqs env:AUDIT_QUEUE_ARN  (serverless consumer | line 1)
 ```
 
-`${self:...}` resolves against the document. A reference that only the deploy supplies keeps its token, as `env:AUDIT_QUEUE_ARN` does above. suss knows there is a queue there without knowing its name, and it pairs the consumer on that basis instead of dropping it.
+`${self:...}` resolves against the document. A reference that only the deploy supplies keeps its token, as `env:AUDIT_QUEUE_ARN` does above. suss knows there is a queue there without knowing its name, and it pairs the consumer on that basis.
 
 ## `terraform`
 
@@ -125,7 +125,7 @@ infra/main.tf
      Table: acme-uploads
 ```
 
-The AWS and Google Cloud providers both load, so one command covers a configuration using either. A resource whose name the configuration computes comes out unnamed rather than guessed at.
+The AWS and Google Cloud providers both load, so one command covers a configuration using either. A resource whose name the configuration computes comes out unnamed.
 
 ## `wrangler`
 
@@ -202,7 +202,7 @@ That gives the checker a set of prop combinations the component is expected to t
 
 ## Intent is not a `--from` source
 
-Team-authored intent docs are their own stream, read by `check` rather than by `contract`:
+Team-authored intent docs are their own stream, and `check` reads them directly:
 
 ```bash
 suss check --dir summaries/ --intent intent/
@@ -212,13 +212,13 @@ suss check --dir summaries/ --intent intent/
 
 ## What a contract summary records
 
-Every transition a contract source emits is marked `confidence: { source: "derived", level }`. `derived` tells inspect and diff that the transition came from a declaration rather than from code, and `level` reflects how precisely the source said it. An OpenAPI `200` with a typed body schema is `high`; a `2XX` range expansion, or a body described with `additionalProperties: true`, is lower.
+Every transition a contract source emits is marked `confidence: { source: "derived", level }`. `derived` tells inspect and diff that the transition came from a declaration, and `level` reflects how precisely the source said it. An OpenAPI `200` with a typed body schema is `high`; a `2XX` range expansion, or a body described with `additionalProperties: true`, is lower.
 
 Read `derived` as a note about where the summary came from. A well-formed OpenAPI document is often more precise than the TypeScript behind it, so a derived summary can be the better description of the two. The checker pairs by method and normalized path whatever the source, so `:id` on one side matches `{id}` on the other, and `confidence.source` survives on both sides for anybody who wants to filter by it.
 
 Four things a contract source deliberately does not do:
 
-- **Validate its own input.** A malformed template or a broken `$ref` produces best-effort output rather than an error. Validating the format is that format's own tooling's job.
+- **Validate its own input.** A malformed template or a broken `$ref` produces best-effort output. Validating the format is that format's own tooling's job.
 - **Predict runtime state.** A throttled endpoint can return 429; whether it does depends on traffic. The summary is the envelope of possible behaviors.
 - **Model authorization per caller.** "An authorizer is attached, so 401 and 403 are possible" is captured. "User X is denied on resource Z" is runtime state.
 - **Backfill a field the source left out.** An OpenAPI response with no body schema emits a null body.
@@ -241,7 +241,7 @@ aws:apigateway:status-429      // throttle-induced
 stripe:cards:card_declined     // vendor contract
 ```
 
-Stable namespacing lets inspect and diff group related transitions across readers instead of each one inventing labels.
+Stable namespacing lets inspect and diff group related transitions across readers.
 
 When several knobs produce the same status, emit one transition and aggregate the contributors in `metadata.causes`. An authorizer and an API key requirement both produce 403, and a consumer has no way to tell which one fired. Multiple transitions for one status mean something different to the checker: sub-cases the consumer is expected to disambiguate.
 

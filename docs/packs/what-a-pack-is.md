@@ -5,7 +5,7 @@ description: A pack is a data object that tells suss how one library is written,
 
 # What a pack is
 
-A pack is a data object describing how one library is written: where it registers handlers, what returning a response looks like, which calls reach a database. The language adapter reads your source through the packs a run loads, so teaching suss a new framework means adding data rather than changing the analyzer.
+A pack is a data object describing how one library is written: where it registers handlers, what returning a response looks like, which calls reach a database. The language adapter reads your source through the packs a run loads, so teaching suss a new framework means writing data.
 
 Take a Hono route:
 
@@ -126,7 +126,7 @@ export const declares: PackDeclaration = {
 
 **Effects packs** fire on calls inside units another pack already found. `-f prisma` alone comes back empty; run beside `-f hono` it attaches a storage read to the query inside the handler. Because effects packs fire wherever the call is, they work across framework boundaries, and no pack has to be written with any other pack in mind.
 
-Contract readers are a fourth thing, and not a `PatternPack` at all. They read something the project declares rather than the code: `suss contract --from openapi orders.yaml` turns a spec into the same summaries the extractor writes. [Contract sources](/packs/contract-sources) lists all ten.
+Contract readers are a fourth thing, and not a `PatternPack` at all. They read something the project declares: `suss contract --from openapi orders.yaml` turns a spec into the same summaries the extractor writes. [Contract sources](/packs/contract-sources) lists all ten.
 
 ## Which packs a run uses
 

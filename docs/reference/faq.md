@@ -93,7 +93,7 @@ Which libraries suss reads at each of those comes from the packs, and [Pack cata
 
 Two pieces of code, or one piece of code and one written contract, that used to agree about what crosses a boundary and now do not.
 
-The agreement was about behavior rather than types, so the types may not have changed at all:
+The agreement was about behavior, so the types may not have changed at all:
 
 - A handler used to return `404` for soft-deleted users and now returns `200 { status: "deleted" }`. The caller still takes `200` to mean the user exists.
 - A Prisma write used to set `email` and the schema dropped the column. The field is still in the input type, so the type checker says nothing and only the database refuses it.
@@ -132,7 +132,7 @@ The run reports where it stopped, file by file and pack by pack. [Fix a run that
 
 Sometimes, and the output marks the places where it was unsure.
 
-Three things show up in a summary. A branch condition suss could not resolve becomes an `opaque` predicate with the source text kept. A value whose origin it could not trace becomes an `unresolved` subject rather than being dropped. And every summary has a `confidence` block. On top of those, each `check` run ends with a line saying how much of the code it could not follow:
+Three things show up in a summary. A branch condition suss could not resolve becomes an `opaque` predicate with the source text kept. A value whose origin it could not trace becomes an `unresolved` subject, and stays in the summary. And every summary has a `confidence` block. On top of those, each `check` run ends with a line saying how much of the code it could not follow:
 
 ```
 suss met a call it could not follow in one unit, of 6, so that one is described in part. `suss inspect` says which calls.
@@ -192,10 +192,10 @@ Your linter, type checker and tests each read one side of a boundary, and suss r
 
 Anything that needs a running system, a database of history, or a server.
 
-- Cross-service aggregation, dashboards and historical drift tracking. Those consume summaries rather than producing them.
+- Cross-service aggregation, dashboards and historical drift tracking. Those all consume summaries suss produces.
 - Continuous monitoring. suss runs on demand, locally or in CI, and never as a daemon.
 - Authorial intent, mostly. suss derives what the code does rather than what it should do. Written contracts express some of it, and team-authored [intent docs](/guides/check-against-intent) are their own stream.
-- Runtime instrumentation. Nothing suss reads comes from your running system. `suss corroborate --experimental` does run handlers, locally, against inputs it generates, and it records what it saw beside the derived claim rather than in place of it.
+- Runtime instrumentation. Nothing suss reads comes from your running system. `suss corroborate --experimental` does run handlers, locally, against inputs it generates, and it records what it saw beside the derived claim, which stays as it was.
 
 ## How do I add a new framework?
 

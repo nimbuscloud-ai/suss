@@ -27,15 +27,15 @@ Each term is defined once here, and the other pages link to it.
 
 **[Effect](/reference/ir#effect)**, something observable a unit causes while it runs: a database write, a message on a queue, scheduled work, a config read, a call to another service. Two functions that return the same value and touch different stores do not agree.
 
-**[Gap](/reference/ir#gap)**, something the summary could not account for. suss records it in the summary rather than failing the run. An `unhandledCase` gap marks a hole in the code: the contract declares a 500 the handler never produces, or the handler produces a status the contract leaves out. An `unreadOutcome` gap marks a piece of code suss could not read, such as a `return` that didn't match any of the terminal shapes the pack looks for. An `unfollowedCall` gap records a call the walk could not resolve to a body.
+**[Gap](/reference/ir#gap)**, something the summary could not account for. suss records it in the summary and the run keeps going. An `unhandledCase` gap marks a hole in the code: the contract declares a 500 the handler never produces, or the handler produces a status the contract leaves out. An `unreadOutcome` gap marks a piece of code suss could not read, such as a `return` that didn't match any of the terminal shapes the pack looks for. An `unfollowedCall` gap records a call the walk could not resolve to a body.
 
 **Declared contract**, a machine-readable statement of behavior written beside the implementation: a ts-rest router, an OpenAPI document, a GraphQL schema, a Prisma schema, a Storybook story. suss reads both the declaration and the code, and the checker compares them. See [Kinds of contract](/why/kinds-of-contract).
 
-**Contract source**, a contract written at the boundary rather than derived from an implementation: an OpenAPI YAML, a CloudFormation template, a Terraform file, a hand-written stub. `suss contract` turns one into the same summaries the extractor writes, and what comes out is marked `confidence.source: "derived"`. See [Contract sources](/packs/contract-sources).
+**Contract source**, a contract somebody wrote at the boundary itself: an OpenAPI YAML, a CloudFormation template, a Terraform file, a hand-written stub. `suss contract` turns one into the same summaries the extractor writes, and what comes out is marked `confidence.source: "derived"`. See [Contract sources](/packs/contract-sources).
 
 **[Finding](/reference/ir#finding)**, a record that two paired summaries disagree. It has a `kind`, a `severity` (`error`, `warning` or `info`), the boundary, both sides, and a sentence saying what is wrong. The [findings catalog](/reference/findings) lists every kind. The behavioral checker emits `Finding`; the intent checker emits `IntentFinding`, which has a document on one side instead of a second piece of code.
 
-**Pack**, a set of declarative patterns (a `PatternPack`) that tells the adapter and the extractor how to recognize a framework, a runtime or a library. A pack is data rather than code. See [What a pack is](/packs/what-a-pack-is).
+**Pack**, a set of declarative patterns (a `PatternPack`) that tells the adapter and the extractor how to recognize a framework, a runtime or a library. A pack is data. See [What a pack is](/packs/what-a-pack-is).
 
 **Recognizer**, a rule in a pack that fires when the extractor meets a particular call or property access, such as `setTimeout(...)` or `process.env.X`. It attaches an effect or some metadata to whichever unit it fired inside.
 

@@ -78,7 +78,7 @@ A queue takes a string, so nothing on either side type-checks the payload and th
 
 ### `boundaryFieldUnused`
 
-**Severity:** warning, and info where suss is saying it could not check rather than that something is unread.
+**Severity:** warning, dropping to info where suss could not run the check at all.
 
 The provider declares a field no consumer references. No input produces a wrong result here: an unread field breaks nothing at runtime, and whether it is dead or reserved is intent the repository does not state.
 
@@ -87,7 +87,7 @@ The provider declares a field no consumer references. No input produces a wrong 
   Checkout declares environment variable STRIPE_KEY but no code in its codeScope reads process.env.STRIPE_KEY.
 ```
 
-The info form means the run could not check, rather than that the field went unread:
+The info form means the run could not run the check at all:
 
 ```
 [INFO] boundaryFieldUnused
@@ -125,7 +125,7 @@ This kind is where the message-bus body-shape pairing will report, along with th
 
 **Severity:** error.
 
-The consumer picks items by something the provider does not key on. A store that accepts only its key attributes refuses the request, so every run of this query fails rather than returning nothing.
+The consumer picks items by something the provider does not key on. A store that accepts only its key attributes refuses the request outright, so every run of this query fails.
 
 ```
 [ERROR] boundarySelectorMismatch
@@ -178,7 +178,7 @@ The path runs on a response the provider sends, reads a field that response's bo
 
 Where `unhandledProviderCase` is about coverage, this kind makes a claim about behavior. It asks the same question the storage and GraphQL read checks ask: does the code read something the other side never supplies. suss keeps it narrow on purpose.
 
-- A field any of the consumer's guards test is never reported. `if (res.error)` is how the consumer tells the failure body apart, so `error` coming back undefined on the 200 is an answer rather than a misread.
+- A field any of the consumer's guards test is never reported. `if (res.error)` is how the consumer tells the failure body apart, so `error` coming back undefined on the 200 is the answer the consumer was testing for.
 - A body with spreads or an opaque shape claims nothing, and a status the provider returns with several bodies fires only when every one of them lacks the field.
 - The branch has to run on the response: a status guard, a range such as `!res.ok`, or the fall-through over the 2xx class. A branch guarded on a body field never runs on a response whose body cannot satisfy the guard.
 - A response declared as a range is one response that may arrive with any status in it, so a branch on 404 is judged against the `4XX` body and the finding says which.
@@ -230,7 +230,7 @@ The other direction is a warning, because a document routinely declares the 401 
 
 Where the contract is written in the handler's own code, as with ts-rest or hono-openapi, the provider and consumer fields point at one summary, and the checker skips the comparison when the contract source is derived from the implementation. Where the contract is a separate document read with `suss contract`, the document is the consumer side. A declared 5XX is not reported at all.
 
-Every `unhandledCase` gap on the provider surfaces here. An `unreadOutcome` gap does not: it comes out as `lowConfidence` at info, because it means the pack has no form for what the handler returns rather than that the handler is wrong.
+Every `unhandledCase` gap on the provider surfaces here. An `unreadOutcome` gap does not: it comes out as `lowConfidence` at info, because the pack has no form for what the handler returns.
 
 **Fix:** add the status to the contract, or take it out of the handler. For a declared status the handler never produces, suppress it when something in front of the handler sends it.
 
@@ -382,7 +382,7 @@ Nothing breaks at runtime, so removing it is a judgement.
 
 **Legitimate when:** something outside the project uses it, or it is kept on purpose for a consumer that has not landed.
 
-**A bug when:** the feature it belonged to is gone. This is cleanup rather than a defect.
+**A bug when:** the feature it belonged to is gone. This is cleanup.
 
 ### `messageBusConsumerDisabled`
 
@@ -460,7 +460,7 @@ Or several providers declare a directory containing the same source file, and no
 
 **Severity:** info.
 
-suss could not finish reading one side, so it reports that instead of guessing. Predicates stayed opaque, type resolution failed, or confidence dropped below `medium`.
+suss could not finish reading one side, and this finding is how it tells you. Predicates stayed opaque, type resolution failed, or confidence dropped below `medium`.
 
 ```
 [INFO] lowConfidence
@@ -470,7 +470,7 @@ suss could not finish reading one side, so it reports that instead of guessing. 
 
 It also reports every `unreadOutcome` gap on the provider. Such a gap means a `return` in the handler didn't match any of the terminal shapes the pack looks for.
 
-**Fix:** teach the pack that terminal shape. Until then the handler is under-described rather than wrong, and that is why this kind is info.
+**Fix:** teach the pack that terminal shape. Until then the summary is incomplete, and that is why this kind is info.
 
 ### `unsupportedSemantics`
 
@@ -488,7 +488,7 @@ It also covers a boundary no pack knows how to summarise, such as a WebSocket su
 
 **Legitimate when:** the channel is decided outside the code, by a deploy-time value or a change somebody made in a console, so the source could never have stated it.
 
-**A bug when:** the source does state it and the pack could not follow it. That is a gap in suss rather than in your project, and the reason on the finding tells you where.
+**A bug when:** the source does state it and the pack could not follow it. That is a gap in suss, and the reason on the finding tells you where.
 
 ### `ambiguousProvider`
 
@@ -536,7 +536,7 @@ They have a different shape, because one side is a document rather than code, so
 | `message` | string | One line of human-readable text. |
 | `suppressed` | `IntentFindingSuppression?` | Set only when a `.sussignore` rule matched. |
 
-One rule cuts across all ten: **a finding against intent suss inferred rather than a person wrote is downgraded one level.** An intent doc has a `source` field, and `inferred` means suss guessed the declaration from the code. Curating the document restores the full severity, so an `error` you see at `warning` may mean nobody has confirmed the intent yet rather than that the problem is smaller.
+One rule cuts across all ten: **a finding against intent suss inferred rather than a person wrote is downgraded one level.** An intent doc has a `source` field, and `inferred` means suss guessed the declaration from the code. Curating the document restores the full severity, so an `error` you see at `warning` may mean nobody has confirmed the intent yet.
 
 The severity split follows from what an intent doc is. A person wrote it deliberately, so code that fails to satisfy it is a defect, and those kinds are errors. An intent nothing can check, or a scenario pointing at nothing, is a gap in the documents, and those are warnings. Code that does more than the document claims is info.
 
@@ -614,7 +614,7 @@ A declared store the unit never touches, paired with an undeclared store of the 
 
 Renaming a store without updating the intent doc would otherwise produce an `uncoveredOutcome` for every verb and outcome declared against the old store, plus an `undeclaredOutcome` for every verb the code touches the new one with. This replaces that whole set with one finding. Pairing requires the two boundaries to share a system prefix, their verbs to match exactly, the new one to satisfy every declared use the old one had, and each side to have exactly one candidate on the other.
 
-**Legitimate when:** never. The document and the code disagree either way, and the pairing is a guess about the cause rather than a change in whether that disagreement matters.
+**Legitimate when:** never. The pairing is a guess about the cause, and the document and the code disagree either way.
 
 **A bug when:** always. Update the intent if the store was renamed, and fix the code if it was not.
 
@@ -680,7 +680,7 @@ A scenario in a PRD is not linked to any system-intent outcome. It reads fine on
 [info] prd:Reading a user: Scenario #3 in PRD "Reading a user" has no structured link to a system-intent outcome; it reads on its own, but its coverage can't be checked until a link is added.
 ```
 
-**Legitimate when:** the PRD is still being written, or the scenario describes something outside any one boundary. This is a valid pending state rather than a defect.
+**Legitimate when:** the PRD is still being written, or the scenario describes something outside any one boundary. This is a valid pending state.
 
 **A bug when:** never on its own. Treat the count as a coverage number: how much of what the PRD describes is connected to something suss can check.
 
@@ -724,13 +724,13 @@ A boundary intent declares an outcome and no PRD scenario links to it.
 
 The other three scenario kinds ask whether a scenario points at something that exists. This one asks the question from the other end, the way a product reader would: which of these behaviors has nobody written down a reason for. It stays quiet until at least one PRD is loaded, since before that every outcome would be reported and the list would be useless. `suss infer prd` writes a scenario per outcome, so a fresh set of drafts starts with none of these.
 
-**Legitimate when:** the outcome is one nobody needs a reason for, such as a 500 from an unhandled throw. Treat the count as a coverage number rather than a list to empty.
+**Legitimate when:** the outcome is one nobody needs a reason for, such as a 500 from an unhandled throw. Treat the count as a coverage number.
 
 **A bug when:** never on its own. It becomes one when you read the list and find an outcome nobody meant to ship.
 
 ## Run findings
 
-A third list, under `run` in the JSON. These are about the run rather than about a boundary, so they have no two sides and no boundary key:
+A third list, under `run` in the JSON. These are about the run itself, so they have no two sides and no boundary key:
 
 | Field | Type | Meaning |
 |---|---|---|

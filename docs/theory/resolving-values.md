@@ -268,7 +268,7 @@ a condition on where the walk ended.
 |---|---|
 | `comesTo(x, z)` | at a function or an object literal, having run no call |
 | `givesBack(x, z)` | the same, for a walk that did run a call |
-| `isWrittenAs(x, z)` | at anything written out in source rather than named |
+| `isWrittenAs(x, z)` | at anything spelled out in source |
 | `objectOf(o, obj)` | at the object an expression refers to |
 | `paramAt(r, p, z)` | at what one call site put in parameter `p` |
 | `comesFrom(x, m, n)` | at an import, giving the module and the name, including a member read off a module imported whole |
@@ -478,8 +478,8 @@ body and the strongest across competing derivations. The evaluator
 cannot tell the two apart.
 
 Under the witness algebra the merge keeps whichever derivation arrived
-first, so a fact derived nine ways records one of them rather than
-nine, and the engine reaches the same set of facts it reaches untagged.
+first, so a fact derived nine ways records one of those nine,
+and the engine reaches the same set of facts it reaches untagged.
 `proofOf` walks the stored records backward into a tree when somebody
 asks for one, without re-running a rule.
 

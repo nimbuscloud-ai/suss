@@ -46,7 +46,7 @@ suss check --dir summaries/ --intent intent/
 
 Given an `http(s)` URL, suss fetches the document, writes it to a temp file, parses it the way it would parse a local file, and deletes the temp file. That covers a vendor spec hosted on GitHub or a docs site. The extension on the URL path decides the parser: `.json` gets the JSON parser, anything else, including no extension at all, gets YAML.
 
-A summary read from a URL is labelled with the URL, not with the temporary path, so it still points at where the document came from.
+A summary read from a URL is labelled with that URL, so it still points at where the document came from.
 
 ## What it writes
 

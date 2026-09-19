@@ -67,8 +67,8 @@ checking actually cares about.
   effect it produces.
   Pairing key: `(component identity, unit kind, unit name?)`. The
   multi-unit framing comes from a design record, [the React
-  roadmap](https://github.com/nimbuscloud-ai/suss/blob/main/design/roadmap-react.md), which plans work rather than
-  describing what ships.
+  roadmap](https://github.com/nimbuscloud-ai/suss/blob/main/design/roadmap-react.md), which plans work still to
+  come.
 - **gRPC unary call**: discriminated by gRPC status enum (its own code
   space, not HTTP status); payload is the response message. Pairing
   key: `(service, method)`.
@@ -301,7 +301,7 @@ config takes the new name too: a project passing
 `{ "storageSystem": "postgres" }` to the sqlalchemy, activerecord,
 prisma or drizzle pack writes `postgresql` instead. The CLI parses a
 pack config against the pack's own declaration, so the old spelling
-stops the run with a sentence rather than pairing with nothing.
+stops the run with a sentence telling you to change it.
 
 ### Field names suss keeps
 
@@ -463,8 +463,7 @@ thing both sides of an invoke can spell is the platform and the name.
 
 Each one ships as another discriminated-union variant, and none of them
 reshape the variants already there. Anything that would move REST's
-method and path out of `semantics` needs its own variant rather than a
-retrofit onto an existing one.
+method and path out of `semantics` needs a variant of its own.
 
 ## Boundaries compose
 
@@ -497,7 +496,7 @@ rejected. Transformation is a continuum, so the right way to model it is a
 transformation descriptor (path-rewrite rules, header-add list, etc.) rather
 than a category enum.
 
-Assembling multi-hop chains belongs in the query layer rather than inside suss.
+Assembling multi-hop chains belongs in the query layer.
 Once pairing works two sides at a time over binding identities detailed enough
 to describe each hop, walking a chain is graph traversal over the pairing
 results, which an MCP tool or a query CLI can do over the summary store. The
@@ -510,8 +509,8 @@ Shipped:
 
 1. `BoundaryBinding` has `transport`, `semantics`, and `recognition` as
    top-level fields. `@suss/behavioral-ir` exports ten binding builder
-   helpers; packs and contract sources use them rather than hand-rolling
-   the structure themselves.
+   helpers, and every pack and contract source builds its bindings
+   through them.
 2. Nine `semantics` variants: `rest`, `function-call`, `graphql-resolver`,
    `graphql-operation`, `runtime-config`, `storage`, `message-bus`, `metric`,
    `unit-invocation`.
@@ -522,9 +521,7 @@ Shipped:
    pairing), message-bus, storage, runtime-config, unit-invocation, and
    Storybook stories.
 5. `boundaryKey` dispatches on `semantics.name`. Summaries without a
-   matchable key go to `unmatched.unpairable`, and each entry says why,
-   instead of being fabricated
-   into REST pairs.
+   matchable key go to `unmatched.unpairable`, and each entry says why.
 
 The dispatch registry has shipped since the list above was first written.
 Each variant declares its behavior (`identityKey`, `pairingKey`,
@@ -548,8 +545,8 @@ See also:
   metadata rather than hardcoding frameworks, a summary states its
   `BOUNDARY_ROLE`, packs supply the accessor that reads a status off a
   response, and the three layers below got written down. The
-  [status design record](https://github.com/nimbuscloud-ai/suss/blob/main/design/status.md) keeps the log, and it is a
-  working record rather than documentation.
+  [status design record](https://github.com/nimbuscloud-ai/suss/blob/main/design/status.md) keeps the log as the work
+  happens.
 - [Architecture](/theory/architecture), the current package
   dependency graph and protocol assumptions.
 - [Pack patterns](/packs/patterns), how

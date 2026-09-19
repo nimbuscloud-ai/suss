@@ -205,4 +205,4 @@ Assert on status codes, transition counts, input roles, and gaps if the pack rea
 
 ## What you do not need to know
 
-A pack author never touches the engine. You can write a pack without learning how conditions are extracted, how the extractor assembles a summary, or what any other pack does. If you find yourself reaching past your pack's own directory into the engine to express a pattern, the pattern system is missing something. Raise that rather than working around it.
+A pack author never touches the engine. You can write a pack without learning how conditions are extracted, how the extractor assembles a summary, or what any other pack does. If you find yourself reaching past your pack's own directory into the engine to express a pattern, the pattern system is missing something. Raise that.

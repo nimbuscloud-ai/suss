@@ -68,7 +68,7 @@ Five of the forms have a symbol spelling, for a question you type often. The ope
 
 ### Spelling the subject
 
-A boundary is spelled the way reports spell it, and a shorter spelling covers more, exactly as under [`check --at`](/reference/cli/check#reporting-on-one-thing): `dynamodb:editions` covers every index on that table. When a spelling covers several boundaries at once, suss lists them instead of picking one for you. A spelling that exactly matches one boundary's name takes that boundary, so `GET /articles` is the collection route and not the comments route under it.
+A boundary is spelled the way reports spell it, and a shorter spelling covers more, exactly as under [`check --at`](/reference/cli/check#reporting-on-one-thing): `dynamodb:editions` covers every index on that table. When a spelling covers several boundaries at once, suss lists them all and waits for you to narrow it. A spelling that exactly matches one boundary's name takes that boundary, so `GET /articles` is the collection route and not the comments route under it.
 
 A unit is spelled the way `--at` spells one: a file, a `file:line`, a summary id, or a function name. A package export such as `fn:@suss/datalog::evaluate` resolves to the function behind it, so that spelling, the bare name, and `what reads` on the export all give one answer. A bare name that is two functions in different places is refused, with both listed.
 

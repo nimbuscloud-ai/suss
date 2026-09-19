@@ -51,7 +51,7 @@ recorded the URL it built, `/users/123`, keys as itself and pairs with
 no route, and nothing gets reported: the summary lands in the unmatched
 list, which a reader has to notice on their own. Whether a client pack
 should record the template it interpolated rather than the string it
-produced is a question for the pack rather than for the key.
+produced is a question for the pack to answer.
 
 ### A wildcard route serves whichever method the caller sends
 
@@ -365,7 +365,7 @@ one needs something the IR does not record today.
   code behind it is deployed.
 - **Whether the run is the whole world.** Needs to know what reads a
   store or a variable outside the analysed repository, which is a
-  cross-repository question rather than a checker one.
+  cross-repository question.
 
 ## Where a claim is false today
 

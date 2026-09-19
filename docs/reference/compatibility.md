@@ -65,7 +65,7 @@ No summaries to write in 0.02s.
 
 ## Your own response helpers
 
-Most handlers build a response through a helper rather than at the return site. suss follows the call and reads the helper, so it works with whatever argument order you wrote:
+Most handlers build a response through a helper of their own. suss follows the call and reads the helper, so it works with whatever argument order you wrote:
 
 ```ts
 return json(200, { status: "ok" });   // json(statusCode, payload)

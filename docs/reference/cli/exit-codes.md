@@ -22,7 +22,7 @@ Every code is `0` or `1`. There is no third code to branch on.
 | [`infer intent`](/reference/cli/infer#suss-infer-intent) | At least one doc was written. | No boundary in the summaries could be drafted as intent, or `--into` points at a folder that already has intent docs. |
 | [`infer prd`](/reference/cli/infer#suss-infer-prd) | At least one PRD was written. | Every boundary intent already has a scenario pointing at it, a document in the folder is still an uncurated draft, or `--into` points at a folder that already has PRDs. |
 
-When `--json` is among the arguments, the reason for a usage failure arrives on stdout as `{"error": "..."}` as well as on stderr, so a caller parsing stdout gets it rather than a truncated stream.
+When `--json` is among the arguments, the reason for a usage failure arrives on stdout as `{"error": "..."}` as well as on stderr, so a caller parsing stdout still gets the reason.
 
 `--fail-on-empty` is gone from both `extract` and `check`. A run that finds or pairs nothing now fails by default; passing the old flag exits `1` and says to use `--allow-empty` instead.
 

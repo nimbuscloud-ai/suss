@@ -11,7 +11,7 @@ Bertrand Meyer's [Design by Contract (1986)](https://en.wikipedia.org/wiki/Desig
 
 ## Compiler design
 
-The adapter is a compiler front end for a narrow purpose. It reads an AST, resolves symbols through the type checker, enumerates control-flow paths through the structured statement language, and walks expression trees, all of which is standard. It stops short of two things a compiler would do: suss never builds a control-flow graph and never runs data-flow analysis. It finds the places a function produces observable output, works out the conditions that gate each one, and pairs them into transitions. A CFG would capture more and cost orders of magnitude more to build and maintain, and the comparison the checker does needs the cases rather than the graph. [Extraction algorithm](/theory/extraction-algorithm) is the five steps in detail.
+The adapter is a compiler front end for a narrow purpose. It reads an AST, resolves symbols through the type checker, enumerates control-flow paths through the structured statement language, and walks expression trees, all of which is standard. It stops short of two things a compiler would do: suss never builds a control-flow graph and never runs data-flow analysis. It finds the places a function produces observable output, works out the conditions that gate each one, and pairs them into transitions. A CFG would capture more and cost orders of magnitude more to build and maintain, and the comparison the checker does only needs the cases. [Extraction algorithm](/theory/extraction-algorithm) is the five steps in detail.
 
 ## Formal verification
 
@@ -19,7 +19,7 @@ Preconditions, postconditions and the discipline of saying what a program guaran
 
 ## Datalog program analysis
 
-Using Datalog to express a whole-program analysis, rather than writing another traversal, is a long-standing line of work: bddbddb for points-to analysis, Doop for Java, and Soufflé as the general engine. suss follows it with `@suss/datalog`, a small semi-naive evaluator with stratified negation where rules are plain data. Three pieces come straight out of that literature. Semi-naive evaluation joins each round only against the facts that were new in the round before. The on-demand rewrite in `deriveOnDemand` is magic sets (Bancilhon, Maier, Sagiv and Ullman, 1986): each derived relation gains a companion relation saying which rows somebody is waiting on, and a relation nothing asks for is never derived. And the tag algebra is a provenance semiring (Green, Karvounarakis and Tannen, 2007). That is what lets `suss ask why` rebuild a proof by walking stored derivations backward, the way Soufflé's provenance mode does, without re-running a rule. suss differs in scope. Nothing in the engine refers to the IR or to any AST, so an adapter for a second language emits the same facts and gets every analysis unchanged. [Facts and rules](/theory/facts-and-rules) and [How suss follows a value](/theory/resolving-values) are the two rule sets that ship.
+Expressing a whole-program analysis in Datalog is a long-standing line of work: bddbddb for points-to analysis, Doop for Java, and Soufflé as the general engine. suss follows it with `@suss/datalog`, a small semi-naive evaluator with stratified negation where rules are plain data. Three pieces come straight out of that literature. Semi-naive evaluation joins each round only against the facts that were new in the round before. The on-demand rewrite in `deriveOnDemand` is magic sets (Bancilhon, Maier, Sagiv and Ullman, 1986): each derived relation gains a companion relation saying which rows somebody is waiting on, and a relation nothing asks for is never derived. And the tag algebra is a provenance semiring (Green, Karvounarakis and Tannen, 2007). That is what lets `suss ask why` rebuild a proof by walking stored derivations backward, the way Soufflé's provenance mode does, without re-running a rule. suss differs in scope. Nothing in the engine refers to the IR or to any AST, so an adapter for a second language emits the same facts and gets every analysis unchanged. [Facts and rules](/theory/facts-and-rules) and [How suss follows a value](/theory/resolving-values) are the two rule sets that ship.
 
 ## Concept design
 
@@ -27,12 +27,12 @@ Daniel Jackson's concept design describes software as independent concepts, each
 
 ## Design principles
 
-1. **Inference over authoring.** Contracts are extracted from code rather than written by hand. The extraction is the product.
+1. **Inference over authoring.** Contracts are extracted from code. The extraction is the product.
 2. **Staged degradation.** Where the extractor cannot decompose a condition, it falls back to opaque, keeps the source text and lowers confidence. It never fails and never fabricates.
-3. **Opacity is data.** An opaque predicate or an unresolved subject is a labeled surface in the summary rather than a discarded branch. Later passes decompose what earlier ones could not, and reducing opacity over time is a design axis.
+3. **Opacity is data.** An opaque predicate or an unresolved subject stays in the summary, labeled for what it is. Later passes decompose what earlier ones could not, and reducing opacity over time is a design axis.
 4. **Language-agnostic output.** A summary has the same structure whether it came from TypeScript, Python or Ruby, and downstream tools never ask which.
-5. **Boundaries come apart into three layers.** Every summary is attached to a `BoundaryBinding` with separate transport, semantics and recognition. A new protocol adds a semantics variant rather than reshaping the layers around it.
-6. **Declarative over imperative.** Framework support is data. Adding a framework should be about a hundred lines of `PatternPack` configuration rather than a new module.
+5. **Boundaries come apart into three layers.** Every summary is attached to a `BoundaryBinding` with separate transport, semantics and recognition. A new protocol adds a semantics variant, and the layers around it stay put.
+6. **Declarative over imperative.** Framework support is data. Adding a framework should be about a hundred lines of `PatternPack` configuration.
 7. **Layered coupling.** The IR has zero dependencies, the extractor depends only on the IR, and the adapter depends on the extractor and the compiler API. Each layer can be replaced without touching the others.
 
 ## References
