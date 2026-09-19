@@ -5,7 +5,7 @@ description: Read TypeScript, Python or Ruby source into behavioral summaries, w
 
 # `suss extract`
 
-Read source into behavioral summaries.
+`suss extract` reads your TypeScript, Python or Ruby source and writes a behavioral summary for every code unit it finds. It is the first command you run on a project, and every other command works from the JSON it produces.
 
 ```
 suss extract [-p <tsconfig> | --dir <directory>] [--lang typescript|python|ruby]
@@ -20,7 +20,7 @@ suss extract [-p <tsconfig> | --dir <directory>] [--lang typescript|python|ruby]
 | `-f`, `--framework <name>` | the packs in `suss.json`, or what `init` would pick | Which pack to read with. Repeatable. See [Pack names](#pack-names) and [Configuring a pack](#configuring-a-pack). |
 | `-p`, `--project <path>` | the nearest `tsconfig.json` or `jsconfig.json` above the working directory | The tsconfig covering the code to read, so suss resolves types the way your compiler does. |
 | `--dir <path>` | the working directory | Read this directory, for a project with no tsconfig. |
-| `--lang <name>` | worked out from what the directory contains, the packs you asked for, and the nearest tsconfig | `typescript`, `python` or `ruby`. suss says so when it cannot tell. |
+| `--lang <name>` | worked out from what the directory contains, the packs you asked for, and the nearest tsconfig | `typescript`, `python` or `ruby`. When suss cannot work the language out for itself, it stops and asks you to pass this flag. |
 | `-o`, `--output <path>` | stdout | Write the summary JSON to a file. Parent directories are created. |
 | `--files <f1> <f2> ...` | every file the tsconfig or directory covers | Read only these files, resolved against the working directory. Bare arguments with no flag in front of them mean the same thing when `--files` is absent. |
 | `--gaps <mode>` | `permissive` | `permissive` records in the summary the returns and declared statuses a pack could not account for. `strict` records the same and then exits non-zero. `silent` skips gap detection. |
@@ -31,7 +31,7 @@ suss extract [-p <tsconfig> | --dir <directory>] [--lang typescript|python|ruby]
 | `--allow-empty` | off | Exit `0` even when the run produced nothing. Without it that run fails, because a silent zero looks the same in CI as a passing check. |
 | `--fail-on-pack-error` | off | Exit non-zero when a pack throws while it reads. By default the run reports the throw and keeps going with the other packs. |
 
-`--fail-on-empty` is gone. A run that finds nothing now fails by default, and passing the old flag stops the run and says so.
+`--fail-on-empty` is gone. A run that finds nothing now fails by default, and passing the old flag stops the run and points you at `--allow-empty`.
 
 ## What it writes
 
@@ -48,7 +48,7 @@ Wrote 4 summaries to /home/dana/shop/summaries/api.json in 0.61s
 
 ## Pack names
 
-`-f` takes these 44 names out of the box. Every one of them ships inside the CLI, so there is nothing else to install. The [pack catalog](/packs/catalog) says what each one reads.
+`-f` takes these 44 names out of the box. Every one of them ships inside the CLI, so there is nothing else to install. The [pack catalog](/packs/catalog) describes what each one reads.
 
 **Frameworks.** These discover the units a run is about: a route, a resolver, a component, a deployed function.
 
@@ -64,17 +64,17 @@ Wrote 4 summaries to /home/dana/shop/summaries/api.json in 0.61s
 
 Twelve of them read something other than TypeScript, and a run reads one language at a time. `fastapi`, `flask-restx`, `sqlalchemy`, `sqlmodel`, `requests`, `httpx` and `aiohttp` read Python; `rails`, `graphql-ruby`, `activerecord`, `faraday` and `net-http` read Ruby. Naming one in a TypeScript run stops the run and prints the command to run it separately. See [Read Python or Ruby](/guides/python-and-ruby).
 
-A name that is not on the list resolves as a module, which is how you run a pack of your own. A name starting with `@` or containing a `/` is imported exactly as written, so `-f @acme/suss-pack` works. Any other name is tried as `@suss/packs/<name>`, then `@suss/framework-<name>`, then `@suss/<name>`. If none of the three import, the run stops and prints the built-in list.
+A name that is not on the list gets treated as a module to import, and that is how you run a pack of your own. A name starting with `@` or containing a `/` is imported exactly as written, so `-f @acme/suss-pack` works. Any other name is tried as `@suss/packs/<name>`, then `@suss/framework-<name>`, then `@suss/<name>`. If none of the three import, the run stops and prints the built-in list.
 
 ## Configuring a pack
 
-Write `-f <pack>=<config.json>` and the file's contents go to the pack as its options. The CLI parses the file against the pack's own schema before the pack runs, so a key the pack never declared stops the run instead of reading as nothing. The error says which key it was and which keys that pack does take.
+Write `-f <pack>=<config.json>` and the file's contents go to the pack as its options. The CLI parses the file against the pack's own schema before the pack runs, so a key the pack never declared stops the run instead of being quietly ignored. The error gives the key you wrote and the keys that pack does take.
 
-A pack config says something about your own project: which database is behind a connection, which directory your schema lives in, which modules make a file worth reading. A fact about a package you depend on goes in a [dependency stub](/guides/teach-a-dependency) instead, and every pack in the run reads it from there.
+A pack config describes your own project: which database is behind a connection, or which directory your schema lives in. A fact about a package you depend on goes in a [dependency stub](/guides/teach-a-dependency) instead, and every pack in the run reads it from there.
 
-Most packs have nothing to configure. `aws-dynamodb` takes `requiresImport`, the modules whose presence, directly or through a file the project imports, makes a file worth reading. `react-router` takes `errorHelpers`, the project's own helpers that turn an error into a response.
+Most packs have nothing to configure. `aws-dynamodb` takes `requiresImport`, the modules whose presence, directly or through a file the project imports, makes a file one the pack should read. `react-router` takes `errorHelpers`, the project's own helpers that turn an error into a response.
 
-Five option names describe a dependency rather than your own project, so a stub writes them and a config file may not. Setting one stops the run and says which stub kind takes it over:
+Five option names describe a dependency rather than your own project, so they belong in a stub and a config file may not set them. Setting one stops the run and tells you which stub kind takes it over:
 
 | Pack | Option | Stub kind |
 |---|---|---|
@@ -84,6 +84,6 @@ Five option names describe a dependency rather than your own project, so a stub 
 | `fastapi`, `flask-restx` | `wrapperModules` | `re-exports` |
 | `graphql-ruby`, `rails` | `baseClassNames` | `extends-base` |
 
-Three more described the project's own code, and suss reads those off the code itself now: `registrationHelpers` on `express`, `fastify` and `hono`, `requestFunctions` on `aws-dynamodb`, and `subjectFactories` on `aws-lambda`. A config that still sets one keeps running. The key is dropped, with a warning saying what replaced it.
+Three more described the project's own code, and suss reads those off the code itself now: `registrationHelpers` on `express`, `fastify` and `hono`, `requestFunctions` on `aws-dynamodb`, and `subjectFactories` on `aws-lambda`. A config that still sets one keeps running. suss drops the key and warns you what replaced it.
 
-[Exit codes](/reference/cli/exit-codes) says what `extract` returns to the shell.
+[Exit codes](/reference/cli/exit-codes) lists what `extract` returns to the shell.

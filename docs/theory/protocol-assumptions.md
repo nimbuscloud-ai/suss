@@ -13,43 +13,31 @@ receives. Where a claim like that stops being true, the finding stops
 meaning what its description says, and nothing in the output shows the
 difference.
 
-Two bugs in one week came out of that gap, and no test caught either.
-The OpenAPI reader took whichever media type a document listed first,
-so a JSON caller was compared against an XML schema and reported as
-agreeing ([#389](https://github.com/nimbuscloud-ai/suss/pull/389),
-[#387](https://github.com/nimbuscloud-ai/suss/issues/387)). Storage
-treated a table name plus the scope `default` as enough to identify a
-table, so two services each keeping a `users` table had their queries
-checked against each other's schema at error severity
-([#388](https://github.com/nimbuscloud-ai/suss/pull/388)).
+Two examples of what that looks like. An OpenAPI reader that takes
+whichever media type a document lists first will compare a JSON caller
+against an XML schema and report the two as agreeing. Storage that
+treats a table name plus the scope `default` as enough to identify a
+table will check two services' `users` queries against each other's
+schema, at error severity.
 
-Each entry below says where the checker relies on the claim, what a
-finding means once the claim stops being true, and which test pins
-today's behaviour. A test listed here fails if the behaviour changes,
-so moving what a finding means takes a deliberate edit.
+Each entry below gives the claim, where in the checker it matters, and
+what a finding means once the claim stops being true.
 
 ## Identity: when two sides describe one boundary
 
 ### A method and a normalized path identify one endpoint in the whole run
 
-`pairSummaries` buckets REST summaries on `rest <path>` and settles the
+`pairSummaries` buckets REST summaries on `rest <path>` and decides the
 method inside the bucket. `checkContractAgreement` groups declared
 contracts on `METHOD /normalized/path`. Neither key contains a host, a
 base URL, or the service the summary came from.
 
 When two services in one repository serve the same route, a provider in
 one gets paired with a consumer in the other, and every per-pair check
-runs on that pair. `misreadProviderResponse` is error severity, so the
-wrong answer is a confident one. GraphQL got a workspace filter for the
-same problem in [#366](https://github.com/nimbuscloud-ai/suss/pull/366)
-and storage in [#388](https://github.com/nimbuscloud-ai/suss/pull/388);
-REST has neither. Filed as
-[#514](https://github.com/nimbuscloud-ai/suss/issues/514).
-
-Pinned by `pairing.test.ts`, "treats a method and a path as one
-endpoint across the whole run", and `contractAgreement.test.ts`,
-"groups sources by method and path alone, whichever service each came
-from".
+runs on that pair. `misreadProviderResponse` is an error, so a wrong
+answer here fails a build. GraphQL and storage both filter by workspace
+to avoid this. REST does not, and
+[#514](https://github.com/nimbuscloud-ai/suss/issues/514) tracks it.
 
 ### Both sides state the path as a route template
 
@@ -63,22 +51,13 @@ recorded the URL it built, `/users/123`, keys as itself and pairs with
 no route, and nothing gets reported: the summary lands in the unmatched
 list, which a reader has to notice on their own. Whether a client pack
 should record the template it interpolated rather than the string it
-produced is a question for the pack rather than for the key.
-
-The parameter-name half of this was false until
-[#521](https://github.com/nimbuscloud-ai/suss/pull/521), which this
-catalogue turned up as [#515](https://github.com/nimbuscloud-ai/suss/issues/515).
-
-Pinned by `pairing.test.ts`, "reads the consumer's path as a route
-template, not as a URL it built", alongside the three tests #521 added
-for the shape comparison itself.
+produced is a question for the pack to answer.
 
 ### A wildcard route serves whichever method the caller sends
 
 `methodsAgree` pairs `"*"` with any stated method, and pairs a null
-method with nothing, because a source that never said which method made
-no claim to agree with. Pinned by `pairing.test.ts`, "lets a wildcard
-route serve whichever method the caller sends".
+method with nothing, because a source that never stated a method made
+no claim to agree with.
 
 ### A subject identifies one channel, and a side with no bus stated meets that subject on any bus
 
@@ -91,11 +70,6 @@ The subject itself compares byte for byte, because AWS compares
 detail-types and queue ids that way, so a producer that writes
 `ordersqueue` orphans against a queue declared as `OrdersQueue`.
 
-Pinned by `channelPairing.test.ts`, "pairs a bus-less subject with the
-same subject on any bus" and "lets a channel with no bus stated pair
-with that subject on every bus", and by `messageBusPairing.test.ts`,
-"compares a channel's subject letter for letter".
-
 ### A `#` in a channel string separates a bus from a subject
 
 `parseChannel` splits on the first `#` whatever the bus is, although
@@ -104,22 +78,16 @@ Kafka restrict their names to characters that exclude `#`, so the split
 does no harm there. BullMQ takes an arbitrary string, and a queue called
 `orders#priority` pairs with one called `priority`.
 
-Pinned by `channelPairing.test.ts`, "reads a separator in any channel
-string as a bus in front of a subject".
-
 ### A store is identified by its system, its scope, its container and its access path, inside one service
 
 `nameCovering` compares the system, the scope and the access path for
 equality, matches the container through `namesAgree` so a name built at
 deploy time can cover what the code reached, and then asks
 `sameService`, which reads `location.workspace`. A summary that states no workspace is
-treated as a single-project run and pairs with anything, which is what
-keeps a shared utility file working. Two databases behind one scope, a
+treated as a single-project run and pairs with anything, and that is
+what keeps a shared utility file working. Two databases behind one scope, a
 staging instance and a production instance, are one store here; that
 half is [#412](https://github.com/nimbuscloud-ai/suss/issues/412).
-
-Pinned by `storagePairing.test.ts`, "reads a summary that states no
-workspace as a single-project run".
 
 ### A metric's system and its type string identify one series
 
@@ -130,19 +98,12 @@ into a `Map` keyed on the identity, so a second declaration of one
 series replaces the first and the reading gets compared against
 whichever came last.
 
-Pinned by `metricPairing.test.ts`, "treats the system and the type
-string as the whole identity" and "compares what a series measures and
-not how it accumulates".
-
 ### A GraphQL schema's root types are called Query, Mutation and Subscription
 
 `rootTypeNameFor` maps an operation type to one of those three strings
 and looks it up in the SDL index. A schema that renames a root type with
 `schema { query: RootQuery }` has no `Query` for the walk to find, so
 the walk returns and nothing under the operation gets checked.
-
-Pinned by `graphqlPairing.test.ts`, "takes a schema's root types to be
-named Query, Mutation and Subscription".
 
 ## HTTP: what a status and a body mean
 
@@ -153,8 +114,8 @@ or an API gateway response mapping, can change the number between the
 two sides, and neither of them is in the pair.
 
 When it fails, a finding reports a status no caller receives, or stays
-quiet about one every caller receives. Summaries cannot settle this:
-the pairing never puts the rewriting unit between the two sides.
+quiet about one every caller receives. Summaries cannot decide this,
+because the pairing never puts the rewriting unit between the two sides.
 Answering it needs the chain of hops `flow/` already builds for routing,
 with each hop's own effect on the status attached, and nothing reads
 that chain for statuses today.
@@ -169,8 +130,8 @@ template decides what goes on the wire, and the handler's return value
 is that template's input.
 
 When it fails, every body-field finding at that boundary describes a
-shape the caller never receives. Summaries cannot settle this either:
-no reader records the integration type on the boundary, so a proxy
+shape the caller never receives. Summaries cannot decide this either.
+No reader records the integration type on the boundary, so a proxy
 handler and a non-proxy handler produce the same summary.
 
 ### A status the code computes states one outcome, and that outcome is unknown
@@ -181,9 +142,6 @@ two outcomes: whatever the caught error contains, and 500. One opaque
 record covers both, so the 500 never gets covered and never gets
 reported.
 
-Pinned by `providerCoverage.test.ts`, "emits a lowConfidence finding for
-opaque provider statuses".
-
 ### A field the consumer reads is present under that name, with whatever type the consumer wants
 
 `providerCoversConsumerFields` walks field presence. The consumer's
@@ -193,31 +151,23 @@ not what was expected of them, and an unknown leaf matches anything.
 A provider that sends `id` as a string where the consumer does
 arithmetic on it agrees. A provider that sends `email: null` on every
 response agrees. Two sides that use the same field names and different
-encodings agree, which is the half of this that
-[#387](https://github.com/nimbuscloud-ai/suss/issues/387) covers.
-
-Pinned by `bodyCompatibility.test.ts`, "agrees whatever type the
-provider gives a field the consumer reads", "agrees on a field the
-provider only ever sends as null", and "counts a field as present when a
-dictionary could supply any key".
+encodings agree, and
+[#387](https://github.com/nimbuscloud-ai/suss/issues/387) covers that
+half of it.
 
 ### A consumer's fall-through path runs on the 2xx class and nothing else
 
 A consumer branch with no guard on it is the success path. Widening it
 to the whole space would call a 404 handled by code that never mentions
-it. Pinned by `providerCoverage.test.ts`, "treats a consumer default
-branch as covering 2xx statuses" and "does NOT treat a consumer default
-as covering non-2xx statuses".
+it.
 
 ### A `catch` covers every failure only when the client rejects on a non-2xx
 
 axios and ky reject, so the caller never sees a response to guard on and
 every failure arrives at the `catch`. `fetch` returns the response
 instead, so the same `catch` covers nothing there.
-`metadata.http.failureDelivery` is where a pack says which one it is.
-Pinned by `providerCoverage.test.ts`, "counts a catch when the client
-throws on a non-2xx" and "does not count a catch when the client returns
-the failing response".
+A pack declares which of the two its client does, in
+`metadata.http.failureDelivery`.
 
 ### A consumer is a statement made apart from the contract
 
@@ -229,11 +179,6 @@ observation.
 A client generated from the same OpenAPI document agrees with that
 document by construction, so the comparison records that the generator
 ran. That is [#391](https://github.com/nimbuscloud-ai/suss/issues/391).
-
-Pinned by `contractConsistency.test.ts`, "reads a consumer as a
-statement made apart from the contract, however the consumer was
-written" and "leaves a provider's own transitions unchecked against a
-contract read from the same source".
 
 ### The provider's transitions are every response it can send
 
@@ -249,9 +194,6 @@ pack recorded a gap for it, and a `lowConfidence` from an
 `AS` gives a name in the code that differs from the name in the schema,
 and the comparison reports an error-severity `boundaryFieldUnknown`
 about a column that exists.
-
-Pinned by `storagePairing.test.ts`, "compares the name a query selects
-against the name the schema declares, letter for letter".
 
 ### A contract that calls its field set exhaustive saw the whole schema
 
@@ -270,9 +212,7 @@ DynamoDB, so a GSI projecting `ALL` or a PostgreSQL index would each
 report the same error.
 
 Only the CloudFormation and Terraform DynamoDB readers emit an access
-path today, so the wider claim does not fire yet. Pinned with a
-PostgreSQL provider by `storagePairing.test.ts`, "reads any secondary
-access path as one that copies part of an item".
+path today, so the wider claim does not fire yet.
 
 ### The store refuses a request keyed on anything but its key fields
 
@@ -282,9 +222,6 @@ runs `WHERE email = ?` against a table whose primary key is `id` without
 complaint. The rule fires for any store whose contract declares
 `identifies`, and only the DynamoDB readers declare it today.
 
-Pinned with a PostgreSQL provider by `storagePairing.test.ts`, "says a
-store refuses a selector that is not a key, whichever store it is".
-
 ### A field is read when a query asks for it by name
 
 The pass counts a read from what the query asked for, so a field the code
@@ -292,22 +229,12 @@ takes off a record the query already returned is invisible to it. A
 codebase that selects whole rows and picks fields out of them in the
 application leaves every column looking unread.
 
-`boundaryFieldUnused` says as much in its own text, "suss counts a
-column as read only when a query selects it, so before you treat the
-column as dead, look for code that takes it off a record it already
-fetched", which
-[#513](https://github.com/nimbuscloud-ai/suss/pull/513) added. The
-warning still fires on that evidence, and
+The finding's own text warns you about this: "suss counts a column as
+read only when a query selects it, so before you treat the column as
+dead, look for code that takes it off a record it already fetched". The
+warning still fires on that evidence.
 [#510](https://github.com/nimbuscloud-ai/suss/issues/510) is where
-field-level access tracing would settle it.
-
-Two narrower cases of this closed while the catalogue was being written,
-both on the Prisma side.
-[#518](https://github.com/nimbuscloud-ai/suss/pull/518) makes a query
-with an `include` and no `select` record the whole shape, and
-[#522](https://github.com/nimbuscloud-ai/suss/pull/522) walks a nested
-`select` to the table the relation reaches so its columns count against
-that table rather than against nothing.
+field-level access tracing would fix it properly.
 
 ### The run is the whole world
 
@@ -326,18 +253,12 @@ handler that appends a row or charges a card per message has a defect
 that no finding describes. Filed as
 [#516](https://github.com/nimbuscloud-ai/suss/issues/516).
 
-Pinned by `messageBusPairing.test.ts`, "says nothing about a message
-arriving more than once".
-
 ### Any producer on a channel could have sent any message a consumer receives
 
 `collectProducerFields` unions the fields of every producer whose
 channel pairs, and compares the consumer's reads against that union. One
 channel that takes two message types is ordinary, and a field only the
 other producer sends stops a `boundaryFieldUnknown` that was true.
-
-Pinned by `messageBusPairing.test.ts`, "lets every producer on a channel
-account for what any consumer receives".
 
 ### Every message-receive inside a consumer's code scope is on that consumer's channel
 
@@ -382,17 +303,11 @@ runtime does not provide, at error severity. Only the node runtime pack
 and the Cloudflare Workers env-bindings pack emit `config-read` today,
 and both write runtime-config semantics, so the claim is true for now.
 
-Pinned by `runtimeConfigPairing.test.ts`, "reads every config-read
-effect as an environment variable, whatever protocol its binding
-states".
-
 ### A variable is its name
 
 The comparison is `providedSet.has(read.name)`. A runtime declaring
 `DATABASE_URL: ""` satisfies any read of `DATABASE_URL`, and nothing
 compares the value or its format against what the code does with it.
-Pinned by `runtimeConfigPairing.test.ts`, "compares a variable by its
-name and never by the value behind it".
 
 ### The provided set is everything the process receives
 
@@ -420,16 +335,11 @@ whose type the SDL never declares, so the walk returns and reports
 nothing about the selection under it. A typo'd `... on Doge` and a
 correct selection through a union come out the same way.
 
-Pinned by `graphqlPairing.test.ts`, "stops at a union field and reports
-nothing about the selection under it" and "stops at a fragment condition
-the schema never declares".
-
 ### A document defines one operation
 
 `parseFirstOperation` reads the first operation definition and the rest
 of the document goes unexamined. A file that ships two named queries has
-one of them checked. Pinned by `graphqlPairing.test.ts`, "reads only the
-first operation a document defines".
+one of them checked.
 
 ### An interface's fields are the ones its own definition declares
 
@@ -439,10 +349,10 @@ gets reported as one the schema does not declare, at error severity,
 against a selection that is correct. Filed as
 [#517](https://github.com/nimbuscloud-ai/suss/issues/517).
 
-## What summaries cannot settle
+## What summaries cannot decide
 
-Four of the claims above have no test here, and each one needs something
-the IR does not record today.
+Four of the claims above cannot be checked from summaries at all. Each
+one needs something the IR does not record today.
 
 - **The status the caller sees.** Needs the chain of hops between the
   two sides, with each hop's own effect on the status. `flow/` builds
@@ -455,7 +365,7 @@ the IR does not record today.
   code behind it is deployed.
 - **Whether the run is the whole world.** Needs to know what reads a
   store or a variable outside the analysed repository, which is a
-  cross-repository question rather than a checker one.
+  cross-repository question.
 
 ## Where a claim is false today
 

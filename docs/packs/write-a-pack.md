@@ -40,7 +40,7 @@ Every pack starts with the same three, and the answers become the three required
 
 ## Write the discovery half first
 
-Start with discovery alone and leave `terminals` empty. A pack that finds the right units and describes none of them is a good place to check your work, because the CLI tells you exactly that.
+Start with discovery alone and leave `terminals` empty. A pack that finds the right units without describing what happens inside them is a good place to check your work, because that is exactly what the CLI will report.
 
 ```js
 // index.mjs
@@ -66,7 +66,7 @@ export function ittyRouter() {
 export default ittyRouter;
 ```
 
-`name` is what summaries record as the pack that recognized the boundary. `protocol` is the transport, so `"http"` here. Export the factory as the default, which is what the CLI loads.
+`name` is what summaries record as the pack that recognized the boundary. `protocol` is the transport, so `"http"` here. Export the factory as the default, since that is what the CLI loads.
 
 Put that in a package of its own with `@suss/extractor` as a dependency, install it beside the project, and point `-f` at the package name:
 
@@ -78,7 +78,7 @@ Pack health (1):
   no-output  itty-router  1 summaries -> 0 transitions
 ```
 
-Discovery works. `no-output` is the health report saying the pack claimed a unit and described nothing inside it. `suss inspect` says the same thing with the code in front of it:
+Discovery works. The `no-output` line in the health report means the pack claimed a unit without describing anything inside it. `suss inspect` reports the same thing with the code in front of it:
 
 ```
 routes.ts
@@ -87,11 +87,11 @@ routes.ts
        !! 2 returns in this function match none of the terminal shapes this pack looks for, so what they produce is not described here
 ```
 
-The method and path are already right, and the confidence is low because nothing is known about what the route returns. [Fix a run that found nothing](/guides/fix-an-empty-run) covers the other health codes.
+The method and path are already right, and the confidence is low because the pack has told suss nothing about what the route returns. [Fix a run that found nothing](/guides/fix-an-empty-run) covers the other health codes.
 
 ## Add the terminals
 
-`json(user)` and `error(404, "no such user")` are calls to imported functions, so both are `functionCall` matches. Set `requiresImport` on each: `json` and `error` are ordinary names, and without the gate the pack would read a project's own `json` helper as itty-router's and get the argument order wrong with full confidence.
+`json(user)` and `error(404, "no such user")` are calls to imported functions, so both are `functionCall` matches. Set `requiresImport` on each: `json` and `error` are ordinary names, and without the gate the pack would read a project's own `json` helper as itty-router's, get the argument order wrong, and report high confidence while doing it.
 
 ```js
 terminals: [
@@ -152,7 +152,7 @@ db.ts
 2 summaries.
 ```
 
-Both branches, both status codes, the shape of each body, and the call into `db.ts` that each branch makes. That is enough for the checker to pair this route against a client, an OpenAPI spec, or an intent doc.
+You get both branches, both status codes, the shape of each body, and the call into `db.ts` that each branch makes. That is enough for the checker to pair this route against a client, an OpenAPI spec, or an intent doc.
 
 ## Only hardcode what the library defines
 
@@ -179,7 +179,7 @@ Contributing the pack to suss means a few more edits, each of which a check will
 
 - `packages/framework/<name>/`, with `private: true` on its manifest, a `README.md`, a `vocabulary.json` mapping each identifier the pack hardcodes to where in the library it comes from, and an exported `declares: PackDeclaration`.
 - `packages/packs/src/<name>.ts`, re-exporting `default`, `declares` and `optionsSchema` from the pack, plus a `./<name>` subpath in the exports of `packages/packs/package.json` and a devDependency on the pack so turbo builds it first.
-- `<name>: "@suss/packs/<name>"` in `BUILTIN_FRAMEWORKS` in `packages/cli/src/extract.ts`, which is what `-f <name>` resolves through.
+- `<name>: "@suss/packs/<name>"` in `BUILTIN_FRAMEWORKS` in `packages/cli/src/extract.ts`, since `-f <name>` resolves through that table.
 - An entry in `scripts/coverage-packages.mjs`, so the coverage gate reads the package.
 
 `npm run check:packs` reads the first three, `npm run check:vocabulary` reads the vocabulary file, and `npm run check:pack-counts` fails when the [pack catalog](/packs/catalog) does not mention the pack. The catalog's tables are generated from `declares`, so `npm run docs:packs` writes them.
@@ -205,4 +205,4 @@ Assert on status codes, transition counts, input roles, and gaps if the pack rea
 
 ## What you do not need to know
 
-A pack author never touches the engine. How ts-morph works past the handles a recognizer is given, how conditions are extracted, how the extractor assembles a summary, what any other pack does: none of it comes up. Reaching past your pack's own directory into the engine to express a pattern means the pattern system is missing something, so raise it rather than working around it.
+A pack author never touches the engine. You can write a pack without learning how conditions are extracted, how the extractor assembles a summary, or what any other pack does. If you find yourself reaching past your pack's own directory into the engine to express a pattern, the pattern system is missing something. Raise that.

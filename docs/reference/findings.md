@@ -5,9 +5,9 @@ description: Every finding suss can report, what it means, and what to do about 
 
 # Findings catalog
 
-A run produces up to three lists, and they have different shapes.
+A run produces up to three lists of findings, and they have different shapes.
 
-Most of this page is the behavioral findings, under `findings` in the JSON, which say that two sides of a boundary disagree. [Intent findings](#intent-findings) go under `intent` and say that code and a document your team wrote disagree. [Run findings](#run-findings) go under `run` and say the run could not get far enough to compare anything. A parser that reads only `findings` misses the other two.
+The behavioral findings go under `findings` in the JSON, and each one reports that two sides of a boundary disagree. Most of the kinds below are these. [Intent findings](#intent-findings) go under `intent`, where code disagrees with a document your team wrote. [Run findings](#run-findings) go under `run`, for a run that could not get far enough to compare anything. A parser that reads only `findings` misses the other two.
 
 `FindingKindSchema` in [`packages/behavioral-ir/src/schemas.ts`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/behavioral-ir/src/schemas.ts) and `IntentFindingKindSchema` in [`packages/intent-ir/src/findings.ts`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/intent-ir/src/findings.ts) are the authoritative lists, and `npm run check:findings` fails when this page and those enums disagree.
 
@@ -29,11 +29,11 @@ Most of this page is the behavioral findings, under `findings` in the JSON, whic
 
 One test decides every default severity: can you name an input and the wrong result it produces?
 
-- **Error: the code will misread or lose data on an input the other side produces.** The claim is about behavior, both sides are in the run, and the corpus says the kind is usually right when it fires.
+- **Error: the code will misread or lose data on an input the other side produces.** The claim is about behavior, both sides are in the run, and measured over the pinned corpus the kind is usually right when it fires.
 - **Warning: the two sides disagree and a person has to judge it.** The disagreement is there in the files, and whether it is a defect turns on intent the repository does not state.
 - **Info: suss is reporting on itself.** Confidence, coverage, something it could not read. Never a claim that the code is wrong.
 
-A kind with no such sentence to write is a warning by construction. A kind at error whose measured precision over the pinned corpus falls under half moves down until its model improves, which is how `unhandledProviderCase` became a warning.
+A kind you cannot write that sentence for is a warning by construction. A kind at error whose measured precision over the pinned corpus falls under half moves down until its model improves. `unhandledProviderCase` is a warning for that reason.
 
 ## Generic boundary findings
 
@@ -45,7 +45,7 @@ They replaced the per-domain enums earlier versions had, where `storageReadField
 
 **Severity:** error for a read or a write against a contract in the run, warning for a construct or send aspect, or where suss never extracted the provider.
 
-The consumer references a field the provider's contract does not declare. A read of a missing field comes back with nothing, no error says so, and the code branches on what is not there. The construct and send aspects and the missing-provider case cannot state that outcome, so they stay warnings.
+The consumer references a field the provider's contract does not declare. A read of a missing field comes back undefined, nothing raises an error, and the code goes on to branch on a value that was never there. The construct and send aspects and the missing-provider case cannot state that outcome, so they stay warnings.
 
 Runtime config:
 
@@ -78,7 +78,7 @@ A queue takes a string, so nothing on either side type-checks the payload and th
 
 ### `boundaryFieldUnused`
 
-**Severity:** warning, and info where suss is saying it could not check rather than that something is unread.
+**Severity:** warning, dropping to info where suss could not run the check at all.
 
 The provider declares a field no consumer references. No input produces a wrong result here: an unread field breaks nothing at runtime, and whether it is dead or reserved is intent the repository does not state.
 
@@ -87,14 +87,14 @@ The provider declares a field no consumer references. No input produces a wrong 
   Checkout declares environment variable STRIPE_KEY but no code in its codeScope reads process.env.STRIPE_KEY.
 ```
 
-The info form says the run could not check, rather than that the field is unread:
+The info form means the run could not run the check at all:
 
 ```
 [INFO] boundaryFieldUnused
   cloudformation:template.yaml declares environment variables and these summaries record no environment read anywhere, so whether code reads them was not checked. If the code reads process.env, extract with the node pack in the framework list (-f node) so the reads are in the summaries.
 ```
 
-For storage, suss stays quiet when any caller reads the table with a default shape (`["*"]`), because then it cannot tell whether those callers use the column. A query that asks for some columns is not default-shape, so a Prisma call with a `select` or an `include` still leaves the check running over the columns it did not ask for. An `aspect` of `read` means the field has writers and no reader.
+For storage, suss stays quiet when any caller reads the table with a default shape (`["*"]`), because then it cannot tell whether those callers use the column. A query that asks for some columns is not default-shape, so a Prisma call with a `select` or an `include` still leaves the check running over the columns it did not ask for. An `aspect` of `read` means the field has writers but nothing reads it.
 
 **Legitimate when:** the field is reserved for something that has not landed, or read by code outside the extracted scope. Suppress.
 
@@ -125,7 +125,7 @@ This kind is where the message-bus body-shape pairing will report, along with th
 
 **Severity:** error.
 
-The consumer picks items by something the provider does not key on. A store that accepts only its key attributes refuses the request, so every run of this query fails rather than returning nothing.
+The consumer picks items by something the provider does not key on. A store that accepts only its key attributes refuses the request outright, so every run of this query fails.
 
 ```
 [ERROR] boundarySelectorMismatch
@@ -154,7 +154,7 @@ The provider produces a status, or a body case within a status, that no consumer
   boundary: express (http) GET /orders/:id
 ```
 
-No outcome sentence can be written: the fall-through may be the intended handling, and over the pinned corpus the uncovered-status form was wrong far more often than right. The error-worthy core of the old kind, a path that will actually misread a response, is `misreadProviderResponse` below.
+There is no outcome sentence to write here. The fall-through may be exactly what the author intended, and over the pinned corpus this kind was wrong far more often than right. The narrower case, a path that will misread a response, is `misreadProviderResponse` below, and that one is an error.
 
 A provider response declared as a range, such as an OpenAPI `4XX`, is one declared response that may arrive with any status in it. It counts as covered when the consumer covers any member, whether that is a branch on 404, a `!res.ok` guard, or a catch on a throwing client. When nothing covers any member it reports once, saying `Provider produces statuses in the 4XX range but no consumer branch handles any of them`.
 
@@ -176,9 +176,9 @@ The path runs on a response the provider sends, reads a field that response's bo
   boundary: express (http) GET /orders/:id
 ```
 
-This is `unhandledProviderCase` restated as a claim about behavior rather than about coverage, and it is the same question the storage and GraphQL read checks ask: does the code read something the other side does not supply. It stays narrow on purpose.
+Where `unhandledProviderCase` is about coverage, this kind makes a claim about behavior. It asks the same question the storage and GraphQL read checks ask: does the code read something the other side never supplies. suss keeps it narrow on purpose.
 
-- A field any of the consumer's guards test is never reported. `if (res.error)` is how the consumer tells the failure body apart, so `error` coming back undefined on the 200 is an answer rather than a misread.
+- A field any of the consumer's guards test is never reported. `if (res.error)` is how the consumer tells the failure body apart, so `error` coming back undefined on the 200 is the answer the consumer was testing for.
 - A body with spreads or an opaque shape claims nothing, and a status the provider returns with several bodies fires only when every one of them lacks the field.
 - The branch has to run on the response: a status guard, a range such as `!res.ok`, or the fall-through over the 2xx class. A branch guarded on a body field never runs on a response whose body cannot satisfy the guard.
 - A response declared as a range is one response that may arrive with any status in it, so a branch on 404 is judged against the `4XX` body and the finding says which.
@@ -230,7 +230,7 @@ The other direction is a warning, because a document routinely declares the 401 
 
 Where the contract is written in the handler's own code, as with ts-rest or hono-openapi, the provider and consumer fields point at one summary, and the checker skips the comparison when the contract source is derived from the implementation. Where the contract is a separate document read with `suss contract`, the document is the consumer side. A declared 5XX is not reported at all.
 
-Every `unhandledCase` gap on the provider surfaces here. An `unreadOutcome` gap does not: it comes out as `lowConfidence` at info, because it means the pack has no form for what the handler returns rather than that the handler is wrong.
+Every `unhandledCase` gap on the provider surfaces here. An `unreadOutcome` gap does not: it comes out as `lowConfidence` at info, because the pack has no form for what the handler returns.
 
 **Fix:** add the status to the contract, or take it out of the handler. For a declared status the handler never produces, suppress it when something in front of the handler sends it.
 
@@ -267,7 +267,7 @@ Two or more contract sources describe the same boundary and declare different th
   boundary: apigateway (http) GET /pets/{id}
 ```
 
-At most one of them is right, and which one is a judgement the repository does not settle.
+At most one of them is right, and nothing in the repository says which.
 
 **Legitimate when:** the sources describe different deployments of the same route, so one really does serve a status the other cannot.
 
@@ -308,11 +308,11 @@ The operation ships a document spreading a fragment nothing defines, and no frag
   boundary: apollo-client (http)
 ```
 
-Three readings line up before it fires. The document that reaches the call site is the one with the dangling spread, so a codegen-composed version that defines the fragment never fires it. Every client construction in the project was read and none installs a fragment registry, the one runtime mechanism that could supply the definition; a client whose construction the pack cannot see counts as unknown, and unknown gives the info-level `lowConfidence` finding instead. And the spread has no definition anywhere in the shipped document.
+Three things have to be true before it fires. The document that reaches the call site is the one with the dangling spread, so a codegen-composed version that defines the fragment never fires it. Every client construction in the project was read and none installs a fragment registry, the one runtime mechanism that could supply the definition; a client whose construction the pack cannot see counts as unknown, and unknown gives the info-level `lowConfidence` finding instead. And the spread has no definition anywhere in the shipped document.
 
 **Legitimate when:** the call site never runs, as with dead code behind a disabled flag. Suppress, or delete the code.
 
-**A bug when:** the import points at the raw source document instead of the codegen output, which is the shape that produced this kind. Import the composed document, or register the fragment on the cache.
+**A bug when:** the import points at the raw source document instead of the codegen output. Import the composed document, or register the fragment on the cache.
 
 ## React and Storybook findings
 
@@ -329,7 +329,7 @@ A component has a conditional branch that turns on a prop, and no story supplies
   boundary: react (in-process)
 ```
 
-Nothing misbehaves at runtime. The branch is undeclared in the stories, and whether it deserves one is a judgement.
+Nothing misbehaves at runtime. The branch has no story declaring it, and whether it needs one is a judgement.
 
 **Fix:** add a story that exercises the branch.
 
@@ -382,7 +382,7 @@ Nothing breaks at runtime, so removing it is a judgement.
 
 **Legitimate when:** something outside the project uses it, or it is kept on purpose for a consumer that has not landed.
 
-**A bug when:** the feature it belonged to is gone. This is cleanup rather than a defect.
+**A bug when:** the feature it belonged to is gone. This is cleanup.
 
 ### `messageBusConsumerDisabled`
 
@@ -396,9 +396,9 @@ A rule or a subscription deploys switched off, so its target receives nothing un
   boundary: cloudformation (eventbridge)
 ```
 
-The subscription counts as a consumer nowhere in this pass. A producer whose only subscriber is disabled comes out as `messageBusProducerOrphan`, the disabled rule is never reported as a waiting `messageBusConsumerOrphan`, and its channel is not reported as `messageBusUnused`, because switched off on purpose is not left over.
+The subscription counts as a consumer nowhere in this pass. A producer whose only subscriber is disabled comes out as `messageBusProducerOrphan`, the disabled rule is never reported as a waiting `messageBusConsumerOrphan`, and its channel is not reported as `messageBusUnused`, because a rule somebody switched off on purpose is not an orphan resource.
 
-**Legitimate when:** it is switched off on purpose, which is why this is info.
+**Legitimate when:** somebody switched it off deliberately. That is the common case, which is why this kind is info.
 
 **A bug when:** somebody meant to enable it and did not. No other finding will say so.
 
@@ -406,7 +406,7 @@ The subscription counts as a consumer nowhere in this pass. A producer whose onl
 
 **Severity:** warning.
 
-An SQS queue that is not FIFO can deliver one message more than once, and the handler draining it makes a `POST` to another service while handling it. A second delivery makes that call again, which is a second charge or a second order.
+An SQS queue that is not FIFO can deliver one message more than once, and the handler draining it makes a `POST` to another service while handling it. A second delivery makes that call again, so the customer gets charged twice, or gets two orders.
 
 ```
 [WARNING] repeatUnsafeConsumer
@@ -417,7 +417,7 @@ An SQS queue that is not FIFO can deliver one message more than once, and the ha
 
 A call that sends an idempotency key is safe and still reported, because a summary does not record the headers a call sends. Suppress those. A FIFO queue is left alone, and so are `GET`, `PUT`, `PATCH` and `DELETE`, which land on the same resource twice. A storage write is left alone as well: whether a repeat overwrites the same row or appends a new one turns on where the key's value came from, and a summary does not say that today.
 
-Both gaps come down to a summary being able to state that a call is idempotent, and on what. Issue #516 has the shape.
+Both gaps come down to the same missing piece: a summary cannot yet state that a call is idempotent, and on what. Issue #516 covers what that would take.
 
 ## Unit-invocation findings
 
@@ -442,7 +442,7 @@ Code invokes a deployed unit by name and no deployment source in the run declare
 
 **Severity:** info.
 
-suss could not tell which code a runtime runs, so it paired that runtime's environment contract against nothing. This says verification was skipped rather than that the code is wrong.
+suss could not tell which code a runtime runs, so it paired that runtime's environment contract against nothing. The run skipped that check. Nothing here says the code is wrong.
 
 ```
 [INFO] runtimeScopeUnknown
@@ -450,7 +450,7 @@ suss could not tell which code a runtime runs, so it paired that runtime's envir
   boundary: cloudformation (os)
 ```
 
-There are two ways to get here. The provider declares no `codeScope`, or one that resolved to no source files, which is what raw CloudFormation with an S3-built artifact looks like. **Fix:** add `Metadata: { SussCodeScope: { CodeUri: "src/handlers/x" } }` to the resource, or wire `CodeUri` through.
+There are two ways to get here. The provider declares no `codeScope`, or declares one that resolved to no source files. Raw CloudFormation with an S3-built artifact is the usual case. **Fix:** add `Metadata: { SussCodeScope: { CodeUri: "src/handlers/x" } }` to the resource, or wire `CodeUri` through.
 
 Or several providers declare a directory containing the same source file, and nothing in that file says which deployed unit it belongs to. A service that builds every function from the service root gives them all one directory, and attributing a shared helper to all of them would report one `process.env` read once per function. **Fix:** let a pack discover the code under a template entry so it comes with a deployed unit, or give each function a `CodeUri` covering only its own sources.
 
@@ -460,7 +460,7 @@ Or several providers declare a directory containing the same source file, and no
 
 **Severity:** info.
 
-suss could not finish reading one side, so it says so rather than guessing. Predicates stayed opaque, type resolution failed, or confidence dropped below `medium`.
+suss could not finish reading one side, and this finding is how it tells you. Predicates stayed opaque, type resolution failed, or confidence dropped below `medium`.
 
 ```
 [INFO] lowConfidence
@@ -468,15 +468,15 @@ suss could not finish reading one side, so it says so rather than guessing. Pred
   boundary: apollo-client (http)
 ```
 
-It also reports every `unreadOutcome` gap on the provider, which means a `return` in the handler matched none of the terminal shapes the pack looks for.
+It also reports every `unreadOutcome` gap on the provider. Such a gap means a `return` in the handler didn't match any of the terminal shapes the pack looks for.
 
-**Fix:** teach the pack that terminal shape. Until then the handler is under-described rather than wrong, which is why this is info.
+**Fix:** teach the pack that terminal shape. Until then the summary is incomplete, and that is why this kind is info.
 
 ### `unsupportedSemantics`
 
 **Severity:** info.
 
-A pack identified a boundary it cannot work out the other side of, and the finding says which reading gave up.
+A pack identified a boundary it cannot work out the other side of, and the finding records which reading gave up.
 
 ```
 [INFO] unsupportedSemantics
@@ -486,9 +486,9 @@ A pack identified a boundary it cannot work out the other side of, and the findi
 
 It also covers a boundary no pack knows how to summarise, such as a WebSocket subscription handler or a gRPC streaming method.
 
-**Legitimate when:** the channel is settled outside the code, by a deploy-time value or a change somebody made in a console, so the source could not have said it.
+**Legitimate when:** the channel is decided outside the code, by a deploy-time value or a change somebody made in a console, so the source could never have stated it.
 
-**A bug when:** the source does say it and the pack could not follow it. That is a gap in suss rather than in your project, and the reason on the finding says where.
+**A bug when:** the source does state it and the pack could not follow it. That is a gap in suss, and the reason on the finding tells you where.
 
 ### `ambiguousProvider`
 
@@ -502,17 +502,17 @@ One consumer matched two providers where at most one of them can be right.
   boundary: graphql-documents (http-graphql)
 ```
 
-Storage says it for a container. A table declared as `{StageName}-orders-blue` and one declared as `prod-orders-{Colour}` both cover `prod-orders-blue`, and each states as much of its own name as the other, so nothing in the run says which one the code reaches. The access pairs with neither and the finding says which two were in the way. Where one states more of its name, that one takes the access and no finding is emitted.
+Storage reports it for a container. A table declared as `{StageName}-orders-blue` and one declared as `prod-orders-{Colour}` both cover `prod-orders-blue`, and each states as much of its own name as the other, so nothing in the run says which one the code reaches. The access pairs with neither and the finding says which two were in the way. Where one states more of its name, that one takes the access and no finding is emitted.
 
 **Legitimate when:** the two providers are the same route in two documents, so whichever the consumer reaches behaves the same.
 
-**A bug when:** they are different services that happen to share a method and a path. The consumer is being checked against an API it never calls, so every finding on that pair is suspect until the collision is settled.
+**A bug when:** they are different services that happen to share a method and a path. The consumer is being checked against an API it never calls, so every finding on that pair is suspect until the collision is resolved.
 
 ## Reserved kinds
 
 These six are in the enum and no checker emits them today. They cover failure modes distinct enough not to fold into the generic family.
 
-- `restMethodOnUnknownPath`: error. The consumer's call targets a `(method, path)` the provider does not expose, so every call to the missing endpoint returns a 404 the caller wrote no branch for. It is at boundary-identity level rather than field level, which is why it is separate from `boundaryFieldUnknown`. Today's pairing layer leaves both summaries unmatched, which quietly hides what is probably a typo. The emitter ships once pairing has a "consumer with no provider" finding distinct from "unmatched".
+- `restMethodOnUnknownPath`: error. The consumer's call targets a `(method, path)` the provider does not expose, so every call to the missing endpoint returns a 404 the caller wrote no branch for. It is at boundary-identity level rather than field level, so it stays separate from `boundaryFieldUnknown`. Today's pairing layer leaves both summaries unmatched, which quietly hides what is probably a typo. The emitter ships once pairing has a "consumer with no provider" finding distinct from "unmatched".
 - `authPolicyMismatch`: error. The provider requires authentication and the consumer's call does not supply it, so the request is rejected whenever it runs. It needs auth-policy modeling on both sides, OpenAPI security schemes against the client's own header or interceptor patterns.
 - `boundaryFieldRequired`: error. The provider declares a field as required and the consumer does not supply it, so the provider rejects the request every time: a 4xx, or a component that fails to render. The `aspect` would point at the payload. It takes the place of `requiredHeaderMissing`, `componentRequiredPropMissing` and `graphqlRequiredArgMissing`.
 - `boundaryConstraintViolation`: error. The value has the type the provider declared and breaks a value-level rule it declared, such as enum membership or a length. It takes the place of `storageEnumConstraintViolation` and `graphqlEnumValueUnknown`.
@@ -521,7 +521,7 @@ These six are in the enum and no checker emits them today. They cover failure mo
 
 ## Intent findings
 
-These come from a second checker and travel in a second list. `suss check --intent DIR` pairs the intent docs your team writes against the same code summaries and puts what it found under `intent` in the JSON rather than under `findings`.
+These come from a second checker and go in a second list. `suss check --intent DIR` pairs the intent docs your team writes against the same code summaries and puts what it found under `intent` in the JSON rather than under `findings`.
 
 They have a different shape, because one side is a document rather than code, so there is no `provider` and no `consumer`:
 
@@ -536,9 +536,9 @@ They have a different shape, because one side is a document rather than code, so
 | `message` | string | One line of human-readable text. |
 | `suppressed` | `IntentFindingSuppression?` | Set only when a `.sussignore` rule matched. |
 
-One rule cuts across all ten: **a finding against intent suss inferred rather than a person wrote is downgraded one level.** An intent doc has a `source` field, and `inferred` means suss guessed the declaration from the code. Curating the document restores the full severity, so an `error` you see at `warning` may mean nobody has confirmed the intent yet rather than that the problem is smaller.
+One rule cuts across all ten: **a finding against intent suss inferred rather than a person wrote is downgraded one level.** An intent doc has a `source` field, and `inferred` means suss guessed the declaration from the code. Curating the document restores the full severity, so an `error` you see at `warning` may mean nobody has confirmed the intent yet.
 
-The severity split follows from what an intent doc is. A person sat down and wrote it, so code that does not satisfy it is a defect and reads as an error. An intent that cannot be checked, or a scenario pointing at nothing, is a gap in the documents and reads as a warning. Code that does more than the document claims reads as info.
+The severity split follows from what an intent doc is. A person wrote it deliberately, so code that fails to satisfy it is a defect, and those kinds are errors. An intent nothing can check, or a scenario pointing at nothing, is a gap in the documents, and those are warnings. Code that does more than the document claims is info.
 
 ### `unimplementedBoundary`
 
@@ -566,9 +566,9 @@ The code implements the boundary and none of its transitions produce one of the 
 
 An outcome can also declare the effects it results in, and the same finding covers those: a queue consumer whose intent says an outcome results in a write to `aws.dynamodb:Invoices`, where no transition of it writes that table.
 
-**Legitimate when:** the outcome is produced somewhere suss cannot follow, in a shared error handler or a framework layer the pack does not read. Check the summary's gaps before treating it as missing. For a declared effect, an access whose container the code is handed as an argument is one the storage pass grounds and this pass does not, so it matches nothing here.
+**Legitimate when:** the outcome is produced somewhere suss cannot follow, in a shared error handler or a framework layer the pack does not read. Check the summary's gaps before treating it as missing. For a declared effect, an access whose container the code receives as an argument is one the storage pass can resolve and this pass cannot, so it matches nothing here.
 
-**A bug when:** the branch is absent. The declared behavior is not implemented, which is the case this checker exists for.
+**A bug when:** the branch is absent, meaning nobody implemented the behavior the document declares.
 
 ### `outcomeShapeMismatch`
 
@@ -614,7 +614,7 @@ A declared store the unit never touches, paired with an undeclared store of the 
 
 Renaming a store without updating the intent doc would otherwise produce an `uncoveredOutcome` for every verb and outcome declared against the old store, plus an `undeclaredOutcome` for every verb the code touches the new one with. This replaces that whole set with one finding. Pairing requires the two boundaries to share a system prefix, their verbs to match exactly, the new one to satisfy every declared use the old one had, and each side to have exactly one candidate on the other.
 
-**Legitimate when:** never. The document and the code disagree either way, and the pairing is a guess about the cause rather than a change in whether that disagreement matters.
+**Legitimate when:** never. The pairing is a guess about the cause, and the document and the code disagree either way.
 
 **A bug when:** always. Update the intent if the store was renamed, and fix the code if it was not.
 
@@ -664,9 +664,9 @@ The intent doc is well-formed and its boundary cannot be keyed for pairing, so n
 
 A function-call boundary needs a package and an export path, a message-bus boundary needs a channel, and without those there is nothing to match the code against. The message says what the boundary's own protocol would need.
 
-A store is the one case where filling the fields in does not help. Storage has no identity key by design, because a container name can be a pattern only a caller or the deployment settles, and the storage pass grounds it before pairing. Say what the store is for by putting `- writes: aws.dynamodb:Invoices` on an outcome of the boundary that touches it, and the checker compares that.
+A store is the one case where filling the fields in does not help. Storage has no identity key by design, because a container name can be a pattern that only a caller or the deployment resolves, and the storage pass resolves it before pairing. Say what the store is for by putting `- writes: aws.dynamodb:Invoices` on an outcome of the boundary that touches it, and the checker compares that instead.
 
-**Legitimate when:** the boundary is a store, or the intent was written ahead of the keying suss can do. The author declared coverage they are not getting either way, so the finding is worth reading.
+**Legitimate when:** the boundary is a store, or the intent was written ahead of the keying suss can do. Read the finding either way, because the author declared coverage they are not getting.
 
 **A bug when:** the missing part is a field the author could write. Add it and the boundary starts being checked.
 
@@ -680,7 +680,7 @@ A scenario in a PRD is not linked to any system-intent outcome. It reads fine on
 [info] prd:Reading a user: Scenario #3 in PRD "Reading a user" has no structured link to a system-intent outcome; it reads on its own, but its coverage can't be checked until a link is added.
 ```
 
-**Legitimate when:** the PRD is still being written, or the scenario describes something outside any one boundary. This is a valid pending state rather than a defect.
+**Legitimate when:** the PRD is still being written, or the scenario describes something outside any one boundary. This is a valid pending state.
 
 **A bug when:** never on its own. Treat the count as a coverage number: how much of what the PRD describes is connected to something suss can check.
 
@@ -722,15 +722,15 @@ A boundary intent declares an outcome and no PRD scenario links to it.
 [info] DELETE /users/{id}: Intent "delete-users-id" declares 204-deleted and no PRD scenario says why it is there.
 ```
 
-The other three scenario kinds ask whether a scenario points at something that exists. This asks it the other way, which is the question a product reader has: which of these behaviors has nobody written down a reason for. It stays quiet until at least one PRD is loaded, because before that the answer is every outcome, which tells nobody anything. `suss infer prd` writes a scenario per outcome, so a fresh set of drafts starts with none of these.
+The other three scenario kinds ask whether a scenario points at something that exists. This one asks the question from the other end, the way a product reader would: which of these behaviors has nobody written down a reason for. It stays quiet until at least one PRD is loaded, since before that every outcome would be reported and the list would be useless. `suss infer prd` writes a scenario per outcome, so a fresh set of drafts starts with none of these.
 
-**Legitimate when:** the outcome is one nobody needs a reason for, such as a 500 from an unhandled throw. Treat the count as a coverage number rather than a list to empty.
+**Legitimate when:** the outcome is one nobody needs a reason for, such as a 500 from an unhandled throw. Treat the count as a coverage number.
 
-**A bug when:** never on its own. It becomes one when the outcome turns out to be behavior nobody meant to ship, which is what reading the list is for.
+**A bug when:** never on its own. It becomes one when you read the list and find an outcome nobody meant to ship.
 
 ## Run findings
 
-A third list, under `run` in the JSON. These are about the run rather than about a boundary, so they have no two sides and no boundary key:
+A third list, under `run` in the JSON. These are about the run itself, so they have no two sides and no boundary key:
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -743,7 +743,7 @@ A third list, under `run` in the JSON. These are about the run rather than about
 
 **Severity:** error. Emitted by `suss check --dir` unless `--allow-empty` was passed.
 
-The run read summaries and paired none of them. No boundary had both a provider and a consumer, so nothing was compared, and without this the report would say what it says when both sides agree.
+The run read summaries and paired none of them. No boundary had both a provider and a consumer, so nothing was compared. Without this finding the report would look exactly like one where both sides agreed.
 
 ```
 error: nothingPaired
@@ -788,7 +788,7 @@ error: unreadableInput
   Fix or remove the files, or write summaries somewhere reports are not written back to. A truncated extract output and a report saved into the summaries directory are the usual causes.
 ```
 
-Without the flag the file is skipped with a warning on stderr and the run exits by findings alone, so a truncated extract output reads as a pass. The `--json` body lists the skipped files whether or not the flag is on.
+Without the flag the file is skipped with a warning on stderr and the run exits by findings alone, so a truncated extract output passes the run. The `--json` body lists the skipped files whether or not the flag is on.
 
 **Legitimate when:** the directory deliberately mixes summaries with other JSON a different tool reads. Move the other files, or leave the flag off.
 

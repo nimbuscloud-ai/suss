@@ -63,9 +63,9 @@ You do need your project's own dependencies installed, because some packs resolv
 
 ## Does it require annotations or changes to my code?
 
-No. suss reads your source as it is, with no decorators, no JSDoc tags and no comments to add.
+No. suss reads your source exactly as it is. You add no decorators, no JSDoc tags and nothing else to the code.
 
-It wants two things from you: your `tsconfig.json`, so type resolution matches what your compiler sees, and the packs for your stack.
+It needs two things from you: your `tsconfig.json`, so type resolution matches what your compiler sees, and the packs for your stack.
 
 ## What is a "boundary"?
 
@@ -93,7 +93,7 @@ Which libraries suss reads at each of those comes from the packs, and [Pack cata
 
 Two pieces of code, or one piece of code and one written contract, that used to agree about what crosses a boundary and now do not.
 
-The agreement was about behavior rather than types, so the types may not have changed at all:
+The agreement was about behavior, so the types may not have changed at all:
 
 - A handler used to return `404` for soft-deleted users and now returns `200 { status: "deleted" }`. The caller still takes `200` to mean the user exists.
 - A Prisma write used to set `email` and the schema dropped the column. The field is still in the input type, so the type checker says nothing and only the database refuses it.
@@ -101,9 +101,9 @@ The agreement was about behavior rather than types, so the types may not have ch
 
 ## What languages does it support?
 
-TypeScript and JavaScript through ts-morph, Python and Ruby through tree-sitter compiled to WASM.
+suss reads TypeScript and JavaScript through ts-morph, and Python and Ruby through tree-sitter compiled to WASM.
 
-Neither Python nor Ruby needs an installed interpreter. `suss extract --lang python` and `--lang ruby` pick those adapters, and a directory with a `pyproject.toml` or a `Gemfile.lock` in it is recognized without the flag. Over this repository's own `fixtures/python-webapp`, `suss extract --dir fixtures/python-webapp -f fastapi -f flask-restx` writes 14 summaries, 8 of them routes with a path. Two of those, with the rest cut:
+Neither Python nor Ruby needs an installed interpreter. `suss extract --lang python` and `--lang ruby` pick those adapters, and a directory with a `pyproject.toml` or a `Gemfile.lock` in it is recognized without the flag. Over this repository's own `fixtures/python-webapp`, `suss extract --dir fixtures/python-webapp -f fastapi -f flask-restx` writes 14 summaries, 8 of them routes with a path. Here are two of them, with the rest cut:
 
 ```
 myapp/fastapi_app.py
@@ -114,7 +114,7 @@ myapp/fastapi_app.py
        -> 201 TodoResponse
 ```
 
-The IR and the checker know nothing about any of this. They read `BehavioralSummary[]` JSON, so a Python service and a TypeScript client compare against each other in one `check` run. [Read Python or Ruby](/guides/python-and-ruby) covers what each adapter reads and where it stops.
+None of that reaches the IR or the checker. Both of them read `BehavioralSummary[]` JSON, so a Python service and a TypeScript client compare against each other in one `check` run. [Read Python or Ruby](/guides/python-and-ruby) covers what each adapter reads and where it stops.
 
 ## Does it work in monorepos?
 
@@ -126,19 +126,19 @@ The contract commands are independent of the source repo, so a spec that lives s
 
 Almost always because the pack list does not match the stack, or because a pack needs a dependency that is not installed.
 
-The run says where it stopped, file by file and pack by pack. [Fix a run that found nothing](/guides/fix-an-empty-run) reads that output case by case.
+The run reports where it stopped, file by file and pack by pack. [Fix a run that found nothing](/guides/fix-an-empty-run) reads that output case by case.
 
 ## Does it produce false positives?
 
-Sometimes, and the output says where it is unsure.
+Sometimes, and the output marks the places where it was unsure.
 
-Three things show up in a summary. A branch condition suss could not resolve becomes an `opaque` predicate with the source text kept. A value whose origin it could not trace becomes an `unresolved` subject rather than being dropped. And every summary has a `confidence` block. On top of those, each `check` run ends with a line saying how much of the code it could not follow:
+Three things show up in a summary. A branch condition suss could not resolve becomes an `opaque` predicate with the source text kept. A value whose origin it could not trace becomes an `unresolved` subject, and stays in the summary. And every summary has a `confidence` block. On top of those, each `check` run ends with a line saying how much of the code it could not follow:
 
 ```
 suss met a call it could not follow in one unit, of 6, so that one is described in part. `suss inspect` says which calls.
 ```
 
-You will get outright false positives sometimes, findings about something the code does not do. The usual cause is a pack that does not know about a wrapper you wrote, and adding that pattern to the pack is the fix.
+You will get outright false positives sometimes, findings about something the code does not do. Usually the cause is a wrapper you wrote that the pack has no pattern for. Add that pattern to the pack and the finding goes away.
 
 ## How do I silence a finding I have accepted?
 
@@ -156,7 +156,7 @@ It can. `suss check` exits non-zero when it reports any `error`-severity finding
 
 One reads code and one reads a document. `extract` derives summaries from the implementation, and `contract` reads a written artifact and emits summaries in the same form.
 
-Both feed `suss check`, which pairs them. Sometimes `contract` tells you something no handler does. Reading `fixtures/aws-lambda/template.yaml` gives 29 summaries, six of them routes. Here is one route, with the other 28 cut:
+Both feed `suss check`, which pairs them. Sometimes `contract` turns up behavior no handler in your code produces. Reading `fixtures/aws-lambda/template.yaml` gives 29 summaries, six of them routes. Here is one route, with the other 28 cut:
 
 ```
 cloudformation:fixtures/aws-lambda/template.yaml:ListWidgetsFunction:List
@@ -180,7 +180,7 @@ The `packageExports` discovery variant writes one provider summary per public ex
 
 The IR (`@suss/behavioral-ir`) and its JSON Schema are versioned, and a breaking change gets a major version bump.
 
-The CLI surface and the `inspect` rendering are still settling, so a tool built on the JSON is on firmer ground than one parsing the text. [Summary format](/reference/summary-format#what-a-consumer-can-rely-on) says what is guaranteed.
+The CLI surface and the `inspect` rendering are still settling, so build any tool of yours on the JSON. The text rendering can change under you. [Summary format](/reference/summary-format#what-a-consumer-can-rely-on) covers what is guaranteed.
 
 ## How is it different from the tools I already run?
 
@@ -192,10 +192,10 @@ Your linter, type checker and tests each read one side of a boundary, and suss r
 
 Anything that needs a running system, a database of history, or a server.
 
-- Cross-service aggregation, dashboards and historical drift tracking. Those consume summaries rather than producing them.
+- Cross-service aggregation, dashboards and historical drift tracking. Those all consume summaries suss produces.
 - Continuous monitoring. suss runs on demand, locally or in CI, and never as a daemon.
 - Authorial intent, mostly. suss derives what the code does rather than what it should do. Written contracts express some of it, and team-authored [intent docs](/guides/check-against-intent) are their own stream.
-- Runtime instrumentation. Nothing suss reads comes from your running system. `suss corroborate --experimental` does run handlers, locally, against inputs it generates, and it records what it saw beside the derived claim rather than in place of it.
+- Runtime instrumentation. Nothing suss reads comes from your running system. `suss corroborate --experimental` does run handlers, locally, against inputs it generates, and it records what it saw beside the derived claim, which stays as it was.
 
 ## How do I add a new framework?
 

@@ -5,7 +5,7 @@ description: Trace extract, contract, check and ask end to end, with a run at ea
 
 # Pipelines
 
-A run gave you something you did not expect: a summary with no branches in it, or a route that paired with nothing. One step between your files and the output is nearly always the cause, and working out which step should not mean reading the source. Each command below goes end to end, with a run at each stage to compare yours against.
+Say a run gave you something you did not expect: a summary with no branches in it, or a route that paired with nothing. One step between your files and the output is nearly always the cause, and you should be able to work out which step without reading the source. So each command below is traced end to end, with a run at every stage for you to compare yours against.
 
 [Architecture](/theory/architecture) has the static package picture, and [Cross-boundary checking](/why/cross-boundary-checking) says what a finding means.
 
@@ -17,7 +17,7 @@ The CLI parses the flags and hands off. `@suss/adapter-typescript` builds a ts-m
 
 Each matched unit then goes through the five extraction steps in [Extraction algorithm](/theory/extraction-algorithm). The adapter finds the terminals, enumerates the paths that reach each one, reads the conditions along each path, turns those conditions into predicates, and assembles a branch. It reads the contract too, when the pack declares one. What comes out per unit is a `RawCodeStructure`: plain data with no AST references, ready to be serialized or tested against a fixture.
 
-`@suss/extractor.assembleSummary` then normalizes each `RawCodeStructure` into a `BehavioralSummary`. It wraps un-decomposed conditions as `opaque` and records a gap wherever the contract and the code disagree, or wherever a return matched no terminal pattern. Then it assesses confidence and assembles the summary. The CLI collects the array, parses it back through the IR validator as a sanity check, and writes it to disk.
+`@suss/extractor.assembleSummary` then normalizes each `RawCodeStructure` into a `BehavioralSummary`. It wraps un-decomposed conditions as `opaque` and records a gap wherever the contract and the code disagree, or wherever a return didn't match any terminal pattern. Then it assesses confidence and assembles the summary. The CLI collects the array, parses it back through the IR validator as a sanity check, and writes it to disk.
 
 Python and Ruby take the same route through `@suss/adapter-python` and `@suss/adapter-ruby`, which parse with tree-sitter instead of ts-morph and emit the same `RawCodeStructure`. `--lang` says which one to use, and when you leave the flag off suss works it out from what the directory contains.
 
@@ -139,7 +139,7 @@ A line starting `+` is an **effect**: something the branch does besides producin
 
 A **Reaches** block appears under a handler when something it calls touches a store, a bus or another service. `reads postgresql:invoices  through findInvoice` says the read happens inside `findInvoice`, so you can see what a request touches without reading down the chain of calls.
 
-A line starting `!!` is a **gap**: something suss could not settle, written down rather than dropped. This one is the contract promising a 500 that no branch produces. Gaps are what keeps "there is nothing here" apart from "suss could not tell", so an empty answer never reads as an all-clear.
+A line starting `!!` is a **gap**: something suss could not work out, written down where you can see it. This one is the contract promising a 500 that no branch produces. Gaps are what separate "there is nothing here" from "suss could not tell", so you never mistake an empty answer for an all-clear.
 
 `suss inspect --diff before.json after.json` and `suss inspect --dir summaries/` are variants over the same load-and-parse plumbing. The first uses `diffSummaries` to compute added, removed and changed transitions per summary pair. The second uses `pairSummaries` to show which summaries face which, and which ones matched nothing.
 
@@ -188,7 +188,7 @@ The CLI loads the files through `safeParseSummaries`, the same validation path `
 - `checkBodyCompatibility`: do the consumer's body-field reads line up with the bodies the provider produces, per status?
 - `checkSemanticBridging`: does the provider produce a distinguishing literal or a field-presence discriminator that the consumer collapses into one branch?
 
-Each check is pure over `(provider, consumer)`, emits `Finding[]`, and knows nothing about the other six. The findings are then rendered, human-readable or JSON, and the exit code comes from `--fail-on`: `error`, `warning`, `info` or `none`.
+Each check is pure over `(provider, consumer)`, emits `Finding[]`, and runs without reference to the other six. The findings are then rendered, human-readable or JSON, and the exit code comes from `--fail-on`: `error`, `warning`, `info` or `none`.
 
 `suss check --dir summaries/` is the same flow with a step in front. `pairSummaries` groups every summary by its boundary key and by its role from `BOUNDARY_ROLE[kind]`, and produces matched pairs plus buckets of unmatched providers, unmatched consumers, and summaries that took no part. `checkPair` runs on each matched pair.
 
@@ -274,7 +274,7 @@ A boundary's **semantics** is what kind of meeting point it is: a REST route, a 
 
 Turns an OpenAPI 3.x document into `BehavioralSummary[]` marked `confidence.source: "derived"`. The output is in the same form `suss extract` produces, and it pairs with extracted consumers.
 
-`@suss/contract-openapi` walks every `(path, operation)` in the document. For each operation it emits one handler summary with one transition per declared response, the status code plus the body schema converted to a `TypeShape`, `metadata.http.declaredContract` populated so `checkContractConsistency` can cross-check a provider you extract later, and `confidence.source: "derived"` so a downstream reader knows where it came from.
+`@suss/contract-openapi` walks every `(path, operation)` in the document. For each operation it emits one handler summary with one transition per declared response, the status code plus the body schema converted to a `TypeShape`, `metadata.http.declaredContract` populated so `checkContractConsistency` can cross-check a provider you extract later, and `confidence.source: "derived"` so a downstream reader can tell where it came from.
 
 <!-- suss:unchecked the command that writes the file it reads is in the prose above rather than in a block, so there is nothing to run first -->
 
@@ -304,7 +304,7 @@ openapi:openapi.json
 │      -> default
 ```
 
-The run ends with `19 summaries.`, which is the count to check against your own document's operation count when a route goes missing.
+The run ends with `19 summaries.` When a route goes missing, compare that number against the operation count in your own document.
 
 The lines with no shape after the status are the responses Petstore declares with no schema. They still become transitions, because a caller has to handle a 400 whether or not anybody wrote down what is in it. These summaries came out of a document rather than out of source, so there is no line in a source file to point at and the location reads `line 0`.
 
@@ -418,7 +418,7 @@ One level below `suss extract`: what `assembleSummary` does.
 
 It reads the raw branches and produces one `Transition` per branch. Structured predicates pass through, and a condition it could not take apart is wrapped as `opaque`, which keeps the source text and marks the branch as one suss read but did not understand.
 
-Each transition gets an ID minted from `(function, terminal kind, status, conditionHash)`. Hashing the condition into the ID makes reordering two branches a no-op and rewriting one condition a change, which is the behaviour the `--diff` above shows.
+Each transition gets an ID built from `(function, terminal kind, status, conditionHash)`. Hashing the condition into the ID makes reordering two branches a no-op and rewriting one condition a change. That is the behaviour the `--diff` above shows.
 
 Then it looks for gaps, and there are two kinds worth telling apart. An `unhandledCase` gap means the contract and the code disagree, in either direction: a declared response the handler never produces, or a produced response the contract never declared. That is a fact about the code, and the checker reports it as an error. An `unreadOutcome` gap means a `return` matched none of the pack's terminal patterns, so suss could not tell what that path produces. That is a fact about suss, it forces confidence to `low`, and the checker reports it as info, because failing a build over what the analyzer could not read would punish working code.
 
@@ -430,12 +430,12 @@ Every step here is pure over `RawCodeStructure` and testable on its own, so the 
 
 Before `suss check --dir` runs `checkPair`, it has to work out which summaries face each other. `pairSummaries` does that in three passes.
 
-1. Bucket each summary. `pairingKey(binding)` gives the bucket. A summary with no boundary binding at all goes to `unmatched.unpairable` with the reason `noBoundary`. A binding whose semantics declares no key goes there too, with `unnamedBoundary`, rather than being forced through a REST-style key. `BOUNDARY_ROLE[summary.kind]` then says which side it is on: provider for a handler, loader, action, middleware, resolver, worker, component or hook, and consumer for a client or a consumer. An unrecognized kind goes to `unpairable` with `unknownKind` rather than crashing, and that guard stays until the zod IR migration makes it unreachable.
+1. Bucket each summary. `pairingKey(binding)` gives the bucket. A summary with no boundary binding at all goes to `unmatched.unpairable` with the reason `noBoundary`. A binding whose semantics declares no key goes there too, with `unnamedBoundary`. `BOUNDARY_ROLE[summary.kind]` then says which side it is on: provider for a handler, loader, action, middleware, resolver, worker, component or hook, and consumer for a client or a consumer. An unrecognized kind goes to `unpairable` with `unknownKind`, and that guard stays until the zod IR migration makes it unreachable.
 
-2. Within a bucket, settle the rest. Sharing a key is not enough on its own: two REST sides can share a normalized path and use different methods, and two message-bus sides can share a subject and use different buses. `semanticsAgree` decides that, per semantics variant. A consumer that several services all serve produces an `ambiguousProvider` finding and no pair, because pairing it with one of them would compare a caller against a handler it may never reach.
+2. Within a bucket, decide the rest. Sharing a key is not enough on its own: two REST sides can share a normalized path and use different methods, and two message-bus sides can share a subject and use different buses. `semanticsAgree` decides that, per semantics variant. A consumer that several services all serve produces an `ambiguousProvider` finding and no pair, because pairing it with one of them would compare a caller against a handler it may never reach.
 
 3. Collect what is left. A key with providers and no consumers populates `unmatched.providers`, and the other way round for `unmatched.consumers`.
 
-The result is `{ pairs, unmatched }`. `checkPair` runs on each pair, and the unmatched lists reach the CLI output, which is where the "20 provider-side boundaries have no client" line in the run above comes from.
+The result is `{ pairs, unmatched }`. `checkPair` runs on each pair, and the unmatched lists reach the CLI output. That is where the "20 provider-side boundaries have no client" line in the run above comes from.
 
-The key function and the agreement check both come from the binding's semantics variant, imported from `@suss/ir-core`. REST buckets by path and settles the method inside the bucket, GraphQL pairs by the parent type name plus the field, and message-bus pairs by the channel's subject. See [Boundary semantics](/theory/boundary-semantics).
+The key function and the agreement check both come from the binding's semantics variant, imported from `@suss/ir-core`. REST buckets by path and decides the method inside the bucket, GraphQL pairs by the parent type name plus the field, and message-bus pairs by the channel's subject. See [Boundary semantics](/theory/boundary-semantics).

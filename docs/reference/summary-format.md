@@ -13,7 +13,7 @@ A summary file is a JSON array of objects, one per code unit:
 ]
 ```
 
-`suss extract` writes one, `suss contract` writes one from a schema or a deploy template, and `suss check`, `suss inspect` and `suss ask` all read them. The zod schemas in [`packages/behavioral-ir/src/schemas.ts`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/behavioral-ir/src/schemas.ts) are the one place the format is written by hand. [IR types](/reference/ir) goes through every type field by field; this page is about the file.
+`suss extract` writes one, `suss contract` writes one from a schema or a deploy template, and `suss check`, `suss inspect` and `suss ask` all read them. The zod schemas in [`packages/behavioral-ir/src/schemas.ts`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/behavioral-ir/src/schemas.ts) are the one place the format is written by hand. [IR types](/reference/ir) goes through every type field by field.
 
 ## Top-level fields
 
@@ -76,11 +76,11 @@ Here is a whole summary, from `suss extract --dir fixtures/express -f express`, 
 }
 ```
 
-The handler is 23 lines of Express with two guards and a nested condition. The `db` it calls is declared with no body, so the walk stopped there and the gap says which call.
+The handler is 23 lines of Express with two guards and a nested condition. The `db` it calls is declared with no body, so the walk stopped there and the gap records which call it was.
 
 ## One transition
 
-A transition says: when all of these conditions hold, this output comes out and these effects fire. This is the 404 branch of the same handler:
+A transition records that when all of these conditions hold, this output comes out and these effects fire. Here is the 404 branch of the same handler:
 
 ```json
 {
@@ -125,11 +125,11 @@ A transition says: when all of these conditions hold, this output comes out and 
 }
 ```
 
-Two conditions, AND-joined: the id is present, and `db.findById` came back falsy. `OR` lives inside a predicate, in the `compound` variant, so two transitions have the same precondition when their condition lists are structurally equal.
+There are two conditions here, joined with AND: the id is present, and `db.findById` came back falsy. `OR` goes inside a predicate instead, in the `compound` variant, so two transitions have the same precondition when their condition lists are structurally equal.
 
 Conditions are structured when the reader could take the expression apart, and opaque when it could not. An opaque predicate keeps the source text and a reason, so a downstream tool knows the branch is there and decides for itself how to treat it.
 
-The `id` is content-addressed: `${functionName}:${terminalKind}:${statusKey}:${hash7}`, where the hash is over the ordered condition chain's source text. Reordering branches keeps the ids. Changing a status, a condition or a terminal kind mints a new one.
+The `id` is content-addressed: `${functionName}:${terminalKind}:${statusKey}:${hash7}`, where the hash is over the ordered condition chain's source text. Reordering branches keeps the ids. Changing a status, a condition or a terminal kind gives you a new one.
 
 ## One effect
 
@@ -160,7 +160,7 @@ The transition above has an `invocation` effect, which records that a call fired
 }
 ```
 
-Every `interaction` includes the `BoundaryBinding` of the thing it talks to, so the checker pairs it against whatever declares that thing: a Prisma schema, a CloudFormation table, another service's summaries. The seven classes are `storage-access`, `service-call`, `message-send`, `message-receive`, `unit-invoke`, `config-read` and `schedule`. [IR types](/reference/ir#effect) has each one's fields.
+Every `interaction` includes the `BoundaryBinding` of the thing it talks to, so the checker can pair it against whatever declares that thing, such as a Prisma schema or a CloudFormation table. The seven classes are `storage-access`, `service-call`, `message-send`, `message-receive`, `unit-invoke`, `config-read` and `schedule`. [IR types](/reference/ir#effect) has each one's fields.
 
 ## How two summaries pair
 
@@ -172,7 +172,7 @@ An identity field is null when the source never said what it is. A send whose qu
 { "name": "message-bus", "messageBus": "aws_sqs", "channel": null }
 ```
 
-It pairs with nothing, which is the point: a null pairs with nothing rather than with whatever its source text happened to spell. A REST `method` of `"*"` means the handler responds to every method, and it pairs with whatever method each consumer uses.
+That summary pairs with nothing, and suss means it to. Pairing a null against whatever the source text happened to spell would put two unrelated boundaries together. A REST `method` of `"*"` means the handler responds to every method, and it pairs with whatever method each consumer uses.
 
 ### Route paths
 
@@ -209,10 +209,10 @@ The format is stable enough to build on. These are the guarantees:
 
 - **The parsers read every version ever published.** `parseSummaries` normalizes an older artifact on the way in, so a file written by any released version reads back as the current shape. Nobody rewrites published JSON.
 - **A breaking change bumps the major version** of `@suss/behavioral-ir` and comes with a migration note in the [changelog](/reference/changelog).
-- **Adding an interaction class, a code unit kind or a semantics variant is additive.** A tool that dispatches on `class`, `kind` or `semantics.name` needs a default branch, and gets no new required fields on the shapes it already reads.
+- **Adding an interaction class, a code unit kind or a semantics variant is additive.** A tool that dispatches on `class`, `kind` or `semantics.name` needs a default branch, and it never gets a new required field on a shape it already reads.
 - **Transition ids survive reordering and reformatting.** They are computed from the condition chain's source text, with source offsets left out, so a diff across two points in time matches by id.
 - **A null identity field means the source did not say.** It never means the empty string, which is invalid from version 2 on.
-- **The JSON is canonical and the `inspect` rendering is not.** The text `suss inspect` prints is written for people to read and it changes with the CLI. Build on the JSON. [Format stability](/reference/cli/inspect#format-stability) says what the text does promise.
+- **The JSON is the canonical artifact.** The text `suss inspect` prints is written for people to read, and it changes with the CLI, so build your tool on the JSON. [Format stability](/reference/cli/inspect#format-stability) covers the parts of the text that do stay put.
 
 Two ways to read a file:
 

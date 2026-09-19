@@ -23,7 +23,7 @@ npm test
 npm run dogfood    # run suss over every package in this repo
 ```
 
-`npm run dogfood` is the widest check here. It runs discovery, extraction, resolution and the checker over every package in this repo rather than over a fixture, and it fails when a package declares an export that produces no summary. It writes the per-package counts to `scripts/dogfood-baseline.json`, which is committed, and CI runs `npm run check:dogfood` to fail when a count comes out below the committed one. Each package gets three counts: `exports` for the summaries that describe its declared public surface, `internal` for the ones behind that surface, and `consumers` for its calls into other packages.
+`npm run dogfood` is the widest check here. It runs discovery, extraction, resolution and the checker over every package in this repo, and it fails when a package declares an export that doesn't produce a summary. It writes the per-package counts to `scripts/dogfood-baseline.json`, which is committed, and CI runs `npm run check:dogfood` to fail when a count comes out below the committed one. Each package gets three counts: `exports` for the summaries that describe its declared public surface, `internal` for the ones behind that surface, and `consumers` for its calls into other packages.
 
 So if your change deletes exports, moves them between packages, inlines a private helper, or narrows a recognizer that was firing too often, run `npm run dogfood` and commit the refreshed baseline. The drop then appears in your pull request diff, where a reviewer can see it and agree you meant it. Counts going up need no refresh. `design/docs-internal/dogfooding.md` has the full table of what fails and what to do about it.
 
@@ -72,7 +72,7 @@ A reader you write beside the call site handles the spellings you had in front o
 
 A framework pack is a set of patterns you declare in configuration rather than write as code. See [`docs/packs/what-a-pack-is.md`](./docs/packs/what-a-pack-is.md) for the full guide, and copy from the packs that already exist under `packages/framework/` and `packages/client/`.
 
-A pack may hardcode an identifier only when the library that pack is about defines it. An identifier that comes from one particular codebase belongs in per-project configuration instead. If you ship it as a default, other users get false matches on it, and coverage measured against the codebase the name came from looks better than it is, because discovery found those units by name rather than by pattern. List every identifier your pack hardcodes in its `vocabulary.json`, or `npm run check:vocabulary` will fail. [`design/docs-internal/style.md#identifiers-a-pack-names`](./design/docs-internal/style.md#identifiers-a-pack-names) has the detail.
+A pack may hardcode an identifier only when the library that pack is about defines it. An identifier that comes from one particular codebase belongs in per-project configuration instead. Ship it as a default and two things go wrong: everyone else gets false matches on that name, and your coverage against the codebase that name came from is overstated, because discovery matched those units on the hardcoded name instead of on the pattern you wrote. List every identifier your pack hardcodes in its `vocabulary.json`, or `npm run check:vocabulary` will fail. [`design/docs-internal/style.md#identifiers-a-pack-names`](./design/docs-internal/style.md#identifiers-a-pack-names) has the detail.
 
 ## Adding a metadata field
 
@@ -80,7 +80,7 @@ A field on a metadata namespace needs a writer and a reader before it does anyth
 
 ## Documentation that shows a command and its output
 
-`npm run check:examples` runs the commands the pages show and compares what comes back to what the page says comes back. It exists because `docs/start/quickstart.md` promised a finding count the tool had stopped producing, twice in one week, and nothing noticed until somebody sat down and followed the tutorial.
+`npm run check:examples` runs the commands the pages show and compares what comes back to what the page shows. It exists because a page can promise a finding count the tool has since stopped producing, and nobody notices until a reader follows the tutorial and gets a different answer.
 
 A command needs a project to run in, and not every page builds one, so a page opts in with HTML comments the rendered site drops:
 
@@ -98,11 +98,11 @@ A command needs a project to run in, and not every page builds one, so a page op
                                             unchecked, and here is why
 ```
 
-Inside a run, a code fence introduced by a paragraph that starts with a backticked path and ends with a colon is written to that path, which is what both tutorials already do. `suss:file` is for a fence whose prose does not say where it goes.
+Inside a run, a code fence introduced by a paragraph that starts with a backticked path and ends with a colon is written to that path. Both tutorials already write their fences that way. Use `suss:file` when the prose around a fence doesn't spell out where it goes.
 
 Only suss commands run. `npm install express` and `mkdir` are left where they are, because extraction reads import specifiers rather than resolved packages and these projects need no `node_modules`. Where a bash fence has several commands in it, the output below it is compared against the last one, and timings and absolute paths are normalised out first.
 
-Every output block the check did not run is listed at the end with the reason. Adding a page to that list costs nothing; leaving a wrong number on a page nobody checks costs a reader their first hour.
+Every output block the check did not run is listed at the end with the reason. Add a page to that list freely. It is better than leaving a number on a page that nothing verifies.
 
 ## Reporting bugs
 

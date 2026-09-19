@@ -5,7 +5,7 @@ description: Turn an OpenAPI document, a deploy template, a schema or another de
 
 # `suss contract`
 
-Read a declared source into summaries.
+`suss contract` reads a contract somebody already wrote down, such as an OpenAPI document or a CloudFormation template, and turns it into summaries. Run it on the declared side of a boundary so `check` has something to compare your code against.
 
 ```
 suss contract --from <source> <spec> [-o <output.json>]
@@ -34,7 +34,7 @@ suss contract --from <source> <spec> [-o <output.json>]
 | `graphql-documents` | Committed `.graphql` or `.gql` operation documents, one file or a directory walked recursively. Each operation becomes a client-kind summary, and fragment spreads are inlined across the whole read set. |
 | `storybook` | A CSF3 `.stories.ts` or `.stories.tsx` file, or a directory of them walked recursively. |
 
-[Contract sources](/packs/contract-sources) says what each reader produces.
+[Contract sources](/packs/contract-sources) describes what each reader produces.
 
 Team-authored intent docs are not a `--from` source. `suss check` reads them directly:
 
@@ -46,7 +46,7 @@ suss check --dir summaries/ --intent intent/
 
 Given an `http(s)` URL, suss fetches the document, writes it to a temp file, parses it the way it would parse a local file, and deletes the temp file. That covers a vendor spec hosted on GitHub or a docs site. The extension on the URL path decides the parser: `.json` gets the JSON parser, anything else, including no extension at all, gets YAML.
 
-A summary read from a URL is labelled by the URL rather than by the temp path, so the identity survives the fetch.
+A summary read from a URL is labelled with that URL, so it still points at where the document came from.
 
 ## What it writes
 
@@ -59,4 +59,4 @@ $ suss contract --from openapi openapi.json -o summaries/provider.json
 Wrote 19 summaries to /home/dana/petstore/summaries/provider.json
 ```
 
-[Exit codes](/reference/cli/exit-codes) says what `contract` returns to the shell.
+[Exit codes](/reference/cli/exit-codes) lists what `contract` returns to the shell.

@@ -13,7 +13,7 @@ npm install --save-dev @suss/cli
 
 Forty-four packs read code today, across thirty-five frameworks, eight HTTP and GraphQL clients, and the Node runtime. Ten contract readers turn a declared artifact into the same summary structure. Team-authored intent docs are their own stream, read by `@suss/contract-intent`.
 
-Most of that is TypeScript and JavaScript. Some of it is not: flask-restx and FastAPI read Python through `@suss/adapter-python`, and graphql-ruby and rails read Ruby through `@suss/adapter-ruby`. `suss extract` reaches those two adapters as well, and the [Python and Ruby guide](/guides/python-and-ruby) shows how.
+Most of that is TypeScript and JavaScript. Four of the packs read another language: flask-restx and FastAPI read Python through `@suss/adapter-python`, and graphql-ruby and rails read Ruby through `@suss/adapter-ruby`. `suss extract` reaches those two adapters as well, and the [Python and Ruby guide](/guides/python-and-ruby) shows how.
 
 The quickest way to find your packs is to let suss look:
 
@@ -21,7 +21,7 @@ The quickest way to find your packs is to let suss look:
 suss init
 ```
 
-It reads your dependencies, says which packs match, and offers to write them into `suss.json`. The [add-to-project guide](/guides/add-to-project) walks the whole setup.
+It reads your dependencies, tells you which packs match, and offers to write them into `suss.json`. The [add-to-project guide](/guides/add-to-project) walks the whole setup.
 
 ## What to run, by stack
 
@@ -119,7 +119,7 @@ An effects pack reads the calls inside a unit another pack discovered: a query, 
 
 ## Contract sources
 
-These are not packs. A contract source reads something the project already declares and writes the same summaries the extractor writes, and it is reached through `suss contract --from <name>` rather than through `-f`. [Contract sources](/packs/contract-sources) has a command and the output for each one.
+These are not packs. A contract source reads something the project already declares and writes the same summaries the extractor writes, and you reach it through `suss contract --from <name>`. [Contract sources](/packs/contract-sources) has a command and the output for each one.
 
 | Reader | `--from` | What it reads | Coverage |
 |---|---|---|---|

@@ -5,7 +5,7 @@ description: Run each handler against the claims suss derived for it, and record
 
 # `suss corroborate` (experimental)
 
-Extract, then run each handler against its own claims.
+`suss corroborate` extracts your code as usual, then executes each handler to see whether it behaves the way the summary says it does. Run it when you want evidence that a summary is right before you trust a finding built on it. It writes the same summaries `extract` writes, with a verdict added to each claim it was able to test.
 
 ```
 suss corroborate --experimental [-p <tsconfig> | --dir <directory>] [-f <pack> ...]
@@ -29,7 +29,7 @@ It runs a normal extraction. Then, for every summary in scope, it generates requ
 | Verdict | What it means |
 |---|---|
 | `observed` | Every satisfying run produced the claimed status. |
-| `refuted` | Some run produced a different status. The counterexample, with the request, the observed status and the claimed one, is attached to the summary and printed. Either the extraction is wrong there or the code surprises its own summary, and both are worth knowing. |
+| `refuted` | Some run produced a different status. The counterexample, with the request, the observed status and the claimed one, is attached to the summary and printed. Either suss read the handler wrongly, or the handler returns a status its summary doesn't claim. |
 | `untested` | No satisfying input was found, or every run hit a dependency the sandbox cannot supply, such as a database or another service. The claim keeps its static confidence. |
 
 ## Scope today
@@ -49,4 +49,4 @@ Every claim that could be tried held up.
 Untried claims need a dependency the sandbox does not have, or an input the sampler did not find. They stay at their static confidence.
 ```
 
-[Exit codes](/reference/cli/exit-codes) says what `corroborate` returns to the shell.
+[Exit codes](/reference/cli/exit-codes) lists what `corroborate` returns to the shell.
