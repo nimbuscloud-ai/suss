@@ -183,7 +183,11 @@ function widest(values: string[]): number {
 
 /** The path as somebody would type it to open the file. */
 function where(file: string): string {
-  return path.relative(process.cwd(), file) || file;
+  const here = path.relative(process.cwd(), file);
+  if (here === "" || here.startsWith("..")) {
+    return file;
+  }
+  return here;
 }
 
 // ---------------------------------------------------------------------------
@@ -227,9 +231,10 @@ export function intentOutcomesCommand(
 function writeListing(listing: IntentOutcomeListing, json: boolean): void {
   if (json) {
     process.stdout.write(`${JSON.stringify(listing.outcomes, null, 2)}\n`);
-    if (listing.drafts.length > 0) {
+    const left = listing.drafts.length;
+    if (left > 0) {
       process.stderr.write(
-        `${listing.drafts.length} more are in inferred drafts and are left out. Curation renames them.\n`,
+        `Left out ${left} outcome${left === 1 ? "" : "s"} an inferred draft declares, since curation renames them.\n`,
       );
     }
     return;

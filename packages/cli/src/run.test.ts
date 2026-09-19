@@ -1270,6 +1270,77 @@ describe("runCli infer", () => {
   });
 });
 
+describe("runCli intent", () => {
+  it("asks what to read and rejects a word that is not one", async () => {
+    const bare = await capture(() => runCli(["intent"]));
+    expect(bare.exit).toBe(1);
+    expect(bare.io.stderr).toContain("intent outcomes --from intent/");
+
+    const unknown = await capture(() => runCli(["intent", "scenarios"]));
+    expect(unknown.exit).toBe(1);
+    expect(unknown.io.stderr).toContain('no "intent scenarios"');
+  });
+
+  it("asks for the folder when --from is left off", async () => {
+    const { exit, io } = await capture(() => runCli(["intent", "outcomes"]));
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain("needs --from");
+  });
+
+  it("lists the outcomes a boundary document declares", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-intentcli-"));
+    fs.writeFileSync(
+      path.join(dir, "report.intent.yaml"),
+      [
+        "kind: boundary",
+        "name: get-report",
+        "purpose: Serve the weekly report.",
+        "audience: the web client",
+        "source: author",
+        "boundary:",
+        "  transport: http",
+        "  semantics: rest",
+        "  method: GET",
+        "  path: /report",
+        "transitions:",
+        "  - id: served",
+        "    when: the report exists",
+        "    response:",
+        "      status: 200",
+      ].join("\n"),
+    );
+
+    const { exit, io } = await capture(() =>
+      runCli(["intent", "outcomes", "--from", dir, "--json"]),
+    );
+    expect(exit).toBe(0);
+    expect(JSON.parse(io.stdout)).toEqual([
+      {
+        link: "get-report.served",
+        intent: "get-report",
+        boundary: "GET /report",
+        outcomeId: "served",
+        description: "responds 200 when the report exists",
+        file: path.join(dir, "report.intent.yaml"),
+        line: 12,
+      },
+    ]);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("lists only intent outcomes flags the parser takes", async () => {
+    for (const flag of documentedFlags("intent outcomes")) {
+      const accepted = await parserAccepts([
+        "intent",
+        "outcomes",
+        flag,
+        tmpDir,
+      ]);
+      expect(accepted, `intent outcomes ${flag}`).toBe(true);
+    }
+  });
+});
+
 describe("runCli field-report fixes", () => {
   it("prints the installed version for --version", async () => {
     const { exit, io } = await capture(() => runCli(["--version"]));
