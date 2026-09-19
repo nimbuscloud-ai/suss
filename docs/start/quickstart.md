@@ -181,6 +181,70 @@ each one, and the status and body that branch returns. The `+` lines are
 the calls that path makes, so `POST /orders` writes to Prisma on its 201
 and not on its 400.
 
+## Compare it against the schema
+
+`check` needs both sides of a boundary in the same folder. `init` printed
+the command that turns `schema.prisma` into the other side of every
+Prisma query, and this project has one caller of its own.
+
+`src/client.ts`:
+
+```ts
+export async function loadOrder(reference: string) {
+  const response = await fetch(`/orders/${reference}`);
+
+  if (response.status === 200) {
+    return { state: "ready", order: await response.json() };
+  }
+
+  return { state: "error" };
+}
+```
+
+```bash
+npx suss extract -f hono -f fetch -f prisma -f node -o summaries/code.json
+npx suss contract --from prisma prisma/schema.prisma -o summaries/prisma.json
+npx suss check --dir summaries/ --all
+```
+
+```
+Compared 1 boundary:
+  GET /orders/{reference}
+    orders-api::src/api.ts::get <-> orders-api::src/client.ts::loadOrder
+
+Providers with no client to compare against:
+  POST /orders
+    orders-api::src/api.ts::post
+
+Nothing in this run paired with this boundary, so nothing was checked across it:
+  postgresql:Order
+    prisma/schema.prisma::Order
+
+────────────────────────────────────────────────────────────
+[WARNING] unhandledProviderCase
+  Provider produces status 404 but no consumer branch handles it
+  provider: src/api.ts::get (src/api.ts:7)
+  consumer: src/client.ts::loadOrder (src/client.ts:1)
+  boundary: hono (http) GET /orders/:reference
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: unhandledProviderCase
+      boundary: "GET /orders/{reference}"
+      provider: { transitionId: "get:response:404:ca40ca7" }
+      reason: TODO say why you accept this
+────────────────────────────────────────────────────────────
+1 finding: 0 error, 1 warning, 0 info
+```
+
+One boundary had both sides, and across it `loadOrder` treats every
+status other than 200 alike, so a missing order and a failed request
+reach the screen as the same thing. The two entries above the finding
+had only one side in this run, which is why an empty finding list on its
+own never means the two sides agreed.
+
+Every finding gives you the boundary, both sides, a file and line to
+open, and a rule you can paste if you decide to live with it. The
+[findings catalog](/reference/findings) says what each kind means.
+
 ## Next
 
 - [Add suss to a project](/guides/add-to-project) for a repository with
