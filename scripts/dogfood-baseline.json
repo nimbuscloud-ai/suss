@@ -2,11 +2,11 @@
   "totals": {
     "packages": 75,
     "packagesWithExports": 75,
-    "exports": 1004,
-    "internal": 3538,
-    "consumers": 2049,
-    "pairs": 2037,
-    "unfollowedCalls": 515,
+    "exports": 1014,
+    "internal": 3547,
+    "consumers": 2067,
+    "pairs": 2055,
+    "unfollowedCalls": 520,
     "findingErrors": 0
   },
   "packages": {
@@ -33,30 +33,30 @@
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 122,
-      "internal": 42,
-      "consumers": 11,
-      "unfollowedCalls": 7
+      "exports": 131,
+      "internal": 49,
+      "consumers": 17,
+      "unfollowedCalls": 11
     },
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 43,
-      "internal": 226,
+      "internal": 217,
       "consumers": 191,
       "unfollowedCalls": 42
     },
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
       "exports": 3,
-      "internal": 38,
-      "consumers": 34,
+      "internal": 44,
+      "consumers": 40,
       "unfollowedCalls": 3
     },
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 35,
-      "internal": 548,
-      "consumers": 359,
+      "internal": 553,
+      "consumers": 365,
       "unfollowedCalls": 57
     },
     "packages/client/aiohttp": {
@@ -453,10 +453,10 @@
     },
     "packages/intent-ir": {
       "name": "@suss/intent-ir",
-      "exports": 3,
+      "exports": 4,
       "internal": 14,
       "consumers": 5,
-      "unfollowedCalls": 1
+      "unfollowedCalls": 2
     },
     "packages/ir-core": {
       "name": "@suss/ir-core",

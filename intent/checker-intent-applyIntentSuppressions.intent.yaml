@@ -16,6 +16,10 @@ boundary:
   semantics: function-call
   package: "@suss/checker-intent"
   exportPath: ["applyIntentSuppressions"]
+  receives:
+    findings: { type: array, required: true }
+    rules: { type: array, required: true }
+    opts: { type: object }
 
 transitions:
   - id: filtered

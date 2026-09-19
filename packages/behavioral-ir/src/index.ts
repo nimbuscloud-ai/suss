@@ -549,3 +549,24 @@ export {
   triAnd,
   triOr,
 } from "./interpret.js";
+
+// ---------------------------------------------------------------------------
+// What a unit reads off the value it was handed
+// ---------------------------------------------------------------------------
+
+export {
+  boundaryInputReads,
+  type CarriesPayload,
+  type ComparisonResult,
+  carriesPayloadFor,
+  checkReceivedInput,
+  compareSupplied,
+  formatPath,
+  isTheMessageParameter,
+  messageBodyReadSet,
+  type ReadSet,
+  type ReadSetResult,
+  readPathOf,
+  readSetOf,
+  type StandDown,
+} from "./receive/inputContract.js";

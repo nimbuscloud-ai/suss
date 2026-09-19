@@ -19,6 +19,7 @@ import {
 } from "@suss/ir-core";
 
 import type {
+  AuthoredInputField,
   AuthoredShape,
   BodyShape,
   Boundary,
@@ -88,6 +89,19 @@ export interface IntentOutcome {
   effects: IntentEffect[];
 }
 
+/**
+ * One field of the value the boundary is handed. Every spelling of
+ * `receives` normalises to a list of these, so the checker has one pass
+ * over the list and never looks at the boundary kind.
+ */
+export interface IntentInputField {
+  /** `pair.provider` becomes `["pair", "provider"]`, a header `["headers", "x-tenant-id"]`. */
+  path: string[];
+  /** Null when the author named the field and said nothing else about it. */
+  shape: TypeShape | null;
+  required: boolean;
+}
+
 export interface BoundaryIntentSummary {
   kind: "boundary";
   name: string;
@@ -95,6 +109,8 @@ export interface BoundaryIntentSummary {
   audience: string;
   source: IntentSource;
   boundary: BoundaryBinding;
+  /** Empty for a doc with no `receives` block, which states nothing about the input. */
+  receives: IntentInputField[];
   outcomes: IntentOutcome[];
 }
 
@@ -138,6 +154,7 @@ function boundaryIntentToSummary(doc: BoundaryIntent): BoundaryIntentSummary {
     audience: doc.audience,
     source: doc.source,
     boundary: toBoundaryBinding(doc.boundary),
+    receives: toReceives(doc.boundary),
     outcomes: doc.transitions.map(toOutcome),
   };
 }
@@ -215,6 +232,94 @@ export function toBoundaryBinding(boundary: Boundary): BoundaryBinding {
     boundary: Boundary,
   ) => BoundaryBinding;
   return build(boundary);
+}
+
+/** A dotted field name is the path the checker compares, segment by segment. */
+function toField(name: string, field: AuthoredInputField): IntentInputField {
+  return {
+    path: name.split("."),
+    shape: fieldShape(field),
+    required: field.required,
+  };
+}
+
+/** Null when the author named the field and said nothing about its shape. */
+function fieldShape(field: AuthoredInputField): TypeShape | null {
+  if (!("type" in field)) {
+    return null;
+  }
+  const { required: _required, ...shape } = field;
+  return shapeToTypeShape(shape);
+}
+
+function dottedReceives(
+  receives: Record<string, AuthoredInputField> | undefined,
+): IntentInputField[] {
+  return Object.entries(receives ?? {}).map(([name, field]) =>
+    toField(name, field),
+  );
+}
+
+/** The sections of a request, as paths whose first segment is the section. */
+const REST_SECTIONS = ["headers", "query", "params"] as const;
+
+function restReceives(
+  boundary: Extract<Boundary, { semantics: "rest" }>,
+): IntentInputField[] {
+  const receives = boundary.receives;
+  if (receives === undefined) {
+    return [];
+  }
+  const fields = REST_SECTIONS.flatMap((section) =>
+    Object.entries(receives[section] ?? {}).map(([name, field]) =>
+      toField(`${section}.${name}`, field),
+    ),
+  );
+  return [...fields, ...bodyFields(receives.body)];
+}
+
+/**
+ * A declared body's own properties, each as a field under `body`. A
+ * body the vocabulary spells as one value rather than a set of
+ * properties (an array, a primitive) stays one field, `body` itself.
+ */
+function bodyFields(body: BodyShape | undefined): IntentInputField[] {
+  if (body === undefined) {
+    return [];
+  }
+  const shape = bodyToTypeShape(body);
+  if (shape === null) {
+    return [];
+  }
+  if (shape.type !== "record") {
+    return [{ path: ["body"], shape, required: false }];
+  }
+  const required = new Set("required" in body ? (body.required ?? []) : []);
+  return Object.entries(shape.properties).map(([name, property]) => ({
+    path: ["body", name],
+    shape: property,
+    required: required.has(name),
+  }));
+}
+
+const RECEIVES: {
+  [K in Boundary["semantics"]]: (
+    boundary: Extract<Boundary, { semantics: K }>,
+  ) => IntentInputField[];
+} = {
+  rest: restReceives,
+  "function-call": (boundary) => dottedReceives(boundary.receives),
+  "message-bus": (boundary) => dottedReceives(boundary.receives),
+  storage: (boundary) => dottedReceives(boundary.receives),
+  "unit-invocation": (boundary) => dottedReceives(boundary.receives),
+};
+
+export function toReceives(boundary: Boundary): IntentInputField[] {
+  // The same cast the binding table takes, for the same reason.
+  const read = RECEIVES[boundary.semantics] as (
+    boundary: Boundary,
+  ) => IntentInputField[];
+  return read(boundary);
 }
 
 const VERBS = EffectRelationSchema.options;

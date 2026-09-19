@@ -98,6 +98,7 @@ function boundaryIntent(name: string, outcomeIds: string[]): IntentSummary {
       semantics: { name: "rest", method: "GET", path: "/invoices/{id}" },
       recognition: "intent",
     },
+    receives: [],
     outcomes: outcomeIds.map((id) => ({
       id,
       when: "",

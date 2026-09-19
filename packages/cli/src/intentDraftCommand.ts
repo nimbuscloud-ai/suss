@@ -38,6 +38,7 @@ import { loadIntentDoc } from "@suss/contract-intent";
 import { EVERY_FIELD } from "@suss/ir-core";
 
 import { parseSummaryFile, readSummariesFromDir } from "./inspect.js";
+import { draftedReceives } from "./intentReceives.js";
 import { draftedWhen } from "./intentWhen.js";
 import { UsageError } from "./usageError.js";
 
@@ -424,6 +425,7 @@ function boundaryBlock(binding: BoundaryBinding): AuthoredBoundary | null {
 interface BoundaryGroup {
   key: string;
   block: AuthoredBoundary;
+  binding: BoundaryBinding;
   summaries: BehavioralSummary[];
 }
 
@@ -469,7 +471,7 @@ function groupByBoundary(input: BehavioralSummary[]): {
     }
     const existing = groups.get(key);
     if (existing === undefined) {
-      groups.set(key, { key, block, summaries: [summary] });
+      groups.set(key, { key, block, binding, summaries: [summary] });
       continue;
     }
     existing.summaries.push(summary);
@@ -603,13 +605,14 @@ function draftDocument(
   }
 
   const name = unique(slug(group.key) || "boundary", names);
+  const receives = draftedReceives(group.summaries, group.binding);
   const doc = {
     kind: "boundary" as const,
     name,
     purpose: "",
     audience: "",
     source: "inferred" as const,
-    boundary: group.block,
+    boundary: receives === null ? group.block : { ...group.block, receives },
     transitions: outcomes,
   };
 

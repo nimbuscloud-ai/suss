@@ -235,13 +235,40 @@ The link is the half a machine can supply: the boundary document's `name` and th
 
 A boundary intent that a scenario already points at is left alone, so running this again after adding an endpoint writes only what is missing.
 
+## Say what the boundary receives
+
+A document says what a boundary returns and what it does. A `receives` block says what it is handed. Add one to the boundary block, with a line per field:
+
+```yaml
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "@suss/checker"
+  exportPath: ["checkPair"]
+  receives:
+    provider: { type: object, required: true }
+    consumer: { type: object, required: true }
+```
+
+The name is the parameter, and a dot reaches inside one, so `options.stream` says the boundary reads `stream` off the `options` argument. Naming a field is a complete declaration on its own: `consumer: {}` says the field is there and nothing more. `required: true` says the boundary needs it. A message-bus boundary writes its block the same way, with the fields of the message body.
+
+The checker compares the block against the paths the unit actually reads. A declared field nothing reads is `unreadInputField`, at warning when it is required and info otherwise. A read of a path the block leaves out is `undeclaredInputRead`, at info, because a block lists what the author wanted checked and is never a full description of the input. A document with no block says nothing about the input, and produces neither finding.
+
+Rename the read in `checkPair` from `consumer` to something else and the run says so:
+
+```
+[warning] fn:@suss/checker::checkPair: Intent "checker-check-pair" says fn:@suss/checker::checkPair receives consumer and needs it; checkPair never reads it.
+```
+
+A REST boundary accepts a block with a section per part of the request (`headers`, `query`, `params` and `body`), and nothing is compared against it yet, because which of a handler's reads is which part of a request is the framework's vocabulary and no pack says it.
+
 ## What the checker reports
 
-Ten intent finding kinds, each with what makes it legitimate and what makes it a bug, are in the [findings catalog](/reference/findings#intent-findings). The severity follows what is being compared:
+The intent finding kinds, each with what makes it legitimate and what makes it a bug, are in the [findings catalog](/reference/findings#intent-findings). The severity follows what is being compared:
 
 - **Error**: the code does not do what an authored document says. `unimplementedBoundary`, `uncoveredOutcome`, `outcomeShapeMismatch`, `renamedBoundary`.
-- **Warning**: the documents have a gap. An intent nothing can be paired against, a scenario linking to an outcome that does not exist, a link that resolves to two documents.
-- **Info**: the code does more than the documents claim. A status no outcome mentions, a store no outcome mentions, an outcome no scenario explains.
+- **Warning**: the documents have a gap, or nothing reads a field the document says the boundary needs. An intent nothing can be paired against, a scenario linking to an outcome that does not exist, a link that resolves to two documents, `unreadInputField` on a required field.
+- **Info**: the code does more than the documents claim. A status no outcome mentions, a store no outcome mentions, an input field no `receives` block lists, an outcome no scenario explains.
 
 ## A boundary with no key to pair on
 
@@ -270,6 +297,9 @@ boundary:
   semantics: function-call
   package: "@suss/checker"
   exportPath: ["checkPair"]
+  receives:
+    provider: { type: object, required: true }
+    consumer: { type: object, required: true }
 
 transitions:
   - id: findings
