@@ -1,145 +1,182 @@
 ---
 title: Summary format
-description: Field by field, the JSON a suss run writes for each code unit, and the schema that validates it.
+description: The JSON a suss run writes, field by field, and what a downstream tool can rely on.
 ---
 
 # Summary format
 
-Version: **v0** (draft)
-
-A behavioral summary is a structured, language-agnostic description of a code unit's behavior. It answers: *under what conditions does this function produce what outputs?*
-
-The authoritative source of truth is the zod schema in [`packages/behavioral-ir/src/schemas.ts`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/behavioral-ir/src/schemas.ts); the [`behavioral-summary.schema.json`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/behavioral-ir/schema/behavioral-summary.schema.json) JSON Schema is generated from it at build time and committed for non-TypeScript consumers (Python, Go, etc.) that want to validate without running JS.
-
-## File format
-
-A summary file is a JSON array of `BehavioralSummary` objects:
+A summary file is a JSON array of objects, one per code unit:
 
 ```json
 [
-  {
-    "kind": "handler",
-    "identity": { "name": "getUser", "boundaryBinding": { "method": "GET", "path": "/users/:id", ... } },
-    "transitions": [ ... ],
-    ...
-  }
+  { "schemaVersion": 6, "kind": "handler", "identity": { }, "transitions": [ ] }
 ]
 ```
 
-Each element describes one code unit: a handler, client call site, loader, action, component, etc.
+`suss extract` writes one, `suss contract` writes one from a schema or a deploy template, and `suss check`, `suss inspect` and `suss ask` all read them. The zod schemas in [`packages/behavioral-ir/src/schemas.ts`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/behavioral-ir/src/schemas.ts) are the one place the format is written by hand. [IR types](/reference/ir) goes through every type field by field; this page is about the file.
 
-Every summary includes `schemaVersion`. A summary without one is
-version 1, written by 0.3.x. The parsers in `@suss/behavioral-ir` read
-every version ever published, so an artifact never needs rewriting.
-Version 2 writes an unnamed identity field as null, rejects the empty
-string there, and adds `"*"` as the REST method wildcard. Version 3
-lets a parameter input's `role` be null, for a parameter whose role
-suss could not work out. Version 4 replaces the `storage-relational`
-variant with the layered `storage` one. Version 5 spells a store and a
-bus the way OpenTelemetry's semantic conventions do. Version 6 is
-current: a metric's measurement words are OpenTelemetry's as well,
-`histogram` for a bucketed measurement, and `gauge`, `delta`,
-`cumulative` for what one measurement covers.
+## Top-level fields
 
-## Core concept: transitions
+| Field | Type | What it is |
+|---|---|---|
+| `schemaVersion` | number, optional | The format version. Absent means 1. |
+| `kind` | `CodeUnitKind` | What sort of unit this is: a handler, a client, a component, and eleven more. |
+| `location` | `SourceLocation` | File, line range, character span, export name, workspace. |
+| `identity` | `CodeUnitIdentity` | The name, the export path, the boundary binding, the deployed unit. |
+| `inputs` | `Input[]` | How values reach the unit, one per parameter, injection, hook return or closure. |
+| `transitions` | `Transition[]` | One per execution path. |
+| `gaps` | `Gap[]` | What the summary could not account for. |
+| `confidence` | `ConfidenceInfo` | How much of the behavior was read, and where the claim came from. |
+| `definitions` | record, optional | Types a `ref` shape points at, keyed by definition. |
+| `inputReads` | array, optional | What the unit read out of the values it was given, once each. |
+| `metadata` | record, optional | Framework-specific data, namespaced by boundary semantics. |
 
-A **transition** is a single execution path through the code unit. Every transition has:
+## One unit
 
-- **conditions**: predicates that must all hold for this path to execute
-- **output**: what the code unit produces (HTTP response, return value, thrown exception, rendered component)
-- **effects**: side effects observed (database writes, API calls, event emissions)
-- **isDefault**: true if this path executes when no other conditions match
-
-A handler with three `if` guards and a fallback produces four transitions.
+Here is a whole summary, from `suss extract --dir fixtures/express -f express`, with its four transitions cut:
 
 ```json
 {
-  "id": "getUser:response:404:a1b2c3d",
+  "kind": "handler",
+  "location": {
+    "file": "fixtures/express/handlers.ts",
+    "range": { "start": 17, "end": 39 },
+    "span": { "start": 438, "end": 827 },
+    "exportName": "get",
+    "workspace": "suss"
+  },
+  "identity": {
+    "name": "get",
+    "nameKind": "label",
+    "exportPath": ["get"],
+    "boundaryBinding": {
+      "transport": "http",
+      "semantics": { "name": "rest", "method": "GET", "path": "/users/:id" },
+      "recognition": "express"
+    },
+    "id": "suss::fixtures/express/handlers.ts::get#GET /users/{id}"
+  },
+  "inputs": [
+    { "type": "parameter", "name": "req", "position": 0, "role": "request", "shape": null },
+    { "type": "parameter", "name": "res", "position": 1, "role": "response", "shape": null },
+    { "type": "parameter", "name": "next", "position": 2, "role": "next", "shape": null }
+  ],
+  "transitions": [ ],
+  "gaps": [
+    {
+      "type": "unfollowedCall",
+      "conditions": [],
+      "consequence": "unknown",
+      "description": "The call to db.findById lands on a declaration with no body, so whatever runs there is missing from this summary",
+      "callee": "db.findById"
+    }
+  ],
+  "confidence": { "source": "inferred_static", "level": "high" },
+  "schemaVersion": 6
+}
+```
+
+The handler is 23 lines of Express with two guards and a nested condition. The `db` it calls is declared with no body, so the walk stopped there and the gap says which call.
+
+## One transition
+
+A transition says: when all of these conditions hold, this output comes out and these effects fire. This is the 404 branch of the same handler:
+
+```json
+{
+  "id": "get:response:404:9d39a1a",
   "conditions": [
-    { "type": "nullCheck", "subject": { "type": "dependency", "name": "db.findById", "accessChain": [] }, "negated": false }
+    {
+      "type": "negation",
+      "operand": {
+        "type": "truthinessCheck",
+        "subject": {
+          "type": "derived",
+          "from": {
+            "type": "derived",
+            "from": { "type": "input", "inputRef": "req", "path": [] },
+            "derivation": { "type": "propertyAccess", "property": "params" }
+          },
+          "derivation": { "type": "destructured", "field": "id" }
+        },
+        "negated": true
+      }
+    },
+    {
+      "type": "truthinessCheck",
+      "subject": { "type": "dependency", "name": "db.findById", "accessChain": [] },
+      "negated": true
+    }
   ],
   "output": {
     "type": "response",
     "statusCode": { "type": "literal", "value": 404 },
-    "body": { "type": "record", "properties": { "error": { "type": "literal", "value": "not found" } } },
+    "body": {
+      "type": "record",
+      "properties": { "error": { "type": "literal", "value": "not found" } }
+    },
     "headers": {}
   },
-  "effects": [],
+  "effects": [
+    { "type": "invocation", "callee": "db.findById", "args": [{ "kind": "identifier", "name": "id" }], "async": true }
+  ],
+  "location": { "start": 28, "end": 28 },
   "isDefault": false
 }
 ```
 
-## Conditions and predicates
+Two conditions, AND-joined: the id is present, and `db.findById` came back falsy. `OR` lives inside a predicate, in the `compound` variant, so two transitions have the same precondition when their condition lists are structurally equal.
 
-Conditions are structured when the extractor can decompose them, opaque when it can't. A structured predicate tree preserves the logic; an opaque predicate preserves the source text. Downstream tools can reason about structured predicates and treat opaque ones conservatively.
+Conditions are structured when the reader could take the expression apart, and opaque when it could not. An opaque predicate keeps the source text and a reason, so a downstream tool knows the branch is there and decides for itself how to treat it.
 
-| Predicate type | Meaning | Example |
-|---------------|---------|---------|
-| `nullCheck` | Subject is/isn't null | `user == null` |
-| `truthinessCheck` | Subject is truthy/falsy | `!params.id` |
-| `comparison` | Two values compared | `status === 404` |
-| `typeCheck` | Runtime type check | `typeof x === "string"` |
-| `propertyExists` | Object has a property | `"email" in user` |
-| `compound` | AND/OR of sub-predicates | `a && b` |
-| `negation` | Logical NOT | `!(isValid(x))` |
-| `call` | Function call as predicate | `isAdmin(user)` |
-| `opaque` | Could not decompose | preserved source text |
+The `id` is content-addressed: `${functionName}:${terminalKind}:${statusKey}:${hash7}`, where the hash is over the ordered condition chain's source text. Reordering branches keeps the ids. Changing a status, a condition or a terminal kind mints a new one.
 
-## Value references
+## One effect
 
-Values in conditions and outputs are represented as `ValueRef`, a tree describing where a value comes from:
-
-- `input`: a function parameter (`params.id`)
-- `dependency`: result of a function call (`db.findById()`)
-- `derived`: property access on another ref (`user.email`)
-- `literal`: a known constant (`404`, `"not found"`)
-- `state`: component/module state
-- `unresolved`: could not resolve the origin
-
-## Body shapes
-
-Response bodies and expected inputs use `TypeShape`, a recursive type describing the structure of a value:
-
-- `record`: object with known fields: `{ "type": "record", "properties": { "id": ..., "name": ... } }`
-- `literal`: exact value: `{ "type": "literal", "value": "success" }`
-- `ref`: type reference: `{ "type": "ref", "name": "User" }`
-- `array`, `dictionary`, `union`, composite shapes
-- `text`, `integer`, `number`, `boolean`, `null`, `undefined`, primitive type shapes
-- `unknown`: shape could not be determined
-
-## Boundary bindings
-
-A boundary binding connects a code unit to an API endpoint. It has three layers: `transport` (the wire: `"http"`, `"in-process"`), `semantics` (a discriminated union of `rest`, `function-call`, `graphql-resolver`, and `graphql-operation`), and `recognition` (which pack matched the unit, or `"reachable"` for units found through transitive closure rather than by a pack pattern):
+The transition above has an `invocation` effect, which records that a call fired and with what. The other layer is `interaction`, the typed boundary crossings. This one is from `suss extract -f aws-lambda -f aws-dynamodb` over a Lambda that reads a DynamoDB table:
 
 ```json
 {
-  "transport": "http",
-  "semantics": { "name": "rest", "method": "GET", "path": "/users/:id" },
-  "recognition": "ts-rest"
+  "type": "interaction",
+  "binding": {
+    "transport": "aws-sdk",
+    "semantics": {
+      "name": "storage",
+      "storageSystem": "aws.dynamodb",
+      "scope": "default",
+      "container": "Invoices",
+      "accessPath": null
+    },
+    "recognition": "@suss/framework-aws-dynamodb"
+  },
+  "callee": "dynamo.send",
+  "interaction": {
+    "class": "storage-access",
+    "kind": "read",
+    "fields": ["*"],
+    "operation": "GetItemCommand",
+    "selector": ["invoiceId"]
+  }
 }
 ```
 
-Two summaries with matching `semantics` (each semantics pairs its own way: REST pairs by `(method, normalizedPath)`, and `function-call` pairs by `package::exportPath`) describe opposite sides of the same boundary, one provider and one consumer. This is how cross-boundary checking works: pair summaries by boundary, then compare transitions.
+Every `interaction` includes the `BoundaryBinding` of the thing it talks to, so the checker pairs it against whatever declares that thing: a Prisma schema, a CloudFormation table, another service's summaries. The seven classes are `storage-access`, `service-call`, `message-send`, `message-receive`, `unit-invoke`, `config-read` and `schedule`. [IR types](/reference/ir#effect) has each one's fields.
 
-An identity field is null when the source never states it. A send
-whose queue URL comes from a variable still appears:
+## How two summaries pair
+
+Two summaries describe opposite sides of one boundary when their `semantics` match, and each protocol matches its own way. REST pairs on `(method, normalizedPath)`. `function-call` pairs on `package::exportPath`. Storage pairs on `(storageSystem, scope, container, accessPath)`. [Boundary semantics](/theory/boundary-semantics) has the whole set.
+
+An identity field is null when the source never said what it is. A send whose queue URL comes from a variable still appears:
 
 ```json
 { "name": "message-bus", "messageBus": "aws_sqs", "channel": null }
 ```
 
-It pairs with nothing. A REST `method` of `"*"` means the handler
-responds to every method, and it pairs with whatever method each
-consumer uses.
+It pairs with nothing, which is the point: a null pairs with nothing rather than with whatever its source text happened to spell. A REST `method` of `"*"` means the handler responds to every method, and it pairs with whatever method each consumer uses.
 
 ### Route paths
 
-A REST `path` is the route as the pack read it. A path a route
-declares outright keeps its own spelling, so an Express route keeps
-`:id`. A path suss had to work out, from a prefix a variable supplies
-or a piece the code joins together, is written in the pattern grammar
-below, and pairing normalizes every path to that grammar first. A
-consumer that reads paths should expect either form.
+A REST `path` is the route as the pack read it. A path the route declares outright keeps its own spelling, so an Express route keeps `:id`. A path suss had to work out, from a prefix a variable supplies or pieces the code joins together, is written in the pattern grammar below, and pairing normalizes every path to that grammar first. A tool that reads paths should expect either form.
 
 | Spelling | Meaning |
 | --- | --- |
@@ -149,168 +186,39 @@ consumer that reads paths should expect either form.
 | `/files/{rest*}` | zero or more segments, the same as a bare `*` segment |
 | `(/api\|/api/v2)/orders` | one of the options, and an option may contain a slash |
 
-A hole's name is what the code called it, or a placeholder such as
-`value` when the expression had no name. Two paths pair when some request satisfies both, so
-`/api/orders/{rest*}` pairs with a consumer of `/api/orders`, and
-`(/api|/api/v2)/orders` pairs with a consumer of either option.
+A hole's name is what the code called it, or a placeholder such as `value` where the expression had no name. Two paths pair when some request satisfies both, so `/api/orders/{rest*}` pairs with a consumer of `/api/orders`, and `(/api|/api/v2)/orders` pairs with a consumer of either option.
 
-`recognition: "reachable"` marks library summaries produced by transitive closure: internal functions called from an entry point a pack recognised, but not themselves matched by any pack. They have no pairing identity yet, so nothing cross-checks them, but their transitions and effects are fully extracted.
+## Versions
 
-## Effects and argument shape
+Every summary this build writes says `"schemaVersion": 6`. A summary without the field is version 1, written by 0.3.x. The parsers in `@suss/behavioral-ir` read every version ever published, so a published artifact never needs rewriting.
 
-Every transition has zero or more `effects` that fire on that path: mutations, emissions, state changes, and, most commonly, `invocation` effects that record a function call with its structured arguments:
+| Version | What changed |
+|---|---|
+| 1 | An identity field the source did not state is the empty string. |
+| 2 | Those fields are null instead, the empty string is invalid, and `"*"` becomes the REST method wildcard. |
+| 3 | A parameter input's `role` can be null, for a parameter whose role nobody could read. |
+| 4 | One `storage` variant replaces `storage-relational`. |
+| 5 | A store and a bus go by the names OpenTelemetry's semantic conventions give them, so a summary and a span spell one boundary the same way. |
+| 6 | A metric's measurement words are OpenTelemetry's too: `histogram`, and `gauge`, `delta`, `cumulative` for what one measurement covers. |
 
-```json
-{
-  "type": "invocation",
-  "callee": "logger.error",
-  "async": false,
-  "args": [
-    {
-      "kind": "object",
-      "fields": {
-        "userId": { "kind": "identifier", "name": "userId" },
-        "requestId": { "kind": "identifier", "name": "ctx.requestId" }
-      }
-    },
-    { "kind": "string", "value": "pull request not found" }
-  ]
-}
-```
+Two of those bumps needed a hand edit. Moving to 5 changes a suppression that says which bus (`bus:sqs order.placed` becomes `bus:aws_sqs order.placed`), and a `storageSystem` of `postgres` in pack config becomes `postgresql`. Nothing else, at any version, needs one.
 
-The `EffectArg` union covers:
+## What a consumer can rely on
 
-- **`string` / `number` / `boolean`**: resolved literal values
-- **`object` / `array`**: composite shapes, kept even when individual field or element values are opaque (so the *shape* of a call's payload survives even when specific values don't)
-- **`identifier`**: variable or property-access reference (`userId`, `user.profile.email`, `process.env.QUEUE_URL`, `config["host"]`). The `name` contains the full source text, so readers can tell which binding flowed in.
-- **`call`**: nested call expression, so `log(formatError(e))` becomes `{ kind: "call", callee: "formatError", args: [...] }`.
-- **`template`**: template literal with substitutions; the source text is kept, so `` `Error: ${e.message}` `` still shows how it was put together.
-- **`null`**: truly opaque (type assertions with computed operands, arithmetic, etc.). The positional slot is kept, but the value has no structure.
+The format is stable enough to build on. These are the guarantees:
 
-Object and array shapes survive even when every field or element is opaque, so the *keys* a call supplied stay visible as evidence of what the caller meant to do. Throw terminals surface static message strings (`throw new Error("msg")` → `terminal.message: "msg"`) and template source text for interpolated messages.
+- **The parsers read every version ever published.** `parseSummaries` normalizes an older artifact on the way in, so a file written by any released version reads back as the current shape. Nobody rewrites published JSON.
+- **A breaking change bumps the major version** of `@suss/behavioral-ir` and comes with a migration note in the [changelog](/reference/changelog).
+- **Adding an interaction class, a code unit kind or a semantics variant is additive.** A tool that dispatches on `class`, `kind` or `semantics.name` needs a default branch, and gets no new required fields on the shapes it already reads.
+- **Transition ids survive reordering and reformatting.** They are computed from the condition chain's source text, with source offsets left out, so a diff across two points in time matches by id.
+- **A null identity field means the source did not say.** It never means the empty string, which is invalid from version 2 on.
+- **The JSON is canonical and the `inspect` rendering is not.** The text `suss inspect` prints is written for people to read and it changes with the CLI. Build on the JSON. [Format stability](/reference/cli/inspect#format-stability) says what the text does promise.
 
-### Throws: what's modelled, what isn't
+Two ways to read a file:
 
-Throw terminals describe what a function *explicitly* throws: `throw new Error("...")`, `throw new HttpError(...)`, etc. Bare rethrows inside a catch block (`try { ... } catch (e) { throw e }`) get `transition.metadata.rethrow.possibleSources` added to them, the union of throws from the call sites in the try body, taken from those callees' summaries (one hop, same project only).
+- **TypeScript or JavaScript.** Install `@suss/behavioral-ir` (one peer dependency on `zod`) and call `parseSummaries(json)` to validate and narrow in one step, or `safeParseSummaries(json)` to handle errors without throwing. The types come from the same schemas through `z.infer`.
+- **Anything else.** Validate against [`behavioral-summary.schema.json`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/behavioral-ir/schema/behavioral-summary.schema.json). The build generates it from the zod schemas, so it always matches the runtime parsers and nobody edits it by hand.
 
-One thing is not modelled today: *propagated* throws, the implicit throw paths of a function that calls a throwing callee without a try/catch. `function x() { y(); }` can throw whatever `y` throws, but the summary doesn't record that. Consumers who want full propagation can walk the transitive closure themselves, since the call graph is already in the summaries. This is a deliberate non-goal for v0. Modelling it faithfully runs into diminishing returns fast, because every function transitively calls something that can throw TypeError / RangeError / etc., and the question "where does the catalog of known throws end?" has no good answer. Revisit it when a concrete use case motivates a specific slice.
+## Publishing summaries with a package
 
-## Confidence
-
-Every summary has a confidence level. A return the pack could not make sense of sets it to **low** outright, since nothing then describes what that path produces. Otherwise it comes from how much of the code was decomposed versus marked opaque:
-
-- **high**: all conditions decomposed into structured predicates
-- **medium**: some opaque predicates (< 50%)
-- **low**: most predicates are opaque (>= 50%)
-
-Tools consuming summaries can use confidence to decide how much to trust the analysis.
-
-## Gaps
-
-A gap is something the summary could not account for. One kind says the code has a hole; the other two say suss could not read part of it.
-
-**`unhandledCase`** says the code has a hole. Either the contract declares a response that no transition produces, or a transition produces a status the contract never declared:
-
-```json
-{
-  "type": "unhandledCase",
-  "consequence": "frameworkDefault",
-  "description": "Declared response 500 is never produced by the handler"
-}
-```
-
-The checker reports these as `providerContractViolation` at error severity.
-
-**`unreadOutcome`** says the analysis has a hole. A `return` matched none of the terminal shapes the pack looks for, so nothing here describes what it produces:
-
-```json
-{
-  "type": "unreadOutcome",
-  "consequence": "unknown",
-  "description": "One return in this function matches none of the terminal shapes this pack looks for, so what it produces is not described here"
-}
-```
-
-The handler may be responding perfectly well in a form nobody taught the pack, so the checker reports `lowConfidence` at info severity instead of blaming the code.
-
-**`unfollowedCall`** says the walk stopped. A call could not be resolved to a function with a body, so whatever runs behind it is missing from this summary:
-
-```json
-{
-  "type": "unfollowedCall",
-  "consequence": "unknown",
-  "description": "The call to this.dao.getEditions lands on a declaration with no body, so whatever runs there is missing from this summary"
-}
-```
-
-Without it, a service reaching its database through an injected interface produces the same empty summary as a service that touches nothing. Only a call whose callee the project itself declares is recorded; a call into a dependency is described elsewhere, as a boundary crossing.
-
-## Metadata
-
-The `metadata` field contains framework-specific data that doesn't fit the universal structure. Keys are **namespaced by boundary semantics** so that additional semantics (GraphQL, Lambda-invoke, queue messages) can use their own sibling namespaces without clashing with HTTP-scoped keys. HTTP-scoped entries live under `metadata.http.*`:
-
-```json
-{
-  "metadata": {
-    "http": {
-      "declaredContract": {
-        "framework": "ts-rest",
-        "responses": [
-          { "statusCode": 200, "body": { "type": "record", "properties": { ... } } },
-          { "statusCode": 404 }
-        ]
-      },
-      "bodyAccessors": ["data"],
-      "statusAccessors": ["status"],
-      "failureDelivery": "exception"
-    }
-  }
-}
-```
-
-- `http.declaredContract`: the response schema the pack declared (status codes plus body shapes). Frameworks that read a contract, like ts-rest, fill this in. A source that declares a response by class rather than by one code (OpenAPI's `4XX`) records it under `responseRanges` (`{ min, max, spec, body }`), and an OpenAPI `default` becomes `defaultResponse`; the checker treats any status inside a range, or any status at all under a `default`, as declared.
-- `http.bodyAccessors`: names of the response properties the consumer uses to read the body (`.data` for axios, `.body`/`.json()` for fetch). These let the cross-boundary checker unwrap `expectedInput` correctly.
-- `http.statusAccessors`: names of the response properties the consumer uses to read the status code. These let the checker recognise pack-specific names beyond the historical `["status", "statusCode"]`.
-- `http.failureDelivery`: `"response"` when a refused request comes back as a response the caller reads a status off, which is `fetch`, and `"exception"` when it rejects, which is axios and ky. On `"exception"` the consumer's `catch` is the branch every non-2xx arrives on, and the coverage check counts it as handling them.
-
-Semantics-neutral keys (valid for every boundary kind) stay at the top level, e.g. `metadata.derivedFromWrapper` on summaries that came out of wrapper expansion.
-
-Tools that don't need metadata can ignore it entirely. See [Boundary semantics](/theory/boundary-semantics) for the layered model this naming convention anticipates.
-
-## Consuming summaries
-
-Summaries are designed for machine consumption. Common operations:
-
-- **Enumerate transitions**: iterate `transitions[]` to see every execution path
-- **Check coverage**: compare provider transition statuses against consumer condition literals
-- **Inspect body shapes**: read `output.body` to see what fields are returned
-- **Pair boundaries**: for HTTP boundaries, group summaries by `identity.boundaryBinding.(method, path)` to find provider/consumer pairs. Each semantics has its own pairing key; non-REST semantics added later will pair by their own identity (GraphQL operation name, Kafka topic, Lambda function name, etc.). See [Boundary semantics](/theory/boundary-semantics).
-- **Detect drift**: compare summaries from two points in time using transition IDs
-
-The format is stable enough to build on. Pin your tools to `v0` and check the schema version before parsing.
-
-For `suss inspect`'s human-readable rendering, the form you would paste
-into a review or an AI prompt, see [the inspect format stability section](/reference/cli/inspect#format-stability).
-The JSON is canonical; the text rendering is written for people to read
-and is not meant to be parsed.
-
-## What you can build on this
-
-The behavioral summary is a foundation, not an endpoint. Some things it enables:
-
-- **Documentation generation**: render summaries as human-readable API behavior docs
-- **AI context enrichment**: feed summaries to coding agents so they understand endpoint behavior without reading source
-- **Test case enumeration**: each transition is a test case; conditions are the setup, output is the expected result
-- **Impact analysis**: when a handler's summary changes, trace which consumers are affected via boundary bindings
-- **Architectural visibility**: aggregate summaries across a codebase to map which services talk to which endpoints and how
-
-## Publishing summaries
-
-The format contains no machine-specific data, so a library author can ship pre-built summaries with the package. [Publish summaries](/guides/publish-summaries) covers the convention.
-
-## Schema
-
-Two consumption paths:
-
-- **TypeScript / JavaScript:** install `@suss/behavioral-ir` (one peer dep on `zod`) and call `parseSummaries(json)` to validate and narrow in one step, or `safeParseSummaries(json)` to handle errors without throwing. The types (`BehavioralSummary`, `Transition`, `Predicate`, …) come from the same schemas via `z.infer`.
-- **Other languages:** validate against [`packages/behavioral-ir/schema/behavioral-summary.schema.json`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/behavioral-ir/schema/behavioral-summary.schema.json). The build generates it from the zod schema (`npm run build` in `packages/behavioral-ir/`), so it always matches the runtime parsers and nobody edits it by hand.
+The format contains nothing machine-specific, so a library author can ship pre-built summaries alongside the package and consumers pair against them without reading the source. [Publish summaries](/guides/publish-summaries) has the convention.
