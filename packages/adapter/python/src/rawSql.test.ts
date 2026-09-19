@@ -52,6 +52,8 @@ const WAREHOUSE: SqlClientPattern[] = [
     clientTypes: ["BigQueryHook"],
     statements: [
       { method: "get_records", argument: 0, keyword: "sql" },
+      // A method the pattern says takes its statement by keyword alone.
+      { method: "get_pandas_df", keyword: "sql" },
       {
         method: "insert_job",
         argument: 0,
@@ -417,11 +419,16 @@ describe("a statement handed to a client object", () => {
     expect(
       effects.map((effect) => {
         const { semantics, interaction } = storageOf(effect);
-        return [semantics.container, interaction.kind];
+        return {
+          container: semantics.container,
+          ...(interaction.class === "storage-access"
+            ? { kind: interaction.kind }
+            : {}),
+        };
       }),
     ).toEqual([
-      ["dim_account", "read"],
-      ["dim_stale", "write"],
+      { container: "dim_account", kind: "read" },
+      { container: "dim_stale", kind: "write" },
     ]);
   });
 
@@ -437,6 +444,60 @@ describe("a statement handed to a client object", () => {
     });
 
     expect(storageOf(effects[0] as Effect).semantics.container).toBe(
+      "dim_account",
+    );
+  });
+
+  it("says nothing when the dictionary a method takes wrote no statement under those keys", async () => {
+    expect(
+      await warehouseEffects({
+        "handler.py": [
+          "from airflow.providers.google.cloud.hooks.bigquery import BigQueryHook",
+          "",
+          "def load():",
+          "    hook = BigQueryHook()",
+          '    return hook.insert_job(configuration={"copy": {"sourceTable": "a"}})',
+        ].join("\n"),
+      }),
+    ).toEqual([]);
+  });
+
+  it("says nothing when the argument a method takes its statement in is no dictionary", async () => {
+    expect(
+      await warehouseEffects({
+        "handler.py": [
+          "from airflow.providers.google.cloud.hooks.bigquery import BigQueryHook",
+          "",
+          "def load():",
+          "    hook = BigQueryHook()",
+          '    return hook.insert_job(configuration="SELECT id FROM `analytics.core.dim_account`")',
+        ].join("\n"),
+      }),
+    ).toEqual([]);
+  });
+
+  it("reads a statement only where the method is declared to take it", async () => {
+    const positional = await warehouseEffects({
+      "handler.py": [
+        "from airflow.providers.google.cloud.hooks.bigquery import BigQueryHook",
+        "",
+        "def load():",
+        "    hook = BigQueryHook()",
+        '    return hook.get_pandas_df("SELECT id FROM `analytics.core.dim_account`")',
+      ].join("\n"),
+    });
+    expect(positional).toEqual([]);
+
+    const byKeyword = await warehouseEffects({
+      "handler.py": [
+        "from airflow.providers.google.cloud.hooks.bigquery import BigQueryHook",
+        "",
+        "def load():",
+        "    hook = BigQueryHook()",
+        '    return hook.get_pandas_df(sql="SELECT id FROM `analytics.core.dim_account`")',
+      ].join("\n"),
+    });
+    expect(storageOf(byKeyword[0] as Effect).semantics.container).toBe(
       "dim_account",
     );
   });
