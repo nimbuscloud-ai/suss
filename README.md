@@ -172,7 +172,7 @@ Reference and theory: [Summary format](./docs/reference/summary-format.md), [IR 
 
 The behavioral summary format and the IR types in `@suss/behavioral-ir` are stable. The extraction pipeline and the cross-boundary checker are in active development against a growing set of packs.
 
-Forty-seven packs read code today, reached by name with `-f`:
+Forty-nine packs read code today, reached by name with `-f`:
 
 | What it reads | Packs |
 |---|---|
@@ -183,8 +183,8 @@ Forty-seven packs read code today, reached by name with `-f`:
 | Serverless and edge | `aws-lambda` `cloudflare-workers` |
 | UI | `react` `react-router` `react-query` |
 | HTTP and GraphQL clients | `fetch` `axios` `apollo-client` `requests` `httpx` `aiohttp` `faraday` `net-http` |
-| Databases and ORMs | `prisma` `drizzle` `mongoose` `pg` `sqlalchemy` `sqlmodel` `activerecord` `redis` |
-| Warehouses | `bigquery` `bigquery-python` |
+| Databases and ORMs | `prisma` `drizzle` `mongoose` `pg` `pg-ruby` `sqlalchemy` `sqlmodel` `activerecord` `redis` |
+| Warehouses | `bigquery` `bigquery-python` `bigquery-ruby` |
 | Client state | `zustand` |
 | Object and key-value storage | `aws-s3` `gcs` `aws-dynamodb` |
 | Secrets and parameters | `aws-secrets-manager` `aws-ssm` |

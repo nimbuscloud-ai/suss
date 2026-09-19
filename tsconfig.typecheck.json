@@ -104,6 +104,9 @@
       "path": "packages/framework/bigquery/tsconfig.typecheck.json"
     },
     {
+      "path": "packages/framework/bigquery-ruby/tsconfig.typecheck.json"
+    },
+    {
       "path": "packages/framework/aws-sqs/tsconfig.typecheck.json"
     },
     {
@@ -156,6 +159,9 @@
     },
     {
       "path": "packages/framework/zustand/tsconfig.typecheck.json"
+    },
+    {
+      "path": "packages/framework/pg-ruby/tsconfig.typecheck.json"
     },
     {
       "path": "packages/framework/prisma/tsconfig.typecheck.json"

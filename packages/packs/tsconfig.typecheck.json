@@ -66,6 +66,9 @@
       "path": "../framework/bigquery/tsconfig.typecheck.json"
     },
     {
+      "path": "../framework/bigquery-ruby/tsconfig.typecheck.json"
+    },
+    {
       "path": "../framework/aws-sqs/tsconfig.typecheck.json"
     },
     {
@@ -109,6 +112,9 @@
     },
     {
       "path": "../framework/pg/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../framework/pg-ruby/tsconfig.typecheck.json"
     },
     {
       "path": "../framework/prisma/tsconfig.typecheck.json"
