@@ -73,6 +73,10 @@
       "types": "./dist/axios.d.ts",
       "import": "./dist/axios.js"
     },
+    "./bigquery-python": {
+      "types": "./dist/bigquery-python.d.ts",
+      "import": "./dist/bigquery-python.js"
+    },
     "./cloudflare-workers": {
       "types": "./dist/cloudflare-workers.d.ts",
       "import": "./dist/cloudflare-workers.js"
@@ -248,6 +252,7 @@
     "@suss/framework-aws-sns": "*",
     "@suss/framework-aws-sqs": "*",
     "@suss/framework-aws-ssm": "*",
+    "@suss/framework-bigquery-python": "*",
     "@suss/framework-cloudflare-workers": "*",
     "@suss/framework-drizzle": "*",
     "@suss/framework-express": "*",
