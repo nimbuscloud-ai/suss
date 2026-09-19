@@ -83,6 +83,37 @@ export function blanksLeftEmpty(
   return CURATED_FIELDS.filter((blank) => blanks.includes(blank));
 }
 
+/** What fills a blank so the rest of a draft can be read. */
+const PLACEHOLDER = "not written yet";
+
+/** The blanks a PRD leaves inside each scenario rather than at the top. */
+const SCENARIO_BLANKS = new Set(["when", "expect"]);
+
+/**
+ * The same draft with a placeholder written into each blank, so a
+ * reader after the parts a draft does state can validate it and have
+ * them. Nothing that fills the blanks this way should show them to
+ * anybody: the words are suss's, not the team's.
+ */
+export function fillBlanks(doc: unknown, blanks: string[]): unknown {
+  const filled = { ...(doc as Record<string, unknown>) };
+  for (const blank of blanks.filter((one) => !SCENARIO_BLANKS.has(one))) {
+    filled[blank] = PLACEHOLDER;
+  }
+
+  const scenarios = filled.scenarios;
+  if (!Array.isArray(scenarios)) {
+    return filled;
+  }
+
+  const inScenario = blanks.filter((one) => SCENARIO_BLANKS.has(one));
+  filled.scenarios = scenarios.map((scenario: unknown) => ({
+    ...(scenario as Record<string, unknown>),
+    ...Object.fromEntries(inScenario.map((blank) => [blank, PLACEHOLDER])),
+  }));
+  return filled;
+}
+
 // ---------------------------------------------------------------------------
 // Body shapes: friendly authoring form (object with primitive-typed
 // properties). Maps onto @suss/ir-core's TypeShape in ./summary.ts.

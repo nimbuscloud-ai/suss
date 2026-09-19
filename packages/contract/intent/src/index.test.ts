@@ -6,7 +6,12 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { loadIntentDirectory, loadIntentDoc, loadIntentFile } from "./index.js";
+import {
+  loadIntentDirectory,
+  loadIntentDoc,
+  loadIntentFile,
+  readIntentDirectory,
+} from "./index.js";
 
 import type { BoundaryIntentSummary, PrdSummary } from "./index.js";
 
@@ -204,6 +209,62 @@ describe("an inferred draft with its blanks still empty", () => {
     } finally {
       fs.rmSync(tmpDir, { recursive: true });
     }
+  });
+});
+
+describe("readIntentDirectory", () => {
+  let tmpDir: string;
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-intent-read-"));
+  });
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it("says which file each document came from, in name order", () => {
+    fs.writeFileSync(path.join(tmpDir, "b.intent.yaml"), YAML_BOUNDARY);
+    fs.writeFileSync(
+      path.join(tmpDir, "a.prd.json"),
+      JSON.stringify({ ...prdSpec, title: "First" }),
+    );
+
+    const read = readIntentDirectory(tmpDir);
+    expect(read.docs.map((doc) => path.basename(doc.file))).toEqual([
+      "a.prd.json",
+      "b.intent.yaml",
+    ]);
+  });
+
+  it("gives the line each outcome id is written on", () => {
+    fs.writeFileSync(path.join(tmpDir, "users.intent.yaml"), YAML_BOUNDARY);
+
+    const [doc] = readIntentDirectory(tmpDir).docs;
+    expect(doc.outcomeLines).toEqual({ "not-found": 12, found: 19 });
+  });
+
+  it("reads an uncurated draft and names the blanks it is waiting on", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "draft.intent.json"),
+      JSON.stringify({
+        ...boundarySpec,
+        purpose: "",
+        audience: "",
+        source: "inferred",
+      }),
+    );
+
+    const [doc] = readIntentDirectory(tmpDir).docs;
+    expect(doc.blanks).toEqual(["purpose", "audience"]);
+    expect(doc.summary.kind).toBe("boundary");
+    expect((doc.summary as BoundaryIntentSummary).outcomes).toHaveLength(2);
+  });
+
+  it("reports a file that is broken rather than unfinished", () => {
+    fs.writeFileSync(path.join(tmpDir, "bad.intent.yaml"), "kind: boundary\n");
+
+    const read = readIntentDirectory(tmpDir);
+    expect(read.docs).toHaveLength(0);
+    expect(read.broken).toHaveLength(1);
   });
 });
 
