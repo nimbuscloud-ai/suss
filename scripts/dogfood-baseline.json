@@ -2,11 +2,11 @@
   "totals": {
     "packages": 75,
     "packagesWithExports": 75,
-    "exports": 1014,
-    "internal": 3547,
-    "consumers": 2067,
-    "pairs": 2055,
-    "unfollowedCalls": 520,
+    "exports": 1018,
+    "internal": 3558,
+    "consumers": 2074,
+    "pairs": 2062,
+    "unfollowedCalls": 528,
     "findingErrors": 0
   },
   "packages": {
@@ -27,16 +27,16 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 116,
-      "internal": 871,
+      "internal": 872,
       "consumers": 223,
       "unfollowedCalls": 114
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 131,
-      "internal": 49,
-      "consumers": 17,
-      "unfollowedCalls": 11
+      "exports": 135,
+      "internal": 50,
+      "consumers": 20,
+      "unfollowedCalls": 13
     },
     "packages/checker": {
       "name": "@suss/checker",
@@ -48,16 +48,16 @@
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
       "exports": 3,
-      "internal": 44,
-      "consumers": 40,
-      "unfollowedCalls": 3
+      "internal": 46,
+      "consumers": 41,
+      "unfollowedCalls": 7
     },
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 35,
-      "internal": 553,
-      "consumers": 365,
-      "unfollowedCalls": 57
+      "internal": 560,
+      "consumers": 367,
+      "unfollowedCalls": 59
     },
     "packages/client/aiohttp": {
       "name": "@suss/client-aiohttp",
@@ -203,7 +203,7 @@
       "name": "@suss/extractor",
       "exports": 69,
       "internal": 85,
-      "consumers": 21,
+      "consumers": 22,
       "unfollowedCalls": 15
     },
     "packages/framework/activerecord": {
