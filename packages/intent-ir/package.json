@@ -30,15 +30,19 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
-    }
+    },
+    "./schema/intent-doc.schema.json": "./schema/intent-doc.schema.json",
+    "./package.json": "./package.json"
   },
   "files": [
     "dist",
+    "schema",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && node scripts/generate-schema.mjs && npx biome format --write schema/intent-doc.schema.json",
+    "schema:generate": "node scripts/generate-schema.mjs && npx biome format --write schema/intent-doc.schema.json",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "lint": "biome check .",
@@ -52,9 +56,11 @@
     "@suss/ir-core": "0.32.0"
   },
   "devDependencies": {
+    "ajv": "^8.20.0",
     "tsup": "*",
     "typescript": "*",
     "vitest": "*",
+    "yaml": "^2.4.0",
     "zod": "^4.3.6"
   },
   "publishConfig": {

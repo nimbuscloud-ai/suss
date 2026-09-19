@@ -397,6 +397,55 @@ describe("a boundary block that rejects what it does not recognise", () => {
   });
 });
 
+describe("a document that rejects what it does not recognise", () => {
+  it("says which key it did not recognise when scenarios is misspelt", () => {
+    const result = IntentDocSchema.safeParse({
+      ...prd,
+      scenario: prd.scenarios,
+    });
+    expect(result.success).toBe(false);
+    const said = result.error?.issues.map((issue) => issue.message).join("\n");
+    expect(said).toContain("scenario");
+  });
+
+  it("says which key it did not recognise when transitions is misspelt", () => {
+    const result = IntentDocSchema.safeParse({
+      ...fnIntent,
+      transition: fnIntent.transitions,
+    });
+    expect(result.success).toBe(false);
+    const said = result.error?.issues.map((issue) => issue.message).join("\n");
+    expect(said).toContain("transition");
+  });
+
+  it("says which key it did not recognise when a transition has a typo", () => {
+    const result = IntentDocSchema.safeParse({
+      ...fnIntent,
+      transitions: [{ ...fnIntent.transitions[0], respones: {} }],
+    });
+    expect(result.success).toBe(false);
+    const said = result.error?.issues.map((issue) => issue.message).join("\n");
+    expect(said).toContain("respones");
+  });
+
+  it("says which key it did not recognise when a scenario has a typo", () => {
+    const result = IntentDocSchema.safeParse({
+      ...prd,
+      scenarios: [
+        { titel: "Found", when: "a known id", expect: "the profile" },
+      ],
+    });
+    expect(result.success).toBe(false);
+    const said = result.error?.issues.map((issue) => issue.message).join("\n");
+    expect(said).toContain("titel");
+  });
+
+  it("leaves source optional, the one document field with a default", () => {
+    expect(IntentDocSchema.safeParse(fnIntent).success).toBe(true);
+    expect(IntentDocSchema.safeParse(prd).success).toBe(true);
+  });
+});
+
 describe("receives, normalised to a field list", () => {
   it("splits a dotted parameter name into a path", () => {
     expect(

@@ -37,7 +37,10 @@ import {
 
 export const IntentSourceSchema = z
   .enum(["author", "inferred", "inferred, curated"])
-  .default("author");
+  .default("author")
+  .describe(
+    "Where the document came from: somebody wrote it, suss inferred it, or suss inferred it and somebody has since curated it.",
+  );
 
 /** The provenance of a doc `suss infer` wrote and nobody has curated. */
 const UNCURATED_SOURCE = "inferred";
@@ -141,7 +144,12 @@ export const BodyShapeSchema = z.union([
  * the list of property names an object shape takes under the same word.
  * Nested properties go through ShapeSchema, where that list still works.
  */
-const REQUIRED = { required: z.boolean().default(false) };
+const REQUIRED = {
+  required: z
+    .boolean()
+    .default(false)
+    .describe("Whether the boundary needs this field."),
+};
 
 const InputFieldSchema = z.union([
   z.strictObject({ ...REQUIRED, type: PrimitiveTypeName }),
@@ -158,8 +166,12 @@ const InputFieldSchema = z.union([
   z.strictObject(REQUIRED),
 ]);
 
-/** Field name to field. On a function-call it is a parameter, on a bus a body field. */
-const ReceivesSchema = z.record(z.string().min(1), InputFieldSchema).optional();
+const ReceivesSchema = z
+  .record(z.string().min(1), InputFieldSchema)
+  .describe(
+    "The fields the boundary is handed, by field name. On a function-call boundary a name is a parameter, on a message bus it is a field of the message body.",
+  )
+  .optional();
 
 /**
  * A request comes in four parts the sender fills separately, so the
@@ -168,11 +180,23 @@ const ReceivesSchema = z.record(z.string().min(1), InputFieldSchema).optional();
  */
 const RestReceivesSchema = z
   .strictObject({
-    headers: z.record(z.string().min(1), InputFieldSchema).optional(),
-    query: z.record(z.string().min(1), InputFieldSchema).optional(),
-    params: z.record(z.string().min(1), InputFieldSchema).optional(),
-    body: BodyShapeSchema.optional(),
+    headers: z
+      .record(z.string().min(1), InputFieldSchema)
+      .describe("The request headers the boundary depends on, by name.")
+      .optional(),
+    query: z
+      .record(z.string().min(1), InputFieldSchema)
+      .describe("The query-string parameters the boundary depends on, by name.")
+      .optional(),
+    params: z
+      .record(z.string().min(1), InputFieldSchema)
+      .describe("The path parameters the boundary depends on, by name.")
+      .optional(),
+    body: BodyShapeSchema.describe(
+      "The shape of the request body the boundary depends on.",
+    ).optional(),
   })
+  .describe("The parts of the request the boundary depends on.")
   .optional();
 
 // ---------------------------------------------------------------------------
@@ -184,8 +208,11 @@ const RestReceivesSchema = z
 const RestBoundarySchema = z.strictObject({
   transport: z.literal("http").default("http"),
   semantics: z.literal("rest"),
-  method: z.string().min(1),
-  path: z.string().min(1),
+  method: z.string().min(1).describe("The HTTP method the route handles."),
+  path: z
+    .string()
+    .min(1)
+    .describe("The route path, written the way the framework declares it."),
   receives: RestReceivesSchema,
 });
 
@@ -199,15 +226,28 @@ const RestBoundarySchema = z.strictObject({
 const FunctionCallBoundarySchema = z.strictObject({
   transport: z.string().default("in-process"),
   semantics: z.literal("function-call"),
-  /** Repo-relative module path, when the boundary is an intra-repo unit. */
-  module: z.string().optional(),
-  /** Named export within the module / package. */
-  exportName: z.string().optional(),
-  /** Package name when the boundary is a public package export. */
-  package: z.string().optional(),
-  /** Path to the export within the package (sub-path + nested names). */
-  exportPath: z.array(z.string()).optional(),
-  /** The arguments it needs, by parameter name: `options.stream: {}`. */
+  module: z
+    .string()
+    .describe(
+      "The repo-relative module path, when the boundary is a unit inside this repository.",
+    )
+    .optional(),
+  exportName: z
+    .string()
+    .describe("The name the module or package exports the function under.")
+    .optional(),
+  package: z
+    .string()
+    .describe(
+      "The package name, when the boundary is something a package publishes.",
+    )
+    .optional(),
+  exportPath: z
+    .array(z.string())
+    .describe(
+      "The path to the export inside the package: the sub-path, then any nested names.",
+    )
+    .optional(),
   receives: ReceivesSchema,
 });
 
@@ -216,9 +256,14 @@ const FunctionCallBoundarySchema = z.strictObject({
 // authorable and unpairable, and the checker is what says so.
 const MessageBusBoundarySchema = z.strictObject({
   semantics: z.literal("message-bus"),
-  messageBus: MessageBusSemanticsSchema.shape.messageBus,
-  channel: MessageBusSemanticsSchema.shape.channel.default(null),
-  /** The fields of the message body the consumer depends on. */
+  messageBus: MessageBusSemanticsSchema.shape.messageBus.describe(
+    "Which bus carries the message, in the name suss gives that bus.",
+  ),
+  channel: MessageBusSemanticsSchema.shape.channel
+    .default(null)
+    .describe(
+      "The queue or topic the message travels on. Null when the document does not name one.",
+    ),
   receives: ReceivesSchema,
 });
 
@@ -227,10 +272,24 @@ const MessageBusBoundarySchema = z.strictObject({
 // is authorable and unpairable. See the README.
 const StorageBoundarySchema = z.strictObject({
   semantics: z.literal("storage"),
-  storageSystem: StorageSemanticsSchema.shape.storageSystem,
-  scope: StorageSemanticsSchema.shape.scope.default("default"),
-  container: StorageSemanticsSchema.shape.container.default(null),
-  accessPath: StorageSemanticsSchema.shape.accessPath.default(null),
+  storageSystem: StorageSemanticsSchema.shape.storageSystem.describe(
+    "Which store this is: postgresql, aws.dynamodb, s3, and so on.",
+  ),
+  scope: StorageSemanticsSchema.shape.scope
+    .default("default")
+    .describe(
+      "The ORM, schema or deployment scope the container is in. A setup with one database uses default.",
+    ),
+  container: StorageSemanticsSchema.shape.container
+    .default(null)
+    .describe(
+      "The table, bucket, collection or index. Null when the document does not name one.",
+    ),
+  accessPath: StorageSemanticsSchema.shape.accessPath
+    .default(null)
+    .describe(
+      "A secondary way into the container, such as a DynamoDB index or an Elasticsearch alias. Null means the container's own primary way in.",
+    ),
   receives: ReceivesSchema,
 });
 
@@ -239,8 +298,15 @@ const StorageBoundarySchema = z.strictObject({
 // unpairable, and the checker is what says so.
 const UnitInvocationBoundarySchema = z.strictObject({
   semantics: z.literal("unit-invocation"),
-  deploymentTarget: UnitInvocationSemanticsSchema.shape.deploymentTarget,
-  instanceName: UnitInvocationSemanticsSchema.shape.instanceName.default(null),
+  deploymentTarget:
+    UnitInvocationSemanticsSchema.shape.deploymentTarget.describe(
+      "What sort of deployed thing this is: a Lambda function, an ECS task's container, a plain container, a k8s deployment or an edge worker.",
+    ),
+  instanceName: UnitInvocationSemanticsSchema.shape.instanceName
+    .default(null)
+    .describe(
+      "The name the deployment medium knows the unit by, such as a CloudFormation logical id. Null when the document does not name one.",
+    ),
   receives: ReceivesSchema,
 });
 
@@ -257,16 +323,24 @@ export const BoundarySchema = z.discriminatedUnion("semantics", [
 // ---------------------------------------------------------------------------
 
 const ResponseOutcomeSchema = z.object({
-  status: z.number().int().min(100).max(599),
-  body: BodyShapeSchema.optional(),
+  status: z
+    .number()
+    .int()
+    .min(100)
+    .max(599)
+    .describe("The HTTP status code the response carries."),
+  body: BodyShapeSchema.describe("The shape of the response body.").optional(),
 });
 
 const ReturnsOutcomeSchema = z.object({
-  body: BodyShapeSchema.optional(),
+  body: BodyShapeSchema.describe("The shape of the returned value.").optional(),
 });
 
 const ThrowsOutcomeSchema = z.object({
-  errorType: z.string().optional(),
+  errorType: z
+    .string()
+    .describe("The name of the error class this outcome raises.")
+    .optional(),
 });
 
 // A key written with no value (`returns:` on its own line) parses to
@@ -274,8 +348,18 @@ const ThrowsOutcomeSchema = z.object({
 // and `returns: {}` mean the same body-less thing, instead of failing
 // with "expected object, received null".
 function emptyIfNull<T extends z.ZodTypeAny>(schema: T) {
-  return z.preprocess((v) => (v === null ? {} : v), schema);
+  return z
+    .preprocess((v) => (v === null ? {} : v), schema)
+    .meta({ [ACCEPTS_NULL]: true });
 }
+
+/**
+ * The meta key `emptyIfNull` leaves on a field for the JSON Schema
+ * generator, which rewrites the field to accept null and takes the key
+ * back out. JSON Schema has no word for a preprocess, so without this
+ * the published schema would reject a bare `returns:` that suss takes.
+ */
+export const ACCEPTS_NULL = "x-suss-accepts-null";
 
 /** One effect, written `- writes: postgresql:invoices`. */
 export type DeclaredEffect = Partial<Record<EffectRelation, string>> & {
@@ -373,13 +457,32 @@ const WhenSchema = z.union([
 ]);
 
 const BoundaryTransitionSchema = z
-  .object({
-    id: z.string().min(1),
-    when: WhenSchema,
-    response: emptyIfNull(ResponseOutcomeSchema).optional(),
-    returns: emptyIfNull(ReturnsOutcomeSchema).optional(),
-    throws: emptyIfNull(ThrowsOutcomeSchema).optional(),
-    results: z.array(EffectOutcomeSchema).min(1).optional(),
+  .strictObject({
+    id: z
+      .string()
+      .min(1)
+      .describe(
+        "The outcome's name. A PRD scenario links to it as <intent-name>.<id>.",
+      ),
+    when: WhenSchema.describe(
+      "What has to hold for this outcome, either as a list of clauses or as one sentence.",
+    ),
+    response: emptyIfNull(ResponseOutcomeSchema)
+      .describe("This outcome sends an HTTP response.")
+      .optional(),
+    returns: emptyIfNull(ReturnsOutcomeSchema)
+      .describe("This outcome returns a value to its caller.")
+      .optional(),
+    throws: emptyIfNull(ThrowsOutcomeSchema)
+      .describe("This outcome raises an error.")
+      .optional(),
+    results: z
+      .array(EffectOutcomeSchema)
+      .min(1)
+      .describe(
+        "The effects this outcome has, written in the same verbs suss ask uses: reads, writes, invokes.",
+      )
+      .optional(),
   })
   .refine((t) => endingsOf(t).length <= 1, {
     message:
@@ -402,27 +505,54 @@ function endingsOf(t: {
 // kind: boundary: system intent for one boundary.
 // ---------------------------------------------------------------------------
 
-const BoundaryIntentSchema = z.object({
-  kind: z.literal("boundary"),
-  /** Name PRDs reference outcomes through: `<name>.<transition-id>`. */
-  name: z.string().min(1),
-  purpose: z.string().min(1),
-  audience: z.string().min(1),
+// Strict for the same reason the boundary blocks are: suss reports
+// `scenario:` written for `scenarios:` and stops.
+const BoundaryIntentSchema = z.strictObject({
+  kind: z
+    .literal("boundary")
+    .describe("Makes this document boundary intent for one boundary."),
+  name: z
+    .string()
+    .min(1)
+    .describe(
+      "What this document is called. A PRD scenario links to an outcome of it as <name>.<outcome-id>.",
+    ),
+  purpose: z
+    .string()
+    .min(1)
+    .describe("What the boundary is for, in the author's own words."),
+  audience: z
+    .string()
+    .min(1)
+    .describe("Who calls this boundary and depends on what it does."),
   source: IntentSourceSchema,
-  boundary: BoundarySchema,
-  transitions: z.array(BoundaryTransitionSchema).min(1),
+  boundary: BoundarySchema.describe(
+    "Which boundary in the code the document is about.",
+  ),
+  transitions: z
+    .array(BoundaryTransitionSchema)
+    .min(1)
+    .describe("Every outcome the boundary can produce, one entry each."),
 });
 
 // ---------------------------------------------------------------------------
 // kind: prd: outcome intent (human scenarios).
 // ---------------------------------------------------------------------------
 
-const PrdScenarioSchema = z.object({
-  title: z.string().min(1).optional(),
-  /** The condition, in the author's terms. */
-  when: z.string().min(1),
-  /** The expected outcome, in the author's terms. Always present. */
-  expect: z.string().min(1),
+const PrdScenarioSchema = z.strictObject({
+  title: z
+    .string()
+    .min(1)
+    .describe("A short name for the scenario.")
+    .optional(),
+  when: z
+    .string()
+    .min(1)
+    .describe("The condition the scenario covers, in the author's own words."),
+  expect: z
+    .string()
+    .min(1)
+    .describe("What should happen then, in the author's own words."),
   /**
    * Optional structured link(s) to system-intent outcomes
    * (`<intent-name>.<outcome-id>`). A scenario without `link` is a
@@ -436,16 +566,27 @@ const PrdScenarioSchema = z.object({
    */
   link: z
     .union([z.string().min(1), z.array(z.string().min(1)).min(1)])
+    .describe(
+      "The boundary-intent outcomes this scenario is about, each written <intent-name>.<outcome-id>.",
+    )
     .optional(),
 });
 
-const PrdSchema = z.object({
-  kind: z.literal("prd"),
-  title: z.string().min(1),
-  purpose: z.string().min(1),
-  audience: z.string().min(1),
+const PrdSchema = z.strictObject({
+  kind: z
+    .literal("prd")
+    .describe("Makes this document a PRD, a set of scenarios for a feature."),
+  title: z.string().min(1).describe("What this document is called."),
+  purpose: z
+    .string()
+    .min(1)
+    .describe("What the feature is for, in the author's own words."),
+  audience: z.string().min(1).describe("Who the feature is for."),
   source: IntentSourceSchema,
-  scenarios: z.array(PrdScenarioSchema).min(1),
+  scenarios: z
+    .array(PrdScenarioSchema)
+    .min(1)
+    .describe("The situations the feature covers, one entry each."),
 });
 
 // ---------------------------------------------------------------------------

@@ -130,7 +130,7 @@ The block lists only the fields the author wants checked. It is never a full des
 
 Every spelling normalises to the same list on `BoundaryIntentSummary.receives`: a path, a shape or null, and whether the field is required. `pair.provider` becomes `["pair", "provider"]`, and a REST section becomes the first segment of the path, so `["headers", "x-tenant-id"]` and `["body", "note"]`. The checker has one pass over that list and never looks at the boundary kind.
 
-Every boundary block is a `z.strictObject`, so a misspelt `recieves:` stops the run with `boundary: Unrecognized key: "recieves"` rather than being dropped in silence. That rejects unknown keys only; the fields that were optional stay optional, so a module-level function-call boundary is still authorable.
+Every boundary block is a `z.strictObject`, so a misspelt `recieves:` stops the run with `boundary: Unrecognized key: "recieves"` instead of disappearing. The two document shapes, a transition and a scenario are all strict for the same reason, so `scenario:` for `scenarios:`, `respones:` on a transition and `titel:` on a scenario each stop the run. That rejects unknown keys only; the fields that were optional stay optional, so a module-level function-call boundary is still authorable and `source:` can still be left off.
 
 ## Which boundaries pair, and which are pending
 
