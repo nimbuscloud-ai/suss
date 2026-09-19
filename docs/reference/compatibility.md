@@ -45,16 +45,16 @@ Everything suss recognizes comes from a pack, and the packs ship inside `@suss/c
 
 ## Dependencies
 
-Install your project's dependencies before running suss. Some packs need them and the rest do not.
+Install your project's dependencies before running suss. Some packs resolve symbols through them and cannot do their job otherwise.
 
 | | What happens |
 |---|---|
 | Dependencies installed | Everything works |
 | Not installed, pack reads a file on disk | Works. The AWS pack finds handlers through your SAM template. |
-| Not installed, pack resolves symbols | Finds nothing, and says which package is missing |
+| Not installed, pack resolves symbols | Finds nothing, and tells you which package is missing |
 | A library with no pack | suss marks the call unknown and reads the rest of the unit |
 
-When a pack needs a package you have not installed, the run says which one:
+When a pack needs a package you have not installed, the run tells you which one:
 
 ```
 No summaries to write in 0.02s.
@@ -104,15 +104,15 @@ const app = express();
 registerHealth(app);
 ```
 
-suss reads `GET /health` here. The receiver is a parameter, the parameter comes from whatever each caller passed, and the walk ends at the `express()` that built the app. It follows the app through as many helpers as it is handed through, and the path and the handler resolve the same way.
+suss reads `GET /health` here. The receiver is a parameter, the parameter comes from whatever each caller passed, and the walk ends at the `express()` that built the app. It follows the app through however many helpers you hand it to, and it resolves the path and the handler the same way.
 
-A helper called from more than one place with different arguments would leave those values undecided, so suss reads it from the other direction: before extraction it writes down what each such function registers in terms of its own parameters, then fills those in at every call site. `registerCrud(app, "users", handlers)` gives `GET /users` and `POST /users` where the helper writes ``app.get(`/${name}`, handlers.list)``. The helper's own file need not mention express for this, so a parameter typed with an interface of your own is read too.
+A helper called from several places with different arguments would leave those values undecided, so suss works from the other direction. Before extraction it writes down what each such function registers in terms of its own parameters, then fills those parameters in at every call site. Given a helper that writes ``app.get(`/${name}`, handlers.list)``, the call `registerCrud(app, "users", handlers)` gives you `GET /users` and `POST /users`. The helper's own file doesn't have to mention express, so a parameter typed with an interface of your own works here too.
 
 ## Where it stops
 
-**A helper reached through an object.** suss follows a helper called by its own name. `responses.json(200, payload)` is not followed, and the handler comes back with a low-confidence summary saying the return matched no terminal shape the pack knows.
+**A helper reached through an object.** suss follows a helper called by its own name. `responses.json(200, payload)` is not followed, and the handler comes back with a low-confidence summary recording that the return didn't match any terminal shape in the pack.
 
-**An app with two values.** When the app itself is built twice and handed to one helper, nothing says which app the helper registered on, so the route is left out. The handler's summary says so under `Could not follow:` in `suss inspect`:
+**An app with two values.** When the app itself is built twice and handed to one helper, suss cannot tell which app the helper registered on, so the route is left out. The handler's summary says so under `Could not follow:` in `suss inspect`:
 
 ```
 Could not follow:
@@ -123,6 +123,6 @@ Could not follow:
 
 **Two services in one folder.** suss identifies an HTTP boundary by its method and path and nothing else, so two services that both expose `GET /users` count as one boundary and a client of either pairs against both. Check one service at a time until this is fixed; [Work across services](/guides/work-across-services#two-services-that-serve-the-same-path) has the commands.
 
-**Routes registered at runtime.** `registerRoutes(configBuiltAtRuntime)` reads nothing. suss reads what the code says without running it.
+**Routes registered at runtime.** suss gets nothing out of `registerRoutes(configBuiltAtRuntime)`, because it reads what the code says without running it.
 
-**Other languages.** Go, Java, C# and the rest are invisible. The adapter interface does not care which language it is fed, so one could be written; Python and Ruby were.
+**Other languages.** suss reads nothing of Go, Java, C# or anything else. The adapter interface is not tied to a particular language, so somebody could write an adapter for one of them, the way the Python and Ruby adapters were written.
