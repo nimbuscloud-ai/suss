@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   blanksLeftEmpty,
+  fillBlanks,
   IntentDocSchema,
   IntentFindingKindSchema,
   intentDocToSummary,
@@ -1058,6 +1059,59 @@ describe("blanksLeftEmpty", () => {
       blanksLeftEmpty({ source: "inferred, curated" }, ["purpose"]),
     ).toEqual([]);
     expect(blanksLeftEmpty({}, ["purpose"])).toEqual([]);
+  });
+});
+
+describe("fillBlanks", () => {
+  it("writes a placeholder into a top-level blank", () => {
+    const filled = fillBlanks(
+      { source: "inferred", name: "get-report", purpose: "", audience: "" },
+      ["purpose", "audience"],
+    ) as Record<string, string>;
+
+    expect(filled.purpose).toBe("not written yet");
+    expect(filled.audience).toBe("not written yet");
+    expect(filled.name).toBe("get-report");
+  });
+
+  it("writes a scenario's blanks into every scenario", () => {
+    const filled = fillBlanks(
+      {
+        source: "inferred",
+        title: "",
+        scenarios: [
+          { when: "", expect: "", link: "get-report.served" },
+          { when: "", expect: "" },
+        ],
+      },
+      ["title", "when", "expect"],
+    ) as { title: string; scenarios: Array<Record<string, string>> };
+
+    expect(filled.title).toBe("not written yet");
+    expect(filled.scenarios).toEqual([
+      {
+        when: "not written yet",
+        expect: "not written yet",
+        link: "get-report.served",
+      },
+      { when: "not written yet", expect: "not written yet" },
+    ]);
+  });
+
+  it("leaves a boundary document alone, since it has no scenarios", () => {
+    const filled = fillBlanks({ source: "inferred", purpose: "" }, [
+      "purpose",
+      "when",
+    ]) as Record<string, unknown>;
+
+    expect(filled).toEqual({ source: "inferred", purpose: "not written yet" });
+  });
+
+  it("does not write over the document it was handed", () => {
+    const draft = { source: "inferred", purpose: "" };
+    fillBlanks(draft, ["purpose"]);
+
+    expect(draft.purpose).toBe("");
   });
 });
 

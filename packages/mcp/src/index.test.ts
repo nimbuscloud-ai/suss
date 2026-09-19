@@ -77,6 +77,7 @@ function writeProject(root: string): void {
       "      status: 200",
     ].join("\n"),
   );
+  writeBigIntentFolder(path.join(root, "many-intent"));
   fs.writeFileSync(
     path.join(root, "suss.json"),
     JSON.stringify({
@@ -90,6 +91,60 @@ function writeProject(root: string): void {
         },
       ],
     }),
+  );
+}
+
+/** How many outcomes a tool result shows before it counts the rest. */
+const SHOWN = 20;
+
+/**
+ * More outcomes than one answer shows, and an uncurated draft beside
+ * them, so the answer has to say what it left out and why.
+ */
+function writeBigIntentFolder(dir: string): void {
+  fs.mkdirSync(dir, { recursive: true });
+  const outcome = (i: number): string[] => [
+    `  - id: case-${i}`,
+    `    when: the request asks for case ${i}`,
+    "    response:",
+    "      status: 200",
+  ];
+  fs.writeFileSync(
+    path.join(dir, "cases.intent.yaml"),
+    [
+      "kind: boundary",
+      "name: list-cases",
+      "purpose: Serve one case at a time.",
+      "audience: the storefront",
+      "source: author",
+      "boundary:",
+      "  transport: http",
+      "  semantics: rest",
+      "  method: GET",
+      "  path: /cases/:id",
+      "transitions:",
+      ...Array.from({ length: SHOWN + 1 }, (_, i) => outcome(i)).flat(),
+    ].join("\n"),
+  );
+  fs.writeFileSync(
+    path.join(dir, "report.intent.yaml"),
+    [
+      "kind: boundary",
+      "name: get-report",
+      'purpose: ""',
+      'audience: ""',
+      "source: inferred",
+      "boundary:",
+      "  transport: http",
+      "  semantics: rest",
+      "  method: GET",
+      "  path: /report",
+      "transitions:",
+      "  - id: 200-ok",
+      "    when: every call reaches this outcome",
+      "    response:",
+      "      status: 200",
+    ].join("\n"),
   );
 }
 
@@ -207,6 +262,33 @@ describe("the suss MCP server", () => {
     expect(payload.outcomes[0].description).toBe(
       "responds 200 when the order exists",
     );
+  });
+
+  it("says what it left out: the rest of a long list, and the drafts", async () => {
+    const result = await client.callTool({
+      name: "suss_intent_outcomes",
+      arguments: { intentDir: "many-intent" },
+    });
+    const payload = result.structuredContent as {
+      outcomes: unknown[];
+      total: number;
+      countsByIntent: Record<string, number>;
+      note: string;
+    };
+    expect(payload.total).toBe(SHOWN + 1);
+    expect(payload.outcomes).toHaveLength(SHOWN);
+    expect(payload.countsByIntent).toEqual({ "list-cases": SHOWN + 1 });
+    expect(payload.note).toContain("1 more outcomes are not shown");
+    expect(payload.note).toContain("Left out 1 outcome an uncurated draft");
+  });
+
+  it("keeps only the boundaries the filter picks out", async () => {
+    const result = await client.callTool({
+      name: "suss_intent_outcomes",
+      arguments: { intentDir: "many-intent", boundary: "/nothing-here" },
+    });
+    const payload = result.structuredContent as { total: number };
+    expect(payload.total).toBe(0);
   });
 
   it("says which folder to pass when there is no intent folder", async () => {

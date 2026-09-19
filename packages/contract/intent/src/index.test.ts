@@ -127,6 +127,12 @@ describe("loadIntentFile / loadIntentDirectory", () => {
     expect(() => loadIntentFile(file)).toThrow(/failed to parse/);
   });
 
+  it("throws when the file parses to something other than an object", () => {
+    const file = path.join(tmpDir, "scalar.intent.yaml");
+    fs.writeFileSync(file, "just a sentence\n");
+    expect(() => loadIntentFile(file)).toThrow(/is not an object/);
+  });
+
   it("walks a directory recursively for *.intent and *.prd files", () => {
     fs.writeFileSync(path.join(tmpDir, "users.intent.yaml"), YAML_BOUNDARY);
     const nested = path.join(tmpDir, "product");
@@ -265,6 +271,70 @@ describe("readIntentDirectory", () => {
     const read = readIntentDirectory(tmpDir);
     expect(read.docs).toHaveLength(0);
     expect(read.broken).toHaveLength(1);
+  });
+
+  it("reports a draft whose blank a placeholder cannot fill", () => {
+    // A transition's `when` counts as a blank, and only a person can
+    // fill it: nothing in the code says what the branch turned on.
+    fs.writeFileSync(
+      path.join(tmpDir, "draft.intent.json"),
+      JSON.stringify({
+        ...boundarySpec,
+        source: "inferred",
+        transitions: [{ id: "found", when: "", returns: {} }],
+      }),
+    );
+
+    const read = readIntentDirectory(tmpDir);
+    expect(read.docs).toHaveLength(0);
+    expect(read.broken[0]).toMatch(/when is still blank/);
+  });
+
+  it("refuses a path that is a file rather than a folder", () => {
+    const file = path.join(tmpDir, "users.intent.yaml");
+    fs.writeFileSync(file, YAML_BOUNDARY);
+
+    expect(() => readIntentDirectory(file)).toThrow(/is not a directory/);
+  });
+
+  it("counts the rejections past the first ten", () => {
+    for (let i = 0; i < 12; i++) {
+      fs.writeFileSync(
+        path.join(tmpDir, `bad-${i}.intent.yaml`),
+        "kind: boundary\n",
+      );
+    }
+
+    expect(() => loadIntentDirectory(tmpDir)).toThrow(/and 2 more/);
+  });
+
+  it("skips the line of an outcome whose id is written as an alias", () => {
+    // Both halves of the document resolve for the schema, and neither
+    // is a node with a position of its own, so there is no line to give.
+    fs.writeFileSync(
+      path.join(tmpDir, "aliased.intent.yaml"),
+      [
+        "kind: boundary",
+        "name: &doc-name users-lookup",
+        "purpose: Look up a user by id.",
+        "audience: web-client",
+        "boundary:",
+        "  transport: http",
+        "  semantics: rest",
+        "  method: GET",
+        "  path: /users/:id",
+        "transitions:",
+        "  - &first",
+        "    id: *doc-name",
+        "    when: user exists",
+        "    returns:",
+        "  - *first",
+      ].join("\n"),
+    );
+
+    const [doc] = readIntentDirectory(tmpDir).docs;
+    expect((doc.summary as BoundaryIntentSummary).outcomes).toHaveLength(2);
+    expect(doc.outcomeLines).toEqual({});
   });
 });
 

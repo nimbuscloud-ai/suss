@@ -370,7 +370,7 @@ function draftNote(drafts: number): string | undefined {
   if (drafts === 0) {
     return undefined;
   }
-  return `${drafts} more outcome(s) are in uncurated drafts and are left out, since curation renames those ids.`;
+  return `Left out ${drafts} outcome${drafts === 1 ? "" : "s"} an uncurated draft declares, since curation renames those ids.`;
 }
 
 export async function stubDraftTool(
