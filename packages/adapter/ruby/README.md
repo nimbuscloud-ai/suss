@@ -26,6 +26,7 @@ npx suss check --dir summaries/
 - Rails controller actions, bound to the method and path `config/routes.rb` gives each one, with every status an action can respond with and the `before_action` filters that run in front of it.
 - graphql-ruby's class-based field DSL, including `mutation:` and `resolver:` wiring, and the method behind a field wherever it is defined in the class's ancestry.
 - ActiveRecord calls, what a file reads from the environment, and what a body calls out to, as facts the checker's rules run over.
+- SQL a project wrote itself and handed to a database client, parsed by `@suss/sql` into the tables it touches.
 
 How each of those is decided, and where it stops: [how the Ruby adapter reads a project](./DESIGN.md).
 

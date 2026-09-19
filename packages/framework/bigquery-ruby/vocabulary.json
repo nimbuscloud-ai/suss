@@ -1,0 +1,18 @@
+{
+  "bigquery": "google-cloud-bigquery: Google::Cloud.bigquery hands a client out, and @suss/sql reads BigQuery's own SQL under the same name",
+  "container": "suss: which table an access reached",
+  "data": "google-cloud-bigquery: Google::Cloud::Bigquery::Table#data reads the table's rows",
+  "dataset": "google-cloud-bigquery: Google::Cloud::Bigquery::Project#dataset picks a dataset",
+  "delete": "google-cloud-bigquery: Google::Cloud::Bigquery::Table#delete removes the table",
+  "insert": "google-cloud-bigquery: Table#insert and Dataset#insert stream rows in",
+  "insert_async": "google-cloud-bigquery: Table#insert_async and Dataset#insert_async stream rows in through a background writer",
+  "load": "google-cloud-bigquery: Table#load and Dataset#load write rows from a file and wait",
+  "load_job": "google-cloud-bigquery: Table#load_job and Dataset#load_job start the same write without waiting",
+  "new": "language: Ruby spells Class#new the same way. Google::Cloud::Bigquery.new builds a client",
+  "query": "google-cloud-bigquery: Project#query and Dataset#query run a statement and wait for its rows",
+  "query_job": "google-cloud-bigquery: Project#query_job and Dataset#query_job start the same statement without waiting",
+  "read": "suss: access kind",
+  "scope": "suss: which namespace an access reached",
+  "table": "google-cloud-bigquery: Google::Cloud::Bigquery::Dataset#table picks a table",
+  "write": "suss: access kind"
+}

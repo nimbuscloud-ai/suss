@@ -9,7 +9,13 @@
   },
   "references": [
     {
+      "path": "../../packages/adapter/ruby/tsconfig.typecheck.json"
+    },
+    {
       "path": "../../packages/adapter/typescript/tsconfig.typecheck.json"
+    },
+    {
+      "path": "../../packages/datalog/tsconfig.typecheck.json"
     },
     {
       "path": "../../packages/behavioral-ir/tsconfig.typecheck.json"

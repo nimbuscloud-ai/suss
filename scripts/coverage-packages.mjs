@@ -71,6 +71,8 @@ export const coveragePackages = [
   ["packages/framework/activerecord", "activerecord"],
   ["packages/framework/graphql-ruby", "graphql-ruby"],
   ["packages/framework/rails", "rails"],
+  ["packages/framework/bigquery-ruby", "bigquery-ruby"],
+  ["packages/framework/pg-ruby", "pg-ruby"],
   // Clients
   ["packages/client/web", "web"],
   ["packages/client/axios", "axios"],

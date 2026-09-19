@@ -72,6 +72,9 @@ const KEYED_BY_IDENTIFIER = new Set([
   "codes",
   "scalars",
   "means",
+  "addressing",
+  "statements",
+  "rowCalls",
 ]);
 
 /**

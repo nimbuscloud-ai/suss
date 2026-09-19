@@ -63,6 +63,11 @@ export {
   walkClasses,
   walkDefinitions,
 } from "./scope.js";
+export {
+  type RbStorageOptions,
+  storageClaims,
+  storageEffects,
+} from "./storage.js";
 export { rubyStubEvidence } from "./stubEvidence.js";
 export { typeShapeFromNode } from "./typeShape.js";
 export {
@@ -91,8 +96,12 @@ export type {
 export type {
   ControllerActions,
   GraphqlObjectFields,
+  RbAddressingCall,
+  RbArgumentPlace,
   RbBodyBlock,
   RbInflections,
+  RbRawSqlPattern,
+  RbRowCall,
   RbStatusCall,
   RbStoragePattern,
   RubyDiscoveryPattern,

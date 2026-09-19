@@ -8,9 +8,9 @@
  * defines, and every other call is left to the reach walk. The README says
  * why ancestry.
  *
- * The class behind the receiver comes from the constant bindings for a chain
- * written from a constant and from the resolution rules otherwise. A loader
- * pattern adds calls given the model as an argument, tested the same way.
+ * The class behind the receiver comes from the constant bindings, or from the
+ * resolution rules. A loader pattern adds calls given the model, and a raw
+ * SQL pattern adds calls handed a statement, both reported through here.
  */
 
 import { storageBinding } from "@suss/ir-core";
@@ -24,12 +24,17 @@ import {
 } from "./ast.js";
 import { RUBY_PROGRAM } from "./facts/resolve.js";
 import { nodeId, readKey } from "./facts/values.js";
+import { rawSqlEffects } from "./rawSql.js";
 import { compoundName } from "./scope.js";
 import { evaluatedValue, stringValueOf } from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { RbLoaderPattern, RbStoragePattern } from "./pack.js";
+import type {
+  RbLoaderPattern,
+  RbRawSqlPattern,
+  RbStoragePattern,
+} from "./pack.js";
 import type { RbNode } from "./parser.js";
 
 function children(node: RbNode): RbNode[] {
@@ -62,6 +67,8 @@ export interface RbStorageOptions {
   readonly facts: Database;
   readonly patterns: readonly RbStoragePattern[];
   readonly loaders?: readonly RbLoaderPattern[];
+  /** What a pack says about calls that take SQL the project wrote itself. */
+  readonly rawSql?: readonly RbRawSqlPattern[];
 }
 
 function isConstant(node: RbNode): boolean {
@@ -533,7 +540,19 @@ function effectsOfCall(
   enclosing: RbNode | null,
 ): Effect[] {
   const onModel = modelCallEffects(call, file, options, enclosing);
-  return onModel.length > 0 ? onModel : loaderCallEffects(call, file, options);
+  if (onModel.length > 0) {
+    return onModel;
+  }
+
+  const throughLoader = loaderCallEffects(call, file, options);
+  if (throughLoader.length > 0) {
+    return throughLoader;
+  }
+
+  return rawSqlEffects(call, {
+    facts: options.facts,
+    patterns: options.rawSql ?? [],
+  });
 }
 
 /**
@@ -548,9 +567,14 @@ export function storageClaims(
   enclosing: RbNode | null = null,
 ): boolean {
   return (
-    options.patterns.length > 0 &&
+    saysAnything(options) &&
     effectsOfCall(call, file, options, enclosing).length > 0
   );
+}
+
+/** Whether any pack in the run said anything about the database at all. */
+function saysAnything(options: RbStorageOptions): boolean {
+  return options.patterns.length > 0 || (options.rawSql ?? []).length > 0;
 }
 
 /** The receivers this body asks the rules about, so one evaluation settles them all. */
@@ -588,7 +612,7 @@ export function storageEffects(
   options: RbStorageOptions,
   enclosing: RbNode | null = null,
 ): Effect[] {
-  if (options.patterns.length === 0) {
+  if (!saysAnything(options)) {
     return [];
   }
 

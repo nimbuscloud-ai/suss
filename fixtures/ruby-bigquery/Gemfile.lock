@@ -1,0 +1,13 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    google-cloud-bigquery (1.42.0)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  google-cloud-bigquery (~> 1.42)
+
+BUNDLED WITH
+   2.5.9
