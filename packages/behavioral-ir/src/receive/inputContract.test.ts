@@ -4,6 +4,7 @@ import {
   functionCallBinding,
   messageBusBinding,
   restBinding,
+  storageBinding,
 } from "@suss/ir-core";
 
 import {
@@ -501,6 +502,20 @@ describe("boundaryInputReads on a REST route", () => {
     });
   });
 
+  it("stands down when a rest parameter could be taking anything else", () => {
+    const withRest: BehavioralSummary = {
+      ...receiver({
+        inputs: [parameter("args", "rest")],
+        reads: [{ input: "args", path: ["0", "headers"] }],
+      }),
+      metadata: { requestSpelling: EXPRESS_SPELLING },
+    };
+    expect(boundaryInputReads(withRest, GET_INVOICES)).toEqual({
+      read: false,
+      reason: "rest-parameter",
+    });
+  });
+
   it("counts what the middleware around the route reads as the route's", () => {
     const middleware = receiver({
       inputs: [parameter("req", "request"), parameter("res", "response", 1)],
@@ -560,6 +575,45 @@ describe("boundaryInputPathOf", () => {
       inputRef: "req",
       path: ["user", "id"],
     });
+    expect(path).toBeNull();
+  });
+
+  it("puts the parameter's role first on a function-call boundary", () => {
+    const path = boundaryInputPathOf(
+      receiver({ inputs: [parameter("c", "consumer")] }),
+      functionCallBinding({
+        transport: "in-process",
+        recognition: "code",
+        package: "@suss/checker",
+      }),
+      { type: "input", inputRef: "c", path: ["identity"] },
+    );
+    expect(path).toEqual(["consumer", "identity"]);
+  });
+
+  it("starts at the message body on a message-bus boundary", () => {
+    const path = boundaryInputPathOf(
+      receiver({ inputs: [parameter("event", "event")] }),
+      messageBusBinding({
+        recognition: "code",
+        messageBus: "aws_sqs",
+        channel: "orders",
+      }),
+      { type: "input", inputRef: "event", path: ["orderId"] },
+    );
+    expect(path).toEqual(["orderId"]);
+  });
+
+  it("gives nothing on a protocol that has not said how it spells a read", () => {
+    const path = boundaryInputPathOf(
+      receiver({ inputs: [parameter("row", "row")] }),
+      storageBinding({
+        recognition: "code",
+        storageSystem: "aws.dynamodb",
+        container: "Invoices",
+      }),
+      { type: "input", inputRef: "row", path: ["id"] },
+    );
     expect(path).toBeNull();
   });
 });

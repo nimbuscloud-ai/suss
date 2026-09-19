@@ -11,6 +11,7 @@ import {
   readModuleImports,
   readMountMetadata,
   readReactMetadata,
+  readRequestSpellingMetadata,
   readRoutingMetadata,
   readRuntimeContractMetadata,
   readSourceDocumentMetadata,
@@ -21,6 +22,7 @@ import {
   withHttpMetadata,
   withMessageBusMetadata,
   withMountMetadata,
+  withRequestSpellingMetadata,
   withRoutingMetadata,
   withRuntimeContractMetadata,
   withSourceDocumentMetadata,
@@ -83,6 +85,33 @@ describe("the mount metadata namespace", () => {
         siblings: 2,
         prefix: "/v1",
         extra: true,
+      } as never),
+    ).toThrow();
+  });
+});
+
+describe("the requestSpelling metadata namespace", () => {
+  it("round-trips where a handler reads each part of the request", () => {
+    const summary = summaryWith(
+      withRequestSpellingMetadata(undefined, {
+        headers: { path: ["request", "headers"], saysWhichField: true },
+        body: { path: ["event", "body"], saysWhichField: false },
+      }),
+    );
+    expect(readRequestSpellingMetadata(summary)).toEqual({
+      headers: { path: ["request", "headers"], saysWhichField: true },
+      body: { path: ["event", "body"], saysWhichField: false },
+    });
+  });
+
+  it("gives nothing for a summary whose pack never said", () => {
+    expect(readRequestSpellingMetadata(summaryWith(undefined))).toBeUndefined();
+  });
+
+  it("throws on a section the schema does not declare", () => {
+    expect(() =>
+      withRequestSpellingMetadata(undefined, {
+        cookies: { path: ["request", "cookies"], saysWhichField: true },
       } as never),
     ).toThrow();
   });

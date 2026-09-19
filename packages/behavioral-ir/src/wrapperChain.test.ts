@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { withWrapperMetadata } from "./metadata.js";
-import { wrapperChain, wrapperFor, wrapperIndex } from "./wrapperChain.js";
+import {
+  wrapperChain,
+  wrapperFor,
+  wrapperIndex,
+  wrappersAround,
+} from "./wrapperChain.js";
 
 import type { BehavioralSummary } from "./index.js";
 
@@ -61,5 +66,26 @@ describe("wrapperChain", () => {
 
   it("gives nothing for a unit with no wrappers", () => {
     expect(wrapperChain(unit("route", "src/routes.ts", 1))).toEqual([]);
+  });
+});
+
+describe("wrappersAround", () => {
+  const outer = unit("outer", "src/a.ts", 3);
+  const route: BehavioralSummary = {
+    ...unit("route", "src/routes.ts", 1),
+    metadata: withWrapperMetadata(undefined, {
+      applied: [
+        { file: "src/a.ts", name: "outer" },
+        { file: "src/vendor.ts", name: "fromAPackage" },
+      ],
+    }),
+  };
+
+  it("gives the summary behind each reference the run has one for", () => {
+    expect(wrappersAround([route, outer])(route)).toEqual([outer]);
+  });
+
+  it("gives nothing for a unit that records no wrappers", () => {
+    expect(wrappersAround([route, outer])(outer)).toEqual([]);
   });
 });
