@@ -1,14 +1,23 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  functionCallBinding,
+  messageBusBinding,
+  restBinding,
+} from "@suss/ir-core";
+
+import {
+  boundaryInputReads,
   type CarriesPayload,
   checkReceivedInput,
   compareSupplied,
   formatPath,
+  messageBodyReadSet,
+  readPathOf,
   readSetOf,
 } from "./inputContract.js";
 
-import type { BehavioralSummary, Input } from "@suss/behavioral-ir";
+import type { BehavioralSummary, Input } from "../index.js";
 
 const arrivesAsEvent: CarriesPayload = (input) =>
   input.type === "parameter" && input.role === "event";
@@ -228,5 +237,152 @@ describe("checkReceivedInput", () => {
 describe("formatPath", () => {
   it("writes a path the way the source spells it", () => {
     expect(formatPath(["data", "invoiceId"])).toBe("data.invoiceId");
+  });
+});
+
+describe("messageBodyReadSet", () => {
+  it("declines when the handler read a field of the platform's own record", () => {
+    const result = messageBodyReadSet(
+      receiver({
+        inputs: [parameter("event", "event")],
+        reads: [{ input: "event", path: ["Records", "body"] }],
+      }),
+      "aws_sqs",
+    );
+    expect(result).toEqual({ read: false, reason: "platform-envelope" });
+  });
+
+  it("treats a handler that read no envelope field as holding the parsed message", () => {
+    const result = messageBodyReadSet(
+      receiver({
+        inputs: [parameter("event", "event")],
+        reads: [{ input: "event", path: ["orderId"] }],
+      }),
+      "aws_sqs",
+    );
+    expect(result).toEqual({
+      read: true,
+      reads: { paths: [["orderId"]], rootedAtPayload: true },
+    });
+  });
+
+  it("leaves the read set alone for a bus with no envelope of its own", () => {
+    const result = messageBodyReadSet(
+      receiver({
+        inputs: [parameter("event", "event")],
+        reads: [{ input: "event", path: ["orderId"] }],
+      }),
+      "kafka",
+    );
+    expect(result).toEqual({
+      read: true,
+      reads: { paths: [["orderId"]], rootedAtPayload: false },
+    });
+  });
+});
+
+describe("boundaryInputReads", () => {
+  it("gives every parameter of a function-call boundary under its own role", () => {
+    const result = boundaryInputReads(
+      receiver({
+        inputs: [parameter("provider", "provider"), parameter("c", "consumer")],
+        reads: [
+          { input: "provider", path: [] },
+          { input: "c", path: ["identity"] },
+        ],
+      }),
+      functionCallBinding({ recognition: "code", package: "@suss/checker" }),
+    );
+    expect(result).toEqual({
+      read: true,
+      reads: {
+        paths: [["provider"], ["consumer", "identity"]],
+        rootedAtPayload: true,
+      },
+    });
+  });
+
+  it("goes through the envelope for a message-bus boundary", () => {
+    const result = boundaryInputReads(
+      receiver({
+        inputs: [parameter("event", "event")],
+        reads: [{ input: "event", path: ["Records", "body"] }],
+      }),
+      messageBusBinding({
+        recognition: "code",
+        messageBus: "aws_sqs",
+        channel: "orders",
+      }),
+    );
+    expect(result).toEqual({ read: false, reason: "platform-envelope" });
+  });
+
+  it("declines for REST, whose sections no framework has spelled out here", () => {
+    const result = boundaryInputReads(
+      receiver({
+        inputs: [parameter("req", "request")],
+        reads: [{ input: "req", path: ["headers", "x-tenant-id"] }],
+      }),
+      restBinding({
+        transport: "http",
+        method: "GET",
+        path: "/invoices",
+        recognition: "code",
+      }),
+    );
+    expect(result).toEqual({ read: false, reason: "unmapped-protocol" });
+  });
+});
+
+describe("readPathOf", () => {
+  it("spells a guard on a parameter the way a read of it is spelled", () => {
+    const summary = receiver({ inputs: [parameter("opts", "options")] });
+    expect(
+      readPathOf(
+        summary,
+        { type: "input", inputRef: "opts", path: ["stream"] },
+        () => false,
+      ),
+    ).toEqual(["options", "stream"]);
+  });
+
+  it("drops the payload's own name, the way a read off it does", () => {
+    const summary = receiver({ inputs: [parameter("message", "event")] });
+    expect(
+      readPathOf(
+        summary,
+        { type: "input", inputRef: "message", path: ["orderId"] },
+        arrivesAsEvent,
+      ),
+    ).toEqual(["orderId"]);
+  });
+
+  it("has no path for the payload taken whole", () => {
+    const summary = receiver({ inputs: [parameter("message", "event")] });
+    expect(
+      readPathOf(
+        summary,
+        { type: "input", inputRef: "message", path: [] },
+        arrivesAsEvent,
+      ),
+    ).toBeNull();
+  });
+
+  it("has no path for a reference to something other than an input", () => {
+    const summary = receiver({ inputs: [parameter("message", "event")] });
+    expect(
+      readPathOf(summary, { type: "state", name: "count" }, arrivesAsEvent),
+    ).toBeNull();
+  });
+
+  it("has no path for an input the summary never declared", () => {
+    const summary = receiver({ inputs: [parameter("message", "event")] });
+    expect(
+      readPathOf(
+        summary,
+        { type: "input", inputRef: "nowhere", path: ["id"] },
+        arrivesAsEvent,
+      ),
+    ).toBeNull();
   });
 });

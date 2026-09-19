@@ -34,7 +34,7 @@ import {
 import {
   compareSupplied,
   formatPath,
-  readSetOf,
+  messageBodyReadSet,
 } from "../receive/inputContract.js";
 import {
   addChannel,
@@ -52,12 +52,11 @@ import type {
   BoundaryBinding,
   Finding,
   MessageBusSemantics,
-  MessageBusTechnology,
   UnitScope,
   UnitsByFile,
 } from "@suss/behavioral-ir";
 import type { ComparedPair } from "../pairing/comparedPair.js";
-import type { CarriesPayload, ReadSet } from "../receive/inputContract.js";
+import type { ReadSet } from "../receive/inputContract.js";
 
 type ProducerRecord = InteractionRecord<"message-send"> & {
   /** Null when no env var resolved to a template resource. */
@@ -740,29 +739,6 @@ function makeSide(
 // Body-shape pairing
 // ---------------------------------------------------------------------------
 
-/**
- * A message arrives through the handler's event parameter. Every pack
- * that discovers a message handler gives that parameter this role.
- */
-const isTheMessageParameter: CarriesPayload = (input) =>
-  input.type === "parameter" && input.role === "event";
-
-/**
- * The fields at the top of Lambda's event, per bus, that a business
- * payload would not plausibly have. A handler reading one of these was
- * given the envelope; one reading none of them was given the parsed
- * message by a wrapper. EventBridge's `id`, `source` and `time` are
- * left out because a parsed detail often has fields spelled that way.
- */
-const LAMBDA_ENVELOPE_FIELDS: Partial<
-  Record<MessageBusTechnology, readonly string[]>
-> = {
-  aws_sqs: ["Records"],
-  "aws.sns": ["Records"],
-  s3: ["Records"],
-  eventbridge: ["detail", "detail-type", "resources", "account", "region"],
-};
-
 interface ReceiveRecord {
   summary: BehavioralSummary;
   transitionId?: string;
@@ -910,25 +886,11 @@ function parameterReceive(summary: BehavioralSummary): ReceiveRecord | null {
   if (!bindingIs(binding, "message-bus")) {
     return null;
   }
-  const result = readSetOf(summary, isTheMessageParameter);
+  const result = messageBodyReadSet(summary, binding.semantics.messageBus);
   if (!result.read) {
     return null;
   }
-  const envelope = LAMBDA_ENVELOPE_FIELDS[binding.semantics.messageBus];
-  if (envelope === undefined) {
-    return { summary, reads: result.reads };
-  }
-  if (readsThroughEnvelope(result.reads, envelope)) {
-    return null;
-  }
-  return { summary, reads: { ...result.reads, rootedAtPayload: true } };
-}
-
-function readsThroughEnvelope(
-  reads: ReadSet,
-  envelope: readonly string[],
-): boolean {
-  return reads.paths.some((path) => envelope.includes(path[0] ?? ""));
+  return { summary, reads: result.reads };
 }
 
 /** Every body sent to this channel, opaque ones included. */

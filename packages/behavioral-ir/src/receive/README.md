@@ -4,6 +4,8 @@ One rule, shared by every protocol: a receiver asks for a path off the value it 
 
 suss already did the mirror image of this. A client's `expectedInput` says what it reads off a response, and `bodyCompatibility`, `consumerContract` and `responseMisread` check that against what the provider returns. The receiving direction was recorded on every summary as `inputReads` and never compared against anything except React props.
 
+The rule lives in the IR package rather than in one checker because the behavioural checker and the intent checker both ask it, and the intent checker does not depend on the behavioural one. `@suss/checker` re-exports it, so the passes there import it from where it has always been.
+
 ## What it takes and what it gives back
 
 `readSetOf(summary, carriesPayload)` turns a summary's `inputReads` into a list of paths, or says why the list would be too short to compare against. The protocol supplies `carriesPayload`, which says which input the sender's whole value arrives through: the `props` object for React, the event parameter for a queue handler.
@@ -20,9 +22,11 @@ A false finding against working code costs more than a missing one, so the rule 
 - **`rest-parameter`.** A rest binding collects whatever the caller passed. Anything could be consumed through it without a read being recorded.
 - **`payload-used-whole`.** The receiver used the payload object itself, with an empty path. It can forward the object anywhere, and every field of it could be read somewhere this summary cannot see.
 - **`sender-opaque`.** One of the senders passed something that is not an object literal: a variable, a call, a template string. It could be setting any of these paths. The message-bus pass previously ignored such a sender and compared against the rest, which reported a field a `send(payload)` beside it may well have been sending.
+- **`platform-envelope`.** A queue handler read one of the fields at the top of the platform's own record (`Records` for SQS, `detail` for EventBridge), so it was handed the envelope rather than the message. Its paths are not body fields, and comparing them against a producer's payload would report nonsense. `messageBodyReadSet` is where that table lives.
+- **`unmapped-protocol`.** `boundaryInputReads` was asked for a protocol that has not said which input the caller's value arrives through. REST is the one that matters: a request is split across headers, query, path and body, and which of a handler's reads is which part is the framework's vocabulary.
 - **`different-object`.** Every path came back unsupplied and not one outermost name is shared. That is what a receiver reading the platform's envelope looks like: a raw SQS handler reads `event.Records` while the producer sends `{ id, total }`, and reporting `Records` as a missing field would be nonsense. This one applies only when `rootedAtPayload` is false, which is a read set whose protocol could not say whether the parameter is the sender's value or an envelope around it. A destructure of an already-parsed message is known to start at the sender's value, so a wholesale rename there is reported.
 
-`different-object` is the one that costs findings. A payload with a single top-level field, renamed, looks exactly like a receiver reading the wrong object, and the rule keeps quiet about both. A protocol that knows what its envelope looks like can settle `rootedAtPayload` itself instead of leaving it to this rule, which is what the message-bus pass does for the buses Lambda delivers: a handler reading none of the envelope's fields has the parsed message, and its top-level rename is reported.
+`different-object` is the one that costs findings. A payload with a single top-level field, renamed, looks exactly like a receiver reading the wrong object, and the rule keeps quiet about both. A protocol that knows what its envelope looks like can settle `rootedAtPayload` itself instead of leaving it to this rule, which is what `messageBodyReadSet` does for the buses Lambda delivers: a handler reading none of the envelope's fields has the parsed message, and its top-level rename is reported.
 
 ## What the reader cannot see into
 
@@ -32,8 +36,15 @@ An index in the middle of a read path is dropped rather than recorded: `event.Re
 
 ## Who uses it
 
-- `message-bus/messageBusPairing.ts` compares what a queue consumer reads against what the producers on its channel send. It feeds the rule two kinds of read: the destructured fields of a `message-receive` effect, which start at the parsed message, and the `inputReads` of the code deployed as the consumer, which start at the handler parameter.
-- `render/renderProps.ts` uses `readSetOf` for the opposite question, which props a parent passes that the child never reads. It only needs the outermost segment of each path.
+- The message-bus pass in `@suss/checker` compares what a queue consumer reads against what the producers on its channel send. It feeds the rule two kinds of read: the destructured fields of a `message-receive` effect, which start at the parsed message, and the `inputReads` of the code deployed as the consumer, which start at the handler parameter.
+- The React render-props pass in `@suss/checker` uses `readSetOf` for the opposite question, which props a parent passes that the child never reads. It only needs the outermost segment of each path.
+- `@suss/checker-intent` compares the read set against the `receives` block of a boundary intent doc, which is a declaration rather than another unit's call.
+
+## Asking it by boundary
+
+`boundaryInputReads(summary, binding)` picks the `carriesPayload` for the boundary's protocol so a caller with a binding to hand does not have to. A function-call boundary treats every parameter as part of what the caller sent, so a read comes back under that parameter's role. A message-bus boundary goes through `messageBodyReadSet`. Every other protocol declines with `unmapped-protocol`.
+
+`readPathOf(summary, ref, carriesPayload)` spells a `ValueRef` the way `readSetOf` spells a read, so a guard on a value and a read of the same value line up. `suss infer intent` uses it to tell which declared field a rejecting branch tests.
 
 ## Not done here
 
