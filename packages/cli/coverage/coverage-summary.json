@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 5667,
-      "covered": 5347,
+      "total": 5746,
+      "covered": 5422,
       "skipped": 0,
-      "pct": 94.35
+      "pct": 94.36
     },
     "statements": {
-      "total": 5822,
-      "covered": 5495,
+      "total": 5905,
+      "covered": 5574,
       "skipped": 0,
-      "pct": 94.38
+      "pct": 94.39
     },
     "functions": {
-      "total": 1319,
-      "covered": 1260,
+      "total": 1342,
+      "covered": 1281,
       "skipped": 0,
-      "pct": 95.52
+      "pct": 95.45
     },
     "branches": {
-      "total": 4025,
-      "covered": 3376,
+      "total": 4075,
+      "covered": 3419,
       "skipped": 0,
-      "pct": 83.87
+      "pct": 83.9
     },
     "branchesTrue": {
       "total": 0,
@@ -655,6 +655,32 @@
       "pct": 89.24
     }
   },
+  "src/intentOutcomes.ts": {
+    "lines": {
+      "total": 65,
+      "covered": 61,
+      "skipped": 0,
+      "pct": 93.84
+    },
+    "functions": {
+      "total": 21,
+      "covered": 19,
+      "skipped": 0,
+      "pct": 90.47
+    },
+    "statements": {
+      "total": 69,
+      "covered": 65,
+      "skipped": 0,
+      "pct": 94.2
+    },
+    "branches": {
+      "total": 38,
+      "covered": 31,
+      "skipped": 0,
+      "pct": 81.57
+    }
+  },
   "src/intentReceives.ts": {
     "lines": {
       "total": 83,
@@ -969,28 +995,28 @@
   },
   "src/run.ts": {
     "lines": {
-      "total": 299,
-      "covered": 284,
+      "total": 313,
+      "covered": 298,
+      "skipped": 0,
+      "pct": 95.2
+    },
+    "functions": {
+      "total": 38,
+      "covered": 35,
+      "skipped": 0,
+      "pct": 92.1
+    },
+    "statements": {
+      "total": 319,
+      "covered": 303,
       "skipped": 0,
       "pct": 94.98
     },
-    "functions": {
-      "total": 36,
-      "covered": 33,
-      "skipped": 0,
-      "pct": 91.66
-    },
-    "statements": {
-      "total": 305,
-      "covered": 289,
-      "skipped": 0,
-      "pct": 94.75
-    },
     "branches": {
-      "total": 378,
-      "covered": 328,
+      "total": 390,
+      "covered": 340,
       "skipped": 0,
-      "pct": 86.77
+      "pct": 87.17
     }
   },
   "src/sharedCause.ts": {
