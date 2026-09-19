@@ -81,17 +81,26 @@ Pack health (1):
 
 Every line is three columns: what happened, the pack it happened to, and the numbers behind it. The codes are a fixed list, so `grep no-output` over a CI log finds every one with its counts on the same line.
 
-The `prisma` pack matches a call by the type of the thing it is called on, so it classifies `db.user.findUnique(...)` only when `db` resolves to the generated `PrismaClient` with a `user` model on it. Anything that breaks that resolution produces this line, whatever else is right about the run. Two things do it:
+The `prisma` pack matches a call by the type of the thing it is called on, so it classifies `db.user.findUnique(...)` only when `db` resolves to the generated `PrismaClient` with a `user` model on it. Two things break that resolution and give you this line:
 
-- **The `@prisma/client` your code imports has no model types in it.** Either `npx prisma generate` has not run, or it generated somewhere that import does not resolve to: an `output` in the generator block, or a pnpm layout where the copy your code reaches is not the copy that was generated into. Check the `index.d.ts` under the package the import resolves to and look for your models in it.
+- **The `@prisma/client` your code imports has no model types in it.** `npx prisma generate` has not run, so the package is still the stub a fresh install ships, where `PrismaClient` is `any`. Generate, then extract again:
+
+  ```bash
+  npx prisma generate
+  npx suss extract -p tsconfig.json -f hono -f prisma -o summaries/code.json
+  ```
+
 - **A cast on the receiver.** `(db as any).user.findUnique(...)` is a call on an opaque value, so the pack has nothing to match even with the client generated.
 
-Rule the first out before the second, because it is the one with a one-command fix:
+Check separately for a client generated somewhere else, which goes wrong more quietly. The pack takes a type as Prisma's when the file declaring it is under `@prisma/client/` or `.prisma/client/`, and it only looks at files that import `@prisma/client` in the first place. A generator block with an `output` of its own, imported by relative path, satisfies neither. There is no health line at all in that case: the run succeeds and the calls come back as plain calls with no table under them.
 
-```bash
-npx prisma generate
-npx suss extract -p tsconfig.json -f hono -f prisma -o summaries/code.json
 ```
+       -> 200 { id, email }
+           + c.req.param
+           + db.user.findUnique
+```
+
+`+ reads postgresql:User` under that call is what the pack adds when it does match, so its absence is the thing to look for.
 
 The other frequent line is a recognizer pack asked for on its own:
 
