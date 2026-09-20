@@ -112,6 +112,21 @@ export const OWN_BODY_TYPES = new Set([
   "singleton_class",
 ]);
 
+/** The parse tree's root. Its own statements are what a file runs as it loads. */
+export const PROGRAM_TYPE = "program";
+
+/**
+ * What a read of a file's load-time statements does not descend into.
+ * A block is left out along with the nested definitions, because the
+ * library call it is written on decides whether to run it, and a Rake
+ * task body would otherwise read as work the file does when required.
+ */
+export const MODULE_SCOPE_STOPS = new Set([
+  ...OWN_BODY_TYPES,
+  "block",
+  "do_block",
+]);
+
 /** A class and a module both open a body a definition can be written inside. */
 export const NESTING_TYPES = new Set(["class", "module"]);
 

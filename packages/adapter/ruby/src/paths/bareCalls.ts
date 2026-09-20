@@ -109,13 +109,24 @@ const BINDS_A_NAME: Record<string, (node: RbNode, names: Set<string>) => void> =
     ),
   };
 
-/** Every name a method binds as a local variable, its own parameters included. */
-export function localNamesIn(definitionNode: RbNode): Set<string> {
+const DESCENDS_EVERYWHERE: ReadonlySet<string> = new Set<string>();
+
+/**
+ * Every name a method binds as a local variable, its own parameters
+ * included. Leaving out the child types in `stops` keeps a name bound
+ * inside a class or a block from hiding a call written outside one.
+ */
+export function localNamesIn(
+  definitionNode: RbNode,
+  stops: ReadonlySet<string> = DESCENDS_EVERYWHERE,
+): Set<string> {
   const names = new Set<string>();
   const visit = (node: RbNode): void => {
     BINDS_A_NAME[node.type]?.(node, names);
     for (const child of bodyStatements(node)) {
-      visit(child);
+      if (!stops.has(child.type)) {
+        visit(child);
+      }
     }
   };
   visit(definitionNode);
@@ -131,6 +142,9 @@ export function spellsAName(node: RbNode): boolean {
   return SPELLS_A_NAME[parent.type]?.(parent, node) === true;
 }
 
+/** Ruby's own literals that parse as an identifier. The one a script guards its entry with, `if __FILE__ == $0`, runs no method. */
+const KEYWORD_LITERALS = new Set(["__FILE__", "__LINE__", "__ENCODING__"]);
+
 /** Whether this identifier is a bare call on self rather than a local variable read or a name being spelled. */
 export function isBareMethodCall(
   node: RbNode,
@@ -139,5 +153,5 @@ export function isBareMethodCall(
   if (node.type !== "identifier" || locals.has(node.text)) {
     return false;
   }
-  return !spellsAName(node);
+  return !KEYWORD_LITERALS.has(node.text) && !spellsAName(node);
 }

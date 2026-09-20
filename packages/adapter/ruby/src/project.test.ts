@@ -168,7 +168,10 @@ describe("a client method whose class is constructed more than once", () => {
     });
 
     expect(routesIn(summaries)).toEqual(["GET /orders", "GET /users"]);
-    expect(new Set(summaries.map((s) => s.identity.id)).size).toBe(2);
+    const clients = summaries.filter(
+      (s) => s.identity.boundaryBinding?.semantics.name === "rest",
+    );
+    expect(new Set(clients.map((s) => s.identity.id)).size).toBe(2);
   });
 
   it("takes the request method from the request object each construction was handed", async () => {
@@ -336,6 +339,45 @@ describe("environment reads on a summary", () => {
     expect(configReads(moduleInit)).toEqual([
       { class: "config-read", name: "BANNER_BUCKET", defaulted: false },
     ]);
+  });
+});
+
+describe("the unit for what a file does when it loads", () => {
+  /** A job script and the method it calls, with no discovery pattern to find either. */
+  async function extractJob(entry: string[]): Promise<BehavioralSummary[]> {
+    write(
+      "app/sync.rb",
+      ["def run_report", '  ENV["REPORT_BUCKET"]', "end", ""].join("\n"),
+    );
+    write("bin/run_sync.rb", `${entry.join("\n")}\n`);
+    const { summaries } = await extractRubyProject({
+      files: findRubyFiles(tmpDir),
+      packs: [graphqlRubyPack(path.join(tmpDir, "app", "graphql"))],
+      workspaceRoot: tmpDir,
+    });
+    return summaries;
+  }
+
+  it("names the unit after the file and leaves it with no boundary", async () => {
+    const summaries = await extractJob(["run_report"]);
+    const init = summaries.find((s) => s.location.file === "bin/run_sync.rb");
+    expect(init?.kind).toBe("module-init");
+    expect(init?.identity.name).toBe("run_sync.rb");
+    expect(init?.identity.boundaryBinding).toBeNull();
+  });
+
+  it("reports a file whose module scope reads the environment and calls nothing", async () => {
+    const summaries = await extractJob(['BUCKET = ENV["BUCKET"]']);
+    const init = summaries.find((s) => s.location.file === "bin/run_sync.rb");
+    expect(init?.kind).toBe("module-init");
+    expect(summaries.some((s) => s.identity.name === "run_report")).toBe(false);
+  });
+
+  it("reports nothing for a file whose module scope neither reads nor calls anything", async () => {
+    const summaries = await extractJob(["PAGE_SIZE = 20"]);
+    expect(summaries.some((s) => s.location.file === "bin/run_sync.rb")).toBe(
+      false,
+    );
   });
 });
 

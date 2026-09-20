@@ -1673,3 +1673,169 @@ describe("a call on what an ActiveRecord finder gave back", () => {
     );
   });
 });
+
+/** The methods a job's entry script calls, written outside every class. */
+function writeJobMethods(): void {
+  write("app/sync.rb", [
+    "def run_report",
+    "  Account.where(state: 'stale').first",
+    "end",
+    "",
+    "def build_pool(settings)",
+    "  Account.find(settings)",
+    "end",
+  ]);
+}
+
+/** A class whose instance method and class method both read the database. */
+function writeReportJob(): void {
+  write("app/report_job.rb", [
+    "class ReportJob",
+    "  def run",
+    "    Account.where(state: 'open').first",
+    "  end",
+    "",
+    "  def self.run_nightly",
+    "    Account.where(state: 'nightly').first",
+    "  end",
+    "end",
+  ]);
+}
+
+/** The module-init unit for a file, which is what the walk scans a file's load-time statements as. */
+function moduleInitOf(
+  summaries: BehavioralSummary[],
+  file: string,
+): BehavioralSummary {
+  const found = summaries.find(
+    (summary) =>
+      summary.kind === "module-init" && summary.location.file === file,
+  );
+  if (found === undefined) {
+    throw new Error(`no module-init unit for ${file}`);
+  }
+  return found;
+}
+
+describe("what a file calls when it loads", () => {
+  it("reaches a top-level method a bare call at module scope runs", async () => {
+    writeAccountModel();
+    writeJobMethods();
+    write("bin/run_sync.rb", ["run_report"]);
+
+    const summaries = await extractRails();
+    const reached = unitNamed(summaries, "run_report");
+    expect(reached.kind).toBe("library");
+    expect(storageAccessesOf(reached)).toEqual([
+      { kind: "read", operation: "first", selector: ["state"] },
+    ]);
+    expect(
+      callTo(moduleInitOf(summaries, "bin/run_sync.rb"), "run_report"),
+    ).toBe(summaryIdentifier(reached));
+  });
+
+  it("reaches a method run on an instance module scope constructed", async () => {
+    writeAccountModel();
+    writeReportJob();
+    write("bin/run_sync.rb", ["ReportJob.new.run"]);
+
+    const summaries = await extractRails();
+    const reached = unitNamed(summaries, "run");
+    expect(reached.identity.exportPath).toEqual(["ReportJob", "run"]);
+    expect(
+      callTo(moduleInitOf(summaries, "bin/run_sync.rb"), "ReportJob.new.run"),
+    ).toBe(summaryIdentifier(reached));
+  });
+
+  it("reaches a class method module scope calls on the constant", async () => {
+    writeAccountModel();
+    writeReportJob();
+    write("bin/run_sync.rb", ["ReportJob.run_nightly"]);
+
+    const summaries = await extractRails();
+    const reached = unitNamed(summaries, "run_nightly");
+    expect(
+      callTo(
+        moduleInitOf(summaries, "bin/run_sync.rb"),
+        "ReportJob.run_nightly",
+      ),
+    ).toBe(summaryIdentifier(reached));
+  });
+
+  it("reaches a call written under the guard a script runs itself with", async () => {
+    writeAccountModel();
+    writeJobMethods();
+    write("bin/run_sync.rb", ["if __FILE__ == $0", "  run_report", "end"]);
+
+    const summaries = await extractRails();
+    expect(
+      callTo(moduleInitOf(summaries, "bin/run_sync.rb"), "run_report"),
+    ).toBe(summaryIdentifier(unitNamed(summaries, "run_report")));
+  });
+
+  it("reaches a call written as the value a module-scope name is bound to", async () => {
+    writeAccountModel();
+    writeJobMethods();
+    write("bin/run_sync.rb", ["pool = build_pool(1)", "run_report"]);
+
+    const summaries = await extractRails();
+    const init = moduleInitOf(summaries, "bin/run_sync.rb");
+    expect(callTo(init, "build_pool")).toBe(
+      summaryIdentifier(unitNamed(summaries, "build_pool")),
+    );
+  });
+
+  it("leaves out a call written inside a method the file only declares", async () => {
+    writeAccountModel();
+    write("bin/run_sync.rb", ["def never_run", "  Account.find(1)", "end"]);
+
+    const summaries = await extractRails();
+    expect(summaries.some((s) => s.identity.name === "never_run")).toBe(false);
+    expect(summaries.some((s) => s.location.file === "bin/run_sync.rb")).toBe(
+      false,
+    );
+  });
+
+  it("leaves out a call written in a block, whose library decides whether to run it", async () => {
+    writeAccountModel();
+    writeJobMethods();
+    write("bin/run_sync.rb", ["schedule :nightly do", "  run_report", "end"]);
+
+    const summaries = await extractRails();
+    expect(summaries.some((s) => s.identity.name === "run_report")).toBe(false);
+    expect(summaries.some((s) => s.location.file === "bin/run_sync.rb")).toBe(
+      false,
+    );
+  });
+
+  it("gives an action one summary when module scope calls it as well", async () => {
+    writeAccountModel();
+    write("app/controllers/accounts_controller.rb", [
+      "class AccountsController < ApplicationController",
+      "  def refresh",
+      "    Account.where(state: 'stale').first",
+      "  end",
+      "end",
+    ]);
+    write("bin/run_sync.rb", ["AccountsController.new.refresh"]);
+
+    const summaries = await extractRails();
+    const named = summaries.filter((s) => s.identity.name === "refresh");
+    expect(named).toHaveLength(1);
+    expect(named[0]?.kind).toBe("handler");
+    expect(
+      callTo(
+        moduleInitOf(summaries, "bin/run_sync.rb"),
+        "AccountsController.new.refresh",
+      ),
+    ).toBe(summaryIdentifier(named[0] as BehavioralSummary));
+  });
+
+  it("reports no load-time unit for a file whose module scope does nothing", async () => {
+    writeAccountModel();
+    writeJobMethods();
+
+    const summaries = await extractRails();
+    expect(summaries.some((s) => s.kind === "module-init")).toBe(false);
+  });
+});

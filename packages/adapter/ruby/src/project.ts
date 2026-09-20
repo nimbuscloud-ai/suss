@@ -54,13 +54,17 @@ import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitEntryFact, emitRequireFacts } from "./facts.js";
 import { bodyBlocksIn, inflectionsIn } from "./pack.js";
 import { parseRuby } from "./parser.js";
+import {
+  EVERY_ARGLESS_CALL,
+  moduleScopeInvocationEffects,
+} from "./paths/effects.js";
 import { dropPropertyReads, reachedFunctions } from "./reach/closure.js";
 import { buildReachContext } from "./reach/context.js";
 import { walkDefinitions } from "./scope.js";
 import { bindEvaluator, methodDefinitionsIn } from "./values/evaluator.js";
 import { adapterStamp } from "./version.js";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
 import type {
   CacheDiagnostic,
   CacheInput,
@@ -68,8 +72,10 @@ import type {
   ExtractionReport,
   ExtractorOptions,
   RawCodeStructure,
+  RawEffect,
   TimingReport,
 } from "@suss/extractor";
+import type { Range } from "./ast.js";
 import type { ReachSeed } from "./discovery.js";
 import type { RbAssociationCalls, RubyPack } from "./pack.js";
 import type { RbNode } from "./parser.js";
@@ -197,8 +203,34 @@ export function factsForFile(options: FileFactsOptions): Database {
  * from, or a summary that was ready as it was read.
  */
 type Discovered =
-  | { readonly raw: RawCodeStructure; readonly seedKey: string | null }
+  | {
+      readonly raw: RawCodeStructure;
+      readonly seedKey: string | null;
+      /** Set for a unit to report only when the walk reached a project method from it. */
+      readonly onlyIfItReaches?: boolean;
+    }
   | { readonly summary: BehavioralSummary };
+
+/** What a file does as it loads. The calls go on the branch the way a reached method's do, so the walk can place them. */
+function moduleInitUnit(options: {
+  name: string;
+  file: string;
+  range: Range;
+  effects: Effect[];
+  calls: RawEffect[];
+}): RawCodeStructure {
+  const raw = moduleInitStructure({
+    name: options.name,
+    file: options.file,
+    range: options.range,
+    effects: options.effects,
+  });
+  const branch = raw.branches[0];
+  if (branch !== undefined) {
+    branch.effects = options.calls;
+  }
+  return raw;
+}
 
 /** Whether this unit is one an earlier file's discovery already reported, by where its body is written, what it is reported as, and which boundary it reaches. An action two controllers inherit, and a client call that reaches a different route under each construction of its class, are each one body and several units. */
 function alreadyDiscovered(seen: Set<string>, raw: RawCodeStructure): boolean {
@@ -394,24 +426,37 @@ export async function extractRubyProject(
       }
     }
 
-    const loadTimeReads = timer.time("discover", () =>
-      envReadEffects(root, { db, file }),
-    );
-    if (loadTimeReads.length > 0) {
-      const summary = timer.time("summarize", () =>
-        assembleSummary(
-          moduleInitStructure({
-            name: path.basename(displayPath),
-            file: displayPath,
-            range: rangeOf(root),
-            effects: loadTimeReads,
-          }),
-          { gapHandling: "permissive" },
-        ),
-      );
-      summary.confidence = { source: "inferred_static", level: "low" };
-      found.push({ summary });
-    }
+    // Module scope is a caller like any other: the file's own statements
+    // run when it loads, and what they call is reachable from them.
+    const moduleKey = nodeId(file, root);
+    seedKeys.add(moduleKey);
+    seeds.push({
+      key: moduleKey,
+      file,
+      node: root,
+      enclosingQualifiedName: null,
+    });
+
+    const loadTime = timer.time("discover", () => ({
+      reads: envReadEffects(root, { db, file }),
+      calls: moduleScopeInvocationEffects(
+        root,
+        inheritedMethods,
+        EVERY_ARGLESS_CALL,
+        db,
+      ),
+    }));
+    found.push({
+      raw: moduleInitUnit({
+        name: path.basename(displayPath),
+        file: displayPath,
+        range: rangeOf(root),
+        effects: loadTime.reads,
+        calls: loadTime.calls,
+      }),
+      seedKey: moduleKey,
+      onlyIfItReaches: loadTime.reads.length === 0,
+    });
   }
 
   // One gap unit per controllerActions pattern that has something left
@@ -452,6 +497,12 @@ export async function extractRubyProject(
       continue;
     }
     const { raw, seedKey } = entry;
+    if (
+      entry.onlyIfItReaches === true &&
+      (seedKey === null || !reached.followedKeys.has(seedKey))
+    ) {
+      continue;
+    }
     if (seedKey !== null) {
       dropPropertyReads(raw, reached.propertyReadsByKey.get(seedKey));
     }
