@@ -703,6 +703,61 @@ describe("extract over a TypeScript project with a tsconfig, given --files", () 
       "getUser",
     ]);
   });
+
+  it("gives the named files the same summaries a full walk gives them, for a pack with no template and one with no discovery", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-tsfiles-reach-"));
+    fs.mkdirSync(path.join(dir, "src"));
+    fs.writeFileSync(
+      path.join(dir, "src", "dao.ts"),
+      [
+        'import { Pool } from "pg";',
+        "const pool = new Pool();",
+        "export class Dao {",
+        "  async byId(id: string) {",
+        '    return pool.query("SELECT id FROM dim_account WHERE id = $1", [id]);',
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    fs.writeFileSync(
+      path.join(dir, "src", "handler.ts"),
+      [
+        'import type { SQSEvent } from "aws-lambda";',
+        'import { Dao } from "./dao";',
+        "",
+        "export const handler = async (event: SQSEvent) => {",
+        "  const dao = new Dao();",
+        "  await dao.byId(event.Records[0].body);",
+        "};",
+        "",
+      ].join("\n"),
+    );
+    const tsconfig = tsconfigCovering(path.join(dir, "src"));
+
+    const fromFullWalk = await extract({
+      tsconfig,
+      frameworks: ["aws-lambda", "pg"],
+      allowEmpty: true,
+    });
+    const fromNamedFiles = await extract({
+      tsconfig,
+      frameworks: ["aws-lambda", "pg"],
+      files: [
+        path.join(dir, "src", "handler.ts"),
+        path.join(dir, "src", "dao.ts"),
+      ],
+      allowEmpty: true,
+    });
+
+    const shapeOf = (summaries: BehavioralSummary[]) =>
+      summaries
+        .map((s) => [s.identity.name, s.identity.boundaryBinding?.recognition])
+        .sort();
+
+    expect(fromFullWalk.length).toBeGreaterThan(0);
+    expect(shapeOf(fromNamedFiles)).toEqual(shapeOf(fromFullWalk));
+  });
 });
 
 describe("the note a run writes beside its summaries", () => {
