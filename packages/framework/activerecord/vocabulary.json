@@ -75,5 +75,20 @@
   "has_one": "ActiveRecord::Associations::ClassMethods#has_one: declares one record of another model",
   "belongs_to": "ActiveRecord::Associations::ClassMethods#belongs_to: declares the model this one's foreign key points at",
   "has_and_belongs_to_many": "ActiveRecord::Associations::ClassMethods#has_and_belongs_to_many: declares a collection joined through a table with no model",
-  "class_name": "ActiveRecord::Associations::ClassMethods: the option that says which class an association reaches, when the association's name does not"
+  "class_name": "ActiveRecord::Associations::ClassMethods: the option that says which class an association reaches, when the association's name does not",
+  "find_by_sql": "ActiveRecord::Querying#find_by_sql: the records a statement the caller wrote returns",
+  "count_by_sql": "ActiveRecord::Querying#count_by_sql: the count a statement the caller wrote returns",
+  "connection": "ActiveRecord::ConnectionHandling#connection: the connection the model's pool hands out",
+  "lease_connection": "ActiveRecord::ConnectionHandling#lease_connection: takes a connection out of the pool for the current thread",
+  "retrieve_connection": "ActiveRecord::ConnectionHandling#retrieve_connection: the connection already leased to the current thread",
+  "execute": "ActiveRecord::ConnectionAdapters::DatabaseStatements#execute: runs a statement and returns whatever the adapter gives back",
+  "exec_query": "ActiveRecord::ConnectionAdapters::DatabaseStatements#exec_query: runs a statement with bind values and returns a result set",
+  "exec_insert": "ActiveRecord::ConnectionAdapters::DatabaseStatements#exec_insert: runs an insert statement with bind values",
+  "exec_update": "ActiveRecord::ConnectionAdapters::DatabaseStatements#exec_update: runs an update statement with bind values",
+  "exec_delete": "ActiveRecord::ConnectionAdapters::DatabaseStatements#exec_delete: runs a delete statement with bind values",
+  "select_all": "ActiveRecord::ConnectionAdapters::DatabaseStatements#select_all: every row a statement returns",
+  "select_one": "ActiveRecord::ConnectionAdapters::DatabaseStatements#select_one: the first row a statement returns",
+  "select_value": "ActiveRecord::ConnectionAdapters::DatabaseStatements#select_value: the first column of the first row a statement returns",
+  "select_values": "ActiveRecord::ConnectionAdapters::DatabaseStatements#select_values: the first column of every row a statement returns",
+  "select_rows": "ActiveRecord::ConnectionAdapters::DatabaseStatements#select_rows: every row a statement returns, as arrays"
 }

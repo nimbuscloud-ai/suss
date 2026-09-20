@@ -97,7 +97,7 @@ An effects pack reads the calls inside a unit another pack discovered: a query, 
 
 | Name | What it reads | Coverage |
 |---|---|---|
-| [`activerecord`](../../packages/framework/activerecord) | ActiveRecord calls (Ruby): a call matches when its method is one ActiveRecord defines as a read or a write and the class behind its receiver reaches `ActiveRecord::Base`, following what each class extends through the project. | ![](../../.github/badges/coverage-activerecord.svg) |
+| [`activerecord`](../../packages/framework/activerecord) | ActiveRecord calls (Ruby): a call matches when its method is one ActiveRecord defines as a read or a write and the class behind its receiver reaches `ActiveRecord::Base`, following what each class extends through the project. Statements the project wrote itself are read for the tables they touch, whether they went through `find_by_sql` and `count_by_sql` or through the connection. | ![](../../.github/badges/coverage-activerecord.svg) |
 | [`aws-dynamodb`](../../packages/framework/aws-dynamodb) | AWS SDK v3 DynamoDB calls, emits storage-access interactions. | ![](../../.github/badges/coverage-aws-dynamodb.svg) |
 | [`aws-eventbridge`](../../packages/framework/aws-eventbridge) | AWS EventBridge `PutEvents` producer calls, emits message-bus interactions. | ![](../../.github/badges/coverage-aws-eventbridge.svg) |
 | [`aws-s3`](../../packages/framework/aws-s3) | AWS SDK v3 S3 object calls, emits storage-access interactions. | ![](../../.github/badges/coverage-aws-s3.svg) |

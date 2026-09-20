@@ -71,6 +71,11 @@ anything, while `update_all` runs a query and gives back a count.
 `find_or_create_by` is in `writes`, since storing a row is the stronger of
 the two things it may do.
 
+`statements` says which finders take SQL the project wrote rather than
+building it from the model, and `bindPlaceholder` says that ActiveRecord
+writes `?` where a bind value goes. The section below says what comes of
+that.
+
 `byPrimaryKey` says which methods take the primary key as a positional
 argument, so `Account.find(params[:id])` comes out with `id` as its
 selector, and `column` is `id` because that is what ActiveRecord uses
@@ -108,6 +113,27 @@ name nothing in the project declares, which says nothing at all.
 
 A concern is covered too. `has_many` inside an `included do` belongs to
 the module, and the module is in every including model's ancestry.
+
+## Statements the project wrote itself
+
+A project that reaches past the query builder still reaches the database,
+and the tables come from the statement rather than from any model:
+
+```ruby
+ActiveRecord::Base.connection.execute(sql)   # write, against whatever sql updates
+Account.connection.select_values(sql)        # read, the same connection from the model
+Account.find_by_sql(["... WHERE id = ?", id]) # read, the statement at the head of the array
+Account.count_by_sql("select count(*) ...")   # read, against the table in the count
+```
+
+Inside a model's own class method, a bare `connection` is a call on that
+class, and the pack matches it the same way it matches `Account.connection`:
+by following what the class extends back to `ActiveRecord::Base`.
+
+`?` is ActiveRecord's own placeholder for a bind value, not SQL any
+database reads, so the pack says so and the adapter hands the reader a
+parameter in its place. A statement the evaluator cannot settle to a
+string reports nothing, and so does one no parser reads.
 
 ## What comes out
 
