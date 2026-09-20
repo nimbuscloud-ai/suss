@@ -170,8 +170,10 @@ interface InteractionEffect {
   type: "interaction";
   binding: { semantics: { name: string; channel?: string } };
   interaction: { class: string };
+  count?: number;
 }
 
+/** A transition lists one effect per message it sends, and `count` says how many sites sent it. */
 function collectSendEffects(
   summaries: BehavioralSummary[],
 ): InteractionEffect[] {
@@ -183,7 +185,10 @@ function collectSendEffects(
           effect.type === "interaction" &&
           effect.interaction.class === "message-send"
         ) {
-          out.push(effect as unknown as InteractionEffect);
+          const send = effect as unknown as InteractionEffect;
+          for (let sent = 0; sent < (send.count ?? 1); sent += 1) {
+            out.push(send);
+          }
         }
       }
     }

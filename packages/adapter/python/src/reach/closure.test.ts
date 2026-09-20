@@ -458,10 +458,7 @@ describe("the functions a route reaches", () => {
     expect(
       summaries.filter((summary) => summary.identity.name === "load"),
     ).toEqual([]);
-    expect(calls(route)).toEqual([
-      ["load", undefined],
-      ["load", undefined],
-    ]);
+    expect(calls(route)).toEqual([["load", undefined]]);
     expect(route.gaps).toContainEqual(
       expect.objectContaining({
         type: "unfollowedCall",
@@ -581,7 +578,6 @@ describe("the spellings a callee can have", () => {
     const run = unitNamed(summaries, "run");
     const missing = unitNamed(summaries, "missing_target");
     expect(calls(unitNamed(summaries, "svc"))).toEqual([
-      ["Service", summaryIdentifier(init)],
       ["Service", summaryIdentifier(init)],
       ["Service().run", summaryIdentifier(run)],
       ["kept.run", summaryIdentifier(run)],

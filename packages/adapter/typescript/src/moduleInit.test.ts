@@ -235,7 +235,6 @@ describe("what a module calls when it loads", () => {
     expect(callsOf(summary)).toEqual([
       "label",
       "main",
-      "main",
       "main().catch",
       "run",
       "main",
