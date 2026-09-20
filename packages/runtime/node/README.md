@@ -183,10 +183,14 @@ the same names.
 
 - `deploymentTarget`: the kind of deployment the config reads belong to.
   One of `lambda`, `ecs-task`, `container`, or `k8s-deployment`.
-  Defaults to `lambda`.
 - `instanceName`: the name of the deployed instance the config
-  boundary is bound to. Defaults to `<unknown>`, which leaves the
-  boundary unpaired until somebody sets it.
+  boundary is bound to.
+
+Both are left off the binding unless a run sets them. Which deployment
+runs a piece of code is not something the code says, and the pairing
+pass takes the deployment from the provider side, the template or task
+definition that declares the variables. A read of the runtime itself,
+`process.cwd()` or `import.meta.url`, never has them.
 
 ## Where it fits in suss
 

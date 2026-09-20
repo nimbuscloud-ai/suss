@@ -53,6 +53,18 @@ describe("module-surface recognizers", () => {
     expect(reads[0]?.interaction.name).toBe("import.meta.url");
   });
 
+  it("says nothing about a deployment, since nothing supplies a module's location", () => {
+    const file = makeFile(`
+      const here = import.meta.url;
+      const a = __dirname.length;
+    `);
+    const reads = configReadsOf(runRecognizers(file));
+    expect(reads).toHaveLength(2);
+    for (const read of reads) {
+      expect(read.binding.semantics).toEqual({ name: "runtime-config" });
+    }
+  });
+
   it("recognizes __dirname / __filename when accessed as a property receiver", () => {
     const file = makeFile(`
       const a = __dirname.length;

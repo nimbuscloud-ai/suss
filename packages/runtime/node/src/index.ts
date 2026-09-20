@@ -60,14 +60,14 @@ export const optionsSchema = z
   .object({
     /**
      * Deployment context for runtime-config reads (process.env.X,
-     * process.argv). Defaults to `"lambda"`.
+     * process.argv). Left off the binding unless a run sets it.
      */
     deploymentTarget: z
       .enum(["lambda", "ecs-task", "container", "k8s-deployment"])
       .optional(),
     /**
-     * Instance name placeholder for runtime-config bindings the pack
-     * emits. Defaults to `"<unknown>"`.
+     * The deployed instance the reads belong to. Left off the binding
+     * unless a run sets it.
      */
     instanceName: z.string().optional(),
   })

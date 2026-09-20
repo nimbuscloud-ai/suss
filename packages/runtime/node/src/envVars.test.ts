@@ -333,11 +333,22 @@ describe("env-var recognizer — happy path", () => {
       const x = process.env.FOO;
     `);
     const read = configReadEffectsOf(recognizeAll(file))[0] ?? raise("no read");
-    expect(read.binding.semantics).toMatchObject({
-      name: "runtime-config",
-      deploymentTarget: "lambda",
-    });
+    expect(read.binding.semantics).toEqual({ name: "runtime-config" });
     expect(read.binding.recognition).toBe("@suss/runtime-node");
+  });
+
+  it("names an instance only where a run configured one", () => {
+    const file = makeProject(`
+      const x = process.env.FOO;
+    `);
+    const recognizer = envVarRecognizer({ instanceName: "ReportJob" });
+    const read =
+      configReadEffectsOf(recognizeWith(recognizer, file))[0] ??
+      raise("no read");
+    expect(read.binding.semantics).toEqual({
+      name: "runtime-config",
+      instanceName: "ReportJob",
+    });
   });
 
   it("threads deploymentTarget option into the binding", () => {
