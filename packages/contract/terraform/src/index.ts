@@ -31,6 +31,7 @@ import {
   withRuntimeContractMetadata,
 } from "@suss/behavioral-ir";
 
+import { dynamicBlocks, iteratedRecords } from "./blockExpansion.js";
 import { filterValuesFor, parseFilterQuery } from "./filterQuery.js";
 import { parseHclDocument } from "./hclDocument.js";
 import { jsonAttributeValue } from "./jsonAttribute.js";
@@ -152,6 +153,8 @@ interface ParsedFile {
   constraints: Map<string, string>;
   resources: Array<[string, string, Record<string, unknown>]>;
   locals: Array<Record<string, unknown>>;
+  /** The `default` each `variable` block states, by variable name. */
+  defaults: Record<string, unknown>;
 }
 
 /**
@@ -167,10 +170,11 @@ function summariesForFiles(
   const parsed = files
     .map((file) => parseSource(file))
     .filter((file): file is ParsedFile => file !== null);
-  const scope = referenceScope(
-    parsed.flatMap((file) => file.resources),
-    parsed.flatMap((file) => file.locals),
-  );
+  const scope = referenceScope({
+    resources: parsed.flatMap((file) => file.resources),
+    locals: parsed.flatMap((file) => file.locals),
+    defaults: Object.assign({}, ...parsed.map((file) => file.defaults)),
+  });
 
   const summaries: BehavioralSummary[] = [];
   for (const file of parsed) {
@@ -207,7 +211,30 @@ function parseSource(file: SourceFile): ParsedFile | null {
     constraints: providerConstraints(document),
     resources: resourcesIn(document),
     locals: localsIn(document),
+    defaults: variableDefaults(document),
   };
+}
+
+/**
+ * The `default` each `variable` block states. Only a `for_each` reads
+ * these, since a default says what a deployment would get if it passed
+ * nothing, which is not what production runs with.
+ */
+function variableDefaults(
+  document: Record<string, unknown>,
+): Record<string, unknown> {
+  const defaults: Record<string, unknown> = {};
+  for (const group of arrayOf(document.variable)) {
+    for (const [name, declared] of Object.entries(asRecord(group) ?? {})) {
+      for (const block of arrayOf(declared)) {
+        const stated = asRecord(block)?.default;
+        if (stated !== undefined && !(name in defaults)) {
+          defaults[name] = stated;
+        }
+      }
+    }
+  }
+  return defaults;
 }
 
 /**
@@ -629,7 +656,11 @@ function readingSummaries(
 ): BehavioralSummary[] {
   const { boundary } = opts;
   const summaries: BehavioralSummary[] = [];
-  for (const reading of blocksAt(opts.body, boundary.readingBlocks)) {
+  for (const reading of blocksAt(
+    opts.body,
+    boundary.readingBlocks,
+    opts.scope,
+  )) {
     for (const metricType of metricsRead(
       reading,
       boundary.identifies,
@@ -772,7 +803,7 @@ function deployableSummaries(
   opts: ResourceSite & { boundary: DeployableResource },
 ): BehavioralSummary[] {
   const { boundary, label } = opts;
-  return deployedProcesses(opts.body, boundary).map((process) =>
+  return deployedProcesses(opts.body, boundary, opts.scope).map((process) =>
     deployableSummary({
       ...opts,
       boundary,
@@ -871,12 +902,13 @@ function envVarSources(
 function deployedProcesses(
   body: Record<string, unknown>,
   boundary: DeployableResource,
+  scope: ReferenceScope,
 ): DeployedProcess[] {
   const containers = boundary.containers;
   if (containers === undefined) {
     return [{ body, containerName: null }];
   }
-  return blocksAt(body, containers.blocks).map((container) => ({
+  return blocksAt(body, containers.blocks, scope).map((container) => ({
     body: container,
     containerName:
       containers.nameAttribute === undefined
@@ -936,7 +968,7 @@ const ENV_READERS: EnvReaders = {
     }
   },
   entries: (body, declaration, into, scope) => {
-    for (const entry of blocksAt(body, declaration.block.split("."))) {
+    for (const entry of blocksAt(body, declaration.block.split("."), scope)) {
       const name = stringOf(entry[declaration.nameAttribute]);
       if (name === null) {
         continue;
@@ -1061,14 +1093,21 @@ function valueAt(body: Record<string, unknown>, path: string): unknown {
   return current[last];
 }
 
-/** Every block at the end of a chain of nested block names. */
+/**
+ * Every block at the end of a chain of nested block names, including
+ * the ones a `dynamic` writes rather than the module writing each out.
+ */
 function blocksAt(
   body: Record<string, unknown>,
   blocks: string[],
+  scope: ReferenceScope,
 ): Array<Record<string, unknown>> {
   let found: Array<Record<string, unknown>> = [body];
   for (const block of blocks) {
-    found = found.flatMap((record) => nestedRecords(record[block]));
+    found = found.flatMap((record) => [
+      ...nestedRecords(record[block], scope),
+      ...dynamicBlocks(record, block, scope),
+    ]);
   }
   return found;
 }
@@ -1078,7 +1117,14 @@ function blocksAt(
  * as one attribute, ECS's container definitions above all, writes it
  * inside a string, and the same deployed value comes back either way.
  */
-function nestedRecords(value: unknown): Array<Record<string, unknown>> {
+function nestedRecords(
+  value: unknown,
+  scope: ReferenceScope,
+): Array<Record<string, unknown>> {
+  const iterated = iteratedRecords(value, scope);
+  if (iterated !== null) {
+    return iterated;
+  }
   const stated = typeof value === "string" ? jsonAttributeValue(value) : value;
   return arrayOf(stated)
     .map(asRecord)

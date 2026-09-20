@@ -13,13 +13,10 @@
  * nothing rather than guessing.
  */
 
-import { parseHclDocument } from "./hclDocument.js";
+import { parseHclExpression } from "./hclDocument.js";
 
 /** `${jsonencode(<expression>)}`, and nothing else around it. */
 const JSON_ENCODE = /^\$\{\s*jsonencode\((.*)\)\s*\}$/s;
-
-/** The name the wrapped expression is parsed back under. */
-const WRAPPER = "value";
 
 /**
  * The value an attribute states as JSON, or null when the attribute is
@@ -43,15 +40,4 @@ function parseJson(text: string): unknown {
   } catch {
     return null;
   }
-}
-
-/**
- * What an HCL expression evaluates to, read by giving the parser an
- * attribute to hang it on. `jsonencode` takes a list or an object
- * written in HCL, and the parser already reads both; what it hands back
- * for an interpolation it cannot settle is the text as written, which
- * is the same hole a name keeps.
- */
-function parseHclExpression(expression: string): unknown {
-  return parseHclDocument(`${WRAPPER} = ${expression}`)?.[WRAPPER] ?? null;
 }

@@ -1,6 +1,6 @@
 /**
- * An interpolation that refers to another resource in the same
- * configuration, and the value that resource already states.
+ * An interpolation that refers to something the same configuration
+ * already states, and the value it states.
  *
  * Most of what Terraform interpolates is settled at deploy time, so
  * `"${local.environment}-orders"` becomes a pattern with a hole in it.
@@ -9,25 +9,29 @@
  * writes its `name` as a literal string, the configuration has already
  * said what the deployed value is. Leaving it as a hole makes two sides
  * of the same configuration spell the same thing differently, and they
- * stop pairing.
- *
- * Only `<resource_type>.<label>.<attribute>` resolves, and only when
- * the resource writes that attribute as a literal string. An attribute
- * the provider fills in at apply time, an `id` or an `arn` or a
- * `self_link`, is never written in the file, so the lookup finds
- * nothing and the hole stays.
- *
- * A `locals` entry resolves the same way, since a configuration that
- * writes `local.table = "orders-v1"` has stated the name as plainly as
- * a resource does. One built from a variable expands to a value that
- * still has `${var...}` in it, which becomes a hole again, so a stage
- * prefix keeps behaving as it did. `var.`, `data.` and `module.` stay
- * out: a variable's default is not what production runs with, and the
- * other two say nothing this file can read.
+ * stop pairing. The DESIGN says which spelling settles what, and why a
+ * `variable` block's `default` is not one of them.
  */
 
-/** Every attribute each resource states, by the address Terraform uses. */
-export type ReferenceScope = Map<string, Record<string, unknown>>;
+/**
+ * What a configuration states, as everything a reference in it can
+ * reach. One scope per module, since a child's `local.stage` is its
+ * own, and the two are joined by the outputs the parent reads.
+ */
+export interface ReferenceScope {
+  /**
+   * Every attribute each resource states, by the address Terraform
+   * uses, and one entry per child module keyed `module.<label>` whose
+   * attributes are that child's outputs.
+   */
+  resources: Map<string, Record<string, unknown>>;
+  /** What every `locals` block in the module states, by name. */
+  locals: Record<string, unknown>;
+  /** The literal the calling `module` block passed in, by variable name. */
+  arguments: Record<string, string>;
+  /** The `default` each `variable` block states, for a `for_each` alone. */
+  defaults: Record<string, unknown>;
+}
 
 /** `${X}` is an interpolation, the same one a name pattern reads. */
 const SUB_TOKEN = /\$\{([^}]*)\}/g;
@@ -42,8 +46,8 @@ const WHOLE_REFERENCE = /^\$\{([^}]*)\}$/;
 /** `local.name`, which a `locals` block states in the same configuration. */
 const LOCAL_VALUE = /^local\.([A-Za-z_][\w-]*)$/;
 
-/** The address a locals block is kept under, which no resource can spell. */
-const LOCALS = "local";
+/** `var.name`, which the calling `module` block states inside a child. */
+const VARIABLE_VALUE = /^var\.([A-Za-z_][\w-]*)$/;
 
 /**
  * How many hops a chain of references is followed. A resource may state
@@ -52,30 +56,45 @@ const LOCALS = "local";
  */
 const CHAIN_LIMIT = 4;
 
-/** Every resource a configuration states, by the address a reference spells. */
-export function referenceScope(
-  resources: Iterable<[string, string, Record<string, unknown>]>,
-  locals: Iterable<Record<string, unknown>> = [],
-): ReferenceScope {
-  const scope: ReferenceScope = new Map();
-  for (const [resourceType, label, body] of resources) {
+/** What one module states, by the address a reference in it spells. */
+export function referenceScope(opts: {
+  resources: Iterable<[string, string, Record<string, unknown>]>;
+  locals?: Iterable<Record<string, unknown>>;
+  arguments?: Record<string, string>;
+  defaults?: Record<string, unknown>;
+}): ReferenceScope {
+  const resources = new Map<string, Record<string, unknown>>();
+  for (const [resourceType, label, body] of opts.resources) {
     const address = `${resourceType}.${label}`;
-    if (!scope.has(address)) {
-      scope.set(address, body);
+    if (!resources.has(address)) {
+      resources.set(address, body);
     }
   }
-  // A module states its locals across several blocks and several files,
-  // and every one of them is `local.<name>` to a reference.
+  return {
+    resources,
+    locals: firstOfEach(opts.locals ?? []),
+    arguments: opts.arguments ?? {},
+    defaults: opts.defaults ?? {},
+  };
+}
+
+/**
+ * One record out of many, keeping the first value each name was given.
+ * A module states its locals across several blocks and several files,
+ * and every one of them is `local.<name>` to a reference.
+ */
+function firstOfEach(
+  blocks: Iterable<Record<string, unknown>>,
+): Record<string, unknown> {
   const stated: Record<string, unknown> = {};
-  for (const block of locals) {
+  for (const block of blocks) {
     for (const [name, value] of Object.entries(block)) {
       if (!(name in stated)) {
         stated[name] = value;
       }
     }
   }
-  scope.set(LOCALS, stated);
-  return scope;
+  return stated;
 }
 
 /**
@@ -105,7 +124,9 @@ export function referencedResource(
     return null;
   }
   const [, resourceType, label] = parsed;
-  return scope.has(`${resourceType}.${label}`) ? (label as string) : null;
+  return scope.resources.has(`${resourceType}.${label}`)
+    ? (label as string)
+    : null;
 }
 
 /**
@@ -158,14 +179,22 @@ function expand(
 function statedValue(reference: string, scope: ReferenceScope): string | null {
   const local = LOCAL_VALUE.exec(reference);
   if (local !== null) {
-    const stated = scope.get(LOCALS)?.[local[1] as string];
-    return typeof stated === "string" ? stated : null;
+    return stringOrNull(scope.locals[local[1] as string]);
+  }
+  const variable = VARIABLE_VALUE.exec(reference);
+  if (variable !== null) {
+    return scope.arguments[variable[1] as string] ?? null;
   }
   const parsed = RESOURCE_ATTRIBUTE.exec(reference);
   if (parsed === null) {
     return null;
   }
   const [, resourceType, label, attribute] = parsed;
-  const stated = scope.get(`${resourceType}.${label}`)?.[attribute];
-  return typeof stated === "string" ? stated : null;
+  return stringOrNull(
+    scope.resources.get(`${resourceType}.${label}`)?.[attribute],
+  );
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
 }

@@ -60,6 +60,36 @@ EOF
 
 A deployable steps into such an attribute rather than reading fields out of it. An ECS task writes its containers as `container_definitions = jsonencode([...])`, and a pack puts that attribute where it would put a block, so each container is read the same way a Cloud Run container written as blocks is.
 
+## A block written once and deployed many times
+
+A module rarely writes a container's variables out one block at a time. It writes one block and says what to iterate over:
+
+```hcl
+locals {
+  service_env = { DB_NAME = var.db_name, LOG_LEVEL = "info" }
+}
+
+resource "google_cloud_run_v2_service" "api" {
+  template {
+    containers {
+      dynamic "env" {
+        for_each = merge(local.service_env, { SERVICE_ROLE = "api" })
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+    }
+  }
+}
+```
+
+The reader settles `for_each` where the configuration already says what is in it: a map literal, a `locals` entry, a `variable` block's `default`, or a `merge` of those. Each key becomes one block, with `env.key`, `env.value` and `env.value.<field>` filled in, and the block that comes out is read exactly as a hand-written one would be. So this container declares `DB_NAME`, `LOG_LEVEL` and `SERVICE_ROLE`, with `DB_NAME` set to the pattern `{var.db_name}` and `SERVICE_ROLE` to the text `api`. A module that renames the iterator with `iterator = item` is read the same way.
+
+ECS takes its containers as JSON rather than as blocks, so the same environment is written `environment = [for k, v in local.worker_env : { name = k, value = v }]`, and that expands the same way.
+
+A `for_each` nothing settles, one a data source supplies, leaves the container with the variables the platform injects and nothing else. A `variable` default is read for this and for nothing else: a default says what a deployment would get if it passed nothing, so a `${var.stage}` in a name keeps its hole.
+
 ## Several entries for one resource type
 
 A pack states more than one entry for a resource type when the provider spells it differently across versions, and again when one attribute decides what the resource is. `aws_db_instance` is a PostgreSQL store or a MySQL one depending on its `engine`, and `google_sql_database_instance` on its `database_version`, so each has an entry per engine and a gate that picks between them. A gate matches whole values through `equals`, or the start of a value through `startsWith`, which is what Cloud SQL needs: `database_version` states an engine and a release together, `POSTGRES_15` and `MYSQL_8_0_31`, and the releases change every quarter.
@@ -93,7 +123,7 @@ A configuration says which handler runs and never which directory the deployed a
 ## What it will not tell you
 
 - **Only what a loaded pack describes.** A resource no entry covers, an IAM policy or a subnet, is skipped.
-- **A resource built with `for_each` or `count`** states one block for many tables, and this reads the block as written rather than working out what it expands to.
+- **A resource built with `for_each` or `count`** states one `resource` block for many tables, and this reads the block as written rather than working out what it expands to. A `dynamic` block inside a resource is expanded, since that one decides what a single deployed process is given.
 - **A name a variable supplies whole**, `name = var.table_name`, has no fixed text to pair on, so it records nothing rather than guessing.
 - **What a secret contains.** A variable a secret supplies records which resource supplies it and nothing else, since no configuration writes the contents down.
 - **Which source directory a deployable was built from.** Terraform builds the artifact outside the configuration, so a `filename` is a zip nothing in the run can open and a `source_dir` belongs to a data source this does not follow.
