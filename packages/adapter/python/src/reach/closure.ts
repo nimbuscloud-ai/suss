@@ -231,16 +231,7 @@ export function reachedFunctions(
     .facts("reachable")
     .map(([keyAtom]) => String(keyAtom))
     .filter((key) => !seedKeys.has(key));
-  // Every reached body states values the rules have to settle. Asked
-  // together they are one question over the project's facts; asked as
-  // each summary is built they are one per body.
-  askWrittenValues(
-    reached.flatMap((key) => {
-      const target = functionByKey.get(key);
-      return target === undefined ? [] : bodyValueNodes(target.node);
-    }),
-    options.facts,
-  );
+  settleBodyValues(reached, functionByKey, options.facts);
 
   const summaries: BehavioralSummary[] = [];
   const summariesByKey = new Map<string, BehavioralSummary[]>();
@@ -332,6 +323,34 @@ function bodyOf(source: ReachedFunction): BodyCalls {
 
 function outsideNestedDef(node: PyNode): boolean {
   return node.type !== "function_definition";
+}
+
+/**
+ * Settle the values every reached body states, one file at a time. The
+ * rules run over the whole project's facts, so a file's worth of values
+ * costs what one of them does; asking as each summary is built costs
+ * one question per argument the file writes. A whole run at once is
+ * one question again, but a big project derives far more for it than
+ * the sum of the files does.
+ */
+function settleBodyValues(
+  reached: readonly string[],
+  functionByKey: ReadonlyMap<string, ReachedFunction>,
+  facts: Database | undefined,
+): void {
+  const byFile = new Map<string, PyNode[]>();
+  for (const key of reached) {
+    const target = functionByKey.get(key);
+    if (target === undefined) {
+      continue;
+    }
+    const listed = byFile.get(target.file.file) ?? [];
+    listed.push(...bodyValueNodes(target.node));
+    byFile.set(target.file.file, listed);
+  }
+  for (const nodes of byFile.values()) {
+    askWrittenValues(nodes, facts);
+  }
 }
 
 /** The key an identifier argument joins on, or null when the argument is not a bare name. */
