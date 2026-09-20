@@ -649,6 +649,62 @@ describe("extract over a Ruby project", () => {
   });
 });
 
+describe("extract over a TypeScript project with a tsconfig, given --files", () => {
+  const fixtureDir = path.join(repoRoot, "fixtures", "ts-rest");
+
+  function tsconfigCovering(includeDir: string): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-tsfiles-"));
+    fs.writeFileSync(
+      path.join(dir, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: {
+          target: "ESNext",
+          module: "ESNext",
+          moduleResolution: "Bundler",
+          strict: true,
+          skipLibCheck: true,
+          noEmit: true,
+        },
+        include: [path.join(includeDir, "**/*.ts")],
+      }),
+    );
+    return path.join(dir, "tsconfig.json");
+  }
+
+  it("reads the named file instead of finding none, the way --dir alone does", async () => {
+    const summaries = await extract({
+      tsconfig: tsconfigCovering(fixtureDir),
+      frameworks: ["ts-rest"],
+      files: [path.join(fixtureDir, "handlers.ts")],
+      allowEmpty: true,
+    });
+
+    expect(summaries.map((s) => s.identity.name).sort()).toEqual([
+      "createUser",
+      "getUser",
+    ]);
+  });
+
+  it("still reads the named file when the tsconfig's include does not cover it", async () => {
+    const emptyDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), "suss-tsfiles-empty-"),
+    );
+    fs.writeFileSync(path.join(emptyDir, "thing.ts"), "export const x = 1;\n");
+
+    const summaries = await extract({
+      tsconfig: tsconfigCovering(emptyDir),
+      frameworks: ["ts-rest"],
+      files: [path.join(fixtureDir, "handlers.ts")],
+      allowEmpty: true,
+    });
+
+    expect(summaries.map((s) => s.identity.name).sort()).toEqual([
+      "createUser",
+      "getUser",
+    ]);
+  });
+});
+
 describe("the note a run writes beside its summaries", () => {
   function projectMissingItsSubmodule(): string {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-missing-sub-"));
