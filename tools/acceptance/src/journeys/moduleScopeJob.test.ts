@@ -75,6 +75,9 @@ describe("read a job that does its work while the module loads", () => {
   });
 
   it("reports a query inside a function the job invokes on the spot as the module's own", () => {
-    expect(tablesIn("backfillJob.ts")).toEqual(["dim_account"]);
+    expect(tablesIn("backfillJob.ts").sort()).toEqual([
+      "dim_account",
+      "staging_account",
+    ]);
   });
 });
