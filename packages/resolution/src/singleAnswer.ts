@@ -41,6 +41,29 @@ export function answersByKey(
   return answers;
 }
 
+/**
+ * The answers one key has, read through the relation's index on the
+ * key column rather than a pass over every row. A caller asking about
+ * one key at a time, which is every adapter asking at a call site,
+ * pays for the key's own rows and nothing else.
+ */
+export function answersFor(
+  db: Database,
+  relation: string,
+  key: string,
+): string[] {
+  const rows = db.lookup(relation, 0, key);
+  if (rows.length === 0) {
+    return [];
+  }
+  const placeholders = new Set(
+    rows
+      .map((row) => String(row[1]))
+      .filter((answer) => db.has("placeholderValue", [answer])),
+  );
+  return answersByKey(rows, placeholders).get(key) ?? [];
+}
+
 /** The one answer each key settles on, for a caller that treats several as none. */
 export function singleAnswers(
   rows: Iterable<Tuple>,

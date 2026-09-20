@@ -4,6 +4,7 @@ import { Database } from "@suss/datalog";
 
 import {
   answersByKey,
+  answersFor,
   placeholderValues,
   singleAnswers,
 } from "./singleAnswer.js";
@@ -109,5 +110,37 @@ describe("every answer a key has", () => {
       new Set(["none"]),
     );
     expect(answers.get("a")).toEqual(["b", "c"]);
+  });
+});
+
+describe("the answers of one key, read through the index", () => {
+  const filled = (): Database => {
+    const db = new Database();
+    db.add("written", ["a", "a"]);
+    db.add("written", ["a", "none"]);
+    db.add("written", ["a", "b"]);
+    db.add("written", ["z", "none"]);
+    db.add("placeholderValue", ["none"]);
+    return db;
+  };
+
+  it("applies the same drops as the pass over every row", () => {
+    expect(answersFor(filled(), "written", "a")).toEqual(["b"]);
+  });
+
+  it("keeps a placeholder that is the key's only answer", () => {
+    expect(answersFor(filled(), "written", "z")).toEqual(["none"]);
+  });
+
+  it("is empty for a key with no rows, and for a relation with none", () => {
+    expect(answersFor(filled(), "written", "q")).toEqual([]);
+    expect(answersFor(filled(), "absent", "a")).toEqual([]);
+  });
+
+  it("sees a row added after the first read", () => {
+    const db = filled();
+    expect(answersFor(db, "written", "q")).toEqual([]);
+    db.add("written", ["q", "r"]);
+    expect(answersFor(db, "written", "q")).toEqual(["r"]);
   });
 });
