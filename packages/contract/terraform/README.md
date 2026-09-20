@@ -62,59 +62,16 @@ A deployable steps into such an attribute rather than reading fields out of it. 
 
 ## A block written once and deployed many times
 
-A module rarely writes a container's variables out one block at a time. It writes one block and says what to iterate over:
-
-```hcl
-locals {
-  service_env = { DB_NAME = var.db_name, LOG_LEVEL = "info" }
-}
-
-resource "google_cloud_run_v2_service" "api" {
-  template {
-    containers {
-      dynamic "env" {
-        for_each = merge(local.service_env, { SERVICE_ROLE = "api" })
-        content {
-          name  = env.key
-          value = env.value
-        }
-      }
-    }
-  }
-}
-```
-
-The reader settles `for_each` where the configuration already says what is in it: a map literal, a `locals` entry, a `variable` block's `default`, or a `merge` of those. Each key becomes one block, with `env.key`, `env.value` and `env.value.<field>` filled in, and the block that comes out is read exactly as a hand-written one would be. So this container declares `DB_NAME`, `LOG_LEVEL` and `SERVICE_ROLE`, with `DB_NAME` set to the pattern `{var.db_name}` and `SERVICE_ROLE` to the text `api`. A module that renames the iterator with `iterator = item` is read the same way.
-
-ECS takes its containers as JSON rather than as blocks, so the same environment is written `environment = [for k, v in local.worker_env : { name = k, value = v }]`, and that expands the same way.
-
-A `for_each` nothing settles, one a data source supplies, leaves the container with the variables the platform injects and nothing else. A `variable` default is read for this and for nothing else: a default says what a deployment would get if it passed nothing, so a `${var.stage}` in a name keeps its hole.
+A module rarely writes a container's variables out one block at a time. It writes one `dynamic "env"` block over a map, or, in an ECS task's JSON, a `for` expression over the same thing. Both are expanded where the configuration already says what is in that map, so the container declares the variables the deployment will give it rather than none at all. [How a repeated block is expanded](./DESIGN.md#a-block-written-once-and-deployed-many-times) says which spellings settle and which stay holes.
 
 ## A root module that calls child modules
 
-Plenty of configurations declare no resources at all at the root. They call a module per service, and every table and function is inside the child:
-
-```hcl
-locals {
-  stage = "prod"
-}
-
-module "orders" {
-  source     = "./modules/store"
-  stage      = local.stage
-  table_name = "orders-v1"
-}
-```
-
-The reader follows a `source` that says which directory beside this one, `./` or `../`, and reads that directory's `.tf` files as a module of its own. Everything it declares gets `module.orders.` in front of its summary name and its deployable unit, so calling one module twice gives two sets of boundaries rather than one set that collides.
-
-Inside the child, `var.table_name` resolves to the literal the call passed in, so `name = "${var.stage}-${var.table_name}"` comes out as `prod-orders-v1` and pairs with code that addresses that table. An argument the root cannot settle passes nothing down, and the child's `${var.stage}` stays the hole it was. A map argument crosses whole, which is how a module usually takes the environment it hands its container: the root writes `env = { ORDERS_TABLE = example_table.orders.name }`, the child writes `for_each = var.env`, and each entry is read in the module that wrote it. The root reads a child back through `module.orders.table_name`, which resolves through the child's `output` block when the child has already said what the value comes to.
-
-A `source` pointing at a registry, a git repository or an S3 bucket is code the repository does not contain, so the reader skips it and says nothing about what is inside. An argument built from another module's output does not resolve either: the arguments of every call are settled before any child is read.
+Plenty of configurations declare no resources at all at the root. They call a module per service, and every table and function is inside the child. A `source` that says which directory beside this one is followed and read as a module of its own, and everything the child declares gets `module.orders.` in front of its summary name and its deployable unit. [A module call this reader follows](./DESIGN.md#a-module-call-this-reader-follows) says what crosses between a call and the module it calls.
 
 ## Several entries for one resource type
 
 A pack states more than one entry for a resource type when the provider spells it differently across versions, and again when one attribute decides what the resource is. `aws_db_instance` is a PostgreSQL store or a MySQL one depending on its `engine`, and `google_sql_database_instance` on its `database_version`, so each has an entry per engine and a gate that picks between them. A gate matches whole values through `equals`, or the start of a value through `startsWith`, which is what Cloud SQL needs: `database_version` states an engine and a release together, `POSTGRES_15` and `MYSQL_8_0_31`, and the releases change every quarter.
+
 ## What a deployable declares
 
 A resource that deploys something becomes a runtime-config boundary, the same one `@suss/contract-cloudformation` writes for a Lambda in a template:
@@ -141,16 +98,7 @@ One resource deploys several processes where the provider says so. An ECS task d
 
 Every unsettled value in a contract is spelled the same way. An `image = var.image`, a `runtime` and a handler a variable supplies all come out as the pattern `{var.image}` rather than as the raw `${var.image}`, so nothing downstream has to know which field it is reading. A handler with a hole in it says nothing about which file the code is in, since splitting it at its last dot would pick a module nobody deploys.
 
-A configuration says which handler runs and never which directory the deployed artifact was built from. So the handler is all the checker has to go on: where it matches a module in the run, that module's imports are the code the unit runs, and where it matches nothing, the unit is reported as one whose code could not be placed rather than being given the repository.
-
-A container deployable states no handler at all, since its image was built somewhere else, so the caller says where its code is:
-
-```bash
-suss contract --from terraform infra/ --code-scope api/web=services/api
-```
-
-`codeScopes` on the read options does the same thing in the library. The name on the left is the unit's instance name, the one the summary states, and what goes on the summary is `codeScope: { kind: "codeUri", path }`, the same thing a CloudFormation template's own `CodeUri` produces. Pointing two units at one directory makes that directory decide nothing: a file in it that states no unit of its own is contested between them and pairs with neither.
-
+A configuration says which handler runs and never which directory the deployed artifact was built from, so the handler is all the checker has to go on. A container deployable states no handler at all, since its image was built somewhere else, and then the caller says where the code is with `--code-scope api/web=services/api`, or `codeScopes` on the read options. [Which code a deployable unit runs](./DESIGN.md#which-code-a-deployable-unit-runs) says what that writes, and what happens when two units are pointed at one directory.
 
 ## What it will not tell you
 
@@ -158,7 +106,7 @@ suss contract --from terraform infra/ --code-scope api/web=services/api
 - **A resource built with `for_each` or `count`** states one `resource` block for many tables, and this reads the block as written rather than working out what it expands to. A `dynamic` block inside a resource is expanded, since that one decides what a single deployed process is given.
 - **A name a variable supplies whole**, `name = var.table_name`, has no fixed text to pair on, so it records nothing rather than guessing.
 - **What a secret contains.** A variable a secret supplies records which resource supplies it and nothing else, since no configuration writes the contents down.
-- **Which source directory a deployable was built from.** Terraform builds the artifact outside the configuration, so a `filename` is a zip nothing in the run can open and a `source_dir` belongs to a data source this does not follow.
+- **Which source directory a deployable was built from.** Terraform builds the artifact outside the configuration, so a `filename` is a zip nothing in the run can open and a `source_dir` belongs to a data source this does not follow. `--code-scope` is how the caller supplies what the configuration never says.
 
 ## Where it fits in suss
 
@@ -166,6 +114,6 @@ Depends on `@suss/behavioral-ir` for the summaries it produces and `hcl2-parser`
 
 ## More
 
-- [How it resolves a reference](./DESIGN.md)
+- [How it reads a configuration](./DESIGN.md)
 - [Documentation](https://suss.sh/)
 - [Source and issues](https://github.com/nimbuscloud-ai/suss)
