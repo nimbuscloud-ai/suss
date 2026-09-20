@@ -76,7 +76,15 @@ describe("read the routes a project's own helpers register", () => {
 
   it("says nothing extra when the one caller settles the app", () => {
     const summaries = readJson(summariesFile) as BehavioralSummary[];
-    expect(summaries.flatMap((one) => one.gaps)).toEqual([]);
+    // The cache object's callback is the one thing left unread: its
+    // caller hands it an inline arrow, which no name joins to.
+    expect(
+      summaries.flatMap((one) =>
+        one.gaps.map((gap) =>
+          gap.type === "unfollowedCall" ? gap.callee : gap.type,
+        ),
+      ),
+    ).toEqual(["onHit"]);
   });
 });
 

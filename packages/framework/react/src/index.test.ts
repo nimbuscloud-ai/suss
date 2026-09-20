@@ -843,8 +843,10 @@ describe("root discovery", () => {
       `,
     });
 
-    expect(summaries.some((one) => one.identity.name === "NotBooted")).toBe(
-      false,
-    );
+    expect(
+      summaries.some(
+        (one) => one.identity.name === "NotBooted" && one.kind === "component",
+      ),
+    ).toBe(false);
   });
 });

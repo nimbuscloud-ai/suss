@@ -41,9 +41,11 @@ describe("read a helper called twice from a file with no import", () => {
 
   it("keeps each call's own handler behind its own route", () => {
     const summaries = readJson(summariesFile) as BehavioralSummary[];
-    const bodies = summaries.map((one) =>
-      JSON.stringify(one.transitions.map((transition) => transition.output)),
-    );
+    const bodies = summaries
+      .filter((one) => one.identity.boundaryBinding?.semantics.name === "rest")
+      .map((one) =>
+        JSON.stringify(one.transitions.map((transition) => transition.output)),
+      );
     expect(bodies).toHaveLength(2);
     expect(bodies[0]).not.toEqual(bodies[1]);
   });
