@@ -143,6 +143,14 @@ Every unsettled value in a contract is spelled the same way. An `image = var.ima
 
 A configuration says which handler runs and never which directory the deployed artifact was built from. So the handler is all the checker has to go on: where it matches a module in the run, that module's imports are the code the unit runs, and where it matches nothing, the unit is reported as one whose code could not be placed rather than being given the repository.
 
+A container deployable states no handler at all, since its image was built somewhere else, so the caller says where its code is:
+
+```bash
+suss contract --from terraform infra/ --code-scope api/web=services/api
+```
+
+`codeScopes` on the read options does the same thing in the library. The name on the left is the unit's instance name, the one the summary states, and what goes on the summary is `codeScope: { kind: "codeUri", path }`, the same thing a CloudFormation template's own `CodeUri` produces. Pointing two units at one directory makes that directory decide nothing: a file in it that states no unit of its own is contested between them and pairs with neither.
+
 
 ## What it will not tell you
 

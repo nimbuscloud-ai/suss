@@ -44,6 +44,7 @@ import {
 
 import type {
   BehavioralSummary,
+  CodeScopeMetadata,
   DeployableUnit,
   EnvVarSource,
   MetricContractMetadata,
@@ -99,6 +100,14 @@ export type {
 export interface TerraformReadOptions {
   /** The packs that say what this configuration's resources are. */
   packs: TerraformPack[];
+  /**
+   * The directory each deployable unit's code is in, by the instance
+   * name the unit is keyed by. A configuration says which handler runs
+   * and never which directory the artifact was built from, so a
+   * container whose image is built elsewhere has no code at all until
+   * somebody says where it is.
+   */
+  codeScopes?: Record<string, string>;
 }
 
 interface KeyedShape {
@@ -345,6 +354,7 @@ function moduleSummaries(
             sourceFile: file.sourceFile,
             resourceType,
             scope: module.scope,
+            options,
           }),
         );
       }
@@ -523,6 +533,8 @@ interface ResourceSite {
   resourceType: string;
   /** What the rest of the configuration states, for a reference in it. */
   scope: ReferenceScope;
+  /** What the run was asked to read, for the options a reader consults. */
+  options: TerraformReadOptions;
 }
 
 /** One reader per kind of thing a pack entry can say a resource is. */
@@ -1045,14 +1057,11 @@ function deployableSummary(
     gaps: [],
     confidence: { source: "declared", level: "high" },
     metadata: withRuntimeContractMetadata(
-      // A configuration says which handler runs and never which
-      // directory the artifact was built from, so the entry is all the
-      // checker gets to place the unit by.
       {
-        codeScope: {
-          kind: "unknown",
-          ...(code.entry !== null ? { entry: code.entry } : {}),
-        },
+        codeScope: declaredCodeScope(
+          opts.options.codeScopes?.[deployableUnit.instanceName],
+          code.entry,
+        ),
       },
       {
         envVars: [...new Set([...declared.names, ...platform])].sort(),
@@ -1069,6 +1078,22 @@ function deployableSummary(
       },
     ),
   };
+}
+
+/**
+ * Which code the unit runs. A configuration says which handler runs and
+ * never which directory the artifact was built from, so the entry is
+ * all the checker gets until the caller says where the code is.
+ */
+function declaredCodeScope(
+  directory: string | undefined,
+  entry: string | null,
+): CodeScopeMetadata {
+  const written = entry !== null ? { entry } : {};
+  if (directory !== undefined) {
+    return { kind: "codeUri", path: directory, ...written };
+  }
+  return { kind: "unknown", ...written };
 }
 
 /** Where each variable came from: the configuration, or the platform. */

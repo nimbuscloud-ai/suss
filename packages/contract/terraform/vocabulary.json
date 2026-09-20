@@ -4,6 +4,7 @@
   "OR": "filter grammar: the keyword joining two comparisons where either may hold",
   "and": "filter grammar: what this reader calls an AND once it has read one",
   "close": "filter grammar: the parenthesis a group ends with",
+  "codeUri": "suss: the code scope that says which directory a unit's code is in",
   "dynamic": "terraform: the block a repeated one is written inside",
   "exhaustive": "suss: a contract that declares every field an item has",
   "junction": "filter grammar: comparisons joined by AND or OR",

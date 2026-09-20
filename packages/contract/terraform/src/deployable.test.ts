@@ -366,6 +366,36 @@ describe("a deployable whose image, runtime or handler a variable supplies", () 
   });
 });
 
+describe("a deployable the caller says where the code for is", () => {
+  it("records the directory against the unit whose name matches", () => {
+    const units = deployables(
+      terraformToSummaries(TASK, "main.tf", {
+        ...PACKS,
+        codeScopes: { "api/web": "services/api" },
+      }),
+    );
+    expect(units[0]?.metadata?.codeScope).toEqual({
+      kind: "codeUri",
+      path: "services/api",
+    });
+    expect(units[1]?.metadata?.codeScope).toEqual({ kind: "unknown" });
+  });
+
+  it("keeps the handler entry beside the directory", () => {
+    const [unit] = deployables(
+      terraformToSummaries(FUNCTION, "main.tf", {
+        ...PACKS,
+        codeScopes: { confirm: "services/orders" },
+      }),
+    );
+    expect(unit?.metadata?.codeScope).toEqual({
+      kind: "codeUri",
+      path: "services/orders",
+      entry: "src/handlers/confirm",
+    });
+  });
+});
+
 describe("a function that declares no environment", () => {
   it("still declares a contract, of the variables the platform injects", () => {
     const [unit] = deployables(

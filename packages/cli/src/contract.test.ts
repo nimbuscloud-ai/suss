@@ -108,6 +108,39 @@ describe("contract CLI command", () => {
     });
   });
 
+  it("gives a Terraform unit the code scope the caller states", async () => {
+    const moduleDir = path.join(tmpDir, "infra-scoped");
+    fs.mkdirSync(moduleDir);
+    fs.writeFileSync(
+      path.join(moduleDir, "main.tf"),
+      [
+        'resource "aws_lambda_function" "confirm" {',
+        '  function_name = "confirm"',
+        '  handler       = "index.handler"',
+        "}",
+      ].join("\n"),
+    );
+
+    const writeFn = process.stdout.write;
+    process.stdout.write = (() => true) as typeof process.stdout.write;
+    let summaries: BehavioralSummary[];
+    try {
+      summaries = await contract({
+        from: "terraform",
+        spec: moduleDir,
+        codeScopes: { confirm: "services/orders" },
+      });
+    } finally {
+      process.stdout.write = writeFn;
+    }
+
+    expect(summaries[0].metadata?.codeScope).toEqual({
+      kind: "codeUri",
+      path: "services/orders",
+      entry: "index",
+    });
+  });
+
   it("writes summaries to the output file when -o is given", async () => {
     const outFile = path.join(tmpDir, "out.json");
     const writeErr = process.stderr.write;

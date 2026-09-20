@@ -226,6 +226,12 @@ Options (contract):
                    may be one .tf file or the directory a module lives
                    in, and a wrangler path may be the directory a Worker
                    lives in
+  --code-scope     Where a deployable unit's code is, written
+                   <instance>=<dir>. Repeatable. Terraform only: a
+                   configuration never says which directory a
+                   container's image was built from, so check has
+                   nothing to pair the unit's code against until you
+                   say where it is
   -o, --output     Write JSON to a file instead of stdout
 
 Options (corroborate):
@@ -1058,6 +1064,7 @@ async function runContract(args: string[]): Promise<number> {
     options: {
       from: { type: "string" },
       output: { type: "string", short: "o" },
+      "code-scope": { type: "string", multiple: true },
     },
     allowPositionals: true,
   });
@@ -1095,12 +1102,41 @@ async function runContract(args: string[]): Promise<number> {
     return 1;
   }
 
+  const codeScopes = parsedCodeScopes(values["code-scope"] as string[]);
+  if (codeScopes === null) {
+    process.stderr.write(
+      "--code-scope takes a unit and the directory its code is in. Try: --code-scope api/web=services/api\n",
+    );
+    return 1;
+  }
+
   await contract({
     from,
     spec: positionals[0],
     ...(values.output !== undefined ? { output: values.output } : {}),
+    ...(Object.keys(codeScopes).length > 0 ? { codeScopes } : {}),
   });
   return 0;
+}
+
+/**
+ * Where each unit's code is, by instance name, or null when one of the
+ * pairs was not written as `<instance>=<dir>`.
+ */
+function parsedCodeScopes(
+  written: string[] | undefined,
+): Record<string, string> | null {
+  const scopes: Record<string, string> = {};
+  for (const pair of written ?? []) {
+    const at = pair.indexOf("=");
+    const instance = pair.slice(0, at);
+    const directory = pair.slice(at + 1);
+    if (at < 1 || directory.length === 0) {
+      return null;
+    }
+    scopes[instance] = directory;
+  }
+  return scopes;
 }
 
 async function runInfer(args: string[]): Promise<number> {
