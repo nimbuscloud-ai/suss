@@ -112,11 +112,25 @@ export interface EquivalenceOptions {
   ignorePaths?: string[];
 }
 
+/**
+ * What a module does when it loads is left out of the comparison. The
+ * generator's whole job is to write the same behavior two different
+ * ways at the top level of a file, so the two modules really do run
+ * different statements while they load, and the unit describing that is
+ * the one place the pair is meant to differ. The boundary and the code
+ * behind it are what have to agree.
+ */
+function behavioral(summaries: BehavioralSummary[]): BehavioralSummary[] {
+  return summaries.filter((summary) => summary.kind !== "module-init");
+}
+
 export function summarySetDifferences(
-  baseline: BehavioralSummary[],
-  variant: BehavioralSummary[],
+  baselineSet: BehavioralSummary[],
+  variantSet: BehavioralSummary[],
   options: EquivalenceOptions = {},
 ): SummaryDifference[] {
+  const baseline = behavioral(baselineSet);
+  const variant = behavioral(variantSet);
   if (baseline.length !== variant.length) {
     return [
       {

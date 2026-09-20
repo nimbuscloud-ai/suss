@@ -36,6 +36,16 @@ The effects come out in the order the calls finish: a call in argument position 
 
 The walk descends into arrows and function expressions the unit itself runs (`.then` callbacks, `forEach` bodies, Promise executors) and stops at named nested declarations and pack-declared sub-unit boundaries, the same rule every body walker takes from `walk/descent.ts`. A decorator's calls run when the class is defined, not when the method runs, so the walk skips decorators too.
 
+## Module scope is a closure root
+
+A job that a container or a scheduled task runs has no handler. Its entry file opens a pool, calls a couple of its own functions, and exits, all in top-level statements. Nothing pack discovery looks for is there, so without a root of its own every query that job runs would be in no summary at all.
+
+The module-init summary is that root. `moduleInit.ts` records the calls the top-level statements make as invocation effects, and emits the summary when the module either does something a pack recognized or calls a function the project declares. A file whose top level only configures its dependencies still gets nothing, which is what keeps every file in a project from getting a summary.
+
+`expandReachableClosure` seeds each module-init summary as an `entry`, keyed by the file's extent (`file:0-<end>`) rather than by a declaration, since module scope has no function node. `collectReachable` then scans the file the way it scans a function body, with `isModuleScopeStop` keeping the descent out of every function and class the module only defines. From there the closure is the ordinary one: `calls` facts, `reachable` derived by the shared rules, and a library summary per reached function.
+
+A function the module invokes on the spot is the exception to the stop rule. The body of `(async () => { await sync(); })()` runs while the module loads, so all three module-scope walks (access recognizers, invocation capture, the closure) read through it and what it does belongs to the module. The call itself is left off the summary, since there is no name behind it for a reader to follow and the module already owns everything the body does.
+
 ## Which unfollowed calls leave a gap
 
 A call the closure cannot follow reads exactly like a call that is not

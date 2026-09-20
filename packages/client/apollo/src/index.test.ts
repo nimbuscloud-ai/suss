@@ -57,6 +57,13 @@ async function runInMemoryFiles(
   return await adapter.extractAll();
 }
 
+/** The summaries describing a GraphQL operation, which is what this pack is asked about. */
+function withGraphql(summaries: BehavioralSummary[]): BehavioralSummary[] {
+  return summaries.filter(
+    (summary) => readGraphqlMetadata(summary) !== undefined,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Pack shape
 // ---------------------------------------------------------------------------
@@ -863,8 +870,11 @@ describe("apolloClientPack, interpolated string constants", () => {
         }
       `,
     });
-    expect(summaries.map((s) => s.identity.name)).toEqual(["useSearch.Search"]);
-    const graphql = readGraphqlMetadata(summaries[0]);
+    const operations = withGraphql(summaries);
+    expect(operations.map((s) => s.identity.name)).toEqual([
+      "useSearch.Search",
+    ]);
+    const graphql = readGraphqlMetadata(operations[0]);
     expect(graphql?.unresolvedDocument).toBeUndefined();
     expect(graphql?.document).toContain("author");
   });
@@ -954,10 +964,11 @@ describe("apolloClientPack, client-preset fragments", () => {
       `,
       "profile.ts": profilePage,
     });
-    expect(summaries.map((s) => s.identity.name)).toEqual([
+    const operations = withGraphql(summaries);
+    expect(operations.map((s) => s.identity.name)).toEqual([
       "useProfile.Profile",
     ]);
-    const graphql = readGraphqlMetadata(summaries[0]);
+    const graphql = readGraphqlMetadata(operations[0]);
     expect(graphql?.document).toContain("fragment UserCard on User");
     expect(graphql?.document).toContain("avatarUrl");
     expect(graphql?.unresolvedFragments).toBeUndefined();
