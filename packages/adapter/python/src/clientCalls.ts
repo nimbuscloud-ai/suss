@@ -78,6 +78,36 @@ export function clientCallUnits(
   return units;
 }
 
+/**
+ * The receivers `calledAttribute` will ask the rules what built them,
+ * for every call this file's functions make. A caller settles these
+ * together before reading any of them, because the rules run over the
+ * whole project's facts and asking per call would run them once per
+ * call the project writes.
+ *
+ * Which calls reach that question does not depend on the pattern, so
+ * one walk covers every pack in the run.
+ */
+export function clientCallReceivers(
+  root: PyNode,
+  module: ModuleBinding,
+): PyNode[] {
+  const found: PyNode[] = [];
+  for (const definition of functionDefinitions(root)) {
+    for (const call of bodyCalls(definition)) {
+      const callee = field(call, "function");
+      if (callee === null || originOf(callee, module) !== null) {
+        continue;
+      }
+      const object = field(callee, "object");
+      if (object !== null && field(callee, "attribute") !== null) {
+        found.push(object);
+      }
+    }
+  }
+  return found;
+}
+
 /** Every function this file defines, methods included, outermost first. */
 function functionDefinitions(node: PyNode, found: PyNode[] = []): PyNode[] {
   for (const child of children(node)) {

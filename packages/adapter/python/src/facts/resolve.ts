@@ -83,6 +83,23 @@ export function writtenValuesOf(db: Database, key: string): string[] {
   return sharedWrittenValuesOf(db, key, (keys) => resolveCalls(db, keys));
 }
 
+/**
+ * Ask about every one of these keys, and about whatever call each of
+ * them was written as, so a later read of any one of them finds its
+ * answer already there. The rules run over the whole project's facts,
+ * so the two rounds here take the place of two per key.
+ */
+export function settleWrittenValues(
+  db: Database,
+  keys: readonly string[],
+): void {
+  if (keys.length === 0) {
+    return;
+  }
+  resolveCalls(db, keys);
+  writtenValuesByKey(db, keys, (behind) => resolveCalls(db, behind));
+}
+
 /** Where a name came from, for one construction: the module and the name that module exports it under. */
 export interface SubjectOrigin {
   module: string;
