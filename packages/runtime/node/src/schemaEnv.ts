@@ -22,11 +22,13 @@ import {
   propertyOf,
   propertyValueOf,
   symbolBehind,
+  writtenNodeOf,
 } from "@suss/adapter-typescript";
 
 import type { ResolutionStore } from "@suss/adapter-typescript";
 import type {
   CallExpression,
+  Identifier,
   Node,
   ParameterDeclaration,
   SourceFile,
@@ -364,26 +366,13 @@ function builtSchema(
   return literal === undefined ? [] : [literal];
 }
 
-/** The call a value is, or the call a name was declared as. */
+/** The call a value comes down to, written out here or bound to a name. */
 function writtenCallOf(
   value: Node,
   resolution: ResolutionStore,
 ): CallExpression | null {
-  if (N.isCallExpression(value)) {
-    return value;
-  }
-  if (!N.isIdentifier(value)) {
-    return null;
-  }
-  const declared = symbolBehind(value)?.getValueDeclaration();
-  if (declared !== undefined && N.isVariableDeclaration(declared)) {
-    const initializer = declared.getInitializer();
-    if (initializer !== undefined && N.isCallExpression(initializer)) {
-      return initializer;
-    }
-  }
-  const resolved = resolution.resolveWrittenValue(value);
-  return resolved !== null && N.isCallExpression(resolved) ? resolved : null;
+  const written = writtenNodeOf(value, resolution);
+  return written !== null && N.isCallExpression(written) ? written : null;
 }
 
 /** The call at the bottom of a chain of methods called on its result. */
@@ -470,6 +459,17 @@ function isEnvironmentObject(
   return reachesEnvironment(value, resolution, new Set());
 }
 
+/**
+ * Which declaration a name refers to. `writtenNodeOf` gives what a name
+ * was written as only where that is a call, and the environment object
+ * is a property access, so nothing the store exports settles this one.
+ * The `environmentValue` rule in `@suss/resolution` does, and no demand
+ * rule or store method hands its results out yet.
+ */
+function declarationBehind(value: Identifier): Node | undefined {
+  return symbolBehind(value)?.getValueDeclaration();
+}
+
 function reachesEnvironment(
   value: Node,
   resolution: ResolutionStore,
@@ -481,7 +481,7 @@ function reachesEnvironment(
   if (!N.isIdentifier(value)) {
     return false;
   }
-  const declared = symbolBehind(value)?.getValueDeclaration();
+  const declared = declarationBehind(value);
   if (declared === undefined) {
     return false;
   }

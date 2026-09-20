@@ -1584,4 +1584,118 @@ describe("env-var recognizer — a schema parsed against process.env", () => {
     );
     expect(readsOf(handler)).toEqual([]);
   });
+
+  it("leaves a request-body parse alone in a file that also reads the environment", () => {
+    const file = makeProject(`
+      import { z } from "zod";
+      const Body = z.object({ ORDERS_URL: z.string() });
+      export const port = process.env.PORT;
+      export function handle(request: { body: unknown }) {
+        return Body.parse(request.body);
+      }
+    `);
+    expect(readsOf(file)).toEqual([["PORT", false]]);
+  });
+
+  it("says nothing about a parse given no arguments at all", () => {
+    const file = makeProject(`
+      import { cleanEnv } from "envalid";
+      export const port = process.env.PORT;
+      export const env = cleanEnv();
+    `);
+    expect(readsOf(file)).toEqual([["PORT", false]]);
+  });
+
+  it("says nothing about a parse given the environment and no schema", () => {
+    const file = makeProject(`
+      import { cleanEnv } from "envalid";
+      export const env = cleanEnv(process.env);
+    `);
+    expect(readsOf(file)).toEqual([]);
+  });
+
+  it("says nothing where the schema argument is not a call at all", () => {
+    const file = makeProject(`
+      import * as v from "valibot";
+      const shape = { ACCOUNTS_TABLE: 1 };
+      export const env = v.parse(shape, process.env);
+    `);
+    expect(readsOf(file)).toEqual([]);
+  });
+
+  it("says nothing where the schema is built by something other than an object", () => {
+    const file = makeProject(`
+      import * as v from "valibot";
+      export const env = v.parse(v.string(), process.env);
+    `);
+    expect(readsOf(file)).toEqual([]);
+  });
+
+  it("says nothing where the schema call was given no literal to read", () => {
+    const file = makeProject(`
+      import { z } from "zod";
+      const Env = z.object(buildShape());
+      export const config = Env.parse(process.env);
+    `);
+    expect(readsOf(file)).toEqual([]);
+  });
+
+  it("skips a schema key written under a computed name", () => {
+    const file = makeProject(`
+      import { z } from "zod";
+      const key = "ORDERS_URL";
+      const Env = z.object({ [key]: z.string(), ACCOUNTS_TABLE: z.string() });
+      export const config = Env.parse(process.env);
+    `);
+    expect(readsOf(file)).toEqual([["ACCOUNTS_TABLE", false]]);
+  });
+
+  it("says nothing about a parse against a name that is a function", () => {
+    const file = makeProject(`
+      import { z } from "zod";
+      const Env = z.object({ ORDERS_URL: z.string() });
+      export const port = process.env.PORT;
+      export function other() {}
+      export const config = Env.parse(other);
+    `);
+    expect(readsOf(file)).toEqual([["PORT", false]]);
+  });
+
+  it("says nothing about a parse against a name nothing declares", () => {
+    const file = makeProject(`
+      import { z } from "zod";
+      const Env = z.object({ ORDERS_URL: z.string() });
+      export const port = process.env.PORT;
+      export const config = Env.parse(nowhereDeclared);
+    `);
+    expect(readsOf(file)).toEqual([["PORT", false]]);
+  });
+
+  it("reads a schema parsed against a parameter a caller in the same file fills", () => {
+    const file = makeProject(`
+      import { z } from "zod";
+      const Env = z.object({ ORDERS_URL: z.string() });
+      function load(source: Record<string, string>) {
+        return Env.parse(source);
+      }
+      export const config = load(process.env);
+    `);
+    expect(readsOf(file)).toEqual([["ORDERS_URL", false]]);
+  });
+
+  it("stops rather than going round two helpers that hand each other the same parameter", () => {
+    const file = makeProject(`
+      import { z } from "zod";
+      const Env = z.object({ ORDERS_URL: z.string() });
+      function one(source: Record<string, string>) {
+        return two(source);
+      }
+      function two(source: Record<string, string>) {
+        return Env.parse(source) ?? one(source);
+      }
+      export const port = process.env.PORT;
+      export const config = one({ ORDERS_URL: "orders" });
+    `);
+    expect(readsOf(file)).toEqual([["PORT", false]]);
+  });
 });
