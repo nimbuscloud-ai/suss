@@ -262,7 +262,7 @@ The tree under `Output.render.root`. `attrs` gives attribute values as source te
 ### `Effect`
 
 ```typescript
-type Effect =
+type Effect = ({ count?: number }) & (
   | { type: "mutation"; target: string; operation: "create" | "update" | "delete" }
   | { type: "invocation"; callee: string; args: unknown[]; async: boolean;
       summary?: string; declaredAt?: DeclarationPlace;
@@ -274,7 +274,8 @@ type Effect =
   | { type: "stateChange"; variable: string; newValue?: unknown }
   | { type: "interaction"; binding: BoundaryBinding; callee?: string;
       groupId?: string; preconditions?: Predicate[];
-      interaction: Interaction };
+      interaction: Interaction }
+);
 
 interface DeclarationPlace {
   file: string;
@@ -283,6 +284,8 @@ interface DeclarationPlace {
 ```
 
 What a transition does besides producing a value. There are two layers.
+
+A transition lists each effect once. `count` says how many sites on that path produced it, so a path that validates the same schema thirteen times has one effect with `count: 13`. It is absent when there was only one, and a call written across several lines counts with the same call written on one, since `callee` is the source text with its whitespace collapsed.
 
 **Coarse effects** (`mutation`, `invocation`, `emission`, `stateChange`) record that something happened: a call fired, a state variable was set, an event went out. They are there for impact analysis, the kind where you want to say "this change edits a handler that writes `users`, and here is who reads `users`".
 
