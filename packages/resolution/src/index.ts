@@ -121,6 +121,8 @@ export type {
 //                               one of its branches
 //   paramOf(f, k, p)            p is f's parameter at position k
 //   paramNamed(f, n, p)         p is f's parameter called n
+//   paramDefault(p, d)          p takes the value d when a caller
+//                               passes no argument at all
 //   extends(c, b)               class c is written as extending b
 //   extendsNamed(c, n)          class c extends the name n, where no
 //                               node in the run backs that name
@@ -1047,6 +1049,18 @@ const STATED_RULES = [
       lit("refersToParam", v("o"), v("p")),
     ],
   ),
+  // A parameter that defaults to the environment, for the callers that
+  // pass nothing. `loadConfig(env = process.env)` is written that way
+  // so that most of the program never mentions the environment at all.
+  rule(
+    "environmentValue",
+    [v("w"), v("o")],
+    [
+      lit("environmentValue", v("w"), v("d")),
+      lit("paramDefault", v("p"), v("d")),
+      lit("refersToParam", v("o"), v("p")),
+    ],
+  ),
 
   // Which environment object a keyed read takes its entry from. The
   // object comes first because a project writes a handful of those and
@@ -1694,6 +1708,14 @@ export const RESOLUTION_QUESTIONS = [
       lit("environmentRead", v("w"), v("site"), v("x")),
       lit("paramNamesEnv", v("p"), v("site")),
     ],
+  ),
+  // The same relation asked from one expression. Seeding from the
+  // objects instead would settle it for every expression in the
+  // project, and a caller holding an argument wants only that one.
+  rule(
+    "wantedEnvironmentValue",
+    [v("o"), v("w")],
+    [lit("wanted", v("o")), lit("environmentValue", v("w"), v("o"))],
   ),
   rule(
     "wantedComesFrom",

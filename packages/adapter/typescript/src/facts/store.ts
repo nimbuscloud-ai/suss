@@ -479,6 +479,35 @@ export class ResolutionStore {
   }
 
   /**
+   * Whether this expression's value is the environment object: the way
+   * a pack spells it, a name declared as that, or a parameter some
+   * caller hands one to, however many calls deep.
+   *
+   * The question is asked twice at most. A value written as the
+   * environment, or bound to a name in a file the store has read,
+   * settles on the first ask. Only a parameter needs its callers, and
+   * those are in files that import the value's own, which no query
+   * starting at the value reaches.
+   */
+  isEnvironmentValue(value: Node): boolean {
+    const target = factKeyOf(value);
+    if (this.answersEnvironmentValue(target)) {
+      return true;
+    }
+    this.readPossibleCallersOf(target.getSourceFile());
+    return this.answersEnvironmentValue(target);
+  }
+
+  private answersEnvironmentValue(target: Node): boolean {
+    return this.askAbout(target, "wanted", () => {
+      this.derive();
+      return (
+        this.answersFor("wantedEnvironmentValue", nodeId(target)).length > 0
+      );
+    });
+  }
+
+  /**
    * Which parameters an environment read takes its variable's name
    * from, for a reader standing at a call. One question covers the
    * whole project: a project has a handful of environment reads and
