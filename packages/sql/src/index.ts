@@ -558,30 +558,92 @@ function accessesIn(statement: unknown, defined: Set<string>): SqlAccess[] {
 /** What the statement itself touches, leaving its `WITH` clause aside. */
 function ownAccesses(node: Node, defined: Set<string>): SqlAccess[] {
   if (node.type === "select") {
-    return selectAccesses(node, defined);
+    // Each branch of a set operation past the first hangs off the one
+    // before it, and reads tables of its own.
+    return [
+      ...selectAccesses(node, defined),
+      ...accessesIn(node._next, defined),
+    ];
   }
   if (node.type === "insert") {
-    return oneAccess(firstTable(node.table), defined, {
-      kind: "write",
-      fields: namesOf(node.columns),
-      selector: [],
-    });
+    return insertAccesses(node, defined);
   }
   if (node.type === "update") {
-    return oneAccess(firstTable(node.table), defined, {
-      kind: "write",
-      fields: refsIn(node.set).map((ref) => ref.field),
-      selector: selectorFields(node.where),
-    });
+    return updateAccesses(node, defined);
   }
   if (node.type === "delete") {
-    return oneAccess(deletedTable(node), defined, {
-      kind: "write",
-      fields: [],
-      selector: selectorFields(node.where),
-    });
+    return deleteAccesses(node, defined);
   }
   return [];
+}
+
+/**
+ * An insert writes one table. The rows it writes can come from a query
+ * rather than a list of values, and that query reads tables of its own,
+ * so it is read as a statement in its own right.
+ */
+function insertAccesses(node: Node, defined: Set<string>): SqlAccess[] {
+  const conflict = conflictClauses(node);
+  const stated: Stated = {
+    fields: [
+      ...unqualified(namesOf(node.columns)),
+      ...refsIn(node.returning),
+      ...conflict.fields,
+    ],
+    selector: conflict.selector,
+  };
+  const sources = sourcesIn(node.table, defined);
+  return [
+    ...accessesAcross(sources, firstTable(node.table), stated, defined),
+    ...accessesIn(node.values, defined),
+  ];
+}
+
+/**
+ * An update writes the first table it states and reads the rest. One
+ * grammar takes a `FROM` beside the write for those, and another joins
+ * them on to the table the update writes.
+ */
+function updateAccesses(node: Node, defined: Set<string>): SqlAccess[] {
+  const sources = sourcesAcross([node.table, node.from], defined);
+  const stated: Stated = {
+    fields: [...setTargets(node.set), ...refsIn(node.returning)],
+    selector: refsIn(node.where),
+  };
+  return accessesAcross(sources, firstTable(node.table), stated, defined);
+}
+
+/**
+ * A delete writes the table it removes rows from and reads every other
+ * table its `FROM` states.
+ */
+function deleteAccesses(node: Node, defined: Set<string>): SqlAccess[] {
+  const written = deletedTable(node);
+  const stated: Stated = {
+    fields: refsIn(node.returning),
+    selector: refsIn(node.where),
+  };
+  const sources = withTable(sourcesIn(node.from, defined), written);
+  return accessesAcross(sources, written, stated, defined);
+}
+
+/**
+ * What an `ON CONFLICT` says about the table the insert writes: the
+ * fields it matches an existing row by, the fields it sets when it
+ * matches one, and what it narrows those rows to. One grammar spells
+ * the same clause `ON DUPLICATE KEY UPDATE`, which states no condition.
+ */
+function conflictClauses(node: Node): Stated {
+  const conflict = asNode(node.conflict);
+  const action = asNode(asNode(conflict?.action)?.expr);
+  return {
+    fields: [
+      ...refsIn(conflict?.target),
+      ...setTargets(action?.set),
+      ...setTargets(asNode(node.on_duplicate_update)?.set),
+    ],
+    selector: refsIn(action?.where),
+  };
 }
 
 /** The tables a `WITH` clause reads, and the names it gives its queries. */
@@ -609,7 +671,7 @@ function commonTables(node: Node, outer: Set<string>): CommonTables {
     }
     // A query in a `WITH` can read a sibling stated before it, so the
     // names go in as each one is read.
-    inside.push(...accessesIn(cte.stmt, names));
+    inside.push(...accessesIn(statementOf(cte.stmt), names));
     names.add(name);
   }
   return { names, inside };
@@ -629,67 +691,78 @@ function deletedTable(node: Node): string | null {
   return firstTable(node.from) ?? firstTable(node.table);
 }
 
-/** A statement whose table this could not read touches nothing. */
-function oneAccess(
-  table: string | null,
-  defined: Set<string>,
-  rest: Omit<SqlAccess, "table" | "qualifier">,
-): SqlAccess[] {
-  return table === null || defined.has(table)
-    ? []
-    : [{ table, qualifier: [], ...rest }];
+/** The fields a statement states, in the two lists an access reports. */
+interface Stated {
+  /** The fields it states in what it reads or writes. */
+  fields: FieldRef[];
+  /** The fields it picks rows by. */
+  selector: FieldRef[];
+}
+
+/** A select reads every table its `FROM` states. */
+function selectAccesses(statement: Node, names: Set<string>): SqlAccess[] {
+  const stated: Stated = {
+    fields: refsIn(statement.columns),
+    selector: refsIn(statement.where),
+  };
+  return accessesAcross(sourcesIn(statement.from, names), null, stated, names);
 }
 
 /**
- * A select reads every table its `FROM` states. A column says which
- * table it belongs to when the query qualifies it, and one that is not
- * qualified belongs to the only table there is. In a join nothing can
- * settle which table an unqualified column comes from, so it is left
- * out rather than attributed to all of them.
+ * One access per table the statement reads or writes, with every field
+ * on the table the statement qualified it to. A column that is not
+ * qualified belongs to the table a write writes, or to the only table a
+ * select reads. Where a statement reads from more than one source
+ * nothing settles which one such a column came from, so it is left out
+ * rather than attributed to all of them.
  */
-function selectAccesses(statement: Node, names: Set<string>): SqlAccess[] {
-  const sources = sourcesIn(statement.from, names);
-  const tables = sources.tables;
-  if (tables.size === 0) {
-    return sources.inside;
-  }
-  const named = [...new Set(tables.values())];
+function accessesAcross(
+  sources: FromSources,
+  written: string | null,
+  stated: Stated,
+  defined: Set<string>,
+): SqlAccess[] {
+  const named = [...new Set(sources.tables.values())];
   const only =
     named.length === 1 && !sources.derived ? (named[0] ?? null) : null;
-  const fields = new Map<string, Set<string>>();
-  const selectors = new Map<string, Set<string>>();
-
-  const record = (
-    into: Map<string, Set<string>>,
-    alias: string | undefined,
-    field: string,
-  ): void => {
-    const table = alias === undefined ? only : (tables.get(alias) ?? null);
-    if (table === null) {
-      return;
-    }
-    const found = into.get(table) ?? new Set<string>();
-    found.add(field);
-    into.set(table, found);
-  };
-
-  for (const ref of refsIn(statement.columns)) {
-    record(fields, ref.table, ref.field);
-  }
-  for (const ref of refsIn(statement.where)) {
-    record(selectors, ref.table, ref.field);
-  }
-
+  const fields = byTable(stated.fields, sources.tables, written ?? only);
+  const selector = byTable(stated.selector, sources.tables, only);
   const own = named
-    .filter((table) => !names.has(table))
+    .filter((table) => !defined.has(table))
     .map((table) => ({
       table,
       qualifier: [],
-      kind: "read" as const,
-      fields: [...(fields.get(table) ?? [])],
-      selector: [...(selectors.get(table) ?? [])],
+      kind: table === written ? ("write" as const) : ("read" as const),
+      fields: fields.get(table) ?? [],
+      selector: selector.get(table) ?? [],
     }));
   return [...own, ...sources.inside];
+}
+
+/**
+ * The fields one clause puts on each table, in the order the statement
+ * writes them. `only` is where a field nothing qualifies belongs, or
+ * null when nothing settles that.
+ */
+function byTable(
+  refs: readonly FieldRef[],
+  tables: ReadonlyMap<string, string>,
+  only: string | null,
+): Map<string, string[]> {
+  const found = new Map<string, string[]>();
+  for (const ref of refs) {
+    const table =
+      ref.table === undefined ? only : (tables.get(ref.table) ?? null);
+    if (table === null) {
+      continue;
+    }
+    const already = found.get(table) ?? [];
+    if (!already.includes(ref.field)) {
+      already.push(ref.field);
+    }
+    found.set(table, already);
+  }
+  return found;
 }
 
 /** Everything a `FROM` reads from, a table or a query written in place. */
@@ -724,7 +797,7 @@ function sourcesIn(from: unknown, defined: Set<string>): FromSources {
     if (table === null) {
       // The alias belongs to the query's own columns, so it goes into no
       // name a column can be attributed through.
-      const query = derivedQuery(node);
+      const query = statementOf(node.expr);
       derived = derived || query !== null;
       inside.push(...accessesIn(query, defined));
       continue;
@@ -738,13 +811,48 @@ function sourcesIn(from: unknown, defined: Set<string>): FromSources {
   return { tables, inside, derived };
 }
 
-/** The query a `FROM` writes in place of a table, or nothing. */
-function derivedQuery(node: Node): unknown {
-  const expr = asNode(node.expr);
-  if (expr === null) {
+/**
+ * The statement a node states, past the wrapper one grammar puts round
+ * it. A query written in place of a table and a query a `WITH` clause
+ * states both arrive either way.
+ */
+function statementOf(value: unknown): unknown {
+  const node = asNode(value);
+  if (node === null) {
     return null;
   }
-  return expr.ast ?? expr;
+  return node.ast ?? node;
+}
+
+/** The sources of a statement that states them in more than one clause. */
+function sourcesAcross(
+  clauses: readonly unknown[],
+  defined: Set<string>,
+): FromSources {
+  const tables = new Map<string, string>();
+  const inside: SqlAccess[] = [];
+  let derived = false;
+  for (const clause of clauses) {
+    const found = sourcesIn(clause, defined);
+    for (const [name, table] of found.tables) {
+      tables.set(name, table);
+    }
+    inside.push(...found.inside);
+    derived = derived || found.derived;
+  }
+  return { tables, inside, derived };
+}
+
+/**
+ * The same sources with the table a statement writes among them. One
+ * grammar leaves the table of a delete out of the `FROM` it parses, so
+ * the write goes in front of whatever the `FROM` did state.
+ */
+function withTable(sources: FromSources, table: string | null): FromSources {
+  if (table === null || sources.tables.has(table)) {
+    return sources;
+  }
+  return { ...sources, tables: new Map([[table, table], ...sources.tables]) };
 }
 
 function firstTable(value: unknown): string | null {
@@ -785,11 +893,27 @@ function refsIn(value: unknown): FieldRef[] {
   return found;
 }
 
-function selectorFields(where: unknown): string[] {
-  const found: string[] = [];
-  for (const ref of refsIn(where)) {
-    if (!found.includes(ref.field)) {
-      found.push(ref.field);
+/** Fields the statement stated without saying which table they are on. */
+function unqualified(names: readonly string[]): FieldRef[] {
+  return names.map((field) => ({ table: undefined, field }));
+}
+
+/**
+ * The field each assignment in a `SET` states, with the table the
+ * statement qualified it to. One grammar writes an assignment as a
+ * column reference with the value hung off it and another as a plain
+ * column beside its table, and both mean the same field.
+ */
+function setTargets(value: unknown): FieldRef[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const found: FieldRef[] = [];
+  for (const entry of value) {
+    const node = asNode(entry);
+    const field = node === null ? null : columnName(node.column);
+    if (node !== null && field !== null) {
+      found.push({ table: stringOf(node.table) ?? undefined, field });
     }
   }
   return found;

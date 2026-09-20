@@ -2,6 +2,23 @@ import { describe, expect, it } from "vitest";
 
 import { readSqlAccess, splitQualifiedTable, sqlFromParts } from "./index.js";
 
+/** The dialects the package reads, and the parameter each one writes. */
+const DIALECTS = [
+  { dialect: "postgresql", hole: "$1" },
+  { dialect: "mysql", hole: "?" },
+  { dialect: "sqlite", hole: "?" },
+  { dialect: "bigquery", hole: "@a" },
+];
+
+/** What a statement touches, as one line per access. */
+function touched(sql: string, dialect: string): string[] {
+  return readSqlAccess(sql, { dialect }).map(
+    (access) =>
+      `${access.kind} ${access.table}` +
+      ` fields=${access.fields.join()} selector=${access.selector.join()}`,
+  );
+}
+
 describe("what a statement touches", () => {
   it("reads the table, the fields, and what a select picks rows by", () => {
     expect(
@@ -499,6 +516,459 @@ describe("a query a FROM writes in place of a table", () => {
         "WITH c AS (SELECT id FROM refunds) SELECT d.id FROM (SELECT id FROM c) d JOIN orders o ON o.id = d.id",
       ).map((access) => access.table),
     ).toEqual(["orders", "refunds"]);
+  });
+});
+
+describe.each(DIALECTS)("a table a write reads from ($dialect)", (each) => {
+  const { dialect, hole } = each;
+
+  it("reads the table an insert takes its rows from", () => {
+    expect(
+      readSqlAccess("INSERT INTO runs (id) SELECT id FROM jobs", { dialect }),
+    ).toEqual([
+      {
+        table: "runs",
+        qualifier: [],
+        kind: "write",
+        fields: ["id"],
+        selector: [],
+      },
+      {
+        table: "jobs",
+        qualifier: [],
+        kind: "read",
+        fields: ["id"],
+        selector: [],
+      },
+    ]);
+  });
+
+  it("reads what that query picks its rows by", () => {
+    expect(
+      touched(
+        "INSERT INTO runs (id) SELECT id FROM jobs WHERE jobs.state = 'x'",
+        dialect,
+      ),
+    ).toEqual([
+      "write runs fields=id selector=",
+      "read jobs fields=id selector=state",
+    ]);
+  });
+
+  it("reads every branch of a set operation an insert takes its rows from", () => {
+    expect(
+      touched(
+        "INSERT INTO runs (id) SELECT id FROM jobs UNION SELECT id FROM queues",
+        dialect,
+      ),
+    ).toEqual([
+      "write runs fields=id selector=",
+      "read jobs fields=id selector=",
+      "read queues fields=id selector=",
+    ]);
+  });
+
+  it("reads the table an update joins on to the one it writes", () => {
+    expect(
+      touched(
+        `UPDATE runs JOIN jobs ON runs.job_id = jobs.id SET runs.s = ${hole}`,
+        dialect,
+      ),
+    ).toEqual(["write runs fields=s selector=", "read jobs fields= selector="]);
+  });
+
+  it("reads the table a delete joins on to the one it writes", () => {
+    expect(
+      touched(
+        "DELETE runs FROM runs JOIN jobs ON runs.job_id = jobs.id",
+        dialect,
+      ),
+    ).toEqual(["write runs fields= selector=", "read jobs fields= selector="]);
+  });
+
+  it("reads the fields an update sets", () => {
+    expect(
+      touched(`UPDATE runs SET s = ${hole} WHERE id = ${hole}`, dialect),
+    ).toEqual(["write runs fields=s selector=id"]);
+  });
+
+  it("says nothing about a delete that states its read side with USING", () => {
+    expect(
+      readSqlAccess("DELETE FROM runs USING jobs WHERE runs.job_id = jobs.id", {
+        dialect,
+      }),
+    ).toEqual([]);
+  });
+
+  it("says nothing about an insert whose query it cannot parse", () => {
+    expect(
+      readSqlAccess("INSERT INTO runs (id) SELECT FROM WHERE", { dialect }),
+    ).toEqual([]);
+  });
+});
+
+describe("an update that states its read side with FROM", () => {
+  it("reads both tables where the grammar takes the clause", () => {
+    expect(
+      readSqlAccess(
+        "UPDATE runs SET s = $1 FROM jobs WHERE runs.job_id = jobs.id",
+      ),
+    ).toEqual([
+      {
+        table: "runs",
+        qualifier: [],
+        kind: "write",
+        fields: ["s"],
+        selector: ["job_id"],
+      },
+      {
+        table: "jobs",
+        qualifier: [],
+        kind: "read",
+        fields: [],
+        selector: ["id"],
+      },
+    ]);
+  });
+
+  it("reads the same statement written through aliases", () => {
+    expect(
+      touched(
+        "UPDATE runs r SET s = $1 FROM jobs j WHERE r.job_id = j.id",
+        "postgresql",
+      ),
+    ).toEqual([
+      "write runs fields=s selector=job_id",
+      "read jobs fields= selector=id",
+    ]);
+  });
+
+  it("reads a query the clause writes in place of a table", () => {
+    expect(
+      touched(
+        "UPDATE runs SET s = $1 FROM (SELECT id FROM jobs) j WHERE runs.id = j.id",
+        "postgresql",
+      ),
+    ).toEqual([
+      "write runs fields=s selector=id",
+      "read jobs fields=id selector=",
+    ]);
+  });
+
+  it("leaves an unqualified field out, since either side could have supplied it", () => {
+    expect(
+      touched(
+        "UPDATE runs SET s = $1 FROM jobs WHERE job_id = $2",
+        "postgresql",
+      ),
+    ).toEqual(["write runs fields=s selector=", "read jobs fields= selector="]);
+  });
+
+  it("gives back the write alone where the grammar drops the clause", () => {
+    expect(
+      touched(
+        "UPDATE runs SET s = @a FROM jobs WHERE runs.job_id = jobs.id",
+        "bigquery",
+      ),
+    ).toEqual(["write runs fields=s selector=job_id"]);
+  });
+
+  it("says nothing where the grammar turns the clause down", () => {
+    const sql = "UPDATE runs SET s = ? FROM jobs WHERE runs.job_id = jobs.id";
+    expect(readSqlAccess(sql, { dialect: "mysql" })).toEqual([]);
+    expect(readSqlAccess(sql, { dialect: "sqlite" })).toEqual([]);
+  });
+});
+
+describe.each(DIALECTS)(
+  "every branch of a set operation ($dialect)",
+  (each) => {
+    const { dialect } = each;
+
+    it("reads both sides of a UNION", () => {
+      expect(
+        readSqlAccess("SELECT id FROM orders UNION SELECT id FROM refunds", {
+          dialect,
+        }),
+      ).toEqual([
+        {
+          table: "orders",
+          qualifier: [],
+          kind: "read",
+          fields: ["id"],
+          selector: [],
+        },
+        {
+          table: "refunds",
+          qualifier: [],
+          kind: "read",
+          fields: ["id"],
+          selector: [],
+        },
+      ]);
+    });
+
+    it("reads both sides of a UNION ALL", () => {
+      expect(
+        touched(
+          "SELECT id FROM orders UNION ALL SELECT id FROM refunds",
+          dialect,
+        ),
+      ).toEqual([
+        "read orders fields=id selector=",
+        "read refunds fields=id selector=",
+      ]);
+    });
+
+    it("gives each branch the fields and the selector it states itself", () => {
+      expect(
+        touched(
+          "SELECT id FROM orders WHERE total > 1 UNION SELECT ref FROM refunds WHERE amount > 2",
+          dialect,
+        ),
+      ).toEqual([
+        "read orders fields=id selector=total",
+        "read refunds fields=ref selector=amount",
+      ]);
+    });
+
+    it("reads a third branch", () => {
+      expect(
+        touched(
+          "SELECT id FROM orders UNION SELECT id FROM refunds UNION SELECT id FROM chargebacks",
+          dialect,
+        ),
+      ).toEqual([
+        "read orders fields=id selector=",
+        "read refunds fields=id selector=",
+        "read chargebacks fields=id selector=",
+      ]);
+    });
+
+    it("reads one a WITH clause states", () => {
+      expect(
+        touched(
+          "WITH pair AS (SELECT id FROM orders UNION SELECT id FROM refunds) SELECT id FROM pair",
+          dialect,
+        ),
+      ).toEqual([
+        "read orders fields=id selector=",
+        "read refunds fields=id selector=",
+      ]);
+    });
+
+    it("reads one written in place of a table", () => {
+      expect(
+        touched(
+          "SELECT b.id FROM (SELECT id FROM orders UNION SELECT id FROM refunds) b",
+          dialect,
+        ),
+      ).toEqual([
+        "read orders fields=id selector=",
+        "read refunds fields=id selector=",
+      ]);
+    });
+
+    it("says nothing about one whose second branch it cannot parse", () => {
+      expect(
+        readSqlAccess("SELECT id FROM orders UNION SELECT FROM WHERE", {
+          dialect,
+        }),
+      ).toEqual([]);
+    });
+  },
+);
+
+describe.each(DIALECTS)(
+  "a WITH clause in front of a select ($dialect)",
+  (each) => {
+    const { dialect } = each;
+
+    it("reads the tables inside it, not the names it gives them", () => {
+      expect(
+        touched(
+          "WITH recent AS (SELECT id FROM searchable) SELECT id FROM recent",
+          dialect,
+        ),
+      ).toEqual(["read searchable fields=id selector="]);
+    });
+
+    it("says nothing about one whose query it cannot parse", () => {
+      expect(
+        readSqlAccess(
+          "WITH recent AS (SELECT FROM WHERE) SELECT id FROM recent",
+          {
+            dialect,
+          },
+        ),
+      ).toEqual([]);
+    });
+  },
+);
+
+describe("a set operation only some grammars take", () => {
+  it("reads both sides of an INTERSECT and of an EXCEPT", () => {
+    for (const dialect of ["postgresql", "mysql"]) {
+      expect(
+        touched(
+          "SELECT id FROM orders INTERSECT SELECT id FROM refunds",
+          dialect,
+        ),
+      ).toEqual([
+        "read orders fields=id selector=",
+        "read refunds fields=id selector=",
+      ]);
+      expect(
+        touched("SELECT id FROM orders EXCEPT SELECT id FROM refunds", dialect),
+      ).toEqual([
+        "read orders fields=id selector=",
+        "read refunds fields=id selector=",
+      ]);
+    }
+  });
+
+  it("says nothing where the grammar turns them down", () => {
+    for (const dialect of ["sqlite", "bigquery"]) {
+      expect(
+        readSqlAccess(
+          "SELECT id FROM orders INTERSECT SELECT id FROM refunds",
+          {
+            dialect,
+          },
+        ),
+      ).toEqual([]);
+      expect(
+        readSqlAccess("SELECT id FROM orders EXCEPT SELECT id FROM refunds", {
+          dialect,
+        }),
+      ).toEqual([]);
+    }
+  });
+});
+
+describe("what a statement hands the caller back", () => {
+  it("adds a RETURNING field to the write", () => {
+    for (const dialect of ["postgresql", "sqlite"]) {
+      const hole = dialect === "postgresql" ? "$1" : "?";
+      expect(
+        readSqlAccess(
+          `INSERT INTO runs (id) VALUES (${hole}) RETURNING id, created_at`,
+          { dialect },
+        ),
+      ).toEqual([
+        {
+          table: "runs",
+          qualifier: [],
+          kind: "write",
+          fields: ["id", "created_at"],
+          selector: [],
+        },
+      ]);
+    }
+  });
+
+  it("counts a field the statement both writes and hands back once", () => {
+    expect(
+      touched("UPDATE runs SET s = $1 WHERE id = $2 RETURNING s", "postgresql"),
+    ).toEqual(["write runs fields=s selector=id"]);
+  });
+
+  it("adds what an update and a delete hand back", () => {
+    expect(
+      touched(
+        "UPDATE runs SET s = $1 WHERE id = $2 RETURNING created_at",
+        "postgresql",
+      ),
+    ).toEqual(["write runs fields=s,created_at selector=id"]);
+    expect(
+      touched("DELETE FROM runs WHERE id = $1 RETURNING id", "postgresql"),
+    ).toEqual(["write runs fields=id selector=id"]);
+  });
+
+  it("reads a whole row handed back as the wildcard the pairing pass takes", () => {
+    expect(
+      touched("INSERT INTO runs (id) VALUES ($1) RETURNING *", "postgresql"),
+    ).toEqual(["write runs fields=id,* selector="]);
+  });
+
+  it("says nothing where the grammar turns RETURNING down", () => {
+    expect(
+      readSqlAccess("INSERT INTO runs (id) VALUES (?) RETURNING id", {
+        dialect: "mysql",
+      }),
+    ).toEqual([]);
+    expect(
+      readSqlAccess("INSERT INTO runs (id) VALUES (@a) RETURNING id", {
+        dialect: "bigquery",
+      }),
+    ).toEqual([]);
+  });
+});
+
+describe("what an insert does about a row that is already there", () => {
+  it("adds the field it matches on and the field it then sets", () => {
+    expect(
+      readSqlAccess(
+        "INSERT INTO users (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name",
+      ),
+    ).toEqual([
+      {
+        table: "users",
+        qualifier: [],
+        kind: "write",
+        fields: ["email", "name"],
+        selector: [],
+      },
+    ]);
+  });
+
+  it("reads what it narrows the rows it matched to", () => {
+    expect(
+      touched(
+        "INSERT INTO users (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name WHERE users.active",
+        "postgresql",
+      ),
+    ).toEqual(["write users fields=email,name selector=active"]);
+  });
+
+  it("reads one that does nothing about it", () => {
+    expect(
+      touched(
+        "INSERT INTO users (email) VALUES ($1) ON CONFLICT DO NOTHING",
+        "postgresql",
+      ),
+    ).toEqual(["write users fields=email selector="]);
+  });
+
+  it("reads the same clause spelled ON DUPLICATE KEY UPDATE", () => {
+    for (const { dialect, hole } of DIALECTS.filter(
+      (each) => each.dialect !== "postgresql",
+    )) {
+      expect(
+        touched(
+          `INSERT INTO users (email) VALUES (${hole}) ON DUPLICATE KEY UPDATE name = VALUES(name)`,
+          dialect,
+        ),
+      ).toEqual(["write users fields=email,name selector="]);
+    }
+  });
+
+  it("says nothing where the grammar turns the clause down", () => {
+    for (const { dialect, hole } of DIALECTS.filter(
+      (each) => each.dialect !== "postgresql",
+    )) {
+      expect(
+        readSqlAccess(
+          `INSERT INTO users (email) VALUES (${hole}) ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name`,
+          { dialect },
+        ),
+      ).toEqual([]);
+    }
+    expect(
+      readSqlAccess(
+        "INSERT INTO users (email) VALUES ($1) ON DUPLICATE KEY UPDATE name = VALUES(name)",
+      ),
+    ).toEqual([]);
   });
 });
 
