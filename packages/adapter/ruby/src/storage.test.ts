@@ -46,6 +46,8 @@ const ACTIVE_RECORD: RbStoragePattern = {
     methods: ["find", "update", "destroy"],
     column: "id",
   },
+  statements: { find_by_sql: { at: 0 }, count_by_sql: { at: 0 } },
+  bindPlaceholder: "?",
   columnArguments: ["pluck", "select"],
   associations: {
     singular: ["has_one", "belongs_to"],
@@ -545,6 +547,59 @@ describe("the database work a Ruby body does", () => {
         operation: "find_by",
         selector: ["email"],
       });
+    });
+  });
+
+  describe("a statement handed to the model", () => {
+    it("reads the tables the statement touches, not the model's own", async () => {
+      const effects = await effectsFor(
+        'rows = Order.find_by_sql("SELECT id FROM dim_account")\n',
+      );
+      expect(effects).toHaveLength(1);
+      expect(containerOf(effects[0])).toBe("dim_account");
+      expect(accessOf(effects[0])).toMatchObject({
+        kind: "read",
+        operation: "find_by_sql",
+      });
+    });
+
+    it("reads the statement at the head of an array of bind values", async () => {
+      const effects = await effectsFor(
+        'rows = Order.find_by_sql(["SELECT id FROM dim_account WHERE tier = ?", tier])\n',
+      );
+      expect(effects).toHaveLength(1);
+      expect(containerOf(effects[0])).toBe("dim_account");
+    });
+
+    it("reads a statement the project wrote into a constant", async () => {
+      const effects = await effectsFor(
+        'STALE = "SELECT id FROM dim_account"\nrows = Order.find_by_sql(STALE)\n',
+      );
+      expect(effects).toHaveLength(1);
+      expect(containerOf(effects[0])).toBe("dim_account");
+    });
+
+    it("reads one effect per table a statement joins", async () => {
+      const effects = await effectsFor(
+        'rows = Order.find_by_sql("SELECT a.id FROM dim_account a JOIN dim_tier t ON t.id = a.tier_id")\n',
+      );
+      expect(effects.map(containerOf).sort()).toEqual([
+        "dim_account",
+        "dim_tier",
+      ]);
+    });
+
+    it("says nothing when the statement settles on no string", async () => {
+      const effects = await effectsFor("rows = Order.find_by_sql(sql)\n");
+      expect(effects).toEqual([]);
+    });
+
+    it("says nothing when the class behind the receiver reaches no base", async () => {
+      const effects = await effectsFor(
+        'rows = Report.find_by_sql("SELECT id FROM dim_account")\n',
+        ["class Report", "end", ""].join("\n"),
+      );
+      expect(effects).toEqual([]);
     });
   });
 

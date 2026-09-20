@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   activeRecordFramework,
+  activeRecordRawSql,
   activeRecordStorage,
   withActiveRecord,
 } from "./index.js";
@@ -39,6 +40,15 @@ describe("the ActiveRecord pack", () => {
     expect(pattern?.storageSystem).toBe("mysql");
   });
 
+  it("says which finders take a statement the project wrote, and how it writes a bind value", () => {
+    const [pattern] = activeRecordStorage({ storageSystem: "postgresql" });
+    expect(Object.keys(pattern?.statements ?? {})).toEqual([
+      "find_by_sql",
+      "count_by_sql",
+    ]);
+    expect(pattern?.bindPlaceholder).toBe("?");
+  });
+
   it("adds itself to a pack without disturbing its discovery", () => {
     const composed = withActiveRecord(graphqlPack, {
       storageSystem: "sqlite",
@@ -46,6 +56,7 @@ describe("the ActiveRecord pack", () => {
     expect(composed.name).toBe("graphql-ruby");
     expect(composed.discovery).toBe(graphqlPack.discovery);
     expect(composed.storage).toHaveLength(1);
+    expect(composed.rawSql).toHaveLength(1);
   });
 
   it("keeps a storage pattern the pack already had", () => {
@@ -70,6 +81,30 @@ describe("the ActiveRecord pack", () => {
     const pack = activeRecordFramework({ storageSystem: "postgresql" });
     expect(pack.discovery).toEqual([]);
     expect(pack.storage).toHaveLength(1);
+    expect(pack.rawSql).toHaveLength(1);
+  });
+});
+
+describe("the connection ActiveRecord hands out", () => {
+  it("matches the base class outright and every subclass through its ancestry", () => {
+    const [pattern] = activeRecordRawSql({ storageSystem: "postgresql" });
+    expect(pattern?.constantName).toBe("ActiveRecord::Base");
+    expect(pattern?.baseClasses).toEqual(["ActiveRecord::Base"]);
+    expect(pattern?.clientBuilders).toContain("connection");
+    expect(pattern?.clientBuilders).toContain("lease_connection");
+  });
+
+  it("lists the calls on it that take a statement", () => {
+    const [pattern] = activeRecordRawSql({ storageSystem: "postgresql" });
+    expect(pattern?.statements?.execute).toEqual({ at: 0 });
+    expect(pattern?.statements?.select_values).toEqual({ at: 0 });
+    expect(pattern?.statements?.exec_update).toEqual({ at: 0 });
+  });
+
+  it("reads the statements in the dialect of the database the project named", () => {
+    const [pattern] = activeRecordRawSql({ storageSystem: "mysql" });
+    expect(pattern?.storageSystem).toBe("mysql");
+    expect(pattern?.dialect).toBe("mysql");
   });
 });
 

@@ -52,6 +52,43 @@ function action(
   return found as BehavioralSummary;
 }
 
+/** The one reached method with `name`, whatever class it was written on. */
+function method(
+  summaries: BehavioralSummary[],
+  name: string,
+): BehavioralSummary {
+  const found = summaries.find(
+    (s) => s.kind === "library" && s.identity.name === name,
+  );
+  expect(found, name).toBeDefined();
+  return found as BehavioralSummary;
+}
+
+/** Every storage access a reached method made, as the table, the kind and the operation. */
+function accesses(summary: BehavioralSummary) {
+  return summary.transitions
+    .flatMap((transition) => transition.effects)
+    .filter(
+      (effect) =>
+        effect.type === "interaction" &&
+        effect.interaction.class === "storage-access",
+    )
+    .map((effect) => {
+      const semantics = (
+        effect as Extract<typeof effect, { type: "interaction" }>
+      ).binding.semantics as { storageSystem?: string; container?: string };
+      const interaction = (
+        effect as Extract<typeof effect, { type: "interaction" }>
+      ).interaction as { kind: string; operation: string };
+      return {
+        storageSystem: semantics.storageSystem,
+        container: semantics.container,
+        kind: interaction.kind,
+        operation: interaction.operation,
+      };
+    });
+}
+
 /** The transitions the action's own body produced, without the ones its filters contributed. */
 function own(summary: BehavioralSummary): BehavioralSummary["transitions"] {
   return summary.transitions.filter(
@@ -442,6 +479,78 @@ describe("extraction over fixtures/ruby-rails", () => {
 
     expect(covered("show")).toContain("load_order");
     expect(covered("summary")).not.toContain("load_order");
+  });
+
+  it("reads a statement run on the connection the base class hands out", async () => {
+    const { summaries } = await extractFixture();
+    expect(accesses(method(summaries, "close_lapsed"))).toEqual([
+      {
+        storageSystem: "postgresql",
+        container: "dim_account",
+        kind: "write",
+        operation: "execute",
+      },
+    ]);
+  });
+
+  it("reads a statement run through a second call on that connection", async () => {
+    const { summaries } = await extractFixture();
+    expect(accesses(method(summaries, "tag_account"))).toEqual([
+      {
+        storageSystem: "postgresql",
+        container: "dim_account",
+        kind: "write",
+        operation: "exec_query",
+      },
+    ]);
+  });
+
+  it("reads a statement run on the connection a model hands out", async () => {
+    const { summaries } = await extractFixture();
+    expect(accesses(method(summaries, "untiered_ids"))).toEqual([
+      {
+        storageSystem: "postgresql",
+        container: "dim_account",
+        kind: "read",
+        operation: "select_values",
+      },
+    ]);
+  });
+
+  it("reads a statement run on the bare connection of a model's own class method", async () => {
+    const { summaries } = await extractFixture();
+    expect(accesses(method(summaries, "stale_ids"))).toEqual([
+      {
+        storageSystem: "postgresql",
+        container: "dim_account",
+        kind: "read",
+        operation: "select_values",
+      },
+    ]);
+  });
+
+  it("reads the statement at the head of the array find_by_sql was given", async () => {
+    const { summaries } = await extractFixture();
+    expect(accesses(method(summaries, "created_since"))).toEqual([
+      {
+        storageSystem: "postgresql",
+        container: "dim_account",
+        kind: "read",
+        operation: "find_by_sql",
+      },
+    ]);
+  });
+
+  it("reads the table count_by_sql was given, not the model's own", async () => {
+    const { summaries } = await extractFixture();
+    expect(accesses(method(summaries, "total"))).toEqual([
+      {
+        storageSystem: "postgresql",
+        container: "dim_account",
+        kind: "read",
+        operation: "count_by_sql",
+      },
+    ]);
   });
 
   it("records a rescue_from handler as a filter that runs after a raise", async () => {

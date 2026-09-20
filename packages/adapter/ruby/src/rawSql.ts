@@ -18,6 +18,7 @@ import { readSqlAccess, splitQualifiedTable, sqlFromParts } from "@suss/sql";
 import { piecesOf } from "@suss/values";
 
 import { field, readCallArgs } from "./ast.js";
+import { classBehind, enclosingClassKey, reachesBase } from "./baseClass.js";
 import { compoundName } from "./scope.js";
 import { evaluatedValue, writtenNodeOf } from "./values/evaluator.js";
 
@@ -32,6 +33,24 @@ import type { RbNode } from "./parser.js";
 export interface RbRawSqlOptions {
   readonly facts: Database | undefined;
   readonly patterns: readonly RbRawSqlPattern[];
+  /** The absolute path the calls were read from, which the constant bindings key on. */
+  readonly file?: string;
+}
+
+/**
+ * Where a pattern's statements land and how they are read. A model
+ * pattern and a raw SQL pattern both say this much, so both reach the
+ * same reader.
+ */
+export interface RbStatementStore {
+  /** Which store is behind the calls, in the words OpenTelemetry's semantic conventions use. */
+  readonly storageSystem: string;
+  /** Which dialect the statements are written in. */
+  readonly dialect: string;
+  /** Which namespace the calls reach when neither the chain nor the table name says. */
+  readonly scope?: string;
+  /** The token the library writes where a bind value goes, when the dialect does not read that token itself. */
+  readonly bindPlaceholder?: string;
 }
 
 /**
@@ -42,13 +61,13 @@ export interface RbRawSqlOptions {
 const MOST_HOPS = 8;
 
 /** The part of the store a chain of calls reached. */
-interface Address {
+export interface Address {
   readonly scope: string | null;
   readonly container: string | null;
 }
 
 /** What a call on the library's own constant has addressed, which is nothing yet. */
-const NOWHERE: Address = { scope: null, container: null };
+export const NOWHERE: Address = { scope: null, container: null };
 
 /** The storage effects one call makes, which is nothing unless a pattern matches it. */
 export function rawSqlEffects(
@@ -83,7 +102,12 @@ function patternEffects(
   const args = readCallArgs(field(call, "arguments"));
   const place = pattern.statements?.[method];
   if (place !== undefined) {
-    const statement = statementAt(args, place, options.facts);
+    const statement = statementAt(
+      args,
+      place,
+      options.facts,
+      pattern.bindPlaceholder,
+    );
     return statementEffects(call, statement, address, pattern);
   }
 
@@ -91,20 +115,20 @@ function patternEffects(
 }
 
 /** One effect per table the statement touches. */
-function statementEffects(
+export function statementEffects(
   call: RbNode,
   statement: string | null,
   address: Address,
-  pattern: RbRawSqlPattern,
+  store: RbStatementStore,
 ): Effect[] {
   if (statement === null) {
     return [];
   }
 
-  return readSqlAccess(statement, { dialect: pattern.dialect }).map((access) =>
+  return readSqlAccess(statement, { dialect: store.dialect }).map((access) =>
     effectOf(
       call,
-      pattern,
+      store,
       {
         scope: innermost(access.qualifier) ?? address.scope,
         container: access.table,
@@ -177,7 +201,7 @@ function namedTable(name: string | null): Address | null {
 
 function effectOf(
   call: RbNode,
-  pattern: RbRawSqlPattern,
+  store: RbStatementStore,
   address: Address,
   access: Pick<SqlAccess, "kind" | "fields" | "selector">,
 ): Effect {
@@ -186,8 +210,8 @@ function effectOf(
     type: "interaction",
     binding: storageBinding({
       recognition: "ruby-raw-sql",
-      storageSystem: pattern.storageSystem,
-      scope: address.scope ?? pattern.scope ?? "default",
+      storageSystem: store.storageSystem,
+      scope: address.scope ?? store.scope ?? "default",
       container: address.container,
     }),
     callee: call.text,
@@ -220,14 +244,27 @@ function addressBehind(
 
   if (receiver.type !== "call") {
     const written = writtenNodeOf(receiver, options.facts);
-    return written === null || written.id === receiver.id
-      ? null
-      : addressBehind(written, pattern, options, hops + 1);
+    if (written !== null && written.id !== receiver.id) {
+      return addressBehind(written, pattern, options, hops + 1);
+    }
+    return receiver.type === "identifier" &&
+      buildsOnOwnClass(receiver, receiver.text, pattern, options)
+      ? NOWHERE
+      : null;
   }
 
   const method = field(receiver, "method")?.text ?? "";
   const inner = field(receiver, "receiver");
-  if (inner !== null && namesConstant(inner, pattern.constantName)) {
+  if (inner === null) {
+    return buildsOnOwnClass(receiver, method, pattern, options)
+      ? NOWHERE
+      : null;
+  }
+
+  if (
+    namesConstant(inner, pattern.constantName) ||
+    namesSubclass(inner, pattern, options)
+  ) {
     return pattern.clientBuilders.includes(method) ? NOWHERE : null;
   }
 
@@ -271,6 +308,61 @@ function namesConstant(receiver: RbNode, constantName: string): boolean {
   );
 }
 
+/**
+ * Whether this receiver is a constant whose class reaches one of the base
+ * classes the pack listed. A library that gives every subclass a
+ * connection is written from the subclass as often as from the base, and
+ * both reach the same store.
+ */
+function namesSubclass(
+  receiver: RbNode,
+  pattern: RbRawSqlPattern,
+  options: RbRawSqlOptions,
+): boolean {
+  const bases = pattern.baseClasses ?? [];
+  const facts = options.facts;
+  const file = options.file;
+  if (
+    bases.length === 0 ||
+    facts === undefined ||
+    file === undefined ||
+    (receiver.type !== "constant" && receiver.type !== "scope_resolution")
+  ) {
+    return false;
+  }
+
+  const classKey = classBehind(facts, file, receiver);
+  return classKey !== undefined && reachesBase(facts, classKey, bases);
+}
+
+/**
+ * Whether a call written with no receiver builds a client on the class it
+ * is written inside, the bare `connection` of a model's own class method.
+ * Ruby sends such a call to the enclosing class, so the ancestry that
+ * class reaches is what says whether the library gave the call at all.
+ */
+function buildsOnOwnClass(
+  node: RbNode,
+  method: string,
+  pattern: RbRawSqlPattern,
+  options: RbRawSqlOptions,
+): boolean {
+  const bases = pattern.baseClasses ?? [];
+  const facts = options.facts;
+  const file = options.file;
+  if (
+    bases.length === 0 ||
+    facts === undefined ||
+    file === undefined ||
+    !pattern.clientBuilders.includes(method)
+  ) {
+    return false;
+  }
+
+  const classKey = enclosingClassKey(node, file);
+  return classKey !== null && reachesBase(facts, classKey, bases);
+}
+
 function argumentAt(
   args: CallArgs,
   place: RbArgumentPlace,
@@ -308,23 +400,50 @@ function stringAt(
  * all, so a call handed a value nothing in the run wrote stays unread
  * rather than becoming a statement of nothing but parameters.
  */
-function statementAt(
+export function statementAt(
   args: CallArgs,
   place: RbArgumentPlace,
   facts: Database | undefined,
+  bindPlaceholder?: string,
 ): string | null {
   const written = argumentAt(args, place);
   if (written === undefined) {
     return null;
   }
 
-  const parts = literalParts(evaluatedValue(written, facts));
+  const parts = literalParts(statementValue(evaluatedValue(written, facts)));
   if (parts === null) {
     return null;
   }
 
-  const statement = sqlFromParts(parts);
+  const statement = sqlFromParts(bindsSplit(parts, bindPlaceholder));
   return statement.trim() === "" ? null : statement;
+}
+
+/** A library with a bind placeholder of its own writes a statement no dialect parses, so each placeholder becomes a part boundary and reaches the reader as a parameter. */
+function bindsSplit(
+  parts: readonly string[],
+  bindPlaceholder: string | undefined,
+): string[] {
+  if (bindPlaceholder === undefined || bindPlaceholder === "") {
+    return [...parts];
+  }
+
+  return parts.flatMap((part) => part.split(bindPlaceholder));
+}
+
+/**
+ * A library that takes the bind values alongside the statement takes both
+ * as one list, `["SELECT ... WHERE id = ?", id]`, so the statement is the
+ * first of them.
+ */
+function statementValue(value: Value): Value {
+  if (value.kind !== "sequence") {
+    return value;
+  }
+
+  const first = value.items[0];
+  return first === undefined ? value : first.value;
 }
 
 /**
