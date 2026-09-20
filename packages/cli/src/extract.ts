@@ -748,6 +748,13 @@ interface LanguageRun {
    * summary no matter what the code says.
    */
   recognizersOnly: boolean;
+  /**
+   * True when the run read exactly the files --files named, instead of
+   * walking the project. A scoped read like that builds no extraction
+   * funnel, so a missing one does not mean the result came from the
+   * cache.
+   */
+  explicitFiles: boolean;
 }
 
 interface LanguageRunOptions {
@@ -814,17 +821,20 @@ async function runTypeScript(
     },
   });
 
-  const summaries =
-    options.files !== undefined && options.files.length > 0
-      ? await adapter.extractFromFiles(
-          options.files.map((f) => path.resolve(f)),
-        )
-      : await adapter.extractAll();
+  const namedFiles = options.files ?? [];
+  const explicitFiles = namedFiles.length > 0;
+  const summaries = explicitFiles
+    ? await adapter.extractFromFiles(namedFiles.map((f) => path.resolve(f)))
+    : await adapter.extractAll();
 
+  // extractFromFiles builds no extraction report, so its walked count
+  // is unset. The given list already says how many files this read.
   return {
     summaries,
     root: runRoot,
-    filesRead: (extractionReport as ExtractionReport | null)?.filesWalked ?? 0,
+    filesRead: explicitFiles
+      ? namedFiles.length
+      : ((extractionReport as ExtractionReport | null)?.filesWalked ?? 0),
     timingReport,
     cacheDiagnostic,
     extractionReport,
@@ -833,6 +843,7 @@ async function runTypeScript(
       packs.every(
         (p) => p.discovery.length === 0 && p.discoverUnits === undefined,
       ),
+    explicitFiles,
   };
 }
 
@@ -947,6 +958,9 @@ function languageRun(
     cacheDiagnostic,
     extractionReport,
     recognizersOnly,
+    // Python and Ruby build a report whether or not --files was given,
+    // so nothing downstream needs to tell the two runs apart here.
+    explicitFiles: false,
   };
 }
 
@@ -1066,7 +1080,9 @@ export async function extract(
 
   if (extractionReport === null && options.explain === true) {
     process.stderr.write(
-      "These summaries came back from the cache, so there is no breakdown of where they came from. Run this again with --no-cache to walk the files and get one.\n",
+      run.explicitFiles
+        ? "--files reads exactly the files it was given, so there is no funnel breakdown to show. Drop --files to walk the project and see where each pack stood.\n"
+        : "These summaries came back from the cache, so there is no breakdown of where they came from. Run this again with --no-cache to walk the files and get one.\n",
     );
   }
 

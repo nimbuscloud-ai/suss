@@ -2252,6 +2252,7 @@ export function createTypeScriptAdapter(
       const resolution = new ResolutionStore(packWrappers, packEnvironments);
       const claimedUnits = new Map<string, ClaimedUnit>();
 
+      const sourceFiles: SourceFile[] = [];
       for (const fp of filePaths) {
         // The caller asked for this file by name, so load it whatever the
         // gate would have decided.
@@ -2263,6 +2264,7 @@ export function createTypeScriptAdapter(
             continue;
           }
         }
+        sourceFiles.push(sourceFile);
         summaries.push(
           ...extractFromSourceFile(
             sourceFile,
@@ -2275,10 +2277,40 @@ export function createTypeScriptAdapter(
         );
       }
 
+      // A recognizer-only pack's effects need a function to live on,
+      // the same as a full run: fold each named file's exports into
+      // the reachable closure as roots.
+      const packsByFile = computePackApplicability(
+        sourceFiles,
+        config.frameworks,
+        resolution,
+      );
+      const withClosure =
+        config.includeReachable === false
+          ? summaries
+          : expandReachableClosure(
+              summaries,
+              project,
+              config.extractorOptions,
+              undefined,
+              undefined,
+              {
+                invocation: collectInvocationRecognizers(config.frameworks),
+                access: collectAccessRecognizers(config.frameworks),
+                resolution,
+                resolveCallableSources: (value, alsoFrom) =>
+                  resolution.resolveCallableSources(value, alsoFrom),
+                sourceDeclarationsBehind: (declaration) =>
+                  sourceDeclarationsBehind(declaration, resolution),
+              },
+              [],
+              recognizerOnlyRoots(packsByFile),
+            );
+
       // A route's own middleware is read from the same file, so it
       // composes here as it does in a full run.
       return named(
-        composeWrappers(summaries, config.extractorOptions ?? {}),
+        composeWrappers(withClosure, config.extractorOptions ?? {}),
         config.workspace,
         runRoot,
       );
