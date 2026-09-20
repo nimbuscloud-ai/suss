@@ -561,10 +561,12 @@ describe("how a store is spelled", () => {
     scope?: string;
     container?: string | null;
     accessPath?: string | null;
+    storageSystem?: string | null;
   }) =>
     storageBinding({
       recognition: "prisma",
-      storageSystem: "postgresql",
+      storageSystem:
+        opts.storageSystem === undefined ? "postgresql" : opts.storageSystem,
       scope: opts.scope ?? "default",
       container: opts.container === undefined ? "invoices" : opts.container,
       accessPath: opts.accessPath ?? null,
@@ -589,6 +591,12 @@ describe("how a store is spelled", () => {
   it("says so when the source states a container it could not settle", () => {
     expect(boundaryLabel(store({ container: null }))).toBe(
       "postgresql:<unnamed container>",
+    );
+  });
+
+  it("says so when the source states an engine it could not settle", () => {
+    expect(boundaryLabel(store({ storageSystem: null }))).toBe(
+      "<unknown engine>:invoices",
     );
   });
 

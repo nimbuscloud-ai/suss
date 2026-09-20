@@ -59,6 +59,7 @@ export {
   StorageSemanticsSchema,
   storageContainerLabel,
   storageLabel,
+  storageSystemLabel,
 } from "./semantics/storage.js";
 export { UnitInvocationSemanticsSchema } from "./semantics/unitInvocation.js";
 export { semconvAttributes } from "./semconv.js";
@@ -456,12 +457,13 @@ export function unitInvocationBinding(opts: {
  * Build a storage binding, the side of a store that both a schema
  * reader and a call site can spell. `transport` defaults to the store's
  * own name, which is right for a database whose product and wire
- * protocol are the same word, and a store reached over an SDK passes
- * its wire instead.
+ * protocol are the same word; a store reached over an SDK passes its
+ * wire instead, and one whose engine nobody settled has none to pass.
  */
 export function storageBinding(opts: {
   recognition: string;
-  storageSystem: string;
+  /** Null when the source states an engine this reader could not settle. */
+  storageSystem: string | null;
   transport?: string;
   scope: string;
   /** Null when the source gives a container this reader could not settle. */
@@ -470,7 +472,7 @@ export function storageBinding(opts: {
   accessPath?: string | null;
 }): BoundaryBinding {
   return {
-    transport: opts.transport ?? opts.storageSystem,
+    transport: opts.transport ?? opts.storageSystem ?? "storage",
     semantics: {
       name: "storage",
       storageSystem: opts.storageSystem,

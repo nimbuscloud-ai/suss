@@ -379,7 +379,9 @@ const BOUNDARY_BLOCKS: BoundaryBlocks = {
   }),
   storage: (semantics) => ({
     semantics: "storage",
-    storageSystem: semantics.storageSystem,
+    ...(semantics.storageSystem !== null
+      ? { storageSystem: semantics.storageSystem }
+      : {}),
     ...(semantics.scope !== "default" ? { scope: semantics.scope } : {}),
     ...(semantics.container !== null ? { container: semantics.container } : {}),
     ...(semantics.accessPath !== null

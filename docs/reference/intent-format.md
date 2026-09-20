@@ -113,7 +113,7 @@ The checker pairs a function-call boundary on `package` and `exportPath`. A docu
 | Field | Required | What it means |
 |---|---|---|
 | `semantics` | yes | `storage`. |
-| `storageSystem` | yes | Which store this is: `postgresql`, `aws.dynamodb`, `s3`. |
+| `storageSystem` | no | Which store this is: `postgresql`, `aws.dynamodb`, `s3`. Defaults to null, which says the document does not name an engine. |
 | `scope` | no | The ORM, schema or deployment scope the container is in. A setup with one database uses `default`, which is also the default value. |
 | `container` | no | The table, bucket, collection or index. Defaults to null. |
 | `accessPath` | no | A secondary way into the container, such as a DynamoDB index or an Elasticsearch alias. Defaults to null. |
