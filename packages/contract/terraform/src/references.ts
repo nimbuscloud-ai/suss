@@ -31,6 +31,12 @@ export interface ReferenceScope {
   arguments: Record<string, string>;
   /** The `default` each `variable` block states, for a `for_each` alone. */
   defaults: Record<string, unknown>;
+  /**
+   * What goes in front of the name of everything this module declares,
+   * `module.api.` inside a child, so two calls of one module do not
+   * collide. Empty at the root.
+   */
+  namePrefix: string;
 }
 
 /** `${X}` is an interpolation, the same one a name pattern reads. */
@@ -62,6 +68,7 @@ export function referenceScope(opts: {
   locals?: Iterable<Record<string, unknown>>;
   arguments?: Record<string, string>;
   defaults?: Record<string, unknown>;
+  namePrefix?: string;
 }): ReferenceScope {
   const resources = new Map<string, Record<string, unknown>>();
   for (const [resourceType, label, body] of opts.resources) {
@@ -75,6 +82,7 @@ export function referenceScope(opts: {
     locals: firstOfEach(opts.locals ?? []),
     arguments: opts.arguments ?? {},
     defaults: opts.defaults ?? {},
+    namePrefix: opts.namePrefix ?? "",
   };
 }
 
@@ -125,7 +133,7 @@ export function referencedResource(
   }
   const [, resourceType, label] = parsed;
   return scope.resources.has(`${resourceType}.${label}`)
-    ? (label as string)
+    ? `${scope.namePrefix}${label}`
     : null;
 }
 

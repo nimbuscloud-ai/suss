@@ -17,6 +17,7 @@
   "platform": "suss: the provenance of a variable the runtime injects on its own",
   "read": "suss: what an unset gate attribute means when the entry says to read it anyway",
   "ref": "suss: the kind of env-var target that points at a declared resource",
+  "source": "terraform: the module attribute saying where the child module is",
   "store": "suss: a resource that says a store exists without stating its containers",
   "template": "suss: the provenance of a variable the configuration itself declares",
   "term": "filter grammar: one comparison, the leaf of what a filter reads as",

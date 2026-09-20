@@ -12,7 +12,7 @@ A contract reader. It walks `.tf` files and describes what it finds as boundarie
 suss contract --from terraform infra/terraform/dynamodb -o tables.json
 ```
 
-The path may be one file or the directory a module lives in, since a module states its resources across several files.
+The path may be one file or the directory a module lives in, since a module states its resources across several files. A root module that only calls child modules is read too: see below.
 
 ## What it reads
 
@@ -89,6 +89,28 @@ The reader settles `for_each` where the configuration already says what is in it
 ECS takes its containers as JSON rather than as blocks, so the same environment is written `environment = [for k, v in local.worker_env : { name = k, value = v }]`, and that expands the same way.
 
 A `for_each` nothing settles, one a data source supplies, leaves the container with the variables the platform injects and nothing else. A `variable` default is read for this and for nothing else: a default says what a deployment would get if it passed nothing, so a `${var.stage}` in a name keeps its hole.
+
+## A root module that calls child modules
+
+Plenty of configurations declare no resources at all at the root. They call a module per service, and every table and function is inside the child:
+
+```hcl
+locals {
+  stage = "prod"
+}
+
+module "orders" {
+  source     = "./modules/store"
+  stage      = local.stage
+  table_name = "orders-v1"
+}
+```
+
+The reader follows a `source` that says which directory beside this one, `./` or `../`, and reads that directory's `.tf` files as a module of its own. Everything it declares gets `module.orders.` in front of its summary name and its deployable unit, so calling one module twice gives two sets of boundaries rather than one set that collides.
+
+Inside the child, `var.table_name` resolves to the literal the call passed in, so `name = "${var.stage}-${var.table_name}"` comes out as `prod-orders-v1` and pairs with code that addresses that table. An argument the root cannot settle passes nothing down, and the child's `${var.stage}` stays the hole it was. The root reads a child back through `module.orders.table_name`, which resolves through the child's `output` block when the child has already said what the value comes to.
+
+A `source` pointing at a registry, a git repository or an S3 bucket is code the repository does not contain, so the reader skips it and says nothing about what is inside. An argument built from another module's output does not resolve either: the arguments of every call are settled before any child is read.
 
 ## Several entries for one resource type
 

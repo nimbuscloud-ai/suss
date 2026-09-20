@@ -63,7 +63,7 @@ resource "signals_watch" "refused_sustained" {
 
 Both resources deploy the same string, and the configuration already says what it is, so the reference resolves to `signals.example/counters/edp-sweep-refused` on both summaries and the two pair. Left as the hole `{signals_counter.refused.name}`, the two sides of one configuration spell the same metric differently and pair with nothing.
 
-Only `<resource_type>.<label>.<attribute>` resolves, and only when that resource writes the attribute as a literal string. An attribute the provider fills in at apply time, an `id` or an `arn` or a `self_link`, is not written anywhere in the file, so nothing is found and the hole stays. `var.` and `local.` stay holes as well: a variable's default is not what production runs with, and a name built from a stage prefix has to go on pairing with whatever stage the code that meets it was written for.
+Only `<resource_type>.<label>.<attribute>` resolves, and only when that resource writes the attribute as a literal string. An attribute the provider fills in at apply time, an `id` or an `arn` or a `self_link`, is not written anywhere in the file, so nothing is found and the hole stays. A `var.` at the root stays a hole: a variable's default is not what production runs with, and a name built from a stage prefix has to go on pairing with whatever stage the code that meets it was written for.
 
 A reference whose attribute is itself built from another reference is followed four hops, and then the hole stays. Two resources that refer to each other leave the value exactly as it was written.
 
@@ -72,3 +72,13 @@ The scope is every file being read together, so a reference finds a resource ano
 ## A name a locals block states
 
 A configuration that writes `local.table_name = "orders-v1"` and refers to it from every resource has stated that name as plainly as a resource would, so a reference to it resolves. One built from a variable, `"${var.environment}-orders-v1"`, expands to a value that still has a variable in it, which becomes a hole again, so a name built from a stage prefix reads the way it always did.
+
+## A variable a module call passed in
+
+Each module gets a scope of its own, since a child's `local.stage` is the child's and says nothing about the root's. The two are joined in the two places Terraform joins them.
+
+Going down, `var.table_name` inside a child resolves to the literal the calling `module` block passed in, so a module called twice with two table names declares two tables and each one pairs with the code that addresses it. An argument built at deploy time is a hole with another name on it, so the child keeps its own hole rather than taking the parent's. A configuration read at its root has nothing to pass its variables in, and `${var.stage}` there stays a hole as it always has.
+
+Going up, `module.orders.table_name` resolves through the child's `output` block, and only when the value settles inside the child. An output that still has a hole in it is left out, so the parent reads `{module.orders.table_name}` and pairs on nothing rather than on half a name.
+
+A `variable` block's own `default` resolves nowhere. It says what a deployment would get if it passed nothing, which is a guess about production. The one reader of it is a `for_each`, where it decides how many blocks the module writes rather than what any of them says.
