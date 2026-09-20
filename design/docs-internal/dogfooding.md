@@ -183,7 +183,7 @@ factories in the TypeScript adapter): the method exists and pairs
 when something calls it, and today nothing outside the package
 does.
 
-**The 12 unmatched consumers ask for a method that exists only on a
+**The 14 unmatched consumers ask for a method that exists only on a
 value's declared return type.** `SuppressionFileSchema.safeParse(...)`
 and `IntentDocSchema.safeParse(...)` both call a method zod puts on
 every schema object, which comes from the imported `ZodType` type
@@ -201,14 +201,18 @@ one the adapter's own code builds. `forwardedParameter` and, since it stopped ma
 spelling and started comparing declarations, `directEnvRead` both also
 call `symbolBehind(reference)?.getValueDeclaration()`, the same shape
 one call further in: `symbolBehind` gives a ts-morph symbol, and
-`getValueDeclaration` is that symbol's own method. The remaining six
+`getValueDeclaration` is that symbol's own method. The schema readers
+in the same pack added two more of exactly that call, in `writtenCallOf`
+and in `reachesEnvironment`: both ask what declaration a name refers to,
+so both go through `symbolBehind` and then through the symbol's own
+method. The remaining six
 are the same thing in three more packs: `propertyOf(...).getText()` and
 `propertyValueOf(...).getText()` in `@suss/contract-storybook`,
 `writtenNodeOf(...).getExpression()`, `writtenNodeOf(...).getArguments()`
 and `arrayLiteralOf(...).getElements()` in `@suss/framework-drizzle`,
 and `climbSyntax(...).getParent()` in `@suss/framework-aws-sqs`, which
 arrived when that pack stopped climbing past casts and parentheses on
-its own. All eleven need reading a declared or inferred type to find
+its own. All of them need reading a declared or inferred type to find
 the method, which `factorySurface` does not do: it reads what a
 function's own body returns, not what the type checker says that
 return is. The count rises whenever another pack drops its own reader
