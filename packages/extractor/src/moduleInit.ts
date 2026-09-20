@@ -5,16 +5,16 @@
  * and a service that reads its configuration there reads it there for
  * good. Walking unit bodies alone never sees that read, so the read gets
  * a unit of its own, one per file, named after the file, with no
- * boundary. Attributing it to each handler in the file would report one
- * read as several, and a file with no handler would still report nothing.
+ * boundary. Attributing it to each handler would report one read as
+ * several. The calls those statements make go on the same unit, so the
+ * closure can reach the functions behind them.
  *
- * The structure is one default branch whose terminal is `void`, because
- * module initialization returns to nobody. Every adapter builds it the
- * same way, so it lives here.
+ * The one default branch has a `void` terminal, because module
+ * initialization returns to nobody. Every adapter builds it the same way.
  */
 
 import type { Effect } from "@suss/behavioral-ir";
-import type { RawCodeStructure } from "./index.js";
+import type { RawCodeStructure, RawEffect } from "./index.js";
 
 export interface ModuleInitOptions {
   /** The unit name, which is the file's base name in every adapter. */
@@ -22,12 +22,14 @@ export interface ModuleInitOptions {
   file: string;
   range: { start: number; end: number };
   effects: Effect[];
+  /** The calls the top-level statements make while the module loads. */
+  calls?: RawEffect[];
 }
 
 export function moduleInitStructure(
   options: ModuleInitOptions,
 ): RawCodeStructure {
-  const { name, file, range, effects } = options;
+  const { name, file, range, effects, calls } = options;
   return {
     identity: {
       name,
@@ -54,7 +56,7 @@ export function moduleInitStructure(
           emitEvent: null,
           location: range,
         },
-        effects: [],
+        effects: calls ?? [],
         extraEffects: effects,
         location: range,
         isDefault: true,

@@ -28,6 +28,8 @@
 
 import { Node } from "ts-morph";
 
+import { climbSyntax, peelSyntax } from "./unwrap.js";
+
 /**
  * Nested function nodes a pack claimed as sub-units. The unit-body
  * walkers stop at these so the sub-unit's behavior isn't double-counted
@@ -98,12 +100,15 @@ export function isInlineCallback(
  * itself runs, so its behavior is the unit's. At module scope, a
  * function is a value being defined rather than code being run: the
  * body of `const read = () => process.env.PORT` executes when somebody
- * calls `read`, not when the module loads. So does a class member. Both
- * are summarized where they run, by discovery or by the
- * reachable-closure pass, and stopping here keeps the module from
- * claiming behavior that is not its own.
+ * calls `read`, not when the module loads. So does a class member.
+ * Both are summarized where they run instead. A function the module
+ * invokes on the spot is the exception, since the body of
+ * `(async () => { await sync(); })()` does run while the module loads.
  */
 export function isModuleScopeStop(node: Node): boolean {
+  if (isImmediatelyInvoked(node)) {
+    return false;
+  }
   return (
     Node.isFunctionDeclaration(node) ||
     Node.isMethodDeclaration(node) ||
@@ -111,6 +116,32 @@ export function isModuleScopeStop(node: Node): boolean {
     Node.isFunctionExpression(node) ||
     Node.isClassDeclaration(node) ||
     Node.isClassExpression(node)
+  );
+}
+
+/**
+ * Whether this call runs a function written as its own callee. There is
+ * no name behind such a call for a reader to follow, and whoever owns
+ * the call already owns everything the body does.
+ */
+export function invokesFunctionInPlace(call: Node): boolean {
+  return (
+    Node.isCallExpression(call) &&
+    isImmediatelyInvoked(peelSyntax(call.getExpression()))
+  );
+}
+
+/** Whether this function is the callee of the call it is written inside. */
+function isImmediatelyInvoked(node: Node): boolean {
+  if (!Node.isArrowFunction(node) && !Node.isFunctionExpression(node)) {
+    return false;
+  }
+  const climbed = climbSyntax(node);
+  const consumer = climbed.getParent();
+  return (
+    consumer !== undefined &&
+    Node.isCallExpression(consumer) &&
+    consumer.getExpression() === climbed
   );
 }
 
