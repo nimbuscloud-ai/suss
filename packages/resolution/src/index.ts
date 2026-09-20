@@ -159,6 +159,8 @@ export type {
 //                               source computes rather than writes out
 //   declaresAssociation(c, n, t)  class c declares an association n,
 //                               and t refers to the class it targets
+//   classCallback(c, event, n)  c's body registers its own method n to
+//                               run on event
 //   fieldCall(c, n, callee, t)  c's field n is given a call of callee,
 //                               and t refers to the class n is about
 //   associationConstructor(mod, n)  a pack's word: a field given the n
@@ -1912,6 +1914,19 @@ export const RESOLUTION_QUESTIONS = [
     "wantedDeclaredName",
     [v("c"), v("n")],
     [lit("ancestryChain", v("c"), v("b")), lit("declaresName", v("b"), v("n"))],
+  ),
+  // The method behind each callback the chain registers, by the event
+  // that runs it. A base registering one reaches every class below it,
+  // and the method may be declared anywhere along the same chain.
+  rule(
+    "wantedCallbackMethod",
+    [v("c"), v("event"), v("n"), v("held")],
+    [
+      lit("ancestryChain", v("c"), v("b")),
+      lit("classCallback", v("b"), v("event"), v("n")),
+      lit("ancestryChain", v("c"), v("b2")),
+      lit("holdsProperty", v("b2"), v("n"), v("held")),
+    ],
   ),
 
   rule("anchorChain", [v("x"), v("x")], [lit("wantedAnchor", v("x"))]),

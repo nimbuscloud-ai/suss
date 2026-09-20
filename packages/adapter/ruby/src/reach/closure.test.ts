@@ -1229,6 +1229,178 @@ async function extractRails(): Promise<BehavioralSummary[]> {
   return summaries;
 }
 
+/** The three events this library's writes run, and the calls a model registers a method under. */
+const MODEL_CALLBACKS = {
+  eventOf: {
+    save: ["create", "update"],
+    update: ["update"],
+    destroy: ["destroy"],
+  },
+  registeredBy: {
+    before_save: ["create", "update"],
+    after_commit: ["create", "update", "destroy"],
+    after_destroy: ["destroy"],
+  },
+  eventKeyword: "on",
+};
+
+async function extractRailsWithCallbacks(): Promise<BehavioralSummary[]> {
+  const pack = railsWithModels();
+  const [storage] = pack.storage ?? [];
+  const { summaries } = await extractRubyProject({
+    files: findRubyFiles(tmpDir),
+    packs: [
+      { ...pack, storage: [{ ...storage, callbacks: MODEL_CALLBACKS }] },
+    ] as RubyPack[],
+    workspaceRoot: tmpDir,
+  });
+  return summaries;
+}
+
+/** A controller whose one action writes through `Account`. */
+function writeThroughAccount(line: string): void {
+  write("app/controllers/accounts_controller.rb", [
+    "class AccountsController < ApplicationController",
+    "  def suspend",
+    `    ${line}`,
+    "  end",
+    "end",
+  ]);
+}
+
+describe("the callbacks a write through a model runs", () => {
+  it("puts each registered method on the body that did the write", async () => {
+    write("app/models/application_record.rb", [
+      "class ApplicationRecord < ActiveRecord::Base",
+      "end",
+    ]);
+    write("app/models/account.rb", [
+      "class Account < ApplicationRecord",
+      "  before_save :normalize",
+      "",
+      "  def normalize",
+      "    Audit.where(kind: 'normalize')",
+      "  end",
+      "end",
+    ]);
+    writeThroughAccount("Account.find(params[:id]).save");
+
+    const summaries = await extractRailsWithCallbacks();
+    const action = unitNamed(summaries, "suspend");
+    expect(callTo(action, "normalize")).toBe(
+      summaryIdentifier(unitNamed(summaries, "normalize")),
+    );
+  });
+
+  it("leaves one narrowed to another event off a write that does not cause it", async () => {
+    write("app/models/application_record.rb", [
+      "class ApplicationRecord < ActiveRecord::Base",
+      "end",
+    ]);
+    write("app/models/account.rb", [
+      "class Account < ApplicationRecord",
+      "  after_commit :index_account, on: :create",
+      "",
+      "  def index_account",
+      "    Audit.where(kind: 'index')",
+      "  end",
+      "end",
+    ]);
+    writeThroughAccount("Account.find(params[:id]).update(state: 1)");
+
+    const summaries = await extractRailsWithCallbacks();
+    expect(
+      summaries.some((summary) => summary.identity.name === "index_account"),
+    ).toBe(false);
+  });
+
+  it("runs a callback a base class registered on every model below it", async () => {
+    write("app/models/application_record.rb", [
+      "class ApplicationRecord < ActiveRecord::Base",
+      "  after_commit :audit_change",
+      "",
+      "  def audit_change",
+      "    Audit.where(kind: 'change')",
+      "  end",
+      "end",
+    ]);
+    write("app/models/account.rb", [
+      "class Account < ApplicationRecord",
+      "end",
+    ]);
+    writeThroughAccount("Account.find(params[:id]).save");
+
+    const summaries = await extractRailsWithCallbacks();
+    expect(callTo(unitNamed(summaries, "suspend"), "audit_change")).toBe(
+      summaryIdentifier(unitNamed(summaries, "audit_change")),
+    );
+  });
+
+  it("says nothing about a read, which runs no callback", async () => {
+    write("app/models/application_record.rb", [
+      "class ApplicationRecord < ActiveRecord::Base",
+      "end",
+    ]);
+    write("app/models/account.rb", [
+      "class Account < ApplicationRecord",
+      "  before_save :normalize",
+      "",
+      "  def normalize",
+      "    Audit.where(kind: 'normalize')",
+      "  end",
+      "end",
+    ]);
+    writeThroughAccount("Account.find(params[:id])");
+
+    const summaries = await extractRailsWithCallbacks();
+    expect(
+      summaries.some((summary) => summary.identity.name === "normalize"),
+    ).toBe(false);
+  });
+
+  it("says nothing about a callback written as a block, which names no method", async () => {
+    write("app/models/application_record.rb", [
+      "class ApplicationRecord < ActiveRecord::Base",
+      "end",
+    ]);
+    write("app/models/account.rb", [
+      "class Account < ApplicationRecord",
+      "  after_commit do",
+      "    Audit.where(kind: 'commit')",
+      "  end",
+      "end",
+    ]);
+    writeThroughAccount("Account.find(params[:id]).save");
+
+    const summaries = await extractRailsWithCallbacks();
+    expect(summaries.filter((summary) => summary.kind === "library")).toEqual(
+      [],
+    );
+  });
+
+  it("says nothing when the pack declares no callbacks at all", async () => {
+    write("app/models/application_record.rb", [
+      "class ApplicationRecord < ActiveRecord::Base",
+      "end",
+    ]);
+    write("app/models/account.rb", [
+      "class Account < ApplicationRecord",
+      "  before_save :normalize",
+      "",
+      "  def normalize",
+      "    Audit.where(kind: 'normalize')",
+      "  end",
+      "end",
+    ]);
+    writeThroughAccount("Account.find(params[:id]).save");
+
+    const summaries = await extractRails();
+    expect(
+      summaries.some((summary) => summary.identity.name === "normalize"),
+    ).toBe(false);
+  });
+});
+
 /** `Account`, whose ancestry reaches the library base two classes up, with one method of its own. */
 function writeAccountModel(): void {
   write("app/models/application_record.rb", [
@@ -1273,6 +1445,103 @@ function callTo(
 ): string | undefined {
   return calls(summary).find(([name]) => name === callee)?.[1];
 }
+
+/** A loader that runs the read in `fetch` on the source class it is picked with. */
+const BATCH_LOADER = {
+  loader: "dataloader",
+  pick: "with",
+  reads: ["load", "load_all"],
+  shortcuts: ["dataload_record"],
+  source: { at: 0, method: "fetch" },
+};
+
+async function extractWithLoader(
+  loader: unknown = BATCH_LOADER,
+): Promise<BehavioralSummary[]> {
+  const pack = graphqlRubyTestPack({
+    root: path.join(tmpDir, "app", "graphql"),
+  }) as RubyPack;
+  const { summaries } = await extractRubyProject({
+    files: findRubyFiles(tmpDir),
+    packs: [{ ...pack, loaders: [loader] } as RubyPack],
+    workspaceRoot: tmpDir,
+  });
+  return summaries;
+}
+
+/** A source class whose `fetch` reads through a method of its own. */
+function writeCampaignSource(): void {
+  write("app/graphql/sources/campaign_source.rb", [
+    "class Sources::CampaignSource < GraphQL::Dataloader::Source",
+    "  def fetch(ids)",
+    "    active_for(ids)",
+    "  end",
+    "",
+    "  def active_for(ids)",
+    "    Campaign.where(id: ids)",
+    "  end",
+    "end",
+  ]);
+}
+
+describe("a read a loader takes off the caller", () => {
+  it("reaches the method the library runs on the picked source", async () => {
+    writeQueryType("campaigns", [
+      "dataloader.with(Sources::CampaignSource, Campaign).load(current_user)",
+    ]);
+    writeCampaignSource();
+
+    const summaries = await extractWithLoader();
+    const fetch = unitNamed(summaries, "fetch");
+    expect(fetch.kind).toBe("library");
+    expect(
+      callTo(
+        unitNamed(summaries, "Query.campaigns"),
+        "dataloader.with(Sources::CampaignSource, Campaign).load",
+      ),
+    ).toBe(summaryIdentifier(fetch));
+  });
+
+  it("carries on into what that method itself calls", async () => {
+    writeQueryType("campaigns", [
+      "dataloader.with(Sources::CampaignSource, Campaign).load(current_user)",
+    ]);
+    writeCampaignSource();
+
+    const summaries = await extractWithLoader();
+    expect(callTo(unitNamed(summaries, "fetch"), "active_for")).toBe(
+      summaryIdentifier(unitNamed(summaries, "active_for")),
+    );
+  });
+
+  it("reaches nothing through a loader whose pack says no source", async () => {
+    writeQueryType("campaigns", [
+      "dataloader.with(Sources::CampaignSource, Campaign).load(current_user)",
+    ]);
+    writeCampaignSource();
+
+    const { source: _dropped, ...noSource } = BATCH_LOADER;
+    const summaries = await extractWithLoader(noSource);
+    expect(summaries.some((summary) => summary.identity.name === "fetch")).toBe(
+      false,
+    );
+  });
+
+  it("reaches nothing when the source class is not one this run defines", async () => {
+    writeQueryType("campaigns", [
+      "dataloader.with(Sources::Absent, Campaign).load(current_user)",
+    ]);
+    writeCampaignSource();
+
+    const summaries = await extractWithLoader();
+    expect(
+      callTo(
+        unitNamed(summaries, "Query.campaigns"),
+        "dataloader.with(Sources::Absent, Campaign).load",
+      ),
+    ).toBeUndefined();
+  });
+});
 
 describe("a call on what an ActiveRecord finder gave back", () => {
   it("follows a method read off an instance variable a before_action set", async () => {

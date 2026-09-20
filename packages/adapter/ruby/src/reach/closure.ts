@@ -33,7 +33,7 @@ import {
   callsReported,
   isArglessReceiverCall,
 } from "../paths/effects.js";
-import { storageClaims } from "../storage.js";
+import { callbacksReached, storageClaims } from "../storage.js";
 import {
   calleeSpellings,
   mightReadAsACall,
@@ -435,9 +435,38 @@ function scanBody(
     }
   };
 
+  // A write through a model runs the callbacks its class registered,
+  // and nothing in this body writes their names, so the walk is told
+  // about them rather than reading them off a call.
+  const followCallback = (name: string, key: string): void => {
+    const target = ctx.definitions.get(key);
+    if (target === undefined) {
+      return;
+    }
+    const targetKey = keyOf(target);
+    if (!seen.has(targetKey)) {
+      seen.add(targetKey);
+      followed.push(target);
+    }
+    placements.place(name, {
+      file: displayPathOf(target.file),
+      span: spanOf(target.node),
+    });
+  };
+
   for (const call of calls) {
     const callee = calleeText(call);
     const outcome = resolveCallee(call, site, ctx, read.spellings);
+    if (options.storage !== undefined) {
+      for (const callback of callbacksReached(
+        call,
+        source.file,
+        options.storage,
+        site.method,
+      )) {
+        followCallback(callback.name, callback.key);
+      }
+    }
     // A stop is placed at its own call, where no summary can be, so the
     // link step neither links it nor guesses by name.
     const placed =

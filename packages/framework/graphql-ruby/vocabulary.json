@@ -21,5 +21,6 @@
   "dataload": "graphql-ruby: the HasDataloader shortcut for `dataloader.with(source, *args).load(key)`",
   "dataload_all": "graphql-ruby: the HasDataloader shortcut for `dataloader.with(source, *args).load_all(keys)`",
   "dataload_record": "graphql-ruby: the HasDataloader shortcut that loads one ActiveRecord row of the given model by a column",
-  "dataload_all_records": "graphql-ruby: the HasDataloader shortcut that loads several ActiveRecord rows of the given model by a column"
+  "dataload_all_records": "graphql-ruby: the HasDataloader shortcut that loads several ActiveRecord rows of the given model by a column",
+  "fetch": "language: Ruby spells Hash#fetch the same way. GraphQL::Dataloader::Source#fetch: the method a Source subclass writes to load a batch of keys"
 }

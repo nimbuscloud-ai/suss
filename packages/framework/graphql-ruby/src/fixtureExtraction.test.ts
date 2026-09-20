@@ -75,7 +75,12 @@ async function extractFixture() {
 describe("extraction over fixtures/ruby-graphql", () => {
   it("discovers every literal field, plus the mutation- and resolver-wired root fields", async () => {
     const { summaries } = await extractFixture();
-    expect(summaries.map((s) => s.identity.name).sort()).toEqual(
+    expect(
+      summaries
+        .filter((s) => s.kind !== "library")
+        .map((s) => s.identity.name)
+        .sort(),
+    ).toEqual(
       [
         "Campaign.id",
         "Campaign.name",
@@ -85,10 +90,17 @@ describe("extraction over fixtures/ruby-graphql", () => {
         "Organizer.displayName",
         "Organizer.phone",
         "Organizer.status",
+        "Organizer.campaigns",
         "Query.campaign",
         "Mutation.campaignUpdate",
       ].sort(),
     );
+  });
+
+  it("gives the loader's source class no unit of its own", async () => {
+    const { summaries } = await extractFixture();
+    const source = summaries.find((s) => s.identity.name === "fetch");
+    expect(source?.kind).toBe("library");
   });
 
   it("every discovered field is low-confidence: v0 traces nothing through a body", async () => {

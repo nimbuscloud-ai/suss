@@ -508,6 +508,35 @@ records is not reported as a gap, since the summary already says what it
 does. `dataload_association(record, :name)` is left out: the model behind
 an association is declared on another class, which nothing here reads yet.
 
+The read itself happens in the source class, not at the call, so a pack that
+says where `pick` takes the source and which method the library runs on it
+gets that method walked into. `resolveCallee` settles such a call on that
+method the way it settles any other callee, so the source class gets no unit
+of its own and what its `fetch` reaches lands on every field that loads
+through it.
+
+## The methods a write runs on its own
+
+A model registers methods for the library to run around a write, and a body
+that writes through the model runs them without writing their names.
+`callbacks` on a storage pattern says which event each write runs, which
+class-body call registers a callback for which events, and the keyword that
+narrows one declaration to fewer events.
+
+The declaration is read once per class body into
+`classCallback(class, event, method)`, and `wantedCallbackMethod` in
+`@suss/resolution` joins that to the ancestry and to the `def` behind the
+name. So a callback registered on a base counts for every class below it,
+through the chain the base names already come from, and no walk of its own.
+
+A write then reports one invocation per callback the class registers for its
+event, and the reach walk is told about the same methods, so each gets a
+summary and the write links to it. A read reports none, and neither does a
+write method the pack left out of the table.
+
+A callback written as a block gets nothing: the block names no method, and
+there is no way yet to give a block body a summary reference to point at.
+
 ## What a finder gives back
 
 A pack also says which of its library's methods give back one of the model,

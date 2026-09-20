@@ -44,6 +44,7 @@ import {
 } from "./diagnostics.js";
 import { createFileCache, discoverUnits, routingGapUnit } from "./discovery.js";
 import { emitEnvFacts, envReadEffects } from "./envReads.js";
+import { callbacksIn, emitClassCallbacks } from "./facts/callbacks.js";
 import {
   collectFileConstants,
   emitConstantBindings,
@@ -55,6 +56,7 @@ import { bodyBlocksIn, inflectionsIn } from "./pack.js";
 import { parseRuby } from "./parser.js";
 import { dropPropertyReads, reachedFunctions } from "./reach/closure.js";
 import { buildReachContext } from "./reach/context.js";
+import { walkDefinitions } from "./scope.js";
 import { bindEvaluator, methodDefinitionsIn } from "./values/evaluator.js";
 import { adapterStamp } from "./version.js";
 
@@ -297,6 +299,14 @@ export async function extractRubyProject(
     }
     bindEvaluator(db, { files: parsed, definitions });
     addPackWords(db, packWordsOf(options.packs));
+    const callbacks = callbacksIn(
+      options.packs.flatMap((pack) => pack.storage ?? []),
+    );
+    for (const { file, root } of parsed) {
+      walkDefinitions(root, (info) =>
+        emitClassCallbacks(db, file, info.node, callbacks),
+      );
+    }
     return readDynamicNames(
       db,
       new Map(parsed.map(({ file, root }) => [file, root])),
@@ -317,7 +327,7 @@ export async function extractRubyProject(
       : undefined;
   const inheritedMethods = inheritedMethodsIn(options.packs);
   const reachContext = await timer.timeAsync("discover", () =>
-    buildReachContext(parsed, db, bodyBlocks, dynamicNames),
+    buildReachContext(parsed, db, bodyBlocks, dynamicNames, loaderPatterns),
   );
   // Facts keep the full filesystem path, because they are joined against
   // internally. Only the summary's `location.file` gets shortened.

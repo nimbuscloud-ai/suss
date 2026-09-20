@@ -164,6 +164,55 @@ const CONNECTION_STATEMENTS = {
 };
 
 /**
+ * What each write is, in the words ActiveRecord's own callbacks are
+ * registered under. `save` and its bang are both, since the library
+ * decides between them from whether the record was stored before.
+ */
+const EVENT_OF: Record<string, string[]> = {
+  create: ["create"],
+  "create!": ["create"],
+  find_or_create_by: ["create"],
+  "find_or_create_by!": ["create"],
+  save: ["create", "update"],
+  "save!": ["create", "update"],
+  update: ["update"],
+  "update!": ["update"],
+  touch: ["update"],
+  upsert: ["create", "update"],
+  destroy: ["destroy"],
+  "destroy!": ["destroy"],
+  destroy_all: ["destroy"],
+};
+
+/**
+ * Each call a model writes to register one of its own methods, and the
+ * events that method runs on when the call narrows to none. The
+ * bulk writers are left out of `EVENT_OF` above because ActiveRecord
+ * runs no callback for them.
+ */
+const REGISTERED_BY: Record<string, string[]> = {
+  before_validation: ["create", "update"],
+  after_validation: ["create", "update"],
+  before_save: ["create", "update"],
+  around_save: ["create", "update"],
+  after_save: ["create", "update"],
+  before_create: ["create"],
+  around_create: ["create"],
+  after_create: ["create"],
+  before_update: ["update"],
+  around_update: ["update"],
+  after_update: ["update"],
+  before_destroy: ["destroy"],
+  around_destroy: ["destroy"],
+  after_destroy: ["destroy"],
+  after_commit: ["create", "update", "destroy"],
+  after_rollback: ["create", "update", "destroy"],
+  after_create_commit: ["create"],
+  after_update_commit: ["update"],
+  after_destroy_commit: ["destroy"],
+};
+
+/**
  * The base class the library gives a model, the methods that read the
  * database and the methods that change what is stored. Everything here is
  * ActiveRecord's own. A project's `ApplicationRecord` is matched by
@@ -207,6 +256,11 @@ export function activeRecordStorage(
       },
       statements: TAKES_A_STATEMENT,
       bindPlaceholder: "?",
+      callbacks: {
+        eventOf: EVENT_OF,
+        registeredBy: REGISTERED_BY,
+        eventKeyword: "on",
+      },
       columnArguments: ["select", "pluck", "pick"],
       associations: {
         singular: ["has_one", "belongs_to"],
@@ -284,7 +338,7 @@ export const declares: PackDeclaration = {
     { ecosystem: "rubygems", name: "rails" },
   ],
   reads:
-    "ActiveRecord calls (Ruby): a call matches when its method is one ActiveRecord defines as a read or a write and the class behind its receiver reaches \`ActiveRecord::Base\`, following what each class extends through the project. Statements the project wrote itself are read for the tables they touch, whether they went through \`find_by_sql\` and \`count_by_sql\` or through the connection.",
+    "ActiveRecord calls (Ruby): a call matches when its method is one ActiveRecord defines as a read or a write and the class behind its receiver reaches \`ActiveRecord::Base\`, following what each class extends through the project. Statements the project wrote itself are read for the tables they touch, whether they went through \`find_by_sql\` and \`count_by_sql\` or through the connection. A write also runs the model's callbacks, and what they reach lands on the body that did the write.",
   configuration: {
     file: "suss.activerecord.json",
     example: { storageSystem: "postgresql" },

@@ -69,6 +69,7 @@ describe("graphqlRubyFramework", () => {
           "dataload_record",
           "dataload_all_records",
         ],
+        source: { at: 0, method: "fetch" },
       },
     ]);
   });

@@ -2,11 +2,11 @@
   "totals": {
     "packages": 80,
     "packagesWithExports": 80,
-    "exports": 1051,
-    "internal": 3625,
-    "consumers": 2133,
-    "pairs": 2121,
-    "unfollowedCalls": 531,
+    "exports": 1052,
+    "internal": 3647,
+    "consumers": 2139,
+    "pairs": 2127,
+    "unfollowedCalls": 532,
     "findingErrors": 0
   },
   "packages": {
@@ -20,9 +20,9 @@
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
       "exports": 73,
-      "internal": 386,
-      "consumers": 187,
-      "unfollowedCalls": 77
+      "internal": 407,
+      "consumers": 193,
+      "unfollowedCalls": 78
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
@@ -208,7 +208,7 @@
     },
     "packages/framework/activerecord": {
       "name": "@suss/framework-activerecord",
-      "exports": 4,
+      "exports": 5,
       "internal": 0,
       "consumers": 0,
       "unfollowedCalls": 0
@@ -517,7 +517,7 @@
     "packages/packs": {
       "name": "@suss/packs",
       "exports": 58,
-      "internal": 178,
+      "internal": 179,
       "consumers": 0,
       "unfollowedCalls": 7
     },
