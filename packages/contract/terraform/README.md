@@ -70,7 +70,9 @@ Plenty of configurations declare no resources at all at the root. They call a mo
 
 ## Several entries for one resource type
 
-A pack states more than one entry for a resource type when the provider spells it differently across versions, and again when one attribute decides what the resource is. `aws_db_instance` is a PostgreSQL store or a MySQL one depending on its `engine`, and `google_sql_database_instance` on its `database_version`, so each has an entry per engine and a gate that picks between them. A gate matches whole values through `equals`, or the start of a value through `startsWith`, which is what Cloud SQL needs: `database_version` states an engine and a release together, `POSTGRES_15` and `MYSQL_8_0_31`, and the releases change every quarter.
+A pack states more than one entry for a resource type when the provider spells it differently across versions. A resource that runs whichever engine one of its attributes picks needs no second entry: a storage entry's `storageSystem` is either a word or an attribute and a table of what each value there means, so `aws_db_instance` reads its `engine` and `google_sql_database_instance` reads its `database_version`. A table matches whole values by default, or the start of a value under `matches: "prefix"`, which is what Cloud SQL needs: `database_version` states an engine and a release together, `POSTGRES_15` and `MYSQL_8_0_31`, and the releases change every quarter.
+
+A value the pack does not list, and a value the configuration builds at deploy time, both leave the store with no engine on it. The resource is still read: the instance is deployed and it has a name, and the summary records a gap saying which attribute went unsettled. `appliesWhen` is for the other case, a resource that is not the thing the entry describes at all. A Firestore database in Datastore mode speaks a different API, so that entry gates on `type` and skips the resource outright.
 
 ## What a deployable declares
 

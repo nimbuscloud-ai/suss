@@ -96,6 +96,16 @@ resource "aws_db_instance" "archive" {
   engine     = "sqlserver-ex"
 }
 
+variable "accounts_engine" {
+  type    = string
+  default = "postgres"
+}
+
+resource "aws_db_instance" "accounts" {
+  identifier = "accounts"
+  engine     = var.accounts_engine
+}
+
 resource "aws_kinesis_stream" "clicks" {
   name = "\${local.environment}-clicks"
 }
@@ -220,10 +230,11 @@ describe("what the AWS entries read", () => {
     expect(contract?.physicalTable).toBeUndefined();
   });
 
-  it("skips a Memcached cluster, which is not the store the entry describes", () => {
-    expect(read().some((s) => s.identity.name.includes("fragments"))).toBe(
-      false,
-    );
+  it("reads a Memcached cluster with no engine, since the entry lists none for it", () => {
+    expect(
+      boundary("aws_elasticache_cluster.fragments").identity.boundaryBinding
+        ?.semantics,
+    ).toMatchObject({ storageSystem: null });
   });
 
   it("reads a cluster with no engine of its own, since it joins a replication group", () => {
@@ -256,10 +267,20 @@ describe("what the AWS entries read", () => {
     ).toMatchObject({ storageSystem: "mysql" });
   });
 
-  it("skips an engine no entry describes", () => {
+  it("reads an instance whose engine the entry does not list, with no engine on it", () => {
+    const archive = boundary("aws_db_instance.archive");
+    expect(archive.identity.boundaryBinding?.semantics).toMatchObject({
+      storageSystem: null,
+    });
+    expect(archive.gaps.map((gap) => gap.description)).toEqual([
+      '"engine" states an engine this run could not settle, so which store this is stays unknown and it pairs with an access on any engine.',
+    ]);
+  });
+
+  it("reads an instance whose engine a variable supplies, with no engine on it", () => {
     expect(
-      read().some((s) => s.identity.name === "aws_db_instance.archive"),
-    ).toBe(false);
+      boundary("aws_db_instance.accounts").identity.boundaryBinding?.semantics,
+    ).toMatchObject({ storageSystem: null });
   });
 
   it("reads a stream and a delivery stream as channels of their own", () => {

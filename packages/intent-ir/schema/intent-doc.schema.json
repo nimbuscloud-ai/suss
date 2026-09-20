@@ -631,8 +631,16 @@
                   "const": "storage"
                 },
                 "storageSystem": {
-                  "type": "string",
-                  "description": "Which store this is: postgresql, aws.dynamodb, s3, and so on."
+                  "default": null,
+                  "description": "Which store this is: postgresql, aws.dynamodb, s3, and so on. Null when the document does not say which engine.",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "scope": {
                   "default": "default",
@@ -754,7 +762,7 @@
                   "description": "The fields the boundary is handed, by field name. On a function-call boundary a name is a parameter, on a message bus it is a field of the message body."
                 }
               },
-              "required": ["semantics", "storageSystem"],
+              "required": ["semantics"],
               "additionalProperties": false
             },
             {

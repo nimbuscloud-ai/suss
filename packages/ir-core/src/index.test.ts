@@ -9,6 +9,7 @@ import {
   packageExportBinding,
   restBinding,
   runtimeConfigBinding,
+  StorageSemanticsSchema,
   storageBinding,
   TypeShapeSchema,
 } from "./index.js";
@@ -144,6 +145,17 @@ describe("binding constructors", () => {
       name: "storage",
       container: "User",
     });
+  });
+
+  it("storageBinding takes a store whose engine nobody settled", () => {
+    const b = storageBinding({
+      recognition: "terraform",
+      storageSystem: null,
+      scope: "default",
+      container: "accounts",
+    });
+    expect(b.transport).toBe("storage");
+    expect(StorageSemanticsSchema.parse(b.semantics).storageSystem).toBeNull();
   });
 
   it("messageBusBinding uses the bus as transport and carries the channel", () => {

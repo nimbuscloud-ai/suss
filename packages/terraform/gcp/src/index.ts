@@ -16,9 +16,9 @@
 
 import type { MetricAccumulation, MetricValueShape } from "@suss/behavioral-ir";
 import type {
+  AttributeMeaning,
   EnvDeclaration,
   TerraformPack,
-  TerraformResourcePattern,
 } from "@suss/contract-terraform";
 
 /** The versions each entry below was written against. */
@@ -36,29 +36,15 @@ const BIGQUERY = "gcp.bigquery";
  * and the releases change every quarter, so the entry matches the
  * engine part and leaves the rest alone.
  */
-const SQL_VERSIONS = [
-  { storageSystem: "postgresql", prefix: "POSTGRES_" },
-  { storageSystem: "mysql", prefix: "MYSQL_" },
-];
-
-/**
- * One entry per SQL engine an instance can run. Code addresses tables
- * inside the database, which no attribute of the instance lists, so
- * each entry declares the store and claims no access.
- */
-function sqlStores(): TerraformResourcePattern[] {
-  return SQL_VERSIONS.map(({ storageSystem, prefix }) => ({
-    resource: "google_sql_database_instance",
-    providerVersions: CURRENT,
-    appliesWhen: { attribute: "database_version", startsWith: [prefix] },
-    boundary: {
-      kind: "storage" as const,
-      storageSystem,
-      declares: "store" as const,
-      fieldSet: "none" as const,
-    },
-  }));
-}
+const SQL_VERSIONS: AttributeMeaning<string> = {
+  attribute: "database_version",
+  matches: "prefix",
+  means: {
+    POSTGRES_: "postgresql",
+    MYSQL_: "mysql",
+    SQLSERVER_: "mssql",
+  },
+};
 
 /**
  * What each value type measures. BOOL, STRING, and MONEY are left out:
@@ -222,7 +208,19 @@ export function googleTerraform(): TerraformPack {
           fieldSet: "none",
         },
       },
-      ...sqlStores(),
+      {
+        resource: "google_sql_database_instance",
+        providerVersions: CURRENT,
+        boundary: {
+          kind: "storage",
+          // Code addresses tables inside the database, which no
+          // attribute of the instance lists, so the entry declares the
+          // store and claims no access.
+          storageSystem: SQL_VERSIONS,
+          declares: "store",
+          fieldSet: "none",
+        },
+      },
       {
         resource: "google_pubsub_topic",
         providerVersions: CURRENT,

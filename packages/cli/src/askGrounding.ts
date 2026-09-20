@@ -330,11 +330,12 @@ function mentionsStorageSystem(
   subject: string,
   binding: BoundaryBinding,
 ): boolean {
-  const semantics = binding.semantics as { storageSystem?: string };
-  if (semantics.storageSystem === undefined) {
+  const semantics = binding.semantics as { storageSystem?: string | null };
+  const storageSystem = semantics.storageSystem;
+  if (storageSystem === undefined || storageSystem === null) {
     return false;
   }
-  const tokens = new Set(spellingTokens(semantics.storageSystem));
+  const tokens = new Set(spellingTokens(storageSystem));
   for (const token of [...tokens]) {
     for (const part of token.split(".")) {
       tokens.add(part);

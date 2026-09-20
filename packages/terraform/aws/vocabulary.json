@@ -32,7 +32,6 @@
   "Minimum": "CloudWatch: the statistic taking the smallest measurement in a period",
   "Maximum": "CloudWatch: the statistic taking the largest measurement in a period",
   "store": "suss: a resource that says a store exists without stating its containers",
-  "read": "suss: what an unset gate attribute means when the entry says to read it anyway",
   "hash_key": "Terraform AWS provider: the attribute a table partitions by",
   "range_key": "Terraform AWS provider: the attribute a table sorts by",
   "global_secondary_index": "Terraform AWS provider: a block declaring an index that keys differently from the table",

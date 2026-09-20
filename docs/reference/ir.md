@@ -128,7 +128,7 @@ type Semantics =
   | { name: "graphql-operation"; operationName?: string;
       operationType: "query" | "mutation" | "subscription" }
   | { name: "runtime-config"; deploymentTarget: string; instanceName: string }
-  | { name: "storage"; storageSystem: string; scope: string;
+  | { name: "storage"; storageSystem: string | null; scope: string;
       container: string | null; accessPath: string | null }
   | { name: "message-bus"; messageBus: MessageBus; channel: string | null }
   | { name: "metric"; metricSystem: string; metricType: string | null }
@@ -309,7 +309,7 @@ type Interaction =
         | { type: "opaque"; reason: string } };
 ```
 
-- **`storage-access`** covers Prisma calls, Drizzle queries, ActiveRecord chains and raw SQL. It pairs against a storage provider on `(storageSystem, scope, container, accessPath)`. `relationPath` is the relation fields the access travelled through from the container in the binding; only the provider's contract says where a relation points, so the pairing pass resolves the path and moves the access to the container it arrives at. `relationKey` marks an access whose columns come from the contract's own declaration for the last relation in the path, instead of from columns the call spells out. A Prisma `connect` is the usual case.
+- **`storage-access`** covers Prisma calls, Drizzle queries, ActiveRecord chains and raw SQL. It pairs against a storage provider on `(storageSystem, scope, container, accessPath)`, and a provider whose `storageSystem` is null, which is a store whose deploy configuration picks its engine from a variable, meets an access on any engine. `relationPath` is the relation fields the access travelled through from the container in the binding; only the provider's contract says where a relation points, so the pairing pass resolves the path and moves the access to the container it arrives at. `relationKey` marks an access whose columns come from the contract's own declaration for the last relation in the path, instead of from columns the call spells out. A Prisma `connect` is the usual case.
 - **`service-call`** covers fetch, axios, a ts-rest client, an Apollo client. It pairs against a REST or GraphQL provider.
 - **`message-send`** covers SQS, Kafka and BullMQ producers. It pairs against a message-bus consumer on `(messageBus, channel)`.
 - **`message-receive`** is the fields a consumer pulls out of a message. It doesn't state a channel, because a handler signature never tells you which channel it is for, so the checker reads the channel off the enclosing summary's binding instead.

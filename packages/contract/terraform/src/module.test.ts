@@ -30,6 +30,20 @@ const PROVIDER: TerraformPack = {
       },
     },
     {
+      resource: "example_server",
+      providerVersions: ">=1 <9",
+      boundary: {
+        kind: "storage",
+        storageSystem: {
+          attribute: "release",
+          matches: "prefix",
+          means: { FLINT_: "flint" },
+        },
+        declares: "store",
+        fieldSet: "none",
+      },
+    },
+    {
       resource: "example_function",
       providerVersions: ">=1 <9",
       boundary: {
@@ -85,8 +99,16 @@ variable "stage" {
   type = string
 }
 
+variable "release" {
+  type = string
+}
+
 resource "example_table" "orders" {
   name = "\${var.stage}-\${var.table_name}"
+}
+
+resource "example_server" "main" {
+  release = var.release
 }
 
 resource "example_function" "writer" {
@@ -112,6 +134,7 @@ module "orders" {
   source     = "./modules/store"
   stage      = local.stage
   table_name = "orders-v1"
+  release    = "FLINT_15"
 }
 
 module "invoices" {
@@ -143,10 +166,23 @@ describe("a root module that only calls child modules", () => {
     expect(summaries.map((summary) => summary.identity.name).sort()).toEqual([
       "example_function.reporter",
       "module.invoices.example_function.writer",
+      "module.invoices.example_server.main",
       "module.invoices.example_table.orders",
       "module.orders.example_function.writer",
+      "module.orders.example_server.main",
       "module.orders.example_table.orders",
     ]);
+  });
+
+  it("settles the engine from the release the call passed in", () => {
+    expect(
+      named("module.orders.example_server.main").identity.boundaryBinding
+        ?.semantics,
+    ).toMatchObject({ storageSystem: "flint" });
+    expect(
+      named("module.invoices.example_server.main").identity.boundaryBinding
+        ?.semantics,
+    ).toMatchObject({ storageSystem: null });
   });
 
   it("keeps two calls of one module apart by their deployable unit", () => {

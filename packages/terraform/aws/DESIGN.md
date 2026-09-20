@@ -6,7 +6,7 @@ Why each entry reads what it reads, and refuses what it refuses. The [README](./
 
 `aws_rds_cluster` and `aws_db_instance` declare that a PostgreSQL or a MySQL store exists, and no more. Code addresses tables inside the database, and no attribute of either resource lists one, so the same reasoning as for ElastiCache applies: the summary declares the store with no container name, and the storage check claims no access for it. What you get is visibility, a store the run saw, and the tables keep pairing between an ORM schema and the code that queries it.
 
-The `engine` attribute decides which store the resource is, so the pack states one entry per engine and the gate picks between them. An engine outside those lists, `oracle-ee` or `sqlserver-ex`, is a store suss has no word for, so the resource goes unread rather than read as something it may not be.
+The `engine` attribute decides which store the resource is, so the entry reads the engine off that attribute rather than gating on it. An engine suss has no word for, `oracle-ee` or `sqlserver-ex`, and an engine a variable supplies both leave the store with no engine on it. The instance is deployed and it has a name either way, so dropping it would lose a store the run can see for the sake of a word it cannot.
 
 ## Why a Redis cluster pairs with nothing
 

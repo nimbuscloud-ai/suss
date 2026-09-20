@@ -24,10 +24,13 @@ export const StorageSemanticsSchema = z.object({
   name: z.literal("storage"),
   /**
    * Which store this is: postgresql, mysql, aws.dynamodb, or our own
-   * word for one OpenTelemetry never named, such as s3. Two products'
-   * containers can share a name, so this keeps them apart.
+   * word for one OpenTelemetry never named, such as s3, or null when
+   * the source states one this reader could not settle. Two products'
+   * containers can share a name, so this keeps them apart. A null
+   * keeps none of them apart, and the pairing pass says what it does
+   * with one.
    */
-  storageSystem: z.string(),
+  storageSystem: z.string().nullable(),
   /**
    * The ORM, schema, or deployment scope. A single-database setup uses
    * `"default"`, and a monorepo with several schemas gives each one its
@@ -104,8 +107,15 @@ export const storageSemantics = defineBoundarySemantics({
  * intent doc that says which store a write reaches all read this one.
  */
 export function storageLabel(semantics: StorageSemantics): string {
-  return `${semantics.storageSystem}:${storageContainerLabel(semantics)}`;
+  return `${storageSystemLabel(semantics)}:${storageContainerLabel(semantics)}`;
 }
+
+/** The engine, or the words a report writes where nobody settled one. */
+export function storageSystemLabel(semantics: StorageSemantics): string {
+  return semantics.storageSystem ?? UNKNOWN_ENGINE;
+}
+
+const UNKNOWN_ENGINE = "<unknown engine>";
 
 /**
  * What an access writes for its columns when it asked for all of them,
