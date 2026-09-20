@@ -130,7 +130,7 @@ type Semantics =
   | { name: "graphql-resolver"; typeName: string | null; fieldName: string }
   | { name: "graphql-operation"; operationType: "query" | "mutation" | "subscription"; operationName?: string }
   | { name: "runtime-config"; deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment"; instanceName: string }
-  | { name: "storage"; storageSystem: string; scope: string; container: string | null; accessPath: string | null }
+  | { name: "storage"; storageSystem: string | null; scope: string; container: string | null; accessPath: string | null }
   | { name: "message-bus"; messageBus: "aws_sqs" | "aws.sns" | "s3" | "eventbridge" | "bullmq" | "kafka" | "nats"; channel: string | null }
   | { name: "metric"; metricSystem: string; metricType: string | null }
   | { name: "unit-invocation"; deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment" | "worker"; instanceName: string | null };
@@ -196,7 +196,8 @@ is a secondary way in, a global secondary index or an alias, or null for the
 container's own primary key. What a store declares an item has are fields on
 the container's contract, and field-level access checks compare what the code
 reads and writes against `metadata.storageContract.fields`. Pairing key: `(storageSystem, scope,
-container, accessPath)`.
+container, accessPath)`. `storageSystem` is null on a store whose deploy configuration picks its
+engine from a variable, and a null there meets an access on any engine.
 
 Whether a field the code touches can be called unknown is a property the
 provider declares, not something the store's name implies:
@@ -254,7 +255,7 @@ packageExportBinding({ recognition, packageName, exportPath, transport? })
 graphqlResolverBinding({ transport, recognition, typeName /* string | null */, fieldName })
 graphqlOperationBinding({ transport, recognition, operationType, operationName? })
 runtimeConfigBinding({ recognition, deploymentTarget, instanceName })
-storageBinding({ recognition, storageSystem, scope, container /* string | null */, accessPath?, transport? })
+storageBinding({ recognition, storageSystem /* string | null */, scope, container /* string | null */, accessPath?, transport? })
 messageBusBinding({ recognition, messageBus, channel /* string | null */ })
 metricBinding({ recognition, metricSystem, metricType /* string | null */ })
 unitInvocationBinding({ recognition, deploymentTarget, instanceName /* string | null */ })

@@ -255,7 +255,14 @@
                             "const": "storage"
                           },
                           "storageSystem": {
-                            "type": "string"
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "scope": {
                             "type": "string"
@@ -1036,7 +1043,14 @@
                                     "const": "storage"
                                   },
                                   "storageSystem": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   },
                                   "scope": {
                                     "type": "string"

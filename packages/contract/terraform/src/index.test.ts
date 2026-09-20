@@ -346,6 +346,10 @@ describe("an entry gated on what an attribute says", () => {
     expect(cluster("  engine = var.engine")).toEqual([]);
   });
 
+  it("skips a resource whose gate attribute is not text", () => {
+    expect(cluster("  engine = 8")).toEqual([]);
+  });
+
   it("reads an unset attribute only when the entry says to", () => {
     expect(cluster("")).toHaveLength(1);
     expect(cluster("", "aws_memorydb_cluster")).toEqual([]);
@@ -1050,21 +1054,13 @@ const WAREHOUSE: TerraformPack = {
     {
       resource: "warehouse_server",
       providerVersions: ">=1 <2",
-      appliesWhen: { attribute: "release", startsWith: ["FLINT_"] },
       boundary: {
         kind: "storage",
-        storageSystem: "flint",
-        declares: "store",
-        fieldSet: "none",
-      },
-    },
-    {
-      resource: "warehouse_server",
-      providerVersions: ">=1 <2",
-      appliesWhen: { attribute: "release", startsWith: ["EMBER_"] },
-      boundary: {
-        kind: "storage",
-        storageSystem: "ember",
+        storageSystem: {
+          attribute: "release",
+          matches: "prefix",
+          means: { FLINT_: "flint", EMBER_: "ember" },
+        },
         declares: "store",
         fieldSet: "none",
       },
@@ -1169,14 +1165,20 @@ describe("a store whose fields and namespace are attributes", () => {
     expect(contract?.fields).toBeUndefined();
   });
 
-  it("picks the entry whose prefix the release matches", () => {
+  it("picks the store whose prefix the release starts with", () => {
     expect(
       named("warehouse_server.reporting").identity.boundaryBinding?.semantics,
     ).toMatchObject({ storageSystem: "ember" });
   });
 
-  it("skips a resource whose gate attribute is not text", () => {
-    expect(named("warehouse_server.counting")).toBeUndefined();
+  it("reads a server whose release is not text, with no engine on it", () => {
+    const server = named("warehouse_server.counting");
+    expect(server.identity.boundaryBinding?.semantics).toMatchObject({
+      storageSystem: null,
+    });
+    expect(server.gaps.map((gap) => gap.description)).toEqual([
+      '"release" states an engine this run could not settle, so which store this is stays unknown and it pairs with an access on any engine.',
+    ]);
   });
 
   it("puts a table that states no namespace in the default one", () => {

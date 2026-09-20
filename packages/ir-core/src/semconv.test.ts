@@ -39,6 +39,18 @@ describe("semconvAttributes", () => {
     expect(attributes).toEqual({ "db.system.name": "aws.dynamodb" });
   });
 
+  it("leaves out an engine the source never settled", () => {
+    const attributes = semconvAttributes(
+      storageBinding({
+        recognition: "terraform",
+        storageSystem: null,
+        scope: "default",
+        container: "accounts",
+      }),
+    );
+    expect(attributes).toEqual({ "db.collection.name": "accounts" });
+  });
+
   it("leaves out the default scope, which no span states", () => {
     const attributes = semconvAttributes(
       storageBinding({

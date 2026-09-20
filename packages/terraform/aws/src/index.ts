@@ -10,6 +10,7 @@
 
 import type { MetricValueShape } from "@suss/behavioral-ir";
 import type {
+  AttributeMeaning,
   TerraformPack,
   TerraformResourcePattern,
 } from "@suss/contract-terraform";
@@ -34,29 +35,45 @@ const STATISTICS: Record<string, MetricValueShape> = {
 };
 
 /** The store each value of an `engine` attribute picks. */
-const SQL_ENGINES = [
-  { storageSystem: "postgresql", engines: ["postgres", "aurora-postgresql"] },
-  { storageSystem: "mysql", engines: ["mysql", "aurora-mysql", "mariadb"] },
-];
+const SQL_ENGINES: AttributeMeaning<string> = {
+  attribute: "engine",
+  means: {
+    postgres: "postgresql",
+    "aurora-postgresql": "postgresql",
+    mysql: "mysql",
+    "aurora-mysql": "mysql",
+    mariadb: "mysql",
+  },
+};
 
 /**
- * One entry per SQL engine a resource can run, since the engine decides
- * which store it is. Code addresses tables inside the database, which
- * no attribute of the resource lists, so each entry declares the store
- * and claims no access, the same as an ElastiCache cluster.
+ * The store an ElastiCache cluster is. A cluster with no engine of its
+ * own joins a replication group, which always runs one of the two
+ * Redis-protocol engines.
  */
-function sqlStores(resource: string): TerraformResourcePattern[] {
-  return SQL_ENGINES.map(({ storageSystem, engines }) => ({
+const CACHE_ENGINES: AttributeMeaning<string> = {
+  attribute: "engine",
+  means: { redis: "redis", valkey: "redis" },
+  whenUnset: "redis",
+};
+
+/**
+ * The entry for a resource running whichever SQL engine its `engine`
+ * attribute picks. Code addresses tables inside the database, which no
+ * attribute of the resource lists, so the entry declares the store and
+ * claims no access, the same as an ElastiCache cluster.
+ */
+function sqlStore(resource: string): TerraformResourcePattern {
+  return {
     resource,
     providerVersions: CURRENT,
-    appliesWhen: { attribute: "engine", equals: engines },
     boundary: {
-      kind: "storage" as const,
-      storageSystem,
-      declares: "store" as const,
-      fieldSet: "none" as const,
+      kind: "storage",
+      storageSystem: SQL_ENGINES,
+      declares: "store",
+      fieldSet: "none",
     },
-  }));
+  };
 }
 
 export function awsTerraform(): TerraformPack {
@@ -108,17 +125,9 @@ export function awsTerraform(): TerraformPack {
       {
         resource: "aws_elasticache_cluster",
         providerVersions: CURRENT,
-        // A cluster with no engine of its own joins a replication
-        // group, which always runs one of the two Redis-protocol
-        // engines, so an unset engine is read.
-        appliesWhen: {
-          attribute: "engine",
-          equals: ["redis", "valkey"],
-          whenUnset: "read",
-        },
         boundary: {
           kind: "storage",
-          storageSystem: "redis",
+          storageSystem: CACHE_ENGINES,
           // Code addresses key namespaces, which no attribute of a
           // cluster lists, so the cluster declares the store and
           // claims no access. The README says how the sides meet.
@@ -136,8 +145,8 @@ export function awsTerraform(): TerraformPack {
           fieldSet: "none",
         },
       },
-      ...sqlStores("aws_rds_cluster"),
-      ...sqlStores("aws_db_instance"),
+      sqlStore("aws_rds_cluster"),
+      sqlStore("aws_db_instance"),
       {
         resource: "aws_sqs_queue",
         providerVersions: CURRENT,

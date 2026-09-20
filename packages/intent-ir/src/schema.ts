@@ -303,9 +303,11 @@ const MessageBusBoundarySchema = z.strictObject({
 // is authorable and unpairable. See the README.
 const StorageBoundarySchema = z.strictObject({
   semantics: z.literal("storage"),
-  storageSystem: StorageSemanticsSchema.shape.storageSystem.describe(
-    "Which store this is: postgresql, aws.dynamodb, s3, and so on.",
-  ),
+  storageSystem: StorageSemanticsSchema.shape.storageSystem
+    .default(null)
+    .describe(
+      "Which store this is: postgresql, aws.dynamodb, s3, and so on. Null when the document does not say which engine.",
+    ),
   scope: StorageSemanticsSchema.shape.scope
     .default("default")
     .describe(
