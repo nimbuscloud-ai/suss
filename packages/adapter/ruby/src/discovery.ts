@@ -35,7 +35,7 @@ import {
   spanOf,
   symbolValue,
 } from "./ast.js";
-import { clientCallUnits } from "./clientCalls.js";
+import { askClientCallReads, clientCallUnits } from "./clientCalls.js";
 import { envReadEffects } from "./envReads.js";
 import {
   controllerFilters,
@@ -77,6 +77,7 @@ import type {
   ReachedBody,
 } from "./ancestry.js";
 import type { BlockConfigures, BodyBlocks, CallArgs, Range } from "./ast.js";
+import type { ClientCallOptions } from "./clientCalls.js";
 import type { DynamicNames } from "./defineMethod.js";
 import type {
   ControllerActions,
@@ -237,14 +238,18 @@ export async function discoverUnits(
   }));
 
   const units: RawCodeStructure[] = [];
+  const clientOptions: ClientCallOptions = {
+    filePath: options.filePath,
+    ...(options.facts === undefined ? {} : { facts: options.facts }),
+  };
+  askClientCallReads(
+    root,
+    options.packs.flatMap((pack) => pack.clients ?? []),
+    clientOptions,
+  );
   for (const pack of options.packs) {
     for (const pattern of pack.clients ?? []) {
-      units.push(
-        ...clientCallUnits(root, pack, pattern, {
-          filePath: options.filePath,
-          ...(options.facts === undefined ? {} : { facts: options.facts }),
-        }),
-      );
+      units.push(...clientCallUnits(root, pack, pattern, clientOptions));
     }
   }
 
