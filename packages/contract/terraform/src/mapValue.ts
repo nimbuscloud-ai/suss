@@ -26,7 +26,7 @@ const MERGE_CALL = /^merge\(([\s\S]*)\)$/;
 /** `local.name`, which a `locals` block states in the same module. */
 const LOCAL_MAP = /^local\.([A-Za-z_][\w-]*)$/;
 
-/** `var.name`, whose `variable` block may state a `default`. */
+/** `var.name`, which a module call or a `variable` default may state. */
 const VARIABLE_MAP = /^var\.([A-Za-z_][\w-]*)$/;
 
 /**
@@ -84,7 +84,13 @@ function mapFromExpression(
   }
   const variable = VARIABLE_MAP.exec(expression);
   if (variable !== null) {
-    return mapFrom(scope.defaults[variable[1] as string], scope, depth + 1);
+    // What the call passed in is what the deployment runs with, so the
+    // `variable` block's own default only fills a gap the call left.
+    const name = variable[1] as string;
+    return (
+      mapFrom(scope.arguments[name], scope, depth + 1) ??
+      mapFrom(scope.defaults[name], scope, depth + 1)
+    );
   }
   return null;
 }

@@ -27,8 +27,13 @@ export interface ReferenceScope {
   resources: Map<string, Record<string, unknown>>;
   /** What every `locals` block in the module states, by name. */
   locals: Record<string, unknown>;
-  /** The literal the calling `module` block passed in, by variable name. */
-  arguments: Record<string, string>;
+  /**
+   * What the calling `module` block passed in, by variable name, with
+   * the parent's own references already resolved. A string is what a
+   * `${var.x}` in the child resolves to; a map is what a `for_each`
+   * over `var.x` iterates.
+   */
+  arguments: Record<string, unknown>;
   /** The `default` each `variable` block states, for a `for_each` alone. */
   defaults: Record<string, unknown>;
   /**
@@ -66,7 +71,7 @@ const CHAIN_LIMIT = 4;
 export function referenceScope(opts: {
   resources: Iterable<[string, string, Record<string, unknown>]>;
   locals?: Iterable<Record<string, unknown>>;
-  arguments?: Record<string, string>;
+  arguments?: Record<string, unknown>;
   defaults?: Record<string, unknown>;
   namePrefix?: string;
 }): ReferenceScope {
@@ -191,7 +196,7 @@ function statedValue(reference: string, scope: ReferenceScope): string | null {
   }
   const variable = VARIABLE_VALUE.exec(reference);
   if (variable !== null) {
-    return scope.arguments[variable[1] as string] ?? null;
+    return stringOrNull(scope.arguments[variable[1] as string]);
   }
   const parsed = RESOURCE_ATTRIBUTE.exec(reference);
   if (parsed === null) {

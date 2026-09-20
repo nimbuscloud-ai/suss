@@ -228,7 +228,7 @@ function moduleOf(opts: {
   files: SourceFile[];
   directory: string;
   namePrefix: string;
-  arguments: Record<string, string>;
+  arguments: Record<string, unknown>;
   ancestors: string[];
 }): ModuleRead {
   const files = opts.files
@@ -295,26 +295,55 @@ function isDirectory(target: string): boolean {
 }
 
 /**
- * What each argument settles to, for the arguments that settle. One
- * built at deploy time is a hole with another name on it, so the
- * child's own `${var.x}` stays the hole it was.
+ * What each argument comes to, read in the module doing the calling.
+ * A string built at deploy time is a hole with another name on it, so
+ * it passes nothing and the child's own `${var.x}` stays the hole it
+ * was. A map passes whatever it has: its keys are what a `for_each`
+ * over it writes, and an entry the parent could not settle crosses as
+ * written and becomes a hole in the child the way any other value does.
  */
 function passedArguments(
   call: Record<string, unknown>,
   parent: ReferenceScope,
-): Record<string, string> {
-  const passed: Record<string, string> = {};
+): Record<string, unknown> {
+  const passed: Record<string, unknown> = {};
   for (const [name, value] of Object.entries(call)) {
-    const written = name === MODULE_SOURCE ? null : stringOf(value);
-    if (written === null) {
+    if (name === MODULE_SOURCE) {
       continue;
     }
-    const settled = resolveReferences(written, parent);
-    if (!settled.includes("${")) {
+    const stated = asRecord(value);
+    if (stated !== null) {
+      passed[name] = resolvedThroughout(stated, parent);
+      continue;
+    }
+    const written = stringOf(value);
+    const settled =
+      written === null ? null : resolveReferences(written, parent);
+    if (settled !== null && !settled.includes("${")) {
       passed[name] = settled;
     }
   }
   return passed;
+}
+
+/** The same value with every reference in it read in the given module. */
+function resolvedThroughout(value: unknown, scope: ReferenceScope): unknown {
+  if (typeof value === "string") {
+    return resolveReferences(value, scope);
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => resolvedThroughout(entry, scope));
+  }
+  const record = asRecord(value);
+  if (record === null) {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(record).map(([name, entry]) => [
+      name,
+      resolvedThroughout(entry, scope),
+    ]),
+  );
 }
 
 /** What each of a child's outputs comes to, read in the child's own scope. */

@@ -79,6 +79,8 @@ Each module gets a scope of its own, since a child's `local.stage` is the child'
 
 Going down, `var.table_name` inside a child resolves to the literal the calling `module` block passed in, so a module called twice with two table names declares two tables and each one pairs with the code that addresses it. An argument built at deploy time is a hole with another name on it, so the child keeps its own hole rather than taking the parent's. A configuration read at its root has nothing to pass its variables in, and `${var.stage}` there stays a hole as it always has.
 
+A map argument crosses whole, which is how a module usually takes the environment it hands its container: the root writes `env = { ORDERS_TABLE = example_table.orders.name }`, the child writes `for_each = var.env`, and the keys of the passed map are what the expansion writes. Each entry is read in the module that wrote it, so the reference above comes out as the table's own name, and an entry the parent could not settle crosses as written and becomes a hole in the child like any other value. What the call passed wins over the `variable` block's own `default`, which fills only a gap the call left.
+
 Going up, `module.orders.table_name` resolves through the child's `output` block, and only when the value settles inside the child. An output that still has a hole in it is left out, so the parent reads `{module.orders.table_name}` and pairs on nothing rather than on half a name.
 
 A `variable` block's own `default` resolves nowhere. It says what a deployment would get if it passed nothing, which is a guess about production. The one reader of it is a `for_each`, where it decides how many blocks the module writes rather than what any of them says.

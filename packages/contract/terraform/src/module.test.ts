@@ -39,6 +39,27 @@ const PROVIDER: TerraformPack = {
         platformEnvVars: [],
       },
     },
+    {
+      resource: "example_service",
+      providerVersions: ">=1 <9",
+      boundary: {
+        kind: "deployable",
+        deploymentTarget: "container",
+        containers: {
+          blocks: ["template", "containers"],
+          nameAttribute: "name",
+        },
+        env: [
+          {
+            style: "entries",
+            block: "env",
+            nameAttribute: "name",
+            valueAttribute: "value",
+          },
+        ],
+        platformEnvVars: ["PORT"],
+      },
+    },
   ],
 };
 
@@ -164,6 +185,72 @@ describe("a root module that only calls child modules", () => {
       named("example_function.reporter"),
     );
     expect(contract?.envVarValues?.ORDERS_TABLE).toBe("prod-orders-v1");
+  });
+});
+
+const ENV_MAP_ROOT = `
+resource "example_table" "orders" {
+  name = "orders-v1"
+}
+
+module "svc" {
+  source = "./modules/svc"
+  env = {
+    ORDERS_TABLE = example_table.orders.name
+    LOG_LEVEL    = "info"
+    REGION       = "\${var.region}"
+  }
+}
+`;
+
+const ENV_MAP_CHILD = `
+variable "env" {
+  type    = map(string)
+  default = {}
+}
+
+resource "example_service" "api" {
+  template {
+    containers {
+      dynamic "env" {
+        for_each = var.env
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+    }
+  }
+}
+`;
+
+describe("a module call that passes the environment in as a map", () => {
+  const root = moduleTree({
+    "main.tf": ENV_MAP_ROOT,
+    "modules/svc/main.tf": ENV_MAP_CHILD,
+  });
+  const contract = readRuntimeContractMetadata(
+    terraformFileToSummaries(root, PACKS).find(
+      (summary) => summary.identity.name === "module.svc.example_service.api",
+    ) as BehavioralSummary,
+  );
+
+  it("expands the map the call passed rather than the child's default", () => {
+    expect(contract?.envVars).toEqual([
+      "LOG_LEVEL",
+      "ORDERS_TABLE",
+      "PORT",
+      "REGION",
+    ]);
+  });
+
+  it("reads a reference in the map in the module that wrote it", () => {
+    expect(contract?.envVarValues?.ORDERS_TABLE).toBe("orders-v1");
+    expect(contract?.envVarValues?.LOG_LEVEL).toBe("info");
+  });
+
+  it("leaves an entry the parent could not settle as the hole it was", () => {
+    expect(contract?.envVarValues?.REGION).toBe("{var.region}");
   });
 });
 
