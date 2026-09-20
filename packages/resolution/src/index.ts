@@ -1717,6 +1717,14 @@ export const RESOLUTION_QUESTIONS = [
     [v("o"), v("w")],
     [lit("wanted", v("o")), lit("environmentValue", v("w"), v("o"))],
   ),
+  // Whether an expression is a parameter under another name, for a
+  // caller deciding whether going and reading that parameter's callers
+  // could change the answer it already has.
+  rule(
+    "wantedRefersToParam",
+    [v("o"), v("p")],
+    [lit("wanted", v("o")), lit("refersToParam", v("o"), v("p"))],
+  ),
   rule(
     "wantedComesFrom",
     [v("x"), v("m"), v("n")],

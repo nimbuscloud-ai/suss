@@ -483,28 +483,33 @@ export class ResolutionStore {
    * a pack spells it, a name declared as that, or a parameter some
    * caller hands one to, however many calls deep.
    *
-   * The question is asked twice at most. A value written as the
-   * environment, or bound to a name in a file the store has read,
-   * settles on the first ask. Only a parameter needs its callers, and
-   * those are in files that import the value's own, which no query
-   * starting at the value reaches.
+   * A parameter is the only shape whose answer can change once its
+   * callers are in, and reading those means reading every file that
+   * imports this one, so a value that is not one is answered from what
+   * the store already has.
    */
   isEnvironmentValue(value: Node): boolean {
     const target = factKeyOf(value);
-    if (this.answersEnvironmentValue(target)) {
-      return true;
+    const first = this.askAbout(target, "wanted", () => {
+      this.derive();
+      return {
+        environment: this.hasAnswer("wantedEnvironmentValue", target),
+        parameter: this.hasAnswer("wantedRefersToParam", target),
+      };
+    });
+    if (first.environment || !first.parameter) {
+      return first.environment;
     }
-    this.readPossibleCallersOf(target.getSourceFile());
-    return this.answersEnvironmentValue(target);
-  }
 
-  private answersEnvironmentValue(target: Node): boolean {
+    this.readPossibleCallersOf(target.getSourceFile());
     return this.askAbout(target, "wanted", () => {
       this.derive();
-      return (
-        this.answersFor("wantedEnvironmentValue", nodeId(target)).length > 0
-      );
+      return this.hasAnswer("wantedEnvironmentValue", target);
     });
+  }
+
+  private hasAnswer(relation: string, target: Node): boolean {
+    return this.answersFor(relation, nodeId(target)).length > 0;
   }
 
   /**
