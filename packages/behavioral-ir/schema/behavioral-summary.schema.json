@@ -244,11 +244,7 @@
                             "const": "runtime-config"
                           }
                         },
-                        "required": [
-                          "deploymentTarget",
-                          "instanceName",
-                          "name"
-                        ],
+                        "required": ["name"],
                         "additionalProperties": false
                       },
                       {
@@ -1029,11 +1025,7 @@
                                     "const": "runtime-config"
                                   }
                                 },
-                                "required": [
-                                  "deploymentTarget",
-                                  "instanceName",
-                                  "name"
-                                ],
+                                "required": ["name"],
                                 "additionalProperties": false
                               },
                               {

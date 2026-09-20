@@ -81,6 +81,9 @@ describe("process-surface recognizer", () => {
       "process.platform",
       "process.version",
     ]);
+    for (const read of reads) {
+      expect(read.binding.semantics).toEqual({ name: "runtime-config" });
+    }
   });
 
   it("does NOT match process.env reads (handled by env-var pack)", () => {

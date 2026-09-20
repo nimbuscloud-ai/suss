@@ -10,29 +10,11 @@
 
 import { Node, type PropertyAccessExpression } from "ts-morph";
 
-import { runtimeConfigBinding } from "@suss/behavioral-ir";
+import { opaqueRuntimeRead } from "./configBinding.js";
 
-import type { Effect } from "@suss/behavioral-ir";
 import type { AccessRecognizer } from "@suss/extractor";
 
 const FILE_LOCATION_GLOBALS = new Set(["__dirname", "__filename"]);
-
-function moduleMetaRead(callee: string): Effect {
-  return {
-    type: "interaction",
-    binding: runtimeConfigBinding({
-      recognition: "@suss/runtime-node",
-      deploymentTarget: "lambda",
-      instanceName: "<runtime>",
-    }),
-    callee,
-    interaction: {
-      class: "config-read",
-      name: callee,
-      defaulted: false,
-    },
-  };
-}
 
 /**
  * accessRecognizer for `import.meta.url` (and other `import.meta.X`
@@ -56,7 +38,7 @@ export const importMetaRecognizer: AccessRecognizer = (access, _ctx) => {
   if (keyword === undefined || inner.getNameNode().getText() !== "meta") {
     return null;
   }
-  return [moduleMetaRead(node.getText())];
+  return [opaqueRuntimeRead(node.getText())];
 };
 
 /**
@@ -89,7 +71,7 @@ export const fileLocationRecognizer: AccessRecognizer = (access, _ctx) => {
   if (!FILE_LOCATION_GLOBALS.has(text)) {
     return null;
   }
-  return [moduleMetaRead(text)];
+  return [opaqueRuntimeRead(text)];
 };
 
 /**

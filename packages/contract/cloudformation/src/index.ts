@@ -273,7 +273,9 @@ function deployedWithinStack(
         : {}),
       // A runtime-config boundary is keyed on the instance, so the
       // binding has its own copy of the name and both have to move.
-      ...(binding !== null && binding?.semantics.name === "runtime-config"
+      ...(binding !== null &&
+      binding.semantics.name === "runtime-config" &&
+      binding.semantics.instanceName !== undefined
         ? {
             boundaryBinding: {
               ...binding,

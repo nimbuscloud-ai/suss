@@ -524,7 +524,7 @@ function collectFromArgLegacy(
 // ---------------------------------------------------------------------------
 
 function instanceLabel(semantics: RuntimeConfigSemantics): string {
-  return `${semantics.deploymentTarget}/${semantics.instanceName}`;
+  return `${semantics.deploymentTarget ?? "runtime"}/${semantics.instanceName ?? "unnamed"}`;
 }
 
 /**
@@ -533,10 +533,7 @@ function instanceLabel(semantics: RuntimeConfigSemantics): string {
  * as an argument, and a finding that told its author to look at
  * `process.env` would send them somewhere that does not exist.
  */
-const CONFIG_READ_PREFIX: Record<
-  RuntimeConfigSemantics["deploymentTarget"],
-  string
-> = {
+const CONFIG_READ_PREFIX: Record<DeploymentTarget, string> = {
   lambda: "process.env.",
   "ecs-task": "process.env.",
   container: "process.env.",
@@ -544,8 +541,18 @@ const CONFIG_READ_PREFIX: Record<
   worker: "env.",
 };
 
+type DeploymentTarget = NonNullable<RuntimeConfigSemantics["deploymentTarget"]>;
+
+/**
+ * Every finding here describes a provider, and a provider says which
+ * deployment it is. A recognizer standing at a read in the code does
+ * not, so the sentence falls back to how most of them spell it.
+ */
 function readSpelling(semantics: RuntimeConfigSemantics, name: string): string {
-  return `${CONFIG_READ_PREFIX[semantics.deploymentTarget]}${name}`;
+  const target = semantics.deploymentTarget;
+  const prefix =
+    target === undefined ? "process.env." : CONFIG_READ_PREFIX[target];
+  return `${prefix}${name}`;
 }
 
 function makeUnprovidedFinding(
