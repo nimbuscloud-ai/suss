@@ -35,6 +35,7 @@ import {
 import { dynamicBlocks, iteratedRecords } from "./blockExpansion.js";
 import { filterValuesFor, parseFilterQuery } from "./filterQuery.js";
 import { parseHclDocument } from "./hclDocument.js";
+import { arrayOf, asRecord, mapStrings, stringOf } from "./hclValue.js";
 import { jsonAttributeValue } from "./jsonAttribute.js";
 import {
   referencedResource,
@@ -328,22 +329,7 @@ function passedArguments(
 
 /** The same value with every reference in it read in the given module. */
 function resolvedThroughout(value: unknown, scope: ReferenceScope): unknown {
-  if (typeof value === "string") {
-    return resolveReferences(value, scope);
-  }
-  if (Array.isArray(value)) {
-    return value.map((entry) => resolvedThroughout(entry, scope));
-  }
-  const record = asRecord(value);
-  if (record === null) {
-    return value;
-  }
-  return Object.fromEntries(
-    Object.entries(record).map(([name, entry]) => [
-      name,
-      resolvedThroughout(entry, scope),
-    ]),
-  );
+  return mapStrings(value, (text) => resolveReferences(text, scope));
 }
 
 /** What each of a child's outputs comes to, read in the child's own scope. */
@@ -1545,21 +1531,4 @@ function namePattern(value: unknown, scope: ReferenceScope): string | null {
   return namePatternFromSub(
     typeof value === "string" ? resolveReferences(value, scope) : value,
   );
-}
-
-function arrayOf(value: unknown): unknown[] {
-  if (value === undefined || value === null) {
-    return [];
-  }
-  return Array.isArray(value) ? value : [value];
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function stringOf(value: unknown): string | null {
-  return typeof value === "string" ? value : null;
 }

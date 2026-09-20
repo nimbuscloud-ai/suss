@@ -13,6 +13,13 @@
  */
 
 import { parseHclExpression } from "./hclDocument.js";
+import {
+  arrayOf,
+  asRecord,
+  mapStrings,
+  recordsIn,
+  someString,
+} from "./hclValue.js";
 import { statedMap } from "./mapValue.js";
 
 import type { ReferenceScope } from "./references.js";
@@ -175,57 +182,19 @@ function fieldOf(value: unknown, steps: string[]): string | null {
 
 /** The same block with every reference the iteration settles filled in. */
 function substituted(value: unknown, settle: Settle): unknown {
-  if (typeof value === "string") {
-    return value.replace(
+  return mapStrings(value, (text) =>
+    text.replace(
       SUB_TOKEN,
       (written, inner: string) => settle(inner.trim()) ?? written,
-    );
-  }
-  if (Array.isArray(value)) {
-    return value.map((entry) => substituted(entry, settle));
-  }
-  const record = asRecord(value);
-  if (record === null) {
-    return value;
-  }
-  return Object.fromEntries(
-    Object.entries(record).map(([name, entry]) => [
-      name,
-      substituted(entry, settle),
-    ]),
+    ),
   );
 }
 
 /** Whether any reference left in a block still starts with an iterator. */
 function mentions(value: unknown, iterators: string[]): boolean {
-  if (typeof value === "string") {
-    return [...value.matchAll(SUB_TOKEN)].some((match) =>
+  return someString(value, (text) =>
+    [...text.matchAll(SUB_TOKEN)].some((match) =>
       iterators.includes((match[1] as string).trim().split(".")[0] ?? ""),
-    );
-  }
-  if (Array.isArray(value)) {
-    return value.some((entry) => mentions(entry, iterators));
-  }
-  return Object.values(asRecord(value) ?? {}).some((entry) =>
-    mentions(entry, iterators),
+    ),
   );
-}
-
-function recordsIn(value: unknown): Array<Record<string, unknown>> {
-  return arrayOf(value)
-    .map(asRecord)
-    .filter((record): record is Record<string, unknown> => record !== null);
-}
-
-function arrayOf(value: unknown): unknown[] {
-  if (value === undefined || value === null) {
-    return [];
-  }
-  return Array.isArray(value) ? value : [value];
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
 }

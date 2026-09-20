@@ -14,6 +14,7 @@
  */
 
 import { parseHclExpression } from "./hclDocument.js";
+import { asRecord } from "./hclValue.js";
 
 import type { ReferenceScope } from "./references.js";
 
@@ -143,10 +144,4 @@ export function splitArguments(text: string): string[] {
   return found
     .map((argument) => argument.trim())
     .filter((argument) => argument.length > 0);
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
 }
