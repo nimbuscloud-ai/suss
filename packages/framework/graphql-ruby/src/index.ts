@@ -177,6 +177,9 @@ export function graphqlRubyFramework(
           "dataload_record",
           "dataload_all_records",
         ],
+        // The library runs `fetch` on the source class `with` was given,
+        // so whatever that method reaches belongs to the field.
+        source: { at: 0, method: "fetch" },
       },
     ],
   };

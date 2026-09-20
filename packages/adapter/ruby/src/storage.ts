@@ -26,6 +26,7 @@ import {
 import { classBehind, reachesBase } from "./baseClass.js";
 import { RUBY_PROGRAM } from "./facts/resolve.js";
 import { readKey } from "./facts/values.js";
+import { loaderPick } from "./loaders.js";
 import {
   NOWHERE,
   rawSqlEffects,
@@ -426,6 +427,52 @@ function modelStatementEffects(
   );
 }
 
+/** A method the library runs of its own accord when a write happens. */
+export interface RunCallback {
+  /** The name the class body registered, which is what the invocation is written as. */
+  readonly name: string;
+  /** The key of the `def` behind it, the same key the reach walk defines methods under. */
+  readonly key: string;
+}
+
+/**
+ * The callbacks a write on this class runs. The pack says which events
+ * a write method runs and which class-body call registers a callback;
+ * the shared rules follow both through the ancestry, so one registered
+ * on a base counts for every model below it.
+ */
+function callbacksRunBy(
+  facts: Database,
+  classKey: string,
+  pattern: RbStoragePattern,
+  writeMethod: string,
+): RunCallback[] {
+  const events = pattern.callbacks?.eventOf[writeMethod] ?? [];
+  if (events.length === 0) {
+    return [];
+  }
+
+  askResolution(facts, [classKey], "wantedAncestry", RUBY_PROGRAM);
+  const found = new Map<string, RunCallback>();
+  for (const row of facts.lookup("wantedCallbackMethod", 0, classKey)) {
+    if (events.includes(String(row[1]))) {
+      const key = String(row[3]);
+      found.set(key, { name: String(row[2]), key });
+    }
+  }
+  return [...found.values()];
+}
+
+/** An invocation of a method nothing in the body writes out, which the walk still follows. */
+function callbackEffect(callback: RunCallback): Effect {
+  return {
+    type: "invocation",
+    callee: callback.name,
+    args: [],
+    async: false,
+  };
+}
+
 /**
  * The database work one chain does, whether it was written from the model
  * itself or from a record in hand. A method the project declares on the
@@ -463,6 +510,10 @@ function modelCallEffects(
     if (library.how === "statement") {
       return modelStatementEffects(worked, library.place, pattern, options);
     }
+    const ran =
+      library.kind === "write"
+        ? callbacksRunBy(options.facts, target.classKey, pattern, method)
+        : [];
     return [
       storageEffect(
         worked,
@@ -472,44 +523,45 @@ function modelCallEffects(
         selectorOf(worked, pattern, options.facts),
         fieldsOf(worked, pattern, library.kind, options.facts),
       ),
+      ...ran.map(callbackEffect),
     ];
   }
   return [];
 }
 
-/** Whether a node is the loader itself, the receiverless `dataloader`. */
-function isLoader(node: RbNode | null, loader: RbLoaderPattern): boolean {
-  if (node === null) {
-    return false;
-  }
-  if (node.type === "identifier") {
-    return node.text === loader.loader;
-  }
-  return (
-    node.type === "call" &&
-    receiverOf(node) === null &&
-    methodOf(node) === loader.loader
-  );
-}
-
 /**
- * The call that was given the model, for a read through a loader: the
- * `with` behind `dataloader.with(Source, ::User).load(id)`, or the
- * shortcut itself for `dataload_record(::User, id)`. Null otherwise.
+ * The methods a chain's write makes the library run, for the walk to
+ * follow. Empty for anything the recognizer does not read as a write on
+ * a class whose ancestry registers one.
  */
-function loaderPick(call: RbNode, loader: RbLoaderPattern): RbNode | null {
-  const method = methodOf(call);
-  const receiver = receiverOf(call);
-  if (receiver === null) {
-    return loader.shortcuts.includes(method) ? call : null;
+export function callbacksReached(
+  call: RbNode,
+  file: string,
+  options: RbStorageOptions,
+  enclosing: RbNode | null = null,
+): RunCallback[] {
+  const worked = libraryCallIn(call, options);
+  const target =
+    worked === null
+      ? undefined
+      : receiverClass(worked, file, options, enclosing);
+  if (worked === null || target === undefined) {
+    return [];
   }
-  if (!loader.reads.includes(method) || receiver.type !== "call") {
-    return null;
+
+  const method = methodOf(worked);
+  for (const pattern of options.patterns) {
+    if (
+      libraryCallOf(pattern, method)?.how !== "rows" ||
+      kindOfCall(pattern, method) !== "write" ||
+      !reachesBase(options.facts, target.classKey, pattern.baseClasses) ||
+      projectDeclares(options.facts, target.classKey, method)
+    ) {
+      continue;
+    }
+    return callbacksRunBy(options.facts, target.classKey, pattern, method);
   }
-  const picks =
-    methodOf(receiver) === loader.pick &&
-    isLoader(receiverOf(receiver), loader);
-  return picks ? receiver : null;
+  return [];
 }
 
 /** One read per model a loader call is given. The source class it is also given reaches no model base, so it drops out here. */

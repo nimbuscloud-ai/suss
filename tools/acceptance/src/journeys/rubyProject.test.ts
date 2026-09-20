@@ -15,7 +15,11 @@ const DECLARED_FIELDS = [
   "gql:Organizer.displayName",
   "gql:Organizer.phone",
   "gql:Organizer.status",
+  "gql:Organizer.campaigns",
 ];
+
+/** The methods the walk reaches from those fields: the loader's source, and what its fetch calls. */
+const REACHED_METHODS = ["fetch", "active_ids"];
 
 describe("read a graphql-ruby schema", () => {
   const project = copyOfFixture("ruby-graphql");
@@ -53,10 +57,10 @@ describe("read a graphql-ruby schema", () => {
 
     const inspect = runSuss(["inspect", summariesFile]);
     expect(inspect.status, inspect.stderr).toBe(0);
-    for (const field of DECLARED_FIELDS) {
+    for (const field of [...DECLARED_FIELDS, ...REACHED_METHODS]) {
       expect(inspect.stdout).toContain(field);
     }
-    expect(inspect.stdout).toContain("10 summaries.");
+    expect(inspect.stdout).toContain("13 summaries.");
   });
 
   it("says which line each field is on, so a person can go there", () => {
