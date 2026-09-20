@@ -23,7 +23,11 @@
 
 import { Node, type Project, type SourceFile } from "ts-morph";
 
-import { functionCallBinding, TargetPlacements } from "@suss/behavioral-ir";
+import {
+  functionCallBinding,
+  normalizeCalleeText,
+  TargetPlacements,
+} from "@suss/behavioral-ir";
 import { Database, evaluate, lit, rule, variable } from "@suss/datalog";
 import { assembleSummary, type ExtractorOptions } from "@suss/extractor";
 
@@ -39,7 +43,6 @@ import { offsetKeyFor, offsetKeyOf } from "../walk/nodeKeys.js";
 import {
   functionAmong,
   functionTargetOf,
-  normalizeCallee,
   type ReachableCandidate,
   resolveDecl,
 } from "./functionBehind.js";
@@ -423,7 +426,7 @@ function collectReachable(root: ScanRoot, scan: ScanContext): ScanResult {
     if (!Node.isCallExpression(node)) {
       return;
     }
-    const calleeText = normalizeCallee(node.getExpression().getText());
+    const calleeText = normalizeCalleeText(node.getExpression().getText());
     const outcome = resolveCallee(node, calleeText, inFunc);
     if (outcome === null) {
       return;
@@ -900,7 +903,7 @@ function recordTargets(
           if (effect.type !== "invocation") {
             continue;
           }
-          const target = targets.get(normalizeCallee(effect.callee));
+          const target = targets.get(normalizeCalleeText(effect.callee));
           if (target !== undefined) {
             effect.declaredAt = target;
           }
@@ -930,7 +933,7 @@ function recordArgTargets(
           if (effect.type !== "invocation") {
             continue;
           }
-          const byPosition = argTargets.get(normalizeCallee(effect.callee));
+          const byPosition = argTargets.get(normalizeCalleeText(effect.callee));
           if (byPosition === undefined) {
             continue;
           }
@@ -972,7 +975,9 @@ function recordCalleeParameters(
           if (effect.type !== "invocation") {
             continue;
           }
-          const parameterIndex = byCallee.get(normalizeCallee(effect.callee));
+          const parameterIndex = byCallee.get(
+            normalizeCalleeText(effect.callee),
+          );
           if (parameterIndex !== undefined) {
             effect.calleeParameter = parameterIndex;
           }

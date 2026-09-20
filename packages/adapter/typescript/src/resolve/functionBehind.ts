@@ -13,6 +13,8 @@
 
 import { Node } from "ts-morph";
 
+import { normalizeCalleeText } from "@suss/behavioral-ir";
+
 import { toFunctionRoot } from "../discovery/index.js";
 import {
   declarationsBehind,
@@ -26,15 +28,6 @@ import type { FunctionRoot } from "../conditions.js";
 export interface ReachableCandidate {
   func: FunctionRoot;
   name: string;
-}
-
-/**
- * The callee as one line. A call written across several lines would
- * otherwise put its own newlines into the text a gap quotes and the
- * text an invocation effect is matched by.
- */
-export function normalizeCallee(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
 }
 
 /** The first of these declarations the walk can follow into. */
@@ -61,7 +54,7 @@ export function functionCalledAt(
   const callee = call.getExpression();
   return functionAmong(
     declarationsBehind(callee.getSymbol()),
-    normalizeCallee(callee.getText()),
+    normalizeCalleeText(callee.getText()),
   );
 }
 
