@@ -164,7 +164,10 @@ const LANGUAGES: Language[] = [
     paths: [...PER_SITE_PATHS, "GET /config"].sort(),
     rowBound: 60_000,
     questionBound: 30_000,
-    evaluationBound: 25,
+    // Ruby runs the rules 18 times here either way: four files is too
+    // few for the per-file batch to show. `clientCalls.test.ts` is
+    // where adding call sites has to stop adding questions.
+    evaluationBound: 20,
   },
 ];
 
