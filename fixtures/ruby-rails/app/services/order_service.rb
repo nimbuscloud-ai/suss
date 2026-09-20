@@ -7,6 +7,14 @@ class OrderService
     Order.find(id)
   end
 
+  def place_order(reference)
+    Order.create(reference: reference, status: "new")
+  end
+
+  def remove_order(id)
+    Order.find(id).destroy
+  end
+
   def cancel_order(id)
     Order.find(id).update(status: "cancelled")
   end

@@ -89,6 +89,14 @@ function accesses(summary: BehavioralSummary) {
     });
 }
 
+/** Every method a summary's body calls, in the order it reports them. */
+function reaches(summary: BehavioralSummary): string[] {
+  return summary.transitions
+    .flatMap((transition) => transition.effects)
+    .filter((effect) => effect.type === "invocation")
+    .map((effect) => effect.callee);
+}
+
 /** The transitions the action's own body produced, without the ones its filters contributed. */
 function own(summary: BehavioralSummary): BehavioralSummary["transitions"] {
   return summary.transitions.filter(
@@ -119,6 +127,7 @@ describe("extraction over fixtures/ruby-rails", () => {
         "update",
         "archive",
         "cancel",
+        "create",
         "create",
         "destroy",
         "summary",
@@ -551,6 +560,53 @@ describe("extraction over fixtures/ruby-rails", () => {
         operation: "count_by_sql",
       },
     ]);
+  });
+
+  it("runs a model's save callbacks from the body that wrote through the model", async () => {
+    const { summaries } = await extractFixture();
+    expect(reaches(method(summaries, "place_order"))).toEqual([
+      "Order.create",
+      "normalize_reference",
+      "sync_search_index",
+    ]);
+  });
+
+  it("leaves a callback narrowed to another event off a write that does not cause it", async () => {
+    const { summaries } = await extractFixture();
+    expect(reaches(method(summaries, "cancel_order"))).toEqual([
+      "Order.find(id).update",
+      "normalize_reference",
+    ]);
+  });
+
+  it("runs the destroy callbacks from the body that destroyed the record", async () => {
+    const { summaries } = await extractFixture();
+    expect(reaches(method(summaries, "remove_order"))).toContain(
+      "drop_search_index",
+    );
+  });
+
+  it("puts what a callback reaches on its own summary, linked from the write", async () => {
+    const { summaries } = await extractFixture();
+    const callback = method(summaries, "sync_search_index");
+    expect(accesses(callback)).toEqual([
+      {
+        storageSystem: "postgresql",
+        container: "dim_account",
+        kind: "read",
+        operation: "count_by_sql",
+      },
+    ]);
+    expect(
+      method(summaries, "place_order")
+        .transitions.flatMap((transition) => transition.effects)
+        .some(
+          (effect) =>
+            effect.type === "invocation" &&
+            effect.callee === "sync_search_index" &&
+            effect.summary !== undefined,
+        ),
+    ).toBe(true);
   });
 
   it("records a rescue_from handler as a filter that runs after a raise", async () => {
