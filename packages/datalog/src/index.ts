@@ -12,6 +12,7 @@
  * positions, which suits the thousands of tuples extraction produces.
  */
 
+import { FactIndex, type FactKey } from "./factIndex.js";
 import { isDemandRewritten } from "./onDemand.js";
 import {
   chargeEvaluation,
@@ -21,7 +22,6 @@ import {
   chargeRule,
   isProfiling,
 } from "./profile.js";
-import { tupleKey } from "./tupleKey.js";
 
 export {
   type ConfidenceLevel,
@@ -124,45 +124,17 @@ export const ruleLabel = (r: Rule): string =>
 // Tuple store
 // ---------------------------------------------------------------------------
 
-// One tuple is keyed on the way in, again to retract it, and again for
-// every membership test in between, so the key is remembered against
-// the tuple itself.
-const keys = new WeakMap<Tuple, string>();
-
-const keyOf = (tuple: Tuple): string => {
-  const known = keys.get(tuple);
-  if (known !== undefined) {
-    return known;
-  }
-  const key = tupleKey(tuple);
-  keys.set(tuple, key);
-  return key;
-};
-
 interface Relation {
-  keys: Set<string>;
+  /** Which tuples are here, and what identifies each of them. */
+  index: FactIndex;
   tuples: Tuple[];
-  /**
-   * Tags, keyed like `keys`. The key is the tuple's own text, so a tag
-   * cannot live in the tuple: an improved tag would read as a new fact
-   * and the fixpoint would never close. Stays undefined until a caller
-   * stores a tag, so evaluation without an algebra never allocates it.
-   */
-  tags: Map<string, unknown> | undefined;
   /**
    * Column position, then value, then the tuples with that value. The value
    * is the atom itself: a Map already tells 1 from "1", so encoding it first
    * would build a string out of every node id on every lookup and buy
-   * nothing. `tupleKey` is for a key built out of several values.
+   * nothing.
    */
-  indexes: Map<number, Map<Atom, Tuple[]>>;
-}
-
-function tagSlots(relation: Relation): Map<string, unknown> {
-  if (relation.tags === undefined) {
-    relation.tags = new Map();
-  }
-  return relation.tags;
+  columns: Map<number, Map<Atom, Tuple[]>>;
 }
 
 function addToBucket(index: Map<Atom, Tuple[]>, key: Atom, tuple: Tuple): void {
@@ -187,13 +159,21 @@ export class Database {
       return existing;
     }
     const created: Relation = {
-      keys: new Set<string>(),
+      index: new FactIndex(),
       tuples: [],
-      tags: undefined,
-      indexes: new Map(),
+      columns: new Map(),
     };
     this.store.set(name, created);
     return created;
+  }
+
+  /**
+   * The key this relation gives a tuple, whether or not the fact is
+   * present. Evaluation keys its ledger of derived facts by it; a
+   * caller outside this module has nowhere to spend one.
+   */
+  keyFor(relationName: string, tuple: Tuple): FactKey {
+    return this.relation(relationName).index.key(tuple);
   }
 
   /**
@@ -210,14 +190,15 @@ export class Database {
     merge?: (stored: unknown, incoming: unknown) => unknown,
   ): AddOutcome {
     const relation = this.relation(relationName);
-    const key = keyOf(tuple);
-    if (relation.keys.has(key)) {
+    const index = relation.index;
+    const key = index.key(tuple);
+    if (index.has(key)) {
       let outcome: AddOutcome = "unchanged";
       if (merge !== undefined) {
-        const stored = relation.tags?.get(key);
+        const stored = index.tagOf(key);
         const merged = merge(stored, tag);
         if (merged !== stored) {
-          tagSlots(relation).set(key, merged);
+          index.setTag(key, merged);
           outcome = "improved";
         }
       }
@@ -229,15 +210,12 @@ export class Database {
       }
       return outcome;
     }
-    relation.keys.add(key);
+    index.put(key, tag);
     relation.tuples.push(tuple);
-    if (tag !== undefined) {
-      tagSlots(relation).set(key, tag);
-    }
-    for (const [column, index] of relation.indexes) {
+    for (const [column, bucket] of relation.columns) {
       const value = tuple[column];
       if (value !== undefined) {
-        addToBucket(index, value, tuple);
+        addToBucket(bucket, value, tuple);
       }
     }
     return "added";
@@ -245,11 +223,16 @@ export class Database {
 
   /** The tag stored for this fact, or undefined when there is none. */
   tagOf(relationName: string, tuple: Tuple): unknown {
-    return this.store.get(relationName)?.tags?.get(keyOf(tuple));
+    const relation = this.store.get(relationName);
+    if (relation === undefined) {
+      return undefined;
+    }
+    const key = relation.index.find(tuple);
+    return key === undefined ? undefined : relation.index.tagOf(key);
   }
 
   has(relationName: string, tuple: Tuple): boolean {
-    return this.store.get(relationName)?.keys.has(keyOf(tuple)) ?? false;
+    return this.store.get(relationName)?.index.find(tuple) !== undefined;
   }
 
   facts(relationName: string): readonly Tuple[] {
@@ -270,18 +253,18 @@ export class Database {
     if (relation === undefined) {
       return [];
     }
-    let index = relation.indexes.get(column);
-    if (index === undefined) {
-      index = new Map();
+    let buckets = relation.columns.get(column);
+    if (buckets === undefined) {
+      buckets = new Map();
       for (const tuple of relation.tuples) {
         const at = tuple[column];
         if (at !== undefined) {
-          addToBucket(index, at, tuple);
+          addToBucket(buckets, at, tuple);
         }
       }
-      relation.indexes.set(column, index);
+      relation.columns.set(column, buckets);
     }
-    return index.get(value) ?? [];
+    return buckets.get(value) ?? [];
   }
 
   /**
@@ -296,10 +279,11 @@ export class Database {
     if (relation === undefined) {
       return 0;
     }
-    const going = new Set<string>();
+    const index = relation.index;
+    const going = new Set<FactKey>();
     for (const tuple of tuples) {
-      const key = keyOf(tuple);
-      if (relation.keys.has(key)) {
+      const key = index.find(tuple);
+      if (key !== undefined) {
         going.add(key);
       }
     }
@@ -307,19 +291,23 @@ export class Database {
       return 0;
     }
     for (const key of going) {
-      relation.keys.delete(key);
-      relation.tags?.delete(key);
+      index.remove(key);
     }
     // Emptying a relation is what `clearRelations` does after every
     // question, and walking the tuples to find that none of them stay is
     // the slowest way to arrive at an empty list.
-    relation.tuples =
-      relation.keys.size === 0
-        ? []
-        : relation.tuples.filter((tuple) => !going.has(keyOf(tuple)));
-    // Dropping the indexes and letting the next lookup rebuild them is
-    // cheaper than hunting through every bucket for the removed tuples.
-    relation.indexes.clear();
+    if (index.size === 0) {
+      relation.tuples = [];
+      index.clear();
+    } else {
+      relation.tuples = relation.tuples.filter(
+        (tuple) => index.find(tuple) !== undefined,
+      );
+    }
+    // Dropping the column indexes and letting the next lookup rebuild
+    // them is cheaper than hunting through every bucket for the removed
+    // tuples.
+    relation.columns.clear();
     forgetFacts(this, relationName, going);
     return going.size;
   }
@@ -880,7 +868,7 @@ interface RuleSetState {
    * caller had already added never shows up here: `add` said it was
    * nothing new, so evaluation never claimed it.
    */
-  derived: Map<string, Map<string, Tuple>>;
+  derived: Map<string, Map<FactKey, Tuple>>;
 }
 
 const evaluated = new WeakMap<Database, Map<string, RuleSetState>>();
@@ -911,7 +899,7 @@ function statesFor(db: Database): Map<string, RuleSetState> {
 }
 
 /** The caller now owns this fact, so no rule set may take it back. */
-function claimFact(db: Database, relation: string, key: string): void {
+function claimFact(db: Database, relation: string, key: FactKey): void {
   const states = evaluated.get(db);
   if (states === undefined) {
     return;
@@ -926,7 +914,7 @@ function claimFact(db: Database, relation: string, key: string): void {
  * fixpoint. Each rule set keeps its ledger of what it derived, since a
  * later run with negation still has to be able to retract those facts.
  */
-function forgetFacts(db: Database, relation: string, keys: Set<string>): void {
+function forgetFacts(db: Database, relation: string, keys: Set<FactKey>): void {
   const states = evaluated.get(db);
   if (states === undefined) {
     return;
@@ -1174,7 +1162,7 @@ function runRules<Tag>(
       ledger = new Map();
       derived.set(relation, ledger);
     }
-    ledger.set(keyOf(tuple), tuple);
+    ledger.set(db.keyFor(relation, tuple), tuple);
     addedHere?.push([relation, tuple]);
   };
   const mergeStored =
