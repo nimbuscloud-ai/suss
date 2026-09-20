@@ -183,7 +183,7 @@ factories in the TypeScript adapter): the method exists and pairs
 when something calls it, and today nothing outside the package
 does.
 
-**The 13 unmatched consumers ask for a method that exists only on a
+**The 12 unmatched consumers ask for a method that exists only on a
 value's declared return type.** `SuppressionFileSchema.safeParse(...)`
 and `IntentDocSchema.safeParse(...)` both call a method zod puts on
 every schema object, which comes from the imported `ZodType` type
@@ -201,13 +201,7 @@ one the adapter's own code builds. `forwardedParameter` and, since it stopped ma
 spelling and started comparing declarations, `directEnvRead` both also
 call `symbolBehind(reference)?.getValueDeclaration()`, the same shape
 one call further in: `symbolBehind` gives a ts-morph symbol, and
-`getValueDeclaration` is that symbol's own method. The schema readers
-in the same pack added one more of exactly that call, in
-`declarationBehind`, which asks which declaration a name refers to on
-the way to working out whether a value comes down to `process.env`.
-Nothing the store exports settles that question, so the call stays
-until a store method hands out what the `environmentValue` rule already
-derives. The remaining six
+`getValueDeclaration` is that symbol's own method. The remaining six
 are the same thing in three more packs: `propertyOf(...).getText()` and
 `propertyValueOf(...).getText()` in `@suss/contract-storybook`,
 `writtenNodeOf(...).getExpression()`, `writtenNodeOf(...).getArguments()`

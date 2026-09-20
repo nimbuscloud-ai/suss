@@ -479,6 +479,40 @@ export class ResolutionStore {
   }
 
   /**
+   * Whether this expression's value is the environment object: the way
+   * a pack spells it, a name declared as that, or a parameter some
+   * caller hands one to, however many calls deep.
+   *
+   * A parameter is the only shape whose answer can change once its
+   * callers are in, and reading those means reading every file that
+   * imports this one, so a value that is not one is answered from what
+   * the store already has.
+   */
+  isEnvironmentValue(value: Node): boolean {
+    const target = factKeyOf(value);
+    const first = this.askAbout(target, "wanted", () => {
+      this.derive();
+      return {
+        environment: this.hasAnswer("wantedEnvironmentValue", target),
+        parameter: this.hasAnswer("wantedRefersToParam", target),
+      };
+    });
+    if (first.environment || !first.parameter) {
+      return first.environment;
+    }
+
+    this.readPossibleCallersOf(target.getSourceFile());
+    return this.askAbout(target, "wanted", () => {
+      this.derive();
+      return this.hasAnswer("wantedEnvironmentValue", target);
+    });
+  }
+
+  private hasAnswer(relation: string, target: Node): boolean {
+    return this.answersFor(relation, nodeId(target)).length > 0;
+  }
+
+  /**
    * Which parameters an environment read takes its variable's name
    * from, for a reader standing at a call. One question covers the
    * whole project: a project has a handful of environment reads and

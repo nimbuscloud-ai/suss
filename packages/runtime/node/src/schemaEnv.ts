@@ -21,18 +21,11 @@ import {
   propertyNameOf,
   propertyOf,
   propertyValueOf,
-  symbolBehind,
   writtenNodeOf,
 } from "@suss/adapter-typescript";
 
 import type { ResolutionStore } from "@suss/adapter-typescript";
-import type {
-  CallExpression,
-  Identifier,
-  Node,
-  ParameterDeclaration,
-  SourceFile,
-} from "ts-morph";
+import type { CallExpression, Node, SourceFile } from "ts-morph";
 
 /** Where the call takes the environment object from. */
 type EnvironmentAt =
@@ -192,7 +185,7 @@ export function schemaEnvReads(
       continue;
     }
     const environment = environmentArgument(call, reader, resolution);
-    if (environment === null || !isEnvironmentObject(environment, resolution)) {
+    if (environment === null || !resolution.isEnvironmentValue(environment)) {
       continue;
     }
     const reads = readsFromSchema(call, reader, resolution);
@@ -423,87 +416,6 @@ function defaults(node: Node): boolean {
   }
   const option = propertyNameOf(node);
   return option !== null && DEFAULTING_OPTIONS.has(option);
-}
-
-/**
- * Whether a value handed to a library comes down to `process.env`. This
- * is the test that decides whether a parse is read at all, so a value
- * that is not an identifier costs the two syntax tests below and no more.
- */
-function isEnvironmentObject(
-  value: Node,
-  resolution: ResolutionStore,
-): boolean {
-  return reachesEnvironment(value, resolution, new Set());
-}
-
-/**
- * Which declaration a name refers to. `writtenNodeOf` gives what a name
- * was written as only where that is a call, and the environment object
- * is a property access, so nothing the store exports settles this one.
- * The `environmentValue` rule in `@suss/resolution` does, and no demand
- * rule or store method hands its results out yet.
- */
-function declarationBehind(value: Identifier): Node | undefined {
-  return symbolBehind(value)?.getValueDeclaration();
-}
-
-function reachesEnvironment(
-  value: Node,
-  resolution: ResolutionStore,
-  taken: Set<ParameterDeclaration>,
-): boolean {
-  if (isProcessEnv(value)) {
-    return true;
-  }
-  if (!N.isIdentifier(value)) {
-    return false;
-  }
-  const declared = declarationBehind(value);
-  if (declared === undefined) {
-    return false;
-  }
-  if (N.isVariableDeclaration(declared)) {
-    const initializer = declared.getInitializer();
-    return initializer !== undefined && isProcessEnv(initializer);
-  }
-  if (!N.isParameterDeclaration(declared)) {
-    return false;
-  }
-  return parameterTakesEnvironment(declared, resolution, taken);
-}
-
-/**
- * A parameter the environment reaches: its own default says so, or some
- * caller passes one in. The walk runs callee to caller, so a helper two
- * calls away from the one that wrote `process.env` is covered, and a
- * parameter already taken ends a pair of helpers that call each other.
- */
-function parameterTakesEnvironment(
-  parameter: ParameterDeclaration,
-  resolution: ResolutionStore,
-  taken: Set<ParameterDeclaration>,
-): boolean {
-  if (taken.has(parameter)) {
-    return false;
-  }
-  taken.add(parameter);
-  const fallback = parameter.getInitializer();
-  if (fallback !== undefined && isProcessEnv(fallback)) {
-    return true;
-  }
-  return resolution
-    .argumentsPassedTo(parameter)
-    .some((passed) => reachesEnvironment(passed.argument, resolution, taken));
-}
-
-/** Whether a node is the `process.env` object itself. */
-function isProcessEnv(node: Node): boolean {
-  if (!N.isPropertyAccessExpression(node) || node.getName() !== "env") {
-    return false;
-  }
-  const root = node.getExpression();
-  return N.isIdentifier(root) && root.getText() === "process";
 }
 
 /**
