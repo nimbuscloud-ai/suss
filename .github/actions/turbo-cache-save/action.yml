@@ -1,0 +1,21 @@
+name: Turbo cache save
+description: >
+  Save the turbo cache under the key turbo-cache restored, so the next
+  run of this job finds it even if this run's own build or test step
+  failed. Call this as a step of the job itself, with if: always(),
+  after the last turbo task. A composite action's own always() only
+  sees its own steps, so nesting the save inside turbo-cache would
+  still skip it once a later step of the calling job fails.
+
+inputs:
+  key:
+    description: The cache key to save under, from turbo-cache's "key" output.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache/save@v4
+      with:
+        path: .turbo
+        key: ${{ inputs.key }}

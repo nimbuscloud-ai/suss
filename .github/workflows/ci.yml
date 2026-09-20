@@ -47,6 +47,13 @@ jobs:
   # refs/tested/, and this looks the current one up. A push that only
   # rewords or squashes commits has the same tree as the push before it,
   # so the three jobs skip and ci reports the earlier pass.
+  #
+  # behaviour is skipped on a narrower condition: refs/behaved/ records
+  # a hash of only what the behaviour job reads, packages and fixtures
+  # and the scripts that drive them. Tests, READMEs and coverage output
+  # are left out. A push that only adds a test or edits a README keeps
+  # the same behaviour hash even though the tree changed, so behaviour
+  # skips while checks and test still run over the new tree.
   guard:
     runs-on: ubuntu-latest
     if: ${{ !github.event.pull_request.draft }}
@@ -55,6 +62,8 @@ jobs:
     outputs:
       tested: ${{ steps.tree.outputs.tested }}
       tree: ${{ steps.tree.outputs.tree }}
+      behaved: ${{ steps.behaviour.outputs.behaved }}
+      behaviour_inputs: ${{ steps.behaviour.outputs.behaviour_inputs }}
     steps:
       - uses: actions/checkout@v4
       - name: Look the tree up
@@ -67,6 +76,26 @@ jobs:
             echo "Tree $TREE already passed CI."
           else
             echo "tested=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Look the behaviour inputs up
+        id: behaviour
+        run: |
+          HASH=$(
+            {
+              git ls-tree -r HEAD -- packages fixtures scripts tools | awk -F'\t' '
+                $2 ~ /^packages\// && ($2 ~ /\.test\.[^\/]+$/ || $2 ~ /(^|\/)(README|DESIGN)\.md$/ || $2 ~ /(^|\/)coverage\//) { next }
+                { print }
+              '
+              git ls-tree HEAD -- package.json package-lock.json turbo.json
+            } | sha256sum | cut -c1-16
+          )
+          echo "behaviour_inputs=$HASH" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code origin "refs/behaved/$HASH" >/dev/null; then
+            echo "behaved=true" >> "$GITHUB_OUTPUT"
+            echo "Behaviour inputs $HASH already passed."
+          else
+            echo "behaved=false" >> "$GITHUB_OUTPUT"
           fi
 
   checks:
@@ -194,6 +223,27 @@ jobs:
       - name: Documented examples
         run: npm run check:examples
 
+      # Save whatever turbo produced even when a step above failed, so
+      # the next run of this job still finds it. See turbo-cache-save.
+      - name: Save the turbo cache
+        if: always()
+        uses: ./.github/actions/turbo-cache-save
+        with:
+          key: ${{ steps.prepare.outputs.key }}
+
+      # Kept as a run artifact so the warm-cache workflow can save this
+      # entry under main's own ref once the pull request merges, since a
+      # cache entry this job saves is scoped to the pull request's ref.
+      - name: Upload the turbo cache for warm-cache
+        if: always() && steps.prepare.outputs.docs_only != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: turbo-checks-${{ steps.prepare.outputs.inputs }}
+          path: |
+            .turbo
+            **/.tsbuild
+          retention-days: 2
+
   test:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: guard
@@ -220,10 +270,24 @@ jobs:
         if: steps.prepare.outputs.docs_only != 'true'
         run: npm run check:coverage
 
+      - name: Save the turbo cache
+        if: always()
+        uses: ./.github/actions/turbo-cache-save
+        with:
+          key: ${{ steps.prepare.outputs.key }}
+
+      - name: Upload the turbo cache for warm-cache
+        if: always() && steps.prepare.outputs.docs_only != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: turbo-test-${{ steps.prepare.outputs.inputs }}
+          path: .turbo
+          retention-days: 2
+
   behaviour:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: guard
-    if: needs.guard.outputs.tested != 'true'
+    if: needs.guard.outputs.tested != 'true' && needs.guard.outputs.behaved != 'true'
     permissions:
       contents: read
     steps:
@@ -255,14 +319,34 @@ jobs:
         if: steps.prepare.outputs.docs_only != 'true'
         run: npm run check:dogfood
 
+      - name: Save the turbo cache
+        if: always()
+        uses: ./.github/actions/turbo-cache-save
+        with:
+          key: ${{ steps.prepare.outputs.key }}
+
+      - name: Upload the turbo cache for warm-cache
+        if: always() && steps.prepare.outputs.docs_only != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: turbo-behaviour-${{ steps.prepare.outputs.inputs }}
+          path: .turbo
+          retention-days: 2
+
   # The name a branch ruleset requires. It waits on the three jobs, so
   # that splitting the work above did not change what a pull request
   # has to satisfy, and it passes on its own when the guard found the
-  # tree already passed.
+  # tree already passed. It also passes when behaviour was skipped
+  # because the guard found the behaviour inputs already passed.
   #
-  # On a pass it records the merge commit's tree under refs/tested/,
-  # which is what the guard looks up next time. A pull request from a
-  # fork has a read-only token, so its passes are not recorded.
+  # On a pass it records the merge commit's tree under refs/tested/ and
+  # its behaviour inputs under refs/behaved/, which is what the guard
+  # looks up next time. The two hashes cover different things: tested
+  # is the whole tree, so it clears every job at once on a reworded or
+  # squashed push; behaved is only what the behaviour job reads, so it
+  # clears only that job on a push that only touches a test or a
+  # README. A pull request from a fork has a read-only token, so its
+  # passes are not recorded.
   ci:
     runs-on: ubuntu-latest
     needs: [guard, checks, test, behaviour]
@@ -278,16 +362,23 @@ jobs:
           fi
           echo "checks:    ${{ needs.checks.result }}"
           echo "test:      ${{ needs.test.result }}"
-          echo "behaviour: ${{ needs.behaviour.result }}"
-          if [ "${{ needs.checks.result }}" != "success" ] \
-            || [ "${{ needs.test.result }}" != "success" ] \
-            || [ "${{ needs.behaviour.result }}" != "success" ]; then
+          echo "behaviour: ${{ needs.behaviour.result }} (behaved: ${{ needs.guard.outputs.behaved }})"
+          if [ "${{ needs.checks.result }}" != "success" ] || [ "${{ needs.test.result }}" != "success" ]; then
+            exit 1
+          fi
+          if [ "${{ needs.guard.outputs.behaved }}" = "true" ]; then
+            if [ "${{ needs.behaviour.result }}" != "success" ] && [ "${{ needs.behaviour.result }}" != "skipped" ]; then
+              exit 1
+            fi
+          elif [ "${{ needs.behaviour.result }}" != "success" ]; then
             exit 1
           fi
 
       - uses: actions/checkout@v4
         if: needs.guard.outputs.tested != 'true' && github.event.pull_request.head.repo.full_name == github.repository
 
-      - name: Record the tree as passed
+      - name: Record the tree and the behaviour inputs as passed
         if: needs.guard.outputs.tested != 'true' && github.event.pull_request.head.repo.full_name == github.repository
-        run: git push origin "HEAD:refs/tested/${{ needs.guard.outputs.tree }}"
+        run: |
+          git push origin "HEAD:refs/tested/${{ needs.guard.outputs.tree }}"
+          git push origin "HEAD:refs/behaved/${{ needs.guard.outputs.behaviour_inputs }}"

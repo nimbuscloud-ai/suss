@@ -1,0 +1,25 @@
+name: Turbo hash
+description: >
+  Hash the git tree turbo reads: the workspace packages, the root
+  manifests and the tsconfig files. Two commits with the same hash
+  share every turbo cache entry, so this is the one place that computes
+  it, for the turbo-cache action and the warm-cache workflow to share.
+
+outputs:
+  hash:
+    description: The hash, sixteen hex characters.
+    value: ${{ steps.hash.outputs.hash }}
+
+runs:
+  using: composite
+  steps:
+    - name: Hash the sources turbo reads
+      id: hash
+      shell: bash
+      run: |
+        HASH=$(git rev-parse \
+          HEAD:packages HEAD:tools \
+          HEAD:package.json HEAD:package-lock.json HEAD:turbo.json \
+          HEAD:tsconfig.base.json HEAD:tsconfig.typecheck.json \
+          | sha256sum | cut -c1-16)
+        echo "hash=$HASH" >> "$GITHUB_OUTPUT"
