@@ -380,8 +380,14 @@ jobs:
       - uses: actions/checkout@v4
         if: needs.guard.outputs.tested != 'true' && github.event.pull_request.head.repo.full_name == github.repository
 
+      # refs/behaved/ is skipped when the guard already found it recorded:
+      # the hash leaves out most of the tree on purpose, so two pushes in a
+      # row often share it, and pushing the same ref twice is a
+      # non-fast-forward rejection, not a no-op.
       - name: Record the tree and the behaviour inputs as passed
         if: needs.guard.outputs.tested != 'true' && github.event.pull_request.head.repo.full_name == github.repository
         run: |
           git push origin "HEAD:refs/tested/${{ needs.guard.outputs.tree }}"
-          git push origin "HEAD:refs/behaved/${{ needs.guard.outputs.behaviour_inputs }}"
+          if [ "${{ needs.guard.outputs.behaved }}" != "true" ]; then
+            git push origin "HEAD:refs/behaved/${{ needs.guard.outputs.behaviour_inputs }}"
+          fi
