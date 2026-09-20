@@ -6,9 +6,11 @@
  * Seeds are entry facts; each scanned body adds a `calls` fact per
  * callee it could place, and the rules derive what is reachable until
  * the set stops growing. A call that could not be placed is recorded
- * as an unfollowed-call gap on the summary of the body it is in. The
- * package README says how a callee is resolved and where the walk
- * stops.
+ * as an unfollowed-call gap on the summary of the body it is in.
+ *
+ * A file's own load-time statements are a seed like any other, with
+ * the program as its node. The package README says how a callee is
+ * resolved and where the walk stops.
  */
 
 import {
@@ -24,7 +26,13 @@ import {
 import { Database, evaluate, lit, rule, variable as v } from "@suss/datalog";
 import { assembleSummary } from "@suss/extractor";
 
-import { bodyStatements, field, rangeOf, spanOf } from "../ast.js";
+import {
+  bodyStatements,
+  field,
+  PROGRAM_TYPE,
+  rangeOf,
+  spanOf,
+} from "../ast.js";
 import { bodyOfMethod } from "../discovery.js";
 import { nodeId } from "../facts/values.js";
 import {
@@ -32,6 +40,8 @@ import {
   calleeText,
   callsReported,
   isArglessReceiverCall,
+  methodBody,
+  moduleScopeBody,
 } from "../paths/effects.js";
 import { callbacksReached, storageClaims } from "../storage.js";
 import {
@@ -51,6 +61,7 @@ import type {
 import type { RawCodeStructure, RawParameter } from "@suss/extractor";
 import type { BodyReadOptions } from "../discovery.js";
 import type { RbNode } from "../parser.js";
+import type { ReadableBody } from "../paths/effects.js";
 import type {
   CalleeSpellings,
   CallSite,
@@ -65,7 +76,7 @@ export interface ReachOptions extends BodyReadOptions {
   readonly displayPathOf: (file: string) => string;
 }
 
-/** A discovered unit's method, keyed the way its summary's span is. */
+/** A discovered unit's method, or a file's program node, keyed the way its summary's span is. */
 export interface Seed {
   readonly key: string;
   readonly file: string;
@@ -92,6 +103,8 @@ export interface ReachedUnits {
   readonly propertyReadsByKey: ReadonlyMap<string, ReadonlySet<string>>;
   /** Every (method, position) some scanned body passed a named project method into, across the whole run. */
   readonly passedPositions: ReadonlySet<string>;
+  /** The keys of the bodies that reached at least one project method, for a caller that reports a body only when it goes somewhere. */
+  readonly followedKeys: ReadonlySet<string>;
 }
 
 const REACHABLE_RULES = [
@@ -124,6 +137,7 @@ export async function reachedFunctions(
   // method into. An inline block or a variable does not count, so a
   // parameter call missing here is a gap even when a caller supplies one.
   const passedPositions = new Set<string>();
+  const followedKeys = new Set<string>();
 
   for (const seed of seeds) {
     seedKeys.add(seed.key);
@@ -181,6 +195,10 @@ export async function reachedFunctions(
       for (const position of scan.passedPositions) {
         passedPositions.add(position);
       }
+      if (scan.followed.length > 0) {
+        followedKeys.add(key);
+      }
+
       for (const target of scan.followed) {
         const calleeKey = keyOf(target);
         if (!functionByKey.has(calleeKey)) {
@@ -220,6 +238,7 @@ export async function reachedFunctions(
     parameterCallsByKey,
     propertyReadsByKey,
     passedPositions,
+    followedKeys,
   };
 }
 
@@ -331,16 +350,10 @@ interface BodyCalls {
  * already.
  */
 function bodyOf(source: ReachedFunction, options: ReachOptions): BodyCalls {
-  const site: CallSite = {
-    file: source.file,
-    method: source.node,
-    owner: keyOf(source),
-    enclosingQualifiedName: source.enclosingQualifiedName,
-  };
+  const site = siteOf(source);
+  const read = readableBodyOf(source.node);
   const written =
-    field(source.node, "body") === null
-      ? []
-      : bodyCalls(source.node, options.inheritedMethods);
+    read === null ? [] : bodyCalls(read, options.inheritedMethods);
   const calls = callsReported(written, (call) =>
     mightReadAsACall(call, site, options.context),
   );
@@ -349,6 +362,28 @@ function bodyOf(source: ReachedFunction, options: ReachOptions): BodyCalls {
     argless: written.filter(isArglessReceiverCall),
     site,
     written: calls.map((call) => ({ call, site })),
+  };
+}
+
+/**
+ * The statements this source runs. A program node is a file's load-time
+ * statements; anything else is a method and runs its own body.
+ */
+function readableBodyOf(node: RbNode): ReadableBody | null {
+  return node.type === PROGRAM_TYPE ? moduleScopeBody(node) : methodBody(node);
+}
+
+/**
+ * Where this source's calls are written. Module scope keys its names
+ * against the file rather than against a method, which is how the value
+ * facts already keyed them.
+ */
+function siteOf(source: ReachedFunction): CallSite {
+  return {
+    file: source.file,
+    method: source.node.type === PROGRAM_TYPE ? null : source.node,
+    owner: keyOf(source),
+    enclosingQualifiedName: source.enclosingQualifiedName,
   };
 }
 
@@ -382,7 +417,7 @@ function scanBody(
   },
 ): Scan {
   const displayPathOf = options.displayPathOf;
-  if (field(source.node, "body") === null) {
+  if (readableBodyOf(source.node) === null) {
     return EMPTY_SCAN;
   }
 
