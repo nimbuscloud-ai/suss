@@ -47,12 +47,10 @@ export {
 
 // Pack behavior stamp, fed into the adapter's cache-invalidation
 // digest (see @suss/adapter-typescript `computeAdapterPacksDigest`).
-// Bumped when the merge of `process.env.X` recognition into this pack
-// changed what it extracts, so warm caches from the pre-merge node
-// pack (which skipped env vars) re-extract instead of returning stale
-// summaries. Bump again on any future change to discovered units /
-// emitted effects.
-const PACK_VERSION = "0.1.0";
+// Bumped last for the schema readers, which add a config read per key
+// of a schema parsed against `process.env`. Bump again on any future
+// change to discovered units or emitted effects.
+const PACK_VERSION = "0.2.0";
 
 /**
  * What `-f node=config.json` may say. The CLI parses the file against it
@@ -120,7 +118,7 @@ export const declares: PackDeclaration = {
   dependencies: [],
   shippedWith: "typescript",
   reads:
-    "Node.js runtime primitives, scheduling, the \`process\` surface (incl. \`process.env.X\` config-read interactions), module-loading globals, emitted as interaction effects.",
+    "Node.js runtime primitives, scheduling, the \`process\` surface (incl. \`process.env.X\` config-read interactions and the keys of a schema parsed against \`process.env\`), module-loading globals, emitted as interaction effects.",
 };
 
 export default nodeRuntimePack;

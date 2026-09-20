@@ -9,6 +9,7 @@
 //   process.env.X ?? "default"     → config-read for "X" with defaulted=true
 //   process.env.X || other        → the same; any ||/?? chain with a
 //                                    later operand defaults the read
+//   Env.parse(process.env)        → one config-read per schema key
 //
 // The adapter hands access recognizers property accesses and nothing
 // else, so the three spellings are recognized from the one node they
@@ -68,6 +69,8 @@ import {
   toFunctionRoot,
 } from "@suss/adapter-typescript";
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
+
+import { schemaEnvReads, schemaEnvReadsInside } from "./schemaEnv.js";
 
 import type { ResolutionStore } from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
@@ -314,7 +317,10 @@ function envReadsAt(
   resolution: ResolutionStore | undefined,
 ): EnvRead[] {
   if (N.isCallExpression(node)) {
-    return readsThroughHelperCall(node, resolution);
+    const parsed = anchoredAt(schemaEnvReads(node, resolution), node);
+    return parsed.length > 0
+      ? parsed
+      : readsThroughHelperCall(node, resolution);
   }
   if (!N.isPropertyAccessExpression(node)) {
     return [];
@@ -366,11 +372,24 @@ function readsThroughHelperCall(
   });
 
   const wrapped = isDefaultedAt(call);
-  return [...defaultedByName].map(([name, atSites]) => ({
-    name,
-    defaulted: atSites || wrapped,
-    node: call,
-  }));
+  return [
+    ...[...defaultedByName].map(([name, atSites]) => ({
+      name,
+      defaulted: atSites || wrapped,
+      node: call,
+    })),
+    // A config module parses its schema once and every handler calls
+    // the function around it, so the call reports what the parse reads.
+    ...anchoredAt(schemaEnvReadsInside(callee, resolution), call),
+  ];
+}
+
+/** The reads a schema gave, put where the source has a line number. */
+function anchoredAt(
+  reads: readonly { name: string; defaulted: boolean }[],
+  node: Node,
+): EnvRead[] {
+  return reads.map((read) => ({ ...read, node }));
 }
 
 /** The function a callee expression is written against, or null when nothing this reader follows defines one. */

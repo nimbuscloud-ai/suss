@@ -429,7 +429,7 @@ describe("node runtime pack — env-var wiring", () => {
   });
 
   it("declares a version stamp so the merge invalidates warm caches", () => {
-    expect(nodeRuntimePack().version).toBe("0.1.0");
+    expect(nodeRuntimePack().version).toBe("0.2.0");
   });
 
   it("follows a literal through a one-argument helper into a computed read", () => {
@@ -1293,5 +1293,262 @@ describe("a helper call resolved from the caller's side", () => {
       export const table = requireEnv("TABLE_NAME");`,
     );
     expect(configReadEffectsOf(recognizeWithStore(handler))).toEqual([]);
+  });
+});
+
+/** Every variable a file reads, with whether the program defaults it. */
+function readsOf(sourceFile: SourceFile): Array<[string, boolean]> {
+  return configReadEffectsOf(recognizeWithStore(sourceFile))
+    .map((read): [string, boolean] => [
+      read.interaction.name,
+      read.interaction.defaulted === true,
+    ])
+    .sort((one, other) => one[0].localeCompare(other[0]));
+}
+
+describe("env-var recognizer — a schema parsed against process.env", () => {
+  it("reads every key of a zod schema a helper parses its parameter against", () => {
+    const file = makeProject(`
+      import { z } from "zod";
+      const Env = z.object({
+        PORT: z.coerce.number().int().positive().default(8080),
+        LOG_LEVEL: z.enum(["debug", "info"]).default("info"),
+        ACCOUNTS_TABLE: z.string().optional(),
+        ORDERS_URL: z.string(),
+      });
+      export function loadConfig(env = process.env) {
+        return Env.parse(env);
+      }
+    `);
+    expect(readsOf(file)).toEqual([
+      ["ACCOUNTS_TABLE", true],
+      ["LOG_LEVEL", true],
+      ["ORDERS_URL", false],
+      ["PORT", true],
+    ]);
+  });
+
+  it("reads a schema written out at the parse call", () => {
+    const file = makeProject(`
+      import { z } from "zod";
+      export const config = z
+        .object({ ORDERS_URL: z.string() })
+        .parse(process.env);
+    `);
+    expect(readsOf(file)).toEqual([["ORDERS_URL", false]]);
+  });
+
+  it("reads a schema through the refinements chained onto it", () => {
+    const file = makeProject(`
+      import { z } from "zod";
+      const Env = z.object({ ORDERS_URL: z.string() }).strict();
+      export const config = Env.safeParse(process.env);
+    `);
+    expect(readsOf(file)).toEqual([["ORDERS_URL", false]]);
+  });
+
+  it("reads an envalid schema, with its option object as the default", () => {
+    const file = makeProject(`
+      import { cleanEnv, port, str } from "envalid";
+      export const env = cleanEnv(process.env, {
+        PORT: port({ default: 8080 }),
+        ACCOUNTS_TABLE: str(),
+        REPORT_QUEUE: str({ devDefault: "local" }),
+      });
+    `);
+    expect(readsOf(file)).toEqual([
+      ["ACCOUNTS_TABLE", false],
+      ["PORT", true],
+      ["REPORT_QUEUE", true],
+    ]);
+  });
+
+  it("reads a t3-env schema out of every audience it declares", () => {
+    const file = makeProject(`
+      import { createEnv } from "@t3-oss/env-core";
+      import { z } from "zod";
+      export const env = createEnv({
+        server: { ACCOUNTS_TABLE: z.string() },
+        shared: { LOG_LEVEL: z.string().optional() },
+        runtimeEnv: process.env,
+      });
+    `);
+    expect(readsOf(file)).toEqual([
+      ["ACCOUNTS_TABLE", false],
+      ["LOG_LEVEL", true],
+    ]);
+  });
+
+  it("reads a znv schema", () => {
+    const file = makeProject(`
+      import { parseEnv } from "znv";
+      import { z } from "zod";
+      export const env = parseEnv(process.env, {
+        PORT: z.number().default(8080),
+        ORDERS_URL: z.string(),
+      });
+    `);
+    expect(readsOf(file)).toEqual([
+      ["ORDERS_URL", false],
+      ["PORT", true],
+    ]);
+  });
+
+  it("reads a valibot schema written inside the parse call", () => {
+    const file = makeProject(`
+      import * as v from "valibot";
+      export const env = v.parse(
+        v.object({ ACCOUNTS_TABLE: v.string(), PORT: v.optional(v.string()) }),
+        process.env,
+      );
+    `);
+    expect(readsOf(file)).toEqual([
+      ["ACCOUNTS_TABLE", false],
+      ["PORT", true],
+    ]);
+  });
+
+  it("reads a valibot schema whose pieces the program imported by name", () => {
+    const file = makeProject(`
+      import { object, optional, parse, string } from "valibot";
+      export const env = parse(
+        object({ ACCOUNTS_TABLE: string(), PORT: optional(string()) }),
+        process.env,
+      );
+    `);
+    expect(readsOf(file)).toEqual([
+      ["ACCOUNTS_TABLE", false],
+      ["PORT", true],
+    ]);
+  });
+
+  it("counts nullish, catch and a union with a literal as defaults", () => {
+    const file = makeProject(`
+      import { z } from "zod";
+      const Env = z.object({
+        ACCOUNTS_TABLE: z.string().nullish(),
+        ORDERS_URL: z.string().catch("http://localhost"),
+        REPORT_QUEUE: z.string().or(z.literal("none")),
+        LOG_LEVEL: z.string(),
+      });
+      export const config = Env.parse(process.env);
+    `);
+    expect(readsOf(file)).toEqual([
+      ["ACCOUNTS_TABLE", true],
+      ["LOG_LEVEL", false],
+      ["ORDERS_URL", true],
+      ["REPORT_QUEUE", true],
+    ]);
+  });
+
+  it("reads the keys a schema spreads in from another literal", () => {
+    const file = makeProject(`
+      import { z } from "zod";
+      const shared = { LOG_LEVEL: z.string().default("info") };
+      const Env = z.object({ ...shared, ORDERS_URL: z.string() });
+      export const config = Env.parse(process.env);
+    `);
+    expect(readsOf(file)).toEqual([
+      ["LOG_LEVEL", true],
+      ["ORDERS_URL", false],
+    ]);
+  });
+
+  it("reads a schema parsed against a name bound to process.env", () => {
+    const file = makeProject(`
+      import { z } from "zod";
+      const source = process.env;
+      const Env = z.object({ ORDERS_URL: z.string() });
+      export const config = Env.parse(source);
+    `);
+    expect(readsOf(file)).toEqual([["ORDERS_URL", false]]);
+  });
+
+  it("says nothing about a schema parsed against anything else", () => {
+    const file = makeProject(`
+      import { z } from "zod";
+      const Body = z.object({ ORDERS_URL: z.string() });
+      export function handle(request: { body: unknown }) {
+        return Body.parse(request.body);
+      }
+    `);
+    expect(readsOf(file)).toEqual([]);
+  });
+
+  it("says nothing about a parse whose parameter no caller fills with the environment", () => {
+    const file = makeProject(`
+      import { z } from "zod";
+      const Env = z.object({ ORDERS_URL: z.string() });
+      export function load(source: Record<string, string>) {
+        return Env.parse(source);
+      }
+      export const config = load({ ORDERS_URL: "http://orders" });
+    `);
+    expect(readsOf(file)).toEqual([]);
+  });
+
+  it("reads a schema parsed against a parameter a caller fills with process.env", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "config.ts",
+      `import { z } from "zod";
+      const Env = z.object({ ORDERS_URL: z.string() });
+      export function load(source: Record<string, string>) {
+        return Env.parse(source);
+      }`,
+    );
+    const entry = project.createSourceFile(
+      "entry.ts",
+      `import { load } from "./config.js";
+      export const config = load(process.env);`,
+    );
+    const inConfig = project.getSourceFileOrThrow("config.ts");
+    expect(readsOf(inConfig)).toEqual([["ORDERS_URL", false]]);
+    expect(readsOf(entry)).toEqual([["ORDERS_URL", false]]);
+  });
+
+  it("reports a config module's schema at the call a handler makes", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "config.ts",
+      `import { z } from "zod";
+      const Env = z.object({
+        ACCOUNTS_TABLE: z.string(),
+        LOG_LEVEL: z.string().default("info"),
+      });
+      export function loadConfig(env = process.env) {
+        return Env.parse(env);
+      }`,
+    );
+    const handler = project.createSourceFile(
+      "handler.ts",
+      `import { loadConfig } from "./config.js";
+      export async function report() {
+        const config = loadConfig();
+        return config.ACCOUNTS_TABLE;
+      }`,
+    );
+    expect(readsOf(handler)).toEqual([
+      ["ACCOUNTS_TABLE", false],
+      ["LOG_LEVEL", true],
+    ]);
+  });
+
+  it("says nothing about a call to a helper that parses something else", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "parse.ts",
+      `import { z } from "zod";
+      const Body = z.object({ ORDERS_URL: z.string() });
+      export function readBody(raw: unknown) {
+        return Body.parse(raw);
+      }`,
+    );
+    const handler = project.createSourceFile(
+      "handler.ts",
+      `import { readBody } from "./parse.js";
+      export const body = readBody({});`,
+    );
+    expect(readsOf(handler)).toEqual([]);
   });
 });

@@ -11,10 +11,10 @@ scheduling calls, the process object, and the module-location globals.
 - **Invocation recognizers** for the scheduling calls: `setImmediate`,
   `setTimeout`, `setInterval`, `queueMicrotask`, and
   `process.nextTick`
-- **Access recognizers** for `process.env.X` reads, the rest of the
-  process surface (`argv`, `exit`, and the process metadata), and the
-  module-location globals `__dirname`, `__filename`, and
-  `import.meta.url`
+- **Access recognizers** for `process.env.X` reads, the keys of a
+  schema parsed against `process.env`, the rest of the process surface
+  (`argv`, `exit`, and the process metadata), and the module-location
+  globals `__dirname`, `__filename`, and `import.meta.url`
 - **Sub-units** for the callbacks handed to a scheduling call, so what
   runs later is described as its own unit
 
@@ -110,6 +110,67 @@ env[name]` reads whatever its callers pass, and so does the same object
 handed through several calls, or written into a name first. What the
 helper is handed has to come down to `process.env`; a plain object
 reads nothing.
+
+## Reads through a schema
+
+A service that validates its configuration writes every variable it
+reads into one object literal and hands `process.env` to a library:
+
+```ts
+const Env = z.object({
+  PORT: z.coerce.number().int().positive().default(8080),
+  ACCOUNTS_TABLE: z.string().optional(),
+  ORDERS_URL: z.string(),
+});
+
+export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
+  return Env.parse(env);
+}
+```
+
+Nothing there spells `process.env.PORT`, so the property readers above
+see one read of the environment object and no variable names at all.
+The names are the schema literal's keys, so the pack reports one
+config read per key, at the parse call.
+
+Six libraries, in the spellings each of them uses:
+
+```ts
+const env = cleanEnv(process.env, { PORT: port({ default: 8080 }) });   // envalid
+export const env = createEnv({ server: { DB }, runtimeEnv: process.env }); // @t3-oss/env-core
+const env = parseEnv(process.env, { PORT: z.number().default(8080) });  // znv
+const parsed = v.parse(v.object({ DB: v.string() }), process.env);      // valibot
+const config = Env.parse(process.env);                                  // zod
+const config = Env.safeParse(process.env);                              // zod
+```
+
+`@t3-oss/env-nextjs` reads the same way as `@t3-oss/env-core`, and
+`parseAsync` and `safeParseAsync` the same way as their synchronous
+pairs. A zod schema is read through whatever refinements the program
+chained onto it, so `z.object({ ... }).strict()` gives the same keys.
+Keys a schema spreads in from another literal are read too.
+
+A key reports `defaulted` when its value chain contains `default`,
+`optional`, `nullish`, `catch` or `or`, or an envalid `default` or
+`devDefault` option, whichever way the library spells the call.
+
+The reader fires only where the environment object reaching the call
+comes down to `process.env`: written there, kept in a name, a
+parameter whose default is `process.env`, or a parameter some caller
+passes it to. A schema parsed against a request body is the same call
+shape, and reporting its keys as environment variables would accuse
+every field of being unset.
+
+A handler that calls a config module's `loadConfig()` reports what the
+parse inside it reads, at the call, the same way a call to a
+`requireEnv` helper does.
+
+Two things it says nothing about. A library nothing in the table above
+covers reads nothing, since the table is what says where the schema
+and the environment object are in each call. And a `runtimeEnv` that
+lists the variables one by one, `{ DB_NAME: process.env.DB_NAME }`,
+is read by the dotted reader rather than by this one, which reports
+the same names.
 
 ## Options
 
