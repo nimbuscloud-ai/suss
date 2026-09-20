@@ -1,0 +1,65 @@
+name: Warm turbo cache
+description: >
+  Save a merged pull request's turbo cache entry under main's own ref,
+  from the artifact its CI run uploaded. GitHub scopes a cache entry to
+  the ref that saved it, so an entry a pull request's branch saved is
+  invisible to the next pull request; this makes it visible on main,
+  without rebuilding anything.
+
+inputs:
+  job:
+    description: The job name the entry belongs to (checks, test or behaviour).
+    required: true
+  hash:
+    description: The turbo-hash output for the commit being warmed.
+    required: true
+  github-token:
+    description: "Token with the actions:read permission, to read artifacts from the run that uploaded them."
+    required: true
+  tsbuild:
+    description: Whether the artifact also carries the typecheck graph, and should seed that cache entry too.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Look up the artifact
+      id: find
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        GH_REPO: ${{ github.repository }}
+        NAME: turbo-${{ inputs.job }}-${{ inputs.hash }}
+      run: |
+        RUN_ID=$(gh api --paginate "repos/$GH_REPO/actions/artifacts?name=$NAME" \
+          --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last | .workflow_run.id // empty')
+        if [ -z "$RUN_ID" ]; then
+          echo "No artifact named $NAME (a docs-only merge or a fork pull request never uploads one). Skipping ${{ inputs.job }}."
+          echo "found=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        echo "found=true" >> "$GITHUB_OUTPUT"
+        echo "run-id=$RUN_ID" >> "$GITHUB_OUTPUT"
+
+    - name: Download the artifact
+      if: steps.find.outputs.found == 'true'
+      uses: actions/download-artifact@v4
+      with:
+        name: turbo-${{ inputs.job }}-${{ inputs.hash }}
+        run-id: ${{ steps.find.outputs.run-id }}
+        github-token: ${{ inputs.github-token }}
+
+    - name: Save the turbo cache entry
+      if: steps.find.outputs.found == 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: .turbo
+        key: turbo-${{ inputs.job }}-${{ runner.os }}-${{ inputs.hash }}
+
+    - name: Save the typecheck graph entry
+      if: steps.find.outputs.found == 'true' && inputs.tsbuild == 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: "**/.tsbuild"
+        key: tsbuild-${{ runner.os }}-${{ inputs.hash }}
