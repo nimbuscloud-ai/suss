@@ -21,6 +21,7 @@ import semver from "semver";
 
 import {
   ecsContainerInstanceName,
+  hasNameHole,
   messageBusBinding,
   metricBinding,
   namePatternFromSub,
@@ -31,8 +32,10 @@ import {
   withRuntimeContractMetadata,
 } from "@suss/behavioral-ir";
 
+import { dynamicBlocks, iteratedRecords } from "./blockExpansion.js";
 import { filterValuesFor, parseFilterQuery } from "./filterQuery.js";
 import { parseHclDocument } from "./hclDocument.js";
+import { arrayOf, asRecord, mapStrings, stringOf } from "./hclValue.js";
 import { jsonAttributeValue } from "./jsonAttribute.js";
 import {
   referencedResource,
@@ -42,6 +45,7 @@ import {
 
 import type {
   BehavioralSummary,
+  CodeScopeMetadata,
   DeployableUnit,
   EnvVarSource,
   MetricContractMetadata,
@@ -97,6 +101,14 @@ export type {
 export interface TerraformReadOptions {
   /** The packs that say what this configuration's resources are. */
   packs: TerraformPack[];
+  /**
+   * The directory each deployable unit's code is in, by the instance
+   * name the unit is keyed by. A configuration says which handler runs
+   * and never which directory the artifact was built from, so a
+   * container whose image is built elsewhere has no code at all until
+   * somebody says where it is.
+   */
+  codeScopes?: Record<string, string>;
 }
 
 interface KeyedShape {
@@ -117,25 +129,40 @@ export function terraformToSummaries(
   sourceFile: string,
   options: TerraformReadOptions,
 ): BehavioralSummary[] {
-  return summariesForFiles([{ source, sourceFile }], options);
+  return moduleSummaries(
+    moduleOf({
+      files: [{ source, sourceFile }],
+      directory: path.dirname(sourceFile),
+      namePrefix: "",
+      arguments: {},
+      ancestors: [],
+    }),
+    options,
+  );
 }
 
-/** Read one `.tf` file, or every one directly inside a directory. */
+/**
+ * Read one `.tf` file, or every one directly inside a directory, and
+ * every local module the configuration calls.
+ */
 export function terraformFileToSummaries(
   target: string,
   options: TerraformReadOptions,
 ): BehavioralSummary[] {
+  const directory = fs.statSync(target).isDirectory()
+    ? target
+    : path.dirname(target);
   const files = fs.statSync(target).isDirectory()
-    ? fs
-        .readdirSync(target)
-        .filter((name) => name.endsWith(".tf"))
-        .map((name) => path.join(target, name))
-    : [target];
-  return summariesForFiles(
-    files.map((file) => ({
-      source: fs.readFileSync(file, "utf8"),
-      sourceFile: file,
-    })),
+    ? sourceFilesIn(target)
+    : [readSourceFile(target)];
+  return moduleSummaries(
+    moduleOf({
+      files,
+      directory,
+      namePrefix: "",
+      arguments: {},
+      ancestors: [directory],
+    }),
     options,
   );
 }
@@ -152,28 +179,183 @@ interface ParsedFile {
   constraints: Map<string, string>;
   resources: Array<[string, string, Record<string, unknown>]>;
   locals: Array<Record<string, unknown>>;
+  /** The `default` each `variable` block states, by variable name. */
+  defaults: Record<string, unknown>;
+  /** Every child module the file calls, as `[label, arguments]`. */
+  modules: Array<[string, Record<string, unknown>]>;
+  /** What each `output` block states, as `[name, value]`. */
+  outputs: Array<[string, unknown]>;
+}
+
+/** One module the run reads, and every module it calls in turn. */
+interface ModuleRead {
+  files: ParsedFile[];
+  scope: ReferenceScope;
+  children: ModuleRead[];
+}
+
+/** A `source` that says which directory beside this one, not which registry. */
+const LOCAL_SOURCE = /^\.\.?[/\\]/;
+
+/** The `module` attribute that says where the child is, not what it takes. */
+const MODULE_SOURCE = "source";
+
+/**
+ * How deep a chain of local modules is followed. A configuration nests
+ * a few modules and stops, and a cycle is caught on the way down, so
+ * this is the guard against a tree nobody meant to write.
+ */
+const MODULE_DEPTH_LIMIT = 8;
+
+/** Every `.tf` file directly inside a directory, as it is on disk. */
+function sourceFilesIn(directory: string): SourceFile[] {
+  return fs
+    .readdirSync(directory)
+    .filter((name) => name.endsWith(".tf"))
+    .map((name) => readSourceFile(path.join(directory, name)));
+}
+
+function readSourceFile(file: string): SourceFile {
+  return { source: fs.readFileSync(file, "utf8"), sourceFile: file };
 }
 
 /**
- * The boundaries a set of files declares, read as one configuration. A
- * module states its resources across several files and a reference in
- * one of them may refer to a resource another one states, so every file
- * being read contributes to the scope references resolve against.
+ * One module and its children, with everything a reference in each of
+ * them resolves against. A module states its resources across several
+ * files and a reference in one of them may refer to a resource another
+ * one states, so every file contributes to the one scope.
  */
-function summariesForFiles(
-  files: SourceFile[],
-  options: TerraformReadOptions,
-): BehavioralSummary[] {
-  const parsed = files
+function moduleOf(opts: {
+  files: SourceFile[];
+  directory: string;
+  namePrefix: string;
+  arguments: Record<string, unknown>;
+  ancestors: string[];
+}): ModuleRead {
+  const files = opts.files
     .map((file) => parseSource(file))
     .filter((file): file is ParsedFile => file !== null);
-  const scope = referenceScope(
-    parsed.flatMap((file) => file.resources),
-    parsed.flatMap((file) => file.locals),
-  );
+  const scope = referenceScope({
+    resources: files.flatMap((file) => file.resources),
+    locals: files.flatMap((file) => file.locals),
+    defaults: Object.assign({}, ...files.map((file) => file.defaults)),
+    arguments: opts.arguments,
+    namePrefix: opts.namePrefix,
+  });
 
+  const children: ModuleRead[] = [];
+  for (const [label, call] of files.flatMap((file) => file.modules)) {
+    const child = childModule({ ...opts, scope, label, call });
+    if (child === null) {
+      continue;
+    }
+    children.push(child);
+    // The parent reads the child through its outputs, and the child has
+    // already said what each one comes to.
+    scope.resources.set(`module.${label}`, outputValues(child));
+  }
+  return { files, scope, children };
+}
+
+/**
+ * The module one `module` block calls, or null when the run cannot read
+ * it. A registry, git or S3 source is not in the repository, and a
+ * directory that calls itself back would never finish.
+ */
+function childModule(opts: {
+  directory: string;
+  namePrefix: string;
+  ancestors: string[];
+  scope: ReferenceScope;
+  label: string;
+  call: Record<string, unknown>;
+}): ModuleRead | null {
+  const source = stringOf(opts.call[MODULE_SOURCE]);
+  if (source === null || !LOCAL_SOURCE.test(source)) {
+    return null;
+  }
+  const directory = path.resolve(opts.directory, source);
+  if (
+    opts.ancestors.includes(directory) ||
+    opts.ancestors.length >= MODULE_DEPTH_LIMIT ||
+    !isDirectory(directory)
+  ) {
+    return null;
+  }
+  return moduleOf({
+    files: sourceFilesIn(directory),
+    directory,
+    namePrefix: `${opts.namePrefix}module.${opts.label}.`,
+    arguments: passedArguments(opts.call, opts.scope),
+    ancestors: [...opts.ancestors, directory],
+  });
+}
+
+function isDirectory(target: string): boolean {
+  return fs.existsSync(target) && fs.statSync(target).isDirectory();
+}
+
+/**
+ * What each argument comes to, read in the module doing the calling.
+ * A string built at deploy time is a hole with another name on it, so
+ * it passes nothing and the child's own `${var.x}` stays the hole it
+ * was. A map passes whatever it has: its keys are what a `for_each`
+ * over it writes, and an entry the parent could not settle crosses as
+ * written and becomes a hole in the child the way any other value does.
+ */
+function passedArguments(
+  call: Record<string, unknown>,
+  parent: ReferenceScope,
+): Record<string, unknown> {
+  const passed: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(call)) {
+    if (name === MODULE_SOURCE) {
+      continue;
+    }
+    const stated = asRecord(value);
+    if (stated !== null) {
+      passed[name] = resolvedThroughout(stated, parent);
+      continue;
+    }
+    const written = stringOf(value);
+    const settled =
+      written === null ? null : resolveReferences(written, parent);
+    if (settled !== null && !settled.includes("${")) {
+      passed[name] = settled;
+    }
+  }
+  return passed;
+}
+
+/** The same value with every reference in it read in the given module. */
+function resolvedThroughout(value: unknown, scope: ReferenceScope): unknown {
+  const resolveHere = (text: string) => resolveReferences(text, scope);
+  return mapStrings(value, resolveHere);
+}
+
+/** What each of a child's outputs comes to, read in the child's own scope. */
+function outputValues(child: ModuleRead): Record<string, unknown> {
+  const stated: Record<string, unknown> = {};
+  for (const [name, value] of child.files.flatMap((file) => file.outputs)) {
+    const written = stringOf(value);
+    if (written === null || name in stated) {
+      continue;
+    }
+    const settled = resolveReferences(written, child.scope);
+    if (!settled.includes("${")) {
+      stated[name] = settled;
+    }
+  }
+  return stated;
+}
+
+/** Every boundary a module and the modules it calls declare. */
+function moduleSummaries(
+  module: ModuleRead,
+  options: TerraformReadOptions,
+): BehavioralSummary[] {
   const summaries: BehavioralSummary[] = [];
-  for (const file of parsed) {
+  for (const file of module.files) {
     for (const [resourceType, label, body] of file.resources) {
       for (const pack of options.packs) {
         const pattern = patternFor(pack, resourceType, file.constraints, body);
@@ -187,11 +369,15 @@ function summariesForFiles(
             body,
             sourceFile: file.sourceFile,
             resourceType,
-            scope,
+            scope: module.scope,
+            options,
           }),
         );
       }
     }
+  }
+  for (const child of module.children) {
+    summaries.push(...moduleSummaries(child, options));
   }
   return summaries;
 }
@@ -207,7 +393,53 @@ function parseSource(file: SourceFile): ParsedFile | null {
     constraints: providerConstraints(document),
     resources: resourcesIn(document),
     locals: localsIn(document),
+    defaults: variableDefaults(document),
+    modules: labelledBlocks(document.module),
+    outputs: labelledBlocks(document.output).map(([name, block]) => [
+      name,
+      block.value,
+    ]),
   };
+}
+
+/** Every block a document states once per label, as `[label, body]`. */
+function labelledBlocks(
+  declared: unknown,
+): Array<[string, Record<string, unknown>]> {
+  const found: Array<[string, Record<string, unknown>]> = [];
+  for (const group of arrayOf(declared)) {
+    for (const [label, bodies] of Object.entries(asRecord(group) ?? {})) {
+      for (const body of arrayOf(bodies)) {
+        const read = asRecord(body);
+        if (read !== null) {
+          found.push([label, read]);
+        }
+      }
+    }
+  }
+  return found;
+}
+
+/**
+ * The `default` each `variable` block states. Only a `for_each` reads
+ * these, since a default says what a deployment would get if it passed
+ * nothing, which is not what production runs with.
+ */
+function variableDefaults(
+  document: Record<string, unknown>,
+): Record<string, unknown> {
+  const defaults: Record<string, unknown> = {};
+  for (const group of arrayOf(document.variable)) {
+    for (const [name, declared] of Object.entries(asRecord(group) ?? {})) {
+      for (const block of arrayOf(declared)) {
+        const stated = asRecord(block)?.default;
+        if (stated !== undefined && !(name in defaults)) {
+          defaults[name] = stated;
+        }
+      }
+    }
+  }
+  return defaults;
 }
 
 /**
@@ -317,6 +549,8 @@ interface ResourceSite {
   resourceType: string;
   /** What the rest of the configuration states, for a reference in it. */
   scope: ReferenceScope;
+  /** What the run was asked to read, for the options a reader consults. */
+  options: TerraformReadOptions;
 }
 
 /** One reader per kind of thing a pack entry can say a resource is. */
@@ -363,7 +597,7 @@ function storageSummary(
   const { boundary, label, shape, types } = opts;
   // Two resource types may share a label, so the summary goes by the
   // address Terraform itself refers to a resource by.
-  const address = `${opts.resourceType}.${label}`;
+  const address = `${opts.scope.namePrefix}${opts.resourceType}.${label}`;
   // A resource that only says the store exists gets no container name
   // and no physical name: either one would claim accesses that spell
   // the same text, and nothing the resource declares is a container.
@@ -525,7 +759,7 @@ function busSummary(
       exportName: null,
     },
     identity: {
-      name: `${opts.resourceType}.${label}`,
+      name: `${opts.scope.namePrefix}${opts.resourceType}.${label}`,
       exportPath: null,
       boundaryBinding: messageBusBinding({
         recognition: "terraform",
@@ -589,7 +823,7 @@ function metricSummary(
       exportName: null,
     },
     identity: {
-      name: `${opts.resourceType}.${opts.label}`,
+      name: `${opts.scope.namePrefix}${opts.resourceType}.${opts.label}`,
       exportPath: null,
       boundaryBinding: metricBinding({
         recognition: "terraform",
@@ -629,7 +863,11 @@ function readingSummaries(
 ): BehavioralSummary[] {
   const { boundary } = opts;
   const summaries: BehavioralSummary[] = [];
-  for (const reading of blocksAt(opts.body, boundary.readingBlocks)) {
+  for (const reading of blocksAt(
+    opts.body,
+    boundary.readingBlocks,
+    opts.scope,
+  )) {
     for (const metricType of metricsRead(
       reading,
       boundary.identifies,
@@ -643,7 +881,7 @@ function readingSummaries(
           exportName: null,
         },
         identity: {
-          name: `${opts.resourceType}.${opts.label}#${summaries.length}`,
+          name: `${opts.scope.namePrefix}${opts.resourceType}.${opts.label}#${summaries.length}`,
           exportPath: null,
           boundaryBinding: metricBinding({
             recognition: "terraform",
@@ -772,7 +1010,7 @@ function deployableSummaries(
   opts: ResourceSite & { boundary: DeployableResource },
 ): BehavioralSummary[] {
   const { boundary, label } = opts;
-  return deployedProcesses(opts.body, boundary).map((process) =>
+  return deployedProcesses(opts.body, boundary, opts.scope).map((process) =>
     deployableSummary({
       ...opts,
       boundary,
@@ -797,12 +1035,21 @@ function deployableSummary(
   const platform =
     boundary.platformEnvVars ??
     PLATFORM_INJECTED_ENV_VARS[boundary.deploymentTarget];
-  const code = codePointer(process.body, boundary);
-  const image = attributeText(process.body, boundary.code?.imageAttribute);
-  const runtime = attributeText(process.body, boundary.runtimeAttribute);
+  const code = codePointer(process.body, boundary, opts.scope);
+  const image = attributePattern(
+    process.body,
+    boundary.code?.imageAttribute,
+    opts.scope,
+  );
+  const runtime = attributePattern(
+    process.body,
+    boundary.runtimeAttribute,
+    opts.scope,
+  );
+  const prefix = opts.scope.namePrefix;
   const deployableUnit: DeployableUnit = {
     deploymentTarget: boundary.deploymentTarget,
-    instanceName,
+    instanceName: `${prefix}${instanceName}`,
   };
 
   return {
@@ -813,7 +1060,7 @@ function deployableSummary(
       exportName: null,
     },
     identity: {
-      name: `${opts.resourceType}.${instanceName.replace("/", "#")}`,
+      name: `${prefix}${opts.resourceType}.${instanceName.replace("/", "#")}`,
       exportPath: null,
       boundaryBinding: runtimeConfigBinding({
         recognition: "terraform",
@@ -826,14 +1073,11 @@ function deployableSummary(
     gaps: [],
     confidence: { source: "declared", level: "high" },
     metadata: withRuntimeContractMetadata(
-      // A configuration says which handler runs and never which
-      // directory the artifact was built from, so the entry is all the
-      // checker gets to place the unit by.
       {
-        codeScope: {
-          kind: "unknown",
-          ...(code.entry !== null ? { entry: code.entry } : {}),
-        },
+        codeScope: declaredCodeScope(
+          opts.options.codeScopes?.[deployableUnit.instanceName],
+          code.entry,
+        ),
       },
       {
         envVars: [...new Set([...declared.names, ...platform])].sort(),
@@ -850,6 +1094,22 @@ function deployableSummary(
       },
     ),
   };
+}
+
+/**
+ * Which code the unit runs. A configuration says which handler runs and
+ * never which directory the artifact was built from, so the entry is
+ * all the checker gets until the caller says where the code is.
+ */
+function declaredCodeScope(
+  directory: string | undefined,
+  entry: string | null,
+): CodeScopeMetadata {
+  const written = entry !== null ? { entry } : {};
+  if (directory !== undefined) {
+    return { kind: "codeUri", path: directory, ...written };
+  }
+  return { kind: "unknown", ...written };
 }
 
 /** Where each variable came from: the configuration, or the platform. */
@@ -871,12 +1131,13 @@ function envVarSources(
 function deployedProcesses(
   body: Record<string, unknown>,
   boundary: DeployableResource,
+  scope: ReferenceScope,
 ): DeployedProcess[] {
   const containers = boundary.containers;
   if (containers === undefined) {
     return [{ body, containerName: null }];
   }
-  return blocksAt(body, containers.blocks).map((container) => ({
+  return blocksAt(body, containers.blocks, scope).map((container) => ({
     body: container,
     containerName:
       containers.nameAttribute === undefined
@@ -909,13 +1170,19 @@ const HANDLER_MODULE: Record<
 function codePointer(
   body: Record<string, unknown>,
   boundary: DeployableResource,
+  scope: ReferenceScope,
 ): CodePointer {
   const spec = boundary.code?.handler;
-  const written = attributeText(body, spec?.attribute);
+  const written = attributePattern(body, spec?.attribute, scope);
   if (spec === undefined || written === null) {
     return { entryPoint: null, entry: null };
   }
-  return { entryPoint: written, entry: HANDLER_MODULE[spec.spelling](written) };
+  // Splitting a handler with a hole in it at its last dot picks a file
+  // nobody deploys, so the unit is placed by whatever else the run knows.
+  return {
+    entryPoint: written,
+    entry: hasNameHole(written) ? null : HANDLER_MODULE[spec.spelling](written),
+  };
 }
 
 /** One reader per way a provider writes an environment. */
@@ -936,7 +1203,7 @@ const ENV_READERS: EnvReaders = {
     }
   },
   entries: (body, declaration, into, scope) => {
-    for (const entry of blocksAt(body, declaration.block.split("."))) {
+    for (const entry of blocksAt(body, declaration.block.split("."), scope)) {
       const name = stringOf(entry[declaration.nameAttribute]);
       if (name === null) {
         continue;
@@ -1027,6 +1294,21 @@ function attributeText(
 }
 
 /**
+ * The attribute's value as a boundary name, so an image and a handler a
+ * variable supplies are spelled the way every other unsettled value in
+ * a summary is.
+ */
+function attributePattern(
+  body: Record<string, unknown>,
+  attribute: string | undefined,
+  scope: ReferenceScope,
+): string | null {
+  return attribute === undefined
+    ? null
+    : namePattern(valueAt(body, attribute), scope);
+}
+
+/**
  * What the pack says the value at that attribute means, or undefined
  * when the resource states nothing there, or states something the pack
  * does not list.
@@ -1061,14 +1343,21 @@ function valueAt(body: Record<string, unknown>, path: string): unknown {
   return current[last];
 }
 
-/** Every block at the end of a chain of nested block names. */
+/**
+ * Every block at the end of a chain of nested block names, including
+ * the ones a `dynamic` writes rather than the module writing each out.
+ */
 function blocksAt(
   body: Record<string, unknown>,
   blocks: string[],
+  scope: ReferenceScope,
 ): Array<Record<string, unknown>> {
   let found: Array<Record<string, unknown>> = [body];
   for (const block of blocks) {
-    found = found.flatMap((record) => nestedRecords(record[block]));
+    found = found.flatMap((record) => [
+      ...nestedRecords(record[block], scope),
+      ...dynamicBlocks(record, block, scope),
+    ]);
   }
   return found;
 }
@@ -1078,7 +1367,14 @@ function blocksAt(
  * as one attribute, ECS's container definitions above all, writes it
  * inside a string, and the same deployed value comes back either way.
  */
-function nestedRecords(value: unknown): Array<Record<string, unknown>> {
+function nestedRecords(
+  value: unknown,
+  scope: ReferenceScope,
+): Array<Record<string, unknown>> {
+  const iterated = iteratedRecords(value, scope);
+  if (iterated !== null) {
+    return iterated;
+  }
   const stated = typeof value === "string" ? jsonAttributeValue(value) : value;
   return arrayOf(stated)
     .map(asRecord)
@@ -1236,21 +1532,4 @@ function namePattern(value: unknown, scope: ReferenceScope): string | null {
   return namePatternFromSub(
     typeof value === "string" ? resolveReferences(value, scope) : value,
   );
-}
-
-function arrayOf(value: unknown): unknown[] {
-  if (value === undefined || value === null) {
-    return [];
-  }
-  return Array.isArray(value) ? value : [value];
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function stringOf(value: unknown): string | null {
-  return typeof value === "string" ? value : null;
 }

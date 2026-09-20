@@ -30,6 +30,13 @@ export interface ContractOptions {
   from: ContractSource;
   spec: string;
   output?: string;
+  /**
+   * The directory each deployable unit's code is in, by instance name.
+   * A Terraform configuration never says which directory a container's
+   * image was built from, so `check` has nothing to pair the unit's
+   * code against until somebody says where it is.
+   */
+  codeScopes?: Record<string, string>;
 }
 
 /**
@@ -42,6 +49,7 @@ export interface ContractOptions {
 type ContractLoader = (
   specPath: string,
   source: string | undefined,
+  options: ContractOptions,
 ) => Promise<BehavioralSummary[]>;
 
 const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
@@ -55,7 +63,7 @@ const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
       ...(source !== undefined ? { source } : {}),
     });
   },
-  terraform: async (specPath) => {
+  terraform: async (specPath, _source, options) => {
     // A path may be one `.tf` file or the directory a module lives in,
     // since a module states its resources across several files. Every
     // shipped pack loads; another provider's goes here beside them.
@@ -66,6 +74,9 @@ const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
     ]);
     return reader.terraformFileToSummaries(specPath, {
       packs: [aws.awsTerraform(), gcp.googleTerraform()],
+      ...(options.codeScopes !== undefined
+        ? { codeScopes: options.codeScopes }
+        : {}),
     });
   },
   serverless: async (specPath, source) => {
@@ -232,7 +243,7 @@ export async function contract(
       : `${options.from}:${resolved.fetchedFrom}`;
   let summaries: BehavioralSummary[];
   try {
-    summaries = await loader(resolved.path, source);
+    summaries = await loader(resolved.path, source, options);
   } finally {
     resolved.cleanup?.();
   }

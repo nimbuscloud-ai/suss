@@ -17,6 +17,7 @@ suss contract --from <source> <spec> [-o <output.json>]
 |---|---|---|
 | `--from <source>` | required | Which kind of source to read. One of the sources below. |
 | `<spec>` | required | A local path or an `http(s)` URL. |
+| `--code-scope <instance>=<dir>` | none | Where a deployable unit's code is. Repeatable. Terraform only. |
 | `-o`, `--output <path>` | stdout | Write the summary JSON to a file. |
 
 ## Sources
@@ -41,6 +42,22 @@ Team-authored intent docs are not a `--from` source. `suss check` reads them dir
 ```bash
 suss check --dir summaries/ --intent intent/
 ```
+
+## Saying where a unit's code is
+
+A Terraform configuration says which handler a function runs, and it never says which directory a container's image was built from, because the build happens outside the configuration. So `check` reports a container deployable as `runtimeScopeUnknown` and pairs no code against it.
+
+`--code-scope` tells it where, one unit at a time:
+
+```bash
+suss contract --from terraform infra/ \
+  --code-scope api/web=services/api \
+  --code-scope worker=services/worker -o infra.json
+```
+
+The name on the left is the unit's instance name, the same one on the summary: `confirm` for a Lambda resource labelled `confirm`, `api/web` for the `web` container of a task definition labelled `api`, and `module.orders.writer` for a resource read through a `module` block. The path on the right is the directory the unit's code is in.
+
+Pointing two units at one directory makes that directory decide nothing. A file in it that states no unit of its own is contested between them, so it pairs with neither, and `check` says why. Give each unit the narrowest directory that contains only its code.
 
 ## Reading from a URL
 
