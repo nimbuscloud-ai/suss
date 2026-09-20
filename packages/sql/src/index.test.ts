@@ -185,6 +185,323 @@ describe("what a statement touches", () => {
   });
 });
 
+describe("a parameter written with the type it is read as", () => {
+  it("reads the table either side of a cast", () => {
+    expect(
+      readSqlAccess(
+        "UPDATE dim_account SET status = $1::text WHERE id = $2::integer",
+      ),
+    ).toEqual([
+      {
+        table: "dim_account",
+        qualifier: [],
+        kind: "write",
+        fields: ["status"],
+        selector: ["id"],
+      },
+    ]);
+  });
+
+  it("reads a cast to an array type", () => {
+    expect(
+      readSqlAccess("SELECT id FROM dim_account WHERE id = ANY($1::int[])"),
+    ).toEqual([
+      {
+        table: "dim_account",
+        qualifier: [],
+        kind: "read",
+        fields: ["id"],
+        selector: ["id"],
+      },
+    ]);
+  });
+
+  it("reads a cast to a type the standard spells in several words", () => {
+    expect(
+      readSqlAccess(
+        "SELECT id FROM dim_account WHERE seen_at = $1::timestamp with time zone",
+      )[0]?.selector,
+    ).toEqual(["seen_at"]);
+  });
+
+  it("reads a cast to a type a schema states, and one given a width", () => {
+    expect(
+      readSqlAccess("SELECT id FROM dim_account WHERE s = $1::public.state")[0]
+        ?.table,
+    ).toBe("dim_account");
+    expect(
+      readSqlAccess("SELECT id FROM dim_account WHERE s = $1::varchar(20)")[0]
+        ?.table,
+    ).toBe("dim_account");
+  });
+
+  it("reads a cast whose type the statement quotes", () => {
+    expect(
+      readSqlAccess('SELECT id FROM dim_account WHERE id = $1::"AccountId"')[0]
+        ?.table,
+    ).toBe("dim_account");
+  });
+
+  it("leaves a cast written inside a quoted name alone", () => {
+    expect(
+      readSqlAccess('SELECT id FROM "dim$1::text" WHERE id = $2::integer')[0]
+        ?.table,
+    ).toBe("dim$1::text");
+  });
+});
+
+describe("a select that locks the rows it picks", () => {
+  it("reads one that waits for the rows", () => {
+    expect(
+      readSqlAccess("SELECT id FROM jobs WHERE run_at < now() FOR UPDATE"),
+    ).toEqual([
+      {
+        table: "jobs",
+        qualifier: [],
+        kind: "read",
+        fields: ["id"],
+        selector: ["run_at"],
+      },
+    ]);
+  });
+
+  it("reads one that steps over a row somebody else took", () => {
+    expect(
+      readSqlAccess("SELECT id FROM jobs FOR UPDATE SKIP LOCKED")[0]?.table,
+    ).toBe("jobs");
+    expect(
+      readSqlAccess("SELECT id FROM jobs FOR SHARE NOWAIT")[0]?.table,
+    ).toBe("jobs");
+  });
+
+  it("reads one that says which table it locks", () => {
+    expect(
+      readSqlAccess(
+        "SELECT j.id FROM jobs j JOIN queues q ON q.id = j.queue_id FOR NO KEY UPDATE OF j",
+      ).map((access) => access.table),
+    ).toEqual(["jobs", "queues"]);
+  });
+});
+
+describe("a WITH clause in front of a write", () => {
+  it("reads the insert and the tables the clause feeds it from", () => {
+    expect(
+      readSqlAccess(
+        "WITH due AS (SELECT id FROM jobs WHERE run_at < now() FOR UPDATE SKIP LOCKED) INSERT INTO job_runs (job_id) SELECT id FROM due",
+      ),
+    ).toEqual([
+      {
+        table: "job_runs",
+        qualifier: [],
+        kind: "write",
+        fields: ["job_id"],
+        selector: [],
+      },
+      {
+        table: "jobs",
+        qualifier: [],
+        kind: "read",
+        fields: ["id"],
+        selector: ["run_at"],
+      },
+    ]);
+  });
+
+  it("reads the same clause in front of a delete", () => {
+    expect(
+      readSqlAccess(
+        "WITH stale AS (SELECT id FROM jobs) DELETE FROM job_runs WHERE id IN (SELECT id FROM stale)",
+      ).map((access) => access.table),
+    ).toEqual(["job_runs", "jobs"]);
+  });
+
+  it("reads the same clause in front of an update", () => {
+    expect(
+      readSqlAccess(
+        "WITH due AS (SELECT id FROM jobs) UPDATE job_runs SET state = $1 FROM due WHERE job_runs.id = due.id",
+      ).map((access) => access.table),
+    ).toEqual(["job_runs", "jobs"]);
+  });
+
+  it("does not report a name the clause gives one of its own queries", () => {
+    expect(
+      readSqlAccess(
+        "WITH a AS (SELECT id FROM orders), b AS (SELECT id FROM a) INSERT INTO job_runs (job_id) SELECT id FROM b",
+      ).map((access) => access.table),
+    ).toEqual(["job_runs", "orders"]);
+  });
+
+  it("reads a clause that says how it is evaluated, or names its columns", () => {
+    expect(
+      readSqlAccess(
+        "WITH due AS MATERIALIZED (SELECT id FROM jobs) INSERT INTO job_runs (job_id) SELECT id FROM due",
+      ).map((access) => access.table),
+    ).toEqual(["job_runs", "jobs"]);
+    expect(
+      readSqlAccess(
+        "WITH due (job_id) AS (SELECT id FROM jobs) INSERT INTO job_runs (job_id) SELECT job_id FROM due",
+      ).map((access) => access.table),
+    ).toEqual(["job_runs", "jobs"]);
+  });
+
+  it("reads a clause whose name the statement quotes", () => {
+    expect(
+      readSqlAccess(
+        'WITH "due rows" AS (SELECT id FROM jobs) INSERT INTO job_runs (job_id) SELECT id FROM "due rows"',
+      ).map((access) => access.table),
+    ).toEqual(["job_runs", "jobs"]);
+  });
+
+  it("reads a parenthesis inside a literal as text rather than as the end of the clause", () => {
+    expect(
+      readSqlAccess(
+        "WITH due AS (SELECT id FROM jobs WHERE note = ')') INSERT INTO job_runs (job_id) SELECT id FROM due",
+      ).map((access) => access.table),
+    ).toEqual(["job_runs", "jobs"]);
+  });
+
+  it("reads a clause a comment runs through", () => {
+    expect(
+      readSqlAccess(
+        "WITH due AS ( -- the ones that are ready\n SELECT id FROM jobs) INSERT INTO job_runs (job_id) SELECT id FROM due",
+      ).map((access) => access.table),
+    ).toEqual(["job_runs", "jobs"]);
+  });
+
+  it("reads a recursive clause", () => {
+    expect(
+      readSqlAccess(
+        "WITH RECURSIVE tree AS (SELECT id FROM jobs) INSERT INTO job_runs (job_id) SELECT id FROM tree",
+      ).map((access) => access.table),
+    ).toEqual(["job_runs", "jobs"]);
+  });
+
+  it("reads a parenthesis inside a dollar-quoted literal as text too", () => {
+    expect(
+      readSqlAccess(
+        "WITH due AS (SELECT id FROM jobs WHERE note = $tag$ ) $tag$) INSERT INTO job_runs (job_id) SELECT id FROM due",
+      ).map((access) => access.table),
+    ).toEqual(["job_runs", "jobs"]);
+    expect(
+      readSqlAccess(
+        "WITH due AS (SELECT id FROM jobs WHERE note = $$ ) $$) INSERT INTO job_runs (job_id) SELECT id FROM due",
+      ).map((access) => access.table),
+    ).toEqual(["job_runs", "jobs"]);
+  });
+
+  it("reads a clause a comment interrupts before the name", () => {
+    expect(
+      readSqlAccess(
+        "WITH /* the ones that are ready */ due AS (SELECT id FROM jobs) INSERT INTO job_runs (job_id) SELECT id FROM due",
+      ).map((access) => access.table),
+    ).toEqual(["job_runs", "jobs"]);
+    expect(
+      readSqlAccess(
+        "-- a note\nWITH due AS (SELECT id FROM jobs) INSERT INTO job_runs (job_id) SELECT id FROM due",
+      ).map((access) => access.table),
+    ).toEqual(["job_runs", "jobs"]);
+  });
+
+  it("says nothing about a clause nothing closes", () => {
+    expect(readSqlAccess("WITH due AS (SELECT id FROM jobs")).toEqual([]);
+  });
+
+  it("says nothing about a clause that states no name, or never says AS", () => {
+    expect(
+      readSqlAccess(
+        "WITH (SELECT id FROM jobs) INSERT INTO job_runs (job_id) VALUES ($1)",
+      ),
+    ).toEqual([]);
+    expect(readSqlAccess("WITH due SELECT id FROM jobs")).toEqual([]);
+  });
+
+  it("says nothing about a clause whose query is not parenthesised", () => {
+    expect(
+      readSqlAccess(
+        "WITH due AS SELECT id FROM jobs INSERT INTO job_runs (job_id) VALUES ($1)",
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("a kind of statement it does not read", () => {
+  it("says nothing about one that parses but touches no rows", () => {
+    expect(readSqlAccess("CREATE TABLE dim_account (id int)")).toEqual([]);
+  });
+});
+
+describe("a query a FROM writes in place of a table", () => {
+  it("reads the tables inside it", () => {
+    expect(
+      readSqlAccess(
+        "SELECT dc.account_id, count(*) FROM (SELECT account_id FROM dim_contact WHERE active) dc JOIN dim_account a ON a.id = dc.account_id",
+      ),
+    ).toEqual([
+      {
+        table: "dim_account",
+        qualifier: [],
+        kind: "read",
+        fields: [],
+        selector: [],
+      },
+      {
+        table: "dim_contact",
+        qualifier: [],
+        kind: "read",
+        fields: ["account_id"],
+        selector: ["active"],
+      },
+    ]);
+  });
+
+  it("drops a column read through its alias, which names no base table", () => {
+    const [account] = readSqlAccess(
+      "SELECT dc.account_id FROM (SELECT account_id FROM dim_contact) dc JOIN dim_account a ON a.id = dc.account_id",
+    );
+    expect(account?.table).toBe("dim_account");
+    expect(account?.fields).toEqual([]);
+  });
+
+  it("leaves an unqualified column out, since the query could have supplied it", () => {
+    const [account] = readSqlAccess(
+      "SELECT account_id FROM (SELECT account_id FROM dim_contact) dc JOIN dim_account a ON a.id = dc.account_id",
+    );
+    expect(account?.fields).toEqual([]);
+  });
+
+  it("reads one that is the only thing the FROM states", () => {
+    expect(
+      readSqlAccess(
+        "SELECT s.total FROM (SELECT sum(amount) AS total FROM orders WHERE paid) s",
+      ),
+    ).toEqual([
+      {
+        table: "orders",
+        qualifier: [],
+        kind: "read",
+        fields: ["amount"],
+        selector: ["paid"],
+      },
+    ]);
+  });
+
+  it("reads one written inside another", () => {
+    expect(
+      readSqlAccess(
+        "SELECT x.id FROM (SELECT y.id FROM (SELECT id FROM orders) y) x",
+      ).map((access) => access.table),
+    ).toEqual(["orders"]);
+  });
+
+  it("reads one that reads from a WITH clause, without reporting the name", () => {
+    expect(
+      readSqlAccess(
+        "WITH c AS (SELECT id FROM refunds) SELECT d.id FROM (SELECT id FROM c) d JOIN orders o ON o.id = d.id",
+      ).map((access) => access.table),
+    ).toEqual(["orders", "refunds"]);
+  });
+});
+
 describe("a query written as a tagged template", () => {
   it("reads an interpolation as the parameter it becomes", () => {
     const sql = sqlFromParts(["SELECT id FROM users WHERE tenant = ", ""]);
