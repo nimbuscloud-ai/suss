@@ -21,14 +21,12 @@ import {
   someString,
 } from "./hclValue.js";
 import { statedMap } from "./mapValue.js";
+import { interpolatedReferences, replaceInterpolations } from "./references.js";
 
 import type { ReferenceScope } from "./references.js";
 
 /** The block HCL wraps a repeated one in, labelled by what it writes. */
 const DYNAMIC = "dynamic";
-
-/** `${X}`, the same interpolation a name pattern reads. */
-const SUB_TOKEN = /\$\{([^}]*)\}/g;
 
 /** `${item}`, which is how an `iterator` attribute arrives. */
 const BARE_NAME = /^\$\{([A-Za-z_][\w-]*)\}$/;
@@ -182,19 +180,15 @@ function fieldOf(value: unknown, steps: string[]): string | null {
 
 /** The same block with every reference the iteration settles filled in. */
 function substituted(value: unknown, settle: Settle): unknown {
-  return mapStrings(value, (text) =>
-    text.replace(
-      SUB_TOKEN,
-      (written, inner: string) => settle(inner.trim()) ?? written,
-    ),
-  );
+  const fill = (text: string) => replaceInterpolations(text, settle);
+  return mapStrings(value, fill);
 }
 
 /** Whether any reference left in a block still starts with an iterator. */
 function mentions(value: unknown, iterators: string[]): boolean {
-  return someString(value, (text) =>
-    [...text.matchAll(SUB_TOKEN)].some((match) =>
-      iterators.includes((match[1] as string).trim().split(".")[0] ?? ""),
-    ),
-  );
+  const mentionsOne = (text: string) =>
+    interpolatedReferences(text).some((reference) =>
+      iterators.includes(reference.split(".")[0] ?? ""),
+    );
+  return someString(value, mentionsOne);
 }

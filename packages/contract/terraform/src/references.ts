@@ -47,6 +47,30 @@ export interface ReferenceScope {
 /** `${X}` is an interpolation, the same one a name pattern reads. */
 const SUB_TOKEN = /\$\{([^}]*)\}/g;
 
+/**
+ * The same text with each interpolation replaced by what `settle` makes
+ * of the reference inside it. One that settles nothing stays as
+ * written. Terraform's `${}` is read here and in the scanner below and
+ * nowhere else, so a caller that wants at an interpolation asks rather
+ * than writing a second reader of the syntax.
+ */
+export function replaceInterpolations(
+  text: string,
+  settle: (reference: string) => string | null,
+): string {
+  return text.replace(
+    SUB_TOKEN,
+    (written, inner: string) => settle(inner.trim()) ?? written,
+  );
+}
+
+/** Every reference a text interpolates, in the order it writes them. */
+export function interpolatedReferences(text: string): string[] {
+  return [...text.matchAll(SUB_TOKEN)].map((match) =>
+    (match[1] as string).trim(),
+  );
+}
+
 /** A reference to one attribute of one resource, and nothing else. */
 const RESOURCE_ATTRIBUTE =
   /^([A-Za-z][\w-]*)\.([A-Za-z_][\w-]*)\.([A-Za-z_][\w-]*)$/;
@@ -168,23 +192,23 @@ function expand(
   resolving: string[],
 ): string | null {
   let cycled = false;
-  const expanded = value.replace(SUB_TOKEN, (written, inner: string) => {
-    const reference = inner.trim();
+  const expandOne = (reference: string): string | null => {
     if (resolving.includes(reference)) {
       cycled = true;
-      return written;
+      return null;
     }
     const stated = statedValue(reference, scope);
     if (stated === null || resolving.length >= CHAIN_LIMIT) {
-      return written;
+      return null;
     }
     const nested = expand(stated, scope, [...resolving, reference]);
     if (nested === null) {
       cycled = true;
-      return written;
+      return null;
     }
     return nested;
-  });
+  };
+  const expanded = replaceInterpolations(value, expandOne);
   return cycled ? null : expanded;
 }
 

@@ -247,6 +247,157 @@ describe("a dynamic block whose content nests further blocks", () => {
   });
 });
 
+const OTHER_REFERENCES = `
+resource "example_service" "api" {
+  template {
+    containers {
+      image = "example/api:7"
+      dynamic "env" {
+        for_each = { REPLICA = "1" }
+        content {
+          name  = env.key
+          value = "\${count.index}-\${env.value}"
+        }
+      }
+    }
+  }
+}
+`;
+
+describe("a content block that refers to something else as well", () => {
+  const contract = contractOf(OTHER_REFERENCES);
+
+  it("fills the iterator and leaves the rest of the value alone", () => {
+    expect(contract?.envVarValues?.REPLICA).toBe("{count.index}-1");
+  });
+});
+
+const DEEP_FIELD = `
+locals {
+  declared = {
+    logging = { name = "LOG_LEVEL" }
+  }
+}
+
+resource "example_service" "api" {
+  template {
+    containers {
+      image = "example/api:7"
+      dynamic "env" {
+        for_each = local.declared
+        content {
+          name  = env.value.name
+          value = env.value.nested.deep
+        }
+      }
+    }
+  }
+}
+`;
+
+describe("a content block reaching further into an entry than the map goes", () => {
+  it("writes no block rather than one with the iterator still in it", () => {
+    expect(contractOf(DEEP_FIELD)?.envVars).toEqual(["PORT"]);
+  });
+});
+
+const HALF_MERGED = `
+locals {
+  known = { LOG_LEVEL = "info" }
+}
+
+resource "example_service" "api" {
+  template {
+    containers {
+      image = "example/api:7"
+      dynamic "env" {
+        for_each = merge(local.known, data.example_config.current.entries)
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+    }
+  }
+}
+`;
+
+describe("a merge one of whose parts nothing settles", () => {
+  it("declares none of the keys rather than the half it can see", () => {
+    expect(contractOf(HALF_MERGED)?.envVars).toEqual(["PORT"]);
+  });
+});
+
+const LONG_CHAIN = `
+locals {
+  one   = "\${local.two}"
+  two   = "\${local.three}"
+  three = "\${local.four}"
+  four  = "\${local.five}"
+  five  = "\${local.six}"
+  six   = { LOG_LEVEL = "info" }
+}
+
+resource "example_service" "api" {
+  template {
+    containers {
+      image = "example/api:7"
+      dynamic "env" {
+        for_each = local.one
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+    }
+  }
+}
+`;
+
+describe("a for_each reached through a longer chain than this follows", () => {
+  it("stops rather than running the chain out", () => {
+    expect(contractOf(LONG_CHAIN)?.envVars).toEqual(["PORT"]);
+  });
+});
+
+const FOR_OVER_UNSETTLED = `
+resource "example_task" "worker" {
+  container_definitions = jsonencode([
+    {
+      name        = "worker"
+      image       = "example/worker:2"
+      environment = [for k, v in data.example_config.current.entries : { name = k, value = v }]
+    }
+  ])
+}
+`;
+
+const FOR_WITHOUT_OBJECT = `
+locals {
+  worker_env = { QUEUE_NAME = "orders" }
+}
+
+resource "example_task" "worker" {
+  container_definitions = jsonencode([
+    {
+      name        = "worker"
+      image       = "example/worker:2"
+      environment = [for k, v in local.worker_env : k]
+    }
+  ])
+}
+`;
+
+describe("a for expression this reader cannot settle", () => {
+  it("says nothing when the collection is not written down", () => {
+    expect(contractOf(FOR_OVER_UNSETTLED)?.envVars).toEqual([]);
+  });
+
+  it("says nothing when the body is not the object a block would be", () => {
+    expect(contractOf(FOR_WITHOUT_OBJECT)?.envVars).toEqual([]);
+  });
+});
+
 const UNSETTLED = `
 resource "example_service" "api" {
   template {

@@ -329,7 +329,8 @@ function passedArguments(
 
 /** The same value with every reference in it read in the given module. */
 function resolvedThroughout(value: unknown, scope: ReferenceScope): unknown {
-  return mapStrings(value, (text) => resolveReferences(text, scope));
+  const resolveHere = (text: string) => resolveReferences(text, scope);
+  return mapStrings(value, resolveHere);
 }
 
 /** What each of a child's outputs comes to, read in the child's own scope. */

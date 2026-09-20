@@ -254,6 +254,86 @@ describe("a module call that passes the environment in as a map", () => {
   });
 });
 
+const NON_STRING_PARTS = `
+module "svc" {
+  source = "./modules/svc"
+  env = {
+    LOG_LEVEL = "info"
+    REPLICAS  = 3
+  }
+}
+`;
+
+const NON_STRING_CHILD = `
+variable "env" {
+  type    = map(string)
+  default = {}
+}
+
+output "endpoints" {
+  value = { primary = "west" }
+}
+
+resource "example_service" "api" {
+  template {
+    containers {
+      dynamic "env" {
+        for_each = var.env
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+    }
+  }
+}
+`;
+
+const READS_OUTPUT = `
+module "svc" {
+  source = "./modules/svc"
+}
+
+resource "example_function" "reporter" {
+  environment {
+    variables = {
+      ENDPOINT = module.svc.endpoints
+    }
+  }
+}
+`;
+
+describe("a map argument with an entry that is not text", () => {
+  it("declares the entries that are, and claims nothing for the rest", () => {
+    const root = moduleTree({
+      "main.tf": NON_STRING_PARTS,
+      "modules/svc/main.tf": NON_STRING_CHILD,
+    });
+    const contract = readRuntimeContractMetadata(
+      terraformFileToSummaries(root, PACKS).find(
+        (summary) => summary.identity.name === "module.svc.example_service.api",
+      ) as BehavioralSummary,
+    );
+    expect(contract?.envVars).toEqual(["LOG_LEVEL", "PORT"]);
+    expect(contract?.envVarValues?.LOG_LEVEL).toBe("info");
+  });
+});
+
+describe("a child output that is not one string", () => {
+  it("leaves the parent's reference to it a hole", () => {
+    const root = moduleTree({
+      "main.tf": READS_OUTPUT,
+      "modules/svc/main.tf": NON_STRING_CHILD,
+    });
+    const contract = readRuntimeContractMetadata(
+      terraformFileToSummaries(root, PACKS).find(
+        (summary) => summary.identity.name === "example_function.reporter",
+      ) as BehavioralSummary,
+    );
+    expect(contract?.envVarValues?.ENDPOINT).toBe("{module.svc.endpoints}");
+  });
+});
+
 const REMOTE = `
 module "queue" {
   source  = "example-org/queue/example"
