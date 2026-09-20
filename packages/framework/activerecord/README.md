@@ -135,6 +135,36 @@ database reads, so the pack says so and the adapter hands the reader a
 parameter in its place. A statement the evaluator cannot settle to a
 string reports nothing, and so does one no parser reads.
 
+## What a callback says
+
+A model registers its own methods for ActiveRecord to run around a write,
+and a body that writes through the model runs them without writing their
+names:
+
+```ruby
+class Order < ApplicationRecord
+  before_save :normalize_reference
+  after_commit :sync_search_index, on: :create
+  after_destroy :drop_search_index
+end
+
+OrderService.new.place_order(ref)   # Order.create, then normalize_reference and sync_search_index
+OrderService.new.cancel_order(id)   # Order.update, then normalize_reference alone
+```
+
+The pack says which event each write runs and which call registers a
+callback for which events, and `on:` narrows one declaration. Those get no
+unit of their own: each is an invocation on the body that did the write, so
+whatever the callback reaches lands on that body's summary too. A callback
+registered on `ApplicationRecord` counts for every model below it, through
+the same ancestry the rest of the pack matches on.
+
+The bulk writers are left out, because ActiveRecord runs no callback for
+`update_all`, `insert_all` or `delete_all`.
+
+A callback written as a block, `after_commit do ... end`, names no method
+and is not read. Nothing about its body reaches any summary.
+
 ## What comes out
 
 One `interaction` effect per chain, with `class: "storage-access"`. The chain

@@ -49,6 +49,29 @@ describe("the ActiveRecord pack", () => {
     expect(pattern?.bindPlaceholder).toBe("?");
   });
 
+  it("says which event each write runs, and which call registers a callback for it", () => {
+    const [pattern] = activeRecordStorage({ storageSystem: "postgresql" });
+    expect(pattern?.callbacks?.eventOf.create).toEqual(["create"]);
+    expect(pattern?.callbacks?.eventOf.save).toEqual(["create", "update"]);
+    expect(pattern?.callbacks?.registeredBy.after_commit).toEqual([
+      "create",
+      "update",
+      "destroy",
+    ]);
+    expect(pattern?.callbacks?.registeredBy.before_save).toEqual([
+      "create",
+      "update",
+    ]);
+    expect(pattern?.callbacks?.eventKeyword).toBe("on");
+  });
+
+  it("leaves the bulk writers out, since ActiveRecord runs no callback for them", () => {
+    const [pattern] = activeRecordStorage({ storageSystem: "postgresql" });
+    expect(pattern?.callbacks?.eventOf.update_all).toBeUndefined();
+    expect(pattern?.callbacks?.eventOf.insert_all).toBeUndefined();
+    expect(pattern?.callbacks?.eventOf.delete_all).toBeUndefined();
+  });
+
   it("adds itself to a pack without disturbing its discovery", () => {
     const composed = withActiveRecord(graphqlPack, {
       storageSystem: "sqlite",

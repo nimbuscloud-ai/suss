@@ -90,5 +90,6 @@
   "select_one": "ActiveRecord::ConnectionAdapters::DatabaseStatements#select_one: the first row a statement returns",
   "select_value": "ActiveRecord::ConnectionAdapters::DatabaseStatements#select_value: the first column of the first row a statement returns",
   "select_values": "ActiveRecord::ConnectionAdapters::DatabaseStatements#select_values: the first column of every row a statement returns",
-  "select_rows": "ActiveRecord::ConnectionAdapters::DatabaseStatements#select_rows: every row a statement returns, as arrays"
+  "select_rows": "ActiveRecord::ConnectionAdapters::DatabaseStatements#select_rows: every row a statement returns, as arrays",
+  "on": "ActiveRecord::Callbacks: the option that narrows a callback to some of create, update and destroy"
 }
