@@ -51,6 +51,15 @@ describe("Database", () => {
 
     expect(db.size("r")).toBe(pairs.length);
   });
+
+  it("has no tag for a relation nothing was ever added to", () => {
+    const db = new Database();
+    db.add("r", ["a"], "tagged");
+
+    expect(db.tagOf("r", ["a"])).toBe("tagged");
+    expect(db.tagOf("r", ["b"])).toBeUndefined();
+    expect(db.tagOf("missing", ["a"])).toBeUndefined();
+  });
 });
 
 describe("evaluate: positive rules", () => {
@@ -453,6 +462,25 @@ describe("Database.retract", () => {
     expect(db.has("edge", ["a", "b"])).toBe(true);
     expect(db.size("edge")).toBe(2);
     expect(sorted(db.facts("edge"))).toEqual(["a,b", "a,c"]);
+  });
+
+  it("removes two facts that share a path in one call", () => {
+    const db = new Database();
+    db.add("r", ["a", "b"]);
+    db.add("r", ["a", "b", "c"]);
+    db.add("r", ["z"]);
+
+    expect(
+      db.retract("r", [
+        ["a", "b", "c"],
+        ["a", "b"],
+      ]),
+    ).toBe(2);
+
+    expect(db.has("r", ["a", "b"])).toBe(false);
+    expect(db.has("r", ["a", "b", "c"])).toBe(false);
+    expect(db.has("r", ["z"])).toBe(true);
+    expect(sorted(db.facts("r"))).toEqual(["z"]);
   });
 
   it("keeps a tuple that another tuple starts with", () => {
