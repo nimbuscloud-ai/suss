@@ -76,9 +76,9 @@ function settledByKey(
     keys.map((key) => [key, answersFor(db, relation, key)]),
   );
 
-  const isCall = (answer: string): boolean =>
-    db.lookup("call", 0, answer).length > 0;
-  const throughCalls = [...direct.values()].flat().filter(isCall);
+  const throughCalls = [...direct.values()]
+    .flat()
+    .filter((answer) => isCall(db, answer));
   if (throughCalls.length === 0) {
     return direct;
   }
@@ -87,36 +87,34 @@ function settledByKey(
   return new Map(
     [...direct].map(([key, answers]) => [
       key,
-      collapseCalls(answers, isCall, (call) =>
-        singleAnswerFor(db, relation, call),
-      ),
+      collapseCalls(db, relation, answers),
     ]),
   );
 }
 
-/** The one answer a key settles on once asked, or nothing for a key with several. */
-function singleAnswerFor(
-  db: Database,
-  relation: string,
-  key: string,
-): string | undefined {
-  const answers = answersFor(db, relation, key);
-  return answers.length === 1 ? answers[0] : undefined;
+function isCall(db: Database, key: string): boolean {
+  return db.lookup("call", 0, key).length > 0;
 }
 
 /** A step off a call that keeps its value, `list.freeze`, leaves the call and what it comes down to as two answers that are the same one. */
 function collapseCalls(
+  db: Database,
+  relation: string,
   direct: readonly string[],
-  isCall: (answer: string) => boolean,
-  deeper: (call: string) => string | undefined,
 ): string[] {
   return [
     ...new Set(
       direct.map((answer) =>
-        isCall(answer) ? (deeper(answer) ?? answer) : answer,
+        isCall(db, answer) ? behindCall(db, relation, answer) : answer,
       ),
     ),
   ];
+}
+
+/** What an asked-about call comes down to, or the call itself when the rules settled on nothing or on several. */
+function behindCall(db: Database, relation: string, call: string): string {
+  const answers = answersFor(db, relation, call);
+  return answers.length === 1 ? (answers[0] as string) : call;
 }
 
 /**
