@@ -16,9 +16,10 @@
 //
 // Pairing key: (storageSystem, scope, container, accessPath), pulled
 // from the effect's `binding.semantics` (StorageSemantics), same as
-// the provider's. Multi-attribution is intentional, a shared util
-// file's storage access pairs against every provider whose key
-// matches, just like runtime-config did for env vars.
+// the provider's. A declared store with no storageSystem on it meets
+// an access on any engine; the README says why. Multi-attribution is
+// intentional, a shared util file's storage access pairs against every
+// provider whose key matches, just like runtime-config did for env vars.
 //
 // An access written under a relation, the select inside a Prisma
 // `include` or the `connectOrCreate` inside its `data`, arrives keyed
@@ -46,6 +47,7 @@ import {
   EVERY_FIELD,
   storageContainerLabel,
   storageLabel,
+  storageSystemLabel,
 } from "@suss/ir-core";
 
 import { makeSide } from "../coverage/responseMatch.js";
@@ -386,7 +388,26 @@ function claimantsOf(
       candidates.push({ subject: container, name });
     }
   }
-  return mostSpecificName(candidates);
+  return mostSpecificName(statedEngineFirst(candidates, access));
+}
+
+/**
+ * The candidates left once one of them states the engine the access
+ * uses. A store with no engine on it covers an access on any of them,
+ * so it gives way to one declared on the engine the access speaks, the
+ * same way a name stating more of itself wins over one with a hole.
+ */
+function statedEngineFirst(
+  candidates: NameCandidate<DeclaredContainer>[],
+  access: StorageAccessRecord,
+): NameCandidate<DeclaredContainer>[] {
+  const agreeing: NameCandidate<DeclaredContainer>[] = [];
+  for (const candidate of candidates) {
+    if (enginesMatch(candidate.subject.semantics, access.semantics)) {
+      agreeing.push(candidate);
+    }
+  }
+  return agreeing.length === 0 ? candidates : agreeing;
 }
 
 /**
@@ -777,7 +798,7 @@ function nameCovering(
 ): string | null {
   const semantics = container.semantics;
   if (
-    access.semantics.storageSystem !== semantics.storageSystem ||
+    !enginesAgree(semantics, access.semantics) ||
     access.semantics.scope !== semantics.scope ||
     access.semantics.accessPath !== semantics.accessPath ||
     !sameService(container.summary, access.summary)
@@ -791,6 +812,28 @@ function nameCovering(
   return covering.reduce((most, name) =>
     fixedTextLength(name) > fixedTextLength(most) ? name : most,
   );
+}
+
+/**
+ * Whether a declared store and an access are about the same engine. A
+ * store whose deploy configuration picks its engine from a variable
+ * says which instance it is and not which engine, so it meets an access
+ * on any of them. An access always knows its own: a connection pool is
+ * a pool for one product.
+ */
+function enginesAgree(
+  declared: StorageSemantics,
+  access: StorageSemantics,
+): boolean {
+  return declared.storageSystem === null || enginesMatch(declared, access);
+}
+
+/** Whether both sides name the same engine, with neither leaving it out. */
+function enginesMatch(
+  declared: StorageSemantics,
+  access: StorageSemantics,
+): boolean {
+  return declared.storageSystem === access.storageSystem;
 }
 
 /** One access reaching two names can arrive at one container twice. */
@@ -886,7 +929,7 @@ function makeAmbiguousContainerFinding(
     boundary: access.effect.binding,
     provider: makeSide(first.subject.summary),
     consumer: makeSide(access.summary, access.transitionId),
-    description: `${access.summary.identity.name} reaches "${reached}" on ${access.semantics.storageSystem}, and ${tied.length} declared containers cover it (${spelled}). Each states as much of its own name as the other, so nothing in this run settles which one the code reaches. The access pairs with none of them, rather than reporting fields and selectors against a container it never touches.`,
+    description: `${access.summary.identity.name} reaches "${reached}" on ${storageSystemLabel(access.semantics)}, and ${tied.length} declared containers cover it (${spelled}). Each states as much of its own name as the other, so nothing in this run settles which one the code reaches. The access pairs with none of them, rather than reporting fields and selectors against a container it never touches.`,
     severity: "warning",
   };
 }
@@ -906,7 +949,7 @@ function makeFieldUnknownFinding(
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(access.summary, access.transitionId),
-    description: `${access.summary.identity.name} ${verb} "${field}" on ${containerLabel(semantics)} (${semantics.storageSystem}) but the contract declares no ${field} field.`,
+    description: `${access.summary.identity.name} ${verb} "${field}" on ${containerLabel(semantics)} (${storageSystemLabel(semantics)}) but the contract declares no ${field} field.`,
     severity: "error",
   };
 }
@@ -924,7 +967,7 @@ function makeWholeItemFinding(
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(access.summary, access.transitionId),
-    description: `${access.summary.identity.name} reads whole items through ${containerLabel(semantics)} (${semantics.storageSystem}), which copies only the fields it declares, so anything else comes back absent and no error says so.`,
+    description: `${access.summary.identity.name} reads whole items through ${containerLabel(semantics)} (${storageSystemLabel(semantics)}), which copies only the fields it declares, so anything else comes back absent and no error says so.`,
     severity: "error",
   };
 }
@@ -947,7 +990,7 @@ function makeSelectorMismatchFinding(
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(access.summary, access.transitionId),
-    description: `${access.summary.identity.name} picks items on ${containerLabel(semantics)} by "${field}", which is not one of its key attributes (${keys}). ${semantics.storageSystem} refuses a request keyed on anything else, so this fails when it runs.`,
+    description: `${access.summary.identity.name} picks items on ${containerLabel(semantics)} by "${field}", which is not one of its key attributes (${keys}). ${storageSystemLabel(semantics)} refuses a request keyed on anything else, so this fails when it runs.`,
     severity: "error",
   };
 }

@@ -19,7 +19,7 @@ import type { ComparedPair } from "../pairing/comparedPair.js";
 
 function makeProvider(opts: {
   container: string | null;
-  storageSystem?: string;
+  storageSystem?: string | null;
   scope?: string;
   accessPath?: string | null;
   fields: Array<{
@@ -47,7 +47,8 @@ function makeProvider(opts: {
       exportPath: null,
       boundaryBinding: storageBinding({
         recognition: "prisma",
-        storageSystem: opts.storageSystem ?? "postgresql",
+        storageSystem:
+          opts.storageSystem === undefined ? "postgresql" : opts.storageSystem,
         scope: opts.scope ?? "default",
         container: opts.container,
         accessPath: opts.accessPath ?? null,
@@ -683,6 +684,120 @@ describe("checkStorage", () => {
         (f) => f.kind === "boundaryFieldUnknown" && f.aspect === "read",
       ),
     ).toEqual([]);
+  });
+
+  it("pairs an access with a declared store whose engine nobody settled", () => {
+    const compared: ComparedPair[] = [];
+    checkStorage(
+      [
+        makeProvider({
+          container: "accounts",
+          storageSystem: null,
+          fields: [{ name: "id" }],
+        }),
+        makeAccessSummary({
+          name: "listAccounts",
+          file: "src/accounts.ts",
+          accesses: [{ container: "accounts", kind: "read", fields: ["id"] }],
+        }),
+      ],
+      undefined,
+      compared,
+    );
+
+    expect(compared.map((pair) => pair.key)).toEqual([
+      "<unknown engine>:accounts",
+    ]);
+  });
+
+  it("gives the access to the store that states the engine it speaks", () => {
+    const compared: ComparedPair[] = [];
+    checkStorage(
+      [
+        makeProvider({
+          container: "accounts",
+          storageSystem: null,
+          fields: [{ name: "id" }],
+        }),
+        makeProvider({
+          container: "accounts",
+          storageSystem: "postgresql",
+          fields: [{ name: "id" }],
+        }),
+        makeAccessSummary({
+          name: "listAccounts",
+          file: "src/accounts.ts",
+          accesses: [{ container: "accounts", kind: "read", fields: ["id"] }],
+        }),
+      ],
+      undefined,
+      compared,
+    );
+
+    expect(compared.map((pair) => pair.key)).toEqual(["postgresql:accounts"]);
+  });
+
+  it("leaves out a store declared on another engine than the access speaks", () => {
+    const compared: ComparedPair[] = [];
+    checkStorage(
+      [
+        makeProvider({
+          container: "accounts",
+          storageSystem: null,
+          fields: [{ name: "id" }],
+        }),
+        makeProvider({
+          container: "accounts",
+          storageSystem: "mysql",
+          fields: [{ name: "id" }],
+        }),
+        makeAccessSummary({
+          name: "listAccounts",
+          file: "src/accounts.ts",
+          accesses: [{ container: "accounts", kind: "read", fields: ["id"] }],
+        }),
+      ],
+      undefined,
+      compared,
+    );
+
+    expect(compared.map((pair) => pair.key)).toEqual([
+      "<unknown engine>:accounts",
+    ]);
+  });
+
+  it("reports two stores with no engine and one name as an even contest", () => {
+    const compared: ComparedPair[] = [];
+    const findings = checkStorage(
+      [
+        makeProvider({
+          container: "accounts",
+          storageSystem: null,
+          fields: [{ name: "id" }],
+          physicalTable: "{Env}-accounts-blue",
+        }),
+        makeProvider({
+          container: "accounts",
+          storageSystem: null,
+          fields: [{ name: "id" }],
+          physicalTable: "prod-accounts-{Colour}",
+        }),
+        makeAccessSummary({
+          name: "listAccounts",
+          file: "src/accounts.ts",
+          accesses: [
+            { container: "prod-accounts-blue", kind: "read", fields: ["id"] },
+          ],
+        }),
+      ],
+      undefined,
+      compared,
+    );
+
+    expect(compared).toEqual([]);
+    expect(findings.filter((f) => f.kind === "ambiguousProvider")).toHaveLength(
+      1,
+    );
   });
 
   it("multi-table accesses (joins) emit per-table findings", () => {
