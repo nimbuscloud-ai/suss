@@ -29,6 +29,7 @@ import {
   composeWrappers,
   createCacheLayer,
   createTimer,
+  effectToIR,
   moduleInitStructure,
   noopTimer,
   runDigest,
@@ -48,6 +49,7 @@ import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitEntryFact, emitModuleImportFacts } from "./facts.js";
 import { importedDefinitionLookup } from "./importedDefinitions.js";
 import { parsePython } from "./parser.js";
+import { moduleLoadInvocationEffects } from "./paths/effects.js";
 import { reachedFunctions } from "./reach/closure.js";
 import { buildRouterIndex } from "./routers.js";
 import { bindModule } from "./scope.js";
@@ -55,7 +57,7 @@ import { bindEvaluator } from "./values/evaluator.js";
 import { adapterStamp } from "./version.js";
 import { buildWrapperIndex } from "./wrappers.js";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
 import type {
   CacheDiagnostic,
   CacheInput,
@@ -187,6 +189,14 @@ export function factsForFile(options: FileFactsOptions): Database {
   bindEnvFacts(db, [envFactsIn(options.file, options.root, options.module)]);
   addPackWords(db, packWordsOf(options.packs));
   return db;
+}
+
+/** One file's module scope, waiting on the walk to say what it called. */
+interface ModuleRoot {
+  readonly boundFile: BoundPythonFile;
+  readonly displayPath: string;
+  readonly key: string;
+  readonly loadTimeReads: Effect[];
 }
 
 export async function extractPythonProject(
@@ -380,6 +390,7 @@ export async function extractPythonProject(
 
   const seeds: Seed[] = [];
   const summariesBySeed = new Map<string, BehavioralSummary[]>();
+  const moduleRoots: ModuleRoot[] = [];
   for (const boundFile of bound) {
     const { file, root, module: moduleBinding } = boundFile;
     const displayPath = displayPathOf(file);
@@ -419,20 +430,17 @@ export async function extractPythonProject(
     const loadTimeReads = timer.time("discover", () =>
       envReadEffects(root, moduleBinding, db),
     );
-    if (loadTimeReads.length > 0) {
-      const summary = timer.time("summarize", () =>
-        assembleSummary(
-          moduleInitStructure({
-            name: path.basename(displayPath),
-            file: displayPath,
-            range: rangeOf(root),
-            effects: loadTimeReads,
-          }),
-          { gapHandling },
-        ),
-      );
-      summary.confidence = { source: "inferred_static", level: "low" };
-      summaries.push(summary);
+    // What a module runs on the way in is a caller like any other, so it
+    // joins the walk even when it reads nothing from the environment.
+    const moduleKey = nodeId(file, root);
+    if (!summariesBySeed.has(moduleKey)) {
+      seeds.push({ key: moduleKey, file: boundFile, node: root });
+      moduleRoots.push({
+        boundFile,
+        displayPath,
+        key: moduleKey,
+        loadTimeReads,
+      });
     }
   }
 
@@ -446,16 +454,22 @@ export async function extractPythonProject(
       definitions,
     }),
   );
+  const placeWhatItReached = (
+    summary: BehavioralSummary,
+    key: string,
+  ): void => {
+    if (gapHandling !== "silent") {
+      summary.gaps.push(
+        ...(reached.stopsByKey.get(key) ?? []).map(unfollowedCallGap),
+      );
+    }
+    placeCalls(summary, reached.targetsByKey.get(key));
+    placeArgTargets(summary, reached.argTargetsByKey.get(key));
+    placeCalleeParameters(summary, reached.parameterCallsByKey.get(key));
+  };
   for (const [key, owners] of summariesBySeed) {
     for (const summary of owners) {
-      if (gapHandling !== "silent") {
-        summary.gaps.push(
-          ...(reached.stopsByKey.get(key) ?? []).map(unfollowedCallGap),
-        );
-      }
-      placeCalls(summary, reached.targetsByKey.get(key));
-      placeArgTargets(summary, reached.argTargetsByKey.get(key));
-      placeCalleeParameters(summary, reached.parameterCallsByKey.get(key));
+      placeWhatItReached(summary, key);
     }
   }
   if (gapHandling !== "silent") {
@@ -465,6 +479,31 @@ export async function extractPythonProject(
       reached.passedPositions,
     );
   }
+
+  for (const { boundFile, displayPath, key, loadTimeReads } of moduleRoots) {
+    const calledAtLoad = reached.callsByKey.get(key) ?? [];
+    if (loadTimeReads.length === 0 && calledAtLoad.length === 0) {
+      continue;
+    }
+    const summary = timer.time("summarize", () =>
+      assembleSummary(
+        moduleInitStructure({
+          name: path.basename(displayPath),
+          file: displayPath,
+          range: rangeOf(boundFile.root),
+          effects: [
+            ...loadTimeReads,
+            ...moduleLoadInvocationEffects(boundFile.root, db).map(effectToIR),
+          ],
+        }),
+        { gapHandling },
+      ),
+    );
+    summary.confidence = { source: "inferred_static", level: "low" };
+    placeWhatItReached(summary, key);
+    summaries.push(summary);
+  }
+
   summaries.push(...reached.summaries);
 
   const resolvedImports = resolvedImportsOf(db, displayPathOf);

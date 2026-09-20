@@ -1,0 +1,3 @@
+# A scheduled job with no web framework. The only library it talks to is
+# the database, and every statement it sends is written as SQL.
+sqlalchemy>=2.0
