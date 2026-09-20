@@ -262,6 +262,14 @@ function methodNamesOf(
     const value = named === undefined ? null : stringValueOf(named, facts);
     return value === null ? [] : [value];
   }
+  return symbolArgumentNames(args, facts);
+}
+
+/** The methods a class-body call names as leading symbols, `:a` and `:b` in `before_action :a, :b`. */
+export function symbolArgumentNames(
+  args: ReturnType<typeof readCallArgs>,
+  facts: Database | undefined,
+): string[] {
   return args.positional
     .map((arg) => stringValueOf(arg, facts))
     .filter((name): name is string => name !== null);

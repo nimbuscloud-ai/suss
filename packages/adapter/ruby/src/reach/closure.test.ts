@@ -1229,6 +1229,178 @@ async function extractRails(): Promise<BehavioralSummary[]> {
   return summaries;
 }
 
+/** The three events this library's writes run, and the calls a model registers a method under. */
+const MODEL_CALLBACKS = {
+  eventOf: {
+    save: ["create", "update"],
+    update: ["update"],
+    destroy: ["destroy"],
+  },
+  registeredBy: {
+    before_save: ["create", "update"],
+    after_commit: ["create", "update", "destroy"],
+    after_destroy: ["destroy"],
+  },
+  eventKeyword: "on",
+};
+
+async function extractRailsWithCallbacks(): Promise<BehavioralSummary[]> {
+  const pack = railsWithModels();
+  const [storage] = pack.storage ?? [];
+  const { summaries } = await extractRubyProject({
+    files: findRubyFiles(tmpDir),
+    packs: [
+      { ...pack, storage: [{ ...storage, callbacks: MODEL_CALLBACKS }] },
+    ] as RubyPack[],
+    workspaceRoot: tmpDir,
+  });
+  return summaries;
+}
+
+/** A controller whose one action writes through `Account`. */
+function writeThroughAccount(line: string): void {
+  write("app/controllers/accounts_controller.rb", [
+    "class AccountsController < ApplicationController",
+    "  def suspend",
+    `    ${line}`,
+    "  end",
+    "end",
+  ]);
+}
+
+describe("the callbacks a write through a model runs", () => {
+  it("puts each registered method on the body that did the write", async () => {
+    write("app/models/application_record.rb", [
+      "class ApplicationRecord < ActiveRecord::Base",
+      "end",
+    ]);
+    write("app/models/account.rb", [
+      "class Account < ApplicationRecord",
+      "  before_save :normalize",
+      "",
+      "  def normalize",
+      "    Audit.where(kind: 'normalize')",
+      "  end",
+      "end",
+    ]);
+    writeThroughAccount("Account.find(params[:id]).save");
+
+    const summaries = await extractRailsWithCallbacks();
+    const action = unitNamed(summaries, "suspend");
+    expect(callTo(action, "normalize")).toBe(
+      summaryIdentifier(unitNamed(summaries, "normalize")),
+    );
+  });
+
+  it("leaves one narrowed to another event off a write that does not cause it", async () => {
+    write("app/models/application_record.rb", [
+      "class ApplicationRecord < ActiveRecord::Base",
+      "end",
+    ]);
+    write("app/models/account.rb", [
+      "class Account < ApplicationRecord",
+      "  after_commit :index_account, on: :create",
+      "",
+      "  def index_account",
+      "    Audit.where(kind: 'index')",
+      "  end",
+      "end",
+    ]);
+    writeThroughAccount("Account.find(params[:id]).update(state: 1)");
+
+    const summaries = await extractRailsWithCallbacks();
+    expect(
+      summaries.some((summary) => summary.identity.name === "index_account"),
+    ).toBe(false);
+  });
+
+  it("runs a callback a base class registered on every model below it", async () => {
+    write("app/models/application_record.rb", [
+      "class ApplicationRecord < ActiveRecord::Base",
+      "  after_commit :audit_change",
+      "",
+      "  def audit_change",
+      "    Audit.where(kind: 'change')",
+      "  end",
+      "end",
+    ]);
+    write("app/models/account.rb", [
+      "class Account < ApplicationRecord",
+      "end",
+    ]);
+    writeThroughAccount("Account.find(params[:id]).save");
+
+    const summaries = await extractRailsWithCallbacks();
+    expect(callTo(unitNamed(summaries, "suspend"), "audit_change")).toBe(
+      summaryIdentifier(unitNamed(summaries, "audit_change")),
+    );
+  });
+
+  it("says nothing about a read, which runs no callback", async () => {
+    write("app/models/application_record.rb", [
+      "class ApplicationRecord < ActiveRecord::Base",
+      "end",
+    ]);
+    write("app/models/account.rb", [
+      "class Account < ApplicationRecord",
+      "  before_save :normalize",
+      "",
+      "  def normalize",
+      "    Audit.where(kind: 'normalize')",
+      "  end",
+      "end",
+    ]);
+    writeThroughAccount("Account.find(params[:id])");
+
+    const summaries = await extractRailsWithCallbacks();
+    expect(
+      summaries.some((summary) => summary.identity.name === "normalize"),
+    ).toBe(false);
+  });
+
+  it("says nothing about a callback written as a block, which names no method", async () => {
+    write("app/models/application_record.rb", [
+      "class ApplicationRecord < ActiveRecord::Base",
+      "end",
+    ]);
+    write("app/models/account.rb", [
+      "class Account < ApplicationRecord",
+      "  after_commit do",
+      "    Audit.where(kind: 'commit')",
+      "  end",
+      "end",
+    ]);
+    writeThroughAccount("Account.find(params[:id]).save");
+
+    const summaries = await extractRailsWithCallbacks();
+    expect(summaries.filter((summary) => summary.kind === "library")).toEqual(
+      [],
+    );
+  });
+
+  it("says nothing when the pack declares no callbacks at all", async () => {
+    write("app/models/application_record.rb", [
+      "class ApplicationRecord < ActiveRecord::Base",
+      "end",
+    ]);
+    write("app/models/account.rb", [
+      "class Account < ApplicationRecord",
+      "  before_save :normalize",
+      "",
+      "  def normalize",
+      "    Audit.where(kind: 'normalize')",
+      "  end",
+      "end",
+    ]);
+    writeThroughAccount("Account.find(params[:id]).save");
+
+    const summaries = await extractRails();
+    expect(
+      summaries.some((summary) => summary.identity.name === "normalize"),
+    ).toBe(false);
+  });
+});
+
 /** `Account`, whose ancestry reaches the library base two classes up, with one method of its own. */
 function writeAccountModel(): void {
   write("app/models/application_record.rb", [

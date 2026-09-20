@@ -427,6 +427,52 @@ function modelStatementEffects(
   );
 }
 
+/** A method the library runs of its own accord when a write happens. */
+export interface RunCallback {
+  /** The name the class body registered, which is what the invocation is written as. */
+  readonly name: string;
+  /** The key of the `def` behind it, the same key the reach walk defines methods under. */
+  readonly key: string;
+}
+
+/**
+ * The callbacks a write on this class runs. The pack says which events
+ * a write method runs and which class-body call registers a callback;
+ * the shared rules follow both through the ancestry, so one registered
+ * on a base counts for every model below it.
+ */
+function callbacksRunBy(
+  facts: Database,
+  classKey: string,
+  pattern: RbStoragePattern,
+  writeMethod: string,
+): RunCallback[] {
+  const events = pattern.callbacks?.eventOf[writeMethod] ?? [];
+  if (events.length === 0) {
+    return [];
+  }
+
+  askResolution(facts, [classKey], "wantedAncestry", RUBY_PROGRAM);
+  const found = new Map<string, RunCallback>();
+  for (const row of facts.lookup("wantedCallbackMethod", 0, classKey)) {
+    if (events.includes(String(row[1]))) {
+      const key = String(row[3]);
+      found.set(key, { name: String(row[2]), key });
+    }
+  }
+  return [...found.values()];
+}
+
+/** An invocation of a method nothing in the body writes out, which the walk still follows. */
+function callbackEffect(callback: RunCallback): Effect {
+  return {
+    type: "invocation",
+    callee: callback.name,
+    args: [],
+    async: false,
+  };
+}
+
 /**
  * The database work one chain does, whether it was written from the model
  * itself or from a record in hand. A method the project declares on the
@@ -464,6 +510,10 @@ function modelCallEffects(
     if (library.how === "statement") {
       return modelStatementEffects(worked, library.place, pattern, options);
     }
+    const ran =
+      library.kind === "write"
+        ? callbacksRunBy(options.facts, target.classKey, pattern, method)
+        : [];
     return [
       storageEffect(
         worked,
@@ -473,7 +523,43 @@ function modelCallEffects(
         selectorOf(worked, pattern, options.facts),
         fieldsOf(worked, pattern, library.kind, options.facts),
       ),
+      ...ran.map(callbackEffect),
     ];
+  }
+  return [];
+}
+
+/**
+ * The methods a chain's write makes the library run, for the walk to
+ * follow. Empty for anything the recognizer does not read as a write on
+ * a class whose ancestry registers one.
+ */
+export function callbacksReached(
+  call: RbNode,
+  file: string,
+  options: RbStorageOptions,
+  enclosing: RbNode | null = null,
+): RunCallback[] {
+  const worked = libraryCallIn(call, options);
+  const target =
+    worked === null
+      ? undefined
+      : receiverClass(worked, file, options, enclosing);
+  if (worked === null || target === undefined) {
+    return [];
+  }
+
+  const method = methodOf(worked);
+  for (const pattern of options.patterns) {
+    if (
+      libraryCallOf(pattern, method)?.how !== "rows" ||
+      kindOfCall(pattern, method) !== "write" ||
+      !reachesBase(options.facts, target.classKey, pattern.baseClasses) ||
+      projectDeclares(options.facts, target.classKey, method)
+    ) {
+      continue;
+    }
+    return callbacksRunBy(options.facts, target.classKey, pattern, method);
   }
   return [];
 }
