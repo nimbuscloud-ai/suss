@@ -33,6 +33,7 @@ const RELATIONS: RelationTable = {
   "unit-invoke": () => ["invokes"],
   "message-receive": () => ["reads"],
   "config-read": () => ["reads"],
+  "metadata-read": () => ["reads"],
   schedule: () => [],
 };
 

@@ -301,6 +301,7 @@ type Interaction =
   | { class: "message-receive"; body?: unknown }
   | { class: "unit-invoke"; payload?: unknown }
   | { class: "config-read"; name: string; defaulted: boolean }
+  | { class: "metadata-read"; name: string }
   | { class: "schedule"; via: string; hasDelay: boolean;
       callbackRef:
         | { type: "literal" }
@@ -314,6 +315,7 @@ type Interaction =
 - **`message-receive`** is the fields a consumer pulls out of a message. It doesn't state a channel, because a handler signature never tells you which channel it is for, so the checker reads the channel off the enclosing summary's binding instead.
 - **`unit-invoke`** is calling a deployed unit by name. It pairs on `(deploymentTarget, instanceName)`, once the invoking unit's environment resolves a name that only exists at deploy time.
 - **`config-read`** is a `process.env.X` access or its equivalent. It pairs against a runtime-config provider on the variable name plus the code scope.
+- **`metadata-read`** is a read of something the runtime provides on its own: `__dirname`, `import.meta.url`, `process.cwd`, `process.platform`. It goes on the same runtime-config boundary as a config read, and nothing pairs against it, because no deploy file declares these.
 - **`schedule`** is a callback handed to `setTimeout`, `process.nextTick` or a library hook. Nothing pairs against these, so the enclosing binding uses `function-call` semantics and the interaction is there for dataflow and for `inspect`. `hasDelay` records only that a delay argument was passed, without its value.
 
 Adding a class is an additive IR change. Each class maps one to one onto a `binding.semantics.name` by convention; the IR does not enforce that and every shipped recognizer follows it. See [Pack patterns](/packs/patterns#recognizers) for the recognizers that emit them.

@@ -1317,6 +1317,32 @@ function readsOf(sourceFile: SourceFile): Array<[string, boolean]> {
     .sort((one, other) => one[0].localeCompare(other[0]));
 }
 
+/** A parse whose environment arrives from a caller two calls above it. */
+function twoHopsToTheEnvironment(): Project {
+  const project = createTestProject();
+  project.createSourceFile(
+    "config.ts",
+    `import { z } from "zod";
+    const Env = z.object({ ORDERS_URL: z.string() });
+    export function load(source: Record<string, string>) {
+      return Env.parse(source);
+    }`,
+  );
+  project.createSourceFile(
+    "middle.ts",
+    `import { load } from "./config.js";
+    export function loadFrom(source: Record<string, string>) {
+      return load(source);
+    }`,
+  );
+  project.createSourceFile(
+    "entry.ts",
+    `import { loadFrom } from "./middle.js";
+    export const config = loadFrom(process.env);`,
+  );
+  return project;
+}
+
 describe("env-var recognizer — a schema parsed against process.env", () => {
   it("reads every key of a zod schema a helper parses its parameter against", () => {
     const file = makeProject(`
@@ -1518,7 +1544,7 @@ describe("env-var recognizer — a schema parsed against process.env", () => {
     expect(readsOf(entry)).toEqual([["ORDERS_URL", false]]);
   });
 
-  it("says nothing where only a caller in another file names the environment", () => {
+  it("reads a parse whose environment only a caller in another file writes", () => {
     const project = createTestProject();
     project.createSourceFile(
       "config.ts",
@@ -1533,11 +1559,22 @@ describe("env-var recognizer — a schema parsed against process.env", () => {
       `import { load } from "./config.js";
       export const config = load(process.env);`,
     );
-    // Asking what every argument of every parse comes down to costs a
-    // symbol lookup apiece, so a file that never spells the
-    // environment is not asked about. The README says so.
-    expect(readsOf(project.getSourceFileOrThrow("config.ts"))).toEqual([]);
-    expect(readsOf(entry)).toEqual([]);
+    expect(readsOf(project.getSourceFileOrThrow("config.ts"))).toEqual([
+      ["ORDERS_URL", false],
+    ]);
+    expect(readsOf(entry)).toEqual([["ORDERS_URL", false]]);
+  });
+
+  it("reads a parse two hops from the caller that writes the environment", () => {
+    const project = twoHopsToTheEnvironment();
+    expect(readsOf(project.getSourceFileOrThrow("config.ts"))).toEqual([
+      ["ORDERS_URL", false],
+    ]);
+  });
+
+  it("says nothing at a call whose own callee has no parse, only a call to one", () => {
+    const project = twoHopsToTheEnvironment();
+    expect(readsOf(project.getSourceFileOrThrow("entry.ts"))).toEqual([]);
   });
 
   it("reports a config module's schema at the call a handler makes", () => {
@@ -1582,6 +1619,7 @@ describe("env-var recognizer — a schema parsed against process.env", () => {
       `import { readBody } from "./parse.js";
       export const body = readBody({});`,
     );
+    expect(readsOf(project.getSourceFileOrThrow("parse.ts"))).toEqual([]);
     expect(readsOf(handler)).toEqual([]);
   });
 

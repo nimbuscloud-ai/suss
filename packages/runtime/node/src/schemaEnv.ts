@@ -168,28 +168,6 @@ function readerCouldFire(
   return reader.modules.some((module) => mentioned.has(module));
 }
 
-/** What a file has to spell somewhere for the environment to be in it. */
-const ENVIRONMENT_OBJECT = "process.env";
-
-const MENTIONS_ENVIRONMENT = new WeakMap<SourceFile, boolean>();
-
-/**
- * Whether a file spells the environment object at all. Asking what a
- * value comes down to costs a symbol lookup per argument, and a file
- * that never writes `process.env` has no argument that can reach it.
- * A parse whose environment only its caller in another file names is
- * the spelling this gives up, and the README says so.
- */
-function mentionsEnvironment(sourceFile: SourceFile): boolean {
-  const remembered = MENTIONS_ENVIRONMENT.get(sourceFile);
-  if (remembered !== undefined) {
-    return remembered;
-  }
-  const found = sourceFile.getFullText().includes(ENVIRONMENT_OBJECT);
-  MENTIONS_ENVIRONMENT.set(sourceFile, found);
-  return found;
-}
-
 /**
  * Every environment variable a call reads by parsing the environment
  * against a schema. Empty for every other call, which is nearly all of
@@ -203,11 +181,7 @@ export function schemaEnvReads(
     return [];
   }
   const written = writtenCalleeName(call.getExpression());
-  if (
-    written === null ||
-    !PARSE_CALL_NAMES.has(written) ||
-    !mentionsEnvironment(call.getSourceFile())
-  ) {
+  if (written === null || !PARSE_CALL_NAMES.has(written)) {
     return [];
   }
   for (const reader of SCHEMA_READERS) {
@@ -451,7 +425,11 @@ function defaults(node: Node): boolean {
   return option !== null && DEFAULTING_OPTIONS.has(option);
 }
 
-/** Whether a value handed to a library comes down to `process.env`. */
+/**
+ * Whether a value handed to a library comes down to `process.env`. This
+ * is the test that decides whether a parse is read at all, so a value
+ * that is not an identifier costs the two syntax tests below and no more.
+ */
 function isEnvironmentObject(
   value: Node,
   resolution: ResolutionStore,
