@@ -242,6 +242,7 @@ jobs:
           path: |
             .turbo
             **/.tsbuild
+          include-hidden-files: true
           retention-days: 2
 
   test:
@@ -282,6 +283,7 @@ jobs:
         with:
           name: turbo-test-${{ steps.prepare.outputs.inputs }}
           path: .turbo
+          include-hidden-files: true
           retention-days: 2
 
   behaviour:
@@ -331,6 +333,7 @@ jobs:
         with:
           name: turbo-behaviour-${{ steps.prepare.outputs.inputs }}
           path: .turbo
+          include-hidden-files: true
           retention-days: 2
 
   # The name a branch ruleset requires. It waits on the three jobs, so
