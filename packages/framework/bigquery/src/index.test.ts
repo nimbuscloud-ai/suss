@@ -83,6 +83,22 @@ describe("a statement handed to a BigQuery client", () => {
     });
   });
 
+  it("reads the statement out of a shorthand property in the options object", () => {
+    const effects = effectsIn(`
+      ${CLIENT}
+      export async function accounts(tier: string) {
+        const query = "SELECT id FROM \`analytics-prod.core.dim_account\` WHERE tier = @tier";
+        const params = { tier };
+        return bigquery.query({ query, params });
+      }
+    `);
+
+    expect(storageOf(effects[0]).semantics).toMatchObject({
+      scope: "core",
+      container: "dim_account",
+    });
+  });
+
   it("reads a job and a stream the same way it reads a query", () => {
     const effects = effectsIn(`
       ${CLIENT}
