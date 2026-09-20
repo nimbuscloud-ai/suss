@@ -30,6 +30,15 @@ suss extract -p tsconfig.json -f express -f node -o summaries/code.json
 boundary, which is how a deployable unit's configuration channel is
 described. The two options below say what that boundary is called.
 
+`__dirname`, `import.meta.url`, `process.cwd` and the rest of the
+process metadata come back on the same boundary under a different
+interaction class, `metadata-read` instead of `config-read`. The
+runtime provides these itself, so a template has nothing to declare and
+the runtime-config checker pairs nothing against them. Before the split
+it reported `__dirname read by handler but <instance> declares no
+__dirname in its environment` at error severity, once for every Lambda
+that resolved a path.
+
 ## Reads through a project's own helper
 
 Most services read their environment through one helper:
@@ -165,20 +174,8 @@ A handler that calls a config module's `loadConfig()` reports what the
 parse inside it reads, at the call, the same way a call to a
 `requireEnv` helper does.
 
-Three things it says nothing about.
-
-A library nothing in the table above covers reads nothing, since the
-table is what says where the schema and the environment object are in
-each call. Aliasing the import, `import { cleanEnv as load }`, hides
-the call the same way, because the name the source writes is the first
-test.
-
-A `runtimeEnv` that lists the variables one by one,
-`{ DB_NAME: process.env.DB_NAME }`, is read by the dotted reader
-rather than by this one, which reports the same names.
-
-A parse whose environment only a caller in another file writes is out
-of reach:
+A parse whose environment only a caller in another file writes is read
+too:
 
 ```ts
 // config.ts, which never spells process.env
@@ -190,11 +187,29 @@ export function load(source: Record<string, string>) {
 export const config = load(process.env);
 ```
 
-Asking what every argument of every `parse` comes down to costs a
-symbol lookup apiece, and 4.5% of this repo's own source files spell
-`process.env` at all, so a file that never writes it is not asked
-about. Giving the parameter a default, `source = process.env`, brings
-it back, and that is how most services spell it anyway.
+The pack asks the resolution store which arguments the callers of
+`load` write at `source`. That question reaches across files, so the
+caller can be anywhere in the project and any number of helpers away.
+A parameter whose default is `process.env` is read the same way, and so
+is a variable the file assigns `process.env` to first.
+
+The question costs something: on this repo's own `packages/cli`, where
+no parse takes its environment from another file, extraction uses 6%
+more CPU with the per-file cache off and 15% more with it on, and gives
+back the same summaries either way. What is not an identifier, a
+request body or a literal, costs two syntax tests and nothing more.
+
+Two things it says nothing about.
+
+A library nothing in the table above covers reads nothing, since the
+table is what says where the schema and the environment object are in
+each call. Aliasing the import, `import { cleanEnv as load }`, hides
+the call the same way, because the name the source writes is the first
+test.
+
+A `runtimeEnv` that lists the variables one by one,
+`{ DB_NAME: process.env.DB_NAME }`, is read by the dotted reader
+rather than by this one, which reports the same names.
 
 ## Options
 

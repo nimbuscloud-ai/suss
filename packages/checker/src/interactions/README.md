@@ -1,6 +1,6 @@
 # interactions/
 
-This module builds a single-pass index over interaction effects (`storage-access`, `service-call`, `message-send`, `config-read`, `schedule`, etc.), so that the per-class checkers don't each re-walk every summary.
+This module builds a single-pass index over interaction effects (`storage-access`, `service-call`, `message-send`, `config-read`, `metadata-read`, `schedule`, etc.), so that the per-class checkers don't each re-walk every summary.
 
 ## Place in the pipeline
 

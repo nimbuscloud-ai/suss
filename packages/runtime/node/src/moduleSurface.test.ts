@@ -33,12 +33,12 @@ function runRecognizers(file: SourceFile): Effect[] {
   return out;
 }
 
-function configReadsOf(effects: Effect[]) {
+function metadataReadsOf(effects: Effect[]) {
   return effects.filter(
-    (e) => e.type === "interaction" && e.interaction.class === "config-read",
+    (e) => e.type === "interaction" && e.interaction.class === "metadata-read",
   ) as Array<
     Extract<Effect, { type: "interaction" }> & {
-      interaction: { class: "config-read" };
+      interaction: { class: "metadata-read" };
     }
   >;
 }
@@ -48,7 +48,7 @@ describe("module-surface recognizers", () => {
     const file = makeFile(`
       const here = import.meta.url;
     `);
-    const reads = configReadsOf(runRecognizers(file));
+    const reads = metadataReadsOf(runRecognizers(file));
     expect(reads).toHaveLength(1);
     expect(reads[0]?.interaction.name).toBe("import.meta.url");
   });
@@ -58,11 +58,22 @@ describe("module-surface recognizers", () => {
       const here = import.meta.url;
       const a = __dirname.length;
     `);
-    const reads = configReadsOf(runRecognizers(file));
+    const reads = metadataReadsOf(runRecognizers(file));
     expect(reads).toHaveLength(2);
     for (const read of reads) {
       expect(read.binding.semantics).toEqual({ name: "runtime-config" });
     }
+  });
+
+  it("reports a module location as metadata rather than as a config read", () => {
+    const file = makeFile(`
+      const here = import.meta.url;
+      const a = __dirname.length;
+    `);
+    const classes = runRecognizers(file).map((e) =>
+      e.type === "interaction" ? e.interaction.class : e.type,
+    );
+    expect(classes).toEqual(["metadata-read", "metadata-read"]);
   });
 
   it("recognizes __dirname / __filename when accessed as a property receiver", () => {
@@ -70,7 +81,7 @@ describe("module-surface recognizers", () => {
       const a = __dirname.length;
       const b = __filename.length;
     `);
-    const reads = configReadsOf(runRecognizers(file));
+    const reads = metadataReadsOf(runRecognizers(file));
     const names = reads.map((r) => r.interaction.name).sort();
     expect(names).toEqual(["__dirname", "__filename"]);
   });

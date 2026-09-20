@@ -43,6 +43,12 @@ describe("relationsOf", () => {
     ).toEqual(["reads"]);
   });
 
+  it("reads a metadata read the same way", () => {
+    expect(relationsOf({ class: "metadata-read", name: "__dirname" })).toEqual([
+      "reads",
+    ]);
+  });
+
   it("gives a scheduled callback neither, since it crosses no boundary", () => {
     expect(
       relationsOf({

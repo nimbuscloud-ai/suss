@@ -38,14 +38,14 @@ export function configBinding(where: DeploymentOptions): BoundaryBinding {
 /**
  * A read of the runtime itself: the working directory, the platform,
  * the module's own location. Recorded so a unit's dependency on the
- * runtime is in its summary, with no deployment on the binding, because
- * no deployment supplies these and none can fail to.
+ * runtime is in its summary, with no deployment on the binding, and
+ * under a class the runtime-config pairing pass leaves alone.
  */
 export function opaqueRuntimeRead(callee: string): Effect {
   return {
     type: "interaction",
     binding: configBinding({}),
     callee,
-    interaction: { class: "config-read", name: callee, defaulted: false },
+    interaction: { class: "metadata-read", name: callee },
   };
 }

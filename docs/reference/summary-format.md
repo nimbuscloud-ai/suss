@@ -160,7 +160,7 @@ The transition above has an `invocation` effect, which records that a call fired
 }
 ```
 
-Every `interaction` includes the `BoundaryBinding` of the thing it talks to, so the checker can pair it against whatever declares that thing, such as a Prisma schema or a CloudFormation table. The seven classes are `storage-access`, `service-call`, `message-send`, `message-receive`, `unit-invoke`, `config-read` and `schedule`. [IR types](/reference/ir#effect) has each one's fields.
+Every `interaction` includes the `BoundaryBinding` of the thing it talks to, so the checker can pair it against whatever declares that thing, such as a Prisma schema or a CloudFormation table. The eight classes are `storage-access`, `service-call`, `message-send`, `message-receive`, `unit-invoke`, `config-read`, `metadata-read` and `schedule`. [IR types](/reference/ir#effect) has each one's fields.
 
 ## How two summaries pair
 

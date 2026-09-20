@@ -40,6 +40,16 @@ function configReadsOf(effects: Effect[]) {
   >;
 }
 
+function metadataReadsOf(effects: Effect[]) {
+  return effects.filter(
+    (e) => e.type === "interaction" && e.interaction.class === "metadata-read",
+  ) as Array<
+    Extract<Effect, { type: "interaction" }> & {
+      interaction: { class: "metadata-read" };
+    }
+  >;
+}
+
 describe("process-surface recognizer", () => {
   it("recognizes process.argv as a config-read", () => {
     const file = makeFile(`
@@ -74,7 +84,7 @@ describe("process-surface recognizer", () => {
         return [a, b, c];
       }
     `);
-    const reads = configReadsOf(recognizeAll(file));
+    const reads = metadataReadsOf(recognizeAll(file));
     const names = reads.map((r) => r.interaction.name).sort();
     expect(names).toEqual([
       "process.cwd",
@@ -84,6 +94,32 @@ describe("process-surface recognizer", () => {
     for (const read of reads) {
       expect(read.binding.semantics).toEqual({ name: "runtime-config" });
     }
+  });
+
+  it("keeps process metadata out of the config reads a template is paired against", () => {
+    const file = makeFile(`
+      function handler() {
+        const a = process.cwd;
+        const b = process.pid;
+        return [a, b];
+      }
+    `);
+    expect(configReadsOf(recognizeAll(file))).toHaveLength(0);
+  });
+
+  it("keeps process.argv a config read, since a deployment sets the arguments", () => {
+    const file = makeFile(`
+      function handler() {
+        return process.argv[2];
+      }
+    `);
+    const effects = recognizeAll(file);
+    expect(metadataReadsOf(effects)).toHaveLength(0);
+    expect(
+      configReadsOf(effects)
+        .map((r) => r.interaction.name)
+        .sort(),
+    ).toEqual(["argv", "argv[2]"]);
   });
 
   it("does NOT match process.env reads (handled by env-var pack)", () => {
@@ -104,6 +140,8 @@ describe("process-surface recognizer", () => {
         return [myProcess.argv, myProcess.cwd];
       }
     `);
-    expect(configReadsOf(recognizeAll(file))).toHaveLength(0);
+    const effects = recognizeAll(file);
+    expect(configReadsOf(effects)).toHaveLength(0);
+    expect(metadataReadsOf(effects)).toHaveLength(0);
   });
 });

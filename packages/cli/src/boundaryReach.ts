@@ -38,13 +38,16 @@ export function boundarySpelling(binding: BoundaryBinding): string {
 
 /**
  * What the effect says past the boundary's own label. A store's label
- * says which container, but a config read's label is only the
- * recognizer, so the variable is the detail.
+ * says which container, but a config or metadata read's label is only
+ * the recognizer, so the name read is the detail.
  */
 export function interactionDetail(
   interaction: Interaction,
 ): string | undefined {
-  if (interaction.class === "config-read") {
+  if (
+    interaction.class === "config-read" ||
+    interaction.class === "metadata-read"
+  ) {
     return interaction.name;
   }
   return undefined;
