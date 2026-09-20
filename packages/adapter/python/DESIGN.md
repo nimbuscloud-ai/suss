@@ -540,7 +540,9 @@ A module-level mount is never dropped this way. It runs whichever factory the ap
 | `os.environ["X"] = "1"`, `del os.environ["X"]`, `"X" in os.environ` | nothing: a write or a membership test | |
 | `os.environ.get("X") or os.environ.get("Y")` | `X` defaulted, `Y` not, since `Y` is the chain's last resort | |
 
-A read inside a route body goes on that route's summary. A read at module level, or in a class body, runs when the module is imported, so it goes on a `module-init` summary named after the file, one per file that has such a read. A read inside a function a route reaches through its calls goes on that function's own summary (see below). A read inside a function nothing discovered and nothing reaches is reported nowhere, because nothing says when that function runs.
+A read inside a route body goes on that route's summary. A read at module level, or in a class body, runs when the module is imported, so it goes on a `module-init` summary named after the file, one per file. A read inside a function a route reaches through its calls goes on that function's own summary (see below). A read inside a function nothing discovered and nothing reaches is reported nowhere, because nothing says when that function runs.
+
+A file gets that `module-init` summary when its module scope reads the environment or calls a project function, and no summary at all when it does neither.
 
 ### A read through a project helper
 
@@ -576,11 +578,13 @@ Out of scope: a name built out of a parameter (`env(f"{prefix}_URL")` reads noth
 
 A project where every read writes its own name calls no expression the environment, and then the reader never asks anything at a call.
 
-## What a route reaches
+## What a route, or a module loading, reaches
 
 A route's body calls project functions, and those call others. Each function a route reaches this way gets a summary of its own, of kind `library`, bound as `function-call` with `transport: "in-process"` and `recognition: "reachable"`, with the calls, environment reads and database work its own body does. Each invocation effect on a route or a reached function says which summary the call lands on, in `summary`, so a reader answering "what does this route reach" follows `summary` from one unit to the next and never has to match a name. This is the same walk the TypeScript adapter runs, and it produces the same shape.
 
-The walk starts at every discovered route, and adds a `calls` fact for each call in a body it could follow, until the set stops growing. A function two routes both reach gets one summary. A call the walk could not follow is recorded once per callee on the summary of the body it is in, as an `unfollowedCall` gap saying why, unless the reason is one nothing could have done better with (a call to a parameter that some caller passes a function by name into, or a call into a package that is not in the run).
+The walk starts at every discovered route and at every file's module scope, and adds a `calls` fact for each call in a body it could follow, until the set stops growing. A function two routes both reach gets one summary, and so does one a route and a module both reach.
+
+A job a scheduler runs has no route at all: its entry file opens a pool and runs its work while the module loads. So module scope is a starting point like a route, with the file's `module-init` summary as the caller, and the calls it makes go on that summary the way a route's go on its own. What counts is a call written in the module's own statements, including one under `if __name__ == "__main__":` or inside a module-level `try` or `for`, and one written as an argument (`asyncio.run(main())`) or as a variable's initializer (`pool = make_pool(settings)`). A function, lambda or class body waits for something to call it, so the walk stops at each one, and a decorator applied to a definition is not counted as a call the module makes. A call the walk could not follow is recorded once per callee on the summary of the body it is in, as an `unfollowedCall` gap saying why, unless the reason is one nothing could have done better with (a call to a parameter that some caller passes a function by name into, or a call into a package that is not in the run).
 
 A callee is followed only through a binding that says where it came from. The binder's scopes settle a name written in the file; the import resolver settles a name brought in from another file in the run.
 
