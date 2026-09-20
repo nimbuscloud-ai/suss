@@ -1,8 +1,8 @@
 {
   "total": {
     "lines": {
-      "total": 6,
-      "covered": 6,
+      "total": 7,
+      "covered": 7,
       "skipped": 0,
       "pct": 100
     },
@@ -13,8 +13,8 @@
       "pct": 100
     },
     "functions": {
-      "total": 3,
-      "covered": 3,
+      "total": 2,
+      "covered": 2,
       "skipped": 0,
       "pct": 100
     },
@@ -33,14 +33,14 @@
   },
   "src/index.ts": {
     "lines": {
-      "total": 6,
-      "covered": 6,
+      "total": 7,
+      "covered": 7,
       "skipped": 0,
       "pct": 100
     },
     "functions": {
-      "total": 3,
-      "covered": 3,
+      "total": 2,
+      "covered": 2,
       "skipped": 0,
       "pct": 100
     },

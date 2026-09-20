@@ -19,10 +19,10 @@
       "pct": 100
     },
     "branches": {
-      "total": 1008,
-      "covered": 888,
+      "total": 1009,
+      "covered": 889,
       "skipped": 0,
-      "pct": 88.09
+      "pct": 88.1
     },
     "branchesTrue": {
       "total": 0,
@@ -181,10 +181,10 @@
       "pct": 88.01
     },
     "branches": {
-      "total": 340,
-      "covered": 280,
+      "total": 341,
+      "covered": 281,
       "skipped": 0,
-      "pct": 82.35
+      "pct": 82.4
     }
   },
   "src/messageBus.ts": {
