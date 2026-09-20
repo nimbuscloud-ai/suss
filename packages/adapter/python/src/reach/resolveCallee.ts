@@ -124,6 +124,18 @@ export function resolveCallee(
 }
 
 /**
+ * What each of these keys comes down to, asked as one batch. A caller
+ * that then reads them one at a time evaluates the rules once rather
+ * than once per key.
+ */
+export function namedOutcomes(
+  keys: readonly string[],
+  ctx: ResolveContext,
+): ReadonlyMap<string, CalleeOutcome> {
+  return calleeOutcomes(ctx.facts, [...new Set(keys)]);
+}
+
+/**
  * The function a name refers to, when the name is the function's own. A
  * name a scope assigned a function to is left out, since what counts is
  * a function passed by the name it was declared under.
@@ -131,11 +143,12 @@ export function resolveCallee(
 export function functionNamed(
   nameKey: string,
   ctx: ResolveContext,
+  read?: ReadonlyMap<string, CalleeOutcome>,
 ): ReachedFunction | null {
   if (assignedElsewhere(ctx.facts, nameKey)) {
     return null;
   }
-  const outcome = calleeOutcomeOf(ctx.facts, nameKey);
+  const outcome = read?.get(nameKey) ?? calleeOutcomeOf(ctx.facts, nameKey);
   return outcome.kind === "function" ? functionAt(outcome.key, ctx) : null;
 }
 

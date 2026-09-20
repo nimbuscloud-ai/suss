@@ -134,6 +134,8 @@ interface Language {
   rowBound: number;
   /** Rows one question may read, about three times the biggest one today. */
   questionBound: number;
+  /** Times the rules may be evaluated, a little over what the run takes today. Asking per call site rather than per file blows straight through it. */
+  evaluationBound: number;
 }
 
 // The counts are the same on every machine, so the bounds can be close
@@ -146,6 +148,7 @@ const LANGUAGES: Language[] = [
     paths: [...PER_SITE_PATHS, ...CONTEXT_FREE_PATHS].sort(),
     rowBound: 200_000,
     questionBound: 20_000,
+    evaluationBound: 120,
   },
   {
     name: "Python",
@@ -153,6 +156,7 @@ const LANGUAGES: Language[] = [
     paths: [...PER_SITE_PATHS, "GET /config"].sort(),
     rowBound: 7_000_000,
     questionBound: 1_800_000,
+    evaluationBound: 25,
   },
   {
     name: "Ruby",
@@ -160,12 +164,13 @@ const LANGUAGES: Language[] = [
     paths: [...PER_SITE_PATHS, "GET /config"].sort(),
     rowBound: 60_000,
     questionBound: 30_000,
+    evaluationBound: 25,
   },
 ];
 
 describe.each(LANGUAGES)(
   "a client class read per construction site in $name",
-  ({ run, paths, rowBound, questionBound }) => {
+  ({ run, paths, rowBound, questionBound, evaluationBound }) => {
     let extracted: Run;
 
     beforeAll(async () => {
@@ -186,6 +191,10 @@ describe.each(LANGUAGES)(
 
     it("reads fewer rows over the whole run than the bound", () => {
       expect(extracted.profile.examined).toBeLessThan(rowBound);
+    });
+
+    it("evaluates the rules fewer times than the bound", () => {
+      expect(extracted.profile.evaluations).toBeLessThan(evaluationBound);
     });
   },
 );

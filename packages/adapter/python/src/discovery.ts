@@ -41,7 +41,7 @@ import {
   spanOf,
   stripDecorators,
 } from "./ast.js";
-import { clientCallUnits } from "./clientCalls.js";
+import { clientCallReceivers, clientCallUnits } from "./clientCalls.js";
 import {
   classifyDecorator,
   decoratorReceiver,
@@ -186,10 +186,11 @@ export function discoverUnits(
   module: ModuleBinding,
   options: DiscoveryOptions,
 ): RawCodeStructure[] {
+  const decorated = decoratedStatements(root, module, options.facts);
+  askWrittenValues(clientCallReceivers(root, module), options.facts);
   return [
-    ...decoratedStatements(root, module, options.facts).flatMap(
-      (decoratedStatement) =>
-        decoratedUnits(decoratedStatement, module, options),
+    ...decorated.flatMap((decoratedStatement) =>
+      decoratedUnits(decoratedStatement, module, options),
     ),
     ...clientUnits(root, module, options),
   ];
