@@ -910,7 +910,6 @@ export function storageBoundaryKey(semantics: Semantics): string | null {
 }
 
 const keyOf = storageLabel;
-const containerLabel = storageContainerLabel;
 
 /**
  * Two containers, both declared under a name covering what one access
@@ -949,7 +948,7 @@ function makeFieldUnknownFinding(
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(access.summary, access.transitionId),
-    description: `${access.summary.identity.name} ${verb} "${field}" on ${containerLabel(semantics)} (${storageSystemLabel(semantics)}) but the contract declares no ${field} field.`,
+    description: `${access.summary.identity.name} ${verb} "${field}" on ${storageContainerLabel(semantics)} (${storageSystemLabel(semantics)}) but the contract declares no ${field} field.`,
     severity: "error",
   };
 }
@@ -967,7 +966,7 @@ function makeWholeItemFinding(
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(access.summary, access.transitionId),
-    description: `${access.summary.identity.name} reads whole items through ${containerLabel(semantics)} (${storageSystemLabel(semantics)}), which copies only the fields it declares, so anything else comes back absent and no error says so.`,
+    description: `${access.summary.identity.name} reads whole items through ${storageContainerLabel(semantics)} (${storageSystemLabel(semantics)}), which copies only the fields it declares, so anything else comes back absent and no error says so.`,
     severity: "error",
   };
 }
@@ -990,7 +989,7 @@ function makeSelectorMismatchFinding(
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(access.summary, access.transitionId),
-    description: `${access.summary.identity.name} picks items on ${containerLabel(semantics)} by "${field}", which is not one of its key attributes (${keys}). ${storageSystemLabel(semantics)} refuses a request keyed on anything else, so this fails when it runs.`,
+    description: `${access.summary.identity.name} picks items on ${storageContainerLabel(semantics)} by "${field}", which is not one of its key attributes (${keys}). ${storageSystemLabel(semantics)} refuses a request keyed on anything else, so this fails when it runs.`,
     severity: "error",
   };
 }
@@ -1014,7 +1013,7 @@ function makeFieldUnusedFinding(
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(provider),
-    description: `${containerLabel(semantics)} declares "${field}". No query here reads it and nothing writes to it. ${askedForNote(field, "the column as dead")}`,
+    description: `${storageContainerLabel(semantics)} declares "${field}". No query here reads it and nothing writes to it. ${askedForNote(field, "the column as dead")}`,
     severity: "warning",
   };
 }
@@ -1031,7 +1030,7 @@ function makeWriteOnlyFinding(
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(provider),
-    description: `${containerLabel(semantics)} declares "${field}" and code here writes to it, but no query reads it. ${askedForNote(field, "the write as pointless")}`,
+    description: `${storageContainerLabel(semantics)} declares "${field}" and code here writes to it, but no query reads it. ${askedForNote(field, "the write as pointless")}`,
     severity: "warning",
   };
 }
