@@ -11,6 +11,9 @@ outputs:
   inputs:
     description: The hash of the sources turbo reads, for other caches that move with them.
     value: ${{ steps.turbo.outputs.inputs }}
+  key:
+    description: The turbo cache key this run restored, for the turbo-cache-save step at the end of the job.
+    value: ${{ steps.turbo.outputs.key }}
 
 runs:
   using: composite

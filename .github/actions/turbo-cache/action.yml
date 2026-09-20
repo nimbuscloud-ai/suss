@@ -1,51 +1,50 @@
 name: Turbo cache
 description: >
-  Restore the turbo cache a job of this name saved last, and save this
-  job's cache when the inputs changed. Runs after checkout and before
-  the first turbo task.
+  Restore the turbo cache a job of this name saved last. Runs after
+  checkout and before the first turbo task. Call the turbo-cache-save
+  action with if: always() as a step of the job itself, once turbo has
+  run, to save what it produced even when a later step failed.
 
-  The key is the git tree of everything turbo hashes: the workspace
-  packages, the root manifests and the tsconfig files. Two runs over
-  the same sources share a key, so the second one finds an exact hit
-  and saves nothing. A run over changed sources misses the exact key,
-  restores the newest entry for this job name, replays whatever turbo
-  still recognises, and saves one new entry.
+  The key is this commit's turbo-hash. Two runs over the same sources
+  share a key, so the second finds an exact hit and there is nothing
+  new for the save step to write. A run over changed sources misses the
+  exact key, restores the newest entry for this job name, and replays
+  whatever turbo still recognises.
 
-  The name keeps the jobs of one run from racing for a single key. The
-  cache action lets the first job to finish reserve a key and refuses
-  the rest, so with one shared key only the fastest job ever saved and
-  the test outputs were never kept. Each job name has its own line of
-  entries; the nightly regenerate job saves under every name so a new
-  branch starts from last night's main.
+  The name keeps the jobs of one run from racing for a single key. Each
+  job name has its own line of entries; the nightly regenerate job
+  saves under every name so a new branch starts from last night's main,
+  and the warm-cache workflow saves a merged pull request's entry under
+  main's own ref right after it lands.
 
 inputs:
   name:
-    description: Which line of entries to restore and save. Usually the job name.
+    description: Which line of entries to restore. Usually the job name.
     required: true
 
 outputs:
   inputs:
     description: The hash of the sources turbo reads, for other caches that move with them.
-    value: ${{ steps.inputs.outputs.hash }}
+    value: ${{ steps.hash.outputs.hash }}
+  key:
+    description: The cache key this run restored, for turbo-cache-save to reuse.
+    value: ${{ steps.key.outputs.key }}
 
 runs:
   using: composite
   steps:
-    - name: Hash the sources turbo reads
-      id: inputs
-      shell: bash
-      run: |
-        HASH=$(git rev-parse \
-          HEAD:packages HEAD:tools \
-          HEAD:package.json HEAD:package-lock.json HEAD:turbo.json \
-          HEAD:tsconfig.base.json HEAD:tsconfig.typecheck.json \
-          | sha256sum | cut -c1-16)
-        echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+    - uses: ./.github/actions/turbo-hash
+      id: hash
 
-    - uses: actions/cache@v4
+    - name: Compute the cache key
+      id: key
+      shell: bash
+      run: echo "key=turbo-${{ inputs.name }}-${{ runner.os }}-${{ steps.hash.outputs.hash }}" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/cache/restore@v4
       with:
         path: .turbo
-        key: turbo-${{ inputs.name }}-${{ runner.os }}-${{ steps.inputs.outputs.hash }}
+        key: ${{ steps.key.outputs.key }}
         restore-keys: |
           turbo-${{ inputs.name }}-${{ runner.os }}-
 

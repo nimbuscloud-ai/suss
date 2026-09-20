@@ -1,0 +1,53 @@
+name: Warm cache
+
+# ci.yml saves each job's turbo cache under the pull request's own ref,
+# and uploads the same .turbo directory as a run artifact so it survives
+# past the pull request. GitHub only lets a run restore a cache entry
+# saved on its own ref or on main, so the pull request's entry stays
+# invisible to every other pull request until something saves it again
+# under main. This is that something: it runs right after a merge,
+# finds the merged commit's artifact, and saves it under main without
+# installing or building anything. The next pull request that does not
+# touch a package then restores a warm cache instead of a cold one.
+#
+# The merge commit has the same tree as the merge ref CI already tested,
+# so hashing HEAD here reproduces the hash the pull request's run
+# uploaded its artifact under.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  warm:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/turbo-hash
+        id: hash
+
+      - name: Warm checks
+        uses: ./.github/actions/warm-turbo-cache
+        with:
+          job: checks
+          hash: ${{ steps.hash.outputs.hash }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          tsbuild: "true"
+
+      - name: Warm test
+        uses: ./.github/actions/warm-turbo-cache
+        with:
+          job: test
+          hash: ${{ steps.hash.outputs.hash }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Warm behaviour
+        uses: ./.github/actions/warm-turbo-cache
+        with:
+          job: behaviour
+          hash: ${{ steps.hash.outputs.hash }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
