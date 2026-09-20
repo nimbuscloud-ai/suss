@@ -14,6 +14,7 @@
 import { Node } from "ts-morph";
 
 import { rootIdentifier } from "../configuredCall.js";
+import { propertyValueOf } from "../discovery/resolveValue.js";
 import { parameterReads } from "../parameterReads.js";
 import { peelValue } from "../walk/unwrap.js";
 import {
@@ -589,14 +590,22 @@ function objectAt(
   return Node.isObjectLiteralExpression(written) ? written : null;
 }
 
-/** What one property of an object literal was written as. */
+/**
+ * What one property of an object literal was written as. A shorthand
+ * property, `{ text }`, states its name as the value, the same as
+ * `{ text: text }` would.
+ */
 function initializerOf(
   object: ObjectLiteralExpression,
   property: string,
 ): Node | null {
   for (const written of object.getProperties()) {
-    if (Node.isPropertyAssignment(written) && written.getName() === property) {
-      return written.getInitializer() ?? null;
+    if (
+      (Node.isPropertyAssignment(written) ||
+        Node.isShorthandPropertyAssignment(written)) &&
+      written.getName() === property
+    ) {
+      return propertyValueOf(written);
     }
   }
   return null;

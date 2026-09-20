@@ -88,6 +88,20 @@ describe("a query on a node-postgres client", () => {
     expect(interaction).toMatchObject({ kind: "read", fields: ["email"] });
   });
 
+  it("reads the statement out of a shorthand property in the config object", () => {
+    const effects = effectsIn(`
+      ${POOL}
+      export async function findAccount(id: string) {
+        const text = "SELECT id FROM dim_account WHERE id = $1";
+        return pool.query({ text, values: [id] });
+      }
+    `);
+
+    const { semantics, interaction } = storageOf(effects[0]);
+    expect(semantics.container).toBe("dim_account");
+    expect(interaction).toMatchObject({ kind: "read", fields: ["id"] });
+  });
+
   it("reads a write as a write, with the columns it sets", () => {
     const effects = effectsIn(`
       ${POOL}

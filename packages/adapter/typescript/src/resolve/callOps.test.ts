@@ -511,6 +511,8 @@ describe("reading a value an argument states", () => {
         ?.entries("nothing")
         .map((entry) => entry.key),
     ).toEqual(["side"]);
+
+    expect(ops.valueAt(0)?.property("side")?.text()).toBeNull();
   });
 });
 
