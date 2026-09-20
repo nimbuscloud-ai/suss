@@ -75,8 +75,8 @@ export interface ReachContext {
 /** Where a call is written: the file, the method whose body it is, and the class that method belongs to. */
 export interface CallSite {
   readonly file: string;
-  /** The method being scanned, which is what keys its own locals. */
-  readonly method: RbNode;
+  /** The method being scanned, which is what keys its own locals. Null at module scope, whose locals the file keys. */
+  readonly method: RbNode | null;
   /** That method's key, which is what tells its own parameters apart. */
   readonly owner: string;
   readonly enclosingQualifiedName: string | null;

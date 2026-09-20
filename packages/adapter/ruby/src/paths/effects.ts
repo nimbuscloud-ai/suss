@@ -5,7 +5,7 @@
 import { enumerateOrDegrade, sharedGatingConditions } from "@suss/extractor";
 import { constantOf, literalOf } from "@suss/values";
 
-import { field, NodeMap, OWN_BODY_TYPES } from "../ast.js";
+import { field, MODULE_SCOPE_STOPS, NodeMap, OWN_BODY_TYPES } from "../ast.js";
 import { evaluatedValue } from "../values/evaluator.js";
 import { isBareMethodCall, localNamesIn } from "./bareCalls.js";
 import { lowerRubyBody } from "./lowering.js";
@@ -171,37 +171,62 @@ function isCall(
 
 function collectCalls(
   node: RbNode,
-  locals: ReadonlySet<string>,
+  read: ReadableBody,
   inherited: InheritedMethods,
   found: RbNode[],
 ): RbNode[] {
   for (const child of children(node)) {
-    if (OWN_BODY_TYPES.has(child.type)) {
+    if (read.stops.has(child.type)) {
       continue;
     }
-    if (isCall(child, locals, inherited)) {
+    if (isCall(child, read.locals, inherited)) {
       found.push(child);
     }
-    collectCalls(child, locals, inherited, found);
+    collectCalls(child, read, inherited, found);
   }
   return found;
 }
 
-/**
- * Every call this method's own body makes. A raise is not one, and
- * neither is a call to a method a pack said the library defines. A call
- * written with no arguments is in here, and `isArglessReceiverCall`
- * marks it so each reader can decide whether it counts.
- */
-export function bodyCalls(
-  definitionNode: RbNode,
-  inherited: InheritedMethods = NO_INHERITED_METHODS,
-): RbNode[] {
+/** The statements a reader walks, the names that are locals in them, and the child types whose statements belong to something else. */
+export interface ReadableBody {
+  readonly body: RbNode;
+  readonly locals: ReadonlySet<string>;
+  readonly stops: ReadonlySet<string>;
+}
+
+/** What a method's own body comes to, or null when the method has none. */
+export function methodBody(definitionNode: RbNode): ReadableBody | null {
   const body = field(definitionNode, "body");
   if (body === null) {
-    return [];
+    return null;
   }
-  return collectCalls(body, localNamesIn(definitionNode), inherited, []);
+  return {
+    body,
+    locals: localNamesIn(definitionNode),
+    stops: OWN_BODY_TYPES,
+  };
+}
+
+/** What a file runs as it loads: the statements written outside every definition and every block. */
+export function moduleScopeBody(root: RbNode): ReadableBody {
+  return {
+    body: root,
+    locals: localNamesIn(root, MODULE_SCOPE_STOPS),
+    stops: MODULE_SCOPE_STOPS,
+  };
+}
+
+/**
+ * Every call this body makes. A raise is not one, and neither is a call
+ * to a method a pack said the library defines. A call written with no
+ * arguments is in here, and `isArglessReceiverCall` marks it so each
+ * reader can decide whether it counts.
+ */
+export function bodyCalls(
+  read: ReadableBody,
+  inherited: InheritedMethods = NO_INHERITED_METHODS,
+): RbNode[] {
+  return collectCalls(read.body, read, inherited, []);
 }
 
 /** The callee as it is written, which is what a reader matches against. */
@@ -271,15 +296,36 @@ export function invocationEffects(
   keepsArglessCall: (call: RbNode) => boolean = NO_ARGLESS_CALLS,
   facts?: Database | undefined,
 ): InvocationEffect[] {
-  const body = field(definitionNode, "body");
-  if (body === null) {
+  const read = methodBody(definitionNode);
+  if (read === null) {
     return [];
   }
+  return effectsOfBody(read, inherited, keepsArglessCall, facts);
+}
 
-  const calls = callsReported(
-    bodyCalls(definitionNode, inherited),
+/** The same, for the statements a file runs as it loads. */
+export function moduleScopeInvocationEffects(
+  root: RbNode,
+  inherited: InheritedMethods = NO_INHERITED_METHODS,
+  keepsArglessCall: (call: RbNode) => boolean = NO_ARGLESS_CALLS,
+  facts?: Database | undefined,
+): InvocationEffect[] {
+  return effectsOfBody(
+    moduleScopeBody(root),
+    inherited,
     keepsArglessCall,
+    facts,
   );
+}
+
+function effectsOfBody(
+  read: ReadableBody,
+  inherited: InheritedMethods,
+  keepsArglessCall: (call: RbNode) => boolean,
+  facts: Database | undefined,
+): InvocationEffect[] {
+  const body = read.body;
+  const calls = callsReported(bodyCalls(read, inherited), keepsArglessCall);
   if (calls.length === 0) {
     return [];
   }
