@@ -11,7 +11,7 @@
 import { enumerateOrDegrade, sharedGatingConditions } from "@suss/extractor";
 import { constantOf, literalOf } from "@suss/values";
 
-import { field } from "../ast.js";
+import { field, runsAtModuleLoad } from "../ast.js";
 import { evaluatedValue } from "../values/evaluator.js";
 import { lowerPythonBody } from "./lowering.js";
 import { predicateOf } from "./predicates.js";
@@ -53,6 +53,20 @@ export function bodyCalls(node: PyNode, found: PyNode[] = []): PyNode[] {
       found.push(child);
     }
     bodyCalls(child, found);
+  }
+  return found;
+}
+
+/** Every call the module makes as it loads, in source order. */
+export function moduleLoadCalls(node: PyNode, found: PyNode[] = []): PyNode[] {
+  for (const child of node.namedChildren) {
+    if (child === null || !runsAtModuleLoad(child)) {
+      continue;
+    }
+    if (child.type === "call") {
+      found.push(child);
+    }
+    moduleLoadCalls(child, found);
   }
   return found;
 }
@@ -117,10 +131,28 @@ export function invocationEffects(
   if (body === null) {
     return [];
   }
+  return invocationEffectsIn(body, bodyCalls(body), facts);
+}
 
+/**
+ * The same, for the statements a module runs as it loads. A module has no
+ * body field, so the module node is passed where a body would be.
+ */
+export function moduleLoadInvocationEffects(
+  moduleNode: PyNode,
+  facts?: Database | undefined,
+): Extract<RawEffect, { type: "invocation" }>[] {
+  return invocationEffectsIn(moduleNode, moduleLoadCalls(moduleNode), facts);
+}
+
+function invocationEffectsIn(
+  body: PyNode,
+  written: readonly PyNode[],
+  facts: Database | undefined,
+): Extract<RawEffect, { type: "invocation" }>[] {
   // A call finishes after everything written inside it, so ordering by end
   // puts a call in argument position before the call it feeds.
-  const calls = bodyCalls(body).sort((a, b) => a.endIndex - b.endIndex);
+  const calls = [...written].sort((a, b) => a.endIndex - b.endIndex);
   if (calls.length === 0) {
     return [];
   }

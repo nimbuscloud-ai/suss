@@ -1406,15 +1406,14 @@ function rawSqlOf(storageLookup: StorageLookup): RawSqlOptions {
   };
 }
 
-/** The calls in a body that storage recognition already read the meaning of, by node id, so the reach walk does not report them as lost. */
+/** Which of these calls storage recognition already read the meaning of, by node id, so the reach walk does not report them as lost. */
 export function recognizedCallIds(
-  definitionNode: PyNode,
+  calls: readonly PyNode[],
   storageLookup: StorageLookup | undefined,
 ): ReadonlySet<number> {
   if (storageLookup === undefined) {
     return new Set();
   }
-  const calls = bodyCalls(definitionNode);
   return new Set([
     ...storageCallIds(calls, {
       ...storageLookup,

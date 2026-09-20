@@ -57,6 +57,20 @@ export const LATER_BODY_TYPES = new Set([
   "class_definition",
 ]);
 
+export function isModule(node: PyNode): boolean {
+  return node.type === "module";
+}
+
+/**
+ * Whether a node runs while the module is loading. A body in
+ * `LATER_BODY_TYPES` waits for something to call it, and a decorator is
+ * applied to a definition rather than written as a statement, so neither
+ * belongs to what the module itself does on the way in.
+ */
+export function runsAtModuleLoad(node: PyNode): boolean {
+  return !LATER_BODY_TYPES.has(node.type) && node.type !== "decorator";
+}
+
 /** The nearest function a node is written inside, or null at module level. */
 export function enclosingFunction(node: PyNode): PyNode | null {
   let current = node.parent;
