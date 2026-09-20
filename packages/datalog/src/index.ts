@@ -281,10 +281,12 @@ export class Database {
     }
     const index = relation.index;
     const going = new Set<FactKey>();
+    const gone: Tuple[] = [];
     for (const tuple of tuples) {
       const key = index.find(tuple);
-      if (key !== undefined) {
+      if (key !== undefined && !going.has(key)) {
         going.add(key);
+        gone.push(tuple);
       }
     }
     if (going.size === 0) {
@@ -303,6 +305,9 @@ export class Database {
       relation.tuples = relation.tuples.filter(
         (tuple) => index.find(tuple) !== undefined,
       );
+      for (const tuple of gone) {
+        index.prune(tuple);
+      }
     }
     // Dropping the column indexes and letting the next lookup rebuild
     // them is cheaper than hunting through every bucket for the removed

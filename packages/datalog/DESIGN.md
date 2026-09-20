@@ -23,6 +23,28 @@ column gets indexed the first time something asks for it and stays up to
 date after that, so a relation nobody joins on that way never gets an
 index at all.
 
+A relation finds a fact by walking a trie of its tuple's atoms. Each
+relation keeps a tree of maps, one level per column, and the node a walk
+lands on is the fact: whether it is there, and the tag stored for it. So
+asking whether a tuple is already known costs one map lookup per column
+and stops at the first column that misses, and nothing is built along
+the way.
+
+That matters because the join asks the question constantly. Every
+candidate a rule derives is offered to `add`, and on a large project
+almost all of them are facts the database already has. The engine used
+to identify a tuple by joining its atoms into a string, which for the
+node ids suss uses ran to 60 or 200 characters; building and hashing
+that string was 41.6 seconds of a 71 second run over a 719-file Python
+project, more than half the whole run.
+
+The walk is over the atoms themselves rather than over integers interned
+from them. Interning would be a map lookup to get the integer and then a
+map lookup to follow it, two hops per column where the atoms give one.
+The atoms a rule binds are the same string objects the caller asserted,
+so V8 hashes each of them once and keeps the hash, and the second hop
+buys nothing back. Measured both ways, interning was slower.
+
 The body is not always walked in the order it was written. A round draws
 one literal from the facts that arrived last round, and that list is
 usually short and has no index, so it is read first, once, and

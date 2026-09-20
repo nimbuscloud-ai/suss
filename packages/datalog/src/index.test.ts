@@ -441,6 +441,32 @@ describe("Database.retract", () => {
     expect(sorted(db.lookup("edge", 0, "a"))).toEqual(["a,c"]);
   });
 
+  it("takes a retracted fact back when it is added again", () => {
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+    db.add("edge", ["a", "c"]);
+
+    db.retract("edge", [["a", "b"]]);
+    expect(db.has("edge", ["a", "b"])).toBe(false);
+    expect(db.add("edge", ["a", "b"])).toBe("added");
+
+    expect(db.has("edge", ["a", "b"])).toBe(true);
+    expect(db.size("edge")).toBe(2);
+    expect(sorted(db.facts("edge"))).toEqual(["a,b", "a,c"]);
+  });
+
+  it("keeps a tuple that another tuple starts with", () => {
+    const db = new Database();
+    db.add("r", ["a"]);
+    db.add("r", ["a", "b"]);
+    expect(db.size("r")).toBe(2);
+
+    db.retract("r", [["a", "b"]]);
+
+    expect(db.has("r", ["a"])).toBe(true);
+    expect(db.has("r", ["a", "b"])).toBe(false);
+  });
+
   it("makes the next evaluate start over", () => {
     const rules = [
       rule("path", [V("x"), V("y")], [lit("edge", V("x"), V("y"))]),
