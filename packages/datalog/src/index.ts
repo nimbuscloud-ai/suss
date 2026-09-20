@@ -22,6 +22,7 @@ import {
   chargeRule,
   isProfiling,
 } from "./profile.js";
+import { addToBucket, bucketIn, type Relation } from "./relation.js";
 
 export {
   type ConfidenceLevel,
@@ -124,28 +125,6 @@ export const ruleLabel = (r: Rule): string =>
 // Tuple store
 // ---------------------------------------------------------------------------
 
-interface Relation {
-  /** Which tuples are here, and what identifies each of them. */
-  index: FactIndex;
-  tuples: Tuple[];
-  /**
-   * Column position, then value, then the tuples with that value. The value
-   * is the atom itself: a Map already tells 1 from "1", so encoding it first
-   * would build a string out of every node id on every lookup and buy
-   * nothing.
-   */
-  columns: Map<number, Map<Atom, Tuple[]>>;
-}
-
-function addToBucket(index: Map<Atom, Tuple[]>, key: Atom, tuple: Tuple): void {
-  const bucket = index.get(key);
-  if (bucket === undefined) {
-    index.set(key, [tuple]);
-  } else {
-    bucket.push(tuple);
-  }
-}
-
 /** What `add` did: a new fact, a better tag on an existing one, or nothing. */
 export type AddOutcome = "added" | "improved" | "unchanged";
 
@@ -161,7 +140,7 @@ export class Database {
     const created: Relation = {
       index: new FactIndex(),
       tuples: [],
-      columns: new Map(),
+      columns: [],
     };
     this.store.set(name, created);
     return created;
@@ -212,10 +191,11 @@ export class Database {
     }
     index.put(key, tag);
     relation.tuples.push(tuple);
-    for (const [column, bucket] of relation.columns) {
+    for (let column = 0; column < relation.columns.length; column++) {
+      const buckets = relation.columns[column];
       const value = tuple[column];
-      if (value !== undefined) {
-        addToBucket(bucket, value, tuple);
+      if (buckets !== undefined && value !== undefined) {
+        addToBucket(buckets, value, tuple);
       }
     }
     return "added";
@@ -250,21 +230,12 @@ export class Database {
    */
   lookup(relationName: string, column: number, value: Atom): readonly Tuple[] {
     const relation = this.store.get(relationName);
-    if (relation === undefined) {
-      return [];
-    }
-    let buckets = relation.columns.get(column);
-    if (buckets === undefined) {
-      buckets = new Map();
-      for (const tuple of relation.tuples) {
-        const at = tuple[column];
-        if (at !== undefined) {
-          addToBucket(buckets, at, tuple);
-        }
-      }
-      relation.columns.set(column, buckets);
-    }
-    return buckets.get(value) ?? [];
+    return relation === undefined ? [] : bucketIn(relation, column, value);
+  }
+
+  /** @internal The join resolves a literal's relation once, then narrows on each fixed column. */
+  relationOf(relationName: string): Relation | undefined {
+    return this.store.get(relationName);
   }
 
   /**
@@ -312,7 +283,7 @@ export class Database {
     // Dropping the column indexes and letting the next lookup rebuild
     // them is cheaper than hunting through every bucket for the removed
     // tuples.
-    relation.columns.clear();
+    relation.columns.length = 0;
     forgetFacts(this, relationName, going);
     return going.size;
   }
@@ -731,6 +702,7 @@ function narrowedSource(
 ): readonly Tuple[] | null {
   // Of the columns already fixed, the one with the fewest facts under
   // its value feeds the join the fewest candidates to reject.
+  const relation = db.relationOf(literal.relation);
   let narrowest: readonly Tuple[] | null = null;
   for (let column = 0; column < literal.terms.length; column++) {
     const term = literal.terms[column];
@@ -739,7 +711,8 @@ function narrowedSource(
     if (value === undefined) {
       continue;
     }
-    const bucket = db.lookup(literal.relation, column, value);
+    const bucket =
+      relation === undefined ? [] : bucketIn(relation, column, value);
     if (bucket.length === 0) {
       return bucket;
     }
