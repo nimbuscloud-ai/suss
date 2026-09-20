@@ -51,6 +51,15 @@ describe("Database", () => {
 
     expect(db.size("r")).toBe(pairs.length);
   });
+
+  it("has no tag for a relation nothing was ever added to", () => {
+    const db = new Database();
+    db.add("r", ["a"], "tagged");
+
+    expect(db.tagOf("r", ["a"])).toBe("tagged");
+    expect(db.tagOf("r", ["b"])).toBeUndefined();
+    expect(db.tagOf("missing", ["a"])).toBeUndefined();
+  });
 });
 
 describe("evaluate: positive rules", () => {
@@ -439,6 +448,51 @@ describe("Database.retract", () => {
     db.retract("edge", [["a", "b"]]);
 
     expect(sorted(db.lookup("edge", 0, "a"))).toEqual(["a,c"]);
+  });
+
+  it("takes a retracted fact back when it is added again", () => {
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+    db.add("edge", ["a", "c"]);
+
+    db.retract("edge", [["a", "b"]]);
+    expect(db.has("edge", ["a", "b"])).toBe(false);
+    expect(db.add("edge", ["a", "b"])).toBe("added");
+
+    expect(db.has("edge", ["a", "b"])).toBe(true);
+    expect(db.size("edge")).toBe(2);
+    expect(sorted(db.facts("edge"))).toEqual(["a,b", "a,c"]);
+  });
+
+  it("removes two facts that share a path in one call", () => {
+    const db = new Database();
+    db.add("r", ["a", "b"]);
+    db.add("r", ["a", "b", "c"]);
+    db.add("r", ["z"]);
+
+    expect(
+      db.retract("r", [
+        ["a", "b", "c"],
+        ["a", "b"],
+      ]),
+    ).toBe(2);
+
+    expect(db.has("r", ["a", "b"])).toBe(false);
+    expect(db.has("r", ["a", "b", "c"])).toBe(false);
+    expect(db.has("r", ["z"])).toBe(true);
+    expect(sorted(db.facts("r"))).toEqual(["z"]);
+  });
+
+  it("keeps a tuple that another tuple starts with", () => {
+    const db = new Database();
+    db.add("r", ["a"]);
+    db.add("r", ["a", "b"]);
+    expect(db.size("r")).toBe(2);
+
+    db.retract("r", [["a", "b"]]);
+
+    expect(db.has("r", ["a"])).toBe(true);
+    expect(db.has("r", ["a", "b"])).toBe(false);
   });
 
   it("makes the next evaluate start over", () => {
