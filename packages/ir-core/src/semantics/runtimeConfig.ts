@@ -17,8 +17,16 @@ import { defineBoundarySemantics } from "./definition.js";
  * The pairing key is `(deploymentTarget, instanceName)`, which is
  * exactly a deployable unit, so the two fields come from
  * `DeployableUnitSchema` instead of being written out a second time.
+ *
+ * A provider states both. The reading side is the code, which knows it
+ * reads its configuration and not which deployment will run it, so a
+ * recognizer standing at a read leaves both off rather than guessing.
+ * The pairing pass takes the deployment from the provider anyway.
  */
-export const RuntimeConfigSemanticsSchema = DeployableUnitSchema.extend({
+export const RuntimeConfigSemanticsSchema = DeployableUnitSchema.partial({
+  deploymentTarget: true,
+  instanceName: true,
+}).extend({
   name: z.literal("runtime-config"),
 });
 

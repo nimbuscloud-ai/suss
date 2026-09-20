@@ -16,25 +16,13 @@ import {
   type PropertyAccessExpression,
 } from "ts-morph";
 
-import { runtimeConfigBinding } from "@suss/behavioral-ir";
+import { configBinding, opaqueRuntimeRead } from "./configBinding.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { AccessRecognizer } from "@suss/extractor";
+import type { DeploymentOptions } from "./configBinding.js";
 
-export interface ProcessSurfaceOptions {
-  /**
-   * Deployment context for argv reads. Same shape as the env-var
-   * recognizer's option: argv and env-vars share the runtime-config
-   * channel concept.
-   */
-  deploymentTarget?: "lambda" | "ecs-task" | "container" | "k8s-deployment";
-  /**
-   * Instance name placeholder for the emitted runtime-config binding.
-   * Informational; pairing dispatcher uses provider-side metadata to
-   * scope reads.
-   */
-  instanceName?: string;
-}
+export type ProcessSurfaceOptions = DeploymentOptions;
 
 /**
  * Read of `process.env.X`, let the sibling `envVarRecognizer`
@@ -75,18 +63,15 @@ const OPAQUE_PROPERTY_NAMES = new Set([
 ]);
 
 function makeProcessSurfaceRecognizer(
-  opts: ProcessSurfaceOptions,
+  where: ProcessSurfaceOptions,
 ): AccessRecognizer {
-  const deploymentTarget = opts.deploymentTarget ?? "lambda";
-  const instanceName = opts.instanceName ?? "<unknown>";
-
   return (access, _ctx) => {
     const node = access as Node;
     if (Node.isPropertyAccessExpression(node)) {
-      return recognizeProperty(node, deploymentTarget, instanceName);
+      return recognizeProperty(node, where);
     }
     if (Node.isElementAccessExpression(node)) {
-      return recognizeElementAccess(node, deploymentTarget, instanceName);
+      return recognizeElementAccess(node, where);
     }
     return null;
   };
@@ -94,8 +79,7 @@ function makeProcessSurfaceRecognizer(
 
 function recognizeProperty(
   node: PropertyAccessExpression,
-  deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment",
-  instanceName: string,
+  where: DeploymentOptions,
 ): Effect[] | null {
   // Skip env-var reads: handled by the sibling envVarRecognizer.
   if (isProcessEnvVarRead(node)) {
@@ -107,12 +91,12 @@ function recognizeProperty(
 
   // process.argv as a runtime-config channel, same shape as env vars.
   if (isProcessIdentifier(subject) && name === "argv") {
-    return [argvRead(deploymentTarget, instanceName, node.getText(), null)];
+    return [argvRead(where, node.getText(), null)];
   }
 
   // process.cwd / .platform / .version / etc. opaque metadata.
   if (isProcessIdentifier(subject) && OPAQUE_PROPERTY_NAMES.has(name)) {
-    return [opaqueProcessRead(node.getText(), `process.${name}`)];
+    return [opaqueRuntimeRead(node.getText())];
   }
 
   return null;
@@ -120,8 +104,7 @@ function recognizeProperty(
 
 function recognizeElementAccess(
   node: ElementAccessExpression,
-  deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment",
-  instanceName: string,
+  where: DeploymentOptions,
 ): Effect[] | null {
   // Only `process.argv[N]` is recognized via element access. Other
   // element-access patterns (process[someComputedKey]) are too
@@ -143,12 +126,11 @@ function recognizeElementAccess(
   if (arg !== undefined && Node.isNumericLiteral(arg)) {
     indexLabel = String(arg.getLiteralValue());
   }
-  return [argvRead(deploymentTarget, instanceName, node.getText(), indexLabel)];
+  return [argvRead(where, node.getText(), indexLabel)];
 }
 
 function argvRead(
-  deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment",
-  instanceName: string,
+  where: DeploymentOptions,
   callee: string,
   indexLabel: string | null,
 ): Effect {
@@ -157,37 +139,11 @@ function argvRead(
   const name = indexLabel !== null ? `argv[${indexLabel}]` : "argv";
   return {
     type: "interaction",
-    binding: runtimeConfigBinding({
-      recognition: "@suss/runtime-node",
-      deploymentTarget,
-      instanceName,
-    }),
+    binding: configBinding(where),
     callee,
     interaction: {
       class: "config-read",
       name,
-      defaulted: false,
-    },
-  };
-}
-
-function opaqueProcessRead(callee: string, _label: string): Effect {
-  // Opaque runtime-metadata reads don't have a pairing target. They
-  // describe the unit's dependency on the runtime, not a contract.
-  // Use a runtime-config interaction with a synthetic "<runtime>"
-  // name so the pairing dispatcher routes it correctly while keeping
-  // the channel name distinct from real env-var / argv channels.
-  return {
-    type: "interaction",
-    binding: runtimeConfigBinding({
-      recognition: "@suss/runtime-node",
-      deploymentTarget: "lambda",
-      instanceName: "<runtime>",
-    }),
-    callee,
-    interaction: {
-      class: "config-read",
-      name: callee,
       defaulted: false,
     },
   };

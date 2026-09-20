@@ -400,22 +400,30 @@ export function isGraphqlOperationBinding(
 }
 
 /**
- * Build a runtime-config binding, the provider side of a runtime
- * configuration channel (env vars on a Lambda, ECS task, container, or
- * k8s pod). Transport is `"os"` because the OS hands env vars to the
- * process at startup no matter what the deployment medium is.
+ * Build a runtime-config binding for a runtime configuration channel
+ * (env vars on a Lambda, ECS task, container, or k8s pod). Transport is
+ * `"os"` because the OS hands env vars to the process at startup no
+ * matter what the deployment medium is.
+ *
+ * A provider says which deployment it is. A recognizer standing at a
+ * read in the code leaves both off, since nothing in the code says
+ * which deployment will run it.
  */
 export function runtimeConfigBinding(opts: {
   recognition: string;
-  deploymentTarget: DeployableUnit["deploymentTarget"];
-  instanceName: string;
+  deploymentTarget?: DeployableUnit["deploymentTarget"];
+  instanceName?: string;
 }): BoundaryBinding {
   return {
     transport: "os",
     semantics: {
       name: "runtime-config",
-      deploymentTarget: opts.deploymentTarget,
-      instanceName: opts.instanceName,
+      ...(opts.deploymentTarget === undefined
+        ? {}
+        : { deploymentTarget: opts.deploymentTarget }),
+      ...(opts.instanceName === undefined
+        ? {}
+        : { instanceName: opts.instanceName }),
     },
     recognition: opts.recognition,
   };

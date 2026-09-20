@@ -9,6 +9,7 @@
 //   process.env.X ?? "default"     → config-read for "X" with defaulted=true
 //   process.env.X || other        → the same; any ||/?? chain with a
 //                                    later operand defaults the read
+//   Env.parse(process.env)        → one config-read per schema key
 //
 // The adapter hands access recognizers property accesses and nothing
 // else, so the three spellings are recognized from the one node they
@@ -67,30 +68,16 @@ import {
   symbolBehind,
   toFunctionRoot,
 } from "@suss/adapter-typescript";
-import { runtimeConfigBinding } from "@suss/behavioral-ir";
+
+import { configBinding } from "./configBinding.js";
+import { schemaEnvReads, schemaEnvReadsInside } from "./schemaEnv.js";
 
 import type { ResolutionStore } from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
 import type { AccessRecognizer } from "@suss/extractor";
+import type { DeploymentOptions } from "./configBinding.js";
 
-export interface EnvVarRecognizerOptions {
-  /**
-   * Deployment target context for the emitted binding. Defaults to
-   * `"lambda"` since that's the dominant deployment for which suss
-   * has runtime-config providers today (CFN/SAM Lambda env-var
-   * declarations). The value does not affect pairing, the
-   * env-var name does the work, but it keeps the binding's
-   * semantics shape consistent with provider summaries.
-   */
-  deploymentTarget?: "lambda" | "ecs-task" | "container" | "k8s-deployment";
-  /**
-   * Instance name placeholder for the emitted binding. The pairing
-   * dispatcher uses metadata.codeScope on runtime-config providers
-   * to scope reads to a specific instance, so this is informational.
-   * Defaults to `"<unknown>"`.
-   */
-  instanceName?: string;
-}
+export type EnvVarRecognizerOptions = DeploymentOptions;
 
 /** One variable a program reads, before it becomes an effect. */
 interface EnvRead {
@@ -314,7 +301,10 @@ function envReadsAt(
   resolution: ResolutionStore | undefined,
 ): EnvRead[] {
   if (N.isCallExpression(node)) {
-    return readsThroughHelperCall(node, resolution);
+    const parsed = anchoredAt(schemaEnvReads(node, resolution), node);
+    return parsed.length > 0
+      ? parsed
+      : readsThroughHelperCall(node, resolution);
   }
   if (!N.isPropertyAccessExpression(node)) {
     return [];
@@ -366,11 +356,24 @@ function readsThroughHelperCall(
   });
 
   const wrapped = isDefaultedAt(call);
-  return [...defaultedByName].map(([name, atSites]) => ({
-    name,
-    defaulted: atSites || wrapped,
-    node: call,
-  }));
+  return [
+    ...[...defaultedByName].map(([name, atSites]) => ({
+      name,
+      defaulted: atSites || wrapped,
+      node: call,
+    })),
+    // A config module parses its schema once and every handler calls
+    // the function around it, so the call reports what the parse reads.
+    ...anchoredAt(schemaEnvReadsInside(callee, resolution), call),
+  ];
+}
+
+/** The reads a schema gave, put where the source has a line number. */
+function anchoredAt(
+  reads: readonly { name: string; defaulted: boolean }[],
+  node: Node,
+): EnvRead[] {
+  return reads.map((read) => ({ ...read, node }));
 }
 
 /** The function a callee expression is written against, or null when nothing this reader follows defines one. */
@@ -485,18 +488,10 @@ function directEnvRead(
   return null;
 }
 
-function configReadEffect(
-  read: EnvRead,
-  deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment",
-  instanceName: string,
-): Effect {
+function configReadEffect(read: EnvRead, where: DeploymentOptions): Effect {
   return {
     type: "interaction",
-    binding: runtimeConfigBinding({
-      recognition: "@suss/runtime-node",
-      deploymentTarget,
-      instanceName,
-    }),
+    binding: configBinding(where),
     callee: readName(read.name),
     interaction: {
       class: "config-read",
@@ -508,17 +503,14 @@ function configReadEffect(
 
 function recognizeProcessEnvRead(
   access: unknown,
-  deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment",
-  instanceName: string,
+  where: DeploymentOptions,
   resolution: ResolutionStore | undefined,
 ): Effect[] | null {
   const reads = envReadsAt(access as Node, resolution);
   if (reads.length === 0) {
     return null;
   }
-  return reads.map((read) =>
-    configReadEffect(read, deploymentTarget, instanceName),
-  );
+  return reads.map((read) => configReadEffect(read, where));
 }
 
 /**
@@ -561,13 +553,10 @@ export function findProcessEnvReads(
 export function envVarRecognizer(
   opts: EnvVarRecognizerOptions = {},
 ): AccessRecognizer {
-  const deploymentTarget = opts.deploymentTarget ?? "lambda";
-  const instanceName = opts.instanceName ?? "<unknown>";
   return (access, ctx) =>
     recognizeProcessEnvRead(
       access,
-      deploymentTarget,
-      instanceName,
+      opts,
       (ctx as { resolution?: ResolutionStore }).resolution,
     );
 }

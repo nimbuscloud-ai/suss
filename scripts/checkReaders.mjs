@@ -375,6 +375,10 @@ const EXEMPT = new Map([
     "packages/runtime/node/src/envVars.ts",
     "bracketRead, bindingRead, destructuredReads, and forwardedParameter, which takes the declaration behind a symbol the facility already resolved",
   ],
+  [
+    "packages/runtime/node/src/schemaEnv.ts",
+    "declarationBehind and parameterTakesEnvironment, asking whether a value comes down to process.env. The `environmentValue` rule in @suss/resolution settles that, and nothing hands its results out: no demand rule derives it and the store has no method for it, so `writtenNodeOf` and `resolveObject` both give null for a name bound to `process.env` and for a parameter. The entry comes out when a store method exposes the rule",
+  ],
   ["packages/adapter/python/src/decorators.ts", "argShapeOf"],
   [
     "packages/adapter/python/src/paths/returnedShape.ts",
