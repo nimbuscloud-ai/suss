@@ -32,6 +32,7 @@ import { startLineOf } from "../lines.js";
 import { resolveAliasedSymbol } from "../moduleExports.js";
 import {
   type DescentBarriers,
+  invokesFunctionInPlace,
   isDescentStop,
   isModuleScopeStop,
   NO_BARRIERS,
@@ -381,10 +382,33 @@ export function extractInvocationEffects(
   func: FunctionRoot,
   barriers: DescentBarriers = NO_BARRIERS,
 ): InvocationEffectLocation[] {
+  return invocationsUnder(
+    func,
+    (node) => isDescentStop(node, func, barriers) || Node.isDecorator(node),
+  );
+}
+
+/**
+ * The same capture over a module's own top-level statements, for the
+ * calls a file makes while it loads rather than while a unit in it
+ * runs. A job with no handler does all of its work through these.
+ */
+export function extractInvocationEffectsAtModuleScope(
+  sourceFile: SourceFile,
+): InvocationEffectLocation[] {
+  return invocationsUnder(sourceFile, isModuleScopeStop).filter(
+    (call) => !invokesFunctionInPlace(call.node),
+  );
+}
+
+function invocationsUnder(
+  root: Node,
+  isStop: (node: Node) => boolean,
+): InvocationEffectLocation[] {
   const calls: CallExpression[] = [];
 
-  func.forEachDescendant((node, traversal) => {
-    if (isDescentStop(node, func, barriers) || Node.isDecorator(node)) {
+  root.forEachDescendant((node, traversal) => {
+    if (isStop(node)) {
       traversal.skip();
       return;
     }
@@ -396,12 +420,12 @@ export function extractInvocationEffects(
   // A call finishes after everything written inside it, so ordering by
   // end puts a call in argument position before the call it feeds.
   calls.sort((a, b) => a.getEnd() - b.getEnd());
-  return calls.map((call) => invocationAt(call, func));
+  return calls.map((call) => invocationAt(call, root));
 }
 
 function invocationAt(
   call: CallExpression,
-  func: FunctionRoot,
+  func: Node,
 ): InvocationEffectLocation {
   const preconditions = collectPreconditions(call, func);
   return {

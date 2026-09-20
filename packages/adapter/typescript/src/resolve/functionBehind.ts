@@ -20,12 +20,49 @@ import {
   isInExternalCode,
 } from "./unfollowedCall.js";
 
-import type { Identifier, Symbol as TsSymbol } from "ts-morph";
+import type { CallExpression, Identifier, Symbol as TsSymbol } from "ts-morph";
 import type { FunctionRoot } from "../conditions.js";
 
 export interface ReachableCandidate {
   func: FunctionRoot;
   name: string;
+}
+
+/**
+ * The callee as one line. A call written across several lines would
+ * otherwise put its own newlines into the text a gap quotes and the
+ * text an invocation effect is matched by.
+ */
+export function normalizeCallee(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/** The first of these declarations the walk can follow into. */
+export function functionAmong(
+  declarations: readonly Node[],
+  calleeName: string,
+): ReachableCandidate | null {
+  for (const decl of declarations) {
+    const resolved = resolveDecl(decl, calleeName);
+    if (resolved !== null) {
+      return resolved;
+    }
+  }
+  return null;
+}
+
+/**
+ * The project function a call comes down to, or null when a dependency
+ * declares the callee and this run never read it.
+ */
+export function functionCalledAt(
+  call: CallExpression,
+): ReachableCandidate | null {
+  const callee = call.getExpression();
+  return functionAmong(
+    declarationsBehind(callee.getSymbol()),
+    normalizeCallee(callee.getText()),
+  );
 }
 
 /**
@@ -49,18 +86,18 @@ export function symbolBehind(node: Identifier): TsSymbol | undefined {
 export function functionTargetOf(
   node: Identifier,
 ): { func: FunctionRoot; file: string; name: string } | null {
-  for (const decl of declarationsBehind(symbolBehind(node))) {
-    const resolved = resolveDecl(decl, node.getText());
-    if (resolved !== null) {
-      const func = resolved.func as FunctionRoot;
-      return {
-        func,
-        file: func.getSourceFile().getFilePath(),
-        name: resolved.name,
-      };
-    }
+  const resolved = functionAmong(
+    declarationsBehind(symbolBehind(node)),
+    node.getText(),
+  );
+  if (resolved === null) {
+    return null;
   }
-  return null;
+  return {
+    func: resolved.func,
+    file: resolved.func.getSourceFile().getFilePath(),
+    name: resolved.name,
+  };
 }
 
 /**

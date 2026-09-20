@@ -29,11 +29,17 @@ import { assembleSummary, type ExtractorOptions } from "@suss/extractor";
 
 import { extractCodeStructure } from "../adapter.js";
 import { lazyAddSourceFile } from "../bootstrap/lazyProjectInit.js";
-import { createSourceFileLookup } from "../bootstrap/sourceFileLookup.js";
+import {
+  createSourceFileLookup,
+  type SourceFileLookup,
+} from "../bootstrap/sourceFileLookup.js";
 import { createDependencySink, withDependencySink } from "../depTracking.js";
+import { isModuleScopeStop } from "../walk/descent.js";
 import { offsetKeyFor, offsetKeyOf } from "../walk/nodeKeys.js";
 import {
+  functionAmong,
   functionTargetOf,
+  normalizeCallee,
   type ReachableCandidate,
   resolveDecl,
 } from "./functionBehind.js";
@@ -115,6 +121,18 @@ function nodeKey(func: FunctionRoot): string {
   return offsetKeyOf(func);
 }
 
+/**
+ * The key a file's module scope is tracked under, which is the extent
+ * its module-init summary already reports, so the two join without
+ * either side knowing about the other.
+ */
+function moduleScopeKey(sourceFile: SourceFile): string {
+  return offsetKeyFor(sourceFile.getFilePath(), {
+    start: 0,
+    end: sourceFile.getEnd(),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Callee resolution
 // ---------------------------------------------------------------------------
@@ -167,11 +185,9 @@ function resolveCallee(
   // call. An imported name's own declaration says only that something
   // was imported.
   const declarations = declarationsBehind(symbol);
-  for (const decl of declarations) {
-    const resolved = resolveDecl(decl, calleeName);
-    if (resolved !== null) {
-      return { kind: "followed", candidate: resolved };
-    }
+  const direct = functionAmong(declarations, calleeName);
+  if (direct !== null) {
+    return { kind: "followed", candidate: direct };
   }
 
   // A call landing on an interface the project declares has no body to
@@ -328,8 +344,19 @@ function resolveJsxReference(
   };
 }
 
-function collectReachable(func: FunctionRoot, scan: ScanContext): ScanResult {
-  const inFunc: ScanContext = { ...scan, scanning: func };
+/**
+ * What one scan reads: a function's body, or a file's own top-level
+ * statements. Module scope is a caller like any other, so the calls it
+ * makes are found the same way, with the descent stopping at every
+ * function and class the module only defines.
+ */
+type ScanRoot = FunctionRoot | SourceFile;
+
+function collectReachable(root: ScanRoot, scan: ScanContext): ScanResult {
+  const atModuleScope = Node.isSourceFile(root);
+  const inFunc: ScanContext = atModuleScope
+    ? { ...scan }
+    : { ...scan, scanning: root };
   const candidates: ReachableCandidate[] = [];
   const stops: UnfollowedCall[] = [];
   const placements = new TargetPlacements();
@@ -383,7 +410,11 @@ function collectReachable(func: FunctionRoot, scan: ScanContext): ScanResult {
     });
   };
 
-  func.forEachDescendant((node) => {
+  root.forEachDescendant((node, traversal) => {
+    if (atModuleScope && isModuleScopeStop(node)) {
+      traversal.skip();
+      return;
+    }
     const jsx = resolveJsxReference(node, inFunc);
     if (jsx !== null) {
       record(jsx.outcome);
@@ -426,14 +457,6 @@ function collectReachable(func: FunctionRoot, scan: ScanContext): ScanResult {
     parameterCalls,
     passedPositions,
   };
-}
-
-/**
- * The callee as one line. A call written across several lines would put
- * its own newlines into a gap description otherwise.
- */
-function normalizeCallee(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
 }
 
 // ---------------------------------------------------------------------------
@@ -585,6 +608,21 @@ export function recognizerOnlyRoots(
   return roots;
 }
 
+/**
+ * The file whose load-time behavior a seed describes. A module-init
+ * summary covers statements rather than a declaration, so there is no
+ * function to locate and the file itself is what gets scanned.
+ */
+function moduleScopeOf(
+  seed: BehavioralSummary,
+  lookup: SourceFileLookup,
+): SourceFile | null {
+  if (seed.kind !== "module-init") {
+    return null;
+  }
+  return lookup.bySuffix(seed.location.file);
+}
+
 export function expandReachableClosure(
   seeds: BehavioralSummary[],
   project: Project,
@@ -605,6 +643,9 @@ export function expandReachableClosure(
   // effects); otherwise they live and die locally.
   const db = facts?.db ?? new Database();
   const functionByKey = new Map<string, ReachableCandidate>();
+  // Module scope has no function node, so the file itself is the root
+  // and the key is its extent rather than any declaration's.
+  const moduleByKey = new Map<string, SourceFile>();
   const seedKeys = new Set<string>();
   const scanned = new Set<string>();
 
@@ -640,7 +681,18 @@ export function expandReachableClosure(
       facts?.unitKeyBySummary.set(seed, key);
       rememberSummary(summariesByKey, key, seed);
       db.add("entry", [key]);
+      continue;
     }
+    const moduleFile = moduleScopeOf(seed, lookup);
+    if (moduleFile === null) {
+      continue;
+    }
+    const key = moduleScopeKey(moduleFile);
+    seedKeys.add(key);
+    moduleByKey.set(key, moduleFile);
+    facts?.unitKeyBySummary.set(seed, key);
+    rememberSummary(summariesByKey, key, seed);
+    db.add("entry", [key]);
   }
 
   // Roots the caller adds beyond the discovered seeds: the exported
@@ -680,8 +732,9 @@ export function expandReachableClosure(
     }
     for (const key of frontier) {
       scanned.add(key);
-      const source = functionByKey.get(key);
-      if (source === undefined) {
+      const root: ScanRoot | undefined =
+        functionByKey.get(key)?.func ?? moduleByKey.get(key);
+      if (root === undefined) {
         continue;
       }
       const cameFrom = reachedFrom.get(key);
@@ -701,9 +754,7 @@ export function expandReachableClosure(
         argTargets,
         parameterCalls,
         passedPositions: scanPassedPositions,
-      } = scanWithRecording(key, facts, () =>
-        collectReachable(source.func, scan),
-      );
+      } = scanWithRecording(key, facts, () => collectReachable(root, scan));
       if (stops.length > 0) {
         stopsByKey.set(key, stops);
       }
@@ -721,7 +772,7 @@ export function expandReachableClosure(
           functionByKey.set(calleeKey, candidate);
         }
         if (!reachedFrom.has(calleeKey)) {
-          reachedFrom.set(calleeKey, source.func.getSourceFile());
+          reachedFrom.set(calleeKey, root.getSourceFile());
         }
         db.add("calls", [key, calleeKey]);
       }
