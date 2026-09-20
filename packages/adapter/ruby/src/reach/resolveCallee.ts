@@ -21,8 +21,10 @@ import {
 
 import { methodInAncestry } from "../ancestry.js";
 import { field, singletonMethodsByName } from "../ast.js";
+import { classBehind } from "../baseClass.js";
 import { RUBY_PROGRAM } from "../facts/resolve.js";
 import { readKey } from "../facts/values.js";
+import { pickedSource } from "../loaders.js";
 import { calleeMethodName } from "../paths/effects.js";
 
 import type { UnfollowedReason } from "@suss/behavioral-ir";
@@ -31,6 +33,7 @@ import type { CalleeOutcome } from "@suss/resolution";
 import type { AncestorLookup, Ancestry, ReachedBody } from "../ancestry.js";
 import type { BodyBlocks } from "../ast.js";
 import type { DynamicNames } from "../defineMethod.js";
+import type { RbLoaderPattern } from "../pack.js";
 import type { RbNode } from "../parser.js";
 
 /** A method in this run, and the export path its summary gets. */
@@ -65,6 +68,8 @@ export interface ReachContext {
   readonly bodyBlocks: BodyBlocks;
   /** What each class defines under a name the source computes, by class key. */
   readonly dynamicNames: DynamicNames;
+  /** What the run's packs say about a loader that takes a read off the caller. */
+  readonly loaders: readonly RbLoaderPattern[];
 }
 
 /** Where a call is written: the file, the method whose body it is, and the class that method belongs to. */
@@ -150,6 +155,11 @@ export function resolveCallee(
   ctx: ReachContext,
   read?: CalleeSpellings,
 ): CalleeResolution {
+  const throughLoader = loaderSourceCallee(call, site, ctx);
+  if (throughLoader !== null) {
+    return throughLoader;
+  }
+
   const spelling = read?.spellingOf.get(call.id) ?? spellingFor(call, site);
   if (spelling.kind === "stopped") {
     return spelling;
@@ -158,6 +168,32 @@ export function resolveCallee(
     return resolveImplicitSelf(spelling.name, site, ctx);
   }
   return asCallee(spelling, outcomeFor(spelling.key, ctx, read), site, ctx);
+}
+
+/**
+ * A read through a loader runs the project's own source class, so the
+ * call reaches the method the library runs on it. Null when no pack
+ * declares a source, or when this call picked none.
+ */
+function loaderSourceCallee(
+  call: RbNode,
+  site: CallSite,
+  ctx: ReachContext,
+): CalleeResolution | null {
+  for (const loader of ctx.loaders) {
+    const constant = pickedSource(call, loader);
+    const source = loader.source;
+    if (constant === null || source === undefined) {
+      continue;
+    }
+    const classKey = classBehind(ctx.facts, site.file, constant);
+    const qualifiedName =
+      classKey === undefined ? undefined : ctx.classNames.get(classKey);
+    if (qualifiedName !== undefined) {
+      return methodOnAncestryOf(qualifiedName, source.method, ctx);
+    }
+  }
+  return null;
 }
 
 function outcomeFor(

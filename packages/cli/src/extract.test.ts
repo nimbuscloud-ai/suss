@@ -632,7 +632,12 @@ describe("extract over a Ruby project", () => {
       output: out,
     });
 
-    expect(summaries.map((s) => s.identity.name).sort()).toEqual(
+    expect(
+      summaries
+        .filter((s) => s.kind !== "library")
+        .map((s) => s.identity.name)
+        .sort(),
+    ).toEqual(
       [
         "Campaign.id",
         "Campaign.name",
@@ -642,6 +647,7 @@ describe("extract over a Ruby project", () => {
         "Organizer.displayName",
         "Organizer.phone",
         "Organizer.status",
+        "Organizer.campaigns",
         "Query.campaign",
         "Mutation.campaignUpdate",
       ].sort(),

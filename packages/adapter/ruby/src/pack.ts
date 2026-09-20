@@ -182,6 +182,8 @@ export interface RbStoragePattern {
   statements?: Record<string, RbArgumentPlace>;
   /** The token the library writes where a bind value goes, ActiveRecord's `?`. */
   bindPlaceholder?: string;
+  /** The methods the library runs of its own accord when a write happens, `after_commit :sync_search`. */
+  callbacks?: RbModelCallbacks;
   /** Methods that pick rows by the primary key when they are given a positional argument, and the column that is. */
   byPrimaryKey?: RbPrimaryKeyLookup;
   /** Read methods whose symbol arguments are the columns they ask for. */
@@ -261,6 +263,24 @@ export interface RbArgumentPlace {
 }
 
 /** Which methods take the primary key positionally, and what that column is called. */
+/**
+ * The methods a model registers in its own class body for the library
+ * to run when a write happens. A body that writes through the model
+ * runs them too, so their effects belong to that body.
+ *
+ * `events` is the library's own vocabulary for what a write is, and
+ * both halves of this are keyed by it: a write method says which events
+ * it runs, and a registering call says which events it covers.
+ */
+export interface RbModelCallbacks {
+  /** Each write method the pattern declares, and the events it runs. */
+  eventOf: Record<string, string[]>;
+  /** Each class-body call that registers a callback, and the events it covers when the call narrows to none. */
+  registeredBy: Record<string, string[]>;
+  /** The keyword that narrows one registration to some of those events, `on`. */
+  eventKeyword: string;
+}
+
 export interface RbPrimaryKeyLookup {
   methods: string[];
   /** The column the library uses unless a model says another. */
@@ -299,6 +319,20 @@ export interface RbLoaderPattern {
   reads: string[];
   /** Receiverless calls that pick and read in one, whose arguments include the model, `dataload` and `dataload_record`. */
   shortcuts: string[];
+  /**
+   * Where `pick` takes the project's own source class, and the method
+   * the library runs on it. The read happens in that method, so what it
+   * reaches belongs to every body that loads through it.
+   */
+  source?: RbLoaderSource;
+}
+
+/** The source class a loader is given, and the method the library runs on it. */
+export interface RbLoaderSource {
+  /** The position `pick` takes the source class at, 0 for `dataloader.with(Source, ...)`. */
+  at: number;
+  /** The method the library runs on the source, `fetch`. */
+  method: string;
 }
 
 export type RubyDiscoveryPattern = GraphqlObjectFields | ControllerActions;

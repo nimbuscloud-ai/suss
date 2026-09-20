@@ -25,7 +25,7 @@ class ItemsController < ApplicationController
   end
 
   def destroy
-    OrderService.new.find_order(params[:id])
+    OrderService.new.remove_order(params[:id])
     head :no_content
   end
 

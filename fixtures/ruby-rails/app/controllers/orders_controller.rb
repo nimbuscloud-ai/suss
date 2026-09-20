@@ -10,6 +10,10 @@ class OrdersController < ApplicationController
     OrderService.new.find_order(params[:id])
   end
 
+  def create
+    OrderService.new.place_order(params[:reference])
+  end
+
   def cancel
     authorize_order!(params[:id])
     OrderService.new.cancel_order(params[:id])
