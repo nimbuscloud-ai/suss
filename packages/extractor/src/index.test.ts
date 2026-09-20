@@ -20,7 +20,7 @@ import {
   writtenReading,
 } from "./index.js";
 
-import type { TypeShape } from "@suss/behavioral-ir";
+import type { Effect, TypeShape } from "@suss/behavioral-ir";
 
 const makeTerminal = (overrides: Partial<RawTerminal>): RawTerminal => ({
   kind: "void",
@@ -391,6 +391,97 @@ describe("assembleSummary: optional metadata plumbing", () => {
     expect(summary.gaps.map((gap) => gap.description).join("\n")).not.toContain(
       "Declared response",
     );
+  });
+});
+
+describe("assembleSummary: one entry per effect", () => {
+  const branchWith = (effects: RawEffect[]): RawCodeStructure => ({
+    ...twoPathRaw,
+    declaredContract: null,
+    branches: [
+      {
+        conditions: [],
+        terminal: makeTerminal({ kind: "void" }),
+        effects,
+        location: { start: 0, end: 4 },
+        isDefault: true,
+      },
+    ],
+  });
+
+  const validate = (callee: string): RawEffect => ({
+    type: "invocation",
+    callee,
+    args: [],
+    async: false,
+  });
+
+  it("counts an effect three sites produced and lists it once", () => {
+    const summary = assembleSummary(
+      branchWith([validate("check"), validate("check"), validate("check")]),
+    );
+
+    expect(summary.transitions[0]?.effects).toEqual([
+      { type: "invocation", callee: "check", args: [], async: false, count: 3 },
+    ]);
+  });
+
+  it("leaves three distinct effects as three, with no count", () => {
+    const summary = assembleSummary(
+      branchWith([validate("check"), validate("save"), validate("load")]),
+    );
+
+    expect(summary.transitions[0]?.effects).toEqual([
+      { type: "invocation", callee: "check", args: [], async: false },
+      { type: "invocation", callee: "save", args: [], async: false },
+      { type: "invocation", callee: "load", args: [], async: false },
+    ]);
+  });
+
+  it("folds a chain broken across lines into its one-line spelling", () => {
+    const summary = assembleSummary(
+      branchWith([validate("tx\n      .select"), validate("tx.select")]),
+    );
+
+    expect(summary.transitions[0]?.effects).toEqual([
+      {
+        type: "invocation",
+        callee: "tx.select",
+        args: [],
+        async: false,
+        count: 2,
+      },
+    ]);
+  });
+
+  it("counts an effect that has no callee to normalize", () => {
+    const read: Effect = {
+      type: "interaction",
+      binding: {
+        transport: "in-process",
+        semantics: {
+          name: "runtime-config",
+          deploymentTarget: "lambda",
+          instanceName: "orders",
+        },
+        recognition: "node",
+      },
+      interaction: {
+        class: "config-read",
+        name: "ORDERS_TABLE",
+        defaulted: false,
+      },
+    };
+    const raw = branchWith([
+      { type: "mutation", target: "orders", operation: "create" },
+    ]);
+    const branch = raw.branches[0] as RawBranch;
+    branch.extraEffects = [read, read];
+
+    expect(assembleSummary(raw).transitions[0]?.effects).toEqual([
+      { type: "mutation", target: "orders", operation: "create" },
+      { ...read, count: 2 },
+    ]);
   });
 });
 

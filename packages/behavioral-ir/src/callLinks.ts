@@ -10,6 +10,7 @@
  * call the same way and the CLI reads one field.
  */
 
+import { normalizeCalleeText } from "./effectIdentity.js";
 import { BOUNDARY_ROLE } from "./index.js";
 import { summaryIdentifier } from "./summaryId.js";
 import { unfollowedCallGap } from "./unfollowedCall.js";
@@ -51,7 +52,7 @@ export function placeCalls(
       if (effect.type !== "invocation") {
         continue;
       }
-      const target = targets.get(effect.callee);
+      const target = targets.get(normalizeCalleeText(effect.callee));
       if (target !== undefined) {
         effect.declaredAt = target;
       }
@@ -79,14 +80,15 @@ export class TargetPlacements {
     if (placed === null) {
       return;
     }
-    settle(this.byCallee, calleeText, placed);
+    settle(this.byCallee, normalizeCalleeText(calleeText), placed);
   }
 
   // Same shadow handling as `place`, one level down: the argument at
   // this position in calls written as `calleeText`.
   placeArg(calleeText: string, position: number, placed: DeclaredAt): void {
-    const byPosition = this.byCalleeAndPosition.get(calleeText) ?? new Map();
-    this.byCalleeAndPosition.set(calleeText, byPosition);
+    const key = normalizeCalleeText(calleeText);
+    const byPosition = this.byCalleeAndPosition.get(key) ?? new Map();
+    this.byCalleeAndPosition.set(key, byPosition);
     settle(byPosition, position, placed);
   }
 
@@ -161,7 +163,7 @@ export function placeArgTargets(
       if (effect.type !== "invocation") {
         continue;
       }
-      const byPosition = argTargets.get(effect.callee);
+      const byPosition = argTargets.get(normalizeCalleeText(effect.callee));
       if (byPosition === undefined) {
         continue;
       }
@@ -190,7 +192,7 @@ export function placeCalleeParameters(
   }
   const byCallee = new Map(
     parameterCalls.map(({ callee, parameterIndex }) => [
-      callee,
+      normalizeCalleeText(callee),
       parameterIndex,
     ]),
   );
@@ -199,7 +201,7 @@ export function placeCalleeParameters(
       if (effect.type !== "invocation") {
         continue;
       }
-      const parameterIndex = byCallee.get(effect.callee);
+      const parameterIndex = byCallee.get(normalizeCalleeText(effect.callee));
       if (parameterIndex !== undefined) {
         effect.calleeParameter = parameterIndex;
       }

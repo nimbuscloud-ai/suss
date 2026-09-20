@@ -14,6 +14,8 @@ import { createHash } from "node:crypto";
 
 import {
   exchangesHttpResponses,
+  foldRepeatedEffects,
+  normalizeCalleeText,
   withGraphqlMetadata,
   withHttpMetadata,
   withMountMetadata,
@@ -568,6 +570,31 @@ function unreadSentences(raw: RawCodeStructure): string[] {
   ];
 }
 
+/** A recognizer builds its own effects in IR form, so only the raw ones convert. */
+function effectsOfBranch(branch: RawBranch): Effect[] {
+  const effects = [
+    ...branch.effects.map(effectToIR),
+    ...(branch.extraEffects ?? []),
+  ];
+  return foldRepeatedEffects(effects.map(withNormalizedCallee));
+}
+
+/**
+ * Two spellings of one call are one effect, so the callee is normalized
+ * before the fold rather than after it.
+ */
+function withNormalizedCallee(effect: Effect): Effect {
+  if (effect.type !== "invocation" && effect.type !== "interaction") {
+    return effect;
+  }
+
+  if (effect.callee === undefined) {
+    return effect;
+  }
+
+  return { ...effect, callee: normalizeCalleeText(effect.callee) };
+}
+
 export function assembleSummary(
   raw: RawCodeStructure,
   options: ExtractorOptions = DEFAULT_OPTIONS,
@@ -582,10 +609,7 @@ export function assembleSummary(
       id: makeTransitionId(raw.identity.name, branch),
       conditions,
       output: terminalToOutput(branch.terminal),
-      effects: [
-        ...branch.effects.map(effectToIR),
-        ...(branch.extraEffects ?? []),
-      ],
+      effects: effectsOfBranch(branch),
       location: branch.location,
       isDefault: branch.isDefault,
     };

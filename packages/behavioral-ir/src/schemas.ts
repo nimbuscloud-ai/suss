@@ -457,13 +457,22 @@ const DeclarationPlaceSchema = z.object({
   span: z.object({ start: z.number(), end: z.number() }),
 });
 
+/**
+ * How many sites in one transition produced this effect. A path that
+ * inserts twice into the same table says so here, since the transition
+ * lists the effect once. Absent means one.
+ */
+const repeatCount = { count: z.number().int().min(2).optional() };
+
 export const EffectSchema = z.discriminatedUnion("type", [
   z.object({
+    ...repeatCount,
     type: z.literal("mutation"),
     target: z.string(),
     operation: z.enum(["create", "update", "delete"]),
   }),
   z.object({
+    ...repeatCount,
     type: z.literal("invocation"),
     callee: z.string(),
     /**
@@ -504,11 +513,13 @@ export const EffectSchema = z.discriminatedUnion("type", [
     preconditions: z.array(PredicateSchema).optional(),
   }),
   z.object({
+    ...repeatCount,
     type: z.literal("emission"),
     event: z.string(),
     payload: z.unknown().optional(),
   }),
   z.object({
+    ...repeatCount,
     type: z.literal("stateChange"),
     variable: z.string(),
     newValue: z.unknown().optional(),
@@ -519,6 +530,7 @@ export const EffectSchema = z.discriminatedUnion("type", [
    * the IR does not enforce it.
    */
   z.object({
+    ...repeatCount,
     type: z.literal("interaction"),
     binding: BoundaryBindingSchema,
     /** Source text of the call expression, for inspect rendering. */

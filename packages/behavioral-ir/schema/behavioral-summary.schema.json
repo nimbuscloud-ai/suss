@@ -744,6 +744,11 @@
                   {
                     "type": "object",
                     "properties": {
+                      "count": {
+                        "type": "integer",
+                        "minimum": 2,
+                        "maximum": 9007199254740991
+                      },
                       "type": {
                         "type": "string",
                         "const": "mutation"
@@ -762,6 +767,11 @@
                   {
                     "type": "object",
                     "properties": {
+                      "count": {
+                        "type": "integer",
+                        "minimum": 2,
+                        "maximum": 9007199254740991
+                      },
                       "type": {
                         "type": "string",
                         "const": "invocation"
@@ -856,6 +866,11 @@
                   {
                     "type": "object",
                     "properties": {
+                      "count": {
+                        "type": "integer",
+                        "minimum": 2,
+                        "maximum": 9007199254740991
+                      },
                       "type": {
                         "type": "string",
                         "const": "emission"
@@ -871,6 +886,11 @@
                   {
                     "type": "object",
                     "properties": {
+                      "count": {
+                        "type": "integer",
+                        "minimum": 2,
+                        "maximum": 9007199254740991
+                      },
                       "type": {
                         "type": "string",
                         "const": "stateChange"
@@ -886,6 +906,11 @@
                   {
                     "type": "object",
                     "properties": {
+                      "count": {
+                        "type": "integer",
+                        "minimum": 2,
+                        "maximum": 9007199254740991
+                      },
                       "type": {
                         "type": "string",
                         "const": "interaction"

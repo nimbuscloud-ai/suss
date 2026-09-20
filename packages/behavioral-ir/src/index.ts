@@ -154,6 +154,11 @@ export {
   type UnitsByFile,
   unitsByFile,
 } from "./deployment/unitScope.js";
+export {
+  effectKey,
+  foldRepeatedEffects,
+  normalizeCalleeText,
+} from "./effectIdentity.js";
 export { normalizeLegacySummary, SUMMARY_SCHEMA_VERSION } from "./legacy.js";
 export {
   type CodeScopeMetadata,
