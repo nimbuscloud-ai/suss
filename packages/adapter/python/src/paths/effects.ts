@@ -168,7 +168,7 @@ function askedNodesUnder(node: PyNode, found: PyNode[] = []): PyNode[] {
 
 /**
  * Every value this body's own effects could ask the rules about, for a
- * caller settling a whole run's bodies in one question. A nested `def`
+ * caller settling a file's bodies in one question. A nested `def`
  * is left out, the way its calls are: its body belongs to its own
  * summary and is settled when that one is read.
  */
