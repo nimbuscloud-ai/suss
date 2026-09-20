@@ -323,6 +323,49 @@ describe("a deployable whose provider writes its variables as blocks", () => {
   });
 });
 
+const SUPPLIED_BY_VARIABLE = `
+resource "aws_lambda_function" "confirm" {
+  function_name = "confirm"
+  handler       = "\${var.handler}"
+  runtime       = "\${var.runtime}"
+}
+
+resource "aws_ecs_task_definition" "api" {
+  family = "api"
+
+  container_definitions = jsonencode([
+    { name = "web", image = var.image }
+  ])
+}
+`;
+
+describe("a deployable whose image, runtime or handler a variable supplies", () => {
+  const units = deployables(
+    terraformToSummaries(SUPPLIED_BY_VARIABLE, "main.tf", PACKS),
+  );
+  const unitNamed = (instanceName: string) =>
+    units.find(
+      (unit) => unit.identity.deployableUnit?.instanceName === instanceName,
+    ) as BehavioralSummary;
+
+  it("spells the hole the way every other unsettled value is spelled", () => {
+    const lambda = readRuntimeContractMetadata(unitNamed("confirm"));
+    expect(lambda?.runtime).toBe("{var.runtime}");
+    expect(lambda?.entryPoint).toBe("{var.handler}");
+  });
+
+  it("claims no file for a handler nothing settles", () => {
+    expect(unitNamed("confirm").metadata?.codeScope).toEqual({
+      kind: "unknown",
+    });
+  });
+
+  it("spells an image inside a jsonencode the same way", () => {
+    const task = readRuntimeContractMetadata(unitNamed("api/web"));
+    expect(task?.image).toBe("{var.image}");
+  });
+});
+
 describe("a function that declares no environment", () => {
   it("still declares a contract, of the variables the platform injects", () => {
     const [unit] = deployables(

@@ -21,6 +21,7 @@ import semver from "semver";
 
 import {
   ecsContainerInstanceName,
+  hasNameHole,
   messageBusBinding,
   metricBinding,
   namePatternFromSub,
@@ -828,9 +829,17 @@ function deployableSummary(
   const platform =
     boundary.platformEnvVars ??
     PLATFORM_INJECTED_ENV_VARS[boundary.deploymentTarget];
-  const code = codePointer(process.body, boundary);
-  const image = attributeText(process.body, boundary.code?.imageAttribute);
-  const runtime = attributeText(process.body, boundary.runtimeAttribute);
+  const code = codePointer(process.body, boundary, opts.scope);
+  const image = attributePattern(
+    process.body,
+    boundary.code?.imageAttribute,
+    opts.scope,
+  );
+  const runtime = attributePattern(
+    process.body,
+    boundary.runtimeAttribute,
+    opts.scope,
+  );
   const deployableUnit: DeployableUnit = {
     deploymentTarget: boundary.deploymentTarget,
     instanceName,
@@ -941,13 +950,19 @@ const HANDLER_MODULE: Record<
 function codePointer(
   body: Record<string, unknown>,
   boundary: DeployableResource,
+  scope: ReferenceScope,
 ): CodePointer {
   const spec = boundary.code?.handler;
-  const written = attributeText(body, spec?.attribute);
+  const written = attributePattern(body, spec?.attribute, scope);
   if (spec === undefined || written === null) {
     return { entryPoint: null, entry: null };
   }
-  return { entryPoint: written, entry: HANDLER_MODULE[spec.spelling](written) };
+  // Splitting a handler with a hole in it at its last dot picks a file
+  // nobody deploys, so the unit is placed by whatever else the run knows.
+  return {
+    entryPoint: written,
+    entry: hasNameHole(written) ? null : HANDLER_MODULE[spec.spelling](written),
+  };
 }
 
 /** One reader per way a provider writes an environment. */
@@ -1056,6 +1071,21 @@ function attributeText(
   attribute: string | undefined,
 ): string | null {
   return attribute === undefined ? null : stringOf(valueAt(body, attribute));
+}
+
+/**
+ * The attribute's value as a boundary name, so an image and a handler a
+ * variable supplies are spelled the way every other unsettled value in
+ * a summary is.
+ */
+function attributePattern(
+  body: Record<string, unknown>,
+  attribute: string | undefined,
+  scope: ReferenceScope,
+): string | null {
+  return attribute === undefined
+    ? null
+    : namePattern(valueAt(body, attribute), scope);
 }
 
 /**

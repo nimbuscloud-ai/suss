@@ -117,6 +117,8 @@ The unit is the resource label, `confirm`, rather than the name it deploys under
 
 One resource deploys several processes where the provider says so. An ECS task definition is one contract per container, and each container gets only its own variables.
 
+Every unsettled value in a contract is spelled the same way. An `image = var.image`, a `runtime` and a handler a variable supplies all come out as the pattern `{var.image}` rather than as the raw `${var.image}`, so nothing downstream has to know which field it is reading. A handler with a hole in it says nothing about which file the code is in, since splitting it at its last dot would pick a module nobody deploys.
+
 A configuration says which handler runs and never which directory the deployed artifact was built from. So the handler is all the checker has to go on: where it matches a module in the run, that module's imports are the code the unit runs, and where it matches nothing, the unit is reported as one whose code could not be placed rather than being given the repository.
 
 
