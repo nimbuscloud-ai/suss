@@ -368,8 +368,65 @@ describe("a WITH clause in front of a write", () => {
     ).toEqual(["job_runs", "jobs"]);
   });
 
+  it("reads a recursive clause", () => {
+    expect(
+      readSqlAccess(
+        "WITH RECURSIVE tree AS (SELECT id FROM jobs) INSERT INTO job_runs (job_id) SELECT id FROM tree",
+      ).map((access) => access.table),
+    ).toEqual(["job_runs", "jobs"]);
+  });
+
+  it("reads a parenthesis inside a dollar-quoted literal as text too", () => {
+    expect(
+      readSqlAccess(
+        "WITH due AS (SELECT id FROM jobs WHERE note = $tag$ ) $tag$) INSERT INTO job_runs (job_id) SELECT id FROM due",
+      ).map((access) => access.table),
+    ).toEqual(["job_runs", "jobs"]);
+    expect(
+      readSqlAccess(
+        "WITH due AS (SELECT id FROM jobs WHERE note = $$ ) $$) INSERT INTO job_runs (job_id) SELECT id FROM due",
+      ).map((access) => access.table),
+    ).toEqual(["job_runs", "jobs"]);
+  });
+
+  it("reads a clause a comment interrupts before the name", () => {
+    expect(
+      readSqlAccess(
+        "WITH /* the ones that are ready */ due AS (SELECT id FROM jobs) INSERT INTO job_runs (job_id) SELECT id FROM due",
+      ).map((access) => access.table),
+    ).toEqual(["job_runs", "jobs"]);
+    expect(
+      readSqlAccess(
+        "-- a note\nWITH due AS (SELECT id FROM jobs) INSERT INTO job_runs (job_id) SELECT id FROM due",
+      ).map((access) => access.table),
+    ).toEqual(["job_runs", "jobs"]);
+  });
+
   it("says nothing about a clause nothing closes", () => {
     expect(readSqlAccess("WITH due AS (SELECT id FROM jobs")).toEqual([]);
+  });
+
+  it("says nothing about a clause that states no name, or never says AS", () => {
+    expect(
+      readSqlAccess(
+        "WITH (SELECT id FROM jobs) INSERT INTO job_runs (job_id) VALUES ($1)",
+      ),
+    ).toEqual([]);
+    expect(readSqlAccess("WITH due SELECT id FROM jobs")).toEqual([]);
+  });
+
+  it("says nothing about a clause whose query is not parenthesised", () => {
+    expect(
+      readSqlAccess(
+        "WITH due AS SELECT id FROM jobs INSERT INTO job_runs (job_id) VALUES ($1)",
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("a kind of statement it does not read", () => {
+  it("says nothing about one that parses but touches no rows", () => {
+    expect(readSqlAccess("CREATE TABLE dim_account (id int)")).toEqual([]);
   });
 });
 
