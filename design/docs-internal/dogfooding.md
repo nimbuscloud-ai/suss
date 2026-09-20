@@ -183,7 +183,7 @@ factories in the TypeScript adapter): the method exists and pairs
 when something calls it, and today nothing outside the package
 does.
 
-**The 13 unmatched consumers ask for a method that exists only on a
+**The 12 unmatched consumers ask for a method that exists only on a
 value's declared return type.** `SuppressionFileSchema.safeParse(...)`
 and `IntentDocSchema.safeParse(...)` both call a method zod puts on
 every schema object, which comes from the imported `ZodType` type
