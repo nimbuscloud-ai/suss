@@ -582,9 +582,12 @@ async function runExtract(args: string[]): Promise<number> {
     return 1;
   }
 
+  // parseArgs only takes one value per --files occurrence, so
+  // `--files a b` leaves "b" as a bare positional instead of a second
+  // file. Both are files the flag was given.
   const files =
     values.files !== undefined && values.files.length > 0
-      ? values.files
+      ? [...values.files, ...positionals]
       : positionals.length > 0
         ? positionals
         : undefined;

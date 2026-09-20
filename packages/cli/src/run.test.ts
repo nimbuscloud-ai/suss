@@ -549,6 +549,64 @@ describe("runCli extract", () => {
     }
   });
 
+  it("reads every file named after one --files flag, not just the first", async () => {
+    const srcDir = path.join(tmpDir, "src");
+    fs.mkdirSync(srcDir, { recursive: true });
+    const first = path.join(srcDir, "first.ts");
+    const second = path.join(srcDir, "second.ts");
+    fs.writeFileSync(
+      first,
+      [
+        `import axios from "axios";`,
+        "export async function loadFirst() {",
+        "  return (await axios.get(`/first`)).data;",
+        "}",
+      ].join("\n"),
+    );
+    fs.writeFileSync(
+      second,
+      [
+        `import axios from "axios";`,
+        "export async function loadSecond() {",
+        "  return (await axios.get(`/second`)).data;",
+        "}",
+      ].join("\n"),
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: { strict: true, module: "esnext" },
+        include: ["src"],
+      }),
+    );
+
+    const outFile = path.join(tmpDir, "byFiles.json");
+    const { exit } = await capture(() =>
+      runCli([
+        "extract",
+        "-p",
+        path.join(tmpDir, "tsconfig.json"),
+        "-f",
+        "axios",
+        "--files",
+        first,
+        second,
+        "-o",
+        outFile,
+        "--no-cache",
+      ]),
+    );
+    expect(exit).toBe(0);
+
+    const written = JSON.parse(fs.readFileSync(outFile, "utf8")) as Array<{
+      identity: { name: string };
+    }>;
+    expect(written.map((s) => s.identity.name).sort()).toEqual([
+      "loadFirst",
+      "loadSecond",
+    ]);
+  });
+
   it("stops on a misspelled pack option instead of extracting nothing", async () => {
     const config = path.join(tmpDir, "suss.aws-dynamodb.json");
     fs.writeFileSync(
