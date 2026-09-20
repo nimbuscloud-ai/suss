@@ -23,7 +23,7 @@ terraformFileToSummaries("infra/terraform/dynamodb", { packs: [awsTerraform()] }
 | --- | --- |
 | `aws_dynamodb_table` | a store, keyed by `hash_key` and `range_key`, with each `global_secondary_index` and `local_secondary_index` as its own way in |
 | `aws_s3_bucket` | a store whose objects have no fields to compare against |
-| `aws_elasticache_cluster` | a Redis store, when `engine` is `redis` or `valkey`; a Memcached cluster is skipped |
+| `aws_elasticache_cluster` | a Redis store, when `engine` is `redis` or `valkey` or unset; any other engine leaves the store with no engine on it |
 | `aws_elasticache_replication_group` | a Redis store |
 | `aws_rds_cluster` | a PostgreSQL or MySQL store, whichever its `engine` picks |
 | `aws_db_instance` | the same, and `mariadb` counts as MySQL |

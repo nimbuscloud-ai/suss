@@ -169,6 +169,23 @@ resource "google_sql_database_instance" "legacy" {
   region           = "us-central1"
 }
 
+resource "google_sql_database_instance" "archive" {
+  name             = "archive"
+  database_version = "ORACLE_19"
+  region           = "us-central1"
+}
+
+variable "accounts_version" {
+  type    = string
+  default = "POSTGRES_15"
+}
+
+resource "google_sql_database_instance" "accounts" {
+  name             = "accounts"
+  database_version = var.accounts_version
+  region           = "us-central1"
+}
+
 resource "google_spanner_database" "ledger" {
   name     = "ledger"
   instance = "spanner-main"
@@ -274,12 +291,28 @@ describe("what the storage entries read", () => {
     ).toMatchObject({ storageSystem: "mysql" });
   });
 
-  it("skips a Cloud SQL engine no entry describes", () => {
+  it("reads a SQL Server instance as the store its database_version picks", () => {
     expect(
-      read(STORES).some(
-        (s) => s.identity.name === "google_sql_database_instance.legacy",
-      ),
-    ).toBe(false);
+      boundary(STORES, "google_sql_database_instance.legacy").identity
+        .boundaryBinding?.semantics,
+    ).toMatchObject({ storageSystem: "mssql" });
+  });
+
+  it("reads an instance whose engine the entry does not list, with no engine on it", () => {
+    const archive = boundary(STORES, "google_sql_database_instance.archive");
+    expect(archive.identity.boundaryBinding?.semantics).toMatchObject({
+      storageSystem: null,
+    });
+    expect(archive.gaps.map((gap) => gap.description)).toEqual([
+      '"database_version" states an engine this run could not settle, so which store this is stays unknown and it pairs with an access on any engine.',
+    ]);
+  });
+
+  it("reads an instance whose version a variable supplies, with no engine on it", () => {
+    expect(
+      boundary(STORES, "google_sql_database_instance.accounts").identity
+        .boundaryBinding?.semantics,
+    ).toMatchObject({ storageSystem: null });
   });
 
   it("reads Spanner and Firestore as stores with no container to pair on", () => {

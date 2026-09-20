@@ -48,6 +48,7 @@ import type {
   CodeScopeMetadata,
   DeployableUnit,
   EnvVarSource,
+  Gap,
   MetricContractMetadata,
   MetricReadingMetadata,
   StorageContractMetadata,
@@ -478,10 +479,9 @@ function providerConstraints(
  *
  * A pack states several entries for one resource type when the provider
  * spells it differently across versions, and again when one attribute
- * decides which store it is: `aws_db_instance` is a PostgreSQL store or
- * a MySQL one depending on its `engine`. Both are settled here, so an
- * entry whose gate turns it down does not stop a later entry reading
- * the same resource.
+ * decides whether the resource is the thing the entry describes at all.
+ * Both are settled here, so an entry whose gate turns it down does not
+ * stop a later entry reading the same resource.
  */
 function patternFor(
   pack: TerraformPack,
@@ -532,13 +532,7 @@ function entryApplies(
     return gate.whenUnset === "read";
   }
   const text = stringOf(value);
-  if (text === null) {
-    return false;
-  }
-  return (
-    (gate.equals ?? []).includes(text) ||
-    (gate.startsWith ?? []).some((prefix) => text.startsWith(prefix))
-  );
+  return text !== null && (gate.equals ?? []).includes(text);
 }
 
 /** Where in the configuration one resource was written. */
@@ -598,6 +592,7 @@ function storageSummary(
   // Two resource types may share a label, so the summary goes by the
   // address Terraform itself refers to a resource by.
   const address = `${opts.scope.namePrefix}${opts.resourceType}.${label}`;
+  const storageSystem = storageSystemOf(opts.body, boundary, opts.scope);
   // A resource that only says the store exists gets no container name
   // and no physical name: either one would claim accesses that spell
   // the same text, and nothing the resource declares is a container.
@@ -621,7 +616,7 @@ function storageSummary(
       exportPath: null,
       boundaryBinding: storageBinding({
         recognition: "terraform",
-        storageSystem: boundary.storageSystem,
+        storageSystem,
         ...(boundary.transport !== undefined
           ? { transport: boundary.transport }
           : {}),
@@ -632,7 +627,7 @@ function storageSummary(
     },
     inputs: [],
     transitions: [],
-    gaps: [],
+    gaps: unknownEngineGaps(storageSystem, boundary),
     confidence: { source: "declared", level: "high" },
     metadata: {
       storageContract: {
@@ -642,6 +637,47 @@ function storageSummary(
       },
     },
   };
+}
+
+/**
+ * Which store the resource is, or null when the entry reads the engine
+ * off an attribute and the configuration does not settle it there. The
+ * resource is deployed and has a name either way, so it is still read,
+ * and the gap below says the engine is the part that went missing.
+ */
+function storageSystemOf(
+  body: Record<string, unknown>,
+  boundary: StorageResource,
+  scope: ReferenceScope,
+): string | null {
+  const spec = boundary.storageSystem;
+  if (typeof spec === "string") {
+    return spec;
+  }
+  return meaningOf(body, spec, scope) ?? null;
+}
+
+/**
+ * What a reader of the summary is told about an engine nobody settled.
+ * The store shows up with no engine on it, and a reader who cannot see
+ * why would take the blank for a defect in the pack.
+ */
+function unknownEngineGaps(
+  storageSystem: string | null,
+  boundary: StorageResource,
+): Gap[] {
+  const spec = boundary.storageSystem;
+  if (storageSystem !== null || typeof spec === "string") {
+    return [];
+  }
+  return [
+    {
+      type: "unreadOutcome",
+      conditions: [],
+      consequence: "unknown",
+      description: `"${spec.attribute}" states an engine this run could not settle, so which store this is stays unknown and it pairs with an access on any engine.`,
+    },
+  ];
 }
 
 /** The fields a store declares, from its key blocks or from its JSON schema. */
@@ -835,7 +871,9 @@ function metricSummary(
     transitions: [],
     gaps: [],
     confidence: { source: "declared", level: "high" },
-    metadata: { metricContract: metricContract(opts.body, boundary) },
+    metadata: {
+      metricContract: metricContract(opts.body, boundary, opts.scope),
+    },
   };
 }
 
@@ -843,9 +881,10 @@ function metricSummary(
 function metricContract(
   body: Record<string, unknown>,
   boundary: MetricResource,
+  scope: ReferenceScope,
 ): MetricContractMetadata {
-  const values = meaningOf(body, boundary.values);
-  const accumulates = meaningOf(body, boundary.accumulates);
+  const values = meaningOf(body, boundary.values, scope);
+  const accumulates = meaningOf(body, boundary.accumulates, scope);
   return {
     ...(values !== undefined ? { values } : {}),
     ...(accumulates !== undefined ? { accumulates } : {}),
@@ -893,7 +932,9 @@ function readingSummaries(
         transitions: [],
         gaps: [],
         confidence: { source: "declared", level: "high" },
-        metadata: { metricReading: metricReading(reading, boundary) },
+        metadata: {
+          metricReading: metricReading(reading, boundary, opts.scope),
+        },
       });
     }
   }
@@ -970,6 +1011,7 @@ function metricTypesIn(
 function metricReading(
   reading: Record<string, unknown>,
   boundary: MetricReadingResource,
+  scope: ReferenceScope,
 ): MetricReadingMetadata {
   const compares = boundary.comparesTo;
   const comparesTo =
@@ -977,7 +1019,7 @@ function metricReading(
       ? compares.whenSet
       : undefined;
   const reduces = boundary.reducesTo;
-  const reducesTo = meaningOf(reading, reduces);
+  const reducesTo = meaningOf(reading, reduces, scope);
   return {
     ...(comparesTo !== undefined ? { comparesTo } : {}),
     ...(reducesTo !== undefined ? { reducesTo } : {}),
@@ -1308,20 +1350,42 @@ function attributePattern(
     : namePattern(valueAt(body, attribute), scope);
 }
 
+/** One reader per way a pack says a value picks an entry in its table. */
+const MEANING_KEYS: Record<
+  NonNullable<AttributeMeaning<string>["matches"]>,
+  (stated: string, keys: string[]) => string | undefined
+> = {
+  value: (stated, keys) => keys.find((key) => key === stated),
+  prefix: (stated, keys) => keys.find((key) => stated.startsWith(key)),
+};
+
 /**
  * What the pack says the value at that attribute means, or undefined
- * when the resource states nothing there, or states something the pack
- * does not list.
+ * when the resource states nothing there, states something built at
+ * deploy time, or states something the pack does not list.
  */
 function meaningOf<T extends string>(
   body: Record<string, unknown>,
   spec: AttributeMeaning<T> | undefined,
+  scope: ReferenceScope,
 ): T | undefined {
   if (spec === undefined) {
     return undefined;
   }
-  const stated = stringOf(valueAt(body, spec.attribute));
-  return stated === null ? undefined : spec.means[stated];
+  const value = valueAt(body, spec.attribute);
+  if (value === undefined) {
+    return spec.whenUnset;
+  }
+  const written = stringOf(value);
+  const stated = written === null ? null : resolveReferences(written, scope);
+  if (stated === null || stated.includes("${")) {
+    return undefined;
+  }
+  const key = MEANING_KEYS[spec.matches ?? "value"](
+    stated,
+    Object.keys(spec.means),
+  );
+  return key === undefined ? undefined : spec.means[key];
 }
 
 /**

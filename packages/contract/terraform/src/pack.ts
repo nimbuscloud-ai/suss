@@ -18,11 +18,37 @@ import type {
   MetricValueShape,
 } from "@suss/behavioral-ir";
 
+/**
+ * An attribute whose value the pack translates into one of suss's own
+ * words. The reader takes the value at `attribute` and looks it up in
+ * `means`; a value the pack did not list says nothing, and so does one
+ * the configuration builds at deploy time.
+ */
+export interface AttributeMeaning<T extends string> {
+  /** The attribute path whose value says which one it is. */
+  attribute: string;
+  /** What each value the provider can write there means. */
+  means: Record<string, T>;
+  /**
+   * Whether a value has to equal a key of `means` or start with one.
+   * Cloud SQL writes an engine and a release together, `POSTGRES_15`,
+   * and the releases change every quarter, so a pack lists the prefix.
+   */
+  matches?: "value" | "prefix";
+  /** What the resource means when it never set the attribute at all. */
+  whenUnset?: T;
+}
+
 /** A store a caller addresses by container and key. */
 export interface StorageResource {
   kind: "storage";
-  /** Which store this is: dynamodb, s3. */
-  storageSystem: string;
+  /**
+   * Which store this is: dynamodb, s3. A resource that runs whichever
+   * engine one of its attributes picks says which attribute instead,
+   * and a value the pack does not list leaves the store with no engine
+   * on it rather than dropping the resource.
+   */
+  storageSystem: string | AttributeMeaning<string>;
   /** How a caller reaches it, when that is not the store's own name. */
   transport?: string;
   /**
@@ -88,19 +114,6 @@ export interface MessageBusResource {
   kind: "message-bus";
   messageBus: MessageBusTechnology;
   nameAttribute?: string;
-}
-
-/**
- * An attribute whose value the pack translates into one of suss's own
- * words. The reader takes the value at `attribute` and looks it up in
- * `means`; a value the pack did not list says nothing, the same as an
- * attribute the configuration never set.
- */
-export interface AttributeMeaning<T extends string> {
-  /** The attribute path whose value says which one it is. */
-  attribute: string;
-  /** What each value the provider can write there means. */
-  means: Record<string, T>;
 }
 
 /**
@@ -255,22 +268,17 @@ export interface TerraformResourcePattern {
   resource: string;
   /**
    * An attribute that decides whether the entry describes the resource
-   * at all. `aws_elasticache_cluster` deploys whichever engine its
-   * `engine` attribute picks, and only some engines are the store the
-   * entry describes. A value outside `equals`, or one built at deploy
-   * time, means the resource is not read, rather than read as
-   * something it may not be. `whenUnset` says what an absent attribute
-   * means; the default is not to read the resource.
+   * at all. A Firestore database in Datastore mode speaks a different
+   * API, so it is not the store the Firestore entry describes. A value
+   * outside `equals`, or one built at deploy time, means the resource
+   * is not read, rather than read as something it may not be.
+   * `whenUnset` says what an absent attribute means; the default is not
+   * to read the resource.
    */
   appliesWhen?: {
     attribute: string;
     /** The values that mean the entry describes this resource. */
     equals?: string[];
-    /**
-     * The prefixes that do, for an attribute stating an engine and a
-     * release together: Cloud SQL writes `POSTGRES_15`.
-     */
-    startsWith?: string[];
     whenUnset?: "read" | "skip";
   };
   /**

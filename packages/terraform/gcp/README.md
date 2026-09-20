@@ -27,7 +27,7 @@ const summaries = terraformFileToSummaries("infra/terraform/monitoring", {
 | `google_redis_instance` | a Redis store with no container to pair on; see below |
 | `google_bigquery_dataset` | a BigQuery store; the dataset is a namespace rather than something a query addresses |
 | `google_bigquery_table` | a BigQuery table in that dataset, with every column its `schema` states |
-| `google_sql_database_instance` | a PostgreSQL or MySQL store, whichever its `database_version` picks |
+| `google_sql_database_instance` | a PostgreSQL, MySQL or SQL Server store, whichever its `database_version` picks; a version a variable supplies leaves the store with no engine on it |
 | `google_spanner_database` | a Spanner store with no container to pair on |
 | `google_firestore_database` | a Firestore store, when its `type` is `FIRESTORE_NATIVE` |
 | `google_bigtable_table` | a Bigtable table, under the id code passes to `table()` |
