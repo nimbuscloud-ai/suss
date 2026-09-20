@@ -393,8 +393,11 @@ environment, so it states the two things it does know: `readsKeyed` for
 a read off any container, and `environmentObject` for the expression
 that spells `process.env`. `environmentValue(w, o)` walks out of the
 object, through the names declared as it and the parameters callers
-hand it to, however many calls deep. `environmentRead` joins that to a
-keyed read, `readsEnvNamed` drops the object column, and
+hand it to, however many calls deep. A parameter written with the
+environment as its default is one of those too, since a caller that
+passes nothing leaves the default in place; `paramDefault(p, d)` is
+what the adapter states about that. `environmentRead` joins the walk to
+a keyed read, `readsEnvNamed` drops the object column, and
 `paramNamesEnv` says which parameters end up as a variable's name.
 
 `wantedEnvObject` seeds the question, because a project writes the
@@ -403,6 +406,15 @@ is somewhere no scan of the source would look. Every join then runs in
 the direction it was built for: `refersToObject` from the object,
 `passesArgument` from the argument through `callArg`, and
 `paramNamesEnv` from the site to its callers.
+
+A caller that already has one expression in hand asks the other way
+round. `wantedEnvironmentValue(o, w)` binds the expression and leaves
+the object free, so a pack standing at `cleanEnv(source, schema)` can
+ask about `source` alone. The demand rewrite turns every join around
+for that adornment, and the walk runs from the argument to the
+parameter it refers to, out to that parameter's callers, and on until
+it reaches an `environmentObject` or runs out of callers. The store
+exposes it as `isEnvironmentValue`.
 
 ## The anchor behind a receiver
 

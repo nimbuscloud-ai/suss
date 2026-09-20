@@ -1200,6 +1200,10 @@ function emitParameters(
     table.byId.set(parameterId, parameter);
     fact(db, "paramOf", ownerId, String(position), parameterId);
     fact(db, "paramNamed", ownerId, parameter.getName(), parameterId);
+    const fallback = parameter.getInitializer();
+    if (fallback !== undefined) {
+      fact(db, "paramDefault", parameterId, emitValue(db, table, fallback));
+    }
   }
 }
 

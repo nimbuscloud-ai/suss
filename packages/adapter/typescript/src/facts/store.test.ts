@@ -2655,3 +2655,93 @@ describe("reading a value under one construction", () => {
     expect(new ResolutionStore().constructionSitesOf(cls)).toEqual([]);
   });
 });
+
+describe("isEnvironmentValue", () => {
+  /** The first argument of the `parse(...)` call written in `/config.ts`. */
+  function parsedValue(project: Project): Node {
+    const call = project
+      .getSourceFileOrThrow("/config.ts")
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .find((one) => one.getExpression().getText().endsWith("parse"));
+    const argument = call?.getArguments()[0];
+    if (argument === undefined) {
+      throw new Error("No parse call with an argument in /config.ts");
+    }
+    return argument;
+  }
+
+  function asksAbout(files: Record<string, string>): boolean {
+    const project = projectOf(files);
+    const store = new ResolutionStore([], ["process.env"]);
+    store.notePossibleCallers(project.getSourceFiles());
+    return store.isEnvironmentValue(parsedValue(project));
+  }
+
+  it("says yes to the environment written out at the call", () => {
+    expect(
+      asksAbout({
+        "/config.ts": "export const config = parse(process.env);",
+      }),
+    ).toBe(true);
+  });
+
+  it("says yes to a name declared as the environment", () => {
+    expect(
+      asksAbout({
+        "/config.ts": `
+          const source = process.env;
+          export const config = parse(source);
+        `,
+      }),
+    ).toBe(true);
+  });
+
+  it("says yes to a parameter a caller two calls away fills", () => {
+    expect(
+      asksAbout({
+        "/config.ts": "export function load(source) { return parse(source); }",
+        "/middle.ts": `
+          import { load } from "./config.js";
+          export function start(source) { return load(source); }
+        `,
+        "/entry.ts": `
+          import { start } from "./middle.js";
+          export const config = start(process.env);
+        `,
+      }),
+    ).toBe(true);
+  });
+
+  it("says yes to a parameter whose own default is the environment", () => {
+    expect(
+      asksAbout({
+        "/config.ts": `
+          export function load(source = process.env) { return parse(source); }
+        `,
+      }),
+    ).toBe(true);
+  });
+
+  it("says no to a name declared as something else", () => {
+    expect(
+      asksAbout({
+        "/config.ts": `
+          const source = { ORDERS_URL: "http://orders" };
+          export const config = parse(source);
+        `,
+      }),
+    ).toBe(false);
+  });
+
+  it("says no to a parameter every caller hands something else", () => {
+    expect(
+      asksAbout({
+        "/config.ts": "export function load(source) { return parse(source); }",
+        "/entry.ts": `
+          import { load } from "./config.js";
+          export const config = load({ ORDERS_URL: "http://orders" });
+        `,
+      }),
+    ).toBe(false);
+  });
+});
