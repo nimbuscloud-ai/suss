@@ -517,7 +517,7 @@
     "packages/packs": {
       "name": "@suss/packs",
       "exports": 58,
-      "internal": 203,
+      "internal": 198,
       "consumers": 0,
       "unfollowedCalls": 7
     },
@@ -538,8 +538,8 @@
     "packages/runtime/node": {
       "name": "@suss/runtime-node",
       "exports": 12,
-      "internal": 40,
-      "consumers": 32,
+      "internal": 36,
+      "consumers": 30,
       "unfollowedCalls": 4
     },
     "packages/sql": {
