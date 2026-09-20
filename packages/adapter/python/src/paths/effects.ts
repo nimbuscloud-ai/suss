@@ -12,12 +12,12 @@ import { enumerateOrDegrade, sharedGatingConditions } from "@suss/extractor";
 import { constantOf, literalOf } from "@suss/values";
 
 import { field, runsAtModuleLoad } from "../ast.js";
-import { evaluatedValue } from "../values/evaluator.js";
+import { askWrittenValues, evaluatedValue } from "../values/evaluator.js";
 import { lowerPythonBody } from "./lowering.js";
 import { predicateOf } from "./predicates.js";
 
 import type { Database } from "@suss/datalog";
-import type { EffectArg, RawEffect } from "@suss/extractor";
+import type { ConditionInfo, EffectArg, RawEffect } from "@suss/extractor";
 import type { PyNode } from "../parser.js";
 
 /** A body written in one of these belongs to the function it declares. */
@@ -99,7 +99,8 @@ function argOf(node: PyNode, facts: Database | undefined): EffectArg {
   return { kind: "identifier", name: node.text };
 }
 
-function argsOf(call: PyNode, facts: Database | undefined): EffectArg[] {
+/** The expression each argument states, with a keyword argument read through to the value it writes. */
+function argumentNodes(call: PyNode): PyNode[] {
   const args = field(call, "arguments");
   if (args === null) {
     return [];
@@ -108,9 +109,13 @@ function argsOf(call: PyNode, facts: Database | undefined): EffectArg[] {
     .filter((child): child is PyNode => child !== null)
     .map((child) =>
       child.type === "keyword_argument"
-        ? argOf(field(child, "value") ?? child, facts)
-        : argOf(child, facts),
+        ? (field(child, "value") ?? child)
+        : child,
     );
+}
+
+function argsOf(call: PyNode, facts: Database | undefined): EffectArg[] {
+  return argumentNodes(call).map((node) => argOf(node, facts));
 }
 
 /** The callee as it is written, which is what a reader matches against. */
@@ -143,6 +148,49 @@ export function moduleLoadInvocationEffects(
   facts?: Database | undefined,
 ): Extract<RawEffect, { type: "invocation" }>[] {
   return invocationEffectsIn(moduleNode, moduleLoadCalls(moduleNode), facts);
+}
+
+/** A name, a member read or a call is where an evaluation stops and asks the rules; everything else it works out from the parts. */
+const ASKED_ABOUT_TYPES = new Set(["identifier", "attribute", "call"]);
+
+/** Every node under this expression that an evaluation of it could ask the rules about. */
+function askedNodesUnder(node: PyNode, found: PyNode[] = []): PyNode[] {
+  if (ASKED_ABOUT_TYPES.has(node.type)) {
+    found.push(node);
+  }
+  for (const child of node.namedChildren) {
+    if (child !== null && !NESTED_DEFINITION_TYPES.has(child.type)) {
+      askedNodesUnder(child, found);
+    }
+  }
+  return found;
+}
+
+/**
+ * Every value this body's own effects could ask the rules about, for a
+ * caller settling a whole run's bodies in one question. A nested `def`
+ * is left out, the way its calls are: its body belongs to its own
+ * summary and is settled when that one is read.
+ */
+export function bodyValueNodes(definitionNode: PyNode): PyNode[] {
+  const body = field(definitionNode, "body");
+  return body === null ? [] : askedNodesUnder(body);
+}
+
+/** The value nodes one call's effect reads: what it is passed, and what the conditions gating it compare. */
+function effectValueNodes(
+  call: PyNode,
+  gating: readonly (readonly ConditionInfo<PyNode>[])[] | undefined,
+): PyNode[] {
+  const found = argumentNodes(call).flatMap((node) => askedNodesUnder(node));
+  for (const path of gating ?? []) {
+    for (const condition of path) {
+      if (condition.expression !== null) {
+        askedNodesUnder(condition.expression, found);
+      }
+    }
+  }
+  return found;
 }
 
 function invocationEffectsIn(
@@ -179,13 +227,24 @@ function invocationEffectsIn(
     statements,
   );
 
-  return calls.map((call) => {
+  const gatingOf = calls.map((call) => {
     const statement = statementOf.get(call.id);
-    const conditions = sharedGatingConditions(
-      statement === undefined
-        ? undefined
-        : enumerated.byTerminal.get(statement),
-      (condition) => predicateOf(condition, facts),
+    return statement === undefined
+      ? undefined
+      : enumerated.byTerminal.get(statement);
+  });
+
+  // The rules run over the whole project's facts, so this body settles
+  // every value it is about to read in one question rather than one per
+  // argument and one per condition.
+  askWrittenValues(
+    calls.flatMap((call, index) => effectValueNodes(call, gatingOf[index])),
+    facts,
+  );
+
+  return calls.map((call, index) => {
+    const conditions = sharedGatingConditions(gatingOf[index], (condition) =>
+      predicateOf(condition, facts),
     );
     return {
       type: "invocation",

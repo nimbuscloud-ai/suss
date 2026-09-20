@@ -42,10 +42,16 @@ import {
   recognizedCallIds,
 } from "../discovery.js";
 import { nodeId, readKey } from "../facts/values.js";
-import { calleeText, invocationEffects } from "../paths/effects.js";
+import {
+  bodyValueNodes,
+  calleeText,
+  invocationEffects,
+} from "../paths/effects.js";
+import { askWrittenValues } from "../values/evaluator.js";
 import {
   calleeSpellings,
   functionNamed,
+  namedOutcomes,
   resolveCallee,
 } from "./resolveCallee.js";
 
@@ -60,6 +66,7 @@ import type {
   RawCodeStructure,
   RawParameter,
 } from "@suss/extractor";
+import type { CalleeOutcome } from "@suss/resolution";
 import type { PyNode } from "../parser.js";
 import type { BoundPythonFile } from "../routers.js";
 import type { Scope } from "../scope.js";
@@ -177,6 +184,12 @@ export function reachedFunctions(
       bodies.flatMap((body) => body.written),
       ctx,
     );
+    const passed = namedOutcomes(
+      bodies.flatMap(({ source, written }) =>
+        written.flatMap(({ call }) => passedNameKeys(source.file, call)),
+      ),
+      ctx,
+    );
 
     for (const { key, source, body, written } of bodies) {
       const scan = scanBody(
@@ -186,7 +199,7 @@ export function reachedFunctions(
           written.map(({ call }) => call),
           options.storageFor(source.file),
         ),
-        { body, written, spellings },
+        { body, written, spellings, passed },
       );
       if (scan.stops.length > 0) {
         stopsByKey.set(key, scan.stops);
@@ -214,12 +227,26 @@ export function reachedFunctions(
     }
   }
 
+  const reached = db
+    .facts("reachable")
+    .map(([keyAtom]) => String(keyAtom))
+    .filter((key) => !seedKeys.has(key));
+  // Every reached body states values the rules have to settle. Asked
+  // together they are one question over the project's facts; asked as
+  // each summary is built they are one per body.
+  askWrittenValues(
+    reached.flatMap((key) => {
+      const target = functionByKey.get(key);
+      return target === undefined ? [] : bodyValueNodes(target.node);
+    }),
+    options.facts,
+  );
+
   const summaries: BehavioralSummary[] = [];
   const summariesByKey = new Map<string, BehavioralSummary[]>();
-  for (const [keyAtom] of db.facts("reachable")) {
-    const key = String(keyAtom);
+  for (const key of reached) {
     const target = functionByKey.get(key);
-    if (seedKeys.has(key) || target === undefined) {
+    if (target === undefined) {
       continue;
     }
     const summary = assembleSummary(libraryUnit(target, options), {
@@ -307,11 +334,37 @@ function outsideNestedDef(node: PyNode): boolean {
   return node.type !== "function_definition";
 }
 
+/** The key an identifier argument joins on, or null when the argument is not a bare name. */
+function passedNameKeyOf(
+  file: BoundPythonFile,
+  arg: PyNode | null,
+): string | null {
+  if (arg === null || arg.type !== "identifier") {
+    return null;
+  }
+  return readKey(file.file, arg, enclosingFunction(arg));
+}
+
+/** Every name one call passes by position, which is what says a project function was handed over. */
+function passedNameKeys(file: BoundPythonFile, call: PyNode): string[] {
+  const args = field(call, "arguments");
+  if (args === null) {
+    return [];
+  }
+  return args.namedChildren.flatMap((arg) => {
+    const key = passedNameKeyOf(file, arg);
+    return key === null ? [] : [key];
+  });
+}
+
 function scanBody(
   source: ReachedFunction,
   ctx: ResolveContext,
   recognized: ReadonlySet<number>,
-  read: BodyCalls & { spellings: CalleeSpellings },
+  read: BodyCalls & {
+    spellings: CalleeSpellings;
+    passed: ReadonlyMap<string, CalleeOutcome>;
+  },
 ): Scan {
   const followed: ReachedFunction[] = [];
   const stops: UnfollowedCall[] = [];
@@ -343,13 +396,11 @@ function scanBody(
       return;
     }
     args.namedChildren.forEach((arg, position) => {
-      if (arg === null || arg.type !== "identifier") {
+      const nameKey = passedNameKeyOf(file, arg);
+      if (nameKey === null) {
         return;
       }
-      const resolved = functionNamed(
-        readKey(file.file, arg, enclosingFunction(arg)),
-        ctx,
-      );
+      const resolved = functionNamed(nameKey, ctx, read.passed);
       if (resolved === null) {
         return;
       }
