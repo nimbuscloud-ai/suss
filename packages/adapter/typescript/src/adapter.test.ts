@@ -2938,6 +2938,142 @@ describe("createTypeScriptAdapter: reachable closure", () => {
   });
 });
 
+/**
+ * A pack that discovers a `handler` export and gates on nothing, so
+ * every file is walked and a job file with no export discovers no unit.
+ */
+const jobPack: PatternPack = {
+  name: "test-job",
+  protocol: "in-process",
+  languages: ["typescript"],
+  discovery: [
+    { kind: "handler", match: { type: "namedExport", names: ["handler"] } },
+  ],
+  terminals: [
+    { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+  ],
+  inputMapping: { type: "allPositional" },
+};
+
+describe("createTypeScriptAdapter: module scope as a closure root", () => {
+  function jobProject(): ReturnType<typeof createTestProject> {
+    const project = createTestProject();
+    project.createSourceFile(
+      "accounts.ts",
+      `
+      export function syncAccounts(): number {
+        return 1;
+      }
+    `,
+    );
+    return project;
+  }
+
+  it("reaches the functions a job calls while its module loads", async () => {
+    const project = jobProject();
+    project.createSourceFile(
+      "job.ts",
+      `
+      import { syncAccounts } from "./accounts";
+
+      function finish(total: number): number {
+        return total;
+      }
+
+      const total = syncAccounts();
+      finish(total);
+    `,
+    );
+    const adapter = createTypeScriptAdapter({ project, frameworks: [jobPack] });
+
+    const summaries = await adapter.extractAll();
+    const moduleInit = summaries.find((s) => s.kind === "module-init");
+    expect(moduleInit?.location.file).toBe("/job.ts");
+    expect(
+      moduleInit?.transitions
+        .flatMap((t) => t.effects)
+        .flatMap((e) => (e.type === "invocation" ? [e.callee] : [])),
+    ).toEqual(["syncAccounts", "finish"]);
+    expect(
+      summaries
+        .filter((s) => s.kind === "library")
+        .map((s) => s.identity.name)
+        .sort(),
+    ).toEqual(["finish", "syncAccounts"]);
+  });
+
+  it("keeps one summary for a function both discovered and called at module scope", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "job.ts",
+      `
+      export function handler(): number {
+        return 1;
+      }
+
+      handler();
+    `,
+    );
+    const adapter = createTypeScriptAdapter({ project, frameworks: [jobPack] });
+
+    const summaries = await adapter.extractAll();
+    expect(summaries.filter((s) => s.identity.name === "handler")).toHaveLength(
+      1,
+    );
+  });
+
+  it("leaves a call written inside a function to that function", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "job.ts",
+      `
+      function inner(): number {
+        return 1;
+      }
+
+      function outer(): number {
+        return inner();
+      }
+
+      outer();
+    `,
+    );
+    const adapter = createTypeScriptAdapter({ project, frameworks: [jobPack] });
+
+    const summaries = await adapter.extractAll();
+    const moduleInit = summaries.find((s) => s.kind === "module-init");
+    expect(
+      moduleInit?.transitions
+        .flatMap((t) => t.effects)
+        .flatMap((e) => (e.type === "invocation" ? [e.callee] : [])),
+    ).toEqual(["outer"]);
+    const outer = summaries.find((s) => s.identity.name === "outer");
+    expect(
+      outer?.transitions
+        .flatMap((t) => t.effects)
+        .flatMap((e) => (e.type === "invocation" ? [e.callee] : [])),
+    ).toEqual(["inner"]);
+  });
+
+  it("reaches a job's callees when the caller names the file", async () => {
+    const project = jobProject();
+    project.createSourceFile(
+      "job.ts",
+      `
+      import { syncAccounts } from "./accounts";
+
+      await syncAccounts();
+    `,
+    );
+    const adapter = createTypeScriptAdapter({ project, frameworks: [jobPack] });
+
+    const summaries = await adapter.extractFromFiles(["/job.ts"]);
+    expect(summaries.map((s) => `${s.kind}:${s.identity.name}`).sort()).toEqual(
+      ["library:syncAccounts", "module-init:job.ts"],
+    );
+  });
+});
+
 describe("createTypeScriptAdapter: rethrow enrichment", () => {
   it("populates rethrow.possibleSources from direct callees' throws", async () => {
     const project = createTestProject();

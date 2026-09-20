@@ -181,4 +181,112 @@ describe("what a module reads when it loads", () => {
     `);
     expect(varsRead(summary)).toEqual(["SERVICE_URL"]);
   });
+
+  it("reads a top-level statement inside a function the module invokes on the spot", () => {
+    expect(
+      varsRead(
+        summaryOf(`
+          void (async () => {
+            const url = settings.SERVICE_URL;
+            return url;
+          })();
+        `),
+      ),
+    ).toEqual(["SERVICE_URL"]);
+  });
+});
+
+function callsOf(summary: BehavioralSummary | null): string[] {
+  if (summary === null) {
+    return [];
+  }
+  return summary.transitions
+    .flatMap((transition) => transition.effects ?? [])
+    .flatMap((effect) => (effect.type === "invocation" ? [effect.callee] : []));
+}
+
+describe("what a module calls when it loads", () => {
+  function callSummaryOf(source: string): BehavioralSummary | null {
+    return moduleInitSummary(moduleOf(source), []);
+  }
+
+  it("summarizes a module that calls a function the project declares", () => {
+    const summary = callSummaryOf(`
+      function sync() { return 1; }
+      sync();
+    `);
+    expect(callsOf(summary)).toEqual(["sync"]);
+  });
+
+  it("records the call in each of the spellings a job is written in", () => {
+    const summary = callSummaryOf(`
+      declare function run(fn: () => Promise<void>): void;
+      async function main(): Promise<void> {}
+      function report(error: unknown): void {}
+      function label(): string { return "x"; }
+      const started = label();
+      void main();
+      main().catch(report);
+      run(main);
+      if (started === "x") {
+        main();
+      }
+    `);
+    expect(callsOf(summary)).toEqual([
+      "label",
+      "main",
+      "main",
+      "main().catch",
+      "run",
+      "main",
+    ]);
+  });
+
+  it("produces no summary for a module whose top level only calls its dependencies", () => {
+    expect(
+      callSummaryOf(`
+        declare function configure(): void;
+        configure();
+      `),
+    ).toBeNull();
+  });
+
+  it("leaves a call inside a function to the unit that runs it", () => {
+    expect(
+      callSummaryOf(`
+        function sync() { return 1; }
+        export function start() { return sync(); }
+      `),
+    ).toBeNull();
+  });
+
+  it("says what had to be true before a call under a module-level if", () => {
+    const summary = callSummaryOf(`
+      declare const enabled: boolean;
+      function prune() {}
+      if (enabled) {
+        prune();
+      }
+    `);
+    const invocation = summary?.transitions
+      .flatMap((transition) => transition.effects)
+      .find((effect) => effect.type === "invocation");
+    expect(
+      invocation?.type === "invocation" && invocation.preconditions,
+    ).toEqual([
+      {
+        type: "truthinessCheck",
+        subject: { type: "unresolved", sourceText: "enabled" },
+        negated: false,
+      },
+    ]);
+  });
+
+  it("leaves out the call to a function the module invokes on the spot", () => {
+    const summary = callSummaryOf(`
+      function sync() { return 1; }
+      void (async () => { sync(); })();
+    `);
+    expect(callsOf(summary)).toEqual(["sync"]);
+  });
 });
