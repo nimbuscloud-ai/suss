@@ -345,7 +345,9 @@ function settleBodyValues(
       continue;
     }
     const listed = byFile.get(target.file.file) ?? [];
-    listed.push(...bodyValueNodes(target.node));
+    for (const node of bodyValueNodes(target.node)) {
+      listed.push(node);
+    }
     byFile.set(target.file.file, listed);
   }
   for (const nodes of byFile.values()) {

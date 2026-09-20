@@ -162,9 +162,10 @@ function constructionAt(
 }
 
 /**
- * Ask the rules about all of these at once. The rules run over the whole
- * project's facts, so a reader that then asks one at a time runs them
- * once rather than once per question.
+ * Settle all of these against the rules at once, and settle what any of
+ * them was written as too, which is the hop a reader takes next. The
+ * rules run over the whole project's facts, so a reader that then asks
+ * one at a time runs them once rather than once per question.
  */
 export function askWrittenValues(
   nodes: readonly PyNode[],
