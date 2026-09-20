@@ -90,34 +90,45 @@ function makeCodeSummary(opts: {
   name: string;
   file: string;
   envReads: string[];
+  /** What the runtime hands the code itself: `__dirname`, `process.cwd`. */
+  metadataReads?: string[];
   runsInUnit?: string;
   moduleImports?: string[];
   defaulted?: boolean;
   /** How the source spelled every read; null leaves the callee off. */
   callee?: string | null;
 }): BehavioralSummary {
+  const runtimeConfig = {
+    transport: "os",
+    semantics: {
+      name: "runtime-config" as const,
+      deploymentTarget: "lambda" as const,
+      instanceName: "<unknown>",
+    },
+    recognition: "@suss/runtime-node",
+  };
   const transition: Transition = {
     id: "t0",
     conditions: [],
     output: { type: "return", value: null },
-    effects: opts.envReads.map((varName) => ({
-      type: "interaction" as const,
-      binding: {
-        transport: "os",
-        semantics: {
-          name: "runtime-config" as const,
-          deploymentTarget: "lambda" as const,
-          instanceName: "<unknown>",
+    effects: [
+      ...opts.envReads.map((varName) => ({
+        type: "interaction" as const,
+        binding: runtimeConfig,
+        ...calleeOf(varName, opts.callee),
+        interaction: {
+          class: "config-read" as const,
+          name: varName,
+          defaulted: opts.defaulted === true,
         },
-        recognition: "@suss/runtime-node",
-      },
-      ...calleeOf(varName, opts.callee),
-      interaction: {
-        class: "config-read" as const,
-        name: varName,
-        defaulted: opts.defaulted === true,
-      },
-    })),
+      })),
+      ...(opts.metadataReads ?? []).map((name) => ({
+        type: "interaction" as const,
+        binding: runtimeConfig,
+        callee: name,
+        interaction: { class: "metadata-read" as const, name },
+      })),
+    ],
     location: { start: 5, end: 10 },
     isDefault: true,
   };
@@ -189,6 +200,41 @@ describe("checkRuntimeConfig", () => {
     expect(unused).toHaveLength(1);
     expect(unused[0].severity).toBe("warning");
     expect(unused[0].description).toContain("LEGACY_FLAG");
+  });
+
+  it("says nothing about a metadata read the runtime cannot declare", () => {
+    const runtime = makeRuntimeProvider({
+      instanceName: "reports",
+      envVars: ["PORT"],
+      codeScope: { kind: "codeUri", path: "src/reports/" },
+    });
+    const code = makeCodeSummary({
+      name: "reportHandler",
+      file: "src/reports/index.ts",
+      envReads: ["PORT"],
+      metadataReads: ["__dirname", "process.cwd"],
+    });
+    expect(checkRuntimeConfig([runtime, code])).toEqual([]);
+  });
+
+  it("counts no environment read when a unit reads only runtime metadata", () => {
+    const runtime = makeRuntimeProvider({
+      instanceName: "reports",
+      envVars: ["PORT"],
+      codeScope: { kind: "codeUri", path: "src/reports/" },
+    });
+    const code = makeCodeSummary({
+      name: "reportHandler",
+      file: "src/reports/index.ts",
+      envReads: [],
+      metadataReads: ["__dirname"],
+    });
+    const findings = checkRuntimeConfig([runtime, code]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].severity).toBe("info");
+    expect(findings[0].description).toContain(
+      "record no environment read anywhere",
+    );
   });
 
   it("records the runtime and the file it was asked about as compared", () => {

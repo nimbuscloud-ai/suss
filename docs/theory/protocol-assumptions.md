@@ -303,6 +303,10 @@ runtime does not provide, at error severity. Only the node runtime pack
 and the Cloudflare Workers env-bindings pack emit `config-read` today,
 and both write runtime-config semantics, so the claim is true for now.
 
+A read of the runtime itself, `__dirname` or `process.cwd`, used to be
+a config read and got reported that way. It is a `metadata-read` now,
+which this pass never looks at.
+
 ### A variable is its name
 
 The comparison is `providedSet.has(read.name)`. A runtime declaring

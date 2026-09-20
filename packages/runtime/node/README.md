@@ -30,6 +30,15 @@ suss extract -p tsconfig.json -f express -f node -o summaries/code.json
 boundary, which is how a deployable unit's configuration channel is
 described. The two options below say what that boundary is called.
 
+`__dirname`, `import.meta.url`, `process.cwd` and the rest of the
+process metadata come back on the same boundary under a different
+interaction class, `metadata-read` instead of `config-read`. The
+runtime provides these itself, so a template has nothing to declare and
+the runtime-config checker pairs nothing against them. Before the split
+it reported `__dirname read by handler but <instance> declares no
+__dirname in its environment` at error severity, once for every Lambda
+that resolved a path.
+
 ## Reads through a project's own helper
 
 Most services read their environment through one helper:

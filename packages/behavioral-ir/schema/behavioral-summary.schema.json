@@ -1316,6 +1316,20 @@
                             "properties": {
                               "class": {
                                 "type": "string",
+                                "const": "metadata-read"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": ["class", "name"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "class": {
+                                "type": "string",
                                 "const": "schedule"
                               },
                               "via": {

@@ -595,6 +595,18 @@ export const EffectSchema = z.discriminatedUnion("type", [
         defaulted: z.boolean(),
       }),
       /**
+       * A read of something the runtime provides on its own: the
+       * working directory, the platform, the module's own location.
+       * Separate from `config-read` because no deploy file declares
+       * these and none can fail to, so pairing a read of `__dirname`
+       * against a template's environment would accuse the code of
+       * missing a variable nobody was ever going to set.
+       */
+      z.object({
+        class: z.literal("metadata-read"),
+        name: z.string(),
+      }),
+      /**
        * A scheduled callback. Nothing pairs against these, so the
        * enclosing binding uses `function-call` semantics and the
        * interaction is there for dataflow and inspect rendering.

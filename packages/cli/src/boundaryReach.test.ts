@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { storageBinding } from "@suss/behavioral-ir";
+import { runtimeConfigBinding, storageBinding } from "@suss/behavioral-ir";
 
 import { boundariesTouchedBy } from "./boundaryReach.js";
 
@@ -43,6 +43,10 @@ function commentBinding() {
     container: "Comment",
     accessPath: null,
   });
+}
+
+function runtimeBinding() {
+  return runtimeConfigBinding({ recognition: "@suss/runtime-node" });
 }
 
 describe("boundariesTouchedBy", () => {
@@ -111,5 +115,33 @@ describe("boundariesTouchedBy", () => {
     );
 
     expect(touched).toEqual([]);
+  });
+
+  it("names the metadata a unit reads off the runtime", () => {
+    const touched = boundariesTouchedBy(
+      summaryWith([
+        {
+          type: "interaction",
+          binding: runtimeBinding(),
+          callee: "__dirname",
+          interaction: { class: "metadata-read", name: "__dirname" },
+        },
+        {
+          type: "interaction",
+          binding: runtimeBinding(),
+          callee: "process.env.PORT",
+          interaction: {
+            class: "config-read",
+            name: "PORT",
+            defaulted: false,
+          },
+        },
+      ]),
+    );
+
+    expect(touched.map((t) => `${t.relation} ${t.label} ${t.detail}`)).toEqual([
+      "reads runtime-config:@suss/runtime-node __dirname",
+      "reads runtime-config:@suss/runtime-node PORT",
+    ]);
   });
 });
