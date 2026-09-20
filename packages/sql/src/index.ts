@@ -362,8 +362,18 @@ const LOCKING_CLAUSE = new RegExp(
  * touched, and the grammar turns down either one.
  */
 function rewrittenForGrammar(sql: string): string {
-  const uncast = replaceInCode(sql, PARAMETER_CAST, (match) => match[1] ?? "");
-  return replaceInCode(uncast, LOCKING_CLAUSE, () => "");
+  const uncast = replaceInCode(sql, PARAMETER_CAST, castAwayFrom);
+  return replaceInCode(uncast, LOCKING_CLAUSE, nothing);
+}
+
+/** The parameter a cast was written on, without the cast. */
+function castAwayFrom(match: RegExpMatchArray): string {
+  return match[1] ?? "";
+}
+
+/** What a clause the statement is read without comes back as. */
+function nothing(): string {
+  return "";
 }
 
 /** One query a `WITH` clause states, and the name it gives it. */
@@ -529,31 +539,6 @@ interface Node {
   [key: string]: unknown;
 }
 
-/** What one kind of statement touches, given the names above it. */
-type StatementReader = (node: Node, defined: Set<string>) => SqlAccess[];
-
-const STATEMENT_READERS: Record<string, StatementReader> = {
-  select: selectAccesses,
-  insert: (node, defined) =>
-    oneAccess(firstTable(node.table), defined, {
-      kind: "write",
-      fields: namesOf(node.columns),
-      selector: [],
-    }),
-  update: (node, defined) =>
-    oneAccess(firstTable(node.table), defined, {
-      kind: "write",
-      fields: refsIn(node.set).map((ref) => ref.field),
-      selector: selectorFields(node.where),
-    }),
-  delete: (node, defined) =>
-    oneAccess(deletedTable(node), defined, {
-      kind: "write",
-      fields: [],
-      selector: selectorFields(node.where),
-    }),
-};
-
 /**
  * `defined` is every name a `WITH` clause above this one states, since
  * a query inside one can read from a sibling and that is a name rather
@@ -564,14 +549,39 @@ function accessesIn(statement: unknown, defined: Set<string>): SqlAccess[] {
   if (node === null) {
     return [];
   }
-  const read = STATEMENT_READERS[node.type ?? ""];
-  if (read === undefined) {
-    return [];
-  }
   // A write can carry a `WITH` as readily as a select can, so the clause
   // is read before the statement whatever the statement turns out to be.
   const clause = commonTables(node, defined);
-  return [...read(node, clause.names), ...clause.inside];
+  return [...ownAccesses(node, clause.names), ...clause.inside];
+}
+
+/** What the statement itself touches, leaving its `WITH` clause aside. */
+function ownAccesses(node: Node, defined: Set<string>): SqlAccess[] {
+  if (node.type === "select") {
+    return selectAccesses(node, defined);
+  }
+  if (node.type === "insert") {
+    return oneAccess(firstTable(node.table), defined, {
+      kind: "write",
+      fields: namesOf(node.columns),
+      selector: [],
+    });
+  }
+  if (node.type === "update") {
+    return oneAccess(firstTable(node.table), defined, {
+      kind: "write",
+      fields: refsIn(node.set).map((ref) => ref.field),
+      selector: selectorFields(node.where),
+    });
+  }
+  if (node.type === "delete") {
+    return oneAccess(deletedTable(node), defined, {
+      kind: "write",
+      fields: [],
+      selector: selectorFields(node.where),
+    });
+  }
+  return [];
 }
 
 /** The tables a `WITH` clause reads, and the names it gives its queries. */
