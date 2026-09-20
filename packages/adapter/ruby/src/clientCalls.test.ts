@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { Database } from "@suss/datalog";
+import { Database, profileEvaluationAsync } from "@suss/datalog";
 
 import {
   httpClientTestPack,
@@ -8,6 +8,7 @@ import {
   wrappedUrlsPattern,
 } from "./__fixtures__/httpClientPattern.js";
 import { clientCallUnits } from "./clientCalls.js";
+import { createFileCache, discoverUnits } from "./discovery.js";
 import { emitValueFacts } from "./facts/values.js";
 import { parseRuby } from "./parser.js";
 import { bindEvaluator, methodDefinitionsIn } from "./values/evaluator.js";
@@ -50,6 +51,16 @@ function boundary(units: RawCodeStructure[]): {
     );
   }
   return { method: semantics.method, path: semantics.path };
+}
+
+/** Every unit's REST path, sorted, with the empty string for a unit bound to something else. */
+function paths(units: RawCodeStructure[]): string[] {
+  return units
+    .map((unit) => {
+      const semantics = unit.boundaryBinding?.semantics;
+      return semantics?.name === "rest" ? (semantics.path ?? "") : "";
+    })
+    .sort();
 }
 
 describe("a method that calls a request method", () => {
@@ -615,15 +626,6 @@ describe("a URL the constructor was given", () => {
       end
   `;
 
-  function paths(units: RawCodeStructure[]): string[] {
-    return units
-      .map((unit) => {
-        const semantics = unit.boundaryBinding?.semantics;
-        return semantics?.name === "rest" ? (semantics.path ?? "") : "";
-      })
-      .sort();
-  }
-
   it("gives one client per construction of the class", async () => {
     const units = await unitsIn(`${RESOURCE}
       USERS = Resource.new("/users")
@@ -652,5 +654,64 @@ describe("a URL the constructor was given", () => {
 
   it("gives nothing when nothing constructs the class", async () => {
     expect(await unitsIn(RESOURCE)).toEqual([]);
+  });
+});
+
+describe("a file with several call sites", () => {
+  /** A class that keeps one connection per name and calls through each of them. */
+  function clientOver(names: readonly string[]): string {
+    return [
+      "class OrderClient",
+      "  def initialize",
+      ...names.map(
+        (name) => `    @${name} = HttpClient.build(base: "/${name}")`,
+      ),
+      "  end",
+      ...names.flatMap((name) => [
+        `  def load_${name}`,
+        `    @${name}.get("/recent")`,
+        "  end",
+      ]),
+      "end",
+    ].join("\n");
+  }
+
+  async function discovered(source: string) {
+    const tree = await parseRuby(source);
+    const facts = new Database();
+    emitValueFacts(facts, FILE, tree.rootNode);
+    bindEvaluator(facts, {
+      files: [{ file: FILE, root: tree.rootNode }],
+      definitions: methodDefinitionsIn(FILE, tree.rootNode),
+    });
+    return profileEvaluationAsync(() =>
+      discoverUnits(tree.rootNode, {
+        packs: [PACK],
+        filePath: FILE,
+        cache: createFileCache(
+          (text) => parseRuby(text).then((parsed) => parsed.rootNode),
+          () => null,
+        ),
+        facts,
+      }),
+    );
+  }
+
+  it("asks the rules as many times for six sites as for three", async () => {
+    const three = await discovered(clientOver(["carts", "orders", "users"]));
+    const six = await discovered(
+      clientOver(["carts", "items", "orders", "prices", "stock", "users"]),
+    );
+
+    expect(paths(three.result)).toEqual([
+      "/carts/recent",
+      "/orders/recent",
+      "/users/recent",
+    ]);
+    expect(six.result).toHaveLength(6);
+    expect(six.profile.evaluations).toEqual(three.profile.evaluations);
+    // Two rounds, each of which asks a second time about a key the
+    // first round settled on a call.
+    expect(three.profile.evaluations).toBeLessThanOrEqual(4);
   });
 });
