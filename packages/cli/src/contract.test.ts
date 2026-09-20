@@ -8,9 +8,36 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { contract } from "./contract.js";
+import { runCli } from "./run.js";
 
 import type { AddressInfo } from "node:net";
 import type { BehavioralSummary } from "@suss/behavioral-ir";
+
+/** What the command wrote, and what it gave back to the shell. */
+async function capture(
+  args: string[],
+): Promise<{ exit: number; stdout: string; stderr: string }> {
+  const out: string[] = [];
+  const err: string[] = [];
+  const origOut = process.stdout.write.bind(process.stdout);
+  const origErr = process.stderr.write.bind(process.stderr);
+  process.stdout.write = ((chunk: string) => {
+    out.push(chunk);
+    return true;
+  }) as typeof process.stdout.write;
+  process.stderr.write = ((chunk: string) => {
+    err.push(chunk);
+    return true;
+  }) as typeof process.stderr.write;
+  let exit: number;
+  try {
+    exit = await runCli(args);
+  } finally {
+    process.stdout.write = origOut;
+    process.stderr.write = origErr;
+  }
+  return { exit, stdout: out.join(""), stderr: err.join("") };
+}
 
 const minimalSpec = {
   openapi: "3.0.3",
@@ -106,6 +133,89 @@ describe("contract CLI command", () => {
       storageSystem: "aws.dynamodb",
       container: "orders",
     });
+  });
+
+  it("gives a Terraform unit the code scope the caller states", async () => {
+    const moduleDir = path.join(tmpDir, "infra-scoped");
+    fs.mkdirSync(moduleDir);
+    fs.writeFileSync(
+      path.join(moduleDir, "main.tf"),
+      [
+        'resource "aws_lambda_function" "confirm" {',
+        '  function_name = "confirm"',
+        '  handler       = "index.handler"',
+        "}",
+      ].join("\n"),
+    );
+
+    const writeFn = process.stdout.write;
+    process.stdout.write = (() => true) as typeof process.stdout.write;
+    let summaries: BehavioralSummary[];
+    try {
+      summaries = await contract({
+        from: "terraform",
+        spec: moduleDir,
+        codeScopes: { confirm: "services/orders" },
+      });
+    } finally {
+      process.stdout.write = writeFn;
+    }
+
+    expect(summaries[0].metadata?.codeScope).toEqual({
+      kind: "codeUri",
+      path: "services/orders",
+      entry: "index",
+    });
+  });
+
+  it("takes a --code-scope per unit at the command line", async () => {
+    const moduleDir = path.join(tmpDir, "infra-flag");
+    fs.mkdirSync(moduleDir);
+    fs.writeFileSync(
+      path.join(moduleDir, "main.tf"),
+      [
+        'resource "aws_lambda_function" "confirm" {',
+        '  function_name = "confirm"',
+        "}",
+        'resource "aws_lambda_function" "settle" {',
+        '  function_name = "settle"',
+        "}",
+      ].join("\n"),
+    );
+
+    const { exit, stdout } = await capture([
+      "contract",
+      "--from",
+      "terraform",
+      moduleDir,
+      "--code-scope",
+      "confirm=services/orders",
+      "--code-scope",
+      "settle=services/billing",
+    ]);
+
+    expect(exit).toBe(0);
+    const scopes = (JSON.parse(stdout) as BehavioralSummary[]).map(
+      (summary) => summary.metadata?.codeScope,
+    );
+    expect(scopes).toEqual([
+      { kind: "codeUri", path: "services/orders" },
+      { kind: "codeUri", path: "services/billing" },
+    ]);
+  });
+
+  it("says how to write a --code-scope that has no directory in it", async () => {
+    const { exit, stderr } = await capture([
+      "contract",
+      "--from",
+      "terraform",
+      tmpDir,
+      "--code-scope",
+      "api/web",
+    ]);
+
+    expect(exit).toBe(1);
+    expect(stderr).toContain("--code-scope takes a unit and the directory");
   });
 
   it("writes summaries to the output file when -o is given", async () => {

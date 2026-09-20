@@ -12,7 +12,7 @@ A contract reader. It walks `.tf` files and describes what it finds as boundarie
 suss contract --from terraform infra/terraform/dynamodb -o tables.json
 ```
 
-The path may be one file or the directory a module lives in, since a module states its resources across several files.
+The path may be one file or the directory a module lives in, since a module states its resources across several files. A root module that only calls child modules is read too: see below.
 
 ## What it reads
 
@@ -60,9 +60,18 @@ EOF
 
 A deployable steps into such an attribute rather than reading fields out of it. An ECS task writes its containers as `container_definitions = jsonencode([...])`, and a pack puts that attribute where it would put a block, so each container is read the same way a Cloud Run container written as blocks is.
 
+## A block written once and deployed many times
+
+A module rarely writes a container's variables out one block at a time. It writes one `dynamic "env"` block over a map, or, in an ECS task's JSON, a `for` expression over the same thing. Both are expanded where the configuration already says what is in that map, so the container declares the variables the deployment will give it rather than none at all. [How a repeated block is expanded](./DESIGN.md#a-block-written-once-and-deployed-many-times) says which spellings settle and which stay holes.
+
+## A root module that calls child modules
+
+Plenty of configurations declare no resources at all at the root. They call a module per service, and every table and function is inside the child. A `source` that says which directory beside this one is followed and read as a module of its own, and everything the child declares gets `module.orders.` in front of its summary name and its deployable unit. [A module call this reader follows](./DESIGN.md#a-module-call-this-reader-follows) says what crosses between a call and the module it calls.
+
 ## Several entries for one resource type
 
 A pack states more than one entry for a resource type when the provider spells it differently across versions, and again when one attribute decides what the resource is. `aws_db_instance` is a PostgreSQL store or a MySQL one depending on its `engine`, and `google_sql_database_instance` on its `database_version`, so each has an entry per engine and a gate that picks between them. A gate matches whole values through `equals`, or the start of a value through `startsWith`, which is what Cloud SQL needs: `database_version` states an engine and a release together, `POSTGRES_15` and `MYSQL_8_0_31`, and the releases change every quarter.
+
 ## What a deployable declares
 
 A resource that deploys something becomes a runtime-config boundary, the same one `@suss/contract-cloudformation` writes for a Lambda in a template:
@@ -87,16 +96,17 @@ The unit is the resource label, `confirm`, rather than the name it deploys under
 
 One resource deploys several processes where the provider says so. An ECS task definition is one contract per container, and each container gets only its own variables.
 
-A configuration says which handler runs and never which directory the deployed artifact was built from. So the handler is all the checker has to go on: where it matches a module in the run, that module's imports are the code the unit runs, and where it matches nothing, the unit is reported as one whose code could not be placed rather than being given the repository.
+Every unsettled value in a contract is spelled the same way. An `image = var.image`, a `runtime` and a handler a variable supplies all come out as the pattern `{var.image}` rather than as the raw `${var.image}`, so nothing downstream has to know which field it is reading. A handler with a hole in it says nothing about which file the code is in, since splitting it at its last dot would pick a module nobody deploys.
 
+A configuration says which handler runs and never which directory the deployed artifact was built from, so the handler is all the checker has to go on. A container deployable states no handler at all, since its image was built somewhere else, and then the caller says where the code is with `--code-scope api/web=services/api`, or `codeScopes` on the read options. [Which code a deployable unit runs](./DESIGN.md#which-code-a-deployable-unit-runs) says what that writes, and what happens when two units are pointed at one directory.
 
 ## What it will not tell you
 
 - **Only what a loaded pack describes.** A resource no entry covers, an IAM policy or a subnet, is skipped.
-- **A resource built with `for_each` or `count`** states one block for many tables, and this reads the block as written rather than working out what it expands to.
+- **A resource built with `for_each` or `count`** states one `resource` block for many tables, and this reads the block as written rather than working out what it expands to. A `dynamic` block inside a resource is expanded, since that one decides what a single deployed process is given.
 - **A name a variable supplies whole**, `name = var.table_name`, has no fixed text to pair on, so it records nothing rather than guessing.
 - **What a secret contains.** A variable a secret supplies records which resource supplies it and nothing else, since no configuration writes the contents down.
-- **Which source directory a deployable was built from.** Terraform builds the artifact outside the configuration, so a `filename` is a zip nothing in the run can open and a `source_dir` belongs to a data source this does not follow.
+- **Which source directory a deployable was built from.** Terraform builds the artifact outside the configuration, so a `filename` is a zip nothing in the run can open and a `source_dir` belongs to a data source this does not follow. `--code-scope` is how the caller supplies what the configuration never says.
 
 ## Where it fits in suss
 
@@ -104,6 +114,6 @@ Depends on `@suss/behavioral-ir` for the summaries it produces and `hcl2-parser`
 
 ## More
 
-- [How it resolves a reference](./DESIGN.md)
+- [How it reads a configuration](./DESIGN.md)
 - [Documentation](https://suss.sh/)
 - [Source and issues](https://github.com/nimbuscloud-ai/suss)
