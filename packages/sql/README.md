@@ -36,6 +36,22 @@ readSqlAccess("SELECT u.email, o.total FROM users u JOIN orders o ON o.user_id =
 // [{ table: "users", fields: ["email"], ... }, { table: "orders", fields: ["total"], ... }]
 ```
 
+A query written in place of a table is read for its own tables. The alias belongs to that query's columns rather than to a base table, so a column read through the alias is dropped rather than attributed to one:
+
+```ts
+readSqlAccess("SELECT dc.account_id FROM (SELECT account_id FROM dim_contact) dc JOIN dim_account a ON a.id = dc.account_id");
+// [{ table: "dim_account", fields: [], ... }, { table: "dim_contact", fields: ["account_id"], ... }]
+```
+
+The grammar behind this turns down two spellings that say nothing about which table is touched, so a statement it refuses is tried again without them: a parameter written with the type it is read as, such as `$1::text` or `$1::int[]`, and a select that locks the rows it picks, such as `FOR UPDATE SKIP LOCKED`. Neither is rewritten inside a literal, a quoted name or a comment.
+
+The grammar also takes a `WITH` clause only in front of a select. In front of an insert, an update or a delete the clause is split off and each query read on its own, which is the most that can be read of a statement the grammar will not take whole:
+
+```ts
+readSqlAccess("WITH due AS (SELECT id FROM jobs FOR UPDATE SKIP LOCKED) INSERT INTO job_runs (job_id) SELECT id FROM due");
+// [{ table: "job_runs", kind: "write", fields: ["job_id"], ... }, { table: "jobs", kind: "read", fields: ["id"], ... }]
+```
+
 A query written as a tagged template becomes readable through `sqlFromParts`, which writes each interpolation as a parameter. What a query interpolates is a value nearly every time, and a parameter is how the statement would supply one anyway.
 
 Two things override that. A caller who knows a hole is a table passes it in `substitutions`, which is how a Drizzle query that interpolates a schema object reaches the statement as a table name. And a caller who ran the source's own evaluator over each hole passes the results in `settled`, which are used where the statement writes a name.
@@ -78,7 +94,10 @@ readSqlAccess("SELECT `id` FROM `users`", { dialect: "mysql" });
 ## What it will not tell you
 
 - **A dialect it does not read gives back nothing.** So does a statement it cannot parse. Neither produces a guess built out of whatever the text happens to spell.
-- **An unqualified field in a join is left out.** `SELECT id FROM users u JOIN orders o ON ...` says nothing about which table `id` is on, so it is dropped rather than attributed to both.
+- **An unqualified field in a join is left out.** `SELECT id FROM users u JOIN orders o ON ...` says nothing about which table `id` is on, so it is dropped rather than attributed to both. A query written in place of a table counts as one of the sides, since it could have supplied the field too.
+- **A table a write reads from is not reported.** `INSERT INTO runs (id) SELECT id FROM jobs` and `UPDATE runs SET s = $1 FROM jobs WHERE ...` both parse, and both give back the write alone. A `WITH` clause in front of either is read, so that is where a read beside a write does come through.
+- **Only the first branch of a set operation is read.** `SELECT id FROM orders UNION SELECT id FROM refunds` gives back `orders`.
+- **Fields outside the clause that states them are left out.** `RETURNING` and the `SET` of an `ON CONFLICT DO UPDATE` both parse, and neither adds to `fields`.
 - **An interpolated table or clause makes a statement unreadable.** ``sql`SELECT * FROM ${table}` `` cannot be settled without running it, so it produces nothing.
 
 ## Where it fits in suss
