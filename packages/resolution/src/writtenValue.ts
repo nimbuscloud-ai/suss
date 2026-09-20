@@ -1,8 +1,4 @@
-import {
-  answersByKey,
-  placeholderValues,
-  singleAnswers,
-} from "./singleAnswer.js";
+import { answersFor } from "./singleAnswer.js";
 
 import type { Database } from "@suss/datalog";
 
@@ -76,41 +72,49 @@ function settledByKey(
   ask: Ask,
   relation: string,
 ): Map<string, string[]> {
-  const placeholders = placeholderValues(db);
-  const byKey = answersByKey(db.facts(relation), placeholders);
-  const direct = new Map(keys.map((key) => [key, byKey.get(key) ?? []]));
+  const direct = new Map(
+    keys.map((key) => [key, answersFor(db, relation, key)]),
+  );
 
-  const calls = new Set(db.facts("call").map((row) => String(row[0])));
   const throughCalls = [...direct.values()]
     .flat()
-    .filter((answer) => calls.has(answer));
+    .filter((answer) => isCall(db, answer));
   if (throughCalls.length === 0) {
     return direct;
   }
 
   ask(throughCalls);
-  const deeper = singleAnswers(db.facts(relation), placeholders);
   return new Map(
     [...direct].map(([key, answers]) => [
       key,
-      collapseCalls(answers, calls, deeper),
+      collapseCalls(db, relation, answers),
     ]),
   );
 }
 
+function isCall(db: Database, key: string): boolean {
+  return db.lookup("call", 0, key).length > 0;
+}
+
 /** A step off a call that keeps its value, `list.freeze`, leaves the call and what it comes down to as two answers that are the same one. */
 function collapseCalls(
+  db: Database,
+  relation: string,
   direct: readonly string[],
-  calls: ReadonlySet<string>,
-  deeper: ReadonlyMap<string, string>,
 ): string[] {
   return [
     ...new Set(
       direct.map((answer) =>
-        calls.has(answer) ? (deeper.get(answer) ?? answer) : answer,
+        isCall(db, answer) ? behindCall(db, relation, answer) : answer,
       ),
     ),
   ];
+}
+
+/** What an asked-about call comes down to, or the call itself when the rules settled on nothing or on several. */
+function behindCall(db: Database, relation: string, call: string): string {
+  const answers = answersFor(db, relation, call);
+  return answers.length === 1 ? (answers[0] as string) : call;
 }
 
 /**
@@ -120,13 +124,9 @@ function collapseCalls(
  * own that reading the writes here would go behind.
  */
 function writesLeft(db: Database, key: string): string[] {
-  const unstated = db
-    .facts("writesUnstated")
-    .some((row) => String(row[0]) === key);
-  if (unstated) {
+  if (db.has("writesUnstated", [key])) {
     return [];
   }
-  const candidates =
-    answersByKey(db.facts("mayHold"), placeholderValues(db)).get(key) ?? [];
+  const candidates = answersFor(db, "mayHold", key);
   return candidates.length > 1 ? candidates : [];
 }
