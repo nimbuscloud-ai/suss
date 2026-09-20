@@ -299,6 +299,20 @@ export interface RbLoaderPattern {
   reads: string[];
   /** Receiverless calls that pick and read in one, whose arguments include the model, `dataload` and `dataload_record`. */
   shortcuts: string[];
+  /**
+   * Where `pick` takes the project's own source class, and the method
+   * the library runs on it. The read happens in that method, so what it
+   * reaches belongs to every body that loads through it.
+   */
+  source?: RbLoaderSource;
+}
+
+/** The source class a loader is given, and the method the library runs on it. */
+export interface RbLoaderSource {
+  /** The position `pick` takes the source class at, 0 for `dataloader.with(Source, ...)`. */
+  at: number;
+  /** The method the library runs on the source, `fetch`. */
+  method: string;
 }
 
 export type RubyDiscoveryPattern = GraphqlObjectFields | ControllerActions;

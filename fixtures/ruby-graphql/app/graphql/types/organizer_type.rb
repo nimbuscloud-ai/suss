@@ -14,4 +14,12 @@ class Types::OrganizerType < Types::BaseObject
 
   # A computed type expression, not a literal type constant.
   field :status, status_label_for(:organizer), null: true
+
+  field :campaigns, [Types::CampaignType], null: false
+
+  # The read happens in the source's own fetch, which is where the field
+  # reaches the database.
+  def campaigns
+    dataloader.with(Sources::CampaignSource, Campaign).load(object.id)
+  end
 end

@@ -1274,6 +1274,103 @@ function callTo(
   return calls(summary).find(([name]) => name === callee)?.[1];
 }
 
+/** A loader that runs the read in `fetch` on the source class it is picked with. */
+const BATCH_LOADER = {
+  loader: "dataloader",
+  pick: "with",
+  reads: ["load", "load_all"],
+  shortcuts: ["dataload_record"],
+  source: { at: 0, method: "fetch" },
+};
+
+async function extractWithLoader(
+  loader: unknown = BATCH_LOADER,
+): Promise<BehavioralSummary[]> {
+  const pack = graphqlRubyTestPack({
+    root: path.join(tmpDir, "app", "graphql"),
+  }) as RubyPack;
+  const { summaries } = await extractRubyProject({
+    files: findRubyFiles(tmpDir),
+    packs: [{ ...pack, loaders: [loader] } as RubyPack],
+    workspaceRoot: tmpDir,
+  });
+  return summaries;
+}
+
+/** A source class whose `fetch` reads through a method of its own. */
+function writeCampaignSource(): void {
+  write("app/graphql/sources/campaign_source.rb", [
+    "class Sources::CampaignSource < GraphQL::Dataloader::Source",
+    "  def fetch(ids)",
+    "    active_for(ids)",
+    "  end",
+    "",
+    "  def active_for(ids)",
+    "    Campaign.where(id: ids)",
+    "  end",
+    "end",
+  ]);
+}
+
+describe("a read a loader takes off the caller", () => {
+  it("reaches the method the library runs on the picked source", async () => {
+    writeQueryType("campaigns", [
+      "dataloader.with(Sources::CampaignSource, Campaign).load(current_user)",
+    ]);
+    writeCampaignSource();
+
+    const summaries = await extractWithLoader();
+    const fetch = unitNamed(summaries, "fetch");
+    expect(fetch.kind).toBe("library");
+    expect(
+      callTo(
+        unitNamed(summaries, "Query.campaigns"),
+        "dataloader.with(Sources::CampaignSource, Campaign).load",
+      ),
+    ).toBe(summaryIdentifier(fetch));
+  });
+
+  it("carries on into what that method itself calls", async () => {
+    writeQueryType("campaigns", [
+      "dataloader.with(Sources::CampaignSource, Campaign).load(current_user)",
+    ]);
+    writeCampaignSource();
+
+    const summaries = await extractWithLoader();
+    expect(callTo(unitNamed(summaries, "fetch"), "active_for")).toBe(
+      summaryIdentifier(unitNamed(summaries, "active_for")),
+    );
+  });
+
+  it("reaches nothing through a loader whose pack says no source", async () => {
+    writeQueryType("campaigns", [
+      "dataloader.with(Sources::CampaignSource, Campaign).load(current_user)",
+    ]);
+    writeCampaignSource();
+
+    const { source: _dropped, ...noSource } = BATCH_LOADER;
+    const summaries = await extractWithLoader(noSource);
+    expect(summaries.some((summary) => summary.identity.name === "fetch")).toBe(
+      false,
+    );
+  });
+
+  it("reaches nothing when the source class is not one this run defines", async () => {
+    writeQueryType("campaigns", [
+      "dataloader.with(Sources::Absent, Campaign).load(current_user)",
+    ]);
+    writeCampaignSource();
+
+    const summaries = await extractWithLoader();
+    expect(
+      callTo(
+        unitNamed(summaries, "Query.campaigns"),
+        "dataloader.with(Sources::Absent, Campaign).load",
+      ),
+    ).toBeUndefined();
+  });
+});
+
 describe("a call on what an ActiveRecord finder gave back", () => {
   it("follows a method read off an instance variable a before_action set", async () => {
     writeAccountModel();
