@@ -14,7 +14,7 @@
 
 import path from "node:path";
 
-import { sourceFileFor } from "../facts/store.js";
+import { sourceFileFor } from "../bootstrap/sourceFileLookup.js";
 import {
   namedPackageDirAbove,
   resolvePackageExportsCached,

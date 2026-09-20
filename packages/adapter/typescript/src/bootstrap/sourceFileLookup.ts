@@ -21,6 +21,8 @@
 // secondary suffix-index handles the rare case of a downstream pass
 // that already saw a relative path.
 
+import path from "node:path";
+
 import { Node } from "ts-morph";
 
 import { endLineOf, startLineOf } from "../lines.js";
@@ -50,6 +52,47 @@ export interface SourceFileLookup {
    * one wins, which is what a document-order scan used to return.
    */
   functionAt(location: SummaryLocation): FunctionRoot | null;
+}
+
+/**
+ * Find the source file at a module key, loading it when no pass has
+ * read that file yet. A key that is a bare package specifier never
+ * resolved to a file, so there is nothing to load.
+ *
+ * Ask ts-morph for a path and it reads its map. Ask it for anything
+ * else and it compares path segments against every source file in the
+ * project, which a package name never matches, because every file here
+ * has an extension on the end. On a large front end that search ran
+ * 3,635 times, took 45 seconds and found nothing, so check the key
+ * first and skip the search.
+ */
+export function sourceFileFor(
+  project: Project,
+  moduleKey: string,
+): SourceFile | undefined {
+  if (!namesAPath(moduleKey)) {
+    return undefined;
+  }
+
+  const known = project.getSourceFile(moduleKey);
+  if (known !== undefined) {
+    return known;
+  }
+
+  if (!moduleKey.startsWith("/")) {
+    return undefined;
+  }
+
+  try {
+    return project.addSourceFileAtPathIfExists(moduleKey) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Whether ts-morph reads this key as a path and looks it up in its map. */
+function namesAPath(moduleKey: string): boolean {
+  return path.isAbsolute(moduleKey) || moduleKey.includes("/");
 }
 
 export function createSourceFileLookup(project: Project): SourceFileLookup {
