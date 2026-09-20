@@ -116,9 +116,10 @@ So a reader with many nodes in hand asks about them together, through
 `askWrittenValues` in `values/evaluator.ts`. `discoverUnits` does this for the
 client patterns before it reads any call site: one question for every call
 receiver in the file, then one for the URLs the receivers that turned out to be
-the library's were handed. `storageEffects` and the environment reader do the
-same for their own keys. Nothing fails a build over it, because a reader that
-asks per site gets the same answer, only slower.
+the library's were handed. `storageEffects` and the environment reader ask the
+same way a method at a time: one question for the receiver of every storage
+chain in a body, and one for every callee key in it. Nothing fails a build over
+it, because a reader that asks per site gets the same answer, only slower.
 
 ## Which scope a name belongs to
 
