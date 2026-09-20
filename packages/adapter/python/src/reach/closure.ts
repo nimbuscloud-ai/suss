@@ -28,7 +28,14 @@ import {
   walkDescendants,
 } from "@suss/extractor";
 
-import { enclosingFunction, field, rangeOf, spanOf } from "../ast.js";
+import {
+  enclosingFunction,
+  field,
+  isModule,
+  rangeOf,
+  runsAtModuleLoad,
+  spanOf,
+} from "../ast.js";
 import {
   bodyContentOf,
   recognizedBodyEffects,
@@ -97,6 +104,8 @@ export interface ReachedUnits {
   >;
   /** The calls each scanned body makes through one of its own parameters, by the scanned function's key. */
   readonly parameterCallsByKey: ReadonlyMap<string, readonly ParameterCall[]>;
+  /** The project functions each scanned body could step into, by the scanned function's key. */
+  readonly callsByKey: ReadonlyMap<string, readonly string[]>;
   /** Every (function, position) some scanned body passed a named project function into, across the whole run. */
   readonly passedPositions: ReadonlySet<string>;
 }
@@ -131,6 +140,7 @@ export function reachedFunctions(
     ReadonlyMap<string, ReadonlyMap<number, DeclaredAt>>
   >();
   const parameterCallsByKey = new Map<string, readonly ParameterCall[]>();
+  const callsByKey = new Map<string, string[]>();
   // Every (function, position) some scanned body passes a named project
   // function into. An inline lambda or a variable does not count, so a
   // parameter call missing here is a gap even when a caller supplies one.
@@ -172,7 +182,10 @@ export function reachedFunctions(
       const scan = scanBody(
         source,
         ctx,
-        recognizedCallIds(source.node, options.storageFor(source.file)),
+        recognizedCallIds(
+          written.map(({ call }) => call),
+          options.storageFor(source.file),
+        ),
         { body, written, spellings },
       );
       if (scan.stops.length > 0) {
@@ -186,12 +199,17 @@ export function reachedFunctions(
       for (const position of scan.passedPositions) {
         passedPositions.add(position);
       }
+      const called: string[] = [];
       for (const target of scan.followed) {
         const calleeKey = keyOf(target);
         if (!functionByKey.has(calleeKey)) {
           functionByKey.set(calleeKey, target);
         }
         db.add("calls", [key, calleeKey]);
+        called.push(calleeKey);
+      }
+      if (called.length > 0) {
+        callsByKey.set(key, called);
       }
     }
   }
@@ -227,6 +245,7 @@ export function reachedFunctions(
     stopsByKey,
     argTargetsByKey,
     parameterCallsByKey,
+    callsByKey,
     passedPositions,
   };
 }
@@ -268,7 +287,8 @@ interface BodyCalls {
 
 function bodyOf(source: ReachedFunction): BodyCalls {
   const { file, node } = source;
-  const body = field(node, "body");
+  // A module has no body field, so its own statements are the body.
+  const body = isModule(node) ? node : field(node, "body");
   // The grammar writes a body on every def.
   /* v8 ignore start */
   if (body === null) {
@@ -277,8 +297,14 @@ function bodyOf(source: ReachedFunction): BodyCalls {
   /* v8 ignore stop */
   return {
     body,
-    written: callsWritten(file, body, scopeAt(file, node), keyOf(source)),
+    written: callsWritten(file, body, scopeAt(file, node), keyOf(source), {
+      descendsInto: isModule(node) ? runsAtModuleLoad : outsideNestedDef,
+    }),
   };
+}
+
+function outsideNestedDef(node: PyNode): boolean {
+  return node.type !== "function_definition";
 }
 
 function scanBody(
@@ -408,12 +434,13 @@ function scanBody(
   };
 }
 
-/** Every call written in a body, with the scope it is written in. A nested def is a function of its own. */
+/** Every call written in a body, with the scope it is written in. `descendsInto` says where the body ends: at a nested def for a function, at anything that runs later for a module. */
 function callsWritten(
   file: BoundPythonFile,
   body: PyNode,
   outer: Scope,
   owner: string,
+  limit: { descendsInto: (node: PyNode) => boolean },
 ): { call: PyNode; site: CallSite }[] {
   const found: { call: PyNode; site: CallSite }[] = [];
   walkDescendants<PyNode, Scope>(body, outer, {
@@ -423,9 +450,9 @@ function callsWritten(
       }
     },
     into: (child, scope) =>
-      child.type === "function_definition"
-        ? SKIP_CHILDREN
-        : (file.module.scopeFor.get(child.id) ?? scope),
+      limit.descendsInto(child)
+        ? (file.module.scopeFor.get(child.id) ?? scope)
+        : SKIP_CHILDREN,
   });
   return found;
 }

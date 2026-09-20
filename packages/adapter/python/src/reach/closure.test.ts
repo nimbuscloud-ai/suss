@@ -1065,3 +1065,218 @@ describe("a call on what a model query gave back", () => {
     ).toBeUndefined();
   });
 });
+
+/** The summary for what a file does when it loads, or undefined when it does nothing. */
+function moduleInitOf(
+  summaries: BehavioralSummary[],
+  file: string,
+): BehavioralSummary | undefined {
+  return summaries.find(
+    (summary) =>
+      summary.kind === "module-init" && summary.location.file === file,
+  );
+}
+
+function moduleInitIn(
+  summaries: BehavioralSummary[],
+  file: string,
+): BehavioralSummary {
+  const found = moduleInitOf(summaries, file);
+  if (found === undefined) {
+    throw new Error(`nothing says what ${file} does when it loads`);
+  }
+  return found;
+}
+
+/** A job that runs its work in a project function, with no handler anywhere. */
+function writeSyncWork(): void {
+  write("app/work.py", [
+    "def sync_accounts(pool):",
+    "    return pool.run()",
+    "",
+    "def make_pool(settings):",
+    "    return settings",
+  ]);
+}
+
+describe("what a module calls when it loads", () => {
+  it("follows a call written as a statement of its own", async () => {
+    writeSyncWork();
+    write("app/job.py", [
+      "from app.work import sync_accounts",
+      "",
+      "sync_accounts(None)",
+    ]);
+
+    const summaries = await extract();
+    const work = unitNamed(summaries, "sync_accounts");
+    expect(work.kind).toBe("library");
+    expect(callTo(moduleInitIn(summaries, "app/job.py"), "sync_accounts")).toBe(
+      summaryIdentifier(work),
+    );
+  });
+
+  it("follows a call written as an argument of another call", async () => {
+    writeSyncWork();
+    write("app/job.py", [
+      "import asyncio",
+      "",
+      "from app.work import sync_accounts",
+      "",
+      "asyncio.run(sync_accounts(None))",
+    ]);
+
+    const summaries = await extract();
+    expect(callTo(moduleInitIn(summaries, "app/job.py"), "sync_accounts")).toBe(
+      summaryIdentifier(unitNamed(summaries, "sync_accounts")),
+    );
+  });
+
+  it("follows a call the process exits on", async () => {
+    writeSyncWork();
+    write("app/job.py", [
+      "import sys",
+      "",
+      "from app.work import sync_accounts",
+      "",
+      "sys.exit(sync_accounts(None))",
+    ]);
+
+    const summaries = await extract();
+    expect(callTo(moduleInitIn(summaries, "app/job.py"), "sync_accounts")).toBe(
+      summaryIdentifier(unitNamed(summaries, "sync_accounts")),
+    );
+  });
+
+  it("follows a call written under the script guard", async () => {
+    writeSyncWork();
+    write("app/job.py", [
+      "from app.work import sync_accounts",
+      "",
+      'if __name__ == "__main__":',
+      "    sync_accounts(None)",
+    ]);
+
+    const summaries = await extract();
+    expect(callTo(moduleInitIn(summaries, "app/job.py"), "sync_accounts")).toBe(
+      summaryIdentifier(unitNamed(summaries, "sync_accounts")),
+    );
+  });
+
+  it("follows a call written as a variable's initializer", async () => {
+    writeSyncWork();
+    write("app/job.py", [
+      "from app.work import make_pool",
+      "",
+      "pool = make_pool({})",
+    ]);
+
+    const summaries = await extract();
+    expect(callTo(moduleInitIn(summaries, "app/job.py"), "make_pool")).toBe(
+      summaryIdentifier(unitNamed(summaries, "make_pool")),
+    );
+  });
+
+  it("leaves the module-init summary without a boundary", async () => {
+    writeSyncWork();
+    write("app/job.py", [
+      "from app.work import sync_accounts",
+      "",
+      "sync_accounts(None)",
+    ]);
+
+    const summaries = await extract();
+    expect(
+      moduleInitIn(summaries, "app/job.py").identity.boundaryBinding,
+    ).toBeNull();
+  });
+
+  it("says nothing about a file whose only calls are inside a function", async () => {
+    writeSyncWork();
+    write("app/job.py", [
+      "from app.work import sync_accounts",
+      "",
+      "def run(pool):",
+      "    return sync_accounts(pool)",
+    ]);
+
+    const summaries = await extract();
+    expect(moduleInitOf(summaries, "app/job.py")).toBeUndefined();
+    expect(
+      summaries.filter((summary) => summary.identity.name === "sync_accounts"),
+    ).toEqual([]);
+  });
+
+  it("does not treat a decorator as a call the module makes", async () => {
+    write("app/wrap.py", [
+      "def trace():",
+      "    def apply(fn):",
+      "        return fn",
+      "    return apply",
+    ]);
+    write("app/job.py", [
+      "from app.wrap import trace",
+      "",
+      "@trace()",
+      "def run():",
+      "    return 1",
+    ]);
+
+    const summaries = await extract();
+    expect(moduleInitOf(summaries, "app/job.py")).toBeUndefined();
+  });
+
+  it("gives a function one summary when a route and module scope both reach it", async () => {
+    write("app/store.py", ["def read_orders():", "    return []"]);
+    write("app/main.py", [
+      ...APP_HEADER,
+      "from app.store import read_orders",
+      "",
+      '@app.get("/orders")',
+      "def list_orders():",
+      "    return read_orders()",
+      "",
+      "read_orders()",
+    ]);
+
+    const summaries = await extract();
+    const reached = summaries.filter(
+      (summary) => summary.identity.name === "read_orders",
+    );
+    expect(reached).toHaveLength(1);
+    expect(callTo(unitNamed(summaries, "list_orders"), "read_orders")).toBe(
+      summaryIdentifier(reached[0]),
+    );
+    expect(callTo(moduleInitIn(summaries, "app/main.py"), "read_orders")).toBe(
+      summaryIdentifier(reached[0]),
+    );
+  });
+
+  it("keeps the load-time environment reads beside the calls", async () => {
+    writeSyncWork();
+    write("app/job.py", [
+      "import os",
+      "",
+      "from app.work import sync_accounts",
+      "",
+      'dsn = os.environ["ORDERS_DSN"]',
+      "sync_accounts(dsn)",
+    ]);
+
+    const summaries = await extract();
+    const moduleInit = moduleInitIn(summaries, "app/job.py");
+    expect(
+      moduleInit.transitions.flatMap((transition) =>
+        transition.effects.flatMap((effect) =>
+          effect.type === "interaction" &&
+          effect.interaction.class === "config-read"
+            ? [effect.interaction.name]
+            : [],
+        ),
+      ),
+    ).toEqual(["ORDERS_DSN"]);
+    expect(callTo(moduleInit, "sync_accounts")).toBe(
+      summaryIdentifier(unitNamed(summaries, "sync_accounts")),
+    );
+  });
+});
