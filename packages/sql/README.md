@@ -43,6 +43,27 @@ readSqlAccess("SELECT dc.account_id FROM (SELECT account_id FROM dim_contact) dc
 // [{ table: "dim_account", fields: [], ... }, { table: "dim_contact", fields: ["account_id"], ... }]
 ```
 
+A write reads too. An insert can take its rows from a query, and an update or a delete can reach another table to pick the rows it changes:
+
+```ts
+readSqlAccess("INSERT INTO runs (id) SELECT id FROM jobs");
+// [{ table: "runs", kind: "write", fields: ["id"], ... }, { table: "jobs", kind: "read", fields: ["id"], ... }]
+```
+
+Every branch of a set operation is read, whether the statement writes it on its own, inside a `WITH` clause, or in place of a table. `SELECT id FROM orders UNION SELECT id FROM refunds` gives back a read on `orders` and one on `refunds`, each with the field `id`.
+
+Wherever a field turns up, it goes on the table the statement qualified it to, and a `WHERE` puts it in the selector rather than the fields. So the table an update reads from lists its join key the way a table a select joins to would:
+
+```ts
+readSqlAccess("UPDATE runs SET state = $1 FROM jobs WHERE runs.job_id = jobs.id");
+// [{ table: "runs", kind: "write", fields: ["state"], selector: ["job_id"] },
+//  { table: "jobs", kind: "read", fields: [], selector: ["id"] }]
+```
+
+What a `RETURNING` hands back, and what an `ON CONFLICT` matches on and then sets, are all columns of the one table the statement writes, so they go on that write rather than on a second access: a consumer pairs one access per table against the schema, and a field the statement both writes and hands back is listed once. `INSERT INTO users (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name RETURNING id` writes `users` with the fields `email`, `id` and `name`.
+
+Not every grammar takes every spelling of these. `UPDATE ... FROM` is Postgres alone, and BigQuery parses the statement but drops the clause, so there it gives back the write by itself. No grammar here takes `DELETE ... USING`. `INTERSECT` and `EXCEPT` are Postgres and MySQL, `RETURNING` is Postgres and SQLite, and `ON CONFLICT` is Postgres, where the other three grammars take `ON DUPLICATE KEY UPDATE` instead.
+
 The grammar behind this turns down two spellings that say nothing about which table is touched, so a statement it refuses is tried again without them: a parameter written with the type it is read as, such as `$1::text` or `$1::int[]`, and a select that locks the rows it picks, such as `FOR UPDATE SKIP LOCKED`. Neither is rewritten inside a literal, a quoted name or a comment.
 
 The grammar also takes a `WITH` clause only in front of a select. In front of an insert, an update or a delete the clause is split off and each query read on its own, which is the most that can be read of a statement the grammar will not take whole:
@@ -95,9 +116,6 @@ readSqlAccess("SELECT `id` FROM `users`", { dialect: "mysql" });
 
 - **A dialect it does not read gives back nothing.** So does a statement it cannot parse. Neither produces a guess built out of whatever the text happens to spell.
 - **An unqualified field in a join is left out.** `SELECT id FROM users u JOIN orders o ON ...` says nothing about which table `id` is on, so it is dropped rather than attributed to both. A query written in place of a table counts as one of the sides, since it could have supplied the field too.
-- **A table a write reads from is not reported.** `INSERT INTO runs (id) SELECT id FROM jobs` and `UPDATE runs SET s = $1 FROM jobs WHERE ...` both parse, and both give back the write alone. A `WITH` clause in front of either is read, so that is where a read beside a write does come through.
-- **Only the first branch of a set operation is read.** `SELECT id FROM orders UNION SELECT id FROM refunds` gives back `orders`.
-- **Fields outside the clause that states them are left out.** `RETURNING` and the `SET` of an `ON CONFLICT DO UPDATE` both parse, and neither adds to `fields`.
 - **An interpolated table or clause makes a statement unreadable.** ``sql`SELECT * FROM ${table}` `` cannot be settled without running it, so it produces nothing.
 
 ## Where it fits in suss
