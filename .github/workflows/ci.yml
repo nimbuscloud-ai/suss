@@ -223,6 +223,27 @@ jobs:
       - name: Documented examples
         run: npm run check:examples
 
+      # Save whatever turbo produced even when a step above failed, so
+      # the next run of this job still finds it. See turbo-cache-save.
+      - name: Save the turbo cache
+        if: always()
+        uses: ./.github/actions/turbo-cache-save
+        with:
+          key: ${{ steps.prepare.outputs.key }}
+
+      # Kept as a run artifact so the warm-cache workflow can save this
+      # entry under main's own ref once the pull request merges, since a
+      # cache entry this job saves is scoped to the pull request's ref.
+      - name: Upload the turbo cache for warm-cache
+        if: always() && steps.prepare.outputs.docs_only != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: turbo-checks-${{ steps.prepare.outputs.inputs }}
+          path: |
+            .turbo
+            **/.tsbuild
+          retention-days: 2
+
   test:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: guard
@@ -248,6 +269,20 @@ jobs:
       - name: Coverage floor check
         if: steps.prepare.outputs.docs_only != 'true'
         run: npm run check:coverage
+
+      - name: Save the turbo cache
+        if: always()
+        uses: ./.github/actions/turbo-cache-save
+        with:
+          key: ${{ steps.prepare.outputs.key }}
+
+      - name: Upload the turbo cache for warm-cache
+        if: always() && steps.prepare.outputs.docs_only != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: turbo-test-${{ steps.prepare.outputs.inputs }}
+          path: .turbo
+          retention-days: 2
 
   behaviour:
     runs-on: blacksmith-4vcpu-ubuntu-2404
@@ -283,6 +318,20 @@ jobs:
       - name: Dogfood count check
         if: steps.prepare.outputs.docs_only != 'true'
         run: npm run check:dogfood
+
+      - name: Save the turbo cache
+        if: always()
+        uses: ./.github/actions/turbo-cache-save
+        with:
+          key: ${{ steps.prepare.outputs.key }}
+
+      - name: Upload the turbo cache for warm-cache
+        if: always() && steps.prepare.outputs.docs_only != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: turbo-behaviour-${{ steps.prepare.outputs.inputs }}
+          path: .turbo
+          retention-days: 2
 
   # The name a branch ruleset requires. It waits on the three jobs, so
   # that splitting the work above did not change what a pull request
