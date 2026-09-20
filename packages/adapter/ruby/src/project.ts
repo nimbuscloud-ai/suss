@@ -317,7 +317,7 @@ export async function extractRubyProject(
       : undefined;
   const inheritedMethods = inheritedMethodsIn(options.packs);
   const reachContext = await timer.timeAsync("discover", () =>
-    buildReachContext(parsed, db, bodyBlocks, dynamicNames),
+    buildReachContext(parsed, db, bodyBlocks, dynamicNames, loaderPatterns),
   );
   // Facts keep the full filesystem path, because they are joined against
   // internally. Only the summary's `location.file` gets shortened.

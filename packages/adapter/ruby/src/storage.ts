@@ -26,6 +26,7 @@ import {
 import { classBehind, reachesBase } from "./baseClass.js";
 import { RUBY_PROGRAM } from "./facts/resolve.js";
 import { readKey } from "./facts/values.js";
+import { loaderPick } from "./loaders.js";
 import {
   NOWHERE,
   rawSqlEffects,
@@ -475,41 +476,6 @@ function modelCallEffects(
     ];
   }
   return [];
-}
-
-/** Whether a node is the loader itself, the receiverless `dataloader`. */
-function isLoader(node: RbNode | null, loader: RbLoaderPattern): boolean {
-  if (node === null) {
-    return false;
-  }
-  if (node.type === "identifier") {
-    return node.text === loader.loader;
-  }
-  return (
-    node.type === "call" &&
-    receiverOf(node) === null &&
-    methodOf(node) === loader.loader
-  );
-}
-
-/**
- * The call that was given the model, for a read through a loader: the
- * `with` behind `dataloader.with(Source, ::User).load(id)`, or the
- * shortcut itself for `dataload_record(::User, id)`. Null otherwise.
- */
-function loaderPick(call: RbNode, loader: RbLoaderPattern): RbNode | null {
-  const method = methodOf(call);
-  const receiver = receiverOf(call);
-  if (receiver === null) {
-    return loader.shortcuts.includes(method) ? call : null;
-  }
-  if (!loader.reads.includes(method) || receiver.type !== "call") {
-    return null;
-  }
-  const picks =
-    methodOf(receiver) === loader.pick &&
-    isLoader(receiverOf(receiver), loader);
-  return picks ? receiver : null;
 }
 
 /** One read per model a loader call is given. The source class it is also given reaches no model base, so it drops out here. */
