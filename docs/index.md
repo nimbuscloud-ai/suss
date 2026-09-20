@@ -51,7 +51,7 @@ Deterministic means no model is involved, so the same source gives the same summ
 
 Fast means reading a project takes seconds and a run is never the slow part of a pull request. A large project that takes minutes today is a bug. Incremental means a project is read once, and after that a run reads the files that changed and whatever depends on them, both in the CLI and in the [GitHub Action](/guides/ci-integration#caching-and-the-push-trigger).
 
-Where grep or a model would do as well, [Compared to other tools](/why/compared) says so, with numbers.
+[Compared to other tools](/why/compared) has the numbers for the cases where grep or a model does as well.
 
 ## Three ways to start
 
