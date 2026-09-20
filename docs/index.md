@@ -43,6 +43,14 @@ Nobody wrote the description above by hand. suss worked it out from the
 source, without running your code and without a model, so the same
 source gives you the same answer every time.
 
+## What it is built to be
+
+- **The same answer every time.** No model is involved. The same source gives the same summaries, so a finding is something you can go and look at, with a file and a line on both sides.
+- **Every path, not a sample.** A summary lists what a unit does on each path it can take, including the branch nobody wrote a test for.
+- **Fast enough to run on every push.** Reading a project should cost seconds, not minutes, and a run should never be the slow part of a pull request. Where a large project is still slow today, that is a bug and it gets fixed like one.
+- **Incremental.** A project is read once. After that a run reads the files that changed and whatever depends on them, in the CLI and in the [GitHub Action](/guides/ci-integration#caching-and-the-push-trigger).
+- **Measured against the alternative.** Where grep or a model would do, the docs say so, with numbers. [Compared to other tools](/why/compared) has the measurements.
+
 ## Three ways to start
 
 - **Run it now.** [Quickstart](/start/quickstart) walks you through
