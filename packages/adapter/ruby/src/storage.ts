@@ -19,18 +19,26 @@ import { askResolution } from "@suss/resolution";
 import {
   field,
   hashKeySymbolName,
+  readCallArgs,
   stringLiteralValue,
   symbolValue,
 } from "./ast.js";
+import { classBehind, reachesBase } from "./baseClass.js";
 import { RUBY_PROGRAM } from "./facts/resolve.js";
-import { nodeId, readKey } from "./facts/values.js";
-import { rawSqlEffects } from "./rawSql.js";
+import { readKey } from "./facts/values.js";
+import {
+  NOWHERE,
+  rawSqlEffects,
+  statementAt,
+  statementEffects,
+} from "./rawSql.js";
 import { compoundName } from "./scope.js";
 import { evaluatedValue, stringValueOf } from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type {
+  RbArgumentPlace,
   RbLoaderPattern,
   RbRawSqlPattern,
   RbStoragePattern,
@@ -80,44 +88,6 @@ function constantName(constant: RbNode): string {
   return constant.type === "constant" ? constant.text : compoundName(constant);
 }
 
-/**
- * Whether a class reaches one of the named base classes. The shared
- * ancestry rules follow what each one extends through the binding
- * behind it; a base the library gives is matched by the name it is
- * written as, since it has no node in the run to point at.
- */
-function reachesBase(
-  facts: Database,
-  classKey: string,
-  bases: readonly string[],
-): boolean {
-  askResolution(facts, [classKey], "wantedAncestry", RUBY_PROGRAM);
-  return facts
-    .lookup("wantedBaseName", 0, classKey)
-    .some((row) => bases.includes(String(row[1])));
-}
-
-/**
- * The class a constant refers to, by the key the constant bindings gave this
- * reference: a bare name is bound once per file, a compound path once per
- * node. Two classes bound to it would make picking one a guess, so nothing
- * is said, the same caution the constant bindings apply.
- */
-function classBehind(
-  facts: Database,
-  file: string,
-  constant: RbNode,
-): string | undefined {
-  const key =
-    constant.type === "constant"
-      ? `${file}#${constant.text}`
-      : nodeId(file, constant);
-  const bound = new Set(
-    facts.lookup("binds", 0, key).map((row) => String(row[1])),
-  );
-  return bound.size === 1 ? [...bound][0] : undefined;
-}
-
 /** The pattern whose base class the constant's class reaches, if the constant is a model. */
 function modelPattern(
   constant: RbNode,
@@ -160,13 +130,31 @@ function kindOfCall(
   return undefined;
 }
 
+/** What the library does with one of its methods: run a statement the project wrote, or read or write rows of the model's own container. */
+type LibraryCall =
+  | { readonly how: "statement"; readonly place: RbArgumentPlace }
+  | { readonly how: "rows"; readonly kind: StorageKind };
+
+/** What the pattern says this method is, or nothing when its library does not define it. */
+function libraryCallOf(
+  pattern: RbStoragePattern,
+  method: string,
+): LibraryCall | undefined {
+  const place = pattern.statements?.[method];
+  if (place !== undefined) {
+    return { how: "statement", place };
+  }
+  const kind = kindOfCall(pattern, method);
+  return kind === undefined ? undefined : { how: "rows", kind };
+}
+
 /** Whether any pattern in the run says its library defines this method. */
 function someLibraryDefines(
   options: RbStorageOptions,
   method: string,
 ): boolean {
   return options.patterns.some(
-    (pattern) => kindOfCall(pattern, method) !== undefined,
+    (pattern) => libraryCallOf(pattern, method) !== undefined,
   );
 }
 
@@ -422,6 +410,22 @@ function libraryCallIn(call: RbNode, options: RbStorageOptions): RbNode | null {
   );
 }
 
+/** The tables a statement handed to the model touches. The statement says which tables, not the model's own container, and it may say several. */
+function modelStatementEffects(
+  call: RbNode,
+  place: RbArgumentPlace,
+  pattern: RbStoragePattern,
+  options: RbStorageOptions,
+): Effect[] {
+  const args = readCallArgs(field(call, "arguments"));
+  return statementEffects(
+    call,
+    statementAt(args, place, options.facts, pattern.bindPlaceholder),
+    NOWHERE,
+    { storageSystem: pattern.storageSystem, dialect: pattern.storageSystem },
+  );
+}
+
 /**
  * The database work one chain does, whether it was written from the model
  * itself or from a record in hand. A method the project declares on the
@@ -446,9 +450,9 @@ function modelCallEffects(
   }
 
   for (const pattern of options.patterns) {
-    const kind = kindOfCall(pattern, method);
+    const library = libraryCallOf(pattern, method);
     if (
-      kind === undefined ||
+      library === undefined ||
       !reachesBase(options.facts, target.classKey, pattern.baseClasses)
     ) {
       continue;
@@ -456,14 +460,17 @@ function modelCallEffects(
     if (projectDeclares(options.facts, target.classKey, method)) {
       return [];
     }
+    if (library.how === "statement") {
+      return modelStatementEffects(worked, library.place, pattern, options);
+    }
     return [
       storageEffect(
         worked,
         target.container,
         pattern,
-        kind,
+        library.kind,
         selectorOf(worked, pattern, options.facts),
-        fieldsOf(worked, pattern, kind, options.facts),
+        fieldsOf(worked, pattern, library.kind, options.facts),
       ),
     ];
   }
@@ -552,6 +559,7 @@ function effectsOfCall(
   return rawSqlEffects(call, {
     facts: options.facts,
     patterns: options.rawSql ?? [],
+    file,
   });
 }
 

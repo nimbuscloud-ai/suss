@@ -445,6 +445,31 @@ table is the scope. A table a call was given by name goes through
 thing. A table written on its own belongs to whatever the chain addressed, and
 to `scope` when the chain addressed nothing.
 
+Some libraries hand the same client out from every subclass of their own base
+class, which is how ActiveRecord works. `baseClasses` declares those bases, and
+the chain then starts at any class whose ancestry reaches one of them, or at no
+receiver at all when the call is written inside such a class:
+
+```ruby
+ActiveRecord::Base.connection.execute(sql)   # the constant itself
+Account.connection.select_values(sql)        # a model two classes below the base
+connection.select_values(sql)                # a bare call inside that model's own class method
+```
+
+The ancestry comes from the same rules the model recognizer uses, in
+`baseClass.ts`, so both sides settle a class the same way.
+
+A model itself can take a statement, through `find_by_sql` and `count_by_sql`.
+`statements` on a storage pattern declares those methods, and the tables come
+from the statement rather than from the model's own container. The first
+argument may be the statement or an array whose first element is, since that is
+how the library takes bind values alongside it.
+
+A library with a bind placeholder of its own writes a statement no dialect
+parses. `bindPlaceholder` says what that token is, ActiveRecord's `?`, and each
+one becomes a boundary between two literal parts, so the reader sees a
+parameter where the value would have gone.
+
 ## What a read picked and what a write set
 
 `selector` is what the chain was given to pick rows by: the keywords of every
