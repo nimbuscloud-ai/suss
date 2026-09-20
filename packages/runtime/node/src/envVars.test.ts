@@ -1498,7 +1498,27 @@ describe("env-var recognizer — a schema parsed against process.env", () => {
     expect(readsOf(file)).toEqual([]);
   });
 
-  it("reads a schema parsed against a parameter a caller fills with process.env", () => {
+  it("reads a schema parsed against a parameter the same file defaults to process.env", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "config.ts",
+      `import { z } from "zod";
+      const Env = z.object({ ORDERS_URL: z.string() });
+      export function load(source = process.env) {
+        return Env.parse(source);
+      }`,
+    );
+    const entry = project.createSourceFile(
+      "entry.ts",
+      `import { load } from "./config.js";
+      export const config = load();`,
+    );
+    const inConfig = project.getSourceFileOrThrow("config.ts");
+    expect(readsOf(inConfig)).toEqual([["ORDERS_URL", false]]);
+    expect(readsOf(entry)).toEqual([["ORDERS_URL", false]]);
+  });
+
+  it("says nothing where only a caller in another file names the environment", () => {
     const project = createTestProject();
     project.createSourceFile(
       "config.ts",
@@ -1513,9 +1533,11 @@ describe("env-var recognizer — a schema parsed against process.env", () => {
       `import { load } from "./config.js";
       export const config = load(process.env);`,
     );
-    const inConfig = project.getSourceFileOrThrow("config.ts");
-    expect(readsOf(inConfig)).toEqual([["ORDERS_URL", false]]);
-    expect(readsOf(entry)).toEqual([["ORDERS_URL", false]]);
+    // Asking what every argument of every parse comes down to costs a
+    // symbol lookup apiece, so a file that never spells the
+    // environment is not asked about. The README says so.
+    expect(readsOf(project.getSourceFileOrThrow("config.ts"))).toEqual([]);
+    expect(readsOf(entry)).toEqual([]);
   });
 
   it("reports a config module's schema at the call a handler makes", () => {

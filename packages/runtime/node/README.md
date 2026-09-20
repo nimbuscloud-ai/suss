@@ -165,12 +165,36 @@ A handler that calls a config module's `loadConfig()` reports what the
 parse inside it reads, at the call, the same way a call to a
 `requireEnv` helper does.
 
-Two things it says nothing about. A library nothing in the table above
-covers reads nothing, since the table is what says where the schema
-and the environment object are in each call. And a `runtimeEnv` that
-lists the variables one by one, `{ DB_NAME: process.env.DB_NAME }`,
-is read by the dotted reader rather than by this one, which reports
-the same names.
+Three things it says nothing about.
+
+A library nothing in the table above covers reads nothing, since the
+table is what says where the schema and the environment object are in
+each call. Aliasing the import, `import { cleanEnv as load }`, hides
+the call the same way, because the name the source writes is the first
+test.
+
+A `runtimeEnv` that lists the variables one by one,
+`{ DB_NAME: process.env.DB_NAME }`, is read by the dotted reader
+rather than by this one, which reports the same names.
+
+A parse whose environment only a caller in another file writes is out
+of reach:
+
+```ts
+// config.ts, which never spells process.env
+export function load(source: Record<string, string>) {
+  return Env.parse(source);
+}
+
+// entry.ts
+export const config = load(process.env);
+```
+
+Asking what every argument of every `parse` comes down to costs a
+symbol lookup apiece, and 4.5% of this repo's own source files spell
+`process.env` at all, so a file that never writes it is not asked
+about. Giving the parameter a default, `source = process.env`, brings
+it back, and that is how most services spell it anyway.
 
 ## Options
 

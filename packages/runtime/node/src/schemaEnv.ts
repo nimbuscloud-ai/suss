@@ -115,24 +115,8 @@ const PARSE_CALL_NAMES = new Set(
   SCHEMA_READERS.flatMap((reader) => [...reader.calls]),
 );
 
-const READER_MODULES = [
-  ...new Set(SCHEMA_READERS.flatMap((reader) => [...reader.modules])),
-];
-
-const FILE_MENTIONS_LIBRARY = new WeakMap<SourceFile, boolean>();
-
-/**
- * Whether to put a call to the store at all. Every project calls
- * something spelled `parse`, few of those are a schema, and asking
- * which package each one came from is a query apiece.
- */
-function couldBeSchemaCall(call: CallExpression): boolean {
-  const written = writtenCalleeName(call.getExpression());
-  if (written !== null && PARSE_CALL_NAMES.has(written)) {
-    return true;
-  }
-  return mentionsLibrary(call.getSourceFile());
-}
+/** The packages a file's text mentions, worked out once per file. */
+const MODULES_MENTIONED = new WeakMap<SourceFile, ReadonlySet<string>>();
 
 /** How the source spells the callee, for the cheap tests. */
 function writtenCalleeName(callee: Node): string | null {
@@ -142,15 +126,65 @@ function writtenCalleeName(callee: Node): string | null {
   return N.isPropertyAccessExpression(callee) ? callee.getName() : null;
 }
 
-/** Whether a file's text mentions one of the packages at all. */
-function mentionsLibrary(sourceFile: SourceFile): boolean {
-  const remembered = FILE_MENTIONS_LIBRARY.get(sourceFile);
+function modulesMentionedIn(sourceFile: SourceFile): ReadonlySet<string> {
+  const remembered = MODULES_MENTIONED.get(sourceFile);
   if (remembered !== undefined) {
     return remembered;
   }
   const text = sourceFile.getFullText();
-  const found = READER_MODULES.some((module) => text.includes(module));
-  FILE_MENTIONS_LIBRARY.set(sourceFile, found);
+  const found = new Set(
+    SCHEMA_READERS.flatMap((reader) => [...reader.modules]).filter((module) =>
+      text.includes(module),
+    ),
+  );
+  MODULES_MENTIONED.set(sourceFile, found);
+  return found;
+}
+
+/**
+ * Whether to put any question to the store about this call, for this
+ * reader. Every project calls something spelled `parse`, few of those
+ * are a schema, and asking which package one came from is a query.
+ *
+ * A method on a schema says nothing about the package, so the zod
+ * reader gets the name test alone and settles the package later, off
+ * the receiver. The rest are imported functions, and an import a file
+ * never mentions is one nothing in it can be calling.
+ */
+function readerCouldFire(
+  call: CallExpression,
+  reader: SchemaReader,
+  written: string,
+): boolean {
+  if (!reader.calls.includes(written)) {
+    return false;
+  }
+  if (reader.onSchema === true) {
+    return true;
+  }
+  const mentioned = modulesMentionedIn(call.getSourceFile());
+  return reader.modules.some((module) => mentioned.has(module));
+}
+
+/** What a file has to spell somewhere for the environment to be in it. */
+const ENVIRONMENT_OBJECT = "process.env";
+
+const MENTIONS_ENVIRONMENT = new WeakMap<SourceFile, boolean>();
+
+/**
+ * Whether a file spells the environment object at all. Asking what a
+ * value comes down to costs a symbol lookup per argument, and a file
+ * that never writes `process.env` has no argument that can reach it.
+ * A parse whose environment only its caller in another file names is
+ * the spelling this gives up, and the README says so.
+ */
+function mentionsEnvironment(sourceFile: SourceFile): boolean {
+  const remembered = MENTIONS_ENVIRONMENT.get(sourceFile);
+  if (remembered !== undefined) {
+    return remembered;
+  }
+  const found = sourceFile.getFullText().includes(ENVIRONMENT_OBJECT);
+  MENTIONS_ENVIRONMENT.set(sourceFile, found);
   return found;
 }
 
@@ -163,11 +197,22 @@ export function schemaEnvReads(
   call: CallExpression,
   resolution: ResolutionStore | undefined,
 ): SchemaEnvRead[] {
-  if (resolution === undefined || !couldBeSchemaCall(call)) {
+  if (resolution === undefined) {
+    return [];
+  }
+  const written = writtenCalleeName(call.getExpression());
+  if (
+    written === null ||
+    !PARSE_CALL_NAMES.has(written) ||
+    !mentionsEnvironment(call.getSourceFile())
+  ) {
     return [];
   }
   for (const reader of SCHEMA_READERS) {
-    if (!callMatches(call, reader, resolution)) {
+    if (
+      !readerCouldFire(call, reader, written) ||
+      !callMatches(call, reader, resolution)
+    ) {
       continue;
     }
     const environment = environmentArgument(call, reader, resolution);
