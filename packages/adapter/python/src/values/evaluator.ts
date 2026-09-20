@@ -17,6 +17,7 @@ import { enclosingFunction, field } from "../ast.js";
 import {
   constructionSites,
   resolveCalls,
+  settleWrittenValues,
   writtenValueOf,
   writtenValuesOf,
   writtenValueUnder,
@@ -176,10 +177,22 @@ export function askWrittenValues(
   if (bound === undefined) {
     return;
   }
-  const keys = nodes
-    .map((node) => bound.keyOf(node))
-    .filter((key): key is string => key !== null);
-  resolveCalls(db, keys);
+  settleWrittenValues(db, resolutionKeysOf(nodes, bound));
+}
+
+/** The keys these nodes are asked about under, without repeats and without the ones no file in the run covers. */
+function resolutionKeysOf(
+  nodes: readonly PyNode[],
+  bound: BoundProject,
+): string[] {
+  const keys = new Set<string>();
+  for (const node of nodes) {
+    const key = bound.keyOf(node);
+    if (key !== null) {
+      keys.add(key);
+    }
+  }
+  return [...keys];
 }
 
 /**
@@ -315,11 +328,9 @@ function projectOver(db: Database, nodes: ProjectNodes): BoundProject {
         return null;
       }
       resolveCalls(db, [key]);
-      const resolved = db
-        .facts("wantedResolves")
-        .filter((row) => String(row[0]) === key)
-        .map((row) => String(row[1]));
-      const settled = resolved.length === 1 ? resolved[0] : undefined;
+      const resolved = db.lookup("wantedResolves", 0, key);
+      const settled =
+        resolved.length === 1 ? String(resolved[0]?.[1]) : undefined;
       return settled === undefined
         ? null
         : (nodes.definitions.get(settled) ?? null);
