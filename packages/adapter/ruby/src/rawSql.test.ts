@@ -414,6 +414,108 @@ describe("a call that reaches rows with no statement", () => {
   });
 });
 
+/** A store library that hands a client out from every subclass of its own base, the way a Rails model does. */
+const INHERITED: RbRawSqlPattern = {
+  constantName: "Warehouse::Record",
+  baseClasses: ["Warehouse::Record"],
+  clientBuilders: ["session"],
+  statements: { run: { at: 0 } },
+  storageSystem: "postgresql",
+  dialect: "postgresql",
+};
+
+/** The project's own class between the library's base and every record. */
+const RECORDS = [
+  "class BaseRecord < Warehouse::Record",
+  "end",
+  "",
+  "class AccountRecord < BaseRecord",
+  "end",
+  "",
+].join("\n");
+
+describe("a client the library hands out from a subclass of its base", () => {
+  it("reads a statement run from the library's own constant", async () => {
+    const effects = await effectsFor(
+      'Warehouse::Record.session.run("SELECT id FROM dim_account")',
+      INHERITED,
+      { "app/models/records.rb": RECORDS },
+    );
+
+    expect(effects).toHaveLength(1);
+    expect(reached(effects[0]).container).toBe("dim_account");
+  });
+
+  it("reads a statement run from a class two below that base", async () => {
+    const effects = await effectsFor(
+      'AccountRecord.session.run("SELECT id FROM dim_account")',
+      INHERITED,
+      { "app/models/records.rb": RECORDS },
+    );
+
+    expect(effects).toHaveLength(1);
+    expect(reached(effects[0]).container).toBe("dim_account");
+  });
+
+  it("reads a statement run on the bare client of the class it is written in", async () => {
+    const source = [
+      "class AccountRecord < BaseRecord",
+      "  def self.stale_ids",
+      '    session.run("SELECT id FROM dim_account")',
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+    const effects = await effectsFor(source, INHERITED, {
+      "app/models/base_record.rb":
+        "class BaseRecord < Warehouse::Record\nend\n",
+    });
+
+    expect(effects).toHaveLength(1);
+    expect(reached(effects[0]).container).toBe("dim_account");
+  });
+
+  it("says nothing for a class whose ancestry reaches no base the pack listed", async () => {
+    const effects = await effectsFor(
+      'ReportJob.session.run("SELECT id FROM dim_account")',
+      INHERITED,
+      { "app/jobs/report_job.rb": "class ReportJob\nend\n" },
+    );
+
+    expect(effects).toEqual([]);
+  });
+
+  it("says nothing for a bare call in a class the pack never named a base for", async () => {
+    const source = [
+      "class ReportJob",
+      "  def self.stale_ids",
+      '    session.run("SELECT id FROM dim_account")',
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+
+    expect(await effectsFor(source, INHERITED)).toEqual([]);
+  });
+
+  it("says nothing about a bare call when the pack listed no base at all", async () => {
+    const source = [
+      "class AccountRecord < BaseRecord",
+      "  def self.stale_ids",
+      '    connect.run("SELECT id FROM dim_account")',
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+    const effects = await effectsFor(source, STORE, {
+      "app/models/base_record.rb":
+        "class BaseRecord < Warehouse::Client\nend\n",
+    });
+
+    expect(effects).toEqual([]);
+  });
+});
+
 describe("a call the raw SQL reader records", () => {
   it("is claimed, so the reach walk does not report it as a gap", async () => {
     const { db, root } = await factsFor({

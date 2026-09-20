@@ -173,6 +173,15 @@ export interface RbStoragePattern {
   reads: string[];
   /** Methods whose result is the model again: one record, or a relation a later read narrows to one. */
   givesBack: string[];
+  /**
+   * Methods on the model that take a statement the project wrote itself,
+   * and where each one takes it. The tables come from the statement, so
+   * one of these says nothing about the model's own container, and the
+   * statement is read in the dialect of `storageSystem`.
+   */
+  statements?: Record<string, RbArgumentPlace>;
+  /** The token the library writes where a bind value goes, ActiveRecord's `?`. */
+  bindPlaceholder?: string;
   /** Methods that pick rows by the primary key when they are given a positional argument, and the column that is. */
   byPrimaryKey?: RbPrimaryKeyLookup;
   /** Read methods whose symbol arguments are the columns they ask for. */
@@ -194,12 +203,21 @@ export interface RbStoragePattern {
 export interface RbRawSqlPattern {
   /** The constant the library's calls start at, `PG` or `Google::Cloud::Bigquery`. */
   constantName: string;
+  /**
+   * Base classes whose subclasses hand a client out the same way the
+   * constant does, `ActiveRecord::Base` for Rails. A project writes
+   * `Account.connection` and a bare `connection` inside the model as
+   * readily as the base class itself, and all three reach one store.
+   */
+  baseClasses?: string[];
   /** Methods on that constant that give back a client, `connect` for the pg gem. */
   clientBuilders: string[];
   /** Calls that narrow a client to part of the store and give back something the rest of the calls can be made on. */
   addressing?: Record<string, RbAddressingCall>;
   /** Calls that take a statement, and where each one takes it. */
   statements?: Record<string, RbArgumentPlace>;
+  /** The token the library writes where a bind value goes, when it is not the one the dialect itself reads. */
+  bindPlaceholder?: string;
   /** Calls that read or write rows of an addressed container with no statement, `insert` on a BigQuery table. */
   rowCalls?: Record<string, RbRowCall>;
   /** Which store is behind the calls, in the words OpenTelemetry's semantic conventions use: `postgresql`, `gcp.bigquery`. */

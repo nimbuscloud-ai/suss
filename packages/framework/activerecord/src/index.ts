@@ -6,7 +6,11 @@ import { z } from "zod";
 
 import { storageSystemOption } from "@suss/extractor";
 
-import type { RbStoragePattern, RubyPack } from "@suss/adapter-ruby";
+import type {
+  RbRawSqlPattern,
+  RbStoragePattern,
+  RubyPack,
+} from "@suss/adapter-ruby";
 import type { PackDeclaration } from "@suss/ir-core";
 
 /**
@@ -133,6 +137,33 @@ const RETURNS_A_RELATION = [
 const READS = [...RUNS_A_QUERY, ...RETURNS_A_RELATION, "not"];
 
 /**
+ * The two finders that take a statement rather than building one. Both
+ * take it first, either on its own or at the head of an array whose rest
+ * are the bind values.
+ */
+const TAKES_A_STATEMENT = {
+  find_by_sql: { at: 0 },
+  count_by_sql: { at: 0 },
+};
+
+/**
+ * The methods a connection gives for running a statement the project
+ * wrote. Every one of them takes it first.
+ */
+const CONNECTION_STATEMENTS = {
+  execute: { at: 0 },
+  exec_query: { at: 0 },
+  exec_insert: { at: 0 },
+  exec_update: { at: 0 },
+  exec_delete: { at: 0 },
+  select_all: { at: 0 },
+  select_one: { at: 0 },
+  select_value: { at: 0 },
+  select_values: { at: 0 },
+  select_rows: { at: 0 },
+};
+
+/**
  * The base class the library gives a model, the methods that read the
  * database and the methods that change what is stored. Everything here is
  * ActiveRecord's own. A project's `ApplicationRecord` is matched by
@@ -174,6 +205,8 @@ export function activeRecordStorage(
         methods: ["find", "exists?", "update", "destroy", "delete"],
         column: "id",
       },
+      statements: TAKES_A_STATEMENT,
+      bindPlaceholder: "?",
       columnArguments: ["select", "pluck", "pick"],
       associations: {
         singular: ["has_one", "belongs_to"],
@@ -181,6 +214,28 @@ export function activeRecordStorage(
         classNameKeyword: "class_name",
       },
       storageSystem: options.storageSystem,
+    },
+  ];
+}
+
+/**
+ * The connection ActiveRecord hands out, and the calls on it that take a
+ * statement. `ActiveRecord::Base` gives it, every model inherits the same
+ * three calls, and a model's own class method writes a bare `connection`,
+ * so all three spellings reach one store. ActiveRecord's dialect is the
+ * database behind the connection, which is what the project supplies.
+ */
+export function activeRecordRawSql(
+  options: ActiveRecordPackOptions,
+): RbRawSqlPattern[] {
+  return [
+    {
+      constantName: "ActiveRecord::Base",
+      baseClasses: ["ActiveRecord::Base"],
+      clientBuilders: ["connection", "lease_connection", "retrieve_connection"],
+      statements: CONNECTION_STATEMENTS,
+      storageSystem: options.storageSystem,
+      dialect: options.storageSystem,
     },
   ];
 }
@@ -197,6 +252,7 @@ export function withActiveRecord(
   return {
     ...pack,
     storage: [...(pack.storage ?? []), ...activeRecordStorage(options)],
+    rawSql: [...(pack.rawSql ?? []), ...activeRecordRawSql(options)],
   };
 }
 
@@ -215,6 +271,7 @@ export function activeRecordFramework(
     protocol: options.storageSystem,
     discovery: [],
     storage: activeRecordStorage(options),
+    rawSql: activeRecordRawSql(options),
   };
 }
 
@@ -227,7 +284,7 @@ export const declares: PackDeclaration = {
     { ecosystem: "rubygems", name: "rails" },
   ],
   reads:
-    "ActiveRecord calls (Ruby): a call matches when its method is one ActiveRecord defines as a read or a write and the class behind its receiver reaches \`ActiveRecord::Base\`, following what each class extends through the project.",
+    "ActiveRecord calls (Ruby): a call matches when its method is one ActiveRecord defines as a read or a write and the class behind its receiver reaches \`ActiveRecord::Base\`, following what each class extends through the project. Statements the project wrote itself are read for the tables they touch, whether they went through \`find_by_sql\` and \`count_by_sql\` or through the connection.",
   configuration: {
     file: "suss.activerecord.json",
     example: { storageSystem: "postgresql" },
