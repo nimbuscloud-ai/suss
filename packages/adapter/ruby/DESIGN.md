@@ -105,6 +105,21 @@ two reads of one node are never `===` and a plain `Set` or `Map` keyed on a
 node matches nothing. Use `NodeSet` and `NodeMap`, which key on the node id.
 `npm run check:style` fails a build that keys either on a node.
 
+### Asking the rules once for a file
+
+One question to `@suss/resolution` runs the rules over every fact the project
+emitted, so it costs about the same whether it asks about one key or a
+thousand. Asking key by key runs them again per key, and on a large Rails app
+that was almost the whole extraction.
+
+So a reader with many nodes in hand asks about them together, through
+`askWrittenValues` in `values/evaluator.ts`. `discoverUnits` does this for the
+client patterns before it reads any call site: one question for every call
+receiver in the file, then one for the URLs the receivers that turned out to be
+the library's were handed. `storageEffects` and the environment reader do the
+same for their own keys. Nothing fails a build over it, because a reader that
+asks per site gets the same answer, only slower.
+
 ## Which scope a name belongs to
 
 Ruby declares no local. Assigning a name anywhere in a method body makes it a

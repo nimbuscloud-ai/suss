@@ -21,6 +21,7 @@ import { invocationEffects } from "./paths/effects.js";
 import { returnPathBranches } from "./responseStatus.js";
 import { compoundName } from "./scope.js";
 import {
+  askWrittenValues,
   constructionSitesOf,
   evaluatedValue,
   writtenNodeOf,
@@ -66,6 +67,85 @@ export function clientCallUnits(
     }
   }
   return units;
+}
+
+/**
+ * Settle what this file's request calls read, before any one of them is
+ * read on its own. Asking per call site is what made a large project
+ * slow, because each question runs the rules again.
+ *
+ * Two rounds. The first settles which receivers the library built, and
+ * that is what says which calls have a URL to read at all.
+ */
+export function askClientCallReads(
+  root: RbNode,
+  patterns: readonly RbClientCall[],
+  options: ClientCallOptions,
+): void {
+  const facts = options.facts;
+  if (facts === undefined || patterns.length === 0) {
+    return;
+  }
+  const calls: RbNode[] = [];
+  for (const method of methodDefinitions(root)) {
+    calls.push(...callsUnder(method));
+  }
+  if (patterns.some((pattern) => (pattern.receiverBuilders ?? []).length > 0)) {
+    askWrittenValues(receiversOf(calls), facts);
+  }
+  askWrittenValues(requestArguments(calls, patterns, options), facts);
+}
+
+function receiversOf(calls: readonly RbNode[]): RbNode[] {
+  const found: RbNode[] = [];
+  for (const call of calls) {
+    const receiver = field(call, "receiver");
+    if (receiver !== null) {
+      found.push(receiver);
+    }
+  }
+  return found;
+}
+
+/** The URL, or the request object, each call on the library was handed. */
+function requestArguments(
+  calls: readonly RbNode[],
+  patterns: readonly RbClientCall[],
+  options: ClientCallOptions,
+): RbNode[] {
+  const found: RbNode[] = [];
+  for (const call of calls) {
+    const receiver = field(call, "receiver");
+    const called = field(call, "method")?.text;
+    if (receiver === null || called === undefined) {
+      continue;
+    }
+    for (const pattern of patterns) {
+      if (!isLibraryReceiver(receiver, pattern, options)) {
+        continue;
+      }
+      const argument = requestArgument(call, called, pattern);
+      if (argument !== undefined) {
+        found.push(argument);
+      }
+    }
+  }
+  return found;
+}
+
+/** The URL a request method was handed, or the request object a sending call was handed. */
+function requestArgument(
+  call: RbNode,
+  called: string,
+  pattern: RbClientCall,
+): RbNode | undefined {
+  const args = readCallArgs(field(call, "arguments"));
+  if (pattern.verbMethodNames[called] !== undefined) {
+    return urlNodeIn(args, pattern);
+  }
+  return pattern.requestObject?.attribute === called
+    ? args.positional[0]
+    : undefined;
 }
 
 /** Every method this file defines, in a class or outside one. */
@@ -295,11 +375,16 @@ function urlIn(
   options: ClientCallOptions,
   site?: string,
 ): string | null {
+  return pathAt(urlNodeIn(args, pattern), options, site);
+}
+
+/** Where the pack said the URL is written: under a keyword when it named one, at a position otherwise. */
+function urlNodeIn(args: CallArgs, pattern: RbClientCall): RbNode | undefined {
   const keyword = pattern.url.keyword;
-  const written =
+  return (
     (keyword === undefined ? undefined : args.keyword[keyword]) ??
-    args.positional[pattern.url.position];
-  return pathAt(written, options, site);
+    args.positional[pattern.url.position]
+  );
 }
 
 /**

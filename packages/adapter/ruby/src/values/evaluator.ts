@@ -11,7 +11,7 @@
  * own scope walk.
  */
 
-import { nodeOfKey } from "@suss/resolution";
+import { nodeOfKey, writtenValuesByKey } from "@suss/resolution";
 import { Evaluator, force, literalOf, text } from "@suss/values";
 
 import { enclosingDefinition, field, METHOD_TYPES } from "../ast.js";
@@ -73,6 +73,39 @@ export function writtenNodeOf(
 ): RbNode | null {
   const context = db === undefined ? undefined : contexts.get(db);
   return context === undefined ? null : context.writtenTo(node, site);
+}
+
+/**
+ * Settle what each of these nodes was written as, in one question.
+ *
+ * The rules run over the whole project's facts either way, so one
+ * question about a thousand keys costs about what one question about a
+ * single key costs. A reader with many nodes in hand asks here first,
+ * and every later read of one of them finds its answer already there.
+ */
+export function askWrittenValues(
+  nodes: readonly RbNode[],
+  db: Database | undefined,
+): void {
+  if (db === undefined || !contexts.has(db)) {
+    return;
+  }
+  const keys = new Set<string>();
+  for (const node of nodes) {
+    const file = filesByTree.get(node.tree);
+    if (file !== undefined) {
+      keys.add(readKey(file, node, enclosingDefinition(node)));
+    }
+  }
+  if (keys.size === 0) {
+    return;
+  }
+  const asked = [...keys];
+  resolveValues(db, asked);
+  // A key the rules settle on a call has to be asked about again, and
+  // doing that for the whole batch keeps the second round to one
+  // question as well.
+  writtenValuesByKey(db, asked, (more) => resolveValues(db, more));
 }
 
 /** Strings to read for the parameters of the block or method `node` is written in, the way a caller would supply them. */
