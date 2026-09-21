@@ -56,21 +56,15 @@ export interface SourceFileLookup {
 
 /**
  * Find the source file at a module key, loading it when no pass has
- * read that file yet. A key that is a bare package specifier never
- * resolved to a file, so there is nothing to load.
- *
- * Ask ts-morph for a path and it reads its map. Ask it for anything
- * else and it compares path segments against every source file in the
- * project, which a package name never matches, because every file here
- * has an extension on the end. On a large front end that search ran
- * 3,635 times, took 45 seconds and found nothing, so check the key
- * first and skip the search.
+ * read that file yet. A bare package specifier is checked first because
+ * ts-morph looks a non-path key up by comparing path segments against
+ * every source file, and a package name never matches one.
  */
 export function sourceFileFor(
   project: Project,
   moduleKey: string,
 ): SourceFile | undefined {
-  if (!namesAPath(moduleKey)) {
+  if (!isPathKey(moduleKey)) {
     return undefined;
   }
 
@@ -91,7 +85,7 @@ export function sourceFileFor(
 }
 
 /** Whether ts-morph reads this key as a path and looks it up in its map. */
-function namesAPath(moduleKey: string): boolean {
+function isPathKey(moduleKey: string): boolean {
   return path.isAbsolute(moduleKey) || moduleKey.includes("/");
 }
 
