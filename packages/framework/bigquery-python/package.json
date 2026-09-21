@@ -1,6 +1,6 @@
 {
   "name": "@suss/framework-bigquery-python",
-  "version": "0.32.0",
+  "version": "0.33.0",
   "type": "module",
   "description": "Pattern pack that says which BigQuery calls a Python body makes against the warehouse.",
   "keywords": [
@@ -47,7 +47,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/adapter-python": "0.32.0"
+    "@suss/adapter-python": "0.33.0"
   },
   "devDependencies": {
     "@suss/behavioral-ir": "*",
