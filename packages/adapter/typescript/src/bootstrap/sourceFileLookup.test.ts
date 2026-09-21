@@ -1,7 +1,7 @@
 import { Project } from "ts-morph";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { createSourceFileLookup } from "./sourceFileLookup.js";
+import { createSourceFileLookup, sourceFileFor } from "./sourceFileLookup.js";
 
 function projectWith(files: Record<string, string>) {
   const project = new Project({ useInMemoryFileSystem: true });
@@ -53,5 +53,37 @@ describe("createSourceFileLookup", () => {
     expect(
       lookup.functionAt({ file: "src/gone.ts", range: { start: 1, end: 1 } }),
     ).toBeNull();
+  });
+});
+
+describe("sourceFileFor", () => {
+  it("finds a file by its absolute path", () => {
+    const project = projectWith({ "src/a.ts": "export const x = 1;\n" });
+    expect(sourceFileFor(project, "/src/a.ts")?.getBaseName()).toBe("a.ts");
+  });
+
+  it("gives nothing back for a bare package specifier", () => {
+    const project = projectWith({ "src/react.ts": "export const x = 1;\n" });
+    expect(sourceFileFor(project, "react")).toBeUndefined();
+  });
+
+  it("never asks ts-morph about a bare package specifier", () => {
+    const project = projectWith({ "src/a.ts": "export const x = 1;\n" });
+    const spy = vi.spyOn(project, "getSourceFile");
+
+    expect(sourceFileFor(project, "react")).toBeUndefined();
+
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("still asks about a relative specifier, which is a path", () => {
+    const project = projectWith({ "src/a.ts": "export const x = 1;\n" });
+    const spy = vi.spyOn(project, "getSourceFile");
+
+    sourceFileFor(project, "./src/a.ts");
+
+    expect(spy).toHaveBeenCalledWith("./src/a.ts");
+    spy.mockRestore();
   });
 });
