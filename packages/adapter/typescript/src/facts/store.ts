@@ -43,6 +43,7 @@ import {
   writtenValueUnder,
 } from "@suss/resolution";
 
+import { sourceFileFor } from "../bootstrap/sourceFileLookup.js";
 import { recordFileDependency } from "../depTracking.js";
 import { isFunctionRoot } from "../discovery/shared.js";
 import {
@@ -1400,31 +1401,6 @@ export class ResolutionStore {
     this.fullyExtracted.add(filePath);
     this.stale = true;
     extractFileFacts(this.db, this.table, sourceFile);
-  }
-}
-
-/**
- * A re-export target the project has not loaded yet, such as a
- * dependency's .d.ts, is added by its resolved path. A key that is a
- * bare specifier never resolved to a file, so there is nothing to add.
- */
-export function sourceFileFor(
-  project: Project,
-  moduleKey: string,
-): SourceFile | undefined {
-  const known = project.getSourceFile(moduleKey);
-  if (known !== undefined) {
-    return known;
-  }
-
-  if (!moduleKey.startsWith("/")) {
-    return undefined;
-  }
-
-  try {
-    return project.addSourceFileAtPathIfExists(moduleKey) ?? undefined;
-  } catch {
-    return undefined;
   }
 }
 
