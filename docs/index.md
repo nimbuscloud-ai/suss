@@ -49,7 +49,7 @@ suss should be deterministic, complete, fast and incremental.
 
 Deterministic means no model is involved, so the same source gives the same summaries and every finding has a file and a line you can go and look at. Complete means a summary lists what a unit does on every path it can take, including the branch nobody wrote a test for.
 
-Fast means reading a project takes seconds and a run is never the slow part of a pull request. A large project that takes minutes today is a bug. Incremental means a project is read once, and after that a run reads the files that changed and whatever depends on them, both in the CLI and in the [GitHub Action](/guides/ci-integration#caching-and-the-push-trigger).
+Fast means reading a project takes seconds and a run is never the slow part of a pull request. A large project that takes minutes today is a bug. As of 0.33.0, Zulip's `zerver/` directory (1,676 Python files) reads in 14 seconds and Mastodon's `app/` (1,254 Ruby files) in 5; twenty-front (8,989 TypeScript files) takes 115 seconds, which is still a bug by this standard, and the [changelog](/reference/changelog) has the numbers for each release. Incremental means a project is read once, and after that a run reads the files that changed and whatever depends on them, both in the CLI and in the [GitHub Action](/guides/ci-integration#caching-and-the-push-trigger).
 
 [Compared to other tools](/why/compared) has the numbers for the cases where grep or a model does as well.
 
