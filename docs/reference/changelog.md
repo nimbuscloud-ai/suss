@@ -7,6 +7,71 @@ description: What changed in each suss release, newest first.
 
 One section per release, newest first.
 
+## 0.33.0 (2026-09-20)
+
+0.33.0 reads a large project in a fraction of the time 0.32.0 took, follows the work a file does when it loads, and reads the SQL a service writes by hand.
+
+### Breaking changes
+
+An intent document with an unknown key no longer loads. The document, its transitions and its scenarios are checked strictly now, the way the boundary block already was, so a document that said `scenario:` instead of `scenarios:` stops the run and says which key it did not recognise instead of checking nothing and passing. ([#1108](https://github.com/nimbuscloud-ai/suss/pull/1108), [#1109](https://github.com/nimbuscloud-ai/suss/pull/1109))
+
+A transition lists each effect once, with a `count` saying how many sites produced it, where it used to repeat the effect once per site. ([#1141](https://github.com/nimbuscloud-ai/suss/pull/1141))
+
+`deploymentTarget` and `instanceName` on a runtime-config binding are left off unless a run configured one; every read the node pack emitted used to say `lambda`. A summary written by 0.32.0 still validates. ([#1129](https://github.com/nimbuscloud-ai/suss/pull/1129))
+
+A Terraform value nobody settled is spelled `{var.image}` in the `image`, `runtime` and `entryPoint` fields, the way every other field already wrote it. ([#1127](https://github.com/nimbuscloud-ai/suss/pull/1127))
+
+### Reading a project takes a fraction of the time
+
+Zulip's `zerver/` directory, 1,676 Python files, took 624 seconds to read with 0.32.0 and takes 14 with 0.33.0. Mastodon's `app/` directory, 1,254 Ruby files, went from 8.9 seconds to 5.1. In TypeScript, directus's `api/` went from 372 seconds to 90, twenty-front from 231 to 115, and saleor-dashboard from 57 to 46, each the median of three alternating runs of the published 0.32.0 CLI against this release. twenty-server went the other way, from 44 seconds to 53, because the node pack's new environment questions pull more files into the reachable closure on that corpus than the engine work saved; that is the next thing on the performance list.
+
+The rule engine keeps a relation's facts in a trie over their parts, so checking whether a fact is already known is one map lookup per column instead of building and hashing a string. The Python and Ruby adapters ask the rules once per file instead of once per call site. Reading where a value was written goes through the engine's index instead of scanning every row. And the TypeScript adapter checks whether a module key is a path before asking ts-morph for it, since a bare package name made ts-morph compare path segments against every source file and find nothing. ([#1137](https://github.com/nimbuscloud-ai/suss/pull/1137), [#1143](https://github.com/nimbuscloud-ai/suss/pull/1143), [#1144](https://github.com/nimbuscloud-ai/suss/pull/1144), [#1145](https://github.com/nimbuscloud-ai/suss/pull/1145), [#1147](https://github.com/nimbuscloud-ai/suss/pull/1147))
+
+### A job with no handler is read from the top of its file
+
+A script a scheduler or a container runs does its work at module scope, calling the functions it defines, and none of those calls used to be followed. Module scope is now a root of the reachable closure in all three languages, so `suss ask "what does jobs/sync.py reach"` lists the table reads and writes those calls make, and the file's `module-init` summary lists the calls. ([#1130](https://github.com/nimbuscloud-ai/suss/pull/1130), [#1132](https://github.com/nimbuscloud-ai/suss/pull/1132), [#1138](https://github.com/nimbuscloud-ai/suss/pull/1138))
+
+### SQL a service writes itself is read as table access
+
+New packs read node-postgres and BigQuery in TypeScript (`-f pg`, `-f bigquery`), the BigQuery client and the Airflow BigQuery hook in Python (`-f bigquery-python`), and the pg gem and google-cloud-bigquery in Ruby (`-f pg-ruby`, `-f bigquery-ruby`). A table kept in a module constant is followed to the string, and a BigQuery `project.dataset.table` name lands as a scope and a container, so it pairs with a Terraform BigQuery table. ([#1113](https://github.com/nimbuscloud-ai/suss/pull/1113), [#1115](https://github.com/nimbuscloud-ai/suss/pull/1115), [#1119](https://github.com/nimbuscloud-ai/suss/pull/1119))
+
+ActiveRecord's own ways of running a statement are read too: `connection.execute`, `exec_query`, `select_values`, `find_by_sql` and `count_by_sql`. ([#1125](https://github.com/nimbuscloud-ai/suss/pull/1125))
+
+The SQL reader covers a parameter with a cast, a select that locks its rows, a `WITH` clause in front of an insert or a delete, a derived table in `FROM`, `INSERT ... SELECT`, `UPDATE ... FROM`, set operations, and what `RETURNING` and `ON CONFLICT` touch. ([#1124](https://github.com/nimbuscloud-ai/suss/pull/1124), [#1134](https://github.com/nimbuscloud-ai/suss/pull/1134))
+
+### Terraform declares what it deploys
+
+An `aws_lambda_function`, an `aws_ecs_task_definition` container, a Cloud Run service or job and a Cloud Functions function each become the runtime-config boundary the CloudFormation reader already wrote for a Lambda. The reader expands a `dynamic "env"` block over a map, follows a `module` block into the local directory it points at, and takes `--code-scope api/web=services/api` so a container has code to pair against. Fourteen more resources are read, among them RDS, Kinesis, Firehose, CloudWatch, BigQuery, Cloud SQL, Spanner, Firestore, Bigtable and Pub/Sub, and a store whose engine is a variable with no default is reported with no engine instead of dropped. ([#1114](https://github.com/nimbuscloud-ai/suss/pull/1114), [#1116](https://github.com/nimbuscloud-ai/suss/pull/1116), [#1127](https://github.com/nimbuscloud-ai/suss/pull/1127), [#1136](https://github.com/nimbuscloud-ai/suss/pull/1136))
+
+### Environment variables read through a schema or a factory are reported by name
+
+A service that hands `process.env` to a zod, valibot, envalid, znv or t3 env schema used to be reported as one read of the environment object and no names. The node pack now reads the schema's keys, says which have a default, and finds the parse through its callers when the environment arrives as a parameter from another file. A helper a factory returned is followed in all three languages, so `requireEnv("TABLE_NAME")` where `requireEnv = makeReader(process.env)` is a read of `TABLE_NAME`. `__dirname`, `import.meta.url` and `process.cwd()` are no longer environment reads. ([#1094](https://github.com/nimbuscloud-ai/suss/pull/1094), [#1095](https://github.com/nimbuscloud-ai/suss/pull/1095), [#1129](https://github.com/nimbuscloud-ai/suss/pull/1129), [#1135](https://github.com/nimbuscloud-ai/suss/pull/1135))
+
+### An intent document says what a boundary receives
+
+A `receives` block on every boundary kind declares the fields a boundary is handed, and `suss check --intent` compares it against what the unit reads. For a REST route the block is written as `headers`, `query`, `params` and `body`, and each REST pack says where its handlers read those. `@suss/intent-ir` publishes a JSON Schema for intent documents, and `suss intent outcomes --from intent/` lists the outcome ids a PRD scenario can link to. ([#1108](https://github.com/nimbuscloud-ai/suss/pull/1108), [#1109](https://github.com/nimbuscloud-ai/suss/pull/1109), [#1111](https://github.com/nimbuscloud-ai/suss/pull/1111), [#1118](https://github.com/nimbuscloud-ai/suss/pull/1118))
+
+### The CLI reads suss.json when given nothing
+
+`suss extract` with no `-f` reads the packs from `suss.json`, or picks the ones `suss init` would when there is no file, and `suss inspect` and `suss check` given nothing read the current project first. ([#1090](https://github.com/nimbuscloud-ai/suss/pull/1090))
+
+### Ruby follows dataloader sources and model callbacks
+
+A GraphQL field that loads through `dataloader.with(Sources::CampaignSource, Campaign)` reaches the source's `fetch`, and a write through a model reaches the callbacks its class registers for that event, including one registered on `ApplicationRecord`. ([#1128](https://github.com/nimbuscloud-ai/suss/pull/1128))
+
+### Fixes
+
+- A Prisma client generated into the project's own directory is read, and a pack whose library is installed but whose gate selected no file says so in the pack health report. ([#1106](https://github.com/nimbuscloud-ai/suss/pull/1106))
+- An axios instance's `baseURL` is put in front of every path it sends. ([#1093](https://github.com/nimbuscloud-ai/suss/pull/1093))
+- A client path through `encodeURIComponent(id)` reads as `/messages/{id}` instead of `/messages/undefined`. ([#1092](https://github.com/nimbuscloud-ai/suss/pull/1092))
+- A shorthand property in an object argument is read by a pack's property pick. ([#1123](https://github.com/nimbuscloud-ai/suss/pull/1123))
+- `--files` with a tsconfig gives the same summaries a full walk gives those files, and `--files a b` keeps both. ([#1126](https://github.com/nimbuscloud-ai/suss/pull/1126))
+- `suss inspect` says which variable a config read takes, and `inspect --diff` no longer folds two variables read through one chain into one line. ([#1089](https://github.com/nimbuscloud-ai/suss/pull/1089))
+- The node pack asks the resolution rules whether a value is the environment instead of reading the syntax itself. ([#1142](https://github.com/nimbuscloud-ai/suss/pull/1142))
+- A finding no longer says "makes POST POST /v1/charges", and the retired-option warning stops naming a release that never refused them. ([#1105](https://github.com/nimbuscloud-ai/suss/pull/1105))
+- The petstore example has a manifest and calls its spec `openapi.json`, so `suss init` finds both. ([#1091](https://github.com/nimbuscloud-ai/suss/pull/1091))
+- The docs are at [suss.sh](https://suss.sh/), and every page has been rewritten with its output blocks run through the built CLI. ([#1096](https://github.com/nimbuscloud-ai/suss/pull/1096) through [#1104](https://github.com/nimbuscloud-ai/suss/pull/1104), [#1110](https://github.com/nimbuscloud-ai/suss/pull/1110), [#1112](https://github.com/nimbuscloud-ai/suss/pull/1112), [#1117](https://github.com/nimbuscloud-ai/suss/pull/1117), [#1120](https://github.com/nimbuscloud-ai/suss/pull/1120))
+
 ## 0.32.0 (2026-09-17)
 
 0.32.0 reads an environment variable through a project's own settings helper, in all three languages, through one rule instead of three walks.
