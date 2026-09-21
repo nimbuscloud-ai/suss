@@ -1,6 +1,6 @@
 {
   "name": "@suss/framework-bigquery-ruby",
-  "version": "0.32.0",
+  "version": "0.33.0",
   "type": "module",
   "description": "Pattern pack that says which BigQuery tables a Ruby body reads and writes through the google-cloud-bigquery gem.",
   "keywords": [
@@ -47,8 +47,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/adapter-ruby": "0.32.0",
-    "@suss/ir-core": "0.32.0"
+    "@suss/adapter-ruby": "0.33.0",
+    "@suss/ir-core": "0.33.0"
   },
   "devDependencies": {
     "@suss/behavioral-ir": "*",

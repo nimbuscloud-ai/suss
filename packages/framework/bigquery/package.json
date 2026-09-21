@@ -1,6 +1,6 @@
 {
   "name": "@suss/framework-bigquery",
-  "version": "0.32.0",
+  "version": "0.33.0",
   "type": "module",
   "description": "Says which BigQuery datasets and tables a TypeScript service reads and writes.",
   "keywords": [
@@ -45,7 +45,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/recognize": "0.32.0"
+    "@suss/recognize": "0.33.0"
   },
   "devDependencies": {
     "@suss/adapter-typescript": "*",
