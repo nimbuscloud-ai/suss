@@ -120,6 +120,6 @@ readSqlAccess("SELECT `id` FROM `users`", { dialect: "mysql" });
 
 ## Where it fits in suss
 
-`@suss/framework-drizzle` uses it for ``db.execute(sql`...`)``. Nothing else depends on it, and it depends on nothing inside suss, so it stays a plain function over a string.
+`@suss/recognize` uses it for every TypeScript pack that declares a method taking a statement (drizzle, pg, bigquery, prisma), `@suss/framework-cloudflare-workers` for D1 bindings, and the Python and Ruby adapters for the statements their packs declare. It depends on nothing inside suss, so it stays a plain function over a string.
 
 The grammars come from `node-sql-parser` and are bundled into this package's build rather than installed, which is why it has no runtime dependencies. See THIRD-PARTY-NOTICES.md.

@@ -40,6 +40,32 @@ A model reading a diff can judge naming, intent and whether the change was a goo
 
 grep finds every occurrence of a string in any file in any language, faster than suss will ever load a project. To answer "what calls this" with grep, you read the hits and decide which ones matter, and that gets harder the more indirection the codebase has, such as a barrel re-export or a client built by a factory. suss follows the value through those hops and works out which function a name comes down to, and `suss ask why` prints the chain it followed, one reason per hop. [How suss follows a value](/theory/resolving-values) covers the machinery.
 
+### Measured: raw SQL in a TypeScript monorepo
+
+The question was "which statements does this codebase run against the database by hand", on a monorepo of several TypeScript services that use `pg` and BigQuery clients directly. With grep, the search is for `.query(` and `.execute(`.
+
+| | grep | suss 0.32 |
+|---|---|---|
+| Lines returned | 90 | |
+| In service code (the rest were one-off scripts, tooling and a front end) | 44 | |
+| Transaction control (`BEGIN`, `COMMIT`, `ROLLBACK`) or a method named `execute` that runs no SQL | 17 | |
+| SQL statements to read | 27 | 22 |
+
+Sorting grep's 90 lines into the 27 that matter is work a person does by reading each one, and what comes out is a list of lines. suss's 22 come out as storage access on the summary of the function that runs them, each with the table, whether it reads or writes, and the fields it touches, and a route or job that reaches that function lists them too. Of the five it does not read, four run inside a method on a value whose declared type is an interface, handed in through an options object, and suss stops at the interface; the fifth goes through a client that another package in the monorepo wraps. Both are open gaps, and measurements like this one decide which gaps get fixed first.
+
+In Ruby the same measurement is not worth publishing yet. The ActiveRecord pack reads a statement written as a string, and most raw SQL in a Rails app is a heredoc (`execute(<<~SQL)`), which it does not read at the time of writing.
+
+### Measured: an agent answering with grep against an agent answering with suss
+
+Two coding agents were given the same question about the suss repository itself (62 packages) and the same budget. One had grep and the file system. The other had the [MCP server](/start/give-your-agent-suss) and nothing else. The agent with suss ran on a smaller model than the agent with grep.
+
+| Question | grep (Opus) | suss (Sonnet) |
+|---|---|---|
+| Which files call `@suss/datalog`'s `evaluate`? (16 files) | 15 of 16, 17 tool calls, 117s, $1.16 | 16 of 16, 1 tool call, 47s, $0.12 |
+| Which exports of two adapters and the checker reach `evaluate`, through chains up to 11 calls deep? (7 exports) | 7 of 7, 34 tool calls, 216s, $1.59 | 7 of 7, 14 tool calls, 100s, $0.42 |
+
+The first question is one hop and grep is nearly complete on it; its one miss was a file grep skipped because it contains a NUL byte. The second question is where the two separate. Each hop of a chain is another grep and another set of hits to read, so the grep agent's calls and cost grow with the depth of the chain. The suss agent asked what each package provides, asked what reaches `evaluate`, and intersected the two. Both rows were run on the same day against the same commit of suss.
+
 ## Related
 
 - [Kinds of contract](/why/kinds-of-contract#three-kinds-of-truth) sorts specifications, observations and derivations, and explains why comparing across two of those kinds is what turns up findings.
