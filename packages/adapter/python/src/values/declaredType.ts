@@ -28,7 +28,11 @@ const ALIAS_HOPS = 2;
 /** Follows a name to the expression it was written as, or null. */
 type WrittenTo = (node: PyNode) => PyNode | null;
 
-/** The literals a parameter's annotation allows, as a value, or null. */
+/**
+ * The literals a parameter's annotation allows, as a value, or null. An
+ * annotation that is a name is followed to what it was written as, up
+ * to `ALIAS_HOPS` times.
+ */
 export function declaredValueOf(
   node: PyNode,
   writtenTo: WrittenTo,
@@ -36,13 +40,24 @@ export function declaredValueOf(
   if (node.type !== "identifier") {
     return null;
   }
-  const annotation = parameterAnnotation(node);
-  const literals =
-    annotation === null ? null : literalStrings(annotation, writtenTo, 0);
-  if (literals === null || literals.length > SET_CAP) {
+  let annotation = typeExpression(parameterAnnotation(node));
+  for (let hop = 0; annotation !== null; hop++) {
+    const literals = literalStrings(annotation);
+    if (literals !== null) {
+      return literals.length > SET_CAP ? null : string([textPiece(literals)]);
+    }
+    annotation =
+      hop < ALIAS_HOPS ? typeExpression(writtenTo(annotation)) : null;
+  }
+  return null;
+}
+
+/** The expression an annotation writes, with the grammar's `type` wrapper taken off. */
+function typeExpression(written: PyNode | null): PyNode | null {
+  if (written === null) {
     return null;
   }
-  return string([textPiece(literals)]);
+  return written.type === "type" ? (children(written)[0] ?? null) : written;
 }
 
 /** The annotation on the parameter a name reads, from the nearest function that takes one by that name. */
@@ -66,15 +81,7 @@ function parameterAnnotation(name: PyNode): PyNode | null {
  * as a generic type inside an annotation and as a subscript anywhere
  * else, which is where an alias's right side ends up.
  */
-function literalStrings(
-  written: PyNode,
-  writtenTo: WrittenTo,
-  hops: number,
-): string[] | null {
-  const node = written.type === "type" ? children(written)[0] : written;
-  if (node === undefined) {
-    return null;
-  }
+function literalStrings(node: PyNode): string[] | null {
   if (node.type === "generic_type") {
     const [name, parameters] = children(node);
     return name !== undefined && isLiteral(name) && parameters !== undefined
@@ -87,11 +94,7 @@ function literalStrings(
       ? stringsIn(fields(node, "subscript"))
       : null;
   }
-  if (hops >= ALIAS_HOPS) {
-    return null;
-  }
-  const alias = writtenTo(node);
-  return alias === null ? null : literalStrings(alias, writtenTo, hops + 1);
+  return null;
 }
 
 /** `Literal` or `typing.Literal`, written under whatever module name the file imported. */

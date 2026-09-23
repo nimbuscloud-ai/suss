@@ -82,6 +82,8 @@ export function pythonLowering(options: LoweringOptions): Lowering<PyNode> {
   const { context, originOf, rows } = options;
   const readingMethods = readingMethodsOf(rows);
   const mutatedByRoot = new Map<number, Set<string>>();
+  const writtenAs = (name: PyNode): PyNode | null =>
+    context === null ? null : context.writtenTo(name);
 
   return {
     idOf: (node) => node.id,
@@ -107,10 +109,7 @@ export function pythonLowering(options: LoweringOptions): Lowering<PyNode> {
     },
     freeNamesOf,
     holeNameOf: placeholderName,
-    declaredValueOf: (node) =>
-      declaredValueOf(peelValue(node), (name) =>
-        context === null ? null : context.writtenTo(name),
-      ),
+    declaredValueOf: (node) => declaredValueOf(peelValue(node), writtenAs),
     rows,
   };
 }
