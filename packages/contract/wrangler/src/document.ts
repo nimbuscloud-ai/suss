@@ -1,10 +1,10 @@
 /**
  * Finding and parsing a Wrangler configuration document.
  *
- * Wrangler accepts the same configuration in two spellings, TOML and
- * JSONC, and prefers the JSON one where a project has both. This module
- * settles which file a path means and hands back the parsed object; the
- * shape of what is in it is `translate.ts`'s problem.
+ * Wrangler accepts the same configuration as TOML or JSONC, and uses the
+ * JSON file when a project has both. This module picks the file for a
+ * path and returns the parsed object. It does not check the object's
+ * contents beyond it being an object.
  */
 
 import fs from "node:fs";
@@ -14,9 +14,8 @@ import { parse as parseJsonc } from "jsonc-parser";
 import { parse as parseToml } from "smol-toml";
 
 /**
- * The names Wrangler looks for, in the order it prefers them. Wrangler
- * defines the list, so a project that spells its file otherwise passes
- * the path to that file outright.
+ * The file names Wrangler looks for, in its order of preference. A
+ * project whose file has another name passes that file's path directly.
  */
 export const CONFIGURATION_FILE_NAMES = [
   "wrangler.jsonc",
@@ -57,9 +56,9 @@ export type DocumentLocation =
   | { kind: "missing" };
 
 /**
- * The configuration file a path means. A path may be the file itself or
- * the directory a Worker lives in, since that is where a person points
- * when they mean the Worker rather than one of its two spellings.
+ * Finds the configuration file for a path. The path may be the file
+ * itself or the Worker's directory, which is searched in Wrangler's
+ * order of preference.
  */
 export function locateConfigurationFile(target: string): DocumentLocation {
   const resolved = path.resolve(target);
@@ -78,7 +77,7 @@ export function locateConfigurationFile(target: string): DocumentLocation {
   return { kind: "missing" };
 }
 
-/** The document a file contains, read by whichever parser its suffix asks for. */
+/** Parses a configuration file as TOML or JSONC, chosen by its extension. */
 export function loadConfigurationDocument(file: string): WranglerDocument {
   const text = fs.readFileSync(file, "utf8");
   const parsed = file.endsWith(".toml")
