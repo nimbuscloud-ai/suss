@@ -1,49 +1,13 @@
-// @suss/framework-prisma: recognize Prisma client calls in TypeScript
-// and emit `interaction(class: "storage-access")` effects on the
-// transitions that contain them.
-//
-// Recognition is AST-based via ts-morph: walks the call's receiver
-// chain back to its root identifier, resolves that identifier's type
-// via the type checker, and verifies the type's symbol declaration is
-// in `@prisma/client`, in `.prisma/client` (where the generator puts
-// the client by default), or in a directory holding a `schema.prisma`
-// (where a generator with its own `output` put it).
-//
-// Three-segment chain: `<receiver>.<modelDelegate>.<method>(args)`.
-// `<modelDelegate>` is the lowercase-first-letter Prisma client
-// convention (`prisma.user` for `model User`); the recognizer reads
-// the property NAME and capitalizes the first letter to recover the
-// PascalCase schema model name. This matches the schema reader's
-// (`@suss/contract-prisma`) output channel.
-//
-// Method classification:
-//   read:   findUnique, findFirst, findMany, count, aggregate, groupBy
-//   write:  create, update, delete, upsert, createMany, updateMany,
-//           deleteMany
-//
-// Field extraction from the call's first arg (always an object literal
-// for typed Prisma calls):
-//   read:   `select` keys, plus `include` keys when a select says which
-//           fields to return. A query with no `select` reads the whole
-//           record, `include` or not, so it comes back as ["*"].
-//   write:  union of `data`, `create`, `update` keys (an upsert can pass
-//           both create and update). Falls back to ["*"] for shape-
-//           less writes (rare; createMany with a dynamic body).
-//   selector: keys of `where` (when present).
-//
-// A relation asked for beside the record is a read of another model,
-// and the call says which relation without ever saying which model. So
-// each one comes back as a second effect carrying `relationPath`, the
-// relation fields it was written under, and the checker resolves that
-// path against the model's contract to find the table it belongs to.
-// A write does this too: a `create` with an `include` hands the
-// relation back the way a query does, and a nested operation under
-// `data` writes the model across the relation, per `NESTED_OPERATIONS`.
-// An operation that moves a join sets a foreign key, so it arrives with
-// `relationKey` and the checker fills the columns from the contract.
-//
-// Out of scope for v0:
-//   - findUniqueOrThrow and findFirstOrThrow, which would be easy to add.
+/**
+ * Recognizes Prisma client calls and records each one as a storage
+ * access on the model it reaches, with one more effect for each relation
+ * the call reads or writes through.
+ *
+ * The typed path reads ts-morph nodes for `<receiver>.<model>.<method>()`
+ * and checks the receiver by its type. The `$queryRaw` family is a
+ * `@suss/recognize` declaration. The README covers which methods count,
+ * where the fields come from, and how a relation reaches the checker.
+ */
 
 import fs from "node:fs";
 import path from "node:path";
@@ -84,7 +48,7 @@ const PRISMA_READ_METHODS = new Set([
   "groupBy",
 ]);
 
-/** Where a write states the row values, an upsert stating two of them. */
+// An upsert passes both `create` and `update`, so a write reads all three.
 const WRITE_PAYLOAD_KEYS = ["data", "create", "update"];
 
 const PRISMA_WRITE_METHODS = new Set([
@@ -98,21 +62,20 @@ const PRISMA_WRITE_METHODS = new Set([
 ]);
 
 /**
- * What `-f prisma=config.json` may say. The CLI parses the file against it
- * before the factory runs.
+ * The options a `-f prisma=config.json` file may set. The CLI checks
+ * the file against this schema before it calls the factory.
  */
 export const optionsSchema = z
   .object({
     /**
-     * Storage system the recognized calls target. Must match the
-     * `storageSystem` on schema-reader provider summaries; otherwise
-     * pairing keys won't match. Defaults to `"postgresql"` since that's
-     * the dominant Prisma deployment.
+     * The storage system the calls target, `"postgresql"` when unset. It
+     * has to match the `storageSystem` on the schema reader's summaries,
+     * or the calls do not pair.
      */
     storageSystem: storageSystemOption.optional(),
     /**
-     * Scope label that must match the schema reader's scope. Defaults
-     * to `"default"` to align with `prismaSchemaToSummaries`'s default.
+     * Has to match the schema reader's scope. It is `"default"` when
+     * unset, the same default `prismaSchemaToSummaries` uses.
      */
     scope: scopeOption.optional(),
   })
@@ -138,9 +101,7 @@ function recognizePrismaCall(
     extractArgs: () => EffectArg[];
   };
 
-  // Shape gate: callee must be `<receiver>.<delegate>.<method>` ,
-  // a PropertyAccessExpression whose own expression is also a
-  // PropertyAccessExpression.
+  // The callee has to be `<receiver>.<delegate>.<method>`.
   const calleeExpr = callNode.getExpression();
   if (!N.isPropertyAccessExpression(calleeExpr)) {
     return null;
@@ -156,26 +117,14 @@ function recognizePrismaCall(
     return null;
   }
 
-  // Verify the delegate's receiver is a PrismaClient. The delegate
-  // expression is `<receiver>.<delegate>` (e.g. `prisma.user` or
-  // `ctx.prisma.user`); its `.getExpression()` is the receiver
-  // (`prisma` / `ctx.prisma`). Check that receiver's TYPE: its
-  // symbol declaration should live in `@prisma/client` /
-  // `.prisma/client`.
-  //
-  // Checking the receiver's TYPE rather than its identifier symbol
-  // covers both bare-instance receivers (`const db = new PrismaClient()`)
-  // and wrapped-context receivers (`{ prisma: new PrismaClient() }.prisma`)
-  //: the receiver expression's type is PrismaClient in both shapes.
   const receiverExpr = delegateExpr.getExpression();
   if (!isPrismaClientReceiver(receiverExpr)) {
     return null;
   }
 
-  // Model name: the property accessed on PrismaClient (`db.user`) is
-  // lowercase-first-letter per the Prisma client convention. The
-  // schema model is PascalCase. Capitalize back so pairing matches
-  // the schema reader's table channel.
+  // Prisma lowercases the first letter of the model for the delegate
+  // (`db.user` for `model User`). Capitalizing it again gives the name
+  // the schema reader pairs on.
   const delegateName = delegateExpr.getName();
   const tableName = capitalizeFirst(delegateName);
   if (tableName === null) {
@@ -233,9 +182,8 @@ function recognizePrismaCall(
           fields: nested.fields,
           relationPath: nested.relationPath,
           ...(nested.relationKey === true ? { relationKey: true } : {}),
-          // What reaches the other model is the nested operation, so
-          // that is what the effect records. The outer method belongs
-          // to the model in the binding.
+          // The outer method acts on the model in the binding. The model
+          // across the relation gets the nested operation.
           operation: nested.operation,
         },
       }),
@@ -243,17 +191,15 @@ function recognizePrismaCall(
   ];
 }
 
-/** Fields a query asks for through a relation, and the relation. */
 interface NestedRead {
   relationPath: string[];
   fields: string[];
 }
 
 /**
- * Every relation a query asks for alongside the record itself, at any
- * depth. The pack can see the relation and never the model behind it,
- * so each read travels with the path it was written under and the
- * checker resolves that path on the model's contract.
+ * The call shows a relation and never the model behind it, so each read
+ * is recorded with the relation path it was written under, at any depth.
+ * The checker resolves that path against the model's contract.
  */
 function nestedReads(optionsArg: ObjectArg | null): NestedRead[] {
   if (optionsArg === null) {
@@ -265,9 +211,9 @@ function nestedReads(optionsArg: ObjectArg | null): NestedRead[] {
 }
 
 /**
- * `include` takes relations and nothing else, so every key under it is
- * one. `select` takes columns as `true` and relations as an object, so
- * only the objects are relations.
+ * `include` takes only relations, so every key under it is one. `select`
+ * takes a column as `true` and a relation as an object, so only the
+ * objects are relations.
  */
 function collectRelations(
   shape: ObjectArg,
@@ -291,7 +237,7 @@ function collectRelations(
   for (const [name, value] of Object.entries(include.fields)) {
     const nested = readObjectArg(value);
     if (nested === null) {
-      // `include: { comments: true }` hands back whole records.
+      // `include: { comments: true }` returns whole records.
       found.push({ relationPath: [...path, name], fields: ["*"] });
       continue;
     }
@@ -310,43 +256,39 @@ function recordRelation(
   collectRelations(nested, relationPath, found);
 }
 
-/** What a write puts in another model, and the relation it goes through. */
 interface NestedWrite {
   relationPath: string[];
   fields: string[];
   operation: string;
   /**
-   * Set when the columns are the foreign key of the last relation in
-   * the path rather than columns the call states, which only the
-   * contract can supply.
+   * Set when the columns written are the foreign key of the last
+   * relation in the path. The call does not show that key, so the
+   * checker fills it in from the contract.
    */
   relationKey?: true;
 }
 
-/** The row values a nested operation states, and the columns they fill. */
 interface WrittenRows {
   /**
-   * The columns the operation fills. `["*"]` when the call does not
-   * write the payload out here, which says a row is written without
-   * saying which columns, the same answer a top-level write with an
-   * unreadable `data` gives.
+   * `["*"]` when the payload is not written out at the call, the same as
+   * a top-level write whose `data` cannot be read.
    */
   fields: string[];
-  /** The row maps to keep walking, for relations of their own. */
+  /** Walked again for relations of their own. */
   rows: ObjectArg[];
 }
 
 type ReadWrittenRows = (payload: EffectArg | undefined) => WrittenRows;
 
-/** `create: { name: tag }`, or a list of those: the payload is the row. */
+/** For `create: { name: tag }` or a list of those, the payload is the row. */
 const rowIsPayload: ReadWrittenRows = (payload) => {
   const read = objectsIn(payload);
   return { fields: fieldsOfRows(read), rows: read.rows };
 };
 
 /**
- * An operation that puts the row a level down, `connectOrCreate:
- * { where, create: { name } }`. An upsert puts one under each of two
+ * For an operation with the row one level down, as in `connectOrCreate:
+ * { where, create: { name } }`. An upsert has a row under each of two
  * keys and can fill columns from either.
  */
 function rowsUnder(...keys: string[]): ReadWrittenRows {
@@ -366,9 +308,8 @@ function rowsUnder(...keys: string[]): ReadWrittenRows {
 }
 
 /**
- * A nested `update` states `{ where, data }` against a list relation
- * and the row itself against a single one, so the `data` key is what
- * tells the two apart.
+ * A nested `update` passes `{ where, data }` on a list relation and the
+ * row itself on a single one, so a `data` key separates the two.
  */
 const updateRow: ReadWrittenRows = (payload) => {
   const outer = objectsIn(payload);
@@ -376,30 +317,22 @@ const updateRow: ReadWrittenRows = (payload) => {
   return statesData ? rowsUnder("data")(payload) : rowIsPayload(payload);
 };
 
-/** A row that goes away fills no column and changes all of them. */
+/** A deleted row fills no column and changes all of them. */
 const wholeRow: ReadWrittenRows = () => ({ fields: ["*"], rows: [] });
 
-/** What one nested operation changes, on either side of the relation. */
 interface NestedOperation {
-  /** Where it states the rows it puts in the model across the relation. */
   rows?: ReadWrittenRows;
   /**
-   * Whether it moves which row is joined, which sets the foreign key
-   * on whichever side declares it.
+   * Changing which row is joined sets the foreign key, on whichever side
+   * declares it.
    */
   movesJoin?: true;
 }
 
 /**
- * What each operation Prisma takes under a relation does, and where it
- * states the values. A delete is here because the row it takes away
- * changes every column of that row.
- *
- * An operation that moves which row is joined sets a foreign key, and
- * which column that is depends on the side the schema declares it on,
- * so the checker reads it off the contract. Recording `connect: { id }`
- * as a write of `id` instead would report a column the code selects by
- * as one the code sets, on the wrong model at that.
+ * `connect: { id }` selects the row to join by `id` and sets a foreign
+ * key whose column depends on the schema, so the checker reads that
+ * column from the contract. A delete changes every column of its row.
  */
 const NESTED_OPERATIONS = new Map<string, NestedOperation>([
   ["create", { rows: rowIsPayload }],
@@ -416,10 +349,9 @@ const NESTED_OPERATIONS = new Map<string, NestedOperation>([
 ]);
 
 /**
- * Every model a write reaches through a relation, at any depth. The
- * pack sees the relation field and never the model behind it, so each
- * write travels with the path it was written under and the checker
- * resolves that path on the contract, the way a nested read does.
+ * Each write through a relation is recorded with its relation path, at
+ * any depth, and the checker resolves the path the same way it does for
+ * a nested read.
  */
 function nestedWrites(optionsArg: ObjectArg | null): NestedWrite[] {
   if (optionsArg === null) {
@@ -435,11 +367,9 @@ function nestedWrites(optionsArg: ObjectArg | null): NestedWrite[] {
 }
 
 /**
- * A key of a row map whose value is an object is either a relation with
- * nested operations under it or a column whose value is a structure,
- * and only the schema tells the two apart. A column that looks like a
- * relation survives as far as the checker, which drops a path the
- * contract does not declare as a relation.
+ * An object under a row key can be a relation's operations or a
+ * structured column value, and the code alone cannot separate them. The
+ * checker drops any path the contract does not declare as a relation.
  */
 function collectNestedWrites(
   row: ObjectArg,
@@ -471,7 +401,10 @@ function collectNestedWrites(
   }
 }
 
-/** Row maps written out in a payload, one object or a list of them. */
+/**
+ * `written` is false when the payload, or any item in its list, is not an
+ * object literal.
+ */
 function objectsIn(arg: EffectArg | undefined): {
   rows: ObjectArg[];
   written: boolean;
@@ -501,7 +434,6 @@ function objectsIn(arg: EffectArg | undefined): {
   return { rows, written };
 }
 
-/** The columns a set of row maps fills, or the whole row when unread. */
 function fieldsOfRows(read: { rows: ObjectArg[]; written: boolean }): string[] {
   if (!read.written) {
     return ["*"];
@@ -516,26 +448,18 @@ function fieldsOfRows(read: { rows: ObjectArg[]; written: boolean }): string[] {
 }
 
 /**
- * Verify an expression's TYPE resolves to a PrismaClient: i.e. its
- * symbol declaration lives in `@prisma/client` (the package's API
- * surface), in `.prisma/client` (the generated client output Prisma
- * puts at `node_modules/.prisma/client/` by default), or in whatever
- * directory a generator's own `output` sent the client to.
- *
- * Checking the type rather than the expression's own declaration
- * covers both `const db = new PrismaClient()` (decl is a
- * VariableDeclaration, type is PrismaClient) and `ctx.prisma`
- * (decl chain doesn't directly point at PrismaClient, but the
- * resulting type does).
+ * Checks the receiver's type, so `const db = new PrismaClient()` and a
+ * wrapped `ctx.prisma` both count. `isPrismaClientPath` lists the places
+ * the type may be declared.
  */
 function isPrismaClientReceiver(node: Node): boolean {
   return extendsPrismaClient(node.getType(), new Set());
 }
 
 /**
- * A project's client is often a subclass, `class PrismaService extends
- * PrismaClient`, whose own symbol is declared in the project. So the
- * type counts when it, or anything it extends, comes from Prisma.
+ * A project's client is often a subclass declared in the project, such
+ * as `class PrismaService extends PrismaClient`, so the type counts when
+ * it or anything it extends comes from Prisma.
  */
 function extendsPrismaClient(type: Type, seen: Set<Type>): boolean {
   if (seen.has(type)) {
@@ -553,10 +477,8 @@ function extendsPrismaClient(type: Type, seen: Set<Type>): boolean {
   return type.getBaseTypes().some((base) => extendsPrismaClient(base, seen));
 }
 
-/**
- * The schema Prisma copies into whatever directory the generator wrote
- * the client to, the default output and a project's own alike.
- */
+// Prisma copies the schema next to the generated client, wherever the
+// generator wrote it.
 const GENERATED_CLIENT_MARKER = "schema.prisma";
 
 function isPrismaClientPath(filePath: string): boolean {
@@ -606,11 +528,8 @@ function extractFields(
     const select = readObjectArg(optionsArg.fields.select);
     const include = readObjectArg(optionsArg.fields.include);
     if (select === null) {
-      // `include` asks for relations beside the record, and Prisma
-      // still returns every column of the record itself. Prisma
-      // refuses a query carrying both, so a query with an include has
-      // no select and reads the whole shape. Recording the relations it
-      // asks for, and nothing else, reported every column as unread.
+      // With no `select`, Prisma returns every column of the record, and
+      // an `include` only adds relations beside it.
       return ["*"];
     }
     const out = new Set<string>();
@@ -624,8 +543,6 @@ function extractFields(
     }
     return [...out];
   }
-  // Write: data, create, or update. Collect from all three, since an upsert
-  // can pass both create and update at the same time.
   const stated = new Map<string, EffectArg>();
   for (const propName of WRITE_PAYLOAD_KEYS) {
     const prop = readObjectArg(optionsArg.fields[propName]);
@@ -641,9 +558,8 @@ function extractFields(
   }
   const columns: string[] = [];
   for (const [name, value] of stated) {
-    // A key with an operation under it reaches across a relation, and
-    // no column of this model is called that. What does change here is
-    // the relation's foreign key, which only the contract knows.
+    // A key with an operation under it goes across a relation. The
+    // foreign key it changes is recorded by the nested write.
     if (statesNestedOperations(value)) {
       continue;
     }
@@ -652,7 +568,6 @@ function extractFields(
   return columns;
 }
 
-/** Whether a value under a payload key is a relation's operations. */
 function statesNestedOperations(value: EffectArg): boolean {
   const nested = readObjectArg(value);
   if (nested === null) {
@@ -673,27 +588,18 @@ function extractSelector(optionsArg: ObjectArg | null): string[] | null {
   return keys.length > 0 ? keys : null;
 }
 
-/**
- * Where each raw method states its statement. The tagged form writes it
- * as a template and the unsafe form as a string, and a tagged template
- * is a call whose one argument is the template, so both put it in the
- * same position.
- */
+// A tagged template is a call whose one argument is the template, so the
+// tagged and unsafe forms both have the statement first.
 const STATEMENT: SqlMethod = { statement: { at: 0 } };
 
 /**
- * The raw path, as a declaration.
- *
- * A raw call bypasses the typed client, so the text of the statement is
- * what says which tables the query touches, and the ending reads it.
- * Which client the call is on is settled by where the method was
- * declared: the generated client lives under `.prisma/client` and the
- * package's own surface under `@prisma/client`, and a project reaches
- * its client through one or the other.
+ * A raw call bypasses the typed client, so the statement text is the only
+ * place its tables show up. The method has to be declared under
+ * `.prisma/client` or `@prisma/client`.
  */
 function rawStatements(options: PrismaRecognizerOptions): SqlStatements {
-  // Prisma's provider is the store and the SQL the statements are
-  // written in at once, so the one option states both.
+  // Prisma's provider sets both the store and the SQL dialect, so one
+  // option covers both.
   const provider = options.storageSystem ?? "postgresql";
   return sqlStatements({
     system: provider,
@@ -711,10 +617,8 @@ function rawStatements(options: PrismaRecognizerOptions): SqlStatements {
 }
 
 /**
- * The pack. It recognizes calls and nothing else: a Prisma call is not
- * a boundary of its own, it is an effect inside a handler or a service
- * some other pack discovered, so there are no discovery patterns and no
- * terminals here.
+ * The pack discovers no units. A Prisma call becomes an effect inside a
+ * handler or service that another pack discovered.
  */
 export function prismaFramework(
   options: PrismaRecognizerOptions = {},
@@ -727,8 +631,8 @@ export function prismaFramework(
     discovery: [],
     terminals: [],
     inputMapping: { type: "positionalParams", params: [] },
-    // Skip files that don't import from @prisma/client: the
-    // recognizer's type-resolution check would reject them anyway.
+    // The type check would reject every call in a file that does not
+    // import `@prisma/client`, so those files are skipped.
     requiresImport: ["@prisma/client"],
     // A generator with its own `output` puts the client in the project,
     // where the only way to reach it is a relative path.
@@ -741,7 +645,6 @@ export function prismaFramework(
   };
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "effects",
   package: "@suss/framework-prisma",
