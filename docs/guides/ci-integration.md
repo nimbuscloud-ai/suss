@@ -5,7 +5,7 @@ description: Post what a pull request changes about each boundary as a comment, 
 
 # Run suss in CI
 
-You can post what a pull request changes about each boundary as a comment, so the reviewer reads the behavior and not only the diff. You can also fail the job when a provider returns a status no client handles.
+You can post what a pull request changes about each boundary as a comment, so the reviewer sees the change in behavior next to the code diff. You can also fail the job when a provider returns a status no client handles.
 
 ```yaml
 name: suss
@@ -30,7 +30,7 @@ jobs:
       - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@main
 ```
 
-The action runs `suss extract` at the head of the pull request, checks the base commit out beside it, runs the same extract there, and posts `suss inspect --diff` between the two as one comment. When you push again, it edits that comment.
+The action runs `suss extract` at the head of the pull request, checks the base commit out next to it, runs the same extract there, and posts `suss inspect --diff` between the two as one comment. When you push again, it edits that comment.
 
 ## What the comment says
 
@@ -60,7 +60,7 @@ The first line counts what moved: how many boundaries, how many of their outcome
 
 When one filter, middleware or error handler gives the same outcome to several routes, the comment prints it once under `From <wrapper>`, with the routes that have it and the routes the wrapper runs on that still do not. A batch of routes gaining a 401 prints as the single edit that caused it.
 
-Last come the files whose units moved. If a unit has only a couple of lines to its name, the comment writes them out. If it has more, the comment prints a count instead. A unit in a file the pull request edited gets the count either way, because the reviewer already has that file's diff in front of them. A comment stops at 65,536 characters, so the action renders it with `--budget`, and the report counts what it left out. The whole diff is in the run's artifact.
+Last come the files whose units moved. When a unit has only a couple of changed lines, the comment writes them out. When it has more, the comment prints a count instead. A unit in a file the pull request edited gets the count either way, because the reviewer already has that file's diff in front of them. A comment stops at 65,536 characters, so the action renders it with `--budget`, and the report counts what it left out. The whole diff is in the run's artifact.
 
 ## Choosing the packs
 
@@ -78,7 +78,7 @@ For Python that is `--dir src -f fastapi`, and for Ruby `--dir app -f rails`.
 
 | Input | Default | What it is |
 | --- | --- | --- |
-| `extract` | empty | The arguments to `suss extract`, after the command. Empty reads the packs from `suss.json`, or the ones `suss init` would pick when there is no file. |
+| `extract` | empty | The arguments to `suss extract`, after the command. When it is empty, the action reads the packs from `suss.json`, or uses the ones `suss init` would pick when there is no file. |
 | `working-directory` | `.` | The directory to run `suss extract` in, relative to the repository root. |
 | `version` | `latest` | The version of `@suss/cli` to install. |
 | `install` | empty | A shell command that installs dependencies in the base checkout, such as `pnpm install --frozen-lockfile` or `npm ci && npm run build`. When it is empty the base checkout shares the head's `node_modules` directories, and that works as long as the pull request does not change dependencies. |
@@ -96,7 +96,7 @@ For Python that is `--dir src -f fastapi`, and for Ruby `--dir app -f rails`.
 | `before` | The path of the summaries read from the base commit. |
 | `after` | The path of the summaries read from the head commit. |
 
-A job condition reads `changed`:
+A later step can test `changed` in its condition:
 
 ```yaml
       - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@main
@@ -115,7 +115,7 @@ The first is suss's own per-file cache, so a file the pull request did not touch
 
 The second cache keeps the summaries of each commit, and that is why the workflow at the top has a `push` trigger. On a push to the default branch, the action reads the commit, saves its summaries under it and stops. It posts no diff and no comment, and `changed` comes back empty. A pull request whose base is that commit restores those summaries and skips the base checkout. A pull request whose base was never read this way reads the base itself and saves it for its own later pushes.
 
-Both caches are keyed on the installed version of `@suss/cli` and on `extract` and `working-directory`, so a new release or a change to the packs starts them over. Set `cache: false` to read everything on every run.
+Both caches are keyed on the installed version of `@suss/cli` and on `extract` and `working-directory`, so a new release or a change to the packs starts them from empty. Set `cache: false` to read everything on every run.
 
 ## A pull request from a fork
 
@@ -129,7 +129,7 @@ A fork's pull request gets a read-only token, so the comment step fails there. Y
 
 ## Without the Action
 
-Any CI system runs the same three commands. Extract each side of your boundaries into one directory, then compare them:
+Any CI system can run the same three commands. Extract each side of your boundaries into one directory, then compare them:
 
 ```yaml
 name: suss
@@ -159,7 +159,7 @@ jobs:
 
 `check --dir` pairs every provider summary with every consumer summary that shares a boundary key, `GET /users/:id` or `bus:aws_sqs PaidQueue`. The two sides do not have to come from the same kind of source: a provider read out of an OpenAPI document pairs with a consumer read out of axios call sites.
 
-With a `suss.json` committed, all of that collapses to `npx suss check`. It runs every extract and every contract read that the file lists, then compares what came back. [Add suss to a project](/guides/add-to-project) covers what `init` writes.
+With a `suss.json` committed, `npx suss check` does all of that. It runs every extract and every contract read that the file lists, then compares the results. [Add suss to a project](/guides/add-to-project) covers what `init` writes.
 
 ## The exit code as the gate
 
@@ -167,7 +167,7 @@ With a `suss.json` committed, all of that collapses to `npx suss check`. It runs
 
 Two other exits matter here. A run that paired nothing exits non-zero, because having nothing to report looks the same as both sides agreeing. Pass `--allow-empty` when you expect an empty run, such as checking one side before the other has been extracted. `--at` exits non-zero when it matches nothing, for the same reason. [Exit codes](/reference/cli/exit-codes) lists what every command returns.
 
-Do not gate on `--fail-on info`. Info findings are advisory, and failing on them produces churn and tells you nothing.
+Do not gate on `--fail-on info`. Info findings are advisory. Failing the build on them causes churn without telling you anything.
 
 ## Findings as JSON
 
@@ -204,7 +204,7 @@ rules:
     reason: planned work in JIRA-1234
 ```
 
-[Accept a finding](/guides/accept-a-finding) has the full rule syntax and the three effects. Commit the file. It is a list of decisions your team made, while `summaries/` is derived and belongs outside the repository.
+[Accept a finding](/guides/accept-a-finding) has the full rule syntax and the three effects. Commit the file, because it records decisions your team made. `summaries/` is derived, so keep it out of the repository.
 
 ## Before you push
 
@@ -217,6 +217,6 @@ npx suss inspect --diff summaries/before.json summaries/after.json
 
 `before.json` is an extract from the commit you branched from and `after.json` is one from the working tree.
 
-If an agent writes the code, put those commands in the instructions it reads, or set up the [MCP server](/start/give-your-agent-suss) so it can ask before it edits. Keep the CI jobs as well. They catch the change that never went through the local run.
+If an agent writes the code, put those commands in the instructions it reads, or set up the [MCP server](/start/give-your-agent-suss) so it can ask before it edits. Keep the CI jobs as well, to catch a change that skipped the local run.
 
 suss runs this on its own pull requests, reading the workspace through the `package-exports` pack. You can read the whole workflow in [behavior-diff.yml](https://github.com/nimbuscloud-ai/suss/blob/main/.github/workflows/behavior-diff.yml).

@@ -5,7 +5,7 @@ description: Draft intent documents from the code, curate them, and compare what
 
 # Check against your intent
 
-Compare the code against what your team said it should do, rather than against another piece of code or a document somebody else published.
+Compare the code against what your team said it should do. The other side of this comparison is a document your team wrote, instead of more code or a document somebody else published.
 
 ```bash
 npx suss check --dir summaries/ --intent intent/
@@ -16,7 +16,7 @@ An intent document is a YAML file your team writes and commits. There are two ki
 - **Boundary intent** (`*.intent.yaml`) states what one boundary should do, as in `POST /auth/login` returns 429 with `{ error, retryAfter }`. It is structural, and the checker compares it against the code directly.
 - **A PRD** (`*.prd.yaml`) states what should happen for the person using the system, written as scenarios, and each scenario links to an outcome a boundary document declares.
 
-An OpenAPI document or a Prisma schema expresses some of this, but somebody wrote it as a wire contract or a data model, not as a statement of what the team wanted. An intent document is an open specification: it states what must exist, and it does not limit what else the code may do. When the code does more than the document states, suss reports that as info.
+An OpenAPI document or a Prisma schema covers some of this, but somebody wrote it as a wire contract or a data model. It does not record what the team wanted. An intent document lists what must exist and puts no limit on what else the code may do. When the code does more than the document states, suss reports that as info.
 
 ## Write one from the code
 
@@ -71,7 +71,7 @@ transitions:
       status: 200
 ```
 
-`purpose` and `audience` are blank on purpose. Nobody can read out of the code why the boundary exists or who it is for. An empty string does not satisfy the schema either, so a check over the folder refuses the draft and lists the files that are waiting:
+`purpose` and `audience` are blank on purpose. Nobody can tell from the code why the boundary exists or who it is for. An empty string does not satisfy the schema either, so a check over the folder refuses the draft and lists the files that are waiting:
 
 ```bash
 suss check --dir summaries --intent intent/
@@ -83,7 +83,7 @@ suss check --dir summaries --intent intent/
 Write them and set source to "inferred, curated", or take those files out of the intent folder until you do.
 ```
 
-The [`suss infer` reference](/reference/cli/infer) has the drafted shape for a queue consumer and a Lambda as well, and the `when` grammar.
+The [`suss infer` reference](/reference/cli/infer) shows the draft for a queue consumer and for a Lambda too, and the `when` grammar.
 
 ## Curate it
 
@@ -121,7 +121,7 @@ transitions:
       status: 200
 ```
 
-The checker reads `source` to decide severity. It downgrades a finding against bare `inferred` intent by one level, because that declaration is still a guess read off the code and nobody has confirmed it. Curating the document restores the full severity.
+The checker uses `source` to set severity. It downgrades a finding against bare `inferred` intent by one level, because that document is still a guess taken from the code, and nobody has confirmed it. Curating the document restores the full severity.
 
 Now the check has something to compare:
 
@@ -195,9 +195,9 @@ Intent:
   [error] GET /orders/{customer}: Intent "get-orders-customer" declares status 410 at GET /orders/{customer}; GetOrderFunction.getOrder has no transition that produces it.
 ```
 
-That is `uncoveredOutcome`. It stays until the branch exists, and it reads the same whether nobody ever built the outcome or somebody built it and then took it out.
+This finding is `uncoveredOutcome`. It stays until the branch exists. The message is the same whether nobody ever built the outcome or somebody built it and later took it out.
 
-An outcome can also declare what it did, not only what it returned, using `results`. Take a queue consumer whose intent has an outcome that results in `- writes: aws.dynamodb:Invoices`. If no transition of that consumer writes the table, you get the same finding. The key is the verb, and the value is the boundary spelled the way `suss ask` takes one, so the question and the assertion use the same words.
+With `results`, an outcome can also declare what the boundary did, in addition to what it returned. Take a queue consumer whose intent has an outcome that results in `- writes: aws.dynamodb:Invoices`. If no transition of that consumer writes the table, you get the same finding. The key is the verb, and the value is the boundary spelled the way `suss ask` takes one, so the question and the assertion use the same words.
 
 ## Write the PRD from the curated intent
 
@@ -231,13 +231,13 @@ scenarios:
 
 suss can supply the link, which is the boundary document's `name` plus the outcome's `id`. You write the words.
 
-`infer prd` reads intent documents, not summaries, and it refuses a folder that still has uncurated boundary documents in it. If it drafted both at once, it would link to an id like `200-ok`, and renaming those ids is the first thing curation does, so the PRD would end up pointing at an id nothing declares.
+`infer prd` reads intent documents instead of summaries, and it refuses a folder that still has uncurated boundary documents in it. If it drafted both at once, it would link to an id like `200-ok`, and renaming those ids is the first thing curation does, so the PRD would end up pointing at an id nothing declares.
 
 A boundary intent that a scenario already points at is left alone, so running this again after adding an endpoint writes only what is missing.
 
 ## Say what the boundary receives
 
-A document says what a boundary returns and what it does. A `receives` block says what it is handed. Add one to the boundary block, with a line per field:
+The rest of the document says what a boundary returns and what it does. A `receives` block says what the boundary is passed. Add one to the boundary block, with a line per field:
 
 ```yaml
 boundary:
@@ -250,17 +250,17 @@ boundary:
     consumer: { type: object, required: true }
 ```
 
-The name is the parameter, and a dot reaches inside one, so `options.stream` says the boundary reads `stream` off the `options` argument. Naming a field is a complete declaration on its own: `consumer: {}` says the field is there and nothing more. `required: true` says the boundary needs it. A message-bus boundary writes its block the same way, with the fields of the message body.
+Each key is a parameter name, and a dot goes inside a parameter, so `options.stream` says the boundary reads `stream` off the `options` argument. Listing a field is a complete declaration on its own: `consumer: {}` says the field is there and nothing more. `required: true` says the boundary needs it. A message-bus boundary writes its block the same way, with the fields of the message body.
 
-The checker compares the block against the paths the unit actually reads. A declared field nothing reads is `unreadInputField`, at warning when it is required and info otherwise. A read of a path the block leaves out is `undeclaredInputRead`, at info, because a block lists what the author wanted checked and is never a full description of the input. A document with no block says nothing about the input, and produces neither finding.
+The checker compares the block against the paths the unit actually reads. A declared field nothing reads is `unreadInputField`, at warning when it is required and info otherwise. A read of a path the block leaves out is `undeclaredInputRead`, at info, because a block lists what the author wanted checked and is not meant to describe the whole input. A document with no block says nothing about the input, and produces neither finding.
 
-Rename the read in `checkPair` from `consumer` to something else and the run says so:
+Rename the read in `checkPair` from `consumer` to something else and the run reports it:
 
 ```
 [warning] fn:@suss/checker::checkPair: Intent "checker-check-pair" says fn:@suss/checker::checkPair receives consumer and needs it; checkPair never reads it.
 ```
 
-A REST boundary writes its block in a section per part of the request. `headers`, `query` and `params` are maps from a name to a field; `body` is a shape, because a body is one value with properties under it:
+A REST boundary writes its block in a section per part of the request. `headers`, `query` and `params` are maps from a name to a field. `body` is a schema, because a body is one value with properties under it:
 
 ```yaml
 boundary:
@@ -280,11 +280,11 @@ boundary:
 
 Header names compare case-insensitively, since HTTP treats them that way and Node lowercases them before a handler sees one.
 
-Which of a handler's reads is which part of a request is the framework's vocabulary, so each pack says how its handlers spell one. Express, Fastify and AWS Lambda under a proxy integration all say it field by field. Hono reads a field through a method with the name in the argument (`c.req.header("x-tenant-id")`), and a read records the method without the argument, so a Hono section can only be compared whole: reading any header satisfies every declared header, and no read of one is reported as undeclared. A route from a pack that says nothing about its request is not compared, the same way a document with no block is not.
+Each framework reads the parts of a request its own way, so each pack declares how its handlers read them. The Express, Fastify and AWS Lambda packs (Lambda under a proxy integration) declare it field by field. Hono reads a field through a method call with the name as the argument (`c.req.header("x-tenant-id")`). suss records the method but not the argument, so it can only compare a Hono section as a whole. Reading any header satisfies every declared header, and no header read is reported as undeclared. suss does not compare a route whose pack declares nothing about its request, the same way it skips a document with no block.
 
-Two things a REST route does are not a mismatch. A handler that passes the body to a validator (`schema.parse(req.body)`) has used it whole, so the block's body fields are not reported against it, and the other sections still compare. A read under `body` is never `undeclaredInputRead` when the block declares a body, because the shape is where the body gets described.
+suss does not count two things a REST route does as a mismatch. A handler that passes the body to a validator (`schema.parse(req.body)`) has used the whole body, so suss does not report the block's body fields against it, and the other sections still compare. A read under `body` is never `undeclaredInputRead` when the block declares a body, because the body schema is where the body gets described.
 
-A required header is often checked in middleware rather than in the handler. The reads of every wrapper registered around a route count as the route's, so a route that never touches the header its middleware demands is quiet.
+A required header is often checked in middleware instead of in the handler. suss counts the reads of every wrapper registered around a route as the route's own, so it reports nothing for a route that never touches the header its middleware requires.
 
 ## What the checker reports
 
@@ -338,7 +338,7 @@ transitions:
             severity: { type: string }
 ```
 
-This one says `source: author` instead of `inferred, curated`, because a person wrote it from scratch rather than editing a draft. On a green run the tail reads:
+This one says `source: author` instead of `inferred, curated`, because a person wrote it from scratch instead of editing a draft. On a green run the output ends with:
 
 ```
 Intent:
