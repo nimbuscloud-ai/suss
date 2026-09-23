@@ -1,16 +1,15 @@
 /**
  * The environment variables a program reads by parsing `process.env`
- * against a schema, rather than one property at a time.
+ * against a schema.
  *
  *   const Env = z.object({ PORT: z.coerce.number().default(8080) });
  *   export function loadConfig(env = process.env) { return Env.parse(env); }
  *
- * Nothing here spells `process.env.PORT`, so the property readers see
- * one read of the environment object and no variable names at all. The
- * variable names are the schema literal's keys. `SCHEMA_READERS` is the
- * whole library-specific part, so covering a library is one more entry
- * rather than another walk. The README says which spellings that
- * reaches and what this declines to guess at.
+ * No code here writes `process.env.PORT`, so the property readers find
+ * one read of the environment object and no variable names. The names
+ * are the keys of the schema literal. All the library-specific detail is
+ * in `SCHEMA_READERS`, so supporting another library means adding an
+ * entry there. The README lists the spellings this covers.
  */
 
 import { Node as N, SyntaxKind } from "ts-morph";
@@ -29,32 +28,31 @@ import type { CallExpression, Node, SourceFile } from "ts-morph";
 
 /** Where the call takes the environment object from. */
 type EnvironmentAt =
-  /** The argument at this position is the environment object. */
+  /** The argument at this position. */
   | { in: "argument"; at: number }
-  /** A named property of the object literal at this position is. */
+  /** A named property of the object literal at this position. */
   | { in: "property"; at: number; named: string };
 
 /** Where the call takes the schema object literal from. */
 type SchemaAt =
-  /** The argument at this position is the schema literal. */
+  /** The argument at this position. */
   | { in: "argument"; at: number }
-  /** Named properties of the literal at this position each have one. */
+  /** Named properties of the object literal at this position, each a schema. */
   | { in: "properties"; at: number; named: readonly string[] }
-  /** The argument at this position is a builder call with one in it. */
+  /** A builder call at this position, whose argument is the schema. */
   | { in: "builtAt"; at: number; builders: readonly string[] }
-  /** The call's receiver is a builder call with one in it. */
+  /** A builder call as the call's receiver, whose argument is the schema. */
   | { in: "builtAtReceiver"; builders: readonly string[] };
 
 interface SchemaReader {
-  /** The packages whose call this is. */
+  /** The packages that export the call. */
   modules: readonly string[];
-  /** What the source writes: the exported function, or the method. */
+  /** The exported function or method name, as the source writes it. */
   calls: readonly string[];
   /**
-   * Set where `calls` describes a method on a schema the library built
-   * rather than a function the program imported. Nothing about such a
-   * callee says which package it came from, so the package is settled
-   * from the receiver instead.
+   * Set when `calls` are methods on a schema object the library built.
+   * The callee does not show which package it came from, so the package
+   * is checked through the receiver.
    */
   onSchema?: true;
   environment: EnvironmentAt;
@@ -100,7 +98,7 @@ const SCHEMA_READERS: readonly SchemaReader[] = [
   },
 ];
 
-/** One variable a schema key asks for, before it becomes an effect. */
+/** A variable read through one key of a schema. */
 export interface SchemaEnvRead {
   name: string;
   defaulted: boolean;
@@ -113,7 +111,7 @@ const PARSE_CALL_NAMES = new Set(
 /** The packages a file's text mentions, worked out once per file. */
 const MODULES_MENTIONED = new WeakMap<SourceFile, ReadonlySet<string>>();
 
-/** How the source spells the callee, for the cheap tests. */
+/** The callee's name as written, for the checks that need no store query. */
 function writtenCalleeName(callee: Node): string | null {
   if (N.isIdentifier(callee)) {
     return callee.getText();
@@ -137,14 +135,9 @@ function modulesMentionedIn(sourceFile: SourceFile): ReadonlySet<string> {
 }
 
 /**
- * Whether to put any question to the store about this call, for this
- * reader. Every project calls something spelled `parse`, few of those
- * are a schema, and asking which package one came from is a query.
- *
- * A method on a schema says nothing about the package, so the zod
- * reader gets the name test alone and settles the package later, off
- * the receiver. The rest are imported functions, and an import a file
- * never mentions is one nothing in it can be calling.
+ * Checks that run before any store query, since most calls named `parse`
+ * are not schemas. A schema method shows no package, so for zod only the
+ * name is checked here and the package is checked later on the receiver.
  */
 function readerCouldFire(
   call: CallExpression,
@@ -198,7 +191,7 @@ export function schemaEnvReads(
   return [];
 }
 
-/** Whether the source wrote this call the way the reader describes. */
+/** True when the call is written the way the reader describes. */
 function callMatches(
   call: CallExpression,
   reader: SchemaReader,
@@ -216,10 +209,8 @@ function callMatches(
 }
 
 /**
- * The name a package exports this callee under. An imported name is
- * already that name; a property read off a namespace, or off the
- * package's root object, is the property's own name, once the value it
- * was read off comes from the package.
+ * The name the package exports this callee under. A property read off a
+ * namespace import or the package's root object uses its own name.
  */
 function moduleCallName(
   callee: Node,
@@ -264,9 +255,8 @@ function readsFromSchema(
 }
 
 /**
- * The object literals with the schema keys in them. Several for a
- * library that splits its variables by who may see them, one for the
- * rest.
+ * The object literals that contain the schema keys. A library that splits
+ * variables into server and client groups has several, the others one.
  */
 function schemaLiterals(
   call: CallExpression,
@@ -380,9 +370,8 @@ function keysOf(literal: Node, resolution: ResolutionStore): SchemaEnvRead[] {
 }
 
 /**
- * The calls that make a variable's absence something the program has
- * already dealt with. A schema that accepts undefined belongs to a
- * program that does not need the variable set.
+ * A key whose schema calls one of these accepts a missing variable, so
+ * the program does not need it set.
  */
 const DEFAULTING_CALLS = new Set([
   "default",
@@ -420,13 +409,10 @@ function defaults(node: Node): boolean {
   return option !== null && DEFAULTING_OPTIONS.has(option);
 }
 
-/**
- * The reads a function makes by parsing a schema in its own body, for a
- * reader standing at a call to it. The answer belongs to the callee
- * rather than the call, so a helper twenty handlers call is walked once.
- */
+/** Cached by callee, so a helper that twenty handlers call is walked once. */
 const SCHEMA_READS_INSIDE = new WeakMap<Node, SchemaEnvRead[]>();
 
+/** The reads a function makes by parsing a schema in its own body. */
 export function schemaEnvReadsInside(
   callee: Node,
   resolution: ResolutionStore | undefined,

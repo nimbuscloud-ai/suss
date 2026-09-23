@@ -1,39 +1,17 @@
-// envVars.ts: recognize `process.env.X` reads and emit
-// `interaction(class: "config-read")` effects on the units that
-// contain them.
-//
-// Pattern:
-//   process.env.STRIPE_API_KEY     → config-read for "STRIPE_API_KEY"
-//   process.env["FOO"]             → config-read for "FOO"
-//   const { FOO } = process.env     → config-read for "FOO"
-//   process.env.X ?? "default"     → config-read for "X" with defaulted=true
-//   process.env.X || other        → the same; any ||/?? chain with a
-//                                    later operand defaults the read
-//   Env.parse(process.env)        → one config-read per schema key
-//
-// The adapter hands access recognizers property accesses and nothing
-// else, so the three spellings are recognized from the one node they
-// all share, `process.env`, by asking what encloses it. A dotted read
-// is enclosed by the property access naming the variable, a bracket
-// read by an element access, and a destructuring by the declaration it
-// initializes.
-//
-// `process.env` is Node-defined behavior, the env-var channel is part
-// of the deployable unit's runtime-config contract, so this lives
-// alongside the rest of the process surface in the node runtime pack.
-// The sibling `processSurfaceRecognizer` (processSurface.ts) covers
-// argv / cwd / platform / etc. and skips `process.env.X` so the two
-// recognizers partition the `process.*` space without duplication.
-//
-// Pairing identity for config-read interactions doesn't need a
-// boundaryBinding: the env-var name IS the channel identity, and
-// runtime-config providers carry the full env-var set in their
-// metadata. The recognizer emits effects with a synthetic binding
-// (recognition: "@suss/runtime-node", semantics: runtime-config) so
-// the unified pairing dispatcher can route the effect to the right
-// finding generator. `checkRuntimeConfig` matches the emitted
-// effects against runtime-config provider summaries (Lambda env-var
-// declarations, ECS env blocks, etc.).
+/**
+ * Environment variable reads, each reported as a `config-read` effect
+ * named after the variable. `process.env.FOO`, `process.env["FOO"]` and
+ * `const { FOO } = process.env` all count. So do a call to a project
+ * helper such as `requireEnv("FOO")` and the keys of a schema parsed
+ * against `process.env`. A read is defaulted when the program handles
+ * the variable being unset, for example with `??` after the read.
+ *
+ * The three direct spellings share the `process.env` node, so each is
+ * recognized there by looking at what encloses it. The variable's name
+ * identifies the read for pairing, and the runtime-config checker
+ * matches it against the variables a template or task definition
+ * declares. The README covers helpers and schemas.
+ */
 
 import {
   type ArrowFunction,
@@ -79,23 +57,19 @@ import type { DeploymentOptions } from "./configBinding.js";
 
 export type EnvVarRecognizerOptions = DeploymentOptions;
 
-/** One variable a program reads, before it becomes an effect. */
 interface EnvRead {
   name: string;
   defaulted: boolean;
-  /** The node the read is anchored to, for line numbers. */
+  /** Where the read is reported, which sets its line number. */
   node: Node;
 }
 
 /**
- * How an effect spells the read. All three spellings reach the same
- * variable, so all three are named the same way: a consumer grouping
- * reads of one variable should not have to parse an index argument or
- * a binding pattern to see that it is looking at one channel.
+ * Every spelling gets the dotted name, so a consumer grouping reads by
+ * variable never has to parse an index argument or a binding pattern.
  */
 const readName = (name: string): string => `process.env.${name}`;
 
-/** Whether a node is the `process.env` object itself. */
 function isProcessEnv(node: Node): node is PropertyAccessExpression {
   if (!N.isPropertyAccessExpression(node) || node.getName() !== "env") {
     return false;
@@ -104,7 +78,6 @@ function isProcessEnv(node: Node): node is PropertyAccessExpression {
   return N.isIdentifier(root) && root.getText() === "process";
 }
 
-/** `process.env.NAME`, where the property is the variable's name. */
 function dottedRead(node: PropertyAccessExpression): EnvRead[] {
   if (!isProcessEnv(node.getExpression())) {
     return [];
@@ -113,9 +86,8 @@ function dottedRead(node: PropertyAccessExpression): EnvRead[] {
 }
 
 /**
- * `process.env["NAME"]`, where the index is the variable's name. An index
- * the pack cannot read back as a literal refers to a variable nothing can
- * pair against, so it reports nothing rather than a guess.
+ * `process.env["NAME"]`. Pairing needs the variable's name, so an index
+ * that does not resolve to a literal reports nothing.
  */
 function bracketRead(
   access: ElementAccessExpression,
@@ -142,20 +114,16 @@ function bracketRead(
 }
 
 /**
- * `process.env[name]` where `name` is a parameter of the enclosing
- * function: the reads are the literals the callers pass. A helper like
- * `requireEnv("TABLE_NAME")` is how many services spell every env read,
- * and reporting nothing here made each of those variables look unused.
- * Each read is anchored at its call site, so the unit that passed the
- * literal is the unit that reads the variable.
- */
-/**
- * One lookup per read site. The same helper is visited once per unit
- * whose closure contains it, and asking the store is the expensive
- * part, so the repeat visits read the first answer.
+ * A helper is visited once for each unit whose closure contains it, and
+ * the store query is the costly part, so later visits reuse the answer.
  */
 const CALLER_LOOKUPS = new WeakMap<Node, EnvRead[]>();
 
+/**
+ * `process.env[name]` where `name` is a parameter. The reads are the
+ * literals callers pass, each reported at its call, so the unit that
+ * passed the name is recorded as reading the variable.
+ */
 function readsThroughParameter(
   access: ElementAccessExpression,
   index: Identifier,
@@ -191,9 +159,9 @@ function callerLiteralReads(
 
   const defaulted = isDefaultedAt(access);
   const reads: EnvRead[] = [];
-  // A worklist, because the literal can be more than one call away:
-  // getEnv(name) handing to requireEnv(name) crosses two. A parameter
-  // already taken ends a pair of helpers that call each other.
+  // The literal can be more than one call away, as when getEnv(name)
+  // passes it to requireEnv(name). `taken` stops two helpers that call
+  // each other from looping.
   const pending: ParameterDeclaration[] = [start];
   const taken = new Set<ParameterDeclaration>();
   while (pending.length > 0) {
@@ -217,7 +185,7 @@ function callerLiteralReads(
   return reads;
 }
 
-/** The caller's own parameter an argument passes along, for the worklist. */
+/** The caller's parameter, when the argument passes one along unchanged. */
 function forwardedParameter(
   passed: Node,
   call: Node,
@@ -236,7 +204,7 @@ function forwardedParameter(
   return behind.getParent() === caller ? behind : null;
 }
 
-/** The variable one element of `const { A, B: c } = process.env` names. */
+/** The variable read by one element of `const { A, B: c } = process.env`. */
 function bindingRead(element: BindingElement): EnvRead[] {
   if (element.getDotDotDotToken() !== undefined) {
     return [];
@@ -254,8 +222,8 @@ function bindingRead(element: BindingElement): EnvRead[] {
   return [
     {
       name,
-      // A binding default supplies the value the variable is missing,
-      // which is what `??` does for the other two spellings.
+      // A binding default covers a missing variable the same way `??`
+      // does after a dotted read.
       defaulted:
         element.getInitializer() !== undefined || isDefaultedAt(element),
       node: element,
@@ -263,7 +231,6 @@ function bindingRead(element: BindingElement): EnvRead[] {
   ];
 }
 
-/** Every variable `const { ... } = process.env` names. */
 function destructuredReads(declaration: VariableDeclaration): EnvRead[] {
   const pattern = declaration.getNameNode();
   if (!N.isObjectBindingPattern(pattern)) {
@@ -273,9 +240,8 @@ function destructuredReads(declaration: VariableDeclaration): EnvRead[] {
 }
 
 /**
- * The reads spelled through the `process.env` object rather than
- * through a property of it. Both put the variable name somewhere the
- * dotted form does not: in an index argument, or in a binding pattern.
+ * Bracket and destructured reads. Both are found from the `process.env`
+ * node, because the name is in an index argument or a binding pattern.
  */
 function readsThroughEnvObject(
   envNode: PropertyAccessExpression,
@@ -292,10 +258,8 @@ function readsThroughEnvObject(
 }
 
 /**
- * Every variable a property access reads off `process.env`. The walk
- * visits both nodes of `process.env.NAME`, so each spelling is
- * recognized from exactly one of them and the dotted read is reported
- * once.
+ * The walk visits both nodes of `process.env.NAME`, so each spelling is
+ * recognized at only one of them and a dotted read is reported once.
  */
 function envReadsAt(
   node: Node,
@@ -316,12 +280,8 @@ function envReadsAt(
 }
 
 /**
- * `requireEnv("TABLE_NAME")` read from the call: the callee's body reads
- * `process.env` through the parameter this literal lands in. The reverse
- * walk in `readsThroughParameter` only fires where the helper's own body
- * is walked, and a call at module scope is in no unit's body (#326), so
- * the call resolves forward too. Anchoring at the call keeps the read in
- * the caller's file whatever file defines the helper.
+ * `requireEnv("TABLE_NAME")`, read forward from the call. A call at module
+ * scope is in no unit's body, so readsThroughParameter never sees it (#326).
  */
 function readsThroughHelperCall(
   call: CallExpression,
@@ -333,8 +293,8 @@ function readsThroughHelperCall(
   }
   const sitesNaming = namesReadAtSites(callee, resolution);
   const parameters = callee.getParameters();
-  // One read per variable, however many sites end up reading it: a
-  // default only counts when every one of them supplies one.
+  // One read per variable. It counts as defaulted only when every site
+  // that reads it supplies a default.
   const defaultedByName = new Map<string, boolean>();
   call.getArguments().forEach((passed, at) => {
     const parameter = parameters[at];
@@ -363,13 +323,13 @@ function readsThroughHelperCall(
       defaulted: atSites || wrapped,
       node: call,
     })),
-    // A config module parses its schema once and every handler calls
-    // the function around it, so the call reports what the parse reads.
+    // A config module often parses its schema inside a function that
+    // every handler calls, so each call reports the keys that parse reads.
     ...anchoredAt(schemaEnvReadsInside(callee, resolution), call),
   ];
 }
 
-/** The reads a schema gave, put where the source has a line number. */
+/** Attaches a node to schema reads so they get a line number. */
 function anchoredAt(
   reads: readonly { name: string; defaulted: boolean }[],
   node: Node,
@@ -377,7 +337,7 @@ function anchoredAt(
   return reads.map((read) => ({ ...read, node }));
 }
 
-/** The function a callee expression is written against, or null when nothing this reader follows defines one. */
+/** The function a call resolves to, or null when it cannot be followed. */
 function functionBehindCallee(
   callee: Node,
   resolution: ResolutionStore | undefined,
@@ -396,9 +356,9 @@ function functionBehindCallee(
 }
 
 /**
- * The function behind `const requireEnv = makeReader(process.env)`,
- * where no declaration is a function at all. Asking the store costs a
- * query, so only a name the source writes as a call gets one.
+ * The function returned by `makeReader` in `const requireEnv =
+ * makeReader(process.env)`. Store queries are costly, so only a name
+ * declared as a call's result is asked about.
  */
 function factoryReturnedCallee(
   nameNode: Identifier,
@@ -412,7 +372,7 @@ function factoryReturnedCallee(
   return returned === null ? null : toFunctionRoot(returned);
 }
 
-/** Whether every declaration behind a name writes it as a call's result. */
+/** True when every declaration of the name sets it to a call's result. */
 function isDeclaredAsCall(nameNode: Identifier): boolean {
   const declarations = declarationsBehind(symbolBehind(nameNode));
   return declarations.length > 0 && declarations.every(isVariableSetToCall);
@@ -426,21 +386,14 @@ function isVariableSetToCall(declaration: Node): boolean {
   return initializer !== undefined && N.isCallExpression(initializer);
 }
 
-/** Whether a value read back off an argument is a variable's name. */
 function namesSomething(value: string | null): value is string {
   return value !== null && value.length > 0;
 }
 
 /**
- * Where each of a callee's parameters is read as an environment
- * variable's name, through however many helpers forward it along the
- * way. The store works that out for a whole project in one question,
- * asked from the reads rather than from the parameters, so a call whose
- * callee reads nothing costs a lookup and no query.
- *
- * Null back from the store means the rules had no facts to go on, and
- * without a store there is no question to ask at all. Both leave this
- * reader the callee's own body, which is the case most services spell.
+ * The read sites where each parameter ends up as a variable name, from one
+ * query for the whole project. Null means the store had no facts, and the
+ * caller then looks in the callee's own body. The README explains why.
  */
 function namesReadAtSites(
   fn: FunctionLike,
@@ -453,7 +406,6 @@ function namesReadAtSites(
   return (parameter) => namers.sitesNaming(parameter);
 }
 
-/** `process.env[name]` in the callee's own body, the one hop read from syntax. */
 function directEnvReads(
   fn: FunctionLike,
   parameter: ParameterDeclaration,
@@ -462,11 +414,7 @@ function directEnvReads(
   return direct === null ? [] : [direct];
 }
 
-/**
- * `process.env[name]` read directly in a function's own body, or a
- * closure nested in it. The shape is specific to this runtime surface,
- * so nothing in the fact vocabulary reads it on this reader's behalf.
- */
+/** `process.env[name]` in the function's own body or a closure inside it. */
 function directEnvRead(
   fn: FunctionLike,
   parameter: ParameterDeclaration,
@@ -515,18 +463,17 @@ function recognizeProcessEnvRead(
 }
 
 /**
- * Walk a source file for every `process.env` read, in all three
- * spellings. Used by tests and by downstream consumers that want to
- * enumerate env-var reads outside the recognizer dispatch (rare). Most
- * consumers should let the adapter wire the recognizer via the pack.
+ * Every environment variable read in a source file, with its line. This
+ * runs outside extraction, which uses `envVarRecognizer` through the pack
+ * instead.
  */
 export function findProcessEnvReads(
   sourceFile: SourceFile,
   resolution?: ResolutionStore,
 ): Array<{ name: string; defaulted: boolean; line: number }> {
   const out: Array<{ name: string; defaulted: boolean; line: number }> = [];
-  // A helper call resolves from the call and from the bracket read in
-  // the callee, with the same anchor, so one of the pair is dropped.
+  // A helper call is found both at the call and at the bracket read in
+  // its callee, reported at the same node, so the second is dropped.
   const seen = new Set<string>();
   sourceFile.forEachDescendant((node) => {
     for (const read of envReadsAt(node, resolution)) {
@@ -546,10 +493,8 @@ export function findProcessEnvReads(
 }
 
 /**
- * Access recognizer for `process.env.X` reads. Sister to
- * `processSurfaceRecognizer`: both fire on PropertyAccessExpression
- * nodes; this one owns the `process.env.*` slice, the other owns the
- * rest of the process surface.
+ * The access recognizer for environment variable reads.
+ * `processSurfaceRecognizer` handles the rest of `process`.
  */
 export function envVarRecognizer(
   opts: EnvVarRecognizerOptions = {},
