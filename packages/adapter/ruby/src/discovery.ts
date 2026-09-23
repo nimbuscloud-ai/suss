@@ -21,7 +21,7 @@ import {
   ancestryOf,
   inheritedStatements,
   methodInAncestry,
-  reachDefinition,
+  reachConstant,
 } from "./ancestry.js";
 import {
   booleanLiteralValue,
@@ -46,8 +46,8 @@ import {
 import { EVERY_ARGLESS_CALL, invocationEffects } from "./paths/effects.js";
 import { responseBranches } from "./responseStatus.js";
 import {
+  constantRefCandidates,
   graphqlTypeNameFromQualified,
-  qualifyConstantRef,
   walkDefinitions,
 } from "./scope.js";
 import { type RbStorageOptions, storageEffects } from "./storage.js";
@@ -964,8 +964,8 @@ async function readWiredClass(
 ): Promise<FieldReading> {
   const range = rangeOf(ref);
 
-  const targetQualifiedName = qualifyConstantRef(ref, scope.nesting);
-  if (targetQualifiedName === null) {
+  const candidates = constantRefCandidates(ref, scope.nesting);
+  if (candidates.length === 0) {
     return {
       contract: null,
       body: methodNotSettled(
@@ -975,18 +975,23 @@ async function readWiredClass(
     };
   }
 
-  const reached = await reachDefinition(targetQualifiedName, ctx.lookup);
+  const reached = await reachConstant(candidates, ctx.lookup);
   if (reached === null) {
     return {
       contract: null,
       body: methodNotSettled(
-        `This field is wired to ${targetQualifiedName}, which this run did not read, so nothing about what it does was read here`,
+        `This field is wired to ${ref.text}, which this run did not read, so nothing about what it does was read here`,
         range,
       ),
     };
   }
 
-  const ancestry = await ancestryOf(targetQualifiedName, reached, ctx.lookup);
+  const targetQualifiedName = reached.name;
+  const ancestry = await ancestryOf(
+    targetQualifiedName,
+    reached.blocks,
+    ctx.lookup,
+  );
   return {
     contract: readClassContract(ancestry, ctx.pattern),
     body: bodyFromLookup(

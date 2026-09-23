@@ -25,7 +25,8 @@ import type { RbNode } from "./parser.js";
 /**
  * Qualifies a name against the innermost level of `nesting` and no further. It
  * returns null for a computed expression or a variable, which callers treat as
- * unresolved. `shadowingClassFor` is the one place that walks every level.
+ * unresolved. That is the name a `class` or `module` keyword defines. A lookup
+ * that has to find the class a reference means tries `constantRefCandidates`.
  */
 export function qualifyConstantRef(
   node: RbNode,
