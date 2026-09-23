@@ -1,0 +1,38 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: A queue worker and an HTTP function built from the service root.
+  A backfill script in the same directory is never deployed as a handler, so
+  only the worker's handler entry says which code reads the queue.
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 10
+
+Resources:
+  OrdersQueue:
+    Type: AWS::SQS::Queue
+    Properties: {}
+
+  OrdersWorker:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: src/handlers/orders.handler
+      Events:
+        FromOrders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  AccountsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: src/handlers/accounts.handler
+      Events:
+        CreateAccount:
+          Type: HttpApi
+          Properties:
+            Method: POST
+            Path: /accounts
