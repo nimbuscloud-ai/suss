@@ -1,8 +1,8 @@
 /**
- * A tiny language for the engine's own tests: each node is a plain
- * object whose `shape` is the lowered form, with parent links filled in
- * by `module()`. The rows cover `+`, `===`, `!`, `push`, `join` and
- * `concat`, which is enough to exercise every path through the engine.
+ * A tiny language for the engine's own tests. Each node is a plain
+ * object whose `shape` is the lowered form, and `module()` fills in the
+ * parent links. The rows cover `+`, `===`, `!`, a few array methods and
+ * three callees, enough to exercise every path through the engine.
  */
 
 import {
@@ -167,9 +167,8 @@ export const fn = (
   body: TestNode[] | TestNode,
   extra: Partial<TestNode> = {},
 ): TestNode => {
-  // A plain name takes its place in this list as its position; a
-  // caller that built the Parameter itself already said which
-  // argument it reads.
+  // A plain name's position is its index in this list. A Parameter the
+  // caller built keeps the position it was given.
   const parameters = parameterList.map((entry, position) =>
     typeof entry === "string"
       ? parameter<TestNode>(entry, null, position)

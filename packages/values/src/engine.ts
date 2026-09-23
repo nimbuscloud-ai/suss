@@ -44,24 +44,25 @@ const INLINE_DEPTH_CAP = 3;
 const STATEMENT_BUDGET = 20_000;
 
 /**
- * How an outer read is put to the lowering.
+ * Whether an outer read passes the allocation site to the lowering.
  *
- * A read of a receiver's own state depends on which instance is reading
- * it, so it goes under the site. An unfilled parameter does not: the
- * site says which instance the method was called on and says nothing
- * about what a caller passed, so the answer is the same under every
- * site. Asking it per site costs a question per site for one answer,
- * which is what made a wrapper method with ten callers expensive.
+ * A read of a receiver's own state depends on which instance reads it,
+ * so it goes to the lowering with the site. An unfilled parameter does
+ * not depend on the site. The site tells which instance the method was
+ * called on and nothing about what a caller passed, so the value is the
+ * same under every site. Passing the site would repeat one lookup for
+ * every caller of a wrapper method.
  */
 const UNDER_SITE = "under site";
 const CONTEXT_FREE = "context free";
 type OuterAsk = typeof UNDER_SITE | typeof CONTEXT_FREE;
 
 /**
- * What the node an outer read is about is. A read that nothing wrote
- * takes what its declared type allows. A call stays a hole whatever its
- * return type says, because a call that comes back a hole is what lets
- * go of the arrays it was handed.
+ * Whether an outer read is about a name or member read, or about a
+ * call. A read that nothing wrote gets the value its declared type
+ * allows. A call stays a hole whatever its return type is. When a call
+ * returns a hole, the engine treats the arrays and records passed to it
+ * as escaped, and a typed return value would lose that.
  */
 const A_READ = "read";
 const A_CALL = "call";
@@ -89,9 +90,9 @@ export interface EvaluateOptions {
   /** Values for parameters of the enclosing function, from a call site. */
   readonly bindings?: ReadonlyMap<string, Value>;
   /**
-   * The allocation site the receiver behind this expression was made
-   * at, for a name the lowering can only settle once it knows which
-   * instance is reading it.
+   * The allocation site where the receiver behind this expression was
+   * created. The lowering needs it for a name whose value depends on
+   * which instance reads it.
    */
   readonly site?: string;
 }
@@ -149,9 +150,9 @@ export class Evaluator<N extends object> {
   }
 
   /**
-   * Whether this run may write to the memos. Both a call site's
-   * bindings and an allocation site answer for one caller, and the
-   * memos are shared by every caller.
+   * Whether this run may write to the memos. Every caller shares the
+   * memos, and a value computed with a call site's bindings or under an
+   * allocation site is true for one caller only.
    */
   private remembers(
     bindings: ReadonlyMap<string, Value> | null = null,
@@ -164,9 +165,9 @@ export class Evaluator<N extends object> {
   }
 
   /**
-   * The value of an expression where it is written. An answer under an
-   * allocation site is true only for that site, so it is forced before
-   * the site is dropped and none of it is kept.
+   * The value of an expression where it is written. A value computed
+   * under an allocation site is true only for that site, so it is forced
+   * before the site is cleared and none of it goes into the memos.
    */
   evaluate(node: N, options: EvaluateOptions = {}): Value {
     this.statements = 0;
@@ -184,9 +185,9 @@ export class Evaluator<N extends object> {
   private valueAt(node: N, options: EvaluateOptions = {}): Value {
     const shape = this.lowering.expression(node);
     if (shape.kind === "literal") {
-      // A literal is worth the same wherever it is written, so the
-      // statements before it are not run. Most values asked about are
-      // literals.
+      // A literal has the same value wherever it is written, so the
+      // statements before it are skipped. Most values callers ask for
+      // are literals.
       return literalValue(shape.value);
     }
     const site = this.lowering.siteOf(node);
@@ -269,9 +270,10 @@ export class Evaluator<N extends object> {
   }
 
   /**
-   * Into the arm, loop body or block of `stmt` that contains the rest of
-   * the path. The memo goes along: the state before a nested statement
-   * is fixed by the path to it, the same as at the top level.
+   * Runs into the arm, loop body or block of `stmt` that contains the
+   * rest of the path. The memo is passed down, because the state before
+   * a nested statement depends only on the path to it, the same as at
+   * the top level.
    */
   private descend(
     stmt: N,
@@ -475,7 +477,7 @@ export class Evaluator<N extends object> {
     this.escape(written, state);
   }
 
-  /** A write to `object.name`; a null name is an index nothing settled. */
+  /** A write to `object.name`. A null name is an index that did not evaluate to one value. */
   private writeField(
     object: N,
     name: string | null,
@@ -689,9 +691,9 @@ export class Evaluator<N extends object> {
   ): Value {
     const object = this.expression(objectNode, state, depth);
     if (object.kind === "deferred") {
-      // An object read from outside this function has already been
-      // materialized, so there is no heap to follow. When it is not
-      // something to index, the facts are asked about the member itself.
+      // An object read from outside this function is already
+      // materialized, so there is no heap to follow. When it is not a
+      // record or a sequence, the lowering resolves the member read.
       return deferred(
         () => this.memberOf(force(object), name, node) ?? this.outerValue(node),
       );
@@ -735,7 +737,7 @@ export class Evaluator<N extends object> {
   /**
    * A name not bound in this function, read where the function is
    * written. An unfilled parameter skips the enclosing scopes, since
-   * only a call site can say what it is.
+   * only a call site can supply its value.
    */
   private outer(node: N, name: string, throughScopes: boolean): Value {
     const id = this.idOf(node);
@@ -827,12 +829,12 @@ export class Evaluator<N extends object> {
     }
   }
 
-  /** What a name or member read nothing wrote is limited to by its type. */
+  /** The value a declared type allows, for a name or member read that nothing wrote. */
   private declaredValue(node: N): Value {
     return this.lowering.declaredValueOf?.(node) ?? this.unwritten(node);
   }
 
-  /** A hole in place of an expression, named the way the lowering names it. */
+  /** A hole in place of an expression, with the name the lowering gives it. */
   private unwritten(node: N): Value {
     return hole(this.lowering.holeNameOf(node));
   }
@@ -882,8 +884,8 @@ export class Evaluator<N extends object> {
     if (inlined !== null) {
       return inlined;
     }
-    // A call the lowering can follow to what it is worth, such as a
-    // declared wrapper that passes one argument through.
+    // The lowering may still resolve the call to a value, as it does for
+    // a declared wrapper that passes one argument through.
     const written = this.outerValue(node, UNDER_SITE, A_CALL);
     if (written.kind !== "hole") {
       return written;
@@ -1014,7 +1016,7 @@ export class Evaluator<N extends object> {
     return joinAll(outcome.returns);
   }
 
-  /** What a call gives a parameter, or undefined when it leaves it out. */
+  /** The argument a call passes for a parameter, or undefined when the call leaves it out. */
   private argumentFor(
     parameter: Parameter<N>,
     args: Arguments,
@@ -1081,7 +1083,7 @@ export class Evaluator<N extends object> {
     return row.apply(operands, (value) => this.contentOf(value, state));
   }
 
-  /** A callback handed to an unknown call may run any time; what it reaches is gone. */
+  /** A callback passed to an unknown call may run at any time, so every allocation it can reach escapes. */
   private escapeCallbacks(args: readonly Element<N>[], state: State): void {
     for (const arg of args) {
       if (this.lowering.expression(arg.node).kind !== "function") {
@@ -1096,7 +1098,7 @@ export class Evaluator<N extends object> {
     }
   }
 
-  /** An allocation something unknown now has a handle on. */
+  /** Widens an allocation that code the engine cannot see now has a reference to. */
   private escape(value: Value, state: State): void {
     const forced = force(value);
     if (forced.kind !== "ref") {
@@ -1153,7 +1155,7 @@ export class Evaluator<N extends object> {
   }
 }
 
-/** What an allocation is once something the engine cannot see may have changed it. */
+/** An allocation's value once code the engine cannot see may have changed it. */
 function widenAway(content: Value): Value {
   if (content.kind === "sequence" || content.kind === "unbounded") {
     return unbounded(hole("value"));
@@ -1175,7 +1177,7 @@ function literalValue(value: Literal): Value {
   return typeof value === "string" ? text(value) : constant(value);
 }
 
-/** A hole bound to a name takes that name, since that is what a reader sees. */
+/** A hole bound to a name takes that name, since a reader finds that name in the source. */
 function named(value: Value, name: string): Value {
   if (value.kind === "hole") {
     return hole(name);

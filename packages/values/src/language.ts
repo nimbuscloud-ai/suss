@@ -2,12 +2,12 @@
  * What an adapter supplies to run the evaluator over its language.
  *
  * The adapter lowers each expression and statement into one of a dozen
- * shapes on demand, so the engine never sees a syntax tree. It also
- * settles the two questions that need resolution across files, which
- * expression a name was written as and which function a callee is, and
- * it supplies a table of rows saying what each operator and library
- * method does to abstract values. The engine is the same for every
- * language; the lowering and the table are what differ.
+ * kinds on demand, so the engine never sees a syntax tree. The adapter
+ * also resolves the two things that need lookups across files: which
+ * expression a name was written as, and which function a callee is.
+ * Last, it supplies a table of rows, one for each operator and library
+ * method, saying what that operation does to abstract values. Every
+ * language shares the engine. Only the lowering and the table change.
  */
 
 import type { Value } from "./value.js";
@@ -31,8 +31,9 @@ export interface Origin {
 }
 
 /**
- * Who a call is made on. `origin` is asked only when a row wants it,
- * since finding an import's source is a resolution question.
+ * The receiver and name of a call. The engine calls `origin` only when a
+ * row matches on it, because finding an import's source costs a
+ * resolution lookup.
  */
 export interface Callee<N> {
   readonly receiver: N | null;
@@ -110,11 +111,10 @@ export interface Parameter<N> {
   readonly name: string;
   readonly default: N | null;
   /**
-   * The position of the argument that fills the name. Every name a
+   * The position of the argument that fills the name. Counting list
+   * entries gives the wrong position for two reasons: every name a
    * destructured parameter binds shares one argument, and a parameter
-   * a lowering drops for want of a path still uses up a position, so a
-   * lowering has to say this rather than let a caller count list
-   * entries.
+   * the lowering dropped for lack of a path still uses up a position.
    */
   readonly position: number;
   /**
@@ -163,8 +163,8 @@ export interface Lowering<N> {
   functionOf(node: N): FunctionShape<N> | null;
   /**
    * The expression a name resolves to, through imports and re-exports.
-   * With a site, only what the name is when the receiver behind it is
-   * the one that site made.
+   * Given a site, it returns the expression only when the receiver
+   * behind the name was created at that site.
    */
   writtenTo(node: N, site?: string): N | null;
   /** The function a callee resolves to, through wrappers and barrels. */
@@ -184,7 +184,7 @@ export interface Lowering<N> {
    */
   declaredValueOf?(node: N): Value | null;
   /**
-   * One key per node, for a parser that hands back a fresh object on
+   * One key per node, for a parser that returns a fresh object on
    * every read of the same node. The engine compares and memoizes nodes
    * by this key. Left out, the node itself is the key.
    */
