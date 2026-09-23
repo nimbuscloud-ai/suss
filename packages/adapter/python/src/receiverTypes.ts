@@ -2,18 +2,18 @@
  * Which class a value belongs to, where a recognizer has the name a
  * call is read off.
  *
- * Python says it three ways, and a recognizer reading only one of them
- * misses most call sites. The source may state a type beside the name,
- * as a parameter annotation, an annotated assignment, or the class a
- * `with ... as` opens. Where it states none, the resolution rules say
- * what call wrote the name. Either way the class may be spelled as a
- * plain name the file imported or as an attribute on an imported
- * module, and both mean the same class. The answer is where the class
- * came from rather than what it is called, so a project alias in front
- * of the library still arrives at the library's own module and name.
+ * The source may state a type beside the name, as a parameter
+ * annotation, an annotated assignment, or the class a `with ... as`
+ * opens. Where it states none, the resolution rules say what type the
+ * callers of a parameter declare, or what call wrote the name. The
+ * class may be spelled as a plain name the file imported or as an
+ * attribute on an imported module, and both mean the same class. The
+ * answer is where the class came from rather than what it is called, so
+ * a project alias in front of the library still arrives at the
+ * library's own module and name.
  */
 
-import { genericTypeArgs } from "./annotations.js";
+import { annotationTarget } from "./annotations.js";
 import {
   children,
   enclosingFunction,
@@ -21,7 +21,11 @@ import {
   parameterNameAndType,
   stringLiteralValue,
 } from "./ast.js";
-import { originsOf, subjectConstructions } from "./facts/resolve.js";
+import {
+  declaredTypeOrigins,
+  originsOf,
+  subjectConstructions,
+} from "./facts/resolve.js";
 import { nameKeyIn } from "./facts/values.js";
 import { constructionBehind, moduleOf } from "./values/evaluator.js";
 import { originOf } from "./values/origin.js";
@@ -37,38 +41,6 @@ export interface ReceiverTypeOptions {
 
 /** What a name nothing in the file declares is reported as, which says only that. */
 const UNDECLARED_MODULE = "builtins";
-
-/**
- * The node an annotation writes its class at, past the wrappers that
- * do not change which class it is: the grammar's `type` node, the first
- * argument of an `Annotated` or an `Optional`, the named side of
- * `X | None`, and the outer name of any other generic.
- */
-function annotationTarget(annotation: PyNode): PyNode | null {
-  if (annotation.type === "type" && annotation.namedChildren[0]) {
-    return annotationTarget(annotation.namedChildren[0]);
-  }
-  if (annotation.type === "binary_operator") {
-    const named = [field(annotation, "left"), field(annotation, "right")].find(
-      (side) => side !== null && side.type !== "none",
-    );
-    return named === undefined || named === null
-      ? null
-      : annotationTarget(named);
-  }
-  if (annotation.type === "generic_type") {
-    const outer = annotation.namedChildren[0];
-    const first = genericTypeArgs(annotation)[0];
-    if (
-      (outer?.text === "Annotated" || outer?.text === "Optional") &&
-      first !== undefined
-    ) {
-      return annotationTarget(first);
-    }
-    return outer ?? null;
-  }
-  return annotation;
-}
 
 /** The class an annotation refers to, by the name it is written under, read through a forward reference's quotes. */
 export function typeNameOf(annotation: PyNode): string | null {
@@ -173,8 +145,9 @@ function statedOrigins(
 
 /**
  * Where the class of the value a name refers to came from. What the
- * source states wins, since a parameter has no construction to read;
- * otherwise the rules say what call wrote the name, which reaches
+ * source states wins, since a parameter has no construction to read.
+ * Next is the type every caller of an unannotated parameter declares.
+ * Otherwise the rules say what call wrote the name, which reaches
  * across modules and through a project function that builds the
  * object.
  */
@@ -186,14 +159,18 @@ export function receiverTypeOrigins(
   if (stated !== null) {
     return statedOrigins(stated, options);
   }
-  const built = constructionBehind(receiver, options.facts);
-  if (built.type === "oneCall") {
-    return [built.construction.origin];
-  }
   const key = nameKeyIn(
     options.filePath,
     enclosingFunction(receiver),
     receiver.text,
   );
+  const declared = declaredTypeOrigins(options.facts, key);
+  if (declared.length > 0) {
+    return declared;
+  }
+  const built = constructionBehind(receiver, options.facts);
+  if (built.type === "oneCall") {
+    return [built.construction.origin];
+  }
   return subjectConstructions(options.facts, [key]).get(key)?.origins ?? [];
 }
