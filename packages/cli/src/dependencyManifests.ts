@@ -279,9 +279,22 @@ function joinContinuations(contents: string): string[] {
   return joined;
 }
 
-type TomlTable = Record<string, unknown>;
+export type TomlTable = Record<string, unknown>;
 
-function tableAt(value: unknown, ...keys: string[]): TomlTable | null {
+export type TomlFileRead =
+  | { kind: "parsed"; value: unknown }
+  | { kind: "unreadable"; reason: string };
+
+export function readTomlFile(file: string): TomlFileRead {
+  try {
+    return { kind: "parsed", value: parseToml(fs.readFileSync(file, "utf8")) };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { kind: "unreadable", reason: `it is not valid TOML: ${message}` };
+  }
+}
+
+export function tableAt(value: unknown, ...keys: string[]): TomlTable | null {
   let current = value;
   for (const key of keys) {
     if (current === null || typeof current !== "object") {
@@ -297,16 +310,11 @@ function tableAt(value: unknown, ...keys: string[]): TomlTable | null {
 /** pyproject spells dependencies three ways: standard, and Poetry's two. */
 function readPyproject(root: string, file: string): DeclaredDependencies {
   const where = path.relative(root, file);
-  let parsed: unknown;
-  try {
-    parsed = parseToml(fs.readFileSync(file, "utf8"));
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return {
-      named: [],
-      unread: [{ where, reason: `it is not valid TOML: ${message}` }],
-    };
+  const read = readTomlFile(file);
+  if (read.kind === "unreadable") {
+    return { named: [], unread: [{ where, reason: read.reason }] };
   }
+  const parsed = read.value;
 
   const named: DeclaredDependency[] = [];
   const unread: UnreadDependencies[] = [];
@@ -361,16 +369,11 @@ function readPyproject(root: string, file: string): DeclaredDependencies {
 /** Pipfile is TOML, and its `packages` tables are keyed by library name. */
 function readPipfile(root: string, file: string): DeclaredDependencies {
   const where = path.relative(root, file);
-  let parsed: unknown;
-  try {
-    parsed = parseToml(fs.readFileSync(file, "utf8"));
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return {
-      named: [],
-      unread: [{ where, reason: `it is not valid TOML: ${message}` }],
-    };
+  const read = readTomlFile(file);
+  if (read.kind === "unreadable") {
+    return { named: [], unread: [{ where, reason: read.reason }] };
   }
+  const parsed = read.value;
 
   const named: DeclaredDependency[] = [];
   for (const table of ["packages", "dev-packages"]) {
