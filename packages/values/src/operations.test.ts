@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   appended,
+  caseRows,
   environmentRead,
   equals,
   extended,
@@ -15,6 +16,7 @@ import {
   percentFormatted,
   plus,
   readableFallback,
+  recased,
   startsWith,
   stripped,
   isPresent as takesLeftWhenPresent,
@@ -31,6 +33,7 @@ import {
   text,
   textPiece,
   unbounded,
+  type Value,
 } from "./value.js";
 
 describe("appended and extended", () => {
@@ -237,6 +240,45 @@ describe("fallback and isPresent", () => {
   it("cannot tell when a constant is sometimes null", () => {
     expect(isPresent({ kind: "constant", options: [1, null] })).toBeNull();
     expect(isPresent({ kind: "constant", options: [1, 2] })).toBe(true);
+  });
+});
+
+describe("recased", () => {
+  const lower = (value: string): string => value.toLowerCase();
+
+  it("changes every member of a set", () => {
+    expect(
+      recased(
+        string([textPiece(["INSERT", "UPDATE"]), holePiece("id")]),
+        lower,
+      ),
+    ).toEqual(string([textPiece(["insert", "update"]), holePiece("id")]));
+  });
+
+  it("keeps a hole with its name", () => {
+    expect(recased(hole("kind"), lower)).toEqual(hole("kind"));
+  });
+
+  it("gives a hole for anything that is not a string", () => {
+    expect(recased(constant(1), lower)).toEqual(hole("value"));
+  });
+});
+
+describe("caseRows", () => {
+  it("lowers and raises a string under the names a language gives them", () => {
+    const [lower, upper] = caseRows("down", "up");
+    const input = (receiver: Value) => ({
+      receiver,
+      args: [],
+      contentOf: (value: Value) => value,
+    });
+    expect(lower?.kind === "method" && lower.method).toBe("down");
+    expect(
+      lower?.kind === "method" && lower.apply(input(text("Placed"))),
+    ).toEqual({ result: text("placed") });
+    expect(
+      upper?.kind === "method" && upper.apply(input(text("Placed"))),
+    ).toEqual({ result: text("PLACED") });
   });
 });
 

@@ -34,6 +34,7 @@ export {
 } from "./lattice.js";
 export {
   appended,
+  caseRows,
   environmentRead,
   equals,
   extended,
@@ -47,6 +48,7 @@ export {
   percentFormatted,
   plus,
   readableFallback,
+  recased,
   startsWith,
   stripped,
 } from "./operations.js";
@@ -62,6 +64,7 @@ export {
   holePiece,
   type Item,
   literalOf,
+  literalsOf,
   normalizePieces,
   type Piece,
   type Presence,

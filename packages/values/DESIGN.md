@@ -18,6 +18,7 @@ interface Lowering<N> {
   mutatedInNestedFunction(root: N, name: string): boolean;
   freeNamesOf(fn: N): readonly string[];
   holeNameOf(node: N): string;
+  declaredValueOf?(node: N): Value | null;
   readonly rows: readonly Row[];
 }
 ```
@@ -34,6 +35,18 @@ named by `holeNameOf`.
 The engine asks `writtenTo` and `callable` only when it needs them, so
 an adapter can back them with its resolution facts without paying for
 nodes nobody asks about.
+
+When `writtenTo` finds nothing for a name or a member read, the engine
+asks `declaredValueOf` before it settles for a hole. A parameter typed
+`"INSERT" | "UPDATE" | "DELETE"` has no value in the source, but its
+type says it is one of three, so the lowering hands back that set and
+`` `record.${op.toLowerCase()}` `` folds to three literals. TypeScript
+reads the type off the checker, which follows a type alias or an enum
+into another file. Python reads a `Literal[...]` annotation on a
+parameter, through an alias the facts can follow. Ruby has no declared
+types and leaves the method out. The engine never asks it about a call:
+a call that comes back a hole lets go of the arrays it was handed, and
+a narrow return type says nothing about what the call did to them.
 
 ## Writing rows
 
@@ -60,7 +73,8 @@ way `concat` does, calls `contentOf(arg)` to read what is behind it.
 
 `operations.ts` has the building blocks a row usually needs: `plus`,
 `appended`, `extended`, `joined`, `equals`, `startsWith`, `negated`,
-`fallback` and `isPresent`. `startsWith` reads only as much of a
+`fallback`, `isPresent` and `recased`, which changes the case of every
+literal in a set. `startsWith` reads only as much of a
 concatenation's settled head as it needs to answer, so a value with an
 unresolved tail can still decide.
 
@@ -82,6 +96,12 @@ the path where it starts.
   past it the run stops with the state it has. A caller can lower it
   through `EvaluatorOptions`.
 - `SET_CAP` and `CONSTANT_CAP` limit how wide a set of literals grows.
+  `SET_CAP` is 16 so an enum of ordinary size survives as a set. A
+  lowering gives a hole for a declared type wider than that, so the
+  hole keeps the name of what it stood for.
+- `literalsOf` takes a cap from its caller, since two sets side by side
+  multiply. Past the cap it gives null, and the caller reads the value
+  as one pattern with holes instead of a list of literals.
 
 ## Testing
 

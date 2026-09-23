@@ -27,7 +27,7 @@ import {
   negated,
   plus,
 } from "./operations.js";
-import { concat, constant, hole, text } from "./value.js";
+import { concat, constant, hole, text, type Value } from "./value.js";
 
 export interface TestNode {
   shape: Expression<TestNode> | Statement<TestNode>;
@@ -40,6 +40,8 @@ export interface TestNode {
   writtenTo?: TestNode;
   /** Set on a call node to say which function it calls. */
   calls?: TestNode;
+  /** Set on a read to say what its declared type limits it to. */
+  declared?: Value;
   mutatedNames?: string[];
   freeNames?: string[];
 }
@@ -457,5 +459,6 @@ export const testLowering: Lowering<TestNode> = {
     }
     return "param";
   },
+  declaredValueOf: (n) => n.declared ?? null,
   rows,
 };

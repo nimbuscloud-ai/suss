@@ -23,6 +23,8 @@ import {
   type Value,
 } from "./value.js";
 
+import type { Row } from "./language.js";
+
 /** The sequence with `values` added at the end. */
 export function appended(sequence: Value, values: readonly Value[]): Value {
   const content = force(sequence);
@@ -315,6 +317,45 @@ export function stripped(
     return text(literal.trimEnd());
   }
   return text(literal.trim());
+}
+
+/**
+ * A string with each literal in it changed the same way, as a lower or
+ * upper case call does. A set changes member by member, and a hole
+ * stays a hole, since nobody knows what case it was in.
+ */
+export function recased(value: Value, change: (text: string) => string): Value {
+  const forced = force(value);
+  if (forced.kind !== "string") {
+    return forced.kind === "hole" ? forced : hole("value");
+  }
+  return string(
+    forced.pieces.map((piece) =>
+      piece.kind === "text" ? textPiece(piece.options.map(change)) : piece,
+    ),
+  );
+}
+
+/** The rows for a language's lower and upper case methods, under the names it spells them. */
+export function caseRows(lower: string, upper: string): Row[] {
+  return [
+    {
+      kind: "method",
+      method: lower,
+      on: "string",
+      apply: ({ receiver }) => ({
+        result: recased(operand(receiver), (text) => text.toLowerCase()),
+      }),
+    },
+    {
+      kind: "method",
+      method: upper,
+      on: "string",
+      apply: ({ receiver }) => ({
+        result: recased(operand(receiver), (text) => text.toUpperCase()),
+      }),
+    },
+  ];
 }
 
 /** A read of the environment is its default when one is written, else a hole named after the variable. */

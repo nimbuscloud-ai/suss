@@ -16,6 +16,7 @@
 import {
   type Callee,
   type Element,
+  type Expression,
   expressionBodyOf,
   type Field,
   type FunctionBody,
@@ -41,6 +42,13 @@ import {
 } from "./value.js";
 
 const INLINE_DEPTH_CAP = 3;
+
+/** The reads a declared type can stand in for. */
+const DECLARED_READS: ReadonlySet<Expression<unknown>["kind"]> = new Set([
+  "name",
+  "member",
+  "element",
+]);
 const STATEMENT_BUDGET = 20_000;
 
 /**
@@ -688,7 +696,7 @@ export class Evaluator<N extends object> {
     }
     return (
       this.memberOf(this.contentOf(object, state), name, node) ??
-      hole(this.lowering.holeNameOf(node))
+      this.declaredValue(node)
     );
   }
 
@@ -797,7 +805,7 @@ export class Evaluator<N extends object> {
       ask === UNDER_SITE ? this.underSite : undefined,
     );
     if (written === null || this.same(written, node)) {
-      return hole(this.lowering.holeNameOf(node));
+      return this.declaredValue(node);
     }
     this.computing.add(id);
     try {
@@ -810,6 +818,20 @@ export class Evaluator<N extends object> {
     } finally {
       this.computing.delete(id);
     }
+  }
+
+  /**
+   * What a name or member read nothing wrote is limited to by its type.
+   * A call stays a hole even when its return type is narrow, because a
+   * call that comes back a hole is what lets go of the arrays it was
+   * handed.
+   */
+  private declaredValue(node: N): Value {
+    const unwritten = hole(this.lowering.holeNameOf(node));
+    if (!DECLARED_READS.has(this.lowering.expression(node).kind)) {
+      return unwritten;
+    }
+    return this.lowering.declaredValueOf?.(node) ?? unwritten;
   }
 
   private call(
