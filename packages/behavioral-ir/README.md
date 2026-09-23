@@ -6,17 +6,17 @@ Core type definitions and utilities for the suss behavioral intermediate represe
 
 ## What this package is
 
-`@suss/behavioral-ir` defines the shared type vocabulary that the rest of suss speaks. It contains the `BehavioralSummary` interface, the canonical output of the extraction pipeline, along with all the supporting types: `Transition`, `Predicate`, `Input`, `Output`, `Effect`, `TypeShape`, and more. It also provides `diffSummaries`, the only runtime utility in this package.
+`@suss/behavioral-ir` defines the types the rest of suss shares. It contains the `BehavioralSummary` interface, which is the canonical output of the extraction pipeline, along with the supporting types such as `Transition`, `Predicate`, `Input`, `Output`, `Effect` and `TypeShape`. It also provides `diffSummaries`, the only runtime utility in this package.
 
-Every other suss package either consumes these types or produces values that conform to them. Nothing in this package depends on any other suss package.
+Every other suss package either consumes these types or produces values that conform to them. This package does not depend on any other suss package.
 
 ## Where it fits in suss
 
-Zero dependencies: `@suss/behavioral-ir` is the foundation everyone else imports. `@suss/extractor`, `@suss/adapter-typescript`, all framework packs, and the CLI all depend on it. It never imports from suss siblings.
+`@suss/behavioral-ir` has zero dependencies, and every other package builds on it. `@suss/extractor`, `@suss/adapter-typescript`, all framework packs, and the CLI depend on it. It never imports from its suss siblings.
 
 ## Status
 
-Stable. The IR types and `diffSummaries` are the public API. The format is also published as a [JSON Schema](schema/behavioral-summary.schema.json) and a [spec document](../../docs/reference/summary-format.md) so consumers in any language can validate and interpret summaries without taking a runtime dependency on this package.
+Stable. The IR types and `diffSummaries` are the public API. The format is also published as a [JSON Schema](schema/behavioral-summary.schema.json) and a [spec document](../../docs/reference/summary-format.md), so consumers in any language can validate and interpret summaries without a runtime dependency on this package.
 
 ## Minimal usage
 

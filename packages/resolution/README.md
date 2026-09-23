@@ -2,21 +2,21 @@
 
 Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and says where the two disagree.
 
-The rules for following a value to the function it ends up being.
+These rules follow a value to the function it ends up being.
 
 ## What this package is
 
-Datalog rules, and the few decisions that need source order rather than
-a fixpoint. It has no parser, no language, and no files of its own. An
-adapter reads source into facts, adds its own rules onto these, and
-evaluates the whole set on `@suss/datalog`.
+The package is a set of Datalog rules, plus the few decisions that
+depend on source order and so cannot come out of a fixpoint. It does not
+parse anything or read files. An adapter reads source into facts, adds
+its own rules to these, and evaluates the whole set on `@suss/datalog`.
 
-The rules are about programming languages in general rather than about
-any one of them. A name binds to a value. A call puts an argument in a
-parameter. A module exports a name, and another module can forward it.
-A function that returns a function calling its parameter hands back the
-argument it was given, which is a decorator in Python, a closure in Go,
-and a handler factory in TypeScript.
+The rules cover what programming languages have in common, so none of
+them is specific to one language. A name binds to a value. A call puts
+an argument in a parameter. A module exports a name, and another module
+can forward it. A function that returns a function calling its
+parameter gives back the argument it was passed. Python calls that a
+decorator, Go a closure, and TypeScript a handler factory.
 
 ## More
 

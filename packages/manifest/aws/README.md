@@ -4,11 +4,11 @@ Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides o
 
 Reads a CloudFormation or SAM template into plain data: the resources, what each one declares, the globals every function inherits, the nested stacks, and the ARNs and event patterns written across them.
 
-Two kinds of reader work from that data. `@suss/contract-cloudformation` and `@suss/contract-serverless` turn a template into summaries, and the Lambda pack pairs a handler in code against the route or queue the template gives it. Both used to parse the template themselves, and they disagreed about what it said.
+Two kinds of reader work from that data. `@suss/contract-cloudformation` and `@suss/contract-serverless` turn a template into summaries. The Lambda pack pairs a handler in code with the route or queue the template assigns to it. Both used to parse the template themselves, and they disagreed about its contents.
 
 ## Where it fits
 
-It depends on `@suss/behavioral-ir` and a YAML parser, and it produces data rather than summaries. Nothing here decides what a resource means; a reader does.
+It depends on `@suss/behavioral-ir` and a YAML parser. It produces plain data, and the readers build summaries from it. The readers also decide what each resource means, and this package leaves that to them.
 
 ## More
 

@@ -1,26 +1,26 @@
 # interactions/
 
-This module builds a single-pass index over interaction effects (`storage-access`, `service-call`, `message-send`, `config-read`, `metadata-read`, `schedule`, etc.), so that the per-class checkers don't each re-walk every summary.
+This module builds an index over interaction effects (`storage-access`, `service-call`, `message-send`, `config-read`, `metadata-read`, `schedule`, etc.) in one pass, so the per-class checkers don't each walk every summary again.
 
 ## Place in the pipeline
 
-`checkAll()` builds the index once at the start. Each per-class checker (`storage/`, `message-bus/`, `runtime-config/`) takes an optional `InteractionIndex` parameter. When it is supplied, the checker uses it for every lookup; when it is left out, the checker builds its own, which is handy for tests and one-off runs.
+`checkAll()` builds the index once at the start. Each per-class checker (`storage/`, `message-bus/`, `runtime-config/`) takes an optional `InteractionIndex` parameter. When a caller passes one, the checker uses it for every lookup. When a caller leaves it out, the checker builds its own, which is handy for tests and one-off runs.
 
-This module emits no findings. It is pure plumbing.
+This module doesn't emit findings. It builds the index and runs lookups against it.
 
 ## Key files
 
-- `dispatcher.ts:buildInteractionIndex` makes one pass over all the summaries, bucketing effects by `(class, semantics name)` and providers by `semantics name`.
+- `dispatcher.ts:buildInteractionIndex` makes one pass over all the summaries. It buckets effects by `(class, semantics name)` and providers by `semantics name`.
 - `dispatcher.ts:providersOf` looks providers up by semantics name.
 - `dispatcher.ts:interactionsOf` looks interaction effects up by class and semantics name.
-- `dispatcher.ts:collectInteractions` is the legacy one-shot walk, for callers written before the unified index. New callers should use the index.
+- `dispatcher.ts:collectInteractions` is the legacy one-shot walk, kept for callers written before the unified index. New callers should use the index.
 
-## Non-obvious things
+## Gotchas
 
-- **Two keys, intentional.** Lookups dispatch on `(class, semanticsName)` even though v0 maps them one to one (e.g. `message-send` → `message-bus`). The IR allows a future class to pair with several semantics types, and the index already supports that.
-- **Null-binding summaries DO appear in `providersBySemantics`.** Anything with a binding goes into a bucket, and a summary with `boundaryBinding === null` simply has no bucket entry. The bucket is keyed on the semantics name, not on the summary's identity.
-- **InteractionRecord has everything pairing needs.** An `InteractionRecord` is `(effect, summary, transitionId)`, so a per-class checker never has to re-walk the summary to find which transition the effect is on.
-- **Index is read-only after build.** There is no mutation API. Rebuilding is cheap (one linear pass over the summaries), so rebuild the index rather than patching it when the summary set changes.
+- **Lookups use two keys on purpose.** They dispatch on `(class, semanticsName)` even though v0 maps the two one to one (e.g. `message-send` → `message-bus`). The IR allows a future class to pair with several semantics types, and the index already supports that.
+- **Null-binding summaries DO appear in `providersBySemantics`.** Anything with a binding goes into a bucket, and a summary with `boundaryBinding === null` doesn't get an entry. The bucket is keyed on the semantics name and not on the summary's identity.
+- **An InteractionRecord has everything pairing needs.** An `InteractionRecord` is `(effect, summary, transitionId)`, so a per-class checker never has to walk the summary again to find which transition the effect is on.
+- **The index is read-only once built.** Nothing can change it after `buildInteractionIndex` returns. Rebuilding costs one linear pass over the summaries, so when the summary set changes, rebuild the index instead of patching it.
 
 ## Sibling modules
 
