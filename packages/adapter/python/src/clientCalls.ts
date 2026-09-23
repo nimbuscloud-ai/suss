@@ -1,14 +1,14 @@
 /**
- * clientCalls.ts: a function that calls out over the network is a
- * client of the boundary that call states.
+ * Makes a function that calls out over the network a client of the
+ * method and path that call states.
  *
- * A pack says which callables its library gives a project for making a
- * request, where each one states the method, and where it states the
- * URL. This reads the calls in each function body, evaluates the URL
- * the same way a route's path is evaluated, and reports the enclosing
- * function as a client of that method and path. A call written at
- * module level has no unit to belong to and is left alone, and so is
- * one whose URL does not settle on a string.
+ * A pack lists the callables its library provides for making a request,
+ * and where each one takes the method and the URL. This module reads the
+ * calls in each function body, evaluates the URL the same way a route's
+ * path is evaluated, and reports the enclosing function as a client of
+ * that method and path. A call at module level has no function to belong
+ * to, and a call whose URL does not settle on a string claims no path.
+ * Both are skipped here.
  */
 
 import { hasNameHole, restBinding } from "@suss/behavioral-ir";
@@ -79,14 +79,12 @@ export function clientCallUnits(
 }
 
 /**
- * The receivers `calledAttribute` will ask the rules what built them,
- * for every call this file's functions make. A caller settles these
- * together before reading any of them, because the rules run over the
- * whole project's facts and asking per call would run them once per
- * call the project writes.
+ * Every receiver in this file's functions that `calledAttribute` will ask
+ * the rules about. A caller settles them all in one round before reading
+ * any, because each round runs over the whole project's facts.
  *
- * Which calls reach that question does not depend on the pattern, so
- * one walk covers every pack in the run.
+ * The receivers do not depend on the pattern, so one walk covers every
+ * pack in the run.
  */
 export function clientCallReceivers(
   root: PyNode,
@@ -120,9 +118,9 @@ function functionDefinitions(node: PyNode, found: PyNode[] = []): PyNode[] {
 }
 
 /**
- * What this call says about the boundary, once per boundary it states.
- * A URL the enclosing class takes in `__init__` says something different
- * per construction, so each of those is a request of its own.
+ * The request this call makes, once per method and path it can reach. A
+ * URL the enclosing class takes in `__init__` can differ between
+ * constructions, so each construction gives a request of its own.
  */
 function requestCalls(
   call: PyNode,
@@ -143,8 +141,8 @@ function requestCalls(
     return [plain];
   }
 
-  // Two constructions that state the same request are one call, since
-  // nothing about the crossing tells them apart.
+  // Two constructions with the same method and path give one request,
+  // since the boundary is the same for both.
   const byBoundary = new Map<string, RequestCall>();
   for (const site of constructionSitesOf(call, options.facts)) {
     const stated = requestCall(call, attribute, pattern, options, site);
@@ -162,7 +160,7 @@ function requestCalls(
   return plain === null ? [] : [plain];
 }
 
-/** What this call says about the boundary, or null when it says nothing readable. */
+/** The method and path this call states, or null when either cannot be read. */
 function requestCall(
   call: PyNode,
   attribute: string,
@@ -208,7 +206,7 @@ function requestCall(
 }
 
 /**
- * The attribute a call names on one of the library's callables:
+ * The library callable a call reaches, by its attribute name:
  * `requests.get`, a bare `get` imported from it, or `session.get` on a
  * value the library's own constructor built.
  */
@@ -294,9 +292,9 @@ function argumentAt(
 
 /**
  * One branch per path the caller takes after the call, so a test on the
- * response says which statuses this caller handles. The conditions come
- * out of the same walk a route's do, which is where their structure,
- * and with it the status a guard names, comes from.
+ * response shows which statuses this caller handles. The conditions come
+ * from the same walk as a route's, so the checker can read the status a
+ * guard tests.
  */
 function callerBranches(
   definition: PyNode,
@@ -356,7 +354,7 @@ function handsBack(
   };
 }
 
-/** The members of the response the pack said mean each thing. */
+/** The response members the pack declares for the body, the status and the success flag. */
 function responseAccessors(pattern: PyClientCall): {
   bodyAccessors?: string[];
   statusAccessors?: string[];

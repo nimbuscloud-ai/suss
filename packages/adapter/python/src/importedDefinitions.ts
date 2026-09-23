@@ -26,7 +26,7 @@ export interface ImportedDefinition {
   scopeFor: Map<number, Scope>;
 }
 
-/** `scope` is where the name is read, which is what keys the import in the facts. */
+/** `scope` is where the name is read. The facts key an import on the file that reads it. */
 export type ImportedDefinitionLookup = (
   scope: Scope,
   name: string,

@@ -3,13 +3,13 @@
  * body.
  *
  * A pack says which receiverless calls send a response and where each one
- * takes its status. Nothing a library defines is written here.
+ * takes its status, so this module contains no library's call names.
  *
  * The shared path engine walks the body once. Every declared response call
  * is a terminal, and the statement it is written in ends its path, because
  * Rails raises on a second render. A path that reaches the end of the body,
- * or that ends in a bare `return`, is the implicit render and claims no
- * status of its own. The package README says more.
+ * or that ends in a bare `return`, is the implicit render and does not
+ * claim a status of its own.
  */
 
 import {
@@ -82,10 +82,10 @@ function declarationsByName(
 }
 
 /**
- * The declaration matching a node, when the node is a call with no receiver,
- * which is how an action writes one of these. A name written on its own,
- * `render` with no arguments at all, parses as an identifier rather than as
- * a call, so both spellings are matched.
+ * The declaration matching a node, when the node is a call with no
+ * receiver, as an action writes a response call. `render` written alone
+ * with no arguments parses as an identifier and not as a call, so both
+ * forms are matched.
  */
 function declarationOf(
   node: RbNode,
@@ -173,7 +173,7 @@ function effectsReaching(
   );
 }
 
-/** The engine's own condition, with no predicate read out of the Ruby expression yet. */
+/** One of the engine's conditions as a raw condition, with the predicate read out of its Ruby expression when it has one. */
 function conditionOf(condition: {
   sourceText: string;
   polarity: "positive" | "negative";
@@ -197,7 +197,7 @@ interface Outcome {
   fellThrough?: boolean;
 }
 
-/** What a path that writes no response of its own does. A filter hands the request on where an action responds with the library's default. */
+/** `fallthrough` says what a path that writes no response of its own does. A filter hands the request on, and an action responds with the library's default. */
 export interface BranchOptions {
   fallthrough?: "respond" | "handOn";
   /** The project's facts, so a status written as a constant another file defines resolves. */
@@ -269,8 +269,8 @@ function handsOnBranch(
 /**
  * One branch per path a method returns on, with the conditions that
  * reach it and no status reading. A client of another service ends
- * every path by handing back what it got, and the tests it writes on
- * the way are what say which statuses it handles.
+ * every path by returning what it got, so the tests along each path
+ * show which statuses it handles.
  */
 export function returnPathBranches(
   method: RbNode,

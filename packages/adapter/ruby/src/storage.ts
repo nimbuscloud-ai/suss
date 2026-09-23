@@ -1,16 +1,15 @@
 /**
- * storage.ts: which calls in a body talk to the database, for Ruby.
+ * Finds the calls in a Ruby body that read or write the database.
  *
- * One rule covers both ways a call is written. It is database work when the
- * pack lists its method as a read or a write, the class behind its receiver
- * reaches a base class the pack lists, and the project does not declare that
- * method itself. A chain counts once, at the outermost call the library
- * defines, and every other call is left to the reach walk. The README says
- * why ancestry.
+ * A call is database work when the pack lists its method as a read or a
+ * write, the class behind its receiver reaches a base class the pack
+ * lists, and the project does not declare that method itself. A chain
+ * counts once, at the outermost call the library defines. Every other
+ * call is left to the reach walk.
  *
- * The class behind the receiver comes from the constant bindings, or from the
- * resolution rules. A loader pattern adds calls given the model, and a raw
- * SQL pattern adds calls handed a statement, both reported through here.
+ * The receiver's class comes from the constant bindings when the chain
+ * starts at a constant, and from the resolution rules otherwise. Loader
+ * calls and raw SQL calls are reported through here as well.
  */
 
 import { storageBinding } from "@suss/ir-core";
@@ -50,12 +49,11 @@ function children(node: RbNode): RbNode[] {
   return node.namedChildren.filter((child): child is RbNode => child !== null);
 }
 
-/** The receiver a call is written against. */
 function receiverOf(node: RbNode): RbNode | null {
   return node.type === "call" ? field(node, "receiver") : null;
 }
 
-/** The method a call says, `where` in `Order.where(id: 1)`. */
+/** The method name of a call, `where` in `Order.where(id: 1)`. */
 function methodOf(node: RbNode): string {
   return field(node, "method")?.text ?? "";
 }
@@ -76,7 +74,7 @@ export interface RbStorageOptions {
   readonly facts: Database;
   readonly patterns: readonly RbStoragePattern[];
   readonly loaders?: readonly RbLoaderPattern[];
-  /** What a pack says about calls that take SQL the project wrote itself. */
+  /** The pack declarations for calls that take SQL the project wrote itself. */
   readonly rawSql?: readonly RbRawSqlPattern[];
 }
 
@@ -84,12 +82,12 @@ function isConstant(node: RbNode): boolean {
   return node.type === "constant" || node.type === "scope_resolution";
 }
 
-/** The name a constant is written as, without the `::` that pins `::Order` to the top level. */
+/** The constant's name, without the leading `::` of a top-level reference like `::Order`. */
 function constantName(constant: RbNode): string {
   return constant.type === "constant" ? constant.text : compoundName(constant);
 }
 
-/** The pattern whose base class the constant's class reaches, if the constant is a model. */
+/** The pattern whose base class the constant's class reaches, or undefined when the constant is not a model. */
 function modelPattern(
   constant: RbNode,
   file: string,
@@ -106,7 +104,7 @@ function modelPattern(
 
 type StorageKind = "read" | "write";
 
-/** The calls a chain is made of, the last one first and the one it starts at last. */
+/** The calls in a chain, from the outermost call to the one the chain starts at. */
 function chainLinks(call: RbNode): RbNode[] {
   const links: RbNode[] = [];
   let current: RbNode | null = call;
@@ -117,7 +115,6 @@ function chainLinks(call: RbNode): RbNode[] {
   return links;
 }
 
-/** What the library does with this method, as the pattern states it. */
 function kindOfCall(
   pattern: RbStoragePattern,
   method: string,
@@ -131,12 +128,12 @@ function kindOfCall(
   return undefined;
 }
 
-/** What the library does with one of its methods: run a statement the project wrote, or read or write rows of the model's own container. */
+/** A library method either runs a statement the project wrote, or reads or writes rows of the model's own container. */
 type LibraryCall =
   | { readonly how: "statement"; readonly place: RbArgumentPlace }
   | { readonly how: "rows"; readonly kind: StorageKind };
 
-/** What the pattern says this method is, or nothing when its library does not define it. */
+/** What the pattern declares this method does, or undefined when its library does not define it. */
 function libraryCallOf(
   pattern: RbStoragePattern,
   method: string,
@@ -149,7 +146,7 @@ function libraryCallOf(
   return kind === undefined ? undefined : { how: "rows", kind };
 }
 
-/** Whether any pattern in the run says its library defines this method. */
+/** Whether any pattern in the run declares this method as one its library defines. */
 function someLibraryDefines(
   options: RbStorageOptions,
   method: string,
@@ -164,13 +161,13 @@ function argumentsOf(call: RbNode): RbNode[] {
   return args === null ? [] : children(args);
 }
 
-/** The field names one argument comes down to, which is empty for anything that is not a hash. */
+/** The keys of the hash an argument evaluates to, or none when it does not evaluate to a hash. */
 function recordFieldsOf(argument: RbNode, facts: Database): string[] {
   const value = evaluatedValue(argument, facts);
   return value.kind === "record" ? [...value.fields.keys()] : [];
 }
 
-/** The keys a call was given as keywords, `id` in `find_by(id: 1)`, `find_by({ id: 1 })` and `find_by(CONDITIONS)`. */
+/** The keys a call is passed, `id` in `find_by(id: 1)`, `find_by({ id: 1 })` and `find_by(CONDITIONS)`. */
 function keywordKeys(call: RbNode, facts: Database): string[] {
   const keys: string[] = [];
   for (const argument of argumentsOf(call)) {
@@ -187,12 +184,12 @@ function keywordKeys(call: RbNode, facts: Database): string[] {
   return keys;
 }
 
-/** The name a bare keyword is written under, `id` in all of `id:`, `:id =>` and `"id" =>`. */
+/** A hash key's name, `id` for each of `id:`, `:id =>` and `"id" =>`. */
 function keyNameOf(key: RbNode): string | null {
   return hashKeySymbolName(key) ?? symbolValue(key) ?? stringLiteralValue(key);
 }
 
-/** Whether the call was given something other than keywords, the `1` in `find(1)`. */
+/** Whether the call is passed something other than keys, such as the `1` in `find(1)`. */
 function hasPositionalArgument(call: RbNode, facts: Database): boolean {
   return argumentsOf(call).some(
     (argument) =>
@@ -214,7 +211,7 @@ function columnsAskedFor(
     .filter((column): column is string => column !== null);
 }
 
-/** The primary key, where this call is a lookup by it and was given one. */
+/** The primary key column, when this call looks rows up by primary key and is passed one. */
 function primaryKeySelector(
   call: RbNode,
   pattern: RbStoragePattern,
@@ -231,8 +228,8 @@ function primaryKeySelector(
 }
 
 /**
- * What the chain was given to pick rows by: the keywords of every read
- * along it, and the primary key where a lookup by it was given one
+ * What the chain picks rows by: the keys passed to every read along it,
+ * plus the primary key when a lookup by primary key is passed one
  * positionally.
  */
 function selectorOf(
@@ -251,10 +248,10 @@ function selectorOf(
 }
 
 /**
- * The columns a call states. A write states them as the data it was given,
- * and a read only where it asks for columns by name. An argument written as
- * a variable states none, and saying nothing is the answer rather than a
- * reason to guess.
+ * The columns a call mentions. For a write they are the keys of the data it
+ * is passed. For a read they are the columns it asks for by name. An
+ * argument written as a variable gives no columns, and the adapter does
+ * not guess at them.
  */
 function fieldsOf(
   call: RbNode,
@@ -302,8 +299,8 @@ function storageEffect(
 
 /**
  * The class the rules settle a receiver on, when they settle on exactly
- * one. Two would make picking one a guess, the same caution the constant
- * bindings apply.
+ * one. With two, picking either would be a guess, so the result is
+ * undefined, as it is for the constant bindings.
  */
 function classSettledOn(facts: Database, key: string): string | undefined {
   askResolution(facts, [key], "wanted", RUBY_PROGRAM);
@@ -314,9 +311,9 @@ function classSettledOn(facts: Database, key: string): string | undefined {
 }
 
 /**
- * The name a class is declared under, which is what a constant receiver
- * would have been written as. A class reopened in several files binds to
- * one of them, so one name comes back.
+ * The name a class is declared under, which is how a constant receiver
+ * would have written it. A class reopened in several files binds to one
+ * of them, so only one name comes back.
  */
 function declaredName(facts: Database, classKey: string): string | undefined {
   const names = new Set(
@@ -326,11 +323,11 @@ function declaredName(facts: Database, classKey: string): string | undefined {
 }
 
 /**
- * Whether the project writes this method itself somewhere in the class's
- * ancestry. The reach walk steps into that body, and the body reports
- * whatever database work it does, so recording a write here as well
- * would count the same work twice. `reachesBase` has already asked
- * `wantedAncestry` about the class, which is what derives this.
+ * Whether the project defines this method somewhere in the class's
+ * ancestry. The reach walk steps into that body and reports its database
+ * work, so recording the call here too would count the work twice.
+ * `reachesBase` has already asked `wantedAncestry` about the class, which
+ * derives the facts this reads.
  */
 function projectDeclares(
   facts: Database,
@@ -342,13 +339,13 @@ function projectDeclares(
     .some((row) => String(row[1]) === method);
 }
 
-/** A class a call was made on, and the name to report the work under. */
+/** The class a call was made on, and the container name to report the work under. */
 interface CallReceiver {
   readonly classKey: string;
   readonly container: string;
 }
 
-/** The class a constant refers to, reported under the constant as written. */
+/** The class a constant refers to, reported under the constant's name as written. */
 function constantReceiver(
   constant: RbNode,
   file: string,
@@ -360,7 +357,7 @@ function constantReceiver(
     : { classKey, container: constantName(constant) };
 }
 
-/** The class the rules settle a receiver on, reported under the name it is declared as. */
+/** The class the rules settle a receiver on, reported under the name the class is declared with. */
 function settledReceiver(
   receiver: RbNode,
   file: string,
@@ -376,9 +373,9 @@ function settledReceiver(
 }
 
 /**
- * The class a chain was called on. A chain written from a constant is
- * settled by the bindings for that name, and any other receiver goes to
- * the rules.
+ * The class a chain was called on. When the chain starts at a constant,
+ * the constant bindings give the class. Any other receiver goes to the
+ * rules.
  */
 function receiverClass(
   call: RbNode,
@@ -398,10 +395,10 @@ function receiverClass(
 }
 
 /**
- * The call in a chain that did the database work: the outermost one whose
- * method the library defines. What comes after it is a method on the result,
- * which the reach walk follows, so `Order.find(id)&.summary` is still the
- * `find`. Null when the library defines none of them.
+ * The call in a chain that does the database work: the outermost one
+ * whose method the library defines. Anything after it is a method on the
+ * result, which the reach walk follows, so for `Order.find(id)&.summary`
+ * this returns the `find`. Null when the library defines none of them.
  */
 function libraryCallIn(call: RbNode, options: RbStorageOptions): RbNode | null {
   return (
@@ -411,7 +408,7 @@ function libraryCallIn(call: RbNode, options: RbStorageOptions): RbNode | null {
   );
 }
 
-/** The tables a statement handed to the model touches. The statement says which tables, not the model's own container, and it may say several. */
+/** The work a statement passed to a model does. The tables come from the statement instead of the model's container, and there can be several. */
 function modelStatementEffects(
   call: RbNode,
   place: RbArgumentPlace,
@@ -427,19 +424,19 @@ function modelStatementEffects(
   );
 }
 
-/** A method the library runs of its own accord when a write happens. */
+/** A method the library runs by itself when a write happens. */
 export interface RunCallback {
-  /** The name the class body registered, which is what the invocation is written as. */
+  /** The method name the class body registered. The invocation is recorded under it. */
   readonly name: string;
-  /** The key of the `def` behind it, the same key the reach walk defines methods under. */
+  /** The key of the `def` behind it, the same key the reach walk uses for methods. */
   readonly key: string;
 }
 
 /**
- * The callbacks a write on this class runs. The pack says which events
- * a write method runs and which class-body call registers a callback;
- * the shared rules follow both through the ancestry, so one registered
- * on a base counts for every model below it.
+ * The callbacks a write on this class runs. The pack declares which
+ * events a write method fires and which class-body calls register a
+ * callback. The shared rules follow both through the ancestry, so a
+ * callback registered on a base class counts for every model below it.
  */
 function callbacksRunBy(
   facts: Database,
@@ -463,7 +460,7 @@ function callbacksRunBy(
   return [...found.values()];
 }
 
-/** An invocation of a method nothing in the body writes out, which the walk still follows. */
+/** An invocation of a callback, which the body never calls by name but the walk still follows. */
 function callbackEffect(callback: RunCallback): Effect {
   return {
     type: "invocation",
@@ -474,11 +471,9 @@ function callbackEffect(callback: RunCallback): Effect {
 }
 
 /**
- * The database work one chain does, whether it was written from the model
- * itself or from a record in hand. A method the project declares on the
- * class says nothing here: the reach walk steps into that body, which
- * reports the work it does, and recording it here as well would count it
- * twice.
+ * The database work one chain does, whether it starts at the model or at
+ * a record. A method the project declares on the class gives nothing
+ * here, because the reach walk steps into that body and reports its work.
  */
 function modelCallEffects(
   call: RbNode,
@@ -530,9 +525,9 @@ function modelCallEffects(
 }
 
 /**
- * The methods a chain's write makes the library run, for the walk to
- * follow. Empty for anything the recognizer does not read as a write on
- * a class whose ancestry registers one.
+ * The callbacks a chain's write makes the library run, for the walk to
+ * follow. Empty unless the chain is a write the recognizer records on a
+ * class whose ancestry registers callbacks.
  */
 export function callbacksReached(
   call: RbNode,
@@ -564,7 +559,7 @@ export function callbacksReached(
   return [];
 }
 
-/** One read per model a loader call is given. The source class it is also given reaches no model base, so it drops out here. */
+/** One read per model passed to a loader call. The source class passed with it does not reach a model base, so it is skipped. */
 function loaderCallEffects(
   call: RbNode,
   file: string,
@@ -617,8 +612,8 @@ function effectsOfCall(
 
 /**
  * Whether the recognizer records this call as database work, so a walk
- * need not report it as a gap. `enclosing` is the method the call is
- * written in, which is what tells one body's locals from the next.
+ * does not need to report it as a gap. `enclosing` is the method the call
+ * is written in, which keeps one method's locals apart from another's.
  */
 export function storageClaims(
   call: RbNode,
@@ -632,12 +627,12 @@ export function storageClaims(
   );
 }
 
-/** Whether any pack in the run said anything about the database at all. */
+/** Whether any pack in the run declares a storage or raw SQL pattern. */
 function saysAnything(options: RbStorageOptions): boolean {
   return options.patterns.length > 0 || (options.rawSql ?? []).length > 0;
 }
 
-/** The receivers this body asks the rules about, so one evaluation settles them all. */
+/** Every receiver in the body to ask the rules about, so one question covers them all. */
 function receiverKeysToAsk(
   chains: readonly RbNode[],
   file: string,
@@ -646,7 +641,7 @@ function receiverKeysToAsk(
 ): string[] {
   const keys: string[] = [];
   for (const call of chains) {
-    // The same call the effect would be recorded at, so
+    // Ask about the receiver of the call the effect is recorded at, so
     // `@status.update(x).present?` asks about `@status`.
     const worked = libraryCallIn(call, options);
     if (worked === null || rootConstant(worked) !== null) {
@@ -661,10 +656,10 @@ function receiverKeysToAsk(
 }
 
 /**
- * The database work a body does, one effect per chain. A chain is one thing
- * the code does, so `Order.where(id: 1).first` counts once. `file` is the
- * absolute path the calls were read from, which the constant bindings key on.
- * `enclosing` is the method the calls were read from, or null outside one.
+ * The database work a body does, one effect per chain, so
+ * `Order.where(id: 1).first` counts once. `file` is the absolute path the
+ * calls were read from, which the constant bindings are keyed on.
+ * `enclosing` is the method the calls are in, or null outside one.
  */
 export function storageEffects(
   calls: readonly RbNode[],

@@ -1,13 +1,13 @@
 /**
  * One evaluator per project, over the parsed files and the resolution
- * facts. A reader hands in a node and gets back the abstract value it
- * comes down to; a route path or a prefix is then spelled from that
- * value rather than read off one syntax shape.
+ * facts. A reader passes in a node and gets back the abstract value it
+ * evaluates to, so a route path or a prefix is read from that value and
+ * any way of writing it reads the same.
  *
  * The facts key a node by file and span, so the evaluator keeps every
- * file's root to find the node a fact refers to. Without facts,
- * which is how a unit test or a single file runs, the evaluator still
- * follows names within the file through the engine's own scope walk.
+ * file's root to find the node a fact refers to. A unit test or a single
+ * file runs without facts, and the evaluator then follows names within
+ * the file through the engine's own scope walk.
  */
 
 import { nodeOfKey } from "@suss/resolution";
@@ -72,9 +72,8 @@ export function bindEvaluator(db: Database, nodes: ProjectNodes): void {
 
 /**
  * The single expression the rules say a value was written as, as a node
- * in whichever file writes it. Null until a project has been bound, since
- * a key only leads back to a node once the run has said which files it
- * covers.
+ * in whichever file writes it. Null until a project has been bound,
+ * because a key leads back to a node only once the run's files are known.
  */
 export function writtenNodeOf(
   node: PyNode,
@@ -85,9 +84,9 @@ export function writtenNodeOf(
 }
 
 /**
- * The key the rules join a read of this expression on, for a caller
- * holding a node and no file path. Null until a project has been bound,
- * and for a node in a file the run did not cover.
+ * The key the rules join a read of this expression on, for a caller that
+ * has a node and no file path. Null until a project has been bound, and
+ * for a node in a file the run did not cover.
  */
 export function resolutionKeyOf(
   node: PyNode,
@@ -99,7 +98,7 @@ export function resolutionKeyOf(
 
 /** The call a value was built by, and where that call's callee came from. */
 export interface Construction {
-  /** The value key of the call, which is the key a router index keys its constructions by. */
+  /** The value key of the call. A router index keys its constructions the same way. */
   key: string;
   /** The name the callee's module exports it under, so a caller can tell a router from an app. */
   origin: Origin;
@@ -107,8 +106,8 @@ export interface Construction {
 
 /**
  * What the rules say built a value. `severalCalls` is a value written
- * more than one way, which a caller says something about at the site
- * rather than reading as the same nothing as `noCall`.
+ * more than one way. It is kept apart from `noCall` so a caller can report
+ * the conflict at the site.
  */
 export type BuiltValue =
   | { type: "oneCall"; construction: Construction }
@@ -120,7 +119,7 @@ const NOTHING_BUILT: BuiltValue = { type: "noCall" };
 /**
  * The call the rules say a name was written as, so `app` in
  * `app = FastAPI()` comes from `fastapi`. An answer that is not a call,
- * or whose callee came out of nowhere, is left out.
+ * or whose callee has no known origin, is left out.
  */
 export function constructionBehind(
   node: PyNode,
@@ -162,10 +161,10 @@ function constructionAt(
 }
 
 /**
- * Settle all of these against the rules at once, and settle what any of
- * them was written as too, which is the hop a reader takes next. The
- * rules run over the whole project's facts, so a reader that then asks
- * one at a time runs them once rather than once per question.
+ * Settles all of these against the rules at once, along with what each
+ * was written as, since a reader follows that hop next. Each round of the
+ * rules runs over the whole project's facts, so a reader that then asks
+ * one node at a time pays for one round instead of one per question.
  */
 export function askWrittenValues(
   nodes: readonly PyNode[],
@@ -197,9 +196,9 @@ function resolutionKeysOf(
 }
 
 /**
- * The abstract value `node` comes down to, through the facts when `db`
- * was bound. With a site, what it comes down to when the receiver
- * behind it is the instance that site made; that run is not memoized.
+ * The abstract value `node` evaluates to, through the facts when `db` was
+ * bound. With a site, the value when its receiver is the instance built
+ * at that site. An evaluation under a site is not memoized.
  */
 export function evaluatedValue(
   node: PyNode,
@@ -214,7 +213,7 @@ export function evaluatedValue(
   );
 }
 
-/** The one string `node` comes down to, or null when it does not settle on one. */
+/** The one string `node` evaluates to, or null when it does not settle on one. */
 export function stringValueOf(node: PyNode, db?: Database): string | null {
   return literalOf(evaluatedValue(node, db));
 }

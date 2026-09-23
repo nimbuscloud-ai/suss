@@ -1,14 +1,13 @@
 /**
- * filters.ts: the methods a controller runs around its actions.
+ * The methods a controller runs around its actions.
  *
- * `before_action :require_login` names a method the library calls
+ * `before_action :require_login` tells the library to call a method
  * before the action, and the request ends there when that method
- * responds. `rescue_from SomeError, with: :not_found` names one it
+ * responds. `rescue_from SomeError, with: :not_found` gives a method it
  * calls when the action raised. Both are written in the class body,
- * inherited down the chain, narrowed by `only:` and `except:`, and
- * taken back off by `skip_before_action`. Each filter method gets a
- * unit of its own and each action it covers records it; the README
- * says what composition does with the two.
+ * inherited by subclasses, narrowed by `only:` and `except:`, and removed
+ * again by `skip_before_action`. Each filter method gets a unit of its
+ * own, and each action it covers records a reference to that unit.
  */
 
 import { inheritedStatements, methodInAncestry } from "./ancestry.js";
@@ -25,11 +24,11 @@ import type { Range } from "./ast.js";
 import type { ControllerActions, RbControllerFilter } from "./pack.js";
 import type { RbNode } from "./parser.js";
 
-/** One filter the ancestry declares, resolved to the method it names. */
+/** One filter the ancestry declares, resolved to its method. */
 export interface ControllerFilter {
   readonly filter: RbControllerFilter;
   readonly methodName: string;
-  /** The `def` the filter names. */
+  /** The `def` of the filter's method. */
   readonly method: RbNode;
   /** Absolute path of the file that `def` is written in. */
   readonly file: string;
@@ -39,7 +38,7 @@ export interface ControllerFilter {
   readonly except: ReadonlySet<string>;
 }
 
-/** A filter declaration, before the method it names has been looked up. */
+/** A filter declaration, before its method has been looked up. */
 interface Declaration {
   readonly filter: RbControllerFilter;
   readonly methodName: string;
@@ -78,9 +77,9 @@ export function controllerFilters(
     }
   }
 
-  // The chain is built in declaration order, ancestors first, the way
-  // the library builds it: a method declared again moves to the end
-  // with its new options, and a skip edits what is in the chain so far.
+  // Built the way the library builds it, in declaration order with
+  // ancestors first. A method declared again moves to the end with its
+  // new options, and a skip changes only what is in the chain so far.
   let declared: Declaration[] = [];
   for (const { statement } of inheritedStatements(ancestry)) {
     const called = calledName(statement);
@@ -126,7 +125,7 @@ export function controllerFilters(
   ];
 }
 
-/** Whether the library runs this filter for the action named. */
+/** Whether the library runs this filter for the given action. */
 export function filterCoversAction(
   filter: ControllerFilter,
   actionName: string,
@@ -149,7 +148,7 @@ export function filterReference(
   };
 }
 
-/** What reading the filter method's body came to, as `bodyOfMethod` reports it. */
+/** What the filter method's body does, as `bodyOfMethod` reports it. */
 export interface FilterBody {
   effects?: RawBranch["effects"];
   extraEffects?: RawBranch["extraEffects"];
@@ -220,7 +219,7 @@ function handsOn(range: Range, body: FilterBody): RawBranch {
   };
 }
 
-/** The name of a receiverless call written as a statement, `before_action`. */
+/** The method a receiverless call statement invokes, such as `before_action`. */
 function calledName(statement: RbNode): string | null {
   if (statement.type !== "call" || field(statement, "receiver") !== null) {
     return null;
@@ -228,7 +227,7 @@ function calledName(statement: RbNode): string | null {
   return field(statement, "method")?.text ?? null;
 }
 
-/** One declaration per method the call names, since `before_action :a, :b` names two. */
+/** One declaration per method, since `before_action :a, :b` registers two. */
 function declarationsOf(
   statement: RbNode,
   filter: RbControllerFilter,
@@ -265,7 +264,7 @@ function methodNamesOf(
   return symbolArgumentNames(args, facts);
 }
 
-/** The methods a class-body call names as leading symbols, `:a` and `:b` in `before_action :a, :b`. */
+/** The method names a class body call passes as leading symbols, `:a` and `:b` in `before_action :a, :b`. */
 export function symbolArgumentNames(
   args: ReturnType<typeof readCallArgs>,
   facts: Database | undefined,
@@ -275,7 +274,7 @@ export function symbolArgumentNames(
     .filter((name): name is string => name !== null);
 }
 
-/** A skip names its filters by method, the way the filter itself does. */
+/** A skip identifies its filters by method name, the same way a filter declaration does. */
 function skipsOf(
   statement: RbNode,
   filterName: string,
@@ -297,8 +296,8 @@ function sameFilter(one: Declaration, other: Declaration): boolean {
 }
 
 /**
- * What is left once the skips are applied. A skip that names no actions
- * takes the filter off altogether.
+ * What is left once the skips are applied. A skip that lists no actions
+ * removes the filter altogether.
  */
 function applySkips(
   declared: readonly Declaration[],

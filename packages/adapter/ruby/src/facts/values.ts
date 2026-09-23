@@ -1,6 +1,10 @@
-// values.ts: the facts @suss/resolution already joins, emitted for Ruby.
-// The relation names and shapes come from that package's own header, and the
-// README says which Ruby constructs differ from the other adapters.
+/**
+ * Emits the value facts that the rules in `@suss/resolution` join, for a
+ * Ruby file. The relations and their columns are defined by that package.
+ * The package DESIGN.md describes where Ruby differs from the other
+ * adapters: names keyed on their scope, a bare name that runs a method,
+ * mixins recorded as `extends`, and instance variables as class properties.
+ */
 
 import { startsAtName, valueLeftByWrites } from "@suss/resolution";
 
@@ -36,22 +40,22 @@ import type { RbNode } from "../parser.js";
 import type { LocalWrite, NameWrites } from "./locals.js";
 
 /**
- * A node's identity across the whole run. The end is part of it because a
+ * A node's key across the whole run. It includes the end offset because a
  * call and its receiver start at the same offset.
  */
 export function nodeId(filePath: string, node: RbNode): string {
   return `${filePath}:${node.startIndex}-${node.endIndex}`;
 }
 
-/** A name in a file, which is what a binding joins on. */
 function nameId(filePath: string, name: string): string {
   return `${filePath}#${name}`;
 }
 
 /**
- * Parentheses say nothing about a value, so every key reads through a pair
- * holding one expression. A pair holding several is a `begin` block whose
- * value is its last statement, which is a different question.
+ * Parentheses do not change a value, so every key looks through a pair
+ * of parentheses around one expression. Parentheses around several
+ * statements act like a `begin` block and evaluate to the last one, so
+ * they keep their own key.
  */
 function readThrough(node: RbNode): RbNode {
   if (node.type !== "parenthesized_statements") {
@@ -62,9 +66,9 @@ function readThrough(node: RbNode): RbNode {
 }
 
 /**
- * The key a bare name joins on: its own scope's, so `query` in one method is
- * apart from `query` in the next. `enclosing` is the method the name is
- * written in, or null outside one.
+ * A bare name is keyed on the scope that owns it, so `query` in one method
+ * and `query` in the next are different names. `enclosing` is the method
+ * the name is written in, or null outside one.
  */
 function nameKey(
   filePath: string,
@@ -78,14 +82,13 @@ function nameKey(
 }
 
 /**
- * The key a read of this expression joins on, for a caller that has an
- * expression in hand and wants to ask the rules about it. `enclosing` is
- * the method the expression is written in, or null outside one.
+ * The key to ask the rules about when reading this expression. `enclosing`
+ * is the method the expression is written in, or null outside one.
  *
- * Two Ruby spellings are keyed on a node rather than on a name. Ruby
- * gives `receiver.method` no node of its own, so the method name is
- * where the callee is keyed, and a name Ruby runs as a method is the
- * call itself.
+ * Two kinds of name are keyed on their node instead of on the name. The
+ * tree has no node for the `receiver.method` part of a call, so the
+ * callee is keyed on the method name's node. A bare name that Ruby runs
+ * as a method is the call itself.
  */
 export function readKey(
   filePath: string,
@@ -102,7 +105,7 @@ export function readKey(
   return nameKey(filePath, node, enclosing);
 }
 
-/** Whether this name is the method of a `receiver.method` call, which is that call's callee. */
+/** Whether this name is the method of a `receiver.method` call. */
 function isMethodOfReceiver(node: RbNode): boolean {
   const parent = node.parent;
   return (
@@ -124,10 +127,9 @@ function isReceiverOfCall(node: RbNode): boolean {
 }
 
 /**
- * Whether Ruby runs this name rather than reading it: no local in
- * scope declares it, so it is a call of a method on `self`. A receiver
- * is one of these too, which is how a service object reaches the one
- * connection its request methods share.
+ * Whether Ruby runs this name as a method on `self`, because no local in
+ * scope binds it. A receiver counts too: in `connection.get(url)`, where
+ * `connection` is a method, the receiver is a call.
  */
 function isBareCall(node: RbNode, enclosing: RbNode | null): boolean {
   if (node.type !== "identifier") {
@@ -150,8 +152,8 @@ const WRITTEN_VALUE_TYPES = new Set([
   "hash_key_symbol",
   "bare_string",
   "bare_symbol",
-  // Composed from other expressions, so a chain ends here and the
-  // evaluator reads the expression back in the scope it is written in.
+  // Built from other expressions. A chain stops here, and the evaluator
+  // reads the expression in the scope it is written in.
   "chained_string",
   "binary",
   "unary",
@@ -163,7 +165,7 @@ const WRITTEN_VALUE_TYPES = new Set([
 /** `%w[a b]` and `%i[a b]` are arrays whose elements are bare words. */
 const ARRAY_TYPES = new Set(["array", "string_array", "symbol_array"]);
 
-/** tree-sitter types a named child as nullable; dropping them once keeps every walk below flat. */
+/** tree-sitter types a named child as nullable, so the nulls are dropped once here. */
 function children(node: RbNode): RbNode[] {
   return node.namedChildren.filter((child): child is RbNode => child !== null);
 }
@@ -173,21 +175,21 @@ interface Emitter {
   filePath: string;
   /**
    * The method whose body is being walked. Its parameters and locals are
-   * keyed under it, because two methods in one file can both write a
-   * `loader` and they are not the same value.
+   * keyed under it, because two methods in one file can each assign a
+   * `loader` with a different value.
    */
   enclosing: RbNode | null;
-  /** The class or module `self` means here, or null outside one. */
+  /** The key of the class or module `self` refers to here, or null outside one. */
   selfKey: string | null;
   /** Whether the body being walked runs with a receiver, so a call in it has one too. */
   insideMethod: boolean;
   /**
-   * Every value the body being walked writes to each of its instance
-   * variables. One map per method, so the facts say which method stored
-   * what, and one for a class body's own statements.
+   * Every value the body being walked assigns to each instance variable.
+   * Each method gets its own map, so the facts say which method stored
+   * which value, and a class body's own statements get one more.
    */
   instanceWrites: Map<string, InstanceWrite[]> | null;
-  /** The calls the run's packs say run their block as part of the body around it. */
+  /** The calls whose block the run's packs declare runs as part of the surrounding body. */
   bodyBlocks: BodyBlocks;
 }
 
@@ -195,12 +197,11 @@ function add(emitter: Emitter, relation: string, ...tuple: string[]): void {
   emitter.db.add(relation, tuple);
 }
 
-/** The key a value joins on, which is the key a reader asks the rules about. */
 function valueKey(emitter: Emitter, written: RbNode): string {
   return readKey(emitter.filePath, written, emitter.enclosing);
 }
 
-/** A pair's key when it is written as a symbol or a string, which is what a property joins on. */
+/** A pair's key as text when it is written as a symbol or a string, or null otherwise. */
 function pairKeyText(key: RbNode): string | null {
   if (key.type === "hash_key_symbol") {
     return key.text;
@@ -216,8 +217,8 @@ function pairKeyText(key: RbNode): string | null {
 
 /**
  * The key of the method an expression runs, or null when it runs none.
- * Ruby gives `receiver.method` no node of its own, so the method name
- * is the callee, and a bare name Ruby runs is its own method name.
+ * For `receiver.method` the key is on the method name's node. A bare name
+ * that Ruby runs is keyed as a name in its scope.
  */
 export function calleeKeyOf(
   filePath: string,
@@ -231,17 +232,17 @@ export function calleeKeyOf(
   if (method === null) {
     return null;
   }
-  // Keying a bare callee on its node would find a method of that name at
-  // the top of the file instead of the one in scope.
+  // A bare callee is keyed as a name so it resolves to the method in
+  // scope. Keyed on its node, it would find a top-level method instead.
   return field(node, "receiver") === null
     ? nameKey(filePath, method, enclosing)
     : nodeId(filePath, method);
 }
 
 /**
- * The key of the value a call runs rather than sends a message to, or
- * null when it sends one. A caller with a call in hand asks about this
- * as well as about `calleeKeyOf`, since either can be the function.
+ * The key of the value a call invokes directly, as in `f.call(x)` or
+ * `f.(x)`, or null for an ordinary method call. Ask about this key as
+ * well as `calleeKeyOf`, since either one can turn out to be the function.
  */
 export function invokedKeyOf(
   filePath: string,
@@ -254,14 +255,14 @@ export function invokedKeyOf(
 
 function emitCall(emitter: Emitter, call: RbNode): void {
   const callKey = nodeId(emitter.filePath, call);
-  // A call is written out in the source, so a name bound to one ends its
-  // chain there and `isWrittenAs` reads it back.
+  // A name bound to a call stops its chain at the call, and `isWrittenAs`
+  // reads the call's source back.
   add(emitter, "writtenValue", callKey);
 
   const invoked = invokedValueOf(call);
   if (invoked !== null) {
-    // `f.call(x)` and `f.(x)` run whatever the receiver is worth, so the
-    // callee is that value rather than a method written as `call`.
+    // `f.call(x)` and `f.(x)` run whatever the receiver evaluates to, so
+    // the callee is that value, not a method named `call`.
     add(emitter, "call", callKey, valueKey(emitter, invoked));
   }
   if (!emitMessageSent(emitter, call, callKey) && invoked === null) {
@@ -271,15 +272,15 @@ function emitCall(emitter: Emitter, call: RbNode): void {
 }
 
 /**
- * The callee of a call that sends a message, and the receiver the name
- * is read off. False for a call that sends none, which is `f.(x)`.
+ * Emits the callee of a method call and the receiver it is looked up on.
+ * Returns false for a call with no method name, which is `f.(x)`.
  */
 function emitMessageSent(
   emitter: Emitter,
   call: RbNode,
   callKey: string,
 ): boolean {
-  // A bare name Ruby runs is the whole call and its own method name.
+  // For a bare name Ruby runs, the identifier is both the call and its method name.
   const method = call.type === "identifier" ? call : field(call, "method");
   const calleeKey = calleeKeyOf(emitter.filePath, call, emitter.enclosing);
   if (method === null || calleeKey === null) {
@@ -300,20 +301,19 @@ function emitMessageSent(
       method.text,
     );
   } else if (emitter.selfKey !== null) {
-    // Ruby looks a name written with no receiver up on `self`, so inside
-    // a class it finds a method that class declares.
+    // Ruby looks up a call with no receiver on `self`, so inside a class
+    // it finds a method that class declares.
     add(emitter, "readsProperty", calleeKey, emitter.selfKey, method.text);
   }
   return true;
 }
 
-/** The method Ruby runs a proc through, `f.call(x)`. */
+/** The method that runs a proc, `f.call(x)`. */
 const INVOKE_METHOD = "call";
 
 /**
- * The value a call runs rather than sends a message to. `f.(x)` has no
- * method at all, and `f.call(x)` is how every proc is run, so both of
- * them run the receiver.
+ * The receiver of `f.(x)` or `f.call(x)`, both of which run the receiver
+ * itself, or null for any other call.
  */
 function invokedValueOf(call: RbNode): RbNode | null {
   if (call.type !== "call") {
@@ -361,7 +361,7 @@ function emitCallArguments(
   }
 }
 
-/** An array records its elements under their positions, the way the other adapters do. */
+/** Records an array's elements under their positions, as the other adapters do. */
 function emitArray(emitter: Emitter, array: RbNode): void {
   const objectKey = nodeId(emitter.filePath, array);
   add(emitter, "objectValue", objectKey);
@@ -378,7 +378,7 @@ function emitArray(emitter: Emitter, array: RbNode): void {
   }
 }
 
-/** A hash records its values under their written keys. */
+/** Records a hash's values under their keys, when a key is written as a symbol or string. */
 function emitHash(emitter: Emitter, hash: RbNode): void {
   const objectKey = nodeId(emitter.filePath, hash);
   add(emitter, "objectValue", objectKey);
@@ -396,29 +396,29 @@ function emitHash(emitter: Emitter, hash: RbNode): void {
   }
 }
 
-/** The two spellings of a block, `{ }` and `do ... end`. */
+/** The two ways to write a block, `{ }` and `do ... end`. */
 const BLOCK_TYPES = new Set(["block", "do_block"]);
 
 /**
- * Ruby's own iteration methods, whose block runs once per element with
- * the element bound to its first parameter and, for `each_with_index`,
- * the position bound to its second. They are `Enumerable`'s, so they
- * are the language core the way `ENV` is rather than a library's.
+ * Iteration methods whose block runs once per element, with the element
+ * bound to the first parameter and, for `each_with_index`, the position
+ * bound to the second. They come from `Enumerable`, so the adapter
+ * recognizes them without a pack, as it does `ENV`.
  */
 const LOOP_METHODS = new Set(["each", "each_with_index", "map"]);
 
-/** Ruby's own dynamic definition, whose argument is the name the method gets. */
+/** Ruby's call for defining a method at run time. Its first argument is the method's name. */
 const DEFINE_METHOD_CALL = "define_method";
 
-/** What one turn of a loop block binds, and the value its elements come from. */
+/** The names one iteration of a loop block binds, and the collection it iterates over. */
 interface LoopTurn {
   readonly element: string;
-  /** The name the position is bound to, or the empty string for a block that takes one parameter. */
+  /** The name bound to the position, or the empty string for a block with one parameter. */
   readonly index: string;
   readonly overKey: string;
 }
 
-/** What a block binds per turn when a loop call opened it, or null for every other block. */
+/** What a loop block binds on each iteration, or null when the block does not belong to a loop call. */
 function loopTurnAt(emitter: Emitter, block: RbNode): LoopTurn | null {
   const call = block.parent;
   if (call?.type !== "call") {
@@ -436,8 +436,8 @@ function loopTurnAt(emitter: Emitter, block: RbNode): LoopTurn | null {
   if (element === undefined) {
     return null;
   }
-  // The expression's own key, not the name's: what it comes down to is
-  // the evaluator's question, and it reads these same facts to answer it.
+  // Keyed on the receiver's node so the evaluator settles what the loop
+  // iterates over, from these same facts.
   return {
     element,
     index: names[1] ?? "",
@@ -446,9 +446,9 @@ function loopTurnAt(emitter: Emitter, block: RbNode): LoopTurn | null {
 }
 
 /**
- * A method the class gets under a name the source computes. The name is
- * whatever the argument comes down to, which the value evaluator settles
- * from these same facts, so nothing here reads the argument itself.
+ * Records a `define_method` call in a class body. The method's name is
+ * whatever the argument evaluates to. The value evaluator works that out
+ * later from these same facts, so this does not read the argument.
  */
 function emitDynamicDefinition(
   emitter: Emitter,
@@ -457,7 +457,7 @@ function emitDynamicDefinition(
 ): void {
   if (
     emitter.selfKey === null ||
-    // A call inside a method runs when that method does, not at load time.
+    // A call inside a method runs when the method runs, not when the class loads.
     emitter.enclosing !== null ||
     call.type !== "call" ||
     field(call, "receiver") !== null ||
@@ -467,7 +467,7 @@ function emitDynamicDefinition(
   }
   const args = field(call, "arguments");
   const first = args === null ? undefined : children(args)[0];
-  // A call handed no name at all points at itself, which settles on nothing.
+  // With no argument, the call's own key is used as the name, which settles on nothing.
   const nameKey = nodeId(emitter.filePath, first ?? call);
   add(emitter, "definesMethodFrom", emitter.selfKey, nameKey);
   for (const turn of turns) {
@@ -482,7 +482,7 @@ function emitDynamicDefinition(
   }
 }
 
-/** Every expression under a node, without crossing into a nested declaration. `turns` is the loop blocks the expression is written inside, outermost first. */
+/** Visits every expression under a node, stopping at nested definitions. `turns` lists the loop blocks around the expression, outermost first. */
 function walkExpressions(
   node: RbNode,
   emitter: Emitter,
@@ -506,7 +506,7 @@ function walkExpressions(
   }
 }
 
-/** A key the source writes out, which `readsProperty` covers instead. */
+/** Keys written as literals. A read with one of these is a property read, which `readsProperty` covers. */
 const WRITTEN_KEY_TYPES = new Set([
   "string",
   "integer",
@@ -516,9 +516,9 @@ const WRITTEN_KEY_TYPES = new Set([
 ]);
 
 /**
- * `settings[name]` and `settings.fetch(name)`: the container, and the
- * expression the key comes from. Which containers are the environment
- * is the rules' business, so this says nothing about that either way.
+ * Records `settings[name]` and `settings.fetch(name)` as a read of the
+ * container under a computed key. This records every container. The
+ * rules decide which containers are the environment.
  */
 function emitKeyedRead(
   emitter: Emitter,
@@ -565,7 +565,7 @@ function emitKeyedFetch(emitter: Emitter, call: RbNode): void {
 
 function emitExpressionFacts(emitter: Emitter, node: RbNode): void {
   // The walk below starts at the children, so a statement that is itself
-  // a definition would go unseen.
+  // a `define_method` call is checked here.
   emitDynamicDefinition(emitter, node, []);
   walkExpressions(node, emitter, (child, turns) => {
     emitDynamicDefinition(emitter, child, turns);
@@ -588,8 +588,8 @@ function emitExpressionFacts(emitter: Emitter, node: RbNode): void {
     if (child.type === "nil") {
       add(emitter, "placeholderValue", nodeId(emitter.filePath, child));
     }
-    // A builder method returning `self` hands back one of the class it is
-    // written in, so the next method in a chain is one that class declares.
+    // A builder method that returns `self` returns an instance of its own
+    // class, so the next call in a chain runs a method that class declares.
     if (child.type === "self" && emitter.selfKey !== null) {
       add(emitter, "binds", nodeId(emitter.filePath, child), emitter.selfKey);
     }
@@ -604,7 +604,7 @@ function emitExpressionFacts(emitter: Emitter, node: RbNode): void {
 
 const ASSIGNMENT_TYPES = new Set(["assignment", "operator_assignment"]);
 
-/** Whether this is the name an assignment writes to rather than a value being read. */
+/** Whether this node is the left side of an assignment. */
 function isWriteTarget(node: RbNode): boolean {
   const parent = node.parent;
   return (
@@ -615,10 +615,9 @@ function isWriteTarget(node: RbNode): boolean {
 }
 
 /**
- * An instance variable is a name on the object, so reading one is
- * reading a property of the class. That is what lets a write in a base
- * class reach a read in a subclass: `contains` already walks `extends`,
- * so the ancestry is joined without a step of its own.
+ * An instance variable belongs to the object, so a read of one is
+ * recorded as a property read off the class. `contains` already walks
+ * `extends`, so a write in a base class reaches a read in a subclass.
  */
 function emitInstanceRead(emitter: Emitter, node: RbNode): void {
   if (emitter.selfKey === null || isWriteTarget(node)) {
@@ -633,7 +632,7 @@ function emitInstanceRead(emitter: Emitter, node: RbNode): void {
   );
 }
 
-/** One write to `@name`, with the target node that orders it against the others. */
+/** One write to `@name`, with the target node used to order it against the others. */
 interface InstanceWrite {
   write: NameWrite;
   target: RbNode;
@@ -649,8 +648,8 @@ function collectInstanceWrite(emitter: Emitter, node: RbNode): void {
   if (left.type !== "instance_variable") {
     return;
   }
-  // `count += 1` combines the right side with what is already there, and
-  // that result is written nowhere this can name.
+  // `count += 1` writes a value the source never states, so the write
+  // has no value key.
   const operator = field(node, "operator")?.text;
   const value =
     node.type === "assignment" || WHOLE_VALUE_OPERATORS.has(operator ?? "")
@@ -671,10 +670,10 @@ function collectInstanceWrite(emitter: Emitter, node: RbNode): void {
 }
 
 /**
- * The values one instance variable ends up with. Writes the body runs one
- * after another settle on the last; anything a branch or a loop decides
- * gives one value per write, and a reader that needs a single answer sees
- * more than one source.
+ * The values one instance variable can end up with. When the writes run
+ * in order, the last one wins. When a branch or a loop decides which write
+ * runs, every write's value is kept, so a reader that needs one answer
+ * sees more than one source.
  */
 function settledWrites(
   writes: readonly InstanceWrite[],
@@ -694,7 +693,7 @@ function settledWrites(
   return left;
 }
 
-/** What a class body's own statements, rather than any method, put on the class. */
+/** Records the instance variables that a class body's own statements assign, outside any method. */
 function emitInstanceWrites(
   emitter: Emitter,
   classKey: string,
@@ -708,9 +707,10 @@ function emitInstanceWrites(
 }
 
 /**
- * What one method's body stored, which the rules put on the class and on
- * each site. `@thing = @thing.where(a: 1)` states no store: what it leaves
- * behind depends on a value another body decided.
+ * Records what one method's body stores in each instance variable. The
+ * rules then attach it to the class. A write like
+ * `@thing = @thing.where(a: 1)` is skipped, because its result depends on
+ * a value another method assigned.
  */
 function emitInstanceStores(
   emitter: Emitter,
@@ -734,7 +734,7 @@ function emitInstanceStores(
   }
 }
 
-/** A method returns its last expression when it writes no return, which Python has no equivalent of. */
+/** The last expression of a body, which Ruby returns when the body ends without a `return`. */
 function implicitReturn(body: RbNode): RbNode | null {
   const statements = children(body).filter(
     (child) => child.type !== "rescue" && child.type !== "ensure",
@@ -747,10 +747,9 @@ function implicitReturn(body: RbNode): RbNode | null {
 }
 
 /**
- * The value an assignment is worth, since Ruby hands back what it
- * wrote. `@filters ||= %i[...]` as a method's last line is the
- * memoised list, and a reader that stopped at the assignment would
- * have nothing to read.
+ * The right side of an assignment, since an assignment evaluates to the
+ * value it wrote. A method whose last line is `@filters ||= %i[...]`
+ * returns that list.
  */
 function assignedValueOf(node: RbNode): RbNode | null {
   if (!ASSIGNMENT_TYPES.has(node.type)) {
@@ -767,9 +766,9 @@ function assignedValueOf(node: RbNode): RbNode | null {
 }
 
 /**
- * A lambda is a function a name can be written to and called later, so
- * it gets the facts a method gets. Emitting one walks its own body, so
- * this stops where the next definition starts.
+ * A lambda can be assigned to a name and called later, so it gets the
+ * same facts as a method. Emitting a lambda walks its body, so this walk
+ * stops at each definition.
  */
 function emitLambdasIn(emitter: Emitter, body: RbNode): void {
   for (const child of children(body)) {
@@ -784,10 +783,7 @@ function emitLambdasIn(emitter: Emitter, body: RbNode): void {
   }
 }
 
-/**
- * The statements a definition runs. A lambda writes its body inside a
- * block, so its statements are one level further in than a method's.
- */
+/** A lambda's statements are inside a block, one level deeper than a method's. */
 function definitionBody(definition: RbNode): RbNode | null {
   const body = field(definition, "body");
   if (body === null || definition.type !== LAMBDA_TYPE) {
@@ -797,8 +793,9 @@ function definitionBody(definition: RbNode): RbNode | null {
 }
 
 /**
- * Where a method's name goes is the caller's to say, because a method inside a
- * class belongs to that class and one at the top of a file belongs to the file.
+ * Emits a method's own facts and returns its key. The caller binds the
+ * method's name, because a method in a class belongs to the class and a
+ * method at the top of a file belongs to the file.
  */
 function emitMethodFacts(emitter: Emitter, method: RbNode): string {
   const funcKey = nodeId(emitter.filePath, method);
@@ -835,8 +832,7 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
 
   walkExpressions(body, inside, (child) => {
     if (child.type === "return") {
-      // `return x` wraps the value in an argument list, the same shape a
-      // call's arguments take.
+      // tree-sitter wraps the value of `return x` in an argument list.
       const first = children(child)[0];
       const returned =
         first?.type === "argument_list" ? children(first)[0] : first;
@@ -861,7 +857,7 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
   return funcKey;
 }
 
-/** A call, or an array or a hash literal: a value built where it is written. */
+/** A call, or an array or hash literal: a value built where it is written. */
 function isConstruction(value: RbNode): boolean {
   return (
     value.type === "call" ||
@@ -870,16 +866,15 @@ function isConstruction(value: RbNode): boolean {
   );
 }
 
-/** Source text with whitespace runs collapsed, so formatting alone never tells two constructions apart. */
+/** Source text with whitespace collapsed, so two constructions that differ only in formatting compare equal. */
 function sourceOf(node: RbNode): string {
   return node.text.replace(/\s+/g, " ").trim();
 }
 
 /**
- * Ruby writes an attribute read as a call too, so `query = query.limit`
- * reads the same way as `query = query.limit(1)` and both narrow the
- * name. What either call gives back is left to the rules, which have the
- * value key for it.
+ * An attribute read in Ruby is also a call, so `query = query.limit` and
+ * `query = query.limit(1)` both narrow `query`. The rules work out what
+ * either call returns from its value key.
  */
 function readFirst(node: RbNode): RbNode | null {
   const inner = readThrough(node);
@@ -889,7 +884,7 @@ function readFirst(node: RbNode): RbNode | null {
   return node.type === "call" ? field(node, "receiver") : null;
 }
 
-/** What the shared chain walk needs to know about Ruby, which spells a name two ways. */
+/** The Ruby details the shared chain walk needs. Ruby has two node types for a name. */
 const CHAIN_READS: ChainReads<RbNode> = {
   nameTypes: RUBY_NAME_TYPES,
   readFirst,
@@ -910,9 +905,9 @@ function describeWrite(emitter: Emitter, write: LocalWrite): NameWrite {
 }
 
 /**
- * The value a name comes down to, or null when the writes settle on none.
- * A name written once is that write, the way every `const` is in a language
- * that has one; a parameter written once is already covered by `paramNamed`.
+ * The value a name ends up with, or null when its writes do not settle on
+ * one. A name written once has that write's value. A parameter that is
+ * never reassigned returns null here, because `paramNamed` covers it.
  */
 function settledValue(emitter: Emitter, group: NameWrites): string | null {
   const only = group.writes.length === 1 ? group.writes[0] : undefined;
@@ -928,9 +923,10 @@ function settledValue(emitter: Emitter, group: NameWrites): string | null {
 }
 
 /**
- * What each name a scope writes comes down to. A name written once is bound
- * to that value; a reassigned name comes down to whatever the writes leave
- * behind, and to nothing when control flow decides which write a reader sees.
+ * Records the value of each name a scope writes. A name written once gets
+ * `binds`. A reassigned name gets `endsHolding` when its writes settle on
+ * one value, and one candidate per write when control flow decides which
+ * write a reader sees.
  */
 function emitScopeWrites(
   emitter: Emitter,
@@ -953,7 +949,7 @@ function emitScopeWrites(
       key,
       settled,
     );
-    // Only a name written at the top of a file is something another file can read.
+    // Another file can read only a name written at the top of a file.
     if (group.owner === null) {
       add(emitter, "exportsAs", emitter.filePath, group.name, settled);
     }
@@ -961,12 +957,11 @@ function emitScopeWrites(
 }
 
 /**
- * Each value a write put in a name the writes left undecided. A write that
- * narrows the name is left out, and a write with no value of its own, a
- * `for` target or a block parameter, is what `writesUnstated` says. A
- * method parameter is left out of both: `paramNamed` already says the
- * value is whatever the caller passed. `writesAllStated` is the other
- * side: the run read every write to the name.
+ * Records each value a write gives a name whose writes did not settle on
+ * one, as `mayHold`. A write that narrows the name is left out. A write
+ * with no stated value, such as a `for` target or a block parameter, adds
+ * `writesUnstated`. A method parameter adds neither, since `paramNamed`
+ * covers it. `writesAllStated` means every write to the name was read.
  */
 function emitCandidates(
   emitter: Emitter,
@@ -981,9 +976,8 @@ function emitCandidates(
       unstated = true;
       continue;
     }
-    // A parameter's value comes from the caller, and no fact here says
-    // whether a later write always replaces it, so the writes the run
-    // did read are not the whole set.
+    // The caller supplies a parameter's value, and nothing here says a
+    // later write always replaces it, so the writes read are not all of them.
     if (write.fromParameter) {
       unstated = true;
       continue;
@@ -1002,9 +996,10 @@ function emitCandidates(
 const INITIALIZE_METHOD = "initialize";
 
 /**
- * The key `self` joins on inside a method. An instance method gets one
- * of the class, so a walk under one construction reads that
- * construction's fields; `def self.x` runs on the class itself.
+ * The key `self` has inside a method. In an instance method `self` is an
+ * instance of the class, with a key of its own so that a walk from one
+ * construction reads that construction's fields. In `def self.x`, `self`
+ * is the class itself.
  */
 function receiverKeyOf(
   filePath: string,
@@ -1016,14 +1011,14 @@ function receiverKeyOf(
     : `${nodeId(filePath, method)}#self`;
 }
 
-/** A name a rule can join on. A mixin written any other way has none. */
+/** A mixin argument written any other way has no name a rule can join on. */
 const CONSTANT_REF_TYPES = new Set(["constant", "scope_resolution"]);
 
 /**
- * The modules given to one kind of mixin call, in the order Ruby's own
- * ancestors list has them. Each call goes in front of the ones before
- * it, and `include A, B` puts A in front of B, which is why the
- * arguments of one call and the calls themselves are each reversed.
+ * The modules passed to one kind of mixin call, in the order Ruby's
+ * `ancestors` lists them. Each call puts its modules in front of the
+ * earlier calls' modules, and `include A, B` puts A in front of B, so
+ * both the calls and each call's arguments are reversed.
  */
 function mixedInConstants(body: RbNode, callName: string): RbNode[] {
   return bareCallArgumentGroups(body, callName)
@@ -1034,13 +1029,13 @@ function mixedInConstants(body: RbNode, callName: string): RbNode[] {
 }
 
 /**
- * A module mixed in with `include` or `prepend` is an ancestor in
- * Ruby's own lookup, so `extends` is the fact for it and every rule
- * that already walks an ancestry reaches what the module declares.
+ * A module mixed in with `include` or `prepend` is an ancestor in Ruby's
+ * method lookup, so it is recorded as `extends`. Every rule that walks an
+ * ancestry then reaches what the module declares.
  *
- * `extendsNamed` is left alone. It says which library base a class
- * arrives at, and a module is never one, so naming a mixin there would
- * give a class a second base for a pack to match on.
+ * It is not recorded in `extendsNamed`, which gives the library base a
+ * class ends up at. A module is never that base, and listing one there
+ * would give a pack a second base to match.
  */
 function emitMixinFacts(
   emitter: Emitter,
@@ -1054,18 +1049,18 @@ function emitMixinFacts(
 }
 
 /**
- * A class or a module is an object containing its methods, which is the
- * treatment an array and a hash already get. That is what lets a method
- * read off an instance resolve to the method the class declares, and a
- * bare call on a module resolve to a method it declares.
+ * A class or module is recorded as an object whose properties are its
+ * methods, the same way an array or hash is recorded. A method called on
+ * an instance then resolves to the method the class declares, and a bare
+ * call inside a module resolves to a method the module declares.
  */
 function emitClassFacts(emitter: Emitter, cls: RbNode): string {
   const classKey = nodeId(emitter.filePath, cls);
   add(emitter, "objectValue", classKey);
 
   const body = field(cls, "body");
-  // Ruby looks a method up through what is prepended, then the class
-  // itself, then what is included, then the superclass chain.
+  // Ruby looks a method up in prepended modules, then the class itself,
+  // then included modules, then the superclass chain.
   if (body !== null) {
     emitMixinFacts(emitter, classKey, body, PREPEND_CALL);
     emitMixinFacts(emitter, classKey, body, INCLUDE_CALL);
@@ -1075,8 +1070,8 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
   const base = superclass === null ? null : (children(superclass)[0] ?? null);
   if (base !== null) {
     add(emitter, "extends", classKey, valueKey(emitter, base));
-    // A base class the project does not declare, `ActiveRecord::Base`, has no
-    // node to bind to, so the name it is written as is what a pack can match.
+    // A base class the project does not declare, such as `ActiveRecord::Base`,
+    // has no node to bind to, so a pack matches it by the name as written.
     add(emitter, "extendsNamed", classKey, base.text);
   }
 
@@ -1103,21 +1098,21 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
           left.text,
           valueKey(emitter, right),
         );
-        // The right side runs in the class body, so a bare call written
-        // there is looked up on the class like any other body statement.
+        // The right side runs in the class body, so a bare call in it is
+        // looked up on the class.
         emitExpressionFacts(within, statement);
       }
       continue;
     }
     if (NESTING_TYPES.has(statement.type)) {
-      // A nested class or module is an object of its own. Its key is the
-      // node collectFileConstants binds a qualified name like A::B to.
+      // A nested class or module gets its own object, keyed on the node
+      // that collectFileConstants binds a qualified name like A::B to.
       emitClassFacts(emitter, statement);
       continue;
     }
     if (!METHOD_TYPES.has(statement.type)) {
-      // Ruby runs a class body, so `Settings.filters.each do ... end`
-      // written there reads a value the same way a method body would.
+      // Ruby runs a class body, so a statement there such as
+      // `Settings.filters.each do ... end` gets the same facts as in a method.
       emitExpressionFacts(within, statement);
       continue;
     }
@@ -1156,8 +1151,9 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
 }
 
 /**
- * Walk a file and emit the value facts. A method is walked in its own right,
- * so a body's returns and calls belong to the method that wrote them.
+ * Walks a file and emits its value facts. Each method is walked on its
+ * own, so the returns and calls in a body are recorded against the method
+ * they are written in.
  */
 export function emitValueFacts(
   db: Database,
@@ -1181,7 +1177,7 @@ export function emitValueFacts(
       return;
     }
     add(emitter, "binds", nameId(filePath, name.text), key);
-    // A declaration at the top of a file is what another file gets by name.
+    // Another file can refer to a top-level declaration by name.
     add(emitter, "exportsAs", filePath, name.text, key);
   };
 
@@ -1189,7 +1185,8 @@ export function emitValueFacts(
     for (const child of children(node)) {
       if (NESTING_TYPES.has(child.type)) {
         declaresName(child, emitClassFacts(emitter, child));
-        // Its methods are its own; descending would make them the file's.
+        // The class's methods belong to the class, so the walk does not
+        // descend and record them as the file's.
         continue;
       }
       if (METHOD_TYPES.has(child.type)) {

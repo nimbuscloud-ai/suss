@@ -1,16 +1,15 @@
 /**
- * Which class a value belongs to, where a recognizer has the name a
- * call is read off.
+ * The class of the value a method is called on, for a recognizer that
+ * has the receiver's name.
  *
  * The source may state a type beside the name, as a parameter
  * annotation, an annotated assignment, or the class a `with ... as`
- * opens. Where it states none, the resolution rules say what type the
- * callers of a parameter declare, or what call wrote the name. The
- * class may be spelled as a plain name the file imported or as an
- * attribute on an imported module, and both mean the same class. The
- * answer is where the class came from rather than what it is called, so
- * a project alias in front of the library still arrives at the
- * library's own module and name.
+ * opens. When it states none, the resolution rules give the type the
+ * callers of a parameter declare, or the call that assigned the name.
+ * `Client` imported by name and `bigquery.Client` off an imported module
+ * resolve to the same class. The result is the module and name the class
+ * came from, so a project alias for a library class still resolves to
+ * the library's own module and name.
  */
 
 import { annotationTarget } from "./annotations.js";
@@ -39,7 +38,7 @@ export interface ReceiverTypeOptions {
   readonly filePath: string;
 }
 
-/** What a name nothing in the file declares is reported as, which says only that. */
+/** `originOf` puts a name nothing in the file declares under this module, which says nothing about where the class came from. */
 const UNDECLARED_MODULE = "builtins";
 
 /** The class an annotation refers to, by the name it is written under, read through a forward reference's quotes. */
@@ -53,7 +52,7 @@ export function typeNameOf(annotation: PyNode): string | null {
     : stringLiteralValue(target);
 }
 
-/** The first answer `read` gives for a statement in a body, past the nested functions, which bind a name of their own. */
+/** The first non-null result of `read` over a body's statements. Nested functions are skipped because they bind names of their own. */
 export function firstInBody<T>(
   node: PyNode,
   read: (statement: PyNode) => T | null,
@@ -91,9 +90,8 @@ function statedBy(statement: PyNode, name: string): PyNode | null {
 }
 
 /**
- * Where the source states the class of a name, as the node the class is
- * written at. A type is not a value, so the resolution facts say
- * nothing about any of these spellings.
+ * The node where the source states the class of a name. A type is not a
+ * value, so the resolution facts do not cover any of these spellings.
  */
 export function statedTypeNode(name: string, from: PyNode): PyNode | null {
   const fn = enclosingFunction(from);
@@ -120,11 +118,11 @@ export function statedTypeName(name: string, from: PyNode): string | null {
 }
 
 /**
- * Where the class an annotation refers to came from. The rules answer
- * first, since they follow a project alias such as
- * `SessionDep = Annotated[Session, ...]` on to the library behind it.
- * What the annotation imports is the answer for a class written as an
- * attribute on an imported module, which is a name the rules never see.
+ * Where the class an annotation refers to came from. The rules go first,
+ * because they follow a project alias such as
+ * `SessionDep = Annotated[Session, ...]` to the library class behind it.
+ * A class written as an attribute on an imported module is not a name the
+ * rules see, so its import is added as well.
  */
 function statedOrigins(
   stated: PyNode,
@@ -144,11 +142,11 @@ function statedOrigins(
 }
 
 /**
- * Where the class of the value a name refers to came from. What the
- * source states wins, since a parameter has no construction to read.
- * Next is the type every caller of an unannotated parameter declares.
- * Otherwise the rules say what call wrote the name, which reaches
- * across modules and through a project function that builds the
+ * Where the class of the value a name refers to came from. A type the
+ * source states comes first, since a parameter has no construction to
+ * read. Next is the type every caller of an unannotated parameter
+ * declares. Last is the call that assigned the name, which the rules
+ * follow across modules and through a project function that builds the
  * object.
  */
 export function receiverTypeOrigins(

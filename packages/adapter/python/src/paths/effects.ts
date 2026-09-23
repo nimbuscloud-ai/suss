@@ -1,11 +1,11 @@
 /**
  * The calls a unit's own body makes, as invocation effects, wherever a
- * call is written: a statement of its own, an argument, the receiver of
- * a method chain. A call written under an `if` records that test as a
- * precondition, which is what the IR means by a call that does not
- * always fire. The walk descends into lambdas, whose calls are behavior
- * of the enclosing unit, and stops at a nested `def`, whose calls
- * belong to its own summary.
+ * call is written: as a statement, as an argument, or as the receiver of
+ * a method chain. A call written under an `if` gets that test as a
+ * precondition, and the IR reads an effect with preconditions as one
+ * that does not always run. The walk goes into lambdas, whose calls count
+ * as the enclosing unit's, and stops at a nested `def`, whose calls go on
+ * its own summary.
  */
 
 import { enumerateOrDegrade, sharedGatingConditions } from "@suss/extractor";
@@ -20,10 +20,10 @@ import type { Database } from "@suss/datalog";
 import type { ConditionInfo, EffectArg, RawEffect } from "@suss/extractor";
 import type { PyNode } from "../parser.js";
 
-/** A body written in one of these belongs to the function it declares. */
+/** A lambda is left out on purpose, because its calls count as the enclosing unit's. */
 const NESTED_DEFINITION_TYPES = new Set(["function_definition"]);
 
-/** The literal an argument comes down to, or null when it does not come down to one. */
+/** The literal an argument evaluates to, or null when it does not settle on one. */
 function literalArgOf(
   node: PyNode,
   facts: Database | undefined,
@@ -83,7 +83,7 @@ export function enclosingStatement(call: PyNode, body: PyNode): PyNode | null {
   return null;
 }
 
-/** What one argument says, written out as the IR spells an effect argument. */
+/** The argument's literal when it settles on one, otherwise the call or name as written. */
 function argOf(node: PyNode, facts: Database | undefined): EffectArg {
   const literal = literalArgOf(node, facts);
   if (literal !== null) {
@@ -118,15 +118,15 @@ function argsOf(call: PyNode, facts: Database | undefined): EffectArg[] {
   return argumentNodes(call).map((node) => argOf(node, facts));
 }
 
-/** The callee as it is written, which is what a reader matches against. */
+/** The callee as written. Readers of the effect match on this text. */
 export function calleeText(call: PyNode): string {
   return field(call, "function")?.text ?? call.text;
 }
 
 /**
  * The calls a body makes, each with the conditions that have to be true for
- * it to run. A call nobody gated says so by carrying no preconditions, which
- * the IR reads as always firing.
+ * it to run. An ungated call gets no preconditions, and the IR reads that as
+ * a call that always runs.
  */
 export function invocationEffects(
   definitionNode: PyNode,
@@ -150,7 +150,7 @@ export function moduleLoadInvocationEffects(
   return invocationEffectsIn(moduleNode, moduleLoadCalls(moduleNode), facts);
 }
 
-/** A name, a member read or a call is where an evaluation stops and asks the rules; everything else it works out from the parts. */
+/** The evaluator asks the rules about a name, a member read or a call, and works out anything else from its parts. */
 const ASKED_ABOUT_TYPES = new Set(["identifier", "attribute", "call"]);
 
 /** Every node under this expression that an evaluation of it could ask the rules about. */
@@ -167,10 +167,10 @@ function askedNodesUnder(node: PyNode, found: PyNode[] = []): PyNode[] {
 }
 
 /**
- * Every value this body's own effects could ask the rules about, for a
- * caller settling a file's bodies in one question. A nested `def`
- * is left out, the way its calls are: its body belongs to its own
- * summary and is settled when that one is read.
+ * Every value this body's own effects could ask the rules about, so a
+ * caller can settle all of a file's bodies in one question. A nested `def`
+ * is left out, because its body goes on its own summary and is settled
+ * when that summary is read.
  */
 export function bodyValueNodes(definitionNode: PyNode): PyNode[] {
   const body = field(definitionNode, "body");

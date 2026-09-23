@@ -1,17 +1,14 @@
 /**
- * defaulted.ts: whether a read has something behind it.
+ * Decides whether a read is defaulted, meaning the program still works
+ * when the value is missing. Either an `or` supplies a fallback, or the
+ * program tests the value for presence and uses it only where the test
+ * passed, and the path a missing value takes does not end in a raise.
  *
- * A read is defaulted when the program still works where the value is
- * missing. Either an `or` supplies a fallback value, or the program
- * tests the value for presence and only uses it where the test passed,
- * and the path a missing value takes does not end in a raise.
  * The test can be on the read itself or on a local the read initializes
  * inside a function: a truthiness check, a comparison with `None`, or an
- * `in` membership test. The TypeScript and Ruby adapters define the
- * same rule for their own syntax.
- *
- * A read that raises when the value is missing, `os.environ["X"]`, is
- * defaulted only by a test that runs before it.
+ * `in` membership test. The TypeScript and Ruby adapters apply the same
+ * rule to their own syntax. A read that raises when the value is missing,
+ * `os.environ["X"]`, is defaulted only by a test that runs before it.
  */
 
 import { enclosingFunction, field, fields } from "./ast.js";
@@ -30,8 +27,8 @@ export interface EnvVariableRead {
 
 /**
  * What a presence test can be about: the variable an environment read
- * looks up, however a test spells its own read or asks `os.environ`; a
- * local the read initializes; or, for any other read, its spelling.
+ * looks up, however the test writes its own read of it; a local the read
+ * initializes; or, for any other read, the read's source text.
  */
 type ReadSubject =
   | { kind: "variable"; read: EnvVariableRead }
@@ -40,7 +37,7 @@ type ReadSubject =
 
 /**
  * Whether the program copes with this read coming back empty. Pass
- * `variable` for a read of the environment, so a test that spells the
+ * `variable` for a read of the environment, so a test that writes the
  * read another way still counts.
  */
 export function isDefaultedAt(
@@ -604,7 +601,7 @@ function usesOf(local: Local): PyNode[] {
     );
 }
 
-/** `obj.x` and `f(x=1)` spell `x` without reading a local called `x`. */
+/** `obj.x` and `f(x=1)` contain the name `x` without reading a local called `x`. */
 function isMemberName(identifier: PyNode): boolean {
   return memberNameIn(identifier.parent)?.id === identifier.id;
 }

@@ -1,6 +1,5 @@
-// Rails' own controller-action vocabulary, the same values a project's
-// pack config would supply. None of these strings appear anywhere in
-// the adapter's own source.
+// The controller-action values the Rails pack supplies. The adapter's own
+// source contains none of these strings.
 
 import type { ControllerActions, RubyPack } from "../pack.js";
 
@@ -9,8 +8,8 @@ export function controllerActionsPattern(
 ): ControllerActions {
   return {
     type: "controllerActions",
-    // Every Rails app scaffolds this class; the library's own base
-    // comes one hop further up, past what a project reader can open.
+    // Rails generates this class in every app. The library's own base class
+    // is one step further up, in a gem the adapter does not read.
     baseClassNames: ["ApplicationController"],
     root: "/app/controllers",
     pathConvention: "railsUnderscore",

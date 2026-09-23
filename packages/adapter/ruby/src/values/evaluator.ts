@@ -1,14 +1,14 @@
 /**
  * One evaluator per project, over the parsed files and the resolution
- * facts. A reader hands in a node and gets back the abstract value it
- * comes down to; a route path or a prefix is then spelled from that
- * value rather than read off one syntax shape.
+ * facts. A reader passes in a node and gets back the abstract value it
+ * comes down to. A route path or a prefix is then built from that value,
+ * so every way of writing it gives the same result.
  *
  * The facts key a node by file and span, so the evaluator keeps every
- * file's root to find the node a fact refers to. Without facts,
- * which is how a unit test or a routes file on its own runs, the
- * evaluator still follows names within the file through the engine's
- * own scope walk.
+ * file's root to find the node a fact refers to. Without facts, as in a
+ * unit test or when a routes file is read on its own, the evaluator
+ * still follows names within the file through the engine's own scope
+ * walk.
  */
 
 import { nodeOfKey, writtenValuesByKey } from "@suss/resolution";
@@ -48,7 +48,7 @@ const withoutFacts = new WeakMap<object, Evaluator<RbNode>>();
 /** The file a parsed tree came from, for a reader that has only a node. */
 const filesByTree = new WeakMap<object, string>();
 
-/** Register the parsed project, so reads through `db` can follow the facts back to nodes. */
+/** Registers the parsed project, so reads through `db` can follow the facts back to nodes. */
 export function bindEvaluator(db: Database, nodes: ProjectNodes): void {
   for (const entry of nodes.files) {
     filesByTree.set(entry.root.tree, entry.file);
@@ -59,12 +59,12 @@ export function bindEvaluator(db: Database, nodes: ProjectNodes): void {
 }
 
 /**
- * The one expression `node` was written as, as the node itself, for a
- * reader that needs the arguments of the call behind a name rather than
- * the value the name comes down to. It takes the step the evaluator
- * takes to follow a name, so a database with no project bound to it
- * gives back null. With a site, the expression it was written as when
- * the receiver behind it is the instance that site made.
+ * The node of the one expression `node` was written as, for a reader
+ * that needs the arguments of the call behind a name instead of the
+ * value the name comes down to. It follows a name the same way the
+ * evaluator does, so it returns null for a database with no project
+ * bound. With a site, it returns what `node` was written as when its
+ * receiver is the instance that site made.
  */
 export function writtenNodeOf(
   node: RbNode,
@@ -76,12 +76,12 @@ export function writtenNodeOf(
 }
 
 /**
- * Settle what each of these nodes was written as, in one question.
+ * Settles what each of these nodes was written as, in one question.
  *
  * The rules run over the whole project's facts either way, so one
- * question about a thousand keys costs about what one question about a
- * single key costs. A reader with many nodes in hand asks here first,
- * and every later read of one of them finds its answer already there.
+ * question about a thousand keys costs about the same as one about a
+ * single key. A reader with many nodes asks here first, and each later
+ * read of one of them finds its answer already derived.
  */
 export function askWrittenValues(
   nodes: readonly RbNode[],
@@ -102,19 +102,18 @@ export function askWrittenValues(
   }
   const asked = [...keys];
   resolveValues(db, asked);
-  // A key the rules settle on a call has to be asked about again, and
-  // doing that for the whole batch keeps the second round to one
-  // question as well.
+  // A key the rules settle on a call has to be asked about again. Asking
+  // for the whole batch keeps that second round to one question too.
   writtenValuesByKey(db, asked, (more) => resolveValues(db, more));
 }
 
-/** Strings to read for the parameters of the block or method `node` is written in, the way a caller would supply them. */
+/** Values to use for the parameters of the block or method around `node`, as a caller would supply them. */
 export type ParameterBindings = ReadonlyMap<string, string>;
 
 /**
  * The abstract value `node` comes down to, through the facts when `db`
- * was bound. With a site, what it comes down to when the receiver
- * behind it is the instance that site made; that run is not memoized.
+ * was bound. With a site, the value when its receiver is the instance
+ * that site made. That evaluation is not memoized.
  */
 export function evaluatedValue(
   node: RbNode,

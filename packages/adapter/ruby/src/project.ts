@@ -1,12 +1,13 @@
-// project.ts: the adapter's whole contract, which is to discover units,
-// emit summaries in the shared IR, and emit facts.
-//
-// It parses every file it is given, runs discovery over each one, hands
-// each discovered unit to `@suss/extractor`'s `assembleSummary`, and
-// emits this run's facts into one shared `Database`. That assembly
-// layer is the same one the Python and TypeScript adapters use, so gap
-// detection and confidence scoring are one implementation all three
-// languages share.
+/**
+ * Runs the Ruby adapter over a project: discovers units, emits summaries
+ * in the shared IR, and emits facts.
+ *
+ * It parses every file it is given, emits the run's facts into one
+ * shared `Database`, runs discovery over each file, walks what each unit
+ * reaches, and hands every unit to `assembleSummary` from
+ * `@suss/extractor`. The Python and TypeScript adapters use the same
+ * assembly step, so gap detection is shared across all three languages.
+ */
 
 import fs from "node:fs";
 import path from "node:path";
@@ -97,7 +98,7 @@ export interface ExtractRubyOptions {
   onCacheDiagnostic?: (diagnostic: CacheDiagnostic) => void;
   /** Absolute. `<projectRoot>/.suss/cache` by default; `null` turns it off. */
   cacheDir?: string | null;
-  /** What to do with gaps, which composing a controller's filters can add one of. */
+  /** How to handle gaps. Composing a controller's filters into its actions can add one. */
   gapHandling?: ExtractorOptions["gapHandling"];
 }
 
@@ -107,10 +108,9 @@ export interface ExtractRubyResult {
 }
 
 /**
- * Every method the run's packs said their own libraries define, pooled
- * across the packs. One pool rather than one per pattern, because the
- * reach walk reads methods that no pattern discovered and still has to
- * leave these out of what it reports.
+ * Every method the run's packs declare their libraries define, pooled
+ * across packs. There is one pool for the run because the reach walk also
+ * reads methods no pattern discovered, and has to leave these out there too.
  */
 function inheritedMethodsIn(packs: readonly RubyPack[]): ReadonlySet<string> {
   const found = new Set<string>();
@@ -128,9 +128,9 @@ function inheritedMethodsIn(packs: readonly RubyPack[]): ReadonlySet<string> {
 }
 
 /**
- * What every storage pattern in the run says an association declaration
- * looks like. The constants pass reads a model's body with these, since
- * that is where the class a target name refers to is settled.
+ * The association calls every storage pattern in the run declares. The
+ * constants pass reads model bodies with these, because the target class
+ * of an association is resolved there.
  */
 export function associationCallsIn(
   packs: readonly RubyPack[],
@@ -143,10 +143,9 @@ export function associationCallsIn(
 }
 
 /**
- * What the run's packs say about their own libraries, in the shape
- * `addPackWords` takes. Ruby writes no return type, so a storage
- * pattern's `givesBack` methods are the only thing that says
- * `Account.find(id)` is one Account.
+ * The run's pack declarations in the form `addPackWords` takes. Ruby code
+ * declares no return types, so a storage pattern's `givesBack` methods are
+ * the only source for knowing that `Account.find(id)` returns an Account.
  */
 export function packWordsOf(packs: readonly RubyPack[]): PackWords {
   return {
@@ -169,11 +168,10 @@ export interface FileFactsOptions {
 
 /**
  * The facts for a single parsed file, with the evaluator bound to them,
- * for a caller that has one file and no project. A pack's own tests need
- * these: what built a receiver is an answer the rules give, and without
- * facts they have nothing to give it from. A project run emits the same
- * facts across every file at once, so a name written in another file
- * resolves there and never here.
+ * for a caller with one file and no project, such as a pack's tests. The
+ * rules need facts to work out what built a receiver. A project run emits
+ * the same facts for every file at once, so a name defined in another
+ * file resolves there but not here.
  */
 export function factsForFile(options: FileFactsOptions): Database {
   const db = new Database();
@@ -198,9 +196,9 @@ export function factsForFile(options: FileFactsOptions): Database {
 }
 
 /**
- * Something to put in the summary list once the walk has run: a unit
- * still to assemble, with the method the walk finishes its effect list
- * from, or a summary that was ready as it was read.
+ * An entry for the summary list, added once the walk has run: either a
+ * unit still to assemble, with the seed key the walk finishes its effect
+ * list from, or a summary that was complete when it was built.
  */
 type Discovered =
   | {
@@ -211,7 +209,7 @@ type Discovered =
     }
   | { readonly summary: BehavioralSummary };
 
-/** What a file does as it loads. The calls go on the branch the way a reached method's do, so the walk can place them. */
+/** What a file does as it loads. The calls go on the branch, as a reached method's do, so the walk can place them. */
 function moduleInitUnit(options: {
   name: string;
   file: string;
@@ -232,7 +230,14 @@ function moduleInitUnit(options: {
   return raw;
 }
 
-/** Whether this unit is one an earlier file's discovery already reported, by where its body is written, what it is reported as, and which boundary it reaches. An action two controllers inherit, and a client call that reaches a different route under each construction of its class, are each one body and several units. */
+/**
+ * Whether an earlier file's discovery already reported this unit. Units
+ * are compared by where the body is written, the name it is reported
+ * under, and the boundary it reaches. The boundary is part of the key
+ * because one body can be several units: an action two controllers
+ * inherit, or a client call that reaches a different route under each
+ * construction of its class.
+ */
 function alreadyDiscovered(seen: Set<string>, raw: RawCodeStructure): boolean {
   const reported = raw.identity.exportPath?.join(".") ?? raw.identity.name;
   const boundary =
@@ -287,20 +292,19 @@ export async function extractRubyProject(
   const db = new Database();
   const summaries: BehavioralSummary[] = [];
   const tallies = createPackTallies(options.packs);
-  // Which file defines a constant is settled across the whole run, so the
-  // reading sites wait until every file has been walked.
+  // Which file defines a constant is only known once every file has been
+  // walked, so references are bound after the walk.
   const constants: FileConstants[] = [];
-  // One cache for the whole run, so a class that shows up both as an input file
-  // and through a wiring keyword only gets parsed once.
+  // One cache for the run, so a class that is both an input file and the
+  // target of a wiring keyword is parsed once.
   const cache = createFileCache(
     (source) => parseRuby(source).then((tree) => tree.rootNode),
     (absPath) =>
       fs.existsSync(absPath) ? fs.readFileSync(absPath, "utf8") : null,
   );
 
-  // Two passes, because which file declares a constant is settled
-  // across the whole run, and the storage recognizer asks about that
-  // during discovery.
+  // Facts are emitted for every file before discovery starts, because the
+  // storage recognizer asks during discovery which file defines a constant.
   const parsed: { file: string; root: RbNode }[] = [];
   const definitions = new Map<string, RbNode>();
   const associationCalls = associationCallsIn(options.packs);
@@ -361,8 +365,8 @@ export async function extractRubyProject(
   const reachContext = await timer.timeAsync("discover", () =>
     buildReachContext(parsed, db, bodyBlocks, dynamicNames, loaderPatterns),
   );
-  // Facts keep the full filesystem path, because they are joined against
-  // internally. Only the summary's `location.file` gets shortened.
+  // Facts keep the absolute path because they are joined on it. Only a
+  // summary's `location.file` is shortened.
   const displayPathOf = (file: string): string =>
     options.workspaceRoot !== undefined
       ? path.relative(options.workspaceRoot, file)
@@ -372,17 +376,16 @@ export async function extractRubyProject(
   const seedKeys = new Set<string>();
   const summariesBySeed = new Map<string, BehavioralSummary[]>();
   const discovered = new Set<string>();
-  // A unit is assembled after the walk, in the order it was discovered,
-  // because a Ruby body's effect list is not finished until the walk has
-  // said which of its no-argument calls were property reads.
+  // Units are assembled after the walk, in discovery order, because a body's
+  // effect list is not final until the walk decides which of its
+  // no-argument calls are property reads.
   const found: Discovered[] = [];
 
   for (const { file, root } of parsed) {
     const displayPath = displayPathOf(file);
 
-    // A unit whose own body is a method it found (a graphql-ruby field's
-    // resolver, say) hands that method back here, so the reach walk has
-    // somewhere to start.
+    // A unit whose body is a method, such as a graphql-ruby field's
+    // resolver, reports that method here as a starting point for the walk.
     const seedByRaw = new Map<RawCodeStructure, ReachSeed>();
     const rawUnits = await timer.timeAsync("discover", () =>
       discoverUnits(root, {
@@ -400,8 +403,8 @@ export async function extractRubyProject(
       }),
     );
     for (const raw of rawUnits) {
-      // A filter written on a base class is read again for every
-      // controller that inherits it, and there is one method to report.
+      // A filter on a base class is discovered again for every controller
+      // that inherits it, but it is one method and gets one summary.
       if (alreadyDiscovered(discovered, raw)) {
         continue;
       }
@@ -426,8 +429,8 @@ export async function extractRubyProject(
       }
     }
 
-    // Module scope is a caller like any other: the file's own statements
-    // run when it loads, and what they call is reachable from them.
+    // A file's top-level statements run when it loads, so they are a seed
+    // for the walk like any method.
     const moduleKey = nodeId(file, root);
     seedKeys.add(moduleKey);
     seeds.push({
@@ -459,9 +462,8 @@ export async function extractRubyProject(
     });
   }
 
-  // One gap unit per controllerActions pattern that has something left
-  // to say about its own routing, read once here rather than once per
-  // controller discovery happened to visit first.
+  // One gap unit per controllerActions pattern with routing it could not
+  // read, built once here instead of once per controller.
   for (const pack of options.packs) {
     for (const pattern of pack.discovery) {
       if (pattern.type !== "controllerActions") {
@@ -509,9 +511,8 @@ export async function extractRubyProject(
     const summary = timer.time("summarize", () =>
       assembleSummary(raw, { gapHandling: "permissive" }),
     );
-    // `assembleSummary` scores confidence on the assumption that a unit's
-    // branches came from tracing its body. Nothing here traces a body, so
-    // that score would be meaningless and we set confidence directly.
+    // `assembleSummary` scores confidence as if every branch came from
+    // tracing the body, which is not true of every unit here.
     summary.confidence = { source: "inferred_static", level: "low" };
     summaries.push(summary);
     if (seedKey !== null) {
@@ -542,9 +543,8 @@ export async function extractRubyProject(
   const dependencies = fileDependenciesOf(db, displayPathOf);
   stampModuleImports(summaries, (file) => dependencies.get(file) ?? []);
 
-  // A summary's id is measured from the project root, because the CLI
-  // shortens `location.file` to that root after this returns and an id
-  // written from the longer path would not match it.
+  // Ids use paths relative to the project root, because the CLI later
+  // shortens `location.file` to that root and the two have to match.
   const idRoot = options.projectRoot ?? options.workspaceRoot;
   for (const summary of summaries) {
     const absoluteFile =
@@ -570,9 +570,9 @@ export async function extractRubyProject(
   );
 
   await timer.timeAsync("cache.write", async () => {
-    // An empty result is never cached. Serving one would skip the
-    // stages that fill the funnel, so a misconfigured project would
-    // get "0 summaries" with no explanation ever after.
+    // An empty result is not cached. A cache hit skips the stages that
+    // explain an empty run, so a misconfigured project would keep getting
+    // "0 summaries" with no reason given.
     if (cacheDir === null || composed.length === 0) {
       return;
     }
@@ -597,10 +597,10 @@ export async function extractRubyProject(
 }
 
 /**
- * The files each file depends on, spelled the way a summary's
- * location.file is. Ruby has no import statement to read, so this comes
- * from `require_relative` lines that resolve to a file in the run and
- * from constants this file reads that another file in the run defines.
+ * The files each file depends on, as display paths. Ruby has no import
+ * statement, so this comes from `require_relative` lines that resolve to a
+ * file in the run, and from constants a file reads that another file in
+ * the run defines.
  */
 function fileDependenciesOf(
   db: Database,
@@ -623,7 +623,7 @@ function fileDependenciesOf(
 
 const SKIPPED_DIRECTORIES = new Set(["vendor", "node_modules", "tmp", ".git"]);
 
-/** Every `.rb` file under `root`, depth-first, skipping the usual non-source directories. */
+/** Every `.rb` file under `root`, sorted, skipping vendored, temporary and VCS directories. */
 export function findRubyFiles(root: string): string[] {
   const found: string[] = [];
   const walk = (dir: string): void => {

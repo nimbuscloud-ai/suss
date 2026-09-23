@@ -1,5 +1,5 @@
-// graphql-ruby's vocabulary, the same values the shipped pack supplies. None of
-// these strings appear anywhere in the adapter's own source.
+// The values the shipped graphql-ruby pack supplies. The adapter's own source
+// contains none of these strings, so a test that passes proves the pack drives it.
 
 import type { GraphqlObjectFields, RubyPack } from "../pack.js";
 

@@ -1,6 +1,9 @@
-// lowering.ts: Ruby tree-sitter statements to StructuredStatement<RbNode>.
-// The shared path engine is generic over the language's condition handle,
-// so the README's table of what each construct lowers to is the contract.
+/**
+ * Lowers Ruby tree-sitter statements into the `StructuredStatement<RbNode>`
+ * form the shared path engine walks. The engine is generic over each
+ * language's condition handle, so what each Ruby construct lowers to is
+ * the whole contract between this module and the engine.
+ */
 
 import { field, NodeMap, NodeSet, OWN_BODY_TYPES } from "../ast.js";
 
@@ -13,7 +16,7 @@ import type {
 } from "@suss/extractor";
 import type { RbNode } from "../parser.js";
 
-/** `raise` is an ordinary method call in Ruby rather than a keyword. */
+/** `raise` is an ordinary method call in Ruby, and not a keyword. */
 const RAISE_NAMES = new Set(["raise", "fail"]);
 
 /**
@@ -63,7 +66,7 @@ function exitOf(
   return KEYWORD_EXITS[node.type] ?? null;
 }
 
-/** A raise anywhere beats a return anywhere, which is what the engine expects. */
+/** A raise anywhere in the node wins over a return anywhere, as the engine expects. */
 function exitKindOf(node: RbNode): ExitKind {
   let sawReturn = false;
   const raises = (current: RbNode): boolean => {
@@ -97,8 +100,8 @@ function handleOf(node: RbNode | null): ConditionHandle<RbNode> {
 }
 
 /**
- * A reader of a condition wants to see `respond_to`, not the whole block
- * underneath it, so the header stops where the block starts.
+ * The condition text for a call with a block stops where the block
+ * starts, so a reader sees `respond_to` and not the whole block under it.
  */
 function callHeaderOf(call: RbNode, block: RbNode): ConditionHandle<RbNode> {
   const header = call.text.slice(0, block.startIndex - call.startIndex).trim();
@@ -154,7 +157,7 @@ class Lowerer {
     return this.attachTerminals(statement, found);
   }
 
-  /** The response calls written inside one statement, which the caller gave as the calls that end a path. */
+  /** The response calls inside one statement. The caller passed these as the calls that end a path. */
   private responsesIn(node: RbNode, found: RbNode[] = []): RbNode[] {
     if (this.responseCalls.size === 0) {
       return found;
@@ -214,7 +217,7 @@ class Lowerer {
     };
   }
 
-  /** `render :gone if expired?` gates one statement on one test, so it lowers to an if with one arm, on whichever side the test puts it. */
+  /** `render :gone if expired?` lowers to an `if` with one arm, on whichever side of the test the modifier puts the statement. */
   private lowerIfModifier(node: RbNode): StructuredStatement<RbNode> {
     const body = field(node, "body");
     const gated = body === null ? [] : [this.lower(body)];
@@ -313,9 +316,9 @@ class Lowerer {
       );
     }
 
-    // `items.each do |i| ... end` runs its block per iteration and a return
-    // inside it returns from the method, which is what a loop already means
-    // to the engine.
+    // `items.each do |i| ... end` runs its block once per item, and a
+    // return inside it returns from the method. The engine treats a loop
+    // the same way.
     const attachedBlock = node.namedChildren.find(
       (child): child is RbNode =>
         child !== null && (child.type === "do_block" || child.type === "block"),
@@ -355,13 +358,13 @@ class Lowerer {
 }
 
 /**
- * Lower one method body, and say where each terminal ended up. The terminals
- * are whatever the caller wants paths to, which for a resolver is its return
- * statements and its raises.
+ * Lowers one method body and records where each terminal ended up. The
+ * terminals are whatever the caller wants paths to. For a resolver those
+ * are its return statements and its raises.
  *
- * `responseCalls` is for a caller reading what an action responds with: each
- * one is a terminal, and the statement it is written in leaves the method
- * rather than falling through to whatever comes next.
+ * `responseCalls` is for a caller reading what an action responds with.
+ * Each one is a terminal, and the statement it is in leaves the method
+ * instead of falling through to the next statement.
  */
 export function lowerRubyBody(
   body: RbNode | null,

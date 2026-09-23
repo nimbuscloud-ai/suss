@@ -1,13 +1,13 @@
 /**
- * What a call anywhere in the run is placed against: every class the
- * run defines with its method-lookup order worked out, every method a
- * file writes outside a class, and the value facts the rules read a
+ * The index every call in the run is resolved against: each class the
+ * run defines with its method lookup order worked out, each method a
+ * file defines outside a class, and the value facts the rules follow a
  * receiver through.
  *
- * It is built once, before anything reads a body, because the effect
- * lowering asks the same question the reach walk does: a Ruby call
- * written with no arguments is a method call when the rules settle its
- * receiver, and a property read otherwise.
+ * It is built once, before any body is read, because the effect
+ * lowering needs the same answer the reach walk does. A Ruby call with
+ * no arguments is a method call when the rules settle its receiver, and
+ * a property read otherwise.
  */
 
 import { ancestryOf } from "../ancestry.js";
@@ -31,7 +31,7 @@ import type { ReachContext, ReachedFunction } from "./resolveCallee.js";
 
 const METHOD_TYPES = new Set(["method", "singleton_method"]);
 
-/** Every class the run defines, and every method written outside one, so a call anywhere can be placed without re-reading a file per call. */
+/** Reads every file once up front, so resolving a call never re-reads a file. */
 export async function buildReachContext(
   files: readonly { file: string; root: RbNode }[],
   facts: Database,
@@ -41,8 +41,8 @@ export async function buildReachContext(
 ): Promise<ReachContext> {
   const blocksByQualifiedName = new Map<string, ReachedBody[]>();
   const classes: { file: string; info: ReachedBody["info"] }[] = [];
-  // Both keyed the way the value facts key the node, so a class or a
-  // method the rules settle on can be named.
+  // Both use the value facts' node keys, so a class or method the rules
+  // settle on maps back to its qualified name.
   const classNames = new Map<string, string>();
   const classOfMethod = new Map<string, string>();
   for (const { file, root } of files) {
@@ -98,9 +98,8 @@ export async function buildReachContext(
     root: "",
     pathConvention: "railsUnderscore",
     ancestryRootClassNames: [],
-    // Every class the run defines is already in `blocksByQualifiedName`
-    // above, so a name that misses there is outside the run and this
-    // never has a file on disk to read.
+    // Every class the run defines is already in `blocksByQualifiedName`.
+    // A name missing from it is outside the run, so there is no file to read.
     parsedFile: async () => null,
     localDefinition: (name) => blocksByQualifiedName.get(name) ?? null,
   };
@@ -135,7 +134,7 @@ function namedChildren(node: RbNode | null): RbNode[] {
   return node.namedChildren.filter((child): child is RbNode => child !== null);
 }
 
-/** A `def` written outside any class, module, or other method, which Ruby calls a private method on every object. */
+/** Every `def` written outside any class, module or other method. Ruby makes each one a private method of every object. */
 function topLevelMethodNodes(root: RbNode, found: RbNode[] = []): RbNode[] {
   for (const child of bodyStatements(root)) {
     if (child.type === "method") {

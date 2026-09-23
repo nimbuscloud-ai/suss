@@ -1,15 +1,14 @@
 /**
- * Finds decorated routes and turns each one into a `RawCodeStructure`.
+ * Finds decorated routes and turns each one into a `RawCodeStructure`, and
+ * collects the client units for outgoing requests alongside them.
  *
- * Only decorated module-level functions and classes that are declared
- * unconditionally get discovered, the same boundary the binder in scope.ts
- * draws. Nothing here reads into a unit's body, so a route's summary comes out
- * with no branches at all, or with exactly one branch describing what an
- * annotation or a decorator keyword already states, such as a FastAPI
- * `response_model` or `status_code`, or a return annotation.
- *
- * That is enough to pair a route against a caller by method and path, and it
- * claims nothing about behavior nobody read.
+ * Every decorated definition in the file is classified, wherever it is
+ * written. One a pack's pattern accepts becomes a unit per HTTP method and
+ * per mount. The path is the decorator's first argument with the router
+ * prefixes in front of it. The status and body shape come from decorator
+ * keywords, the return annotation, and each return or raise in the body.
+ * A route that cannot be read keeps its name and gets no path, so it pairs
+ * with nothing.
  */
 
 import { dispatchByType, restBinding } from "@suss/behavioral-ir";
@@ -109,13 +108,13 @@ export interface DiscoveryOptions {
   packs: PythonPack[];
   /** Repo-relative or absolute path recorded on each summary's `location.file`. */
   filePath: string;
-  /** Without it, every route object looks like the app itself and paths stand as written. */
+  /** Without it, every route object is treated as the app itself and paths are used as written. */
   routerIndex?: RouterIndex;
   /** Under "strict" a route whose unit cannot be built stops the run instead of abstaining. */
   gapHandling?: ExtractorOptions["gapHandling"];
-  /** What a pack needs to say a call talks to the database. Absent when no pack does. */
+  /** What a pack needs to decide that a call talks to the database. Absent when no pack declares storage. */
   storage?: StorageLookup | undefined;
-  /** The file's absolute path, which module resolution wants; `filePath` may be shortened for display. */
+  /** The file's absolute path, which module resolution needs. `filePath` may be shortened for display. */
   absoluteFile?: string | undefined;
   /** The project's facts, so the rules can say what an object no scope has a binding for was built by. */
   facts?: Database | undefined;
@@ -133,8 +132,8 @@ interface DecoratedStatement {
 
 /**
  * Every decorated definition in the file, wherever it is written. A route
- * can go anywhere the language allows a statement, and listing the places
- * loses to the language, so the walk goes everywhere.
+ * can be declared anywhere Python allows a statement, so the walk visits
+ * every node instead of a list of places a route might be.
  */
 function decoratedNodes(
   root: PyNode,
@@ -154,7 +153,7 @@ function decoratedNodes(
 
 /**
  * What each decorator in the file was written as. The rules are asked
- * about every object a decorator hangs on in one go, because they run
+ * about every object a decorator is called on in one go, because they run
  * over the whole project's facts and asking per decorator would run them
  * once per route.
  */
@@ -397,8 +396,8 @@ function classRouteUnits(
   module: ModuleBinding,
   options: DiscoveryOptions,
 ): RawCodeStructure[] {
-  // The path is all a class decorator says about the route, so if we cannot
-  // read one, the class is not discovered at all.
+  // The path is all a class decorator says about the route, so a class
+  // whose path cannot be read is not discovered at all.
   const pathArgument = readPathArgument(classification, options);
   if (pathArgument.kind !== "written") {
     return [];
@@ -484,7 +483,7 @@ function classRouteUnits(
   return units;
 }
 
-/** The path a route is served at, spelled the way the IR spells a path template. */
+/** The path a route is served at, written in the IR's path template form. */
 function readRoutePath(
   pattern: PythonDiscoveryPattern,
   pathArgument: Reading<string>,
@@ -580,9 +579,9 @@ function routerResolutionOf(
     return byName;
   }
 
-  // A name the index does not know is looked up by its call only when the
-  // call built a router, since a mount object is what the index knows by
-  // name. A decorator with no name to look up has only its call.
+  // The index keeps mount objects by name, so a name it does not know is
+  // looked up by its call only when that call built a router. A decorator
+  // with no name to look up has only its call.
   if (
     byName !== null &&
     built.constructorName !== composition.routerConstructorName
@@ -623,8 +622,8 @@ function composeRoutePath(
 }
 
 /**
- * What a library serves for a path carrying repeated slashes, which
- * composing a prefix written with a trailing slash is how you get.
+ * What a library serves for a path with repeated slashes. Composing a
+ * prefix written with a trailing slash produces one.
  */
 const REPEATED_SLASH_READERS: Record<
   PathRepeatedSlashes,
@@ -638,7 +637,7 @@ function servedSpelling(pattern: PythonDiscoveryPattern, path: string): string {
   return REPEATED_SLASH_READERS[pattern.pathRepeatedSlashes ?? "kept"](path);
 }
 
-/** Absent when the decorator hangs on something that composes no prefix, the app itself included. */
+/** Absent when the decorator is called on something that composes no prefix, the app itself included. */
 function readRouterPrefix(
   pattern: PythonDiscoveryPattern,
   classification: DecoratorClassification,
@@ -1134,11 +1133,11 @@ interface BuildRouteUnitOptions {
   module: ModuleBinding;
   filePath: string;
   skipReceiverParam: boolean;
-  /** What the decorator declares, before the return annotation gets a say. */
+  /** What the decorator declares. It takes precedence over the return annotation. */
   responseShape: Reading<TypeShape>;
   /** Handed to the extractor uncollapsed, so it applies the library default itself. */
   statusCode: DefaultedReading<number>;
-  /** What a pack needs to say a call talks to the database. Absent when no pack does. */
+  /** What a pack needs to decide that a call talks to the database. Absent when no pack declares storage. */
   storage?: StorageLookup | undefined;
   importedDefinition?: ImportedDefinitionLookup | undefined;
   definitionsCtx?: ReturnType<typeof createAnnotationContext>;
@@ -1162,7 +1161,7 @@ function readResponseShape(
   return firstWrittenReading([declared, readAnnotation()]);
 }
 
-/** When a route cannot be turned into a unit, we lose that route rather than the whole run. */
+/** A route that cannot be turned into a unit costs that route alone, and the run goes on. */
 function routeUnitOrAbstention(
   unitOptions: BuildRouteUnitOptions,
   options: DiscoveryOptions,
@@ -1260,9 +1259,6 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     readReturnAnnotation(definitionNode, enclosingScope, ctx),
   );
 
-  // A route that says nothing about the body shape and nothing about the
-  // status declares no response at all, so the library's default status has
-  // nothing to apply to.
   const effects = invocationEffects(definitionNode, options.facts);
   const extra = recognizedBodyEffects(
     definitionNode,
@@ -1285,8 +1281,9 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
   const branches: RawBranch[] = (perTerminal ?? []).map((branch) =>
     extra.length === 0 ? branch : { ...branch, extraEffects: extra },
   );
-  // Whatever a body does, it did so whether or not the route declares a
-  // response, and an effect with no transition to sit on is thrown away.
+  // A route declaring neither a body shape nor a status still gets a default
+  // branch when its body has effects, since an effect with no transition to
+  // go on would be dropped.
   if (
     perTerminal === null &&
     (responseShape.reading.kind !== "absent" ||
@@ -1360,7 +1357,7 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
   };
 }
 
-/** One sentence covers every parameter, because an unread path is the same reason for all of them. An injected parameter has no role either, and is not what this is about. */
+/** One reading covers every parameter, because an unread path is the same reason for all of them. An injected parameter also has no role, but for a different reason, and it does not trigger this. */
 function unreadRoleReadings(
   parameters: RawParameter[],
   range: SourceRange,

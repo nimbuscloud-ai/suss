@@ -1,6 +1,8 @@
-// resolve.ts: run the shared resolution rules over this project's facts.
-// The rules live in @suss/resolution and are the same ones the TypeScript
-// adapter evaluates, so a Python value is followed the way any value is.
+/**
+ * Runs the shared resolution rules over this project's facts. The rules in
+ * `@suss/resolution` are the same ones the TypeScript adapter runs, so a
+ * Python value is followed the same way a TypeScript one is.
+ */
 
 import {
   allocationSitesOf,
@@ -15,16 +17,16 @@ import {
 
 import type { Database } from "@suss/datalog";
 
-/** Ask what these calls come down to, then derive. */
+/** Asks the rules to resolve these keys, and derives what follows. */
 export function resolveCalls(db: Database, callKeys: readonly string[]): void {
   askResolution(db, callKeys);
 }
 
 /**
- * Ask which parameters end up naming a variable read off each of these
- * environment objects. A project writes a handful of those and has
- * thousands of parameters, so the objects are what the question is
- * keyed on, and one of them covers every caller.
+ * Asks which parameters end up as the variable name read off each of these
+ * environment objects. A project has a handful of environment objects and
+ * thousands of parameters, so the question is keyed on the objects, and
+ * one answer covers every caller.
  */
 export function resolveEnvObjects(
   db: Database,
@@ -34,10 +36,10 @@ export function resolveEnvObjects(
 }
 
 /**
- * Every function calling a value runs: what the value came down to, and
- * what a factory handed back when the value is a name for a call.
- * Asked once per call a body makes, so it joins on the index rather
- * than reading every answer the run has given.
+ * Every function that calling this value runs: what the value resolves to,
+ * and what a factory returned when the value was assigned from a call.
+ * This runs once per call in a body, so it looks rows up by key instead of
+ * scanning the whole relation.
  */
 export function resolvedFunctions(db: Database, key: string): string[] {
   return [
@@ -47,13 +49,12 @@ export function resolvedFunctions(db: Database, key: string): string[] {
 }
 
 /**
- * The single expression a value was written as when the receiver behind
- * it is the instance one site made. A field two constructions fill
- * differently settles here and not context free.
+ * The single expression a value was written as, when its receiver is the
+ * instance built at `site`. A field that two constructions fill differently
+ * has one value under each site and none without one.
  *
- * A question abandoned on its budget gives back nothing. The pair
- * stays marked as asked, so a second caller gets the same nothing
- * without paying for it again.
+ * A question abandoned on its budget returns null. The pair stays marked
+ * as asked, so a second caller gets null too without paying for it again.
  */
 export function writtenValueUnder(
   db: Database,
@@ -78,17 +79,17 @@ export function writtenValueOf(db: Database, key: string): string | null {
   return sharedWrittenValueOf(db, key, (keys) => resolveCalls(db, keys));
 }
 
-/** Every expression a value was written as, for a caller with something to say about two. */
+/** Every expression a value was written as, for a caller that handles more than one. */
 export function writtenValuesOf(db: Database, key: string): string[] {
   resolveCalls(db, [key]);
   return sharedWrittenValuesOf(db, key, (keys) => resolveCalls(db, keys));
 }
 
 /**
- * Ask about every one of these keys, and about whatever call each of
- * them was written as, so a later read of any one of them finds its
- * answer already there. The rules run over the whole project's facts,
- * so the two rounds here take the place of two per key.
+ * Asks about every one of these keys, and about the call each was written
+ * as, so a later read of any of them is already settled. Each round of the
+ * rules runs over the whole project's facts, so two rounds for the batch
+ * replace two rounds per key.
  */
 export function settleWrittenValues(
   db: Database,
@@ -152,7 +153,7 @@ function sameOrigin(one: SubjectOrigin, other: SubjectOrigin): boolean {
 
 /** The call a value was built by, and where that call's callee came from. */
 export interface SubjectConstruction {
-  /** The value key of the call, which is the key a router index keys its constructions by. */
+  /** The value key of the call. A router index keys its constructions the same way. */
   constructionKey: string;
   origins: SubjectOrigin[];
 }
@@ -230,7 +231,7 @@ export function containedValues(db: Database, objectKey: string): string[] {
     .map(([, value]) => value);
 }
 
-/** What a call comes down to, when the rules settled it on an object. */
+/** The object a call returns, when the rules settled it on one. */
 export function objectReturnedBy(db: Database, callKey: string): string | null {
   const row = db.facts("wantedObjectOf").find((entry) => entry[0] === callKey);
   return row === undefined ? null : String(row[1]);

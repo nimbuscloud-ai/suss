@@ -1,12 +1,12 @@
 /**
- * envSpellings.ts: the ways Python source writes a read of one
- * environment variable. `os.environ["X"]`, `os.environ.get("X", d)` and
- * `os.getenv("X", d)` all read `X`, through whatever name the file
- * imported `os`, `environ` or `getenv` under.
+ * The ways Python source writes a read of one environment variable.
+ * `os.environ["X"]`, `os.environ.get("X", d)` and `os.getenv("X", d)`
+ * all read `X`, through whatever name the file imported `os`, `environ`
+ * or `getenv` under.
  *
- * The env reader turns these into effects, and the defaulted rule asks
- * whether a test elsewhere reads the same variable, so both take the
- * spellings from here.
+ * The env reader turns these reads into effects, and the defaulted rule
+ * looks for a test elsewhere that reads the same variable. Both use the
+ * spellings here so they agree on what counts as a read.
  */
 
 import { field, stringLiteralValue } from "./ast.js";

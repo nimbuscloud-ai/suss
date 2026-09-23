@@ -22,7 +22,6 @@ import {
 
 import type { PyNode } from "../parser.js";
 
-/** How many aliases an annotation is followed through. */
 const ALIAS_HOPS = 2;
 
 /** Follows a name to the expression it was written as, or null. */

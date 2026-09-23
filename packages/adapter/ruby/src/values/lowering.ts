@@ -1,16 +1,16 @@
 /**
- * The Ruby side of the value evaluator: each tree-sitter node lowered
- * to one of the engine's expression or statement shapes, on demand.
+ * The Ruby half of the value evaluator. Each tree-sitter node is lowered,
+ * when the engine asks for it, to one of the engine's expression or
+ * statement kinds.
  *
  * A root is the file, a method, a lambda, a class body, or the block
- * handed to a call. A block is a root of its own so that a route
- * written inside `namespace :api do ... end` still reads a name the
- * `draw` block bound above it, through the enclosing-scope walk. The
- * block inside a `-> { }` literal belongs to the lambda and is not a
- * root itself. A method's last expression is its return, so the
- * statement lowering marks a tail-position expression as one. The
- * engine keys nodes by `node.id`, because tree-sitter hands back a
- * fresh wrapper on every read.
+ * passed to a call. A block is its own root so that a route written
+ * inside `namespace :api do ... end` can still read a name the `draw`
+ * block bound above it. The block inside a `-> { }` literal belongs to
+ * the lambda. A method's last expression is its return value, so the
+ * statement lowering marks an expression in tail position as a return.
+ * The engine keys nodes by `node.id`, because tree-sitter returns a new
+ * wrapper on every read.
  */
 
 import {
@@ -90,7 +90,7 @@ const LITERAL_TYPES: Record<string, (node: RbNode) => Expression<RbNode>> = {
   bare_symbol: (node) => ({ kind: "literal", value: node.text }),
 };
 
-/** The method rows that write to their receiver rather than read it. */
+/** The method rows that write to their receiver instead of reading it. */
 const WRITING_ROWS = new Set(["push", "append", "concat", "<<"]);
 
 /** The calls a block literal makes a callable value with. */
@@ -315,10 +315,10 @@ function arrayExpression(node: RbNode): Expression<RbNode> {
 }
 
 /**
- * `x.call(...)` and `lambda { }` are calls like any other; the lowering
- * reads a block literal handed to `lambda` or `proc` as a function value.
- * A receiverless call with no arguments parses as a bare identifier, so
- * a call node with a receiver and nothing else is a property read.
+ * `x.call(...)` is a call like any other, and a block literal passed to
+ * `lambda` or `proc` is a function value. `a.b` is a call too, since
+ * Ruby cannot refer to a method without running it. Only the target of
+ * an assignment, as in `a.b = 1`, is a member.
  */
 function callExpression(node: RbNode): Expression<RbNode> {
   const method = field(node, "method");
@@ -616,15 +616,14 @@ function returnedValue(node: RbNode): RbNode | null {
   return values.length === 1 ? (values[0] ?? null) : null;
 }
 
-/** A `begin` runs its statements and then its `ensure`; a `rescue` arm only runs when something threw. */
-/** The statements a `begin` runs first, before any `rescue` or `ensure`. */
+/** The statements a `begin` runs first, before its `ensure`. A `rescue` arm runs only when something raised. */
 function mainStatements(node: RbNode): RbNode[] {
   return named(node).filter(
     (child) => child.type !== "rescue" && child.type !== "ensure",
   );
 }
 
-/** A `begin` is worth its last main statement; the `ensure` runs after but is not the value. */
+/** A `begin` evaluates to its last main statement. The `ensure` runs after it but does not give the value. */
 function beginStatements(node: RbNode): RbNode[] {
   const ensure = named(node).find((child) => child.type === "ensure");
   return [
@@ -633,7 +632,7 @@ function beginStatements(node: RbNode): RbNode[] {
   ];
 }
 
-/** `if` with no `else`, and every `if` form, once the engine has the arms. */
+/** Statements whose arms or body end in tail position only when the statement itself is in tail position. */
 const TAIL_BRANCH_TYPES = new Set([
   "if",
   "unless",
@@ -757,7 +756,7 @@ function siteOf(node: RbNode): Site<RbNode> | null {
   }
 }
 
-/** A bare `*` or `**`, with no name of its own, blocks further positional or keyword arguments rather than taking one. */
+/** A bare `*` or `**`, with no name of its own, stops later positional or keyword arguments from binding instead of taking one. */
 const BARE_SPLAT_TYPES = new Set(["splat_parameter", "hash_splat_parameter"]);
 
 /**

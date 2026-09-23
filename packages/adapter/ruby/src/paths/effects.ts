@@ -1,6 +1,8 @@
-// effects.ts: the calls a resolver's own body makes, as invocation effects.
-// A call written under an `if` records that test as a precondition, which is
-// what the IR means by a call that does not always fire.
+/**
+ * The calls a body makes, as invocation effects. A call written under an
+ * `if` records that test as a precondition, and the IR treats a call
+ * with preconditions as one that does not always run.
+ */
 
 import { enumerateOrDegrade, sharedGatingConditions } from "@suss/extractor";
 import { constantOf, literalOf } from "@suss/values";
@@ -16,7 +18,7 @@ import type { RbNode } from "../parser.js";
 
 type InvocationEffect = Extract<RawEffect, { type: "invocation" }>;
 
-/** `raise` is a call in Ruby, but it leaves the method rather than doing work. */
+/** `raise` is a call in Ruby, but it leaves the method instead of doing work. */
 const RAISE_NAMES = new Set(["raise", "fail"]);
 
 /** A statement list, which is where the lowering keys a path. */
@@ -53,9 +55,10 @@ function children(node: RbNode): RbNode[] {
 }
 
 /**
- * One invocation per chain. `Order.where(id: 1).limit(10).update(...)` is one
- * thing the code does, and the outermost call's text spells out the whole
- * chain, so emitting the inner links too counts the same work three times.
+ * One invocation per chain. `Order.where(id: 1).limit(10).update(...)` is
+ * one operation, and the outermost call's text already shows the whole
+ * chain. Emitting the inner links too would count the same work three
+ * times.
  */
 export function withoutChainLinks(calls: readonly RbNode[]): RbNode[] {
   const isLink = new Set<number>();
@@ -69,12 +72,12 @@ export function withoutChainLinks(calls: readonly RbNode[]): RbNode[] {
 }
 
 /**
- * The calls a reader reports, out of everything a body writes: one per
- * chain, plus the no-argument calls `keeps` says are calls rather than
- * property reads. A no-argument call does not take the place of the
- * call it is written on, because `Filter.new(a, b).results` runs the
- * class's `initialize` and then its `results`, and a reader that
- * reported only the outermost of the two would never reach the first.
+ * The calls to report out of everything a body writes: one per chain,
+ * plus the calls with no arguments that `keeps` accepts as calls instead
+ * of property reads. A call with no arguments does not replace the call
+ * it is written on. `Filter.new(a, b).results` runs the class's
+ * `initialize` and then its `results`, and reporting only the outer call
+ * would lose the first.
  */
 export function callsReported(
   written: readonly RbNode[],
@@ -91,11 +94,10 @@ export function callsReported(
 }
 
 /**
- * The method name a call spells. A bare call is an identifier and
- * spells its own name. The `.()` shorthand has no `method` field, and
- * its only other children are the receiver and the argument list, so
- * without the middle branch the fallback would read the receiver's own
- * text as the method name.
+ * The method name a call invokes. A bare call is an identifier, and its
+ * text is the name. The `.()` shorthand has no `method` field, so it is
+ * reported as `call`; without that branch the fallback would take the
+ * receiver's text as the method name.
  */
 export function calleeMethodName(call: RbNode): string | undefined {
   if (call.type === "identifier") {
@@ -109,13 +111,13 @@ export function calleeMethodName(call: RbNode): string | undefined {
 }
 
 /**
- * A call written on a receiver with no argument list. Ruby has no
- * property read, so `config.host` and `c.run` are the same node, and
- * which one this is depends on what the receiver turns out to be. That
- * is what the mark is for: `bodyCalls` keeps these, and each reader
- * decides for itself which of them count. `handler.call` is left out,
- * because it runs the Proc the receiver refers to rather than a method
- * looked up on it, and the walk settles that one through the caller.
+ * Whether a call has a receiver and no argument list. Ruby has no
+ * separate syntax for a property read, so `config.host` and `c.run`
+ * parse the same way, and which one a call is depends on what its
+ * receiver turns out to be. `bodyCalls` keeps these calls, and each
+ * reader decides which of them count. `handler.call` is excluded,
+ * because it runs the Proc the receiver refers to, and the walk resolves
+ * it through the caller.
  */
 export function isArglessReceiverCall(node: RbNode): boolean {
   if (field(node, "receiver") === null || field(node, "arguments") !== null) {
@@ -133,18 +135,18 @@ function isRaise(node: RbNode): boolean {
   );
 }
 
-/** The methods a pack declared the library defines itself, so a receiverless call to one of them is not work the project does. */
+/** Methods the pack says the library defines, so a receiverless call to one of them is not project work. */
 export type InheritedMethods = ReadonlySet<string>;
 
 const NO_INHERITED_METHODS: InheritedMethods = new Set<string>();
 
-/** What a reader with no walk behind it makes of a no-argument call. */
+/** For a reader with no reach walk behind it, no call without arguments counts. */
 const NO_ARGLESS_CALLS = (): boolean => false;
 
-/** Every no-argument call, for a reader whose list the walk finishes. */
+/** For a reader whose list the reach walk finishes, every call without arguments counts until the walk removes the property reads. */
 export const EVERY_ARGLESS_CALL = (): boolean => true;
 
-/** Whether this call goes with no receiver to a method the library defines, which is how a body writes one. */
+/** Whether this is a receiverless call to a method the library defines. */
 function isInherited(node: RbNode, inherited: InheritedMethods): boolean {
   const method = field(node, "method");
   return (
@@ -194,7 +196,7 @@ export interface ReadableBody {
   readonly stops: ReadonlySet<string>;
 }
 
-/** What a method's own body comes to, or null when the method has none. */
+/** A method's own body to read, or null when the method has none. */
 export function methodBody(definitionNode: RbNode): ReadableBody | null {
   const body = field(definitionNode, "body");
   if (body === null) {
@@ -217,10 +219,10 @@ export function moduleScopeBody(root: RbNode): ReadableBody {
 }
 
 /**
- * Every call this body makes. A raise is not one, and neither is a call
- * to a method a pack said the library defines. A call written with no
- * arguments is in here, and `isArglessReceiverCall` marks it so each
- * reader can decide whether it counts.
+ * Every call this body makes. A raise does not count, and neither does a
+ * call to a method the pack says the library defines. Calls with no
+ * arguments are included, and `isArglessReceiverCall` identifies them so
+ * each reader can decide whether they count.
  */
 export function bodyCalls(
   read: ReadableBody,
@@ -229,7 +231,7 @@ export function bodyCalls(
   return collectCalls(read.body, read, inherited, []);
 }
 
-/** The callee as it is written, which is what a reader matches against. */
+/** The callee as written, for a reader to match against. */
 export function calleeText(call: RbNode): string {
   const receiver = field(call, "receiver");
   const method = calleeMethodName(call);
@@ -280,15 +282,14 @@ function enclosingStatement(call: RbNode, body: RbNode): RbNode {
 }
 
 /**
- * The calls a body makes, each with the conditions that have to be true for
- * it to run. A call nobody gated says so by recording no preconditions, which
- * the IR reads as always firing.
+ * The calls a body makes, each with the conditions that must hold for it
+ * to run. A call with no gate has no preconditions, and the IR treats it
+ * as always running.
  *
- * `keepsArglessCall` says which calls written with no arguments count.
- * Ruby writes a property read the same way it writes such a call, and
- * only the reach walk settles which one a given expression is, so a
- * caller that the walk finishes for keeps them all and one with no walk
- * behind it keeps none.
+ * `keepsArglessCall` decides which calls with no arguments count. Ruby
+ * writes a property read the same way, and only the reach walk settles
+ * which one an expression is. A caller whose list the walk finishes
+ * keeps them all, and a caller with no walk keeps none.
  */
 export function invocationEffects(
   definitionNode: RbNode,
@@ -330,9 +331,9 @@ function effectsOfBody(
     return [];
   }
 
-  // Two calls written in one statement, `Filter.new(a).results`, give
-  // two readings of that statement, and the engine keys a path by the
-  // node it was handed, so both calls have to be handed the same one.
+  // `Filter.new(a).results` puts two calls in one statement. The engine
+  // keys a path by the node it was given, so both calls must map to the
+  // same statement node.
   const statementOf = new Map<number, RbNode>();
   const byStatement = new NodeMap<RbNode>();
   const statements: RbNode[] = [];

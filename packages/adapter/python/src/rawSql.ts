@@ -1,15 +1,15 @@
 /**
- * Which calls in a body hand the database a statement written as SQL.
+ * Which calls in a body pass the database a statement written as SQL.
  *
- * A pack says how its library takes one. SQLAlchemy exports a function,
- * `text`, and a cloud warehouse hands the project a client object whose
- * methods take the statement instead. A call matching either becomes the
- * same storage-access effect a query through an ORM would have produced,
+ * A pack declares how its library takes one. SQLAlchemy exports a
+ * function, `text`, and a cloud warehouse gives the project a client
+ * object whose methods take the statement. A call matching either becomes
+ * the same storage-access effect a query through an ORM would produce,
  * one per table.
  *
- * The statement goes through the shared value evaluator, so what the
- * evaluator cannot settle becomes a parameter. The adapter's README says
- * how a table name reaches the boundary.
+ * The statement goes through the shared value evaluator, and any piece it
+ * cannot settle becomes a parameter. DESIGN.md, under "A statement the
+ * project wrote as SQL", describes how a table name becomes the boundary.
  */
 
 import { storageBinding } from "@suss/ir-core";
@@ -40,7 +40,7 @@ export interface RawSqlOptions {
   readonly clients?: readonly SqlClientPattern[];
 }
 
-/** One call a pattern claimed, and what the database work it states comes to. */
+/** One call a pattern matched, and the tables its statement reads or writes. */
 interface RawSqlMatch {
   readonly call: PyNode;
   /** Which pack recognition to stamp on the binding. */
@@ -60,9 +60,9 @@ export function rawSqlEffects(
 }
 
 /**
- * The calls raw-SQL recognition already read the meaning of, by node id.
- * The reach walk cannot step into a library call and asks here so as not
- * to report one it already understands as one it lost.
+ * The calls this module already recognized, by node id. The reach walk
+ * cannot follow a library call, and checks here so it does not report a
+ * recognized call as one it failed to follow.
  */
 export function rawSqlCallIds(
   calls: readonly PyNode[],
@@ -117,9 +117,9 @@ function effectFor(match: RawSqlMatch, access: SqlAccess): Effect[] {
 const NO_GROUP = "default";
 
 /**
- * The pattern a call matches because the file imported that name from the
- * module the pattern states. A local function of the same name is
- * somebody else's, so the import is what settles it.
+ * The pattern a call matches because the file imported the callee from
+ * the pattern's module. Matching on the import keeps a local function of
+ * the same name from counting.
  */
 function importedFunctionMatch(
   call: PyNode,
@@ -185,10 +185,10 @@ function clientMatch(call: PyNode, options: RawSqlOptions): RawSqlMatch | null {
 }
 
 /**
- * What one call on a client says it touches, or null when the pattern
- * claims no method of that name. A claimed method whose argument the
- * evaluator could not settle touches nothing, which is a different
- * answer and comes back as an empty list.
+ * The tables one call on a client touches, or null when the pattern
+ * declares no method of that name. A declared method whose argument the
+ * evaluator cannot settle returns an empty list, so the call still counts
+ * as recognized.
  */
 function accessesOf(
   call: PyNode,
@@ -213,8 +213,8 @@ function accessesOf(
     const written = argumentNode(call, takes);
     const name =
       written === null ? null : stringValueOf(written, options.facts);
-    // A table named on the call is split the way one named in a
-    // statement is, so the two say the same dataset and table.
+    // Split the same way as a table written in a statement, so both give
+    // the same dataset and table.
     const split = name === null ? null : splitQualifiedTable(name);
     return split === null
       ? []
@@ -248,10 +248,10 @@ function receiverOrigins(
 }
 
 /**
- * The class a declared handoff says a call gives back, which is how a
- * chain off one client reaches another client's own methods. Only the
- * library can say what one of its methods gives back, so a pack declares
- * it and nothing here infers it.
+ * The class a declared handoff says a call returns, so a chain off one
+ * client can reach another client's methods. Nothing in the project says
+ * what a library method returns, so the pack declares it and nothing here
+ * infers it.
  */
 function handedBack(call: PyNode, options: RawSqlOptions): SubjectOrigin[] {
   const callee = field(call, "function");
@@ -275,7 +275,7 @@ function handedBack(call: PyNode, options: RawSqlOptions): SubjectOrigin[] {
   return found;
 }
 
-/** The node one call was given what it works on at, by keyword first and then by position. */
+/** The argument node `at` points to, by keyword first and then by position. */
 function argumentNode(call: PyNode, at: SqlCallArgument): PyNode | null {
   const args = field(call, "arguments");
   const written = args === null ? [] : children(args);
@@ -330,10 +330,10 @@ function valueAt(value: Value, path: readonly string[]): Value | null {
 }
 
 /**
- * The literal text either side of everything the value left unsettled, which
- * is the form the SQL reader takes a statement in. Null for a value that is
- * not a string at all, so a call handed a name nothing wrote stays unread
- * instead of becoming a statement of nothing but parameters.
+ * The literal text on either side of each unsettled piece, which is the
+ * form the SQL reader takes. Null for a value that is not a string, so a
+ * call passed an unknown name stays unread instead of becoming a statement
+ * made only of parameters.
  */
 function literalParts(value: Value): string[] | null {
   if (value.kind !== "string") {

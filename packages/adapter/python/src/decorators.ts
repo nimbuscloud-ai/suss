@@ -1,16 +1,15 @@
-// decorators.ts: decorator lowering and module classification.
-//
-// A decorator expression is really two applications: the factory call
-// that builds the decorator (`app.route("/x")`) and the decoration
-// itself, which applies that result to the function. Discovery only
-// needs the first one. What name did the call's callee resolve to, and
-// which module did that name come from? `classifyDecorator` reads that
-// much and stops, without building call facts nothing downstream reads
-// yet.
-//
-// This is the same recipe the TypeScript packs use for a decorator
-// re-exported through a project's own wrapper: classify the name as an
-// import of module X, and let the pack list every module X it accepts.
+/**
+ * Works out which library a decorator comes from, for discovery.
+ *
+ * `@app.route("/x")` is two steps: the call that builds the decorator, and
+ * applying the result to the function. Discovery needs only the first, so
+ * `classifyDecorator` reads which name the callee resolved to and which
+ * module that name came from, and stops there.
+ *
+ * A decorator re-exported through a project wrapper is handled the same
+ * way the TypeScript packs handle one: the name is classified as an import
+ * of some module, and the pack lists every module it accepts.
+ */
 
 import { dispatchByType } from "@suss/behavioral-ir";
 
@@ -34,7 +33,7 @@ import type { PyNode } from "./parser.js";
 import type { ModuleBinding } from "./scope.js";
 import type { BuiltValue } from "./values/evaluator.js";
 
-/** An argument as written, plus its node so a reader can evaluate what it comes down to. */
+/** An argument as written, plus its node so a reader can evaluate it. */
 export type DecoratorArg = DecoratorArgShape & { readonly node: PyNode };
 
 type DecoratorArgShape =
@@ -50,15 +49,15 @@ type DecoratorArgShape =
   | { kind: "other" };
 
 export interface DecoratorClassification {
-  /** The name as its source module exports it, not the local alias or attribute path it was written under. */
+  /** The name as its source module exports it, whatever alias or attribute path the file wrote it under. */
   importedName: string | null;
   /** The dotted module the name was imported from. It is null whenever `importedName` is null. */
   module: string | null;
-  /** The local variable an attribute decorator hangs on, `app` in `@app.get(...)`. */
+  /** The local variable an attribute decorator is called on, `app` in `@app.get(...)`. */
   objectName: string | null;
   args: DecoratorArg[];
   keywordArgs: Record<string, DecoratorArg>;
-  /** Where the decorator is written. Anything we read out of its arguments uses this as its provenance. */
+  /** Where the decorator is written. Anything read out of its arguments reports this as its location. */
   range: Range;
   /**
    * The module the decorator's object lives in, when the decorator was read
@@ -67,14 +66,14 @@ export interface DecoratorClassification {
    */
   objectModule?: ModuleBinding;
   /**
-   * The call the rules say built the object this decorator hangs on. A
-   * router the index never saw under a name is looked up by this call
-   * instead, and a decorator on `self.router` has no name to look up.
+   * The call the rules say built the object this decorator is called on.
+   * The router index looks a router up by this call when it never saw the
+   * router under a name, as with a decorator on `self.router`.
    */
   subjectConstruction?: { key: string; constructorName: string };
 }
 
-/** What a decorator hangs on and which of its methods it calls, for `@app.get(...)` and `@self.app.get(...)` alike. */
+/** The object a decorator is called on and the method it calls, for `@app.get(...)` and `@self.app.get(...)` alike. */
 export interface DecoratorReceiver {
   /** The expression the method is called on, whatever kind it is. */
   object: PyNode;
@@ -87,8 +86,8 @@ export interface DecoratorReceiver {
 
 /**
  * The receiver and method a decorator is written as, without resolving
- * either. Whoever calls this has another way to say what the receiver is,
- * so nothing here reads the scope.
+ * either. The caller works out what the receiver is by its own means, so
+ * nothing here reads the scope.
  */
 export function decoratorReceiver(
   decoratorNode: PyNode,
@@ -187,15 +186,9 @@ export function readCallArguments(argumentList: PyNode | null): {
       }
       continue;
     }
-    // `f(**cfg)` and `f(*rest)` spread a value the call does not write
-    // out. Neither one is an argument at a position, and counting a spread as
-    // the first positional argument made `Api(**authorizations())` look like
-    // a construction on something this reading could not identify, which
-    // left every route under it with no path.
-    //
-    // A spread dictionary could carry the prefix keyword itself. Reading
-    // the keywords that are written and leaving it there is what keeps
-    // the routes; see the Python adapter README.
+    // A spread is not an argument at a position. Counting `Api(**opts)` as
+    // one would leave every route under it without a path. DESIGN.md covers
+    // a spread dictionary that sets the prefix keyword itself.
     if (child.type === "dictionary_splat" || child.type === "list_splat") {
       continue;
     }
@@ -217,11 +210,11 @@ const UNRESOLVED: ResolvedCallee = {
 };
 
 /**
- * What the call that built a decorator's object says about the decorator.
- * Two constructions out of the same module still say which pack the route
- * belongs to, and leaving out the construction key sends the router index
- * looking by name, where it reports the name the two share. Two that
- * disagree about the module say nothing.
+ * The callee a decorator resolves to, from the call that built its object.
+ * Two constructions from the same module still decide which pack the
+ * route belongs to. The construction key is left out then, so the router
+ * index looks the router up by the name the two share. Two constructions
+ * from different modules resolve to nothing.
  */
 function builtObjectCallee(
   built: BuiltValue,
@@ -255,8 +248,8 @@ function builtObjectCallee(
 
 /**
  * A decorator's callee, as the name a module exports and the module that
- * exports it. An attribute chain deeper than one property access
- * (`a.b.route`) is left unresolved, and its decorator is not discovered.
+ * exports it. For `@obj.method`, the call that built `obj` decides the
+ * module when the rules find one, and the file's imports decide otherwise.
  */
 function resolveCallee(
   expr: PyNode,
@@ -282,7 +275,7 @@ function resolveCallee(
 
   // What a name was assigned wins over what it was imported as. Python
   // lets `import app.store` bind `app` over an `app = FastAPI()` written
-  // above it, and the app is what the decorator hangs on.
+  // above it, and the decorator is still called on the app.
   const built = builtObjectCallee(
     constructionBehind(object, facts),
     attribute.text,
@@ -339,10 +332,10 @@ export function classifyDecorator(
  *     def api_route(path):
  *         return orders_namespace.route(path)
  *
- * The rules say what the wrapper's call comes down to, wherever the
- * wrapper is written. A wrapper that rearranges its parameters gives null,
- * because the arguments written here are then not the ones the library is
- * called with.
+ * The rules resolve the wrapper call to the library call inside it,
+ * wherever the wrapper is written. A wrapper that rearranges its
+ * parameters gives null, because the arguments written at the decorator
+ * are then different from the ones the library receives.
  */
 export function unwrapDecorator(
   decoratorNode: PyNode,

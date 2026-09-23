@@ -29,7 +29,7 @@ export type ModuleResolution =
     };
 
 export interface ModuleResolverOptions {
-  /** The directories an absolute dotted import is resolved against. We cannot see `sys.path` order, since that only exists at runtime. */
+  /** The directories an absolute dotted import is resolved against. Their order does not matter, because the order of `sys.path` exists only at run time. */
   roots: string[];
 }
 
@@ -67,11 +67,11 @@ function candidatesUnderRoot(root: string, dotted: string): string[] {
 }
 
 /**
- * Whether the file exists under exactly this casing. fs.existsSync is
- * case-insensitive on macOS and Windows, so a wrongly-cased import
- * resolved locally and abstained on Linux, and the two disagreed
- * (#188). Only the trailing segments the dotted path chose are
- * compared, so a symlinked root keeps resolving.
+ * Whether the file exists under exactly this casing. `fs.existsSync`
+ * ignores case on macOS and Windows, and without this check an import
+ * with the wrong case would resolve there and abstain on Linux (#188).
+ * Only the trailing segments the dotted path chose are compared, so a
+ * symlinked root still resolves.
  */
 function existsWithExactCase(file: string, trailingSegments: number): boolean {
   if (!fs.existsSync(file)) {

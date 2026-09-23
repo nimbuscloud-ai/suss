@@ -1,14 +1,14 @@
 /**
- * values.ts: the facts @suss/resolution already joins, emitted for Python.
- * The relation names and shapes come from that package's own header, so a
- * Python value follows the same rules a TypeScript one does.
+ * Emits the value facts that the rules in @suss/resolution join, read from
+ * Python source. The relations are the ones that package defines, so a
+ * Python value is followed by the same rules as a TypeScript one.
  *
  * A name is keyed by the scope that binds it. A function's own names take
- * the function's key, so two handlers that both write `query` stay apart,
- * and a module's names take the file's key, which is what another file
- * imports back out. Every write to a name in one scope is collected in
- * source order and `valueLeftByWrites` says what the name comes down to,
- * so a reassigned name states one value or none rather than two.
+ * the function's key, so two handlers that both write `query` stay apart.
+ * A module's names take the file's key, and another file's import matches
+ * on that key. Every write to a name in one scope is collected in source
+ * order, and `valueLeftByWrites` decides what the name comes down to, so a
+ * reassigned name gets one value or none, never two.
  */
 
 import {
@@ -45,7 +45,7 @@ export function nodeId(filePath: string, node: PyNode): string {
 /**
  * The node a value key was made from, for a caller that has the key the
  * rules settled on and wants the expression back to read something the
- * facts do not carry. Null when the key belongs to another file, and
+ * facts do not record. Null when the key belongs to another file, and
  * then the caller has nothing to read and abstains.
  */
 export function nodeAt(
@@ -78,7 +78,7 @@ export function nodeAt(
   return found;
 }
 
-/** A module-level name in a file, which is what a binding joins on. */
+/** The key of a module-level name in a file. Bindings and imports match on it. */
 function nameId(filePath: string, name: string): string {
   return `${filePath}#${name}`;
 }
@@ -214,7 +214,7 @@ function boundParameterNames(fn: PyNode): string[] {
 /** The function a name is read in, and what it binds, so two functions' `query` stay apart. */
 interface FunctionScope {
   funcKey: string;
-  /** Names this function binds, which is what a read of one keys to. */
+  /** Names this function binds. A read of one of them is keyed to this function. */
   locals: ReadonlySet<string>;
   /** Names a `global` statement here sends to the module. */
   globals: ReadonlySet<string>;
@@ -275,8 +275,8 @@ function scopeChainOf(
 /** The callee of a call, and the arguments it passes by position. */
 function emitCall(emitter: Emitter, call: PyNode): void {
   // A call is written out in the source, so a name bound to one ends its
-  // chain there. It gets no `comesTo`, which is the rules' own decision
-  // about a factory call, and `isWrittenAs` is what reads it back.
+  // chain there. The rules decide what a factory call comes to, so it gets
+  // no `comesTo` here, and `isWrittenAs` reads it back.
   add(emitter, "writtenValue", nodeId(emitter.filePath, call));
 
   const callee = field(call, "function");
@@ -320,13 +320,13 @@ export type CallArgument =
   | { kind: "keyword"; name: string; node: PyNode };
 
 /**
- * The arguments a call writes out, in source order. A caller that wants
- * the argument sitting at a parameter reads them the same way the facts
- * were keyed, so the two never disagree about which one is at position 1.
+ * The arguments a call writes out, in source order. The facts are keyed
+ * through this too, so a caller looking for the argument at a parameter
+ * never disagrees with them about which one is at position 1.
  *
- * `*args` and `**kwargs` fill parameters nobody can name from the call,
- * so neither is an argument here, and a positional argument after
- * `*args` has no position anyone can count.
+ * `*args` and `**kwargs` fill parameters the call does not identify, so
+ * neither counts as an argument here. A positional argument after `*args`
+ * has no position that can be counted, so it is left out too.
  */
 export function callArguments(call: PyNode): CallArgument[] {
   const args = field(call, "arguments");
@@ -504,8 +504,8 @@ const WRITTEN_KEY_TYPES = new Set(["string", "integer", "concatenated_string"]);
 
 /**
  * `settings[name]` and `settings.get(name)`: the container, and the
- * expression the key comes from. Which containers are the environment
- * is the rules' business, so this says nothing about that either way.
+ * expression the key comes from. The rules decide which containers are
+ * the environment, so this records every keyed read whatever the container.
  */
 function emitKeyedRead(
   emitter: Emitter,
@@ -599,8 +599,8 @@ interface MethodReceiver {
 
 /**
  * A function's parameters by position, its returns, and the calls its body
- * makes. Where its name goes is the caller's to say, because a method belongs
- * to its class and a def belongs to its module.
+ * makes. The caller records where the function's name is bound, because a
+ * method belongs to its class and a def belongs to its module.
  */
 function emitFunctionFacts(
   emitter: Emitter,
@@ -631,8 +631,8 @@ function emitFunctionFacts(
       if (byPosition && position >= 0) {
         add(emitter, "paramOf", funcKey, String(position), paramKey);
       }
-      // The receiver is one of the class rather than the class itself,
-      // so what one method stored reaches a read in another.
+      // The receiver is an instance of the class, so a value one method
+      // stores on it reaches a read in another method.
       if (classKey !== undefined && position === -1) {
         receiver = { classKey, name: paramName.text };
         add(emitter, "instanceOf", paramKey, classKey);
@@ -735,7 +735,7 @@ function emitReturnAnnotation(
 /** One `self.name = value`, with what orders it against the others in the body. */
 interface ReceiverWrite {
   write: NameWrite;
-  /** The property as the source spells it, which is what a read of it is spelled as. */
+  /** The property as the source writes it, `self.name`, so reads of it can be matched against it. */
   spelling: string;
   at: PyNode;
   /** Whether the write is a direct statement of the method's own statement list. */
@@ -961,9 +961,9 @@ function fieldClassKey(
 }
 
 /**
- * A class-body field given a call, with the callee and the class the
- * field is about. Which callee makes it an association is a pack's word,
- * so the rules do that matching and this states only what it read.
+ * A class-body field assigned from a call, with the callee and the class
+ * the field refers to. A pack declares which callees make a field an
+ * association and the rules do the matching, so this records every one.
  */
 function emitFieldCall(
   emitter: Emitter,
@@ -1029,9 +1029,9 @@ function writtenBaseName(base: PyNode): string | null {
 const INIT_METHOD = "__init__";
 
 /**
- * A class is an object containing its methods, which is the treatment an
- * object literal gets. That is what lets a method read off an instance
- * resolve to the method the class declares.
+ * A class is recorded as an object containing its methods, the same as an
+ * object literal, so a method read off an instance resolves to the one the
+ * class declares.
  */
 function emitClassFacts(emitter: Emitter, cls: PyNode): string {
   const classKey = nodeId(emitter.filePath, cls);
@@ -1108,7 +1108,7 @@ function emitNestedDefinitions(emitter: Emitter, node: PyNode): void {
 interface RawWrite {
   /** The expression written, or null when the write states no value of its own. */
   value: PyNode | null;
-  /** A value the source spells nowhere, which is what a parameter arrives holding. */
+  /** A value the source never writes out, such as the argument a parameter receives. */
   given: string | null;
   /** The node whose position orders this write among the scope's others. */
   at: PyNode;
@@ -1118,13 +1118,13 @@ interface RawWrite {
   entered?: PyNode;
 }
 
-/** What a scope's own statements write, and the names that keeps in the scope. */
+/** What a scope's own statements write, and which names are local to it. */
 interface ScopeReading {
   /** The statement list the writes were read from, or null for a scope with no block. */
   bodyOwner: PyNode | null;
   /** The writes to each name, in source order. */
   writes: Map<string, RawWrite[]>;
-  /** Names bound in this scope, which is what a read of one keys to. */
+  /** Names bound in this scope. A read of one of them is keyed to this scope. */
   locals: Set<string>;
   /** Names a `global` statement sends to the module scope. */
   globals: Set<string>;
@@ -1153,7 +1153,7 @@ function scopeReadingOf(fn: PyNode): ScopeReading {
   return reading;
 }
 
-/** The patterns `a, b = ...` and `for k, v in ...` spell an unpacked target with. */
+/** The node types of an unpacked target, as in `a, b = ...` and `for k, v in ...`. */
 const TARGET_PATTERN_TYPES = new Set([
   "pattern_list",
   "tuple_pattern",
@@ -1245,8 +1245,8 @@ function identifierOf(node: PyNode): PyNode | null {
 
 /**
  * `with open(p) as fh` and `except E as err`: the construct decides what
- * the name takes. Only a pack knows whether `__enter__` returns the
- * call's own object, so the call is recorded and the pack decides.
+ * the name gets. Only a pack knows whether `__enter__` returns the call's
+ * own object, so this records the call and leaves that to the pack.
  */
 function readAsPattern(node: PyNode, sink: WriteSink): void {
   const target = field(node, "alias") ?? children(node)[1];
@@ -1353,8 +1353,8 @@ function readScope(
     visit(statement);
   }
 
-  // A declared name is still written here; what changes is the scope the
-  // write lands in, and leaving it out of `locals` is what sends it there.
+  // A `global` or `nonlocal` name is still written here, but the write goes
+  // to an outer scope. Leaving the name out of `locals` sends it there.
   const locals = new Set(writes.keys());
   for (const name of [...globals, ...nonlocals]) {
     locals.delete(name);
@@ -1367,7 +1367,7 @@ function readScope(
   return { bodyOwner, writes, locals, globals };
 }
 
-/** A parameter arrives holding what the caller passed, so a body that writes the name again has to settle against that. */
+/** A parameter starts with whatever the caller passed, so a later write to the name in the body settles against that. */
 function addParameterWrite(later: RawWrite[] | undefined, name: string): void {
   const first = later?.[0];
   if (later === undefined || first === undefined) {
@@ -1468,7 +1468,7 @@ const RECEIVER_READS: NameReads<PyNode> = {
   nameTypes: new Set(["attribute"]),
 };
 
-/** A value built where it is written, which is what tells two writes of one name apart. */
+/** A value built where it is written. Two writes of one name that build different values can be told apart. */
 const CONSTRUCTION_TYPES = new Set([
   "call",
   "list",
@@ -1508,8 +1508,8 @@ function describeWrite(
 
 /**
  * What a name comes down to, or null when the writes leave it undecided. A
- * name written again goes to the shared policy, which is where every
- * adapter decides it.
+ * name written more than once goes to the shared policy in @suss/resolution,
+ * so every adapter settles it the same way.
  */
 function settledValue(
   emitter: Emitter,
@@ -1528,11 +1528,11 @@ function settledValue(
 }
 
 /**
- * One claim per name: `binds` for a name written once, `endsHolding` for a
- * reassigned name the policy settles, and nothing for one it does not. A
- * module's names are also what another file imports back out.
+ * One fact per name: `binds` for a name written once, and `endsHolding` for
+ * a reassigned name the policy settles. A module-level name also gets
+ * `exportsAs`, since another file can import it.
  *
- * A name the policy leaves undecided says what each write put there
+ * For a name the policy leaves undecided, each write's value is recorded
  * instead, so a reader can tell two sources from none.
  */
 function emitScopeWrites(
@@ -1556,9 +1556,9 @@ function emitScopeWrites(
 
 /**
  * Each value a write put in an unsettled name. A write that narrows the
- * name is left out, and a write with no value of its own, a loop target
- * or an `except ... as`, is what `writesUnstated` says.
- * `writesAllStated` is its other side: the run read every write.
+ * name is left out. A write with no value of its own, such as a loop target
+ * or an `except ... as`, is recorded as `writesUnstated`. `writesAllStated`
+ * records the opposite case, where every write had a value the run read.
  */
 function emitCandidates(
   emitter: Emitter,

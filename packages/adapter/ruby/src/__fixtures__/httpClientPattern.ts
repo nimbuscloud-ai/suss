@@ -1,8 +1,8 @@
 /**
- * An HTTP library written the way a client pack writes one, with the
- * two shapes a pack can declare: request methods on the constant
- * itself, and a call that sends a request object built elsewhere. None
- * of these strings appear anywhere in the adapter's own source.
+ * An HTTP library declared the way a client pack declares one. It covers
+ * both forms a pack can declare: request methods on the constant itself,
+ * and a call that sends a request object built elsewhere. The adapter's
+ * own source contains none of these strings.
  */
 
 import type { RbClientCall, RubyPack } from "../pack.js";

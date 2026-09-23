@@ -1,10 +1,10 @@
 /**
- * version.ts: this adapter's own half of the cache key.
+ * The Python adapter's part of the extraction cache key.
  *
- * `ADAPTER_VERSION` is the hand-bumped semver. Bump it on any change
- * that affects extraction output: IR shape, discovery semantics,
- * terminal classification, anything that would invalidate previously
- * cached summaries.
+ * Bump `ADAPTER_VERSION` by hand on any change to what extraction
+ * produces, such as the IR it writes, what discovery finds, or how a
+ * terminal is classified. Summaries cached under the old version are
+ * then read again instead of reused.
  */
 
 import { createAdapterStamp } from "@suss/extractor";
