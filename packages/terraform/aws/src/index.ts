@@ -1,11 +1,11 @@
 /**
  * What AWS's Terraform provider declares, as far as suss reads it.
  *
- * Every entry says which provider versions it describes. The provider
+ * Every entry lists the provider versions it describes. The provider
  * moves things between releases, so a configuration pinned to one major
- * is read by the entries written for it and by no others. Version 4
- * split a bucket's settings into resources of their own, which is why
- * the bucket entry starts there.
+ * version is read only by the entries written for it. Version 4 split a
+ * bucket's settings into resources of their own, so the bucket entry
+ * starts there. DESIGN.md explains why each entry reads what it reads.
  */
 
 import type { MetricValueShape } from "@suss/behavioral-ir";
@@ -22,9 +22,8 @@ const CURRENT = ">=4 <7";
 const METRIC_SYSTEM = "cloudwatch";
 
 /**
- * What each statistic leaves behind. A percentile is written under
- * `extended_statistic` as `pNN.NN`, which no fixed table can list, so
- * an alarm using one states no reduction here.
+ * A percentile is written under `extended_statistic` as `pNN.NN`, which
+ * no fixed table can list, so an alarm using one does not record a reduction.
  */
 const STATISTICS: Record<string, MetricValueShape> = {
   SampleCount: "number",
@@ -47,9 +46,8 @@ const SQL_ENGINES: AttributeMeaning<string> = {
 };
 
 /**
- * The store an ElastiCache cluster is. A cluster with no engine of its
- * own joins a replication group, which always runs one of the two
- * Redis-protocol engines.
+ * A cluster with no engine of its own joins a replication group, which
+ * always runs one of the two Redis-protocol engines.
  */
 const CACHE_ENGINES: AttributeMeaning<string> = {
   attribute: "engine",
@@ -58,10 +56,9 @@ const CACHE_ENGINES: AttributeMeaning<string> = {
 };
 
 /**
- * The entry for a resource running whichever SQL engine its `engine`
- * attribute picks. Code addresses tables inside the database, which no
- * attribute of the resource lists, so the entry declares the store and
- * claims no access, the same as an ElastiCache cluster.
+ * Code addresses tables inside the database, which no attribute of the
+ * resource lists, so the entry declares only the store and claims no
+ * access. DESIGN.md has the reasoning.
  */
 function sqlStore(resource: string): TerraformResourcePattern {
   return {
@@ -129,8 +126,8 @@ export function awsTerraform(): TerraformPack {
           kind: "storage",
           storageSystem: CACHE_ENGINES,
           // Code addresses key namespaces, which no attribute of a
-          // cluster lists, so the cluster declares the store and
-          // claims no access. The README says how the sides meet.
+          // cluster lists, so the cluster declares the store and claims
+          // no access. DESIGN.md explains why.
           declares: "store",
           fieldSet: "none",
         },
@@ -198,9 +195,8 @@ export function awsTerraform(): TerraformPack {
         boundary: {
           kind: "metric",
           metricSystem: METRIC_SYSTEM,
-          // CloudWatch identifies a metric by its namespace and its
-          // name together, and an alarm spells both, so both are the
-          // identity the two sides share.
+          // CloudWatch identifies a metric by its namespace and its name
+          // together, and an alarm writes both, so the identity uses both.
           metricTypeTemplate:
             "{metric_transformation.namespace}/{metric_transformation.name}",
         },
