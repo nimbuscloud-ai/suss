@@ -7,6 +7,14 @@ description: What changed in each suss release, newest first.
 
 One section per release, newest first.
 
+## 0.33.1 (2026-09-23)
+
+0.33.1 takes back the time 0.33.0 added to a TypeScript service that reads its environment through helpers.
+
+### Fixes
+
+- The node pack works out once per run which helpers read an environment variable named by a parameter, and which parameters are handed `process.env`. It used to ask at every call to a project function, reading the called function's file each time, and asked again at every `parse(text)` call whether `text` was the environment, reading every file that imports the call's file. twenty-server took 53 seconds with 0.33.0 and 44 with 0.32.0, and takes 41 now, the median of three alternating runs; the variables it reports are the same. ([#1153](https://github.com/nimbuscloud-ai/suss/pull/1153))
+
 ## 0.33.0 (2026-09-20)
 
 0.33.0 reads a large project in a fraction of the time 0.32.0 took, follows the work a file does when it loads, and reads the SQL a service writes by hand.
