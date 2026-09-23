@@ -1,11 +1,11 @@
 /**
- * The strings a Ruby expression comes down to, for the readers that want a
- * name or a list of names rather than a route path.
+ * Reads a Ruby expression down to a string or a list of strings, for
+ * callers that need a name rather than a route path.
  *
- * Everything goes through the shared value evaluator, so `only: ACTIONS`
- * with the array written in a constant reads the same as `only: %i[show]`
- * written at the call, and a symbol, a string and a `%i[...]` element all
- * come down to the same string.
+ * Everything goes through the shared value evaluator. So `only: ACTIONS`
+ * with the array in a constant reads the same as `only: %i[show]` written
+ * at the call, and a symbol, a string and a `%i[...]` element all come
+ * down to the same string.
  */
 
 import { force, literalOf } from "@suss/values";
@@ -42,8 +42,8 @@ export function literalElementsOf(
 
 /**
  * Every name one expression writes: the single string it comes down to, or
- * every string in the list it comes down to. Null when neither settles, and
- * a caller reads that as having been told nothing.
+ * every string in the list it comes down to. Returns null when neither
+ * settles, which a caller treats as no names given.
  */
 export function namesOf(node: RbNode, db?: Database): string[] | null {
   const value = evaluatedValue(node, db);

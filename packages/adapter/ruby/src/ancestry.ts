@@ -1,5 +1,9 @@
-// ancestry.ts: the chain a lookup walks to find the method behind a
-// class. See this package's README for why it walks and where it stops.
+/**
+ * The ancestor chain a lookup walks to find the method behind a class,
+ * in the order Ruby's `Module#ancestors` gives. A reopened class is one
+ * place in the chain, an included module's own chain goes in as a unit,
+ * and an ancestor already in the chain is not added again.
+ */
 
 import {
   bareCallArgumentGroups,
@@ -43,7 +47,7 @@ export type AncestorEntry =
 /** A class and everything it inherits from, in Ruby's own method-lookup order. */
 export type Ancestry = readonly AncestorEntry[];
 
-/** What reading a class body takes beyond the body: the run's facts, and what its packs declare about a block written in one. */
+/** What reading a class body needs besides the body: the run's facts, and what the packs declare about blocks written in one. */
 export interface BodyReading {
   readonly facts?: Database | undefined;
   readonly bodyBlocks?: BodyBlocks | undefined;
@@ -117,11 +121,11 @@ export function ancestryOf(
 }
 
 /**
- * Ruby computes a class's ancestors once at include time and inserts
- * each module's own already-computed chain as a unit, skipping anything
- * already in there. That is why the superclass chain is built first and
- * every later step filters against it: a module the superclass already
- * mixes in keeps the place the superclass gave it.
+ * Ruby computes ancestors as each `include` runs. It inserts the
+ * module's own chain as a unit and skips anything already present. So
+ * the superclass chain is built first and every later step is checked
+ * against it, and a module the superclass already mixes in keeps the
+ * place the superclass gave it.
  */
 async function chainOf(
   self: Extract<AncestorEntry, { type: "bodies" }>,
@@ -216,9 +220,9 @@ export async function reachConstant(
 }
 
 /**
- * Ruby would raise NameError for a constant none of the candidates
- * defines. The bare name is the one a configured base is written as, so
- * an unread ancestor still matches by that name.
+ * A constant none of the candidates defines, which Ruby would reject with
+ * a NameError. The chain keeps the bare name, since a configured base
+ * class is written that way, so an unread ancestor still matches it.
  */
 function unreadConstant(candidates: readonly string[]): AncestorEntry[] {
   const bare = candidates.at(-1);
@@ -236,10 +240,9 @@ function definitionOf(
 }
 
 /**
- * What one kind of mixin call contributes, each module's whole chain
- * computed on its own and then filtered, so two concerns sharing a base
- * put that base where Ruby puts it rather than where the first of them
- * was read.
+ * What one kind of mixin call adds to the chain. Each module's whole
+ * chain is computed on its own and then filtered, so two concerns that
+ * share a base put it where Ruby puts it, after both concerns.
  */
 async function mixinChain(
   self: Extract<AncestorEntry, { type: "bodies" }>,
@@ -294,10 +297,10 @@ interface ModuleRef {
 }
 
 /**
- * The modules one kind of mixin call names, in the order Ruby mixes
- * them in. Each call is inserted in front of the ones before it, and
- * `include A, B` mixes in B before A, so calls read in source order and
- * one call's own arguments read backwards.
+ * The modules one kind of mixin call lists, in the order Ruby mixes them
+ * in. Each call is inserted in front of the ones before it, and
+ * `include A, B` mixes in B before A, so calls are read in source order
+ * and one call's arguments backwards.
  */
 function moduleRefs(
   blocks: readonly ReachedBody[],
@@ -334,15 +337,14 @@ function superclassCandidatesOf(
 
 /** What searching an ancestry for one method name came to. */
 export type MethodLookup =
-  /** `block` is which ancestor's own body the method is written in, so a caller that needs its file can get there. */
+  /** `block` is the ancestor body the method is written in, which gives a caller its file. */
   | { type: "found"; method: RbNode; block: ReachedBody }
   /**
-   * `reason` completes "could be answered by a method ...".
-   * `cause` says why the search stopped, since a caller deciding
-   * whether to look further needs more than the sentence: `unreadAncestor`
-   * is a base whose file this run could not open, and `dynamicDefine`
-   * is a `define_method` call that defines this name, or one whose own
-   * name this reader could not read.
+   * `reason` finishes the sentence "could be answered by a method ...".
+   * `cause` gives the reason as a value, for a caller deciding whether
+   * to look further. `unreadAncestor` is a base whose file the run could
+   * not open, and `dynamicDefine` is a `define_method` call that defines
+   * this name or whose own name did not settle.
    */
   | {
       type: "unsettled";
@@ -387,7 +389,7 @@ export function methodInAncestry(
   return { type: "none" };
 }
 
-/** What one ancestor's blocks say about `name`: its last definition, the way Ruby's own redefinition works, and what the `define_method` calls in them define. */
+/** What one ancestor's blocks show about `name`: its last definition, since a later `def` replaces an earlier one, and what the `define_method` calls in them define. */
 function definitionIn(
   blocks: readonly ReachedBody[],
   name: string,
@@ -397,7 +399,7 @@ function definitionIn(
   block: ReachedBody | null;
   /** Whether a `define_method` here defines `name`, which has no body a reader of `def` nodes can see. */
   definedDynamically: boolean;
-  /** Whether a `define_method` here was given a method name this reader could not read, so `name` may be one of them. */
+  /** Whether a `define_method` here has a name that did not fully settle, so it may define `name`. */
   unreadableDefine: boolean;
 } {
   let method: RbNode | null = null;

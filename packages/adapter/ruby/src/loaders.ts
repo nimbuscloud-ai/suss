@@ -1,11 +1,11 @@
 /**
- * loaders.ts: reading a call written through a batching loader.
+ * Reads a call written through a batching loader.
  *
- * A loader takes the read off the caller and runs it later, in a source
- * class of the project's own. Two readers ask the same question of such
- * a call: the storage recognizer wants the model it was given, and the
- * reach walk wants the source method that runs. Both start by finding
- * the call that picked the source, which is what this settles.
+ * A loader takes the read away from the caller and runs it later, in a
+ * source class the project wrote. The storage recognizer needs the model
+ * the call was given, and the reach walk needs the source method that
+ * runs. Both start from the call that picked the source, and this module
+ * finds that call.
  */
 
 import { field } from "./ast.js";

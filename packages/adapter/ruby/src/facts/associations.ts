@@ -1,14 +1,14 @@
 /**
- * associations.ts: reading `has_many :statuses` out of a model's body.
+ * Reads association declarations such as `has_many :statuses` out of a
+ * model's body.
  *
- * A pack says which calls declare an association. The target is the
- * class the `class_name:` keyword gives, or the association's own name
- * put through ActiveSupport's default inflections when the declaration
- * gives none. That inflected name is written nowhere in the source, so
- * the declaration comes with a constant reference of its own and the
- * constant bindings settle it from the nesting the model is written in:
- * a `has_many :statuses` inside `Admin::Account` reaches `Admin::Status`
- * before it reaches `Status`.
+ * A pack says which calls declare an association. The target is the class
+ * `class_name:` gives, or the association's name put through the
+ * inflections when the call gives none. The source never writes that
+ * inflected name, so each declaration gets a constant reference of its
+ * own, and the constant bindings settle it from the model's nesting. A
+ * `has_many :statuses` inside `Admin::Account` reaches `Admin::Status`
+ * before `Status`.
  */
 
 import {
@@ -58,8 +58,8 @@ function targetReference(
 
 /**
  * The name of the class one declaration reaches, or null when the call
- * writes a `class_name:` this cannot read. Falling back to the
- * inflection there would point the association at the wrong class.
+ * writes a `class_name:` that is not a plain string. Falling back to the
+ * inflected name there would point the association at the wrong class.
  */
 function targetName(
   call: RbNode,
@@ -78,10 +78,10 @@ function targetName(
 }
 
 /**
- * Every association declared in one class or module body, one written
- * inside a block that body runs included. `nesting`
- * is the enclosing module and class names, outermost first, and is
- * where the lookup of a target reference starts.
+ * Every association declared in one class or module body, including one
+ * inside a block that runs as part of the body. `nesting` lists the
+ * enclosing module and class names, outermost first, and the lookup of
+ * each target reference starts there.
  */
 export function associationsDeclaredIn(
   cls: RbNode,

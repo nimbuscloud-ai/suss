@@ -1,16 +1,15 @@
 /**
- * envReads.ts: the environment variables a body reads through the core
- * `ENV` object. `ENV["X"]`, `ENV.fetch("X", d)` and `ENV.fetch("X") { d }`
- * become the config-read effect the TypeScript adapter emits for
- * `process.env.X`, with the same defaulted flag, so the runtime-config
- * checker pairs them against a template the same way.
+ * The environment variables a body reads through Ruby's `ENV` object.
+ * `ENV["X"]`, `ENV.fetch("X", d)` and `ENV.fetch("X") { d }` become the
+ * config-read effect the TypeScript adapter emits for `process.env.X`,
+ * with the same defaulted flag, so the runtime-config checker pairs them
+ * with a template the same way.
  *
- * `ENV` is the language's own object, so this belongs to the adapter and
- * not to a pack. Every expression that spells `ENV` and hands it
- * somewhere is stated as `environmentObject`, and one question over
- * those gives back every parameter whose value ends up naming a
- * variable, so a body calling such a helper reports the read at the
- * call. The README lists every spelling that is and is not read.
+ * `ENV` is part of the language, so this belongs to the adapter and not
+ * to a pack. Every expression that passes `ENV` somewhere becomes an
+ * `environmentObject` fact. One question over those facts returns every
+ * parameter whose value ends up naming a variable, so a body that calls
+ * such a helper reports the read at the call.
  */
 
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
@@ -40,22 +39,22 @@ import type { RbNode } from "./parser.js";
 export const RUBY_ENV_RECOGNITION = "ruby-env";
 
 /**
- * Whether a read whose name is not a literal supplies a fallback. Ruby
- * says this at the read and the rules never carry it, so the run keeps
- * it under a name of its own. A read the rules derived inside a helper
- * has no row here, and the reader takes that as no fallback.
+ * Marks a read whose variable name is not a literal and which supplies a
+ * fallback. The fallback is written at the read and the shared rules do
+ * not carry it, so the adapter records it in a relation of its own. A
+ * read site with no row here has no fallback.
  */
 const ENV_DEFAULTED = "rbEnvDefaulted";
 
-/** The project's facts and the path they key this body's file under. */
+/** The project's facts, and the path they use as this body's file key. */
 export interface EnvFacts {
   readonly db: Database;
   readonly file: string;
 }
 
-/** The same, once the run is known to have a helper read to look for. */
+/** The same facts, for a run with at least one helper that reads the environment. */
 interface HelperFacts extends EnvFacts {
-  /** Each parameter whose value names a variable, and the reads it names. */
+  /** Each parameter whose value becomes a variable name, with the read sites that name reaches. */
   readonly named: ReadonlyMap<string, readonly string[]>;
 }
 
@@ -73,14 +72,14 @@ interface EnvSite {
   readonly defaulted: boolean;
 }
 
-/** What a caller passes at a parameter the rules came back with. */
+/** What a caller passes for a parameter the rules found. */
 interface NamingArgument {
   /** The reads the parameter's value supplies the name to. */
   readonly sites: readonly string[];
   readonly argument: RbNode;
 }
 
-/** A place in the body's source order: a read found there, or a call still to answer. */
+/** A place in the body's source order: a read found there, or a call still to resolve. */
 type Slot = { readonly read: EnvRead } | { readonly call: RbNode };
 
 /** A method or lambda body runs when it is called, so its reads wait for its own unit. */
@@ -96,8 +95,8 @@ const DEFERRED_BODY_TYPES = new Set(["method", "singleton_method", "lambda"]);
  */
 export function envReadEffects(root: RbNode, facts?: EnvFacts): Effect[] {
   const helpers = helperFactsOf(facts);
-  // The calls are answered in a batch once the walk is over, so what the
-  // walk keeps is a place in source order for each of them.
+  // The calls are resolved in one batch after the walk, so the walk keeps
+  // a slot for each one to preserve source order.
   const slots: Slot[] = [];
   walkDescendants<RbNode, null>(root, null, {
     at: (node) => {
@@ -106,8 +105,8 @@ export function envReadEffects(root: RbNode, facts?: EnvFacts): Effect[] {
         slots.push({ read });
         return;
       }
-      // A bare name Ruby runs as a method parses as an `identifier` and
-      // passes nothing, so no name reaches a helper through one.
+      // A bare method call parses as an `identifier` and takes no
+      // arguments, so it cannot pass a name to a helper.
       if (helpers !== null && node.type === "call") {
         slots.push({ call: node });
       }
@@ -128,8 +127,7 @@ export function envReadEffects(root: RbNode, facts?: EnvFacts): Effect[] {
 
 /**
  * The run's facts with the parameters that name a variable, or null when
- * no parameter in the run does, in which case the body's calls are left
- * alone.
+ * no parameter in the run does. The body's calls are then skipped.
  */
 function helperFactsOf(facts: EnvFacts | undefined): HelperFacts | null {
   if (facts === undefined) {
@@ -147,10 +145,11 @@ const namedByDb = new WeakMap<Database, Map<string, string[]>>();
 
 /**
  * Every parameter whose value ends up naming an environment variable,
- * against the reads that name comes to. One question per run, seeded
- * with the expressions that spell `ENV`, however many helpers deep the
- * name is handed. The reads cannot be the seed: one written through a
- * parameter is off an object no scan of the source would pick out.
+ * mapped to the read sites the name reaches. It asks one question per
+ * run, starting from the expressions that spell `ENV`, and follows the
+ * name through any number of helpers. The reads cannot be the starting
+ * point, because a read through a parameter is made on an object no scan
+ * of the source would recognize as `ENV`.
  */
 function namedParameters(db: Database): ReadonlyMap<string, readonly string[]> {
   const memo = namedByDb.get(db);
@@ -176,9 +175,9 @@ function namedParameters(db: Database): ReadonlyMap<string, readonly string[]> {
 }
 
 /**
- * State which expressions spell `ENV` and hand it on, so the shared
- * rules can say which parameters a caller's argument ends up naming,
- * and keep the fallback flag they do not carry.
+ * Records which expressions spell `ENV` and pass it on, so the shared
+ * rules can work out which parameters a caller's argument ends up
+ * naming. Also records the fallback flag the rules do not carry.
  */
 export function emitEnvFacts(db: Database, file: string, root: RbNode): void {
   walkDescendants<RbNode, null>(root, null, {
@@ -202,9 +201,9 @@ export function emitEnvFacts(db: Database, file: string, root: RbNode): void {
 }
 
 /**
- * Whether anything but a read of one written-out variable is done with
- * the object. A file whose every read spells its own variable hands
- * `ENV` nowhere, so the rules have nothing to follow out of it.
+ * Whether `ENV` is used for anything other than a read of a literal
+ * variable name. A file whose reads all write out their variable passes
+ * `ENV` nowhere, so the rules have nothing to follow.
  */
 function handsOnward(node: RbNode): boolean {
   const parent = node.parent;
@@ -221,8 +220,8 @@ function handsOnward(node: RbNode): boolean {
 /**
  * The environment reads each of a body's calls reaches through a project
  * helper. The callees are resolved in one round, so a body costs one
- * question rather than one per call, and which parameters name a
- * variable was settled once for the whole run.
+ * question instead of one per call. Which parameters name a variable
+ * was already settled once for the whole run.
  */
 function helperReads(
   calls: readonly RbNode[],
@@ -263,9 +262,10 @@ function helperReads(
 }
 
 /**
- * The arguments this call passes at parameters that name a variable,
- * taken over every function the callee settles on. Ruby writes a call
- * two ways, so a call comes with a key for each.
+ * The arguments this call passes for parameters that name a variable,
+ * across every function the callee settles on. A Ruby call is keyed both
+ * as a method call and as an invocation of a value, so it comes with a
+ * key for each.
  */
 function namingArguments(
   db: Database,

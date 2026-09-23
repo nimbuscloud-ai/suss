@@ -1,16 +1,16 @@
 /**
- * locals.ts: which scope a Ruby name belongs to, and every write each
- * scope makes to it.
+ * Which scope a Ruby name belongs to, and every write each scope makes
+ * to it.
  *
- * Ruby declares no local. Assigning a name anywhere in a method body
- * makes it a local of that method, a branch, a loop and a block
- * included, so `query` in two methods is two different names and the
- * facts have to key them apart. A block parameter is the one name a
- * block owns rather than the method around it.
+ * Ruby has no local declarations. Assigning a name anywhere in a method
+ * body makes it a local of that method, inside a branch, a loop or a
+ * block too, so `query` in two methods is two different names and the
+ * facts key them apart. A block parameter belongs to its block.
  *
- * A name written more than once is a question about control flow, and
- * `valueLeftByWrites` decides it. What this supplies is the writes in
- * source order and whether the scope's own statements order them.
+ * When a name is written more than once, `valueLeftByWrites` in the
+ * shared rules decides which value a reader sees. This module supplies
+ * the writes in source order and whether the scope's own statements put
+ * them in order.
  */
 
 import { writesRunInOrder } from "@suss/resolution";
@@ -39,7 +39,7 @@ export const RUBY_NAME_TYPES: ReadonlySet<string> = new Set([
   "instance_variable",
 ]);
 
-/** The left sides of a multiple assignment that hold further targets. */
+/** The left sides of a multiple assignment that contain more targets. */
 const TARGET_LIST_TYPES = new Set([
   "left_assignment_list",
   "destructured_left_assignment",
@@ -201,7 +201,7 @@ function writesUnder(body: RbNode): LocalWrite[] {
   return found;
 }
 
-/** The names one scope has, worked out once because every key asks about them. */
+/** The names one scope has, computed once because every key needs them. */
 interface ScopeNames {
   /** Its parameters and every name its body writes to. */
   locals: ReadonlySet<string>;
@@ -300,8 +300,8 @@ export function ownerOfName(
   }
   for (const scope of scopesAround(enclosing)) {
     const names = namesOfScope(scope, node);
-    // Reading the parents costs a wrapper object per step, so the scope's own
-    // names settle every name no block declares before any of that happens.
+    // Walking up the parents allocates a wrapper per step, so the scope's
+    // own names rule out every name no block declares before that walk.
     if (names.blockParams.has(name)) {
       const block = blockDeclaring(node, name);
       if (block !== null) {
@@ -316,9 +316,9 @@ export function ownerOfName(
 }
 
 /**
- * Whether a bare name here is a local. Ruby spells a local read and a
- * call of a method on `self` the same way, so a name no scope around
- * this point wrote is the second one.
+ * Whether a bare name here is a local. Ruby writes a local read and a
+ * call of a method on `self` the same way, so a name that no surrounding
+ * scope wrote to is a call.
  */
 export function isLocalName(
   node: RbNode,
@@ -413,9 +413,8 @@ export function collectWrites(
 
 /**
  * Whether one body's writes to an instance variable run once each, in the
- * order they are written. The writes are collected off the expression walk
- * rather than by `collectWrites`, so they arrive as the target node each
- * one writes to.
+ * order they are written. The writes come from the expression walk instead
+ * of from `collectWrites`, so each arrives as the target node it writes to.
  */
 export function instanceWritesRunInOrder(
   body: RbNode,
@@ -463,7 +462,7 @@ function isNameRead(node: RbNode, targetIds: ReadonlySet<number>): boolean {
   if (targetIds.has(node.id)) {
     return false;
   }
-  // In `query.where`, `where` is a method on the receiver, not the local spelled the same.
+  // In `query.where`, `where` is a method called on the receiver, even when a local has that name.
   const parent = node.parent;
   return !(
     parent !== null &&

@@ -1,15 +1,15 @@
 /**
- * The method names a class gets under a name the source computes.
+ * The methods a class defines under a name the source computes.
  *
  * `KEYS.each { |key| define_method(key) { ... } }` defines one method
  * per element of `KEYS`, and a reader of `def` nodes sees none of them.
- * Reading the names lets a lookup for a name none of them defines carry
- * on up the ancestry instead of stopping at the class.
+ * Knowing the names lets a lookup for any other name continue up the
+ * ancestry instead of stopping at the class.
  *
- * Which calls those are, and what each name is written as, arrive as
- * `definesMethodFrom` and `nameTurnsOn`, so this reads no source of its
- * own. Each name goes through the shared value evaluator, which follows
- * names and constants across the whole run. A name read only in part
+ * The calls and their name expressions come in as `definesMethodFrom`
+ * and `nameTurnsOn` facts, so this module never reads source itself. Each
+ * name goes through the shared value evaluator, which follows names and
+ * constants across the whole run. A name that settles only in part
  * becomes a pattern the whole name has to match.
  */
 
@@ -26,15 +26,15 @@ import type { ParameterBindings } from "./values/evaluator.js";
 
 /** What the dynamic definitions in one class define. */
 export interface DefinedNames {
-  /** Every name this reader read one as defining. */
+  /** Every name a dynamic definition settled on. */
   readonly names: ReadonlySet<string>;
-  /** What a name read only in part has to match for the class to be defining it. */
+  /** One pattern per name that settled only in part. A name matching one may be defined by the class. */
   readonly patterns: readonly RegExp[];
-  /** Whether one of them was given a name this reader could not read. */
+  /** Whether any definition's name settled on nothing at all. */
   readonly unreadable: boolean;
 }
 
-/** Every class's reading, by the key the value facts give the class node. */
+/** What each class defines dynamically, keyed by the class node's value fact key. */
 export type DynamicNames = ReadonlyMap<string, DefinedNames>;
 
 const NOTHING: DefinedNames = {
@@ -43,14 +43,14 @@ const NOTHING: DefinedNames = {
   unreadable: false,
 };
 
-/** Whether `name` could be one the class defines without this reader having read which. */
+/** Whether the class may define `name` through a definition whose name did not fully settle. */
 export function couldBeDefined(defined: DefinedNames, name: string): boolean {
   return (
     defined.unreadable || defined.patterns.some((pattern) => pattern.test(name))
   );
 }
 
-/** What a class defines dynamically, or an empty reading for one that defines nothing that way. */
+/** What a class defines dynamically, or an empty result for a class with no dynamic definitions. */
 export function definedNamesOf(
   dynamic: DynamicNames | undefined,
   classKey: string,
@@ -59,11 +59,12 @@ export function definedNamesOf(
 }
 
 /**
- * Read every dynamic definition in the run, put the names it settles on
- * in the facts so the shared `wantedDeclaredName` rule reports them
- * beside the ones a `def` writes out, and hand back what else the
- * ancestry lookup needs. Runs after the evaluator is bound, since
- * settling a name reads the run's own facts.
+ * Reads every dynamic definition in the run. The names they settle on
+ * go into the facts as `declaresName`, so the shared
+ * `wantedDeclaredName` rule reports them next to the names a `def`
+ * writes. The result also has the patterns and the unreadable flag the
+ * ancestry lookup needs. Call it after the evaluator is bound, since
+ * settling a name reads the run's facts.
  */
 export function readDynamicNames(
   db: Database,
@@ -88,7 +89,7 @@ export function readDynamicNames(
   return byClass;
 }
 
-/** What the calls read so far say, with one more call's reading folded in. */
+/** Adds one more call's result to what the calls read so far found. */
 function foldReading(
   soFar: DefinedNames,
   reading: { names: string[]; patterns: RegExp[] } | null,
@@ -103,14 +104,13 @@ function foldReading(
   };
 }
 
-/** What one call defines: a name per turn of the loops around it, or the pattern a turn's name matches. Null when a turn gives neither. */
+/** What one call defines: a name for each turn of the loops around it, or a pattern when a turn's name settles only in part. Null when some turn gives neither. */
 function readOne(
   db: Database,
   rootsByFile: ReadonlyMap<string, RbNode>,
   nameKey: string,
 ): { names: string[]; patterns: RegExp[] } | null {
-  // A key naming no node in the run settles on nothing, which is what
-  // an unreadable name settles on too.
+  // A key with no node in the run is treated like an unreadable name.
   const node = nodeOfKey(rootsByFile, nameKey);
   const names: string[] = [];
   const patterns: RegExp[] = [];
@@ -162,10 +162,9 @@ function escapeForPattern(text: string): string {
 }
 
 /**
- * One set of block-parameter bindings per turn of the loops the name is
- * written inside. A loop whose elements this reader cannot list
- * contributes no binding, which leaves a name taken from its parameter
- * unread.
+ * One set of block parameter bindings per turn of the loops the name is
+ * written inside. A loop whose elements cannot be listed adds no
+ * binding, so a name taken from its parameter stays unread.
  */
 function loopTurns(
   db: Database,
@@ -187,7 +186,7 @@ function loopTurns(
   return turns;
 }
 
-/** One loop around a name, with what it runs over read out. */
+/** One loop around a name, with the elements it runs over. */
 interface LoopOver {
   readonly element: string;
   /** The name the position is bound to, or the empty string for a block that takes one parameter. */
@@ -195,7 +194,7 @@ interface LoopOver {
   readonly elements: string[];
 }
 
-/** Every loop around the name whose elements this reader could list, in the order the facts state them. */
+/** Every loop around the name whose elements could be listed, in the order of the facts. */
 function listsBehind(
   db: Database,
   rootsByFile: ReadonlyMap<string, RbNode>,

@@ -1,24 +1,23 @@
 /**
- * Finds the file behind a constant.
+ * Finds the file that defines a constant.
  *
- * A Ruby codebase locates that file by a naming convention rather than through a
- * load graph a static reader could follow, so we build one path from the
- * constant's own name and look for it under the configured root and the
+ * A Ruby codebase finds that file by a naming convention, with no load
+ * graph a static reader could follow. So the adapter builds one path from
+ * the constant's name and looks for it under the configured root and the
  * directories Rails autoloads from. No other spelling is tried.
  */
 
 import fs from "node:fs";
 import path from "node:path";
 
-/** A pack picks a convention by name, and the code for each one lives here. */
+/** A pack picks a convention by name, and `PATH_CONVENTIONS` maps each name to its code. */
 export type ConstantPathConvention = "railsUnderscore";
 
 /**
- * Ported from ActiveSupport's own `String#underscore`, which is what
- * Rails autoloading runs a constant path through. An acronym the
- * project registers with the inflector is one word to it, so with
- * `ActivityPub` registered the path is `activitypub`, not
- * `activity_pub`.
+ * A port of ActiveSupport's `String#underscore`, which Rails autoloading
+ * runs a constant path through. The inflector treats an acronym the
+ * project registers as one word, so with `ActivityPub` registered the
+ * path is `activitypub` and never `activity_pub`.
  */
 export function underscoreConstantPath(
   qualifiedName: string,
@@ -59,15 +58,13 @@ const PATH_CONVENTIONS: Record<
 };
 
 /**
- * Null when there is no file at that path. Rails autoloads from every
- * directory directly under `app`, so `ApplicationController` is
- * `app/controllers/application_controller.rb` and not
- * `app/application_controller.rb`. It also autoloads from each
- * `concerns` directory under those, so a concern in
- * `app/models/concerns/archivable.rb` is `Archivable`. The root is tried
- * first, then the directories under it in name order, then their
- * `concerns` directories in the same order, which is the order Rails'
- * own autoload glob lists them. No other spelling is tried.
+ * The file that defines a constant under `root`, or null when there is
+ * none. Rails autoloads from every directory directly under `app`, and
+ * from each `concerns` directory under those, so `ApplicationController`
+ * is `app/controllers/application_controller.rb` and `Archivable` can be
+ * `app/models/concerns/archivable.rb`. The root is tried first, then the
+ * directories under it in name order, then their `concerns` directories
+ * in the same order. Rails' own autoload glob lists them in that order.
  */
 export function resolveConstantFile(
   root: string,

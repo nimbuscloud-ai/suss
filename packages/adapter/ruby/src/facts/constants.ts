@@ -1,6 +1,8 @@
-// constants.ts: linking a Ruby constant to the definition behind it. Ruby has
-// no imports, so `imports` has no counterpart here and this binds a reference
-// straight to its definition. The README says how the lookup works.
+/**
+ * Binds each Ruby constant reference to the definition behind it. Ruby
+ * has no imports, so there is no `imports` fact to follow, and a
+ * reference is bound directly to its definition.
+ */
 
 import { field, NESTING_TYPES } from "../ast.js";
 import { associationsDeclaredIn } from "./associations.js";
@@ -11,11 +13,11 @@ import type { RbAssociationCalls, RbInflections } from "../pack.js";
 import type { RbNode } from "../parser.js";
 import type { AssociationDeclaration } from "./associations.js";
 
-/** A definition every file in the run can see, under the name it is written as. */
+/** A constant definition, which every file in the run can see, under its qualified name. */
 export interface ConstantDefinition {
   readonly qualifiedName: string;
   readonly key: string;
-  /** `class`/`module` opens a constant every file may open again; `X = ...` sets one. */
+  /** A `class` or `module` declaration, which any file may reopen, or an `X = ...` assignment. */
   readonly kind: "declaration" | "assignment";
 }
 
@@ -32,7 +34,7 @@ export interface FileConstants {
   readonly filePath: string;
   readonly definitions: readonly ConstantDefinition[];
   readonly references: readonly ConstantReference[];
-  /** Empty unless a pack in the run said what an association declaration looks like. */
+  /** Empty unless a pack in the run declares association calls. */
   readonly associations: readonly AssociationDeclaration[];
 }
 
@@ -58,12 +60,12 @@ function writtenName(node: RbNode): string | null {
   return prefix === null ? null : `${prefix}::${name.text}`;
 }
 
-/** The whole name a definition goes by, given what it is written inside. */
+/** The qualified name of a definition written inside `nesting`. */
 function qualify(nesting: readonly string[], name: string): string {
   return [...nesting, name].join("::");
 }
 
-/** A constant that says what something is called rather than reading it. */
+/** Whether a constant declares a name instead of reading one. */
 function isDeclaration(node: RbNode, parent: RbNode | null): boolean {
   if (parent === null) {
     return false;
@@ -79,10 +81,10 @@ function isDeclaration(node: RbNode, parent: RbNode | null): boolean {
 }
 
 /**
- * Every constant this file defines and every one it reads. One walk, because
- * the nesting a reference is written inside is what the walk already knows.
- * An association's target is read here too: the name it inflects to has no
- * node in the source, and the nesting is what settles which class it means.
+ * Every constant this file defines and every one it reads, in one walk
+ * that tracks the nesting as it goes. An association's target is
+ * collected here too, because the inflected name has no node in the
+ * source and only the nesting says which class it means.
  */
 export function collectFileConstants(
   filePath: string,
@@ -168,16 +170,16 @@ export function collectFileConstants(
 }
 
 /**
- * Link every constant read anywhere in the run to the definition behind it,
- * looking outwards from the nesting it was read inside the way Ruby does.
+ * Binds every constant read anywhere in the run to its definition,
+ * looking outwards from the nesting it was read inside, the way Ruby
+ * does.
  *
- * `binds(refKey, defKey)` is the link itself. `rbConstantFrom(from, to)`
- * is the same link at file level, which is the closest thing to an
- * import graph a language without imports has.
+ * `binds(refKey, defKey)` records the binding. `rbConstantFrom(from, to)`
+ * records the same link between the two files, and it is the nearest
+ * thing Ruby has to an import graph.
  *
- * `declaresAssociation` is emitted here as well, because an association's
- * target is one of those references and the shared rules read the pair
- * together.
+ * `declaresAssociation` is emitted here too, because an association's
+ * target is one of these references and the shared rules join the two.
  */
 export function emitConstantBindings(
   db: Database,
@@ -193,17 +195,17 @@ export function emitConstantBindings(
       byName.set(definition.qualifiedName, found);
       fileOfDefinition.set(definition.key, file.filePath);
       // A caller that settled a value on a class through the rules has
-      // the key and no reference to read a name off.
+      // only the key, and needs this fact to get the class's name.
       db.add("rbConstantName", [definition.key, definition.qualifiedName]);
     }
   }
 
   /**
-   * Which definition a reference means. Two files opening one class or
-   * module are the same constant reopened, so the first body is the one
-   * to bind to and a lookup by name reaches the rest. Two assignments
-   * are a guess, and one alongside a declaration is a script that
-   * happens to spell the name the same way.
+   * Which definition a candidate name refers to. Two files that open one
+   * class or module reopen the same constant, so the reference binds to
+   * the first body and a lookup by name finds the rest. Two assignments
+   * would make the choice a guess, so neither is bound. An assignment
+   * next to a declaration is taken as a script that reuses the name.
    */
   const settles = (candidate: string): string | null => {
     const found = byName.get(candidate) ?? [];

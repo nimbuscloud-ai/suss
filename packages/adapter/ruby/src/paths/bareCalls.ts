@@ -1,16 +1,16 @@
 /**
- * A Ruby method call written as a bare name, with no receiver and no
- * arguments.
+ * Finds a Ruby method call written as a bare name, with no receiver and
+ * no arguments.
  *
  * `visible_items` on its own parses as an identifier, the same node a
- * local variable read parses as, so a reader that collects only `call`
- * nodes misses the call. Ruby tells the two apart the same way this
- * does: a name the method binds is a local variable, and every other
- * identifier read is a call on self.
+ * local variable read produces, so a reader that collects only `call`
+ * nodes misses it. This module tells the two apart the way Ruby does: a
+ * name the method binds is a local variable, and every other identifier
+ * read is a call on self.
  *
  * Binding is over-approximated on purpose. A name assigned anywhere in
- * the method counts as a local, even below the read, so the mistake
- * this can make is missing a call rather than inventing one.
+ * the method counts as a local, even after the read, so a mistake here
+ * misses a call and never invents one.
  */
 
 import { bodyStatements, field } from "../ast.js";
@@ -37,9 +37,9 @@ function always(): boolean {
 }
 
 /**
- * Where an identifier spells a name rather than reading a value, by the
- * node it is written under. A parent absent from here reads its
- * identifier children as values.
+ * For each parent node type, whether an identifier under it spells a
+ * name instead of reading a value. Under a parent type missing from this
+ * table, an identifier reads a value.
  */
 const SPELLS_A_NAME: Record<string, (parent: RbNode, node: RbNode) => boolean> =
   {
@@ -113,8 +113,9 @@ const DESCENDS_EVERYWHERE: ReadonlySet<string> = new Set<string>();
 
 /**
  * Every name a method binds as a local variable, its own parameters
- * included. Leaving out the child types in `stops` keeps a name bound
- * inside a class or a block from hiding a call written outside one.
+ * included. The walk does not descend into the node types in `stops`, so
+ * a name bound inside a class or a block does not hide a call written
+ * outside it.
  */
 export function localNamesIn(
   definitionNode: RbNode,
@@ -142,7 +143,7 @@ export function spellsAName(node: RbNode): boolean {
   return SPELLS_A_NAME[parent.type]?.(parent, node) === true;
 }
 
-/** Ruby's own literals that parse as an identifier. The one a script guards its entry with, `if __FILE__ == $0`, runs no method. */
+/** Ruby keywords that parse as an identifier but call no method, such as the `__FILE__` in `if __FILE__ == $0`. */
 const KEYWORD_LITERALS = new Set(["__FILE__", "__LINE__", "__ENCODING__"]);
 
 /** Whether this identifier is a bare call on self rather than a local variable read or a name being spelled. */

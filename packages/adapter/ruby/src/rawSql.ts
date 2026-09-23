@@ -1,16 +1,13 @@
 /**
- * rawSql.ts: which calls in a body hand the store a statement the
- * project wrote itself, for Ruby.
+ * Finds the calls in a Ruby body that send the store a statement the
+ * project wrote itself.
  *
- * A pack says which constant its library's calls start at, which
- * methods on it give back a client, which calls on that client take a
- * statement, and where each one takes it. A statement goes through the
- * shared value evaluator, so one held in a constant another module
- * wrote reads the same as one written out at the call, and `@suss/sql`
- * says which tables it touches.
- *
- * The README says how a chain that addresses a container without a
- * statement is read, and what a statement nobody can settle produces.
+ * A pack says which constant its library's calls start at, which methods
+ * on it return a client, which calls on that client take a statement,
+ * and where each one takes it. A statement goes through the shared value
+ * evaluator, so one kept in a constant another file defines reads the
+ * same as one written at the call. `@suss/sql` then works out which
+ * tables it touches.
  */
 
 import { storageBinding } from "@suss/ir-core";
@@ -38,9 +35,8 @@ export interface RbRawSqlOptions {
 }
 
 /**
- * Where a pattern's statements land and how they are read. A model
- * pattern and a raw SQL pattern both say this much, so both reach the
- * same reader.
+ * Where a pattern's statements go and how they are read. A model pattern
+ * and a raw SQL pattern both declare these, so both use the same reader.
  */
 export interface RbStatementStore {
   /** Which store is behind the calls, in the words OpenTelemetry's semantic conventions use. */
@@ -56,7 +52,7 @@ export interface RbStatementStore {
 /**
  * How far the reader follows a name back to what it was written as. A
  * client is assigned once and then read, so anything deeper than this
- * is a cycle in the facts rather than a chain somebody wrote.
+ * is a cycle in the facts and not a chain somebody wrote.
  */
 const MOST_HOPS = 8;
 
@@ -69,7 +65,7 @@ export interface Address {
 /** What a call on the library's own constant has addressed, which is nothing yet. */
 export const NOWHERE: Address = { scope: null, container: null };
 
-/** The storage effects one call makes, which is nothing unless a pattern matches it. */
+/** The storage effects one call makes. Empty unless a pattern matches the call. */
 export function rawSqlEffects(
   call: RbNode,
   options: RbRawSqlOptions,
@@ -149,8 +145,8 @@ function innermost(qualifier: readonly string[]): string | null {
 
 /**
  * A call that reads or writes the rows of a container the chain already
- * addressed, or that is given the container itself. Nothing is reported
- * for a container nobody settled, since guessing one would report a
+ * addressed, or that is given the container itself. A call whose
+ * container did not settle reports nothing, since a guess would report a
  * table the code never mentions.
  */
 function rowCallEffects(
@@ -188,9 +184,9 @@ function rowCallEffects(
 }
 
 /**
- * A table a call was given by name, split the way one written into a
- * statement is, so a call and a statement say the same namespace and
- * the same table. Null for a name that settled on nothing.
+ * A table a call was given by name, split the same way as a table written
+ * in a statement, so a call and a statement give the same namespace and
+ * table. Null for a name that settled on nothing.
  */
 function namedTable(name: string | null): Address | null {
   const split = name === null ? null : splitQualifiedTable(name);
@@ -226,11 +222,10 @@ function effectOf(
 }
 
 /**
- * The part of the store a receiver has reached, or null when the
- * library did not give that receiver out. A receiver written as a name is
- * followed back to the expression behind it, so a connection kept in a
- * local, an instance variable or a method reads the same as one built
- * at the call.
+ * The part of the store a receiver has reached, or null when the receiver
+ * did not come from the library. A receiver written as a name is followed
+ * back to the expression behind it, so a connection kept in a local, an
+ * instance variable or a method reads the same as one built at the call.
  */
 function addressBehind(
   receiver: RbNode,
@@ -287,8 +282,8 @@ function addressBehind(
     return { scope: named ?? behind.scope, container: behind.container };
   }
 
-  // A table named on the chain is split the way one named in a statement
-  // is, so `dataset.table("core.accounts")` says the dataset it spells.
+  // A table given on the chain is split the same way as one in a
+  // statement, so `dataset.table("core.accounts")` gives the dataset `core`.
   const table = namedTable(named);
   return {
     scope: table?.scope ?? behind.scope,
@@ -296,7 +291,7 @@ function addressBehind(
   };
 }
 
-/** Whether this receiver is the constant the pack said, `PG` or `Google::Cloud::Bigquery`. */
+/** Whether this receiver is the constant the pack declared, such as `PG` or `Google::Cloud::Bigquery`. */
 function namesConstant(receiver: RbNode, constantName: string): boolean {
   if (receiver.type === "constant") {
     return receiver.text === constantName;
@@ -311,8 +306,8 @@ function namesConstant(receiver: RbNode, constantName: string): boolean {
 /**
  * Whether this receiver is a constant whose class reaches one of the base
  * classes the pack listed. A library that gives every subclass a
- * connection is written from the subclass as often as from the base, and
- * both reach the same store.
+ * connection is called through a subclass as often as through the base,
+ * and both reach the same store.
  */
 function namesSubclass(
   receiver: RbNode,
@@ -337,9 +332,9 @@ function namesSubclass(
 
 /**
  * Whether a call written with no receiver builds a client on the class it
- * is written inside, the bare `connection` of a model's own class method.
- * Ruby sends such a call to the enclosing class, so the ancestry that
- * class reaches is what says whether the library gave the call at all.
+ * is written inside, like the bare `connection` in a model's own class
+ * method. Ruby sends such a call to the enclosing class, so that class's
+ * ancestry decides whether the method comes from the library.
  */
 function buildsOnOwnClass(
   node: RbNode,
@@ -395,10 +390,10 @@ function stringAt(
 }
 
 /**
- * The SQL a call states, with everything the evaluator could not settle
+ * The SQL a call sends, with everything the evaluator could not settle
  * written as a parameter. Null for an argument that is not a string at
- * all, so a call handed a value nothing in the run wrote stays unread
- * rather than becoming a statement of nothing but parameters.
+ * all, so a call given a value from outside the run stays unread instead
+ * of becoming a statement made only of parameters.
  */
 export function statementAt(
   args: CallArgs,
@@ -447,10 +442,10 @@ function statementValue(value: Value): Value {
 }
 
 /**
- * The literal text either side of everything a value left unsettled,
- * which is the form the SQL reader takes a statement in. Null for a
- * value that is not a string, since a parameter standing in for the
- * whole statement says nothing about any table.
+ * The literal text on either side of each part a value left unsettled,
+ * the form the SQL reader expects. Null for a value that is not a string,
+ * since a parameter in place of the whole statement says nothing about
+ * any table.
  */
 function literalParts(value: Value): string[] | null {
   if (value.kind !== "string") {

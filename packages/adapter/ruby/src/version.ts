@@ -1,10 +1,8 @@
 /**
- * version.ts: this adapter's own half of the cache key.
- *
- * `ADAPTER_VERSION` is the hand-bumped semver. Bump it on any change
- * that affects extraction output: IR shape, discovery semantics,
- * terminal classification, anything that would invalidate previously
- * cached summaries.
+ * The adapter's part of the cache key. Bump `ADAPTER_VERSION` by hand on
+ * any change to extraction output, such as a change to the IR, to which
+ * units are discovered, or to how a terminal is classified. A summary
+ * cached under the old version is then thrown away.
  */
 
 import { createAdapterStamp } from "@suss/extractor";

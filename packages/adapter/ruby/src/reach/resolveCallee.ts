@@ -1,16 +1,16 @@
 /**
- * What a call's callee is: a project method the walk can step into, or
- * a reason it cannot.
+ * Resolves a call's callee to a project method the walk can step into, or
+ * to the reason it cannot.
  *
- * The rules in @suss/resolution say what the receiver is. Every hop that
- * moves a value, a local reassigned, a name aliased through two more,
- * `Klass.new`, a method that returns `self`, parentheses, is a step they
- * already state, so nothing here reads a receiver for itself.
+ * The rules in @suss/resolution work out what the receiver is. They
+ * already follow a reassigned local, a chain of aliases, `Klass.new`, a
+ * method that returns `self`, and parentheses, so this file never reads a
+ * receiver itself.
  *
- * Which method of that class then runs is Ruby's own question, and
- * `ancestry.ts` settles it: `include` puts modules in the lookup order
- * at load time, a subclass overrides what its base declares, and `def
- * self.` is looked up somewhere else again.
+ * The ancestry walk then decides which method of that class runs, the way
+ * Ruby does: `include` adds modules to the lookup order at load time, a
+ * subclass overrides its base, and `def self.` methods are looked up
+ * separately.
  */
 
 import {
@@ -44,7 +44,7 @@ export interface ReachedFunction {
   readonly name: string;
   /** `[name]` for a method defined outside any class, `[qualifiedName, name]` for one written in a class body. */
   readonly exportPath: string[];
-  /** The class the method is written in, so a further call from inside it resolves against the right ancestry. Null for a method defined outside any class. */
+  /** The class the method is written in, so calls from inside it resolve against that class's ancestry. Null for a method defined outside any class. */
   readonly enclosingQualifiedName: string | null;
 }
 
@@ -54,40 +54,40 @@ export type CalleeResolution =
 
 export interface ReachContext {
   readonly lookup: AncestorLookup;
-  /** Every class the run defines, with its method-lookup order worked out once, so placing a call reads a map rather than walking the chain again. */
+  /** The method lookup order of every class the run defines, computed once so resolving a call is a map lookup. */
   readonly ancestries: ReadonlyMap<string, Ancestry>;
-  /** Every method a project file writes outside any class or module, by name. More than one file writing the same name settles nothing. */
+  /** Every method a project file defines outside any class or module, by name. A name defined in more than one file does not resolve. */
   readonly topLevelMethods: ReadonlyMap<string, ReachedFunction[]>;
-  /** The value facts, which are where a receiver is settled. */
+  /** The value facts the rules settle receivers from. */
   readonly facts: Database;
-  /** The name of each class the run defines, by the key the value facts give its node. */
+  /** The name of each class the run defines, keyed by the value facts' key for its node. */
   readonly classNames: ReadonlyMap<string, string>;
   /** The method each function key was read from. */
   readonly definitions: ReadonlyMap<string, ReachedFunction>;
-  /** The calls the run's packs said run their block as part of the body around it. */
+  /** The calls whose block the run's packs declare runs as part of the surrounding body. */
   readonly bodyBlocks: BodyBlocks;
-  /** What each class defines under a name the source computes, by class key. */
+  /** The methods each class defines under a name computed at run time, by class key. */
   readonly dynamicNames: DynamicNames;
-  /** What the run's packs say about a loader that takes a read off the caller. */
+  /** The run's loader patterns, for reads a batching loader makes for the caller. */
   readonly loaders: readonly RbLoaderPattern[];
 }
 
-/** Where a call is written: the file, the method whose body it is, and the class that method belongs to. */
+/** Where a call is written: the file, the method whose body contains it, and that method's class. */
 export interface CallSite {
   readonly file: string;
-  /** The method being scanned, which is what keys its own locals. Null at module scope, whose locals the file keys. */
+  /** The method being scanned, whose node its locals are keyed on. Null at module scope, where locals are keyed on the file. */
   readonly method: RbNode | null;
-  /** That method's key, which is what tells its own parameters apart. */
+  /** That method's key, which its parameters' keys start with. */
   readonly owner: string;
   readonly enclosingQualifiedName: string | null;
 }
 
 const DYNAMIC_SEND_NAMES = new Set(["send", "public_send", "__send__"]);
 
-/** The one method name that runs the receiver itself rather than something the receiver holds. */
+/** The method name that runs the receiver itself, as with a proc or lambda. */
 const INVOKES_RECEIVER = "call";
 
-/** The word this adapter puts on each outcome the rules settle nothing for. */
+/** The gap reason for each outcome where the rules settle nothing. */
 const STOP_FOR: Record<string, UnfollowedReason> = {
   severalSources: "multipleSources",
   outsideRun: "outsideRun",
@@ -106,29 +106,29 @@ function followed(target: ReachedFunction): CalleeResolution {
   return { kind: "followed", target };
 }
 
-/** A call whose receiver goes to the rules, and what is read off it. */
+/** A call whose receiver goes to the rules, and the method called on it. */
 interface ReceiverSpelling {
   readonly kind: "receiver";
-  /** The key the receiver expression is asked about. */
+  /** The key to ask the rules about for the receiver expression. */
   readonly key: string;
   readonly method: string;
-  /** Whether the receiver names the class itself, `Klass.build`, rather than one of it. */
+  /** Whether the receiver is the class itself, as in `Klass.build`, instead of an instance. */
   readonly onClassItself: boolean;
 }
 
-/** Where a callee is settled: the receiver's key, the name Ruby looks up on `self`, or the stop neither would reach. */
+/** How a callee is resolved: through the receiver's key, as a name Ruby looks up on `self`, or not at all. */
 type CalleeSpelling =
   | ReceiverSpelling
   | { readonly kind: "implicitSelf"; readonly name: string }
   | { readonly kind: "stopped"; readonly reason: UnfollowedReason };
 
-/** What a batch of calls came down to: the key each receiver was asked under, and what came back. */
+/** The answers for a batch of calls: each call's spelling, and the outcome for each receiver key. */
 export interface CalleeSpellings {
   readonly spellingOf: ReadonlyMap<number, CalleeSpelling>;
   readonly outcomes: ReadonlyMap<string, CalleeOutcome>;
 }
 
-/** What every one of these calls is made through, asked as one batch. */
+/** Asks the rules about the receivers of all these calls in one batch. */
 export function calleeSpellings(
   calls: readonly { call: RbNode; site: CallSite }[],
   ctx: ReachContext,
@@ -148,7 +148,7 @@ export function calleeSpellings(
   };
 }
 
-/** What a call's callee comes down to, once `calleeSpellings` has asked about the batch. */
+/** Resolves a call's callee. Pass the result of `calleeSpellings` to reuse its batched answers. */
 export function resolveCallee(
   call: RbNode,
   site: CallSite,
@@ -171,9 +171,9 @@ export function resolveCallee(
 }
 
 /**
- * A read through a loader runs the project's own source class, so the
- * call reaches the method the library runs on it. Null when no pack
- * declares a source, or when this call picked none.
+ * A read through a loader runs in the project's own source class, so the
+ * call resolves to the method the library runs on that class. Null when
+ * no pack declares a source, or when this call does not pick one.
  */
 function loaderSourceCallee(
   call: RbNode,
@@ -207,11 +207,11 @@ function outcomeFor(
 }
 
 /**
- * Whether to ask the rules about this no-argument call at all. Ask when
- * the run says anything about its receiver. Most of what a Rails body
- * writes is `config.host` on a name nothing built, and asking about
- * every one of those makes each later question costlier without
- * changing an answer.
+ * Whether to ask the rules about this no-argument call at all. Ask only
+ * when the facts say something about its receiver. Most such calls in a
+ * Rails body are reads like `config.host` on a name nothing in the run
+ * built, and asking about each one makes later questions slower without
+ * changing any answer.
  */
 export function mightReadAsACall(
   call: RbNode,
@@ -225,11 +225,11 @@ export function mightReadAsACall(
 }
 
 /**
- * Whether a call written with no arguments is a method call rather than
- * a property read. It is one when the rules bring its receiver down to
- * something this run defines. `config.host`, whose receiver they say
- * nothing about, is the property read, and reporting it as a call would
- * put an effect and a gap on every attribute a body reads.
+ * Whether a call with no arguments is a method call instead of a property
+ * read. It is a call when the rules settle its receiver on a function or
+ * object this run defines. `config.host`, whose receiver the rules know
+ * nothing about, is a property read. Treating it as a call would add an
+ * effect and a gap for every attribute a body reads.
  */
 export function readsAsACall(
   call: RbNode,
@@ -245,7 +245,7 @@ export function readsAsACall(
   return outcome.kind === "function" || outcome.kind === "object";
 }
 
-/** Where the receiver of this call is settled, or the name Ruby would look up on `self`. */
+/** How this call's callee is resolved: through its receiver's key, or as a name Ruby looks up on `self`. */
 function spellingFor(call: RbNode, site: CallSite): CalleeSpelling {
   const methodName = calleeMethodName(call);
   if (methodName === undefined) {
@@ -289,8 +289,8 @@ function asCallee(
     return methodOnObject(spelling, objectKey, ctx);
   }
   if (outcome.kind === "function") {
-    // A method or a lambda a name refers to is run by calling it, and any
-    // other name read off one belongs to the language.
+    // A method or lambda runs when `call` is sent to it. Any other method
+    // called on it is one Ruby itself defines.
     return spelling.method === INVOKES_RECEIVER
       ? functionCallee(outcome.key, ctx)
       : NO_DECLARATION;
@@ -299,9 +299,9 @@ function asCallee(
 }
 
 /**
- * The objects a receiver could be. `objectOf` covers a call that gave one
- * back as well as a name that refers to one, which is what a builder
- * returning `self` needs and what `comesTo` refuses to say about a call.
+ * The objects a receiver could be. `objectOf` covers a call that returned
+ * an object as well as a name that refers to one. A builder that returns
+ * `self` needs the first case, which `comesTo` does not cover.
  */
 function objectsBehind(facts: Database, key: string): string[] {
   return [
@@ -312,11 +312,10 @@ function objectsBehind(facts: Database, key: string): string[] {
 }
 
 /**
- * Which method of a class runs. A class named in the source is the class
- * object itself, so `Klass.build` looks for `def self.build` and
- * `Klass.new` runs the class's own `initialize`. Anything else the rules
- * settled on a class is one of that class, and its methods come from the
- * ancestry.
+ * Which method of a class runs. A constant receiver is the class object
+ * itself, so `Klass.build` looks for `def self.build` and `Klass.new`
+ * runs the class's own `initialize`. Any other receiver the rules settle
+ * on a class is an instance, and its methods come from the ancestry.
  */
 function methodOnObject(
   spelling: ReceiverSpelling,
@@ -324,7 +323,7 @@ function methodOnObject(
   ctx: ReachContext,
 ): CalleeResolution {
   const qualifiedName = ctx.classNames.get(objectKey);
-  // An array, a hash, or anything else written out where it is used.
+  // An array, a hash, or another literal object.
   if (qualifiedName === undefined) {
     return NO_DECLARATION;
   }
@@ -337,10 +336,10 @@ function methodOnObject(
 }
 
 /**
- * A parameter of the method being scanned, called by name, runs whatever
- * its caller passed. A method read off that parameter runs something
- * only the caller's value would name, and another method's parameter is
- * a value this body cannot see at all.
+ * `param.call` on a parameter of the method being scanned runs whatever
+ * the caller passed, so it stops as `callerSupplied`. Any other method on
+ * that parameter depends on the caller's value, and another method's
+ * parameter is not visible from this body, so both stop as unsettled.
  */
 function fromCaller(
   spelling: ReceiverSpelling,
@@ -362,10 +361,10 @@ function functionCallee(key: string, ctx: ReachContext): CalleeResolution {
 }
 
 /**
- * What `method(:name)` refers to, resolved the same way a bare call to
- * `name` would be: a project method this run can follow, or null for
- * anything else. Used for a `method(:name)` reference passed by name
- * into a call, as an argument or as an `&`-prefixed block argument.
+ * What `method(:name)` refers to, resolved the same way as a bare call to
+ * `name`: a project method this run can follow, or null. Used when such a
+ * reference is passed into a call, as an argument or as an `&` block
+ * argument.
  */
 export function resolveMethodReference(
   name: string,
@@ -376,12 +375,21 @@ export function resolveMethodReference(
   return resolved.kind === "followed" ? resolved.target : null;
 }
 
-/** Whether the enclosing class's ancestry saying nothing here still leaves Object's own private methods worth a look, rather than a case this run already settled. */
+/**
+ * Whether a lookup in the enclosing class's ancestry that stopped for
+ * this reason should fall back to top-level methods. It does when the
+ * ancestry has no declaration or leaves the run, and not when a
+ * `define_method` in the ancestry may define the name.
+ */
 function leavesRoomForATopLevelMethod(reason: UnfollowedReason): boolean {
   return reason === "noDeclaration" || reason === "outsideRun";
 }
 
-/** A bare or explicit-`self` call: the enclosing class's own ancestry first, then every method the project writes outside a class, the way Ruby mixes `Object`'s private methods into everything. */
+/**
+ * A call with no receiver or with `self`. Looks in the enclosing class's
+ * ancestry first, then among methods the project defines outside any
+ * class, which Ruby makes private methods of `Object`.
+ */
 function resolveImplicitSelf(
   methodName: string,
   site: CallSite,
@@ -435,8 +443,8 @@ function methodOnAncestryOf(
     return followed(reachedMethod(found.method, found.block, methodName));
   }
   if (found.type === "unsettled") {
-    // An ancestor this run never indexed is a class the project does
-    // not define, the same as calling straight into a dependency.
+    // An ancestor this run never indexed is a class the project does not
+    // define, so the call is treated like a call into a dependency.
     return stop(
       found.cause === "dynamicDefine" ? "definedAtLoadTime" : "outsideRun",
     );
@@ -459,11 +467,10 @@ function reachedMethod(
 }
 
 /**
- * `Const.method`: a class method called straight on the constant, which
- * runs `def self.method` written in the class's own body. This does
- * not walk the ancestry the way an instance method does, since `def
- * self.` on a superclass is inherited through a different mechanism
- * than `include`/`prepend` mix instance methods in.
+ * `Const.method`, a class method called on the constant, which runs a
+ * `def self.method` in the class's own body. This does not walk the
+ * ancestry, because a superclass's `def self.` methods are inherited
+ * through a different mechanism from the one `include` and `prepend` use.
  */
 function singletonMethodOn(
   qualifiedName: string,

@@ -1,15 +1,13 @@
 /**
- * The session behind `suss ask why` on a Ruby project: a tree-sitter
- * parse of the asked-about source, a way to point at the expression
- * somebody spelled, and the witness proof of what it resolved to,
- * rendered through `@suss/resolution`'s phrases.
+ * The session behind `suss ask why` on a Ruby project. It parses every
+ * file under the root with tree-sitter, finds the expression a question
+ * points at, and renders the witness proof of what that expression
+ * resolved to through `@suss/resolution`'s phrases.
  *
- * It parses every file under the root and emits the same value and
- * constant facts `extractRubyProject` does, keeping a location for
- * every fact key so a proof's atoms can point back at source. A
- * handle this session hands back pairs a tree-sitter node with the
- * file it came from, since a node alone does not say which file
- * parsed it.
+ * It emits the same value and constant facts an extraction does, and
+ * keeps a location for every fact key so each atom of a proof can point
+ * back at source. A handle pairs a tree-sitter node with its file, since
+ * a node alone does not say which file it came from.
  */
 
 import fs from "node:fs";
@@ -32,7 +30,7 @@ import type { FileConstants } from "./constants.js";
 const WITNESS_RULES = [...RESOLUTION_RULES, ...RUBY_RULES];
 
 export interface RubyWhySessionOptions {
-  /** The project root, which paths in every answer come out relative to. */
+  /** The project root. Paths in every answer are relative to it. */
   dir: string;
 }
 
@@ -52,9 +50,9 @@ function namedChildrenOf(node: RbNode): RbNode[] {
 }
 
 /**
- * Every declaration site in a file: a method or class by its own
- * node, a name it declares by that name's identifier, so a proof atom
- * that is a bare name still says where it came from.
+ * Indexes every node in a file by its key. A constant and an assigned
+ * local are also indexed by their name key, so a proof atom that is a
+ * bare name still points at source.
  */
 function indexFile(
   file: string,
@@ -64,8 +62,8 @@ function indexFile(
   const walk = (node: RbNode): void => {
     locations.set(nodeId(file, node), { file, node });
 
-    // A bare constant is name-keyed wherever it is read, not only where
-    // it is assigned, so the later occurrence a walk reaches wins.
+    // A bare constant gets a name key wherever it appears, so the last
+    // occurrence the walk reaches wins.
     if (node.type === "constant") {
       locations.set(`${file}#${node.text}`, { file, node });
     }
@@ -103,8 +101,8 @@ function width(node: RbNode): number {
 }
 
 /**
- * The key a question about this expression asks. Which method a call
- * runs is the answer somebody asking about a call wants.
+ * The key to ask about for this expression. For a call it is the
+ * callee's key, since a question about a call is about which method runs.
  */
 function askedKey(value: RubyValueHandle): string {
   const enclosing = enclosingDefinition(value.node);
@@ -201,8 +199,8 @@ export class RubyWhySession {
 
   /**
    * Why `value` resolves to what it does: the witness proof, flattened
-   * to the chain and rendered. Null when the value does not resolve,
-   * which the caller says in its own words.
+   * to the chain and rendered. Null when the value does not resolve, and
+   * the caller reports that itself.
    */
   explain(
     value: RubyValueHandle,
@@ -238,7 +236,7 @@ export class RubyWhySession {
     return path.isAbsolute(file) ? file : path.resolve(this.root, file);
   }
 
-  /** A file path said relative to the root, or as given when it is outside the root. */
+  /** A file path relative to the root, or unchanged when it is outside the root. */
   private displayPath(key: string): string {
     if (key.startsWith(this.root)) {
       return path.relative(this.root, key);

@@ -1,14 +1,14 @@
-// discovery.ts: find class DSL field declarations and turn each one into
-// a RawCodeStructure.
-//
-// A field's boundary binding and its declared contract both come from
-// the arguments of its own DSL call. A field written with one of the
-// pack's wiring keywords is the exception. It declares no type of its
-// own, so its contract and the method behind it are read from the class
-// it points at, one hop away.
-//
-// See this package's README for what a field's summary says about the
-// method behind it and where the reading stops.
+/**
+ * Discovers the units a Ruby file defines: GraphQL fields declared through
+ * a class DSL, controller actions, and client calls.
+ *
+ * A field's boundary binding and declared contract come from the
+ * arguments of its own DSL call. A field written with one of the pack's
+ * wiring keywords declares no type of its own, so its contract and the
+ * method behind it are read from the class the keyword points at, one hop
+ * away. DESIGN.md describes what a field's summary says about the method
+ * behind it and where the reading stops.
+ */
 
 import {
   dispatchByType,
@@ -115,20 +115,20 @@ export function createFileCache(
 }
 
 /**
- * What the run's packs said that reading a method body needs. An
- * options object that already declares both fields, `DiscoveryOptions`
- * among them, is one of these and can be passed straight through.
+ * What reading a method body needs from the run's packs. Any options
+ * object that has these fields, `DiscoveryOptions` among them, can be
+ * passed straight through.
  */
 export interface BodyReadOptions {
-  /** The run's own facts, which the value evaluator reads a name through. Absent in a test that builds one file by hand. */
+  /** The run's facts, which the value evaluator reads names through. Absent in a test that builds one file by hand. */
   readonly facts?: Database | undefined;
-  /** What a pack needs to say a call talks to the database. Absent when no pack does. */
+  /** The storage patterns that decide whether a call reads or writes the database. Absent when no pack declares any. */
   readonly storage?: RbStorageOptions | undefined;
-  /** The methods every pack in the run said its own library defines, which are left off an effect list. */
+  /** The methods the run's packs declare their libraries define. Calls to them are left off an effect list. */
   readonly inheritedMethods?: InheritedMethods | undefined;
-  /** The calls every pack in the run said run their block as part of the body around it. */
+  /** The calls whose block the run's packs declare runs as part of the surrounding body. */
   readonly bodyBlocks?: BodyBlocks | undefined;
-  /** What each class defines under a name the source computes, by class key. */
+  /** The methods each class defines under a name computed at run time, by class key. */
   readonly dynamicNames?: DynamicNames | undefined;
 }
 
@@ -136,16 +136,16 @@ export interface DiscoveryOptions extends BodyReadOptions {
   packs: RubyPack[];
   /** Repo-relative or absolute path recorded on each summary's `location.file`. */
   filePath: string;
-  /** Absolute path of the file being read, for a block's own `ReachedBody.file`. Falls back to `filePath` when nothing was written to disk. */
+  /** Absolute path of the file being read, used for `ReachedBody.file`. Falls back to `filePath` for a source that is not on disk. */
   absoluteFile?: string;
-  /** What a summary's `location.file` says for a file other than the one being read, which a controller's filters need when an ancestor defines them. */
+  /** The `location.file` to record for another file, needed when a controller's filters come from an ancestor in another file. */
   displayPathOf?: (absolute: string) => string;
   cache: FileCache;
-  /** Called once per discovered unit whose own body is a method this run can follow calls out of, so the reach walk has a place to start. */
+  /** Called once for each discovered unit whose body is a method, so the reach walk can start from it. */
   onReachSeed?: (raw: RawCodeStructure, seed: ReachSeed) => void;
 }
 
-/** The method behind a discovered unit's own body, and where it lives, so the reach walk can start there the way it starts at a `def` it found directly. */
+/** The method behind a discovered unit, and where it is, so the reach walk can start there as it does at any `def`. */
 export interface ReachSeed {
   readonly file: string;
   readonly node: RbNode;
@@ -153,7 +153,7 @@ export interface ReachSeed {
   readonly enclosingQualifiedName: string | null;
 }
 
-/** What a bare constant is resolved against: the nesting chain in effect, plus every class the file defines, so we can spot shadowing. */
+/** What a bare constant is resolved against: the nesting in effect, plus every class the file defines so shadowing can be detected. */
 interface FileScope {
   nesting: readonly string[];
   knownClasses: ReadonlySet<string>;
@@ -165,7 +165,7 @@ interface FieldReadContext {
   lookup: AncestorLookup;
   bodyRead: BodyReadOptions;
   facts: Database | undefined;
-  /** The same two, in the shape a lookup down an ancestry takes them. */
+  /** The facts and body options again, in the form an ancestry lookup takes. */
   read: BodyReading;
 }
 
@@ -226,8 +226,8 @@ export async function discoverUnits(
   options: DiscoveryOptions,
 ): Promise<RawCodeStructure[]> {
   const classes: ClassInfo[] = [];
-  // Modules are visited too: a graphql-ruby interface is a module that
-  // mixes in the interface base, and its fields are declared the same way.
+  // Modules are included because a graphql-ruby interface is a module
+  // that mixes in the interface base and declares fields the same way.
   walkDefinitions(root, (info) => classes.push(info));
   const knownClasses = new Set(classes.map((info) => info.qualifiedName));
 
@@ -254,8 +254,8 @@ export async function discoverUnits(
   }
 
   for (const info of classes) {
-    // A class reopened in one file is one class, so a method written in
-    // a later block redeclares a field declared in an earlier one.
+    // A class reopened in the same file is still one class, so a method in
+    // a later block can override a field declared in an earlier one.
     const ownBlocks = fileBlocks.filter(
       (block) => block.info.qualifiedName === info.qualifiedName,
     );
@@ -278,10 +278,10 @@ export async function discoverUnits(
 }
 
 /**
- * Whether a class or module inherits from, or mixes in, one of the
- * pack's base classes, however many project bases are in between
- * (#247). The ancestry keeps a base it could not open as an entry
- * under its written name, so an unread base still matches.
+ * Whether a class or module inherits from, or mixes in, one of the pack's
+ * base classes, however many project bases are in between (#247). A base
+ * the walk could not open stays in the ancestry under its written name,
+ * so it still matches.
  */
 function reachesConfiguredBase(
   ancestry: Ancestry,
@@ -347,9 +347,8 @@ async function graphqlObjectFieldUnits(
   const knownClasses = ownBlocks[0]?.knownClasses ?? new Set<string>();
   const scope: FileScope = { nesting: info.bodyNesting, knownClasses };
 
-  // The class DSL stores fields by name, so a field redefined later in the same
-  // body replaces the earlier declaration. Keying this Map on the resolved field
-  // name gives the same last-write-wins result.
+  // The library stores fields by name, so a field declared again later in
+  // the body replaces the earlier one. Keying on the field name matches that.
   const declsByName = new Map<string, FieldDeclaration>();
   for (const stmt of runStatements(
     info.bodyNode,
@@ -370,13 +369,12 @@ async function graphqlObjectFieldUnits(
 }
 
 /**
- * Every public instance method a controller defines directly is one
- * of its actions; Rails dispatches to a public method only, so a
- * private or protected one is not discovered here at all, though it
- * still gets a summary through the reach walk once something calls
- * it. Each action becomes its own unit, bound when `routeFor` finds a
- * route for it and left unbound otherwise, with its calls seeded into
- * the reach walk either way.
+ * Every public instance method a controller defines directly is an
+ * action. Rails dispatches only to public methods, so a private or
+ * protected one is not discovered here, though the reach walk still
+ * gives it a summary once something calls it. Each action becomes a unit,
+ * bound when `routeFor` finds a route and unbound otherwise, and the
+ * reach walk starts from it either way.
  */
 async function controllerActionUnits(
   pattern: ControllerActions,
@@ -401,8 +399,8 @@ async function controllerActionUnits(
     localDefinition: (name) => sameFileBlocks(name, fileBlocks),
   };
   const ancestry = await ancestryOf(info.qualifiedName, ownBlocks, lookup);
-  // A class extending one of the library's own roots directly is a
-  // controller too, with no project base in between.
+  // A class that extends one of the library's root classes directly, with
+  // no project base in between, is a controller too.
   if (
     !reachesConfiguredBase(ancestry, info.qualifiedName, [
       ...pattern.baseClassNames,
@@ -482,8 +480,8 @@ async function controllerActionUnits(
     emitAction(actionName, method, block);
   }
 
-  // Rails dispatches a routed action to whichever ancestor defines it,
-  // so a subclass that routes `show` without writing it gets the base's.
+  // Rails dispatches a routed action to whichever ancestor defines it, so
+  // a subclass with a route to `show` and no `show` of its own runs the base's.
   const seen = new Set(own);
   for (const entry of ancestry) {
     if (entry.type !== "bodies" || entry.name === info.qualifiedName) {
@@ -604,7 +602,11 @@ function buildControllerActionUnit(
   };
 }
 
-/** One unit, with no boundary and nothing to call, saying what a run of this pattern's own routing read left uncovered. `project.ts` builds this once per pattern, after discovery has read every file, rather than once per controller. */
+/**
+ * A unit with no boundary and no calls, recording the routing
+ * declarations this pattern could not read. Build it once per pattern,
+ * after every file has been discovered, and not once per controller.
+ */
 export function routingGapUnit(
   pattern: ControllerActions,
   gaps: readonly string[],
@@ -648,10 +650,10 @@ export function routingGapUnit(
 }
 
 /**
- * A block on one of the pack's own DSL calls configures that call.
+ * A block on one of the pack's DSL calls configures that call.
  * `field :x, String do argument :q, String end` declares an argument on
- * the field, so reading it as a statement of the class body would put
- * the argument on the wrong thing.
+ * the field, so reading the block as part of the class body would put the
+ * argument on the class.
  */
 function blockConfiguresCall(pattern: GraphqlObjectFields): BlockConfigures {
   const names = new Set([
@@ -683,22 +685,21 @@ interface FieldContract {
   /**
    * When argument wrapping applies, the declared arguments as written.
    * The library unwraps the input object before calling the resolver
-   * method, so the method's parameters follow these, not `args`.
+   * method, so the method's parameters match these instead of `args`.
    */
   methodArgs?: ArgDeclaration[];
 }
 
 interface FieldDeclaration {
   fieldName: string;
-  /** False when the name was computed, so nothing on the wire can be matched against it. */
+  /** False when the name is computed at run time, so no wire name can be matched against it. */
   namedOnTheWire: boolean;
   node: RbNode;
   contract: FieldContract | null;
   body: BodyReport;
 }
 
-/** What one field's declaration and the method behind it come to together, since a wiring keyword settles both at once. */
-/** One branch recording what the resolver does, when anything was read of it. */
+/** One branch recording what the resolver does, or none when nothing was read of it. */
 function branchesFor(body: BodyReport, range: Range): RawBranch[] {
   if (body.effects === undefined && body.extraEffects === undefined) {
     return [];
@@ -728,20 +729,24 @@ function branchesFor(body: BodyReport, range: Range): RawBranch[] {
   ];
 }
 
+/** A field's contract and the method behind it, read together because a wiring keyword decides both. */
 interface FieldReading {
   contract: FieldContract | null;
   body: BodyReport;
 }
 
 export interface BodyReport {
-  /** Left unset when no value of it would be true: the extractor writes its own sentence from this one, and there is a truer sentence in `readings`. */
+  /**
+   * Left unset when no value would be accurate. The extractor writes its
+   * own sentence from this field, and `readings` has a more accurate one.
+   */
   bodyContent?: BodyContent;
   readings: Reading<unknown>[];
-  /** The calls the method makes, each with what gates it. */
+  /** The calls the method makes, each with the conditions it runs under. */
   effects?: RawEffect[];
-  /** Effects a recognizer built in IR form, the database work among them. */
+  /** Effects a recognizer built in IR form, such as database work. */
   extraEffects?: Effect[];
-  /** Set when this body came from an actual method, so the reach walk can follow the calls it makes. */
+  /** Set when this body came from a method, so the reach walk can follow the calls it makes. */
   reachSeed?: ReachSeed;
 }
 
@@ -751,8 +756,8 @@ export function bodyOfMethod(
   file: string,
   bodyRead: BodyReadOptions = {},
 ): BodyReport {
-  // Every call written with no arguments goes on the list, and the reach
-  // walk takes back the ones that turned out to be property reads.
+  // Every call with no arguments goes on the list, and the reach walk
+  // removes the ones that turn out to be property reads.
   const effects = invocationEffects(
     method,
     bodyRead.inheritedMethods,
@@ -778,7 +783,6 @@ export function bodyOfMethod(
   };
 }
 
-/** Every call written under a node. */
 function callsUnder(node: RbNode, found: RbNode[] = []): RbNode[] {
   for (const child of node.namedChildren) {
     if (child === null) {
@@ -792,7 +796,7 @@ function callsUnder(node: RbNode, found: RbNode[] = []): RbNode[] {
   return found;
 }
 
-/** The library resolves a field with no method behind it by reading the attribute off the object it was resolved against, so there is no body anywhere to read. */
+/** A field with no method behind it: the library reads the attribute off the object the field was resolved against, so there is no body to read. */
 const NO_METHOD_BEHIND_IT: BodyReport = {
   bodyContent: "absent",
   readings: [],
@@ -803,8 +807,8 @@ function methodNotSettled(reason: string, range: Range): BodyReport {
 }
 
 /**
- * What a search of an ancestry says about the body, given what it
- * should say when the search read everything and found nothing.
+ * The body report for an ancestry lookup. `nothingThere` is the report to
+ * give when the lookup read the whole ancestry and found no method.
  */
 function bodyFromLookup(
   found: MethodLookup,
@@ -833,11 +837,11 @@ function bodyFromLookup(
 }
 
 /**
- * A field whose type we cannot read is still discovered with no declared
- * contract, since the symbol alone tells you the field exists. A field
- * whose name we cannot read is discovered too, under the expression it
- * was written as and bound to nothing, because a declaration nobody
- * mentions is indistinguishable from one that was never written.
+ * A field whose type cannot be read is still discovered, with no declared
+ * contract, since the symbol alone shows the field exists. A field whose
+ * name cannot be read is discovered too, under the expression it was
+ * written as and with no binding. Dropping it would make the declaration
+ * look as if it had never been written.
  */
 async function readFieldCall(
   stmt: RbNode,
@@ -877,7 +881,7 @@ async function readFieldCall(
   };
 }
 
-/** A field whose name is worked out when the class body runs, so the schema's own name for it is not in this file. */
+/** A field whose name is computed when the class body runs, so the file does not contain the name the schema uses. */
 function computedNameDeclaration(
   stmt: RbNode,
   nameArg: RbNode,
@@ -913,7 +917,7 @@ function wiringReference(
   return null;
 }
 
-/** A contract of null means the shape wasn't readable, which is not the same as a field that declares none. */
+/** The contract is null when no shape could be read for the field, whether it wrote no type or one this reader does not follow. */
 async function readFieldShape(
   symbol: string,
   callArgs: CallArgs,
@@ -939,7 +943,7 @@ async function readFieldShape(
   };
 }
 
-/** The shape a field states outright in its own type argument, or null when it states none this module can read. */
+/** The shape given by a field's own type argument, or null when it has none or the type cannot be read. */
 function literalContract(
   callArgs: CallArgs,
   scope: FileScope,
@@ -956,7 +960,7 @@ function literalContract(
   return returnType === null ? null : { returnType, args: [] };
 }
 
-/** A wiring keyword points at the class that resolves the field, so its ancestry supplies both the declared shape and the resolver method. */
+/** A wiring keyword points at the class that resolves the field, so that class's ancestry gives both the declared shape and the resolver method. */
 async function readWiredClass(
   ref: RbNode,
   scope: FileScope,
@@ -1008,9 +1012,9 @@ async function readWiredClass(
 }
 
 interface ClassContractAccumulator {
-  /** Set by a type-declaring call, which is how a referenced class declares its own return type. */
+  /** Set by the type call, which a referenced class uses to declare its own return type. */
   typeCallShape: TypeShape | null;
-  /** Built up from field-declaring calls, which is how a referenced class describes its own payload. */
+  /** Built from field calls, which a referenced class uses to describe its payload. */
   fieldProperties: Record<string, TypeShape>;
   args: Map<string, ArgDeclaration>;
 }
@@ -1093,7 +1097,7 @@ function classCallHandlers(
   };
 }
 
-/** The declared contract an ancestry states. Null when nothing in it states a shape. */
+/** The contract declared across an ancestry, or null when nothing in it declares a shape. */
 function readClassContract(
   ancestry: Ancestry,
   pattern: GraphqlObjectFields,
@@ -1148,7 +1152,7 @@ function readClassContract(
 
 type ArgumentWrapping = NonNullable<GraphqlObjectFields["argumentWrapping"]>;
 
-/** Followed or not, the wrapping ancestor's name is in the chain. */
+/** Checked by name, so the wrapping base matches even when its file was not read. */
 function ancestryReaches(
   ancestry: Ancestry,
   wrapping: ArgumentWrapping,
@@ -1157,10 +1161,9 @@ function ancestryReaches(
 }
 
 /**
- * The wire shape the wrapping base class gives a mutation: one
- * required input-object argument whose fields are the declared
- * arguments, optional ones unioned with undefined, plus the fields
- * the library adds on its own.
+ * The wire shape the wrapping base class gives a mutation: one required
+ * input-object argument. Its fields are the declared arguments, with
+ * optional ones unioned with undefined, plus the fields the library adds.
  */
 function wrapInputArgument(
   args: readonly ArgDeclaration[],
@@ -1185,7 +1188,7 @@ function optionalShape(shape: TypeShape): TypeShape {
   return { type: "union", variants: [shape, { type: "undefined" }] };
 }
 
-/** The name the schema exposes a field or argument symbol under. */
+/** The name the schema exposes a field or argument under. */
 function resolvedName(
   symbol: string,
   callArgs: CallArgs,

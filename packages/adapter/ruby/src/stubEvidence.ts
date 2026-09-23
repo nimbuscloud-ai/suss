@@ -1,11 +1,11 @@
 /**
  * Evidence for drafting a graphql-ruby `extends-base` dependency stub:
- * every `require`/`require_relative` of the asked package, and every
- * project class whose superclass is spelled from it. Discovery
- * only recognizes a class through `baseClassNames`' literal names (see
- * discovery.ts's `reachesConfiguredBase`), so a project's own base
- * under a renamed namespace, or one that extends the library's own
- * class directly, has to state the exact name.
+ * every `require` or `require_relative` of the requested package, and
+ * every project class whose superclass name is spelled from it.
+ * Discovery only recognizes a class by the literal names in
+ * `baseClassNames`, so a project's own base under a renamed namespace,
+ * or a class that extends the library's class directly, has to be
+ * listed by its exact name.
  */
 
 import fs from "node:fs";
@@ -50,11 +50,11 @@ function bareLetters(name: string): string {
 
 /**
  * Whether a superclass's leading constants spell the gem's name. A gem
- * called `acme-graphql` conventionally lives under `Acme::GraphQL`,
- * and `acme_graphql` under `AcmeGraphql`, so every prefix of the
- * constant path is tried. Rails' own underscore convention breaks on
- * a run of capitals like "GraphQL", so this compares letters only
- * rather than reusing that convention.
+ * called `acme-graphql` usually defines its classes under
+ * `Acme::GraphQL`, and `acme_graphql` under `AcmeGraphql`, so every
+ * prefix of the constant path is tried. Rails' underscore convention
+ * turns `GraphQL` into `graph_ql`, which would never match the gem name,
+ * so this compares letters only.
  */
 function isSpelledFrom(qualifiedName: string, packageName: string): boolean {
   const wanted = bareLetters(packageName);

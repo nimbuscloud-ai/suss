@@ -1,16 +1,14 @@
 /**
- * The methods a discovered unit reaches through the calls it makes,
- * each given a `library` summary of its own, so a question about what
- * a graphql-ruby field reaches can be answered from the summaries alone.
+ * Walks from each discovered unit to the project methods it calls, and
+ * gives each method reached a `library` summary of its own. What a
+ * graphql-ruby field reaches can then be read from the summaries alone.
  *
- * Seeds are entry facts; each scanned body adds a `calls` fact per
- * callee it could place, and the rules derive what is reachable until
- * the set stops growing. A call that could not be placed is recorded
- * as an unfollowed-call gap on the summary of the body it is in.
- *
- * A file's own load-time statements are a seed like any other, with
- * the program as its node. The package README says how a callee is
- * resolved and where the walk stops.
+ * Seeds become `entry` facts. Each scanned body adds a `calls` fact for
+ * every callee it can place, and the rules derive what is reachable until
+ * the set stops growing. A call that cannot be placed becomes an
+ * unfollowed-call gap on the summary of the body it is in. A file's
+ * load-time statements are a seed too, with the program as the node.
+ * DESIGN.md describes how a callee is resolved and where the walk stops.
  */
 
 import {
@@ -70,13 +68,13 @@ import type {
 } from "./resolveCallee.js";
 
 export interface ReachOptions extends BodyReadOptions {
-  /** Every class the run defines and every method it writes outside one, which is what a call is placed against. */
+  /** Every class the run defines and every method defined outside a class, which calls are resolved against. */
   readonly context: ReachContext;
-  /** How a `location.file`/`declaredAt.file` spells an absolute path, the same way `project.ts` spells a discovered unit's. */
+  /** Turns an absolute path into the `location.file` or `declaredAt.file` to record, the same way discovered units record theirs. */
   readonly displayPathOf: (file: string) => string;
 }
 
-/** A discovered unit's method, or a file's program node, keyed the way its summary's span is. */
+/** A discovered unit's method, or a file's program node, keyed the same way as its summary's span. */
 export interface Seed {
   readonly key: string;
   readonly file: string;
@@ -88,22 +86,22 @@ export interface Seed {
 export interface ReachedUnits {
   /** One `library` summary per reached method, in the order they were reached. */
   readonly summaries: BehavioralSummary[];
-  /** Where each callee text a scanned body writes was placed, by the scanned method's key. */
+  /** Where each callee in a scanned body resolved to, by callee text, keyed by the scanned method's key. */
   readonly targetsByKey: ReadonlyMap<string, ReadonlyMap<string, DeclaredAt>>;
   /** The calls each scanned body could not follow, by the scanned method's key. */
   readonly stopsByKey: ReadonlyMap<string, UnfollowedCall[]>;
-  /** Where each `method(:name)` reference that is itself a project method was declared, by callee text and position, keyed by the scanned method's key. */
+  /** Where each `method(:name)` argument that is a project method is declared, by callee text and position, keyed by the scanned method's key. */
   readonly argTargetsByKey: ReadonlyMap<
     string,
     ReadonlyMap<string, ReadonlyMap<number, DeclaredAt>>
   >;
   /** The calls each scanned body makes through one of its own parameters, by the scanned method's key. */
   readonly parameterCallsByKey: ReadonlyMap<string, readonly ParameterCall[]>;
-  /** The callee text of each no-argument call the walk found was a property read, by the scanned method's key, so a summary written before the walk can take it back. */
+  /** The callee text of each no-argument call that turned out to be a property read, by the scanned method's key, so a summary built before the walk can drop it. */
   readonly propertyReadsByKey: ReadonlyMap<string, ReadonlySet<string>>;
-  /** Every (method, position) some scanned body passed a named project method into, across the whole run. */
+  /** Every (method, position) pair that some scanned body passes a named project method into, across the whole run. */
   readonly passedPositions: ReadonlySet<string>;
-  /** The keys of the bodies that reached at least one project method, for a caller that reports a body only when it goes somewhere. */
+  /** The keys of the bodies that reached at least one project method, for a caller that reports a body only when it reaches something. */
   readonly followedKeys: ReadonlySet<string>;
 }
 
@@ -133,9 +131,9 @@ export async function reachedFunctions(
   >();
   const parameterCallsByKey = new Map<string, readonly ParameterCall[]>();
   const propertyReadsByKey = new Map<string, ReadonlySet<string>>();
-  // Every (method, position) some scanned body passes a named project
-  // method into. An inline block or a variable does not count, so a
-  // parameter call missing here is a gap even when a caller supplies one.
+  // Only a named project method counts, not an inline block or a variable,
+  // so a parameter call missing from this set is a gap even when some
+  // caller supplies a value.
   const passedPositions = new Set<string>();
   const followedKeys = new Set<string>();
 
@@ -160,8 +158,8 @@ export async function reachedFunctions(
     if (frontier.length === 0) {
       break;
     }
-    // Every body in this round asks the rules together, so evaluation
-    // runs once per round rather than once per body.
+    // All the bodies in this round ask the rules together, so evaluation
+    // runs once per round instead of once per body.
     const bodies = frontier.flatMap((key) => {
       scanned.add(key);
       const source = functionByKey.get(key);
@@ -247,10 +245,10 @@ function keyOf(target: ReachedFunction): string {
 }
 
 /**
- * Takes the property reads back off a unit read before the walk ran. A
- * body's effect list is written as the body is read, when nothing yet
- * says whether `config.host` runs a method, so every no-argument call
- * goes on it and the ones that reached nothing come off here.
+ * Removes property reads from a unit built before the walk ran. The
+ * effect list is written while the body is read, before anything decides
+ * whether `config.host` runs a method, so every no-argument call goes on
+ * it and the ones that reached nothing are removed here.
  */
 export function dropPropertyReads(
   raw: RawCodeStructure,
@@ -268,10 +266,10 @@ export function dropPropertyReads(
 }
 
 /**
- * A branch that says nothing: a pack wrote it for what the body does,
- * and the body turned out to do none of it. A unit left with no
- * branches says instead that its body went unread, which is what a
- * resolver whose one statement was a property read should say.
+ * A branch with no terminal, conditions or effects. Such a branch is
+ * removed. A unit left with no branches reports that its body went
+ * unread, which is correct for a resolver whose only statement was a
+ * property read.
  */
 function saysNothing(branch: RawCodeStructure["branches"][number]): boolean {
   return (
@@ -282,13 +280,7 @@ function saysNothing(branch: RawCodeStructure["branches"][number]): boolean {
   );
 }
 
-/**
- * What one pass over a body found: methods to walk into, stops, where
- * each callee was placed, where a `method(:name)` reference that is
- * itself a project method was placed (by callee text and position),
- * calls made through one of this body's own parameters, and the
- * (method, position) pairs this body passes a method into.
- */
+/** What one pass over a body found. The fields match the per-key maps on `ReachedUnits`. */
 interface Scan {
   readonly followed: ReachedFunction[];
   readonly stops: UnfollowedCall[];
@@ -296,7 +288,7 @@ interface Scan {
   readonly argTargets: ReadonlyMap<string, ReadonlyMap<number, DeclaredAt>>;
   readonly parameterCalls: readonly ParameterCall[];
   readonly passedPositions: ReadonlySet<string>;
-  /** The no-argument calls this body writes that reached no project method, by the text they were written as. */
+  /** The no-argument calls in this body that reached no project method, by callee text. */
   readonly propertyReads: ReadonlySet<string>;
 }
 
@@ -311,9 +303,8 @@ const EMPTY_SCAN: Scan = {
 };
 
 /**
- * A bare `method(:name)`, or one wrapped as an `&`-prefixed block
- * argument, is a project method passed by name: the symbol node that
- * spells it, if the shape matches, else null.
+ * The `:name` symbol of a bare `method(:name)` argument, also when passed
+ * as an `&` block argument, or null for any other argument.
  */
 function methodReferenceSymbol(node: RbNode): RbNode | null {
   const target =
@@ -333,21 +324,20 @@ function methodReferenceSymbol(node: RbNode): RbNode | null {
     : null;
 }
 
-/** A body's calls, read before the round asks the rules about all of them at once. */
+/** A body's calls, collected before the round asks the rules about all of them at once. */
 interface BodyCalls {
   readonly calls: RbNode[];
-  /** Every call this body writes with no arguments, which is what the summary already has an effect for. */
+  /** Every call in this body with no arguments. The summary already has an effect for each. */
   readonly argless: RbNode[];
   readonly site: CallSite;
   readonly written: { call: RbNode; site: CallSite }[];
 }
 
 /**
- * The calls this round asks the rules about. A call written with no
- * arguments is among them when the run says anything about its
- * receiver, since whether it is a call at all is what the rules then
- * settle; one with nothing behind its receiver is a property read
- * already.
+ * The calls in this body to ask the rules about. A call with no arguments
+ * is included when the facts say something about its receiver, because
+ * the rules then decide whether it is a call. When they say nothing, it
+ * is already a property read.
  */
 function bodyOf(source: ReachedFunction, options: ReachOptions): BodyCalls {
   const site = siteOf(source);
@@ -366,17 +356,16 @@ function bodyOf(source: ReachedFunction, options: ReachOptions): BodyCalls {
 }
 
 /**
- * The statements this source runs. A program node is a file's load-time
- * statements; anything else is a method and runs its own body.
+ * The statements this source runs. For a program node they are the file's
+ * load-time statements, and for a method, its body.
  */
 function readableBodyOf(node: RbNode): ReadableBody | null {
   return node.type === PROGRAM_TYPE ? moduleScopeBody(node) : methodBody(node);
 }
 
 /**
- * Where this source's calls are written. Module scope keys its names
- * against the file rather than against a method, which is how the value
- * facts already keyed them.
+ * Where this source's calls are written. At module scope, names are keyed
+ * on the file instead of a method, matching how the value facts key them.
  */
 function siteOf(source: ReachedFunction): CallSite {
   return {
@@ -390,8 +379,8 @@ function siteOf(source: ReachedFunction): CallSite {
 /**
  * The calls this body makes, out of the ones the round asked about. A
  * no-argument call whose receiver the rules settled on something in the
- * run is one of them, and it is resolved like any other. One they
- * settled on anything else is a property read: no invocation, no gap.
+ * run is kept and resolved like any other call. Otherwise it is a
+ * property read, with no invocation and no gap.
  */
 function callsMade(
   asked: readonly RbNode[],
@@ -434,8 +423,8 @@ function scanBody(
   const parameterCallsSeen = new Set<string>();
   const followedArgless = new Set<number>();
 
-  // A `method(:name)` reference joins a `passes` fact to whichever
-  // parameter of the followed callee it calls through.
+  // Records each `method(:name)` argument as passed into that position of
+  // the callee, so it can be joined to the parameter the callee calls.
   const recordPassedArgs = (
     call: RbNode,
     callee: string,
@@ -470,9 +459,8 @@ function scanBody(
     }
   };
 
-  // A write through a model runs the callbacks its class registered,
-  // and nothing in this body writes their names, so the walk is told
-  // about them rather than reading them off a call.
+  // A write through a model runs the callbacks its class registered. The
+  // body never calls them by name, so the storage recognizer supplies them.
   const followCallback = (name: string, key: string): void => {
     const target = ctx.definitions.get(key);
     if (target === undefined) {
@@ -502,8 +490,8 @@ function scanBody(
         followCallback(callback.name, callback.key);
       }
     }
-    // A stop is placed at its own call, where no summary can be, so the
-    // link step neither links it nor guesses by name.
+    // A stop is placed at the call itself, where no summary is, so the link
+    // step does not link it or fall back to matching by name.
     const placed =
       outcome.kind === "followed"
         ? {
@@ -523,7 +511,7 @@ function scanBody(
     if (outcome.kind === "stopped") {
       const stopKey = `${outcome.reason}:${callee}`;
       // A call the storage recognizer records is already in the summary as
-      // database work, so it is not a gap in what this walk reached.
+      // database work, so it is not reported as a gap.
       const claimed =
         options.storage !== undefined &&
         storageClaims(call, source.file, options.storage, site.method);
@@ -567,9 +555,9 @@ function scanBody(
 }
 
 /**
- * The no-argument calls that reached no project method, by the text
- * they were written as. A text another call in this body kept is not
- * one of them, since dropping it would take that call off the list too.
+ * The no-argument calls that reached no project method, by callee text.
+ * A text that another call in this body kept is left out, since effects
+ * are dropped by text and that call would be dropped too.
  */
 function propertyReadsAmong(
   argless: readonly RbNode[],

@@ -1,6 +1,8 @@
-// resolve.ts: run the shared resolution rules over this project's facts, plus
-// the one thing Ruby says differently. The rules live in @suss/resolution and
-// are the same ones the other two adapters evaluate.
+/**
+ * Runs the shared rules from `@suss/resolution` over this project's facts,
+ * with the few steps Ruby writes differently. The other two adapters run
+ * the same shared rules.
+ */
 
 import { constant, lit, rule, variable as v } from "@suss/datalog";
 import {
@@ -18,11 +20,11 @@ import {
 
 import type { Database } from "@suss/datalog";
 
-/** The steps Ruby states beyond the shared rules. */
+/** The steps Ruby needs beyond the shared rules. */
 export const RUBY_RULES = alsoSteps([
-  // Making one of a class is a call of the class, which the shared rules
-  // already say. Ruby writes the callee as `new` read off the constant, so
-  // what this adds is that the callee is the class.
+  // The shared rules treat a call of a class as making an instance of it.
+  // Ruby writes that call as `new` read off the constant, so this step
+  // takes the class as the callee.
   rule(
     "hop",
     [v("x"), v("cls"), INSTANCE_STEP],
@@ -33,9 +35,9 @@ export const RUBY_RULES = alsoSteps([
     ],
   ),
 
-  // The same spelling again, for the caller asking where a class was
-  // made. `callsNamed` reaches a callee written as the name itself, and
-  // Ruby writes `new` off the constant instead.
+  // The same `Klass.new` spelling, for a caller asking where a class is
+  // constructed. `callsNamed` only matches a callee written as the class
+  // name itself.
   rule(
     "constructsNamed",
     [v("r"), v("cls")],
@@ -46,8 +48,8 @@ export const RUBY_RULES = alsoSteps([
     ],
   ),
 
-  // `%i[a b].freeze` is worth the list it was written as. The evaluator
-  // says the same in its row table, for a value it reads in one file.
+  // `%i[a b].freeze` evaluates to the list it was called on. The
+  // evaluator's row table has the same step for a value inside one file.
   ...["freeze", "dup"].map((method) =>
     rule(
       "hop",
@@ -62,21 +64,22 @@ export const RUBY_RULES = alsoSteps([
 ]);
 
 /**
- * The shared rules with Ruby's own, and the questions, as one program.
- * Every question this adapter asks runs over it, so the whole run shares
- * one evaluation state.
+ * The shared rules, Ruby's own steps and the questions, built as one
+ * program. Every question the adapter asks runs over it, so the whole
+ * run shares one evaluation state.
  */
 export const RUBY_PROGRAM = resolutionProgram(RUBY_RULES);
 
-/** Ask what these values come down to, then derive. */
+/** Asks what these values come down to, and adds the answers to `db`. */
 export function resolveValues(db: Database, keys: readonly string[]): void {
   askResolution(db, keys, "wanted", RUBY_PROGRAM);
 }
 
 /**
- * Ask which parameters end up naming a variable read off each of these
- * environment objects. A project writes a handful of those and has
- * thousands of callee parameters, so one question covers them all.
+ * Asks which parameters end up naming a variable read off each of these
+ * environment objects. A project writes `ENV` in a handful of places and
+ * has thousands of callee parameters, so starting from the objects takes
+ * one question instead of one per parameter.
  */
 export function resolveEnvObjects(
   db: Database,
@@ -86,10 +89,10 @@ export function resolveEnvObjects(
 }
 
 /**
- * Every function calling a value runs: what the value came down to, and
- * what a factory handed back when the value is a name for a call.
- * Asked once per call a body makes, so it joins on the index rather
- * than reading every answer the run has given.
+ * Every function that runs when a value is called: the function the
+ * value comes down to, and the one a factory returned when the value was
+ * assigned from a call. This runs once per call in a body, so it looks
+ * up the index instead of scanning every answer the run has derived.
  */
 export function resolvedFunctions(db: Database, key: string): string[] {
   return [
@@ -99,9 +102,8 @@ export function resolvedFunctions(db: Database, key: string): string[] {
 }
 
 /**
- * The single expression a value was written as. A call to a project
- * function is asked about as well, so the answer is what that function
- * returns.
+ * The single expression a value was written as. When the value is a call
+ * to a project function, the answer is what that function returns.
  */
 export function writtenValueOf(db: Database, key: string): string | null {
   resolveValues(db, [key]);
@@ -109,13 +111,13 @@ export function writtenValueOf(db: Database, key: string): string | null {
 }
 
 /**
- * The single expression a value was written as when the receiver behind
- * it is the instance one site made. An ivar two constructions fill
- * differently settles here and not context free.
+ * The single expression a value was written as, when its receiver is the
+ * instance one construction site made. An instance variable that two
+ * constructions set differently settles here, though it settles on
+ * nothing without the site.
  *
- * A question abandoned on its budget gives back nothing. The pair
- * stays marked as asked, so a second caller gets the same nothing
- * without paying for it again.
+ * A question stopped by its budget returns null. The pair stays marked as
+ * asked, so a second caller also gets null without paying for it again.
  */
 export function writtenValueUnder(
   db: Database,
