@@ -1,10 +1,18 @@
 #!/usr/bin/env node
-// checkDocLinks.mjs: every relative markdown link resolves, anchors included.
-// Links broke quietly when files were renamed and nothing noticed until a
-// reader did, which is #252. Site-root links are the VitePress site's.
+/**
+ * checkDocLinks.mjs: every markdown link resolves, anchors included.
+ * Links broke quietly when files were renamed and nothing noticed until a
+ * reader did, which is #252.
+ *
+ * A relative link resolves against the file it is in. A site-root link
+ * such as `/reference/cli/ask` resolves against the VitePress site in
+ * docs/, the way the built site serves it. A link to a directory lands on
+ * that directory's index page, so its anchor is checked against that page.
+ */
 
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const SKIPPED_DIRECTORIES = new Set([
@@ -13,7 +21,12 @@ const SKIPPED_DIRECTORIES = new Set([
   "coverage",
   ".git",
   "grammar",
+  // The link checker's own fixtures break links on purpose.
+  "__fixtures__",
 ]);
+
+/** The pages a server shows for a directory: VitePress's first, then GitHub's. */
+const INDEX_PAGES = ["index.md", "README.md"];
 
 function markdownFiles(dir, found = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -50,9 +63,8 @@ function linksIn(source) {
   return links;
 }
 
-/** A scheme link, or a site-root path VitePress resolves against the site. */
-function checkable(link) {
-  return !/^[a-z][a-z0-9+.-]*:/i.test(link) && !link.startsWith("/");
+function hasScheme(link) {
+  return /^[a-z][a-z0-9+.-]*:/i.test(link);
 }
 
 /** The anchor GitHub gives a heading: lowercased, punctuation dropped, spaces to hyphens. */
@@ -93,38 +105,88 @@ function anchorsOf(file) {
   return anchors;
 }
 
-const problems = [];
-for (const file of markdownFiles(ROOT)) {
-  for (const link of linksIn(fs.readFileSync(file, "utf8"))) {
-    if (!checkable(link)) {
-      continue;
-    }
-    const [target, anchor] = link.split("#");
-    const resolved =
-      target === "" ? file : path.resolve(path.dirname(file), target);
-    if (target !== "" && !fs.existsSync(resolved)) {
-      problems.push(
-        `${path.relative(ROOT, file)}: ${link} points at a file that does not exist`,
-      );
-      continue;
-    }
-    if (
-      anchor !== undefined &&
-      resolved.endsWith(".md") &&
-      !anchorsOf(resolved).has(anchor.toLowerCase())
-    ) {
-      problems.push(
-        `${path.relative(ROOT, file)}: ${link} points at a heading ${path.relative(ROOT, resolved)} does not contain`,
-      );
-    }
-  }
+function isFile(candidate) {
+  return fs.existsSync(candidate) && fs.statSync(candidate).isFile();
 }
 
-if (problems.length > 0) {
-  for (const problem of problems) {
-    console.error(`  ${problem}`);
-  }
-  console.error(`\n${problems.length} markdown links point at nothing.`);
-  process.exit(1);
+function indexPageOf(directory) {
+  return INDEX_PAGES.map((page) => path.join(directory, page)).find(isFile);
 }
-console.log("Every relative markdown link resolves, anchors included.");
+
+/** A relative target is a file, or a directory that has an index page. */
+function relativeTarget(file, target) {
+  if (target === "") {
+    return file;
+  }
+  const resolved = path.resolve(path.dirname(file), target);
+  if (isFile(resolved)) {
+    return resolved;
+  }
+  if (fs.existsSync(resolved)) {
+    return indexPageOf(resolved) ?? resolved;
+  }
+  return undefined;
+}
+
+/**
+ * A site-root target is a page with cleanUrls on, a directory's index
+ * page, or a static file under public/.
+ */
+function siteTarget(siteRoot, target) {
+  const page = target.replace(/\.html$/, "").replace(/^\/+/, "");
+  const candidates = [
+    path.join(siteRoot, `${page.replace(/\/+$/, "")}.md`),
+    ...INDEX_PAGES.map((index) => path.join(siteRoot, page, index)),
+    path.join(siteRoot, "public", page),
+    path.join(siteRoot, page),
+  ];
+  return candidates.find(isFile);
+}
+
+/** Every link under `root` that points at a missing file or heading. */
+export function findBrokenLinks({ root, siteRoot = path.join(root, "docs") }) {
+  const problems = [];
+  for (const file of markdownFiles(root)) {
+    const where = path.relative(root, file);
+    for (const link of linksIn(fs.readFileSync(file, "utf8"))) {
+      if (hasScheme(link)) {
+        continue;
+      }
+      const [target, anchor] = link.split("#");
+      const resolved = target.startsWith("/")
+        ? siteTarget(siteRoot, target)
+        : relativeTarget(file, target);
+      if (resolved === undefined) {
+        problems.push(`${where}: ${link} points at a file that does not exist`);
+        continue;
+      }
+      if (
+        anchor !== undefined &&
+        anchor !== "" &&
+        resolved.endsWith(".md") &&
+        !anchorsOf(resolved).has(anchor.toLowerCase())
+      ) {
+        problems.push(
+          `${where}: ${link} points at a heading ${path.relative(root, resolved)} does not contain`,
+        );
+      }
+    }
+  }
+  return problems;
+}
+
+function main() {
+  const problems = findBrokenLinks({ root: ROOT });
+  if (problems.length > 0) {
+    for (const problem of problems) {
+      console.error(`  ${problem}`);
+    }
+    console.error(`\n${problems.length} markdown links point at nothing.`);
+    process.exit(1);
+  }
+  console.log("Every markdown link resolves, anchors included.");
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main();
+}
