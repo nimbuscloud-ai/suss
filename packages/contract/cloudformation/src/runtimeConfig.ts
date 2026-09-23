@@ -1,21 +1,15 @@
-// runtimeConfig.ts: extract runtime-configuration provider summaries
-// from CFN/SAM resources that declare an env-var contract.
-//
-// Recognized resource types and where their env vars live:
-//
-//   AWS::Lambda::Function           Properties.Environment.Variables
-//   AWS::Serverless::Function       Properties.Environment.Variables
-//                                   Properties.CodeUri  (SAM)
-//   AWS::ECS::TaskDefinition        Properties.ContainerDefinitions[*].Environment
-//                                   (one summary per container)
-//
-// Each summary has `metadata.runtimeContract.envVars` (the FULL
-// set the process sees, including platform-injected vars) and
-// `metadata.runtimeContract.envVarSources` (provenance per name,
-// "template", "globals" or "platform"). The pairing checker uses the
-// source distinction so platform-injected vars never fire
-// boundaryFieldUnused, and so a name the whole document supplies is
-// judged across the document rather than function by function.
+/**
+ * Runtime-config provider summaries for the resources that set
+ * environment variables: Lambda and SAM functions
+ * (`Environment.Variables`) and ECS task definitions (each container's
+ * `Environment`, one summary per container).
+ *
+ * `envVars` lists every variable the process sees, including the ones
+ * the platform sets. `envVarSources` says where each came from:
+ * "template", "globals" or "platform". The checker uses that so a
+ * platform variable never counts as unused, and so a variable from SAM
+ * Globals is judged once for the whole document.
+ */
 
 import {
   runtimeConfigBinding,
@@ -37,12 +31,10 @@ interface CloudFormationResource {
 }
 
 /**
- * Walk the template's resources and emit one runtime-config provider
- * summary per Lambda / ECS task / etc. that declares an environment
- * block. Resources without an Environment property still emit a
- * summary so the checker can flag any env-var read scoped to them
- * as `boundaryFieldUnknown` (aspect: read), declaring no vars is
- * itself a contract.
+ * One runtime-config provider summary per Lambda function or ECS
+ * container. A function with no Environment block still gets one,
+ * because declaring no variables is a contract too: the checker reports
+ * a read of any variable in that function's code as `boundaryFieldUnknown`.
  */
 export function buildRuntimeConfigSummaries(
   resources: Record<string, CloudFormationResource>,
@@ -139,10 +131,8 @@ function buildEcsTaskSummaries(
     const envEntries = container.Environment;
     const templateVars = readEcsEnvironmentList(envEntries);
     const summary = buildSummary({
-      // ECS gives one summary per container, distinguished by the
-      // composed instance name. The ALB flow reader's `fronts` edges
-      // name the same container the same way, so the two agree without
-      // either one importing the other.
+      // The ALB flow reader's `fronts` edges build the container's
+      // instance name with the same helper, so the two match.
       logicalId: ecsContainerInstanceName(logicalId, containerName),
       sourceFile,
       deploymentTarget: "ecs-task",
@@ -162,31 +152,16 @@ function buildSummary(opts: {
   sourceFile: string;
   deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment";
   templateVars: string[];
-  /**
-   * The subset of `templateVars` a document-level default supplies
-   * rather than the resource itself. Recorded as its own provenance so
-   * the checker asks about it once for the document.
-   */
+  // The variables in `templateVars` that came from SAM Globals.
   inheritedVars?: string[];
-  /**
-   * Resolved CFN-ref targets for env vars. Maps the env var NAME the
-   * code reads to the LOGICAL ID of the resource it Refs. Lets the
-   * message-bus pairing (and any future cross-resource pairing) collapse
-   * the env-var → resource chain at check time. Only populated for env
-   * vars whose values are recognised CFN intrinsics (Ref, GetAtt). Plain
-   * string values produce no entry. They're "data," not "wiring."
-   */
+  // The logical id each `Ref` or `GetAtt` variable points at. Message-bus
+  // pairing uses it to get from a variable the code reads to a resource.
   envVarTargets?: Record<string, { kind: "ref"; logicalId: string }>;
-  /**
-   * What the template sets each variable to, for the ones it writes as
-   * plain text. A store the code addresses through a variable reaches
-   * whatever declares that name through this.
-   */
+  // Plain-text values, so a store named through a variable can pair.
   envVarValues?: Record<string, string>;
   codeScope: { kind: "codeUri" | "unknown"; path?: string };
-  /** Language runtime the manifest declares for the unit (SAM `Runtime`). */
+  // The SAM `Runtime`, when set.
   runtime?: string;
-  /** The manifest language that stated this contract. */
   recognition: string;
 }): BehavioralSummary | null {
   const deployableUnit: DeployableUnit = {
@@ -213,10 +188,6 @@ function buildSummary(opts: {
     location: {
       file: opts.sourceFile,
       range: { start: 1, end: 1 },
-      // Runtime-config summaries don't have an export name. They're
-      // synthesized from a CFN/SAM resource block, not exported from
-      // any module. The schema's required-but-nullable contract reads
-      // null as "no exportName applies."
       exportName: null,
     },
     identity: {
@@ -226,8 +197,8 @@ function buildSummary(opts: {
         recognition: opts.recognition,
         ...deployableUnit,
       }),
-      // The binding keeps its own copy because the unit is what keys a
-      // runtime-config boundary, not incidental to it.
+      // Also on the identity, because the unit is part of what identifies
+      // a runtime-config boundary.
       deployableUnit,
     },
     inputs: [],
@@ -260,15 +231,8 @@ function readEnvVariables(raw: unknown): string[] {
   return Object.keys(raw as Record<string, unknown>).sort();
 }
 
-/**
- * Inspect each Lambda env var value and extract the CFN logical id
- * it resolves to (when the value is `!Ref X` or `!GetAtt X.Attr`).
- * Plain string values are skipped. They're data, not wiring.
- *
- * Used by message-bus pairing (and future cross-resource pairing
- * passes) to bridge env-var-named producer channels to CFN-resource-
- * named provider channels.
- */
+// The logical id behind each `!Ref X` or `!GetAtt X.Attr` value, so a
+// producer that reads a channel from a variable pairs with the resource.
 function readEnvVarTargets(
   raw: unknown,
 ): Record<string, { kind: "ref"; logicalId: string }> {
@@ -285,11 +249,8 @@ function readEnvVarTargets(
   return out;
 }
 
-/**
- * A bare string env-var value is data rather than wiring, so resolving
- * it would invent a reference the template never made. Every other
- * reference shape is the shared one.
- */
+// A plain string value is not a reference, and resolving it as one would
+// invent a link the template never made.
 function readRefTarget(value: unknown): string | null {
   if (typeof value === "string") {
     return null;
@@ -297,12 +258,9 @@ function readRefTarget(value: unknown): string | null {
   return refTarget(value);
 }
 
-/**
- * What the template sets each variable to, for the ones it writes out
- * as plain text. A store or a base URL the code reaches through a
- * variable is that string, so the boundary pairs with whatever declares
- * it. A `!Ref` says which resource instead and is read next door.
- */
+// A store or base URL the code reads from a variable is this string, so
+// the boundary can pair with whatever declares it. `!Ref` values are
+// handled by readEnvVarTargets.
 function readEnvVarValues(raw: unknown): Record<string, string> {
   const out: Record<string, string> = {};
   if (raw === null || typeof raw !== "object") {
@@ -317,10 +275,8 @@ function readEnvVarValues(raw: unknown): Record<string, string> {
 }
 
 function readEcsEnvironmentList(raw: unknown): string[] {
-  // ECS uses [{Name: "FOO", Value: "bar"}, ...] rather than the
-  // Lambda map shape. Skip non-string Name entries (CloudFormation
-  // Ref or Fn::Sub objects show up as objects; we only capture the
-  // declared name when it's static).
+  // ECS writes `[{ Name, Value }]` where Lambda writes a map. A Name built
+  // with an intrinsic is an object and is skipped.
   if (!Array.isArray(raw)) {
     return [];
   }
@@ -338,26 +294,23 @@ function readEcsEnvironmentList(raw: unknown): string[] {
 }
 
 /**
- * Where a function's code is and which file it enters. A queue consumer
- * on the function states the same scope, so it reads it here too.
+ * Where a function's code is and which file it starts in. The queue
+ * consumer summaries for the function use the same scope.
  */
 export function readCodeScope(resource: CloudFormationResource): {
   kind: "codeUri" | "unknown";
   path?: string;
   entry?: string;
 } {
-  // SAM authoring shape: Properties.CodeUri points at a directory
-  // (or a single file). Only string values are useful, Ref / Fn:Sub
-  // objects can't be statically resolved to a path.
+  // A CodeUri built with an intrinsic cannot be turned into a path.
   const codeUri = resource.Properties?.CodeUri;
   if (typeof codeUri === "string" && codeUri.length > 0) {
     const path = codeScopePath(codeUri);
     const entry = handlerEntry(resource, path);
     return { kind: "codeUri", path, ...(entry !== null ? { entry } : {}) };
   }
-  // Escape hatch for raw CFN / authored projects without CodeUri:
-  // a `Metadata.SussCodeScope` annotation lets the user tell the
-  // stub which source directory backs this runtime.
+  // Without a CodeUri, a `Metadata.SussCodeScope` annotation can say
+  // which source directory the function runs.
   const metaScope = resource.Metadata?.SussCodeScope;
   if (typeof metaScope === "string" && metaScope.length > 0) {
     return { kind: "codeUri", path: codeScopePath(metaScope) };
@@ -365,12 +318,9 @@ export function readCodeScope(resource: CloudFormationResource): {
   return { kind: "unknown" };
 }
 
-/**
- * The file this runtime enters, from the resource's `Handler`, joined
- * under the CodeUri and written without an extension the way SAM
- * writes it. Eleven functions built from one CodeUri stay apart only
- * through this: each entry's import closure is that function's scope.
- */
+// Several functions can share one CodeUri, and the entry file from each
+// `Handler` is what keeps their scopes apart. It has no extension, as SAM
+// writes it.
 function handlerEntry(
   resource: CloudFormationResource,
   scopePath: string,

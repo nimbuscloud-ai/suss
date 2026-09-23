@@ -1,30 +1,26 @@
-// The label a manifest reader stamps on the summaries it reads out of
-// one document, when the caller gives none.
-//
-// The label is the document's identity everywhere downstream: the
-// reachability walk scopes its nodes by it, so two documents sharing a
-// label share one scope, and one stack's question gets answered from
-// another stack's rules. A basename is not enough for that, because a
-// repository full of services gives every one of them a template.yaml.
-// Where the file is within its repository does, so that is what the
-// label says.
+/**
+ * The label a manifest reader puts on the summaries from one document
+ * when the caller does not pass one.
+ *
+ * Everything downstream uses the label to tell documents apart. The
+ * reachability walk scopes its nodes by it, so two documents with the
+ * same label share one scope, and a question about one stack gets
+ * answered with another stack's rules. A basename is too weak for this,
+ * because in a repository of services every one has a template.yaml, so
+ * the label is the file's path within its repository.
+ */
 
 import fs from "node:fs";
 import path from "node:path";
 
-/** A spec named by URL keeps the URL: the fetched copy is a temp file whose name says nothing. */
+// A spec fetched from a URL keeps the URL, because the fetched copy is a
+// temp file with a meaningless name.
 const URL_ORIGIN = /^https?:\/\//i;
 
 /**
- * The repository the file belongs to: the nearest ancestor holding a
- * `.git` entry. A linked worktree writes a file there rather than a
- * directory, so both count.
- *
- * Nearest, not outermost, which is worth knowing: a repository vendored
- * inside another repository is the repository for its own files, so two
- * of its documents at the same path within it collide again. A caller
- * that reads across such a tree passes `source` and says what each
- * document is called.
+ * The nearest ancestor with a `.git` entry, which a linked worktree
+ * writes as a file. A repository vendored inside another is its own root,
+ * so a caller reading such a tree should pass `source` for each document.
  */
 function repositoryRoot(file: string): string | null {
   let dir = path.dirname(file);
@@ -42,15 +38,15 @@ function repositoryRoot(file: string): string | null {
   }
 }
 
-/** A path as a label reads it: forward slashes, whatever the platform writes. */
+// Labels use forward slashes on every platform so they match across runs.
 function withForwardSlashes(value: string): string {
   return value.split(path.sep).join("/");
 }
 
 /**
- * Where the document is, relative to its repository. Outside a
- * repository the working directory takes that role, and a file above it
- * keeps its absolute path, which is unlovely but unique.
+ * The document's path relative to its repository, or to the working
+ * directory outside one. A file above that directory keeps its absolute
+ * path, which is long but still unique.
  */
 function documentPathLabel(origin: string): string {
   const resolved = path.resolve(origin);
@@ -68,9 +64,9 @@ function documentPathLabel(origin: string): string {
 }
 
 /**
- * The provenance label for a document read from `origin`, which is
- * either a path on disk or the URL it was fetched from. `prefix` gives
- * the reader, the way `cloudformation:template.yaml` always did.
+ * The provenance label for a document read from `origin`, which is a
+ * path on disk or the URL it was fetched from. `prefix` is the reader's
+ * name, as in `cloudformation:infra/template.yaml`.
  */
 export function documentSourceLabel(prefix: string, origin: string): string {
   if (URL_ORIGIN.test(origin)) {

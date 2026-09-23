@@ -1,13 +1,11 @@
 /**
  * The stores and queues a Worker is bound to, as boundary summaries.
  *
- * Every binding block in a Wrangler document has the same two halves:
- * `binding`, the name the code reads it under, and a key giving the
- * resource's own name. The code says the first, the deployment declares
- * the second, so a summary keeps both: the container is the binding
- * name, which is what an access in the Worker spells (`env.SESSIONS`),
- * and `physicalTable` is the resource's own name, the same split a
- * Prisma model has between the model and the table it maps to.
+ * Every binding block in a Wrangler document has two parts: `binding`,
+ * the name the code reads the resource under, and a key with the
+ * resource's own name. Code only ever uses the first (`env.SESSIONS`),
+ * so the binding name becomes the container the storage check pairs
+ * on, and the resource's own name goes on `physicalTable`.
  */
 
 import { messageBusBinding, storageBinding } from "@suss/behavioral-ir";
@@ -18,10 +16,7 @@ import type { WranglerRecord } from "./document.js";
 /** The manifest language recorded on every binding this reader writes. */
 export const RECOGNITION = "wrangler";
 
-/**
- * A Cloudflare store, the key its block gives the resource's name
- * under, and the store suss records. Cloudflare defines every one of these keys.
- */
+/** How one kind of Cloudflare store appears in a Wrangler document. */
 interface StoreShape {
   /** The Wrangler block that lists these bindings. */
   block: "kv_namespaces" | "r2_buckets" | "d1_databases";
@@ -30,9 +25,8 @@ interface StoreShape {
   /** The store, as a storage binding spells it. */
   storageSystem: string;
   /**
-   * Whether the store declares what an item contains. KV and R2 keep
-   * opaque values, so neither declares a field. D1 is SQL, and its
-   * schema lives in a migration this reader does not read.
+   * KV and R2 store opaque values, so neither declares a field. D1 is
+   * SQL, but its schema is in a migration this reader does not read.
    */
   fieldSet: "partial" | "none";
 }
@@ -105,8 +99,8 @@ function storeSummary(
         recognition: RECOGNITION,
         storageSystem: store.storageSystem,
         scope: "default",
-        // The binding name is what an access in the Worker spells, so
-        // it is the name the storage check pairs on.
+        // An access in the Worker uses the binding name, so the storage
+        // check has to pair on it.
         container: boundAs ?? resourceName,
         accessPath: null,
       }),
@@ -126,10 +120,10 @@ function storeSummary(
 }
 
 /**
- * The properties the binding blocks add to the env object at runtime.
- * A Worker reads `env.SESSIONS` the same way it reads
+ * The blocks whose bindings become properties of the env object at
+ * runtime. A Worker reads `env.SESSIONS` the same way it reads
  * `env.RETRY_LIMIT`, so the runtime contract lists both, and a read of
- * a binding nobody declared is judged like a read of an unset variable.
+ * a binding nobody declared is reported like a read of an unset variable.
  */
 export const BINDING_BLOCKS = [
   "kv_namespaces",
@@ -158,7 +152,6 @@ export function bindingNames(document: Record<string, unknown>): string[] {
   return names;
 }
 
-/** A record, or null for a value that is not one. */
 function asRecord(raw: unknown): Record<string, unknown> | null {
   return raw !== null && typeof raw === "object" && !Array.isArray(raw)
     ? (raw as Record<string, unknown>)
@@ -197,9 +190,9 @@ function queueSide(
       continue;
     }
     summaries.push({
-      // A producer block declares a queue the Worker sends to, which is
-      // a channel rather than a unit that runs, so it is a library. A
-      // consumer block says this Worker drains that queue.
+      // A producer block declares a queue the Worker sends to. Nothing
+      // runs there, so it is a library. A consumer block means this
+      // Worker drains the queue.
       kind: side === "consumers" ? "consumer" : "library",
       location: {
         file: context.sourceFile,

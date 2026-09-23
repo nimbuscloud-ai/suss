@@ -1,18 +1,17 @@
-// albMatch.ts: how an ALB listener picks the match that takes a
-// request, over the match records the ALB flow reader emits.
-//
-// This is the "alb" side of the routing match-language table: the
-// glob rules (`*` crosses `/`, `?` is one character) and the ordering
-// (lowest priority first, the listener's own default last) are ALB's,
-// so they live here with the reader that owns the vocabulary, and the
-// generic walk only dispatches to this selector by the language name.
-//
-// Conditions the reader marked unevaluated are never treated as
-// admitting and never as refusing: a match gated on one is possible,
-// not admitted, and everything such a match would shadow stays
-// possible too. Only a match every one of whose conditions this
-// selector can settle, standing where no earlier match could take the
-// request first, is admitted outright.
+/**
+ * How an ALB listener picks which rule takes a request, given the match
+ * records the ALB flow reader emits.
+ *
+ * The glob rules (`*` crosses `/`, `?` is one character) and the order
+ * (lowest priority first, the listener's default last) are specific to
+ * ALB, so they live next to the reader. The generic walk looks this
+ * selector up by the "alb" language name.
+ *
+ * A condition the reader could not evaluate neither admits nor refuses.
+ * A rule gated on one is only possible, and so is every rule it might
+ * shadow. A rule is admitted outright only when every condition on it is
+ * settled and no earlier rule could take the request first.
+ */
 
 import type {
   FlowRequest,
@@ -23,14 +22,12 @@ import type {
 } from "@suss/behavioral-ir";
 import type { MatchResult } from "@suss/ir-core";
 
-/** The condition language the ALB flow reader stamps on its match records. */
+/** The match language on the ALB flow reader's match records. */
 export const ALB_MATCH_LANGUAGE = "alb";
 
 /**
- * An ALB pattern as a matcher: `*` matches any run of characters
- * including none and including `/`, `?` matches exactly one. Both are
- * ALB's own reading, which is the point of keeping this matcher out
- * of every other language's way.
+ * ALB globbing: `*` matches any run of characters, `/` included, and `?`
+ * matches exactly one.
  */
 function albPatternRegex(pattern: string): RegExp {
   const source = pattern
@@ -60,10 +57,8 @@ type ConditionTester = (
 ) => MatchResult;
 
 /**
- * The condition fields this selector evaluates. Paths compare
- * case-sensitively, ALB's rule; hosts do not, DNS's rule. A request
- * that gives no host cannot settle a host-header condition, so that
- * condition abstains.
+ * Paths compare case-sensitively, as in ALB, and hosts do not, as in DNS.
+ * A request with no host leaves a host-header condition unknown.
  */
 const CONDITION_TESTERS: Record<string, ConditionTester> = {
   "path-pattern": (condition, request) =>
@@ -84,11 +79,8 @@ const CONDITION_TESTERS: Record<string, ConditionTester> = {
 };
 
 /**
- * One condition against the request. Values within a field are ORed,
- * ALB's rule. A condition the reader marked unevaluated, or whose
- * field this selector has no tester for, abstains; a condition with
- * an evaluated field but nothing to compare (an empty Values list the
- * reader recorded as such) never admits.
+ * ALB ORs the values within one condition. An unevaluated condition or
+ * an unknown field gives "unknown", and an empty Values list never matches.
  */
 function conditionOutcome(
   condition: RoutingMatchCondition,
@@ -111,11 +103,8 @@ function conditionOutcome(
 }
 
 /**
- * A whole match against the request. Conditions are ANDed across
- * fields, ALB's rule, so one refusing field refuses the match however
- * many others abstain; with no refusal, one abstaining field keeps
- * the match unsettled; a match with no conditions at all (a
- * listener's own default action) takes whatever reaches it.
+ * ALB ANDs the conditions on a rule, so one "nomatch" rejects it and one
+ * "unknown" leaves it unsettled. A listener's default has no conditions.
  */
 function matchOutcome(
   record: RoutingMatchRecord,
@@ -141,10 +130,8 @@ interface CandidateMatch {
 }
 
 /**
- * Candidates in the order the listener consults them: ascending
- * priority, the priority-less default last. Two matches sharing a
- * priority stay adjacent and unordered between themselves, which is
- * the selection's problem to state, not this sort's to hide.
+ * Groups by ascending priority, default last. Rules that share a priority
+ * stay in one group so the selector can report the tie.
  */
 function groupedByPriority(candidates: CandidateMatch[]): CandidateMatch[][] {
   const groups = new Map<number, CandidateMatch[]>();
@@ -160,15 +147,15 @@ function groupedByPriority(candidates: CandidateMatch[]): CandidateMatch[][] {
 }
 
 /**
- * The selection: walk the priority ladder and stop at the first rank
- * where some match settles the request. A settled match standing
- * alone, with nothing unsettled at its own rank or above it, takes
- * the request outright. Anything unsettled above it, or a tie between
- * settled matches at one rank (an ordering CFN lets a template
- * declare and a deploy would refuse), leaves every candidate up to
- * and including that rank possible instead. Below the first settled
- * rank nothing is reachable: whichever way the unsettled conditions
- * fall, some match at or above it has already taken the request.
+ * Walks the priorities in order and stops at the first one where some
+ * rule matches. That rule is admitted when it is the only match there and
+ * nothing at or above it is unsettled.
+ *
+ * Otherwise every candidate down to that priority is possible. This
+ * covers an unsettled rule above it and two matching rules at one
+ * priority, which a template can declare though a deploy would reject it.
+ * Nothing below that priority can be reached, because some rule at or
+ * above it has already taken the request.
  */
 export const albRouterSelector: RouterMatchSelector = (
   records,

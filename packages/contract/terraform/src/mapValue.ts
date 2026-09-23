@@ -1,16 +1,16 @@
 /**
- * The map an expression states, for the one caller that has to know how
- * many times a block is written.
+ * Resolves the map a `for_each` iterates over, which decides how many
+ * times a block is written.
  *
- * `for_each` decides that, so a reader that leaves it unsettled sees a
- * container with no environment at all. Most of what a module iterates
- * over is written down: a map literal, a `locals` entry, a `variable`
- * default, or a `merge` of those.
+ * A reader that cannot resolve `for_each` sees a container with no
+ * environment at all. Most of what a module iterates over is written
+ * down: a map literal, a `locals` entry, a `variable` default, or a
+ * `merge` of those.
  *
- * A `variable` default is read here and nowhere else. A default is a
- * guess about what the deployment passes in, so a `${var.x}` in a name
- * keeps its hole; here it only says which keys exist, and each block
- * the expansion writes still spells its values as the module wrote them.
+ * Only this module reads a `variable` default. A default is a guess at
+ * what the deployment passes in, so a `${var.x}` in a name stays a
+ * hole. Here the default only decides which keys exist, and each
+ * expanded block keeps its values as the module wrote them.
  */
 
 import { parseHclExpression } from "./hclDocument.js";
@@ -31,17 +31,16 @@ const LOCAL_MAP = /^local\.([A-Za-z_][\w-]*)$/;
 const VARIABLE_MAP = /^var\.([A-Za-z_][\w-]*)$/;
 
 /**
- * How far a chain of one map referring to another is followed. A
- * `merge` of locals that merge further locals settles in one or two
- * hops, and past a few the expression is not one anybody is writing.
+ * How many hops of one map referring to another are followed. A `merge`
+ * of locals that merge further locals resolves in one or two hops.
  */
 const CHAIN_LIMIT = 4;
 
-/** The brackets an argument list may nest before its next comma counts. */
+/** A comma inside any of these brackets does not split arguments. */
 const OPENERS = "([{";
 const CLOSERS = ")]}";
 
-/** Every key an expression states, or null when nothing settles it. */
+/** The map an expression resolves to, or null when it cannot be resolved. */
 export function statedMap(
   value: unknown,
   scope: ReferenceScope,
@@ -97,9 +96,9 @@ function mapFromExpression(
 }
 
 /**
- * One map out of several, later arguments winning, or null when any of
- * them is unsettled. A merge missing one of its parts states fewer keys
- * than the deployment will, which is worse than stating none.
+ * Null when any argument is unresolved, because a merge missing a part
+ * would list fewer keys than the deployment has, which is worse than
+ * listing none.
  */
 function mergedMaps(
   argumentTexts: string[],

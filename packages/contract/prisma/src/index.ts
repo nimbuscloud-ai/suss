@@ -1,19 +1,12 @@
-// @suss/contract-prisma: turn a Prisma schema into one
-// `BehavioralSummary` per model with `storage` semantics.
-//
-// Parses `schema.prisma` via `@mrleebo/prisma-ast` (a stable parser
-// that doesn't pull in Prisma's runtime). Emits one provider summary
-// per model that the checker's `checkStorage` pass pairs
-// against `interaction(class: "storage-access")` effects in code summaries.
-//
-// Out of scope for v0:
-//   - MongoDB and other non-relational providers (skipped with a
-//     warning; needs storage-document semantics).
-//   - Composite types (Mongo) and views (Postgres), emit nothing
-//     today; can be added later under the same boundary semantics.
-//   - Relations between models, relation fields aren't columns. The FK
-//     columns are, both as scalars and as the `relationKey` of the
-//     relation field that owns them.
+/**
+ * Reads a Prisma schema into one storage summary per model and view, plus
+ * one per implicit many-to-many join table. The checker's storage pass
+ * pairs these with the `storage-access` interactions found in code.
+ *
+ * `@mrleebo/prisma-ast` parses the schema, so no Prisma runtime or
+ * generated client is needed. A schema whose datasource is not relational,
+ * such as MongoDB, comes back empty. The README lists what else is left out.
+ */
 
 import fs from "node:fs";
 import path from "node:path";
@@ -25,20 +18,18 @@ import { storageBinding } from "@suss/behavioral-ir";
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 export interface PrismaSchemaToSummariesOptions {
-  /** Override the source-file path recorded on each summary. */
+  /** The path recorded on each summary, in place of the default. */
   source?: string;
   /**
-   * Scope identifier: defaults to `"default"` for single-schema
-   * projects. Monorepos with multiple Prisma schemas should pass
-   * distinct values per schema so pairings stay separate.
+   * Defaults to `"default"`. With several Prisma schemas in one repo, give
+   * each its own scope so their pairings stay separate.
    */
   scope?: string;
 }
 
 /**
- * Built-in Prisma scalar types. Anything in this set is a column;
- * anything outside it is either an enum (also a column, looked up
- * separately) or a relation (skipped).
+ * A field of one of these types is a column. Any other field type is an
+ * enum, which is also a column, or another model, which is a relation.
  */
 const PRISMA_SCALARS = new Set([
   "Int",
@@ -53,8 +44,8 @@ const PRISMA_SCALARS = new Set([
 ]);
 
 /**
- * Prisma datasource providers, by the store each one talks to. Prisma
- * takes both spellings of Postgres and the conventions take one.
+ * Prisma accepts both `postgresql` and `postgres` as a provider, and the
+ * storage binding uses one spelling for both.
  */
 const PROVIDER_TO_SYSTEM: Record<string, "postgresql" | "mysql" | "sqlite"> = {
   postgresql: "postgresql",
@@ -99,7 +90,8 @@ interface PrismaDatasource {
 }
 
 /**
- * Convert an in-memory Prisma schema source into `BehavioralSummary[]`.
+ * Converts Prisma schema text into summaries. Returns an empty array when
+ * the datasource is not relational.
  */
 export function prismaSchemaToSummaries(
   source: string,
@@ -108,7 +100,8 @@ export function prismaSchemaToSummaries(
   const ast = getSchema(source);
   const list = (ast as { list: Array<unknown> }).list;
 
-  // First pass: inventory model names + enum names + storage system.
+  // Names are collected first, because a field can refer to a model or
+  // enum declared later in the file.
   const modelNames = new Set<string>();
   const enumNames = new Set<string>();
   let storageSystem: "postgresql" | "mysql" | "sqlite" | null = null;
@@ -133,14 +126,11 @@ export function prismaSchemaToSummaries(
   }
 
   if (storageSystem === null) {
-    // No relational datasource: schema is for MongoDB or another
-    // non-relational target. Emit nothing; future phases handle
-    // storage-document.
+    // A schema for MongoDB or another document store, which needs a
+    // different kind of boundary.
     return [];
   }
 
-  // Second pass: emit one summary per model / view, plus one per
-  // implicit many-to-many join table the models declare between them.
   const sourceFile = options.source ?? "schema.prisma";
   const scope = options.scope ?? "default";
   const summaries: BehavioralSummary[] = [];
@@ -189,10 +179,9 @@ export function prismaSchemaToSummaries(
 }
 
 /**
- * One relation table Prisma manages itself, between two list fields
- * that point at each other with neither side declaring the foreign
- * key. An explicit join model already has a `@relation(fields: [...])`
- * on one of its own fields, so it never matches here.
+ * A table Prisma manages for two list fields that point at each other when
+ * neither declares a foreign key. An explicit join model has
+ * `@relation(fields: [...])` on one of its fields, so it never matches.
  */
 interface ImplicitManyToMany {
   leftModel: string;
@@ -203,10 +192,7 @@ interface ImplicitManyToMany {
   joinTable: string;
 }
 
-/**
- * Every implicit many-to-many the schema declares, one entry per
- * relation regardless of which side it is read from.
- */
+/** Each relation appears once, whichever side it is found from. */
 function implicitManyToManyRelations(
   models: PrismaModel[],
   modelNames: Set<string>,
@@ -264,10 +250,9 @@ function implicitManyToManyRelations(
 }
 
 /**
- * The list relation field on the other side of an implicit
- * many-to-many: same relation name (both unnamed counts as a match),
- * pointing back at this model, and never the field itself for a
- * self-relation.
+ * The list field on the other model that points back with the same
+ * relation name, where two unnamed relations match. On a self-relation the
+ * field itself is skipped.
  */
 function counterpartField(
   target: PrismaModel,
@@ -305,10 +290,8 @@ function pairSignature(
 }
 
 /**
- * What Prisma calls the table behind an implicit many-to-many: an
- * underscore plus the relation's own name when the schema gives one,
- * or an underscore plus the two model names in alphabetical order
- * joined by `To` when it does not.
+ * Prisma calls the table `_<RelationName>`, or `_<A>To<B>` with the two
+ * model names sorted when the relation is unnamed.
  */
 function joinTableName(
   leftModel: string,
@@ -330,10 +313,9 @@ interface BuildJoinTableOpts {
 }
 
 /**
- * The boundary for a join table Prisma creates and manages itself.
- * Its only columns are `A` and `B`, referencing the model whose name
- * sorts first and second, which is how the client's `connect`,
- * `disconnect` and `set` change a row here without naming either.
+ * Prisma gives the table two columns, `A` and `B`, for the models whose
+ * names sort first and second. The client's `connect`, `disconnect` and
+ * `set` write rows here, though the code never mentions the table.
  */
 function buildJoinTableSummary(opts: BuildJoinTableOpts): BehavioralSummary {
   const [modelA, modelB] = [
@@ -378,7 +360,8 @@ function buildJoinTableSummary(opts: BuildJoinTableOpts): BehavioralSummary {
 }
 
 /**
- * Convert a Prisma schema file on disk into `BehavioralSummary[]`.
+ * Reads a Prisma schema file and converts it. Throws when the file does
+ * not exist.
  */
 export function prismaSchemaFileToSummaries(
   schemaPath: string,
@@ -405,7 +388,10 @@ interface BuildModelOpts {
   storageSystem: "postgresql" | "mysql" | "sqlite";
   scope: string;
   sourceFile: string;
-  /** The implicit join table each many-to-many field writes through, keyed `<model>.<field>`. */
+  /**
+   * The implicit join table each many-to-many field writes through, keyed
+   * `<model>.<field>`.
+   */
   joinContainerByField: Map<string, string>;
 }
 
@@ -493,10 +479,9 @@ function buildModelSummary(opts: BuildModelOpts): BehavioralSummary {
 }
 
 /**
- * A field whose type is another model. The client takes it in an
- * `include` or a `select` even though no column of that name exists.
- * Leaving it out of a contract that calls itself exhaustive reports
- * working code as reading a field nobody declared.
+ * The client accepts a relation field in an `include` or `select`, though
+ * no column has its name. Leaving it out of an exhaustive contract would
+ * report working code as reading an undeclared field.
  */
 function relationField(
   field: PrismaField,
@@ -524,17 +509,14 @@ function relationField(
   };
 }
 
-/** The field's own `@relation(...)` attribute, or undefined without one. */
 function relationAttributeOf(field: PrismaField): PrismaAttribute | undefined {
   return (field.attributes ?? []).find((attr) => attr.name === "relation");
 }
 
 /**
- * The columns listed in `@relation(fields: [...])`, which are the
- * foreign key this model stores. Prisma allows that argument on one
- * side of a relation only, so the other side and every implicit
- * many-to-many come back null: connecting a row there changes a
- * join-table entry and no column of this model.
+ * Prisma allows `@relation(fields: [...])` on one side of a relation only.
+ * The other side and an implicit many-to-many give null, since a connect
+ * there writes to a join table and leaves this model's columns alone.
  */
 function relationKeyOf(field: PrismaField): string[] | null {
   const relation = relationAttributeOf(field);
@@ -542,10 +524,8 @@ function relationKeyOf(field: PrismaField): string[] | null {
 }
 
 /**
- * The relation's own name from `@relation("Name", ...)`, or null when
- * the schema leaves the relation unnamed. Two list fields pointing at
- * each other need this to tell one many-to-many from another between
- * the same two models, and it is what the join table is called after.
+ * The name tells apart two many-to-many relations between the same two
+ * models, and Prisma names their join table after it.
  */
 function relationNameOf(field: PrismaField): string | null {
   const relation = relationAttributeOf(field);
@@ -553,10 +533,8 @@ function relationNameOf(field: PrismaField): string | null {
 }
 
 /**
- * Decide whether a field is a column we should record. Skips
- * relation fields (whose type is another model) and array fields
- * (relation arrays like `posts Post[]`). Captures attributes for
- * primary-key / unique flags.
+ * Scalar and enum fields are columns. A relation field is not, and
+ * neither is any array field.
  */
 function fieldToColumn(
   field: PrismaField,
@@ -570,7 +548,8 @@ function fieldToColumn(
   unique?: boolean;
 } | null {
   if (field.array === true) {
-    // `Post[]` is a relation list, not a column.
+    // Every array field is taken as a relation list, so `String[]` is
+    // dropped as well.
     return null;
   }
   const ft = field.fieldType;
@@ -581,8 +560,8 @@ function fieldToColumn(
     return null;
   }
   if (!isScalar && !isEnum) {
-    // Unknown type: could be Unsupported(...), an unsupported
-    // composite type, or a typo. Skip rather than guess.
+    // `Unsupported(...)`, a composite type, or a typo. The field is
+    // skipped so the reader never guesses.
     return null;
   }
 
@@ -606,12 +585,9 @@ function fieldToColumn(
 }
 
 /**
- * The physical SQL table name from a model's `@@map("...")` block
- * attribute, or null when the model has none (in which case the
- * physical table IS the model name, Prisma's default). This is the
- * cross-tool pairing bridge: code that speaks SQL names directly
- * (Drizzle's `pgTable("users")`, raw SQL) matches a mapped model
- * through this channel.
+ * The SQL table name from `@@map("...")`, or null when the table has the
+ * model's name. Code that uses SQL names directly, such as Drizzle's
+ * `pgTable("users")`, pairs with a mapped model through this.
  */
 function physicalTableOf(model: PrismaModel): string | null {
   for (const property of model.properties) {
@@ -642,10 +618,8 @@ function readStringArg(attr: PrismaAttribute): string | null {
 }
 
 /**
- * Convert a block-level attribute (`@@index([...])`, `@@unique([...])`,
- * `@@id([...])`) into an index entry. Other block attributes
- * (`@@schema`) are ignored; `@@map` is read separately as the
- * physical table name.
+ * `@@index`, `@@unique` and `@@id` become index entries, and any other
+ * block attribute gives null. `@@map` is read separately.
  */
 function blockAttributeToIndex(
   attr: PrismaAttribute,
@@ -671,9 +645,8 @@ function readArrayArg(attr: PrismaAttribute): string[] | null {
 }
 
 /**
- * The array under one named argument. A field attribute takes several
- * arguments and the position of each varies, so the name is the only
- * way to tell `fields` from `references`.
+ * A field attribute's arguments can come in any order, so only the
+ * argument's name tells `fields` from `references`.
  */
 function readKeyedArrayArg(
   attr: PrismaAttribute,
@@ -721,7 +694,7 @@ function readProviderString(ds: PrismaDatasource): string | null {
       continue;
     }
     if (typeof a.value === "string") {
-      // Parser keeps quotes: strip them.
+      // prisma-ast keeps the quotes on string literals.
       return a.value.replace(/^"|"$/g, "");
     }
   }

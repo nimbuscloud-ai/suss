@@ -24,10 +24,9 @@ export function webFetchPack(): PatternPack {
           },
           path: { type: "fromArgument", position: 0 },
         },
-        // No import gate: `fetch` is a global. Walk every file,
-        // the discovery dispatch is itself cheap (just looks for
-        // call expressions named `fetch`), so the lack of pre-
-        // filter doesn't blow up perf.
+        // `fetch` is a global, so there is no import to gate on. Walking
+        // every file stays cheap because discovery only looks for calls
+        // named `fetch`.
         requiresImport: [],
       },
     ],

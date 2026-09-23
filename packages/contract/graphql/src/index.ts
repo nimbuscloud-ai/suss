@@ -1,16 +1,9 @@
-// @suss/contract-graphql: generate resolver-kind behavioral summaries
-// from a plain GraphQL SDL file.
-//
-// Each field on Query / Mutation / Subscription becomes one resolver
-// summary with a `graphql-resolver` boundary binding (typeName,
-// fieldName), inputs derived from field arguments, and a default
-// success transition returning the field's declared return shape.
-// A generic throw transition models the GraphQL `errors[]` path.
-//
-// This is the schema-only counterpart to @suss/contract-appsync (which
-// does the same for AppSync resolvers declared in CloudFormation
-// templates). Use this when you have a vanilla GraphQL schema and want
-// to compare it against server-side resolver implementations.
+/**
+ * Reads a plain GraphQL SDL file and writes one resolver summary for each
+ * field on Query, Mutation and Subscription. @suss/contract-appsync does
+ * the same for AppSync schemas declared in CloudFormation. The README
+ * describes what each summary contains.
+ */
 
 import fs from "node:fs";
 
@@ -55,29 +48,27 @@ type RootType = (typeof ROOT_TYPES)[number];
 
 export interface GraphqlContractOptions {
   /**
-   * Logical source path recorded on each summary's `location.file`.
-   * Defaults to `"graphql"` so summaries are identifiable even when
-   * the SDL came from a non-file source (in-memory string).
+   * The path recorded on each summary's `location.file`. Defaults to
+   * `"graphql"`, for SDL passed in as a string with no file behind it.
    */
   source?: string;
   /**
    * Recognition tag for the resolver binding. Defaults to `"graphql"`.
-   * Override when the same SDL is used by multiple deployments
-   * (`apollo-prod`, `apollo-staging`) and you want findings to
-   * distinguish them.
+   * When several deployments serve the same SDL, give each its own tag
+   * (`apollo-prod`, `apollo-staging`) so findings tell them apart.
    */
   recognition?: string;
   /**
-   * Transport to record on the boundary binding. Defaults to
-   * `"http-graphql"`: most GraphQL servers run over HTTPS.
+   * Transport recorded on the boundary binding. Defaults to
+   * `"http-graphql"`, since most GraphQL servers are served over HTTP.
    */
   transport?: string;
 }
 
 /**
- * Convert an SDL string into resolver-kind summaries. Used directly
- * when the caller has the SDL in memory; tests and the file-based
- * entry point share this code path.
+ * Converts SDL text into one resolver summary per root field, plus one
+ * summary for the schema document. Returns an empty array when the SDL
+ * does not parse or has no root fields.
  */
 export function graphqlSdlToSummaries(
   sdl: string,
@@ -111,7 +102,6 @@ export function graphqlSdlToSummaries(
   return out;
 }
 
-/** What every summary from one read of one SDL has in common. */
 interface ReaderSettings {
   sdl: string;
   source: string;
@@ -120,8 +110,8 @@ interface ReaderSettings {
 }
 
 /**
- * Read an SDL file from disk and convert it to summaries. Convenience
- * wrapper for the CLI's `suss contract --from graphql <file>` path.
+ * Reads an SDL file and converts it, recording the file path as the
+ * source. `suss contract --from graphql <file>` calls this.
  */
 export function graphqlSdlFileToSummaries(
   filepath: string,
@@ -135,13 +125,10 @@ export function graphqlSdlFileToSummaries(
 }
 
 /**
- * Read an SDL file from disk and return its text, or `null` when the
- * file can't be read. Shared entry point for callers that need the raw
- * SDL rather than the derived summaries, e.g. @suss/contract-appsync
- * resolving an external schema file referenced by a CloudFormation /
- * SAM template's `DefinitionS3Location` / `SchemaUri`. Reading fails
- * best-effort (missing file, permission error) so the caller can record
- * an unresolved-schema gap instead of throwing.
+ * Reads an SDL file and returns its text, or `null` when the file cannot
+ * be read. @suss/contract-appsync uses it for the schema file a template
+ * points at through `DefinitionS3Location` or `SchemaUri`, and records a
+ * gap on `null` so a missing file does not fail the run.
  */
 export function loadSdlFile(filepath: string): string | null {
   try {
@@ -161,8 +148,8 @@ interface RootField {
 }
 
 function collectRootFields(doc: DocumentNode): RootField[] {
-  // SDL allows extending root types via `extend type Query { ... }`.
-  // Walk both ObjectTypeDefinition and ObjectTypeExtension to merge.
+  // `extend type Query { ... }` adds fields to a root type, so extensions
+  // are merged with the definition.
   const fieldsByRoot = new Map<RootType, FieldDefinitionNode[]>();
   for (const def of doc.definitions) {
     const node =
@@ -230,17 +217,13 @@ function buildResolverSummary(
     },
     inputs: buildInputs(field),
     transitions: buildTransitions(ownerKey, field),
-    // The record behind each named type this field mentions, so a reader
-    // comparing the field against an implementation has structure on
-    // both sides rather than a name on one.
+    // Every type record in the document, so a comparison with the
+    // implementation has a structure to compare and not only a type name.
     ...(Object.keys(definitions).length > 0 ? { definitions } : {}),
     gaps: [],
     confidence: { source: "derived", level: "high" },
-    // Declared contract: checker pairs against any other source
-    // declaring a contract for the same gql:Type.field key. Provenance
-    // is "derived" because both this metadata and the summary's
-    // transitions come from the same SDL field declaration;
-    // self-comparison would be tautological.
+    // Provenance is "derived" because the transitions come from the same
+    // field declaration, so comparing the contract with them finds nothing.
     metadata: withGraphqlMetadata(
       withSourceDocumentMetadata(undefined, { label: source }),
       {
@@ -253,14 +236,9 @@ function buildResolverSummary(
 }
 
 /**
- * One summary for the schema document itself, which is where the SDL
- * goes: the type definitions belong to the schema rather than to any
- * one field, and a client crosses `Query.users`, not the schema. The
- * checker follows the document label from a resolver to here when it
- * checks what a consumer selected.
- *
- * It binds to no boundary, so pairing records it as taking no part
- * rather than looking for a counterpart.
+ * The SDL belongs to the whole schema, so it goes on its own summary. The
+ * checker reaches it from a resolver through the document label. It does
+ * not bind to a boundary, so pairing leaves it out.
  */
 function buildSchemaDocumentSummary(
   settings: ReaderSettings,

@@ -1,8 +1,5 @@
-// spec.ts: Minimal OpenAPI 3.x type subset that suss consumes.
-//
-// We deliberately do not model the full spec, only the operation,
-// parameter, requestBody, response, and schema fields that map onto
-// BehavioralSummary. Anything else is ignored at parse time.
+// The part of OpenAPI 3.x and Swagger 2.0 that maps onto a summary. Any
+// other field in a document is ignored when it is read.
 
 export type HttpMethod =
   | "get"
@@ -32,9 +29,9 @@ export interface OpenApiSpec {
     title?: string;
     version?: string;
   };
-  /** Swagger 2.0 writes the prefix every path comes after here. */
+  /** Swagger 2.0 puts the prefix for every path here. */
   basePath?: string;
-  /** OpenAPI 3 writes it in the first server's URL instead. */
+  /** OpenAPI 3 puts the prefix in the first server's URL instead. */
   servers?: Array<{ url?: string }>;
   paths?: Record<string, PathItem | undefined>;
   /** Swagger 2.0 keeps its named schemas here, where 3.x uses `components.schemas`. */
@@ -64,16 +61,15 @@ export interface OpenApiOperation {
 export interface OpenApiParameter {
   name: string;
   /**
-   * Where the parameter is written. Swagger 2.0 puts a request body and
-   * a form field here, as `body` and `formData`; OpenAPI 3 moved both
-   * into `requestBody`, so a 3.x document never uses either.
+   * Swagger 2.0 also writes a request body and a form field as parameters,
+   * `body` and `formData`. OpenAPI 3 moved both into `requestBody`.
    */
   in: "path" | "query" | "header" | "cookie" | "body" | "formData";
   required?: boolean;
   schema?: OpenApiSchema;
   /**
-   * Swagger 2.0 writes a scalar parameter's type on the parameter, where
-   * 3.x wraps it in `schema`. The other schema keywords sit beside it.
+   * Swagger 2.0 puts a scalar parameter's type and other schema keywords
+   * on the parameter itself, where 3.x wraps them in `schema`.
    */
   type?: OpenApiSchema["type"];
   format?: OpenApiSchema["format"];
@@ -100,21 +96,6 @@ export interface OpenApiMediaType {
   schema?: OpenApiSchema;
 }
 
-/**
- * OpenAPI Schema Object (subset).
- *
- * Carries either an inline shape or a `$ref` to a component. Inline shapes
- * mirror JSON Schema with the OpenAPI extensions we care about.
- *
- * Supports both OpenAPI 3.0 and 3.1:
- *  - 3.0 uses `nullable: true` to mark a schema as nullable.
- *  - 3.1 aligns with JSON Schema 2020-12 and uses `type: ["string", "null"]`
- *    instead. 3.1 also adds `const` (a single-value shorthand for enum)
- *    and makes `discriminator` a top-level schema concept.
- *
- * We accept both forms. `schemaToShape` normalizes them into the same
- * TypeShape output.
- */
 export type SchemaTypeName =
   | "object"
   | "array"
@@ -127,24 +108,24 @@ export type SchemaTypeName =
 export interface OpenApiDiscriminator {
   propertyName: string;
   /**
-   * Mapping from discriminator value to `$ref` string. When present, the
-   * variant with a matching `$ref` in `oneOf`/`anyOf` has its
-   * `propertyName` narrowed to the exact literal value.
+   * Discriminator value to `$ref`. The `oneOf` or `anyOf` variant with a
+   * matching `$ref` has its `propertyName` narrowed to that value.
    */
   mapping?: Record<string, string>;
 }
 
+/**
+ * Covers both OpenAPI 3.0 and 3.1. 3.0 marks a nullable schema with
+ * `nullable: true`, and 3.1 follows JSON Schema 2020-12 and lists `"null"`
+ * in `type` instead. `schemaToShape` gives the same TypeShape for both.
+ */
 export interface OpenApiSchema {
   $ref?: string;
-  /**
-   * OpenAPI 3.0: a single type name.
-   * OpenAPI 3.1 / JSON Schema 2020-12: either a single name or an array
-   *   of names. When the array includes `"null"`, the schema is nullable.
-   */
+  /** 3.1 allows an array of type names, and `"null"` in it means nullable. */
   type?: SchemaTypeName | SchemaTypeName[];
-  /** 3.0 only: 3.1 encodes nullability via `type: [... "null"]`. */
+  /** 3.0 only. */
   nullable?: boolean;
-  /** 3.1 / JSON Schema 2020-12, a single-valued enum shorthand. */
+  /** 3.1 shorthand for a one-value enum. */
   const?: string | number | boolean | null;
   enum?: Array<string | number | boolean | null>;
   properties?: Record<string, OpenApiSchema>;

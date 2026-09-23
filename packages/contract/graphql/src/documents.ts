@@ -1,19 +1,12 @@
-// Read committed `.graphql` / `.gql` operation documents and emit one
-// client-kind summary per operation, without tracing any call site.
-//
-// Each query / mutation / subscription definition becomes a summary
-// with a `graphql-operation` boundary binding (operationType,
-// operationName), inputs from the operation's variable definitions,
-// and the full document text at `metadata.graphql.document`, the same
-// place the TypeScript adapter puts documents it recovers from client
-// call sites, so the checker's GraphQL pairing pass reads both the
-// same way.
-//
-// Fragment spreads are resolved against every fragment definition in
-// the read set and inlined into the stored document, so the pairing
-// pass sees the selected fields directly. A spread the reader cannot
-// expand stays in the document as written and becomes a gap on the
-// summary, not a crash.
+/**
+ * Reads committed `.graphql` and `.gql` operation documents and writes one
+ * client summary per operation, with no call site to trace. The document
+ * text goes where the TypeScript adapter puts documents it finds in code,
+ * so the checker's GraphQL pairing pass reads both the same way.
+ *
+ * Fragment spreads are inlined from every file read. The README describes
+ * what happens to a spread that cannot be expanded.
+ */
 
 import fs from "node:fs";
 import path from "node:path";
@@ -50,36 +43,33 @@ import type {
 export interface GraphqlDocumentsOptions {
   /**
    * Recognition tag for the operation binding. Defaults to
-   * `"graphql-documents"` so findings distinguish document-derived
-   * operations from call-site-traced ones.
+   * `"graphql-documents"`, so findings can tell these operations apart
+   * from operations found at a call site.
    */
   recognition?: string;
   /**
-   * Transport to record on the boundary binding. Defaults to
-   * `"http-graphql"` to match the schema reader's resolver side.
+   * Transport recorded on the boundary binding. Defaults to
+   * `"http-graphql"`, the same as the schema reader.
    */
   transport?: string;
   /**
-   * Directory the document paths hang off. An anonymous operation is
-   * named after its path relative to this root, so the name stays the
-   * same on every machine that checks the repo out. Without it the
-   * path is used as given.
+   * The directory an anonymous operation's name is relative to, so the
+   * name is the same on every machine. Without it the path is used as is.
    */
   rootDir?: string;
 }
 
-/** One parsed source document, tagged with where it came from. */
+/** One document's text and the path it came from. */
 export interface DocumentSource {
   /** Path recorded on each summary's `location.file`. */
   path: string;
-  /** Raw document text. */
   text: string;
 }
 
 /**
- * Convert in-memory operation documents into summaries. Fragments are
- * resolved across the whole set, so a fragment-only document
- * contributes definitions without producing summaries of its own.
+ * Converts documents already in memory into one summary per operation.
+ * Fragments resolve across the whole set, so a file of fragments alone
+ * contributes definitions but does not produce a summary.
  */
 export function graphqlDocumentsToSummaries(
   sources: DocumentSource[],
@@ -99,9 +89,8 @@ export function graphqlDocumentsToSummaries(
 
   const fragments = collectFragments(parsed);
 
-  // Every summary name has to be distinct, because the transition ids
-  // are built from it and a repeated id makes two operations look like
-  // one downstream.
+  // Transition ids are built from the summary name, so a repeated name
+  // would make two operations look like one.
   const takenNames = new Set<string>();
 
   const out: BehavioralSummary[] = [];
@@ -126,8 +115,8 @@ export function graphqlDocumentsToSummaries(
 }
 
 /**
- * A named operation goes by its own name. An anonymous one goes by
- * where it lives, which is all that tells it apart from the next one.
+ * An anonymous operation is named after its file and operation type,
+ * since nothing else tells two of them apart.
  */
 function operationName(
   op: OperationDefinitionNode,
@@ -164,9 +153,8 @@ function distinctName(candidate: string, taken: Set<string>): string {
 }
 
 /**
- * Read `.graphql` / `.gql` files from disk and convert them to
- * summaries. Unreadable files are skipped, so one bad path does not
- * lose the rest of the set.
+ * Reads `.graphql` and `.gql` files and converts them. A file that cannot
+ * be read is skipped, so one bad path does not lose the rest.
  */
 export function graphqlDocumentFilesToSummaries(
   filepaths: string[],
@@ -186,9 +174,9 @@ export function graphqlDocumentFilesToSummaries(
 }
 
 /**
- * Accept either a single document file or a directory to walk
- * recursively for `.graphql` / `.gql` files. Entry point for the
- * CLI's `suss contract --from graphql-documents <path>`.
+ * Reads one document file, or every `.graphql` and `.gql` file under a
+ * directory, skipping `node_modules`. Throws when nothing exists at the
+ * path. `suss contract --from graphql-documents <path>` calls this.
  */
 export function graphqlDocumentsPathToSummaries(
   specPath: string,
@@ -239,11 +227,8 @@ interface BindingConfig {
 }
 
 /**
- * The fragment definitions of the whole read set, keyed by name, plus
- * the names that more than one file defines. The first definition in
- * read order wins so that two runs over the same files agree, and any
- * operation that spreads a contested name gets a gap saying the
- * choice was ambiguous.
+ * The first definition in read order wins, so two runs over the same
+ * files agree. A spread of a name in `competingFiles` gets a gap.
  */
 interface FragmentIndex {
   definitions: Map<string, FragmentDefinitionNode>;
@@ -331,8 +316,8 @@ function buildVariableInputs(op: OperationDefinitionNode): Input[] {
     type: "parameter",
     name: variable.variable.name.value,
     position: index,
-    // Same role the TypeScript adapter stamps on operation-header
-    // `$variables`, so downstream consumers treat both alike.
+    // The TypeScript adapter gives an operation's `$variables` the same
+    // role, so the checker treats both alike.
     role: "variable",
     shape: typeNodeToShape(variable.type),
   }));
@@ -387,9 +372,8 @@ function unexpandedSpreadGaps(
   const gaps: Gap[] = [];
   for (const name of [...unexpanded.missing].sort()) {
     gaps.push(
-      // A statement about the reading, not the code: the fragment
-      // likely exists somewhere outside the files handed to this
-      // reader.
+      // The fragment is probably defined in a file this reader was not
+      // given.
       readingGap(
         `Fragment spread "...${name}" has no matching fragment definition in the read set; its selections are not part of this summary.`,
       ),
@@ -427,11 +411,9 @@ function readingGap(description: string): Gap {
 // ---------------------------------------------------------------------------
 
 /**
- * Spreads the reader could not expand, by reason. A spread in any of
- * these sets stays in the document exactly as it was written: dropping
- * it would leave behind either an empty selection set, which does not
- * parse, or a composite field printed as a leaf, which is a different
- * operation from the one on disk.
+ * A spread that cannot be expanded stays in the document as written.
+ * Dropping it could leave an empty selection set, which does not parse,
+ * or turn a composite field into a leaf and change the operation.
  */
 interface UnexpandedSpreads {
   missing: Set<string>;
@@ -500,8 +482,7 @@ function inlineOneSelection(
       unexpanded.ambiguous.add(fragmentName);
     }
     if (stack.includes(fragmentName)) {
-      // Fragment cycle: invalid GraphQL, but a reader should not loop
-      // on it.
+      // A fragment cycle is invalid GraphQL. Stop here instead of looping.
       unexpanded.cyclic.add(fragmentName);
       return [selection];
     }
@@ -519,8 +500,8 @@ function inlineOneSelection(
     return [...inlined.selections];
   }
 
-  // Inline fragment: keep the node (its type condition matters for
-  // unions / interfaces) and resolve spreads within it.
+  // An inline fragment keeps its node, because its type condition matters
+  // on a union or interface.
   const inlineFragment: InlineFragmentNode = {
     ...selection,
     selectionSet: inlineSelectionSet(
@@ -543,12 +524,9 @@ function documentOf(op: OperationDefinitionNode): DocumentNode {
 // ---------------------------------------------------------------------------
 
 /**
- * Approximate the response shape from the selection set alone: field
- * names become record properties; leaves are `unknown` because the
- * document does not declare field types (the schema does). Fields
- * behind an inline fragment's type condition merge into the parent
- * record. They may or may not appear at runtime, and without the
- * schema the reader cannot tell which.
+ * Leaves are `unknown`, since only the schema has field types. Fields
+ * under an inline fragment merge into the parent record, though without
+ * the schema there is no telling whether they appear at run time.
  */
 function selectionSetToShape(selectionSet: SelectionSetNode): TypeShape {
   const properties: Record<string, TypeShape> = {};
@@ -567,10 +545,8 @@ function mergeSelectionsInto(
         selection.selectionSet !== undefined
           ? selectionSetToShape(selection.selectionSet)
           : { type: "unknown" };
-      // The same field can be selected twice, once in the operation
-      // and once through a fragment. A server merges those selections
-      // and returns one object with both sets of fields, so the shape
-      // has to merge them too.
+      // A server returns one object for a field selected both directly
+      // and through a fragment, so the two shapes are merged.
       properties[key] = mergeShapes(properties[key], selected);
       continue;
     }
@@ -578,15 +554,13 @@ function mergeSelectionsInto(
     if (selection.kind === Kind.INLINE_FRAGMENT) {
       mergeSelectionsInto(properties, selection.selectionSet.selections);
     }
-    // Fragment spreads were already inlined; any survivor was
-    // unresolvable and is recorded as a gap.
+    // A spread still here could not be expanded and already has a gap.
   }
 }
 
 /**
- * Combine two shapes read for the same field. Two records become one
- * record holding both field sets. Otherwise the record wins over an
- * `unknown`, because a selection set says more than a leaf does.
+ * Two records for the same field merge their fields. Otherwise a record
+ * wins over `unknown`, since a selection set gives more detail than a leaf.
  */
 function mergeShapes(
   existing: TypeShape | undefined,

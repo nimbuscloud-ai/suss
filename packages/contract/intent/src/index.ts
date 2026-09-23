@@ -1,20 +1,14 @@
-// @suss/contract-intent: read team-authored intent specs into
-// IntentSummary[]. A thin reader over @suss/intent-ir: file / directory
-// discovery and YAML / JSON parsing live here; the schema and the
-// normalisation to IntentSummary live in intent-ir.
-//
-// Two file shapes, discriminated by the top-level `kind`:
-//
-//   kind: boundary: engineer-authored system intent (REST or
-//                     function-call): the outcomes a boundary should
-//                     produce.
-//   kind: prd: PM-authored outcome intent: scenarios that link to
-//                     system-intent outcomes by qualified id.
-//
-// Unlike the other contract readers, intent does NOT produce
-// BehavioralSummary: intent is a separate citizen with its own type
-// (IntentSummary) and its own checker. The full design lives in
-// design/proposals/intent-specs.md.
+/**
+ * Reads team-written intent specs into IntentSummary values. This package
+ * finds and parses the files, and @suss/intent-ir defines the schema and
+ * converts each document into a summary.
+ *
+ * A file's top-level `kind` picks its form. `kind: boundary` lists the
+ * outcomes a REST or function-call boundary should produce, and
+ * `kind: prd` lists scenarios that link to those outcomes by qualified id.
+ * Intent has its own checker, so this reader returns IntentSummary values
+ * and never a BehavioralSummary.
+ */
 
 import fs from "node:fs";
 import path from "node:path";
@@ -39,18 +33,16 @@ export type {
 } from "@suss/intent-ir";
 
 /**
- * Validate an in-memory intent doc (already parsed from YAML / JSON) and
- * normalise it to an IntentSummary. Throws on validation failure,
- * malformed specs are a load-time error, never a comparison finding.
- *
- * Accepts both `kind: boundary` and `kind: prd`; the transform
- * dispatches on the discriminator.
+ * Validates an intent document that is already parsed, of either `kind`,
+ * and converts it to an IntentSummary. A document that does not fit the
+ * schema throws, because a malformed spec is an error at load time and
+ * never a finding.
  */
 export function loadIntentDoc(raw: unknown): IntentSummary {
   return intentDocToSummary(validated(raw, "The intent doc"));
 }
 
-/** What is written for one doc, plus the blanks when that is the reason. */
+/** `blanks` is empty unless blank fields are why the document was rejected. */
 class IntentDocRejected extends Error {
   constructor(
     readonly blanks: string[],
@@ -68,7 +60,6 @@ function waitingOnBlanks(where: string, blanks: string[]): string {
   return `${where} is an inferred draft and ${empty} and set source to "inferred, curated", or take the file out of the intent folder until you do.`;
 }
 
-/** `a, b and c`, so a list of five reads as one. */
 function andLast(names: string[]): string {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
@@ -80,8 +71,8 @@ function validated(raw: unknown, where: string) {
   }
 
   const issues = result.error.issues;
-  // The whole path, since a PRD leaves its blanks inside scenarios and
-  // `blanksLeftEmpty` is what reads which part of one is a blank.
+  // The full path is passed, because a PRD's blanks are inside its
+  // scenarios and `blanksLeftEmpty` works out which part is the blank.
   const blanks = blanksLeftEmpty(
     raw,
     issues.map((issue) => issue.path.join(".")),
@@ -101,19 +92,17 @@ function validated(raw: unknown, where: string) {
 }
 
 /**
- * Read a single intent-doc file (YAML or JSON, chosen by extension) and
- * normalise it. JSON is parsed strictly; everything else goes through
- * the YAML parser, which also accepts JSON syntax.
- *
- * Accepts both `*.intent.{yaml,yml,json}` and `*.prd.{yaml,yml,json}`,
- * the document's `kind` picks the shape.
+ * Reads one intent file and converts it. A `.json` file is parsed as
+ * JSON, and any other file goes through the YAML parser, which also
+ * accepts JSON. The document's `kind` picks its form, whether the file is
+ * named `*.intent.*` or `*.prd.*`.
  */
 export function loadIntentFile(filepath: string): IntentSummary {
   const resolved = path.resolve(filepath);
   return intentDocToSummary(validated(parseIntentFile(resolved), resolved));
 }
 
-/** The file's own data, before the schema has had a look at it. */
+/** The parsed file, before schema validation. */
 function parseIntentFile(filepath: string): unknown {
   const resolved = path.resolve(filepath);
   if (!fs.existsSync(resolved)) {
@@ -142,10 +131,9 @@ export interface LoadedIntentDoc {
   /** The line each outcome's id is written on, by id. Empty for a PRD. */
   outcomeLines: Record<string, number>;
   /**
-   * The fields the file leaves blank, empty for one that loads as
-   * written. Each blank is filled with a placeholder, so `purpose` and
-   * the rest of them contain that placeholder rather than what
-   * anybody wrote.
+   * The fields left blank, empty for a file that loads as written. Each
+   * blank gets a placeholder, so `purpose` and the other blank fields
+   * contain the placeholder and nothing anybody wrote.
    */
   blanks: string[];
 }
@@ -158,14 +146,12 @@ export interface IntentDirectoryRead {
 }
 
 /**
- * Walk `dir` recursively for `*.intent.{yaml,yml,json}` and
- * `*.prd.{yaml,yml,json}` files and normalise each. Specs can live
- * anywhere under the root, organised however the team prefers.
+ * Reads every `*.intent.*` and `*.prd.*` file (YAML or JSON) at any depth
+ * under `dir`, so a team can arrange its specs however it likes.
  *
  * An inferred draft comes back with a placeholder in each blank, so a
- * reader that only wants the outcome ids can still have them. A caller
- * that needs finished documents reads `blanks` and refuses the ones
- * that have any.
+ * caller that only wants outcome ids still gets them. A caller that needs
+ * finished documents checks `blanks` and refuses any that have some.
  */
 export function readIntentDirectory(dir: string): IntentDirectoryRead {
   const resolved = path.resolve(dir);
@@ -190,8 +176,8 @@ export function readIntentDirectory(dir: string): IntentDirectoryRead {
 }
 
 /**
- * Walk `dir` and normalise every document in it, refusing the whole
- * folder when a file is an uncurated draft or does not read at all.
+ * Reads every document under `dir`. Throws for the whole folder when any
+ * file is an uncurated draft or cannot be read.
  */
 export function loadIntentDirectory(dir: string): IntentSummary[] {
   const resolved = path.resolve(dir);
@@ -211,9 +197,8 @@ type DocRead =
   | { doc: null; broken: string };
 
 /**
- * A draft is read a second time with a placeholder in each blank. One
- * that still does not validate is broken rather than unfinished, so it
- * comes back with the message the first read produced.
+ * A draft is read a second time with a placeholder in each blank. If it
+ * still fails, the file is broken, and the first read's message is returned.
  */
 function readOneDoc(file: string): DocRead {
   try {
@@ -254,12 +239,9 @@ function readDraft(file: string, blanks: string[]): LoadedIntentDoc | null {
 }
 
 /**
- * The line each outcome's id is written on, by id.
- *
- * A listing of outcome ids is something a person opens the file at, so
- * the line has to come from the text rather than from the normalised
- * document, which has no positions in it. JSON goes through the same
- * parser, since YAML takes JSON syntax.
+ * The converted document has no positions, so each outcome id's line
+ * comes from the file text. JSON goes through the YAML parser too, since
+ * YAML accepts JSON syntax.
  */
 function outcomeLines(file: string): Record<string, number> {
   const counter = new YAML.LineCounter();
@@ -290,7 +272,7 @@ function outcomeLines(file: string): Record<string, number> {
   return lines;
 }
 
-/** How many rejected files get written out before a count takes over. */
+/** Rejected files listed by name before the rest are only counted. */
 const REJECTIONS_SHOWN = 10;
 
 function listed(files: string[]): string {
@@ -303,11 +285,9 @@ function listed(files: string[]): string {
 }
 
 /**
- * One error for the whole directory, with the drafts waiting on their
- * blanks kept apart from the files that are actually broken. Inferring
- * intent leaves every doc waiting on the same two blanks at once, so
- * reporting the first file and stopping would take one run per file to
- * get through, and repeating the same sentence for each is no better.
+ * Inferring intent leaves every draft with the same blanks, so stopping at
+ * the first file would take one run per file. Unfinished drafts are listed
+ * apart from broken files, with one sentence for all of them.
  */
 function everyRejection(
   dir: string,

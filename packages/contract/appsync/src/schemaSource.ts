@@ -1,11 +1,6 @@
-// schemaSource.ts: Resolve an API's declared schema source to SDL text.
-//
-// Inline SDL is already text. A `DefinitionS3Location` / `SchemaUri`
-// pointing at a local file is loaded from disk via the SDL machinery in
-// @suss/contract-graphql (relative paths resolve against the template's
-// directory). A genuinely-remote `s3://` / `http(s)://` URI can't be
-// fetched by a static reader, so it surfaces as an explicit unresolved
-// gap rather than silently producing no schema.
+// Turns an API's declared schema source into SDL text. A remote `s3://`
+// or `http(s)://` URI cannot be fetched by a static reader, so it becomes
+// an unresolved source and the missing schema shows up in the summary.
 
 import path from "node:path";
 
@@ -23,12 +18,12 @@ export type ResolvedSchema =
     }
   | { status: "absent" };
 
-/** Schemes a static reader can't dereference, recorded, never fetched. */
+/** URI schemes that are recorded and never fetched. */
 const REMOTE_SCHEME = /^(s3|https?):\/\//i;
 
 /**
- * Resolve a raw schema source against a base directory (the template's
- * directory, or null for in-memory templates with no on-disk anchor).
+ * Resolves a schema source to SDL. `baseDir` is the template's directory,
+ * or null for a template with no file on disk.
  */
 export function resolveSchemaSource(
   raw: RawSchemaSource,
@@ -41,8 +36,8 @@ export function resolveSchemaSource(
     return { status: "absent" };
   }
 
-  // The template computes the location (an intrinsic), so there is no
-  // string to dereference. The schema still exists on the deployed API.
+  // An intrinsic computes the location, so there is no path to open,
+  // though the deployed API still has a schema.
   if (raw.kind === "computed") {
     return { status: "unresolved", location: null, reason: "computed" };
   }

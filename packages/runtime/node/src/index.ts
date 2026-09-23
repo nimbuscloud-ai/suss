@@ -1,17 +1,14 @@
-// @suss/runtime-node: pack for the Node.js runtime surface.
-//
-// Models scheduling primitives (setImmediate / setTimeout / setInterval /
-// queueMicrotask / process.nextTick), the process surface (argv, env,
-// exit, metadata), and module-loading globals (__dirname, __filename,
-// import.meta.url) that aren't expressible as imports.
-//
-// Recognizer-only pack (no top-level discovery patterns). The pack's
-// scope is widely distributed in any Node code, so it relies on
-// invocationRecognizers / accessRecognizers / subUnits firing on
-// whatever units other packs (Express handlers, AWS SQS consumers,
-// etc.) have already discovered.
-//
-// See `design/proposals/runtime-node.md` for the design.
+/**
+ * @suss/runtime-node: the pack for what Node.js provides without an
+ * import. That covers scheduling calls such as `setTimeout` and
+ * `process.nextTick`, the `process` global, and the module globals
+ * `__dirname`, `__filename` and `import.meta.url`.
+ *
+ * The pack discovers no units of its own. These calls can appear in any
+ * Node code, so its recognizers run inside the units other packs have
+ * already found, such as Express handlers or SQS consumers. The README
+ * links the design proposal.
+ */
 
 import { z } from "zod";
 
@@ -45,22 +42,20 @@ export {
   schedulingRecognizer,
 } from "./scheduling.js";
 
-// Pack behavior stamp, fed into the adapter's cache-invalidation
-// digest (see @suss/adapter-typescript `computeAdapterPacksDigest`).
-// Bumped last for the schema readers, which add a config read per key
-// of a schema parsed against `process.env`. Bump again on any future
-// change to discovered units or emitted effects.
+// The adapter's extraction cache includes this version in its key, so
+// bump it whenever the pack changes which units it finds or which
+// effects it emits.
 const PACK_VERSION = "0.2.0";
 
 /**
- * What `-f node=config.json` may say. The CLI parses the file against it
- * before the factory runs.
+ * The options in a `-f node=config.json` file. The CLI checks the file
+ * against this schema before the pack factory runs.
  */
 export const optionsSchema = z
   .object({
     /**
-     * Deployment context for runtime-config reads (process.env.X,
-     * process.argv). Left off the binding unless a run sets it.
+     * The kind of deployment that runtime-config reads such as
+     * `process.env.X` belong to. Left off the binding unless a run sets it.
      */
     deploymentTarget: z
       .enum(["lambda", "ecs-task", "container", "k8s-deployment"])
@@ -99,9 +94,8 @@ export function nodeRuntimePack(
     invocationRecognizers: [schedulingRecognizer],
     environmentObjects: ["process.env"],
     accessRecognizers: [
-      // `envRecognizer` owns `process.env.X`; `processRecognizer`
-      // owns the rest of the process surface and skips env reads,
-      // together they partition `process.*` without duplication.
+      // envRecognizer handles `process.env.X` and processRecognizer skips
+      // it, so each `process.*` read produces one effect.
       envRecognizer,
       processRecognizer,
       importMetaRecognizer,

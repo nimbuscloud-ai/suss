@@ -1,22 +1,21 @@
 /**
- * An interpolation that refers to something the same configuration
- * already states, and the value it states.
+ * Resolving an interpolation that refers to something the same
+ * configuration writes as a literal.
  *
- * Most of what Terraform interpolates is settled at deploy time, so
+ * Most of what Terraform interpolates is known only at deploy time, so
  * `"${local.environment}-orders"` becomes a pattern with a hole in it.
- * A reference is different: `"${google_logging_metric.refused.name}"`
- * refers to a resource in this configuration, and when that resource
- * writes its `name` as a literal string, the configuration has already
- * said what the deployed value is. Leaving it as a hole makes two sides
- * of the same configuration spell the same thing differently, and they
- * stop pairing. The DESIGN says which spelling settles what, and why a
- * `variable` block's `default` is not one of them.
+ * `"${google_logging_metric.refused.name}"` refers to a resource in this
+ * configuration, and when that resource writes its `name` as a literal,
+ * the deployed value is already known. Leaving a hole there would make
+ * two sides of one configuration write the same name differently, and
+ * they would stop pairing. DESIGN.md says which references resolve, and
+ * why a `variable` block's `default` does not.
  */
 
 /**
- * What a configuration states, as everything a reference in it can
- * reach. One scope per module, since a child's `local.stage` is its
- * own, and the two are joined by the outputs the parent reads.
+ * Everything a reference in one module can reach. Each module has its
+ * own scope, since a child's `local.stage` is its own, and the parent
+ * reaches the child only through its outputs.
  */
 export interface ReferenceScope {
   /**
@@ -25,7 +24,7 @@ export interface ReferenceScope {
    * attributes are that child's outputs.
    */
   resources: Map<string, Record<string, unknown>>;
-  /** What every `locals` block in the module states, by name. */
+  /** Every local the module defines, by name. */
   locals: Record<string, unknown>;
   /**
    * What the calling `module` block passed in, by variable name, with
@@ -34,25 +33,25 @@ export interface ReferenceScope {
    * over `var.x` iterates.
    */
   arguments: Record<string, unknown>;
-  /** The `default` each `variable` block states, for a `for_each` alone. */
+  /** The `default` of each `variable` block. Only a `for_each` reads these. */
   defaults: Record<string, unknown>;
   /**
-   * What goes in front of the name of everything this module declares,
+   * The prefix on the name of everything this module declares, such as
    * `module.api.` inside a child, so two calls of one module do not
    * collide. Empty at the root.
    */
   namePrefix: string;
 }
 
-/** `${X}` is an interpolation, the same one a name pattern reads. */
+/** An interpolation, `${X}`. */
 const SUB_TOKEN = /\$\{([^}]*)\}/g;
 
 /**
- * The same text with each interpolation replaced by what `settle` makes
- * of the reference inside it. One that settles nothing stays as
- * written. Terraform's `${}` is read here and in the scanner below and
- * nowhere else, so a caller that wants at an interpolation asks rather
- * than writing a second reader of the syntax.
+ * Replaces each interpolation with what `settle` returns for the
+ * reference inside it, and leaves it as written when `settle` returns
+ * null. Only this function and `interpolatedReferences` parse
+ * Terraform's `${}`, so callers go through them instead of writing a
+ * second parser.
  */
 export function replaceInterpolations(
   text: string,
@@ -81,17 +80,17 @@ const WHOLE_REFERENCE = /^\$\{([^}]*)\}$/;
 /** `local.name`, which a `locals` block states in the same configuration. */
 const LOCAL_VALUE = /^local\.([A-Za-z_][\w-]*)$/;
 
-/** `var.name`, which the calling `module` block states inside a child. */
+/** `var.name`, which the calling `module` block sets inside a child. */
 const VARIABLE_VALUE = /^var\.([A-Za-z_][\w-]*)$/;
 
 /**
- * How many hops a chain of references is followed. A resource may state
- * a name that refers to another, which refers to a third, and past a
- * few hops the hole stays rather than the chain running on.
+ * How many hops a chain of references is followed, as when one
+ * resource's name refers to another's, which refers to a third. Past
+ * that the hole stays.
  */
 const CHAIN_LIMIT = 4;
 
-/** What one module states, by the address a reference in it spells. */
+/** Builds one module's scope, keyed by the addresses its references use. */
 export function referenceScope(opts: {
   resources: Iterable<[string, string, Record<string, unknown>]>;
   locals?: Iterable<Record<string, unknown>>;
@@ -116,9 +115,9 @@ export function referenceScope(opts: {
 }
 
 /**
- * One record out of many, keeping the first value each name was given.
- * A module states its locals across several blocks and several files,
- * and every one of them is `local.<name>` to a reference.
+ * A module can define its locals across several blocks and files, and a
+ * reference reads all of them as `local.<name>`. The first value for
+ * each name wins.
  */
 function firstOfEach(
   blocks: Iterable<Record<string, unknown>>,
@@ -135,18 +134,16 @@ function firstOfEach(
 }
 
 /**
- * The resource a value refers to and nothing else, by the label the
- * rest of the configuration refers to it as.
+ * The label of the resource a value refers to, when the value is that
+ * reference and nothing else.
  *
- * A queue URL and a table ARN exist only once the configuration is
- * applied, so a variable set to one of them states a reference and no
- * text at all. The two sides mean one resource, and the label is what
- * both the deployable and the resource's own summary spell, so the
- * chain from a variable to a resource collapses on it.
+ * A queue URL or a table ARN exists only once the configuration is
+ * applied, so a variable set to one contains a reference and no text.
+ * The deployable and the resource's own summary both use the label, so
+ * the chain from a variable to a resource resolves to it.
  *
- * Null when the value has text of its own around the reference, or
- * when it refers to a local or a variable rather than to a resource
- * this configuration states.
+ * Null when the value has text around the reference, or when it refers
+ * to a local or a variable instead of a resource in this configuration.
  */
 export function referencedResource(
   value: string,
@@ -167,9 +164,9 @@ export function referencedResource(
 }
 
 /**
- * The same value, with each reference replaced by what the resource it
- * refers to states. Everything else is left as it was written, so the
- * caller still reads it as a hole.
+ * Replaces each reference with the literal the configuration writes for
+ * it. Anything else stays as written, so the caller still reads it as a
+ * hole.
  */
 export function resolveReferences(
   value: string,
@@ -179,12 +176,9 @@ export function resolveReferences(
 }
 
 /**
- * The value expanded, or null when a reference in it leads back to one
- * being resolved. Two resources that refer to each other say nothing
- * either of them could deploy, so the value is left as it was written.
- *
- * `resolving` is the chain so far, which is both how a cycle is spotted
- * and how far the chain has gone.
+ * Null when a reference leads back into `resolving`, the chain so far.
+ * Two resources that refer to each other describe nothing deployable,
+ * so the caller keeps the value as written.
  */
 function expand(
   value: string,

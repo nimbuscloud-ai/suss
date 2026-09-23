@@ -1,9 +1,7 @@
-// rest.ts: Convert a normalized RestApiConfig into BehavioralSummary[].
-//
-// Manifest-agnostic: callers (CFN/CDK/Terraform readers) build
-// RestApiConfig from their source format and pass it here. This module
-// owns the AWS API Gateway v1 (REST) resource semantics: which platform
-// transitions appear given which configuration knobs.
+/**
+ * Turns a RestApiConfig into one summary per endpoint, adding the
+ * responses API Gateway v1 (REST) returns for each configuration setting.
+ */
 
 import { restBinding, withHttpMetadata } from "@suss/behavioral-ir";
 
@@ -38,11 +36,8 @@ export function restApiToSummaries(config: RestApiConfig): BehavioralSummary[] {
     summaries.push(buildEndpointSummary(endpoint, config, sourceFile));
   }
 
-  // Synthesize OPTIONS preflight per unique resource path when CORS is
-  // configured at the API level. A real REST API can also declare CORS
-  // per-method via "EnableCorsOnMethod": readers should turn those
-  // into explicit OPTIONS endpoints in `endpoints` and skip the
-  // top-level `cors` field, so we don't double-emit.
+  // A reader turns CORS declared on one method into an OPTIONS endpoint
+  // and leaves `cors` unset, so this preflight never duplicates it.
   if (config.cors !== undefined) {
     for (const endpoint of dedupeByPath(config.endpoints)) {
       summaries.push(
@@ -92,10 +87,8 @@ function buildEndpointSummary(
     }
   }
 
-  // Endpoints with no integration status codes AND no platform
-  // contributions still need at least one transition so they pair
-  // with consumers. Default isDefault transition is the under-specified
-  // fallback: manifest didn't tell us what the integration returns.
+  // An endpoint needs at least one transition to pair with a consumer,
+  // even when the manifest says nothing about what it returns.
   if (transitions.length === 0) {
     transitions.push({
       id: `${ownerKey}:integration:default`,
@@ -143,13 +136,9 @@ function buildEndpointSummary(
         integrationType: endpoint.integration.type,
       },
       {
-        // The integration's declared status codes (from MethodResponses
-        // in the CFN template) are the declared contract here.
-        // Platform-injected transitions (authorizer 401/403, throttle
-        // 429, etc.) come from SEPARATE config fields and so are
-        // independent from this contract: contract-consistency
-        // comparison is meaningful and will surface template-internal
-        // inconsistencies.
+        // The platform's responses come from other settings than
+        // MethodResponses, so comparing them with this contract can find
+        // a template that contradicts itself.
         declaredContract: {
           framework: FRAMEWORK,
           provenance: "independent",
@@ -157,10 +146,6 @@ function buildEndpointSummary(
             statusCode,
           })),
         },
-        // Additive pointer to the code that implements this endpoint
-        // (SAM Lambda proxy Handler), so a checker can correlate the
-        // declared route with the extracted handler summary carrying the
-        // same REST binding.
         ...(endpoint.implementingHandler !== undefined
           ? { implementingHandler: endpoint.implementingHandler }
           : {}),
@@ -169,12 +154,7 @@ function buildEndpointSummary(
   };
 }
 
-/**
- * Walk the configuration knobs that produce additional response
- * transitions and bucket them by status code. Cascading: API-level
- * defaults (authorizer, throttle) apply unless the endpoint sets the
- * corresponding field. Passing `null` opts out of an inherited default.
- */
+/** Groups the platform's added responses by status code. */
 function collectPlatformContributions(
   endpoint: RestEndpointConfig,
   api: RestApiConfig,

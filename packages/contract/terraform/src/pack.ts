@@ -1,14 +1,14 @@
 /**
- * What a pack says about the resources one Terraform provider declares.
+ * The types a Terraform pack uses to describe the resources one provider
+ * declares.
  *
- * A provider states its own resource types, and a version of it states
- * their shape, so both belong to a pack rather than to this reader. The
- * reader walks HCL and matches; a pack says what `aws_dynamodb_table`
- * is and which provider versions it is describing.
+ * A provider defines its own resource types, and each version defines
+ * their attributes, so both belong in a pack and stay out of this
+ * reader. The reader walks HCL and matches resources. A pack describes
+ * what `aws_dynamodb_table` is and which provider versions that covers.
  *
- * Every entry is data rather than a function. A resource this shape
- * cannot describe is a reason to widen it, rather than a reason for a
- * pack to ship code the reader cannot see into.
+ * Every entry is data. When these types cannot describe a resource,
+ * widen them, so a pack never ships code the reader cannot inspect.
  */
 
 import type {
@@ -19,15 +19,15 @@ import type {
 } from "@suss/behavioral-ir";
 
 /**
- * An attribute whose value the pack translates into one of suss's own
- * words. The reader takes the value at `attribute` and looks it up in
- * `means`; a value the pack did not list says nothing, and so does one
- * the configuration builds at deploy time.
+ * An attribute whose value the pack translates into suss's own terms.
+ * The reader looks up the value at `attribute` in `means`. A value the
+ * pack did not list, or one the configuration builds at deploy time,
+ * maps to nothing.
  */
 export interface AttributeMeaning<T extends string> {
-  /** The attribute path whose value says which one it is. */
+  /** The attribute path to read. */
   attribute: string;
-  /** What each value the provider can write there means. */
+  /** The suss term for each value the provider can write there. */
   means: Record<string, T>;
   /**
    * Whether a value has to equal a key of `means` or start with one.
@@ -35,7 +35,7 @@ export interface AttributeMeaning<T extends string> {
    * and the releases change every quarter, so a pack lists the prefix.
    */
   matches?: "value" | "prefix";
-  /** What the resource means when it never set the attribute at all. */
+  /** The meaning to use when the resource does not set the attribute. */
   whenUnset?: T;
 }
 
@@ -43,68 +43,68 @@ export interface AttributeMeaning<T extends string> {
 export interface StorageResource {
   kind: "storage";
   /**
-   * Which store this is: dynamodb, s3. A resource that runs whichever
-   * engine one of its attributes picks says which attribute instead,
-   * and a value the pack does not list leaves the store with no engine
-   * on it rather than dropping the resource.
+   * The store, such as `aws.dynamodb` or `s3`. A resource whose engine
+   * depends on one of its attributes gives an AttributeMeaning instead.
+   * A value the pack does not list leaves the store with no engine, and
+   * the resource is still read.
    */
   storageSystem: string | AttributeMeaning<string>;
-  /** How a caller reaches it, when that is not the store's own name. */
+  /** How a caller reaches it, when that differs from the store's own name. */
   transport?: string;
   /**
-   * What the resource declares. The default, `"container"`, means the
-   * resource is the thing code addresses: code passes a bucket's name
-   * to `bucket()`, so the declared name and the accessed name meet.
-   * `"store"` means the resource only says the store exists. Code
-   * splits a Redis cluster into key namespaces, no attribute of the
-   * cluster lists them, so the summary gets no container name and
-   * claims no access. Any match on the cluster's own name would be a
-   * coincidence between a deployment name and a key prefix.
+   * What the resource declares. The default, `"container"`, means code
+   * addresses the resource directly: code passes a bucket's name to
+   * `bucket()`, so the declared name matches the accessed one. `"store"`
+   * means the resource only declares that the store exists. Code splits
+   * a Redis cluster into key namespaces that no attribute of the cluster
+   * lists, so the summary gets no container name and claims no access.
+   * A match on the cluster's own name would be a coincidence between a
+   * deployment name and a key prefix.
    */
   declares?: "container" | "store";
-  /** The attribute that says what the resource is called once deployed. */
+  /** The attribute that contains the resource's deployed name. */
   nameAttribute?: string;
   /**
-   * The attribute naming the namespace a container belongs to. A
+   * The attribute that contains the namespace a container belongs to. A
    * BigQuery table is always addressed through its dataset, so two
    * tables called `orders` in two datasets are two containers.
    */
   scopeAttribute?: string;
   /** Whether the fields it declares are every field an item has. */
   fieldSet: "exhaustive" | "partial" | "none";
-  /** The attributes that state what identifies an item, in key order. */
+  /** The attributes that list an item's key fields, in key order. */
   identifies?: string[];
-  /** Blocks that declare another way in, each keyed on its own fields. */
+  /** Blocks that declare another access path, each keyed on its own fields. */
   accessPathBlocks?: string[];
   /** The block that gives each field a type, and its two attributes. */
   fieldTypes?: { block: string; nameAttribute: string; typeAttribute: string };
   /**
-   * An attribute stating every field as JSON, one object per field. A
-   * schema written this way is every field the item has, so reading one
-   * makes the contract exhaustive whatever `fieldSet` says.
+   * An attribute that lists every field as JSON, one object per field. A
+   * schema written this way lists every field the item has, so reading
+   * one makes the contract exhaustive regardless of `fieldSet`.
    */
   fieldsFromJson?: {
     /** The attribute whose value is a JSON list of field objects. */
     attribute: string;
-    /** The key of one entry that says what the field is called. */
+    /** The key in each entry that contains the field's name. */
     nameKey: string;
-    /** The key of one entry that gives the field its type. */
+    /** The key in each entry that contains the field's type. */
     typeKey?: string;
-    /** The key that says a field is always set, and the values that do. */
+    /** The key that marks a field as always set, and the values that do. */
     requires?: { key: string; values: string[] };
   };
   /**
-   * How another way in says what it can serve. A DynamoDB index copies
-   * some of an item rather than all of it, and a reader asking for
-   * anything else gets nothing back and no error, so what it copies is
-   * every field it has rather than the ones somebody wrote down.
+   * Which fields an access path can return. A DynamoDB index copies only
+   * part of an item, and a read of any other attribute returns nothing
+   * without an error, so the copied attributes are the index's complete
+   * field list.
    */
   serves?: {
-    /** The attribute that says which kind of copy it keeps. */
+    /** The attribute that contains the projection kind. */
     kindAttribute: string;
-    /** The attribute listing what it copies, for the kind that lists. */
+    /** The attribute listing the copied fields, for a kind that lists them. */
     fieldsAttribute: string;
-    /** The value of `kindAttribute` that means it copies the item. */
+    /** The `kindAttribute` value that means the whole item is copied. */
     everything: string;
   };
 }
@@ -117,39 +117,38 @@ export interface MessageBusResource {
 }
 
 /**
- * How the deployed metric type is spelled, with each `{...}` standing
- * for the value at that attribute. A CloudWatch metric is identified by
- * its namespace and its name together, so a template says where both
- * come from: `"{metric_transformation.namespace}/{metric_transformation.name}"`.
- * A hole the resource leaves unset makes the whole identity unknown, so
- * the summary pairs with nothing rather than with a half-spelled name.
+ * The pattern of the deployed metric type, where each `{...}` is
+ * replaced by the value at that attribute path. A CloudWatch metric is
+ * identified by its namespace and its name together, so its template
+ * gives both: `"{metric_transformation.namespace}/{metric_transformation.name}"`.
+ * When the resource leaves one of those attributes unset, the whole
+ * identity is unknown, so the summary does not pair on a partial name.
  */
 export type MetricTypeTemplate = string;
 
 /** A named series of measurements a resource declares. */
 export interface MetricResource {
   kind: "metric";
-  /** Which system the series lives in: cloud-monitoring. */
+  /** The metrics system, such as `cloud-monitoring`. */
   metricSystem: string;
-  /** How the string both sides spell is built from the resource. */
+  /** How the identity both sides write is built from the resource. */
   metricTypeTemplate: MetricTypeTemplate;
-  /** Which attribute says whether one measurement is a number or a histogram. */
+  /** The attribute that decides whether a measurement is a number or a histogram. */
   values?: AttributeMeaning<MetricValueShape>;
-  /** Which attribute says what a measurement covers. */
+  /** The attribute that decides what one measurement covers. */
   accumulates?: AttributeMeaning<MetricAccumulation>;
 }
 
 /**
- * How a reading says which metric it is about. A CloudWatch alarm
- * writes the namespace and the name in attributes of its own; a Cloud
- * Monitoring condition states a query, and the metric is one value
- * inside it.
+ * Where a reading gives the metric it is about. A CloudWatch alarm
+ * writes the namespace and the name as attributes. A Cloud Monitoring
+ * condition writes a query, and the metric is one value inside it.
  */
 export type MetricIdentity =
   | { from: "attributes"; template: MetricTypeTemplate }
   | {
       from: "query";
-      /** The attribute whose query says which metric this is about. */
+      /** The attribute that contains the query. */
       attribute: string;
       /** The key inside that query whose value is the metric's type. */
       key: string;
@@ -157,8 +156,8 @@ export type MetricIdentity =
 
 /**
  * A resource that reads a metric another resource declares. One
- * resource usually states several readings, each in its own block and
- * each about its own metric, so each becomes a boundary of its own.
+ * resource often contains several readings, each in its own block and
+ * about its own metric, so each becomes its own boundary.
  */
 export interface MetricReadingResource {
   kind: "metric-reading";
@@ -168,22 +167,22 @@ export interface MetricReadingResource {
    * list means the resource is itself one reading.
    */
   readingBlocks: string[];
-  /** How the reading spells the metric it is about. */
+  /** Where the reading gives the metric it is about. */
   identifies: MetricIdentity;
   /**
-   * The attribute whose presence means the reading compares the series
-   * against a value of this shape. A condition states a threshold, so
-   * the number it compares against is the attribute being set at all.
+   * An attribute whose presence means the reading compares the series
+   * against a value of this shape. A condition that sets a threshold
+   * compares against a number, whatever the number is.
    */
   comparesTo?: { attribute: string; whenSet: MetricValueShape };
-  /** Which attribute says what the reading reduces each window to first. */
+  /** The attribute that decides what the reading reduces each window to. */
   reducesTo?: AttributeMeaning<MetricValueShape>;
 }
 
 /**
- * Where a provider writes one process's environment. A map attribute
- * gives the names as its keys; repeated entries each say what one
- * variable is called and then what supplies it, a literal or a secret.
+ * Where a provider writes one process's environment: either a map
+ * attribute keyed by variable name, or repeated entries that each give
+ * one variable's name and its source, a literal or a secret.
  */
 export type EnvDeclaration =
   | { style: "map"; attribute: string }
@@ -191,27 +190,26 @@ export type EnvDeclaration =
       style: "entries";
       /** The block one entry is written as, as a dotted path. */
       block: string;
-      /** The attribute stating what the variable is called. */
+      /** The attribute that contains the variable's name. */
       nameAttribute: string;
-      /** The attribute stating the value, for an entry that writes one. */
+      /** The attribute that contains the value, for an entry that writes one. */
       valueAttribute?: string;
-      /** The attribute stating which secret supplies the value. */
+      /** The attribute that contains the secret supplying the value. */
       secretAttribute?: string;
     };
 
 /**
- * How a platform spells the string that says which code it calls.
- * `"module.export"` is a module path and an exported name split at the
- * last dot, which is what Lambda takes. `"name"` is an exported name on
- * its own, which says nothing about which file it is in.
+ * How a platform writes the handler it calls. `"module.export"` is a
+ * module path and an exported name joined at the last dot, as Lambda
+ * takes it. `"name"` is an exported name alone, with no file.
  */
 export type HandlerSpelling = "module.export" | "name";
 
-/** What the provider says one process runs. */
+/** Where the provider records the code one process runs. */
 export interface DeployableCode {
-  /** The attribute that says which function the platform calls. */
+  /** The attribute that contains the function the platform calls. */
   handler?: { attribute: string; spelling: HandlerSpelling };
-  /** The attribute that says which image a container runs. */
+  /** The attribute that contains the image a container runs. */
   imageAttribute?: string;
 }
 
@@ -219,38 +217,38 @@ export interface DeployableCode {
 export interface DeployableContainers {
   /** The blocks one container is written inside, outermost first. */
   blocks: string[];
-  /** The attribute inside a container that says what it is called. */
+  /** The attribute inside a container that contains its name. */
   nameAttribute?: string;
 }
 
 /**
- * Something that gets deployed and runs: a function, a container, a
- * job. What it declares is the environment the process starts with, so
- * code reading a variable the deployment never sets is a defect either
- * side can be shown.
+ * Something that gets deployed and runs, such as a function, a
+ * container or a job. It declares the environment the process starts
+ * with, so suss can report code that reads a variable the deployment
+ * never sets.
  *
- * The unit is the resource's label rather than the name it deploys
- * under. The label is what the rest of the configuration refers to it
- * as, the way a logical id is in CloudFormation, and it is what a
- * variable pointing at the resource resolves to.
+ * The unit is keyed by the resource's label, and the deployed name is
+ * not used. The rest of the configuration refers to the resource by its
+ * label, as CloudFormation does with a logical id, and a variable that
+ * points at the resource resolves to it.
  */
 export interface DeployableResource {
   kind: "deployable";
-  /** Which medium runs it, in the words a deployable unit is keyed by. */
+  /** What runs it, as a deployable unit's `deploymentTarget`. */
   deploymentTarget: DeployableUnit["deploymentTarget"];
   /** Where each process is written, for a resource that deploys several. */
   containers?: DeployableContainers;
   /** Where the environment is written, inside the process. */
   env?: EnvDeclaration[];
-  /** What the provider says the process runs. */
+  /** Where the provider records the code the process runs. */
   code?: DeployableCode;
-  /** The attribute stating the language runtime, verbatim. */
+  /** The attribute that contains the language runtime, copied as written. */
   runtimeAttribute?: string;
   /**
-   * Names the platform sets whatever the configuration says. An entry
-   * that states none takes the list for its deployment target, which
-   * is the one every other reader of that target uses. A product with
-   * a list of its own, Cloud Run against a bare container, states it.
+   * Variables the platform sets regardless of the configuration. An
+   * entry that leaves this out gets the list for its deployment target,
+   * which every other reader of that target uses. A product with its own
+   * list, such as Cloud Run, sets it here.
    */
   platformEnvVars?: readonly string[];
 }
@@ -264,16 +262,16 @@ export type TerraformResource =
 
 /** One resource type, as one version range of one provider declares it. */
 export interface TerraformResourcePattern {
-  /** The resource type, spelled the way the provider spells it. */
+  /** The resource type, as the provider writes it. */
   resource: string;
   /**
    * An attribute that decides whether the entry describes the resource
-   * at all. A Firestore database in Datastore mode speaks a different
-   * API, so it is not the store the Firestore entry describes. A value
-   * outside `equals`, or one built at deploy time, means the resource
-   * is not read, rather than read as something it may not be.
-   * `whenUnset` says what an absent attribute means; the default is not
-   * to read the resource.
+   * at all. A Firestore database in Datastore mode uses a different
+   * API, so the Firestore entry does not describe it. A value outside
+   * `equals`, or one built at deploy time, means the resource is
+   * skipped, so it is never read as something it may not be.
+   * `whenUnset` gives what an absent attribute means; by default the
+   * resource is skipped.
    */
   appliesWhen?: {
     attribute: string;
@@ -285,7 +283,7 @@ export interface TerraformResourcePattern {
    * Which provider versions this describes, as a semver range. A
    * configuration states its own constraint under `required_providers`,
    * and an entry outside it is not read. A configuration that states no
-   * constraint is read by every entry, since nothing said otherwise.
+   * constraint is read by every entry, since nothing rules any out.
    */
   providerVersions: string;
   /** What the resource is, once read. */

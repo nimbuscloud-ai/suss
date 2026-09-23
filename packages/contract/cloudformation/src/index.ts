@@ -1,32 +1,16 @@
-// @suss/contract-cloudformation: Generate behavioral summaries from
-// CloudFormation / SAM templates.
-//
-// Three extraction paths run side by side:
-//
-//   1. Inline-OpenAPI: API Gateway resources whose Properties.Body or
-//      Properties.DefinitionBody contains an OpenAPI document. Each body
-//      is handed to @suss/contract-openapi.
-//
-//   2. CFN-native REST: AWS::ApiGateway::RestApi + AWS::ApiGateway::Method
-//      + AWS::ApiGateway::Resource resources. The walker resolves the
-//      resource graph to derive paths, reads authorization / integration
-//      / api-key / validation knobs, and builds a normalized
-//      RestApiConfig per RestApi. Delegates to @suss/contract-aws-apigateway
-//      for the resource semantics, the CFN package is a *manifest reader*,
-//      not a behavior model.
-//
-//   3. CFN-native HTTP API: AWS::ApiGatewayV2::Api + AWS::ApiGatewayV2::Route
-//      + AWS::ApiGatewayV2::Integration + AWS::ApiGatewayV2::Authorizer.
-//      Same shape as REST: build HttpApiConfig per Api, delegate.
-//
-// SAM AWS::Serverless::Function.Events { Api | HttpApi } blocks are
-// expanded into synthetic Method / Route entries in the appropriate
-// API's config: that's the dominant SAM authoring idiom.
-//
-// Reading a template from disk reads the templates it embeds too. Each
-// document is walked on its own, because a logical id, a SAM `Globals`
-// section and a relative path all mean something only inside the
-// document that writes them.
+/**
+ * Builds summaries from a CloudFormation or SAM template, with one walk
+ * per family of resources in cloudFormationToSummaries.
+ *
+ * For API Gateway this package only reads the template. It builds a
+ * RestApiConfig or HttpApiConfig, including one entry per SAM `Events`
+ * route, and @suss/contract-aws-apigateway decides what the platform
+ * adds.
+ *
+ * Reading a template from disk also reads the templates it embeds. Each
+ * document is walked on its own, because a logical id, a SAM `Globals`
+ * section and a relative path only mean something inside their document.
+ */
 
 import {
   nestedDocumentLabel,
@@ -72,8 +56,8 @@ import { buildRuntimeConfigSummaries } from "./runtimeConfig.js";
 import type { BehavioralSummary, RoutingMetadata } from "@suss/behavioral-ir";
 import type { OpenApiSpec } from "@suss/contract-openapi";
 
-// Re-exported so existing consumers of the parse layer keep working;
-// the canonical home is @suss/manifest-aws.
+// These live in @suss/manifest-aws. Callers that import them from this
+// package still get them.
 export {
   type CloudFormationResource,
   type CloudFormationTemplate,
@@ -86,40 +70,33 @@ export {
 } from "@suss/manifest-aws";
 
 export { ALB_MATCH_LANGUAGE, albRouterSelector } from "./albMatch.js";
-// Where a document is decides which flow scope its resources join, so
-// every manifest reader labels its documents the same way.
+// A document's label decides which flow scope its resources join, so
+// every manifest reader has to label documents the same way.
 export { documentSourceLabel } from "./documentLabel.js";
-// The runtime-config walk is the one summary builder another manifest
-// reader reuses whole: @suss/contract-serverless synthesizes SAM-shaped
-// function resources and runs the same walk, so the two manifest
-// languages cannot drift on env-var provenance or platform-injected
-// variables.
+// @suss/contract-serverless runs this walk over SAM-shaped resources, so
+// both readers record environment variables the same way.
 export { buildRuntimeConfigSummaries } from "./runtimeConfig.js";
 
 export interface CloudFormationToSummariesOptions {
-  /** Override the logical source file recorded on each summary. */
+  /** The source label recorded on each summary, in place of the default. */
   source?: string;
   /**
-   * Logical ids of the stack resources leading from the root template
-   * down to this document. Empty (the default) for a template nothing
-   * embeds. A logical id is unique inside one document, so the stack
-   * path is what tells two nested documents' resources apart.
+   * Logical ids of the stack resources from the root template down to
+   * this document, empty for a template nothing embeds. Logical ids are
+   * only unique within one document, so this path keeps two nested
+   * documents' resources apart.
    */
   stackPath?: string[];
   /**
-   * What recognized these resources, recorded on each binding. Another
-   * manifest language that compiles to these same resource shapes reads
-   * through this walk and names itself here, so a reader of the summary
-   * sees the document a person wrote rather than the shape it compiled
-   * to. Defaults to "cloudformation".
+   * The `recognition` recorded on each binding. A manifest format that
+   * compiles to these resource types passes its own name, so the summary
+   * points at the file a person wrote. Defaults to "cloudformation".
    */
   recognition?: string;
 }
 
-/**
- * Resource types whose `Body` / `DefinitionBody` usually contains an OpenAPI
- * definition. Each entry says which property to read.
- */
+// Resource types whose `Body` or `DefinitionBody` usually contains an
+// OpenAPI definition.
 const API_RESOURCE_BODIES: Record<string, "Body" | "DefinitionBody"> = {
   "AWS::ApiGateway::RestApi": "Body",
   "AWS::ApiGatewayV2::Api": "Body",
@@ -127,20 +104,18 @@ const API_RESOURCE_BODIES: Record<string, "Body" | "DefinitionBody"> = {
   "AWS::Serverless::HttpApi": "DefinitionBody",
 };
 
-/**
- * Convert an in-memory CloudFormation template into a `BehavioralSummary[]`.
- */
+/** Summaries for one CloudFormation template already in memory. */
 export function cloudFormationToSummaries(
   template: CloudFormationTemplate,
   options: CloudFormationToSummariesOptions = {},
 ): BehavioralSummary[] {
   const summaries: BehavioralSummary[] = [];
-  // Every walk below reads properties, and a SAM section can supply any
-  // of them, so the section is applied once here rather than per walk.
+  // SAM Globals can supply any property a walk below reads, so they are
+  // applied once up front.
   const resources = resourcesWithGlobals(template);
   const recognition = options.recognition ?? "cloudformation";
 
-  // 1. Inline OpenAPI walk.
+  // 1. OpenAPI documents inline in an API resource.
   for (const [logicalId, resource] of Object.entries(resources)) {
     const bodyKey = API_RESOURCE_BODIES[resource.Type ?? ""];
     if (bodyKey === undefined) {
@@ -161,24 +136,19 @@ export function cloudFormationToSummaries(
 
   const sourceFile = options.source ?? "cloudformation";
 
-  // 2. CFN-native REST walk: build one RestApiConfig per AWS::ApiGateway::RestApi
-  //    (or one per orphan Method group when no RestApi is declared).
+  // 2. One RestApiConfig per RestApi, plus one for Methods with no RestApi.
   const restConfigs = buildRestApiConfigs(resources, sourceFile);
   for (const config of restConfigs) {
     summaries.push(...restApiToSummaries(config));
   }
 
-  // 3. CFN-native HTTP API walk: same shape, v2 resource types.
+  // 3. The same for HTTP APIs (API Gateway v2).
   const httpConfigs = buildHttpApiConfigs(resources, sourceFile);
   for (const config of httpConfigs) {
     summaries.push(...httpApiToSummaries(config));
   }
 
-  // 4. Runtime-config walk: Lambda / ECS task env-var contracts. Each
-  //    resource that declares (or implicitly inherits, via platform
-  //    injection) an env block emits one runtime-config provider
-  //    summary. The pairing checker scopes code reads to these
-  //    runtimes via metadata.codeScope.
+  // 4. Environment variables for each Lambda function and ECS container.
   summaries.push(
     ...buildRuntimeConfigSummaries(
       resources,
@@ -188,26 +158,16 @@ export function cloudFormationToSummaries(
     ),
   );
 
-  // 5. Message-bus walk: AWS::SQS::Queue resources emit queue provider
-  //    summaries; Lambdas with SAM Events:SQS or AWS::Lambda::EventSourceMapping
-  //    emit consumer summaries with a queue boundaryBinding. Producer-side
-  //    interaction effects from @suss/framework-aws-sqs pair against these.
+  // 5. SQS, SNS, EventBridge and S3 notification channels and consumers.
   summaries.push(
     ...buildMessageBusSummaries(resources, sourceFile, recognition),
   );
 
-  // 6. ALB flow walk: listener rules and a listener's own default
-  //    action emit routesTo / answers edges with their match recorded
-  //    as data; target groups emit fronts edges naming what backs
-  //    them. No boundaryBinding, since these are the fact base a
-  //    future reachability rule reads, not a pairing the checker
-  //    matches today.
+  // 6. Load balancer and DNS routing edges for the reachability walk.
   summaries.push(...buildAlbFlowSummaries(resources, sourceFile));
   summaries.push(...buildDnsFlowSummaries(resources, sourceFile));
 
-  // 7. Storage walk: every AWS::DynamoDB::Table becomes a provider
-  //    summary, and so does each of its secondary indexes, since a
-  //    query through an index keys on that index's own fields.
+  // 7. DynamoDB tables and their secondary indexes.
   summaries.push(
     ...buildDynamoTableSummaries(resources, sourceFile, recognition),
   );
@@ -221,26 +181,14 @@ export function cloudFormationToSummaries(
 }
 
 /**
- * The same summary with the deployed thing it names qualified by the
- * stack path that reaches its document.
+ * Prefixes the deployed instance a summary belongs to with the stack
+ * path that leads to its document. The README explains why the instance
+ * gets the path and a channel does not.
  *
- * A logical id is unique within one document and nowhere else, so two
- * nested documents can each declare `HandlerFunction` and mean two
- * different Lambdas. The deployed instance is the identity the checker
- * joins the code side against, so it is the one that has to include the
- * path. A channel keeps the name its document writes, because a queue
- * name is what the code says and the code cannot know which document
- * declared the queue.
- *
- * A `fronts` edge's `resource` field follows the same rule as
- * `deployableUnit.instanceName` when it points at a deployable unit's own
- * identity (an ECS container's or a Lambda's instanceName): the ALB
- * flow reader and the runtime-config reader must qualify it the same
- * way for the two to still name the same thing once nested. A fronted
- * resource that is itself another load balancer (a TargetType alb
- * group fronting one) is ALB infrastructure like the router and target
- * group logical ids, which nothing outside the template ever names, so
- * it stays bare the same way they do, like a channel does.
+ * A `fronts` edge that points at a Lambda or an ECS container gets the
+ * same prefix, so it still matches the runtime-config summary for that
+ * unit. An edge that points at another load balancer stays bare, like the
+ * other ALB logical ids, since nothing outside the template refers to it.
  */
 function deployedWithinStack(
   summary: BehavioralSummary,
@@ -271,8 +219,8 @@ function deployedWithinStack(
             },
           }
         : {}),
-      // A runtime-config boundary is keyed on the instance, so the
-      // binding has its own copy of the name and both have to move.
+      // A runtime-config binding has its own copy of the instance name,
+      // so it gets the prefix too.
       ...(binding !== null &&
       binding.semantics.name === "runtime-config" &&
       binding.semantics.instanceName !== undefined
@@ -301,12 +249,8 @@ function deployedWithinStack(
   };
 }
 
-/**
- * A `fronts` edge's resource, when it points at a deployable unit the stack
- * path has to qualify. Null when the edge is not `fronts`, when nothing
- * resolved, or when the resource is a declared load balancer, which
- * stays bare.
- */
+// The resource of a `fronts` edge that needs the stack path, or null for
+// any other edge, an unresolved one, or one that points at a load balancer.
 function frontedUnitResource(
   routing: RoutingMetadata,
   resources: Record<string, CloudFormationResource>,
@@ -335,11 +279,8 @@ function buildRestApiConfigs(
   resources: Record<string, CloudFormationResource>,
   sourceFile: string,
 ): RestApiConfig[] {
-  // Collect RestApi resources up front so we can look up cascading
-  // defaults (CORS settings on Properties, throttle defaults from a
-  // companion AWS::ApiGateway::Stage, etc.) when building per-endpoint
-  // configs. SAM's AWS:Serverless:Api also lands here. It's the
-  // SAM-side authoring shape that transforms into a RestApi.
+  // SAM's AWS::Serverless::Api becomes a RestApi when deployed, so it
+  // counts as one here.
   const restApis = new Map<string, CloudFormationResource>();
   for (const [logicalId, resource] of Object.entries(resources)) {
     if (
@@ -350,9 +291,8 @@ function buildRestApiConfigs(
     }
   }
 
-  // Group Methods by their RestApiId. Methods without a resolvable
-  // RestApiId go into the orphan bucket so their endpoints still
-  // surface (synthetic API id "RestApi").
+  // A Method whose RestApiId does not resolve still gets a summary, under
+  // an API with the made-up id "RestApi".
   const methodsByApi = new Map<string, string[]>();
   const orphan: string[] = [];
   for (const [logicalId, resource] of Object.entries(resources)) {
@@ -371,8 +311,8 @@ function buildRestApiConfigs(
 
   const configs: RestApiConfig[] = [];
 
-  // Iterate over every declared RestApi so APIs that exist only via
-  // SAM Events (no native Method resources) still produce configs.
+  // An API whose routes all come from SAM Events has no Methods, so every
+  // RestApi gets a config.
   for (const [apiId, api] of restApis) {
     const methodIds = methodsByApi.get(apiId) ?? [];
     configs.push(
@@ -386,8 +326,6 @@ function buildRestApiConfigs(
     );
   }
 
-  // Drop configs that ended up with zero endpoints (a RestApi resource
-  // with no Methods and no matching Events shouldn't produce summaries).
   return configs.filter((c) => c.endpoints.length > 0);
 }
 
@@ -399,7 +337,7 @@ function buildRestApiConfig(
   sourceFile: string,
 ): RestApiConfig {
   const endpoints: RestEndpointConfig[] = [];
-  // Null: a segment on the way is computed, so no path can be stated.
+  // Null when some PathPart on the way is computed, so no path is known.
   const pathByLogicalId = new Map<string, string | null>();
 
   function pathFor(logicalId: string): string | null {
@@ -431,7 +369,6 @@ function buildRestApiConfig(
       continue;
     }
     const props = resource.Properties ?? {};
-    // ANY is API Gateway's spelling of the method wildcard.
     const method = wildcardOrMethod(plainString(props.HttpMethod) ?? "");
     if (method === null) {
       continue;
@@ -469,7 +406,7 @@ function buildRestApiConfig(
     if (authorizer !== undefined) {
       endpoint.authorizer = authorizer;
     } else if (looksLikeAnonymous(props.AuthorizationType)) {
-      // Explicit "NONE" opts out of any inherited default.
+      // "NONE" turns off any default authorizer the API sets.
       endpoint.authorizer = null;
     }
 
@@ -489,8 +426,6 @@ function buildRestApiConfig(
     endpoints.push(endpoint);
   }
 
-  // Append SAM Events (AWS::Serverless::Function with Events.Api blocks
-  // referencing this RestApi).
   endpoints.push(...readSamApiEvents(apiId, resources, sourceFile));
 
   const config: RestApiConfig = {
@@ -499,9 +434,8 @@ function buildRestApiConfig(
     endpoints,
   };
 
-  // CORS configured at the RestApi level via SAM's CorsConfiguration
-  // is the most common authoring shape; raw CFN requires per-method
-  // OPTIONS resources, which the manifest already enumerates.
+  // Only SAM has an API-wide CorsConfiguration. Plain CloudFormation
+  // declares OPTIONS Methods, which the loop above already read.
   if (api !== undefined) {
     const cors = readSamRestCors(
       api.Properties?.CorsConfiguration,
@@ -603,7 +537,8 @@ function readRestAuthorizer(
       type = readRestAuthorizerType(authorizerId, resources);
       break;
     default:
-      // JWT is HTTP API only; if it shows up here treat as cognito-ish.
+      // Any other type, JWT included, is treated like Cognito: a 401 and
+      // a 403 either way.
       type = "cognito";
   }
   const config: AuthorizerConfig = { type };
@@ -709,8 +644,6 @@ function buildHttpApiConfig(
       continue;
     }
 
-    // The route's Target attribute references an Integration resource;
-    // we use its Type to determine the IntegrationConfig.
     const integration = readHttpIntegration(
       props.Target,
       resources,
@@ -766,9 +699,8 @@ function readHttpIntegration(
   resources: Record<string, CloudFormationResource>,
   sourceFile: string,
 ): IntegrationConfig {
-  // Target is "integrations/<integrationId>" string. The integrationId
-  // can be a Ref/!Sub, but in the most common case it's a literal
-  // logical id we can look up.
+  // A route's Target is "integrations/<logical id>", written as a string
+  // or inside an `Fn::Sub`.
   const id = parseIntegrationTarget(target);
   if (id === null || resources[id] === undefined) {
     return { type: "unknown", statusCodes: [] };
@@ -863,18 +795,8 @@ function readHttpAuthorizer(
 // ---------------------------------------------------------------------------
 // SAM Events block expansion
 // ---------------------------------------------------------------------------
-//
-// AWS::Serverless::Function declares per-Lambda Events of type Api or
-// HttpApi. This is the dominant SAM authoring idiom, instead of separate
-// AWS::ApiGateway::Method resources, the routes are attached directly to
-// each Function. We expand them into the same RestEndpointConfig /
-// HttpRouteConfig shapes the manual Method walks produce.
 
-/**
- * Build a code pointer from a Serverless::Function's Handler / CodeUri
- * so the declared route summary can name the implementation. Returns
- * undefined when the Handler isn't a parseable `module.export` string.
- */
+// Undefined when the Handler is not a `module.export` string.
 function readHandlerPointer(
   fnId: string,
   resource: CloudFormationResource,
@@ -933,8 +855,8 @@ function readSamApiEvents(
       if (restApiRef !== null && restApiRef !== apiId) {
         continue;
       }
-      // No RestApiId → goes onto the implicit ServerlessRestApi; only
-      // emit if we're building the orphan / implicit api config.
+      // An event with no RestApiId belongs to SAM's implicit API. Every
+      // config here is "RestApi" or a declared API, so this never skips one.
       if (restApiRef === null && apiId !== "RestApi" && !resources[apiId]) {
         continue;
       }
@@ -1056,8 +978,7 @@ function readCors(
   if (raw === null || raw === undefined) {
     return null;
   }
-  // SAM CorsConfiguration can be a string (single allowed origin) or an
-  // object with AllowOrigins/AllowMethods/etc. arrays.
+  // SAM accepts a single origin string or an object of arrays.
   if (typeof raw === "string") {
     return {
       allowOrigins: [raw],
@@ -1110,22 +1031,13 @@ function readCors(
   return cors;
 }
 
-/**
- * A template's HTTP method as a binding method: `ANY` is API
- * Gateway's spelling of the method wildcard, and a blank method is a
- * malformed template with nothing to bind.
- */
-/**
- * The string a template property states, or null when the template
- * computes it with an intrinsic. Stringifying an intrinsic fabricates
- * the literal "[object Object]" inside a route's identity (#127), and
- * a route with a made-up identity pairs with nothing correctly, so a
- * computed value reads as unstated instead.
- */
+// Null for a value computed with an intrinsic. Turning one into a string
+// put "[object Object]" into route identities (#127).
 function plainString(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
+// `ANY` is API Gateway's method wildcard. A blank method has nothing to bind.
 function wildcardOrMethod(raw: string): string | null {
   const method = raw.toUpperCase();
   if (method === "") {
@@ -1165,15 +1077,12 @@ function parseStatus(value: unknown): number | null {
 }
 
 /**
- * Load a CloudFormation template from disk, along with every template
- * it embeds through a stack resource, and convert them all into
- * behavioral summaries. Format is detected by extension; `.json` is
- * parsed as JSON, everything else (including `.yaml`/`.yml`/`.template`)
- * goes through the YAML parser.
+ * Summaries for a template on disk and every template it embeds through
+ * a stack resource. A `.json` file is parsed as JSON, and any other
+ * extension as YAML.
  *
- * A child the reader could not open is reported on stderr and named,
- * so it reads as a template we did not get to rather than a template
- * that declares nothing.
+ * A child template that cannot be opened is reported on stderr by name,
+ * so nobody mistakes it for a template that declares nothing.
  */
 export function cloudFormationFileToSummaries(
   templatePath: string,

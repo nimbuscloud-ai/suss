@@ -1,21 +1,17 @@
-// events.ts: one function's `events` list, translated into the SAM
-// event shapes the CloudFormation reader already understands.
-//
-// Every event kind here maps onto the resource the framework compiles
-// it into, so the boundary a serverless.yml declares and the boundary
-// the same wiring declares in a SAM template come out as the same
-// summary. An httpApi event is an API Gateway v2 route, an http event
-// is a REST route, sqs is an event-source mapping, sns is a topic
-// subscription, and schedule and eventBridge are EventBridge rules.
-//
-// An event kind the framework defines but this reader does not
-// translate abstains by name. The reason travels back to the caller,
-// which reports it, so a wiring nobody read is never mistaken for a
-// wiring nobody wrote.
+/**
+ * Translates one function's `events` list into the SAM event entries
+ * the CloudFormation reader reads.
+ *
+ * Each event kind maps onto the resource the framework compiles it
+ * into, so a serverless.yml and a SAM template with the same wiring
+ * produce the same summary. When this reader does not translate an
+ * event, the reason goes back to the caller, which reports it, so a
+ * wiring nobody read is never mistaken for one nobody wrote.
+ */
 
 import type { VariableResolver } from "./variables.js";
 
-/** A SAM `Events` entry, which is what the CloudFormation reader consumes. */
+/** A SAM `Events` entry, in the form the CloudFormation reader reads. */
 export interface SamEvent {
   Type: string;
   Properties?: Record<string, unknown>;
@@ -186,9 +182,8 @@ const snsEvent = (raw: unknown, ctx: EventContext): EventTranslation => {
 };
 
 /**
- * A schedule fires on a clock, so the wiring is declared whether or not
- * the rate resolves. `enabled: false` deploys the rule switched off,
- * which does carry through, as SAM's `Enabled`.
+ * A schedule fires on a clock, so the wiring is declared even when the
+ * rate does not resolve. `enabled: false` becomes SAM's `Enabled`.
  */
 const scheduleEvent = (raw: unknown, ctx: EventContext): EventTranslation => {
   const map = asMap(raw);

@@ -1,20 +1,13 @@
-// scheduling.ts: recognize Node scheduling primitives and emit
-// `interaction(class: "schedule")` effects + scheduled-callback sub-units.
-//
-// Recognized primitives:
-//   setImmediate(fn[, ...args])
-//   setTimeout(fn, delay[, ...args])
-//   setInterval(fn, delay[, ...args])
-//   queueMicrotask(fn)
-//   process.nextTick(fn[, ...args])
-//
-// For each call:
-//   - The recognizer emits one schedule effect (per the IR's
-//     `interaction.class === "schedule"` discriminator).
-//   - The subUnits hook synthesizes one `scheduled-callback` sub-unit
-//     per call whose first argument resolves to a literal function
-//     expression. Identifier and opaque callbacks emit no sub-unit;
-//     the recognizer's effect records an opaque callbackRef instead.
+/**
+ * Calls to `setImmediate`, `setTimeout`, `setInterval`,
+ * `queueMicrotask` and `process.nextTick`.
+ *
+ * Each call gets a `schedule` interaction effect. When the callback is
+ * written inline as a function, it also becomes a `scheduled-callback`
+ * sub-unit with a summary of its own. A callback passed by name or
+ * computed gets no sub-unit, and the effect's callbackRef records what
+ * the call passed.
+ */
 
 import {
   type CallExpression,
@@ -41,11 +34,6 @@ type ScheduleVia =
 
 interface SchedulingPrimitive {
   via: ScheduleVia;
-  /**
-   * Whether the call has a delay argument. `setTimeout` /
-   * `setInterval` do; the others don't. Drives the `hasDelay` field
-   * on the emitted effect.
-   */
   hasDelayArg: boolean;
   matches: (call: CallExpression) => boolean;
 }
@@ -123,15 +111,9 @@ function describeCallback(arg: Node | undefined): {
   if (Node.isIdentifier(arg)) {
     return { type: "identifier", name: arg.getText() };
   }
-  // Property access (`obj.method`), call expression (`getHandler()`),
-  // any non-trivial expression: the analyzer can't resolve the
-  // callback without runtime info.
+  // A callback such as `obj.method` or `getHandler()` is not resolved.
   return { type: "opaque", reason: "non-literal-callback" };
 }
-
-// ---------------------------------------------------------------------------
-// invocationRecognizer
-// ---------------------------------------------------------------------------
 
 export const schedulingRecognizer: InvocationRecognizer = (call, _ctx) => {
   const c = call as CallExpression;
@@ -172,26 +154,18 @@ export const schedulingRecognizer: InvocationRecognizer = (call, _ctx) => {
   return [effect];
 };
 
-// ---------------------------------------------------------------------------
-// subUnits
-// ---------------------------------------------------------------------------
-
 const SCHEDULED_CALLBACK_INPUT: InputMappingPattern = {
   type: "positionalParams",
-  // Timer callbacks receive whatever `...args` were passed at the
-  // schedule site. v0 doesn't track these positions individually,
-  // packs that need argument-shape modeling can layer it on top.
+  // A timer callback receives the extra arguments passed to the
+  // scheduling call. Those are not mapped to its parameters yet.
   params: [],
 };
 
 /**
- * Walk the parent unit's body for scheduling calls whose first
- * argument is an inline function expression, and synthesize one
- * sub-unit per such callback. Identifier-referenced callbacks emit
- * no sub-unit (the recognizer's effect records the identifier name
- * for inspect rendering instead).
- *
- * Mirrors the contract React's pack uses for `useEffect` bodies.
+ * Returns one `scheduled-callback` sub-unit for each scheduling call in
+ * the parent whose first argument is an inline function, the way the
+ * React pack treats a `useEffect` body. A callback passed by name gets
+ * no sub-unit, and the schedule effect records its name instead.
  */
 export function nodeSchedulingSubUnits(
   parent: DiscoveredSubUnitParent,
@@ -202,8 +176,8 @@ export function nodeSchedulingSubUnits(
   const counters = new Map<ScheduleVia, number>();
 
   parentFunc.forEachDescendant((node, traversal) => {
-    // Skip nested function bodies, sub-units of nested fns belong
-    // to those fns' own summaries.
+    // A scheduling call inside a nested function belongs to that
+    // function's own summary.
     if (
       node !== parentFunc &&
       (Node.isFunctionDeclaration(node) ||
@@ -235,8 +209,8 @@ export function nodeSchedulingSubUnits(
     out.push({
       func: arg,
       kind: "scheduled-callback",
-      // Naming convention: `<parent>.<via>#<index>`. Multiple
-      // setImmediate calls in the same parent get distinct indices.
+      // The index keeps two calls to the same primitive in one parent
+      // apart.
       name: `${parent.name}.${primitive.via}#${idx}`,
       inputMapping: SCHEDULED_CALLBACK_INPUT,
       metadata: {

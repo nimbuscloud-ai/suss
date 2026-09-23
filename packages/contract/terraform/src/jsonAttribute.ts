@@ -1,16 +1,15 @@
 /**
  * An attribute whose value is JSON.
  *
- * Several providers take a structure as a string rather than as blocks:
- * a BigQuery table's schema, an ECS task's container definitions, an
- * IAM policy document. Terraform gives an author two ways to write one,
- * a literal string (usually a heredoc) and `jsonencode` over an HCL
- * value, and the two arrive at this reader looking nothing alike. This
- * turns both into the value the provider will see.
+ * Several providers take a structure as a JSON string instead of as
+ * blocks, such as a BigQuery table's schema or an ECS task's container
+ * definitions. An author can write one as a literal string, usually a
+ * heredoc, or as `jsonencode` over an HCL value, and the parser returns
+ * the two very differently. This module turns both into the value the
+ * provider receives.
  *
- * A schema a file or a variable supplies is not written down anywhere
- * this can read, so it comes back as null and the caller records
- * nothing rather than guessing.
+ * A value that a file or a variable supplies is not written in the
+ * configuration, so it comes back as null and the caller records nothing.
  */
 
 import { parseHclExpression } from "./hclDocument.js";
@@ -19,8 +18,8 @@ import { parseHclExpression } from "./hclDocument.js";
 const JSON_ENCODE = /^\$\{\s*jsonencode\((.*)\)\s*\}$/s;
 
 /**
- * The value an attribute states as JSON, or null when the attribute is
- * missing or states something only a deploy can settle.
+ * The value an attribute writes as JSON, or null when the attribute is
+ * missing or its value is known only at deploy time.
  */
 export function jsonAttributeValue(value: unknown): unknown {
   if (typeof value !== "string") {

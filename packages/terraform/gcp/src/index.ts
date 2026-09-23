@@ -2,16 +2,15 @@
  * What Google Cloud's Terraform provider declares, as far as suss reads
  * it.
  *
- * A log-based metric is a boundary: the resource declares a series of
- * measurements, and an alert policy elsewhere reads it back by the type
- * string Cloud Monitoring gives it. That string is what the two share,
- * whether the policy writes it out or builds it from a reference to the
- * metric resource.
+ * A log-based metric is a boundary. The resource declares a series of
+ * measurements, and an alert policy reads it back by the type string
+ * Cloud Monitoring gives it, whether the policy writes that string out
+ * or builds it from a reference to the metric resource.
  *
- * Google's vocabulary starts and stops in this file. Each entry says
- * which attribute a resource writes which of Google's words in, and
- * what they mean in the terms suss compares boundaries in, so
- * `checkMetric` in `@suss/checker` judges a pair with no pack loaded.
+ * Google's own terms appear only in this file. Each entry gives the
+ * attribute that contains a Google value and what that value means in
+ * suss's terms, so `checkMetric` in `@suss/checker` can judge a pair
+ * without loading a pack.
  */
 
 import type { MetricAccumulation, MetricValueShape } from "@suss/behavioral-ir";
@@ -47,9 +46,8 @@ const SQL_VERSIONS: AttributeMeaning<string> = {
 };
 
 /**
- * What each value type measures. BOOL, STRING, and MONEY are left out:
- * no word suss has describes them, and a metric this pack says nothing
- * about is compared against nothing.
+ * BOOL, STRING and MONEY are left out because suss has no value shape
+ * for them, and a metric with no value shape is not compared.
  */
 const VALUE_TYPES: Record<string, MetricValueShape> = {
   INT64: "number",
@@ -65,10 +63,9 @@ const METRIC_KINDS: Record<string, MetricAccumulation> = {
 };
 
 /**
- * What each aligner leaves behind. Cloud Monitoring's error message on
- * a bad apply lists the percentile four, and refuses every other way of
- * comparing a distribution to a threshold, so an aligner missing from
- * here is one that leaves the distribution alone.
+ * Cloud Monitoring accepts only these four percentiles when comparing a
+ * distribution to a threshold, so any other aligner leaves the
+ * distribution unreduced.
  */
 const ALIGNERS: Record<string, MetricValueShape> = {
   ALIGN_PERCENTILE_99: "number",
@@ -91,10 +88,9 @@ const CONTAINER_ENV: EnvDeclaration = {
 };
 
 /**
- * What each product puts in the environment on its own. Google's
- * container runtime contract states them, and the pack README says
- * which page each list comes from. A service and a job get different
- * ones, so the target alone cannot say.
+ * The variables each product sets in the environment itself. A service
+ * and a job get different ones, so the deployment target alone does not
+ * decide. DESIGN.md gives the page each list comes from.
  */
 const CLOUD_RUN_SERVICE_ENV = [
   "PORT",
@@ -130,8 +126,8 @@ export function googleTerraform(): TerraformPack {
         boundary: {
           kind: "storage",
           storageSystem: "gcs",
-          // The name is what code passes to `bucket()`, so it is the
-          // identity both sides spell.
+          // Code passes the same name to `bucket()`, so both sides use
+          // it as the identity.
           nameAttribute: "name",
           // An object has no fields to compare a read against.
           fieldSet: "none",
@@ -157,8 +153,9 @@ export function googleTerraform(): TerraformPack {
           storageSystem: BIGQUERY,
           nameAttribute: "table_id",
           scopeAttribute: "dataset_id",
-          // A schema written in the configuration is every column the
-          // table has; one a file or a variable supplies says nothing.
+          // A schema written in the configuration lists every column. A
+          // schema from a file or a variable is out of sight, so `none` is
+          // the fallback when fieldsFromJson finds nothing.
           fieldSet: "none",
           fieldsFromJson: {
             attribute: "schema",
@@ -183,8 +180,8 @@ export function googleTerraform(): TerraformPack {
       {
         resource: "google_firestore_database",
         providerVersions: CURRENT,
-        // A database in Datastore mode speaks a different API, so it is
-        // not the store this entry describes.
+        // A database in Datastore mode uses a different API, so this
+        // entry does not describe it.
         appliesWhen: { attribute: "type", equals: ["FIRESTORE_NATIVE"] },
         boundary: {
           kind: "storage",
@@ -201,8 +198,8 @@ export function googleTerraform(): TerraformPack {
         boundary: {
           kind: "storage",
           storageSystem: "gcp.bigtable",
-          // A table id is what code passes to `instance.table()`, so
-          // the declared name and the accessed name meet.
+          // Code passes the table id to `instance.table()`, so the
+          // declared name matches the accessed one.
           nameAttribute: "name",
           // Column families are not the fields of a row.
           fieldSet: "none",
@@ -249,7 +246,7 @@ export function googleTerraform(): TerraformPack {
           storageSystem: "redis",
           // Code addresses key namespaces, which no attribute of the
           // instance lists, so it declares the store and claims no
-          // access. The README says how the sides meet.
+          // access. The README explains why.
           declares: "store",
           fieldSet: "none",
         },
@@ -261,8 +258,8 @@ export function googleTerraform(): TerraformPack {
           kind: "metric",
           metricSystem: METRIC_SYSTEM,
           // Cloud Monitoring puts every metric a project defines for
-          // itself under this prefix, and an alert policy spells the
-          // whole string, so the whole string is the shared identity.
+          // itself under this prefix, and an alert policy writes the
+          // whole string, so the identity is the whole string.
           metricTypeTemplate: "logging.googleapis.com/user/{name}",
           values: {
             attribute: "metric_descriptor.value_type",
@@ -306,7 +303,7 @@ export function googleTerraform(): TerraformPack {
         boundary: {
           kind: "deployable",
           // A second-generation function is deployed as a Cloud Run
-          // service, so it runs on the same medium as one.
+          // service, so it uses the same deployment target as one.
           deploymentTarget: "container",
           runtimeAttribute: "build_config.runtime",
           env: [
@@ -318,8 +315,8 @@ export function googleTerraform(): TerraformPack {
               secretAttribute: "secret",
             },
           ],
-          // The entry point is an exported name and says nothing about
-          // which file it is in.
+          // The entry point is an exported name and does not give the
+          // file it is in.
           code: {
             handler: {
               attribute: "build_config.entry_point",
