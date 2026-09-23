@@ -37,18 +37,17 @@ src/api.ts
   ~ get
 ```
 
-`placedAt` came off the success body. In the text diff that is one
-changed line among all the others, and the reviewer has to notice it.
+`placedAt` is no longer in the success body. In the text diff that is
+one changed line among all the others, and a reviewer has to spot it.
 Nobody wrote the description above by hand. suss worked it out from the
-source, without running your code and without a model, so the same
-source gives you the same answer every time.
+source without running your code or using a model, so the same source
+gives you the same answer every time.
 
 ## Three ways to start
 
 - **Run it now.** [Quickstart](/start/quickstart) walks you through
-  `init`, `extract` and `inspect` on a project you already have. There is
-  nothing to triage at the end of it. What you get is a description of
-  your service.
+  `init`, `extract` and `inspect` on a project you already have. At the
+  end you have a description of your service, and nothing to triage.
 - **Put it on pull requests.** [Read a pull request](/start/read-a-pull-request)
   sets up the GitHub Action that posts the diff above as a comment and
   edits it on every push.
@@ -64,8 +63,8 @@ packs you need, and the [pack catalog](/packs/catalog) lists them. Every
 pack ships inside `@suss/cli`, so there is one install.
 
 TypeScript is the furthest along. In Python and Ruby, suss reads routes
-and a smaller set of ORMs, and where each language stops is covered in
-[Read Python or Ruby](/guides/python-and-ruby). Both sides of a boundary
+and a smaller set of ORMs. [Read Python or Ruby](/guides/python-and-ruby)
+describes where each language stops. Both sides of a boundary
 have to be in one repository for suss to compare them, so a front end in
 a second repository is a second run for now.
 [Compatibility](/reference/compatibility) has the rest of the limits.
@@ -73,7 +72,7 @@ a second repository is a second run for now.
 ## Where to go next
 
 [Four ideas](/start/four-ideas) explains the four words the rest of the
-documentation leans on: boundary, summary, check and pack.
+documentation uses: boundary, summary, check and pack.
 
 - **Adopting it one step at a time:** [Adopt it step by step](/guides/adopting-suss), then [Run suss in CI](/guides/ci-integration).
 - **Comparing the code against a spec you published:** [Check against OpenAPI](/guides/check-against-openapi).

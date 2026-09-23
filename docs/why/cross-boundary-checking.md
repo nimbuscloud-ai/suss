@@ -5,7 +5,7 @@ description: How the checker pairs two summaries across a boundary and reports w
 
 # Cross-boundary checking
 
-`suss check` reads the handler on one side of a boundary and the call site on the other, and reports where the two disagree. Each side becomes a behavioral summary, and the checker compares them. You do not need a spec, and if you have one, suss compares it against both sides as well.
+`suss check` reads the handler on one side of a boundary and the call site on the other, and reports where the two disagree. suss reads each side into a behavioral summary, and the checker compares the two. You do not need a spec. If you have one, suss compares it against both sides as well.
 
 ## An example
 
@@ -105,11 +105,11 @@ Three comparisons produced those three findings. The first one compares status c
 
 Each finding gives you the file and the line on both sides, plus a `.sussignore.yml` rule to paste for any one you decide to live with. See [Accept a finding](/guides/accept-a-finding) for that format.
 
-`db.findById` is declared here and never defined. That is why the last line of the run reports that part of the handler went unread.
+`db.findById` is declared here and never defined, so the last line of the run reports that part of the handler went unread.
 
 ## Which summaries face each other
 
-Two summaries pair up when they are on the same boundary, and what that means depends on the kind of boundary:
+Two summaries pair up when they are on the same boundary. What counts as the same boundary depends on its kind:
 
 | Boundary | The two sides pair on | Example |
 |---|---|---|
@@ -124,7 +124,7 @@ Two summaries pair up when they are on the same boundary, and what that means de
 
 ## What gets compared
 
-For each pair the checker runs seven checks. Each one reads nothing but that pair, and none of them can see what another found.
+For each pair the checker runs seven checks. Each check reads only that pair, and it cannot see what the other checks found.
 
 - **Provider coverage.** A status the provider produces that no consumer branch handles, and sub-cases within one status that the consumer treats as one. Those are the first two findings above.
 - **Consumer satisfaction.** A consumer branch for a status the provider never produces. That branch is dead.
@@ -134,7 +134,7 @@ For each pair the checker runs seven checks. Each one reads nothing but that pai
 - **Body compatibility.** The consumer's body-field reads against the bodies the provider produces, per status.
 - **Semantic bridging.** The provider puts `admin: true` in a 200 body on the `user.role === "admin"` branch, and the consumer never tests `admin`. That is the third finding above.
 
-All seven compare subjects rather than source text, so a condition written on an intermediate variable still counts: `const data = result.body` resolves back to the response before anything is compared.
+All seven compare subjects and ignore how the source text spells them. A condition written on an intermediate variable still counts, because `const data = result.body` resolves back to the response before anything is compared.
 
 Where several sources describe one boundary, say an OpenAPI document and a CloudFormation template for the same endpoint, `checkContractAgreement` compares those declarations against each other and emits `contractDisagreement` when they differ.
 
@@ -142,7 +142,7 @@ The [findings catalog](/reference/findings) lists every finding kind by domain, 
 
 ## The three contracts at a boundary
 
-Every boundary has three behavioral contracts: the declared one, which somebody wrote, and the provider's and the consumer's, which suss derives from their code. Each pairwise comparison catches a different class of failure.
+Every boundary has three behavioral contracts: the declared one, which somebody wrote, and the provider's and the consumer's, which suss derives from their code. Comparing each pair of them catches a different kind of problem.
 
 <svg class="suss-diagram" viewBox="0 0 660 300" role="img" aria-labelledby="matrix-title matrix-desc">
   <title id="matrix-title">The three contracts at one boundary</title>
@@ -189,8 +189,8 @@ Every boundary has three behavioral contracts: the declared one, which somebody 
 
 ## What the checker abstains from
 
-Every comparison rests on a claim about how the protocol behaves. When suss reports an unhandled 404, it is treating the status the handler wrote as the status the caller receives, and a middleware or an API gateway can make that untrue. [Protocol assumptions](/theory/protocol-assumptions) lists those claims per protocol and explains what a finding means once one of them is no longer true.
+Every comparison assumes something about how the protocol behaves. When suss reports an unhandled 404, it is treating the status the handler wrote as the status the caller receives, and a middleware or an API gateway can make that untrue. [Protocol assumptions](/theory/protocol-assumptions) lists those assumptions for each protocol and explains what a finding means once one of them is no longer true.
 
 Where the extractor could not take a condition apart, the checker emits `lowConfidence` at info severity instead of a finding it cannot support. A gap that records a `return` matching none of the pack's terminal patterns comes out the same way: the handler may well be returning the right thing, and suss could not read it.
 
-The checker compares two summaries at a time. Anything above that, such as aggregating summaries across an organization or tracking one boundary over a series of commits, is a separate layer, and that layer takes `BehavioralSummary[]` and pairwise findings as its input.
+The checker compares two summaries at a time. Work above that, such as aggregating summaries across an organization or tracking one boundary over a series of commits, belongs to a separate layer. That layer takes `BehavioralSummary[]` and pairwise findings as its input.

@@ -9,7 +9,7 @@ Code arrives faster than anyone can read it. Once a team is working with coding 
 
 A reviewer falls back on the diff and on the tests, and neither one closes that gap. A diff shows you which lines of text changed, and you still have to work out what the service does now. A field dropped from one response object looks like a single edited line among all the rest. A test only checks what its author thought to check, so when the model that wrote the change also wrote the tests, all they confirm is that the change does what the model meant.
 
-The reviewer needs a description of what the change does that did not come from whoever wrote it. suss reads the source and writes that description. It runs the same way every time and there is no model in it.
+The reviewer needs a description of what the change does that did not come from whoever wrote it. suss reads the source and writes that description. There is no model in it, so the same source gives the same description every time.
 
 ## A change that breaks a caller
 
