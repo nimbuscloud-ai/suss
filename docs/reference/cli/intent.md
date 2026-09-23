@@ -5,7 +5,7 @@ description: List the outcome ids a PRD scenario can link to, from the boundary 
 
 # `suss intent`
 
-Read the intent documents in a folder. One subcommand today: `outcomes`.
+`suss intent` reads the intent documents in a folder. It has one subcommand today, `outcomes`.
 
 ## `suss intent outcomes`
 
@@ -18,7 +18,7 @@ suss intent outcomes --from <intent-directory> [--json]
 | `--from <path>` | required | The folder of intent documents to read. |
 | `--json` | off | Write the rows as JSON instead of prose. |
 
-A PRD scenario points at an outcome with `link: <intent-name>.<outcome-id>`. The name is a boundary intent document's `name` and the id is one of the ids under its `transitions`, so both halves are written inside a document somebody else wrote. This lists them, and whoever writes the scenario picks a link off that list. A link nothing declares comes back from `suss check --intent` as `danglingScenarioLink`.
+A PRD scenario points at an outcome with `link: <intent-name>.<outcome-id>`. The name is a boundary intent document's `name` and the id is one of the ids under its `transitions`, so both halves are written inside a document somebody else wrote. This command lists them, so whoever writes the scenario can pick a link off the list. A link nothing declares comes back from `suss check --intent` as `danglingScenarioLink`.
 
 A PRD in the folder is skipped, since a PRD links to outcomes rather than declaring any.
 
@@ -102,7 +102,7 @@ intent/get-report.intent.yaml
   get-report.200-ok  GET /report  responds 200 when every call reaches this outcome
 ```
 
-Curating a document means filling in its `purpose` and `audience`, renaming its outcome ids to what your team calls them, and setting `source: "inferred, curated"`. [`suss infer`](/reference/cli/infer) covers the drafting that comes before this.
+Curating a document means filling in its `purpose` and `audience`, renaming its outcome ids to what your team calls them, and setting `source: "inferred, curated"`. [`suss infer`](/reference/cli/infer) describes the drafting that comes before this.
 
 ## Exit codes
 
@@ -114,4 +114,4 @@ Curating a document means filling in its `purpose` and `audience`, renaming its 
 
 A file in the folder that cannot be read at all is reported on stderr and passed over, so one broken document does not hide the rest.
 
-[Exit codes](/reference/cli/exit-codes) covers the other commands.
+[Exit codes](/reference/cli/exit-codes) lists the other commands.

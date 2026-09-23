@@ -24,7 +24,7 @@ suss ask "<question>" [--dir <directory> | <summaries.json>] [--project <directo
 
 ## The ten questions
 
-Each one is written in these words. The placeholders are yours; everything else is the grammar.
+Each one is written in these words. You fill in the placeholders, and the other words have to match.
 
 | Question | What comes back |
 |---|---|
@@ -34,7 +34,7 @@ Each one is written in these words. The placeholders are yours; everything else 
 | `what invokes <boundary>` | Every unit that calls a deployed unit by name, such as one Lambda invoking another. |
 | `what calls <unit>` | Every unit whose calls the run resolved to it, with the file, the line and the call. |
 | `what does <unit> reach` | Every boundary a file or a summary goes through, and whether it reads, writes or invokes each. |
-| `what reaches <target>` | Every boundary whose unit ends up going through the target, however many calls away, and the calls it took to get there. A unit appears only when it serves a boundary of its own, so you get routes, queues and package exports, not the functions in between. The answer also counts the calls that didn't resolve to a unit, because a boundary that reaches the target through one of those is missing from the list. |
+| `what reaches <target>` | Every boundary whose unit ends up going through the target, however many calls away, and the calls it took to get there. A unit appears only when it serves a boundary of its own, so you get routes, queues and package exports, and the functions in between are left out. The answer also counts the calls that didn't resolve to a unit, because a boundary that reaches the target through one of those is missing from the list. |
 | `what does <package or unit> provide` | Every boundary it provides, one per line, sorted by boundary key. A package is spelled by its name, `@suss/checker`, and the answer gathers its exports wherever they are in the run. Also written `what does <package> export`. |
 | `why does <unit> reach <target>` | The shortest call chain from the unit to a boundary, a function or a package export, with each written hop's resolution proved from source. |
 | `why does <name> at <file>:<line> resolve to <target>` | The chain from a written name to the function it comes down to, one reason per hop. |
@@ -56,7 +56,7 @@ suss ask 'why does handler at src/app.ts:12 resolve to createHandler'
 
 ### Symbol shorthand
 
-Five of the forms have a symbol spelling, for a question you type often. The operators are symbols such as `<-` and `->` because a boundary key already contains `:`, `.`, `#` and `/`, and suss needs a separator that can never turn up inside the subject you are asking about.
+Five of the forms have a symbol spelling, for a question you type often. The operators are symbols such as `<-` and `->` because a boundary key already contains `:`, `.`, `#` and `/`, and suss needs a separator that cannot appear inside the subject you are asking about.
 
 | Shorthand | The question it means |
 |---|---|
@@ -68,7 +68,7 @@ Five of the forms have a symbol spelling, for a question you type often. The ope
 
 ### Spelling the subject
 
-A boundary is spelled the way reports spell it, and a shorter spelling covers more, exactly as under [`check --at`](/reference/cli/check#reporting-on-one-thing): `dynamodb:editions` covers every index on that table. When a spelling covers several boundaries at once, suss lists them all and waits for you to narrow it. A spelling that exactly matches one boundary's name takes that boundary, so `GET /articles` is the collection route and not the comments route under it.
+A boundary is spelled the way reports spell it, and a shorter spelling covers more, exactly as under [`check --at`](/reference/cli/check#reporting-on-one-thing): `dynamodb:editions` covers every index on that table. When a spelling covers several boundaries at once, suss lists them all so you can narrow it. A spelling that exactly matches one boundary's name picks that boundary, so `GET /articles` is the collection route and not the comments route under it.
 
 A unit is spelled the way `--at` spells one: a file, a `file:line`, a summary id, or a function name. A package export such as `fn:@suss/datalog::evaluate` resolves to the function behind it, so that spelling, the bare name, and `what reads` on the export all give one answer. A bare name that is two functions in different places is refused, with both listed.
 
