@@ -1,16 +1,11 @@
 /**
- * Recognize Redis commands and emit `storage-access` effects.
+ * Recognizes Redis commands and records each one as a storage access.
  *
- * A Redis client is usually reached through something the source does
- * not spell out, so the anchor is the command's own type: `get`, `setex`
- * and the rest are declared by the client library, and a method declared
- * there is a command whatever the receiver was called.
- *
- * Keys carry their own structure. `user_online:{communityId}` puts every
- * online-user entry under one name, so the fixed part up to the first
- * separator becomes the container and the whole key becomes the
- * selector. That is what makes a writer and a reader of the same
- * namespace two ends of one boundary.
+ * A service rarely builds its client where it uses it, so a call counts
+ * when the client library declares the method, whatever the receiver is
+ * called. The container is the key's namespace, the fixed part before
+ * the first `:`, so a writer and a reader of `session:{id}` pair on
+ * `session`. The README covers the commands and what is left out.
  */
 
 import { declaredBy, pack, storageCalls } from "@suss/recognize";
@@ -18,22 +13,16 @@ import { declaredBy, pack, storageCalls } from "@suss/recognize";
 import type { PackDeclaration } from "@suss/ir-core";
 import type { PatternPack, StorageMethod } from "@suss/recognize";
 
-/**
- * The client libraries whose method declarations settle a call. All
- * three speak one protocol, so what they reach is recorded as redis
- * whichever server is answering.
- */
+// All three use the Redis protocol, so a call through any of them is
+// recorded as `redis` whatever server is on the other end.
 const CLIENT_MODULES = ["ioredis", "redis", "iovalkey"];
 
-/** A command that takes one key, its first argument. */
 const READ_KEY: StorageMethod = { kind: "read", selector: { at: 0 } };
 const WRITE_KEY: StorageMethod = { kind: "write", selector: { at: 0 } };
 
-/** A command that takes a list of keys. */
 const READ_KEYS: StorageMethod = { kind: "read", selector: { from: 0 } };
 const WRITE_KEYS: StorageMethod = { kind: "write", selector: { from: 0 } };
 
-/** A hash command: one key, and the field inside it as the second argument. */
 const READ_FIELD: StorageMethod = {
   kind: "read",
   selector: { at: 0 },
@@ -45,11 +34,8 @@ const WRITE_FIELD: StorageMethod = {
   fields: { at: 1 },
 };
 
-/**
- * The commands this reads, by the lower-cased method name. node-redis
- * spells `hGet` where ioredis spells `hget`, and they are the same
- * command, so the lookup ignores case.
- */
+// Keyed by lower-case name. node-redis writes `hGet` where ioredis writes
+// `hget`, so the lookup ignores case.
 const COMMANDS: Record<string, StorageMethod> = {
   get: READ_KEY,
   getdel: WRITE_KEY,
@@ -102,13 +88,12 @@ const COMMANDS: Record<string, StorageMethod> = {
   lrem: WRITE_KEY,
 };
 
-/** What separates a Redis key's namespace from the rest of it. */
 const NAMESPACE_SEPARATOR = ":";
 
 /**
- * The namespace a set of keys share. Keys of one call are the same
- * shape nearly every time, and one that is not leaves the container
- * unsettled rather than picking whichever came first.
+ * Returns null when a call's keys fall in more than one namespace.
+ * Taking the first key's namespace would pair the call with only part of
+ * what it touches.
  */
 function namespaceOf(keys: readonly string[]): string | null {
   const namespaces = new Set(
@@ -118,8 +103,8 @@ function namespaceOf(keys: readonly string[]): string | null {
     return null;
   }
   const [only] = [...namespaces];
-  // A namespace built at run time says nothing about which keys go
-  // together, so it settles nothing.
+  // A namespace built at run time gives no way to tell which keys go
+  // together.
   return only === undefined || only.includes("{") ? null : only;
 }
 
@@ -132,8 +117,8 @@ const COMMAND_CALLS = storageCalls({
   .example('redis.get("user_online:42")');
 
 /**
- * Pack export. One declaration, gated on a file reaching a client
- * library, since that is where a command can come from.
+ * A command counts only when a Redis client library declares its method,
+ * so a `get` on a cache wrapper the project wrote is ignored.
  */
 export function redisFramework(): PatternPack {
   return pack("redis", [COMMAND_CALLS], {
@@ -142,7 +127,6 @@ export function redisFramework(): PatternPack {
   });
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "effects",
   package: "@suss/framework-redis",
