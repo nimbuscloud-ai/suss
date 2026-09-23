@@ -2,10 +2,10 @@
   "totals": {
     "packages": 80,
     "packagesWithExports": 80,
-    "exports": 1059,
-    "internal": 3856,
-    "consumers": 2190,
-    "pairs": 2178,
+    "exports": 1060,
+    "internal": 3857,
+    "consumers": 2205,
+    "pairs": 2193,
     "unfollowedCalls": 529,
     "findingErrors": 0
   },
@@ -33,7 +33,7 @@
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",
-      "exports": 140,
+      "exports": 141,
       "internal": 52,
       "consumers": 20,
       "unfollowedCalls": 14
@@ -41,8 +41,8 @@
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 43,
-      "internal": 219,
-      "consumers": 196,
+      "internal": 217,
+      "consumers": 199,
       "unfollowedCalls": 37
     },
     "packages/checker-intent": {
@@ -55,8 +55,8 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 37,
-      "internal": 573,
-      "consumers": 370,
+      "internal": 576,
+      "consumers": 383,
       "unfollowedCalls": 60
     },
     "packages/client/aiohttp": {
@@ -133,7 +133,7 @@
       "name": "@suss/contract-cloudformation",
       "exports": 8,
       "internal": 81,
-      "consumers": 127,
+      "consumers": 126,
       "unfollowedCalls": 1
     },
     "packages/contract/graphql": {
