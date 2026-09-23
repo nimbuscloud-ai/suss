@@ -446,7 +446,7 @@ A `TypeShape` has enough structure to describe a response body or a return value
 
 #### What crosses the wire
 
-`TypeShape` describes values as they cross a serialization boundary: HTTP bodies, messages on a queue, return values a caller reads. It does not model the source language's in-memory types, which leads to the points below.
+`TypeShape` describes values as they cross a serialization boundary: HTTP bodies, messages on a queue, return values a caller reads. It does not model the source language's in-memory types. Four things follow from that.
 
 **Numeric precision.** JavaScript's `number` is an IEEE 754 double. Integers past `Number.MAX_SAFE_INTEGER`, high-precision decimals, hex and scientific notation, and underscore separators all lose information through it. A numeric `literal` keeps the exact source text in `raw`, so a consumer that needs the precision never has to guess. Strings and booleans round-trip and have no `raw`.
 

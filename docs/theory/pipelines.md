@@ -78,7 +78,7 @@ Timing:
   cache: miss (no-manifest)
 ```
 
-Deciding which files a pack could match costs as much as extracting from the ones that survive, which is why the pre-filter exists at all. The last line says whether the run reused a previous one; `--no-cache` forces the miss shown here.
+In this run, deciding which files a pack could match costs about as much as extracting from the files that pass. The pre-filter reads the imports of all 26 files. When a file's own imports name nothing a pack looks for, it also follows that file's re-export chains, because a local barrel file can re-export the package a pack is looking for. The last line says whether the run reused a previous one; `--no-cache` forces the miss shown here.
 
 The same run as a sketch, from the command down to the file it writes:
 

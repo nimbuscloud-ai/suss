@@ -134,7 +134,7 @@ When two services both serve `GET /users`, suss sees one boundary and compares a
   was compared against both. Check one service at a time to be sure.
 ```
 
-Check one service at a time until this is fixed:
+suss cannot tell the two services apart, so check one service at a time:
 
 ```bash
 npx suss extract -p services/auth/tsconfig.json -f hono -o auth/api.json
