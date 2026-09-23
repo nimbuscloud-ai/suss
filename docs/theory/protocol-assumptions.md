@@ -13,7 +13,7 @@ receives. Where a claim like that stops being true, the finding stops
 meaning what its description says, and nothing in the output shows the
 difference.
 
-Two examples of what that looks like. An OpenAPI reader that takes
+Here are two examples. An OpenAPI reader that takes
 whichever media type a document lists first will compare a JSON caller
 against an XML schema and report the two as agreeing. Storage that
 treats a table name plus the scope `default` as enough to identify a
@@ -50,8 +50,8 @@ That leaves the claim on the consumer's side. A client summary that
 recorded the URL it built, `/users/123`, keys as itself and pairs with
 no route, and nothing gets reported: the summary lands in the unmatched
 list, which a reader has to notice on their own. Whether a client pack
-should record the template it interpolated rather than the string it
-produced is a question for the pack to answer.
+should record the template it interpolated or the string it produced is
+up to the pack.
 
 ### A wildcard route serves whichever method the caller sends
 
@@ -61,7 +61,7 @@ no claim to agree with.
 
 ### A subject identifies one channel, and a side with no bus stated meets that subject on any bus
 
-`busesAgree` returns true when either side is null, so a send that knows
+`busesAgree` returns true when either side is null, so a send that states
 its queue but not its bus pairs with that subject wherever it is
 declared. Two accounts, or a staging bus and a production bus in one
 template, pair with each other on the subject alone.
@@ -83,11 +83,12 @@ does no harm there. BullMQ takes an arbitrary string, and a queue called
 `nameCovering` compares the system, the scope and the access path for
 equality, matches the container through `namesAgree` so a name built at
 deploy time can cover what the code reached, and then asks
-`sameService`, which reads `location.workspace`. A summary that states no workspace is
-treated as a single-project run and pairs with anything, and that is
-what keeps a shared utility file working. Two databases behind one scope, a
-staging instance and a production instance, are one store here; that
-half is [#412](https://github.com/nimbuscloud-ai/suss/issues/412).
+`sameService`, which reads `location.workspace`. A summary that states
+no workspace is treated as a single-project run and pairs with anything,
+so a shared utility file still pairs. Two databases behind one scope, a
+staging instance and a production instance, are one store here.
+[#412](https://github.com/nimbuscloud-ai/suss/issues/412) tracks that
+part.
 
 ### A metric's system and its type string identify one series
 
@@ -109,7 +110,7 @@ the walk returns and nothing under the operation gets checked.
 
 ### The status a handler returns is the status the caller sees
 
-Every finding about a status says this. A middleware that maps an error,
+Every finding about a status assumes this. A middleware that maps an error,
 or an API gateway response mapping, can change the number between the
 two sides, and neither of them is in the pair.
 
@@ -152,8 +153,8 @@ A provider that sends `id` as a string where the consumer does
 arithmetic on it agrees. A provider that sends `email: null` on every
 response agrees. Two sides that use the same field names and different
 encodings agree, and
-[#387](https://github.com/nimbuscloud-ai/suss/issues/387) covers that
-half of it.
+[#387](https://github.com/nimbuscloud-ai/suss/issues/387) tracks that
+part of it.
 
 ### A consumer's fall-through path runs on the 2xx class and nothing else
 
@@ -238,8 +239,8 @@ field-level access tracing would fix it properly.
 
 ### The run is the whole world
 
-Even with a read counted correctly, `boundaryFieldUnused` only knows
-about code in the analysed repository. A migration and an analytics
+Even with a read counted correctly, `boundaryFieldUnused` only sees code
+in the analysed repository. A migration and an analytics
 query are both outside the run, and either one turns the warning into a
 claim about a field that has readers.
 
@@ -250,7 +251,7 @@ claim about a field that has readers.
 SQS standard queues and SNS subscriptions both redeliver. Nothing in the
 pass asks whether a consumer can take the same message twice, so a
 handler that appends a row or charges a card per message has a defect
-that no finding describes. Filed as
+that no finding describes. That is filed as
 [#516](https://github.com/nimbuscloud-ai/suss/issues/516).
 
 ### Any producer on a channel could have sent any message a consumer receives
@@ -258,7 +259,8 @@ that no finding describes. Filed as
 `collectProducerFields` unions the fields of every producer whose
 channel pairs, and compares the consumer's reads against that union. One
 channel that takes two message types is ordinary, and a field only the
-other producer sends stops a `boundaryFieldUnknown` that was true.
+other producer sends hides a `boundaryFieldUnknown` that would have been
+correct.
 
 ### Every message-receive inside a consumer's code scope is on that consumer's channel
 
@@ -272,7 +274,7 @@ union.
 `readObjectBodyFields` reads the keys of an object literal. SQS wraps
 the payload in a JSON string under `body` and EventBridge puts it under
 `detail`. Where a pack does not unwrap the envelope for both sides, the
-two field sets being compared sit at different levels.
+two field sets being compared are at different levels.
 
 ### A declared subscription means messages are consumed
 
@@ -350,7 +352,7 @@ one of them checked.
 `extend interface` is missing from the SDL kinds the index accepts,
 while `extend type` is there. A field added to an interface by extension
 gets reported as one the schema does not declare, at error severity,
-against a selection that is correct. Filed as
+against a selection that is correct. This is filed as
 [#517](https://github.com/nimbuscloud-ai/suss/issues/517).
 
 ## What summaries cannot decide
@@ -376,8 +378,8 @@ one needs something the IR does not record today.
 - REST pairs across services:
   [#514](https://github.com/nimbuscloud-ai/suss/issues/514).
 - A client that recorded a built URL pairs with no route, and the run
-  stays quiet about it. No issue yet: the answer belongs to the client
-  packs rather than to the pairing key.
+  stays quiet about it. There is no issue yet, because the fix belongs in
+  the client packs and the pairing key stays as it is.
 - At-least-once delivery, and a consumer that cannot take a repeat:
   [#516](https://github.com/nimbuscloud-ai/suss/issues/516).
 - A field added by `extend interface` gets reported as undeclared:

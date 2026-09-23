@@ -34,7 +34,7 @@ It runs a normal extraction. Then, for every summary in scope, it generates requ
 
 ## Scope today
 
-`handler` summaries the express or fastify pack recognized, and only claims with a literal status code. Everything else is skipped untouched. That is why `--experimental` is required: the scope and the report format will both change as coverage grows.
+The command tests only `handler` summaries the express or fastify pack recognized, and only claims with a literal status code. It skips everything else and leaves it as it was. That is why `--experimental` is required: the scope and the report format will both change as coverage grows.
 
 ## Example
 

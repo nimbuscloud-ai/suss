@@ -5,7 +5,7 @@ description: The languages, project layouts and frameworks suss reads today, and
 
 # Compatibility
 
-`suss extract` reads a TypeScript or JavaScript project through its tsconfig, so it sees the same files and the same module resolution your compiler does. Python and Ruby have adapters of their own with their own rules; [Read Python or Ruby](/guides/python-and-ruby) covers those.
+`suss extract` reads a TypeScript or JavaScript project through its tsconfig, so it sees the same files and the same module resolution your compiler does. Python and Ruby have adapters of their own, which follow different rules. Those rules are in [Read Python or Ruby](/guides/python-and-ruby).
 
 ## Languages
 

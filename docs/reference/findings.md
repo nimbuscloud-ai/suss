@@ -27,13 +27,13 @@ The behavioral findings go under `findings` in the JSON, and each one reports th
 
 ## How a kind gets its severity
 
-One test decides every default severity: can you name an input and the wrong result it produces?
+Every default severity comes from one question: can you name an input and the wrong result it produces?
 
 - **Error: the code will misread or lose data on an input the other side produces.** The claim is about behavior, both sides are in the run, and measured over the pinned corpus the kind is usually right when it fires.
-- **Warning: the two sides disagree and a person has to judge it.** The disagreement is there in the files, and whether it is a defect turns on intent the repository does not state.
-- **Info: suss is reporting on itself.** Confidence, coverage, something it could not read. Never a claim that the code is wrong.
+- **Warning: the two sides disagree and a person has to judge it.** The disagreement is there in the files, and whether it is a defect depends on intent the repository does not state.
+- **Info: suss is reporting on its own reading.** The finding is about confidence, coverage, or something suss could not read. It does not claim the code is wrong.
 
-A kind you cannot write that sentence for is a warning by construction. A kind at error whose measured precision over the pinned corpus falls under half moves down until its model improves. `unhandledProviderCase` is a warning for that reason.
+A kind with no such input and result is a warning. A kind at error whose measured precision over the pinned corpus falls under half moves down until its model improves. `unhandledProviderCase` is a warning for that reason.
 
 ## Generic boundary findings
 
@@ -61,7 +61,7 @@ GraphQL:
   GraphQL operation "GetUser" selects "User.email" but the provider's schema doesn't declare that field on "User". Likely a stale selection after a schema change.
 ```
 
-The server rejects the whole operation at validation, so every operation using that selection fails, not only the one field. A selection kept in a shared fragment breaks every operation that spreads it.
+The server rejects the whole operation at validation, so every operation using that selection fails outright. A selection kept in a shared fragment breaks every operation that spreads it.
 
 A message bus, where the consumer reads a field off the message body:
 
@@ -70,7 +70,7 @@ A message bus, where the consumer reads a field off the message body:
   OrderConsumer.handler reads "totalAmount" off a message on aws_sqs channel "OrdersQueue" but no producer in the analysed scope sends "totalAmount". Likely a producer/consumer drift: the producer renamed or removed the field, or the consumer expects a field that was never sent.
 ```
 
-A queue takes a string, so nothing on either side type-checks the payload and the consumer throws on every message. A producer whose body suss cannot read takes the channel out of the comparison, so the absence of a finding here is not agreement.
+A queue takes a string, so nothing on either side type-checks the payload and the consumer throws on every message. A producer whose body suss cannot read takes the channel out of the comparison, so a missing finding here does not mean the two sides agree.
 
 **Legitimate when:** the provider is in a service or a contract source you have not extracted. Suppress with `.sussignore` and `effect: mark`.
 
@@ -106,14 +106,14 @@ For storage, suss stays quiet when any caller reads the table with a default sha
 
 Both sides declare the value and disagree about its form: its type, its nullability, its content type. The `aspect` says which side found the disagreement.
 
-One emitter ships today, the metric one. A monitoring alert compares a series against a single number, and the resource declaring that series says its measurements are a histogram of buckets, so the comparison has nothing to run against:
+Only the metric checker emits it today. A monitoring alert compares a series against a single number, and the resource declaring that series says its measurements are a histogram of buckets, so the comparison has nothing to run against:
 
 ```
 [ERROR] boundaryShapeMismatch
   google_monitoring_alert_policy.sweep_refused_sustained#0 compares logging.googleapis.com/user/sweep-refused against a single number, and google_logging_metric.sweep_refused declares that metric's measurements as a histogram of buckets, so the comparison has nothing to run against unless the reading reduces each window to a single number first, by setting aggregations.per_series_aligner to one of ALIGN_PERCENTILE_99, ALIGN_PERCENTILE_95, ALIGN_PERCENTILE_50, ALIGN_PERCENTILE_05.
 ```
 
-Both sides have to say what the value is. A metric whose summary states no `metadata.metricContract.values`, and a reading that states no `metadata.metricReading.comparesTo`, claim nothing here.
+Both sides have to say what the value is. When a metric's summary has no `metadata.metricContract.values`, or a reading has no `metadata.metricReading.comparesTo`, nothing is compared.
 
 This kind is where the message-bus body-shape pairing will report, along with the type-aware storage, runtime-config and GraphQL checks. It takes the place of the per-domain shape kinds earlier versions reserved: `storageTypeMismatch`, `graphqlVariableTypeMismatch`, `requestBodyShapeMismatch` and the rest.
 
@@ -132,7 +132,7 @@ The consumer picks items by something the provider does not key on. A store that
   InvoiceListFunction.handler picks items on InvoicesTable by "customerId", which is not one of its key attributes (invoiceId). aws.dynamodb refuses a request keyed on anything else, so this fails when it runs.
 ```
 
-A contract that states no `metadata.storageContract.identifies` claims nothing here, and neither does an access that states no selector. A query through a secondary index pairs against that index's own summary, so it is checked against the index's key rather than the table's.
+A contract with no `metadata.storageContract.identifies` is not checked, and neither is an access with no selector. A query through a secondary index pairs against that index's own summary, so it is checked against the index's key rather than the table's.
 
 **Legitimate when:** never. The store refuses the query outright.
 
@@ -154,7 +154,7 @@ The provider produces a status, or a body case within a status, that no consumer
   boundary: express (http) GET /orders/:id
 ```
 
-There is no outcome sentence to write here. The fall-through may be exactly what the author intended, and over the pinned corpus this kind was wrong far more often than right. The narrower case, a path that will misread a response, is `misreadProviderResponse` below, and that one is an error.
+You cannot name an input and a wrong result here. The fall-through may be exactly what the author intended, and over the pinned corpus this kind was wrong far more often than right. The narrower case, a path that will misread a response, is `misreadProviderResponse` below, and that one is an error.
 
 A provider response declared as a range, such as an OpenAPI `4XX`, is one declared response that may arrive with any status in it. It counts as covered when the consumer covers any member, whether that is a branch on 404, a `!res.ok` guard, or a catch on a throwing client. When nothing covers any member it reports once, saying `Provider produces statuses in the 4XX range but no consumer branch handles any of them`.
 
@@ -176,10 +176,10 @@ The path runs on a response the provider sends, reads a field that response's bo
   boundary: express (http) GET /orders/:id
 ```
 
-Where `unhandledProviderCase` is about coverage, this kind makes a claim about behavior. It asks the same question the storage and GraphQL read checks ask: does the code read something the other side never supplies. suss keeps it narrow on purpose.
+`unhandledProviderCase` is about coverage. This kind is about behavior: whether the code reads something the other side never supplies, the same test the storage and GraphQL read checks make. It is narrow on purpose.
 
-- A field any of the consumer's guards test is never reported. `if (res.error)` is how the consumer tells the failure body apart, so `error` coming back undefined on the 200 is the answer the consumer was testing for.
-- A body with spreads or an opaque shape claims nothing, and a status the provider returns with several bodies fires only when every one of them lacks the field.
+- A field any of the consumer's guards test is never reported. `if (res.error)` is how the consumer tells the failure body apart, so `error` coming back undefined on the 200 is what the consumer was testing for.
+- A body with spreads or an opaque shape is not checked, and a status the provider returns with several bodies fires only when every one of them lacks the field.
 - The branch has to run on the response: a status guard, a range such as `!res.ok`, or the fall-through over the 2xx class. A branch guarded on a body field never runs on a response whose body cannot satisfy the guard.
 - A response declared as a range is one response that may arrive with any status in it, so a branch on 404 is judged against the `4XX` body and the finding says which.
 
@@ -201,7 +201,7 @@ The consumer has a branch for a status the provider never produces. It usually c
   boundary: express (http) GET /orders/:id
 ```
 
-The branch never runs and nothing misreads because of it, so no outcome sentence can be written. Whether to delete the branch or fix the provider is a judgement.
+The branch never runs and nothing misreads because of it, so there is no wrong result to name. Whether to delete the branch or fix the provider is a judgement.
 
 A status inside a range the provider declares (404 against an OpenAPI `4XX`) is produced, and a provider with a `default` response produces any status, so neither makes a branch dead.
 
@@ -230,7 +230,7 @@ The other direction is a warning, because a document routinely declares the 401 
 
 Where the contract is written in the handler's own code, as with ts-rest or hono-openapi, the provider and consumer fields point at one summary, and the checker skips the comparison when the contract source is derived from the implementation. Where the contract is a separate document read with `suss contract`, the document is the consumer side. A declared 5XX is not reported at all.
 
-Every `unhandledCase` gap on the provider surfaces here. An `unreadOutcome` gap does not: it comes out as `lowConfidence` at info, because the pack has no form for what the handler returns.
+Every `unhandledCase` gap on the provider is reported here. An `unreadOutcome` gap is not. It comes out as `lowConfidence` at info, because the pack has no pattern for what the handler returns.
 
 **Fix:** add the status to the contract, or take it out of the handler. For a declared status the handler never produces, suppress it when something in front of the handler sends it.
 
@@ -308,7 +308,7 @@ The operation ships a document spreading a fragment nothing defines, and no frag
   boundary: apollo-client (http)
 ```
 
-Three things have to be true before it fires. The document that reaches the call site is the one with the dangling spread, so a codegen-composed version that defines the fragment never fires it. Every client construction in the project was read and none installs a fragment registry, the one runtime mechanism that could supply the definition; a client whose construction the pack cannot see counts as unknown, and unknown gives the info-level `lowConfidence` finding instead. And the spread has no definition anywhere in the shipped document.
+Three things have to be true before it fires. The document that reaches the call site is the one with the dangling spread, so a codegen-composed version that defines the fragment never fires it. Every client construction in the project was read and none installs a fragment registry, which is the one runtime mechanism that could supply the definition. A client whose construction the pack cannot see counts as unknown, and an unknown client gives the info-level `lowConfidence` finding instead. And the spread has no definition anywhere in the shipped document.
 
 **Legitimate when:** the call site never runs, as with dead code behind a disabled flag. Suppress, or delete the code.
 
@@ -398,7 +398,7 @@ A rule or a subscription deploys switched off, so its target receives nothing un
 
 The subscription counts as a consumer nowhere in this pass. A producer whose only subscriber is disabled comes out as `messageBusProducerOrphan`, the disabled rule is never reported as a waiting `messageBusConsumerOrphan`, and its channel is not reported as `messageBusUnused`, because a rule somebody switched off on purpose is not an orphan resource.
 
-**Legitimate when:** somebody switched it off deliberately. That is the common case, which is why this kind is info.
+**Legitimate when:** somebody switched it off deliberately. That is the common case, so this kind is info.
 
 **A bug when:** somebody meant to enable it and did not. No other finding will say so.
 
@@ -417,7 +417,7 @@ An SQS queue that is not FIFO can deliver one message more than once, and the ha
 
 A call that sends an idempotency key is safe and still reported, because a summary does not record the headers a call sends. Suppress those. A FIFO queue is left alone, and so are `GET`, `PUT`, `PATCH` and `DELETE`, which land on the same resource twice. A storage write is left alone as well: whether a repeat overwrites the same row or appends a new one turns on where the key's value came from, and a summary does not say that today.
 
-Both gaps come down to the same missing piece: a summary cannot yet state that a call is idempotent, and on what. Issue #516 covers what that would take.
+Both gaps come down to the same missing piece: a summary cannot yet state that a call is idempotent, and on what. Issue #516 describes what that would take.
 
 ## Unit-invocation findings
 
@@ -460,7 +460,7 @@ Or several providers declare a directory containing the same source file, and no
 
 **Severity:** info.
 
-suss could not finish reading one side, and this finding is how it tells you. Predicates stayed opaque, type resolution failed, or confidence dropped below `medium`.
+suss could not finish reading one side. Predicates stayed opaque, type resolution failed, or confidence dropped below `medium`.
 
 ```
 [INFO] lowConfidence
@@ -470,13 +470,13 @@ suss could not finish reading one side, and this finding is how it tells you. Pr
 
 It also reports every `unreadOutcome` gap on the provider. Such a gap means a `return` in the handler didn't match any of the terminal shapes the pack looks for.
 
-**Fix:** teach the pack that terminal shape. Until then the summary is incomplete, and that is why this kind is info.
+**Fix:** add that terminal shape to the pack. Until then the summary is incomplete, so this kind is info.
 
 ### `unsupportedSemantics`
 
 **Severity:** info.
 
-A pack identified a boundary it cannot work out the other side of, and the finding records which reading gave up.
+A pack found a boundary but cannot work out its other side. The finding records which reading stopped.
 
 ```
 [INFO] unsupportedSemantics
@@ -484,9 +484,9 @@ A pack identified a boundary it cannot work out the other side of, and the findi
   boundary: cloudformation (aws.sns)
 ```
 
-It also covers a boundary no pack knows how to summarise, such as a WebSocket subscription handler or a gRPC streaming method.
+It is also reported for a boundary no pack can summarise, such as a WebSocket subscription handler or a gRPC streaming method.
 
-**Legitimate when:** the channel is decided outside the code, by a deploy-time value or a change somebody made in a console, so the source could never have stated it.
+**Legitimate when:** the channel is decided outside the code, by a deploy-time value or a change somebody made in a console, so the source does not state it.
 
 **A bug when:** the source does state it and the pack could not follow it. That is a gap in suss, and the reason on the finding tells you where.
 
@@ -510,13 +510,13 @@ Storage reports it for a container. A table declared as `{StageName}-orders-blue
 
 ## Reserved kinds
 
-These six are in the enum and no checker emits them today. They cover failure modes distinct enough not to fold into the generic family.
+These six are in the enum and no checker emits them today. Each is a failure mode different enough from the generic kinds to keep its own name.
 
-- `restMethodOnUnknownPath`: error. The consumer's call targets a `(method, path)` the provider does not expose, so every call to the missing endpoint returns a 404 the caller wrote no branch for. It is at boundary-identity level rather than field level, so it stays separate from `boundaryFieldUnknown`. Today's pairing layer leaves both summaries unmatched, which quietly hides what is probably a typo. The emitter ships once pairing has a "consumer with no provider" finding distinct from "unmatched".
+- `restMethodOnUnknownPath`: error. The consumer's call targets a `(method, path)` the provider does not expose, so every call to the missing endpoint returns a 404 the caller wrote no branch for. It is about which boundary the call reaches, where `boundaryFieldUnknown` is about a field, so the two stay separate. Today's pairing layer leaves both summaries unmatched, which quietly hides what is probably a typo. The emitter ships once pairing has a "consumer with no provider" finding distinct from "unmatched".
 - `authPolicyMismatch`: error. The provider requires authentication and the consumer's call does not supply it, so the request is rejected whenever it runs. It needs auth-policy modeling on both sides, OpenAPI security schemes against the client's own header or interceptor patterns.
 - `boundaryFieldRequired`: error. The provider declares a field as required and the consumer does not supply it, so the provider rejects the request every time: a 4xx, or a component that fails to render. The `aspect` would point at the payload. It takes the place of `requiredHeaderMissing`, `componentRequiredPropMissing` and `graphqlRequiredArgMissing`.
 - `boundaryConstraintViolation`: error. The value has the type the provider declared and breaks a value-level rule it declared, such as enum membership or a length. It takes the place of `storageEnumConstraintViolation` and `graphqlEnumValueUnknown`.
-- `envVarRequiredButUnmarked`: warning. The code treats `process.env.X` as required (`if (!process.env.X) throw …`) and the runtime contract does not mark it required. Nothing misreads while the variable is set, so tightening the contract is a judgement. The emitter waits for the runtime contract to grow a required attribute on env-var entries.
+- `envVarRequiredButUnmarked`: warning. The code treats `process.env.X` as required (`if (!process.env.X) throw …`) and the runtime contract does not mark it required. Nothing misreads while the variable is set, so tightening the contract is a judgement. Emitting it needs a required attribute on the runtime contract's env-var entries first.
 - `opaquePredicateBlocking`: info. A pairing pass refused to emit substantive findings because too many predicates on the relevant transitions are opaque. It is per pair, where `lowConfidence` is per summary.
 
 ## Intent findings
@@ -536,7 +536,7 @@ They have a different shape, because one side is a document rather than code, so
 | `message` | string | One line of human-readable text. |
 | `suppressed` | `IntentFindingSuppression?` | Set only when a `.sussignore` rule matched. |
 
-One rule cuts across all ten: **a finding against intent suss inferred rather than a person wrote is downgraded one level.** An intent doc has a `source` field, and `inferred` means suss guessed the declaration from the code. Curating the document restores the full severity, so an `error` you see at `warning` may mean nobody has confirmed the intent yet.
+One rule applies to all ten: **a finding against intent suss inferred rather than a person wrote is downgraded one level.** An intent doc has a `source` field, and `inferred` means suss guessed the declaration from the code. Curating the document restores the full severity, so an `error` you see at `warning` may mean nobody has confirmed the intent yet.
 
 The severity split follows from what an intent doc is. A person wrote it deliberately, so code that fails to satisfy it is a defect, and those kinds are errors. An intent nothing can check, or a scenario pointing at nothing, is a gap in the documents, and those are warnings. Code that does more than the document claims is info.
 
@@ -606,7 +606,7 @@ One finding per status, so two catch arms both returning 500 produce one, and on
 
 **Severity:** error.
 
-A declared store the unit never touches, paired with an undeclared store of the same system that the unit touches instead, with the same verbs and outcomes.
+The intent declares a store the unit never touches, and the unit touches an undeclared store of the same system instead, with the same verbs and outcomes.
 
 ```
 [error] bus:aws_sqs InvoicesQueue: Intent "bus-aws-sqs-invoices-queue" declares aws.dynamodb:PaidInvoices; InvoiceWorkerFunction.handler writes aws.dynamodb:Invoices instead, with the same outcomes. If the store was renamed, update the intent.
@@ -646,11 +646,11 @@ The unit reads a path off what it was handed that the `receives` block does not 
 [info] fn:@suss/checker::checkPair: checkPair reads options.stream off what it was handed at fn:@suss/checker::checkPair; intent "checker-check-pair" does not declare it under receives.
 ```
 
-Reported only when the doc has a `receives` block: a doc without one says nothing about the input, the same way a doc without `results` says nothing about effects. One finding per path, so a field read in three branches is one.
+suss reports it only when the doc has a `receives` block. A doc without one says nothing about the input, the same way a doc without `results` says nothing about effects. One finding per path, so a field read in three branches is one.
 
 On a REST route, a read under `body` is never reported when the block declares a body, since the shape is where the body gets described. Header names compare case-insensitively.
 
-Info rather than warning because a block lists the fields the author wanted checked and is never a full description of the input. A handler often reads a header for logging or tracing that no author would write down.
+It is at info because a block lists only the fields the author wanted checked. It does not describe the whole input. A handler often reads a header for logging or tracing that no author would write down.
 
 **Legitimate when:** the field is one the document deliberately leaves out. Treat the list as what the code asks for beyond what anybody wrote down.
 
@@ -678,7 +678,7 @@ A store is the one case where filling the fields in does not help. Storage has n
 
 **Severity:** info.
 
-A scenario in a PRD is not linked to any system-intent outcome. It reads fine on its own, and nothing checks whether the behavior it describes exists.
+A scenario in a PRD is not linked to any system-intent outcome. The scenario makes sense as text, but nothing checks whether the behavior it describes exists.
 
 ```
 [info] prd:Reading a user: Scenario #3 in PRD "Reading a user" has no structured link to a system-intent outcome; it reads on its own, but its coverage can't be checked until a link is added.
@@ -706,7 +706,7 @@ A scenario links to an intent or an outcome nothing declares. Either no boundary
 
 **Severity:** warning.
 
-A scenario links to a name two or more boundary intents share, so the link resolves to more than one and suss will not pick.
+A scenario links to a name two or more boundary intents share, so the link resolves to more than one and suss does not pick between them.
 
 ```
 [warning] prd:Reading a user: Scenario #1 in PRD "Reading a user" links to "get-users-id.410-gone", but 2 boundary intents are named "get-users-id"; rename them so the link resolves to one.
@@ -734,7 +734,7 @@ The other three scenario kinds ask whether a scenario points at something that e
 
 ## Run findings
 
-A third list, under `run` in the JSON. These are about the run itself, so they have no two sides and no boundary key:
+Run findings are a third list, under `run` in the JSON. They are about the run itself, so they have no two sides and no boundary key:
 
 | Field | Type | Meaning |
 |---|---|---|

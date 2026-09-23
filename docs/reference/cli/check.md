@@ -72,7 +72,7 @@ With `--intent`, an `Intent:` section follows the findings with what was checked
 
 ## Reporting on one thing
 
-`--at` runs the same passes over the same folder and prints the part of the report about one target. It is the question you have while editing a file: does this call line up with what it reaches.
+`--at` runs the same passes over the same folder and prints the part of the report about one target. Use it while editing a file, to see whether a call lines up with what it reaches.
 
 A target is one of four spellings, resolved in this order:
 

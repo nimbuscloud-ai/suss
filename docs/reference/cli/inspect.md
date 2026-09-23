@@ -107,7 +107,7 @@ When several boundaries got the same outcome from one wrapper, the report prints
 
 You give `--flow` a request, and it works out which code ends up serving it and prints the chain of hops that get it there.
 
-`--flow` walks the routing a set of summaries declares, hop by hop. It reads both sides of the question, so point it at a folder containing both: a deploy template read with [`suss contract`](/reference/cli/contract) for the wiring, and [`suss extract`](/reference/cli/extract) over the code for the handlers that respond.
+`--flow` walks the routing a set of summaries declares, hop by hop. It needs the wiring and the code, so point it at a folder containing both: a deploy template read with [`suss contract`](/reference/cli/contract) for the wiring, and [`suss extract`](/reference/cli/extract) over the code for the handlers that respond.
 
 ```
 $ suss inspect --flow "GET https://shop.example.com/api/orders/123" --dir summaries/
@@ -124,7 +124,7 @@ What serves it, as the declarations settle it:
     all answers it: * /api/orders/*   (src/orders-app/middleware/dispatch.ts)
 ```
 
-A bare path works too (`"GET /api/orders/123"`). With no host in the request, suss cannot decide a host-header rule, and it tells you where that left it.
+A bare path works too (`"GET /api/orders/123"`). With no host in the request, suss cannot evaluate a host-header rule, and the output shows where the walk stopped because of it.
 
 The answer marks how certain each hop is. A hop whose rule takes the request outright is certain. A hop gated on something the declarations leave open, such as an unevaluated condition field or a tie between two rules, is only possible. suss puts the chain containing that hop under its own heading and points at the hop it could not decide.
 
@@ -132,7 +132,7 @@ When nothing serves the request, the answer tells you where the walk stopped. Th
 
 If the wiring branches wider than the answer prints, the output ends with how many chains were left out.
 
-Two documents that both declare a listener called `HttpListener` are two different listeners, and neither one's rules may serve the other's question. Ask about a name they share and suss refuses, listing the documents it found. Add `--entry HttpListener --scope cloudformation:services/beta/template.yaml` to tell it which stack you meant.
+Two documents that both declare a listener called `HttpListener` are two different listeners, and one listener's rules never apply to a request that came in through the other. Ask about a name they share and suss refuses, listing the documents it found. Add `--entry HttpListener --scope cloudformation:services/beta/template.yaml` to tell it which stack you meant.
 
 `--flow --json` writes `{ request, entry, chains, omitted }`. Each chain is `{ entry, hops, end, certainty }`, and each hop is `{ from, to, edge, certainty }` plus a `match` describing the rule that admitted it.
 

@@ -41,7 +41,7 @@ In a synopsis, `<...>` marks a required value and `[...]` an optional one.
 | [`check`](/reference/cli/check) | Summary files, and optionally a folder of intent docs | Findings, as text or JSON |
 | [`inspect`](/reference/cli/inspect) | A summary file, a folder of them, or two of them | Text for a person, or JSON under `--diff` and `--flow` |
 | [`ask`](/reference/cli/ask) | Summary files, and the source for a why question | One answer, as text or JSON |
-| [`corroborate`](/reference/cli/corroborate) | Source, through the express or fastify packs | Summaries annotated with what execution said |
+| [`corroborate`](/reference/cli/corroborate) | Source, through the express or fastify packs | Summaries annotated with what running the code showed |
 | [`infer`](/reference/cli/infer) | Observed calls, summaries, or curated intent docs | A YAML draft for you to finish |
 
 `extract`, `inspect` and `check` run with no arguments at all. Each one reads `suss.json`, or picks the packs `init` would pick when there is no file, and prints the commands it ran to stderr.

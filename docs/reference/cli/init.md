@@ -18,7 +18,7 @@ suss init [<directory>] [--plain]
 
 ## What it reads
 
-`package.json` for dependencies, and the directory for schemas and deploy templates. At a monorepo root it also reads the workspace declaration, from `package.json` workspaces, `pnpm-workspace.yaml`, `lerna.json` or `turbo.json`, and asks which packages to set up.
+It reads `package.json` for dependencies, and the directory for schemas and deploy templates. At a monorepo root it also reads the workspace declaration, from `package.json` workspaces, `pnpm-workspace.yaml`, `lerna.json` or `turbo.json`, and asks which packages to set up.
 
 ## What it writes
 
