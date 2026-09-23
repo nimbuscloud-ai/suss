@@ -7,8 +7,8 @@
  * `BoundaryBinding`. The Python and TypeScript adapters meet the same
  * contract.
  *
- * The packs supply every call name, keyword and base class a library
- * defines, so this package contains none of them.
+ * The packs supply the call names, keywords and base classes a library
+ * defines.
  */
 
 export {
