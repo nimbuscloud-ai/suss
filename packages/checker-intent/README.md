@@ -101,6 +101,7 @@ It does **not** depend on
 
 ## More
 
+- [How intent findings are graded](./DESIGN.md)
 - [Documentation](https://suss.sh/)
 - [Every package and pack suss ships](https://suss.sh/packs/catalog)
 - [Source and issues](https://github.com/nimbuscloud-ai/suss)

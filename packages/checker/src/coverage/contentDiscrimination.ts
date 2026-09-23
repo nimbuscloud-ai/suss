@@ -27,7 +27,7 @@ import type {
   ValueRef,
 } from "@suss/behavioral-ir";
 
-/** The keys a record shape declares, reaching through an optional wrapper. */
+/** The keys a record declares, merged across the variants of a union. */
 function topLevelFields(shape: TypeShape | null): Set<string> {
   if (shape === null) {
     return new Set();
@@ -63,9 +63,10 @@ function responseStatusSpan(
 }
 
 /**
- * Per failure response, the body fields the provider sends on it and on
- * no 2xx. A field both halves include tells the two apart for nobody.
- * A response declared as a range ("4XX") counts for every status in it.
+ * Per failure response, the body fields the provider sends on it and
+ * never on a 2xx. A field that both kinds of body include cannot tell
+ * them apart. A response declared as a range ("4XX") counts for every
+ * status in it.
  */
 export function failureOnlyBodyFields(
   provider: BehavioralSummary,
@@ -172,10 +173,10 @@ export function bodyFieldsConsumerReads(
 
 /**
  * The body fields the consumer's guards test, on any of its branches.
- * A tested field is how the consumer tells cases apart, so its absence
- * from a body is an answer rather than a misread. Collected across the
- * whole consumer because the extractor attributes a read inside a
- * callback to every path through it.
+ * A tested field is how the consumer tells cases apart, so finding it
+ * missing from a body is expected and does not count as a misread. The
+ * fields are collected across the whole consumer because the extractor
+ * attributes a read inside a callback to every path through it.
  */
 export function bodyFieldsConsumerTests(
   consumer: BehavioralSummary,

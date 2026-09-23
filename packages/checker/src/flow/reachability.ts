@@ -1,22 +1,15 @@
-// reachability.ts: who a request reaches, walked as rules over the
-// facts `collectFlowInputs` reads off a summary set.
-//
-// The split is the one the flow-reachability proposal draws. The engine
-// stores tuples and joins them by equality, so it cannot run a matcher
-// or pick a winner. Deciding which match takes the request is settled
-// in TypeScript first, per router, by the selector for that router's
-// own condition language. The walk over settled edges is recursive,
-// which is what the engine is for, so that part is rules: a fixpoint
-// over a finite node set, which is also why a cycle of edges terminates
-// instead of looping.
-//
-// Certainty is two relations rather than a guess. `reaches` walks edges
-// whose match took the request outright. `mayReach` also walks edges
-// whose match could take it once a condition nobody here evaluates is
-// decided at runtime. Everything `reaches` derives, `mayReach` derives
-// too, so "possible but not certain" is a set difference the reader
-// takes, and an unevaluated condition can never turn a reachable answer
-// into an unreachable one.
+/**
+ * Works out which nodes, units and serving claims a request reaches, as
+ * datalog rules over the facts `collectFlowInputs` reads.
+ *
+ * The engine joins by equality and cannot run a matcher, so TypeScript
+ * first picks which match takes the request at each router, using the
+ * selector for that router's condition language. The walk over the
+ * chosen edges is recursive, so it is written as rules, and a cycle of
+ * edges still terminates. `reaches` follows edges a match took
+ * outright, and `mayReach` also follows edges that depend on a
+ * condition nobody here evaluates. The flow README explains both.
+ */
 
 import { Database, evaluate, lit, rule, variable as v } from "@suss/datalog";
 import { servesRequest } from "@suss/ir-core";

@@ -1,6 +1,3 @@
-// contractImplementation.ts: an extracted handler against the document
-// that describes the same route.
-
 import { BOUNDARY_ROLE, summaryIdentifier } from "@suss/behavioral-ir";
 
 import { extractResponseStatus, makeSide } from "../coverage/responseMatch.js";

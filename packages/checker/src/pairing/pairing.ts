@@ -12,15 +12,9 @@ import { groundedKeys } from "./groundedPath.js";
 
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
 
-// boundaryKey / normalizePath are shared comparison primitives owned by
-// @suss/ir-core (the intent checker keys boundaries the same way). Kept
-// re-exported here so the checker's internal modules and external
-// consumers that import them from this module are unaffected by the move.
+// The intent checker keys boundaries the same way, so these live in
+// @suss/ir-core.
 export { boundaryKey, normalizePath } from "@suss/ir-core";
-
-// ---------------------------------------------------------------------------
-// Pairing
-// ---------------------------------------------------------------------------
 
 export interface SummaryPair {
   provider: BehavioralSummary;
@@ -53,29 +47,28 @@ export interface PairingResult {
      * `noBoundary` is internal code with nothing to pair on,
      * `unnamedBoundary` is a boundary the source never gave a name to,
      * and `unknownKind` is a summary read from disk with a kind this
-     * build does not know. One list, so a caller walks it once, and the
-     * reason is what a reader groups by.
+     * build does not know. They share one list, and a reader groups them
+     * by reason.
      */
     unpairable: UnpairableSummary[];
   };
   /**
-   * Consumers whose path is served by more than one service, with
-   * nothing saying which one they call. Pairing any of them would
-   * compare a caller against a stranger's handler, so the run reports
-   * the question instead.
+   * Consumers whose path more than one service serves, with nothing to
+   * show which one they call. Pairing with any of them could compare a
+   * caller against another service's handler, so the run reports the
+   * ambiguity instead.
    */
   ambiguous: AmbiguousPairing[];
 }
 
 /**
- * Whether two summaries that share a bucket are really the same
- * boundary.
+ * Whether two summaries in one bucket describe the same boundary.
  *
- * A bucket key contains only what both sides always know. Anything one
- * side knows more precisely is settled by the semantics variant's own
- * agreement rule: buses have to agree on a message-bus bucket, methods
- * on a REST bucket (which is how a `"*"` route meets consumers that
- * each use one method).
+ * A bucket key contains only what both sides always record. Anything
+ * one side records more precisely goes through the semantics variant's
+ * own agreement rule: buses have to agree on a message-bus bucket, and
+ * methods on a REST bucket. The method rule lets a `"*"` route meet
+ * consumers that each use one method.
  */
 function bindingsPair(
   provider: BehavioralSummary,
@@ -84,8 +77,8 @@ function bindingsPair(
   const providerSemantics = provider.identity.boundaryBinding?.semantics;
   const consumerSemantics = consumer.identity.boundaryBinding?.semantics;
   if (providerSemantics === undefined || consumerSemantics === undefined) {
-    // Unreachable from a bucket: a summary with no binding never got
-    // a key. Kept permissive so a direct caller sees old behavior.
+    // A summary with no binding never gets a key, so only a direct call
+    // lands here, and it pairs.
     return true;
   }
 
@@ -93,10 +86,10 @@ function bindingsPair(
 }
 
 /**
- * The key a pair reports. The bucket key drops what the sides compare
- * in-bucket, so the pair uses the consumer's concrete identity (a
- * consumer of a `"*"` route shows the method it actually uses),
- * falling back to the provider's, then to the bucket.
+ * The key a pair reports. The bucket key leaves out what the two sides
+ * compare inside the bucket, so the pair uses the consumer's own key,
+ * then the provider's, then the bucket's. A consumer of a `"*"` route
+ * then shows the method it calls.
  */
 function pairKeyFor(
   provider: BehavioralSummary,
@@ -117,21 +110,17 @@ function pairKeyFor(
 }
 
 /**
- * The providers a consumer's calls actually reach, out of the ones that
- * agree with it. Null when the run cannot tell, which is a question
- * rather than a pair.
+ * The providers a consumer's calls reach, out of the ones that agree
+ * with it. Null when the run cannot tell.
  *
- * One service's client calling another service's API is the case this
- * check exists for, so a provider elsewhere is a fine answer. Two
- * services serving the same path is the case that used to invent one:
- * every consumer paired with every provider, and a client that calls
- * its own service was compared against a stranger's handler, which
- * reported a status nobody returns and a field nobody sends.
- *
- * So a provider in the consumer's own service wins outright, since a
- * caller reaches its own service's route before anybody else's. With no
- * provider at home, one service serving the path is the answer, and
- * more than one is the question.
+ * A client in one service calling another service's API is what this
+ * check is for, so a provider elsewhere is a fine answer. The risk is
+ * two services serving one path: pairing with both compares a client
+ * against a handler it never calls, and reports a status nobody
+ * returns and a field nobody sends. So a provider in the consumer's own
+ * service wins, since a caller reaches its own service's route first.
+ * With none there, one service serving the path is the answer, and
+ * more than one is ambiguous.
  */
 function servedBy(
   consumer: BehavioralSummary,
@@ -142,12 +131,9 @@ function servedBy(
   }
   const home = consumer.location.workspace;
   if (home !== undefined) {
-    // A provider that states no workspace is a declared artifact rather
-    // than a rival service, the way `servicesOf` below already treats
-    // one, so it is kept beside the local provider instead of losing to
-    // it. An OpenAPI document and the handler it describes are two
-    // sides of one service, and dropping the document here is what
-    // stopped the contract checks running at all.
+    // A provider with no workspace is a declared document, such as this
+    // service's OpenAPI file, so it stays beside the local provider and
+    // the contract checks still run. `servicesOf` treats it the same way.
     const athome = agreeing.filter(
       (provider) =>
         provider.location.workspace === home ||
@@ -202,17 +188,16 @@ function highestRanked(buckets: Bucket[]): Bucket[] {
 }
 
 /**
- * Given a flat list of summaries, match providers to consumers.
+ * Match providers to consumers across a flat list of summaries.
  *
- * Summaries bucket on `pairingKey` and settle the rest with
- * `bindingsPair`; each provider pairs with every agreeing consumer in
- * its bucket (N×M within a group). A bucket whose key spans other keys
- * (a route with a hole that takes some number of segments) is compared
- * against every bucket on the other side with `bucketsMeet`, and the
- * most specific key among the providers that agree wins. Summaries that
- * cannot take part land in `unmatched.unpairable` with the reason;
- * sides with a key but no agreeing counterpart land in the matching
- * `unmatched` list.
+ * Summaries are bucketed by `pairingKey`, and `bindingsPair` settles
+ * the rest, so each provider pairs with every agreeing consumer in its
+ * bucket. A bucket whose key spans other keys, such as a route with a
+ * hole that takes some number of segments, is compared with every
+ * bucket on the other side through `bucketsMeet`, and the most specific
+ * agreeing provider key wins. A summary that cannot take part goes in
+ * `unmatched.unpairable` with the reason, and one with a key but no
+ * agreeing counterpart goes in the matching `unmatched` list.
  */
 export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
   const providersByKey = new Map<string, Bucket>();
@@ -236,10 +221,9 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
       continue;
     }
 
-    // Guard against summaries deserialized from disk with an unknown kind
-    // string: the type system can't see those. Goes away once IR exposes
-    // a real parser (see #79); until then, an unknown kind means we can't
-    // place it on either side of a pairing.
+    // A summary read from disk can have a kind this build does not know,
+    // and the types cannot rule that out. It belongs on neither side
+    // (#79).
     const role = BOUNDARY_ROLE[summary.kind];
     if (role === undefined) {
       unpairable.push({ summary, reason: "unknownKind" });
@@ -302,7 +286,7 @@ export function pairSummaries(summaries: BehavioralSummary[]): PairingResult {
       }
       // A route with a hole spanning segments serves what a more exact
       // route serves too, so the highest ranked bucket is the one the
-      // consumer reaches, and an even contest is a question.
+      // consumer reaches, and a tie is ambiguous.
       const winners = highestRanked(agreeing);
       const chosen =
         winners.length === 1

@@ -1,6 +1,3 @@
-// contract-completeness.ts: an operation a contract declares that no
-// extracted provider implements.
-
 import { BOUNDARY_ROLE } from "@suss/behavioral-ir";
 
 import { makeSide } from "../coverage/responseMatch.js";
@@ -10,15 +7,16 @@ import { readDeclaredContract } from "./declaredContract.js";
 import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
 
 /**
- * A stub from a contract pack (an OpenAPI spec, a CFN template) that
- * shares no boundary with any extracted provider says nothing: the
- * spec may describe a service whose code is not in the run. Once at
- * least one boundary is shared, the spec and the codebase describe the
- * same service, and a declared operation with no implementation is a
- * finding. The reverse direction (a route in code the spec never
- * declares) stays out, because infra routes (health, the served spec,
- * docs) are unlisted on purpose and flagging them would bury the
- * signal.
+ * Reports operations a contract declares that no extracted provider
+ * implements.
+ *
+ * A contract (an OpenAPI spec, a CFN template) that shares no boundary
+ * with any extracted provider may describe a service whose code is not
+ * in the run, so it is left alone. Once one boundary is shared, the
+ * contract and the code describe the same service, and a declared
+ * operation with no implementation is a finding. The other direction
+ * is not reported. Specs leave out routes such as health checks and
+ * docs on purpose, and reporting those would bury the useful findings.
  */
 export function checkContractCompleteness(
   summaries: BehavioralSummary[],

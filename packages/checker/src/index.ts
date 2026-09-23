@@ -166,8 +166,10 @@ export {
 
 export type { GroundedName, Grounding } from "./storage/grounding.js";
 
-/** Named types go back into the shapes first, because comparing two
- * refs only compares their names. */
+/**
+ * Compare one provider with one consumer. Named types are put back into
+ * the shapes first, because comparing two refs only compares their names.
+ */
 export function checkPair(
   provider: BehavioralSummary,
   consumer: BehavioralSummary,
@@ -249,8 +251,8 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   ];
   const pairInfo: CheckAllResult["pairs"] = [];
 
-  // A pair that no check here judges is still reported, so a reader can
-  // see it. The pass that knows its protocol emits the findings.
+  // A pair that no check here compares is still listed, so a reader can
+  // see it. The pass for its protocol reports the findings.
   for (const pair of restPairs) {
     if (pairIsCheckable(pair)) {
       findings.push(...checkPair(pair.provider, pair.consumer));
@@ -300,8 +302,8 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   findings.push(...checkUnitInvocation(summaries, interactionIndex, pairInfo));
   findings.push(...checkMetric(summaries, interactionIndex));
 
-  // Pairing only knows method and path, so it files a store or a queue
-  // as unpaired even after the pass that owns that protocol compared it.
+  // Pairing matches on method and path, so it lists a store or a queue as
+  // unpaired even after the pass for that protocol compared it.
   const compared = new Set(pairInfo.flatMap((p) => [p.provider, p.consumer]));
   const wentUncompared = (s: BehavioralSummary): boolean =>
     !compared.has(summaryIdentifier(s));

@@ -2,13 +2,14 @@
  * Which provider a consumer meant, when several of them are declared
  * under a name that covers what the consumer reached.
  *
- * A name with a hole in it covers a set of names rather than one, so
- * two providers can both cover what one access reached. Pairing with
- * both reports findings against a boundary the code never touches, and
- * a confident error about the wrong store is worse than no answer, so
- * the more specific name wins and an even contest pairs with nothing.
+ * A name with a hole in it covers a set of names, so two providers can
+ * both cover what one access reached. Pairing with both reports
+ * findings against a boundary the code never touches. A confident error
+ * about the wrong store is worse than no answer, so the more specific
+ * name wins, and when two are equally specific the access pairs with
+ * neither.
  *
- * The README beside this file says what specific means here.
+ * The pairing README explains how specificity is measured.
  */
 
 import { fixedTextLength, namePatternKey } from "@suss/ir-core";
@@ -20,17 +21,17 @@ export interface NameCandidate<T> {
 }
 
 export interface NameChoice<T> {
-  /** Who to pair with. Empty when an even contest stopped the pairing. */
+  /** Who to pair with. Empty when two candidates tied. */
   chosen: T[];
-  /** The candidates that tied, for a caller that wants to say so. */
+  /** The candidates that tied, so the caller can report the tie. */
   tied: NameCandidate<T>[];
 }
 
 /**
- * The candidates whose name states the most fixed text. Two spellings
- * of one name (`{env}-orders` and `{stage}-orders`) are the same name
- * and both are chosen, since the two sides of a deployment spell the
- * same parameter their own way.
+ * The candidates whose name states the most fixed text. `{env}-orders`
+ * and `{stage}-orders` count as one name and both are chosen, because
+ * the two sides of a deployment often give the same parameter
+ * different names.
  */
 export function mostSpecificName<T>(
   candidates: NameCandidate<T>[],

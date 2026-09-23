@@ -1,6 +1,6 @@
 /**
- * groundedPath.ts: what a boundary is called once the deployment has
- * filled its part in.
+ * What a boundary is called once the deployment has filled in its part
+ * of the name.
  *
  * An app that forwards to another service writes the call as
  * `fetch(`${process.env.API_BASE}/orders`)`. The path suss records is

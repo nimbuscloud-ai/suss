@@ -2,11 +2,11 @@
  * Pair the invokes a recognizer found in code against the deployed
  * units a template declares.
  *
- * The two sides rarely spell the callee the same way. Code names the
- * function through an env var or a full ARN, and the template knows it
- * by logical id, so pairing collapses the env-var chain first and only
- * then compares names. The reduction from an ARN to the name inside it
- * happens where the effect is recorded, so nothing here sees an ARN.
+ * The two sides rarely write the callee the same way. Code refers to
+ * the function through an env var or a full ARN, and the template gives
+ * its logical id, so pairing resolves the env var first and then
+ * compares names. The ARN is reduced to the name inside it when the
+ * effect is recorded, so nothing here sees an ARN.
  */
 
 import {
@@ -36,7 +36,7 @@ import type { ComparedPair } from "../pairing/comparedPair.js";
 interface InvokeRecord {
   record: InteractionRecord<"unit-invoke">;
   semantics: UnitInvocationSemantics;
-  /** The identity key this invoke reaches, or null when it names nothing. */
+  /** The identity key this invoke reaches, or null when its target is unsettled. */
   key: string | null;
 }
 
@@ -72,10 +72,10 @@ export function checkUnitInvocation(
 }
 
 /**
- * Who invokes each unit in the run, keyed the way the unit's own
- * binding keys. `suss inspect` reads this to tell a function nothing
- * invokes apart from one something does, without having to know which
- * protocol the question belongs to.
+ * Who invokes each unit in the run, keyed the same way as the unit's
+ * own binding. `suss inspect` uses this to tell a function nothing
+ * invokes from one something does, without having to know which
+ * protocol the invoke went through.
  */
 export function invokersOfUnits(summaries: BehavioralSummary[]): InvokesInRun {
   const idx = buildInteractionIndex(summaries);
@@ -101,14 +101,14 @@ export interface InvokesInRun {
   /** The units something invokes, and who invokes each one. */
   byUnit: ReadonlyMap<string, BehavioralSummary[]>;
   /**
-   * How many invokes work their target out at run time. A unit nothing
-   * names could still be one of their callees, so a report that says
-   * nothing invokes it has to say this too.
+   * How many invokes pick their target at run time. Any of them could
+   * reach a unit that nothing else invokes, so a report that says
+   * nothing invokes a unit should give this count too.
    */
   unsettled: number;
 }
 
-/** Every invoke in the run, with any env var the deployment fills in put in. */
+/** Every invoke in the run, with env var values from the deployment filled in. */
 function groundedInvokes(
   index: InteractionIndex,
   summaries: BehavioralSummary[],

@@ -1,10 +1,9 @@
-// consumer-contract.ts: Level 3: Consumer inferred vs declared contract
-//
-// Checks whether the consumer depends on fields that the declared contract
-// doesn't guarantee. If the consumer reads `body.role` but the declared
-// schema for status 200 only has `{ id, name, email }`, the consumer
-// depends on an implementation detail the provider can remove without
-// violating its contract.
+/**
+ * Reports a consumer that depends on fields the declared contract does
+ * not promise. If the consumer reads `body.role` and the declared 200
+ * body has only `{ id, name, email }`, the provider can drop `role`
+ * without breaking its contract, and the consumer breaks.
+ */
 
 import { providerCoversConsumerFields } from "../body/bodyCompatibility.js";
 import {
@@ -42,7 +41,7 @@ export function checkConsumerContract(
     contract.responses.some((r) => r.body !== null) ||
     contract.responseRanges.some((r) => r.body !== null);
   if (!anyDeclaredBody) {
-    return []; // No declared body schemas to compare against
+    return [];
   }
 
   const statusAccessors = statusAccessorsFor(consumer);

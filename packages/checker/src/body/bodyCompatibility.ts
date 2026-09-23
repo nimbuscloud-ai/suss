@@ -1,9 +1,8 @@
-// body-compatibility.ts: Cross-boundary body shape comparison
-//
-// For each consumer transition that has expectedInput (fields the consumer
-// reads from the response body), find the matching provider transition(s)
-// by status code and compare the provider's output body against the
-// consumer's expected shape.
+/**
+ * Compares response bodies across a boundary. For each consumer branch
+ * that reads fields off the body, the provider responses with the same
+ * status are checked for every field the consumer reads.
+ */
 
 import {
   bodyAccessorsFor,
@@ -28,26 +27,18 @@ import type {
 } from "@suss/behavioral-ir";
 import type { MatchResult } from "../match.js";
 
-// ---------------------------------------------------------------------------
-// Field-presence comparison
-// ---------------------------------------------------------------------------
-
 /**
- * Check whether `provider` contains all fields that `consumer` expects.
+ * Whether `provider` has every field that `consumer` reads.
  *
- * This is NOT the same as `bodyShapesMatch`: that function checks type
- * compatibility (is `actual` assignable to `declared`). This function checks
- * **field presence**: does the provider's record have every key the consumer
- * reads?
+ * `bodyShapesMatch` compares types, and this compares field presence.
+ * Consumer leaves are usually `{ type: "unknown" }`, since the IR
+ * records which fields a consumer read and not what types it expected,
+ * so an unknown leaf counts as present.
  *
- * Consumer leaves are typically `{ type: "unknown" }` because we only tracked
- * which fields were accessed, not what types the consumer expects. Unknown
- * leaves are treated as "field exists, type not checked" → match.
- *
- * Returns:
- *   - "match" when every field the consumer reads exists in the provider
- *   - "nomatch" when the consumer reads a field the provider doesn't have
- *   - "unknown" when the provider shape is opaque (a ref or an unknown)
+ * Returns "match" when every field the consumer reads exists in the
+ * provider, "nomatch" when one does not, and "unknown" when the
+ * provider shape is opaque (a ref or an unknown) or has a spread that
+ * could supply the field.
  */
 export function providerCoversConsumerFields(
   provider: TypeShape,
@@ -57,15 +48,13 @@ export function providerCoversConsumerFields(
     return "match";
   }
 
-  // Provider is opaque: we can't tell if the fields exist
   if (provider.type === "unknown" || provider.type === "ref") {
     return "unknown";
   }
 
-  // Optional provider field (`union<T, undefined>`): the field exists at the
-  // type level, so unwrap and continue the field-presence comparison against
-  // the non-undefined variant. The fact that it's optional is surfaced as a
-  // separate info-level finding via findOptionalAccesses, not as a mismatch.
+  // An optional field (`union<T, undefined>`) still exists, so compare
+  // against the defined variant. findOptionalAccesses reports the
+  // optionality as its own info finding.
   if (isOptionalShape(provider)) {
     return providerCoversConsumerFields(unwrapOptional(provider), consumer);
   }
@@ -75,7 +64,7 @@ export function providerCoversConsumerFields(
     for (const key of Object.keys(consumer.properties)) {
       const providerProp = provider.properties[key];
       if (providerProp === undefined) {
-        // Check spreads: if provider has spreads, we can't be sure
+        // A spread could supply the field.
         if (provider.spreads && provider.spreads.length > 0) {
           result = combineResults(result, "unknown");
           continue;
@@ -91,7 +80,7 @@ export function providerCoversConsumerFields(
     return result;
   }
 
-  // Consumer expects a record but provider is a dictionary: all keys exist
+  // A dictionary can have any key.
   if (consumer.type === "record" && provider.type === "dictionary") {
     return "match";
   }
@@ -100,7 +89,7 @@ export function providerCoversConsumerFields(
     return "nomatch";
   }
 
-  // Non-record consumer shapes (shouldn't happen for field tracking, but safe)
+  // Field tracking records consumer reads as a record, so this is not expected.
   return "unknown";
 }
 
@@ -115,12 +104,11 @@ function combineResults(a: MatchResult, b: MatchResult): MatchResult {
 }
 
 /**
- * Walk the consumer field tree against the provider's shape and return the
- * dot-paths where the consumer reads a field the provider declares as
- * optional (modeled as `union<T, undefined>`).
+ * The paths where the consumer reads a field the provider declares as
+ * optional (`union<T, undefined>`).
  *
- * The check still passes for these (the field exists), but consumers should
- * know they're depending on a value the provider may legally omit.
+ * Field presence still matches for these, but the consumer depends on a
+ * value the provider may leave out.
  */
 export function findOptionalAccesses(
   provider: TypeShape,
@@ -167,16 +155,12 @@ function unwrapOptional(shape: TypeShape): TypeShape {
   return { type: "union", variants: nonUndef };
 }
 
-// ---------------------------------------------------------------------------
-// Main check
-// ---------------------------------------------------------------------------
-
 /**
  * The consumer's expected shape with `drop` taken off the top level.
- * Two kinds of name go: a field the provider returns only when it
- * refuses, which says which case came back, and the accessor the client
- * reaches the body through, which is a method on the response rather
- * than anything the body includes.
+ * Two kinds of field are dropped: a field the provider returns only on
+ * a failure, which tells the consumer which case came back, and the
+ * accessor the client reads the body through, which belongs to the
+ * response object and not the body.
  */
 function withoutFields(shape: TypeShape, drop: ReadonlySet<string>): TypeShape {
   if (shape.type !== "record" || drop.size === 0) {
@@ -189,9 +173,9 @@ function withoutFields(shape: TypeShape, drop: ReadonlySet<string>): TypeShape {
 }
 
 /**
- * How to say which success response a provider transition is in a
- * finding ("200", or "2XX" for one declared as a range), or null when
- * the transition is not a success response.
+ * The label a finding uses for a success response ("200", or "2XX" for
+ * a declared range), or null when the transition is not a success
+ * response.
  */
 function successResponseLabel(pt: Transition): string | null {
   const status = extractResponseStatus(pt);
@@ -253,8 +237,8 @@ export function checkBodyCompatibility(
           consumerBodyShape,
         );
 
-        // A read of a field the body provably lacks is checkResponseMisread's
-        // finding; this check reports only what it could not compare.
+        // checkResponseMisread reports a read of a field the body lacks, so
+        // this check reports only what it could not compare.
         if (result === "unknown") {
           findings.push({
             kind: "lowConfidence",

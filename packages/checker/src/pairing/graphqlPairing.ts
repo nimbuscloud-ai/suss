@@ -1,24 +1,17 @@
-// graphql-pairing.ts: Pair graphql-operation consumers with
-// graphql-resolver providers by walking the operation's selection
-// set.
-//
-// Root-level selections pair by (rootTypeName, fieldName). When
-// the matched provider resolver's schema is on hand, the pairing
-// pass also walks the operation's NESTED selections on the
-// resolved return type and flags any that the schema doesn't
-// declare. That's the `graphqlSelectionFieldUnknown` finding,
-// the second half of "what can go wrong across a GraphQL
-// boundary" alongside the root-field not-implemented finding.
-//
-// The schema comes from the summary standing for the schema
-// document, which the resolver points at through the document
-// label both were read under. A reader with no document summary
-// may write the SDL beside the resolver instead, and that is read
-// too. See this directory's README.
-//
-// Parsing is lazy + cached: operation documents parse once per
-// checker pass; SDLs parse once per unique text. Keeps the pass
-// O(N operations + M resolvers) regardless of schema size.
+/**
+ * Pairs GraphQL operations with the resolvers that serve their root
+ * fields, keyed by (root type, field name). When the resolver's schema
+ * is available, the operation's nested selections are checked against
+ * it, and a selection the schema does not declare is reported as
+ * `boundaryFieldUnknown`.
+ *
+ * The schema comes from the summary for the schema document, which the
+ * resolver points at through the document label both were read under.
+ * A reader with no document summary can write the SDL beside the
+ * resolver instead. Each SDL text is parsed once and cached, so the
+ * pass does not slow down as schemas grow. See this directory's
+ * README.
+ */
 
 import {
   type DocumentNode,
@@ -51,9 +44,9 @@ interface OperationDoc {
   /** Root-type name corresponding to operationType (Query/Mutation/Subscription). */
   rootTypeName: string;
   /**
-   * Root-level selections. Each entry captures the field name plus
-   * any nested sub-selections (recursively), with fragment spreads
-   * and inline fragments flattened into the fields they contribute.
+   * Root-level selections, each with its nested selections. Fragment
+   * spreads and inline fragments are flattened into the fields they
+   * add.
    */
   rootSelections: FieldSelection[];
 }
@@ -64,7 +57,7 @@ interface FieldSelection {
   /**
    * The fragment type condition this selection came through, or null
    * for a direct selection on its parent. `... on Dog { bark }` checks
-   * `bark` against Dog, not against the field's declared return type.
+   * `bark` against Dog instead of the field's declared return type.
    */
   onType: string | null;
 }
@@ -158,9 +151,7 @@ function pairOneOperation(
         consumer: operation,
         key,
       });
-      // When the provider's schema is on hand, walk nested selections
-      // against the declared field set. Fifty resolvers out of one
-      // schema document share one parse.
+      // Resolvers read from one schema document share one parsed schema.
       if (selection.nested.length > 0) {
         const schema = resolverSchema(resolver, schemas);
         if (schema !== null) {
@@ -179,11 +170,11 @@ function pairOneOperation(
 }
 
 /**
- * Look up the return type of `rootTypeName.<selection.name>` in the
- * provider's SDL, then recursively walk each nested selection. Each
- * selection name that isn't a field on the resolved object type
- * emits `graphqlSelectionFieldUnknown`. List / non-null / scalar
- * return types stop the walk. You can't select fields on a scalar.
+ * Look up the return type of `parentTypeName.<selection.name>` in the
+ * provider's SDL, through any list or non-null wrapper, and walk each
+ * nested selection. A selection that is not a field on that type is
+ * reported. The walk stops at a scalar, enum or union, because only
+ * object and interface types are indexed.
  */
 function walkNestedSelections(
   operation: BehavioralSummary,
@@ -214,7 +205,7 @@ function walkNestedSelections(
     const childParentName = child.onType ?? returnTypeName;
     const childParent = schema.objectTypes.get(childParentName);
     if (childParent === undefined) {
-      // Scalar / enum / union / unknown type, v0 doesn't descend.
+      // A scalar, enum, union or unknown type has no fields indexed.
       continue;
     }
 
@@ -243,10 +234,6 @@ function isMetaField(name: string): boolean {
   return name.startsWith("__");
 }
 
-// ---------------------------------------------------------------------------
-// Operation parsing
-// ---------------------------------------------------------------------------
-
 function isGraphqlOperation(summary: BehavioralSummary): boolean {
   return bindingIs(summary.identity.boundaryBinding, "graphql-operation");
 }
@@ -267,9 +254,8 @@ function indexResolvers(
     if (!isGraphqlResolver(summary)) {
       continue;
     }
-    // The semantics' own key guards the null typeName a `@Resolver()`
-    // class with no argument gets; the hand-built join indexed it
-    // under the literal "null.fieldName" (#162).
+    // `boundaryKey` gives null for a `@Resolver()` class with no type
+    // argument, so it is never indexed under "null.fieldName" (#162).
     const key = boundaryKey(summary.identity.boundaryBinding);
     if (key === null) {
       continue;
@@ -426,10 +412,6 @@ function fieldSelectionsFrom(
   return out;
 }
 
-// ---------------------------------------------------------------------------
-// Schema indexing (for nested-selection checks)
-// ---------------------------------------------------------------------------
-
 interface SchemaIndex {
   /** typeName → { fieldName → TypeNode (raw return type) }. */
   objectTypes: Map<string, { fields: Map<string, TypeNode> }>;
@@ -443,10 +425,10 @@ interface SchemaLookup {
 }
 
 /**
- * The SDL out of every summary standing for a schema document. Two
- * documents under one label would each answer for the other's fields,
- * so a label whose summaries disagree drops out and its resolvers check
- * nothing, the same as a resolver with no schema at all.
+ * The SDL from every summary for a schema document. When two summaries
+ * under one label have different SDL, keeping either would check the
+ * other's fields against the wrong schema. The label is dropped, and
+ * its resolvers go unchecked like a resolver with no schema.
  */
 function schemasByDocument(
   summaries: BehavioralSummary[],
@@ -558,10 +540,6 @@ function unwrapToNamedType(node: TypeNode): string {
   return node.name.value;
 }
 
-// ---------------------------------------------------------------------------
-// Finding construction
-// ---------------------------------------------------------------------------
-
 function fieldNotImplementedFinding(
   operation: BehavioralSummary,
   doc: OperationDoc,
@@ -576,10 +554,8 @@ function fieldNotImplementedFinding(
     kind: "boundaryFieldUnknown",
     aspect: "read",
     boundary: binding,
-    // Symmetric sides: the operation is both "provider" and
-    // "consumer" here: the finding is about the operation as a
-    // whole, not about a specific pair. A synthetic provider-less
-    // side records the root type + field for discoverability.
+    // No resolver exists to point at, so the provider side is a
+    // placeholder that gives the root type and field.
     provider: {
       summary: `${doc.rootTypeName}.${fieldName} (unresolved)`,
       location: operation.location,
@@ -677,9 +653,9 @@ function danglingSpreadFindings(
   if (registry !== "absent") {
     return [unresolvedFragmentsFinding(operation, fragmentNames, ambiguous)];
   }
-  // A name the project defines two ways is defined, so the query does
-  // not throw on it; the reader could not say which body the build
-  // takes, which is the info finding.
+  // A name the project defines twice is defined, so the query does not
+  // throw on it. The reader could not tell which body the build uses,
+  // so that name gets the info finding.
   const clashing = fragmentNames.filter((name) => ambiguous.includes(name));
   const missing = fragmentNames.filter((name) => !ambiguous.includes(name));
   return [

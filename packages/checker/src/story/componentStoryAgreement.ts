@@ -1,28 +1,14 @@
-// component-story-agreement.ts: React-specific cross-shape check
-// comparing Storybook stub summaries against their inferred component
-// summaries.
-//
-// v0 deliberately focuses on findings TypeScript can't already give
-// the user for free. Arg-value type checking against declared prop
-// types is TS's job (CSF3's `satisfies Meta<typeof Component>` catches
-// it at compile time), so we don't emit those findings. They'd be
-// noise.
-//
-// The behavioral findings worth emitting:
-//
-//   1. `scenarioArgUnknown`: a story references a prop the component
-//      doesn't declare. Still useful for loose-TS configs, `.stories.js`
-//      files, or stories that predate a prop rename.
-//
-//   2. `scenarioCoverageGap`: the component has a conditional branch
-//      that depends on a prop, but no story exercises that branch.
-//      Genuine behavioral gap: the component's logic has a path
-//      nothing verifies.
-//
-// Richer comparisons (inferred render vs Storybook snapshot, inferred
-// handler vs Storybook play function) depend on Phase 2 extensions
-// (snapshot reader, play parsing). They're the direction this file
-// grows.
+/**
+ * Compares Storybook stories with the React components they render.
+ *
+ * TypeScript already checks a story's arg values against the
+ * component's props (`satisfies Meta<typeof Component>`), so this pass
+ * leaves those alone. It reports two things TypeScript does not catch.
+ * One is a story arg the component does not declare
+ * (`boundaryFieldUnknown`), which still happens in `.stories.js` files
+ * and after a prop rename. The other is a prop the component branches
+ * on that no story supplies (`scenarioCoverageGap`).
+ */
 
 import {
   functionCallBinding,
@@ -92,7 +78,7 @@ export function checkComponentStoryAgreement(
 
   const findings: Finding[] = [];
 
-  // Pass 1: unknown-arg findings, per story.
+  // Args a story passes that its component does not declare.
   for (const story of stories) {
     const meta = storyMeta(story);
     if (meta?.component === undefined) {
@@ -114,10 +100,7 @@ export function checkComponentStoryAgreement(
     }
   }
 
-  // Pass 2: coverage gaps, per component. For each prop referenced in
-  // a conditional transition, check whether any story supplies a
-  // value for that prop. If not, the branches that depend on it go
-  // untested.
+  // Props a component branches on that none of its stories supply.
   for (const [component, componentStories] of storiesByComponent) {
     const gatingProps = collectGatingProps(component.transitions);
     if (gatingProps.size === 0) {
@@ -141,10 +124,6 @@ export function checkComponentStoryAgreement(
 
   return findings;
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 /**
  * The component a story is about. A story states an identifier name
@@ -180,13 +159,10 @@ function storyMeta(summary: BehavioralSummary): StorybookMetadata | null {
 }
 
 /**
- * Pull the set of prop names that gate any of the component's
- * transitions. A prop gates a transition when it's the subject of a
- * condition predicate somewhere in the transition's condition set.
- * Walks the structured `Predicate` / `ValueRef` IR rather than
- * source text, so shapes like `user.active` correctly yield
- * `user` as the gating input. Opaque predicates' source text falls
- * back to a bare-identifier regex when structure is unavailable.
+ * The prop names that any of the component's transition conditions
+ * refer to. The structured predicates are walked, so `user.active`
+ * gives `user`. An opaque predicate falls back to a regex over its
+ * source text.
  */
 function collectGatingProps(transitions: Transition[]): Set<string> {
   const props = new Set<string>();
@@ -250,9 +226,9 @@ function inputsInValueRef(ref: ValueRef): string[] {
 }
 
 /**
- * Fallback for opaque predicates / unresolved refs: extract
- * bare-identifier roots from source text. Skips reserved words so
- * `user != null` doesn't register `null` as a gating prop.
+ * The bare identifiers in the source text of an opaque predicate or an
+ * unresolved ref. Reserved words are skipped so `user != null` does not
+ * count `null` as a prop.
  */
 function rootIdentifiers(text: string): string[] {
   const matches: string[] = [];
@@ -292,10 +268,6 @@ function isReservedWord(name: string): boolean {
   return RESERVED.has(name);
 }
 
-// ---------------------------------------------------------------------------
-// Finding builders
-// ---------------------------------------------------------------------------
-
 function makeUnknownArgFinding(
   story: BehavioralSummary,
   component: BehavioralSummary,
@@ -324,9 +296,8 @@ function makeCoverageGapFinding(
   stories: BehavioralSummary[],
   prop: string,
 ): Finding {
-  // Pick a representative story for the `consumer` side. The
-  // description calls out the uncovered prop rather than a specific
-  // story (it's the gap across all stories).
+  // The gap is across every story, so the first one fills the
+  // consumer side.
   const representative = stories[0];
   const storyNames = stories
     .map((s) => storyMeta(s)?.story ?? s.identity.name)

@@ -1,10 +1,9 @@
 import type { Predicate, ValueRef } from "@suss/behavioral-ir";
 import type { MatchResult } from "@suss/ir-core";
 
-// MatchResult is a shared comparison primitive owned by @suss/ir-core;
-// re-exported here so the checker's many consumers of it are unaffected.
-// The subject / predicate comparators below stay because they're
-// specific to the behavioural checker's predicate model.
+// The intent checker shares MatchResult, so it lives in @suss/ir-core.
+// The comparators below depend on the behavioural predicate model and
+// stay here.
 export type { MatchResult } from "@suss/ir-core";
 
 export function subjectsMatch(a: ValueRef, b: ValueRef): MatchResult {
@@ -37,11 +36,7 @@ function valueRefContainsUnresolved(v: ValueRef): boolean {
   return false;
 }
 
-/**
- * One test per predicate kind. A Record keyed on the discriminant stops
- * the build when a new kind lands without an entry, which a switch with
- * a `default` does not (decision 8).
- */
+/** A new predicate kind without an entry here fails the build (decision 8). */
 type PredicateTests = {
   [K in Predicate["type"]]: (p: Extract<Predicate, { type: K }>) => boolean;
 };
@@ -72,8 +67,8 @@ const CONTAINS_UNRESOLVED: PredicateTests = {
   call: (p) => p.args.some(valueRefContainsUnresolved),
   compound: (p) => p.operands.some(predicateContainsUnresolved),
   negation: (p) => predicateContainsUnresolved(p.operand),
-  // Opaque contains source text, so nothing inside it is a value
-  // reference.
+  // An opaque predicate has only source text, so it has no value
+  // reference to be unresolved.
   opaque: () => false,
 };
 

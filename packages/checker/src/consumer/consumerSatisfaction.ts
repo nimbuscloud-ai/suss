@@ -20,9 +20,9 @@ export function checkConsumerSatisfaction(
   const findings: Finding[] = [];
   const boundary = makeBoundary(provider, consumer);
 
-  // A provider nobody could read produces no status, so calling the
-  // consumer's branches dead would blame the consumer for a limit in
-  // what suss could read. Say it cannot be confirmed instead.
+  // When suss read nothing of the provider it has no statuses, and
+  // calling the consumer's branches dead would blame the consumer for
+  // that. Those branches get low confidence instead.
   const unread = nothingWasRead(provider);
 
   const providerStatuses = new Set<number>();

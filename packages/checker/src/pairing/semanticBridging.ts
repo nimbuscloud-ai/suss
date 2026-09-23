@@ -1,12 +1,13 @@
-// semantic-bridging.ts: Level 5: Match provider output body literals
-// against consumer comparison predicates
-//
-// When a provider transition produces a body with literal field values
-// (e.g., { status: "deleted" }), and another transition for the same
-// status code produces a different value for the same field (or omits it),
-// those literals are "distinguishing signals." If no consumer transition
-// tests for the distinguishing value, the consumer collapses behaviorally
-// distinct cases.
+/**
+ * Reports provider sub-cases a consumer cannot tell apart.
+ *
+ * When one provider transition returns a body with a literal field,
+ * such as `{ status: "deleted" }`, and another transition for the same
+ * status has a different value there or no such field, the literal
+ * tells the two cases apart. A consumer that never tests it treats both
+ * cases the same way. A field that one transition has and another
+ * lacks tells them apart in the same way.
+ */
 
 import { statusAccessorsFor } from "../contract/declaredContract.js";
 import {
@@ -26,20 +27,13 @@ import type {
   ValueRef,
 } from "@suss/behavioral-ir";
 
-// ---------------------------------------------------------------------------
-// Extract distinguishing literals from a provider body shape
-// ---------------------------------------------------------------------------
-
 interface DistinguishingLiteral {
   /** Property path from the body root, e.g. ["status"] or ["user", "role"] */
   path: string[];
-  /** The literal value at this path */
   value: string | number | boolean;
 }
 
-/**
- * Walk a TypeShape and collect all literal-valued fields with their paths.
- */
+/** Every literal-valued field in a shape, with its path. */
 function collectBodyLiterals(
   shape: TypeShape,
   pathPrefix: string[] = [],
@@ -58,13 +52,9 @@ function collectBodyLiterals(
 }
 
 /**
- * Given multiple provider transitions for the same status code, find
- * literal body fields that differ between transitions. These are the
- * values that distinguish one sub-case from another.
- *
- * A literal is "distinguishing" if at least one other transition for the
- * same status either has a different literal at the same path, or doesn't
- * have that path at all.
+ * The literal body fields that tell `transition` apart from its
+ * siblings with the same status: some sibling has a different literal
+ * at the same path, or does not have the path at all.
  */
 function findDistinguishingLiterals(
   transition: Transition,
@@ -83,22 +73,18 @@ function findDistinguishingLiterals(
   }
 
   return myLiterals.filter((lit) => {
-    // Check if any sibling has a different value (or no value) at this path
     for (const sibling of siblings) {
       if (sibling.id === transition.id) {
         continue;
       }
       if (sibling.output.type !== "response" || sibling.output.body === null) {
-        // Sibling has no body. This literal distinguishes
         return true;
       }
       const siblingValue = getValueAtPath(sibling.output.body, lit.path);
       if (siblingValue === undefined) {
-        // Sibling doesn't have this field, distinguishing
         return true;
       }
       if (siblingValue.type !== "literal" || siblingValue.value !== lit.value) {
-        // Sibling has a different value, distinguishing
         return true;
       }
     }
@@ -106,24 +92,17 @@ function findDistinguishingLiterals(
   });
 }
 
-// ---------------------------------------------------------------------------
-// Field-presence discrimination
-// ---------------------------------------------------------------------------
-
 interface DistinguishingField {
   /** Property path from the body root, e.g. ["deletedAt"] */
   path: string[];
-  /** Whether this transition HAS the field (vs sibling which doesn't) */
+  /** True when this transition has the field and a sibling does not. */
   present: boolean;
 }
 
 /**
- * Find fields whose presence differs between this transition and its siblings.
- * A field is "distinguishing by presence" if this transition has it but at
- * least one sibling doesn't (or vice versa).
- *
- * Only reports fields present in THIS transition but missing from a sibling
- * (we can't warn about something that isn't there).
+ * The fields this transition has that at least one sibling with the
+ * same status lacks. A field this transition lacks is not reported,
+ * since the transition has nothing to point a finding at.
  */
 function findDistinguishingFields(
   transition: Transition,
@@ -161,8 +140,8 @@ function findDistinguishingFields(
 }
 
 /**
- * Collect all field paths in a record shape (non-recursive into nested records
- * for now: top-level field presence is the most common discriminator).
+ * The top-level field paths of a record. Nested records are not walked,
+ * since top-level presence is the usual discriminator.
  */
 function collectFieldPaths(
   shape: TypeShape,
@@ -196,50 +175,36 @@ function getValueAtPath(
   return current;
 }
 
-// ---------------------------------------------------------------------------
-// Extract body-field comparisons from consumer predicates
-// ---------------------------------------------------------------------------
-
 type ConsumerFieldTest =
   | {
       type: "equality";
       /** Property path from the response body, e.g. ["status"] */
       bodyPath: string[];
-      /** The literal value being compared */
       value: string | number | boolean;
-      /** The transition this test appears in */
       transitionId: string;
     }
   | {
       type: "negatedEquality";
-      /** Property path from the response body */
       bodyPath: string[];
-      /** The literal value being excluded (consumer tests !== this value) */
+      /** The value the consumer tests `!==` against. */
       value: string | number | boolean;
-      /** The transition this test appears in */
       transitionId: string;
     }
   | {
       type: "truthiness";
-      /** Property path from the response body, e.g. ["deletedAt"] */
       bodyPath: string[];
-      /** The transition this test appears in */
       transitionId: string;
     };
 
 /**
- * Extract comparison predicates that test response body fields from
- * consumer transitions. Returns the body-relative path and the literal
- * value being compared.
- *
- * Recognizes patterns like:
- *   result.body.status === "deleted"  →  bodyPath: ["status"], value: "deleted"
- *   data.type === "error"             →  bodyPath: ["type"], value: "error"
- *     (if data resolves through body)
+ * The consumer's tests on response body fields, with the body-relative
+ * path and the literal compared against. `result.body.status ===
+ * "deleted"` gives `["status"]` and `"deleted"`, and so does
+ * `data.status === "deleted"` when `data` came from `res.json()`.
  */
 function collectConsumerFieldTests(transitions: Transition[]): {
   tests: ConsumerFieldTest[];
-  /** True when a condition could not be decomposed, so the collected tests are not the whole story (#126). */
+  /** True when a condition could not be decomposed, so the tests may be incomplete (#126). */
   sawOpaqueCondition: boolean;
 } {
   const tests: ConsumerFieldTest[] = [];
@@ -273,12 +238,12 @@ function collectFieldTestsFromPredicate(
   negated = false,
 ): void {
   if (pred.type === "comparison" && (pred.op === "eq" || pred.op === "neq")) {
-    // Try both orientations: left=ref right=literal, or vice versa
+    // The literal can be on either side.
     const extracted =
       tryExtractFieldTestBody(pred.left, pred.right) ??
       tryExtractFieldTestBody(pred.right, pred.left);
     if (extracted !== null) {
-      // neq XOR negation context → negated equality
+      // A `!==`, or an `===` under a negation, excludes the value.
       const isNegated = (pred.op === "neq") !== negated;
       out.push({
         type: isNegated ? "negatedEquality" : "equality",
@@ -324,13 +289,10 @@ function tryExtractFieldTestBody(
 }
 
 /**
- * Extract the body-relative property path from a ValueRef.
- *
- * Two patterns are recognized:
- * 1. Explicit `.body` accessor: `result.body.status` → `["status"]`
- * 2. Body-returning call: `data.status` where data = `res.json()` → `["status"]`
- *    (the `.json()` call returns the body directly, so properties on its result
- *    are body fields)
+ * The body-relative property path a ValueRef reads, through an explicit
+ * `.body` accessor (`result.body.status` gives `["status"]`) or through
+ * a call that returns the body (`data.status` where `data` is
+ * `res.json()`).
  */
 function tryExtractBodyPath(ref: ValueRef): string[] | null {
   const result = extractPropertyChainWithRoot(ref);
@@ -340,13 +302,11 @@ function tryExtractBodyPath(ref: ValueRef): string[] | null {
 
   const { chain, root } = result;
 
-  // Pattern 1: explicit "body" in the chain
   const bodyIndex = chain.indexOf("body");
   if (bodyIndex >= 0 && bodyIndex < chain.length - 1) {
     return chain.slice(bodyIndex + 1);
   }
 
-  // Pattern 2: root is a call that returns the body directly (e.g. res.json())
   if (
     root.type === "dependency" &&
     isBodyAccessorCall(root.name) &&
@@ -358,17 +318,14 @@ function tryExtractBodyPath(ref: ValueRef): string[] | null {
   return null;
 }
 
-/**
- * Check if a dependency name represents a call whose return value IS
- * the response body (e.g., `res.json()` in fetch).
- */
+/** Whether a dependency is a call that returns the response body, such as fetch's `res.json()`. */
 function isBodyAccessorCall(name: string): boolean {
   return name.endsWith(".json");
 }
 
 /**
- * Walk a ValueRef's derivation chain and extract the property names,
- * along with the root ValueRef where the chain terminates.
+ * The property names along a ValueRef's derivation chain, and the
+ * ValueRef the chain starts from.
  */
 function extractPropertyChainWithRoot(
   ref: ValueRef,
@@ -381,17 +338,12 @@ function extractPropertyChainWithRoot(
       chain.unshift(current.derivation.property);
       current = current.from;
     } else {
-      // Non-property derivation (destructured, indexAccess, etc.), bail
       return chain.length > 0 ? { chain, root: current } : null;
     }
   }
 
   return chain.length > 0 ? { chain, root: current } : null;
 }
-
-// ---------------------------------------------------------------------------
-// Main check
-// ---------------------------------------------------------------------------
 
 export function checkSemanticBridging(
   provider: BehavioralSummary,
@@ -401,7 +353,6 @@ export function checkSemanticBridging(
   const boundary = makeBoundary(provider, consumer);
   const statusAccessors = statusAccessorsFor(consumer);
 
-  // Group provider transitions by status code
   const providerByStatus = new Map<number, Transition[]>();
   for (const pt of provider.transitions) {
     const status = extractResponseStatus(pt);
@@ -422,7 +373,6 @@ export function checkSemanticBridging(
       continue;
     }
 
-    // Find consumer transitions that handle this status
     const consumerForStatus = consumer.transitions.filter((ct) => {
       if (ct.isDefault && isSuccessStatus(status)) {
         return true;
@@ -431,21 +381,16 @@ export function checkSemanticBridging(
     });
 
     if (consumerForStatus.length === 0) {
-      continue; // Status not handled — already caught by provider coverage
+      continue; // provider coverage reports an unhandled status
     }
 
-    // For each provider transition, check two kinds of discriminators:
-    // 1. Distinguishing literals (field values that differ between siblings)
-    // 2. Distinguishing fields (fields present in one sibling but not another)
     for (const pt of providerTransitions) {
-      // --- Literal discrimination ---
       const distinguishing = findDistinguishingLiterals(
         pt,
         providerTransitions,
       );
 
       if (distinguishing.length > 0) {
-        // Check if any consumer field test matches ANY distinguishing literal
         const anyLiteralMatched = distinguishing.some((lit) =>
           consumerFieldTests.some((test) => {
             if (!pathsEqual(test.bodyPath, lit.path)) {
@@ -457,7 +402,7 @@ export function checkSemanticBridging(
             if (test.type === "negatedEquality") {
               return test.value !== lit.value;
             }
-            // Truthiness or field-presence: same path is enough
+            // A truthiness test on the same path is enough.
             return true;
           }),
         );
@@ -465,7 +410,7 @@ export function checkSemanticBridging(
         if (!anyLiteralMatched) {
           const lit = distinguishing[0];
           // A condition the extractor could not decompose may test this
-          // value, so certainty is not available (#126).
+          // value, so the finding drops to low confidence (#126).
           findings.push(
             sawOpaqueCondition
               ? {
@@ -486,16 +431,14 @@ export function checkSemanticBridging(
                 },
           );
         }
-        continue; // Literal discrimination takes priority
+        continue;
       }
 
-      // --- Field-presence discrimination ---
-      // Only fires when there are no distinguishing literals (otherwise
-      // the literal check above is more specific).
+      // Field presence is checked only when no literal tells the cases
+      // apart, since the literal check is more specific.
       const presenceFields = findDistinguishingFields(pt, providerTransitions);
 
       if (presenceFields.length > 0) {
-        // Check if the consumer tests any of the presence-distinguishing fields
         const anyPresenceMatched = presenceFields.some((field) =>
           consumerFieldTests.some((test) =>
             pathsEqual(test.bodyPath, field.path),
