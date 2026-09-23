@@ -1,12 +1,12 @@
 # How the Terraform reader reads a configuration
 
-The reference for `@suss/contract-terraform`: the references it follows and the ones it leaves as written, the blocks it expands, the module calls it walks into, and how a deployable unit is placed. The [README](./README.md) says what the package is for.
+`@suss/contract-terraform` follows some references and leaves others as written. It expands repeated blocks, walks into module calls, and works out which code a deployable unit runs. The [README](./README.md) explains what the package is for.
 
-## A way in that copies part of an item
+## An index that copies part of an item
 
-A DynamoDB index does not contain the whole item. `projection_type = "INCLUDE"` copies the attributes it lists, `KEYS_ONLY` copies none, and both copy the index's keys and the table's. A reader asking that index for anything else gets nothing back for it, and the store raises no error, so the caller sees an item with fields missing and nothing says why.
+A DynamoDB index does not contain the whole item. `projection_type = "INCLUDE"` copies the attributes it lists, and `KEYS_ONLY` copies none. Both copy the index's keys and the table's. If a reader asks that index for any other attribute, it gets nothing back and the store raises no error, so the caller sees an item with fields missing and no explanation.
 
-So an index like that declares every field it will ever have, and its contract says `exhaustive` where the table's says `partial`. A pack states which attributes have that, under `serves`, and a store without the idea leaves it out.
+So an index like that declares every field it will ever have, and its contract says `exhaustive` where the table's says `partial`. A pack lists which attributes control this, under `serves`. A store without this concept leaves it out.
 
 ## A resource that reads what another one declares
 
@@ -31,21 +31,21 @@ resource "signals_watch" "refusals_climbing" {
 }
 ```
 
-An entry with `kind: "metric"` says how the deployed identity is spelled, as a `metricTypeTemplate` whose `{...}` holes are attribute paths on the resource, so the reader can build the string the other side spells. A hole the resource leaves unset makes the whole identity unknown, since half a name pairs with the wrong metric as readily as with the right one.
+An entry with `kind: "metric"` gives the pattern of the deployed identity as a `metricTypeTemplate`, whose `{...}` holes are attribute paths on the resource. The reader uses it to build the same string the other side writes. If the resource leaves one of those attributes unset, the whole identity is unknown, since half a name is as likely to pair with the wrong metric as with the right one.
 
-An entry with `kind: "metric-reading"` says which blocks one reading is written inside, and how that reading spells the metric it is about. Two providers do that differently and both are covered. Cloud Monitoring states a selector, so the entry gives the attribute and the key inside it, `{ from: "query", attribute: "filter", key: "metric.type" }`. CloudWatch writes the namespace and the name in attributes of the alarm, so the entry gives a template instead, `{ from: "attributes", template: "{namespace}/{metric_name}" }`. Each reading becomes its own consumer summary, since one resource usually states several, each about a different metric.
+An entry with `kind: "metric-reading"` lists the blocks that one reading is written inside, and how that reading refers to the metric it is about. Two providers do this differently, and both are covered. Cloud Monitoring writes a selector, so the entry gives the attribute and the key inside it, `{ from: "query", attribute: "filter", key: "metric.type" }`. CloudWatch writes the namespace and the name as attributes of the alarm, so the entry gives a template instead, `{ from: "attributes", template: "{namespace}/{metric_name}" }`. Each reading becomes its own consumer summary, since one resource usually has several, each about a different metric.
 
-The selector is a small query language rather than a name, so `parseFilterQuery` reads it: comparisons joined by `AND` and `OR`, with parentheses, `NOT`, quoted or bare values, and terms written next to each other for AND. A key may quote one of its own segments, `metric.label."response_code_class"`, and that comes back as one key with the quotes off. A call may stand where a comparison would, which is how Cloud Monitoring writes an SLO burn-rate condition, and `filterCalls` gives those back. The parser is exported, so a pack that has to read the same string for something else does not write a second one. A selector it cannot read leaves the reading with no metric on it, which pairs with nothing.
+The selector is written in a small query language, so `parseFilterQuery` reads it. It handles comparisons joined by `AND` and `OR`, parentheses, `NOT`, quoted or bare values, and terms written next to each other, which mean AND. A key can quote one of its own segments, as in `metric.label."response_code_class"`, and that comes back as one key with the quotes removed. A call can stand where a comparison would, which is how Cloud Monitoring writes an SLO burn-rate condition, and `filterCalls` returns those. The parser is exported, so a pack that has to read the same string for another reason does not need its own. If the parser cannot read a selector, the reading has no metric on it and does not pair with anything.
 
-Both kinds also say what the resource's own words mean in suss's terms, so the checker never learns a provider's vocabulary. A pack writes `values: { attribute: "shape.value_type", means: { SPREAD: "histogram", SCALAR: "number" } }`, the reader takes the value at that attribute, dotted paths stepping into nested blocks, looks it up in the table, and writes the answer to `metricContract` on the summary. `accumulates` works the same way. A value the table does not list says nothing, the same as an attribute the configuration never set.
+Both kinds of entry also translate the resource's own terms into suss's, so the checker never needs to know a provider's vocabulary. A pack writes `values: { attribute: "shape.value_type", means: { SPREAD: "histogram", SCALAR: "number" } }`. The reader takes the value at that attribute, with dotted paths going into nested blocks, looks it up in the table, and writes the result to `metricContract` on the summary. `accumulates` works the same way. A value the table does not list records nothing, the same as an attribute the configuration never set.
 
-A reading translates two things the same way. `comparesTo: { attribute: "limit", whenSet: "number" }` says the reading compares the series against a single number when it states a limit at all, since a threshold is a number by being written down. `reducesTo` maps an aligner or reducer to what it leaves behind. Both land on the summary under `metricReading`, along with the setting and the values that would reduce the series, so a finding can name the fix without the checker knowing which provider it came from.
+A reading translates two more things the same way. `comparesTo: { attribute: "limit", whenSet: "number" }` means the reading compares the series against a single number whenever it sets a limit, since a threshold that is written down is a number. `reducesTo` maps an aligner or reducer to what it leaves behind. Both end up on the summary under `metricReading`, along with the setting and the values that would reduce the series. So a finding can suggest the fix without the checker knowing which provider the resource came from.
 
-Comparing the two sides is `checkMetric` in `@suss/checker`, and it runs off summaries alone. No pack is loaded at check time.
+`checkMetric` in `@suss/checker` compares the two sides, using only the summaries. No pack is loaded at check time.
 
 ## A reference to a resource in the same configuration
 
-The side that reads a metric often spells the name through a Terraform reference rather than by copying the string:
+The side that reads a metric often refers to the name through a Terraform reference instead of copying the string:
 
 ```hcl
 resource "signals_counter" "refused" {
@@ -61,21 +61,21 @@ resource "signals_watch" "refused_sustained" {
 }
 ```
 
-Both resources deploy the same string, and the configuration already says what it is, so the reference resolves to `signals.example/counters/edp-sweep-refused` on both summaries and the two pair. Left as the hole `{signals_counter.refused.name}`, the two sides of one configuration spell the same metric differently and pair with nothing.
+Both resources deploy the same string, and the configuration already states it, so the reference resolves to `signals.example/counters/edp-sweep-refused` on both summaries and the two pair. If the reference were left as the hole `{signals_counter.refused.name}`, the two sides of one configuration would write the same metric differently and would not pair.
 
-Only `<resource_type>.<label>.<attribute>` resolves, and only when that resource writes the attribute as a literal string. An attribute the provider fills in at apply time, an `id` or an `arn` or a `self_link`, is not written anywhere in the file, so nothing is found and the hole stays. A `var.` at the root stays a hole: a variable's default is not what production runs with, and a name built from a stage prefix has to go on pairing with whatever stage the code that meets it was written for.
+Only `<resource_type>.<label>.<attribute>` resolves, and only when that resource sets the attribute to a literal string. An attribute the provider fills in at apply time, such as an `id`, an `arn` or a `self_link`, is not written in the file, so the reader finds nothing and the hole stays. A `var.` at the root also stays a hole. A variable's default is not what production runs with, and a name built from a stage prefix has to keep pairing with whatever stage the matching code was written for.
 
-A reference whose attribute is itself built from another reference is followed four hops, and then the hole stays. Two resources that refer to each other leave the value exactly as it was written.
+When a reference's attribute is itself built from another reference, the reader follows up to four hops, and then leaves the hole. Two resources that refer to each other keep the value exactly as written.
 
-The scope is every file being read together, so a reference finds a resource another file in the module states, the way Terraform reads a module.
+The scope is every file read together, so a reference can find a resource declared in another file of the module, the same way Terraform reads a module.
 
 ## A name a locals block states
 
-A configuration that writes `local.table_name = "orders-v1"` and refers to it from every resource has stated that name as plainly as a resource would, so a reference to it resolves. One built from a variable, `"${var.environment}-orders-v1"`, expands to a value that still has a variable in it, which becomes a hole again, so a name built from a stage prefix reads the way it always did.
+A configuration that writes `local.table_name = "orders-v1"` and refers to it from every resource has stated that name as directly as a resource would, so a reference to it resolves. A local built from a variable, such as `"${var.environment}-orders-v1"`, expands to a value that still contains a variable, which becomes a hole again. So a name built from a stage prefix is read the same way as before.
 
 ## A module call this reader follows
 
-Plenty of configurations declare no resources at all at the root. They call a module per service, and every table and function is inside the child:
+Many configurations declare no resources at the root. They call one module per service, and every table and function is inside the child:
 
 ```hcl
 locals {
@@ -89,25 +89,25 @@ module "orders" {
 }
 ```
 
-A `source` that says which directory beside this one, `./` or `../`, is followed, and that directory's `.tf` files are read as a module of their own. Everything the child declares gets `module.orders.` in front of its summary name and its deployable unit, so calling one module twice gives two sets of boundaries rather than one set that collides. A directory that would call itself back is read once.
+When a `source` points at a directory next to this one, with `./` or `../`, the reader follows it and reads that directory's `.tf` files as a module of their own. Everything the child declares gets `module.orders.` in front of its summary name and its deployable unit, so calling one module twice gives two sets of boundaries, and they do not collide. A directory that would call itself back is read once.
 
-A `source` pointing at a registry, a git repository or an S3 bucket is code the repository does not contain, so it is skipped and nothing is said about what is inside. An argument built from another module's output does not resolve either, since the arguments of every call are settled before any child is read.
+A `source` that points at a registry, a git repository or an S3 bucket is code outside the repository, so the reader skips it and records nothing about its contents. An argument built from another module's output does not resolve either, since the arguments of every call are settled before any child is read.
 
 ## A variable a module call passed in
 
-Each module gets a scope of its own, since a child's `local.stage` is the child's and says nothing about the root's. The two are joined in the two places Terraform joins them.
+Each module gets its own scope, since a child's `local.stage` belongs to the child and has nothing to do with the root's. The two scopes are joined in the two places Terraform joins them.
 
-Going down, `var.table_name` inside a child resolves to the literal the calling `module` block passed in, so a module called twice with two table names declares two tables and each one pairs with the code that addresses it. An argument built at deploy time is a hole with another name on it, so the child keeps its own hole rather than taking the parent's. A configuration read at its root has nothing to pass its variables in, and `${var.stage}` there stays a hole as it always has.
+Going down, `var.table_name` inside a child resolves to the literal that the calling `module` block passed in. So a module called twice with two table names declares two tables, and each one pairs with the code that addresses it. An argument built at deploy time is a hole under another name, so the child keeps its own hole instead of taking the parent's. A configuration read at its root has nothing to pass its variables in, and `${var.stage}` there stays a hole, as before.
 
-A map argument crosses whole, which is how a module usually takes the environment it hands its container: the root writes `env = { ORDERS_TABLE = example_table.orders.name }`, the child writes `for_each = var.env`, and the keys of the passed map are what the expansion writes. Each entry is read in the module that wrote it, so the reference above comes out as the table's own name, and an entry the parent could not settle crosses as written and becomes a hole in the child like any other value. What the call passed wins over the `variable` block's own `default`, which fills only a gap the call left.
+A map argument is passed whole, which is how a module usually receives the environment it gives its container. The root writes `env = { ORDERS_TABLE = example_table.orders.name }`, the child writes `for_each = var.env`, and the expansion uses the keys of the passed map. Each entry is read in the module that wrote it, so the reference above comes out as the table's own name. An entry the parent could not settle is passed as written, and becomes a hole in the child like any other value. What the call passed wins over the `variable` block's own `default`, which only fills a value the call left out.
 
-Going up, `module.orders.table_name` resolves through the child's `output` block, and only when the value settles inside the child. An output that still has a hole in it is left out, so the parent reads `{module.orders.table_name}` and pairs on nothing rather than on half a name.
+Going up, `module.orders.table_name` resolves through the child's `output` block, but only when the value settles inside the child. An output that still has a hole in it is left out, so the parent reads `{module.orders.table_name}` and does not pair on half a name.
 
-A `variable` block's own `default` resolves nowhere. It says what a deployment would get if it passed nothing, which is a guess about production. The one reader of it is a `for_each`, where it decides how many blocks the module writes rather than what any of them says.
+A `variable` block's own `default` is not used to resolve anything. It is what a deployment gets if it passes nothing, which is a guess about production. The one place it is read is a `for_each`, where it decides how many blocks the module writes, and not what any of them contains.
 
 ## A block written once and deployed many times
 
-A module rarely writes a container's variables out one block at a time. It writes one block and says what to iterate over:
+A module rarely writes a container's variables one block at a time. It writes one block and gives what to iterate over:
 
 ```hcl
 locals {
@@ -129,22 +129,22 @@ resource "google_cloud_run_v2_service" "api" {
 }
 ```
 
-`for_each` settles where the configuration already says what is in it: a map literal, a `locals` entry, a `variable` block's `default`, an argument a `module` call passed in, or a `merge` of those. Each key becomes one block, with `env.key`, `env.value` and `env.value.<field>` filled in, and the block that comes out is read exactly as a hand-written one would be. So this container declares `DB_NAME`, `LOG_LEVEL` and `SERVICE_ROLE`, with `DB_NAME` set to the pattern `{var.db_name}` and `SERVICE_ROLE` to the text `api`. A module that renames the iterator with `iterator = item` is read the same way.
+A `for_each` settles when the configuration already gives its contents: a map literal, a `locals` entry, a `variable` block's `default`, an argument a `module` call passed in, or a `merge` of those. Each key becomes one block, with `env.key`, `env.value` and `env.value.<field>` filled in, and the resulting block is read exactly as if it were written by hand. So this container declares `DB_NAME`, `LOG_LEVEL` and `SERVICE_ROLE`, with `DB_NAME` set to the pattern `{var.db_name}` and `SERVICE_ROLE` set to the text `api`. A module that renames the iterator with `iterator = item` is read the same way.
 
-ECS takes its containers as JSON rather than as blocks, so the same environment is written `environment = [for k, v in local.worker_env : { name = k, value = v }]`, and that expands the same way.
+ECS takes its containers as JSON instead of blocks, so the same environment is written `environment = [for k, v in local.worker_env : { name = k, value = v }]`, and that expands the same way.
 
-A `for_each` nothing settles, one a data source supplies, leaves the container with the variables the platform injects and nothing else. A `merge` missing one of its parts states fewer keys than the deployment will, which is worse than stating none, so it settles nothing either. An expanded block that still has its iterator in it, where the content reaches deeper into an entry than the map goes, is left out for the same reason.
+A `for_each` that cannot be settled, such as one a data source supplies, leaves the container with only the variables the platform injects. A `merge` with one of its parts missing would list fewer keys than the deployment will have, which is worse than listing none, so it does not settle either. An expanded block that still contains its iterator, because the content reaches deeper into an entry than the map goes, is left out for the same reason.
 
 ## Which code a deployable unit runs
 
-A configuration says which handler runs and never which directory the deployed artifact was built from. Where the handler matches a module in the run, that module's imports are the code the unit runs. Where it matches nothing, the unit is reported as one whose code could not be placed rather than being given the repository.
+A configuration gives the handler that runs, but never the directory the deployed artifact was built from. When the handler matches a module in the run, that module's imports are the code the unit runs. When it matches nothing, the unit is reported as one whose code could not be placed, and it is not given the whole repository.
 
-A container deployable states no handler at all, since its image was built somewhere else, so the caller says where the code is:
+A container deployable has no handler at all, since its image was built elsewhere, so the caller gives the location of the code:
 
 ```bash
 suss contract --from terraform infra/ --code-scope api/web=services/api
 ```
 
-`codeScopes` on the read options does the same thing in the library. The name on the left is the unit's instance name, the one the summary states: `confirm` for a Lambda resource labelled `confirm`, `api/web` for the `web` container of a task definition labelled `api`, and `module.orders.writer` for a resource read through a `module` block. What goes on the summary is `codeScope: { kind: "codeUri", path }`, the same thing a CloudFormation template's own `CodeUri` produces.
+`codeScopes` in the read options does the same thing in the library. The name on the left is the unit's instance name, as the summary records it: `confirm` for a Lambda resource labelled `confirm`, `api/web` for the `web` container of a task definition labelled `api`, and `module.orders.writer` for a resource read through a `module` block. The summary gets `codeScope: { kind: "codeUri", path }`, the same value a CloudFormation template's own `CodeUri` produces.
 
-Pointing two units at one directory makes that directory decide nothing. A file in it that states no unit of its own is contested between them, so it pairs with neither and the check says why. Give each unit the narrowest directory that contains only its code.
+If two units point at one directory, that directory no longer decides anything. A file in it that does not declare a unit of its own is contested between them, so it pairs with neither, and the check explains why. Give each unit the narrowest directory that contains only its own code.
