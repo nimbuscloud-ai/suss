@@ -277,6 +277,76 @@ describe("env-var recognizer — happy path", () => {
     expect(byName.get("HOST")?.interaction.defaulted).toBe(false);
   });
 
+  it("marks a read defaulted when the program only uses it behind a presence test", () => {
+    const file = makeProject(`
+      declare function lookUpVersionElsewhere(): void;
+      declare function enableFeature(): void;
+      declare function noCache(): void;
+      declare function useCache(url: string): void;
+      let resolved: string | undefined;
+      export function initVersion() {
+        const version = process.env.APP_VERSION;
+        if (version) {
+          resolved = version;
+          return;
+        }
+        lookUpVersionElsewhere();
+      }
+      export function start() {
+        if (process.env.FEATURE_FLAG) {
+          enableFeature();
+        }
+        const region = process.env.REGION !== undefined ? process.env.REGION : "us-east-1";
+        if (!process.env.CACHE_URL) {
+          return noCache();
+        }
+        useCache(process.env.CACHE_URL);
+      }
+    `);
+    const reads = findProcessEnvReads(file);
+    expect(reads.map((r) => [r.name, r.defaulted])).toEqual([
+      ["APP_VERSION", true],
+      ["FEATURE_FLAG", true],
+      ["REGION", true],
+      ["REGION", true],
+      ["CACHE_URL", true],
+      ["CACHE_URL", true],
+    ]);
+  });
+
+  it("leaves a read undefaulted when its local is also used outside the test", () => {
+    const file = makeProject(`
+      declare function use(value: string | undefined): void;
+      export function start() {
+        const url = process.env.SERVICE_URL;
+        if (url) {
+          use(url);
+        }
+        use(url);
+      }
+    `);
+    const reads = configReadEffectsOf(recognizeAll(file));
+    expect(reads[0]?.interaction.defaulted).toBe(false);
+  });
+
+  it("marks a destructured read defaulted when its local is used only behind a test", () => {
+    const file = makeProject(`
+      declare function use(value: string): void;
+      export function start() {
+        const { PORT, HOST } = process.env;
+        if (PORT) {
+          use(PORT);
+        }
+        use(HOST ?? "localhost");
+        use(String(HOST));
+      }
+    `);
+    const reads = configReadEffectsOf(recognizeAll(file));
+    const byName = new Map(reads.map((r) => [r.interaction.name, r]));
+    expect(byName.get("PORT")?.interaction.defaulted).toBe(true);
+    expect(byName.get("HOST")?.interaction.defaulted).toBe(false);
+  });
+
   it("names no variable for a rest element, which stands for the others", () => {
     const file = makeProject(`
       const { PORT, ...rest } = process.env;
@@ -980,7 +1050,7 @@ describe("a helper call resolved from the caller's side", () => {
         if (process.env[key]) {
           return process.env[key] ?? "";
         }
-        return "";
+        return String(process.env[key]);
       }`,
     );
     const handler = project.createSourceFile(
