@@ -23,6 +23,8 @@ import {
   readCallArgs,
   stringLiteralValue,
 } from "./ast.js";
+import { isDefaultedAt } from "./defaulted.js";
+import { envSpellingAt, isEnv } from "./envSpellings.js";
 import {
   resolvedFunctions,
   resolveEnvObjects,
@@ -186,13 +188,13 @@ export function emitEnvFacts(db: Database, file: string, root: RbNode): void {
           readKey(file, node, enclosingDefinition(node)),
         ]);
       }
-      const site = envSiteAt(node);
+      const spelling = envSpellingAt(node);
       if (
-        site !== null &&
-        site.defaulted &&
-        stringLiteralValue(site.name) === null
+        spelling !== null &&
+        stringLiteralValue(spelling.name) === null &&
+        envSiteAt(node)?.defaulted === true
       ) {
-        db.add(ENV_DEFAULTED, [nodeId(file, site.read)]);
+        db.add(ENV_DEFAULTED, [nodeId(file, node)]);
       }
     },
     into: () => null,
@@ -210,8 +212,8 @@ function handsOnward(node: RbNode): boolean {
     return true;
   }
   if (parent.type === "element_reference" || parent.type === "call") {
-    const site = envSiteAt(parent);
-    return site === null || stringLiteralValue(site.name) === null;
+    const spelling = envSpellingAt(parent);
+    return spelling === null || stringLiteralValue(spelling.name) === null;
   }
   return true;
 }
@@ -345,93 +347,13 @@ function envReadAt(node: RbNode): EnvRead | null {
 }
 
 function envSiteAt(node: RbNode): EnvSite | null {
-  if (node.type === "element_reference") {
-    return elementSite(node);
-  }
-  if (node.type === "call") {
-    return fetchSite(node);
-  }
-  return null;
-}
-
-/** `ENV["X"]`, which is nil when the variable is unset unless an `||` supplies a fallback. */
-function elementSite(node: RbNode): EnvSite | null {
-  const object = field(node, "object");
-  if (object === null || !isEnv(object) || isAssignedTo(node)) {
+  const spelling = envSpellingAt(node);
+  if (spelling === null) {
     return null;
   }
-  const index = node.namedChildren.find(
-    (child): child is RbNode => child !== null && child.id !== object.id,
-  );
-  if (index === undefined) {
-    return null;
-  }
-  return { read: node, name: index, defaulted: isDefaultedAt(node) };
-}
-
-/** `ENV.fetch("X")`, defaulted when a second argument or a block supplies the fallback. */
-function fetchSite(node: RbNode): EnvSite | null {
-  const receiver = field(node, "receiver");
-  if (
-    receiver === null ||
-    !isEnv(receiver) ||
-    field(node, "method")?.text !== "fetch"
-  ) {
-    return null;
-  }
-  const { positional } = readCallArgs(field(node, "arguments"));
-  const name = positional[0];
-  if (name === undefined) {
-    return null;
-  }
-  const hasDefault = positional.length > 1 || field(node, "block") !== null;
-  return { read: node, name, defaulted: hasDefault || isDefaultedAt(node) };
-}
-
-/** The core `ENV` object, written bare or as `::ENV`. */
-function isEnv(node: RbNode): boolean {
-  if (node.type === "constant") {
-    return node.text === "ENV";
-  }
-  return (
-    node.type === "scope_resolution" &&
-    field(node, "scope") === null &&
-    field(node, "name")?.text === "ENV"
-  );
-}
-
-/** `ENV["X"] = v` changes the environment rather than reading it. */
-function isAssignedTo(node: RbNode): boolean {
-  const parent = node.parent;
-  return (
-    parent !== null &&
-    (parent.type === "assignment" || parent.type === "operator_assignment") &&
-    field(parent, "left")?.id === node.id
-  );
-}
-
-/**
- * Whether an `||` supplies a value when this read comes back nil. The
- * climb continues through a chain, so B in `A || B || "d"` counts, and
- * stops where the read is the final operand and is itself the fallback.
- */
-function isDefaultedAt(node: RbNode): boolean {
-  let child = node;
-  let parent = node.parent;
-  while (parent !== null) {
-    if (parent.type === "parenthesized_statements") {
-      child = parent;
-      parent = parent.parent;
-      continue;
-    }
-    if (parent.type !== "binary" || field(parent, "operator")?.text !== "||") {
-      return false;
-    }
-    if (field(parent, "left")?.id === child.id) {
-      return true;
-    }
-    child = parent;
-    parent = parent.parent;
-  }
-  return false;
+  return {
+    read: node,
+    name: spelling.name,
+    defaulted: spelling.hasDefault || isDefaultedAt(node, spelling),
+  };
 }
