@@ -6,8 +6,8 @@ the rest is unimplemented.
 ## The problem
 
 Running the full pipeline against a production serverless monorepo
-turned up four failures. Three of them share a cause, and it is not the
-one the symptoms suggest.
+turned up four failures. Three of them share a cause, and the symptoms
+point somewhere else.
 
 1. `suss extract -p tsconfig.json -f aws-lambda` wrote zero summaries
    and exited 0. Every pack that discovers through a callback was
@@ -15,7 +15,7 @@ one the symptoms suggest.
 2. Every extracted status code and body came back swapped, at
    `confidence: high`, with no gap. The project builds its response
    envelope through a local helper, and the pack assumed an argument
-   order for it rather than reading the helper. It assumed the wrong
+   order for it instead of reading the helper. It assumed the wrong
    one.
 3. Pairing the template-declared routes against the extracted handlers
    reported `Paired 0 provider-consumer combinations` and `No findings`,
@@ -24,7 +24,7 @@ one the symptoms suggest.
    every call in that frontend goes through one local hook wrapping the
    Apollo hook, and the pack looks for the library call itself.
 
-Number 1 was a stale duplicate of a predicate and is fixed. The
+Failure 1 came from a stale duplicate of a predicate and is fixed. The
 remaining three are below, along with the part of 4 that shares a
 mechanism with 2.
 
@@ -35,7 +35,7 @@ produces nothing, without recording that it produced nothing.
 
 We already have a rule for this. Degradation is explicit, nothing is
 silently skipped, and checkers report what was checked and what was not
-rather than only what was found. The extractor enforces that rule
+instead of only what was found. The extractor enforces that rule
 inside itself: opaque predicates keep their source text, `detectGaps`
 runs both directions, and the Lambda pack emits `recognized-not-http`
 units so a declared handler is never dropped without a record.
@@ -45,9 +45,9 @@ discovery, terminal to helper, and pairing to checker. At each of
 those, one stage returns an empty result and the next cannot tell
 "there was nothing there" from "I could not look."
 
-For a tool whose output is a report about someone's code, that is the
-failure mode with the highest cost. A crash gets reported. An
-error-free report gets believed.
+For a tool whose output is a report about someone's code, that failure
+costs the most. A crash gets reported. An error-free report gets
+believed.
 
 ## Part 1: extraction diagnostics
 
@@ -55,19 +55,20 @@ error-free report gets believed.
 
 The CLI could work out why extraction returned nothing: re-read the
 tsconfig, re-check the gates, report. That means a second copy of the
-pre-filter's logic. A second copy of that logic drifting from the first
-is what caused failure 1, where `lazyProjectInit.ts` had an outdated
+pre-filter's logic. Failure 1 came from exactly that: a second copy
+drifted from the first, and `lazyProjectInit.ts` had an outdated
 `packIsUngated` in it. So the pipeline produces the accounting and
-hands it out to the CLI.
+hands it to the CLI.
 
-The seam already exists. `TypeScriptAdapterConfig` has `onTiming` and
-`onCacheDiagnostic`, each a per-run report the adapter fills and the
-CLI renders. A third one of the same kind adds no new concept.
+The hook for this already exists. `TypeScriptAdapterConfig` has
+`onTiming` and `onCacheDiagnostic`, each a per-run report the adapter
+fills and the CLI renders. A third one of the same kind adds no new
+concept.
 
 ### What it records
 
-The question "why zero" is always "at which stage did the count reach
-zero", so the report is a funnel:
+The question "why zero" always comes down to "at which stage did the
+count reach zero", so the report is a funnel:
 
 | Stage | Recorded |
 |---|---|
@@ -78,27 +79,28 @@ zero", so the report is a funnel:
 | terminals | units that produced no terminal |
 | accounting | units dropped on purpose, with the reason |
 
-The gate-resolution row is the one worth designing rather than
-inheriting. "The gate matched no files" and "the gate matched files but
-the module does not resolve" are different problems with different
-fixes, and today both present as zero. One `ts.resolveModuleName` call
-per gate separates them, and turns the Apollo case from silence into a
-sentence: the `@apollo/client` gate matched files, the specifier does
-not resolve from this tsconfig, install dependencies. That also covers
-an undocumented prerequisite: packs that rely on symbol resolution need
-the target's dependencies installed, and packs that rely on textual
-gates do not.
+The gate-resolution row is the one that needs new design; the other
+rows come from what exists. "The gate matched no files" and "the gate
+matched files but the module does not resolve" are different problems
+with different fixes, and today both show up as zero. One
+`ts.resolveModuleName` call per gate separates them. It also gives the
+Apollo case a message where today there is silence: the
+`@apollo/client` gate matched files, the specifier does not resolve
+from this tsconfig, install dependencies. That covers an undocumented
+prerequisite too. Packs that rely on symbol resolution need the
+target's dependencies installed, and packs that rely on textual gates
+do not.
 
 ### Rendering
 
 It stays quiet on the happy path. When the summary count is zero, print
-the funnel and say which stage the count reached zero at. `--explain` prints it
-always. `--fail-on-empty` gives CI a gate, since a project may
-legitimately have no boundaries and the default exit code should not
-assume otherwise.
+the funnel and say at which stage the count reached zero. `--explain`
+always prints it. `--fail-on-empty` gives CI a gate, since a project
+may legitimately have no boundaries and the default exit code should
+not assume otherwise.
 
-Structure the report as data with a rendering on top rather than as a
-printed string. Other consumers want it.
+Structure the report as data with a rendering on top, instead of as a
+printed string. Other consumers need it too.
 
 ## Part 2: helper resolution
 
@@ -106,8 +108,8 @@ printed string. Other consumers want it.
 
 Discovery patterns can bind to an import. `DiscoveryPattern` has a
 `requiresImport` field, and a match like `graphqlHookCall` has an
-`importModule` field, so discovery can say "only if this came from the
-library."
+`importModule` field, so discovery can express "only if this came from
+the library."
 
 Terminal patterns cannot. The vocabulary is
 
@@ -115,29 +117,31 @@ Terminal patterns cannot. The vocabulary is
 | { type: "functionCall"; functionName: string }
 ```
 
-and the matcher compares `callee.getText()` against that string. No
-symbol resolution, no origin. So a pack that wants to recognize a
-library's response helper has no way to say so, and the pattern it can
-write matches any identically named function in the user's project.
+and the matcher compares `callee.getText()` against that string. It
+does not resolve symbols, and it ignores where the function came from. So a pack
+that wants to recognize a library's response helper has no way to
+declare that, and the pattern it can write matches any identically
+named function in the user's project.
 
 The pack contributed too. Its comment records the decision: for a
 same-module helper it "declares the envelope its name implies rather
-than resolving the helper body." It knew it was matching project-local
-code and encoded an argument order anyway.
+than resolving the helper body." Its author knew it was matching
+project-local code and wrote in an argument order anyway.
 
-The vocabulary gap made the failure possible. The pack's decision made
-it certain. Fixing only the pack leaves the next pack free to repeat it.
+The vocabulary gap made the failure possible, and the pack's decision
+made it certain. Fixing only the pack would leave the next pack free to
+repeat it.
 
 ### Two changes, doing different jobs
 
-**Origin binding on terminal matches.** Give terminals the same import
-binding that discovery already has and they lack. A pack can then say
-"the library's own `json`", and a same-named local helper stops
+**Origin binding on terminal matches.** Give terminal patterns the
+import binding that discovery patterns already have. A pack can then
+match "the library's own `json`", and a same-named local helper stops
 matching.
 
-On its own this yields zero terminals where it previously yielded
-inverted ones. That is better, because silence beats a wrong answer,
-and it is not enough on its own.
+On its own this yields zero terminals where it used to yield inverted
+ones. That is an improvement, because silence beats a wrong answer, but
+it is not enough.
 
 **Resolution through in-project callees.** When a return expression
 calls a function defined in the project, resolve the declaration, bind
@@ -146,23 +150,23 @@ inside the helper with that binding. The pack's existing
 `{ statusCode, body }` object-literal pattern then matches on the
 helper's return, and `statusCode` resolves back through the parameter
 binding to whichever argument the caller passed. Both argument orders
-work and the pack encodes neither.
+work, and the pack encodes neither.
 
-Parameter defaults come along for free. A call written
+Parameter defaults come with it at no extra cost. A call written
 `redirect(url, cookie)` against a declaration written
 `function redirect(location, cookie?, status = 302)` resolves to 302,
 which the positional guess gets wrong today.
 
-This is the staging decision 5 already commits to: in-project resolves
-to full extraction, typed dependencies to type information, untyped to
-opaque. The terminal layer is the one place that skips it.
+Decision 5 already commits to this staging: in-project resolves to full
+extraction, typed dependencies to type information, untyped to opaque.
+The terminal layer is the one place that skips it.
 
 ### The minimum bar if resolution slips
 
 When the callee is defined in the project and resolution fails, emit a
-gap rather than a value. Wrong at high confidence is the only outcome
-here worse than saying nothing. This is a small change and should land
-first regardless of when resolution does.
+gap instead of a value. A wrong answer at high confidence is the only
+outcome here that is worse than saying nothing. The change is small,
+and it should land first, whenever resolution lands.
 
 ### Inline resolution or units
 
@@ -184,29 +188,29 @@ parameters.
 
 By reference is better in the long run:
 
-- One extraction per helper rather than one per call site. When a
-  codebase funnels hundreds of call sites through a single wrapper,
-  that difference is the budget.
+- It extracts each helper once, instead of once per call site. When a
+  codebase routes hundreds of call sites through a single wrapper, that
+  difference is most of the cost.
 - Helpers calling helpers work by the same mechanism, with no hop
   limit to tune.
 - A helper in another workspace package is already a unit if that
   package was extracted. Inline resolution needs the file in the same
   ts-morph project.
-- It is where transitive recognition has to live. If a unit has a
+- Transitive recognition has to be built on it. If a unit has a
   boundary binding, a caller that inlines it can inherit that binding,
-  which is the answer to the local-wrapper case. Inline resolution has
-  nowhere to put that.
+  and that handles the local-wrapper case. Inline resolution has
+  nowhere to record the binding.
 
-It also brings the risk: a four-branch helper inlined at twenty call
-sites is eighty transitions. That needs a rule, something like inline
-when the helper's returns are envelopes the pack recognizes, keep a
+It also has a risk: a four-branch helper inlined at twenty call sites
+is eighty transitions. That needs a rule, something like: inline the
+helper when its returns are envelopes the pack recognizes, and keep a
 reference otherwise.
 
 **Build inline first**, because it is smaller and unblocks the terminal
 case. Set it up so the resolution step returns a memoized reference to
-a declaration rather than a raw `TypeShape`. A memo keyed on declaration
-node is one step from a unit registry, which makes the by-reference
-version an extension rather than a rewrite.
+a declaration instead of a raw `TypeShape`. A memo keyed on the
+declaration node is one step from a unit registry, so the by-reference
+version can extend it without a rewrite.
 
 ## Part 3: the conformance axis
 
@@ -214,14 +218,14 @@ version an extension rather than a rewrite.
 
 `pairSummaries` buckets on one axis, `BOUNDARY_ROLE[kind]`. The
 template summary and the handler summary are both `kind: "handler"`, so
-both are providers, so neither has a counterpart.
+both are providers and neither has a counterpart.
 
-`contracts.md` describes a second axis and treats it as the organizing
-idea of the document: specification against derivation against
-observation. Pairing does not read it. So two summaries that agree on
-boundary key and role but differ in character have no relationship
-pairing can express, even though the document says what their
-relationship is and how severe a disagreement is.
+`contracts.md` describes a second axis and organizes the whole document
+around it: specification against derivation against observation.
+Pairing ignores it. Two summaries that agree on boundary key and role
+but differ in character therefore have no relationship pairing can
+express, even though the document defines their relationship and how
+severe a disagreement is.
 
 ### Step zero: the character field does not exist yet
 
@@ -238,11 +242,10 @@ the code side. `checkContractConsistency` uses `provenance === "derived"`
 to mean "produced by the same source as the transitions, so comparing
 them is tautological."
 
-That is three meanings for one word, and one of them is close to the
-opposite of another. Dispatching on this field as it is today produces
-a checker that is confident about which side is the specification and
-wrong. Settle it
-first: either add a separate `character` field, or correct the
+That is three meanings for one word, and two of them are close to
+opposites. A checker that dispatched on this field as it is today would
+be confident about which side is the specification, and wrong. Settle
+it first: either add a separate `character` field, or correct the
 taxonomy and update the readers.
 
 ### The three relationships
@@ -257,7 +260,7 @@ type Relation =
   | { kind: "reconcile";   a; b };                     // contractDisagreement
 ```
 
-Worked example, an OpenAPI file beside an Express app:
+For example, an OpenAPI file beside an Express app:
 
 ```
 key: (POST, /users)
@@ -266,13 +269,13 @@ key: (POST, /users)
   useCreateUser   consumer  derivation     (fetch pack)
 ```
 
-Three comparisons from one group. Does the handler do what the spec
-declares. Does the client agree with the handler (ships today). Does
-the client handle what the spec declares. None of them require the
-packs to know about each other.
+One group gives three comparisons: whether the handler does what the
+spec declares, whether the client agrees with the handler (this ships
+today), and whether the client handles what the spec declares. None of
+them needs one pack to be aware of another.
 
 Two specifications on one key are the third kind. `contractDisagreement`
-already exists as a finding kind and nothing produces it on this path.
+already exists as a finding kind, but nothing on this path produces it.
 
 ### Why this rather than attaching contracts at extraction
 
@@ -281,36 +284,35 @@ code summary, the way ts-rest lifts `responses` into
 `metadata.http.declaredContract`. The Lambda pack already parses the
 template, so it could. That ships fastest and needs no new machinery.
 
-It works only where one pack owns both sides. An OpenAPI spec beside an
-Express app cannot be attached by the Express pack, which has no idea
-the spec exists. And it leaves `suss contract --from <source>` emitting
-summaries with nowhere to go, which is the state that produced
-`Paired 0` in the first place. Seven contract readers are in that
-position for the same reason.
+It works only where one pack reads both sides. The Express pack cannot
+attach an OpenAPI spec kept beside the app, because it never reads the
+spec. And it leaves `suss contract --from <source>` emitting summaries
+with nowhere to go. That is the state that produced `Paired 0` in the
+first place, and seven contract readers are in it for the same reason.
 
 ### Staging
 
-Classification and the conformance bucket first, before the comparison
-is built out. Pairing alone converts "No findings, exit 0" into "7
+Build classification and the conformance bucket first, before building
+out the comparison. Pairing alone turns "No findings, exit 0" into "7
 boundaries have both a declared route and an implementation, here is
-what was compared against what." That is the accounting rule again,
-which is the thread through all three parts.
+what was compared against what." That is the accounting rule again, and
+it runs through all three parts.
 
 ## Sequence
 
-1. **Extraction diagnostics.** Hours of work. It goes first, because no
-   result from the other two is trustworthy while silence stays
-   ambiguous.
+1. **Extraction diagnostics.** It is hours of work. It goes first,
+   because no result from the other two can be trusted while silence
+   stays ambiguous.
 2. **Gap on unresolved in-project helpers.** This one is small. It
    stops the wrong-at-high-confidence output before the resolution work
    lands.
 3. **Origin binding on terminal matches.** This stops packs asserting
    conventions over user code.
-4. **Inline helper resolution.** The primitive item 6 needs.
+4. **Inline helper resolution.** Item 6 needs this primitive.
 5. **Character field, then the conformance axis.**
 6. **Transitive recognition on the discovery side.** This is the
    wrapper case. It is the largest of these, and it should reuse item
-   4's resolution primitive rather than growing a second one.
+   4's resolution primitive instead of growing a second one.
 
 ## Open questions
 
