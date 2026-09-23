@@ -61,6 +61,26 @@ re-exported name is followed through to its last declaration first.
 Otherwise a barrel forwarding a dependency's function would look like
 project code.
 
+A stop that would come out `unsettledValue` gets one more try first. The
+closure asks the resolution store, through `functionValueOf`, which
+function the callee is. The store follows what the syntax cannot: a
+function destructured off a hook's result (`const { openModal } =
+useModal()`), a name written as a factory call (`const navigate =
+useNavigator()`), and a value a declared wrapper such as `useCallback`
+or `forwardRef` hands back. When it settles on one function with a body,
+the closure follows that function. Only this reason is asked about,
+because the store reads the files a question leads to, and every other
+stop is already settled by its declaration.
+
+The questions are asked once per body, all of that body's callees
+together, and each answer is kept under the callee's declaration for
+the rest of the walk. A question costs one derivation over the rules
+whether it asks about one value or forty, so asking per callee spent
+25 seconds of a 180 second extract of a large React front end, and
+asking per body spends under 4. A body that reuses another body's answer
+records the files that answer read, so the per-file cache still hears
+about them.
+
 | Reason | What it is | Gap? |
 | --- | --- | --- |
 | `noBody` | A declaration the project wrote that states a signature and leaves the body to whoever implements it: a method on an interface, an abstract method, an ambient declaration. | yes |
