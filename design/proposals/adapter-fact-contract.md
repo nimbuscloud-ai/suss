@@ -1,12 +1,12 @@
-# What an adapter owes the rules
+# The facts an adapter must supply
 
-`@suss/resolution` lists the facts a language adapter supplies and says
-what each one means in a sentence. It does not say how to key one. The
-TypeScript adapter answered that question years of commits ago, in its
-own source, and nothing wrote the answer down.
+`@suss/resolution` lists the facts a language adapter supplies and gives
+a one-sentence meaning for each. It does not say how to key one. The
+TypeScript adapter settled that in its own source long ago, and nobody
+wrote the answer down.
 
-Building the Python and Ruby adapters, five separate pieces went in
-wrong for that one reason. Each was already answered in
+While we built the Python and Ruby adapters, five separate pieces went in
+wrong for that one reason. The answer to each was already in
 `adapter/typescript/src/facts/extract.ts`.
 
 | What went in wrong | What TypeScript already did | How it surfaced |
@@ -17,51 +17,54 @@ wrong for that one reason. Each was already answered in
 | A parameter keyed by file and name | Keyed by the parameter's own node | Review, after merge |
 | Every value keyed by file and name | Every value keyed by the node that declares it | Review, after merge |
 
-Three of those five reached main. One of them, evaluating in full, cost a
-tenfold slowdown on a 417 file service. None of them were hard questions.
-They were all answered, in one file, that a person building a new adapter
-has no reason to know to read.
+Three of those five reached main. One of them, evaluating in full, made a
+417 file service ten times slower. None of them were hard questions. The
+answers were all in one file, and a person building a new adapter has no
+reason to know they should read it.
 
 ## What the contract is
 
-Six rules, which are what the TypeScript adapter does. None of this is
-new behaviour; it is what is already true, written where a second
-adapter author will find it.
+The contract is six rules, and the TypeScript adapter already follows all
+of them. None of this is new behaviour. It is written here so that the
+next adapter author finds it.
 
-**A value is the node that declares it.** Not its name. Two functions in
-one file that both take a `loader` declare two values, and a name that
-shadows another is a different value from the one it shadows.
+**A value is the node that declares it.** Its name does not identify it.
+Two functions in one file that both take a `loader` declare two values,
+and a name that shadows another is a different value from the one it
+shadows.
 
-**A read is its own node, linked to its declaration.** `binds(reference,
-declaration)` is what joins them. A reader that keys both sides by name
-gets the same answer only where a name happens to be unique, which is
-most of the time in a small test and rarely in a whole file.
+**A read is its own node, linked to its declaration.** The fact
+`binds(reference, declaration)` joins the two. A reader that keys both
+sides by name gets the same answer only where the name happens to be
+unique. That holds most of the time in a small test and rarely in a whole
+file.
 
-**A name appears in exactly one place.** `exportsAs(file, name, node)`,
-because a module genuinely exports under a name. Everywhere else a name
-is a value key, something has gone wrong.
+**A name appears in exactly one place.** That place is
+`exportsAs(file, name, node)`, because a module does export under a name.
+Anywhere else a name is used as a value key, something has gone wrong.
 
 **A call is a written value and gets no `comesTo`.** A chain ends at a
-call, and `isWrittenAs` is what reads one back. This is deliberate: a
-factory call usually is the wrapper, and answering with what it returns
-would fight the unwrapping answer.
+call, and `isWrittenAs` reads the call back. We chose this on purpose. A
+factory call usually is the wrapper, so returning what the factory
+returns would conflict with the answer that unwraps it.
 
-**A sequence keeps its elements under their positions.** An array, a
-list, a tuple: `objectValue` plus `holdsProperty` with the position as
-the key, so a property rule covers indexed access with no second rule.
+**A sequence keeps its elements under their positions.** For an array, a
+list or a tuple, the adapter emits `objectValue` plus `holdsProperty`
+with the position as the key. One property rule then covers indexed
+access, and indexed access does not need a second rule.
 
-**Derivation is demand driven.** Ask with `wanted`, evaluate the
-rewritten program. Both give the same answers and differ only in how
-much never gets derived at all.
+**Derivation is demand driven.** Ask with `wanted` and evaluate the
+rewritten program. Both ways give the same answers. The difference is
+that on demand, much of the program never gets derived at all.
 
 ## How it is enforced
 
-Writing it down is the smaller half. An adapter author reads the wrong
-thing or reads nothing, and prose does not fail a build.
+Writing the rules down is the smaller half. An adapter author reads the
+wrong thing or reads nothing, and prose does not fail a build.
 
-**A conformance kit an adapter runs.** Small programs in the adapter's
-own language, each with the facts it must produce, as a test suite the
-adapter imports. Something like:
+**A conformance kit an adapter runs.** The kit is a test suite the
+adapter imports. Each case is a small program in the adapter's own
+language, with the facts it must produce. Something like:
 
 ```
 conformsToFactContract(adapter, {
@@ -75,31 +78,31 @@ conformsToFactContract(adapter, {
 })
 ```
 
-Every one of the five above fails such a suite. The suite is written
-once and each adapter supplies the source for each case, which is the
-only part that differs by language.
+Every one of the five mistakes above fails a suite like this. We write
+the suite once, and each adapter supplies the source for each case. The
+source is the only part that differs by language.
 
-**A branded value key.** `ValueKey` produced only by `declarationKey(node)`,
-so a hand-built string does not typecheck. That kills the two keying
-mistakes at compile time rather than at review.
+**A branded value key.** Only `declarationKey(node)` produces a
+`ValueKey`, so a hand-built string does not typecheck. The two keying
+mistakes then fail at compile time, before anyone reviews them.
 
-The kit is worth more than the type. The type stops one class of error;
-the kit states the semantics and catches drift when a rule changes
-meaning.
+The kit matters more than the type. The type stops one class of error.
+The kit states what each rule means, and it catches drift when a rule
+changes meaning.
 
 ## Where it lives
 
 The kit belongs beside the rules it tests against, in `@suss/resolution`
-or next to it, because the contract is the rules' contract rather than
-any adapter's. The TypeScript adapter runs it too, and where it disagrees
-with the kit, the kit is what needs correcting, since TypeScript is the
-adapter the contract was read off.
+or next to it, because the contract belongs to the rules and to no one
+adapter. The TypeScript adapter runs the kit too. Where the adapter and
+the kit disagree, fix the kit, since the contract was read off the
+TypeScript adapter.
 
 ## What this does not settle
 
-Whether a general argument-to-parameter rule belongs in the shared rules.
-A parameter takes whatever any caller passes, so the relation is
-multi-valued, and a reader taking the first answer is wrong wherever a
-function has two call sites. That is a design question about soundness
-rather than a contract question, and the measured corpus needs an answer
-to it.
+This does not settle whether a general argument-to-parameter rule belongs
+in the shared rules. A parameter takes whatever any caller passes, so the
+relation has many values. A reader that takes the first answer is wrong
+wherever a function has two call sites. That is a design question about
+soundness and does not belong in the contract. The measured corpus
+still needs it settled.

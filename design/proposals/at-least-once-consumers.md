@@ -19,14 +19,13 @@ export const handler = async (event: SQSEvent) => {
 ```
 
 Run it twice on one message and the customer pays twice, and the ledger
-gains a second row. `checkMessageBus` says nothing, and
-`messageBusPairing.test.ts` pins the silence in "says nothing about a
-message arriving more than once".
+gains a second row. `checkMessageBus` reports nothing, and the test
+"says nothing about a message arriving more than once" in
+`messageBusPairing.test.ts` asserts that it stays silent.
 
-The two database calls are what suss sees. The payment call goes to a
-client no pack classifies, so it arrives as an `invocation` with a
-callee name and nothing else. Everything below is about the two calls
-suss can read.
+suss sees the two database calls. The payment call goes to a client no
+pack classifies, so it arrives as an `invocation` with a callee name and
+nothing else. Everything below is about the two calls suss can read.
 
 The pass compares the channel a producer sends to against the channel a
 consumer receives from, and the fields a producer writes into the body
@@ -39,10 +38,10 @@ scope.
 
 ## Delivery belongs to the provider
 
-Delivery is something only the side that declares the channel can
-state. A handler cannot read it off its own parameter. That is the
-boundary-identity split: semantics say what both sides can spell, and
-contract metadata says what only the provider knows. So it goes in
+Only the side that declares the channel can state how it delivers. A
+handler cannot read that off its own parameter. This follows the
+boundary-identity split: semantics are what both sides can spell, and
+contract metadata is what only the provider knows. So the field goes in
 `MessageBusMetadataSchema`, beside `enabled`:
 
 ```ts
@@ -77,13 +76,12 @@ What each reader can fill it from, using properties it already parses:
   CloudFormation reader, so a queue declared there gets `delivery` with
   no change of its own.
 - The wrangler reader emits a `cloudflare-queues` boundary per queue
-  binding. Cloudflare Queues deliver at least once, and the binding
-  says nothing that could change that, so every one of them is
-  `at-least-once`.
+  binding. Cloudflare Queues deliver at least once, and nothing in the
+  binding can change that, so every one of them is `at-least-once`.
 
-A reader that cannot tell leaves the field out. Absent is not
-`at-least-once`: a check that treated it that way would fire on every
-channel nobody has taught suss to read.
+A reader that cannot tell leaves the field out. An absent field does not
+mean `at-least-once`. A check that treated it that way would fire on
+every channel whose declaration suss cannot read yet.
 
 The checker resolves delivery for a consumer by taking the consumer's
 own value first, then the value on the providers its channel pairs
@@ -115,11 +113,10 @@ write, which is false, and a warning a reader can falsify at a glance
 is worse than no warning. Comparing them by value needs the value the
 key was set to, and no effect records it.
 
-Take the property from the pack instead. That is what
-`metadata.http.failureDelivery` does: the pack says whether its client
-throws on a non-2xx, and `providerCoverage` never has to know what
-axios is. The storage-access interaction gains one field in suss's own
-vocabulary:
+Take the property from the pack instead. `metadata.http.failureDelivery`
+already works this way: the pack declares whether its client throws on
+a non-2xx, so `providerCoverage` needs no knowledge of axios. The
+storage-access interaction gains one field in suss's own vocabulary:
 
 ```ts
 /** Whether running this call again changes the store again. A pack
@@ -129,7 +126,7 @@ onRepeat: z.enum(["settles", "accumulates"]).optional(),
 
 `settles` means a second run leaves the store as the first run left it.
 `accumulates` means it does not. The library method names stay in the
-packs and in their `vocabulary.json`, where `check:vocabulary` polices
+packs and in their `vocabulary.json`, where `check:vocabulary` checks
 them:
 
 - Prisma's `create` and `createMany` insert a row per call, and a
@@ -148,8 +145,8 @@ library names of their own.
 
 ## The finding
 
-`messageBusRepeatUnsafe`, warning, emitted by `checkMessageBus`. It
-fires when all three of these are true:
+The new finding is `messageBusRepeatUnsafe`, a warning that
+`checkMessageBus` emits. It fires when all three of these are true:
 
 - The consumer's channel resolves to `delivery: "at-least-once"`.
 - A summary in the consumer's code scope has a storage-access write
@@ -169,12 +166,12 @@ Severity is warning because whether a repeat matters is a question
 about the domain. A duplicate audit row is untidy and a duplicate
 charge is a refund.
 
-The third condition is what the issue calls a read of a deduplication
-store, stated in terms the run can decide. Nothing tells a
+The issue asks for a read of a deduplication store. The third condition
+states that in terms the run can decide. suss cannot tell a
 processed-messages table apart from any other table, so the rule is the
-weaker one: a handler that read something before it wrote is a handler
-that may have checked, and suss has no grounds to call it wrong. It is
-narrow on purpose. The read has to be in the same transition as the
+weaker one. A handler that read something before it wrote may have
+checked for a repeat, and suss has no grounds to call it wrong. The rule
+is narrow on purpose. The read has to be in the same transition as the
 write, because a read in one helper and a write in another are two
 summaries and nothing orders effects across them.
 
@@ -208,12 +205,12 @@ saw.
 
 ## Cost
 
-One optional field on a metadata namespace and one on the
-storage-access interaction. One property read added to each of two
-contract readers. In the checker, one walk over effects that
-`checkBodyShapes` already collects for each consumer, over summaries
-the pass has already filtered by scope. No new pass, and nothing runs
-for a channel with no `delivery`.
+The schema gains one optional field on a metadata namespace and one on
+the storage-access interaction. Two contract readers each read one more
+property. The checker adds one walk over the effects that
+`checkBodyShapes` already collects for each consumer, over summaries the
+pass has already filtered by scope. There is no new pass, and nothing
+runs for a channel with no `delivery`.
 
 ## Order
 
@@ -243,10 +240,10 @@ write, which all three adapters produce.
   which would catch an email or payment client the run recognizes.
   `service-call` is emitted only by `adapter-typescript`, so shipping
   it now would give the finding to one language of the three.
-- Recognizing a processed-messages table as one. That is a pack
-  question: the pack that knows the library also knows what a
-  deduplication check looks like, and until one says so the
+- Recognizing a processed-messages table as one. That belongs in a
+  pack, because the pack for a library is where a deduplication check
+  in that library can be described. Until a pack declares one, the
   earlier-read rule does that job.
 - A write whose new value is computed from a value the handler read
-  earlier. That needs to know where the written value came from, which
-  is the same thing the selector discussion above found missing.
+  earlier. Catching it needs to know where the written value came from,
+  and the selector discussion above found that missing too.

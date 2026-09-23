@@ -1,4 +1,4 @@
-# Proposal: how a pack says a call talks to a database
+# Proposal: how a pack marks a call as a database call
 
 Status: agreed. Matching on the return annotation for Python and on
 the ancestry for Ruby, one library each, a chain read as one effect.
@@ -18,7 +18,7 @@ export interface PythonPack {
 }
 ```
 
-so it says where a route is and nothing about what a body does.
+so it can declare where a route is and nothing about what a body does.
 `#259` and `#260` gave both languages invocation effects, so every call
 a handler makes is already recorded with the conditions that gate it.
 Nothing turns one into a database read.
@@ -52,11 +52,10 @@ imports anything from SQLAlchemy. The `Query` the wrapper returns is the
 library's own, and so are the methods chained off it. The import is one
 hop further away than a recognizer looks.
 
-This is the shape that cost 48 routes in `#273`, where a project
-subclassed `Namespace` and the pack only knew the library's own module.
-Rails makes it the normal case rather than the exception, since
-`Order.where(...)` is a method a project's model inherits from
-ActiveRecord and never writes down.
+The same pattern cost 48 routes in `#273`, where a project subclassed
+`Namespace` and the pack only listed the library's own module. In Rails
+it is the normal case, since `Order.where(...)` is a method a project's
+model inherits from ActiveRecord and never writes down.
 
 ## Three ways a pack could match
 
@@ -78,10 +77,10 @@ the project, so a pack keyed on `sqlalchemy` still matches nothing.
 
 **By what the definition says it returns.** The wrapper is annotated
 `-> Query`, and `Query` is imported from `sqlalchemy.orm` in the file
-that declares the wrapper. So a pack says which library type it
-is looking for, and a call matches when the method it resolves to says
-it returns one. The library's name appears on the project's own hop,
-which is what the corpus needs and what the first two miss.
+that declares the wrapper. So a pack declares which library type it
+is looking for, and a call matches when the method it resolves to is
+annotated to return one. The library's name appears on the project's
+own hop. The corpus needs that, and the first two ways miss it.
 
 Ruby has no annotation to read, so ActiveRecord needs the second one
 against the ancestry the adapter already computes: a model is a class
@@ -92,12 +91,12 @@ is a database call.
 
 1. Whether a pack lists shapes per library, or declares a library type
    and lets resolution do the matching. The second is fewer moving
-   parts and needs the facts to be right; the first ships sooner and
-   says less.
-2. What a match produces. `storage-access` wants `kind`, `fields` and
+   parts and needs the facts to be right. The first ships sooner and
+   records less.
+2. What a match produces. `storage-access` needs `kind`, `fields` and
    `selector`. `filter_by(id=x)` gives a selector, `update(**data)`
-   gives neither, and a chain gives its kind at the end rather than at
-   the call the recognizer fired on.
+   gives neither, and a chain shows its kind only at the end, after the
+   call the recognizer fired on.
 3. Whether a chain is one effect or several. `Model.query().filter_by(
    ...).first()` is one read written as three calls, and three effects
    would be wrong.
@@ -108,8 +107,8 @@ is a database call.
 
 ## Recommendation
 
-Match on what the definition says it returns, for Python, and on the
-ancestry for Ruby, since both read the project's own wrapper rather than
-being defeated by it. Ship one library each, SQLAlchemy and
-ActiveRecord, against a chain read as one effect. Leave raw SQL saying
-that it happened and nothing about what it says.
+Match on the definition's return annotation for Python, and on the
+ancestry for Ruby, since both read through the project's own wrapper
+instead of stopping at it. Ship one library each, SQLAlchemy and
+ActiveRecord, with a chain read as one effect. For raw SQL, record that
+a query ran and nothing about what it contains.

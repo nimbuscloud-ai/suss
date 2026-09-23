@@ -6,8 +6,8 @@ an open-source storefront.
 
 ## The problem
 
-Four things came back wrong or missing, and they are not four
-problems.
+Four things came back wrong or missing. The first three share one
+cause.
 
 1. **A route a library serves.** NextAuth's route file is
    `export { GET, POST } from "@/auth"`, where those names come out of
@@ -19,11 +19,11 @@ problems.
 2. **A response type a library defines.** A handler ending in
    `new ImageResponse(...)` from `next/og`, or
    `new StreamingTextResponse(stream)` from `ai`, matches no terminal
-   any pack describes. The unread return is now reported, which is the
-   correct floor, and the handler still says nothing about what it
-   produces.
+   any pack describes. suss now reports the unread return, which is the
+   least it should do, but the handler's summary still says nothing
+   about what it produces.
 
-3. **An operation that lives in data rather than syntax.** The storefront
+3. **An operation defined in data files instead of code.** The storefront
    sends every query and mutation through its own `executeGraphQL`,
    which takes a document and ends at `fetch`. Two client units stand
    in for the whole data layer. The operation name, the variables, and
@@ -40,22 +40,22 @@ problems.
 Each one is a boundary the project does have, where the thing that
 would describe it is outside the function suss is reading. In 1 it is
 inside a dependency. In 2 the words for the outcome belong to a
-dependency. In 3 it is in a file next to the code rather than in it.
+dependency. In 3 it is in a file beside the code.
 
-Three different fixes would be three different mistakes, because we
-already have the one mechanism that covers all of them.
+We should not build three different fixes, because one mechanism we
+already have covers all of them.
 
 A contract source produces `BehavioralSummary` values from a
-declaration rather than from a function body. `@suss/contract-openapi`
+declaration instead of a function body. `@suss/contract-openapi`
 reads a spec, `@suss/contract-cloudformation` reads a template,
 `@suss/contract-appsync` reads a schema, and each stamps
 `confidence: { source: "declared" }` or `"derived"` on what it emits.
 The checker pairs those against code-derived summaries on boundary
-identity and does not care which side came from where. That is the
-whole point of having one summary format.
+identity, whichever side each one came from. We have one summary format
+so that it can.
 
-So the question is where the description comes from when no spec file
-exists, rather than how to describe a boundary nothing implements.
+So the open question is where the description comes from when there is
+no spec file.
 
 ## What is missing
 
@@ -68,8 +68,8 @@ document at argument 0.
 
 We settled the name for this already, in the note saying that renaming
 `@suss/stub-*` to `@suss/contract-*` frees "stub" for interface
-declarations a person can write by hand. Today's gaps are the demand
-for it.
+declarations a person can write by hand. These gaps are the first cases
+that need it.
 
 Two places the same declaration can come from:
 
@@ -81,23 +81,23 @@ Two places the same declaration can come from:
   package-exports work already points: a package's exports are a
   boundary, and a provider publishes summaries alongside the code.
 
-The second is the leverage and the first is the way to get there. A
-declaration someone wrote by hand, and that works, is what makes a
-library author willing to adopt it, and it costs nothing to keep
-supporting.
+The library route reaches the most projects, and the project route is
+how we get there. A library author adopts the format once someone has
+written a declaration by hand and seen it work. The project route also
+costs nothing to keep supporting.
 
-**Marking what is declared rather than read.** `confidence.source`
-already has `declared`, and today's change to mark an empty summary
-`low` means you can tell an unread handler from a declared one, and
-both from one suss read. A declared summary should not
-claim it was derived from the body, and a reader should be able to ask
-which of their boundaries are described by hand.
+**Marking a summary as declared.** `confidence.source` already has
+`declared`. A recent change marks an empty summary `low`, so you can
+tell an unread handler from a declared one, and both from one suss
+read. A declared summary should not claim it was derived from the body,
+and a reader should be able to ask which of their boundaries are
+described by hand.
 
-## The fourth one is a different thing
+## The fourth case is a different problem
 
 A handler that serves a set of methods is not a reading problem. The
-model has one method per REST binding, and `pages/api`
-serves all of them. Express has the same situation with `app.all`, and
+model has one method per REST binding, and a `pages/api` handler serves
+all of them. Express has the same situation with `app.all`, and
 API Gateway with `ANY`, which the Lambda pack handles today by refusing
 to bind such a function as a route.
 
@@ -114,14 +114,15 @@ before the pack claims to cover the pages router.
 
 ## Order
 
-1. The declaration format, driven by the three cases above rather than
-   designed in the abstract. Start with the NextAuth one, since it is
-   the smallest: a boundary, a method, and no behaviour claimed.
+1. The declaration format, designed around the three cases above. Start
+   with the NextAuth one, since it is the smallest: a boundary, a
+   method, and no behaviour claimed.
 2. The response-type case next, because it is the one a library author
    would most plausibly ship, and because it is the same file format
    pointed at a different question.
 3. The GraphQL documents, which need the declaration to say "argument 0
    is the operation" and then need the reader that finds the document.
-   The largest of the three and the one with the most behind it.
+   This is the largest of the three, and the one with the most behind
+   it.
 4. Method sets, on their own, after deciding which of the three options
    is right.
