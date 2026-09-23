@@ -1,14 +1,13 @@
-// project.ts: the adapter's whole contract, which is to discover units,
-// emit summaries in the shared IR, and emit facts.
-//
-// It parses every file it is given, runs the lexical binder and
-// discovery over each one, hands each discovered unit to
-// `@suss/extractor`'s `assembleSummary`, and emits this run's facts
-// into one shared `Database`.
-//
-// `assembleSummary` is the same assembly layer the TypeScript adapter
-// uses, so gap detection and confidence scoring are one implementation
-// that both languages share.
+/**
+ * The entry point for a Python run. It discovers units, assembles their
+ * summaries in the shared IR, and emits the run's facts into one `Database`.
+ *
+ * Every file is parsed and bound first, and the value facts are emitted
+ * across all of them, before discovery runs on any file, because a mount in
+ * one file can refer to a router built in another. Each discovered unit
+ * goes through `@suss/extractor`'s `assembleSummary`, the same assembly the
+ * TypeScript adapter uses, so both languages share one gap detection.
+ */
 
 import fs from "node:fs";
 import path from "node:path";
@@ -87,13 +86,13 @@ export interface ExtractPythonOptions {
    * it contains a package.
    */
   roots?: string[];
-  /** Roots the project directory cannot tell, such as a checked-out submodule. Added after the others. */
+  /** Roots that cannot be found from the project directory, such as a checked-out submodule. Added after the others. */
   additionalRoots?: string[];
   /** When set, `location.file` on each summary is relativized against this. */
   workspaceRoot?: string;
   /** The directory a summary's id measures its file from, when that differs from `workspaceRoot`. */
   projectRoot?: string;
-  /** As well as deciding how much of what nobody could read reaches a summary, "strict" lets a route that cannot be built stop the run. */
+  /** How much of what could not be read goes on a summary. "strict" also makes a route that cannot be built stop the run. */
   gapHandling?: ExtractorOptions["gapHandling"];
   /** Called once with the run's per-phase wall time, for `suss extract --timing`. */
   onTiming?: (report: TimingReport) => void;
@@ -136,14 +135,11 @@ function rootsOfRun(options: ExtractPythonOptions): {
 }
 
 /**
- * A wrapper module a person configured that nothing imports never
- * matches a decorator, so the run comes back empty without saying why.
- * Say which one missed, once, after every file's imports are in the
- * facts.
- *
- * A wrapper module is usually an installed dependency, which never
- * resolves to a file under the project's own roots, so resolution is
- * not the right test here; whether some file imports it is.
+ * A configured wrapper module that no file imports never matches a
+ * decorator, and the run comes back empty without saying why. This reports
+ * each one once, after every file's imports are in the facts. The test is
+ * whether some file imports the module, because a wrapper is usually an
+ * installed dependency that never resolves under the project's roots.
  */
 function reportUnresolvedProjectModules(
   packs: readonly PythonPack[],
@@ -164,10 +160,10 @@ function reportUnresolvedProjectModules(
 }
 
 /**
- * What the run's packs say about their own libraries, in the shape
- * `addPackWords` takes. Python writes no return type, so a pack's model
- * declarations are the only thing that says `session.get(User, id)` is
- * one User. A `with` block gets whatever `__enter__` returned, and only
+ * What the run's packs declare about their own libraries, in the form
+ * `addPackWords` takes. The run does not read library source, so a pack's
+ * model declarations are the only thing that says `session.get(User, id)`
+ * is one User. A `with` block gets whatever `__enter__` returned, and only
  * the library knows that its own class returns the object it built.
  */
 export function packWordsOf(packs: readonly PythonPack[]): PackWords {
@@ -283,12 +279,8 @@ export async function extractPythonProject(
   const gapHandling = options.gapHandling ?? "permissive";
   const tallies = createPackTallies(options.packs);
 
-  // Every file is parsed and bound before discovery runs on any of them,
-  // because the router index has to see a mount written in one file and the
-  // router it refers to constructed in another.
-  //
-  // Facts keep the full filesystem path, because they are joined against
-  // internally. Only a summary's `location.file` gets shortened.
+  // Facts keep the full filesystem path, because other facts are matched
+  // against it. Only a summary's `location.file` is shortened.
   const displayPathOf = (file: string): string =>
     options.workspaceRoot !== undefined
       ? path.relative(options.workspaceRoot, file)
@@ -308,9 +300,9 @@ export async function extractPythonProject(
     });
   }
 
-  // Discovery asks the rules what an object it cannot name was built by,
-  // a pack that mounts routers asks them what a loop over a call
-  // registers, and both read the value facts, so they are built once here.
+  // Discovery asks the rules what built an object it cannot find by name,
+  // and router mounting asks what a loop over a call registers. Both read
+  // the value facts, so those are emitted once here for the whole run.
   const mountsRouters = options.packs.some((pack) =>
     pack.discovery.some((pattern) => pattern.routerComposition !== undefined),
   );
@@ -325,9 +317,9 @@ export async function extractPythonProject(
       (client) => (client.receiverConstructors ?? []).length > 0,
     ),
   );
-  // A helper reading the environment through a parameter is a read the
-  // caller writes the name of, so what each file says about the
-  // environment is collected before the decision below rather than after.
+  // A helper that reads the environment through a parameter turns each of
+  // its call sites into a read, so every file's environment facts have to
+  // be collected before deciding whether the value facts are needed.
   const envFacts = bound.map((boundFile) =>
     envFactsIn(boundFile.file, boundFile.root, boundFile.module),
   );
@@ -341,8 +333,8 @@ export async function extractPythonProject(
     readsEnvThroughNames ||
     storagePatterns.length > 0 ||
     modelQueries.length > 0 ||
-    // A statement written as SQL is a value, and so is the client the
-    // call that hands it over is read off.
+    // A statement written as SQL is read through the evaluator, and so is
+    // the client object the statement is passed to.
     rawSqlPatterns.length > 0 ||
     sqlClients.length > 0;
   // Which function a resolved key was written as, so a recognizer can read
@@ -365,10 +357,9 @@ export async function extractPythonProject(
 
   reportUnresolvedProjectModules(options.packs, roots, db);
 
-  // A chain that matches starts at a method some file importing the library
-  // declares, so its name is in here. A project that renames one on the way
-  // through is missed, which is what asking about every call would cost a
-  // minute to catch.
+  // A matching chain starts at a method declared in a file that imports the
+  // library. A project that renames the method on the way is missed, since
+  // asking the rules about every call instead would cost about a minute.
   const couldMatch = timer.time("discover", () =>
     methodsDeclaredNear(db, storagePatterns, definitions),
   );
@@ -444,15 +435,14 @@ export async function extractPythonProject(
       const summary = timer.time("summarize", () =>
         assembleSummary(raw, { gapHandling }),
       );
-      // `assembleSummary` scores confidence on the assumption that a unit's
-      // branches came from tracing its body. Nothing here traces a body, so
-      // that score would be meaningless and we set confidence directly.
+      // Every Python summary reports low confidence, in place of the score
+      // `assembleSummary` computed.
       summary.confidence = { source: "inferred_static", level: "low" };
       summaries.push(summary);
       emitEntryFact(db, file, raw.identity.range, raw.identity.name);
       tallyUnit(tallies, raw.boundaryBinding?.recognition);
 
-      // Two routes on one function, one per method say, share a seed.
+      // Two routes on one function, such as one per method, share a seed.
       const span = raw.identity.span;
       const key =
         span === undefined ? null : `${file}:${span.start}-${span.end}`;
@@ -608,7 +598,7 @@ export async function extractPythonProject(
   };
 }
 
-/** The files each file's imports resolved to, spelled the way a summary's location.file is. */
+/** The files each file's imports resolved to, with paths written the same way as a summary's location.file. */
 function resolvedImportsOf(
   db: Database,
   displayPathOf: (file: string) => string,
@@ -670,7 +660,7 @@ function indexDefinitions(
   }
 }
 
-/** What a file importing one of the libraries declares, by name. */
+/** The names of the functions declared in files that import one of the storage libraries. */
 function methodsDeclaredNear(
   db: Database,
   patterns: readonly StoragePattern[],

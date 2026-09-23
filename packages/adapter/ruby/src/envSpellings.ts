@@ -1,18 +1,18 @@
 /**
- * envSpellings.ts: the ways Ruby source writes a read of one environment
- * variable. `ENV["X"]`, `ENV.fetch("X", d)` and `ENV.fetch("X") { d }`
- * all read `X`, off `ENV` written bare or as `::ENV`.
+ * The ways Ruby source writes a read of one environment variable.
+ * `ENV["X"]`, `ENV.fetch("X", d)` and `ENV.fetch("X") { d }` all read `X`,
+ * off `ENV` written bare or as `::ENV`.
  *
- * The env reader turns these into effects, and the defaulted rule asks
- * whether a test elsewhere reads the same variable, so both take the
- * spellings from here.
+ * The environment reader turns these into effects, and the defaulted
+ * check looks for a test elsewhere that reads the same variable. Both
+ * take the spellings from here so they agree on what counts as a read.
  */
 
 import { field, readCallArgs, stringLiteralValue } from "./ast.js";
 
 import type { RbNode } from "./parser.js";
 
-/** How the source writes one read, before anything asks whether it has a fallback. */
+/** How the source writes one read, before any check for a fallback around it. */
 export interface EnvSpelling {
   readonly name: RbNode;
   /** Whether the read itself supplies a value, as `ENV.fetch("X", d)` does. */
@@ -31,7 +31,7 @@ export function envSpellingAt(node: RbNode): EnvSpelling | null {
   return null;
 }
 
-/** Two literals the same string, or two expressions spelled the same way. */
+/** Whether two names match: two literals with the same string, or two expressions with the same source text. */
 export function isSameName(one: RbNode, other: RbNode): boolean {
   const literal = stringLiteralValue(one);
   if (literal !== null) {

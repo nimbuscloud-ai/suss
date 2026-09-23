@@ -1,10 +1,10 @@
 /**
- * The Ruby adapter's own pattern-pack contract.
+ * The contract a Ruby pack implements.
  *
- * Match shapes stay per-language until a second implementation shows what is
- * actually shared, so this is Ruby's own and not the TypeScript or Python
- * adapter's. Everything a library defines, meaning its call names, keywords,
- * scalars, and conventions, arrives as pack data and is never hardcoded here.
+ * Each language adapter keeps its own pack contract until a second
+ * implementation shows which parts can be shared. Anything a library
+ * defines, such as its call names, keywords and scalars, comes in as pack
+ * data. This package hardcodes none of it.
  */
 
 import type { TypeShape } from "@suss/behavioral-ir";
@@ -12,7 +12,7 @@ import type { BodyBlockKind, BodyBlocks } from "./ast.js";
 import type { ConstantPathConvention } from "./constantPath.js";
 import type { GraphqlTypeNameConvention } from "./scope.js";
 
-/** Everything the run's packs read from their own projects' inflectors, pooled in the order the packs are listed. */
+/** The inflections every pack in the run read from its project, pooled in the order the packs are listed. */
 export function inflectionsIn(packs: readonly RubyPack[]): RbInflections {
   const pooled: RbInflections = {
     acronyms: [],
@@ -29,7 +29,7 @@ export function inflectionsIn(packs: readonly RubyPack[]): RbInflections {
   return pooled;
 }
 
-/** Every body block the run's packs declare, pooled, with the fields each left out settled. */
+/** Every body block the run's packs declare, pooled, with each optional flag defaulted to false. */
 export function bodyBlocksIn(packs: readonly RubyPack[]): BodyBlocks {
   const pooled = new Map<string, BodyBlockKind>();
   for (const pack of packs) {
@@ -46,46 +46,43 @@ export function bodyBlocksIn(packs: readonly RubyPack[]): BodyBlocks {
 export interface RubyPack {
   name: string;
   /**
-   * Pack version stamp, which feeds the cache invalidation key. Bump on
-   * any change that affects discovered units or extracted summaries.
-   * The CLI folds a hash of the loaded pack file and its config into
-   * this stamp on top, so a pack run through the CLI invalidates on an
-   * edit whether or not it declares a version of its own.
+   * Part of the cache key. Bump it on any change that affects discovered
+   * units or extracted summaries. The CLI also adds a hash of the loaded
+   * pack file and its config to the key, so a pack run through the CLI
+   * re-extracts after an edit even when it declares no version.
    */
   version?: string;
   /**
-   * Files under the project this pack reads that are not among the
-   * `.rb` files a run walks, given the files the run is about to walk.
-   * Their content feeds the same cache key the pack's own config does,
-   * so an edit to one of them re-extracts instead of handing back the
-   * previous answer.
+   * Files outside the walked `.rb` set whose content this pack reads,
+   * given the files the run is about to walk. Their content goes into the
+   * cache key, so editing one of them forces a re-extract.
    */
   discoveryInputs?: (files: readonly string[]) => string[];
-  /** Wire protocol for the produced boundary bindings, e.g. "http-graphql". */
+  /** Wire protocol for the boundary bindings the pack produces, e.g. "http-graphql". */
   protocol: string;
   discovery: RubyDiscoveryPattern[];
-  /** The calls the library gives a project for making a request. */
+  /** The calls the library offers a project for making a request. */
   clients?: RbClientCall[];
-  /** What the library's own database calls look like. The README says how one is matched. */
+  /** The library's model calls that read or write the database. */
   storage?: RbStoragePattern[];
-  /** The calls the library gives a project for handing the store a statement it wrote itself. */
+  /** The calls the library offers for sending the store a statement the project wrote itself. */
   rawSql?: RbRawSqlPattern[];
-  /** Calls the library gives a project for reading a model through a batching loader, rather than on the model itself. */
+  /** Calls that read a model through a batching loader, where the model is an argument instead of the receiver. */
   loaders?: RbLoaderPattern[];
-  /** Calls the library gives a class or module body whose block runs as part of that body. */
+  /** Calls in a class or module body whose block runs as part of that body. */
   bodyBlocks?: RbBodyBlock[];
-  /** What the project taught the library's inflector, which comes ahead of the adapter's own defaults. */
+  /** Words and rules the project added to the library's inflector. They are tried before the adapter's defaults. */
   inflections?: RbInflections;
 }
 
 /**
- * The words and rules a project registered with its library's
- * inflector. The library says where a project writes them and how; what
- * arrives here is the reading, so the adapter applies them without
- * knowing any of that.
+ * The words and rules a project registered with its library's inflector.
+ * Where a project writes them depends on the library, so the pack reads
+ * them and passes the result here. The adapter applies them the same way
+ * for every library.
  */
 export interface RbInflections {
-  /** Words a constant name keeps whole: `API` gives `APIToken` rather than `ApiToken`. */
+  /** Words a constant name keeps in capitals: with `API`, `api_token` becomes `APIToken`. */
   acronyms?: string[];
   /** A plural and the singular it comes from: `["people", "person"]`. */
   irregular?: Array<[plural: string, singular: string]>;
@@ -96,27 +93,27 @@ export interface RbInflections {
 }
 
 /**
- * A receiverless call a library gives a class or module body, whose
- * block runs as part of that body rather than keeping what it declares
- * to itself. Ruby has no such call of its own, so a run whose packs
- * declare nothing here never opens a block out into the body.
+ * A receiverless call in a class or module body whose block runs as part
+ * of that body, so what the block declares belongs to the class. Ruby has
+ * no such call of its own. When no pack declares one, every block is read
+ * as an ordinary block.
  */
 export interface RbBodyBlock {
   /** The call as a project writes it, `included`. */
   name: string;
-  /** Set when the library only gives the call to a module, as a concern's own `included` is. */
+  /** Set when the library offers the call only to modules, as with a concern's `included`. */
   moduleOnly?: boolean;
-  /** Set when a `def` in the block declares a method on the class itself rather than on an instance. */
+  /** Set when a `def` in the block defines a method on the class itself instead of on an instance. */
   definesClassMethods?: boolean;
 }
 
 /**
- * The calls a library gives a project for making a request. A method
- * that makes one is a client of the boundary that call states, and gets
- * a unit bound to its method and path.
+ * The calls a library offers a project for making a request. A method
+ * that makes one becomes a client unit, bound to the request method and
+ * path of the call.
  */
 export interface RbClientCall {
-  /** The constant the calls hang on, as a project writes it: `Faraday`, `Net::HTTP`. */
+  /** The constant the calls are made on, as a project writes it: `Faraday`, `Net::HTTP`. */
   constantName: string;
   /** Method names that state the request method themselves: `get` means GET. */
   verbMethodNames: Record<string, string>;
@@ -124,11 +121,11 @@ export interface RbClientCall {
   url: { position: number; keyword?: string };
   /** Methods on the constant that build a value taking the same calls, `new` for a Faraday connection. */
   receiverBuilders?: string[];
-  /** The keyword such a builder takes the base URL under, which comes in front of the path of a call on it. */
+  /** The keyword a builder takes its base URL under. The base URL goes in front of the path of each call on the built value. */
   builderUrlKeyword?: string;
-  /** What the response object gives a caller, so a test on one of its members counts as a test on a status. */
+  /** The members of the response object, so a test on one of them counts as a test on the status. */
   response?: RbClientResponse;
-  /** A call that sends a request object built somewhere else, which is how Net::HTTP sends anything with a body. */
+  /** A call that sends a request object built separately. Net::HTTP sends any request with a body this way. */
   requestObject?: {
     /** The method that takes the request object, `request`. */
     attribute: string;
@@ -140,9 +137,9 @@ export interface RbClientCall {
 }
 
 /**
- * The members a library's response object gives a caller. A caller that
- * tests one of them is saying which statuses it handles, and the
- * checker compares that against what the other side produces.
+ * The members of a library's response object. A test on one of them shows
+ * which statuses the caller handles, and the checker compares that with
+ * what the provider sends.
  */
 export interface RbClientResponse {
   /** Members whose value is the status: `status` for Faraday, `code` for Net::HTTP. */
@@ -156,16 +153,17 @@ export interface RbClientResponse {
 }
 
 /**
- * Ruby writes no return type, so a call is matched by what its receiver
- * inherits from. A model is a class that reaches one of these base classes,
- * whether the project declares an intermediate one or not.
+ * Ruby code declares no return types, so a call is matched by what its
+ * receiver inherits from. A model is any class whose ancestry reaches one
+ * of `baseClasses`, including through a base class the project declares
+ * in between.
  *
- * `reads` and `writes` are the whole of what the library does to the
- * database. A method in neither list is the project's own or the
- * language's, and the reach walk follows it instead.
+ * `reads` and `writes` list every database call the library makes. A
+ * method in neither list belongs to the project or the language, and the
+ * reach walk follows it.
  */
 export interface RbStoragePattern {
-  /** Base classes the library gives a model, `ActiveRecord::Base` for Rails. */
+  /** Base classes the library provides for models, `ActiveRecord::Base` for Rails. */
   baseClasses: string[];
   /** Methods the library defines that change what is stored. */
   writes: string[];
@@ -175,69 +173,69 @@ export interface RbStoragePattern {
   givesBack: string[];
   /**
    * Methods on the model that take a statement the project wrote itself,
-   * and where each one takes it. The tables come from the statement, so
-   * one of these says nothing about the model's own container, and the
-   * statement is read in the dialect of `storageSystem`.
+   * and where each one takes it. The tables come from the statement
+   * instead of the model's own container, and the statement is read in
+   * the dialect of `storageSystem`.
    */
   statements?: Record<string, RbArgumentPlace>;
   /** The token the library writes where a bind value goes, ActiveRecord's `?`. */
   bindPlaceholder?: string;
-  /** The methods the library runs of its own accord when a write happens, `after_commit :sync_search`. */
+  /** The methods the library runs by itself around a write, as registered by `after_commit :sync_search`. */
   callbacks?: RbModelCallbacks;
-  /** Methods that pick rows by the primary key when they are given a positional argument, and the column that is. */
+  /** Methods that pick rows by the primary key when given a positional argument, and that key's column. */
   byPrimaryKey?: RbPrimaryKeyLookup;
   /** Read methods whose symbol arguments are the columns they ask for. */
   columnArguments?: string[];
-  /** How the library declares that one model reaches another, when it has such a thing. */
+  /** The calls a model uses to declare an association with another model, when the library has them. */
   associations?: RbAssociationCalls;
-  /** Which database is behind the connection, which the project settles. */
+  /** Which database is behind the connection. The project decides this, so the pack passes it in. */
   storageSystem: "postgresql" | "mysql" | "sqlite";
 }
 
 /**
- * A library whose calls take SQL the project wrote, rather than
- * building it from a model. Ruby writes no types, so the receiver is
- * typed by following it back to the library call that produced it: the
- * chain starts at `constantName`, one of `clientBuilders` gives back a
- * client, and `addressing` calls narrow that client to a part of the
- * store before the statement or the row call arrives.
+ * A library whose calls take SQL the project wrote, instead of building
+ * it from a model. Ruby code declares no types, so the adapter finds the
+ * receiver's type by following it back to the library call that produced
+ * it. The chain starts at `constantName`, one of `clientBuilders` returns
+ * a client, and `addressing` calls narrow that client to part of the store
+ * before the statement or row call.
  */
 export interface RbRawSqlPattern {
   /** The constant the library's calls start at, `PG` or `Google::Cloud::Bigquery`. */
   constantName: string;
   /**
-   * Base classes whose subclasses hand a client out the same way the
-   * constant does, `ActiveRecord::Base` for Rails. A project writes
-   * `Account.connection` and a bare `connection` inside the model as
-   * readily as the base class itself, and all three reach one store.
+   * Base classes whose subclasses return a client the same way the
+   * constant does, `ActiveRecord::Base` for Rails. `Account.connection`
+   * and a bare `connection` inside the model reach the same store as the
+   * base class itself.
    */
   baseClasses?: string[];
-  /** Methods on that constant that give back a client, `connect` for the pg gem. */
+  /** Methods on that constant that return a client, `connect` for the pg gem. */
   clientBuilders: string[];
-  /** Calls that narrow a client to part of the store and give back something the rest of the calls can be made on. */
+  /** Calls that narrow a client to part of the store and return a value the later calls are made on. */
   addressing?: Record<string, RbAddressingCall>;
   /** Calls that take a statement, and where each one takes it. */
   statements?: Record<string, RbArgumentPlace>;
-  /** The token the library writes where a bind value goes, when it is not the one the dialect itself reads. */
+  /** The token the library writes where a bind value goes, when the dialect's parser does not read it. */
   bindPlaceholder?: string;
   /** Calls that read or write rows of an addressed container with no statement, `insert` on a BigQuery table. */
   rowCalls?: Record<string, RbRowCall>;
-  /** Which store is behind the calls, in the words OpenTelemetry's semantic conventions use: `postgresql`, `gcp.bigquery`. */
+  /** Which store is behind the calls, in OpenTelemetry's semantic convention names: `postgresql`, `gcp.bigquery`. */
   storageSystem: string;
   /**
-   * Which dialect the statements are written in, which is a separate
-   * answer from the store: BigQuery's store is `gcp.bigquery` and its
-   * statements are `bigquery`, and a default here would read the wrong
-   * tables without saying so.
+   * Which dialect the statements are written in. This can differ from the
+   * store: BigQuery's store is `gcp.bigquery` and its dialect is
+   * `bigquery`. There is no default, because a wrong dialect would read
+   * the wrong tables without any warning.
    */
   dialect: string;
-  /** Which namespace the calls reach when neither the chain nor the table name says. Defaults to "default". */
+  /** The namespace the calls reach when neither the chain nor the table name gives one. Defaults to "default". */
   scope?: string;
 }
 
-/** A call that says which part of the store the calls after it reach, `bigquery.dataset("core")`. */
+/** A call that selects which part of the store the later calls reach, `bigquery.dataset("core")`. */
 export interface RbAddressingCall extends RbArgumentPlace {
-  /** Which part of the address this call states. */
+  /** Which part of the address this call gives. */
   says: "scope" | "container";
 }
 
@@ -245,84 +243,84 @@ export interface RbAddressingCall extends RbArgumentPlace {
 export interface RbRowCall {
   kind: "read" | "write";
   /**
-   * Where the call may say which container, for a library that gives
-   * the same call on the container and one level above it: BigQuery's
-   * `table.insert(rows)` and `dataset.insert("accounts", rows)`. The
-   * chain's own container is used when this argument settles on no
-   * string, which is what a row argument does.
+   * Where the call can take the container, for a library that offers the
+   * same call on the container and one level above it: BigQuery's
+   * `table.insert(rows)` and `dataset.insert("accounts", rows)`. When this
+   * argument does not settle on a string, as with a rows argument, the
+   * chain's own container is used.
    */
   container?: RbArgumentPlace;
 }
 
-/** Where a call writes one of its arguments. A call that takes it both ways is matched on the keyword first. */
+/** Where a call takes one of its arguments. When a call passes it both ways, the keyword wins. */
 export interface RbArgumentPlace {
   /** The index of the positional argument. */
   at: number;
-  /** The keyword the argument may travel under instead. */
+  /** The keyword the argument can be passed under instead. */
   keyword?: string;
 }
 
-/** Which methods take the primary key positionally, and what that column is called. */
 /**
- * The methods a model registers in its own class body for the library
- * to run when a write happens. A body that writes through the model
- * runs them too, so their effects belong to that body.
+ * The methods a model registers in its class body for the library to
+ * run when a write happens. A body that writes through the model runs
+ * them too, so their effects belong to that body.
  *
- * `events` is the library's own vocabulary for what a write is, and
- * both halves of this are keyed by it: a write method says which events
- * it runs, and a registering call says which events it covers.
+ * Both tables are keyed by the library's own event names: a write method
+ * lists the events it fires, and a registering call lists the events it
+ * covers.
  */
 export interface RbModelCallbacks {
-  /** Each write method the pattern declares, and the events it runs. */
+  /** Each write method the pattern declares, and the events it fires. */
   eventOf: Record<string, string[]>;
-  /** Each class-body call that registers a callback, and the events it covers when the call narrows to none. */
+  /** Each class-body call that registers a callback, and the events it covers when the call does not narrow them. */
   registeredBy: Record<string, string[]>;
   /** The keyword that narrows one registration to some of those events, `on`. */
   eventKeyword: string;
 }
 
+/** Which methods take the primary key positionally, and what that column is called. */
 export interface RbPrimaryKeyLookup {
   methods: string[];
-  /** The column the library uses unless a model says another. */
+  /** The column the library uses unless a model sets another. */
   column: string;
 }
 
 /**
- * The class-body calls a library gives a model for declaring an
- * association, and where one says which class it reaches. The two lists
- * are apart because the target's name is the association's singularised
- * for a plural call and the association's as written for a singular one,
- * and only the library knows which of its calls is which.
+ * The class-body calls a model uses to declare an association, and the
+ * keyword that gives the target class. The calls are split into two
+ * lists because a plural call's target is the singularised association
+ * name, and a singular call's target is the name as written. Only the
+ * library knows which of its calls is which.
  */
 export interface RbAssociationCalls {
   /** Calls written in the singular, `belongs_to :account` and `has_one :profile`. */
   singular: string[];
   /** Calls written in the plural, `has_many :statuses`. */
   plural: string[];
-  /** The keyword whose value is the target class's name instead, `class_name`. */
+  /** The keyword that gives the target class's name explicitly, `class_name`. */
   classNameKeyword: string;
 }
 
 /**
- * A loader that batches reads of a model on the caller's behalf, graphql-ruby's
- * dataloader for one. The call that picks what to load is given the model as
- * a constant argument, so the read is recorded against that model the same
- * way a call on the model itself would be, and a storage pattern from another
- * pack in the run says whether the constant is a model at all.
+ * A loader that batches reads of a model for the caller, such as
+ * graphql-ruby's dataloader. The call that picks what to load gets the
+ * model as a constant argument, so the read is recorded against that
+ * model as if the call were made on it. A storage pattern from another
+ * pack in the run decides whether the constant is a model at all.
  */
 export interface RbLoaderPattern {
-  /** The receiverless call that gives the loader, `dataloader`. */
+  /** The receiverless call that returns the loader, `dataloader`. */
   loader: string;
   /** The method on the loader that picks a source and its arguments, `with`. */
   pick: string;
   /** The methods on a picked source that perform the read, `load` and `load_all`. */
   reads: string[];
-  /** Receiverless calls that pick and read in one, whose arguments include the model, `dataload` and `dataload_record`. */
+  /** Receiverless calls that pick and read in one call, with the model among the arguments: `dataload` and `dataload_record`. */
   shortcuts: string[];
   /**
    * Where `pick` takes the project's own source class, and the method
-   * the library runs on it. The read happens in that method, so what it
-   * reaches belongs to every body that loads through it.
+   * the library runs on it. The read happens in that method, so whatever
+   * it reaches is reported on every body that loads through it.
    */
   source?: RbLoaderSource;
 }
@@ -337,72 +335,77 @@ export interface RbLoaderSource {
 
 export type RubyDiscoveryPattern = GraphqlObjectFields | ControllerActions;
 
-/** A class whose ancestry reaches one of `baseClassNames` or `ancestryRootClassNames` is a controller, and every instance method it defines directly is one of its actions, bound by `routeFor` to the method and path a project's own routing gives it, or discovered with no boundary binding when `routeFor` finds none. */
+/**
+ * A class whose ancestry reaches one of `baseClassNames` or
+ * `ancestryRootClassNames` is a controller, and every instance method it
+ * defines directly is an action. `routeFor` binds each action to the
+ * method and path the project's routing gives it. An action `routeFor`
+ * has no route for is still discovered, with no boundary binding.
+ */
 export interface ControllerActions {
   type: "controllerActions";
-  /** A base a project's controllers extend, `ApplicationController` say. The base itself is not a controller. */
+  /** Bases a project's controllers extend, such as `ApplicationController`. A base is not itself a controller. */
   baseClassNames: string[];
-  /** The directory a bare superclass name is looked up under, the project's own layout. */
+  /** The directory a bare superclass name is looked up under, which depends on the project's layout. */
   root: string;
   pathConvention: ConstantPathConvention;
-  /** Acronyms the project registers with the inflector, which the path convention keeps as one word: `ActivityPub` is `activitypub`, not `activity_pub`. */
+  /** Acronyms the project registers with the inflector. The path convention keeps each one as one word: `ActivityPub` becomes `activitypub`. */
   acronyms?: string[];
   /** The library's own classes a project's controller chain ends at. A class extending one directly is a controller too. */
   ancestryRootClassNames: string[];
-  /** Status code a wire response gets when the action does not say otherwise. */
+  /** The status a response gets when the action does not set one. */
   defaultStatusCode: number;
-  /** The receiverless calls the library gives an action for writing a wire status. Leave it out and every action reports the default. */
+  /** The receiverless calls an action uses to send a status. Without them, every action reports the default. */
   responseStatusCalls?: RbStatusCall[];
-  /** The number behind each name the library accepts where a status number could go, Rack's own symbol table for Rails. */
+  /** The number for each status name the library accepts in place of a number. For Rails this is Rack's symbol table. */
   statusCodeNames?: Record<string, number>;
   /**
-   * The methods every controller gets without defining them, which for
-   * Rails is `params`, `render` and the rest of what `ActionController`
-   * mixes in. An action's effect list is there to show what the action
-   * reaches in the project, and nothing in the project defines these,
-   * so a receiverless call to one of them is left off that list.
+   * Methods every controller inherits from the library, which for Rails
+   * are `params`, `render` and the rest of what `ActionController` mixes
+   * in. Nothing in the project defines them, so a receiverless call to
+   * one is left off the action's effect list.
    */
   inheritedMethodNames?: string[];
-  /** Absolute path of the file this pattern's own routing came from, for the one gap `routingGaps` may report. */
+  /** Absolute path of the routes file this pattern read, used in the gap `routingGaps` can report. */
   routesFile: string;
-  /** The method and path a project's own routing gives one controller's action, or null when that action has none. */
+  /** The method and path the project's routing gives one controller action, or null when it has none. */
   routeFor: (
     controllerQualifiedName: string,
     actionName: string,
   ) => { method: string; path: string } | null;
-  /** One message per routing declaration kind this pattern's reading left uncovered. A pure read: calling it again gives the same list. */
+  /** One message for each kind of routing declaration the pattern could not read. Calling it again returns the same list. */
   routingGaps?: () => readonly string[];
-  /** The class-level calls the library gives a controller for running one of its own methods around every action, Rails' `before_action` and `rescue_from`. */
+  /** The class-level calls that run one of the controller's own methods around its actions, Rails' `before_action` and `rescue_from`. */
   filters?: RbControllerFilter[];
 }
 
 /**
- * A call in a controller's class body naming a method the library runs
- * around the action, and which actions that reaches. A class inherits
- * what its ancestors declared, so a filter on `ApplicationController`
- * reaches every action in the project.
+ * A class-body call that registers a method for the library to run around
+ * a controller's actions. A class inherits what its ancestors register, so
+ * a filter on `ApplicationController` applies to every action in the
+ * project.
  */
 export interface RbControllerFilter {
   /** The call as a controller writes it, `before_action`. */
   name: string;
   /**
-   * Where the call names the method: `argument` for the leading symbol
+   * Where the call takes the method: `argument` for the leading symbol
    * of `before_action :require_login`, `withKeyword` for the `with:` of
    * `rescue_from ActiveRecord::RecordNotFound, with: :not_found`.
    */
   methodFrom: "argument" | "withKeyword";
   /** Set when the library runs the method only for an action that raised, as `rescue_from` does. */
   onThrow?: boolean;
-  /** The name of the call that takes a filter back off, `skip_before_action` for `before_action`. */
+  /** The call that removes the filter again, `skip_before_action` for `before_action`. */
   skippedBy?: string;
-  /** The keywords that narrow a filter to some of the actions, Rails' `only` and `except`. */
+  /** The keywords that limit a filter to some of the actions, Rails' `only` and `except`. */
   actionKeywords?: { include: string; exclude: string };
 }
 
 /**
- * One call an action writes to send a response, and where that call takes
- * the status. A call may take it both ways, and then the keyword wins,
- * as it does in Rails for `head :ok, status: :created`.
+ * A call an action makes to send a response, and where that call takes
+ * the status. When a call passes the status both ways the keyword wins,
+ * as in Rails for `head :ok, status: :created`.
  */
 export interface RbStatusCall {
   /** The call's own name as an action writes it, `render` for Rails. */
@@ -412,9 +415,9 @@ export interface RbStatusCall {
   /** The index of the positional argument giving the status, 0 for Rails' `head :no_content`. */
   statusArgument?: number;
   /**
-   * The status this call sends when the action writes none. Rails'
-   * `redirect_to` sends 302 where its `render` sends the controller's own
-   * default, so a default declared here wins over `defaultStatusCode`.
+   * The status this call sends when the action passes none. Rails'
+   * `redirect_to` sends 302, while `render` sends the controller default,
+   * so a default declared here takes precedence over `defaultStatusCode`.
    */
   defaultStatusCode?: number;
 }
@@ -422,45 +425,45 @@ export interface RbStatusCall {
 /** A class or module whose ancestry reaches one of `baseClassNames` declares GraphQL fields through DSL calls in its own body. */
 export interface GraphqlObjectFields {
   type: "graphqlObjectFields";
-  /** The base classes the library itself generates. The walk crosses a project's own intermediate bases on its own, so config only has to add a base with another name. */
+  /** The base classes the library's generator writes. The walk follows a project's own intermediate bases, so config only needs to add a base with a different name. */
   baseClassNames: string[];
-  /** The directory a wiring keyword's referenced class is looked up under. That is the project's own layout, not the library's. */
+  /** The directory a wiring keyword's referenced class is looked up under, which depends on the project's layout. */
   root: string;
   pathConvention: ConstantPathConvention;
-  /** Acronyms the project registers with the inflector, which the path convention keeps as one word. */
+  /** Acronyms the project registers with the inflector. The path convention keeps each one as one word. */
   acronyms?: string[];
   /** The DSL call declaring one schema field in an object type's body. */
   fieldCallName: string;
   /** The DSL call declaring a referenced class's own return type. */
   typeCallName: string;
   argumentCallName: string;
-  /** Keywords whose value gives a class to read the declared contract from, one hop away. They are tried in the order listed. */
+  /** Keywords whose value is a class to read the declared contract from, one hop away. They are tried in the order listed. */
   wiringKeywords: string[];
-  /** The method a wired class defines to resolve the field it is wired to. Library-defined. */
+  /** The method a wired class defines to resolve the field it is wired to. */
   resolverMethodName: string;
-  /** The library's own classes that a project's class chain ends at. Library-defined. */
+  /** The library's own classes that a project's class chain ends at. */
   ancestryRootClassNames: string[];
-  /** Keyword on an argument call saying whether the argument is required. Library-defined. */
+  /** The keyword on an argument call that says whether the argument is required. */
   requiredKeyword: string;
-  /** What an argument means when it does not write the required keyword at all. */
+  /** Whether an argument is required when its call does not pass the required keyword. */
   requiredDefault: boolean;
   /** The keyword that overrides `camelizeDefault` for a single name. */
   camelizeKeyword: string;
-  /** Whether a symbol's snake_case name is exposed camelCased when the call itself does not say. */
+  /** Whether a snake_case symbol is exposed in camelCase when the call does not say. */
   camelizeDefault: boolean;
-  /** Only the names the library itself accepts in a type position belong here. */
+  /** The scalar names the library accepts in a type position, and the shape of each. List only the library's own. */
   scalars: Record<string, TypeShape>;
-  /** Module prefixes the same scalars can also be written under when someone spells out the full path. */
+  /** Module prefixes a project can write in front of those scalar names when it spells out the full path. */
   scalarNamePrefixes: string[];
   typeNameConvention: GraphqlTypeNameConvention;
   /**
    * A base class that changes a mutation's wire contract. When a wired
-   * class's ancestry reaches `ancestorClassName`, the library wraps
-   * every declared argument into one input-object argument called
+   * class's ancestry reaches `ancestorClassName`, the library wraps every
+   * declared argument into one input-object argument called
    * `argumentName` and adds `extraFields` to it. graphql-ruby's
-   * RelayClassicMutation is the class this describes: on the wire the
-   * mutation takes a single required `input`, whose fields are the
-   * declared arguments plus an optional `clientMutationId`.
+   * RelayClassicMutation does this: on the wire the mutation takes a
+   * single required `input`, whose fields are the declared arguments plus
+   * an optional `clientMutationId`.
    */
   argumentWrapping?: {
     ancestorClassName: string;

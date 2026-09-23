@@ -3,10 +3,10 @@ import { IdMap, IdSet, SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
 /**
  * Small helpers for reading a tree-sitter-ruby parse tree.
  *
- * The node-type strings here come from tree-sitter-ruby's grammar, at the
- * version the grammar README gives. Read a node through these helpers rather
- * than calling `childForFieldName` or `.type` inline, so that a grammar upgrade
- * that renames a field only has to be fixed in one place.
+ * The node type strings come from tree-sitter-ruby's grammar, at the
+ * version the grammar README gives. Read nodes through these helpers
+ * instead of calling `childForFieldName` or `.type` inline, so a grammar
+ * upgrade that renames a field is fixed in one place.
  */
 
 import type { RbNode } from "./parser.js";
@@ -16,7 +16,7 @@ export interface Range {
   end: number;
 }
 
-/** Lines, counting from one, because a summary's `location.range` is lines everywhere else in the IR. */
+/** A node's lines, counting from one, since `location.range` is in lines throughout the IR. */
 export function rangeOf(node: RbNode): Range {
   return {
     start: node.startPosition.row + 1,
@@ -24,7 +24,7 @@ export function rangeOf(node: RbNode): Range {
   };
 }
 
-/** Byte offsets, which identity measures with; lines above are for reading. */
+/** A node's byte offsets, which node keys are built from. */
 export function spanOf(node: RbNode): Range {
   return { start: node.startIndex, end: node.endIndex };
 }
@@ -56,10 +56,10 @@ const BRANCH_FIELDS: Record<string, string[]> = {
   rescue: ["body"],
 };
 
-/** A node whose named children are statements run in place, apart from a clause among them. */
+/** Nodes whose named children are statements that run in order, except for any clause among them. */
 const STATEMENT_LISTS = new Set(["then", "else", "do", "ensure", "begin"]);
 
-/** A clause is part of the statement around it, not a statement of its own. */
+/** Clauses belong to the statement around them, so the walk opens them up. */
 const CLAUSE_TYPES = new Set(["elsif", "else", "when", "rescue", "ensure"]);
 
 /**
@@ -91,7 +91,7 @@ export function nestedStatements(stmt: RbNode): RbNode[] {
   return [];
 }
 
-/** A branch is a statement list, a clause, or, after a modifier, one statement. */
+/** A branch is a statement list, a clause, or, after a modifier such as `x if y`, one statement. */
 function statementsRunBy(branch: RbNode): RbNode[] {
   if (STATEMENT_LISTS.has(branch.type) || CLAUSE_TYPES.has(branch.type)) {
     return nestedStatements(branch);
@@ -100,8 +100,8 @@ function statementsRunBy(branch: RbNode): RbNode[] {
 }
 
 /**
- * A body written in one of these belongs to the thing it declares, so
- * its statements do not run when the enclosing body runs.
+ * The body of one of these belongs to the definition, so its statements
+ * do not run when the enclosing body runs.
  */
 export const OWN_BODY_TYPES = new Set([
   "method",
@@ -112,14 +112,14 @@ export const OWN_BODY_TYPES = new Set([
   "singleton_class",
 ]);
 
-/** The parse tree's root. Its own statements are what a file runs as it loads. */
+/** The parse tree's root. Its own statements run when the file loads. */
 export const PROGRAM_TYPE = "program";
 
 /**
- * What a read of a file's load-time statements does not descend into.
- * A block is left out along with the nested definitions, because the
- * library call it is written on decides whether to run it, and a Rake
- * task body would otherwise read as work the file does when required.
+ * The node types a read of a file's load-time statements does not
+ * descend into. Blocks are included with the definitions because the
+ * call a block is passed to decides whether it runs. Otherwise a Rake
+ * task body would count as work the file does when it is required.
  */
 export const MODULE_SCOPE_STOPS = new Set([
   ...OWN_BODY_TYPES,
@@ -127,19 +127,19 @@ export const MODULE_SCOPE_STOPS = new Set([
   "do_block",
 ]);
 
-/** A class and a module both open a body a definition can be written inside. */
+/** Classes and modules, whose bodies can contain definitions. */
 export const NESTING_TYPES = new Set(["class", "module"]);
 
 /** The two ways Ruby writes a method, `def x` and `def self.x`. */
 export const METHOD_TYPES = new Set(["method", "singleton_method"]);
 
-/** `->(x) { ... }`, a function a name can be written to and called later. */
+/** `->(x) { ... }`, a function that can be assigned to a name and called later. */
 export const LAMBDA_TYPE = "lambda";
 
 /**
- * The nearest method or lambda a node is written inside, or null
- * outside both. A read of a parameter is keyed under it, so this has to
- * stop where the fact emitter stops.
+ * The nearest method or lambda a node is written inside, or null outside
+ * both. Parameter reads are keyed under it, so this has to stop where the
+ * fact emitter stops.
  */
 export function enclosingDefinition(node: RbNode): RbNode | null {
   let current = node.parent;
@@ -153,36 +153,36 @@ export function enclosingDefinition(node: RbNode): RbNode | null {
 }
 
 /**
- * Ruby's own module keywords. `extend` is not one: it adds class
- * methods, and a field is answered by an instance method. The syntactic
- * ancestry and the facts read the same two calls, so both sides agree on
- * which constant is mixed in.
+ * The calls that mix a module into a class's instance methods. `extend`
+ * is left out because it adds class methods, and a field resolves through
+ * an instance method. The ancestry walk and the facts both read these two
+ * calls, so they agree on which constant is mixed in.
  */
 export const INCLUDE_CALL = "include";
 export const PREPEND_CALL = "prepend";
 
-/** A call's arguments are values it is handed, not statements the body runs. */
+/** A call's arguments are values passed in, so the statement walk skips them. */
 const ARGUMENT_LIST_TYPE = "argument_list";
 
-/** The two spellings of a block, `{ }` and `do ... end`. */
+/** The two ways to write a block, `{ }` and `do ... end`. */
 const BLOCK_TYPES = new Set(["block", "do_block"]);
 
-/** What a pack says about one call whose block runs as part of the body around it, with the fields it left out settled. */
+/** A pack's declaration of one body-block call, with its optional flags defaulted. */
 export interface BodyBlockKind {
-  /** Whether the library only gives the call to a module, so a class writing the same name means something else. */
+  /** Whether the library offers the call only to modules. In a class, a call of the same name is something else. */
   readonly moduleOnly: boolean;
-  /** Whether a `def` in the block declares a method on the class itself rather than on an instance. */
+  /** Whether a `def` in the block defines a method on the class itself instead of on an instance. */
   readonly definesClassMethods: boolean;
 }
 
 /**
- * The calls a run's packs say run their block as part of the class or
- * module body it is written in, by the name a project writes. Ruby
- * defines no such call, so this is empty until a pack declares one.
+ * The calls whose block runs as part of the surrounding class or module
+ * body, keyed by the call's name as a project writes it. Ruby has no such
+ * call of its own, so this is empty unless a pack declares one.
  */
 export type BodyBlocks = ReadonlyMap<string, BodyBlockKind>;
 
-/** What a reader that was given no packs works from. */
+/** The body blocks for a reader that was given no packs. */
 export const NO_BODY_BLOCKS: BodyBlocks = new Map();
 
 /** Whether the class or module a body belongs to is a module. */
@@ -190,7 +190,7 @@ export function isModuleBody(body: RbNode): boolean {
   return body.parent?.type === "module";
 }
 
-/** What a pack declared about the block this statement opens on the body around it, or null when the statement opens no such block. */
+/** The pack's declaration for this statement when it is a declared body-block call with a block, or null otherwise. */
 function declaredBlockAt(
   statement: RbNode,
   isModule: boolean,
@@ -208,10 +208,10 @@ function declaredBlockAt(
 }
 
 /**
- * The statements a class or module body runs, with every block a pack
- * declared opened out where it is written. Without that, a method or a
- * value a concern declares inside such a block belongs to the block and
- * nothing can read it off the module.
+ * The statements a class or module body runs, with the statements of
+ * every declared body block read in place of the call. Otherwise a method
+ * or value that a concern declares inside such a block would belong to
+ * the block, and nothing could read it off the module.
  */
 export function bodyStatementsRun(
   body: RbNode,
@@ -229,9 +229,8 @@ export function bodyStatementsRun(
 }
 
 /**
- * Whether a definition written somewhere inside `body` runs on the
- * class rather than on an instance, because a declared block that
- * defines class methods encloses it.
+ * Whether a definition inside `body` defines a class method, because it
+ * is inside a declared body block that defines class methods.
  */
 export function definedAtClassLevel(
   node: RbNode,
@@ -255,18 +254,18 @@ export function definedAtClassLevel(
   return false;
 }
 
-/** A call whose block is the thing being configured rather than a place statements run. */
+/** Whether a call's block configures the call itself, so its statements are not part of the body. */
 export type BlockConfigures = (call: RbNode) => boolean;
 
 /**
  * Every statement a body runs, in source order. Ruby runs a class body
- * like any other code, so a declaration can sit inside an `if`, a
- * `.each` block, a `begin` or a `class_eval`, and taking the body's own
- * child list finds the first spelling and loses the rest in silence.
+ * like any other code, so a declaration can be inside an `if`, an `.each`
+ * block, a `begin` or a `class_eval`. Reading only the body's direct
+ * children would miss those without any sign.
  *
- * `blockConfigures` says which calls keep their block to themselves.
- * `field :x, String do argument :q, String end` declares an argument on
- * the field, not on the class, so that block is not part of the body.
+ * `blockConfigures` picks out the calls whose block is not part of the
+ * body. `field :x, String do argument :q, String end` declares an
+ * argument on the field, so that block is skipped.
  */
 export function runStatements(
   body: RbNode,
@@ -306,19 +305,18 @@ export function stringLiteralValue(node: RbNode): string | null {
   return content;
 }
 
-/** tree-sitter-ruby leaves the leading colon in a `simple_symbol`'s text, but not in a `hash_key_symbol`'s. */
+/** A `simple_symbol`'s name without its leading colon, or null for any other node. */
 export function symbolValue(node: RbNode): string | null {
   return node.type === "simple_symbol" ? node.text.slice(1) : null;
 }
 
 /**
- * Every instance method a class body defines, keyed by the name it is
- * defined under. A name defined twice keeps the later definition, the
- * way Ruby's own redefinition does.
+ * Every instance method a class body defines, keyed by name. A name
+ * defined twice keeps the later definition, as Ruby does.
  *
- * `def self.name` parses as a `singleton_method` and is deliberately
- * not one of these: it runs on the class, and what resolves a field is
- * an instance method, and so is a `def` inside a block a pack declared
+ * Class methods are left out, since a field resolves through an instance
+ * method. That covers `def self.name`, which parses as a
+ * `singleton_method`, and a `def` inside a body block the pack declares
  * as defining class methods.
  */
 export function instanceMethodsByName(
@@ -350,7 +348,7 @@ function visibilityKeyword(text: string): MethodVisibility | null {
   return VISIBILITY_KEYWORDS.has(text) ? (text as MethodVisibility) : null;
 }
 
-/** A public entry is left out rather than written, so the result stays sparse and an explicit `public` can still clear an earlier narrowing. */
+/** Public is recorded by removing the entry, so the result stays sparse and an explicit `public` clears an earlier `private`. */
 function setVisibility(
   visibility: Map<string, MethodVisibility>,
   name: string,
@@ -363,7 +361,7 @@ function setVisibility(
   visibility.set(name, keyword);
 }
 
-/** Each name a `private`/`protected`/`public` call marks, `private def name; end` or `private :a, :b`. */
+/** Sets the visibility of each method passed to `private`, `protected` or `public`, as in `private def name; end` or `private :a, :b`. */
 function markCalledOutMethods(
   call: RbNode,
   keyword: MethodVisibility,
@@ -383,13 +381,12 @@ function markCalledOutMethods(
 }
 
 /**
- * The Ruby visibility of every instance method a class body defines
- * directly, keyed by name. A body runs top to bottom: a bare
- * `private`/`protected`/`public` changes what every later `def` gets,
- * `private def name; end` marks that one definition without changing
- * what follows, and `private :a, :b` marks methods already defined.
- * A method absent from the result is public: nothing in the body
- * narrowed it.
+ * The visibility of every instance method a class body defines directly,
+ * keyed by name. The body is read top to bottom. A bare `private`,
+ * `protected` or `public` applies to every later `def`. The call form,
+ * `private def name; end`, marks that one definition, and
+ * `private :a, :b` marks methods already defined. A method missing from
+ * the result is public.
  */
 export function instanceMethodVisibility(
   body: RbNode,
@@ -420,11 +417,10 @@ export function instanceMethodVisibility(
 }
 
 /**
- * Every `def self.name` a class body writes directly, keyed by the name
- * it is defined under. Used for a call written straight on the
- * constant, `OrderService.call` say, which runs on the class rather
- * than an instance and so is never in `instanceMethodsByName`. A `def`
- * inside a block a pack declared as defining class methods is one too.
+ * Every class method a class body defines, keyed by name: each
+ * `def self.name`, and each `def` inside a body block the pack declares
+ * as defining class methods. A call on the constant itself, such as
+ * `OrderService.call`, is looked up here, since it runs on the class.
  */
 export function singletonMethodsByName(
   body: RbNode,
@@ -457,9 +453,9 @@ export function bareCalls(body: RbNode, name: string): RbNode[] {
 
 /**
  * The arguments of each receiverless call to `name` the body runs, one
- * group per call, in source order. Grouped rather than flattened
- * because `include A, B` and `include A` then `include B` order their
- * modules differently.
+ * group per call, in source order. They stay grouped because
+ * `include A, B` orders its modules differently from `include A`
+ * followed by `include B`.
  */
 export function bareCallArgumentGroups(body: RbNode, name: string): RbNode[][] {
   return bareCalls(body, name).map((call) => {
@@ -469,9 +465,9 @@ export function bareCallArgumentGroups(body: RbNode, name: string): RbNode[][] {
 }
 
 /**
- * Whether a method has work in it. `def name; end` has no `body` field
- * at all; an endless `def name = expr` has the expression itself there
- * rather than a `body_statement`, and that is work.
+ * Whether a method has any statements. `def name; end` has no `body`
+ * field. An endless `def name = expr` has the expression itself as its
+ * body, which counts.
  */
 export function methodHasStatements(method: RbNode): boolean {
   const body = field(method, "body");
@@ -484,7 +480,7 @@ export function methodHasStatements(method: RbNode): boolean {
   return bodyStatements(body).length > 0;
 }
 
-/** A `pair` node's key, when it is written as the bare `key:` shorthand. Null for a pair keyed by a string or an expression. */
+/** A `pair` key's name when it is written as `key:`, or null for a key written as a string or an expression. */
 export function hashKeySymbolName(node: RbNode): string | null {
   return node.type === "hash_key_symbol" ? node.text : null;
 }
@@ -499,7 +495,11 @@ export function booleanLiteralValue(node: RbNode): boolean | null {
   return null;
 }
 
-/** Keyword arguments turn up as `pair` nodes directly among the argument list's children, rather than wrapped in a hash node. */
+/**
+ * A call's arguments, split into positional and keyword. tree-sitter puts
+ * keyword arguments in the argument list as `pair` nodes, with no hash
+ * node around them. Only keys written as `key:` are read.
+ */
 export interface CallArgs {
   positional: RbNode[];
   keyword: Record<string, RbNode>;
@@ -527,12 +527,11 @@ export function readCallArgs(argumentList: RbNode | null): CallArgs {
 }
 
 /**
- * tree-sitter hands back a fresh wrapper object every time a child is read,
- * so two reads of one node are never `===`. These key on the node id, and
- * `checkStyle` fails a build that keys a plain Set or Map on a node.
+ * A set of nodes keyed on node id. tree-sitter returns a new wrapper
+ * object each time a child is read, so two reads of one node are never
+ * `===`, and a plain Set would miss the match.
  */
-/** A set of nodes, compared the way tree-sitter compares them. */
 export class NodeSet extends IdSet<RbNode> {}
 
-/** A map keyed by node, compared the way tree-sitter compares them. */
+/** A map keyed on node id, for the same reason as `NodeSet`. */
 export class NodeMap<V> extends IdMap<RbNode, V> {}

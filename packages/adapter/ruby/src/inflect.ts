@@ -1,11 +1,12 @@
 /**
- * inflect.ts: the default inflections ActiveSupport ships, which is how
- * `has_many :statuses` says Status without writing Status down.
+ * The default inflections ActiveSupport ships. They are how
+ * `has_many :statuses` reaches `Status` without the source writing
+ * `Status` anywhere.
  *
- * The rules and their order are ActiveSupport's own, copied from the
- * `inflections.rb` it loads before a project's initializers run. What a
- * project taught its own inflector arrives from the pack, as
- * `RbInflections`, and is searched before these, the way ActiveSupport
+ * The rules and their order are copied from the `inflections.rb`
+ * ActiveSupport loads before a project's initializers run. The words a
+ * project adds to its own inflector come from the pack as
+ * `RbInflections`, and are searched before these, the way ActiveSupport
  * searches the newest rule first.
  */
 
@@ -47,8 +48,8 @@ const SINGULAR_RULES: readonly (readonly [RegExp, string])[] = [
   [/(matr)ices$/i, "$1ix"],
   [/(quiz)zes$/i, "$1"],
   [/(database)s$/i, "$1"],
-  // The words ActiveSupport calls irregular. It declares them after the
-  // rules above, which is what puts them ahead in the search.
+  // ActiveSupport's irregular words. It declares them after the rules
+  // above, so they come first in the search.
   [/(p)erson$/i, "$1erson"],
   [/(p)eople$/i, "$1erson"],
   [/(m)an$/i, "$1an"],
@@ -63,7 +64,7 @@ const SINGULAR_RULES: readonly (readonly [RegExp, string])[] = [
   [/(z)ombies$/i, "$1ombie"],
 ];
 
-/** Words ActiveSupport says are spelled the same in both numbers. */
+/** Words ActiveSupport spells the same in the singular and the plural. */
 const UNCOUNTABLE: ReadonlySet<string> = new Set([
   "equipment",
   "information",
@@ -77,7 +78,7 @@ const UNCOUNTABLE: ReadonlySet<string> = new Set([
   "police",
 ]);
 
-/** The singular of a word, the way ActiveSupport's `singularize` reads it. */
+/** The singular of a word, the way ActiveSupport's `singularize` computes it. */
 export function singularize(word: string, project?: RbInflections): string {
   if (
     UNCOUNTABLE.has(word.toLowerCase()) ||
@@ -142,7 +143,7 @@ function applyRule(
     : null;
 }
 
-/** The replacement with the first letter's case taken from the word it replaces, which is what ActiveSupport's irregulars do. */
+/** The replacement with its first letter's case taken from the word it replaces, as ActiveSupport does for an irregular word. */
 function matchingCase(word: string, replacement: string): string {
   const first = word[0];
   if (first === undefined || first !== first.toUpperCase()) {

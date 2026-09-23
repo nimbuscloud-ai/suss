@@ -1,9 +1,10 @@
 /**
  * One branch per place a function body ends, with the conditions that
- * gate it. The shared path engine does the enumeration; this lowers
- * Python into the form it takes and turns each result back into a
- * `RawBranch`. What a terminal means is the caller's to say, because a
- * return in a route responds while a return in a dependency hands the
+ * gate it. The shared path engine enumerates the paths. This module lowers
+ * the Python body for it and turns each path back into a `RawBranch`.
+ *
+ * The caller decides what each terminal means through `branchOf`. A
+ * return in a route responds, and a return in a dependency hands the
  * request on to the handler.
  */
 
@@ -65,8 +66,8 @@ export function bodyTerminals(
   raised: readonly RaisedResponse[],
   continuations: readonly PyNode[] = [],
 ): BodyTerminal[] {
-  // `return await call_next(request)` is one statement that both hands on
-  // and returns; handing on is what it does to the request.
+  // `return await call_next(request)` both hands on and returns. It counts
+  // as a continuation, because the request goes on to the handler.
   const handsOn = new NodeSet(continuations);
   const found: BodyTerminal[] = [
     ...returnStatements(body)
@@ -102,7 +103,7 @@ export interface EnumerateBodyOptions {
   raised: readonly RaisedResponse[];
   effects: readonly InvocationEffect[];
   branchOf: (terminal: BodyTerminal) => TerminalBranch;
-  /** What a path that runs off the end of the body does. Unset drops those paths, which is right for a route that then returns None. */
+  /** What a path that runs off the end of the body does. When unset, those paths are dropped. */
   fallthrough?: TerminalBranch;
   /** The project's facts, so a condition over a named constant reads the value that constant was written as. */
   facts?: Database | undefined;
@@ -113,9 +114,9 @@ export function enumerateBodyBranches(
   options: EnumerateBodyOptions,
 ): RawBranch[] {
   const statements = options.terminals.map((found) => found.statement);
-  // A raise leaves the unit through the statement itself. A declared call
-  // and a continuation leave it through a call the lowering would otherwise
-  // read as a step in the middle of the body.
+  // A raise statement ends the unit by itself. A declared status call or a
+  // continuation ends it through a call, which the lowering would otherwise
+  // treat as an ordinary step in the body.
   const leavesByCall = new NodeSet([
     ...options.raised
       .filter((response) => response.thrownByCall)

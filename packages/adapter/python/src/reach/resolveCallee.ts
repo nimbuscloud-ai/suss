@@ -1,13 +1,14 @@
 /**
- * What a call's callee is: a function in this run the walk can step
- * into, or a reason it cannot.
+ * What a call's callee is: a function in this run that the walk can
+ * follow, or the reason it cannot.
  *
- * The rules in @suss/resolution decide it. Every language feature that
- * moves a value is a hop they already state, so nothing here reads a
- * name, an alias, an attribute, or an instance for itself.
+ * The rules in `@suss/resolution` settle the callee. They already follow
+ * a value through names, aliases, attributes and instances, so nothing
+ * here reads any of those itself.
  *
- * What is left is about files rather than values: a module before the
- * dot, and a name only a wildcard import could have brought in.
+ * This module handles the two cases that depend on files: a module
+ * written before the dot, and a name that only a wildcard import could
+ * have brought in.
  */
 
 import {
@@ -46,7 +47,7 @@ export interface ResolveContext {
   /** Every file this run read, by absolute path. */
   readonly filesByPath: ReadonlyMap<string, BoundPythonFile>;
   readonly roots: string[];
-  /** The value facts, which are where a callee is settled. */
+  /** The value facts the rules settle a callee from. */
   readonly facts: Database;
   /** The function each function key was read from. */
   readonly definitions: ReadonlyMap<string, PyNode>;
@@ -56,11 +57,11 @@ export interface ResolveContext {
 export interface CallSite {
   readonly file: BoundPythonFile;
   readonly scope: Scope;
-  /** The key of the function being scanned, which is what tells its own parameters apart. */
+  /** The key of the function being scanned. A parameter key that starts with it is one of this function's own. */
   readonly owner: string;
 }
 
-/** The word this adapter puts on each outcome the rules refuse with. */
+/** The gap reason reported for each outcome where the rules stop. */
 const STOP_FOR: Record<string, UnfollowedReason> = {
   severalSources: "multipleSources",
   outsideRun: "outsideRun",
@@ -73,20 +74,20 @@ const NO_DECLARATION: CalleeResolution = {
   reason: "noDeclaration",
 };
 
-/** The key the rules settle a callee under, or the stop that key would never reach. */
+/** The key the rules settle a callee under, or a stop decided before any key is asked about. */
 type CalleeSpelling =
   | { readonly kind: "key"; readonly key: string }
   | { readonly kind: "stopped"; readonly reason: UnfollowedReason };
 
-/** What a batch of calls came down to: the key each was asked under, and what came back. */
+/** A batch of calls resolved together: the key each was asked under, and the outcome for each key. */
 export interface CalleeSpellings {
   readonly spellingOf: ReadonlyMap<number, CalleeSpelling>;
   readonly outcomes: ReadonlyMap<string, CalleeOutcome>;
 }
 
 /**
- * What every one of these calls is made through, asked as one batch. A
- * callee written through modules is asked about under the name the
+ * Resolves the callees of all these calls in one batch. A callee written
+ * through modules, `pkg.mod.helper()`, is asked about under the name the
  * module declares.
  */
 export function calleeSpellings(
@@ -105,7 +106,7 @@ export function calleeSpellings(
   return { spellingOf, outcomes: calleeOutcomes(ctx.facts, [...keys]) };
 }
 
-/** What a call's callee comes down to, once `calleeSpellings` has asked about the batch. */
+/** What a call's callee resolves to, reading the batch from `calleeSpellings` when one is passed. */
 export function resolveCallee(
   call: PyNode,
   site: CallSite,
@@ -124,9 +125,9 @@ export function resolveCallee(
 }
 
 /**
- * What each of these keys comes down to, asked as one batch. A caller
- * that then reads them one at a time evaluates the rules once rather
- * than once per key.
+ * The outcome for each of these keys, asked as one batch. A caller that
+ * then reads them one at a time runs the rules once instead of once per
+ * key.
  */
 export function namedOutcomes(
   keys: readonly string[],
@@ -188,7 +189,7 @@ function spellingFor(
   );
 }
 
-/** Calling a class runs its `__init__`; every other refusal keeps the word this adapter puts on it. */
+/** Calling a class runs its `__init__`. Any other stop is reported with the reason from `STOP_FOR`. */
 function asCallee(
   outcome: CalleeOutcome,
   owner: string,
@@ -201,8 +202,8 @@ function asCallee(
     return constructorOf(outcome.key, ctx);
   }
   if (outcome.kind === "callerSupplied") {
-    // Some other function's parameter is a value this body cannot see,
-    // rather than something this body's own caller decides.
+    // Only this function's own parameter is supplied by its caller. A
+    // parameter of some other function is a value this body cannot settle.
     return outcome.key.startsWith(`${owner}#`)
       ? { kind: "stopped", reason: "callerSupplied" }
       : { kind: "stopped", reason: "unsettledValue" };
@@ -213,7 +214,7 @@ function asCallee(
   };
 }
 
-/** A lambda has no summary of its own, so a call that comes down to one stops here. */
+/** A lambda has no summary of its own, so a call that resolves to one stops here. */
 function functionCallee(key: string, ctx: ResolveContext): CalleeResolution {
   if (ctx.definitions.get(key)?.type === "lambda") {
     return { kind: "stopped", reason: "unsettledValue" };
@@ -280,10 +281,10 @@ type ModuleStep =
     };
 
 /**
- * The module-level name a callee ends at, when what it is read off is a
- * module rather than a value, or when nothing but a wildcard import
- * could have brought the name in. Null for every other callee, which
- * leaves the rules to settle it from the key the call site gives.
+ * The module-level name a callee ends at, when it is read off a module
+ * instead of a value, or when only a wildcard import could have brought
+ * the name in. Null for every other callee, and the rules then settle it
+ * from the call site's own key.
  */
 function throughModules(
   callee: PyNode,

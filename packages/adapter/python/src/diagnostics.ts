@@ -1,11 +1,11 @@
 /**
- * The extraction funnel for Python, built on the shared report shape
+ * The extraction report for a Python run, built from the shared report
  * in `@suss/extractor`.
  *
- * Python has no import-gate stage yet: every pack sees every file, the
- * way TypeScript reports an ungated pack.
- * `PackTally.unitsDiscovered` and `.summariesProduced` are filled by
- * `project.ts` as it walks each file, and read back here.
+ * Python does not gate a pack on the file's imports yet, so every pack
+ * sees every file and the report reads the way TypeScript reports an
+ * ungated pack. The project walk fills in each pack's tally as it reads
+ * a file, and this module only turns the tallies into the report.
  */
 
 import {

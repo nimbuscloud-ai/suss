@@ -1,14 +1,14 @@
 /**
- * Evidence for drafting a project-wrapper dependency stub: every
- * import, anywhere in the project, of the asked module or one of its
- * submodules. A Python decorator pattern matches a wrapper's import
- * module exactly (see discovery.ts's `importModule.includes`), so a
- * stub covers one imported module at a time rather than one package,
- * and this groups by the exact module text a project writes.
+ * Every import in the project of a module or one of its submodules, for
+ * drafting a stub of a project's wrapper package.
  *
- * This walks every node rather than going through the binder in
- * scope.ts, so an import inside an `if` or `try` still counts as
- * evidence even though the binder would not resolve a name through it.
+ * A discovery pattern matches a decorator's import module exactly, so a
+ * stub covers one imported module at a time. The sites are grouped by
+ * the module text as the project wrote it for that reason.
+ *
+ * The walk visits every node instead of asking the binder, so an import
+ * inside an `if` or a `try` still counts here, even though the binder
+ * does not resolve a name through it.
  */
 
 import fs from "node:fs";
@@ -21,7 +21,7 @@ import { findPythonFiles } from "./project.js";
 import type { PyNode } from "./parser.js";
 
 export interface PythonImportSite {
-  /** The name imported at this site, null for a bare `import module`, which binds the whole module rather than one name from it. */
+  /** The name imported at this site. Null for a bare `import module`, which binds the whole module. */
   name: string | null;
   file: string;
   line: number;
@@ -42,7 +42,7 @@ function importsSubmoduleOf(module: string, packageName: string): boolean {
   return module === packageName || module.startsWith(`${packageName}.`);
 }
 
-/** The dotted modules an `import` statement names, one per comma-separated name. */
+/** The dotted modules an `import` statement lists, one per comma-separated entry. */
 function importStatementModules(stmt: PyNode): string[] {
   const modules: string[] = [];
   for (const nameNode of fields(stmt, "name")) {
@@ -60,7 +60,7 @@ function importStatementModules(stmt: PyNode): string[] {
   return modules;
 }
 
-/** The module and imported name of each `from module import name`. Relative imports are skipped, since they never name an installed package. */
+/** The module and imported name of each `from module import name`. A relative import is skipped because it never refers to an installed package. */
 function importFromStatementEntries(
   stmt: PyNode,
 ): { module: string; name: string }[] {

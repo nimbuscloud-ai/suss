@@ -156,10 +156,10 @@ const stringRows: Row[] = [
 ];
 
 /**
- * What a project asks a list, rather than does to it. The answer is a
- * value nothing here reads, so each row gives back a hole; what a row
- * settles is that the call left the list as it was, which is what keeps
- * a constant asked about in one method readable in another.
+ * Methods that query a list without changing it. Nothing here reads the
+ * result, so each row returns a hole. The row still records that the
+ * call left the list unchanged, so a constant queried in one method
+ * stays readable in another.
  */
 const ASKING_METHODS = [
   "include?",
@@ -185,9 +185,8 @@ const sequenceRows: Row[] = ["sequence", "unbounded"].flatMap((on): Row[] => [
       result: joined(operand(receiver), args[0]),
     }),
   },
-  // Iterating a list gives the list back and leaves it as it was, which
-  // is what keeps `KEYS.each { ... }` from widening `KEYS` everywhere
-  // else.
+  // Iterating a list returns it unchanged, so `KEYS.each { ... }` does
+  // not widen `KEYS` for every other reader.
   ...["each", "each_with_index"].map(
     (method): Row => ({
       kind: "method",
@@ -251,8 +250,8 @@ const calleeRows: Row[] = [
     origin: { module: "Kernel", name: "String" },
     apply: ({ args }) => ({ result: concat([operand(args[0])]) }),
   },
-  // A URI is the string it was parsed from, as far as a reader of paths
-  // is concerned, and both spellings are the standard library's own.
+  // To a reader of paths, a URI is the string it was parsed from. Both
+  // spellings come from Ruby's standard library.
   {
     kind: "callee",
     origin: { module: "Kernel", name: "URI" },

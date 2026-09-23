@@ -1,11 +1,12 @@
 /**
- * The extraction funnel for Ruby, built on the shared report shape in
+ * The extraction report for Ruby, built with the shared report in
  * `@suss/extractor`.
  *
- * Ruby has no import-gate stage yet: every pack sees every file, the
- * way TypeScript reports an ungated pack.
- * `PackTally.unitsDiscovered` and `.summariesProduced` are filled by
- * `project.ts` as it walks each file, and read back here.
+ * Ruby does not gate a pack on the files that import its library yet,
+ * so every pack sees every file and is reported the way TypeScript
+ * reports a pack with no gate. The project walk fills in each pack's
+ * `unitsDiscovered` and `summariesProduced` as it reads a file, and this
+ * module reads them back.
  */
 
 import {

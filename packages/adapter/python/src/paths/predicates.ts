@@ -1,10 +1,10 @@
 /**
- * predicates.ts: what a condition expression says, as a Predicate.
+ * Turns a condition expression into a Predicate.
  *
  * The checker reads a transition's conditions to tell a status test from an
- * ordinary one, so a condition left opaque takes no part in that. Each side
+ * ordinary one, and an opaque condition gives it nothing to read. Each side
  * of a comparison goes through the shared value evaluator, so a status
- * written as a named constant is the number the test compares against.
+ * written as a named constant comes out as its number.
  */
 
 import { constantOf, literalOf } from "@suss/values";
@@ -27,7 +27,7 @@ const COMPARISONS: Record<string, ComparisonOp> = {
   "<=": "lte",
 };
 
-/** The operator a comparison writes, which comes between its two operands. */
+/** Joined with a space so `is not` and `not in` come out as one operator. */
 function operatorText(node: PyNode): string {
   return node.children
     .filter((child) => child !== null && !child.isNamed)
@@ -35,7 +35,6 @@ function operatorText(node: PyNode): string {
     .join(" ");
 }
 
-/** A literal the IR can carry, or the expression as written. */
 function valueRefOf(node: PyNode, facts: Database | undefined): ValueRef {
   const value = evaluatedValue(node, facts);
   const constant = constantOf(value);
@@ -59,11 +58,10 @@ function valueRefOf(node: PyNode, facts: Database | undefined): ValueRef {
 }
 
 /**
- * `response.status_code` as the name it starts from and the members
- * read off it. A reader of one of those members, the checker asking
- * which status a guard names among them, needs the parts rather than
- * the text. Null for anything with a call or a subscript in it, where
- * the value depends on more than the name.
+ * `response.status_code` as the name it starts from and the members read
+ * off it. The checker finds a status test by matching those members, so it
+ * needs the parts and cannot use the text. Null for anything with a call or
+ * a subscript in it, where the value depends on more than the name.
  */
 function attributeChain(node: PyNode, tail: string[] = []): string[] | null {
   if (node.type === "identifier") {
@@ -127,11 +125,7 @@ function comparisonOf(node: PyNode, facts: Database | undefined): Predicate {
   };
 }
 
-/**
- * What a condition expression says. Anything this does not model stays
- * opaque with its own source text, which is what every Python condition was
- * before.
- */
+/** A condition this does not model stays opaque, with its source text. */
 export function predicateOf(
   node: PyNode,
   facts?: Database | undefined,

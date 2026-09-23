@@ -1,11 +1,12 @@
-// parser.ts: loads the Ruby grammar behind web-tree-sitter.
-//
-// tree-sitter is the settled parser choice. It runs as WASM, needs no
-// native build step, and can be swapped behind this one module if a
-// fuzzer run ever asks for a different Ruby grammar. The rest of the
-// adapter never imports `web-tree-sitter` directly. It goes through
-// `parseRuby` and the node helpers in `ast.ts`. This mirrors the Python
-// adapter's parser.
+/**
+ * Loads the Ruby grammar into web-tree-sitter and parses source with it.
+ *
+ * tree-sitter runs as WASM, so the package needs no native build step.
+ * The rest of the adapter never imports `web-tree-sitter` directly. It
+ * goes through `parseRuby` and the node helpers, so moving to a different
+ * Ruby grammar would change only this module. The Python adapter's
+ * parser works the same way.
+ */
 
 import fs from "node:fs";
 import path from "node:path";
@@ -42,9 +43,9 @@ function loadLanguage(): Promise<Language> {
 }
 
 /**
- * A new `Parser` for every call, so that parses running at the same time do
- * not fight over one parser's mutable `language` field. The compiled `Language`
- * is loaded once per process and shared.
+ * Uses a new `Parser` for every call, so two parses running at once never
+ * share one parser's mutable `language` field. The compiled `Language` is
+ * loaded once per process and shared.
  */
 export async function parseRuby(source: string): Promise<Tree> {
   const language = await loadLanguage();

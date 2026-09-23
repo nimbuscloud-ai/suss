@@ -1,15 +1,13 @@
 /**
- * callbacks.ts: the methods a class body registers for its library to
- * run when a write happens.
+ * The methods a class body registers for its library to run when a write
+ * happens.
  *
  * `after_commit :sync_search, on: :create` registers a method of the
- * class, and a body that creates a row through the model runs it
- * without ever writing its name. The declaration is stated as a fact,
- * and the shared rules join it to the ancestry, so a callback
- * registered on a base reaches every model below it.
- *
- * Which call registers a callback, and which events it covers, is the
- * library's own vocabulary and arrives from the pack.
+ * class, and a body that creates a row through the model runs it without
+ * ever writing its name. The registration becomes a fact, and the shared
+ * rules join it to the ancestry, so a callback registered on a base class
+ * applies to every model below it. The pack declares which calls register
+ * a callback and which events each one covers.
  */
 
 import { field, readCallArgs, runStatements } from "../ast.js";
@@ -31,9 +29,10 @@ export function callbacksIn(
 }
 
 /**
- * One `classCallback(class, event, method)` per event a declaration in
- * this class body covers. A declaration giving several methods states
- * one per method, the way the library registers them.
+ * Adds one `classCallback(class, event, method)` for each event a
+ * registration in this class body covers. A registration that lists
+ * several methods gets one fact per method, the way the library
+ * registers each one.
  */
 export function emitClassCallbacks(
   db: Database,
@@ -65,9 +64,9 @@ export function emitClassCallbacks(
 }
 
 /**
- * The events one declaration covers: what the registering call runs on,
- * narrowed by the keyword the library gives for that. Empty when this
- * call registers nothing.
+ * The events one registration covers: every event the registering call
+ * fires on, narrowed to one when the call writes the pack's event
+ * keyword. Empty when this call registers nothing.
  */
 function eventsOf(
   args: ReturnType<typeof readCallArgs>,

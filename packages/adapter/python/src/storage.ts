@@ -1,6 +1,9 @@
-// storage.ts: which calls in a body talk to the database, and what each does.
-// A pack says which query types its library defines, and a call matches when
-// the method behind it says it returns one. The README says why.
+/**
+ * Finds the calls in a body that talk to the database, and what each one
+ * does. A pack lists its library's query types, and a call chain matches
+ * when the method behind it declares that it returns one. DESIGN.md says
+ * why the match goes by return type.
+ */
 
 import { storageBinding } from "@suss/ir-core";
 
@@ -29,7 +32,7 @@ interface Chain {
   readonly last: PyNode;
   /** What the chain was called on, `AccessPoints` in `AccessPoints.query()`. */
   readonly subject: string;
-  /** The method the last call says, which is what tells a read from a write. */
+  /** The method the last call makes. It decides whether the chain reads or writes. */
   readonly operation: string;
   /** The calls between the first and the last, where `filter_by(id=x)` picks rows. */
   readonly between: readonly PyNode[];
@@ -205,10 +208,10 @@ function settledCallee(
 }
 
 /**
- * The class the call a name is assigned gives back. Walking to the
- * assignment is a value read, and the rules answer it only when the class
- * is one the file imported. A class the project wrote, a method read off
- * one, and a return annotation are all outside what they say.
+ * The class returned by the call a name is assigned from. This walks the
+ * body itself instead of asking the rules, because the rules settle the
+ * value only when the class is one the file imported. Here it can also be
+ * a project class, a method read off one, or a return annotation.
  */
 function builtTypeName(
   name: string,
@@ -229,7 +232,7 @@ function builtTypeName(
   });
 }
 
-/** The class the enclosing function says a name is: what the source states, or what the call it is assigned builds. */
+/** The class a name has in the enclosing function: its annotation, or what the call it is assigned from builds. */
 function declaredTypeName(
   name: string,
   from: PyNode,
@@ -417,9 +420,9 @@ function modelNamed(
 /**
  * The class a declared type is an alias of. `current_user: CurrentUser`
  * with `CurrentUser = Annotated[User, Depends(get_current_user)]` in the
- * file or in a module it imports from declares a `User`, which is the
- * class the shared rules say the name reaches. A name that reaches no
- * class the project wrote is its own answer when it is spelled as one.
+ * file or in a module it imports from declares a `User`, the class the
+ * shared rules say the name reaches. A name that reaches no project class
+ * is returned as it is when it is written like a class name.
  */
 function classBehind(typeName: string, options: StorageOptions): string | null {
   const key = `${options.filePath}#${typeName}`;
@@ -618,7 +621,7 @@ function matchedChains(
     }
     const typed = typedReceiverPattern(options, chain);
     if (typed !== undefined) {
-      // `db.execute(stmt).all()` is silent for what it calls on `db`,
+      // `db.execute(stmt).all()` records nothing for the call on `db`,
       // whatever it does with the result.
       const silent = (typed.recordsNothing ?? []).includes(
         methodName(chain.root),

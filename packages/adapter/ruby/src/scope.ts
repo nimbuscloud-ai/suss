@@ -1,21 +1,16 @@
 /**
  * Resolves Ruby constant paths against lexical nesting.
  *
- * A compound path referenced, like `Data::Record`, is read as absolute. A
- * bare name is relative to the nesting it is written inside, and so is a
- * compound name `class` or `module` opens. `require` is never resolved,
- * because Rails autoloads by naming convention rather than through a load graph
- * a static reader could follow, so a constant that nesting alone cannot qualify
- * keeps whatever name the source wrote and callers treat it as unresolved.
+ * A compound reference such as `Data::Record` is read as absolute. A bare
+ * name is relative to the nesting it is written inside, and so is a
+ * compound name that `class` or `module` opens. `require` is never
+ * resolved, because Rails autoloads by naming convention. A constant that
+ * nesting alone cannot qualify keeps the name the source wrote.
  *
- * Ruby's own `Module.nesting` puts a newly opened class or module on the front
- * of the chain already in effect, whether the name used to open it was bare or
- * compound, because nesting follows the class and module keywords in the text
- * and not the form of the name. So even when a class is opened with a compound
- * name, as in `module Api; class Types::CampaignType; end; end`, Ruby still
- * looks up through `Api` inside that body. That matters, because a bare
- * reference in there is resolved by trying each level of the chain, and dropping
- * `Api` would miss a class the file itself defines.
+ * Ruby's `Module.nesting` puts each newly opened class or module on the
+ * front of the chain, whether its name was bare or compound. Inside
+ * `module Api; class Types::CampaignType`, a bare reference is still
+ * looked up through `Api`.
  */
 
 import { field, runStatements } from "./ast.js";
@@ -23,10 +18,11 @@ import { field, runStatements } from "./ast.js";
 import type { RbNode } from "./parser.js";
 
 /**
- * Qualifies a name against the innermost level of `nesting` and no further. It
- * returns null for a computed expression or a variable, which callers treat as
- * unresolved. That is the name a `class` or `module` keyword defines. A lookup
- * that has to find the class a reference means tries `constantRefCandidates`.
+ * Qualifies a name against the innermost level of `nesting` only, which
+ * gives the name a `class` or `module` keyword defines. Returns null for
+ * a computed expression or a variable, which callers treat as
+ * unresolved. To find the class a reference refers to, use
+ * `constantRefCandidates`.
  */
 export function qualifyConstantRef(
   node: RbNode,
@@ -45,8 +41,8 @@ export function qualifyConstantRef(
 /**
  * Every qualified name a constant reference could mean, in the order Ruby
  * tries them. `module Api; class UsersController < ApplicationController`
- * gives `Api::ApplicationController` then `ApplicationController`, and which
- * one is meant depends on which is defined, so the caller decides.
+ * gives `Api::ApplicationController` then `ApplicationController`. Which
+ * one applies depends on which is defined, so the caller picks.
  */
 export function constantRefCandidates(
   node: RbNode,
@@ -248,7 +244,7 @@ function visitModule(
   }
 }
 
-/** A pack picks a derivation by name, and the code for each one lives here. */
+/** A pack picks a convention by name, and `TYPE_NAME_CONVENTIONS` maps each name to its code. */
 export type GraphqlTypeNameConvention = "stripTypeSuffix";
 
 /**
@@ -268,7 +264,7 @@ const TYPE_NAME_CONVENTIONS: Record<
   stripTypeSuffix: stripTypeSuffixName,
 };
 
-/** We never read a per-class name override, so this is always the name the convention derives. */
+/** The GraphQL type name the convention derives from a class name. A name a class sets for itself is not read. */
 export function graphqlTypeNameFromQualified(
   qualifiedName: string,
   convention: GraphqlTypeNameConvention,

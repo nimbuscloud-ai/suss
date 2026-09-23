@@ -1,15 +1,15 @@
 /**
  * The places a route body ends the request by raising.
  *
- * A pack says which of its library's callables end a request with a
- * status. A `raise` of one of them, and a bare call to one written as a
- * statement of its own, both become a throw terminal the extractor reads
- * as the response the library sends. Any other `raise` becomes a throw
- * terminal with no status, so the outcome is still reported without a
- * status nobody wrote being claimed for it.
+ * A pack lists the library callables that end a request with a status. A
+ * `raise` of one of them, or a bare call to one written as a statement on
+ * its own, becomes a throw terminal that the extractor reads as the
+ * response the library sends. Any other `raise` becomes a throw terminal
+ * with no status, so the outcome is still reported and no status is
+ * claimed for it.
  *
  * The match goes through the file's own imports, so a project function
- * spelled `abort` is not mistaken for Flask's.
+ * called `abort` is not mistaken for Flask's.
  */
 
 import { constantOf } from "@suss/values";
@@ -27,7 +27,7 @@ import type { ModuleBinding } from "../scope.js";
 export interface RaisedResponse {
   /** The statement the path engine gives conditions to. */
   statement: PyNode;
-  /** True when the statement is no `raise`, so the lowering has to be told it leaves the unit. */
+  /** True when the statement is not a `raise`, so the lowering has to be told that it ends the unit. */
   thrownByCall: boolean;
   terminal: RawTerminal;
 }
@@ -43,7 +43,8 @@ const NESTED_DEFINITION_TYPES = new Set(["function_definition", "lambda"]);
 
 /**
  * Every raise this function's own body writes, plus every statement that
- * is a bare call to something the pack declared, in source order.
+ * is a bare call to something the pack declared, in source order. Empty
+ * when the pack declares no status calls.
  */
 export function raisedResponses(
   body: PyNode | null,
@@ -93,8 +94,8 @@ function raisedResponseOf(
   const call = expression.type === "call" ? expression : null;
   const callee = calleeOf(expression, call);
   const declared = declaredCallFor(callee, options);
-  // A bare call is an outcome only where the pack said the library ends
-  // the request with it. Anything else about it is somebody's ordinary call.
+  // A bare call ends the request only when the pack declares it does.
+  // Any other bare call is an ordinary step in the body.
   if (declared === undefined && thrownByCall) {
     return null;
   }
@@ -183,9 +184,8 @@ function lastSegmentOf(dotted: string): string | null {
 
 /**
  * The status the call ends the request with. An argument that does not
- * come down to a number is reported as the text it was written as, so a
- * reader sees an outcome nobody could resolve rather than a status the
- * running app may not send.
+ * evaluate to a number is reported as its source text, so the summary
+ * records that a status was set without claiming one the app may not send.
  */
 function statusOf(
   declared: PyStatusCall,
@@ -212,7 +212,6 @@ function argumentsOf(call: PyNode): PyNode[] {
   );
 }
 
-/** The keyword wins over the position, the way a call written both ways runs. */
 function statusArgumentOf(declared: PyStatusCall, call: PyNode): PyNode | null {
   const args = argumentsOf(call);
   const keyed = args.find(
@@ -233,8 +232,8 @@ function statusArgumentOf(declared: PyStatusCall, call: PyNode): PyNode | null {
 
 /**
  * The first string literal the call was given, wherever it was written.
- * Every library spells this differently, and a message read off the
- * wrong argument would still be the message a reader sees.
+ * Each library takes its message in a different argument, and the first
+ * literal finds it in all of them without a pack declaring where.
  */
 function writtenMessageOf(call: PyNode): string | null {
   for (const arg of argumentsOf(call)) {

@@ -1,16 +1,16 @@
 /**
- * clientCalls.ts: a method that calls out over the network is a client
- * of the boundary that call states.
+ * Finds methods that call out over the network. Each becomes a client of
+ * the boundary its call reaches.
  *
- * A pack says which constant the library's request calls hang on, which
- * method names state the request method, and where the URL is written.
- * This reads the calls in each method body, evaluates the URL the same
- * way a route's path is evaluated, and reports the enclosing method as
- * a client of that method and path. A call at the top level of a file
- * has no unit to belong to, and one whose URL does not settle on a
- * string says nothing. The request object a library takes in place of a
- * URL is read from the value facts, so a run without them sees only the
- * request objects built in the call itself.
+ * A pack says which constant the library's request calls are made on,
+ * which method names send which request method, and where the URL is
+ * written. This module reads the calls in each method body, evaluates the
+ * URL the same way a route's path is evaluated, and reports the enclosing
+ * method as a client of that method and path. A call at the top level of
+ * a file has no unit to belong to, and a call whose URL does not settle
+ * on a string is skipped. A request object passed in place of a URL is
+ * read through the value facts, so a run without facts sees only request
+ * objects built in the call itself.
  */
 
 import { hasNameHole, namesNothing, restBinding } from "@suss/behavioral-ir";
@@ -70,12 +70,12 @@ export function clientCallUnits(
 }
 
 /**
- * Settle what this file's request calls read, before any one of them is
- * read on its own. Asking per call site is what made a large project
- * slow, because each question runs the rules again.
+ * Settles what this file's request calls read, before any one of them is
+ * read on its own. Each question runs the rules again, so asking per call
+ * site is slow on a large project.
  *
- * Two rounds. The first settles which receivers the library built, and
- * that is what says which calls have a URL to read at all.
+ * It asks in two rounds. The first settles which receivers the library
+ * built, since that decides which calls have a URL to read.
  */
 export function askClientCallReads(
   root: RbNode,
@@ -107,7 +107,7 @@ function receiversOf(calls: readonly RbNode[]): RbNode[] {
   return found;
 }
 
-/** The URL, or the request object, each call on the library was handed. */
+/** The URL, or the request object, each call on the library was given. */
 function requestArguments(
   calls: readonly RbNode[],
   patterns: readonly RbClientCall[],
@@ -133,7 +133,7 @@ function requestArguments(
   return found;
 }
 
-/** The URL a request method was handed, or the request object a sending call was handed. */
+/** The URL a request method was given, or the request object a sending call was given. */
 function requestArgument(
   call: RbNode,
   called: string,
@@ -177,9 +177,9 @@ function callsUnder(node: RbNode, found: RbNode[] = []): RbNode[] {
 }
 
 /**
- * What this call says about the boundary, once per boundary it states.
- * A URL the enclosing class takes in `initialize` says something
- * different per construction, so each of those is a request of its own.
+ * The requests this call makes, one per boundary. A URL the enclosing
+ * class takes in `initialize` can differ per construction, so each
+ * construction gives a request of its own.
  */
 function requestCalls(
   call: RbNode,
@@ -210,8 +210,8 @@ function requestCalls(
     return [plain];
   }
 
-  // Two constructions that state the same request are one call, since
-  // nothing about the crossing tells them apart.
+  // Two constructions that give the same request count as one call,
+  // since nothing at the boundary tells them apart.
   const byBoundary = new Map<string, RequestCall>();
   for (const site of constructionSitesOf(call, options.facts)) {
     const stated = read(site);
@@ -225,7 +225,7 @@ function requestCalls(
   return plain === null ? [] : [plain];
 }
 
-/** What this call says about the boundary, or null when it says nothing readable. */
+/** The request this call makes, or null when it cannot be read. */
 function requestCall(
   call: RbNode,
   called: string,
@@ -255,10 +255,9 @@ function requestCall(
 }
 
 /**
- * The request object a call was handed: whatever the facts say the
- * argument was written as, or the argument itself, because the facts
- * drop a value's match against itself and a request class built in the
- * call is that match.
+ * The request object a call was given: what the facts say the argument
+ * was written as, or the argument itself. The facts leave out a value
+ * written as itself, which is the case for a request built in the call.
  */
 function requestBuilt(
   argument: RbNode | undefined,
@@ -296,9 +295,9 @@ function isLibraryReceiver(
 }
 
 /**
- * The path in front of a call's own, which is empty for a call on the
- * library's constant and whatever base URL a builder was given for a
- * call on what it built.
+ * The path that goes in front of a call's own path. It is empty for a
+ * call on the library's constant, and the builder's base URL for a call
+ * on what a builder returned.
  */
 function receiverPrefix(
   receiver: RbNode,
@@ -312,7 +311,7 @@ function receiverPrefix(
   }
   const args = readCallArgs(field(built, "arguments"));
   const keyword = pattern.builderUrlKeyword;
-  // `Faraday.new(url: "...")` and `Faraday.new("...")` say the same thing.
+  // `Faraday.new(url: "...")` and `Faraday.new("...")` give the same base URL.
   const base =
     (keyword === undefined ? undefined : args.keyword[keyword]) ??
     args.positional[0];
@@ -328,7 +327,7 @@ function trimmed(path: string): string {
   return path === "/" ? "" : path.replace(/\/+$/, "");
 }
 
-/** Whether this receiver is the constant the pack named, `Faraday` or `Net::HTTP`. */
+/** Whether this receiver is the constant the pack declared, such as `Faraday` or `Net::HTTP`. */
 function namesConstant(receiver: RbNode, constantName: string): boolean {
   if (receiver.type === "constant") {
     return receiver.text === constantName;
@@ -341,8 +340,8 @@ function namesConstant(receiver: RbNode, constantName: string): boolean {
 
 /**
  * The library's own builder call behind whatever a request was called
- * on. The receiver can be spelled any way the facts settle: a local, an
- * instance variable, or a method the class keeps its one connection in.
+ * on. The receiver can be anything the facts settle: a local, an instance
+ * variable, or a method that returns the class's one connection.
  */
 function builderCallBehind(
   receiver: RbNode,
@@ -378,7 +377,7 @@ function urlIn(
   return pathAt(urlNodeIn(args, pattern), options, site);
 }
 
-/** Where the pack said the URL is written: under a keyword when it named one, at a position otherwise. */
+/** The URL argument, under the pack's keyword when it gives one and at the pack's position otherwise. */
 function urlNodeIn(args: CallArgs, pattern: RbClientCall): RbNode | undefined {
   const keyword = pattern.url.keyword;
   return (
@@ -388,9 +387,9 @@ function urlNodeIn(args: CallArgs, pattern: RbClientCall): RbNode | undefined {
 }
 
 /**
- * The path one node states. A URL a library takes as an object rather
- * than a string, `URI("...")` in Ruby, comes back from the value tables
- * as the string it was built from, so nothing here unwraps anything.
+ * The path one node gives. A URL passed as an object instead of a
+ * string, such as `URI("...")`, comes back from the value tables as the
+ * string it was built from, so nothing here needs to unwrap it.
  */
 function pathAt(
   written: RbNode | undefined,
@@ -400,8 +399,8 @@ function pathAt(
   if (written === undefined) {
     return null;
   }
-  // A URL handed in whole evaluates to one hole and nothing else, and
-  // a path like that matches no route and pairs with nothing.
+  // A URL passed in whole evaluates to a single hole. That path cannot
+  // match any route, so it is dropped.
   const path = pathOf(evaluatedValue(written, options.facts, undefined, site));
   return path === undefined || namesNothing(path) ? null : path;
 }
@@ -455,7 +454,7 @@ function callerBranches(
   return returnPathBranches(method, effects) ?? [returnBranch(range, effects)];
 }
 
-/** The members of the response the pack said mean each thing. */
+/** The response members the pack declares for the body, the status and the success flag. */
 function responseAccessors(pattern: RbClientCall): {
   bodyAccessors?: string[];
   statusAccessors?: string[];

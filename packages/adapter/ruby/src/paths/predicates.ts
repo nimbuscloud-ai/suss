@@ -1,12 +1,11 @@
 /**
- * predicates.ts: what a condition tests, rather than the text it was
- * written as.
+ * Records what a condition tests instead of only its source text.
  *
- * A reader of a summary asks which member a test reads and what it
- * compares against: the checker does it to find the status a caller's
- * guard names. Text cannot answer that, so a comparison, a null check
- * and a truthiness check each come out as themselves, and anything this
- * does not model stays opaque with its own text.
+ * The checker needs to know which member a test reads and what it
+ * compares against, to find the status a caller's guard checks for. The
+ * source text cannot tell it that, so a comparison, a null check and a
+ * truthiness check each become their own predicate. Anything not
+ * modelled here stays opaque, with its source text.
  */
 
 import { booleanLiteralValue, field, stringLiteralValue } from "../ast.js";
@@ -131,11 +130,11 @@ function literalOf(node: RbNode): ValueRef | null {
 }
 
 /**
- * `response.status` as the name it starts from and the members read off
+ * `response.status` as the name it starts from plus the members read off
  * it, so a reader can ask which member the test read. A trailing
- * conversion is the language's own and says nothing about that, so
- * `response.code.to_i` comes out as `code` the way `response.status` does.
- * Null for anything with arguments or a receiver that is not a name.
+ * conversion does not change which member was read, so
+ * `response.code.to_i` comes out as `["response", "code"]`. Null for a
+ * call with arguments, or a chain that does not start at a name.
  */
 function memberChain(node: RbNode, tail: string[] = []): string[] | null {
   if (node.type === "identifier") {
@@ -155,7 +154,7 @@ function memberChain(node: RbNode, tail: string[] = []): string[] | null {
   return memberChain(receiver, rest);
 }
 
-/** The method a call names, for a call with no arguments and no block. */
+/** The method a call invokes, or null for anything other than a call without a block. */
 function calledMethod(node: RbNode): string | null {
   if (node.type !== "call" || field(node, "block") !== null) {
     return null;

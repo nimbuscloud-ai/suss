@@ -1,6 +1,8 @@
-// returnedShape.ts: the shape of the value a return statement writes.
-// A route's declared annotation says the same thing for every branch, so a
-// branch reads its own returned expression instead when it can.
+/**
+ * The shape of the value a return statement writes. A route's declared
+ * annotation gives every branch the same body, so a branch reads its own
+ * returned expression instead when it can.
+ */
 
 import { field } from "../ast.js";
 
@@ -44,9 +46,9 @@ function recordShape(node: PyNode, depth: number): TypeShape {
 }
 
 /**
- * What one written-out value says about its own shape. A name is a ref rather
- * than a guess at what it refers to, which is what the TypeScript adapter does
- * with an identifier it has not followed.
+ * What one written-out value says about its own shape. A name becomes a ref
+ * to that name instead of a guess at its value, the same as the TypeScript
+ * adapter does for an identifier it has not followed.
  */
 export function shapeOfReturned(node: PyNode, depth = 0): TypeShape {
   if (depth > MAX_DEPTH) {
@@ -91,9 +93,9 @@ export function shapeOfReturned(node: PyNode, depth = 0): TypeShape {
 }
 
 /**
- * The body a return writes, which is the first element of a returned tuple
- * for a library that takes its status from the second. Null when the return
- * writes nothing this reading can shape.
+ * The body a return writes. From a returned tuple it takes the first
+ * element, because Flask reads the status from the second. Null when the
+ * return writes nothing with a readable shape.
  */
 export function returnedBodyShape(statement: PyNode): TypeShape | null {
   const returned = statement.namedChildren[0];

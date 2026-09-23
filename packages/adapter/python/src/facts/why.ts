@@ -1,14 +1,14 @@
 /**
- * The session behind `suss ask why` on a Python project: a tree-sitter
- * parse of the asked-about source, a way to point at the expression
- * somebody spelled, and the witness proof of what it resolved to,
- * rendered through `@suss/resolution`'s phrases.
+ * The session behind `suss ask why` on a Python project. It finds the
+ * expression a question points at by file, line and text, and renders the
+ * witness proof of what that expression resolved to through the phrases
+ * in `@suss/resolution`.
  *
- * It parses every file under the root and emits the same value facts
- * `extractPythonProject` does, keeping a location for every fact key so
- * a proof's atoms can point back at source. A handle this session hands
- * back pairs a tree-sitter node with the file it came from, since a
- * node alone does not say which file parsed it.
+ * It parses every file under the root and records the same value facts
+ * `extractPythonProject` does, along with a location for every fact key,
+ * so each step of a proof can point back at the source. A handle pairs a
+ * tree-sitter node with its file, because a node alone does not say which
+ * file it was parsed from.
  */
 
 import fs from "node:fs";
@@ -33,7 +33,7 @@ export interface PythonWhySessionOptions {
   dir: string;
   /** Directories an absolute import is resolved against. Read from `dir` when absent, the way `extractPythonProject` reads them. */
   roots?: string[];
-  /** Roots the project directory cannot tell, such as a checked-out submodule. Added after the others. */
+  /** Roots the project directory does not show, such as a checked-out submodule. Added after the others. */
   additionalRoots?: string[];
 }
 
@@ -55,10 +55,10 @@ function namedChildrenOf(node: PyNode): PyNode[] {
 }
 
 /**
- * The local name an import statement binds, and where it is written:
- * the alias in `import x as y`, the bare name otherwise. Mirrors
- * `scope.ts`'s binder closely enough to say where a name came from,
- * without needing the module path or relative level it also tracks.
+ * The local name an import statement binds, and where it is written: the
+ * alias in `import x as y`, the bare name otherwise. This follows the
+ * binder only as far as locating the name, and skips the module path and
+ * relative level the binder also records.
  */
 function indexImportNames(
   file: string,
@@ -82,10 +82,10 @@ function indexImportNames(
 }
 
 /**
- * Every declaration site in a file, indexed under the same key
- * `emitValueFacts` gave it: a function or class by its own node, a
- * name it declares by that name's identifier, so a proof atom that is
- * a bare name still says where it came from.
+ * Every declaration site in a file, indexed under the key `emitValueFacts`
+ * gave it. A function or class is indexed by its node, and a name it
+ * declares by that name's identifier, so a proof step that is a bare name
+ * can still be located.
  */
 function indexFile(
   file: string,
@@ -227,8 +227,8 @@ export class PythonWhySession {
 
   /**
    * Why `value` resolves to what it does: the witness proof, flattened
-   * to the chain and rendered. Null when the value does not resolve,
-   * which the caller says in its own words.
+   * to the chain and rendered. Null when the value does not resolve, and
+   * the caller then writes its own message.
    */
   explain(
     value: PythonValueHandle,
@@ -264,7 +264,7 @@ export class PythonWhySession {
     return path.isAbsolute(file) ? file : path.resolve(this.root, file);
   }
 
-  /** A file path said relative to the root, or as given when it is outside the root. */
+  /** A file path relative to the root, or unchanged when it is outside the root. */
   private displayPath(key: string): string {
     if (key.startsWith(this.root)) {
       return path.relative(this.root, key);

@@ -1,15 +1,15 @@
-// @suss/adapter-python: the Python language adapter.
-//
-// This is Layer 1 for Python. It discovers units, emits summaries in
-// the shared IR, and emits facts. Everything above that layer, meaning
-// reachability, cross-boundary checking and the CLI, is already
-// independent of language and works unchanged as soon as a summary
-// comes with a `BoundaryBinding`. That is the same contract the
-// TypeScript adapter meets.
-//
-// This slice does no path-engine lowering, so a route's transitions are
-// either empty or a single declared-shape transition, never a
-// decomposed branch. It infers nothing, and it never executes Python.
+/**
+ * The Python language adapter. It discovers units, writes summaries in
+ * the shared IR, and records facts for the shared rules.
+ *
+ * Reachability, checking across a boundary and the CLI do not depend on
+ * the language. They work on a Python summary as soon as it has a
+ * `BoundaryBinding`, the same as they do on a TypeScript one.
+ *
+ * A body is lowered into the shared path engine, so a route gets one
+ * transition for each place it returns or raises. The adapter reads the
+ * source and never runs Python.
+ */
 
 export { annotationToShape, shapeFromName } from "./annotations.js";
 export { classifyDecorator } from "./decorators.js";

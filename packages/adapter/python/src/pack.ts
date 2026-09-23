@@ -1,51 +1,48 @@
 /**
- * The Python adapter's own pattern-pack contract.
+ * The contract a Python pack is written against.
  *
- * This is deliberately not the TypeScript adapter's `PatternPack`. That type
- * dispatches its discovery variants through ts-morph-specific handlers, and
- * Python's two route shapes have no exact match in its union anyway. Match
- * shapes stay per-language until a second implementation shows what is actually
- * shared, and this is the per-language one for Python.
+ * It is separate from the TypeScript adapter's `PatternPack` on purpose. That
+ * type dispatches its discovery variants through handlers built on ts-morph,
+ * and Python's two kinds of route have no exact match in its union. Each
+ * language keeps its own match patterns until a second implementation shows
+ * which parts the two have in common.
  *
- * A pack is still plain data, following the same rule the TypeScript packs
- * follow: it describes what a library defines, never anything a project chose.
+ * A pack is plain data under the same rule the TypeScript packs follow: it
+ * describes what a library defines, and nothing a project chose.
  */
 
 export interface PythonPack {
   name: string;
   /**
-   * Pack version stamp, which feeds the cache invalidation key. Bump on
-   * any change that affects discovered units or extracted summaries.
-   * The CLI folds a hash of the loaded pack file and its config into
-   * this stamp on top, so a pack run through the CLI invalidates on an
-   * edit whether or not it declares a version of its own.
+   * Part of the cache key. Bump it on any change that affects the units a
+   * pack discovers or the summaries it produces. The CLI also adds a hash
+   * of the loaded pack file and its config to the key, so a pack run
+   * through the CLI invalidates the cache on an edit whether or not it
+   * declares a version.
    */
   version?: string;
   /**
-   * Files under the project this pack reads that are not among the
-   * `.py` files a run walks, given the files the run is about to walk.
-   * Their content feeds the same cache key the pack's own config does,
-   * so an edit to one of them re-extracts instead of handing back the
-   * previous answer.
+   * Given the `.py` files a run is about to walk, returns the other files
+   * in the project this pack reads. Their content goes into the cache key
+   * along with the pack's config, so editing one of them re-extracts
+   * instead of returning the cached summaries.
    */
   discoveryInputs?: (files: readonly string[]) => string[];
   /** Wire protocol for the produced boundary bindings, e.g. "http". */
   protocol: string;
   discovery: PythonDiscoveryPattern[];
   /**
-   * Modules the project itself supplies, the wrappers a person names
-   * when configuring the pack. The library's own module is not one of
-   * these: it lives outside the project and would never resolve. The
-   * adapter checks each of these against the project's roots, because
-   * a wrapper that resolves to nothing does not match any decorator
-   * and never says why (#188).
+   * Wrapper modules around the library that a person lists when
+   * configuring the pack. The library's own module does not go here. The adapter
+   * reports each of these that no file in the run imports, since
+   * otherwise it would match no decorator and nothing would say why (#188).
    */
   projectModules?: string[];
   /** The callables the library gives a project for making a request. */
   clients?: PyClientCall[];
-  /** What the library's own database queries look like. The README says how one is matched. */
+  /** What the library's own database queries look like. DESIGN.md says how one is matched. */
   storage?: StoragePattern[];
-  /** Which of the library's calls give back one of a model class. The README says what a chain of them composes into. */
+  /** Which of the library's calls give back one of a model class. DESIGN.md says what a chain of them composes into. */
   models?: PyModelQueries[];
   /** Which of the library's classes return themselves from `__enter__`, so a `with` block gets the object itself. */
   contextManagers?: PyContextManager[];
@@ -56,10 +53,10 @@ export interface PythonPack {
 }
 
 /**
- * A call talks to the database when the method behind it says it returns one
- * of the library's query types. Matching on the return rather than on the
- * import is what reads a project base class that wraps the library, which is
- * how the measured corpus writes every one of its queries.
+ * A call talks to the database when the method behind it declares that it
+ * returns one of the library's query types. Matching on the return type finds
+ * queries made through a project base class that wraps the library, where a
+ * match on the import would find none.
  */
 export interface StoragePattern {
   /** The module a query type is imported from, `sqlalchemy.orm` for a Session. */
@@ -69,23 +66,21 @@ export interface StoragePattern {
   /** Chain-ending methods that change what is stored. Anything else reads. */
   writes: string[];
   /**
-   * Methods on a query type that touch no rows of their own: one that runs
-   * a statement built elsewhere, `session.execute(stmt)`, whose own chain
-   * already records the work, and one that manages the session, `close`.
-   * A call to one of these records nothing.
+   * Methods on a query type that touch no rows of their own, and a call to
+   * one records nothing. `session.execute(stmt)` runs a statement whose own
+   * chain already records the work, and `close` manages the session.
    */
   recordsNothing?: string[];
   /**
-   * Methods whose keywords supply column values rather than pick rows,
-   * `values` in `update(User).where(id=1).values(name="x")`. Their
-   * keywords are reported as fields; every other call's keywords are the
-   * selector.
+   * Methods whose keywords supply column values instead of picking rows,
+   * `values` in `update(User).where(id=1).values(name="x")`. Their keywords
+   * are reported as fields, and every other call's keywords as the selector.
    */
   valueMethods?: string[];
   /**
-   * Functions the library exports that start a query on their own, for the
-   * case where a call site imports one rather than reaching it through a
-   * project class. `select(...)` in SQLAlchemy 2.0 is one.
+   * Functions the library exports that start a query on their own, such as
+   * SQLAlchemy 2.0's `select(...)`. A call site imports one directly instead
+   * of reaching it through a project class.
    */
   queryFunctions?: string[];
   /** Which database the library is talking to, for the boundary binding. */
@@ -93,16 +88,16 @@ export interface StoragePattern {
 }
 
 /**
- * What a library gives back when a call is passed one of a project's
- * model classes, so a method read off the result runs the one that
- * class declares. SQLAlchemy and SQLModel take the class as an argument,
- * `session.get(User, id)` and `select(User)`, rather than as the
- * receiver a Rails finder is called on.
+ * Which of a library's calls give back an instance of the project model
+ * class they were passed, so a method called on the result resolves to the
+ * one that class declares. SQLAlchemy and SQLModel take the class as an
+ * argument, as in `session.get(User, id)` and `select(User)`, where a Rails
+ * finder is called on the class itself.
  */
 export interface PyModelQueries {
   /**
-   * The names a model's ancestry arrives at: a base class the library
-   * exports, `DeclarativeBase`, or the function that builds one,
+   * The names a model's base classes lead back to: a base class the
+   * library exports, `DeclarativeBase`, or the function that builds one,
    * `declarative_base`.
    */
   baseNames: string[];
@@ -110,17 +105,17 @@ export interface PyModelQueries {
   givesBack: string[];
   /** Methods that take the model class and give back one of it, with the position it is written at. */
   entryMethods: PyModelEntryMethod[];
-  /** Functions the library exports that do the same, called on their own rather than read off a session. */
+  /** Functions the library exports that do the same, called on their own instead of on a session. */
   entryFunctions: PyModelEntryFunction[];
   /** The library's own constructors for a field that reaches another model. */
   relationships?: PyRelationshipConstructor[];
 }
 
 /**
- * `items: list[Item] = Relationship(...)`: the callable a model's field
- * is given to say it reaches another model, and where it comes from. A
- * project function spelled the same way is somebody else's, so the
- * import is what settles a match.
+ * The callable a model field is assigned from to say it points at another
+ * model, as in `items: list[Item] = Relationship(...)`, and where it is
+ * imported from. A match needs the import, so a project function with the
+ * same name does not count.
  */
 export interface PyRelationshipConstructor {
   /** The module it is imported from, `sqlmodel` or `sqlalchemy.orm`. */
@@ -144,9 +139,9 @@ export interface PyModelEntryFunction {
 
 /**
  * The function a library gives a project for handing the database a
- * statement written as SQL, and where it comes from. SQLAlchemy exports
- * `text` from `sqlalchemy`. A local function of the same name is
- * somebody else's, so the import is what settles a match.
+ * statement written as SQL, and where it is imported from. SQLAlchemy
+ * exports `text` from `sqlalchemy`. A match needs the import, so a local
+ * function with the same name does not count.
  */
 export interface RawSqlPattern {
   /** The module the function is imported from. */
@@ -159,13 +154,13 @@ export interface RawSqlPattern {
 
 /**
  * A client object a library hands a project, and the calls on one that
- * reach the database. `RawSqlPattern` matches a function the file
- * imported; this matches a method on a value whose class came out of
- * the library, which is how a client built in one module and called in
- * another still reads.
+ * reach the database. `RawSqlPattern` matches a function the file imported.
+ * This matches a method called on a value whose class comes from the
+ * library, so a client built in one module and called in another still
+ * matches.
  *
- * Every field here is the library's own: the module, the class names,
- * the method names, and where each method takes what it is given.
+ * Every field describes the library: the module, the class and method
+ * names, and where each method takes its input.
  */
 export interface SqlClientPattern {
   /** The module the client class comes from, `google.cloud.bigquery`. */
@@ -174,9 +169,9 @@ export interface SqlClientPattern {
   clientTypes: string[];
   /** The methods that hand the database a statement, and where each takes it. */
   statements?: SqlStatementCall[];
-  /** The methods that say which table rather than writing SQL, and what each does to it. */
+  /** The methods that take a table name instead of SQL, and what each does to the table. */
   tables?: SqlTableCall[];
-  /** The methods that hand back one of another library class, so a chain off one reaches its calls. */
+  /** The methods that return an instance of another of the library's classes, so a chain can continue through it. */
   handsBack?: SqlClientHandoff[];
   /** Which database the client is talking to, for the boundary binding. */
   storageSystem: string;
@@ -197,14 +192,14 @@ export interface SqlStatementCall extends SqlCallArgument {
   /** The method name, `query`. */
   method: string;
   /**
-   * The keys down to the statement when it travels inside a dictionary
-   * rather than as the argument itself, the `["query", "query"]` of
+   * The keys to follow when the statement is passed inside a dictionary
+   * instead of as the argument itself: `["query", "query"]` for
    * `insert_job(configuration={"query": {"query": sql}})`.
    */
   path?: string[];
 }
 
-/** One method that says which table it works on, and what it does to it. */
+/** One method that takes the name of the table it works on, and what it does to that table. */
 export interface SqlTableCall extends SqlCallArgument {
   /** The method name, `get_table`. */
   method: string;
@@ -212,7 +207,7 @@ export interface SqlTableCall extends SqlCallArgument {
   kind: "read" | "write";
 }
 
-/** One method that hands back an object of another of the library's classes. */
+/** One method that returns an instance of another of the library's classes. */
 export interface SqlClientHandoff {
   /** The method name, Airflow's `get_client`. */
   method: string;
@@ -227,10 +222,10 @@ export type PythonDiscoveryPattern =
   | DecoratedFunctionRoute;
 
 /**
- * A class whose `__enter__` gives back the object it was called on, so
- * `with X() as y` makes y the `X()` the block opened. Python
- * lets `__enter__` return anything, so only the library that wrote the
- * class can say this, and a pack declares it for its own classes alone.
+ * Classes whose `__enter__` returns the object it was called on, so
+ * `with X() as y` binds `y` to the `X()` the block opened. Python lets
+ * `__enter__` return anything, so only the library that wrote the class
+ * knows this, and a pack declares it only for its own library's classes.
  */
 export interface PyContextManager {
   /** The module the classes come from, `httpx`. */
@@ -241,8 +236,8 @@ export interface PyContextManager {
 
 /**
  * The callables a library gives a project for making a request. A
- * function that calls one of them is a client of the boundary that call
- * states, and gets a unit bound to its method and path.
+ * function that calls one of them becomes a client unit, bound to the
+ * method and path that call is made with.
  */
 export interface PyClientCall {
   type: "clientCall";
@@ -266,9 +261,9 @@ export interface PyClientCall {
 }
 
 /**
- * The members a library's response object gives a caller. A caller that
- * tests one of them is saying which statuses it handles, and the
- * checker compares that against what the other side produces.
+ * The members a library's response object gives a caller. A test on one of
+ * them shows which statuses the caller handles, and the checker compares
+ * that against what the other side sends.
  */
 export interface PyClientResponse {
   /** Members whose value is the status code: `status_code`. */
@@ -283,52 +278,50 @@ export interface PyClientResponse {
 
 /** Conventions both kinds of route share. Each one describes what the library does, never a project's choice. */
 export interface RouteConventions {
-  /** How the library spells a path parameter. The README lists the syntaxes we know how to read. */
+  /** How the library writes a path parameter. DESIGN.md lists the syntaxes the adapter reads. */
   pathParamSyntax?: string;
   /** Set it only when the library itself binds an annotated local class to the request body. */
   annotatedClassIsRequestBody?: boolean;
   /**
-   * Callables the library uses to inject a parameter rather than read it
-   * off the request. FastAPI's `Depends` and `Security` are these: the
-   * server supplies the value and the client sends nothing, so a
-   * parameter defaulted to one of them is no part of the request however
-   * its annotation reads.
+   * Callables the library uses to inject a parameter instead of reading it
+   * off the request, such as FastAPI's `Depends` and `Security`. The server
+   * supplies the value and the client sends nothing, so a parameter
+   * defaulted to one of them is not part of the request, whatever its
+   * annotation says.
    */
   injectedParameterCallees?: string[];
   /**
-   * What the library serves when a composed path ends up with repeated
-   * slashes in it. Werkzeug serves the merged path and redirects
-   * the written one, so "merged" is what Flask needs; "kept" is the
-   * default and is what Starlette does.
+   * What the library serves when a composed path has repeated slashes.
+   * Werkzeug serves the merged path and redirects the written one, so Flask
+   * needs "merged". The default, "kept", matches Starlette.
    */
   pathRepeatedSlashes?: PathRepeatedSlashes;
-  /** The status the library returns for a declared response when the route does not give one. Library-defined. */
+  /** The status the library returns for a declared response when the route does not set one. */
   defaultStatusCode?: number;
   /**
    * Set it only when the library reads a status out of the tuple a handler
-   * returns, as Flask does with `return body, 201`. Without it
-   * the library default applies whatever the body returns, and a route
-   * that sets its own status would be reported at the default.
+   * returns, as Flask does with `return body, 201`. Without it, every return
+   * is reported at the library's default status, including a route that
+   * sets its own.
    */
   statusFromReturnedTuple?: boolean;
   /**
    * The library's own callables that end the request with a status, such
-   * as FastAPI's `HTTPException` and Flask's `abort`. Declaring them is
-   * also what makes a `raise` in a route body an outcome of its own: a
-   * raise the list does not cover comes out as a throw with no status,
-   * and one it does cover comes out as the response the library sends.
+   * as FastAPI's `HTTPException` and Flask's `abort`. A `raise` of one in a
+   * route body becomes the response the library sends. A raise of anything
+   * the list does not cover becomes a throw with no status.
    */
   responseStatusCalls?: PyStatusCall[];
   /**
-   * The library's own classes whose instance, when a body returns it, is
-   * the response the library sends, and where each takes the status:
-   * Starlette's `JSONResponse(status_code=...)`. A return of one says its
-   * own status; a return of anything else keeps the declared one.
+   * The library's own classes that are sent as the response when a body
+   * returns an instance, and where each takes the status, as in Starlette's
+   * `JSONResponse(status_code=...)`. Returning one gives that status, and
+   * returning anything else keeps the declared one.
    */
   responseConstructors?: PyStatusCall[];
   /** Unset means the library has no router mounting, and a route's decorator path is used as written. */
   routerComposition?: RouterComposition;
-  /** The ways the library runs a project's own function around a route. The README lists what each one covers. */
+  /** The ways the library runs a project's own function around a route. DESIGN.md lists what each one covers. */
   wrappers?: PyWrapperForm[];
 }
 
@@ -338,7 +331,7 @@ export type PyWrapperForm = PyDependencyForm | PyDecoratedWrapperForm;
 export interface PyWrapperRegistrar {
   /** The constructor of the object the registration is written on, as the library exports it: `FastAPI`, `APIRouter`. */
   constructorName: string;
-  /** Where the constructor is imported from, when that is not the pattern's own `importModule`: `flask` for the app a flask-restx API is served by. */
+  /** Where the constructor is imported from, when that differs from the pattern's own `importModule`: `flask` for the app that serves a flask-restx API. */
   importModule?: string[];
   /**
    * `everyRoute` for the app, whose registration reaches every route of
@@ -349,13 +342,12 @@ export interface PyWrapperRegistrar {
 }
 
 /**
- * The library calls a project function before the handler, given as an
- * argument to one of its own callables: FastAPI's `Depends(get_user)`.
- * One may be written as a parameter default or inside `Annotated[...]`
- * on the route, or in a list under `keyword` on the route decorator or
- * on one of the registrars. The function runs before the handler and
- * ends the request by raising, so it is a wrapper whose every return
- * hands on.
+ * A project function the library calls before the handler, passed to one
+ * of the library's callables, as in FastAPI's `Depends(get_user)`. It can
+ * be written as a parameter default, inside `Annotated[...]` on the route,
+ * or in a list under `keyword` on the route decorator or a registrar. It
+ * ends a request only by raising, so every return passes control on to
+ * the route.
  */
 export interface PyDependencyForm {
   type: "dependency";
@@ -367,11 +359,10 @@ export interface PyDependencyForm {
 }
 
 /**
- * A project function decorated with a method on the app or a router:
- * `@app.middleware("http")`, `@app.exception_handler(ValueError)`,
- * `@app.before_request`. What the decorated function's returns mean
- * depends on which of the three fields below is set; with none set,
- * every return hands the request on.
+ * A project function decorated with a method on the app or a router, such
+ * as `@app.middleware("http")` or `@app.before_request`. Which of the three
+ * optional fields below is set decides what the function's returns mean.
+ * With none set, every return passes the request on.
  */
 export interface PyDecoratedWrapperForm {
   type: "decoratedWrapper";
@@ -385,18 +376,18 @@ export interface PyDecoratedWrapperForm {
    */
   continuationParam?: number;
   /**
-   * Set when a value returned ends the request and only a bare return
-   * hands on. Flask's `before_request` works this way.
+   * Set when returning a value ends the request and only a bare return
+   * passes it on. Flask's `before_request` works this way.
    */
   returnedValueResponds?: boolean;
-  /** The position the library hands the raised exception at. Set on an error handler, which runs only when the handler raised. */
+  /** The parameter position the raised exception is passed at. Set on an exception handler, which runs only when the route raised. */
   throwParam?: number;
 }
 
 /**
- * One callable that ends the request, and where it takes the status.
- * A call may take it either way, so a pattern may state both, and the
- * keyword wins where an argument is written both ways.
+ * One callable that ends the request, and where it takes the status. A
+ * call can pass the status by keyword or by position, so a pattern can
+ * declare both. When a call writes both, the keyword is used.
  */
 export interface PyStatusCall {
   /** The callee as the file imports it, module and name together, `fastapi.HTTPException`. */
@@ -410,9 +401,9 @@ export interface PyStatusCall {
 }
 
 /**
- * A class has a decorator whose first string-literal argument is the route path,
- * and each method in its body named after an HTTP verb becomes its own unit,
- * with the verb taken from the method name.
+ * A route written as a class whose decorator takes the route path as its
+ * first argument. Each method in the class named after an HTTP verb becomes
+ * its own unit, with the verb taken from the method name.
  */
 export interface DecoratedClassRoute extends RouteConventions {
   type: "decoratedClassRoute";
@@ -425,10 +416,10 @@ export interface DecoratedClassRoute extends RouteConventions {
 }
 
 /**
- * A function has a decorator whose attribute name is the HTTP verb and whose
- * first string-literal argument is the route path, the `@app.get(path)`
- * convention. The object it hangs on may be imported, or built one hop away by
- * a call to something imported.
+ * A route written as a function decorated with `@app.get(path)`: the
+ * decorator's attribute name is the HTTP verb and its first argument is the
+ * route path. The object the decorator is called on can be imported, or
+ * built by a call to something imported.
  */
 export interface DecoratedFunctionRoute extends RouteConventions {
   type: "decoratedFunctionRoute";
@@ -441,12 +432,12 @@ export interface DecoratedFunctionRoute extends RouteConventions {
 }
 
 /**
- * What a library calls the pieces of router mounting, so a route's served path
- * can be built from the literal prefixes written along the way: the router
- * constructor's own, the one at the call that mounts it, and, where the pack
- * says so, the prefix on the object the mount is called on. What each spelling
- * of a prefix means, and what makes a composition abstain, is the grid in the
- * adapter's README.
+ * The names a library gives the parts of router mounting, so a route's
+ * served path can be built from the prefixes written along the way: the
+ * router constructor's, the one on the call that mounts it, and, where the
+ * pack declares it, the one on the object the mount is called on. DESIGN.md
+ * has the tables for what each way of writing a prefix means and when a
+ * route abstains.
  */
 export interface RouterComposition {
   /** Constructor whose call builds a mountable router, FastAPI's `APIRouter`. */
@@ -454,38 +445,37 @@ export interface RouterComposition {
   /** Method that mounts a router onto the app, FastAPI's `include_router`. */
   includeMethodName: string;
   /**
-   * What the mount method calls its router parameter, FastAPI's `router`.
-   * A call that passes the router by keyword rather than by position is
-   * read through this. Unset reads the first argument only.
+   * The mount method's name for its router parameter, FastAPI's `router`,
+   * used to read a call that passes the router by keyword. Unset reads the
+   * first positional argument only.
    */
   routerKeyword?: string;
-  /** One keyword serves the constructor and the mount alike. A library that spells them apart needs two fields here. */
+  /** The prefix keyword, the same at the constructor and the mount. A library that uses two different keywords would need two fields here. */
   prefixKeyword: string;
-  /** Default "prefixes". */
+  /** Whether a prefix written at the mount goes in front of the constructor's ("prefixes") or replaces it ("replaces"). Default "prefixes". */
   mountPrefixEffect?: MountPrefixEffect;
-  /** Set it when the library works out a path for a router that gives no prefix. We cannot work that path out, so such routes abstain. */
+  /** Set it when the library makes up a path of its own for a router constructed with no prefix. The adapter cannot work that path out, so such routes abstain. */
   constructorPrefixRequired?: boolean;
-  /** Default "unreadable". The same setting covers the constructor and the mount. */
+  /** What a prefix written as `""`, `None`, `False` or `0` means: no prefix ("unstated"), or one the route has to abstain on ("unreadable"). Default "unreadable", at the constructor and the mount alike. */
   noValuePrefix?: NoValuePrefix;
-  /** Default "kept". */
+  /** Whether the library trims trailing slashes off a constructor's prefix. Default "kept". */
   constructorPrefixTrailingSlash?: PrefixTrailingSlash;
   /**
-   * Where the object the mount is called on states a prefix of its
-   * own, in front of everything the constructor and the mount state.
-   * Unset means it states none, which is FastAPI's behavior: an app
-   * serves a mounted router exactly where the two prefixes put it.
+   * Where the object the mount is called on states a prefix of its own,
+   * in front of everything the constructor and the mount state. Unset
+   * means it states none. That matches FastAPI, where an app serves a
+   * mounted router exactly where the two prefixes put it.
    */
   mountObjectPrefix?: MountObjectPrefix;
 }
 
 /**
- * The prefix the object a mount is called on states, and where it is
- * written. flask-restx needs both halves: `Api(prefix=...)` states one
- * on the object itself, and the Flask blueprint the `Api` was built
- * from states another with `Blueprint(name, __name__,
- * url_prefix=...)`. The library serves a route under the blueprint's
- * prefix, then the `Api`'s, then whatever the namespace and the route
- * say.
+ * Where the object a mount is called on states its prefix. flask-restx
+ * needs both fields: `Api(prefix=...)` states one on the object itself,
+ * and the Flask blueprint the `Api` was built from states another with
+ * `Blueprint(name, __name__, url_prefix=...)`. A route is served under
+ * the blueprint's prefix, then the `Api`'s, then the namespace's path and
+ * the route's own.
  */
 export interface MountObjectPrefix {
   /** Keyword stating a prefix on the mount object's own construction (flask-restx's `Api(prefix=...)`). */
@@ -495,11 +485,10 @@ export interface MountObjectPrefix {
 }
 
 /**
- * An object handed to the mount object's constructor, one hop further
- * out, with a prefix of its own (the Flask blueprint behind an
- * `Api`). Naming it here is what lets the adapter tell that object
- * apart from the plain app that appears in the same argument position and
- * has no prefix at all.
+ * An object passed to the mount object's constructor that has a prefix of
+ * its own, such as the Flask blueprint an `Api` is built from. Declaring
+ * its constructor lets the adapter tell it apart from the plain app, which
+ * is passed in the same argument position and has no prefix.
  */
 export interface MountObjectCarrier {
   /** Modules the carrier's constructor is imported from (Flask's `flask`). */
@@ -508,21 +497,21 @@ export interface MountObjectCarrier {
   constructorName: string;
   /** Position of the carrier among the mount object's constructor arguments. */
   argumentIndex: number;
-  /** Keyword stating the carrier's prefix, at its construction and at its registration alike (Flask's `url_prefix`). */
+  /** The keyword for the carrier's prefix, at its construction and its registration alike (Flask's `url_prefix`). */
   prefixKeyword: string;
   /**
-   * Method handing the carrier to an already-built mount object
-   * (flask-restx's `init_app`, the application-factory spelling of
-   * `Api(blueprint)`). Unset means the constructor argument is the
-   * only way in.
+   * Method that passes the carrier to a mount object already built, as
+   * flask-restx's `init_app` does in an application factory in place of
+   * `Api(blueprint)`. Unset means the constructor argument is the only
+   * way to pass one.
    */
   handoffMethodName?: string;
   /**
-   * Method registering the carrier somewhere else (Flask's
-   * `register_blueprint`). The adapter reads it only to abstain: a
-   * registration restating the prefix, putting the carrier inside
-   * another carrier, or happening twice moves the served path
-   * somewhere the carrier's own construction no longer says.
+   * Method that registers the carrier somewhere else (Flask's
+   * `register_blueprint`). The adapter reads it only to decide when to
+   * abstain. A registration that restates the prefix, registers the
+   * carrier inside another carrier, or registers it twice serves the
+   * routes somewhere other than where the carrier's construction says.
    */
   registerMethodName: string;
 }
@@ -533,9 +522,5 @@ export type PrefixTrailingSlash = "kept" | "trimmed";
 
 export type NoValuePrefix = "unstated" | "unreadable";
 
-/**
- * Werkzeug serves the merged path and redirects the written one, so Flask
- * needs "merged". Starlette leaves the path as composed, so FastAPI keeps
- * the default.
- */
+/** Werkzeug merges repeated slashes, so Flask needs "merged". Starlette does not, so FastAPI keeps "kept". */
 export type PathRepeatedSlashes = "kept" | "merged";
