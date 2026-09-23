@@ -1,6 +1,6 @@
 /**
- * arn.ts resolves the references AWS manifests use to point at a queue, a
- * topic, or a bucket, down to the channel string suss keys the boundary on.
+ * Resolves the references AWS manifests use to point at a queue, a topic,
+ * or a bucket, down to the channel string suss keys the boundary on.
  *
  * Every manifest language that targets AWS writes a reference one of three
  * ways: as a CFN intrinsic (`!Ref X`, `!GetAtt X.Arn`), as a plain ARN
@@ -18,9 +18,9 @@ import { refTarget } from "./templateLoader.js";
  * so a queue ARN, a topic ARN, and a bucket ARN all resolve through the
  * same code.
  *
- * Returns null when the reference is dynamic (a parameter, an import,
- * or an Fn::Join that points at nothing this template declares); those
- * need cross-stack resolution that's out of scope for v0.
+ * Returns null for any other intrinsic, such as `Fn::ImportValue` or
+ * `Fn::Join`, since resolving those needs a stack this package does not
+ * read. A `Ref` to a parameter comes back as the parameter's name.
  */
 export function resolveResourceChannel(
   value: unknown,
@@ -30,9 +30,9 @@ export function resolveResourceChannel(
     return null;
   }
   if (typeof value === "string") {
-    // Plain string: either the ARN of an external resource (we can't
-    // resolve that to a logical id without the deployed stack) or, in
-    // tests, a logical id passed directly.
+    // A plain string is an external resource's ARN, which has no logical
+    // id without the deployed stack, or a logical id passed directly, as
+    // the tests do.
     const resource = resolveArnResource(value, service);
     return resource ?? value;
   }
@@ -46,7 +46,7 @@ export function resolveResourceChannel(
  * rejoined from everything after the account segment, because some ARNs
  * (an SNS subscription, say) append another `:`-separated id.
  *
- * `"s3"` requires region and account BOTH empty and a non-empty
+ * `"s3"` requires both region and account empty and a non-empty
  * resource, and an object ARN's trailing `/key` is stripped because the
  * bucket alone is the channel. Every other service requires region,
  * account, and resource all non-empty. A value that fails these checks
