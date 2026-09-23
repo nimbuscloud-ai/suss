@@ -1,37 +1,15 @@
-// @suss/client-apollo: PatternPack for @apollo/client.
-//
-// Each `useQuery` / `useMutation` / `useSubscription` hook call and each
-// imperative `client.query` / `client.mutate` / `client.subscribe` call
-// becomes a `client`-kind BehavioralSummary bound to a
-// `graphql-operation(operationType, operationName?)` boundary.
-//
-// The document argument resolves across the shapes production codebases
-// use: an inline `gql` tag or `gql(...)` tag call, a named constant
-// holding either (same module, imported, or behind a re-export barrel),
-// a `.graphql` / `.gql` file import, and a generated
-// `TypedDocumentNode` object literal from graphql-codegen client-preset.
-// A `${...}` interpolation resolves the same way and splices in, so a
-// fragment-composed operation reads whole. A spread whose definition
-// never resolves surfaces as `metadata.graphql.unresolvedFragments`
-// on a still-emitted summary.
-// A named constant is what most codebases write, and it resolves
-// through the fact layer rather than by walking one variable
-// declaration, so aliases and barrels do not hide the document.
-// Operation type + name come from the document body when readable, from
-// the `TypedDocumentNode<Result, Vars>` type arguments when it isn't,
-// and from the call shape (hook / method) as the final fallback. A
-// document that stays unresolvable surfaces on the summary as
-// `metadata.graphql.unresolvedDocument`: the boundary is still emitted.
-//
-// Operation-header `$variables` become summary inputs with role
-// "variable"; the `variables: { ... }` call option isn't read on its
-// own (the header is the authoritative variable declaration).
-//
-// Pairs with provider-side summaries (Apollo resolvers, AppSync
-// resolvers) when the pairing layer grows operation→resolver
-// selection-set mapping. Until then, graphql-operation bindings land
-// in `unmatched` rather than pairing automatically, surfacing the
-// consumer boundary, not joining it.
+/**
+ * @suss/client-apollo: the pack for GraphQL operations sent with
+ * `@apollo/client`.
+ *
+ * Each Apollo hook call, and each imperative `client.query`,
+ * `client.mutate` or `client.subscribe` call, becomes a client summary
+ * bound to a `graphql-operation(operationType, operationName?)`
+ * boundary. The pack only declares where documents are passed. The
+ * adapter resolves the document itself, and the README describes the
+ * ways a document can be written and what happens when one stays
+ * unresolved.
+ */
 
 import { z } from "zod";
 
@@ -39,16 +17,10 @@ import type { PatternPack } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
 /**
- * The Apollo hooks this pack reads a document off. Each takes the
- * document as its first argument, and the query hooks differ in when
- * they run and how they suspend rather than in what they ask the server
- * for, so each one is the same boundary. `useLazyQuery` in particular is
- * what a component reaches for whenever the query runs on an event
- * rather than on render, which makes it as common as `useQuery` itself.
- *
- * The list is by signature and Apollo can add to it, so a hook missing
- * here is a hook the pack does not see rather than a hook that is not a
- * boundary.
+ * Each of these hooks takes the document as its first argument. The
+ * query hooks differ only in when they run and how they suspend, so they
+ * all produce the same boundary. Apollo can add hooks, and a hook missing
+ * from this list is still a boundary that the pack cannot see.
  */
 const DOCUMENT_HOOKS = [
   { hookName: "useQuery", operationType: "query" },
@@ -61,26 +33,24 @@ const DOCUMENT_HOOKS = [
 ] as const;
 
 /**
- * What `-f apollo-client=config.json` may say. The CLI parses the file against it
- * before the factory runs.
+ * The options in a `-f apollo-client=config.json` file. The CLI checks
+ * the file against this schema before the pack factory runs.
  */
 export const optionsSchema = z
   .object({
     /**
-     * Which service each client talks to, keyed by the endpoint the
-     * client is constructed with: the uri string itself, or the written
-     * expression when the value is computed (an env read like
-     * `import.meta.env.VITE_GRAPHQL_URL`). The value is the provider
-     * workspace name. One line per client separates two GraphQL services
-     * that share root field names.
+     * The provider workspace each client talks to, keyed by the endpoint
+     * the client is constructed with. The key is the uri string, or the
+     * expression as written when the value is computed, such as
+     * `import.meta.env.VITE_GRAPHQL_URL`. One entry per client keeps
+     * apart two GraphQL services that share root field names.
      */
     clients: z.record(z.string(), z.string()).optional(),
     /**
-     * Which service the operations in a set of files talk to, for a
-     * frontend that uses two clients. A hook call does not say which
-     * client it goes through, so these globs decide by file: an
-     * operation whose file matches gets the entry's workspace. First
-     * matching entry wins.
+     * The workspace for operations in a set of files, for a frontend
+     * that uses two clients. A hook call does not show which client it
+     * goes through, so the pack decides by file. The first entry whose
+     * globs match the operation's file wins.
      */
     operationScopes: z
       .array(
@@ -100,10 +70,8 @@ export function apolloClientPack(
   return {
     name: "apollo-client",
     languages: ["typescript", "javascript"],
-    // Apollo Client sits over HTTP (or WebSocket for subscriptions;
-    // subscriptions reported separately via operationType but the
-    // transport tag stays "http" for v0, the Apollo HttpLink is the
-    // default path).
+    // Subscriptions can run over WebSocket, but operationType already
+    // records them, and HttpLink is Apollo's default transport.
     protocol: "http",
 
     discovery: [
@@ -114,15 +82,11 @@ export function apolloClientPack(
           importModule: "@apollo/client",
           hooks: [...DOCUMENT_HOOKS],
         },
-        // Prefix match: covers `@apollo/client` AND `@apollo/client/react`
-        // AND `@apollo/client/...` sub-paths in one go. The `importModule`
-        // on the match itself stays exact-match for discovery's own
-        // gating.
+        // requiresImport matches by prefix, so it also admits
+        // `@apollo/client/react`. importModule above matches exactly.
         requiresImport: ["@apollo/client"],
       },
-      // Newer re-exports split per-runtime ("@apollo/client/react").
-      // Apollo's current stable major is one path; the react-only
-      // export is here to handle projects that pin per-runtime.
+      // For projects that import the hooks from the React entry point.
       {
         kind: "client",
         match: {
@@ -132,13 +96,9 @@ export function apolloClientPack(
         },
         requiresImport: ["@apollo/client"],
       },
-      // Imperative client: covers server-side data fetching,
-      // Next.js getServerSideProps, Node scripts, anywhere calling
-      // `client.query(...)` / `client.mutate(...)` directly rather
-      // than via a hook. The client identifier can be any name,
-      // we gate on the `ApolloClient` constructor being imported
-      // so random `.query()` method calls in unrelated code don't
-      // light up.
+      // `client.query(...)` outside a hook, as in server-side fetching.
+      // The client variable can have any name, so the match requires an
+      // `ApolloClient` import to skip unrelated `.query()` calls.
       {
         kind: "client",
         match: {
@@ -167,16 +127,16 @@ export function apolloClientPack(
       },
     ],
 
-    // The constructions an operation's calls go through. `uri` is
-    // Apollo's own option, on the client shorthand and on the links.
+    // The endpoint an operation goes to comes from the `uri` option on
+    // whichever of these built its client.
     graphqlClients: [
       {
         importModule: "@apollo/client",
         importName: "ApolloClient",
         uriProperty: "uri",
-        // `createFragmentRegistry` hands the registry to the cache's
-        // `fragments` option; a document can then spread a fragment it
-        // does not define and the client fills it in at run time.
+        // With a registry from `createFragmentRegistry` on the cache, a
+        // document can spread a fragment it does not define, and the
+        // client fills it in at run time.
         fragmentRegistry: {
           cacheProperty: "cache",
           cacheConstructor: {
@@ -218,10 +178,9 @@ export function apolloClientPack(
     ],
 
     inputMapping: {
-      // Apollo hooks take no positional params we track, the surface
-      // inputs are the operation-header `$variables`, which the adapter
-      // reads from the resolved document and stamps onto the summary
-      // directly (role "variable"), independent of this mapping.
+      // The inputs are the `$variables` in the operation header. The
+      // adapter reads them from the resolved document, so no positional
+      // parameter is mapped here.
       type: "positionalParams",
       params: [],
     },
