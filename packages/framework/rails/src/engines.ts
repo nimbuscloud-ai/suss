@@ -1,16 +1,11 @@
 /**
- * Rails engines a project keeps in its own tree. An engine is a class
- * extending `Rails::Engine`; Rails takes its root as the directory
- * that class's `lib/` is in, loads `<root>/config/routes.rb` along
- * with the app's own routes file, and serves the engine's route set
- * wherever the app writes `mount Name::Engine, at: "/prefix"`. An
- * `isolate_namespace Name` inside the class puts every controller the
- * engine routes under that module, so `"items#index"` in its routes
- * means `Name::ItemsController`.
+ * Reads the Rails engines a project keeps in its own tree. Rails finds an
+ * engine by loading Ruby, which a static reader cannot do, so the project
+ * lists the directories that contain one.
  *
- * Rails finds an engine by loading Ruby, which a static reader cannot
- * do, so a project says which directories contain one, and this module
- * reads the class and the routes file out of each.
+ * In each directory, the engine is the class under `lib/` that extends
+ * `Rails::Engine`, and its routes are in `config/routes.rb`. The README
+ * covers how `mount` and `isolate_namespace` shape the routes.
  */
 
 import fs from "node:fs";
@@ -26,9 +21,12 @@ import {
 import type { RbNode } from "@suss/adapter-ruby";
 
 export interface RailsEngine {
-  /** The class as a mount would spell it, `Billing::Engine`. */
+  /** The class as a `mount` call writes it, such as `Billing::Engine`. */
   readonly qualifiedName: string;
-  /** The routing key prefix `isolate_namespace` gives every controller the engine routes, `billing`, or "" for an engine that isolates nothing. */
+  /**
+   * The routing key prefix `isolate_namespace` gives every controller the
+   * engine routes, such as `billing`, or "" when it isolates nothing.
+   */
   readonly modulePrefix: string;
   /** The engine's own `config/routes.rb`, or null when the root has none. */
   readonly routesFile: string | null;
@@ -37,7 +35,12 @@ export interface RailsEngine {
 const ENGINE_BASE_NAMES = new Set(["Rails::Engine", "::Rails::Engine"]);
 const CONSTANT_TYPES = new Set(["constant", "scope_resolution"]);
 
-/** Every engine defined under one of `roots`, in the order the roots were given. A root with no engine class under its `lib/` is skipped. `acronyms` are the project's inflector acronyms, which decide the routing key an isolated namespace gets. */
+/**
+ * Every engine defined under one of `roots`, in the order the roots were
+ * given. A root with no engine class under its `lib/` is skipped.
+ * `acronyms` are the project's inflector acronyms, which change the
+ * routing key an isolated namespace gets.
+ */
 export function readEngines(
   roots: readonly string[],
   acronyms: readonly string[] = [],
@@ -58,8 +61,9 @@ export function readEngines(
 
 /**
  * The files an engine under `root` is read from, for a cache key: the
- * files under its `lib/` that spell `Rails::Engine`, and its routes file.
- * Found by text alone, since this runs before the grammar is loaded.
+ * files under its `lib/` that mention `Rails::Engine`, and its routes
+ * file. It matches by text alone, because this runs before the grammar
+ * is loaded.
  */
 export function engineSourceFiles(root: string): string[] {
   const routesFile = engineRoutesFile(root);
