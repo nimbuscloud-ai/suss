@@ -217,7 +217,10 @@ exact over the database as computed.
 A rule set written for a whole program derives every conclusion its
 facts support. A caller who asks about one value reads only a handful
 of them. `deriveOnDemand` rewrites the rules so that conclusions nobody
-is waiting on never get derived.
+is waiting on never get derived. Profiles of suss's resolution rules
+showed why this matters: one rule was attempted a hundred and fifty
+times to produce fourteen tuples, and the tuples nobody read outnumbered
+the ones somebody did by more than ten to one.
 
 List the relations that have to come out whole, and give each of them a
 rule that starts at a base relation you assert:

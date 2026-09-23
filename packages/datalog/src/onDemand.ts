@@ -1,35 +1,17 @@
-// Deriving what somebody asked for, and nothing else.
-//
-// A rule set written for a whole program derives every conclusion the
-// facts support. A caller asking "what does this one value resolve to"
-// reads a handful of those and pays for all of them. Profiles of the
-// resolution rules show the gap: a rule is attempted a hundred and fifty
-// times to produce fourteen tuples, and the tuples nobody reads outnumber
-// the ones somebody does by more than ten to one.
-//
-// The rewrite here is magic sets. Each derived relation gains a companion
-// relation saying which of its rows somebody is waiting on, every rule
-// gets that companion as its first literal, and the demand propagates
-// down each body the way the join binds variables: a rule that needs
-// `comesTo(y, z)` to answer `comesTo(x, z)` says so, and the engine
-// derives the inner pair because the outer one was asked for.
-//
-// The caller says which relations have to come out complete. Every other
-// derived relation is filled in only as far as those need it, and a
-// relation nothing asks for is not derived at all.
-//
-// This depends on two properties. The rewritten program is positive, so
-// it stays inside the semi-naive resume that makes a store evaluating
-// after every wave of facts affordable. And demand is a fact like any
-// other, so asking a new question is a fact arriving, not a fresh
-// fixpoint.
-//
-// Demand being a fact is also what lets a caller take it back. A
-// database that keeps every question ever asked derives over all of them
-// each time a file's facts arrive, so the tenth question costs ten
-// questions and the thousandth costs a thousand. `demandDriven` lists
-// the relations that stay empty until somebody asks, and
-// `clearRelations` empties them again once an answer has been read.
+/**
+ * The magic sets rewrite, which derives only what somebody asked for.
+ * Each derived relation gets a companion relation recording which of its
+ * rows something is waiting on. That companion becomes the first literal
+ * of each rule, and demand travels down each body the way the join binds
+ * variables. The caller lists the relations that must come out complete;
+ * every other derived relation is filled in only as far as those need.
+ *
+ * The rewritten program is positive, so it keeps the semi-naive resume
+ * that a store evaluating after every wave of facts depends on. Demand
+ * is an ordinary fact, so a new question is one more fact arriving, and
+ * `clearRelations` can take the question back once its answer is read.
+ * DESIGN.md has the worked examples and the costs.
+ */
 
 import type { Literal, Rule, Term } from "./index.js";
 
@@ -281,11 +263,11 @@ type LabelColumns = ReadonlyMap<string, ReadonlySet<number>>;
  * A column of a derived relation that some rule writes a constant into,
  * or matches against one, is a label column: a kind or a mode with a
  * handful of values, so fixing it narrows the relation little. Ordering
- * by bound columns has to leave those out, or a derived literal with
- * only its labels fixed gets demanded before the base literal that
- * would fix its key, and the demand asks for every row under that
- * label. A constant against a base relation is a filter on whatever the
- * caller put there, a property name say, and still counts.
+ * by bound columns leaves those out. Otherwise a derived literal with
+ * only its labels fixed is demanded before the base literal that would
+ * fix its key, and the demand asks for every row under that label. A
+ * constant against a base relation filters on a value the caller
+ * asserted, such as a property name, and still counts.
  */
 function labelColumns(
   rules: Rule[],
@@ -317,7 +299,7 @@ function labelColumns(
 /**
  * The rule with its body in the order demand should travel: at each
  * step, the literal with the most columns already fixed, label columns
- * aside, and written order between equals. The README shows what
+ * aside, and written order between equals. DESIGN.md shows what
  * written order costs when the head binds a column the body's first
  * literal does not mention.
  */

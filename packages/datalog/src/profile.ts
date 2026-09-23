@@ -1,16 +1,14 @@
-// Measuring where evaluation spends its time.
-//
-// Asking "which rule is expensive" needs numbers only the engine can
-// give: a rule's cost is spread across joins that no caller can see
-// from outside. A CPU profile only gets down to `unify` and
-// `lookup`, which tells you how the engine works but not which rule
-// asked for the work.
-//
-// Nothing here runs unless a caller wraps its evaluation in
-// `profileEvaluation`. The engine checks whether any scope is open once
-// per rule attempt and once per round, never per tuple, and the
-// allocation happens inside that branch, so an unprofiled run does the
-// same work it did before.
+/**
+ * Per-rule timing and row counts for an evaluation. A rule's cost is
+ * spread across joins no caller can see, and a CPU profile stops at
+ * `unify` and `lookup` without saying which rule asked for the work, so
+ * the engine records these itself.
+ *
+ * Nothing here runs unless a caller wraps its evaluation in
+ * `profileEvaluation`. The engine checks whether a scope is open once
+ * per rule attempt and once per round, never per tuple, and allocates
+ * only inside that branch, so an unprofiled run pays one check per rule.
+ */
 
 /** What one rule cost, summed over every attempt across every round. */
 export interface RuleCost {
@@ -40,8 +38,8 @@ export interface AbandonedQuestion {
 }
 
 /**
- * How a caller that asks one question at a time got on. `skipped` are
- * the ones it never put, because what it had already spent was gone.
+ * How a caller that asks one question at a time got on. `skipped` counts
+ * the questions it never asked because the run's row budget was spent.
  */
 export interface QuestionTally {
   asked: number;
@@ -136,7 +134,7 @@ interface Collector {
 // inside it both get a complete picture.
 const open: Collector[] = [];
 
-/** Whether anything is listening. The engine's hot path checks this. */
+/** Whether any profiling scope is open. The engine's hot path checks this. */
 export const isProfiling = (): boolean => open.length > 0;
 
 const ruleKey = (head: string, body: string[]): string =>
@@ -202,8 +200,8 @@ export function chargeAbandoned(question: string, examined: number): void {
 }
 
 /**
- * Note that a caller put one question. `outcome` says whether it was
- * given up part way or never put at all; leave it out when it answered.
+ * Count one question from a caller. Pass `outcome` when the question was
+ * abandoned part way or skipped, and leave it out when it was answered.
  */
 export function chargeQuestion(outcome?: QuestionOutcome): void {
   for (const collector of open) {
@@ -265,9 +263,8 @@ export function chargeRelationSizes(
   entries: Iterable<[string, number]>,
   derivedRelations: Iterable<string>,
 ): void {
-  // No guard for "nobody is listening" here. The engine asks whether any
-  // scope is open before it walks its relations, and a second check would
-  // be a branch no test can reach.
+  // No check for an open scope here. The engine checks before it walks
+  // its relations, and a second check would be a branch no test reaches.
   const sizes = [...entries];
   const derived = [...derivedRelations];
   for (const collector of open) {
