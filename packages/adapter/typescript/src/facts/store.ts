@@ -164,6 +164,21 @@ export interface EnvironmentNamers {
 /** What every parameter gets in a project with no environment read to follow. */
 const NO_NAMERS: EnvironmentNamers = { sitesNaming: () => [] };
 
+/** What the store works out once about where the environment goes. */
+interface EnvironmentAnswers {
+  namers: EnvironmentNamers;
+  /** Parameters some caller hands the environment object to, by fact key. */
+  receivers: ReadonlySet<string>;
+}
+
+/** One round of the environment question, before it settles. */
+interface EnvironmentAsked {
+  byParameter: Map<string, Node[]>;
+  receivers: Set<string>;
+  /** Calls that hand the environment object to something, by fact key. */
+  passingCalls: string[];
+}
+
 export class ResolutionStore {
   private readonly db = new Database();
   private readonly table: NodeTable;
@@ -212,8 +227,8 @@ export class ResolutionStore {
   private lastQueryWalked: string[] = [];
   /** See `environmentSiteFiles`; null until the first env question. */
   private envSiteFiles: readonly SourceFile[] | null = null;
-  private envNamersAnswer: EnvironmentNamers = NO_NAMERS;
-  private envNamersExtractedAt = -1;
+  /** See `environmentAnswers`; null until the first env question. */
+  private envAnswers: EnvironmentAnswers | null = null;
   private readonly declarations = new Map<Node, Node>();
   private readonly graph = new ModuleGraph();
   /** See `notePossibleCallers`. */
@@ -484,10 +499,8 @@ export class ResolutionStore {
    * a pack spells it, a name declared as that, or a parameter some
    * caller hands one to, however many calls deep.
    *
-   * A parameter is the only shape whose answer can change once its
-   * callers are in, and reading those means reading every file that
-   * imports this one, so a value that is not one is answered from what
-   * the store already has.
+   * A parameter's answer depends on its callers, so it comes from the
+   * parameters the environment reaches, worked out once per run.
    */
   isEnvironmentValue(value: Node): boolean {
     const target = factKeyOf(value);
@@ -495,18 +508,14 @@ export class ResolutionStore {
       this.derive();
       return {
         environment: this.hasAnswer("wantedEnvironmentValue", target),
-        parameter: this.hasAnswer("wantedRefersToParam", target),
+        parameters: this.answersFor("wantedRefersToParam", nodeId(target)),
       };
     });
-    if (first.environment || !first.parameter) {
+    if (first.environment || first.parameters.length === 0) {
       return first.environment;
     }
-
-    this.readPossibleCallersOf(target.getSourceFile());
-    return this.askAbout(target, "wanted", () => {
-      this.derive();
-      return this.hasAnswer("wantedEnvironmentValue", target);
-    });
+    const { receivers } = this.environmentAnswers(target.getProject());
+    return first.parameters.some((parameter) => receivers.has(parameter));
   }
 
   private hasAnswer(relation: string, target: Node): boolean {
@@ -518,32 +527,81 @@ export class ResolutionStore {
    * from, for a reader standing at a call. One question covers the
    * whole project: a project has a handful of environment reads and
    * thousands of parameters, and with the read bound the rules run from
-   * each callee to its callers.
-   *
-   * `definedIn` is the callee's own file, read into the store before
-   * the question so a helper nothing had extracted yet is among the
-   * facts the rules run over.
+   * each callee to its callers. The facts README says which files that
+   * reads and why it is asked once.
    */
-  envNamers(definedIn: SourceFile): EnvironmentNamers {
-    const siteFiles = this.environmentSiteFiles(definedIn.getProject());
-    if (siteFiles.length === 0) {
-      return NO_NAMERS;
+  envNamers(project: Project): EnvironmentNamers {
+    return this.environmentAnswers(project).namers;
+  }
+
+  private environmentAnswers(project: Project): EnvironmentAnswers {
+    if (this.envAnswers !== null) {
+      return this.envAnswers;
     }
-    this.extractFile(definedIn);
-    // The answer was true of the files extracted when it was worked
-    // out, and a reader arriving later has read more of the project.
-    if (this.envNamersExtractedAt === this.fullyExtracted.size) {
-      return this.envNamersAnswer;
+    const siteFiles = this.environmentSiteFiles(project);
+    if (siteFiles.length === 0) {
+      this.envAnswers = { namers: NO_NAMERS, receivers: new Set() };
+      return this.envAnswers;
     }
 
-    const answered = this.askEnvNamers([...siteFiles, definedIn]);
+    // Every file reaching a forwarder reaches the helper it forwards to,
+    // so reading the helpers' callers covers every hop at once. A helper
+    // a factory builds turns up only once the environment is followed.
+    const helpers = this.followEnvironment(siteFiles).byParameter;
+    for (const helperFile of this.filesOf(helpers)) {
+      this.readPossibleCallersOf(helperFile);
+    }
+    const { byParameter, receivers } = this.followEnvironment(siteFiles);
     const siteFilePaths = new Set(siteFiles.map((one) => one.getFilePath()));
-    this.envNamersAnswer = {
-      sitesNaming: (parameter: Node) =>
-        this.sitesNamedBy(answered, siteFilePaths, parameter),
+    this.envAnswers = {
+      namers: {
+        sitesNaming: (parameter: Node) =>
+          this.sitesNamedBy(byParameter, siteFilePaths, parameter),
+      },
+      receivers,
     };
-    this.envNamersExtractedAt = this.fullyExtracted.size;
-    return this.envNamersAnswer;
+    return this.envAnswers;
+  }
+
+  /**
+   * Ask until every call handing the environment on has had its callee
+   * read, one hop a round, so the answer covers each parameter it lands in.
+   */
+  private followEnvironment(seeds: readonly SourceFile[]): EnvironmentAsked {
+    const followed = new Set<string>();
+    for (;;) {
+      const asked = this.askEnvironment(seeds);
+      const next = asked.passingCalls.filter((call) => !followed.has(call));
+      if (next.length === 0) {
+        return asked;
+      }
+      for (const callId of next) {
+        followed.add(callId);
+        this.readCalleeOf(callId);
+      }
+    }
+  }
+
+  private readCalleeOf(callId: string): void {
+    const call = this.table.byId.get(callId);
+    if (
+      call !== undefined &&
+      (Node.isCallExpression(call) || Node.isNewExpression(call))
+    ) {
+      this.resolveCallableSources(call.getExpression());
+    }
+  }
+
+  /** The files the parameters an answer is keyed by are declared in. */
+  private filesOf(byParameter: ReadonlyMap<string, Node[]>): Set<SourceFile> {
+    const files = new Set<SourceFile>();
+    for (const parameterId of byParameter.keys()) {
+      const parameter = this.table.byId.get(parameterId);
+      if (parameter !== undefined) {
+        files.add(parameter.getSourceFile());
+      }
+    }
+    return files;
   }
 
   private sitesNamedBy(
@@ -564,15 +622,18 @@ export class ResolutionStore {
 
   /**
    * Seed every expression that spells the environment, derive, and take
-   * the sites back per parameter. The question is dropped afterwards, so
-   * a later ask over a larger fact set derives it again.
+   * back the read sites per parameter and the parameters the object is
+   * handed to. The question is dropped afterwards, so a later ask over a
+   * larger fact set derives it again.
    *
    * The reads themselves cannot be the seed: one written through a
    * parameter is off an object a scan of the source has no way to pick
    * out, and the whole point of asking is to find those.
    */
-  private askEnvNamers(seeds: readonly SourceFile[]): Map<string, Node[]> {
+  private askEnvironment(seeds: readonly SourceFile[]): EnvironmentAsked {
     const byParameter = new Map<string, Node[]>();
+    const receivers = new Set<string>();
+    const passingCalls: string[] = [];
     try {
       for (const [object] of this.db.facts("environmentObject")) {
         this.wantKey("wantedEnvObject", String(object));
@@ -588,10 +649,16 @@ export class ResolutionStore {
         sites.push(node);
         byParameter.set(String(parameter), sites);
       }
+      for (const [parameter] of this.db.facts("wantedEnvParameter")) {
+        receivers.add(String(parameter));
+      }
+      for (const [call] of this.db.facts("wantedEnvPassingCall")) {
+        passingCalls.push(String(call));
+      }
     } finally {
       this.forgetQuery();
     }
-    return byParameter;
+    return { byParameter, receivers, passingCalls };
   }
 
   /**
