@@ -169,6 +169,19 @@ environment variable through a parameter its own caller only forwards,
 `wrap(name) { return read(name); }`, is found by asking `wrap`'s
 parameter what it is passed to, then asking the same of `read`'s.
 
+`envNamers(project)` is the same question asked from the other end, for
+a reader standing at a call: which parameters an environment read takes
+its variable's name from. The store reads the files that write the
+environment object, finds the helpers whose parameter becomes a
+variable's name, then reads every file that reaches one of those
+helpers' files, since a helper that only forwards its parameter has to
+import the one it forwards to. Reach is transitive, so a forwarder of a
+forwarder is in that set too and one round is enough. The result is
+worked out once per run and does not depend on which call asked first.
+The reader asks at every call to a project function, so reading the
+callee's file at each call would read thousands of files on a large
+service to find one helper.
+
 REST client wrappers read the same question. A generated HTTP client
 builds its request out of a parameter, so the path and the verb at the
 library call are holes. The store says which calls filled that

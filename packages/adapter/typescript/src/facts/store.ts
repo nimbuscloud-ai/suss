@@ -212,8 +212,8 @@ export class ResolutionStore {
   private lastQueryWalked: string[] = [];
   /** See `environmentSiteFiles`; null until the first env question. */
   private envSiteFiles: readonly SourceFile[] | null = null;
-  private envNamersAnswer: EnvironmentNamers = NO_NAMERS;
-  private envNamersExtractedAt = -1;
+  /** See `envNamers`; null until the first env question. */
+  private envNamersAnswer: EnvironmentNamers | null = null;
   private readonly declarations = new Map<Node, Node>();
   private readonly graph = new ModuleGraph();
   /** See `notePossibleCallers`. */
@@ -518,32 +518,43 @@ export class ResolutionStore {
    * from, for a reader standing at a call. One question covers the
    * whole project: a project has a handful of environment reads and
    * thousands of parameters, and with the read bound the rules run from
-   * each callee to its callers.
-   *
-   * `definedIn` is the callee's own file, read into the store before
-   * the question so a helper nothing had extracted yet is among the
-   * facts the rules run over.
+   * each callee to its callers. The facts README says which files that
+   * reads and why it is asked once.
    */
-  envNamers(definedIn: SourceFile): EnvironmentNamers {
-    const siteFiles = this.environmentSiteFiles(definedIn.getProject());
-    if (siteFiles.length === 0) {
-      return NO_NAMERS;
-    }
-    this.extractFile(definedIn);
-    // The answer was true of the files extracted when it was worked
-    // out, and a reader arriving later has read more of the project.
-    if (this.envNamersExtractedAt === this.fullyExtracted.size) {
+  envNamers(project: Project): EnvironmentNamers {
+    if (this.envNamersAnswer !== null) {
       return this.envNamersAnswer;
     }
+    const siteFiles = this.environmentSiteFiles(project);
+    if (siteFiles.length === 0) {
+      this.envNamersAnswer = NO_NAMERS;
+      return NO_NAMERS;
+    }
 
-    const answered = this.askEnvNamers([...siteFiles, definedIn]);
+    // Every file reaching a forwarder reaches the helper it forwards to,
+    // so reading the helpers' callers covers every hop at once.
+    for (const helperFile of this.filesOf(this.askEnvNamers(siteFiles))) {
+      this.readPossibleCallersOf(helperFile);
+    }
+    const answered = this.askEnvNamers(siteFiles);
     const siteFilePaths = new Set(siteFiles.map((one) => one.getFilePath()));
     this.envNamersAnswer = {
       sitesNaming: (parameter: Node) =>
         this.sitesNamedBy(answered, siteFilePaths, parameter),
     };
-    this.envNamersExtractedAt = this.fullyExtracted.size;
     return this.envNamersAnswer;
+  }
+
+  /** The files the parameters an answer is keyed by are declared in. */
+  private filesOf(byParameter: ReadonlyMap<string, Node[]>): Set<SourceFile> {
+    const files = new Set<SourceFile>();
+    for (const parameterId of byParameter.keys()) {
+      const parameter = this.table.byId.get(parameterId);
+      if (parameter !== undefined) {
+        files.add(parameter.getSourceFile());
+      }
+    }
+    return files;
   }
 
   private sitesNamedBy(

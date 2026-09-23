@@ -932,6 +932,46 @@ describe("a helper call resolved from the caller's side", () => {
     ]);
   });
 
+  it("finds a forwarder that imports the helper through a barrel", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "config/env.ts",
+      `export function requireEnv(key: string): string {
+        return process.env[key] ?? "";
+      }`,
+    );
+    project.createSourceFile(
+      "config/index.ts",
+      `export { requireEnv } from "./env.js";`,
+    );
+    project.createSourceFile(
+      "settings.ts",
+      `import { requireEnv } from "./config/index.js";
+      export function setting(name: string): string {
+        return requireEnv(name);
+      }`,
+    );
+    const handler = project.createSourceFile(
+      "handler.ts",
+      `import { setting } from "./settings.js";
+      export const other = String("NOT_A_VARIABLE");
+      export const url = setting("DATABASE_URL");`,
+    );
+    const store = new ResolutionStore(
+      [],
+      nodeRuntimePack().environmentObjects ?? [],
+    );
+    store.notePossibleCallers(
+      project.getSourceFiles().filter((one) => !one.isInNodeModules()),
+    );
+    const reads = configReadEffectsOf(
+      recognizeWith(envVarRecognizer(), handler, store),
+    );
+    expect(reads.map((read) => read.interaction.name)).toEqual([
+      "DATABASE_URL",
+    ]);
+  });
+
   it("calls a name defaulted only where every read of it supplies one", () => {
     const project = createTestProject();
     project.createSourceFile(
