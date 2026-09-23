@@ -32,7 +32,7 @@ connected, and the sound-tier property runs against both.
 | `src/program.ts` | handler-program DSL + framework-neutral renderer |
 | `src/generators.ts` | fast-check arbitraries, tiered (sound vs documented-gap) |
 | `src/target.ts` | per-pack seam: pack + terminal syntax + module wrapper + vm stub |
-| `src/extract.ts` | real-pipeline extraction (shared in-memory project) |
+| `src/extract.ts` | extraction through the production pipeline (shared in-memory project) |
 | `src/execute.ts`, `src/requests.ts` | vm execution + deterministic request batteries |
 | `src/interpret.ts` | three-valued Predicate/ValueRef interpreter (future `suss corroborate` core) |
 | `src/differential.ts` | adjudicator: `falseClaim` / `uncovered` |

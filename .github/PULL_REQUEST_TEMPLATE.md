@@ -1,6 +1,6 @@
 <!--
-Title: the squash commit takes it. Conventional prefix, imperative,
-the symptom or the change in plain words. No taglines.
+Title: the squash commit uses it as its subject. Conventional prefix,
+imperative, and the symptom or the change in plain words. No taglines.
 -->
 
 ## Summary
@@ -32,8 +32,9 @@ is enough.
 
 ## Context the code does not show
 
-<!-- The why behind the approach, constraints, non-obvious decisions,
-a sentence or two each. Omit when the diff speaks for itself. -->
+<!-- The reason for the approach, the constraints, and any decision a
+reader would not expect, a sentence or two each. Leave this out when
+the diff explains itself. -->
 
 ## Test plan
 
