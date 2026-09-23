@@ -2,7 +2,7 @@
 
 Read a Python codebase with [suss](https://github.com/nimbuscloud-ai/suss).
 
-suss reads both sides of every call in a repository and reports where the two disagree, for example a client asking for a field the route stopped returning, or a status nobody handles. It reads the code itself, without a model or network access. This package reads Python. It parses with tree-sitter, binds names the way Python does, and records what each route declares and what each handler reaches.
+suss reads both sides of every call in a repository and reports where the two disagree. A client might ask for a field the route stopped returning, a status might go unhandled, or a queue might have no consumer. It reads the code itself, without a model or network access. This package reads Python. It parses with tree-sitter, binds names the way Python does, and records what each route declares and what each handler reaches.
 
 ## Install
 
