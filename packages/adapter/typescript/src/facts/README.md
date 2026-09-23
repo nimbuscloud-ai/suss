@@ -182,6 +182,16 @@ The reader asks at every call to a project function, so reading the
 callee's file at each call would read thousands of files on a large
 service to find one helper.
 
+`isEnvironmentValue(value)` asks whether a value is the environment
+object, for a reader holding the argument of a schema parse. A
+parameter is the environment when some caller hands it the object,
+and the same run works out which parameters those are, going forward
+from the files that write the environment: each call handing it on has
+its callee read, one hop a round, until no new call turns up. Asking
+from the parameter instead reads every file that reaches the
+parameter's own, which for a service most of the project imports is
+most of the project.
+
 REST client wrappers read the same question. A generated HTTP client
 builds its request out of a parameter, so the path and the verb at the
 library call are holes. The store says which calls filled that
