@@ -1,16 +1,13 @@
 /**
- * Recognize Google Cloud Storage calls and emit `storage-access`
- * effects.
+ * Recognizes Google Cloud Storage calls and records each one as a
+ * storage access. A caller reaches an object through a chain,
+ * `storage.bucket(name).file(path).download()`, and the method at the
+ * end of the chain determines whether it is a read or a write.
  *
- * A caller reaches an object through a chain rather than a command:
- * `storage.bucket(name).file(path).download()`. The operation at the
- * end says whether it reads or writes, and the chain behind it says
- * which bucket and which object. Those two hops are a different
- * distance back depending on the operation, so each is stated as the
- * step up the receivers that reaches it rather than as a position.
- *
- * The README says which operations it reads and what a signed URL
- * counts as.
+ * How many hops back the `bucket` and `file` calls are depends on the
+ * operation, so the pack finds each one by its method name and ignores
+ * its position in the chain. The README lists the operations and explains
+ * how a signed URL counts.
  */
 
 import { declaredBy, pack, storageCalls } from "@suss/recognize";
@@ -23,14 +20,11 @@ import type {
   StorageMethod,
 } from "@suss/recognize";
 
-/** The library a call has to come from. */
 const CLIENT_MODULE = "@google-cloud/storage";
 
-/** The calls in the chain that say what the operation is addressing. */
 const BUCKET_STEP: CallStep = { to: "receiver", method: "bucket" };
 const FILE_STEP: CallStep = { to: "receiver", method: "file" };
 
-/** Which object the operation reached, and which bucket it is in. */
 const OBJECT: ArgumentPick = { of: [FILE_STEP], at: 0 };
 const BUCKET: ArgumentPick = { of: [BUCKET_STEP], at: 0 };
 
@@ -38,9 +32,9 @@ const READ: StorageMethod = { kind: "read", selector: OBJECT };
 const WRITE: StorageMethod = { kind: "write", selector: OBJECT };
 
 /**
- * A signed URL reaches the object later, and what it does then is
- * whatever the caller asked to sign for. A request that says nothing
- * signs for a read, which is what the library does with it.
+ * A signed URL reaches the object later, for whatever action the caller
+ * signed for. A request with no `action` counts as a read, because the
+ * library signs it as one.
  */
 const SIGNED_URL: StorageMethod = {
   kind: {
@@ -56,7 +50,6 @@ const SIGNED_URL: StorageMethod = {
   selector: OBJECT,
 };
 
-/** Every operation this reads, and whether it reads or writes. */
 const OPERATIONS: Record<string, StorageMethod> = {
   download: READ,
   createReadStream: READ,
@@ -86,8 +79,8 @@ const CHAIN_CALLS = storageCalls({
   .example('storage.bucket("uploads").file("reports/a.pdf").download()');
 
 /**
- * Pack export. One declaration, gated on a file reaching the client
- * library, which is where an operation can come from.
+ * An operation counts only when `@google-cloud/storage` declares it, so a
+ * `download` method a project wrote is ignored.
  */
 export function gcsFramework(): PatternPack {
   return pack("gcs", [CHAIN_CALLS], {
@@ -96,7 +89,6 @@ export function gcsFramework(): PatternPack {
   });
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "effects",
   package: "@suss/framework-gcs",
