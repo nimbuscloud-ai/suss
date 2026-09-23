@@ -432,6 +432,79 @@ describe("eventbridge recognizer: skip cases", () => {
   });
 });
 
+describe("eventbridge recognizer: a detail type that is one of a few strings", () => {
+  const publishing = (declarations: string, detailType: string) => `
+    import { EventBridgeClient, PutEventsCommand } from "@aws-sdk/client-eventbridge";
+    const client = new EventBridgeClient({});
+    ${declarations}
+    export async function publish(event: DomainEvent) {
+      await client.send(new PutEventsCommand({
+        Entries: [{
+          EventBusName: process.env.BUS_NAME,
+          DetailType: ${detailType},
+          Detail: JSON.stringify({ id: "1" }),
+        }],
+      }));
+    }
+  `;
+
+  it("sends once per member of a lower-cased union field", () => {
+    const source = publishing(
+      `interface DomainEvent { operation: "INSERT" | "UPDATE" | "DELETE" }`,
+      "`record.${event.operation.toLowerCase()}`",
+    );
+    const sends = messageSendEffectsOf(recognizeAll(source));
+    expect(sends.map(channelOf)).toEqual([
+      "{BUS_NAME}#record.delete",
+      "{BUS_NAME}#record.insert",
+      "{BUS_NAME}#record.update",
+    ]);
+  });
+
+  it("sends once per value of a string enum", () => {
+    const source = publishing(
+      `enum Kind { Placed = "order.placed", Shipped = "order.shipped" }
+       interface DomainEvent { kind: Kind }`,
+      "event.kind",
+    );
+    const sends = messageSendEffectsOf(recognizeAll(source));
+    expect(sends.map(channelOf)).toEqual([
+      "{BUS_NAME}#order.placed",
+      "{BUS_NAME}#order.shipped",
+    ]);
+  });
+
+  it("reads a union declared under an alias in another file", () => {
+    const sends = messageSendEffectsOf(
+      packUnderTest(eventBridgeFramework(), { library: LIBRARY }).effectsAcross(
+        {
+          "/kinds.ts": `export type ReportPeriod = "daily" | "weekly";`,
+          "/publish.ts": publishing(
+            `import type { ReportPeriod } from "./kinds";
+             interface DomainEvent { period: ReportPeriod }`,
+            "`report.${event.period}`",
+          ),
+        },
+        "/publish.ts",
+      ),
+    );
+    expect(sends.map(channelOf)).toEqual([
+      "{BUS_NAME}#report.daily",
+      "{BUS_NAME}#report.weekly",
+    ]);
+  });
+
+  it("sends once, with a hole, for a union too wide to spell out", () => {
+    const members = Array.from({ length: 20 }, (_, i) => `"m${i}"`).join(" | ");
+    const source = publishing(
+      `interface DomainEvent { metric: ${members} }`,
+      "`metric.${event.metric}`",
+    );
+    const sends = messageSendEffectsOf(recognizeAll(source));
+    expect(sends.map(channelOf)).toEqual(["{BUS_NAME}#metric.{metric}"]);
+  });
+});
+
 describe("eventbridge pack metadata", () => {
   it("declares recognizer-only pack identity gated on the SDK import", () => {
     const pack = eventBridgeFramework();

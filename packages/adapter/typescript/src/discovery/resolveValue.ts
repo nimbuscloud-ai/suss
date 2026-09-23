@@ -12,7 +12,7 @@
 
 import { Node } from "ts-morph";
 
-import { force, literalOf } from "@suss/values";
+import { force, literalOf, literalsOf } from "@suss/values";
 
 import { factKeyOf } from "../facts/extract.js";
 import { evaluatedValue } from "../values/evaluator.js";
@@ -269,6 +269,19 @@ export function stringValueOf(
   resolution: ResolutionStore | undefined,
 ): string | null {
   return literalOf(evaluatedValue(value, resolution));
+}
+
+/**
+ * Every string this value can come to, when the evaluator settles it to
+ * a few: a template over a string literal union, or a name two branches
+ * set. Null when part of it could be anything, or past `cap` strings.
+ */
+export function stringValuesOf(
+  value: Node,
+  resolution: ResolutionStore | undefined,
+  cap: number,
+): readonly string[] | null {
+  return literalsOf(evaluatedValue(value, resolution), cap);
 }
 
 /**

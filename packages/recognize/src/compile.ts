@@ -32,6 +32,7 @@ import type {
   ArgumentPick,
   CallStep,
   Chain,
+  ChannelPart,
   ContainerLink,
   ContainersLink,
   Ending,
@@ -597,20 +598,24 @@ function messageSend(matched: Matched): Effect[] | null {
   // service that sends read as one that sends nothing.
   const messages = messagesIn(input, ending.messages);
   const sent = messages.length === 0 ? [NOTHING_STATED] : messages;
-  return sent.map((message) => ({
-    type: "interaction",
-    binding: messageBusBinding({
-      recognition,
-      messageBus: ending.wire,
-      channel: channelOf(message, input, ending),
-    }),
-    callee: ops.calleeText(),
-    interaction: {
-      class: "message-send",
-      ...bodyOf(message, ending),
-      ...routingKeyOf(message, ending),
-    },
-  }));
+  return sent.flatMap((message) =>
+    channelsOf({ message, input, ending }).map(
+      (channel): Effect => ({
+        type: "interaction",
+        binding: messageBusBinding({
+          recognition,
+          messageBus: ending.wire,
+          channel,
+        }),
+        callee: ops.calleeText(),
+        interaction: {
+          class: "message-send",
+          ...bodyOf(message, ending),
+          ...routingKeyOf(message, ending),
+        },
+      }),
+    ),
+  );
 }
 
 /** Each message the call sends, however the library takes them. */
@@ -626,40 +631,113 @@ function messagesIn(
 }
 
 /**
- * The channel one message states, or null when the source leaves a part
- * of it unsaid. A channel spelled by half of itself would pair across
- * wires, so a message missing a part records the send with nothing
- * claimed about where it went.
+ * How many channels one message may go to. A part the source limits to
+ * a few strings sends the message once per string, and two such parts
+ * multiply. Past this many, the message is read as the one channel it
+ * would be if no part had been spelled out string by string.
+ */
+const CHANNEL_CAP = 16;
+
+/** One message and what it was sent with, which is where its channel is read from. */
+interface Sending {
+  readonly message: ValueOps;
+  readonly input: ValueOps;
+  readonly ending: MessageSendEnding;
+}
+
+/**
+ * Whether a written part is read as every string it can be, or as the
+ * one name it states.
+ */
+type PartReading = "everyString" | "oneName";
+
+function oneName(
+  written: ValueOps,
+  unsettled: UnsettledName,
+): readonly string[] | null {
+  const stated = written.name(unsettled);
+  return stated === null || stated === "" ? null : [stated];
+}
+
+/**
+ * `` `record.${op}` `` with `op` typed `"a" | "b"` is two strings, so
+ * the send is two sends. A value that is only ever one string, or that
+ * could be anything, is read as one name the way it always was.
+ */
+function everyString(
+  written: ValueOps,
+  unsettled: UnsettledName,
+): readonly string[] | null {
+  const each = written.names?.(CHANNEL_CAP) ?? null;
+  if (each === null || each.length < 2 || each.includes("")) {
+    return oneName(written, unsettled);
+  }
+  return each;
+}
+
+/** Every channel one message goes to, one per string a part can be. */
+function channelsOf(sending: Sending): readonly (string | null)[] {
+  const each = channelsRead(sending, "everyString");
+  return each.length > CHANNEL_CAP ? channelsRead(sending, "oneName") : each;
+}
+
+/**
+ * The channels one message states, or a lone null when the source
+ * leaves a part of it unsaid. A channel spelled by half of itself would
+ * pair across wires, so a message missing a part records the send with
+ * nothing claimed about where it went.
+ */
+function channelsRead(
+  sending: Sending,
+  read: PartReading,
+): readonly (string | null)[] {
+  const separator = sending.ending.channelSeparator ?? "#";
+  let channels: readonly string[] | null = null;
+  for (const part of sending.ending.channel) {
+    const values = partValues(part, sending, read);
+    if (values === null) {
+      return [null];
+    }
+    channels =
+      channels === null ? values : crossed(channels, values, separator);
+  }
+  return channels ?? [""];
+}
+
+/** Each head followed by each value. */
+function crossed(
+  heads: readonly string[],
+  values: readonly string[],
+  separator: string,
+): readonly string[] {
+  return heads.flatMap((head) =>
+    values.map((value) => `${head}${separator}${value}`),
+  );
+}
+
+/**
+ * The strings one part of a channel can be, or null when it is unsaid.
  *
- * A part that is absent and a part that is written but unsettled are
- * different answers. Absent means the library fills it in, which is
+ * A part that is absent and a part that is written but unsettled mean
+ * different things. Absent means the library fills it in, which is
  * what `whenAbsent` is for. Written-but-unsettled means the code did
  * say, somewhere this run cannot read, and claiming the library's
  * default there would place the send on a channel it never goes to.
  */
-function channelOf(
-  message: ValueOps,
-  input: ValueOps,
-  ending: MessageSendEnding,
-): string | null {
-  const parts: string[] = [];
-  for (const part of ending.channel) {
-    const holder = part.on === "theInput" ? input : message;
-    const written = firstWritten(holder, part.property);
-    if (written === null) {
-      if (part.whenAbsent === undefined) {
-        return null;
-      }
-      parts.push(part.whenAbsent);
-      continue;
-    }
-    const stated = written.name(part.unsettled ?? ending.unsettledName);
-    if (stated === null || stated === "") {
-      return null;
-    }
-    parts.push(stated);
+function partValues(
+  part: ChannelPart,
+  sending: Sending,
+  read: PartReading,
+): readonly string[] | null {
+  const holder = part.on === "theInput" ? sending.input : sending.message;
+  const written = firstWritten(holder, part.property);
+  if (written === null) {
+    return part.whenAbsent === undefined ? null : [part.whenAbsent];
   }
-  return parts.join(ending.channelSeparator ?? "#");
+  const unsettled = part.unsettled ?? sending.ending.unsettledName;
+  return read === "everyString"
+    ? everyString(written, unsettled)
+    : oneName(written, unsettled);
 }
 
 /**

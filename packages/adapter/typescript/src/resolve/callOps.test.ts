@@ -54,7 +54,10 @@ function opsForCall(source: string, which: "first" | "last"): CallOps {
   if (under === undefined) {
     throw new Error("the fixture contains no call");
   }
-  return callOpsFor(under, (value) => store.resolveWrittenValue(value));
+  return callOpsFor(under, {
+    resolve: (value) => store.resolveWrittenValue(value),
+    resolution: store,
+  });
 }
 
 /** The ops for the last call in a file, which is the one under test. */
@@ -81,9 +84,9 @@ function opsForTaggedTemplate(source: string): CallOps {
   if (tagged === undefined) {
     throw new Error("the fixture contains no tagged template");
   }
-  return callOpsFor(tagged as TaggedTemplateExpression, (value) =>
-    store.resolveWrittenValue(value),
-  );
+  return callOpsFor(tagged as TaggedTemplateExpression, {
+    resolve: (value) => store.resolveWrittenValue(value),
+  });
 }
 
 describe("what the adapter can tell a declared pack", () => {
@@ -365,7 +368,9 @@ describe("the calls one call reaches", () => {
     const store = new ResolutionStore();
     const made = file.getFirstDescendantByKindOrThrow(SyntaxKind.NewExpression);
 
-    const ops = callOpsFor(made, (value) => store.resolveWrittenValue(value));
+    const ops = callOpsFor(made, {
+      resolve: (value) => store.resolveWrittenValue(value),
+    });
     expect(ops.callee()?.calleeText()).toBe("makeDeck");
   });
 
@@ -514,6 +519,21 @@ describe("reading a value an argument states", () => {
 
     expect(ops.valueAt(0)?.property("side")?.text()).toBeNull();
   });
+
+  it("gives every string a value can be, up to the cap it is asked with", () => {
+    const ops = opsForLastCall(`
+      import Deck from "tapedeck";
+      declare const deck: Deck;
+      export function play(side: "a" | "b", track: string) {
+        return deck.send({ Side: \`side-\${side}\`, Track: track });
+      }
+    `);
+
+    const side = ops.valueAt(0)?.property("Side");
+    expect(side?.names?.(4)).toEqual(["side-a", "side-b"]);
+    expect(side?.names?.(1)).toBeNull();
+    expect(ops.valueAt(0)?.property("Track")?.names?.(4)).toBeNull();
+  });
 });
 
 describe("stepping to a receiver another file declared", () => {
@@ -543,9 +563,9 @@ describe("stepping to a receiver another file declared", () => {
       }
     });
 
-    const receiver = callOpsFor(call as CallExpression, (value) =>
-      store.resolveWrittenValue(value),
-    ).receiver();
+    const receiver = callOpsFor(call as CallExpression, {
+      resolve: (value) => store.resolveWrittenValue(value),
+    }).receiver();
 
     expect(receiver?.calleeText()).toBe("makeDeck");
   });
@@ -735,12 +755,12 @@ describe("anchorCall", () => {
     if (under === undefined) {
       throw new Error("the fixture contains no call");
     }
-    return callOpsFor(
-      under,
-      (value) => store.resolveWrittenValue(value),
-      (value, module) => store.importOriginsOf(value, [module]).length > 0,
-      (value, matches) => store.anchorCallsOf(value, matches),
-    );
+    return callOpsFor(under, {
+      resolve: (value) => store.resolveWrittenValue(value),
+      originatesFrom: (value, module) =>
+        store.importOriginsOf(value, [module]).length > 0,
+      anchorCallsOf: (value, matches) => store.anchorCallsOf(value, matches),
+    });
   }
 
   const madeDeck: ReceiverOrigin = {
