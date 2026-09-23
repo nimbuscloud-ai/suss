@@ -1,14 +1,9 @@
 /**
- * The pack's `discoverUnits` callback.
- *
- * A Worker registers nothing. Its entrypoint is the shape of its
- * default export, `export default { fetch, scheduled, queue, tail }`,
- * so discovery reads that object literal and emits one unit per trigger
- * it defines. A function written elsewhere and referred to by name is
- * followed to its declaration, since that is how most services split a
- * long handler out of the entrypoint file. The older service-worker
- * form registers the same triggers through `addEventListener("fetch",
- * handler)`, and comes out as the same unit.
+ * The pack's `discoverUnits` callback. It reads the object the entrypoint
+ * default-exports, and the older `addEventListener("fetch", handler)`
+ * form, and emits one unit per trigger. A trigger written elsewhere and
+ * referred to by name is followed to its declaration, because most
+ * services move a long handler out of the entrypoint file.
  */
 
 import { Node as N } from "ts-morph";
@@ -44,9 +39,9 @@ interface Trigger {
 
 export interface CloudflareWorkersDiscoveryOptions {
   /**
-   * The name the deployment gives this Worker. Left out, a unit states
-   * no deployable, and the runtime-config provider from `wrangler.toml`
-   * places its code by directory instead.
+   * The Worker's `name` from `wrangler.toml`. Without it a unit does not
+   * record a deployable, and the runtime-config provider from
+   * `wrangler.toml` is matched to the code by directory.
    */
   scriptName?: string | undefined;
 }
@@ -106,9 +101,8 @@ function unitFor(
 }
 
 /**
- * The triggers `export default { ... }` defines. `exportedFunctions`
- * skips this export, since it lists only the ones whose declaration is
- * a function, and an entrypoint's is an object.
+ * `exportedFunctions` lists only exports declared as functions, and an
+ * entrypoint exports an object, so this reads the object itself.
  */
 function defaultExportTriggers(
   sf: SourceFile,
@@ -134,10 +128,10 @@ function defaultExportTriggers(
 }
 
 /**
- * The function each trigger property of the entrypoint refers to,
- * written into the object or named there. The env-binding recognizer
- * asks this of every property read in the file, so the answer is kept
- * for as long as the run's store is.
+ * The functions the entrypoint's trigger properties refer to, written in
+ * the object or referred to by name. The env-binding recognizer calls
+ * this for every property read in the file, so the result is cached for
+ * as long as the run's resolution store lives.
  */
 export function entrypointTriggerFunctions(
   sf: SourceFile,
@@ -164,7 +158,10 @@ const triggerFunctionsPerRun = new WeakMap<
   Map<string, Set<Node>>
 >();
 
-/** The object the file default-exports, written there or named. */
+/**
+ * The object the file default-exports, written in place or referred to
+ * by name.
+ */
 export function defaultExportObject(
   sf: SourceFile,
   resolution: ResolutionStore,
@@ -179,9 +176,8 @@ export function defaultExportObject(
 }
 
 /**
- * The triggers `addEventListener("fetch", handler)` registers. Only a
- * string literal is read: an event name computed at run time gives no
- * trigger anyone can pair against.
+ * Only a string literal event name is read, since nothing can pair with
+ * a name computed at run time.
  */
 function listenerTriggers(
   sf: SourceFile,

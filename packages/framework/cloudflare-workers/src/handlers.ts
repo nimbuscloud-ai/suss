@@ -1,13 +1,12 @@
 /**
- * The four triggers a Workers entrypoint can be invoked on, and the
- * boundary each one is.
+ * The four triggers a Workers entrypoint can define, and the boundary
+ * each one becomes. Cloudflare defines the names and what calls each:
+ * `fetch` for an HTTP request, `scheduled` for a cron trigger, `queue`
+ * for a batch from a Cloudflare Queue, `tail` for another Worker's trace
+ * events. A project cannot change any of this, so the table is part of
+ * the pack and has no option.
  *
- * Cloudflare defines the names and what invokes each: `fetch` for an
- * HTTP request, `scheduled` for a cron trigger, `queue` for a batch off
- * a Cloudflare Queue, `tail` for another Worker's trace events. A
- * project chooses none of this, so the table is the pack's own
- * vocabulary rather than configuration. The README beside this file
- * says why `fetch` gets one boundary for the Worker.
+ * The README explains why `fetch` gets one boundary for the whole Worker.
  */
 
 import type { DiscoveredCustomUnit } from "@suss/extractor";
@@ -23,9 +22,9 @@ export interface TriggerShape {
 }
 
 /**
- * A trigger reached over a wire with no producer is still a boundary,
- * and giving it the wire rather than the pack's http keeps it from
- * claiming to serve requests.
+ * Each trigger that is not HTTP gets its own wire, even a wire with no
+ * producer, so it does not claim to serve requests under the pack's
+ * http protocol.
  */
 export const TRIGGERS: Record<string, TriggerShape> = {
   fetch: {

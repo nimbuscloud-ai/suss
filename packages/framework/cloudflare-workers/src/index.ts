@@ -1,15 +1,12 @@
 /**
- * @suss/framework-cloudflare-workers: the PatternPack for a Cloudflare
- * Workers entrypoint.
+ * Pattern pack for a Cloudflare Workers entrypoint. A Worker registers
+ * no routes. It exports an object whose properties are the triggers
+ * Cloudflare calls, so discovery reads that export, and the shape of the
+ * export also acts as the import gate.
  *
- * A Worker registers no routes. It exports an object whose properties
- * are the triggers Cloudflare invokes, so discovery reads that export
- * rather than a registration call, and the export shape is also the
- * import gate. What each trigger becomes is in `handlers.ts`.
- * Configuration arrives as the second argument to every trigger rather
- * than through `process.env`, so `envBindings.ts` reads it there. The
- * README says why an HTTP Worker gets one boundary rather than one per
- * path.
+ * Bindings arrive as the second argument to every trigger, and the env
+ * and store recognizers read them there. The README explains why an HTTP
+ * Worker gets one boundary for all of its paths.
  */
 
 import { z } from "zod";
@@ -26,17 +23,12 @@ export { envBindingRecognizer } from "./envBindings.js";
 export { TRIGGERS, type TriggerShape } from "./handlers.js";
 export { storeBindingRecognizer } from "./storeBindings.js";
 
-/**
- * What `-f cloudflare-workers=config.json` may say. The CLI parses the file against it
- * before the factory runs.
- */
 export const optionsSchema = z
   .object({
     /**
-     * The name the deployment gives this Worker, which is `name` in
-     * `wrangler.toml`. Supplying it stamps every unit with the deployable
-     * it runs as, so a runtime-config provider pairs by unit instead of by
-     * directory. Left out, the directory decides.
+     * The Worker's `name` from `wrangler.toml`. When it is set, every unit
+     * records it as its deployable, so a runtime-config provider pairs
+     * with the Worker by name. Without it, units pair by directory.
      */
     scriptName: z.string().optional(),
   })
@@ -52,15 +44,15 @@ export function cloudflareWorkersFramework(
     protocol: "http",
     languages: ["typescript", "javascript"],
 
-    // Nothing is registered in code, so there is no data-driven
-    // discovery to declare.
+    // A Worker registers nothing in code, so the pattern list stays empty
+    // and the callback reads the exported object.
     discovery: [],
     discoverUnits: cloudflareWorkersDiscovery(options),
 
     terminals: [
       {
-        // new Response(body, { status }), which is what a Worker returns
-        // for everything: JSON, a redirect, a stream, plain text.
+        // new Response(body, { status }). A Worker returns a Response for
+        // JSON, a redirect, a stream and plain text alike.
         kind: "response",
         match: { type: "functionCall", functionName: "Response" },
         extraction: {
@@ -124,7 +116,6 @@ export function cloudflareWorkersFramework(
   };
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "framework",
   package: "@suss/framework-cloudflare-workers",
