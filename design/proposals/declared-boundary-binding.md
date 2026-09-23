@@ -1,11 +1,12 @@
-# What a pack says about the boundary it found
+# How a pack declares the boundary a unit serves
 
 Status: resolved. Step 1 shipped, step 2 stopped on its own condition,
 step 3 turned out to be already fixed. The outcomes are at the end.
 
-A discovery pack does two things. It finds a code unit, and it says which
-boundary that unit serves. Which of the two ways it says the second one
-depends on how it found the unit, and the two ways cover different ground.
+A discovery pack does two things. It finds a code unit, and it declares
+which boundary that unit serves. It declares the boundary in one of two
+ways, depending on how it found the unit, and the two ways cover
+different boundaries.
 
 **Through a callback.** A pack that discovers units with the `discoverUnits`
 hook returns `DiscoveredCustomUnit`, which can state any of four bindings:
@@ -38,8 +39,8 @@ export type BindingExtraction = {
 };
 ```
 
-An HTTP method and an HTTP path, both required, and no way to say anything
-else. A declarative pack whose boundary is a queue, a topic, or a GraphQL
+The type has an HTTP method and an HTTP path, both required, and no way to
+declare anything else. A declarative pack whose boundary is a queue, a topic, or a GraphQL
 field has nowhere to put it.
 
 ## Why that matters
@@ -54,13 +55,13 @@ adapter, one emitting `routeInfo` and the other `resolverInfo`.
 
 Concretely, the pack this blocks today is a NestJS microservice pack.
 `@EventPattern("order.placed")` on a decorated class is a consumer bound to a
-channel. `decoratedRoute` is the right match for finding it and cannot say
-what it is bound to, so the pack has to be written as a callback.
+channel. `decoratedRoute` is the right match for finding it but cannot
+declare what it is bound to, so the pack has to be written as a callback.
 
 ## What to change
 
 Give `DiscoveryPattern` the binding vocabulary `DiscoveredCustomUnit` already
-has, rather than inventing a second one.
+has, instead of inventing a second one.
 
 ```ts
 export interface DiscoveryPattern {
@@ -105,8 +106,8 @@ The NestJS microservice pack then declares:
 
 An earlier draft proposed replacing both of `BindingExtraction`'s source lists
 with one flat `FieldSource` union and discriminating the whole type by
-semantics. Review found four things wrong with it, and they are worth writing
-down so nobody proposes it again.
+semantics. Review found four things wrong with it. They are written down here
+so nobody proposes it again.
 
 **The readings in the tree are not single sources.** A NestJS route path is a
 join of two decorators, `joinRoutePath(pathPrefix, pathSuffix)`, so
@@ -121,7 +122,7 @@ operator, which is a small expression language.
 **Two fields are sometimes read together.** `extractRouteInfoFromBinding`
 special-cases method and path both being `fromArgumentProperty` at the same
 position, resolves the object once, and returns null unless both halves read.
-A per-field union has no word for that.
+A per-field union cannot express that.
 
 **Not every semantics field is a string.** `rest.declaredResponses` is
 `number[]`, `functionCall.exportPath` is `string[]`, and `messageBus` and
@@ -129,19 +130,19 @@ A per-field union has no word for that.
 
 **The sources are not interchangeable across fields.** `fromArgumentLiteral`
 under `path` runs the value through `pathFromUrlNode`, which strips a URL
-origin and rewrites `${id}` to `{id}`. It is a REST path reading, not a
-literal reading, and pointed at a channel name it would corrupt it. Flattening
-the lists also deletes a coupling the current shape has: `registrationArgument`
-means something only under a registration match, `filename` only under
+origin and rewrites `${id}` to `{id}`. That is a REST path reading. Pointed
+at a channel name, it would corrupt the name. Flattening the lists also
+deletes a coupling the current types have: `registrationArgument` means
+something only under a registration match, and `filename` only under
 `fileConvention`.
 
-The two source lists do have one difference that looks like drift rather than
-meaning: `fromRegistration.position` is `"methodName" | number` under `method`
-and `number` under `path`. That is worth fixing on its own.
+The two source lists do have one difference that looks like drift, with no
+meaning behind it: `fromRegistration.position` is `"methodName" | number`
+under `method` and `number` under `path`. That should be fixed on its own.
 
 **The remaining variants stay as they are.** An earlier draft ended with a
 step that moved every baked-in variant onto a declared binding. None of them
-can go:
+can move:
 
 - `jsxElementRoute` decides whether a unit exists at all by reading the path,
   and composes it from the element's ancestors.
@@ -156,10 +157,11 @@ can go:
 
 `namedExport` states no binding and gets the generic `function-call` one.
 
-## The boundary vocabulary, as it actually is
+## The boundary vocabulary today
 
-`packages/ir-core/src/semantics/registry.ts` is the authority. Eight members,
-with a compile-time check tying the schema union to the behavior table:
+`packages/ir-core/src/semantics/registry.ts` is the source of truth. It has
+eight members, with a compile-time check tying the schema union to the
+behavior table:
 
 | Semantics | Fields |
 |---|---|

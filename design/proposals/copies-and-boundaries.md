@@ -23,8 +23,7 @@ that codebase is put together.
 **Do the copies already disagree?** Where they agree, merging is
 arithmetic and the only question is where the surviving copy should go.
 Where they disagree, merging means choosing, and something changes. We
-separate the two below because they are different kinds of work, not
-different sizes of the same work.
+separate the two below because they are different kinds of work.
 
 **Does the disagreement reach output?** `makeSide` differs between two
 files on whether it writes out an empty transition id, and no caller
@@ -33,9 +32,8 @@ passes an empty transition id, so nothing you can observe changes.
 it drops is the one AWS's own documentation uses. Both are two copies
 that disagree. Only one is a bug.
 
-A third thing shaped the survey more than we expected. The largest
-single duplication in the repo is not in the product code. Thirty-one
-test files construct a ts-morph `Project`, thirty-eight times, and they
+A third thing shaped the survey more than we expected: the largest
+single duplication in the repo is in the tests. Thirty-one test files construct a ts-morph `Project`, thirty-eight times, and they
 do not agree: `target` is 99 in most, 9 in two, `ScriptTarget.ES2022` in
 five; `jsx` is 4 in three and 2 in one; `moduleResolution` is missing in
 about half. Eleven of those construct the adapter afterwards in a
@@ -44,7 +42,7 @@ byte-identical once you substitute the pack name. Two packs go further
 and hand-roll their own `extractArgs`, so the unit tests for aws-sqs and
 aws-eventbridge each run against a different and incorrect model of the
 input those packs get in production. Neither test double inlines a
-module-level `const` the way the adapter does, which is why the
+module-level `const` the way the adapter does, and that is how the
 `process.env` disagreement in the next section survived.
 
 ## Group one: copies that agree
@@ -65,21 +63,22 @@ saleor-storefront and directus/api.
 | `isAncestorOrSelf` | 2 | the adapter's conditions module |
 | a status fold that re-implemented two helpers its own file already imports | 1 | calls the imports |
 
-Two of these deserve more than a table row.
+A few of these need more than a table row.
 
 **The summary reference.** Somebody wrote out
 `${location.file}::${identity.name}` at 19 places across three packages.
-Every copy agreed, so nothing was broken, but something also parses the
-string rather than only printing it: the checker deduplicates findings
-by it, and a `.sussignore` rule matches against it. Nineteen authors of
-a wire format is how a twentieth ends up picking a different separator.
-It now has one constructor.
+Every copy agreed, so nothing was broken. But code also parses the
+string as well as printing it: the checker deduplicates findings by it,
+and a `.sussignore` rule matches against it. With nineteen places
+writing a wire format by hand, the twentieth could easily pick a
+different separator. The string now has one constructor.
 
-**The dispatch table.** Three byte-identical copies, one of which
-somebody had already pulled out into its own file in the fuzzer, citing
-the style decision in its header. The idiom is a rule for the whole
-repo, so it belongs in the package that owns primitives for the whole
-repo rather than in three packages that each rediscovered it.
+**The dispatch table.** There were three byte-identical copies.
+Somebody had already pulled one of them out into its own file in the
+fuzzer, citing the style decision in its header. The idiom is a rule
+for the whole repo, so it belongs in the package with the repo-wide
+primitives. Before this change, three packages had each written it
+for themselves.
 
 **The peelers.** `unwrapInitializer` in the resolution pass had a
 docstring saying it must mirror the shape pass's `unwrap` except that it
@@ -93,8 +92,8 @@ below.
 One thing fell out of this by accident. Adding a value import to
 `interpret.ts` put it in the module graph for the first time, and suss
 now sees 7 units inside it that it could not see before. suss does not
-walk a module that only a type-only import reaches. That gap is worth
-its own look.
+walk a module that only a type-only import reaches. That gap needs its
+own investigation.
 
 ## Group two: copies that disagree
 
@@ -117,22 +116,22 @@ FunctionName: !Ref OrdersWorker        3 summaries, consumer present
 FunctionName: !GetAtt OrdersWorker.Arn 2 summaries, consumer gone
 ```
 
-The `OrdersWorker.EventSourceMapping` consumer summary is what tells the
-checker which Lambda reads the queue. Without it, nothing looks like it
-consumes the queue.
+The checker reads the `OrdersWorker.EventSourceMapping` consumer summary
+to find which Lambda reads the queue. Without it, nothing
+looks like it consumes the queue.
 
 Twenty lines above the broken copy, the EventBridge path uses a version
 that does unwrap `Fn::GetAtt`, and its docstring points out the
 difference: "Unlike the local `refTarget` used by the SQS paths, this
-also unwraps `Fn::GetAtt`". Somebody noticed the difference, wrote it
-down, and left it there. The EventBridge behaviour is right, and the SQS
-path should use it too. For every input the broken copy accepts, the
+also unwraps `Fn::GetAtt`". Somebody noticed the difference and wrote it
+down, and the SQS path kept the broken copy anyway. The EventBridge
+behaviour is right, and the SQS path should use it too. For every input the broken copy accepts, the
 working copy gives the same result, so there is no question about which
 way to merge.
 
 One of the six has to keep behaving differently. The env-var reader
-rejects a bare string on purpose, because a plain string env-var value
-is data rather than wiring, and resolving it would invent a reference.
+rejects a bare string on purpose. A plain string env-var value is data,
+and resolving it as wiring would invent a reference.
 That exception has to survive the merge.
 
 It costs little to fix, and it is the most valuable item in this
@@ -150,17 +149,17 @@ boundary, so a scope of `src/foo` covered `src/foobar`, and the
 `includes` spelling covered `vendor/src/foo` too. The producer whose
 comment stated the invariant was the one that did not enforce it.
 
-`codeScopePath` and `fileInCodeScope` in `@suss/ir-core` now own both
-halves, and `runsIn` takes the scope path rather than a callback, which
-is what had let the three call sites drift (#78).
+`codeScopePath` and `fileInCodeScope` in `@suss/ir-core` now implement
+both halves. `runsIn` takes the scope path instead of a callback, and
+the callback was what had let the three call sites drift (#78).
 
-Two things are worth carrying forward. The fix put the convention in the
-package both sides already reach, next to `normalizePath` and
+Two lessons carry forward. The fix put the convention in the package
+both sides already reach, next to `normalizePath` and
 `bodyShapesMatch`, which are there for the same reason. It also landed
-as a pair of functions rather than a type, which is the weaker form: a
-caller can still be handed a scope string that never went through
-`codeScopePath`, so `fileInCodeScope` has to normalise whatever it gets
-to cover for that. The stronger form is in the types section below. Two
+as a pair of functions and not as a type. That is the weaker form,
+because a caller can still be handed a scope string that never went
+through `codeScopePath`, so `fileInCodeScope` has to normalise whatever
+it gets to cover for that. The stronger form is in the types section below. Two
 functions were the right call for a fix that had to keep reading
 summaries written under the older conventions.
 
@@ -183,10 +182,11 @@ const BUS = process.env.ORDER_BUS;
 
 resolves for EventBridge and does not resolve for SQS, because SQS looks
 at a node that is still a bare identifier. The same code in the same
-repo, and two different results. None of the three handles
+repo gives two different results. None of the three handles
 `process.env["X"]`.
 
-What this costs is a silent gap, not a few duplicated lines. Fixing it
+The cost here is a silent gap in what suss reports, and the duplicated
+lines are the smaller problem. Fixing it
 means one reader over the extracted argument, which both AWS packs
 already have in scope.
 
@@ -227,7 +227,7 @@ Merging means giving prisma and drizzle a dependency on the TypeScript
 adapter. Today they take ts-morph as a peer and depend on the extractor
 only. That new edge is defensible, since both cast to ts-morph types on
 their first line, but it changes their published dependency graph, so
-somebody should decide it deliberately rather than in passing.
+somebody should make that decision on purpose.
 
 ### 7. The channel string has a reader and no writer
 
@@ -236,7 +236,7 @@ different places write `${bus}#${subject}` by hand because there is no
 `formatChannel` next to it. A second reader in the checker splits the
 string only when the bus is EventBridge, and otherwise treats the whole
 string as the bus, so it disagrees with `parseChannel` for any other bus
-whose name contains a `#`. The missing half is what causes this: when a
+whose name contains a `#`. The missing writer causes this. When a
 convention has a reader and no constructor, every writer spells it out
 again.
 
@@ -246,15 +246,15 @@ Both walk resolvers, pipeline functions and data sources to work out
 which Lambda serves a field. They disagree twice, and the manifest
 reader is correct both times: it scopes data-source names by API and
 looks them up by name as well as by logical id, and it iterates whatever
-root types it finds rather than hard-coding Query, Mutation and
+root types it finds instead of hard-coding Query, Mutation and
 Subscription. So the contract reader fails to attribute a Lambda for a
 raw template that refers to a data source by `Name`, or for a SAM
 template with a `User.posts` field resolver.
 
 The contract reader needs strictly more per resolver than the manifest
-reader does, so this means layering one on the other rather than
-deleting either. It is a lot of work, and it should fix both
-disagreements on the way through.
+reader does, so the fix layers one on the other and deletes neither.
+It is a lot of work, and it should fix both disagreements on the way
+through.
 
 ### 9. Twenty-nine peelers, eleven names, no two agreeing
 
@@ -276,13 +276,13 @@ on which wrappers to peel:
 | `peelParens` (was `unwrapParens` twice) | yes | no | no | no | no | no |
 | `unwrapAs` | no | no | yes | no | no | no |
 
-One of the inline copies is a single-level ternary rather than a loop,
+One of the inline copies is a single-level ternary instead of a loop,
 so for `await (foo())` it peels the await, stops at the parentheses, and
 hands back something no caller expects. Every other peeler loops. That
-is a bug waiting to happen rather than a difference in style.
+copy is a latent bug.
 
 `await` is the only one of these columns that matters, and it lines up
-with the two questions the repo asks. A pass that wants the type
+with the two questions the passes in the repo ask. A pass that wants the type
 TypeScript infers stops at the await, because TypeScript already reports
 the resolved type there. A pass that is following a value looks through
 it. Three names cover all 29 sites: `peelParens`, `peelSyntax`, and a
@@ -297,16 +297,16 @@ work.
 
 ## Group three: leave alone, and why
 
-An audit that recommends merging everything is not an audit. These look
-like duplication and are not.
+These look like duplication, and each one has a reason to stay
+separate.
 
 **`buildTransitions`, four copies.** These are four different transition
 models. Three of them emit a success plus an error pair; the fourth
 emits one transition per declared response status, with literal and
 range branches. The three that look alike differ in `confidence.source`
 (`declared` for a committed GraphQL document, `derived` for SDL read out
-of a template) and in `exceptionType`. Each difference says something
-deliberate about how much the source knows. A helper with a parameter
+of a template) and in `exceptionType`. Each difference records, on
+purpose, how much that source can know. A helper with a parameter
 for every difference would be longer than the three copies.
 
 **`buildSummary`, three copies.** One builds a library summary with no
@@ -317,8 +317,8 @@ because that is what `BehavioralSummary` is for.
 **`readEnvVarTargets`, two copies.** One builds the map from a raw
 template, the other reads the built map off metadata. They are the
 producer and the consumer of the same wire format, and they share a name
-and a return type because they sit at opposite ends of it. What is
-missing is a shared type for the format, not a shared function.
+and a return type because they are at opposite ends of it. What they
+lack is a shared type for the format. A shared function would not help.
 
 **`objectToShape`, two copies.** One walks an OpenAPI schema object, one
 walks a ts-morph `Type` with depth and cycle guards. They produce the
@@ -338,9 +338,8 @@ PRNG with published constants. It is nine lines that cannot drift.
 **`safeParse`, three byte-identical copies.** Each one is a try/catch
 around `graphql`'s `parse`, with no policy in it. Sharing it means
 either a new package or putting `graphql` into the zero-dependency
-primitives package, and neither is worth six lines. What is worth
-noticing is that two of the four SDL-parsing sites cache the parse and
-two do not.
+primitives package, and six lines do not justify either. Separately,
+two of the four SDL-parsing sites cache the parse and two do not.
 
 **express, fastify and hono terminals.** Express writes to a response
 object at parameter 1, hono returns from a context at parameter 0 with
@@ -350,8 +349,8 @@ and the terminals are data, about as short as data gets.
 
 **nestjs-rest and nestjs-graphql.** The two are built the same way and
 share no strings: different discovery variants, role maps with nothing
-in common, and different terminal semantics. They look alike because the
-pack SDK is doing its job.
+in common, and different terminal semantics. They look alike because
+both use the pack SDK the way it is meant to be used.
 
 **drizzle and prisma, past the type-declared-in question.** Prisma is a
 fixed property chain with a method-name lookup. Drizzle is a fluent
@@ -375,9 +374,9 @@ We applied the same test throughout: what would the constructor refuse
 to build? Where the answer is nothing, the type buys nothing, and the
 functions should stay functions.
 
-The repo already has one that works. `ResolutionStore` owns the fact
-database and exposes six methods, each of which asks a question, and no
-caller anywhere reaches a raw tuple. That is the pattern paying off.
+The repo already has one that works. `ResolutionStore` wraps the fact
+database behind six methods, each of which asks one question, and no
+caller anywhere reads a raw tuple.
 
 **A code scope. Half of it is done, and the half left is the invariant.**
 `codeScopePath` and `fileInCodeScope` landed on main and put the
@@ -387,17 +386,17 @@ that never went through the constructor, which is why `fileInCodeScope`
 has to re-normalise whatever it is given. A type would refuse three
 things: a non-string, an empty or whitespace-only `CodeUri` (one
 producer used to accept `""` and return `/`, which prefix-matches every
-file in the tree), and a scope of `/` or `./`, because a scope that
-matches everything is a problem in the template, worth telling somebody
-about rather than writing into a summary. Nothing rejects any of those
+file in the tree), and a scope of `/` or `./`. A scope that matches
+everything is a problem in the template, and suss should report it
+instead of writing it into a summary. Nothing rejects any of those
 three today. What gets in the way is that summaries already on disk were
 written under the older conventions, so the constructor has to accept
-them on the way in. That is a question about versions rather than a
-reason not to have the type.
+them on the way in. That is a versioning question, and it does not
+argue against the type.
 
-**A channel. Yes.** Three writers, two readers that disagree, and one of
-those readers already in the shared package with no constructor next to
-it. The constructor would refuse a bus segment that contains the
+**A channel. Yes.** There are three writers and two readers that
+disagree, and one of those readers is already in the shared package with
+no constructor next to it. The constructor would refuse a bus segment that contains the
 separator, which nothing rejects today and which makes the split
 ambiguous.
 
@@ -413,9 +412,9 @@ one runtime-node effect builder hardcodes the deployment target where
 its sibling passes through the configured one, and an emitter that
 already has those values gives that builder nowhere to drop them.
 
-**The fact database the closure writes into. Yes.** Same argument as
-`ResolutionStore`, on the same kind of data, and it is the one place in
-the adapter where something still reads raw tuples directly. If the only
+**The fact database the closure writes into. Yes.** The argument is the
+same as for `ResolutionStore`, on the same kind of data, and this is the
+one place in the adapter where code still reads raw tuples directly. If the only
 method that mints a key takes a ts-morph node, you cannot write the
 line-number fallback in group two item 5 at all. It is in the fact
 layer, so it waits.
@@ -424,12 +423,12 @@ layer, so it waits.
 consumer)` and each one re-derives the same three things: the consumer's
 status accessors, its explicit status set plus whether it has a default,
 and which of its transitions handle a given status. They also run in a
-fixed order, and one of them says nothing on purpose because a later one
-will report it, which is written down in a comment and nowhere else. If
-you built the pair object once, it would refuse a status question that
-skipped the consumer's declared accessors, which is the mistake one of
-the six makes today by inlining the 2xx range where the others call the
-shared predicate. Worth doing, and bigger than it looks.
+fixed order, and one of them stays silent on purpose because a later
+one will report it. Only a comment records that. If you built the pair
+object once, it would refuse a status question that skipped the
+consumer's declared accessors. One of the six makes that mistake today,
+by inlining the 2xx range where the others call the shared predicate.
+We should do this, and it is bigger than it looks.
 
 **A summary reference. Not yet.** The function landed in group one and
 removes the 19 hand-written copies. The stronger version is a branded
@@ -442,8 +441,8 @@ closed unions in the IR already enforce everything a constructor could.
 The one invariant left is on the `sources` array, where sorting is what
 makes the output deterministic and somebody retyped it by hand at five
 sites. If one site forgets to sort, the output fails only sometimes.
-What that calls for is a constructor for `sources`, not a builder for
-findings.
+That needs a constructor for `sources`. A builder for findings would
+add nothing.
 
 **TypeShape and SourceLocation. No.** Both are zod-validated wire
 values, so the first parse erases whatever invariant a constructor
@@ -458,7 +457,7 @@ No.** These are repeated argument lists with no shared state and no
 constraint on ordering. A context object would move the same values
 behind a dot.
 
-## Structure that is not carrying its weight
+## File and module structure
 
 **`adapter.ts`, 2,183 lines, four exports.** It marks its own seams with
 section banners, eight of them, and at least four of those sections
@@ -474,9 +473,9 @@ pass at the end is a second, independent pairing loop with its own
 record type and its own scope filter, and the only thing it shares is
 the producer list.
 
-**`responseMatch.ts` is the checker's highest fan-in and has an annex.**
-It has eight importers. Three of them want only `makeSide` and take no
-interest in status codes at all, and one of them is not even HTTP.
+**`responseMatch.ts` is the checker's highest fan-in and does a second job.**
+It has eight importers. Three of them use only `makeSide` and never
+touch status codes, and one of them is not even HTTP.
 Pulling the finding-side construction out into its own file would fix
 the fan-in and give the 26 inline finding literals somewhere to go.
 
