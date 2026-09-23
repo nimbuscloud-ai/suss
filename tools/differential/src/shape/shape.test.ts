@@ -247,29 +247,32 @@ describe("shape fuzzer, sound tier (a handler reached by name)", () => {
   }
 });
 
-describe("shape fuzzer, reach paths still in the tree", () => {
-  for (const bug of REACH_BUGS) {
-    it(
-      `still broken, reach=${bug.value}: ${bug.wrong}`,
-      { timeout: 120_000 },
-      async () => {
-        const result = await runShapeDifferential(
-          {
-            ...SIMPLEST_SHAPE,
-            reach: bug.value as ReachPath,
-            form: "blockArrow",
-            body: RESPOND_BODY,
-          },
-          ALL_SHAPE_TARGETS[0],
-        );
-        expect(
-          result.findings.map(findingSignature),
-          `${bug.wrong}: the fuzzer no longer finds this, so it looks fixed. Move reach=${bug.value} into SOUND_REACH_PATHS and take it out of knownBugs.ts.\n${formatShapeFailure(result)}`,
-        ).toContain(bug.signature);
-      },
-    );
-  }
-});
+describe.skipIf(REACH_BUGS.length === 0)(
+  "shape fuzzer, reach paths still in the tree",
+  () => {
+    for (const bug of REACH_BUGS) {
+      it(
+        `still broken, reach=${bug.value}: ${bug.wrong}`,
+        { timeout: 120_000 },
+        async () => {
+          const result = await runShapeDifferential(
+            {
+              ...SIMPLEST_SHAPE,
+              reach: bug.value as ReachPath,
+              form: "blockArrow",
+              body: RESPOND_BODY,
+            },
+            ALL_SHAPE_TARGETS[0],
+          );
+          expect(
+            result.findings.map(findingSignature),
+            `${bug.wrong}: the fuzzer no longer finds this, so it looks fixed. Move reach=${bug.value} into SOUND_REACH_PATHS and take it out of knownBugs.ts.\n${formatShapeFailure(result)}`,
+          ).toContain(bug.signature);
+        },
+      );
+    }
+  },
+);
 
 describe("shape fuzzer, a response typed by a library type", () => {
   it(

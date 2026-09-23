@@ -70,25 +70,13 @@ export const SOUND_REACH_PATHS = [
   // and the call is in the same file, so the parameter steps to what it
   // passed and the route reads the same as the plainest spelling.
   "throughParameter",
+  // `const built = build({ handle })` is a name written as a factory
+  // call, so it runs whatever that call gives back.
+  "throughFactoryArg",
 ] as const;
 
-/**
- * The one that resolves to nothing at all, for its own reason rather
- * than for want of a rule. A call's return now resolves through a
- * second question asked after the unwrapping one declines. A factory's
- * object argument is the `unwrapsProperty` rule that was tried and
- * taken out, because a wrapper reading several callbacks off one
- * config made each of them a candidate.
- */
-export const REACH_BUGS: ReproducedBug[] = [
-  {
-    dimension: "reach",
-    value: "throughFactoryArg",
-    signature: "invariant:everyAnnouncedBoundaryIsSummarized",
-    wrong:
-      "a handler handed to a factory in an object argument loses its boundary",
-  },
-];
+/** Every reach path resolves now, so nothing is left to reproduce. */
+export const REACH_BUGS: ReproducedBug[] = [];
 
 /**
  * Wrong behaviour at an HTTP registration call.

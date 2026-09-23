@@ -51,7 +51,7 @@ Three layers do the work.
 
   <rect class="box" x="60" y="220" width="540" height="86" rx="6" />
   <text class="label" x="330" y="242" text-anchor="middle">2. One rule set joins the facts into a value graph</text>
-  <text class="note" x="330" y="260" text-anchor="middle">170 rules. 17 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
+  <text class="note" x="330" y="260" text-anchor="middle">171 rules. 17 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
   <text class="note" x="330" y="277" text-anchor="middle">reaches is the transitive closure of those hops, and it records</text>
   <text class="note" x="330" y="294" text-anchor="middle">the strongest kind of step the walk took.</text>
 
@@ -142,8 +142,10 @@ returns is never contradicted by its annotation.
 
 The rules read relations that no rule derives, so something has to
 supply them. The TypeScript adapter reads most of them out of source,
-and emits two more of its own on top: `bindCall`, for the JavaScript
-`.bind` rule, and `importsModule`, for walking module edges. `extends`,
+and emits three more of its own on top: `bindCall` and
+`objectAssignCall`, for the JavaScript rules that `f.bind(...)` leads
+to `f` and `Object.assign(t, ...)` leads to `t`, and
+`importsModule`, for walking module edges. `extends`,
 `extendsNamed` and `callKeywordArg` come from the Python and Ruby
 adapters. `unwrapsByName`, `wrapperModule` and the `givesBackOne` family
 come from a pack's declarations, so no source file contains them at
@@ -160,11 +162,12 @@ explanation each.
 
 ## Layer 2: one rule set makes a graph
 
-`packages/resolution/src/index.ts` contains 170 rules and no code.
+`packages/resolution/src/index.ts` contains 171 rules and no code.
 17 of them derive `stepsTo(x, y, kind)`, which says the value `x` leads
 to the value `y` in one hop. Fifteen of those are stated as `hop` and
 given a `stepsTo` twin, since a walk under a receiver context reads
-`hop`. The TypeScript adapter adds a sixteenth hop, for `.bind`.
+`hop`. The TypeScript adapter adds two hops of its own, for `.bind` and
+`Object.assign`.
 
 ```ts
 rule(
