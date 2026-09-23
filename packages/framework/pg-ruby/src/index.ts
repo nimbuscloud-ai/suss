@@ -1,24 +1,21 @@
 /**
- * Which Postgres tables a Ruby body reads and writes through the pg gem.
+ * Records which Postgres tables a Ruby body reads and writes through the
+ * pg gem.
  *
- * The gem hands a connection out from `PG` or `PG::Connection`, and every
- * statement goes through a call on that connection. Ruby writes no types,
- * so the adapter types a receiver by following it back to the gem call
- * that produced it. The README says what that reaches and what it leaves
- * out.
+ * Ruby has no type annotations, so the adapter types a receiver by
+ * following it back to the gem call that opened the connection. The
+ * README covers which calls that reaches and which it leaves out.
  */
 
 import type { RbRawSqlPattern, RubyPack } from "@suss/adapter-ruby";
 import type { PackDeclaration } from "@suss/ir-core";
 
-/** The store, spelled the way every provider summary spells it. */
+// Provider summaries spell the store this way, and a call pairs with them
+// only when the spelling matches.
 const STORAGE_SYSTEM = "postgresql";
 
-/**
- * The calls that take a statement. `prepare` takes a name first and the
- * statement second; everything else takes the statement first, whether
- * it waits for the result or not.
- */
+// The `prepare` calls take a statement name first, so their statement is
+// the second argument.
 const STATEMENTS: NonNullable<RbRawSqlPattern["statements"]> = {
   exec: { at: 0 },
   exec_params: { at: 0 },
@@ -35,9 +32,9 @@ const STATEMENTS: NonNullable<RbRawSqlPattern["statements"]> = {
 };
 
 /**
- * The two constants the gem hands a connection out from. `PG.connect`
- * and the three calls on `PG::Connection` all open the same thing, and
- * a project writes whichever it likes.
+ * The pg gem's raw SQL patterns. `PG.connect` and the three builders on
+ * `PG::Connection` open the same kind of connection, so a receiver built
+ * by any of them counts.
  */
 export function pgRawSql(): RbRawSqlPattern[] {
   const calls = {
@@ -56,9 +53,10 @@ export function pgRawSql(): RbRawSqlPattern[] {
 }
 
 /**
- * Add the pg gem to whichever pack a run already uses. A web framework
- * and a database library are separate libraries and a project picks
- * both, so this composes rather than replacing anything.
+ * Adds the pg gem's patterns to another Ruby pack, such as the Rails
+ * pack. A project that queries Postgres directly usually runs a web
+ * framework too, and the result keeps that pack's discovery and any raw
+ * SQL patterns it already had.
  */
 export function withPg(pack: RubyPack): RubyPack {
   return {
@@ -76,7 +74,6 @@ export function pgRubyFramework(): RubyPack {
   };
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "effects",
   package: "@suss/framework-pg-ruby",
