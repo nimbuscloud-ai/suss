@@ -184,9 +184,8 @@ export function schemaEnvReads(
     ) {
       continue;
     }
-    // The schema comes first: asking whether a parameter is the
-    // environment reads every file that calls its function, and most
-    // `parse(text)` calls are not parsing against a schema at all.
+    // Most `parse(text)` calls are not parsing against a schema, so the
+    // schema is read before the store is asked about the argument.
     const reads = readsFromSchema(call, reader, resolution);
     if (reads.length === 0) {
       continue;

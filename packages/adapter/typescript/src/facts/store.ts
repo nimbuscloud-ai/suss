@@ -545,8 +545,9 @@ export class ResolutionStore {
     }
 
     // Every file reaching a forwarder reaches the helper it forwards to,
-    // so reading the helpers' callers covers every hop at once.
-    const helpers = this.askEnvironment(siteFiles).byParameter;
+    // so reading the helpers' callers covers every hop at once. A helper
+    // a factory builds turns up only once the environment is followed.
+    const helpers = this.followEnvironment(siteFiles).byParameter;
     for (const helperFile of this.filesOf(helpers)) {
       this.readPossibleCallersOf(helperFile);
     }

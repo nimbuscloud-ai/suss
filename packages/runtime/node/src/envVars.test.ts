@@ -1277,6 +1277,44 @@ describe("a helper call resolved from the caller's side", () => {
     ).toEqual([["TABLE_NAME", false]]);
   });
 
+  it("finds a forwarder of a helper a factory builds, from a store that has read none of it", () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "reader.ts",
+      `export function makeReader(env: NodeJS.ProcessEnv) {
+        return (name: string) => env[name];
+      }`,
+    );
+    project.createSourceFile(
+      "env.ts",
+      `import { makeReader } from "./reader.js";
+      export const requireEnv = makeReader(process.env);`,
+    );
+    project.createSourceFile(
+      "settings.ts",
+      `import { requireEnv } from "./env.js";
+      export function setting(name: string) {
+        return requireEnv(name);
+      }`,
+    );
+    const handler = project.createSourceFile(
+      "handler.ts",
+      `import { setting } from "./settings.js";
+      export const table = setting("TABLE_NAME");`,
+    );
+    const store = new ResolutionStore(
+      [],
+      nodeRuntimePack().environmentObjects ?? [],
+    );
+    store.notePossibleCallers(
+      project.getSourceFiles().filter((one) => !one.isInNodeModules()),
+    );
+    const reads = configReadEffectsOf(
+      recognizeWith(envVarRecognizer(), handler, store),
+    );
+    expect(reads.map((read) => read.interaction.name)).toEqual(["TABLE_NAME"]);
+  });
+
   it("reads a name off a name declared as the environment object", () => {
     const project = createTestProject();
     project.createSourceFile(
