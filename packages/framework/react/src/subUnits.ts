@@ -1,25 +1,12 @@
-// sub-units.ts: React sub-unit synthesis.
-//
-// A React component's render body is the parent DiscoveredUnit. This
-// module produces the child units the React runtime schedules on its
-// behalf:
-//
-//   - One `handler`-kind unit per JSX event-handler prop (`onClick`,
-//     `onChange`, …) that resolves to a locally-authored function.
-//     Prop-delegating references (`onClick={props.onDelete}`) are
-//     skipped: those invoke an external handler we don't own.
-//
-//   - One `handler`-kind unit per `useEffect(fn, deps?)` call inside
-//     the component body, with `metadata.react.kind = "effect"` and
-//     the deps-array source text captured for provenance.
-//
-// Both patterns instantiate the general "runtime schedules a callback
-// in response to an event" concept (`docs/roadmap-react.md`, decisions
-// #35 and #36): the render body is the parent synchronization concept;
-// handlers and effects are synchronized actions triggered by distinct
-// runtime events (user interaction, state change / mount / unmount).
-// The adapter's `subUnits` hook is what makes N-per-component
-// discovery work without the pack needing its own top-level scanner.
+/**
+ * React runs a component's event handlers and effect bodies apart from
+ * its render body, on their own triggers, so each one becomes a unit of
+ * its own under the component (decisions #35 and #36). The adapter's
+ * `subUnits` hook calls this once per component, so the pack needs no
+ * scanner of its own to find several units per component.
+ *
+ * The README describes which handlers count and how each unit is named.
+ */
 
 import type { FunctionRoot, TsSubUnitContext } from "@suss/adapter-typescript";
 import type {
@@ -38,19 +25,14 @@ const USE_EFFECT_INPUT: InputMappingPattern = {
   params: [],
 };
 
-/**
- * Main entry point: produce every sub-unit the React pack can see
- * inside a component body.
- */
+/** Returns the event-handler and `useEffect` units in one component body. */
 export function reactSubUnits(
   parent: DiscoveredSubUnitParent,
   ctx: unknown,
 ): DiscoveredSubUnit[] {
-  // The extractor signatures declare `ctx: unknown` so no framework
-  // pack's code is leaked into the generic interface. React's pack
-  // is written against the TypeScript adapter, cast here, and the
-  // cast is the "I require the TS adapter" contract. Packs paired
-  // with other adapters would perform their own equivalent narrowing.
+  // The extractor types `ctx` as `unknown` to keep adapter types out of
+  // its interface. This pack runs only with the TypeScript adapter, so
+  // the cast is safe.
   const tsCtx = ctx as TsSubUnitContext;
   const parentFunc = parent.func as FunctionRoot;
 
@@ -60,15 +42,9 @@ export function reactSubUnits(
   ];
 }
 
-// ---------------------------------------------------------------------------
-// JSX event handlers
-// ---------------------------------------------------------------------------
-
 /**
- * A JSX prop counts as an event handler when its name starts with "on"
- * followed by an uppercase letter, `onClick`, `onChange`, `onSubmit`,
- * and user-authored callback props like `onDelete`. This matches the
- * React convention without hardcoding a list of DOM event names.
+ * `on` followed by an uppercase letter covers DOM events and callback
+ * props such as `onDelete`, with no list of DOM event names to maintain.
  */
 function isEventHandlerPropName(name: string): boolean {
   if (name.length < 3) {
@@ -101,8 +77,8 @@ function synthesizeEventHandlers(
     }
     const resolved = ctx.resolveAttributeValueFunction(attr, parentFunc);
     if (resolved === null) {
-      // Prop delegation, external reference, or boolean-shorthand
-      // attribute: nothing to extract.
+      // A prop passed through from props, a reference to another module,
+      // or a bare boolean attribute has no body in this component.
       continue;
     }
     raw.push({
@@ -117,12 +93,10 @@ function synthesizeEventHandlers(
 }
 
 /**
- * Assign stable summary names. Named local declarations become
- * `Component.fnName` (legible, matches developer intent). Anonymous
- * inline arrows become `Component.tag.propName`, with `#N` suffixes
- * when the same (tag, propName) key has more than one anonymous
- * handler. Named handlers can't collide because TypeScript won't let
- * two variables in the same scope share a name.
+ * Counts the anonymous handlers on each element and prop first, so a name
+ * gets a `#N` suffix only when two of them share one. Named handlers
+ * cannot collide, because TypeScript does not let two variables in one
+ * scope share a name.
  */
 function disambiguateHandlers(
   raw: HandlerRaw[],
@@ -145,8 +119,8 @@ function disambiguateHandlers(
       kind: "handler",
       name,
       inputMapping: EVENT_HANDLER_INPUT,
-      // The element and prop a handler hangs off already shape the
-      // summary name; no reader consumes them as metadata (#462).
+      // The element and prop are already in the summary name, and nothing
+      // reads them from metadata (#462).
       metadata: {
         react: {
           kind: "handler",
@@ -158,11 +132,9 @@ function disambiguateHandlers(
 }
 
 /**
- * Produce the stable summary name for one handler entry. Named local
- * handlers become `Component.fnName`; anonymous handlers become
- * `Component.tag.propName` with `#N` suffixed when the (tag, propName)
- * key has more than one. Mutates `anonSeen` to advance the per-key
- * counter: kept adjacent to the map's creation site at the caller.
+ * `Component.fnName` for a named handler, `Component.tag.propName` for an
+ * anonymous one, with `#N` added when more than one anonymous handler is
+ * on the same element and prop. Advances the counter in `anonSeen`.
  */
 function handlerUnitName(
   m: HandlerRaw,
@@ -183,10 +155,6 @@ function handlerUnitName(
   return `${componentName}.${m.tag}.${m.propName}#${idx}`;
 }
 
-// ---------------------------------------------------------------------------
-// useEffect bodies
-// ---------------------------------------------------------------------------
-
 function synthesizeUseEffects(
   componentName: string,
   parentFunc: FunctionRoot,
@@ -198,8 +166,8 @@ function synthesizeUseEffects(
   for (const call of ctx.findCallExpressionsByName(parentFunc, "useEffect")) {
     const body = ctx.getCallArgumentFunction(call, 0);
     if (body === null) {
-      // Callback is an identifier reference or a non-function value;
-      // we can't extract a body, skip rather than fabricate a summary.
+      // An identifier or a value that is not a function has no body here
+      // to summarize.
       continue;
     }
     const depsArg = ctx.getCallArgument(call, 1);
@@ -215,8 +183,8 @@ function synthesizeUseEffects(
           kind: "effect",
           component: componentName,
           index,
-          // `null` deps means the second argument was absent
-          // (re-runs every render); `[]` means mount-only.
+          // `null` means no deps argument, so the effect runs after every
+          // render. `[]` means it runs on mount only.
           deps,
         },
       },

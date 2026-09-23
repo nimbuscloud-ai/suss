@@ -1,14 +1,8 @@
 /**
- * Root-walk discovery: the component an app boots with.
- *
- * `createRoot(el).render(<App/>)` renders a component no export
- * heuristic has to find, and an App wired this way was invisible when
- * nothing exported it. This walk reads the boot calls React ships
- * (`createRoot` and `hydrateRoot` from react-dom/client, and
- * `ReactDOM.render`), resolves the rendered element's component to
- * its declaration, and emits it as a component unit. The closure then
- * follows its JSX references, so everything the app actually renders
- * is reachable from here.
+ * Finds the component an app boots with, from calls such as
+ * `createRoot(el).render(<App />)`. That component is often exported by
+ * nothing, so the export walk misses it. The closure follows its JSX
+ * references from here, which makes the rest of the app reachable.
  */
 
 import { Node } from "ts-morph";
@@ -35,7 +29,7 @@ function importedBootNames(sourceFile: SourceFile): Set<string> {
   return names;
 }
 
-/** Namespace and default imports of react-dom, for `ReactDOM.render`. */
+/** For `ReactDOM.render`, with react-dom imported as a namespace or default. */
 function importedDomNamespaces(sourceFile: SourceFile): Set<string> {
   return importedRootsOf(sourceFile, BOOT_MODULES);
 }
@@ -47,8 +41,8 @@ function isBootRender(
 ): boolean {
   const callee = call.getExpression();
   if (!Node.isPropertyAccessExpression(callee)) {
-    // ReactDOM.render's older positional form aside, every boot render
-    // goes through a `.render` property.
+    // Both boot forms read here call a `.render` property:
+    // `createRoot(el).render(...)` and `ReactDOM.render(...)`.
     return false;
   }
   if (callee.getName() !== "render") {
@@ -62,7 +56,6 @@ function isBootRender(
   return Node.isIdentifier(base) && domNamespaces.has(base.getText());
 }
 
-/** The component the rendered element refers to, as its declaration. */
 function renderedComponentOf(
   call: CallExpression,
 ): { func: unknown; name: string } | null {
