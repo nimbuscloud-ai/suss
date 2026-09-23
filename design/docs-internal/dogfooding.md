@@ -71,7 +71,7 @@ The header is written as `caller → target`. `checkDir` is the enclosing functi
 
 When you run the checker over the union of all summaries, that consumer summary pairs with the provider summary for `@suss/checker::checkAll` through the key `fn:@suss/checker::checkAll`. The REST checker has paired HTTP boundaries with the same code from the start. The only difference is that this key comes from `function-call` semantics instead of from `method + path`.
 
-For the full guide to reading the output (header formats, how branches render, gap annotations), see [CLI reference: Reading the output](/reference/cli#reading-the-output).
+For the full guide to reading the output (header formats, how branches render, gap annotations), see [`suss inspect`: Reading the output](../../docs/reference/cli/inspect.md#reading-the-output).
 
 ## What this exercises
 

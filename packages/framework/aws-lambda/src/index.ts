@@ -147,7 +147,7 @@ export const declares: PackDeclaration = {
   package: "@suss/framework-aws-lambda",
   dependencies: [{ ecosystem: "npm", name: "@types/aws-lambda" }],
   reads:
-    "AWS Lambda HTTP handlers, paired to SAM / CloudFormation-declared routes.",
+    "AWS Lambda HTTP handlers, paired with the routes a SAM or CloudFormation template declares.",
 };
 
 export default awsLambdaFramework;

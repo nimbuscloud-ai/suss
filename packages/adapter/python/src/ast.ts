@@ -47,9 +47,9 @@ export function isFunction(node: PyNode): boolean {
 }
 
 /**
- * The bodies that run when something calls or instantiates them, rather
- * than where they are written. Keep this beside `isFunction`: it is those
- * types plus a class.
+ * The bodies the module-load walk does not enter, including a class body,
+ * which Python does run at load. Keep this beside `isFunction`: it is
+ * those types plus a class.
  */
 export const LATER_BODY_TYPES = new Set([
   "function_definition",
@@ -62,10 +62,9 @@ export function isModule(node: PyNode): boolean {
 }
 
 /**
- * Whether a node runs while the module is loading. A body in
- * `LATER_BODY_TYPES` waits for something to call it, and a decorator is
- * applied to a definition rather than written as a statement, so neither
- * belongs to what the module itself does on the way in.
+ * Whether the module-load walk counts a node as running while the module
+ * loads. It skips a body in `LATER_BODY_TYPES`, and a decorator, which is
+ * applied to a definition instead of written as a statement.
  */
 export function runsAtModuleLoad(node: PyNode): boolean {
   return !LATER_BODY_TYPES.has(node.type) && node.type !== "decorator";

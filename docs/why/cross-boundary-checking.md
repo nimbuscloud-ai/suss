@@ -103,7 +103,7 @@ suss met a call it could not follow in one unit, of 2, so that one is described 
 
 Three comparisons produced those three findings. The first one compares status codes: the handler can send a 404 and the caller has no branch for one. The second compares sub-cases within a status: the handler returns 200 in two different situations, and one path in the caller receives both. The third compares a body field the handler varies against the conditions the caller tests, and finds nothing that tests `admin`.
 
-Each finding gives you the file and the line on both sides, plus a `.sussignore.yml` rule to paste for any one you decide to live with. See [Accept a finding](/guides/accept-a-finding) for that format.
+Each finding gives you the file and the line on both sides, plus a `.sussignore` rule to paste for any one you decide to live with. See [Accept a finding](/guides/accept-a-finding) for that format.
 
 `db.findById` is declared here and never defined, so the last line of the run reports that part of the handler went unread.
 

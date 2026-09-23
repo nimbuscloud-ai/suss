@@ -62,13 +62,13 @@ Name a thing for the job it does, and put a package in a directory that matches 
 
 ## Tests
 
-Tests use Vitest, with each test file next to its source (`foo.ts` and `foo.test.ts`). A test that parses fixture source gets its ts-morph project from `@suss/test-project`, so every test parses the same language the adapter parses. See [`design/docs-internal/style.md#tests`](./design/docs-internal/style.md#tests).
+Tests use Vitest, with each test file next to its source (`foo.ts` and `foo.test.ts`). A test that parses fixture source gets its ts-morph project from `@suss/test-project`, so every test parses with the compiler options the adapter uses for a codebase that ships no tsconfig. See [`design/docs-internal/style.md#tests`](./design/docs-internal/style.md#tests).
 
 ## Reading a value
 
 To find out what a value is, ask the evaluator or the resolution store. Do not read the syntax at that position yourself. In the TypeScript adapter that means `discovery/resolveValue.ts`, the `ResolutionStore` in `facts/store.ts`, `resolve/functionBehind.ts`, `walk/unwrap.ts` and `discovery/importScan.ts`. In the Python and Ruby adapters it means `values/evaluator.ts`, `facts/resolve.ts` and the literal readers in `ast.ts`. A pack calls what its adapter exports.
 
-A reader you write next to the call site handles only the spellings you had in front of you. It gives up on a template, or on a constant from another file. So when the evaluator or the store cannot read a spelling, add the case to them and do not read the syntax yourself. `npm run check:readers` fails when it finds code that looks like a second reader, and the files that already fail are listed in `EXEMPT` in [`scripts/checkReaders.mjs`](scripts/checkReaders.mjs). [`design/docs-internal/style.md#reading-a-value`](./design/docs-internal/style.md#reading-a-value) has the entry points and two before-and-after examples.
+A reader you write next to the call site handles only the spellings you had in front of you. It returns null for a path built from a template literal, or for a constant declared in another file, and the caller then reports nothing. So when the evaluator or the store cannot read a spelling, add the case to them and do not read the syntax yourself. `npm run check:readers` fails when it finds code that looks like a second reader, and the files that already fail are listed in `EXEMPT` in [`scripts/checkReaders.mjs`](scripts/checkReaders.mjs). [`design/docs-internal/style.md#reading-a-value`](./design/docs-internal/style.md#reading-a-value) has the entry points and two before-and-after examples.
 
 ## Adding a new framework pack
 

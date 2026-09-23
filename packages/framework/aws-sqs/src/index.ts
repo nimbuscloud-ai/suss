@@ -380,7 +380,8 @@ export const declares: PackDeclaration = {
   kind: "effects",
   package: "@suss/framework-aws-sqs",
   dependencies: [{ ecosystem: "npm", name: "@aws-sdk/client-sqs" }],
-  reads: "AWS SDK v3 SQS producer calls, emits message-send interactions.",
+  reads:
+    "AWS SDK v3 SQS producer calls. Each one becomes a message-send interaction.",
 };
 
 export default sqsFramework;

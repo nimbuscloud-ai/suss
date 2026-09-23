@@ -105,7 +105,7 @@ export const declares: PackDeclaration = {
   kind: "framework",
   package: "@suss/framework-react",
   dependencies: [{ ecosystem: "npm", name: "react" }],
-  reads: "React function components, event handlers, \`useEffect\` bodies.",
+  reads: "React function components, event handlers and \`useEffect\` bodies.",
 };
 
 export default reactFramework;

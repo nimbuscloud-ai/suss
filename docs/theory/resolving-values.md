@@ -162,9 +162,11 @@ explanation each.
 
 `packages/resolution/src/index.ts` contains 170 rules and no code.
 17 of them derive `stepsTo(x, y, kind)`, which says the value `x` leads
-to the value `y` in one hop. Fifteen of those are stated as `hop` and
-given a `stepsTo` twin, since a walk under a receiver context reads
-`hop`. The TypeScript adapter adds a sixteenth hop, for `.bind`.
+to the value `y` in one hop. Two of them, for an argument and a
+property read, are written as `stepsTo` directly. The other fifteen are
+written as `hop`, and each gets a `stepsTo` twin, since a walk under a
+receiver context reads `hop`. The TypeScript adapter adds a sixteenth
+hop, for `.bind`, with its own twin, and that pair is not among the 170.
 
 ```ts
 rule(
@@ -615,5 +617,5 @@ is wrong the tree says which fact to doubt.
 - [Facts and rules](/theory/facts-and-rules) for the
   other rule sets over the same engine, the ones that answer
   whole-program questions about reachability and effects.
-- [CLI reference](/reference/cli/#suss-ask) for the other six
-  questions `suss ask` takes.
+- [`suss ask`](/reference/cli/ask) for all ten questions `suss ask`
+  takes.

@@ -300,7 +300,7 @@ extension to the checker.
 ### Event / temporal / absence sync packs {#non-call-syncs}
 
 Each of these needs a new `BoundarySemantics` variant (see
-[`boundary-semantics.md`](/boundary-semantics)). The biggest piece of
+[`boundary-semantics.md`](../docs/theory/boundary-semantics.md)). The biggest piece of
 work is that the IR has no notion of time, and pairing on an event
 name works differently from the pairing suss has shipped for
 in-process calls, HTTP and GraphQL. This would close the gap in reach

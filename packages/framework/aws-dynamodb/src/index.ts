@@ -613,7 +613,8 @@ export const declares: PackDeclaration = {
     { ecosystem: "npm", name: "@aws-sdk/lib-dynamodb" },
     { ecosystem: "npm", name: "@aws-sdk/client-dynamodb" },
   ],
-  reads: "AWS SDK v3 DynamoDB calls, emits storage-access interactions.",
+  reads:
+    "AWS SDK v3 DynamoDB calls. Each one becomes a storage-access interaction.",
 };
 
 export default dynamoFramework;

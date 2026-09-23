@@ -365,7 +365,7 @@ export const declares: PackDeclaration = {
     { ecosystem: "rubygems", name: "railties" },
   ],
   reads:
-    "Rails controller actions (Ruby), bound to the method and path \`config/routes.rb\` gives each one; an action the routes file does not reach is discovered with no boundary.",
+    "Rails controller actions (Ruby), bound to the method and path \`config/routes.rb\` gives each one. An action the routes file does not reach is still discovered, with no boundary.",
   configuration: {
     file: "suss.rails.json",
     example: {

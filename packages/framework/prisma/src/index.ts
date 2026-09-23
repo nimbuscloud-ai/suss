@@ -747,7 +747,7 @@ export const declares: PackDeclaration = {
   package: "@suss/framework-prisma",
   dependencies: [{ ecosystem: "npm", name: "@prisma/client" }],
   reads:
-    "Prisma client calls, emits storage-access interactions per read / write.",
+    "Prisma client calls. Each read and each write becomes a storage-access interaction.",
 };
 
 export default prismaFramework;

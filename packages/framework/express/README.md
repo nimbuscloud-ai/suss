@@ -28,7 +28,7 @@ Run `suss extract -f express` against the project. `express` itself does not hav
 
 ## Options
 
-None. `registrationHelpers` used to list the route helpers a project wrote for itself, and the helper reading above replaced it. A config file that still sets it gets a warning, and in 0.22.0 it stops the run.
+None. `registrationHelpers` used to list the route helpers a project wrote for itself, and the helper reading above replaced it. A config file that still sets it gets a warning saying to delete it, and the run keeps going without it.
 
 ## Where it fits in suss
 

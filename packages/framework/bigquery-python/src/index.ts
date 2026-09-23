@@ -174,7 +174,7 @@ export const declares: PackDeclaration = {
     { ecosystem: "pypi", name: "apache-airflow-providers-google" },
   ],
   reads:
-    "BigQuery calls (Python): the statement a client or an Airflow hook is handed, read for the tables it touches, and the calls that say which table without writing SQL.",
+    "BigQuery calls (Python). The statement a client or an Airflow hook is handed is read for the tables it touches. Calls such as \`get_table\` and \`insert_rows\` take a table name instead of SQL, and that name is read too.",
 };
 
 export default bigqueryFramework;

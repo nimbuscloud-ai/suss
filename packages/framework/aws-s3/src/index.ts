@@ -90,7 +90,8 @@ export const declares: PackDeclaration = {
   kind: "effects",
   package: "@suss/framework-aws-s3",
   dependencies: [{ ecosystem: "npm", name: "@aws-sdk/client-s3" }],
-  reads: "AWS SDK v3 S3 object calls, emits storage-access interactions.",
+  reads:
+    "AWS SDK v3 S3 object calls. Each one becomes a storage-access interaction.",
 };
 
 export default s3Framework;

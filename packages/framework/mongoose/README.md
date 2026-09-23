@@ -71,4 +71,4 @@ A projection that only excludes (every value falsy, as in `{ password: 0 }`) ret
 
 ## Where it fits in suss
 
-The pack depends on `@suss/recognize`, which compiles the declaration into the recognizer hook an adapter calls, and asks the adapter's own operations about each call. Mongoose has no separate schema-reader package the way Prisma does. So a call's collection pairs with other code, as it does for the Redis and Drizzle packs, through the storage pass in `@suss/checker`.
+The pack depends on `@suss/recognize`, which compiles the declaration into the recognizer hook an adapter calls, and asks the adapter's own operations about each call. Mongoose has no separate schema-reader package the way Prisma does. So a call's collection pairs with other code through the storage pass in `@suss/checker`, the way a Redis key does. Drizzle is different, because its accesses pair with a schema provider such as a Prisma schema.

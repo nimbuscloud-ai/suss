@@ -197,7 +197,7 @@ export const declares: PackDeclaration = {
   package: "@suss/framework-aws-eventbridge",
   dependencies: [{ ecosystem: "npm", name: "@aws-sdk/client-eventbridge" }],
   reads:
-    "AWS EventBridge \`PutEvents\` producer calls, emits message-bus interactions.",
+    "AWS EventBridge \`PutEvents\` producer calls. Each one becomes a message-bus interaction.",
 };
 
 export default eventBridgeFramework;

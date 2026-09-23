@@ -55,7 +55,7 @@ export const declares: PackDeclaration = {
   package: "@suss/framework-pg",
   dependencies: [{ ecosystem: "npm", name: "pg" }],
   reads:
-    "node-postgres queries, emits storage-access interactions with the tables each statement touches.",
+    "node-postgres queries. Each one becomes a storage-access interaction on the tables its statement touches.",
 };
 
 export default pgFramework;

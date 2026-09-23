@@ -304,7 +304,7 @@ export const declares: PackDeclaration = {
   kind: "effects",
   package: "@suss/framework-mongoose",
   dependencies: [{ ecosystem: "npm", name: "mongoose" }],
-  reads: `Mongoose model calls, emits storage-access interactions against the collection a model's \`.model(...)\` call declares.`,
+  reads: `Mongoose model calls. Each one becomes a storage-access interaction on the collection that the model's \`.model(...)\` call declares.`,
 };
 
 export default mongooseFramework;

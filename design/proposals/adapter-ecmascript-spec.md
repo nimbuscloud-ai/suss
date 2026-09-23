@@ -152,7 +152,7 @@ Total: ~4 days, single pass.
 
 ## Decision log (as shipped)
 
-Walker descent shipped complete, including class-method bodies. Promise `.then` binding shipped in the parameter-value resolver. The part explicitly left over is the consumer field-access flow that unblocks the tutorial end to end.
+Walker descent shipped complete, including class-method bodies. Promise `.then` binding shipped in the parameter-value resolver, and the consumer field-access flow shipped after it (D8). What is still left is a default transition for a consumer whose `.then` callback returns nothing, which the remainder below describes.
 
 The descent logic went into the adapter (`packages/adapter/typescript/src/walk/descent.ts`). No runtime or framework pack gained language-specific logic.
 

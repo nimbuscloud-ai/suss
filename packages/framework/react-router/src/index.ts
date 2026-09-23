@@ -270,7 +270,7 @@ export const declares: PackDeclaration = {
     { ecosystem: "npm", name: "react-router" },
     { ecosystem: "npm", name: "react-router-dom" },
   ],
-  reads: "React Router loaders / actions / routes.",
+  reads: "React Router loaders, actions and routes.",
 };
 
 export default reactRouterFramework;

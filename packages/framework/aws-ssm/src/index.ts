@@ -74,7 +74,7 @@ export const declares: PackDeclaration = {
   package: "@suss/framework-aws-ssm",
   dependencies: [{ ecosystem: "npm", name: "@aws-sdk/client-ssm" }],
   reads:
-    "AWS SSM Parameter Store calls, emits storage-access interactions against the parameter.",
+    "AWS SSM Parameter Store calls. Each one becomes a storage-access interaction on the parameter.",
 };
 
 export default ssmFramework;

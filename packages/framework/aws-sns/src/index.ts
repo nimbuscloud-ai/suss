@@ -98,7 +98,7 @@ export const declares: PackDeclaration = {
   package: "@suss/framework-aws-sns",
   dependencies: [{ ecosystem: "npm", name: "@aws-sdk/client-sns" }],
   reads:
-    "AWS SDK v3 SNS \`Publish\` and \`PublishBatch\` calls, emits message-send interactions on the topic.",
+    "AWS SDK v3 SNS \`Publish\` and \`PublishBatch\` calls. Each one becomes a message-send interaction on the topic.",
 };
 
 export default snsFramework;

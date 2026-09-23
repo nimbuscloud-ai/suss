@@ -5,9 +5,9 @@ The [README](./README.md) says what `@suss/recognize` is for.
 ## The four jobs a pack does
 
 A pack does four jobs: it discovers units, it recognizes calls inside
-them, it declares terminals, and it claims sub-units. All four are
-written as the same chain of links. They differ only in what the last
-link yields.
+them, it declares terminals, and it claims sub-units. The design writes
+all four as the same chain of links, differing only in what the last
+link yields. Today only recognition is written that way.
 
 ```
 where the match starts -> which method -> read the arguments -> yield
@@ -17,10 +17,13 @@ where the match starts -> which method -> read the arguments -> yield
                                                                 a sub-unit
 ```
 
-Two endings are built, and both yield effects. One asks the call what
-it reached, and the other reads the statement the call was given.
-Discovery, terminals and sub-units are further members of `Ending`,
-each with an entry in the compile table.
+Four endings are built, and all four are recognition endings that
+yield effects: `storageAccess` asks the call what it reached,
+`sqlAccess` reads the statement the call was given, and `messageSend`
+and `unitInvoke` read the object the call sends. Discovery, terminals
+and sub-units still come from the pack's discovery patterns. Each would
+become a new member of `Ending`, with its own entry in the `YIELD`
+table in `compile.ts`.
 
 ### Where a match starts
 
@@ -29,7 +32,8 @@ and a receiver is one of the options. Across the 29 shipped packs a
 match starts from at least thirteen places, and most of them are not
 receivers: an exported name, a file path, a decorator, a parameter's
 type, a template file beside the module, a function's return type.
-Those go into `MatchStart`.
+`MatchStart` is the union those would go into. Today it has one member,
+`FromReceiver`, because only recognition is written as a chain.
 
 The starts that begin at a receiver form their own union,
 `ReceiverOrigin`:
@@ -73,8 +77,8 @@ health reports every link that does. There are three levels:
    the diff, and pack health reports it the way it reports a pack that
    declares no version.
 
-`packGradients` in `@suss/adapter-typescript` reads the counts from a
-run. Three health checks fire on those counts: a link written as a
+`packGradients` in `@suss/extractor` reads the counts from a run's
+extraction report. Three health checks fire on those counts: a link written as a
 function, a link that reads the syntax tree, and a declaration with no
 example.
 

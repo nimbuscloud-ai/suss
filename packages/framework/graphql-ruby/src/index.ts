@@ -191,7 +191,7 @@ export const declares: PackDeclaration = {
   package: "@suss/framework-graphql-ruby",
   dependencies: [{ ecosystem: "rubygems", name: "graphql" }],
   reads:
-    "graphql-ruby class-based field DSL (Ruby), including \`mutation:\` / \`resolver:\` wiring one hop out to what the referenced class itself declares, and the model a resolver reads through \`dataloader\` when a storage pack in the run recognizes it.",
+    "graphql-ruby class-based field DSL (Ruby). The pack follows \`mutation:\` and \`resolver:\` wiring one hop out to what the referenced class declares. It also records the model a resolver reads through \`dataloader\`, when a storage pack in the run recognizes that model.",
   configuration: {
     file: "suss.graphql-ruby.json",
     example: { root: "app/graphql" },

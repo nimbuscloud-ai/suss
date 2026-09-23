@@ -162,7 +162,7 @@ Every boundary has all three of these, whether or not anyone writes them down. [
 
 ## Contract shapes
 
-The three contracts above are all HTTP. In other domains a contract can take more shapes than a schema, and a large domain usually uses several of them. Each shape is one of the three kinds of truth.
+The three contracts above are all HTTP. In other domains a contract can take more shapes than a schema, and a large domain usually uses several of them. Four of the shapes below are one of the three kinds of truth. Design is intent, which suss treats as a kind of its own.
 
 | Shape | What it declares | Kind of truth |
 |---|---|---|
@@ -174,7 +174,7 @@ The three contracts above are all HTTP. In other domains a contract can take mor
 
 Everything suss reads today is schema-shaped, across the HTTP, GraphQL, AppSync, message-bus, storage and component domains. Point `suss contract --from <source>` at one and you get summaries in the same form `extract` produces; [Contract sources](/packs/contract-sources) lists the readers that ship.
 
-The other shapes have no reader. The one observation that reaches a summary comes from `suss corroborate --experimental`, which runs your code. It generates inputs that satisfy a claim's own conditions, runs the handler on them, and records the verdict in `confidence.corroboration` as `observed`, as `refuted` along with the input that disagreed, or as `untested`. Design shapes are left out on purpose. Design files are rarely in the repository, and integrating with those APIs would cost more than it gives back.
+The other shapes have no reader. The one observation that reaches a summary comes from `suss corroborate --experimental`, which runs your code. It generates inputs that satisfy a claim's own conditions, runs the handler on them, and records the verdict in `confidence.corroboration` as `observed`, as `refuted` along with the input that disagreed, or as `untested`. Design shapes are left out on purpose. Design files are rarely in the repository, and reading them through the Figma or design-token APIs would cost more than it gives back.
 
 Intent your team writes is a kind of truth of its own, and suss reads it separately from the contract sources. [Check against your intent](/guides/check-against-intent) covers the two document kinds and the commands that read them.
 

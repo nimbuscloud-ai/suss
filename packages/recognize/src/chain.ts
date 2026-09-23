@@ -5,10 +5,9 @@
  * receiver, match the method, read the arguments, then yield. What
  * differs is the ending. Recognition yields effects, discovery yields a
  * unit, a terminal yields a response write, and a claimed callback
- * yields a sub-unit. Two recognition endings are built, one that asks
- * the call what it reached and one that reads the statement the call
- * was handed; the other three jobs are further members of `Ending`
- * with an entry in the compile table.
+ * yields a sub-unit. Only recognition is built as a chain so far, with
+ * four endings in `Ending`. The other three jobs would each join
+ * `Ending` with an entry in the compile table.
  *
  * A link's answer is data wherever it can be. A link given a function
  * instead is code, that link alone, and pack health says which ones.
@@ -429,7 +428,7 @@ export interface StorageEnding {
 /**
  * Every table a statement touches, as one effect each.
  *
- * The other ending settles what a call reached by asking the call. This
+ * The storage ending settles what a call reached by asking the call. This
  * one settles it by reading the statement, so one call yields as many
  * effects as the statement has tables, and each of them states its own
  * kind: a statement that writes one table while reading another says

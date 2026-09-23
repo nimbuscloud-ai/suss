@@ -6,9 +6,9 @@ This package builds suss `BehavioralSummary[]` for AWS API Gateway resources (RE
 
 ## What this package is
 
-`@suss/contract-aws-apigateway` is a **resource-semantics stub**. Given a normalized configuration, it works out what an API Gateway endpoint *does*: its status codes, authorizer behavior, CORS preflight and throttling. It does **not** read the configuration as someone wrote it. A manifest reader does that: `@suss/contract-cloudformation` today, and CDK and Terraform readers later. The reader parses its own source format and passes a normalized config to this package.
+`@suss/contract-aws-apigateway` is a **resource-semantics stub**. Given a normalized configuration, it works out what an API Gateway endpoint *does*: its status codes, authorizer behavior, CORS preflight and throttling. It does **not** read the configuration as someone wrote it. A manifest reader does that: `@suss/contract-cloudformation` today, and `@suss/contract-serverless` through it. The reader parses its own source format and passes a normalized config to this package. `@suss/contract-terraform` exists, but it does not read API Gateway resources yet, and there is no CDK reader.
 
-Because of that split, you can configure your API in CloudFormation, CDK, SAM or Terraform, and the same resource semantics produce the same summary.
+Because of that split, an API configured in CloudFormation, SAM or a `serverless.yml` gets the same resource semantics and the same summary. A CDK or Terraform reader would pass its config to the same code.
 
 ## Where it fits
 
@@ -17,8 +17,9 @@ packages/contract/
   openapi/              # Spec → summaries (declares what the API claims to be)
   aws-apigateway/       # Resource semantics: what AWS API Gateway actually does
   cloudformation/       # Manifest reader: walks CFN/SAM, builds configs, delegates here
+  serverless/           # Rewrites serverless.yml as SAM and hands it to cloudformation/
+  terraform/            # Reads Terraform; does not read API Gateway resources yet
   (future) cdk-synth/   # Same delegation pattern
-  (future) terraform/   # Same delegation pattern
 ```
 
 ## Why configuration matters
