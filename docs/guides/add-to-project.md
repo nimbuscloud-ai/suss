@@ -5,7 +5,7 @@ description: Install suss in a repository you already have, run it once, and rea
 
 # Add suss to a project
 
-Install suss in a repository you already have and get a first answer out of it. You do not annotate anything and you do not start any servers. The only things written to disk are a folder of summary files and a small `suss.json`.
+Install suss in a repository you already have and get a first answer out of it. You do not annotate anything or start any servers. suss writes a folder of summary files and a small `suss.json` to disk, and nothing else.
 
 ```bash
 npm install --save-dev @suss/cli
@@ -39,7 +39,7 @@ Then it asks five questions, one at a time:
 - **Add a GitHub Actions workflow that runs this on every pull request?** No by default.
 - **Write `suss.json`, so later runs know what this project declares?** Yes by default.
 
-Nothing reaches disk unless you say yes.
+`init` writes nothing to disk unless you say yes.
 
 If the output is piped, if the run is in CI, or if you pass `--plain`, `init` prints the commands instead of asking:
 
@@ -86,7 +86,7 @@ Two more steps follow: accepting a finding, and running the same two commands in
 }
 ```
 
-Commit it. It records what the project contains, and that is the same for everybody working on it. It also means that when a document stops being compared, a later run tells you, instead of leaving it unpaired and unnoticed.
+Commit it. It records what the project contains, which is the same for everybody working on it. With the file committed, a later run tells you when a document stops being compared, so the document does not go unpaired without anyone noticing.
 
 `init` can also write `.sussignore.json` with one example rule ([Accept a finding](/guides/accept-a-finding) has the syntax) and `.github/workflows/suss.yml` ([Run suss in CI](/guides/ci-integration) has the whole thing). Both are off by default.
 
@@ -183,10 +183,10 @@ A Python or Ruby project has no tsconfig, so point suss at the directory with `-
 
 `summaries/` is derived, so leave it out of the repository and let CI regenerate it. The exception is a library that publishes its summaries for whoever consumes it, and [Publish summaries](/guides/publish-summaries) covers that.
 
-Commit both `suss.json` and `.sussignore`. The first records what the project contains, and the second is the list of findings your team decided to accept.
+Commit both `suss.json` and `.sussignore`. `suss.json` records what the project contains. `.sussignore` lists the findings your team decided to accept.
 
 ## Next
 
 At a repository root with a workspace declaration, `init` asks which packages to set up. [Work across services](/guides/work-across-services) covers that, and what happens when two services serve the same path.
 
-For where to take it after the first run, [Adopt it step by step](/guides/adopting-suss) walks from reading one service to gating pull requests.
+After the first run, [Adopt it step by step](/guides/adopting-suss) goes from reading one service to gating pull requests.

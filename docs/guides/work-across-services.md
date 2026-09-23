@@ -13,7 +13,7 @@ npx suss extract -p apps/storefront/tsconfig.json -f fetch -o summaries/storefro
 npx suss check --dir summaries/
 ```
 
-suss pairs by boundary, so a handler in one service and the client that calls it in another are compared against each other, whichever run wrote them. You do not have to worry about ordering, because `check` reads whatever is in the folder. The team that owns a service owns its extract command, and the pipeline runs all of them.
+suss pairs summaries by boundary, so it compares a handler in one service with the client that calls it in another, whichever run wrote them. Order does not matter, because `check` reads whatever is in the folder. Each team writes the extract command for its own service. The pipeline runs all of them.
 
 ## Two repos
 
@@ -25,7 +25,7 @@ npx suss extract -p tsconfig.json -f hono -o suss/catalog.json
 git add suss/catalog.json
 ```
 
-The consumer copies that file in beside its own and checks the pair:
+The consumer copies that file in next to its own and checks the pair:
 
 ```bash
 # in the storefront repo
@@ -34,7 +34,7 @@ npx suss extract -p tsconfig.json -f fetch -o summaries/storefront.json
 npx suss check --dir summaries/
 ```
 
-`extract` writes file paths relative to the project it read, and the format has nothing machine-specific in it, so the file means the same thing in the consumer's repo as it did in the provider's. [Publish summaries](/guides/publish-summaries) covers shipping the file inside the package instead of copying it.
+`extract` writes file paths relative to the project it read, and the format has nothing machine-specific in it, so the file means the same thing in the consumer's repo as it did in the provider's. [Publish summaries](/guides/publish-summaries) shows how to ship the file inside the package instead of copying it.
 
 You can also pass both files, when the folder has more in it than the pair you want:
 
@@ -92,7 +92,7 @@ Compared 1 boundary.
 Not shown: 1 unhandledProviderCase (warning). Run the same command with --all to see it.
 ```
 
-Each side comes with a file and a line, so the fix is a two-line diff in whichever repo was wrong. The warning underneath is the same pair read the other way: the catalog service returns 404 and the storefront has no branch for it.
+The finding gives a file and a line for each side, so the fix is a two-line diff in whichever repo was wrong. The warning underneath comes from the same pair, seen from the other direction. The catalog service returns 404, and the storefront has no branch for it.
 
 ## Set them all up at once
 
@@ -119,11 +119,11 @@ At a repo root, `init` reads the workspace declaration, from `package.json` work
    suss extract -f hono -f fetch -f node -o summaries/code.json
 ```
 
-You get one block per package, each with the extract command that package needs. Run it without `--plain` and it asks which of them to set up, then writes one `suss.json` for the lot. If the output is piped or the run is in CI, it prints the commands either way.
+You get one block per package, each with the extract command that package needs. Without `--plain`, `init` asks which packages to set up and then writes one `suss.json` for all of them. When the output is piped or the run is in CI, it prints the commands instead.
 
 ## Two services that serve the same path
 
-Two services that both serve `GET /users` look like one boundary, so a client of either is compared against both. `check` reports that:
+When two services both serve `GET /users`, suss sees one boundary and compares a client of either service against both. `check` warns about it:
 
 ```
 1 boundary is claimed by more than one file:
@@ -143,11 +143,11 @@ npx suss check --dir auth/
 
 ## A spec instead of the other side's code
 
-`suss contract` reads a declared artifact into the same format, so the other side can be an OpenAPI document, a Prisma schema or a CloudFormation template rather than code you can extract:
+`suss contract` reads a spec and writes it out in the same format as `extract`. The other side can then be an OpenAPI document, a Prisma schema or a CloudFormation template instead of code:
 
 ```bash
 npx suss contract --from openapi ../catalog-api/openapi.yaml -o summaries/catalog.json
 npx suss check --dir summaries/
 ```
 
-[Check against OpenAPI](/guides/check-against-openapi) has the three-way version: the spec, the handlers behind it, and the client in front of it. [Contract sources](/packs/contract-sources) lists what `--from` accepts.
+In [Check against OpenAPI](/guides/check-against-openapi), suss compares the spec, the handlers behind it and the client that calls it in one run. [Contract sources](/packs/contract-sources) lists what `--from` accepts.

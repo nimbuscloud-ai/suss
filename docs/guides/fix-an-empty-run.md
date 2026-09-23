@@ -5,9 +5,9 @@ description: What each empty-run message means when extract wrote no summaries, 
 
 # Fix a run that found nothing
 
-Read the message. Every command that comes up empty tells you which stage it stopped at, and that stage is where you fix it.
+Read the message first. A command that comes up empty prints the stage where it stopped, and that stage is where the fix goes.
 
-Run the command again with `--explain` for the full funnel, pack by pack:
+Run the command again with `--explain` to see the count at every stage, pack by pack:
 
 ```bash
 npx suss extract -p tsconfig.json -f hono --explain
@@ -29,13 +29,13 @@ No summaries to write in 0.00s.
     0  of those, summaries saying what hono does
 ```
 
-suss took the nearest `tsconfig.json` and that one covers no source. In an Nx or Angular layout the root config is often `"files": []` with the app's own config beside it. Pass the one that covers your source:
+suss took the nearest `tsconfig.json`, and that one covers no source. In an Nx or Angular layout the root config is often `"files": []`, with the app's own config next to it. Pass the one that covers your source:
 
 ```bash
 npx suss extract -p tsconfig.app.json -f express -o summaries/code.json
 ```
 
-suss follows a solution-style root on its own, the kind with `"files": []` and a `references` array, and it reads the union of what the referenced configs list. This message comes from a root that has neither files nor references.
+suss follows a solution-style root on its own. That is a root with `"files": []` and a `references` array, and suss reads every file the referenced configs list. This message comes from a root that has neither files nor references.
 
 ## A package the pack needs is not installed
 
@@ -66,7 +66,7 @@ The tsconfig is right and the pack is wrong for this project. Re-run `init` to s
 npx suss init --plain
 ```
 
-suss reads through a module of your own that wraps the framework. That module imports the framework itself, so it counts in the line above, and suss follows the app through it, which means a route written inside `registerHealth(app)` still comes out as a route. When the framework import is inside a package suss cannot read at all, a [dependency stub](/guides/teach-a-dependency) bridges the gap.
+suss reads through a module of your own that wraps the framework. That module imports the framework itself, so it counts in the line above. suss follows the app object through it, so a route written inside `registerHealth(app)` still comes out as a route. When the framework import is inside a package suss cannot read at all, write a [dependency stub](/guides/teach-a-dependency) for that package.
 
 ## A pack read your code and recognized none of it
 
@@ -79,7 +79,7 @@ Pack health (1):
   no-output  prisma  1 unit bodies -> 0 effects
 ```
 
-Every line is three columns: what happened, the pack it happened to, and the numbers behind it. The codes are a fixed list, so `grep no-output` over a CI log finds every one with its counts on the same line.
+Each line has three columns: a code for what happened, the pack, and the counts. The codes are a fixed list, so `grep no-output` over a CI log finds every one with its counts on the same line.
 
 The `prisma` pack matches a call by the type of the thing it is called on, so it classifies `db.user.findUnique(...)` only when `db` resolves to the generated `PrismaClient` with a `user` model on it. Two things break that resolution and give you this line:
 
@@ -102,7 +102,7 @@ Check separately for a client generated somewhere else, because that goes wrong 
 
 When the pack does match, it adds `+ reads postgresql:User` under that call, so that is the line to look for.
 
-The other line you see often comes from asking for a recognizer pack on its own:
+The other line you will often see comes from running a recognizer pack on its own:
 
 ```
 Pack health (1):
@@ -113,11 +113,11 @@ A recognizer pack labels the calls inside boundaries that some other pack discov
 
 ### Every health code
 
-Six codes are about the run in front of you and always print. Four more are addressed to whoever wrote the pack and wait for `--explain`.
+Six codes describe the run in front of you and always print. The other four are for whoever wrote the pack, and they print only with `--explain`.
 
 | Code | Prints | What it means |
 |---|---|---|
-| `threw` | always | A pack's hook threw on a file, and that file was skipped. Every count for the pack is a floor. |
+| `threw` | always | A pack's hook threw on a file, and suss skipped that file. Every count for the pack is a lower bound. |
 | `no-output` | always | A pack got as far as one stage and produced nothing at the next. |
 | `double-match` | always | Two of a pack's own patterns claimed the same unit. suss kept the first. |
 | `no-files` | always | The pack's library is installed and no file in the run imports it, through the project's own modules included. |
@@ -137,9 +137,9 @@ Six codes are about the run in front of you and always print. Four more are addr
 | `N units -> 0 summaries` | It recognized units and bound none of them to a boundary. |
 | `N summaries -> 0 transitions` | It wrote summaries and recorded nothing in any of them. |
 
-Usually a `no-output` means your code uses the library in a way the pack does not cover, or in a version the pack predates. `threw`, `double-match` and `no-helper` are bugs in the pack and not in your project, so open an issue with the code that triggered them.
+Usually a `no-output` means your code uses the library in a way the pack does not cover, or in a version the pack predates. `threw`, `double-match` and `no-helper` point at bugs in the pack. Open an issue with the code that triggered them.
 
-A pack whose library is not installed is left out of this block. The empty run already tells you the dependencies are missing, and saying it twice looks like two problems.
+suss leaves a pack whose library is not installed out of this block. The empty run already says the dependencies are missing, and a second message would look like a second problem.
 
 ## Nothing was compared
 
@@ -156,7 +156,7 @@ error: nothingPaired
   Check that both sides of at least one boundary are in the directory. A provider extracted from code needs its consumer extracted too, or its contract read with `suss contract`. `suss inspect --dir` over the same files lists the boundaries each side claims, and two spellings of one boundary is the usual cause.
 ```
 
-`check` compares two sides, so one side on its own gives it nothing to do. If you have Express routes and no `fetch` or axios call site beside them, the callers were never extracted, either because they live in another repository or because the pack that reads them was left off the command.
+`check` compares two sides, so one side on its own gives it nothing to do. If you have Express routes and no `fetch` or axios call site next to them, the callers were never extracted. Either they live in another repository, or the pack that reads them was left off the command.
 
 Extract the other side into the same folder:
 
@@ -165,16 +165,16 @@ npx suss extract -p apps/web/tsconfig.json -f fetch -o summaries/web.json
 npx suss check --dir summaries/
 ```
 
-Where the other side is a schema or a spec rather than code, `contract` reads it into the same format. A Prisma schema becomes the provider for your query call sites; an OpenAPI document becomes the provider for your client:
+When the other side is a schema or a spec instead of code, `contract` reads it and writes the same format. A Prisma schema becomes the provider for your query call sites, and an OpenAPI document becomes the provider for your client:
 
 ```bash
 npx suss contract --from prisma prisma/schema.prisma -o summaries/prisma.json
 npx suss check --dir summaries/
 ```
 
-Where the other side is in another repository, extract it there and copy its summary file in. [Work across services](/guides/work-across-services) covers that.
+If the other side is in another repository, extract it there and copy its summary file in. [Work across services](/guides/work-across-services) shows how.
 
 ## See also
 
-- [Read Python or Ruby](/guides/python-and-ruby), where the empty-run messages name a directory rather than a tsconfig
+- [Read Python or Ruby](/guides/python-and-ruby), where the empty-run messages point at a directory instead of a tsconfig
 - [Write a pack](/packs/write-a-pack), for the declared form the last four health codes are measured against
