@@ -12,7 +12,7 @@ at once. Its `storageSystem` field is used as the transport, the
 dialect, and a stand-in for the data model, all under one product name.
 That works while every store we read is a SQL one. It stops working as
 soon as a store differs on any of the three, and DynamoDB differs on
-the middle one.
+the data model.
 
 The relational pass reports a read of an undeclared column as an error,
 because a SQL schema declares every column it has. DynamoDB declares

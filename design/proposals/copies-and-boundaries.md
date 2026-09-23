@@ -43,7 +43,7 @@ and hand-roll their own `extractArgs`, so the unit tests for aws-sqs and
 aws-eventbridge each run against a different and incorrect model of the
 input those packs get in production. Neither test double inlines a
 module-level `const` the way the adapter does, and that is how the
-`process.env` disagreement in the next section survived.
+`process.env` disagreement in item 3 of group two survived.
 
 ## Group one: copies that agree
 
