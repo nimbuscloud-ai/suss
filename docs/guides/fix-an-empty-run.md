@@ -172,7 +172,7 @@ npx suss contract --from prisma prisma/schema.prisma -o summaries/prisma.json
 npx suss check --dir summaries/
 ```
 
-When the other side is in another repository, extract it there and copy its summary file in. [Work across services](/guides/work-across-services) shows how.
+If the other side is in another repository, extract it there and copy its summary file in. [Work across services](/guides/work-across-services) shows how.
 
 ## See also
 

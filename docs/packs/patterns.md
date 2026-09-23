@@ -63,7 +63,7 @@ Reuse a string when your pack pairs the way an existing protocol pairs and its p
 }
 ```
 
-This matches a unit registered through a call chain that starts from an import. Most HTTP frameworks work this way. The adapter walks each reference to the import, follows the chain, and takes the handler functions off the end of it.
+`registrationCall` matches a unit registered through a call chain that starts from an import. Most HTTP frameworks work this way. The adapter walks each reference to the import, follows the chain, and takes the handler functions off the end of it.
 
 ```ts
 const app = express();
@@ -82,7 +82,7 @@ Express, Fastify and Hono all build this through `httpRouteDiscovery`, which emi
 }
 ```
 
-This matches routes registered by looping over an array of specs, which registration-call discovery cannot see.
+`registrationLoop` covers routes registered by looping over an array of specs, which registration-call discovery cannot see.
 
 ```ts
 for (const route of routes) {
@@ -104,7 +104,7 @@ for (const route of routes) {
 }
 ```
 
-This expands one call to a project's own helper into the several routes it registers.
+`registrationTemplate` expands one call to a project's own helper into the several routes it registers.
 
 ```ts
 registerCrud(app, "users", userHandlers);
@@ -118,7 +118,7 @@ registerCrud(app, "users", userHandlers);
 { type: "namedExport"; names: string[] }
 ```
 
-This finds units by their exported name.
+`namedExport` finds units by their exported name.
 
 ```ts
 export async function loader({ params }) { ... }
@@ -132,7 +132,7 @@ React Router uses it for `loader`, `action` and `default`, and the React pack us
 { type: "fileConvention"; filePattern: string; exportNames: string[] }
 ```
 
-This finds units by where the file is and what it exports. Next.js uses it twice: `**/app/**/route.{ts,tsx,js,jsx,mts,mjs}` exporting `GET`, `POST` and the rest, and `**/pages/api/**/*` exporting `default`.
+`fileConvention` picks out units by where the file is and what it exports. Next.js uses it twice: `**/app/**/route.{ts,tsx,js,jsx,mts,mjs}` exporting `GET`, `POST` and the rest, and `**/pages/api/**/*` exporting `default`.
 
 ### `decoratedRoute`
 
@@ -145,7 +145,7 @@ This finds units by where the file is and what it exports. Next.js uses it twice
 }
 ```
 
-This matches route handlers written as decorated methods on a decorated class.
+`decoratedRoute` matches route handlers written as decorated methods on a decorated class.
 
 ```ts
 @Controller("users")
@@ -169,7 +169,7 @@ The path comes from both decorators together, so the pair above gives `/users/:i
 }
 ```
 
-This matches GraphQL resolvers written as decorated methods, the way NestJS declares them. It selects units the same way `decoratedRoute` does, then reads a resolver from each one.
+`decoratedMethod` finds GraphQL resolvers written as decorated methods, the way NestJS declares them. It selects units the same way `decoratedRoute` does, then reads a resolver from each one.
 
 ```ts
 @Resolver(() => User)
@@ -200,7 +200,7 @@ Python decorators go through `decoratedFunctionRoute` and `decoratedClassRoute`,
 }
 ```
 
-This matches call sites, the consumer side of a boundary. The adapter finds imports of `importName` from `importModule`, resolves variables initialized from that import, and walks their method calls. For a global, every bare call to `importName` matches. The enclosing function becomes a `client`-kind unit.
+`clientCall` finds call sites, the consumer side of a boundary. The adapter finds imports of `importName` from `importModule`, resolves variables initialized from that import, and walks their method calls. For a global, every bare call to `importName` matches. The enclosing function becomes a `client`-kind unit.
 
 ```ts
 const api = axios.create({ baseURL: "https://shop.example.com/api" });
@@ -221,7 +221,7 @@ The fetch pack uses it with `importModule: "global"`, axios with `factoryMethods
 }
 ```
 
-This matches a GraphQL hook call on the consumer side, the way Apollo Client and urql are normally used. Each call becomes a `client`-kind unit with `graphql-operation` semantics.
+Apollo Client and urql are normally used through hooks, and `graphqlHookCall` matches one of those hook calls on the consumer side. Each call becomes a `client`-kind unit with `graphql-operation` semantics.
 
 ```ts
 const GET_USER = gql`query GetUser($id: ID!) { user(id: $id) { id } }`;
@@ -241,7 +241,7 @@ The document can be an inline `gql` template, a const in this module or an impor
 }
 ```
 
-This matches the imperative form, where the document is passed on a configuration property.
+`graphqlImperativeCall` covers the imperative form, where the document is passed on a configuration property.
 
 ```ts
 const client = new ApolloClient({ uri });
@@ -262,7 +262,7 @@ Discovery fires only when the named constructor is imported, since otherwise any
 }
 ```
 
-This matches a constructor or factory that takes a configuration object with a two-level resolver map on it. Code-first GraphQL servers are written this way.
+A code-first GraphQL server passes a configuration object with a two-level resolver map on it to a constructor or factory. `resolverMap` matches that call.
 
 ```ts
 new ApolloServer({
@@ -289,7 +289,7 @@ Each inner function becomes one unit with `graphql-resolver(typeName, fieldName)
 }
 ```
 
-This matches routes declared as JSX elements, the way client-side routers write them.
+`jsxElementRoute` reads routes declared as JSX elements, the way client-side routers write them.
 
 ```tsx
 <Routes>
@@ -313,7 +313,7 @@ It covers the nested tree form, where a child path joins its parent's and an ind
 }
 ```
 
-This treats a package's public exports as a boundary. The adapter reads the manifest, resolves every reachable entry point (the root `.` plus any sub-path in `exports`), follows barrel re-exports, and emits one `library`-kind unit per exported function, the provider side of an in-process `function-call` boundary.
+`packageExports` treats a package's public exports as a boundary. The adapter reads the manifest, resolves every reachable entry point (the root `.` plus any sub-path in `exports`), follows barrel re-exports, and emits one `library`-kind unit per exported function, the provider side of an in-process `function-call` boundary.
 
 `workspaces: true` applies the pattern once per package the workspace manifest declares, since the package list is a property of the project itself. Each binding is identified by `{ package, exportPath }`, so a sub-path export comes out as `@suss/behavioral-ir/schemas::BehavioralSummarySchema`. Root exports leave the sub-path segment out. The package-exports pack uses it.
 
@@ -325,7 +325,7 @@ It resolves the `types`, `default` and `import` conditions on `exports`, and fal
 { type: "packageImport"; packages: string[] }
 ```
 
-This matches the consumer side of that same boundary. The adapter scans for imports of the listed packages and records every call site, and each enclosing function becomes one `caller`-kind unit per imported binding it invokes. Each binding is identified as `function-call { package, exportPath }`, matching the `packageExports` providers, so the checker pairs them by `fn:<package>::<exportPath>`.
+`packageImport` finds the consumer side of that same boundary. The adapter scans for imports of the listed packages and records every call site, and each enclosing function becomes one `caller`-kind unit per imported binding it invokes. Each binding is identified as `function-call { package, exportPath }`, matching the `packageExports` providers, so the checker pairs them by `fn:<package>::<exportPath>`.
 
 Pass exact module specifiers, sub-path included. Several call sites inside one function to the same binding collapse to one unit, and call sites to different bindings produce one unit each. Named and default imports with bare-identifier calls are covered. Namespace imports (`import * as X`) and member-call chains (`X.method()`) are not done yet. The package-exports pack uses it.
 
@@ -378,7 +378,7 @@ binding: {
 { type: "returnShape"; requiredProperties?: string[] }
 ```
 
-This matches a return of an object literal. With `requiredProperties` the object has to have all of them, so the terminal does not match arbitrary literals.
+`returnShape` matches a return of an object literal. With `requiredProperties` the object has to have all of them, so the terminal does not match arbitrary literals.
 
 ```ts
 return { status: 404, body: { error: "not found" } };
@@ -392,7 +392,7 @@ ts-rest and React Router use it. Where no extraction picks a property, the body 
 { type: "returnStatement"; excludeCallReturns?: boolean }
 ```
 
-This matches any return, whatever the value, and records it as `Output.return`. Every client pack uses it as its primary terminal, and so do the packs whose units return arbitrary values (package-exports, the NestJS packs, Apollo, React, Next.js server actions, Cloudflare Workers).
+`returnStatement` fires on any return, whatever the value, and records it as `Output.return`. Every client pack uses it as its primary terminal, and so do the packs whose units return arbitrary values (package-exports, the NestJS packs, Apollo, React, Next.js server actions, Cloudflare Workers).
 
 `excludeCallReturns: true` skips a bare `return;` and a `return <call>` or `return new <Ctor>(...)`. Fastify sets it, so `return reply.send(...)` does not fire twice, once here and once as a `parameterMethodCall` on the inner call. `await`, `as`, parentheses and non-null wrappers are stripped before the check. Bare value returns (`return user`, `return { id }`, `return await db.find(id)`) still match.
 
@@ -407,7 +407,7 @@ This matches any return, whatever the value, and records it as `Output.return`. 
 }
 ```
 
-This matches a method call on a particular parameter.
+`parameterMethodCall` matches a method call on a particular parameter.
 
 ```ts
 res.status(201).json(order);   // position 1, chain ["status", "json"]
@@ -422,7 +422,7 @@ An empty chain matches any call. `passThroughMethods` lists methods that return 
 { type: "throwExpression"; constructorPattern?: string }
 ```
 
-This matches a `throw`. With `constructorPattern`, the thrown expression has to match it textually. Almost every framework pack declares one.
+`throwExpression` fires on a `throw`. With `constructorPattern`, the thrown expression has to match it textually. Almost every framework pack declares one.
 
 ```ts
 throw new HTTPException(404, { message: "no such order" });
@@ -436,7 +436,7 @@ Set `producesResponse: true` on the terminal when the framework turns the thrown
 { type: "functionCall"; functionName: string; requiresImport?: string[] }
 ```
 
-This matches a call to a named function. Only a bare identifier callee matches, so `res.json(...)` does not match `functionName: "json"`.
+`functionCall` matches a call to a named function. Only a bare identifier callee counts, so `res.json(...)` does not match `functionName: "json"`.
 
 ```ts
 return json(user);
@@ -453,7 +453,7 @@ For a project's own response helper, declare the envelope with a `returnShape` t
 { type: "jsxReturn" }
 ```
 
-This matches a return whose value is a JSX element or fragment. The root element or component name is recorded on the terminal. The React and React Router packs use it to classify component output as a `render`.
+`jsxReturn` fires on a return whose value is a JSX element or fragment. The root element or component name is recorded on the terminal. The React and React Router packs use it to classify component output as a `render`.
 
 ### `functionFallthrough`
 
@@ -461,7 +461,7 @@ This matches a return whose value is a JSX element or fragment. The root element
 { type: "functionFallthrough" }
 ```
 
-This matches the implicit fall-through at the end of a body, and fires when the last statement is neither a return nor a throw. Without it, a handler that only runs side effects comes out with no transitions at all. A pack for callback bodies should include it. An HTTP pack that always expects an explicit return should leave it out. The NestJS packs, Apollo, AWS Lambda and Cloudflare Workers include it.
+When the last statement of a body is neither a return nor a throw, the body ends in an implicit fall-through, and `functionFallthrough` fires there. Without it, a handler that only runs side effects comes out with no transitions at all. A pack for callback bodies should include it. An HTTP pack that always expects an explicit return should leave it out. The NestJS packs, Apollo, AWS Lambda and Cloudflare Workers include it.
 
 ### `parameterCall`
 
@@ -469,7 +469,7 @@ This matches the implicit fall-through at the end of a body, and fires when the 
 { type: "parameterCall"; parameterPosition: number }
 ```
 
-This matches a call to the parameter at that position, such as `next()` inside middleware. No pack declares this. The adapter builds it from `wraps.continuationParam`, so a wrapper path that hands control on ends in a `delegate` output and a path that responds first does not.
+`parameterCall` matches a call to the parameter at that position, such as `next()` inside middleware. No pack declares this. The adapter builds it from `wraps.continuationParam`, so a wrapper path that hands control on ends in a `delegate` output and a path that responds first does not.
 
 ## `TerminalExtraction`
 
@@ -508,7 +508,7 @@ Both fields are optional. Not every terminal has a body, and not every one has a
 { type: "positionalParams"; params: Array<{ position: number; role: string }> }
 ```
 
-This assigns fixed roles by position. Express declares `(req, res, next)`, and Hono declares one parameter with the role `context`.
+`positionalParams` assigns fixed roles by position. Express declares `(req, res, next)`, and Hono declares one parameter with the role `context`.
 
 ### `objectParam`
 
@@ -521,7 +521,7 @@ This assigns fixed roles by position. Express declares `(req, res, next)`, and H
 }
 ```
 
-This is for one object parameter whose properties are the inputs. React Router passes `{ params, request }` and ts-rest passes `{ params, body, query }`.
+`objectParam` handles one object parameter whose properties are the inputs. React Router passes `{ params, request }` and ts-rest passes `{ params, body, query }`.
 
 A handler that destructures gets one input per name it binds, with the role `knownProperties` gives it. A handler that takes the object whole gets a single input with the role from `wholeParamRole`, because the source does not say which properties it reads.
 
@@ -539,7 +539,7 @@ export async function loader(args: LoaderFunctionArgs) { ... }
 { type: "componentProps"; paramPosition: number; wholeParamRole?: string }
 ```
 
-This is for component props. The prop names are whatever the component author wrote, so no pack can list them in advance. A destructured parameter gives one input per bound name, with the name as its role. An undestructured one gives a single input with the role from `wholeParamRole`, which defaults to `"props"`. Each input records the prop's type text, and the comparison of a component's props reads it. The React pack uses it.
+`componentProps` reads component props. The prop names are whatever the component author wrote, so no pack can list them in advance. A destructured parameter gives one input per bound name, with the name as its role. An undestructured one gives a single input with the role from `wholeParamRole`, which defaults to `"props"`. Each input records the prop's type text, and the comparison of a component's props reads it. The React pack uses it.
 
 ### `decoratedParams`
 
@@ -547,7 +547,7 @@ This is for component props. The prop names are whatever the component author wr
 { type: "decoratedParams"; decoratorRoleMap: Record<string, string>; defaultRole?: string }
 ```
 
-This takes roles from parameter decorators. The adapter reads each parameter's first decorator and looks its name up in the map. A parameter that matches nothing takes `defaultRole`, or is skipped when there is none. The NestJS packs use it, GraphQL with `{ Args: "args", Parent: "parent", Context: "context", Info: "info" }`. Decorators are matched by name alone, so two frameworks declaring `@Args` both map.
+`decoratedParams` takes roles from parameter decorators. The adapter reads each parameter's first decorator and looks its name up in the map. A parameter that matches nothing takes `defaultRole`, or is skipped when there is none. The NestJS packs use it, GraphQL with `{ Args: "args", Parent: "parent", Context: "context", Info: "info" }`. Decorators are matched by name alone, so two frameworks declaring `@Args` both map.
 
 ### `allPositional`
 
@@ -555,7 +555,7 @@ This takes roles from parameter decorators. The adapter reads each parameter's f
 { type: "allPositional"; defaultRole?: string }
 ```
 
-This gives one input per declared parameter, in source order, with the parameter's own name as its role. It is used where no framework declares a set of roles and the name a caller sees is the role: the reachable-closure pass, the package-exports pack, and Next.js server actions. Destructured parameters are captured the way `objectParam` captures them, so `(ctx, { userId })` gives two inputs.
+`allPositional` gives one input per declared parameter, in source order, with the parameter's own name as its role. It is used where no framework declares a set of roles and the name a caller sees is the role: the reachable-closure pass, the package-exports pack, and Next.js server actions. Destructured parameters are captured the way `objectParam` captures them, so `(ctx, { userId })` gives two inputs.
 
 ## Recognizers
 
@@ -617,7 +617,7 @@ Returned units go through the same pipeline top-level units do, and each becomes
 discoverUnits?: (sourceFile: unknown, ctx: unknown) => DiscoveredCustomUnit[];
 ```
 
-This is the discovery counterpart of `subUnits`. When a framework's convention doesn't fit any of the `DiscoveryMatch` variants, the pack ships its own walker and the adapter calls it once per source file alongside the data-driven dispatch.
+`discoverUnits` is the discovery counterpart of `subUnits`. When a framework's convention doesn't fit any of the `DiscoveryMatch` variants, the pack ships its own walker and the adapter calls it once per source file alongside the data-driven dispatch.
 
 Use it for conventions that do not generalize, such as React's component-export heuristic (PascalCase plus a JSX return). Adding each of those to the central union would make every unrelated pack deal with them.
 
@@ -631,7 +631,7 @@ When this callback finds a unit at the same `(func, kind)` as one from another p
 requiresImport?: string[]
 ```
 
-This is an import gate for the whole pack. The adapter's pre-filter only considers the pack applicable to files importing at least one of the listed modules, matched by prefix, so `"@aws-sdk/client-sqs"` matches that module and any sub-path of it.
+`requiresImport` gates the whole pack on its imports. The adapter's pre-filter only considers the pack applicable to files importing at least one of the listed modules, matched by prefix, so `"@aws-sdk/client-sqs"` matches that module and any sub-path of it.
 
 It is for recognizer-only packs that target one library: the SQS pack declares `["@aws-sdk/client-sqs"]` and the Prisma pack `["@prisma/client"]`. Without a gate the pack walks every file, which is correct and wasteful. A discovery pattern has its own `requiresImport` for the same purpose, and an empty array is the deliberate "every file" choice, which the fetch pack makes because `fetch` is a global.
 
@@ -672,7 +672,7 @@ Three parameter positions say how the framework invokes it. `continuationParam` 
 transparentWrappers?: Array<{ callee: string; argument: number; module: string }>
 ```
 
-This declares a library wrapper that returns the function passed to it. For a factory inside the project the adapter works this out on its own by reading the body. A library's body is not there to read, so the pack has to declare it. AWS Lambda declares `Sentry.wrapHandler`-style wrappers, and Hono declares `createRoute` from `@hono/zod-openapi`.
+`transparentWrappers` declares a library wrapper that returns the function passed to it. For a factory inside the project the adapter works this out on its own by reading the body. A library's body is not there to read, so the pack has to declare it. AWS Lambda declares `Sentry.wrapHandler`-style wrappers, and Hono declares `createRoute` from `@hono/zod-openapi`.
 
 ### `environmentObjects` and `libraryEnvVars`
 

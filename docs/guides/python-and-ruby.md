@@ -194,7 +194,7 @@ The pack reads most of the routes grammar:
 - `draw(:name)`, read from `config/routes/name.rb` under the scope the draw was written in
 - `mount`, for an engine the project keeps in its own tree, which the `engineRoots` option points at
 
-When the pack cannot read a declaration, it records the gap instead of guessing. The `mount` line above is one of these: the `mount Sidekiq::Web` in the routes file points at a gem's engine outside `engineRoots`, and the gap says which call went unread. `direct`, `param:` on a resource and a gem routing call like `devise_for` go the same way.
+When the pack cannot read a declaration, it records the gap instead of guessing. The `mount` line above is one of these: the `mount Sidekiq::Web` in the routes file points at a gem's engine outside `engineRoots`, and the gap records which call went unread. `direct`, `param:` on a resource and a gem routing call like `devise_for` go the same way.
 
 An action the routes file does not reach is still discovered, with its calls followed, only with no boundary. When the routes file is missing altogether, every action named for one of Rails' seven conventional actions is bound at the path Rails' own naming convention gives it, and the run records that it did so.
 

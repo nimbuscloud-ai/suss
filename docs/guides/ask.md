@@ -39,7 +39,7 @@ The route's own code does not mention a table. The table name comes from an argu
 
 ## Who reads this table?
 
-Ask this before you rename a column or retire a table.
+Before you rename a column or retire a table, find out what reads it.
 
 ```bash
 suss ask 'what reads aws.dynamodb:OrdersTable' --dir summaries/
@@ -56,7 +56,7 @@ The table has two spellings here: `OrdersTable`, the resource in the template, a
 
 ## Who calls this file?
 
-Ask this before you change a signature.
+A signature change needs this list first.
 
 ```bash
 suss ask 'what calls src/orderStore.ts' --dir summaries/
