@@ -131,6 +131,38 @@ describe("buildMessageBusSummaries", () => {
     });
   });
 
+  it("states the consumer's handler entry the way its runtime does", () => {
+    const out = cloudFormationToSummaries({
+      Resources: {
+        OrdersQueue: { Type: "AWS::SQS::Queue", Properties: {} },
+        OrdersWorker: {
+          Type: "AWS::Serverless::Function",
+          Properties: {
+            CodeUri: "./",
+            Handler: "src/handlers/orders.handler",
+            Events: {
+              FromOrders: {
+                Type: "SQS",
+                Properties: { Queue: { Ref: "OrdersQueue" } },
+              },
+            },
+          },
+        },
+      },
+    });
+    const consumer = pickConsumers(out)[0] ?? raise("no consumer");
+    const runtime =
+      out.find(
+        (s) => s.identity.boundaryBinding?.semantics.name === "runtime-config",
+      ) ?? raise("no runtime");
+    expect(consumer.metadata?.codeScope).toEqual({
+      kind: "codeUri",
+      path: "",
+      entry: "src/handlers/orders",
+    });
+    expect(consumer.metadata?.codeScope).toEqual(runtime.metadata?.codeScope);
+  });
+
   it("emits a consumer summary for AWS::Lambda::EventSourceMapping (raw CFN)", () => {
     const out = cloudFormationToSummaries({
       Resources: {
