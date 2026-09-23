@@ -1,6 +1,6 @@
-// The pack factory, which is what `-f rails` loads, the options
-// schema, and the root class list `suss infer stub` reads to skip a
-// class that extends the library directly.
+// The CLI checks a `-f rails=config.json` file against
+// `optionsSchema` before it calls the factory. `suss infer stub` reads
+// the root class list to skip a class that extends the library directly.
 export {
   declares,
   default,
