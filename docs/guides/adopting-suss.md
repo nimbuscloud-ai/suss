@@ -108,7 +108,7 @@ Today, suss compares these:
 - An OpenAPI document against the handlers that serve it and the clients that call it. [Check against OpenAPI](/guides/check-against-openapi) covers both directions.
 - A document your team wrote about what the code should do. [Check against your intent](/guides/check-against-intent) covers that one.
 
-**What it costs.** One more command, and your first decisions. Each finding is a bug in the code, a document that fell behind, or something you accept. The third kind goes in `.sussignore.yml` with a reason, so it does not come back.
+**What it costs.** One more command, and your first decisions. Each finding is a bug in the code, a document that fell behind, or something you accept. The third kind goes in `.sussignore` with a reason, so it does not come back.
 
 **What a wrong answer looks like.** The contract declares a `401` and suss reports that no path produces it. Usually that `401` comes from middleware or from an error handler registered around the route, not from the handler itself. suss composes those in when it can see the registration. When it cannot, because the middleware is built by a call it could not follow, the route looks as though it never produces the status. Accept it with a suppression rule, or open an issue with the `inspect` output for that route. A wrapper suss cannot see is a gap in a pack, and those get fixed.
 
@@ -175,7 +175,7 @@ Two things go into CI. The `inspect-diff` action reads the base and the head of 
 
 Those two lines show that a message with no `invoiceId` now comes back as a successful `{ shipped }` instead of throwing, whichever of the changed lines did it. When the diff is quiet, no unit changed what it does. For a refactor, that is the result you want.
 
-**What it costs.** Two extracts per pull request instead of one, and the decision of what fails the build. Start at `error`. Tighten to `warning` once every accepted finding is in `.sussignore.yml` and a new warning means something.
+**What it costs.** Two extracts per pull request instead of one, and the decision of what fails the build. Start at `error`. Tighten to `warning` once every accepted finding is in `.sussignore` and a new warning means something.
 
 **What a wrong answer looks like.** A quiet diff after a change you know altered behavior. The changed code is behind a call suss could not follow, and the `Could not follow` line from step 1 tells you which call.
 
@@ -195,7 +195,7 @@ A finding has a kind, a severity, a provider, a consumer and a boundary. Read it
 
 - A bug in the code. Fix the code, and the finding goes away on the next run.
 - A document that fell behind. Fix the document.
-- Something you accept. Add a rule to `.sussignore.yml` with a `reason`. suss prints the rule under the finding, so you can paste it.
+- Something you accept. Add a rule to `.sussignore` with a `reason`. suss prints the rule under the finding, so you can paste it.
 
 Errors are findings where the code on one side cannot work against the other, such as reading a field the other side never sends. Warnings are judgement calls, such as a status with no branch for it. `check --json` writes the same findings for tooling to read, and `--at` narrows a run to one boundary while you work through it.
 

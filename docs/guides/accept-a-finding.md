@@ -25,7 +25,7 @@ Some findings are true and you accept them anyway, such as a status the caller d
 Paste it under `rules:` and replace the reason with yours:
 
 ```yaml
-# .sussignore.yml
+# .sussignore
 version: 1
 rules:
   - kind: unhandledProviderCase
@@ -55,6 +55,8 @@ In each directory suss takes the first of these it finds:
 2. `.sussignore.yml`
 3. `.sussignore.yaml`
 4. `.sussignore.json`
+
+All four work the same way, and the rest of the docs call the file `.sussignore`. The hint `check` prints under a finding says `.sussignore.yml`, and `suss init` writes `.sussignore.json`.
 
 suss reads a `.sussignore.json` in the summaries directory as suppression config and does not load it as summaries.
 

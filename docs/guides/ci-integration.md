@@ -163,7 +163,7 @@ With a `suss.json` committed, `npx suss check` does all of that. It runs every e
 
 ## The exit code as the gate
 
-`check` exits 1 when it finds something at or above the severity you give `--fail-on`, and `error` is the default. Warnings and info findings print without failing the build. Move to `--fail-on warning` once every accepted finding is in `.sussignore.yml` and a new warning means something.
+`check` exits 1 when it finds something at or above the severity you give `--fail-on`, and `error` is the default. Warnings and info findings print without failing the build. Move to `--fail-on warning` once every accepted finding is in `.sussignore` and a new warning means something.
 
 Two other exits matter here. A run that paired nothing exits non-zero, because having nothing to report looks the same as both sides agreeing. Pass `--allow-empty` when you expect an empty run, such as checking one side before the other has been extracted. `--at` exits non-zero when it matches nothing, for the same reason. [Exit codes](/reference/cli/exit-codes) lists what every command returns.
 
@@ -189,7 +189,7 @@ A red check with nothing parseable behind it gives an automated fixer nothing to
 
 ## Accepted findings
 
-Not every finding should fail the build. Your team may have accepted that a legacy endpoint returns 500 on a timeout, or a `deadConsumerBranch` may cover a status the server has never produced. `.sussignore.yml` at the project root lists those, each with a written reason:
+Not every finding should fail the build. Your team may have accepted that a legacy endpoint returns 500 on a timeout, or a `deadConsumerBranch` may cover a status the server has never produced. `.sussignore` at the project root lists those, each with a written reason:
 
 ```yaml
 version: 1
