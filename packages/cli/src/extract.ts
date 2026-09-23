@@ -32,6 +32,10 @@ import { LANGUAGE_LABEL, languageOfProject } from "./language.js";
 import { checkOneTsMorph, formatSecondCopies } from "./oneTsMorph.js";
 import { formatProjectsBelow, projectsBelow } from "./projectsBelow.js";
 import {
+  formatUnreadSourceRoots,
+  pythonSourceRoots,
+} from "./pythonSourceRoots.js";
+import {
   retiredOptionRefusal,
   retiredOptionsUsed,
   retiredOptionWarning,
@@ -858,12 +862,17 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
   // framework inside it do not resolve.
   const submodules = runOptions.submodules;
   const files = filesToRead(runOptions, findPythonFiles, submodules);
+  const sourceRoots = pythonSourceRoots(runOptions.root);
   const roots = [
     runOptions.root,
+    ...sourceRoots.roots,
     ...submodules
       .filter((submodule) => submodule.checkedOut)
       .map((submodule) => submodule.directory),
   ];
+  process.stderr.write(
+    formatUnreadSourceRoots(sourceRoots, runOptions.root, roots),
+  );
 
   let timingReport: TimingReport | null = null;
   let extractionReport: ExtractionReport | null = null;
