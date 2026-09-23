@@ -1,11 +1,11 @@
 ---
 title: What a pack is
-description: A pack is a data object that tells suss how one library is written, so the adapter can read a project's handlers, clients and effects through it.
+description: A pack is a data object that describes how one library is written, so the adapter can read a project's handlers, clients and effects through it.
 ---
 
 # What a pack is
 
-A pack is a data object describing how one library is written: where it registers handlers, what returning a response looks like, which calls reach a database. The language adapter reads your source through the packs a run loads, so teaching suss a new framework means writing data.
+A pack is a data object describing how one library is written: where it registers handlers, what returning a response looks like, which calls reach a database. The language adapter reads your source through the packs a run loads, so adding a new framework to suss means writing data.
 
 Take a Hono route:
 
@@ -53,9 +53,9 @@ src/orders.ts
            + src/orders-store.refundOrder →
 ```
 
-The pack contributed three facts about Hono. Routes are registered as `app.post(path, handler)`, so the method comes from the registration and the path from its first argument. A handler responds by calling `c.json(body, status)` on its first parameter, and Hono sends 200 when the status is left off. The handler takes one parameter, the context.
+The pack supplied three facts about Hono. Routes are registered as `app.post(path, handler)`, so the method comes from the registration and the path from its first argument. A handler responds by calling `c.json(body, status)` on its first parameter, and Hono sends 200 when the status is left off. The handler takes one parameter, the context.
 
-Everything else in that output came from reading the code: the two guards, the calls into `orders-store`, the shape of what each branch returns.
+Everything else in that output came from reading the code: the two guards, the calls into `orders-store`, and what each branch returns.
 
 ## What a pack declares
 
@@ -103,7 +103,7 @@ export function honoFramework(): PatternPack {
 
 A pack can also declare optional fields for things a library does that the three required ones do not cover: `contractReading` for a framework with declared response schemas, `invocationRecognizers` and `accessRecognizers` for calls that produce an effect, `subUnits` for callbacks the runtime schedules, `requiresImport` to skip files that never import the library.
 
-Beside the pattern object, a pack exports a one-line description of itself:
+Next to the pattern object, a pack exports a one-line description of itself:
 
 ```ts
 export const declares: PackDeclaration = {
@@ -122,11 +122,11 @@ export const declares: PackDeclaration = {
 
 **Framework packs** find the units a framework defines: a route handler, a React component, a GraphQL resolver, a queue consumer. Without a framework pack for your server, suss never finds your handlers at all.
 
-**Client packs** find the other side, the call sites: `fetch`, axios, the Apollo hooks, Python's `requests`, Ruby's Net::HTTP. They bind a call to the method and path it sends, so the checker can pair it against whoever serves that route.
+**Client packs** find the call sites on the other side: `fetch`, axios, the Apollo hooks, Python's `requests`, Ruby's Net::HTTP. They bind a call to the method and path it sends, so the checker can pair it against whoever serves that route.
 
-**Effects packs** fire on calls inside units another pack already found. `-f prisma` alone comes back empty; run beside `-f hono` it attaches a storage read to the query inside the handler. Because effects packs fire wherever the call is, they work across framework boundaries, and no pack has to be written with any other pack in mind.
+**Effects packs** fire on calls inside units another pack already found. `-f prisma` alone comes back empty. Run with `-f hono`, it attaches a storage read to the query inside the handler. Because effects packs fire wherever the call is, they work across framework boundaries, and no pack has to be written with any other pack in mind.
 
-Contract readers are a fourth thing, and not a `PatternPack` at all. They read something the project declares: `suss contract --from openapi orders.yaml` turns a spec into the same summaries the extractor writes. [Contract sources](/packs/contract-sources) lists all ten.
+Contract readers are a fourth kind of thing, and they are not a `PatternPack` at all. They read something the project declares: `suss contract --from openapi orders.yaml` turns a spec into the same summaries the extractor writes. [Contract sources](/packs/contract-sources) lists all ten.
 
 ## Which packs a run uses
 
@@ -144,7 +144,7 @@ $ suss init
     node             TypeScript sources, and node reads what the language itself ships
 ```
 
-Run in a terminal it then offers to write `suss.json` at the project root. Piped or in CI it prints the commands instead, and `--plain` prints them either way.
+In a terminal, it then offers to write `suss.json` at the project root. When the output is piped or the run is in CI, it prints the commands instead, and `--plain` prints them either way.
 
 ```json
 {
@@ -159,7 +159,7 @@ Run in a terminal it then offers to write `suss.json` at the project root. Piped
 }
 ```
 
-`suss extract` with no `-f` reads that file and prints what it decided:
+`suss extract` with no `-f` reads that file and prints the command it worked out:
 
 ```
 $ suss extract -o summaries.json
@@ -172,9 +172,9 @@ Wrote 5 summaries to /projects/orders-api/summaries.json in 0.30s
 
 ## What a pack can see
 
-A pack states positions, and the adapter resolves what is at them. That resolution follows a value through a property read, an array element, an alias, an import and a barrel, so `app.get(USERS, handler)` finds `/users` and `` app.get(`${BASE}/items/:id`, handler) `` finds `/api/items/:id` when `BASE` is `"/api"`. A pack never reads the syntax tree to do it. `npm run check:readers` fails a pack that reaches for ts-morph, so `getInitializer`, `getSymbol` and `getLiteralValue` do not build.
+A pack lists argument positions, and the adapter works out the value at each one. It follows a value through a property read, an array element, an alias, an import and a barrel, so `app.get(USERS, handler)` finds `/users` and `` app.get(`${BASE}/items/:id`, handler) `` finds `/api/items/:id` when `BASE` is `"/api"`. A pack does not read the syntax tree for any of this. `npm run check:readers` fails a pack that reaches for ts-morph, so `getInitializer`, `getSymbol` and `getLiteralValue` do not build.
 
-What a pack cannot do is invent a value the code only works out at run time. This handler passes the upstream response's status straight through:
+A pack cannot supply a value that the code only works out at run time. This handler passes the upstream response's status straight through:
 
 ```ts
 app.post("/webhooks/inbound", async (c) => {
@@ -197,9 +197,9 @@ src/webhooks.ts
        writes POST /inbound  through forward
 ```
 
-`any` here means the status is whatever `forward` returns, and the `Reaches` block shows the outbound call the fetch pack found behind it. A field the pack could not read stays null, and suss still records the crossing. That matters on the other side of the boundary: a consumer pairing against `result.status any` learns that the provider never commits to a code, which is different from learning that nothing happened.
+`any` here means the status is whatever `forward` returns, and the `Reaches` block shows the outbound call the fetch pack found behind it. A field the pack could not read stays null, and suss still records the crossing. That matters on the other side of the boundary. When a consumer is paired against `result.status any`, the checker can see that the provider never commits to a status code, and that is different from seeing that nothing happened.
 
-A pack also covers only one library. The Hono pack contains nothing about Prisma, and the Prisma pack contains nothing about Hono. The run is what joins them, because every pack in a run fires on every unit any of them found.
+A pack also covers only one library. The Hono pack contains nothing about Prisma, and the Prisma pack contains nothing about Hono. The run joins them, because every pack in a run fires on every unit any of them found.
 
 ## Next
 
