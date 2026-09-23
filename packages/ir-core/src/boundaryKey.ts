@@ -1,14 +1,13 @@
 /**
- * Keys for a boundary binding, and whether two of them agree. Every
- * function here asks the binding's protocol and returns whatever it
- * says, so the rules themselves are in the protocol's own module under
- * `semantics/` and not in this file.
+ * Keys for a boundary binding, and whether two bindings agree. Each
+ * function looks up the binding's protocol and delegates to it, so the
+ * rules are defined with each protocol's semantics.
  *
- * The sharing is the point. The behavioural checker pairs code
- * summaries by these keys, and the intent checker pairs intent against
- * code by the same keys. If the two ever keyed differently, intent and
- * code would stop lining up, so the keying is here next to the binding
- * rather than in either checker.
+ * The behavioral checker pairs code summaries by these keys, and the
+ * intent checker pairs intent against code by the same keys. If the two
+ * keyed differently, intent and code would stop lining up, so the
+ * keying is defined next to the binding and neither checker has its
+ * own.
  */
 
 import { allBehaviors, behaviorOf } from "./semantics/registry.js";
@@ -19,10 +18,10 @@ import type { BoundaryBinding, Semantics } from "./index.js";
 import type { MatchResult } from "./typeShapeMatch.js";
 
 /**
- * Whether a binding is of one protocol, narrowed to that protocol's
- * own semantics when it is. A caller reaching through the binding to
- * compare the name by hand gets `string | undefined` and no narrowing,
- * so a name that no protocol uses compiles and quietly never matches.
+ * Whether a binding is of one protocol, narrowing its semantics to that
+ * protocol's type. `name` only accepts a protocol that exists. Comparing
+ * `binding?.semantics.name` by hand does not narrow, and a misspelled
+ * protocol name there compiles and never matches.
  */
 export function bindingIs<N extends Semantics["name"]>(
   binding: BoundaryBinding | null | undefined,
@@ -36,9 +35,9 @@ export function boundaryKey(binding: BoundaryBinding): string | null {
 }
 
 /**
- * The binding with any filesystem path its semantics state rewritten.
- * The CLI uses it to make a summary's paths project-relative, and each
- * protocol says for itself whether it states one.
+ * The binding with every filesystem path in its semantics rewritten.
+ * The CLI uses it to make a summary's paths project-relative. A binding
+ * whose protocol has no paths comes back unchanged.
  */
 export function withRewrittenPaths(
   binding: BoundaryBinding,
@@ -55,13 +54,13 @@ export function withRewrittenPaths(
 }
 
 /**
- * The bucket a boundary pairs in, with any name the deployment fills in
- * put in first.
+ * The pairing key after the deployment's values are filled into the
+ * boundary's name.
  *
- * A consumer that gets its base URL from the runtime states a different
- * string from the provider it reaches, and the two are one boundary.
- * Every protocol that has such a name says how to fill it in, and one
- * whose names are settled in the source keys exactly as before.
+ * A consumer that gets its base URL at run time writes a different
+ * string from the provider it reaches, though the two are one boundary.
+ * A protocol whose names are fixed in the source gets the same key as
+ * `pairingKey` would give.
  */
 export function groundedPairingKey(
   binding: BoundaryBinding,
@@ -71,13 +70,12 @@ export function groundedPairingKey(
 }
 
 /**
- * The same boundary, with whatever the deployment fills in put in.
+ * The same boundary, with the deployment's values filled into its name.
  *
- * Everything that reads a boundary's name for a person to see goes
- * through here first: the pairing pass, the drafter that writes an
- * intent document, and the intent checker that reads one back. A step
- * only one of them took would have the drafter write a name the
- * checker then argued with.
+ * The pairing pass, the drafter that writes an intent document and the
+ * intent checker that reads one back all ground a binding here before
+ * reading its name. If only one of them grounded it, the drafter could
+ * write a name the checker then disputes.
  */
 export function groundBinding(
   binding: BoundaryBinding,
@@ -89,9 +87,9 @@ export function groundBinding(
 }
 
 /**
- * Where this boundary's name says to go and ask, or null when the
- * source stated a name outright. A report that has to say why two
- * sides did not meet reads it to say which input would settle them.
+ * The reference in this boundary's name, or null when the source gave
+ * the name outright. A report that explains why two sides did not pair
+ * uses it to say which input would settle the name.
  */
 export function nameReference(binding: BoundaryBinding): Reference | null {
   return (
@@ -145,9 +143,10 @@ export function displayLabel(binding: BoundaryBinding): string {
 }
 
 /**
- * A boundary string that no protocol claims keeps its case, because
- * message-bus keys are case-sensitive and uppercasing one would break
- * the rule without saying so.
+ * A suppression rule's boundary string, normalized by the protocol that
+ * recognizes it. A string no protocol recognizes keeps its case,
+ * because message-bus keys are case-sensitive and uppercasing one would
+ * make the rule stop matching without any error.
  */
 export function normalizeRuleBoundary(raw: string): string {
   const trimmed = raw.trim();
@@ -185,9 +184,11 @@ export function reportsUnpairedItself(binding: BoundaryBinding): boolean {
 }
 
 /**
+ * Whether this binding serves a request with the given method and path.
+ *
  * Null means the protocol does not address its boundaries by method and
- * path at all, which a caller has to tell apart from an unknown answer:
- * unknown means it does, but this declaration cannot settle the question.
+ * path at all. A caller has to tell that apart from `"unknown"`, which
+ * means the protocol does, but this declaration cannot settle it.
  */
 export function servesRequest(
   binding: BoundaryBinding,

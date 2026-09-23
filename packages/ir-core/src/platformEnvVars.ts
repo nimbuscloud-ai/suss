@@ -1,15 +1,14 @@
 /**
- * The variables a deployment medium puts in a process's environment
+ * The variables a deployment platform puts in a process's environment
  * whatever its configuration says.
  *
- * Code reads them and nothing declares them, so a reader that left them
- * out would accuse every deployment of failing to supply `AWS_REGION`.
- * Two readers describe the same Lambda, a CloudFormation template and a
- * Terraform configuration, and a variable one of them knew about and
- * the other did not would be an error in one and not the other, so the
- * list is stated once here. A medium whose vendor documents a different
- * set per product, Cloud Run's `K_SERVICE` against a plain container's
- * nothing, states its own list in the pack that describes it.
+ * Code reads them and no template declares them, so without this list
+ * every deployment would be reported for failing to supply
+ * `AWS_REGION`. A CloudFormation template and a Terraform configuration
+ * can describe the same Lambda, and both use this one list so they
+ * agree on which variables are present. A platform whose vendor
+ * documents a different set per product, such as Cloud Run with its
+ * `K_SERVICE`, lists its variables in the pack that describes it.
  */
 
 import type { DeployableUnit } from "./deployableUnit.js";

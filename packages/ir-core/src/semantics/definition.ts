@@ -1,20 +1,16 @@
 /**
- * The contract a boundary protocol implements.
+ * The interface a boundary protocol implements.
  *
- * A protocol (REST, message-bus, one side of GraphQL) is a single
- * module in this directory. Its schema says what the identity fields
- * are, its behavior says how those fields key and agree, and the two
- * travel together so neither can be added without the other. Nothing
- * outside a protocol's own module decides how its boundaries behave.
+ * Each protocol (REST, message-bus, one side of GraphQL) is one module
+ * in this directory. Its schema lists the identity fields, and its
+ * behavior defines how those fields key and agree. The two are defined
+ * together, so neither can be added without the other.
  *
- * These definitions ship with ir-core rather than with the packs,
- * because a published summary has to mean the same thing to a reader
- * who never installed the pack that wrote it. If a pack needs a
- * protocol nobody has defined yet, add a module here.
- *
- * A protocol also says which of its words come from OpenTelemetry's
- * semantic conventions, in `semconv`. The README says why that
- * matters and where it stops.
+ * The definitions ship with ir-core and not with the packs, because a
+ * published summary has to mean the same thing to a reader who never
+ * installed the pack that wrote it. A pack that needs a new protocol
+ * adds a module here. Each protocol also maps its fields to
+ * OpenTelemetry attributes in `semconv`, as the package README explains.
  */
 
 import type { z } from "zod";
@@ -27,26 +23,26 @@ export interface SemconvAttribute {
   /** The attribute name, as the semantic conventions spell it. */
   name: string;
   /**
-   * Values suss writes where the source named none. A span never says
-   * them, so the projection leaves the attribute off rather than
-   * emitting a string that could only ever mismatch.
+   * Values suss writes when the source gave none. A span never has
+   * them, so the projection leaves the attribute out instead of writing
+   * a value that could never match.
    */
   placeholderValues?: readonly string[];
 }
 
 /**
  * Which identity fields the semantic conventions have an attribute
- * for. A field is absent when they have no attribute for it, or when
- * our value is our own string rather than the one a span gets.
+ * for. A field is absent when the conventions have no attribute for it,
+ * or when suss writes its own value there instead of the one a span gets.
  */
 export type SemconvMapping<S extends { name: string }> = {
   readonly [K in Exclude<keyof S, "name">]?: SemconvAttribute;
 };
 
 /**
- * How one semantics variant keys its boundaries and pairs them up. Each
- * variant fills this in inside its own module, and nothing else in the
- * tree gets a say in how a boundary keys or agrees.
+ * How one protocol keys its boundaries and pairs them up. Each protocol
+ * implements this in its own module, and every rule for how its
+ * boundaries key or agree is defined there.
  */
 export interface BoundaryBehavior<S extends { name: string }> {
   /** Null when the source never gave the boundary a name. */
@@ -62,8 +58,8 @@ export interface BoundaryBehavior<S extends { name: string }> {
   pairingKey?(semantics: S): string | null;
 
   /**
-   * Settles whatever `pairingKey` left out of the bucket. A variant that
-   * does not define it always agrees.
+   * Compares the fields `pairingKey` left out of the bucket. When a
+   * protocol does not define it, every pair in a bucket agrees.
    */
   sidesAgree?(a: S, b: S): boolean;
 
@@ -82,27 +78,27 @@ export interface BoundaryBehavior<S extends { name: string }> {
 
   /**
    * How narrowly this bucket states what it serves, compared
-   * lexicographically. When a consumer meets more than one bucket, the
-   * one ranking highest is the one it reaches, and an even contest is
-   * reported rather than paired.
+   * lexicographically. When a consumer meets more than one bucket, it
+   * reaches the one ranked highest, and a tie is reported instead of
+   * paired.
    */
   bucketRank?(semantics: S): readonly number[];
 
-  /** The line a reader sees for this boundary. Defaults to `identityKey`. */
+  /** The label a reader sees for this boundary. Defaults to `identityKey`. */
   displayLabel?(semantics: S): string | null;
 
   /**
-   * The semantics with any filesystem path it states rewritten, for
-   * the pass that makes a summary's paths project-relative. A
-   * protocol that states no path declares nothing here.
+   * The semantics with every filesystem path in it rewritten, for the
+   * pass that makes a summary's paths project-relative. A protocol
+   * without paths leaves this undefined.
    */
   rewritePaths?(semantics: S, rewrite: (path: string) => string): S;
 
   /**
-   * The first protocol whose `claims` returns true normalizes a
-   * hand-written suppression boundary, and a string nobody claims is
-   * compared byte for byte. A protocol whose keys are exact declares
-   * nothing here and stays verbatim.
+   * How a hand-written suppression boundary is normalized. The first
+   * protocol whose `claims` returns true normalizes the string, and a
+   * string no protocol claims is compared byte for byte. A protocol
+   * whose keys compare exactly leaves this undefined.
    */
   ruleBoundary?: {
     claims(raw: string): boolean;
@@ -110,9 +106,10 @@ export interface BoundaryBehavior<S extends { name: string }> {
   };
 
   /**
-   * A protocol whose boundaries have no URL leaves this undefined, which
-   * is different from an "unknown" result: undefined means the question
-   * does not apply, and unknown means this declaration cannot settle it.
+   * Whether this boundary serves a request with the given method and
+   * path. A protocol whose boundaries have no URL leaves this undefined.
+   * Undefined means the question does not apply, and an `"unknown"`
+   * result means this declaration cannot settle it.
    */
   servesRequest?(semantics: S, method: string, path: string): MatchResult;
 
@@ -120,7 +117,7 @@ export interface BoundaryBehavior<S extends { name: string }> {
    * Whether every request this boundary takes falls inside a pattern
    * something else was registered for. Middleware registered for
    * `/v1/*` runs for `/v1/tenants/{id}` and not for `/health`, so
-   * composing it into a unit asks this first.
+   * composing middleware into a unit checks this first.
    *
    * A protocol whose boundaries no pattern addresses leaves this
    * undefined, and nothing registered with a pattern reaches them.
@@ -128,47 +125,43 @@ export interface BoundaryBehavior<S extends { name: string }> {
   withinScope?(semantics: S, scope: string): boolean;
 
   /**
-   * The same boundary with a name the deployment fills in put in.
+   * The same boundary with the deployment's values filled into its name.
    *
    * A call written as `fetch(`${process.env.API_BASE}/orders`)` gets
    * part of its boundary from the source and part from whatever runs
-   * the code. Both parts have to be in before anybody can see that the
-   * two sides describe one boundary.
+   * the code. Both parts are needed before the two sides can be matched
+   * as one boundary.
    *
    * `deployment` is already scoped to the unit this boundary belongs
-   * to. A protocol hands over the reference its name states and gets
-   * back what fills it in, or null. Return null to leave it as it is,
-   * which is right whenever nothing needs filling in or nothing can
-   * fill it.
-   *
-   * A protocol whose names are settled in the source leaves this
-   * undefined.
+   * to. The protocol looks up the reference in its name through it.
+   * Return null to leave the semantics unchanged, when nothing needs
+   * filling in or nothing can fill it. A protocol whose names are fixed
+   * in the source leaves this undefined.
    */
   groundName?(semantics: S, deployment: Deployment): S | null;
 
   /**
-   * Where this boundary's name says to go and ask, when it says that
-   * rather than a name. A caller that has to explain why two sides did
-   * not meet reads it to say which input would settle them.
+   * The reference in this boundary's name, when the name is a
+   * reference. A caller explaining why two sides did not pair uses it
+   * to say which input would settle the name.
    *
-   * A protocol that defines `groundName` defines this too, and the
-   * same reference is what `groundName` hands over.
+   * A protocol that defines `groundName` defines this too, and
+   * `groundName` looks up the same reference.
    */
   nameReference?(semantics: S): Reference | null;
 
   /**
    * Whether a provider produces a status and a body that a consumer
-   * reads back. Every protocol has to state this, so that one added
-   * later says what it is instead of landing in the HTTP-style checks
-   * because nobody remembered to exclude it.
+   * reads back. It is required, so a new protocol cannot end up in the
+   * HTTP-style checks because nobody remembered to exclude it.
    */
   exchangesHttpResponses: boolean;
 
   /**
-   * Whether crossing this boundary leaves the process. A report about
-   * what a change means for somebody outside the code covers the ones
-   * that do; a call from one function in a project to another is a
-   * boundary as well, and a reader has the source diff for that.
+   * Whether crossing this boundary leaves the process. A report on what
+   * a change means for callers outside the code covers only these. A
+   * call between two functions in one project is a boundary too, and a
+   * reader has the source diff for it.
    */
   leavesTheProcess: boolean;
 
@@ -199,8 +192,8 @@ export interface BoundarySemanticsDefinition<
   schema: Z;
   behavior: BoundaryBehavior<z.infer<Z>>;
   /**
-   * Every protocol declares this, empty included, so that adding one
-   * means deciding where its words come from.
+   * Required even when empty, so adding a protocol means deciding which
+   * of its fields are OpenTelemetry attributes.
    */
   semconv: SemconvMapping<z.infer<Z>>;
 }

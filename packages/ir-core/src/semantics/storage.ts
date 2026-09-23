@@ -1,16 +1,16 @@
 /**
- * A store as a boundary: a SQL table, a DynamoDB table, a bucket, a
- * collection, an index.
+ * A store as a boundary: a SQL table, a DynamoDB table, a bucket, an
+ * index.
  *
- * The fields here are the ones both sides can spell. A schema reader
- * knows the container it declares and a call site knows the container
- * it addresses, so those are what the pairing pass keys on. What only
- * the schema knows, whether its field list is the complete set, goes on
- * the provider's `storageContract` metadata instead.
+ * The fields are the ones both sides can write. A schema reader knows
+ * the container it declares and a call site knows the container it
+ * addresses, so the pairing pass keys on those. Only the schema knows
+ * whether its field list is complete, so that goes in the provider's
+ * `storageContract` metadata.
  *
- * One variant covers every family because the families differ by
- * declared properties rather than by name. Storage is paired by its own
- * dedicated pass, so this protocol has no identity key.
+ * One variant covers every family, because the families differ by
+ * declared properties and not by name. A dedicated pass pairs storage,
+ * so this protocol has no identity key.
  */
 
 import { z } from "zod";
@@ -23,12 +23,12 @@ import type { Reference } from "../boundaryName.js";
 export const StorageSemanticsSchema = z.object({
   name: z.literal("storage"),
   /**
-   * Which store this is: postgresql, mysql, aws.dynamodb, or our own
-   * word for one OpenTelemetry never named, such as s3, or null when
-   * the source states one this reader could not settle. Two products'
-   * containers can share a name, so this keeps them apart. A null
-   * keeps none of them apart, and the pairing pass says what it does
-   * with one.
+   * The storage system: an OpenTelemetry value such as `postgresql` or
+   * `aws.dynamodb`, or suss's own word for one the conventions do not
+   * cover, such as `s3`. Null when the reader could not work out which
+   * system the source uses. Two products' containers can share a name,
+   * and this field keeps them apart. The pairing pass decides how to
+   * treat a null.
    */
   storageSystem: z.string().nullable(),
   /**
@@ -38,18 +38,18 @@ export const StorageSemanticsSchema = z.object({
    */
   scope: z.string(),
   /**
-   * The table, bucket, collection, or index, as the source declares
-   * it, or null when the source states one this reader could not
-   * settle. A null container pairs with nothing, rather than with
-   * whatever its source text happens to spell. The string is in the
-   * boundary-name syntax: a literal, a pattern with `{}` holes, or a
-   * reference, and `parseBoundaryName` is the one reader of it.
+   * The table, bucket, collection or index, as the source declares it.
+   * Null when the reader could not work out the container, and a null
+   * container pairs with nothing, so it cannot match by accident of
+   * shared source text. The string uses the boundary-name syntax (a
+   * literal, a pattern with `{}` holes, or a reference), and only
+   * `parseBoundaryName` should read it.
    */
   container: z.string().nullable(),
   /**
-   * A secondary way into the container, a DynamoDB global secondary
-   * index or an Elasticsearch alias, each with its own key fields.
-   * Null means the container's own primary way in. A query through an
+   * A secondary way into the container, such as a DynamoDB global
+   * secondary index or an Elasticsearch alias, each with its own key
+   * fields. Null means the container's primary key. A query through an
    * index and a query through the table are different accesses, so
    * they pair separately.
    */
@@ -58,7 +58,7 @@ export const StorageSemanticsSchema = z.object({
 
 export type StorageSemantics = z.infer<typeof StorageSemanticsSchema>;
 
-/** Where a container the source states as a variable says to go and ask. */
+/** The reference for a container the source gives only as a variable. */
 function containerReference(semantics: StorageSemantics): Reference | null {
   return semantics.container === null
     ? null
@@ -70,21 +70,21 @@ export const storageSemantics = defineBoundarySemantics({
   schema: StorageSemanticsSchema,
   semconv: {
     storageSystem: { name: "db.system.name" },
-    // "default" is our word for a source that named no database.
+    // suss writes "default" when the source did not say which database.
     scope: { name: "db.namespace", placeholderValues: ["default"] },
     container: { name: "db.collection.name" },
-    // A secondary index has no attribute of its own, so accessPath
-    // stays our word.
+    // The conventions have no attribute for a secondary index, so
+    // accessPath is left out.
   },
   behavior: {
-    /** A query returns rows or items, not a status and a body. */
+    /** A query returns rows or items, with no status. */
     exchangesHttpResponses: false,
     leavesTheProcess: true,
     reportsUnpairedItself: false,
     identityKey: () => null,
     displayLabel: storageLabel,
     /**
-     * A container the source states as a variable is whatever the
+     * A container the source gives as a variable is whatever the
      * deployment sets that variable to. `{SUBSCRIBERS_TABLE}` in the
      * code and `prod-subscribers-v1` in the manifest are one table.
      */
@@ -101,16 +101,16 @@ export const storageSemantics = defineBoundarySemantics({
 });
 
 /**
- * `postgresql:invoices`, `aws.dynamodb:editions#by-publication`. The
- * pairing pass has no key to fall back on here, so a reader who types
- * this back at `suss ask`, the pass that indexes accesses by it, and an
- * intent doc that says which store a write reaches all read this one.
+ * The store's label, such as `postgresql:invoices` or
+ * `aws.dynamodb:editions#by-publication`. Storage has no identity key,
+ * so `suss ask`, the pass that indexes accesses, and an intent doc all
+ * refer to a store by this label.
  */
 export function storageLabel(semantics: StorageSemantics): string {
   return `${storageSystemLabel(semantics)}:${storageContainerLabel(semantics)}`;
 }
 
-/** The engine, or the words a report writes where nobody settled one. */
+/** The storage system, or `<unknown engine>` when it is null. */
 export function storageSystemLabel(semantics: StorageSemantics): string {
   return semantics.storageSystem ?? UNKNOWN_ENGINE;
 }
@@ -118,24 +118,24 @@ export function storageSystemLabel(semantics: StorageSemantics): string {
 const UNKNOWN_ENGINE = "<unknown engine>";
 
 /**
- * What an access writes for its columns when it asked for all of them,
- * which is a query with no explicit projection. It covers every column
- * rather than saying which one, so anything comparing column lists has
- * to tell it apart from a list of columns.
+ * The column list an access records when it reads every column, as a
+ * query without an explicit projection does. It means all columns and
+ * does not list any, so code comparing column lists has to handle it
+ * separately.
  */
 export const EVERY_FIELD = "*";
 
-/** The store on its own, which a finding writes without the system. */
+/** The store's label without the storage system, as a finding writes it. */
 export function storageContainerLabel(semantics: StorageSemantics): string {
   const container = semantics.container ?? "<unnamed container>";
-  // A secondary way in gets written after the container it belongs to,
-  // since a query through an index is a different access.
+  // An access path is written after its container, since a query through
+  // an index is a different access.
   const addressed =
     semantics.accessPath === null
       ? container
       : `${container}#${semantics.accessPath}`;
-  // A default-scope store collapses to the bare container; another
-  // scope keeps the part that tells two of them apart.
+  // A store in the default scope is written as the bare container. Any
+  // other scope is kept as a prefix, since it tells two stores apart.
   return semantics.scope === "default"
     ? addressed
     : `${semantics.scope}/${addressed}`;

@@ -1,10 +1,9 @@
 /**
  * The consumer side of a GraphQL boundary.
  *
- * A document sent from a client to a server, identified by its
- * operation name and type. Operations are paired by their own dedicated
- * pass rather than by the generic keyed pairing, so this protocol has no
- * identity key at all.
+ * A document a client sends to a server, identified by its operation
+ * name and type. A dedicated pass pairs operations, and the generic
+ * keyed pairing never sees them, so this protocol has no identity key.
  */
 
 import { z } from "zod";
@@ -32,15 +31,15 @@ export const graphqlOperationSemantics = defineBoundarySemantics({
   behavior: {
     /**
      * An operation gets a data-and-errors document back, which the
-     * GraphQL contract checker reads. Status codes say nothing here.
+     * GraphQL contract checker reads. Status codes do not apply.
      */
     exchangesHttpResponses: false,
     leavesTheProcess: true,
     reportsUnpairedItself: false,
     identityKey: () => null,
-    /** Keyless by design; the dedicated pass pairs it by its document. */
+    /** No key on purpose. The dedicated pass pairs an operation by its document. */
     canPair: () => true,
-    /** "query GetUser". The contract checker pairs it, the key does not. */
+    /** `query GetUser`. Only for display, since the contract checker does the pairing. */
     displayLabel(semantics) {
       return `${semantics.operationType} ${semantics.operationName ?? "<anonymous>"}`;
     },

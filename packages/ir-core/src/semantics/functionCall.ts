@@ -1,10 +1,12 @@
 /**
  * An in-process function call as a boundary.
  *
- * This covers React components, custom-hook boundaries, bare TypeScript
- * function exports, and a package's public surface. Only a package
- * export gets an identity key, because it is the only one of those with
- * a name that two repositories can both refer to.
+ * This covers React components, exported functions and a package's
+ * public surface. A package export gets an identity key, because two
+ * repositories can both refer to its name. An in-repo unit that gives
+ * its module and export name, such as a server action, gets one too.
+ * Components and plain handlers give neither and pair through call
+ * edges.
  */
 
 import { z } from "zod";
@@ -49,32 +51,32 @@ export type FunctionCallSemantics = z.infer<typeof FunctionCallSemanticsSchema>;
 export const functionCallSemantics = defineBoundarySemantics({
   name: "function-call",
   schema: FunctionCallSemanticsSchema,
-  // A call that never leaves the process does not produce a span, and
-  // the conventions do not name one. All of it is ours.
+  // A call inside the process does not produce a span, and the
+  // conventions have no attributes for it.
   semconv: {},
   behavior: {
-    /** A call returns a value, which is not a status and a body. */
+    /** A call returns a value, with no status. */
     exchangesHttpResponses: false,
     leavesTheProcess: false,
     reportsUnpairedItself: false,
     /**
-     * In-repo units (components, bare handlers) are keyless by design
-     * and pair through call edges rather than the keyed pass, so a
-     * missing key is not a boundary nothing can reach.
+     * In-repo units such as components have no key on purpose. They
+     * pair through call edges instead of the keyed pass, so a missing
+     * key does not make them unreachable.
      */
     canPair: () => true,
-    /**
-     * `"fn:<package>::<exportPath>"` when both are set, and
-     * `"fn:<module>::<exportName>"` for an in-repo unit that states its
-     * module, the way a server action does. Components and bare
-     * handlers state neither and have no key at all.
-     */
     rewritePaths(semantics, rewrite) {
       if (semantics.module === undefined) {
         return semantics;
       }
       return { ...semantics, module: rewrite(semantics.module) };
     },
+    /**
+     * `"fn:<package>::<exportPath>"` when both are set, and
+     * `"fn:<module>::<exportName>"` for an in-repo unit that gives its
+     * module, as a server action does. Components and plain handlers
+     * give neither and have no key.
+     */
     identityKey(semantics) {
       if (
         semantics.package !== undefined &&

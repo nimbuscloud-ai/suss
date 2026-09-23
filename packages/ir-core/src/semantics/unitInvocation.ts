@@ -1,16 +1,15 @@
 /**
- * A deployed unit as something other code can invoke by name: a Lambda
- * function, a Cloud Function, a state machine.
+ * A deployed unit that other code invokes by name: a Lambda function, a
+ * Cloud Function, a state machine.
  *
- * What both sides can spell is the platform the unit runs on and the
- * name that platform knows it by, which is exactly a deployable unit,
- * so the two fields come from `DeployableUnitSchema` rather than being
- * written out again. A unit's runtime config channel is the same pair,
- * and that is the point: one deployed thing, two boundaries on it.
+ * Both sides can write the platform the unit runs on and the name the
+ * platform gives it. That pair is a deployable unit, so the two fields
+ * come from `DeployableUnitSchema`. A unit's runtime config channel
+ * uses the same pair, because one deployed unit has both boundaries.
  *
- * An ARN is a spelling of the name rather than the identity. It has an
- * account and a region in it, so a dev ARN and a prod ARN name one
- * function while differing byte for byte.
+ * An ARN is one way to write the name, and it does not identify the
+ * unit. It has an account and a region in it, so a dev ARN and a prod
+ * ARN for one function differ byte for byte.
  */
 
 import { z } from "zod";
@@ -24,9 +23,9 @@ import type { Reference } from "../boundaryName.js";
 
 /**
  * `instanceName` is nullable here and required on the unit itself,
- * because only the provider always knows the name. A call that works
- * its callee out at run time still happened, and recording it with no
- * name says so without pairing it against everything.
+ * because only the provider always knows the name. A call that picks
+ * its callee at run time still happened. Recording it with a null name
+ * keeps the call without pairing it against every unit.
  */
 export const UnitInvocationSemanticsSchema = DeployableUnitSchema.extend({
   name: z.literal("unit-invocation"),
@@ -37,7 +36,7 @@ export type UnitInvocationSemantics = z.infer<
   typeof UnitInvocationSemanticsSchema
 >;
 
-/** Where a callee the source states as a variable says to go and ask. */
+/** The reference for a callee the source gives only as a variable. */
 function calleeReference(semantics: UnitInvocationSemantics): Reference | null {
   return semantics.instanceName === null
     ? null
@@ -68,9 +67,9 @@ export const unitInvocationSemantics = defineBoundarySemantics({
      */
     reportsUnpairedItself: false,
     /**
-     * A callee the source states only as a variable is not a name for
-     * anything until the deployment fills it in, so it keys as nothing
-     * rather than as a bucket that would agree with itself alone.
+     * A callee the source gives only as a variable has no name until the
+     * deployment fills it in. It gets no key, since a key built from the
+     * variable would pair only with itself.
      */
     identityKey(semantics) {
       if (
@@ -94,11 +93,10 @@ export const unitInvocationSemantics = defineBoundarySemantics({
       );
     },
     /**
-     * A call that reads its callee's name out of the environment
-     * reaches whichever resource the template wires that variable to.
-     * The logical id is the answer rather than the deployed name,
-     * because the invoked unit's own summary is keyed by the logical
-     * id and neither side ever writes the other's string.
+     * A call that reads its callee's name from the environment reaches
+     * whichever resource the template wires that variable to. The name
+     * is grounded to the logical id and not the deployed name, because
+     * the invoked unit's own summary is keyed by the logical id.
      */
     groundName(semantics, deployment) {
       const reference = calleeReference(semantics);
