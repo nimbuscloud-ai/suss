@@ -3,10 +3,10 @@
     "packages": 80,
     "packagesWithExports": 80,
     "exports": 1059,
-    "internal": 3850,
-    "consumers": 2188,
-    "pairs": 2176,
-    "unfollowedCalls": 528,
+    "internal": 3856,
+    "consumers": 2190,
+    "pairs": 2178,
+    "unfollowedCalls": 529,
     "findingErrors": 0
   },
   "packages": {
@@ -27,7 +27,7 @@
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 117,
-      "internal": 881,
+      "internal": 885,
       "consumers": 228,
       "unfollowedCalls": 114
     },
@@ -538,9 +538,9 @@
     "packages/runtime/node": {
       "name": "@suss/runtime-node",
       "exports": 12,
-      "internal": 36,
-      "consumers": 30,
-      "unfollowedCalls": 4
+      "internal": 38,
+      "consumers": 32,
+      "unfollowedCalls": 5
     },
     "packages/sql": {
       "name": "@suss/sql",
