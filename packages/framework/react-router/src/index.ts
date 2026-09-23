@@ -1,18 +1,13 @@
-// @suss/framework-react-router: the PatternPack for React Router.
-
 import { z } from "zod";
 
 import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
 /**
- * Modules that export `json`, `data`, and `redirect`. The response
- * helpers moved between packages as Remix became React Router, and a
- * project on any of these versions writes the same call, so all of them
- * count.
- *
- * Prefix matching covers the sub-paths (`@remix-run/node/dist/...`), so
- * only the package roots are listed.
+ * The response helpers moved between packages as Remix became React
+ * Router, and projects on every version write the same call. Prefix
+ * matching covers sub-paths such as `@remix-run/node/dist/...`, so only
+ * the package roots are listed.
  */
 const RESPONSE_MODULES = [
   "react-router",
@@ -24,11 +19,9 @@ const RESPONSE_MODULES = [
 ];
 
 /**
- * Status codes for the `http-errors` package's named constructors. A
- * loader that throws through a project wrapper passes one of these, and
- * the argument's class name is where the status comes from. Kept as a
- * module-scope
- * constant so pack consumers can inspect / extend the mapping.
+ * Status codes for the `http-errors` constructors. A loader that throws
+ * through a project helper passes one of these, and the status comes
+ * from the argument's class name.
  */
 const HTTP_ERRORS_CODES: Record<string, number> = {
   BadRequest: 400,
@@ -54,23 +47,19 @@ const HTTP_ERRORS_CODES: Record<string, number> = {
 };
 
 /**
- * Modules the route element and the router factories come from. A
- * project on v6 imports them from `react-router-dom` and one on v7
- * from `react-router`, and both write the same declarations.
+ * A project on v6 imports the route element and the router factories
+ * from `react-router-dom`, and a project on v7 imports them from
+ * `react-router`. The declarations are the same in both.
  */
 const ROUTER_MODULES = ["react-router", "react-router-dom"];
 
 /**
- * How React Router declares routes in the app itself, rather than in
- * the file layout: a `Route` element carrying a path and the element
- * it renders, nested inside other routes whose paths it joins, with an
- * index route serving its parent's path. `createBrowserRouter` takes
- * the same keys as an array of objects, nesting through `children`
- * where the JSX form nests elements, and `createRoutesFromElements`
- * turns the JSX form into that array.
+ * Routes the app declares in its own code, as nested `Route` elements or
+ * as the same keys in objects passed to `createBrowserRouter`. The README
+ * describes how nested and index routes build their paths.
  *
- * A navigation is a GET, which is what a client calling the same path
- * pairs against.
+ * A navigation is a GET, so the route pairs with a client's GET to the
+ * same path.
  */
 const JSX_ROUTES: Extract<
   DiscoveryPattern["match"],
@@ -89,18 +78,18 @@ const JSX_ROUTES: Extract<
 };
 
 /**
- * What `-f react-router=config.json` may say. The CLI parses the file against it
- * before the factory runs.
+ * The CLI checks a `-f react-router=config.json` file against this schema
+ * before it calls the factory.
  */
 export const optionsSchema = z
   .object({
     /**
-     * Helpers this project throws HTTP errors through, as
-     * `throw myHelper(new HttpError.NotFound(), body)`. React Router
-     * declares no such helper, so nothing is assumed by default and a
-     * project that installs this pack never matches a call on a name some
-     * other codebase happened to use. The thrown argument's class name
-     * gives the status, read against the `http-errors` constructors.
+     * Helpers this project throws HTTP errors through, as in
+     * `throw myHelper(new HttpError.NotFound(), body)`. React Router has
+     * no such helper, so the list is empty by default, and the pack never
+     * matches a call on a name another codebase happened to use. The
+     * status comes from the class name of the thrown argument, looked up
+     * in the `http-errors` constructors.
      */
     errorHelpers: z.array(z.string()).optional(),
   })
@@ -119,32 +108,16 @@ export function reactRouterFramework(
     discovery: [
       {
         kind: "loader",
+        // The README explains why no route comes from the file name.
         match: { type: "namedExport", names: ["loader"] },
-        // No route derived from the filename. React Router only
-        // reads routes that way when the project opted in by
-        // importing @react-router/fs-routes, and the pack language
-        // has no way to say "only when that import is there". A
-        // loader whose route came out of a guess pairs with whatever
-        // consumer matches the guess, which is worse than pairing
-        // with nothing.
-        // Empty gate: route files often re-export `loader` /
-        // `action` from non-router-importing modules
-        // (server-side data functions, shared util re-exports).
-        // A heuristic gate would miss those. The dispatch only
-        // looks at named exports, so paying for the walk on
-        // every file is fine.
+        // Route files often re-export `loader` and `action` from modules
+        // that never import the router. The match reads only named
+        // exports, so running it on every file costs little.
         requiresImport: [],
       },
       {
         kind: "action",
         match: { type: "namedExport", names: ["action"] },
-        // No route derived from the filename. React Router only
-        // reads routes that way when the project opted in by
-        // importing @react-router/fs-routes, and the pack language
-        // has no way to say "only when that import is there". A
-        // loader whose route came out of a guess pairs with whatever
-        // consumer matches the guess, which is worse than pairing
-        // with nothing.
         requiresImport: [],
       },
       {
@@ -153,10 +126,9 @@ export function reactRouterFramework(
         requiresImport: [],
       },
       {
-        // The route tree the app declares in its own JSX, which is how
-        // most React Router apps say what serves which URL. Gated on
-        // the router import, since the whole pattern is written with
-        // names that come out of it.
+        // Most React Router apps declare their routes in JSX. Every name
+        // this pattern matches comes from the router, so it needs the
+        // router import.
         kind: "component",
         match: JSX_ROUTES,
         requiresImport: ROUTER_MODULES,
@@ -170,9 +142,8 @@ export function reactRouterFramework(
         match: {
           type: "functionCall",
           functionName: "json",
-          // These names come from the router, so a same-named helper
-          // the project wrote is a different function, with its own
-          // argument order, and must not match.
+          // A project helper with the same name may order its arguments
+          // differently, so only the router's own helpers match.
           requiresImport: RESPONSE_MODULES,
         },
         extraction: {
@@ -186,9 +157,6 @@ export function reactRouterFramework(
         match: {
           type: "functionCall",
           functionName: "data",
-          // These names come from the router, so a same-named helper
-          // the project wrote is a different function, with its own
-          // argument order, and must not match.
           requiresImport: RESPONSE_MODULES,
         },
         extraction: {
@@ -202,9 +170,6 @@ export function reactRouterFramework(
         match: {
           type: "functionCall",
           functionName: "redirect",
-          // These names come from the router, so a same-named helper
-          // the project wrote is a different function, with its own
-          // argument order, and must not match.
           requiresImport: RESPONSE_MODULES,
         },
         extraction: {
@@ -213,25 +178,22 @@ export function reactRouterFramework(
         },
       },
       {
-        // What a routed component renders. The route says which
-        // URL reaches this component, and the JSX it returns is what
-        // that URL renders, so the pack reads both rather than
-        // reporting the route and nothing behind it.
+        // The route gives the URL and the returned JSX gives what that
+        // URL renders, so a routed component records both.
         kind: "render",
         match: { type: "jsxReturn" },
         extraction: {},
       },
       {
-        // Loaders return data directly
+        // A loader can return plain data without a helper.
         kind: "return",
         match: { type: "returnShape" },
         extraction: {
           body: { from: "argument", position: 0 },
         },
       },
-      // A project's error helper puts the status in the class name of its
-      // argument, so resolve through `argumentConstructor` rather
-      // than taking the argument's raw source text as a status value.
+      // The status is in the class name of the helper's argument, so it is
+      // read through `argumentConstructor`.
       ...(options.errorHelpers ?? []).map((helper) => ({
         kind: "throw" as const,
         match: {
@@ -262,7 +224,6 @@ export function reactRouterFramework(
   };
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "framework",
   package: "@suss/framework-react-router",
