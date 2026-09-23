@@ -1,5 +1,3 @@
-// @suss/framework-ts-rest: PatternPack for ts-rest
-
 import type { PatternPack } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
@@ -22,10 +20,8 @@ export function tsRestFramework(): PatternPack {
           method: { type: "fromContract" },
           path: { type: "fromContract" },
         },
-        // Pre-filter to ts-rest server callers. The `@ts-rest/`
-        // prefix sweeps any of the framework's adapters in one
-        // go (`@ts-rest/express` / `@ts-rest/fastify` /
-        // `@ts-rest/nest` / etc.).
+        // The `@ts-rest` prefix matches every server adapter, such as
+        // `@ts-rest/express` and `@ts-rest/fastify`.
         requiresImport: ["@ts-rest"],
       },
       {
@@ -56,9 +52,9 @@ export function tsRestFramework(): PatternPack {
           body: { from: "property", name: "body" },
         },
       },
-      // A consumer of a ts-rest client finishes the way any function
-      // does, by returning or throwing. Without these two it matches
-      // no terminal at all and its summary says nothing.
+      // A function that uses a ts-rest client ends by returning or
+      // throwing. Without these two it would not match any terminal, and
+      // its summary would have no transitions.
       { kind: "return", match: { type: "returnStatement" }, extraction: {} },
       { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
     ],
@@ -93,7 +89,6 @@ export function tsRestFramework(): PatternPack {
   };
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "framework",
   package: "@suss/framework-ts-rest",
