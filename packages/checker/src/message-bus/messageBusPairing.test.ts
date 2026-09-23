@@ -21,6 +21,8 @@ function consumerSummary(opts: {
   name: string;
   channel: string;
   codeScopePath: string;
+  /** The template's `Handler` module, joined under the code scope. */
+  entry?: string;
   queue?: string;
   messageBus?: "aws_sqs" | "eventbridge";
 }): BehavioralSummary {
@@ -49,7 +51,11 @@ function consumerSummary(opts: {
     gaps: [],
     confidence: { source: "inferred_static", level: "high" },
     metadata: {
-      codeScope: { kind: "codeUri", path: opts.codeScopePath },
+      codeScope: {
+        kind: "codeUri",
+        path: opts.codeScopePath,
+        ...(opts.entry !== undefined ? { entry: opts.entry } : {}),
+      },
       ...(opts.queue !== undefined
         ? { messageBus: { queue: opts.queue } }
         : {}),
@@ -1936,5 +1942,139 @@ describe("what message-bus pairing takes for granted", () => {
     ]);
 
     expect(findings).toEqual([]);
+  });
+});
+
+describe("which code a queue consumer runs", () => {
+  /** A module that posts to one path and imports the given files. */
+  function postingModule(opts: {
+    file: string;
+    path: string;
+    imports: string[];
+  }): BehavioralSummary {
+    const call: Effect = {
+      type: "interaction",
+      binding: {
+        transport: "http",
+        semantics: { name: "rest", method: "POST", path: opts.path },
+        recognition: "@suss/client-web",
+      },
+      callee: "fetch",
+      interaction: { class: "service-call", method: "POST" },
+    };
+    return {
+      ...consumerCodeSummary({
+        name: opts.path,
+        filePath: opts.file,
+        bodyFields: ["id"],
+      }),
+      transitions: [emptyTransition("t-0", [call])],
+      metadata: { moduleImports: opts.imports },
+    };
+  }
+
+  /** Four modules deployed from one directory; only two load in the worker. */
+  const sharedDirectory = [
+    postingModule({
+      file: "src/handlers/orders.ts",
+      path: "/v1/orders",
+      imports: ["src/lib/billing.ts"],
+    }),
+    postingModule({
+      file: "src/lib/billing.ts",
+      path: "/v1/charges",
+      imports: [],
+    }),
+    postingModule({
+      file: "src/handlers/accounts.ts",
+      path: "/v1/accounts",
+      imports: [],
+    }),
+    postingModule({
+      file: "scripts/backfill.ts",
+      path: "/v1/refunds",
+      imports: [],
+    }),
+  ];
+
+  function repeatedPaths(entry: string | undefined, codeScopePath = "") {
+    const findings = checkMessageBus([
+      queueProvider("OrdersQueue"),
+      consumerSummary({
+        name: "OrdersWorker.FromOrders",
+        channel: "OrdersQueue",
+        codeScopePath,
+        ...(entry !== undefined ? { entry } : {}),
+      }),
+      ...sharedDirectory,
+    ]);
+    return findings
+      .filter((f) => f.kind === "repeatUnsafeConsumer")
+      .map((f) => f.consumer.location.file)
+      .sort();
+  }
+
+  it("pairs the consumer with every module in its directory when it states no entry", () => {
+    expect(repeatedPaths(undefined)).toEqual([
+      "scripts/backfill.ts",
+      "src/handlers/accounts.ts",
+      "src/handlers/orders.ts",
+      "src/lib/billing.ts",
+    ]);
+  });
+
+  it("pairs the consumer only with what its handler entry imports", () => {
+    expect(repeatedPaths("src/handlers/orders")).toEqual([
+      "src/handlers/orders.ts",
+      "src/lib/billing.ts",
+    ]);
+  });
+
+  it("falls back to the directory when the entry matches no module", () => {
+    expect(repeatedPaths("src/handlers/missing", "src")).toEqual([
+      "src/handlers/accounts.ts",
+      "src/handlers/orders.ts",
+      "src/lib/billing.ts",
+    ]);
+  });
+
+  it("compares only the bodies read inside the entry's closure", () => {
+    const findings = checkMessageBus([
+      queueProvider("OrdersQueue"),
+      producerSummary({
+        name: "OrderProducer",
+        filePath: "src/producers/orders.ts",
+        channel: "OrdersQueue",
+        bodyFields: ["id"],
+      }),
+      consumerSummary({
+        name: "OrdersWorker.FromOrders",
+        channel: "OrdersQueue",
+        codeScopePath: "",
+        entry: "src/handlers/orders",
+      }),
+      {
+        ...consumerCodeSummary({
+          name: "handler",
+          filePath: "src/handlers/orders.ts",
+          bodyFields: ["id"],
+        }),
+        metadata: { moduleImports: [] },
+      },
+      {
+        ...consumerCodeSummary({
+          name: "handler",
+          filePath: "src/handlers/refunds.ts",
+          bodyFields: ["refundId"],
+        }),
+        metadata: { moduleImports: [] },
+      },
+    ]);
+
+    expect(
+      findings.filter(
+        (f) => f.kind === "boundaryFieldUnknown" && f.aspect === "receive",
+      ),
+    ).toEqual([]);
   });
 });

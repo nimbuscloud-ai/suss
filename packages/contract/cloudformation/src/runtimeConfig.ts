@@ -337,7 +337,11 @@ function readEcsEnvironmentList(raw: unknown): string[] {
   return names.sort();
 }
 
-function readCodeScope(resource: CloudFormationResource): {
+/**
+ * Where a function's code is and which file it enters. A queue consumer
+ * on the function states the same scope, so it reads it here too.
+ */
+export function readCodeScope(resource: CloudFormationResource): {
   kind: "codeUri" | "unknown";
   path?: string;
   entry?: string;

@@ -60,7 +60,7 @@
 // to consumers.
 
 import { messageBusBinding, withMessageBusMetadata } from "@suss/behavioral-ir";
-import { codeScopePath, formatChannel } from "@suss/ir-core";
+import { formatChannel } from "@suss/ir-core";
 import {
   type PatternReduction,
   reduceEventPattern,
@@ -70,6 +70,8 @@ import {
   resolveQueueChannel,
   resolveTopicChannel,
 } from "@suss/manifest-aws";
+
+import { readCodeScope } from "./runtimeConfig.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -454,20 +456,6 @@ function buildTopicProviderSummary(
   };
 }
 
-/**
- * A consumer's codeScope, mirroring the runtime-config summary's shape
- * so a downstream pairing pass can scope code reads to it. Shared by
- * every message-bus consumer builder (SQS, EventBridge, SNS).
- */
-function resolveCodeScope(
-  lambdaResource: CloudFormationResource,
-): { kind: "codeUri"; path: string } | { kind: "unknown" } {
-  const codeUri = lambdaResource.Properties?.CodeUri;
-  return typeof codeUri === "string"
-    ? { kind: "codeUri", path: codeScopePath(codeUri) }
-    : { kind: "unknown" };
-}
-
 interface LambdaConsumerOpts {
   lambdaId: string;
   lambdaResource: CloudFormationResource;
@@ -487,7 +475,7 @@ interface LambdaConsumerOpts {
 function buildLambdaConsumerSummary(
   opts: LambdaConsumerOpts,
 ): BehavioralSummary {
-  const codeScope = resolveCodeScope(opts.lambdaResource);
+  const codeScope = readCodeScope(opts.lambdaResource);
   return {
     kind: "consumer",
     location: {
@@ -967,7 +955,7 @@ function buildRuleProviderSummary(opts: {
 function buildEventBridgeConsumerSummary(
   opts: EventBridgeConsumerOpts,
 ): BehavioralSummary {
-  const codeScope = resolveCodeScope(opts.lambdaResource);
+  const codeScope = readCodeScope(opts.lambdaResource);
   const nameSuffix =
     opts.detailType !== undefined
       ? `#${opts.detailType}`
@@ -1205,7 +1193,7 @@ function sqsDeliveryOf(
 function buildSnsLambdaConsumerSummary(
   opts: SnsLambdaConsumerOpts,
 ): BehavioralSummary {
-  const codeScope = resolveCodeScope(opts.lambdaResource);
+  const codeScope = readCodeScope(opts.lambdaResource);
   const resolution = reduceFilterPolicy(opts.filterPolicy);
   const delivery = sqsDeliveryOf(opts.sqsSubscription);
   return {
@@ -1444,7 +1432,7 @@ interface S3LambdaConsumerOpts {
 function buildS3LambdaConsumerSummary(
   opts: S3LambdaConsumerOpts,
 ): BehavioralSummary {
-  const codeScope = resolveCodeScope(opts.lambdaResource);
+  const codeScope = readCodeScope(opts.lambdaResource);
   const resolution = reduceS3Filter(opts.filter);
   const events = eventList(opts.event);
   return {

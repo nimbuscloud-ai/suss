@@ -195,6 +195,59 @@ describe("collectFlowInputs", () => {
       },
     ]);
   });
+
+  it("gives a route only to the unit whose handler entry imports it when two share a directory", () => {
+    const withEntry = (instanceName: string, entry: string) => {
+      const declared = unitSummary(instanceName, "");
+      return {
+        ...declared,
+        metadata: { codeScope: { kind: "codeUri" as const, path: "", entry } },
+      };
+    };
+    const importing = (summary: BehavioralSummary, imports: string[]) => ({
+      ...summary,
+      metadata: { moduleImports: imports },
+    });
+
+    const inputs = collectFlowInputs([
+      withEntry("Task/app", "src/app/main"),
+      withEntry("Task/admin", "src/admin/main"),
+      importing(
+        restRoute({
+          file: "src/app/main.ts",
+          name: "m",
+          method: null,
+          path: null,
+        }),
+        ["src/app/routes.ts"],
+      ),
+      importing(
+        restRoute({
+          file: "src/admin/main.ts",
+          name: "n",
+          method: null,
+          path: null,
+        }),
+        [],
+      ),
+      importing(
+        restRoute({
+          file: "src/app/routes.ts",
+          name: "r",
+          method: "GET",
+          path: "/a",
+        }),
+        [],
+      ),
+    ]);
+
+    const routes = inputs.claims.find(
+      (claim) => claim.ref === "src/app/routes.ts::r",
+    );
+    expect(routes?.units).toEqual([
+      { scope: DOCUMENT, instanceName: "Task/app" },
+    ]);
+  });
 });
 
 describe("admission dispatch", () => {
