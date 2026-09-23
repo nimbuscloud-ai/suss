@@ -1,13 +1,14 @@
 /**
- * Dependency stubs: checked-in declarations about packages the repo's
- * code cannot state, read from `suss/stubs/` at the project root.
+ * Dependency stubs: checked-in files in `suss/stubs/` that describe a
+ * package the project's own code cannot describe, such as a wrapper that
+ * composes a framework decorator.
  *
- * v1 is a projection, per design/proposals/dependency-stubs.md: each
- * statement routes into the pack option that consumes the same fact
- * today, before the pack factories run, so no pack or adapter
- * changes. The merged options flow through the same digest pack
- * config does, so an edited stub invalidates the extraction cache the
- * same way. YAML and JSON both parse, one schema.
+ * The CLI turns each statement into an entry in the pack option that
+ * already reads the same fact, before the pack factories run. Packs and
+ * adapters never see a stub. Because the merged options go into the same
+ * digest as pack config, editing a stub invalidates the extraction cache
+ * the same way editing config does. Stubs may be YAML or JSON, with one
+ * schema for both.
  */
 
 import fs from "node:fs";
@@ -29,9 +30,9 @@ const StatementSchema = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal("extends-base"),
-    /** The class the package defines, which a project spells as its superclass. */
+    /** A class the package defines, which project classes use as their superclass. */
     class: z.string(),
-    /** The root class that class descends from, which decides the pack. */
+    /** The framework root class that `class` descends from. It picks the pack. */
     extends: z.string(),
   }),
   z.object({
@@ -48,7 +49,7 @@ const StatementSchema = z.discriminatedUnion("kind", [
 
 const StubFileSchema = z.object({
   package: z.string(),
-  /** Who wrote it and from what, for a reader weighing the claims. */
+  /** Who wrote the stub, so a reader can judge how far to trust it. */
   authored: z.string().optional(),
   from: z.string().optional(),
   statements: z.array(StatementSchema).min(1),
@@ -99,11 +100,11 @@ export function loadStubs(root: string): StubFile[] {
 }
 
 /**
- * A stub keeps describing the version its author read while the
- * project moves to newer ones, so a mismatch between the version in
- * `from:` and the installed package is worth a line. Null when `from`
- * has no version in it, the package is not installed where the loader
- * can see it, or the two agree.
+ * A stub describes the package version its author read, and the project
+ * may since have upgraded. When the version in `from:` differs from the
+ * installed one, this returns a line asking the user to recheck the stub.
+ * Returns null when `from` has no version, the package is not installed
+ * under the project root, or the versions match.
  */
 function driftNote(root: string, stub: StubFile): string | null {
   const fromVersion = stub.from?.match(/\d+\.\d+\.\d+[-+.\w]*/)?.[0];
@@ -148,9 +149,9 @@ function append(
 }
 
 /**
- * Which packs consume a composed decorator, by the decorator it
- * composes. The table is CLI assembly knowledge, the same layer that
- * already maps `-f` names to packages.
+ * The packs that read a composed decorator, keyed by the framework
+ * decorator it composes. The table is in the CLI because the CLI is where
+ * packs get assembled, the same place `-f` names map to packages.
  */
 const DECORATOR_CONSUMERS: Record<string, string[]> = {
   "@nestjs/common Controller": ["nestjs-rest", "nestjs-microservices"],
@@ -167,10 +168,10 @@ const GRAPHQL_RUBY_ROOTS = new Set(GRAPHQL_RUBY_ROOT_CLASS_NAMES);
 const RAILS_ROOTS = new Set(RAILS_ROOT_CLASS_NAMES);
 
 /**
- * Which Ruby packs read a base class, decided by the root class a stub
- * says it descends from. A root in neither pack's list, such as another
- * class the project wrote, leaves the pack undecided, so both get it and
- * the one whose ancestry never reaches the class never matches.
+ * The Ruby packs that get a stub's base class, chosen by the root class
+ * the stub says it descends from. When the root is in neither pack's
+ * list, both packs get the class. The pack whose framework the class does
+ * not descend from never matches it, so the extra entry is harmless.
  */
 function rubyPacksExtending(rootClassName: string): string[] {
   if (GRAPHQL_RUBY_ROOTS.has(rootClassName)) {
@@ -238,12 +239,12 @@ function routeStatement(
 }
 
 /**
- * Option keys only a dependency stub may state, per pack. The overlay
- * above writes these same keys, so a pack factory still reads them;
- * what the CLI refuses is a project's own config file setting one.
+ * Option keys, per pack, that only a dependency stub may set. The stub
+ * overlay writes these keys and pack factories still read them. The CLI
+ * refuses them only in a project's own config file.
  *
- * An option that went because suss reads the same fact off the code is
- * refused through the retired table instead.
+ * An option that suss now reads from the code instead is refused through
+ * the retired-options table.
  */
 const STUB_ONLY_OPTIONS: Record<string, readonly string[]> = {
   "nestjs-rest": ["classDecorators"],
@@ -262,16 +263,16 @@ export function stubOnlyOptionsOf(packName: string): readonly string[] {
   return STUB_ONLY_OPTIONS[packName] ?? [];
 }
 
-/** The reverse of `RE_EXPORT_CONSUMERS`: which `of:` value a wrapperModules pack's own re-exports statement takes. */
+/** The reverse of `RE_EXPORT_CONSUMERS`, for the example in a refusal message. */
 const WRAPPER_MODULE_REEXPORTS: Record<string, string> = {
   fastapi: "fastapi",
   "flask-restx": "flask_restx",
 };
 
 /**
- * wrapperModules matches a project module exactly, one stub per
- * module the project imports, so the refusal shows the shape rather
- * than pointing at the general stub docs alone.
+ * wrapperModules matches a project module by its exact name, so each
+ * wrapper module the project imports from needs its own stub. The refusal
+ * prints an example stub, because the general stub docs do not show that.
  */
 function wrapperModulesExample(packName: string): string {
   const reExports = WRAPPER_MODULE_REEXPORTS[packName];
@@ -287,7 +288,7 @@ function wrapperModulesExample(packName: string): string {
   );
 }
 
-/** What a project reads when its pack config sets one of them. */
+/** The error message for a project config that sets a stub-only option. */
 export function stubOnlyOptionRefusal(
   used: readonly string[],
   packName: string,
@@ -303,9 +304,9 @@ export function stubOnlyOptionRefusal(
 }
 
 /**
- * The options a pack factory gets, with the overlay's items appended
- * under each routed key. The stated options come first, so a project
- * that configures the same option by hand keeps its entries.
+ * A pack's options with the stub overlay's items appended under each key.
+ * The options from config come first, so entries a project set by hand
+ * are kept.
  */
 export function withStubOptions(
   packName: string,

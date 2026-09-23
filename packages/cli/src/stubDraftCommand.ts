@@ -1,15 +1,15 @@
 /**
- * `suss infer stub <package>`: turn the project's observed use of a
- * package suss cannot read into a stub skeleton for an author to fill
- * in. TypeScript evidence is every call site attributed to the
- * package, with the argument shapes seen there. Python evidence is
- * every import of the package or a submodule of it, since a Python
- * decorator pattern matches a wrapper module exactly. Ruby evidence is
- * every `require` of the package and every class whose superclass is
- * spelled from it, since graphql-ruby's `baseClassNames` matches a
- * superclass by its literal written name. In every case the semantic
- * blanks are what the author supplies from the package's own source.
- * The output lands in `suss/stubs/`, where the loader already reads.
+ * `suss infer stub <package>` drafts a stub for a package suss cannot
+ * read, from how the project uses it. An author then fills in the blanks
+ * from the package's own source.
+ *
+ * What counts as use differs by language. In TypeScript it is each call
+ * into the package, with the arguments seen there. In Python it is each
+ * import of the package or one of its submodules, because a Python pack
+ * matches a wrapper module by its exact name. In Ruby it is each
+ * `require` of the package and each class whose superclass comes from it,
+ * because `baseClassNames` matches a superclass by the name written in
+ * the source. Drafts go to `suss/stubs/`, where the stub loader reads.
  */
 
 import fs from "node:fs";
@@ -128,7 +128,7 @@ const FASTAPI_NAMES = new Set([
   "Path",
 ]);
 
-/** Which of the two Python wrapper packs a module's observed names belong to, or "" when they do not all agree on one. */
+/** The framework every name imported from a module belongs to, or "" when the names do not all come from one of the two. */
 function pythonReExportGuess(names: readonly string[]): string {
   if (names.length > 0 && names.every((name) => FLASK_RESTX_NAMES.has(name))) {
     return "flask_restx";
@@ -165,7 +165,7 @@ function pythonStatementLines(evidence: PythonImportEvidence): string[] {
   ];
 }
 
-/** A stub matches this exact module, so one draft file covers one imported module. */
+/** A stub matches one module by its exact name, so each imported module gets its own draft. */
 export function draftPythonYaml(
   moduleName: string,
   evidence: PythonImportEvidence,
@@ -187,18 +187,17 @@ function pythonStubFileName(moduleName: string): string {
   return `${moduleName.replaceAll(".", "-")}.yaml`;
 }
 
-/** Every root class a shipped Ruby pack's own ancestry walk already stops at, across every pack an `extends-base` statement can reach. */
+/** The root classes of every Ruby pack an `extends-base` statement can feed. */
 const KNOWN_RUBY_ROOT_CLASS_NAMES = new Set([
   ...GRAPHQL_RUBY_ROOT_CLASS_NAMES,
   ...RAILS_ROOT_CLASS_NAMES,
 ]);
 
 /**
- * The ancestry walk stops at one of a pack's own root classes without
- * recording an entry for it, so `baseClassNames` can never match one
- * and a stub with it in changes nothing. Only a superclass outside
- * that set, an unread wrapper a project's own classes extend, is worth
- * drafting.
+ * The superclasses a stub could change anything for. A pack's ancestry
+ * walk stops at its own root classes without recording them, so
+ * `baseClassNames` never matches a root class, and a stub that lists one
+ * does nothing. Only a wrapper class outside that set is drafted.
  */
 function actionableExtendsSites(
   evidence: RubyStubEvidence,
@@ -208,7 +207,7 @@ function actionableExtendsSites(
   );
 }
 
-/** The author fills this from the package's own source, so every draft writes the same blank and the same list of roots to pick from. */
+/** Only the package's source can say which root a wrapper descends from, so every draft leaves it blank and lists the choices. */
 const BLANK_EXTENDS_LINE = `    extends: ""  # the class this ultimately extends, e.g. ${[...KNOWN_RUBY_ROOT_CLASS_NAMES].join(", ")}`;
 
 function rubyBlankStatementLines(evidence: RubyStubEvidence): string[] {
@@ -424,7 +423,7 @@ const DRAFT_BY_LANGUAGE: Record<
   ruby: rubyDraftResult,
 };
 
-/** Null when the project has no evidence for the package: no calls into it, no imports of it, no class extending it. */
+/** Returns null when the project never calls, imports or extends the package. */
 export async function stubDraftResult(
   options: Pick<StubDraftOptions, "package" | "tsconfig" | "dir">,
 ): Promise<StubDraftResult | null> {

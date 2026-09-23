@@ -1,14 +1,16 @@
 /**
- * What a branch turned on, for the `when` of a drafted intent document.
+ * The `when` of each outcome in a drafted intent document: the conditions
+ * a branch checked before it ended.
  *
- * A clause says which boundary the guard read and what it came back
- * with, in the verbs `results` uses, so `reads` means one thing in the
- * document and the line survives a rename of the variable the source
- * used. `boundaryGuardsOf` in `@suss/behavioral-ir` does the join.
+ * A clause gives the boundary the guard read and what the guard found
+ * there, using the same verbs as `results`. That way `reads` means one
+ * thing across the document, and the clause stays correct after the
+ * source renames a local variable. `boundaryGuardsOf` in `@suss/behavioral-ir`
+ * matches guards to boundary calls.
  *
- * A guard whose subject is neither a boundary nor an input keeps the
- * sentence `saidPlainly` writes for it. A fall-through branch states
- * its own guards; `OTHERWISE` covers the one case that cannot.
+ * A guard on anything other than a boundary result or an input is written
+ * as a sentence by `saidPlainly`. A fall-through branch lists its own
+ * guards, and falls back to `OTHERWISE` only when the summary has none.
  */
 
 import {
@@ -36,14 +38,13 @@ import type {
 import type { WhenClause } from "@suss/intent-ir";
 
 /**
- * The last resort for a fall-through branch, for one whose guards the
- * summary never recorded. A branch whose guards it did record says what
- * they were, because a word that means "not the ones above" changes
- * what it claims when somebody inserts a transition over it.
+ * Used only for a fall-through branch whose guards the summary did not
+ * record. Where the guards are known they are written out, because
+ * "otherwise" silently changes meaning when someone adds a branch above.
  */
 const OTHERWISE = "otherwise";
 
-/** What a branch nothing guards is. */
+/** The `when` of the first branch when it has no guards. */
 const ALWAYS = "every call reaches this outcome";
 
 export function draftedWhen(
@@ -52,8 +53,8 @@ export function draftedWhen(
   isFirst: boolean,
   deployment: Deployment,
 ): string | WhenClause[] {
-  // A clause spells its boundary the way the rest of the document
-  // does, so a store the template gives a name to gets that name here.
+  // Ground each binding against the deployment, so a store that the
+  // template gives a name gets the same label here as in `results`.
   const named = boundaryGuardsOf(transition, boundaryCalls(summary)).map(
     (guard) => ({
       ...guard,
@@ -69,16 +70,15 @@ export function draftedWhen(
   if (clauses.length === 0) {
     return isFirst ? ALWAYS : OTHERWISE;
   }
-  // One guard nothing structural came out of reads better on the line
-  // than under a list of one.
+  // A single plain-sentence guard is written inline, not as a list of one.
   const only = clauses[0];
   return clauses.length === 1 && typeof only === "string" ? only : clauses;
 }
 
 /**
- * One clause per boundary a branch turned on. Guards that read further
- * into the same result narrow it with `where`, which is what the else
- * arm of a lookup does: the row was there, and something about it held.
+ * One clause per boundary the branch's guards read. Guards that look
+ * deeper into the same result go under `where`. That covers the else arm
+ * of a lookup, where the row was found and one of its fields was checked.
  */
 function boundaryClauses(guards: BoundaryGuard[]): WhenClause[] {
   const clauses: WhenClause[] = [];
@@ -88,8 +88,8 @@ function boundaryClauses(guards: BoundaryGuard[]): WhenClause[] {
       (g): g is BoundaryGuard & { polarity: Polarity } =>
         g.path.length === shortest && g.polarity !== null,
     );
-    // What `finds` already covered is what a `where` beside it leaves
-    // out, so `settledAt is set` rather than the whole read back.
+    // A `where` drops the path that `finds` already covered, so it reads
+    // `settledAt is set` instead of repeating the whole call.
     const shared = says?.path ?? [];
     const where = group
       .filter((g) => g !== says)
@@ -105,9 +105,9 @@ function boundaryClauses(guards: BoundaryGuard[]): WhenClause[] {
 }
 
 /**
- * The guard as a sentence, with the part the clause already said cut
- * off. It renders the whole condition, negation included, so the else
- * arm of a chain says `settledAt is missing` rather than the opposite.
+ * The guard as a sentence, minus the path the clause already gave. The
+ * whole condition is rendered, negation included, so the else arm of a
+ * chain comes out as `settledAt is missing` and keeps its polarity.
  */
 function saidOf(guard: BoundaryGuard, shared: number): string {
   const rest = guard.path.slice(shared);
@@ -135,8 +135,8 @@ function groupByBoundary(
 }
 
 /**
- * A guard that doesn't read a boundary. One that reads what the caller
- * sent says which input; anything else keeps its sentence.
+ * A guard that does not read a boundary. A guard on the caller's input
+ * becomes an `input` clause. Anything else stays a plain sentence.
  */
 function unnamedClause(condition: Predicate): WhenClause {
   const subject = guardSubject(condition);
@@ -161,10 +161,9 @@ const INPUT_STATE: Record<string, string | undefined> = {
 // ---------------------------------------------------------------------------
 
 /**
- * Each guard reads as a sentence about the value the code points at,
- * and that value keeps the spelling the code gave it, because turning
- * `invoiceId` into "the invoice id" would guess at what the author
- * calls it in prose.
+ * Each guard becomes a sentence about the value it checks, with the value
+ * written as the code writes it. Turning `invoiceId` into "the invoice id"
+ * would guess at what the author calls it in prose.
  */
 const PLAINLY: DispatchTable<
   Predicate,
@@ -197,15 +196,14 @@ const PLAINLY: DispatchTable<
       .join(p.op === "and" ? " and " : " or "),
   negation: (p) => (negated, said) =>
     dispatchByType(PLAINLY, p.operand)(!negated, said),
-  // A guard nothing above reads keeps the source text, which is what
-  // the person curating the file rewrites.
+  // An opaque guard keeps its source text for the curator to rewrite.
   opaque: (p) => (negated) =>
     negated ? `not (${p.sourceText.trim()})` : p.sourceText.trim(),
 };
 
 /**
- * `path` is what the clause around this one already said, so the
- * sentence writes what comes after it: `settledAt is set` rather than
+ * `path` is the part the enclosing clause already gave, and the sentence
+ * starts after it: `settledAt is set` instead of
  * `dynamo.send().Item.settledAt is set`.
  */
 export function saidPlainly(
@@ -227,8 +225,8 @@ function afterTheShared(path: string[]): (ref: ValueRef) => string {
 
 /**
  * `typeof x !== "string"` arrives as a comparison whose left side is
- * source text, so the general form would write half a sentence. Null
- * when the comparison is anything else.
+ * unresolved source text, and the general comparison sentence would come
+ * out garbled. Returns null for any other comparison.
  */
 function aTypeofCheck(
   p: Extract<Predicate, { type: "comparison" }>,

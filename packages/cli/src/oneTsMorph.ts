@@ -1,20 +1,16 @@
 /**
- * Whether every pack in this run sees the same ts-morph the adapter
- * parses with.
+ * Checks that every pack in a run imports the same ts-morph that the
+ * TypeScript adapter parses with.
  *
- * A pack asks ts-morph questions about nodes the adapter's parser made:
- * `Node.isPropertyAccessExpression(callee)` and the like. Each of those
- * compares the node's kind number against the `SyntaxKind` of whichever
- * copy the pack imported, and TypeScript moves those numbers between
- * versions. So a pack holding a second copy says no to every question,
- * never matches a call, and reports no error, which reads exactly like
- * a project that does not use the library.
+ * A pack tests nodes with calls such as `Node.isPropertyAccessExpression`,
+ * which compare the node's kind number with the `SyntaxKind` of the copy
+ * the pack imported. TypeScript renumbers those kinds between versions,
+ * so a pack with a second copy never matches a call. No error is raised,
+ * and the output looks like a project that does not use the library.
  *
- * npm installs a second copy whenever a pack's peer range and the
- * adapter's dependency range can be satisfied by two different
- * versions. The published packages did that until the ranges were made
- * to agree, and a user's own ts-morph can still do it, so the run says
- * what it found rather than going quiet.
+ * npm installs a second copy when a pack's peer range and the adapter's
+ * dependency range resolve to different versions. A user's own ts-morph
+ * can cause this, so the run prints a warning when it finds one.
  */
 
 import fs from "node:fs";
@@ -33,7 +29,7 @@ export interface TsMorphCheck {
   others: SecondCopy[];
 }
 
-/** The ts-morph a file at this path would import, by version. */
+/** The version of ts-morph that a file at this path would import. */
 function versionSeenFrom(fromFile: string): string | null {
   try {
     const manifest = createRequire(fromFile).resolve("ts-morph/package.json");
@@ -44,7 +40,7 @@ function versionSeenFrom(fromFile: string): string | null {
   }
 }
 
-/** Where a pack's own files are, for resolving what it imports. */
+/** The path of a pack's entry file, so its imports can be resolved from there. */
 function packEntry(specifier: string): string | null {
   try {
     return fileURLToPath(import.meta.resolve(specifier));
@@ -54,9 +50,9 @@ function packEntry(specifier: string): string | null {
 }
 
 /**
- * The ts-morph each pack resolves, against the one this run parses
- * with. A pack whose copy cannot be read is left out, since a
- * diagnostic that guesses is worse than one that stays quiet.
+ * Compares the ts-morph each pack resolves with the one this run parses
+ * with. A pack whose ts-morph version cannot be read is left out, so the
+ * warning never reports a mismatch it could not confirm.
  */
 export function checkOneTsMorph(
   packs: ReadonlyArray<{ name: string; specifier: string }>,
@@ -82,7 +78,7 @@ export function checkOneTsMorph(
   return { ours, others };
 }
 
-/** What to print when a pack found a different ts-morph, or "". */
+/** The warning to print when a pack imports a different ts-morph, or "" when none does. */
 export function formatSecondCopies(check: TsMorphCheck): string {
   if (check.ours === null || check.others.length === 0) {
     return "";

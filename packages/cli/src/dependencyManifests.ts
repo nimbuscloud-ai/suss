@@ -1,17 +1,16 @@
 /**
- * The libraries a Python or Ruby project says it depends on, and the
- * places suss looked and could not tell.
+ * Reads the libraries a Python or Ruby project declares, and reports the
+ * manifests it could not read.
  *
- * For package.json this is one call to JSON.parse. The other two
- * ecosystems are harder: requirements files have a whole grammar,
- * pyproject spells the same list three ways depending on which tool
- * wrote it, and setup.py and Gemfile are programs that compute their
- * dependencies rather than listing them. The README has a table of
- * what each format takes to read.
+ * For package.json this is one call to JSON.parse. Python and Ruby are
+ * harder. Requirements files have a whole grammar, pyproject writes the
+ * same list three ways depending on which tool wrote it, and setup.py and
+ * a Gemfile are programs that compute their dependencies. The package's
+ * DESIGN.md has a table of what each format takes to read.
  *
- * So each reader returns two things, the names it managed to read and
- * the files it could not, because coming back with no suggestions looks
- * exactly like finding nothing to suggest.
+ * Each reader returns the names it read and the files it could not read.
+ * Without the second list, a project whose manifest suss failed to read
+ * would look the same as a project with nothing to suggest.
  */
 
 import fs from "node:fs";
@@ -30,16 +29,16 @@ import type { Reading } from "@suss/extractor";
 import type { Requirement } from "pip-requirements-js";
 
 export interface DeclaredDependency {
-  /** Normalized library name: lower case, with `_` and `.` written as `-`. */
+  /** Lower case, with `_` and `.` written as `-`. */
   name: string;
   /** The manifest that listed it, relative to the project root. */
   where: string;
 }
 
 export interface UnreadDependencies {
-  /** The file, relative to the project root. */
+  /** Relative to the project root. */
   where: string;
-  /** Why it could not be read, as a sentence a person can act on. */
+  /** Why the file could not be read, as a sentence that tells the user what to do. */
   reason: string;
 }
 
@@ -48,7 +47,7 @@ export interface DeclaredDependencies {
   unread: UnreadDependencies[];
 }
 
-/** PEP 503 normalization. */
+/** Normalizes per PEP 503, so `Flask-RESTX` and `flask_restx` compare equal. */
 export function normalizePythonName(name: string): string {
   return name.toLowerCase().replace(/[-_.]+/g, "-");
 }
@@ -162,7 +161,7 @@ function readRequirementLine(
     return empty();
   }
 
-  // An editable install points at a directory, not at a library.
+  // An editable install points at a directory, and the line has no library name.
   if (text.startsWith("-e ") || text.startsWith("--editable ")) {
     return {
       named: [],
@@ -179,7 +178,7 @@ function readRequirementLine(
   try {
     requirement = parsePipRequirementsLine(text);
   } catch {
-    // A pip setting is not a library, so skipping it hides nothing.
+    // A pip setting such as `--index-url` declares no library, so skipping it loses nothing.
     if (text.startsWith("-")) {
       return empty();
     }
@@ -279,7 +278,7 @@ function joinContinuations(contents: string): string[] {
   return joined;
 }
 
-/** pyproject spells dependencies three ways: standard, and Poetry's two. */
+/** Reads the standard `project.dependencies` list and both of Poetry's tables. */
 function readPyproject(root: string, file: string): DeclaredDependencies {
   const where = path.relative(root, file);
   const read = readTomlFile(file);
@@ -338,7 +337,7 @@ function readPyproject(root: string, file: string): DeclaredDependencies {
   return { named, unread };
 }
 
-/** Pipfile is TOML, and its `packages` tables are keyed by library name. */
+/** A Pipfile's `packages` and `dev-packages` tables are keyed by library name. */
 function readPipfile(root: string, file: string): DeclaredDependencies {
   const where = path.relative(root, file);
   const read = readTomlFile(file);
@@ -361,8 +360,9 @@ function readPipfile(root: string, file: string): DeclaredDependencies {
 }
 
 /**
- * setup.cfg's `install_requires`, which is usually requirement lines
- * but may point at a file or a package attribute instead.
+ * Reads `install_requires` from setup.cfg. It is usually requirement
+ * lines, but it can point at a file or a package attribute instead, and
+ * the reader cannot see the list in either case.
  */
 function readSetupCfg(root: string, file: string): DeclaredDependencies {
   const where = path.relative(root, file);
@@ -405,10 +405,7 @@ function readSetupCfg(root: string, file: string): DeclaredDependencies {
   return { named, unread };
 }
 
-/**
- * setup.py is a program, so only an `install_requires` list written out
- * in the file can be read.
- */
+/** setup.py is a program, so only an `install_requires` list written out literally can be read. */
 function readSetupPy(root: string, file: string): DeclaredDependencies {
   const where = path.relative(root, file);
   const reading = readInstallRequires(fs.readFileSync(file, "utf8"));
@@ -474,8 +471,8 @@ export function readInstallRequires(source: string): Reading<string[]> {
   const strings = [...inside.matchAll(/["']([^"']*)["']/g)].map(
     (match) => match[1] ?? "",
   );
-  // A non-string element means part of the list is computed, so what
-  // suss can see here is not the whole list.
+  // Anything left besides strings means part of the list is computed, so
+  // the strings suss can see are not the whole list.
   const leftover = inside
     .replace(/["'][^"']*["']/g, "")
     .replace(/[\s,]/g, "")
@@ -505,7 +502,7 @@ function nameOfRequirement(requirement: string): string | null {
   }
 }
 
-/** Read from Gemfile.lock: the Gemfile itself is a program. */
+/** Reads Gemfile.lock, because a Gemfile is a Ruby program and its gem list may be computed. */
 export function readRubyDependencies(root: string): DeclaredDependencies {
   const lock = path.join(root, "Gemfile.lock");
   if (fs.existsSync(lock)) {
@@ -528,8 +525,10 @@ export function readRubyDependencies(root: string): DeclaredDependencies {
   return empty();
 }
 
-/** DEPENDENCIES only, because the GEM section below it also contains
- * transitive gems the project never asked for. */
+/**
+ * Reads only the DEPENDENCIES section, because the GEM section also lists
+ * transitive gems the project never asked for.
+ */
 function readGemfileLock(root: string, file: string): DeclaredDependencies {
   const where = path.relative(root, file);
   const contents = fs.readFileSync(file, "utf8");

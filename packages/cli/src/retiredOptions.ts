@@ -1,18 +1,15 @@
 /**
- * Options a pack used to take and no longer does, because suss reads
- * the same fact off the project's own code.
+ * Pack options that suss no longer accepts, because it now reads the same
+ * fact from the project's code.
  *
- * The pack schema drops the key, so without this table a project that
- * still sets one is told it is not an option this pack takes, and goes
- * looking for a typo. What they need instead is the sentence saying
- * what suss does now, and that they can delete the entry. None of
- * these is a dependency fact, so none of them points at a stub.
+ * The pack schema no longer lists these keys. Without this table, a
+ * project that still sets one would be told the pack has no such option,
+ * and the user would go looking for a typo. The messages here say what
+ * suss does instead and that the entry can be deleted. None of these
+ * options describes a dependency, so none of the messages suggests a stub.
  */
 
-/**
- * Every HTTP pack retired the same option, so the sentence is written
- * once and each pack points at it.
- */
+// The three HTTP packs dropped the same option, so they share one message.
 const REGISTRATION_HELPERS =
   "suss reads the helper itself. Before extraction it finds every function " +
   "your code hands its app to, reads what each one registers in terms of " +
@@ -42,7 +39,7 @@ const RETIRED: Record<string, Record<string, string>> = {
   },
 };
 
-/** Which of these keys the pack used to take, in the order given. */
+/** The keys in `keys` that the pack no longer accepts, in the order given. */
 export function retiredOptionsUsed(
   packName: string,
   keys: readonly string[],
@@ -54,7 +51,7 @@ export function retiredOptionsUsed(
   return keys.filter((key) => key in retired);
 }
 
-/** One line per retired key somebody still has in a config file. */
+/** One error line for each retired key that a config file still sets. */
 export function retiredOptionRefusal(
   packName: string,
   used: readonly string[],
@@ -63,7 +60,7 @@ export function retiredOptionRefusal(
   return used.map((key) => `${key} is gone. ${retired[key] ?? ""}`.trimEnd());
 }
 
-/** What somebody setting one of these reads, loudly, on every run. */
+/** The warning printed on every run while a config still sets a retired key. */
 export function retiredOptionWarning(
   packName: string,
   used: readonly string[],

@@ -1,8 +1,8 @@
 /**
- * Gap warnings under an answer, one `warning:` line per unit in the
- * compiler's file:line format, so a reader knows where the answer
- * might be missing something without wading through prose. The full
- * gap records stay in --json.
+ * Warnings printed under an answer to `suss ask`, one line per unit that
+ * recorded a gap. Each line uses a compiler's `warning: file:line` format,
+ * so the reader can jump to the place where the answer may be incomplete.
+ * The full gap records appear only in --json output.
  */
 
 import type { BehavioralSummary, Gap } from "@suss/behavioral-ir";

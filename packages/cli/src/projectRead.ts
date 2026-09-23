@@ -1,11 +1,11 @@
 /**
- * projectRead.ts: read a project without being told which packs to use.
+ * Reads a project when the caller has not said which packs to use.
  *
- * `suss.json` says which packs and artifacts a project has. When the
- * file is missing, the detection `init` runs picks them from the
- * dependency manifests and the files on disk, and the command says
- * so, so the person can write the file down with `init`. The CLI and
- * the MCP server both read a project this way, so a bare
+ * `suss.json` lists a project's packs and artifacts. When the file is
+ * missing, the same detection `suss init` runs picks them from the
+ * dependency manifests and the files on disk. The command prints a line
+ * saying so, and the user can run `init` to write the file. The CLI and
+ * the MCP server both read a project through this module, so a bare
  * `suss inspect` and an agent's question describe the same code.
  */
 
@@ -27,26 +27,25 @@ import type { ContractEntry, ExtractEntry } from "./projectFile.js";
 
 export type ReadEntry = ExtractEntry | ContractEntry;
 
-/** What a project says to read, and whether a `suss.json` said it. */
+/** The entries to read for a project, and whether they came from `suss.json`. */
 export interface DeclaredReads {
   readonly reads: readonly ReadEntry[];
-  /** True when `suss.json` was read; false when detection picked them. */
+  /** True when `suss.json` listed the entries, false when detection picked them. */
   readonly declared: boolean;
 }
 
-/** What reading a project into a directory produced. */
 export interface ProjectReadReport {
   readonly summaryDir: string;
-  /** One command line per entry that ran. */
+  /** The command line of each entry that ran. */
   readonly ran: string[];
-  /** One line per entry that threw, with what it said. */
+  /** One line per entry that threw, with its error message. */
   readonly failed: string[];
   readonly declared: boolean;
 }
 
 /**
- * What `suss.json` says to read, or what `init` would pick when there
- * is no file. Both come back empty for a project nothing matches.
+ * The entries `suss.json` lists, or the ones `init` would pick when there
+ * is no file. `reads` is empty for a project that no pack matches.
  */
 export async function declaredReads(root: string): Promise<DeclaredReads> {
   const file = readProjectFile(root);
@@ -57,7 +56,7 @@ export async function declaredReads(root: string): Promise<DeclaredReads> {
   return { reads: detected?.read ?? [], declared: false };
 }
 
-/** The extract entry for one language, if the project has one. */
+/** The extract entry for one language, or undefined when there is none. */
 export function extractEntryFor(
   reads: readonly ReadEntry[],
   language: string,
@@ -68,14 +67,13 @@ export function extractEntryFor(
   );
 }
 
-/** The languages the project has extract entries for. */
 export function extractLanguagesOf(reads: readonly ReadEntry[]): string[] {
   return reads
     .filter((entry): entry is ExtractEntry => entry.kind === "extract")
     .map((entry) => entry.language);
 }
 
-/** The entry as the command a person would type. */
+/** The command a user would type to read this entry. */
 export function commandFor(entry: ReadEntry): string {
   if (entry.kind === "contract") {
     return `suss contract --from ${entry.from} ${entry.file}`;
@@ -89,8 +87,8 @@ export function packFlags(packs: readonly string[]): string {
 }
 
 /**
- * The line a command prints before it reads a project it was not told
- * about, so the person knows where the packs came from.
+ * The line a command prints before it reads a project, so the user knows
+ * whether the packs came from `suss.json` or from detection.
  */
 export function whereReadsCameFrom(root: string, declared: boolean): string {
   if (declared) {
@@ -100,9 +98,9 @@ export function whereReadsCameFrom(root: string, declared: boolean): string {
 }
 
 /**
- * Run every entry into the directory, one file each. An entry that
- * throws takes down its own file and nothing else, so a project with
- * one unreadable spec still describes the code suss could read.
+ * Runs every entry and writes each one's summaries to its own file in
+ * `summaryDir`. An entry that throws loses only its own file, so a
+ * project with one unreadable spec still gets summaries for the rest.
  */
 export async function readProjectInto(
   root: string,

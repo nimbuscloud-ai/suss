@@ -43,11 +43,11 @@ import type {
 import type { CheckIntentResult, IntentFinding } from "@suss/checker-intent";
 
 /**
- * Look up the summary-level confidence for a `Finding` side. The
- * checker stamps `side.summary` as `${file}::${name}`, which matches
- * the key we build here. Informational only: the checker does not
- * use confidence to decide anything; the human-output renderer
- * surfaces it so reviewers can weigh findings themselves.
+ * Each summary's confidence, keyed by `summaryRef`. The checker writes
+ * the same key into a finding's `side.summary`, so the report can look up
+ * how sure extraction was about either side. The checker never uses
+ * confidence to decide anything. The human report prints it so a
+ * reviewer can weigh the finding.
  */
 export type ConfidenceLookup = Map<string, ConfidenceInfo>;
 
@@ -71,22 +71,19 @@ export interface CheckOptions {
   json?: boolean;
   output?: string;
   failOn?: FailOn;
-  /** Override path to a .sussignore file. */
+  /** A .sussignore file to use instead of the one found by searching. */
   sussignore?: string;
-  /** Skip loading any .sussignore, even if one would be auto-discovered. */
+  /** Skip every .sussignore, including one the search would find. */
   noSuppressions?: boolean;
-  /** Print every finding and every list, not the collapsed report. */
+  /** Print every finding and every list instead of the collapsed report. */
   all?: boolean;
   /**
    * Let a run that compared nothing exit 0. Without it, the run fails.
    *
-   * A run that pairs no boundary produces no findings and reads as a
-   * pass, which is the same answer it gives when both sides agree. The
-   * two mean different things: one says the code is consistent, the
-   * other says suss could not see enough of it to say. `extract` takes
-   * the same option for the same reason. A two-file `check` has no
-   * pairing count to gate on, so it refuses this option instead of
-   * reading it.
+   * A run that pairs no boundary has no findings, and passing it would
+   * hide that suss could not see enough of the code to compare anything.
+   * `extract` takes the same option for the same reason. A two-file
+   * `check` never counts pairs, so it refuses this option.
    */
   allowEmpty?: boolean;
 }
@@ -102,22 +99,22 @@ export interface CheckDirOptions {
   /** Let a run that compared nothing exit 0. See CheckOptions. */
   allowEmpty?: boolean;
   /**
-   * Exit non-zero when more boundaries went unpaired than this allows:
-   * a count ("25") or a share of all boundaries ("50%"). A run that
-   * pairs three boundaries out of hundreds otherwise reads the same as
+   * Exit non-zero when more boundaries went unpaired than this allows,
+   * as a count ("25") or a share of all boundaries ("50%"). Without it, a
+   * run that pairs three boundaries out of hundreds looks the same as
    * one that paired everything.
    */
   failOnUnpaired?: string;
   /**
    * Exit non-zero when a file in the directory could not be read as
-   * summaries. Skipping one silently turns a truncated or malformed
-   * file into a pass.
+   * summaries. Without it, a truncated or malformed file is skipped and
+   * the run can still pass.
    */
   failOnUnreadable?: boolean;
   /**
-   * Directory of team-authored intent specs (`*.intent` / `*.prd`).
-   * When set, each boundary intent is paired against the code summaries
-   * from `dir`, adding intent-coverage findings to the result.
+   * A directory of intent docs the team wrote (`*.intent` and `*.prd`).
+   * When set, each boundary intent is compared with the code summaries
+   * in `dir`, and the result gains an `intent` section.
    */
   intent?: string;
 }
@@ -127,8 +124,8 @@ export interface CheckResult {
   /** Problems with the run itself, present only when there were any. */
   run?: RunFinding[];
   /**
-   * Intent pass result (findings + checked / unchecked accounting),
-   * present only when --intent was supplied.
+   * The intent findings and which intents were checked or left
+   * unchecked, present only when --intent was passed.
    */
   intent?: CheckIntentResult;
   hasErrors: boolean;
@@ -171,22 +168,22 @@ function loadSuppressionsForOptions(
 /** Everything one pass over a directory of summaries produced. */
 export interface CheckedDirectory {
   summaries: BehavioralSummary[];
-  /** Which file each summary came from. */
+  /** The file each summary came from. */
   sourceFile: Map<BehavioralSummary, string>;
-  /** Files in the directory that could not be read as summaries. */
+  /** Files in the directory that could not be read as summaries, each with the reason. */
   skipped: string[];
-  /** The checker's own result, with suppressions already applied. */
+  /** The checker's result, with suppressions already applied. */
   result: CheckAllResult;
   suppressions: SuppressionRule[];
   confidence: ConfidenceLookup;
 }
 
 /**
- * Read a directory of summaries and run every pass over it.
+ * Reads a directory of summaries and runs every pass over it.
  *
- * `suss check --dir` and `suss check --at` both go through here, so a
- * scoped run is the full run with a filter over it rather than a second
- * way of checking that could answer differently.
+ * `suss check --dir` and `suss check --at` both call this, so a run
+ * scoped with `--at` filters the full run's result and cannot disagree
+ * with it.
  */
 export function checkDirectory(options: {
   dir: string;
@@ -200,8 +197,8 @@ export function checkDirectory(options: {
     );
   }
 
-  // .sussignore.json is auto-discovered from this same directory: it's
-  // suppression config, not a summaries file, so exclude it from the walk.
+  // The suppressions file can live in this directory too. Leave it out,
+  // along with extract's incompleteness note.
   const entries = fs.readdirSync(resolved);
   const files = entries.filter(
     (f) =>
@@ -210,9 +207,9 @@ export function checkDirectory(options: {
       !DEFAULT_SUPPRESSIONS_FILENAMES.includes(f),
   );
 
-  // Extract leaves this note beside its output when it could not read
-  // every export, so a check over those summaries is over a partial
-  // picture and has to say so.
+  // Extract writes this note beside its output when it could not read
+  // every export. Agreement over those summaries covers only part of the
+  // code, so the user has to hear about it.
   for (const note of entries.filter((f) => f.endsWith(".incomplete.json"))) {
     process.stderr.write(
       `${note} says the extract that wrote these summaries was incomplete, so agreement here covers only what it could read. Fix what the note lists, re-extract, and it disappears.\n`,
@@ -225,8 +222,7 @@ export function checkDirectory(options: {
   }
 
   const summaries: BehavioralSummary[] = [];
-  // Which file each summary came from, so a caller can report a
-  // boundary two different files both claim to provide.
+  // Lets a caller report a boundary that two files both claim to provide.
   const sourceFile = new Map<BehavioralSummary, string>();
   const skipped: string[] = [];
   for (const file of files) {
@@ -234,9 +230,8 @@ export function checkDirectory(options: {
     try {
       read = readSummaries(path.join(resolved, file));
     } catch (error) {
-      // A folder of summaries picks up files that are not summaries,
-      // most often a report written back where they were read from.
-      // Say which one and check the rest.
+      // Other JSON ends up in a summaries folder, most often a report
+      // written next to the summaries. Name the file and check the rest.
       skipped.push(`${file}: ${reasonOf(error)}`);
       continue;
     }
@@ -285,21 +280,16 @@ export function checkDir(
     confidence,
   } = checkDirectory(options);
 
-  // Intent is a separate citizen with its own finding shape. When
-  // --intent is supplied, pair it against the same code summaries and
-  // render / score it alongside the behavioural findings rather than
-  // folding it into that stream. The checker reports what it did and
-  // didn't compare (checked / unchecked); this layer only renders.
-  // The same .sussignore rules apply to both finding streams.
+  // Intent findings have their own type, so they get their own section
+  // of the report. The same .sussignore rules apply to both lists.
   const intent = runIntentPass(options.intent, allSummaries, suppressions);
 
   const collisions = findBoundaryCollisions(allSummaries, sourceFile);
 
   const runtimeNamedCrossings = countRuntimeNamedCrossings(allSummaries);
   const summariesWithGaps = countSummariesWithGaps(allSummaries);
-  // An intent pass that checked a boundary is a comparison too, so a
-  // directory of provider summaries checked against intent docs is not
-  // an empty run.
+  // Checking a boundary against an intent doc counts as a comparison, so
+  // provider summaries checked only against intent are not an empty run.
   const comparedIntent = (intent?.checked.length ?? 0) > 0;
   const run = [
     ...runFindings(
@@ -337,17 +327,12 @@ export function checkDir(
 }
 
 /**
- * What went wrong with the run, as findings rather than as an exit code
- * alone.
+ * A `nothingPaired` finding when the run had summaries and paired none
+ * of them. The run fails because of this finding, so an automated fixer
+ * that sees the red exit also gets a reason and a remedy to act on.
  *
- * A red exit with nothing to read stalls an automated fixer: it has
- * something to react to and nothing to act on. So a run that fails
- * because it compared nothing says so in the report, with what
- * to do about it, and the exit code follows from the finding.
- *
- * A run over no summaries at all is a different mistake, and the empty
- * run already says so, so this only fires where there was something to
- * compare and no pair came out of it.
+ * A run over no summaries at all is a different mistake that the report
+ * already explains, so this returns nothing for it.
  */
 function runFindings(
   shouldFail: boolean,
@@ -457,16 +442,12 @@ interface BoundaryCollision {
 /**
  * Boundaries that two different summary files both claim to provide.
  *
- * suss identifies an HTTP boundary by its method and path, and records
- * nothing about which service serves it, so two services that both
- * expose `GET /users` end up on one key. Whoever calls either one then
- * pairs against both and gets findings from an API they never touch.
- *
- * One file per service is the usual layout, so two files providing one
- * key is a good sign that this happened. Reporting it beats comparing
- * unrelated services and saying nothing. A document read with
- * `suss contract` describes a route rather than serving it, so it is
- * not a second claim on the handler's key.
+ * suss keys an HTTP boundary by method and path, without the service
+ * that serves it, so two services that both expose `GET /users` share one
+ * key. A caller of either one is then compared with both, and gets
+ * findings from an API it never calls. Projects usually write one file
+ * per service, so two files providing one key most likely means this
+ * happened, and the report says so.
  */
 function findBoundaryCollisions(
   summaries: ReadonlyArray<BehavioralSummary>,
@@ -479,8 +460,8 @@ function findBoundaryCollisions(
     if (binding === null || BOUNDARY_ROLE[summary.kind] !== "provider") {
       continue;
     }
-    // A document read with `suss contract` describes the boundary
-    // rather than serving it, whichever protocol it describes.
+    // A spec read with `suss contract` describes the handler's route. It
+    // does not serve it, so it is no second claim on the key.
     if (
       readDeclaredContract(summary)?.provenance === "derived" ||
       readGraphqlDeclaredContract(summary)?.provenance === "derived"
@@ -535,7 +516,7 @@ function renderCollisions(
   return `${lines.join("\n")}\n`;
 }
 
-/** Re-raise as a UsageError, so runCli prints the sentence, not a stack. */
+/** Rethrows any error as a UsageError, so the CLI prints its message without a stack trace. */
 function attempt<T>(read: () => T): T {
   try {
     return read();
@@ -554,12 +535,12 @@ function runIntentPass(
   if (intentDir === undefined) {
     return undefined;
   }
-  // A doc that fails to load is something the author has to fix, so the
-  // reason reaches them as a sentence rather than as a stack trace.
+  // A doc that fails to load is the author's to fix, so they get the
+  // reason as a message.
   const intents = attempt(() => loadIntentDirectory(intentDir));
   if (intents.length === 0) {
-    // Same convention as an empty --dir: pointing at a directory with
-    // nothing to load is a usage error, not a clean pass.
+    // An empty intent directory is a usage error, the same as an empty
+    // --dir, so it cannot pass as a run with nothing wrong.
     throw new UsageError(
       `${intentDir} holds no intent docs. suss looks for *.intent.yaml, *.intent.yml, *.intent.json, and the same three for *.prd.`,
     );
@@ -579,8 +560,7 @@ function intentMeetsThreshold(
     return false;
   }
   const threshold = SEVERITY_ORDER[failOn];
-  // Same suppression semantics as behavioural findings: mark/hide are
-  // excluded from gating, downgrade counts at the new severity.
+  // Suppressions apply the same way as in meetsThreshold.
   return findings.some(
     (f) => countsForThreshold(f) && SEVERITY_ORDER[f.severity] <= threshold,
   );
@@ -659,9 +639,8 @@ export function meetsThreshold(findings: Finding[], failOn: FailOn): boolean {
     return false;
   }
   const threshold = SEVERITY_ORDER[failOn];
-  // Suppressed findings are excluded from threshold calculation unless
-  // their effect was "downgrade" (in which case they count at the
-  // downgraded severity). See @suss/checker/countsForThreshold.
+  // A suppressed finding counts only when its rule downgraded it, and
+  // then at the lower severity.
   return findings.some(
     (f) => countsForThreshold(f) && SEVERITY_ORDER[f.severity] <= threshold,
   );
@@ -672,9 +651,9 @@ function listOfSkipped(skipped: readonly string[]): string {
 }
 
 /**
- * Why one file was skipped, kept whole. The first line of the message
- * ends where the reason starts, and printing that alone told somebody
- * their file did not fit and never what did not fit.
+ * The whole error message, indented to line up under a list item. The
+ * specific reason starts on the second line, so printing only the first
+ * line would leave it out.
  */
 function reasonOf(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
@@ -700,9 +679,9 @@ function readSummaries(file: string): BehavioralSummary[] {
       `suss could not read ${resolved} as summaries. It should be the output of \`suss extract\` or \`suss contract\`. What did not fit:\n${formatParseIssues(result.error.issues)}`,
     );
   }
-  // Types are spelled out on the way in, so everything downstream
-  // compares structure. A summary writes a named type once and refers
-  // to it after that, and comparing two names compares nothing.
+  // A summary writes a named type once and refers to it by name after
+  // that. Inline the definitions here so the checker compares the types'
+  // structure and not two names.
   return result.data.map(summaryWithDefinitionsInlined);
 }
 
@@ -715,11 +694,11 @@ function formatParseIssues(
     .join("\n");
 }
 
-/** How much of a report gets written out rather than counted. */
+/** How much of a report is printed in full. The rest is only counted. */
 export interface ReportScope {
-  /** Write every finding and every list out. */
+  /** Print every finding and every list in full. */
   all?: boolean;
-  /** The threshold the run is gated on, which decides what prints. */
+  /** The severity the run fails on. Findings at or above it print in full. */
   failOn?: FailOn;
 }
 
@@ -731,9 +710,9 @@ function scopeOf(options: { all?: boolean; failOn?: FailOn }): ReportScope {
 }
 
 /**
- * The severity a finding has to reach to be written out in full. It is
- * the threshold the run fails on, so nothing that decides the exit code
- * is ever left to a count.
+ * The severity a finding has to reach to print in full. It matches the
+ * severity the run fails on, so every finding that sets the exit code is
+ * printed and none is reduced to a count.
  */
 function printedSeverity(failOn: FailOn | undefined): number {
   const threshold =
@@ -742,8 +721,9 @@ function printedSeverity(failOn: FailOn | undefined): number {
 }
 
 /**
- * The findings, with whatever fails the run written out and the rest
- * counted. `--all` writes every one out. `--json` is unaffected.
+ * Renders the findings for a person. Findings that fail the run print in
+ * full and the rest are counted by kind, unless `scope.all` is set.
+ * `--json` output does not go through here.
  */
 export function renderFindings(
   findings: Finding[],
@@ -776,10 +756,8 @@ export function renderFindings(
       );
     }
     lines.push(`  provider: ${formatSide(f.provider, confidence)}`);
-    // When the finding was collapsed across multiple provider sources,
-    // list the others below the primary so reviewers can see who
-    // agreed. Skipped in the common single-source case to keep output
-    // uncluttered.
+    // A finding merged from several providers lists the other sources,
+    // so a reviewer can see every provider that produced it.
     if (f.sources !== undefined && f.sources.length > 1) {
       const others = f.sources.filter((s) => s !== f.provider.summary);
       for (const other of others) {
@@ -804,8 +782,8 @@ export function renderFindings(
 }
 
 /**
- * What the report left out, counted by kind. Written only when
- * something was left out, so a run with errors alone reads as before.
+ * A count, by kind, of the findings the report did not print. Empty
+ * when every finding was printed.
  */
 function notShownLines(
   findings: ReadonlyArray<Finding>,
@@ -852,9 +830,8 @@ function formatSide(
 ): string {
   const loc = `${side.location.file}:${side.location.range.start}`;
   const info = confidence.get(side.summary);
-  // Only annotate when the level is below `high`. A reviewer does not
-  // need telling the analysis was confident; they need telling when it
-  // was not. Informational only; checker severity is unchanged.
+  // Mention confidence only when it is below `high`, since that is when a
+  // reviewer should weigh the finding. It never changes the severity.
   const conf =
     info !== undefined && info.level !== "high"
       ? ` (confidence: ${info.level})`
@@ -863,19 +840,16 @@ function formatSide(
 }
 
 /**
- * A `.sussignore` rule that matches this finding and nothing else,
- * ready to paste.
+ * A `.sussignore` rule that matches this finding and nothing else, ready
+ * to paste.
  *
- * Printing the transition alone left the reader to write the rule, and
- * which side the transition is on decides which discriminator the rule
- * needs. A finding about a status the provider returns keeps its id on
- * the provider side, so a rule keyed on `consumer.transitionId` would
- * never match it. Printing the whole rule takes that guesswork away.
+ * The rule has to key on the side that has the transition id. A finding
+ * about a status the provider returns has its id on the provider side,
+ * and a rule keyed on `consumer.transitionId` would never match it.
  *
- * A finding with no transition on either side gets nothing: `kind` plus
- * `boundary` is the only rule left to write, and it would silence every
- * other finding of that kind on the same boundary too. A finding a rule
- * already covers gets nothing either.
+ * A finding with no transition on either side gets no rule, because
+ * `kind` plus `boundary` would also silence every other finding of that
+ * kind on the boundary. A finding a rule already covers gets none either.
  */
 function formatSuppressionRule(f: Finding): string[] {
   const side = findingTransitionSide(f);
@@ -921,11 +895,11 @@ function formatRoute(boundary: Finding["boundary"]): string {
 }
 
 /**
- * How many message sends cross a boundary whose name the code only
- * works out at runtime. These get recorded but can never be checked,
- * and printing the count stops them looking like coverage. Counted per
- * distinct send site, so a wrapper's summary and the summaries derived
- * from it never report one send twice.
+ * How many message sends go to a queue or bus whose name the code works
+ * out only at runtime. suss records these and cannot check them, so the
+ * report prints the count to keep them from passing as checked. The
+ * count is per send site, so a wrapper's summary and the summaries
+ * derived from it do not count one send twice.
  */
 function countRuntimeNamedCrossings(
   summaries: ReadonlyArray<BehavioralSummary>,
@@ -960,8 +934,9 @@ function renderRuntimeNamedCrossings(count: number): string {
 
 /**
  * How many summaries describe a unit suss could not read all of. A run
- * with no findings agreed on everything it compared, and this says how
- * much of the code those comparisons were standing for.
+ * with no findings agreed on everything it compared, and the report
+ * prints this count so the reader knows how much of that code suss saw
+ * only in part.
  */
 function countSummariesWithGaps(
   summaries: ReadonlyArray<BehavioralSummary>,
@@ -978,12 +953,11 @@ function renderGapCoverage(withGaps: number, total: number): string {
 }
 
 /**
- * Artifacts `suss.json` says this project declares that this run never
- * read, when something went unpaired.
+ * When something went unpaired, lists the artifacts in `suss.json` that
+ * this run never read, with the `suss contract` command for each.
  *
- * The other side of a declared boundary lives in the artifact, so a run
- * without it pairs those boundaries with nothing. Saying which file and
- * which command turns an empty comparison into one edit.
+ * A declared artifact describes the other side of a boundary, so a run
+ * that skips it leaves those boundaries with nothing to pair against.
  */
 function renderUnreadArtifacts(
   summaries: ReadonlyArray<BehavioralSummary>,
@@ -1034,11 +1008,8 @@ function renderDirHuman(
     (u) => u.reason === "unnamedBoundary",
   );
 
-  /**
-   * At most a screenful, then a count. A run over a monorepo has
-   * thousands of these, and printing them all buries whatever the run
-   * found. `--json` still includes every one.
-   */
+  // Print at most a screenful, then a count. A monorepo run has thousands
+  // of these and they would bury the findings. `--json` includes them all.
   const listed = (grouped: Map<string, string[]>): string[] => {
     const out: string[] = [];
     let shown = 0;
@@ -1056,9 +1027,8 @@ function renderDirHuman(
     return out;
   };
 
-  // Lead with how much was actually compared. "No findings" on its own
-  // looks like a pass, and a run where nothing paired has checked
-  // nothing at all, which is the opposite of a pass.
+  // Open with how much was compared. "No findings" alone looks like a
+  // pass even when nothing paired and nothing was checked.
   const comparedByBoundary = groupPairsByKey(result.pairs);
   if (comparedByBoundary.size > 0) {
     const count = comparedByBoundary.size;
@@ -1075,8 +1045,8 @@ function renderDirHuman(
   } else {
     lines.push("Nothing was compared.");
     lines.push("");
-    // Counted by boundary, matching how they are listed below. Two
-    // summaries describing one route are one thing missing a client.
+    // Count by boundary, the way the lists below group them, so two
+    // summaries of one route count as one route missing a client.
     lines.push(
       `  ${nothingComparedReason(groupByKey(providers).size, groupByKey(consumers).size)}`,
     );
@@ -1089,9 +1059,8 @@ function renderDirHuman(
     lines.push("    suss check --dir summaries/");
   }
 
-  // Group by boundary rather than by summary. One route described by
-  // both a deploy template and its handler code is one boundary waiting
-  // for a client, and listing it twice makes the count read wrong.
+  // Group by boundary. A route described by both a deploy template and
+  // its handler is one boundary missing a client, and should count once.
   if (all) {
     if (providers.length > 0) {
       lines.push("");
@@ -1105,8 +1074,8 @@ function renderDirHuman(
       lines.push(...listed(groupByKey(consumers)));
     }
 
-    // A line per unit, because something crossed the boundary and a
-    // reader deciding what to trust needs to know it went unchecked.
+    // Something crossed each of these boundaries unchecked, and a reader
+    // deciding what to trust needs to see which.
     if (nothingToCompare.length > 0) {
       const many = nothingToCompare.length !== 1;
       lines.push("");
@@ -1117,18 +1086,16 @@ function renderDirHuman(
     }
   }
 
-  // Internal helpers reached through the closure pass land here by the
-  // dozen. Listing each one buries whatever else is on screen, and a
-  // function with no boundary is the normal case rather than a problem.
+  // The closure pass adds dozens of internal helpers with no boundary.
+  // That is normal, so they get one line of count and no list.
   const internal =
     noBoundary.length === 0
       ? null
       : `${noBoundary.length} other summar${noBoundary.length === 1 ? "y is" : "ies are"} internal code with no boundary, so nothing pairs with ${noBoundary.length === 1 ? "it" : "them"}.`;
 
   if (!all) {
-    // When one side of the run is empty, the block above already gave
-    // that count in a sentence, and repeating it reads as a second
-    // problem rather than the same one.
+    // When one side is empty, the block above already gave this count.
+    // Printing it again would look like a second problem.
     const oneSided =
       comparedByBoundary.size === 0 &&
       (providers.length === 0 || consumers.length === 0);
@@ -1171,9 +1138,9 @@ function renderDirHuman(
 }
 
 /**
- * What went unpaired, one sentence per case, counted by boundary the
- * same way `--all` lists them. Nothing here is a finding, and on a
- * monorepo the lists run to thousands of lines.
+ * One sentence per kind of unpaired boundary, with a count by boundary
+ * that matches how `--all` lists them. None of these are findings, and on
+ * a monorepo the full lists run to thousands of lines.
  */
 function unpairedCounts(
   providers: ReadonlyArray<{ id: string; key?: string | null }>,
@@ -1203,9 +1170,9 @@ function unpairedCounts(
 }
 
 /**
- * Collapse summaries onto the boundary they describe. Each line under a
- * boundary is a summary id, because two files can both export `update`
- * and a reader has to be able to tell which one a line is about.
+ * Groups summaries under the boundary they describe. Each line under a
+ * boundary is a full summary id, because two files can both export
+ * `update` and the reader has to tell them apart.
  */
 function groupByKey(
   entries: ReadonlyArray<{ id: string; key?: string | null }>,
@@ -1218,9 +1185,9 @@ function groupByKey(
 }
 
 /**
- * The compared sides under the boundary they met on. A route a service
- * and its OpenAPI document both describe is one boundary, so counting
- * the rows would say two.
+ * Groups compared pairs under the boundary they met on. A route that a
+ * service and its OpenAPI document both describe is one boundary with
+ * two rows, so the report counts keys.
  */
 function groupPairsByKey(
   pairs: ReadonlyArray<ComparedPair>,
@@ -1232,7 +1199,7 @@ function groupPairsByKey(
   return byKey;
 }
 
-/** A line the report has already printed under this key is not printed twice. */
+/** Adds a line under a key, skipping it when the key already lists that line. */
 function fileUnderKey(
   byKey: Map<string, string[]>,
   key: string,
@@ -1249,10 +1216,10 @@ function fileUnderKey(
   }
 }
 
-/** Why a run compared nothing, in terms of what the user has and lacks. */
-/** How many unpaired boundaries a report lists before it counts them. */
+/** How many unpaired boundaries a report lists before it counts the rest. */
 const DIAGNOSTIC_LIMIT = 10;
 
+/** Why a run compared nothing, in terms of which side the user has and which is missing. */
 function nothingComparedReason(
   providerCount: number,
   consumerCount: number,

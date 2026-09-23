@@ -1,6 +1,6 @@
-// diagnosis.ts: the one shape for telling a user why a run produced
-// nothing and what to do about it: what happened, then why, then the
-// fix, pastable whenever the CLI can build the command.
+// Every command uses this format when it tells the user why a run produced
+// nothing: what happened, then why, then the fix. The fix is a command the
+// user can paste whenever the CLI can build one.
 
 export interface Diagnosis {
   /** What happened, readable on its own. Always the first line. */

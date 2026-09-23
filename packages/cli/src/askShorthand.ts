@@ -1,15 +1,14 @@
 /**
- * The symbol form of a question, for somebody typing the same question
- * often. `<- src/dao.ts` is who calls it, `src/dao.ts ->` is what it
+ * The symbol form of a question, for somebody who types the same question
+ * often. `<- src/dao.ts` asks what calls it, `src/dao.ts ->` asks what it
  * reaches, and a trailing `?` asks why.
  *
- * Operations are symbols because a boundary key contains `:`, `.`, `#`
- * and `/`, and a word like `reads` could be part of a path, so nothing
- * that could sit inside an operand can be the thing that splits it.
- * `<-`, `->`, `w<-`, `r<-` and a trailing `?` are the five, and each
- * one rewrites to exactly one written question, which is what the rest
- * of ask reads. No question can be asked in symbols that cannot
- * be asked in words.
+ * The operators are symbols because a boundary key can contain `:`, `.`,
+ * `#` and `/`, and a word like `reads` could be part of a path. A token
+ * that can appear inside an operand could not split the question safely.
+ * There are five: `<-`, `->`, `w<-`, `r<-` and a trailing `?`. Each one
+ * expands to exactly one written question, and the rest of ask parses
+ * only the written form, so every symbol question has a word form too.
  */
 
 /** The written question this shorthand means, or null when it is not one. */
@@ -37,11 +36,11 @@ export function looksLikeShorthand(raw: string): boolean {
 
 type Rewrite = (tokens: string[]) => string | null;
 
-/** `<- <unit>`, who calls it. */
+/** `<- <unit>`: what calls the unit. */
 const callersOf: Rewrite = (tokens) =>
   tokens[0] === "<-" && tokens.length === 2 ? `what calls ${tokens[1]}` : null;
 
-/** `w<- <boundary>` and `r<- <boundary>`, who writes it and who reads it. */
+/** `w<- <boundary>` and `r<- <boundary>`: what writes it and what reads it. */
 const directionOf: Rewrite = (tokens) => {
   if (tokens.length !== 2) {
     return null;
@@ -55,7 +54,7 @@ const DIRECTIONS: Record<string, string | undefined> = {
   "r<-": "reads",
 };
 
-/** `<unit> ->`, what it reaches, and `<unit> -> <boundary> ?`, why. */
+/** `<unit> ->` asks what the unit reaches, and `<unit> -> <boundary> ?` asks why. */
 const reachOf: Rewrite = (tokens) => {
   const arrow = tokens.indexOf("->");
   if (arrow !== 1 || tokens[0] === undefined) {

@@ -70,9 +70,9 @@ import type { Language } from "./language.js";
 type PackFactory = (...args: never[]) => PatternPack;
 
 /**
- * A loaded pack. `optionsSchema` is what a pack that takes options
- * exports beside its factory; a pack without one is loaded the way it
- * always was.
+ * A loaded pack module. A pack that takes options exports
+ * `optionsSchema` beside its factory, and the CLI checks a config file
+ * against it. A pack without one gets its options unchecked.
  */
 interface PackModule {
   default: PackFactory;
@@ -100,9 +100,9 @@ function callPackFactory<T>(
 }
 
 /**
- * Loads a pack and stamps it with a version the extraction cache can key
- * on. `T` is whichever language's own pack type; every one declares an
- * optional `version` field for a loader to fill in this way.
+ * Calls a pack's factory and stamps the result with a version for the
+ * extraction cache to key on. `T` is the pack type of the pack's
+ * language. Each of them declares an optional `version` field for this.
  */
 function instantiatePack<T extends { version?: string }>(
   loaded: Pick<LoadedFactory, "factory" | "options" | "handedOver">,
@@ -111,9 +111,9 @@ function instantiatePack<T extends { version?: string }>(
 ): T {
   const pack = callPackFactory<T>(loaded.factory, loaded.handedOver, name);
 
-  // The extraction cache keys on this stamp. A pack's code and config
-  // change what it reads without reaching its declared version; the
-  // config's directory does not, so `digest` never sees it.
+  // Editing a pack's code or config changes what it reads without bumping
+  // its version, so both go into the stamp. The config's directory does
+  // not change what it reads, so the digest leaves it out.
   const stamp = [
     pack.version ?? "unset",
     packCodeHash(specifier),
@@ -124,7 +124,7 @@ function instantiatePack<T extends { version?: string }>(
 
 const packCodeHashes = new Map<string, string>();
 
-/** Empty when the specifier resolves to no file, as when a host bundles it. */
+/** Empty when the specifier resolves to no file, as when a host bundles the pack. */
 function packCodeHash(specifier: string): string {
   const cached = packCodeHashes.get(specifier);
   if (cached !== undefined) {
@@ -137,9 +137,9 @@ function packCodeHash(specifier: string): string {
 }
 
 /**
- * `import.meta.resolve` resolves under the same conditions the import
- * itself did. Do not fall back to `createRequire`: it would hash a
- * build the run never loaded.
+ * `import.meta.resolve` uses the same export conditions as the import
+ * did. Do not fall back to `createRequire`, which can resolve to a
+ * different build than the one the run loaded and hash that instead.
  */
 function resolvePackFile(specifier: string): string[] {
   try {
@@ -149,7 +149,7 @@ function resolvePackFile(specifier: string): string[] {
   }
 }
 
-/** Stable across key order, so reformatting a config keeps the cache entry. */
+/** Ignores key order, so reordering a config's keys keeps the cache entry. */
 function digest(options: unknown): string {
   return createHash("sha256")
     .update(canonicalize(options))
@@ -175,14 +175,9 @@ function canonicalize(value: unknown): string {
 }
 
 /**
- * A pack left out still loads through the dynamic fallback below, but
- * never appears in the list the error message prints, so a test asserts
- * every `@suss/framework-*` the CLI depends on is here.
- */
-/**
- * What every bundled pack says about itself: which libraries it reads
+ * What every bundled pack declares about itself: the libraries it reads,
  * and the line the packages page shows. `suss init` matches a project's
- * manifest against these rather than against a table of its own.
+ * manifest against these, so it keeps no pack table of its own.
  */
 export async function builtinDeclarations(): Promise<
   Array<{ name: string; declares: PackDeclaration }>
@@ -197,6 +192,11 @@ export async function builtinDeclarations(): Promise<
   return found;
 }
 
+/**
+ * A pack missing from this table still loads through the dynamic import
+ * fallback, but the error message's list of packs leaves it out. A test
+ * checks that every pack the CLI depends on is here.
+ */
 export const BUILTIN_FRAMEWORKS: Record<string, string> = {
   "ts-rest": "@suss/packs/ts-rest",
   "react-router": "@suss/packs/react-router",
@@ -306,12 +306,12 @@ export function parseFrameworkSpec(spec: string): {
 }
 
 /**
- * A pack option that gives a path is written relative to its own config
- * file, or to the directory the run reads when there is no config file,
- * and only the pack knows which of its options are paths, so the
- * directory goes along with them. Resolving against the working
- * directory instead fails silently: a routes file the project keeps
- * looks missing, and every field looks unwired rather than like an error.
+ * Adds `configDirectory` to the options a pack gets. A path option is
+ * relative to its config file, or to the directory the run reads when
+ * there is no config file. Which options are paths is up to the pack,
+ * so it gets the directory and resolves them itself. Resolving against
+ * the working directory would fail without an error: the project's routes
+ * file would look missing and every field would look unwired.
  */
 function optionsForFactory(
   options: unknown,
@@ -337,11 +337,11 @@ function optionsForFactory(
 }
 
 /**
- * A relative path in a pack config is read against the config file. A
- * config kept somewhere else resolves to a directory that is not there,
- * every class lookup through it comes back empty, and the run reports
- * gaps naming classes that sit in the project. Saying it once here
- * costs a stat per path-shaped value.
+ * Warns about a path option that points at nothing. A relative path in a
+ * pack config is read against the config file, so a config kept outside
+ * the project points at a directory that is not there. Every class lookup
+ * through it then comes back empty, and the run reports gaps for classes
+ * the project does have. The warning costs one stat per path option.
  */
 function warnAboutMissingPaths(
   options: Record<string, unknown>,
@@ -368,9 +368,9 @@ function warnAboutMissingPaths(
 }
 
 /**
- * A pack without a schema cannot say whether it reads the directory, so
- * it keeps getting one with a config file, as it always has, and never
- * without one, since a strict factory would refuse the extra key.
+ * A pack without a schema does not declare whether it reads the
+ * directory. It gets one when there is a config file, and none without
+ * one, since a strict factory would refuse the extra key.
  */
 function takesConfigDirectory(
   schema: z.ZodObject<z.ZodRawShape> | undefined,
@@ -384,19 +384,18 @@ function takesConfigDirectory(
 
 interface LoadedFactory {
   name: string;
-  /** What the config file said, exactly, which is what the cache key sees. */
+  /** The config file's options, plus any stub statements. The cache key reads these. */
   options: unknown;
-  /** The same options, plus the config file's own directory. */
+  /** The same options, plus `configDirectory` when the pack reads it. The factory gets these. */
   handedOver: unknown;
   factory: PackFactory;
   specifier: string;
 }
 
 /**
- * What each pack this process loaded was imported from. The ts-morph
- * check reads it to ask what each pack resolves, which is a fact about
- * this run rather than about any pack, so it is recorded where the
- * imports happen.
+ * The module specifier each pack in this process was imported from. The
+ * ts-morph check uses it to find which copy each pack resolves to. That
+ * depends on the run, so it is recorded here, where the imports happen.
  */
 const loadedFrom = new Map<string, string>();
 
@@ -408,10 +407,9 @@ export function packsLoadedSoFar(): Array<{
 }
 
 /**
- * The config with any retired key taken out, having said so. suss reads
- * what those keys used to state off the project itself now, so a run
- * that still sets one gets the same answer either way and a warning
- * rather than a failure.
+ * The config with any retired key removed, after warning about it. suss
+ * now reads what those keys stated from the project itself, so the run
+ * gives the same answer with or without them and does not need to fail.
  */
 function withoutRetired(name: string, options: unknown): unknown {
   if (options === null || typeof options !== "object") {
@@ -430,9 +428,9 @@ function withoutRetired(name: string, options: unknown): unknown {
 }
 
 /**
- * Refuse a config the pack could not have read, before the factory
- * runs. Without this a misspelled key parses to nothing, the run exits
- * 0, and the only sign is a boundary that never appears.
+ * Refuses a config the pack could not read, before the factory runs.
+ * Otherwise a misspelled key is dropped, the run exits 0, and the only
+ * sign is a boundary that never appears.
  */
 function assertOptionsArePackable(
   name: string,
@@ -463,13 +461,11 @@ function assertOptionsArePackable(
 }
 
 /**
- * The pack's schema with the stub-only keys taken out. A stub writes
- * those keys into the same options the factory gets, so the factory
- * still declares them and only a project's own file is refused (#673).
- *
- * `configDirectory` goes the same way for the same reason: this file
- * puts it there, and a pack that reads a path relative to its config
- * declares it so the factory can see it.
+ * The pack's schema without the keys a config file may not set (#673).
+ * Stubs write the stub-only keys into the options the factory gets, and
+ * the CLI adds `configDirectory` itself. The factory's schema declares
+ * both so it can read them, and this schema refuses them in a project's
+ * own config file.
  */
 function whatAConfigFileMaySay(
   name: string,
@@ -495,7 +491,7 @@ function whatThePackTakes(
   return `The ${name} pack takes: ${keys.join(", ")}.`;
 }
 
-/** One line per problem, leading with the key somebody has to fix. */
+/** One line per problem, starting with the key the user has to fix. */
 function optionProblems(name: string, issue: z.core.$ZodIssue): string[] {
   if (issue.code === "unrecognized_keys") {
     const stubOnly = new Set(stubOnlyOptionsOf(name));
@@ -588,9 +584,9 @@ function assertPackLanguage(name: string, language: Language): void {
 }
 
 /**
- * `projectRoot` is the directory the run reads. A pack that resolves a
- * relative path option reads it against that directory when the options
- * did not come from a config file of their own.
+ * Loads a TypeScript pack from its `-f` spec. `projectRoot` is the
+ * directory the run reads. When the options did not come from a config
+ * file, a pack resolves a relative path option against that directory.
  */
 export async function resolveFramework(
   spec: string,
@@ -607,10 +603,9 @@ export async function resolveFramework(
 }
 
 /**
- * The loaded factory with stub statements folded into its options.
- * Both copies get them: `options` is what the cache digest reads, so
- * an edited stub invalidates, and `handedOver` is what the factory
- * gets.
+ * The loaded factory with stub statements added to both copies of its
+ * options. The factory needs them in `handedOver`, and the cache digest
+ * needs them in `options` so that editing a stub invalidates the cache.
  */
 function withStubbedOptions(
   loaded: LoadedFactory,
@@ -652,7 +647,7 @@ export async function resolveRubyPack(
   return instantiatePack<RubyPack>(loaded, loaded.specifier, loaded.name);
 }
 
-/** A scoped name or a path is the package itself, not a short name. */
+/** A scoped name or a path is a package specifier. Anything else is a pack's short name. */
 const looksLikeAPackage = (name: string): boolean =>
   name.startsWith("@") || name.includes("/");
 
@@ -666,21 +661,21 @@ async function importPack(specifier: string): Promise<PackModule | null> {
 
 export interface ExtractOptions {
   /**
-   * Path to the tsconfig covering the code to read. Without one, the
-   * nearest tsconfig or jsconfig above the working directory is used,
-   * and the directory itself when there is none.
+   * Path to the tsconfig covering the code to read. Without one, suss
+   * uses the nearest tsconfig or jsconfig above the working directory,
+   * or reads the directory itself when there is none.
    */
   tsconfig?: string;
   /** Directory to read when no tsconfig is given. Defaults to cwd. */
   dir?: string;
-  /** Leave it out and suss works it out from what is in the directory. */
+  /** The language to read. When left out, suss detects it from the directory. */
   lang?: Language;
   frameworks: string[];
   files?: string[];
   output?: string;
   /**
-   * What to do with gaps. `permissive` (default) and `strict` record the
-   * same gaps; `strict` also exits non-zero when any were recorded.
+   * What to do with gaps. `permissive` (the default) and `strict` record
+   * the same gaps, and `strict` also exits non-zero when there are any.
    * `silent` skips gap detection and records none.
    */
   gaps?: "strict" | "permissive" | "silent";
@@ -707,7 +702,7 @@ export interface ExtractOptions {
   failOnPackError?: boolean;
 }
 
-/** A tsconfig wins when one exists, because it has the path aliases. */
+/** Where the code to read comes from. A tsconfig is preferred when one exists, because it has the path aliases. */
 export type Source =
   | { kind: "tsconfig"; path: string; root: string }
   | { kind: "directory"; root: string };
@@ -744,15 +739,14 @@ interface LanguageRun {
   extractionReport: ExtractionReport | null;
   /**
    * True when every pack in the run recognizes calls inside boundaries
-   * but none of them discovers boundaries, so the run cannot produce a
-   * summary no matter what the code says.
+   * and none of them discovers boundaries, so the run cannot produce a
+   * summary whatever the code does.
    */
   recognizersOnly: boolean;
   /**
-   * True when the run read exactly the files --files named, instead of
-   * walking the project. A scoped read like that builds no extraction
-   * funnel, so a missing one does not mean the result came from the
-   * cache.
+   * True when the run read only the files passed with --files instead of
+   * walking the project. Such a run builds no extraction funnel, so a
+   * missing funnel does not mean the result came from the cache.
    */
   explicitFiles: boolean;
 }
@@ -765,8 +759,8 @@ interface LanguageRunOptions {
 }
 
 /**
- * A file given on the command line is read whichever repository it is
- * in. A walk of the directory takes only this project's own files.
+ * A file given on the command line is read whatever repository it is in.
+ * A walk of the directory keeps only this project's own files.
  */
 function filesToRead(
   { options, root }: LanguageRunOptions,
@@ -784,8 +778,8 @@ async function runTypeScript(
 ): Promise<LanguageRun> {
   const { options } = runOptions;
   const source = resolveSource(options);
-  // Ids and the written summaries' paths are both relative to this
-  // root, so a reader can rebuild an id from a summary's own fields.
+  // Ids and the written summaries' paths are both relative to this root,
+  // so a reader can rebuild an id from a summary's own fields.
   const runRoot = workspaceRootFor(source.root);
   const stubOverlay = stubOverlayOf(loadStubs(runRoot));
   const packs = await Promise.all(
@@ -827,8 +821,8 @@ async function runTypeScript(
     ? await adapter.extractFromFiles(namedFiles.map((f) => path.resolve(f)))
     : await adapter.extractAll();
 
-  // extractFromFiles builds no extraction report, so its walked count
-  // is unset. The given list already says how many files this read.
+  // extractFromFiles builds no extraction report and so no walked count.
+  // The length of the given list is the number of files read.
   return {
     summaries,
     root: runRoot,
@@ -854,8 +848,8 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
       resolvePythonPack(one, stubOverlay, runOptions.root),
     ),
   );
-  // A submodule has to be a root of its own, or imports into the shared
-  // framework inside it do not resolve.
+  // Each checked-out submodule becomes an import root, or imports into
+  // the shared framework inside it do not resolve.
   const submodules = runOptions.submodules;
   const files = filesToRead(runOptions, findPythonFiles, submodules);
 
@@ -921,9 +915,8 @@ async function runRuby(runOptions: LanguageRunOptions): Promise<LanguageRun> {
       resolveRubyPack(one, stubOverlay, runOptions.root),
     ),
   );
-  // findRubyFiles skips any directory called .git, but it does not
-  // notice that the .git directory means there is a separate repository
-  // there.
+  // findRubyFiles skips .git directories but still walks the rest of a
+  // nested repository, so filesToRead drops those files.
   const files = filesToRead(runOptions, findRubyFiles, runOptions.submodules);
   let timingReport: TimingReport | null = null;
   let extractionReport: ExtractionReport | null = null;
@@ -974,8 +967,8 @@ function languageRun(
     cacheDiagnostic,
     extractionReport,
     recognizersOnly,
-    // Python and Ruby build a report whether or not --files was given,
-    // so nothing downstream needs to tell the two runs apart here.
+    // Python and Ruby build a report even with --files, so downstream
+    // code has no reason to tell the two kinds of run apart.
     explicitFiles: false,
   };
 }
@@ -1003,8 +996,8 @@ export function languageOfRun(options: ExtractOptions): Language {
     return only;
   }
 
-  // resolveSource reads a directory as TypeScript when there is a
-  // tsconfig above it, so detection has to see that same tsconfig.
+  // resolveSource reads a directory as TypeScript when a tsconfig is
+  // above it, so detection has to take that same tsconfig into account.
   const root = path.resolve(options.dir ?? process.cwd());
   const detected = languageOfProject(root, {
     coveredByTsconfig: findNearestTsconfig(root) !== null,
@@ -1038,9 +1031,9 @@ export async function extract(
     .map((submodule) => submodule.declaredPath);
   process.stderr.write(formatMissingSubmodules(submodules));
 
-  // TypeScript alone can be configured out of this: a tsconfig at or
-  // above the root covers what is under it, and -p was somebody's
-  // choice. Python and Ruby resolve against the directory either way.
+  // Skip the warning about projects below when a tsconfig says what to
+  // read, since that was the user's choice. Python and Ruby have no such
+  // file and always read the whole directory.
   if (
     language !== "typescript" ||
     resolveSource(options).kind === "directory"
@@ -1113,8 +1106,8 @@ export async function extract(
       );
     }
 
-    // What the person running this can act on always prints; what only
-    // a pack's author can fix waits for `--explain`.
+    // Problems the user can fix always print. Problems only a pack's
+    // author can fix print with `--explain`.
     process.stderr.write(
       formatPackHealth(
         evaluatePackHealth(report),
@@ -1176,19 +1169,24 @@ export async function extract(
   return summaries;
 }
 
-/** Enough unreadable files to see the pattern, not the whole list. */
+/** Enough unreadable files for the user to see the pattern. */
 const UNREADABLE_FILES_SHOWN = 5;
 
-/** A separate file beside the summaries, because every reader of the
- * summaries validates them as a bare array. */
+/**
+ * The incompleteness note goes in its own file beside the summaries,
+ * because every reader of the summaries expects a bare array.
+ */
 export function incompletenessPathFor(summariesPath: string): string {
   const ext = path.extname(summariesPath);
   const base = summariesPath.slice(0, summariesPath.length - ext.length);
   return `${base}.incomplete${ext === "" ? ".json" : ext}`;
 }
 
-/** A note left by an earlier run is deleted, because a stale one would
- * fail a job that has since been fixed. */
+/**
+ * Writes the incompleteness note, or deletes one an earlier run left
+ * when this run read everything, so a stale note cannot fail a job that
+ * has since been fixed.
+ */
 async function writeIncompleteness(args: {
   outPath: string;
   projectRoot: string;
@@ -1266,11 +1264,11 @@ const EMPTY_STAGE_COPY: Record<
 };
 
 /**
- * Replaces the discovery-stage copy when no pack in the run can discover
- * boundaries. The default copy blames the code, and the code is fine:
- * a recognizer-only pack reads what happens inside a boundary some other
- * pack has to find first. `packSpecs` come straight from the user's -f
- * flags, so the suggested command is theirs with one flag added.
+ * Replaces the discovery-stage message when no pack in the run can
+ * discover boundaries. The default message blames the code, but here the
+ * code is fine: a recognizer-only pack reads what happens inside a
+ * boundary that another pack has to find first. `packSpecs` are the
+ * user's -f flags, so the suggested command is theirs with one pack added.
  */
 function recognizersOnlyDiagnosis(
   packSpecs: ReadonlyArray<string>,
@@ -1288,7 +1286,7 @@ function recognizersOnlyDiagnosis(
   };
 }
 
-/** A discovery-capable pack of the same language, for the suggestion. */
+/** A pack per language that discovers boundaries, used in the suggested command. */
 const EXAMPLE_DISCOVERY_PACK: Record<Language, string> = {
   typescript: "express",
   python: "fastapi",
@@ -1394,8 +1392,8 @@ export function formatExtractionReport(
         : `files ${pack.pack} looked at`;
     rows.push([pack.candidateFiles, imports]);
 
-    // A pack made only of recognisers discovers no boundary, so the
-    // rows below would print three zeros and look like a broken pack.
+    // A pack made only of recognizers discovers no boundary. The rows
+    // below would print three zeros for it and make it look broken.
     if (!pack.discovers && pack.recognizes) {
       rows.push([
         pack.unitsInGatedFiles,
@@ -1486,9 +1484,10 @@ function formatTimingBreakdown(report: TimingReport): string {
 }
 
 /**
- * The adapter writes every path absolute; the written summaries are
- * project-relative, so anything holding a path rewrites here: the
- * unit's own file, the module imports, and render-edge targets.
+ * Rewrites a summary's paths relative to the project root. The adapter
+ * writes every path absolute, and the written summaries are relative, so
+ * every field that contains a path is rewritten here: the unit's file, the
+ * boundary binding, render targets, module imports, wrappers and type refs.
  */
 export function relativizeSummaryPaths(
   summary: BehavioralSummary,
@@ -1520,9 +1519,9 @@ export function relativizeSummaryPaths(
 }
 
 /**
- * A ref shape records the file its type is declared in, and shapes sit in
- * a dozen places (inputs, outputs, effect payloads, the definitions table,
- * metadata), so this walks the whole summary rather than listing them.
+ * A ref type records the file its type is declared in. Types appear in a
+ * dozen places in a summary, such as inputs and effect payloads, so this
+ * walks the whole summary instead of listing them.
  */
 function relativizeTypeRefs(value: unknown, projectRoot: string): void {
   if (Array.isArray(value)) {
@@ -1547,7 +1546,7 @@ function relativizeTypeRefs(value: unknown, projectRoot: string): void {
   }
 }
 
-/** The file each wrapper around this unit is declared in, on the unit and on the outcomes it contributed. */
+/** Rewrites the file of each wrapper around this unit, both on the unit and on the transitions a wrapper contributed. */
 function relativizeWrapperPaths(
   summary: BehavioralSummary,
   projectRoot: string,
@@ -1606,7 +1605,7 @@ export function relativizeRenderTargets(
   }
 }
 
-/** The stub overlay for a run rooted where its options point. */
+/** The stub overlay for a Python or Ruby run, loaded from the run's root. */
 function pythonStubOverlay(runOptions: LanguageRunOptions): StubOverlay {
   return stubOverlayOf(loadStubs(runOptions.root));
 }

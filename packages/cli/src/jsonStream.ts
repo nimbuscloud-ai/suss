@@ -1,22 +1,23 @@
-// jsonStream.ts: write a JSON document without ever building it as one
-// string.
-//
-// V8 caps a single string at about 512MB. `JSON.stringify` of a whole
-// project's summaries passes that cap and throws `Invalid string length`,
-// so the run does all the work and then dies on the last line. Rendering
-// the document in pieces and writing each piece as it is produced keeps
-// every string small, and the bytes come out identical to what
-// `JSON.stringify(value, null, indent)` would have produced.
+/**
+ * Writes a JSON document without ever building it as one string.
+ *
+ * V8 caps a single string at about 512MB. `JSON.stringify` of a large
+ * project's summaries goes past that cap and throws `Invalid string
+ * length`, so the run would do all its work and then fail while writing.
+ * Rendering the document in pieces and writing each piece as it is
+ * produced keeps every string small. The bytes written are identical to
+ * `JSON.stringify(value, null, indent)`.
+ */
 
 import { once } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
 
 /**
- * Render a value no larger than this as one string. Anything bigger is
- * split into its elements or properties. The number is far below V8's
- * string cap on purpose: it also bounds how much text the writer keeps
- * at once, so peak memory does not track document size.
+ * A value that renders to at most this many characters is written as one
+ * string, and a larger one is split into its elements or properties. The
+ * limit is far below V8's cap because it also bounds how much text the
+ * writer keeps at once, so peak memory does not grow with the document.
  */
 const MAX_PIECE_CHARS = 4 * 1024 * 1024;
 
@@ -35,8 +36,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 /**
- * Apply the `toJSON` hook the way `JSON.stringify` does, since the split
- * path walks the value itself and would otherwise miss it.
+ * Calls `toJSON` the way `JSON.stringify` does. A value too large to
+ * render whole is walked here instead of by `JSON.stringify`, so the
+ * walk has to call it itself.
  */
 function unwrap(value: unknown): unknown {
   if (isRecord(value) && typeof value.toJSON === "function") {
@@ -106,11 +108,11 @@ function* piecesAt(
 }
 
 /**
- * A string in slices, quotes and all. Escaping a slice gives the same
- * characters escaping the whole string would, so long as a surrogate
- * pair is never cut in half: split one and each half becomes a lone
- * surrogate, which `JSON.stringify` writes as `\udXXX` instead of the
- * character it belongs to.
+ * Renders a string in slices, with its quotes. Escaping each slice gives
+ * the same characters as escaping the whole string, as long as no slice
+ * boundary cuts a surrogate pair in half. A cut pair leaves two lone
+ * surrogates, which `JSON.stringify` writes as `\udXXX` escapes instead
+ * of the character.
  */
 function* stringPieces(value: string): Generator<string> {
   yield '"';
@@ -179,10 +181,7 @@ function* recordPieces(
   yield indent > 0 ? `\n${padding(indent, depth)}}` : "}";
 }
 
-/**
- * Gather small pieces into write-sized batches so a document of many
- * thousand pieces does not cost a syscall each.
- */
+/** Gathers pieces into batches, so a document of thousands of pieces does not make a syscall per piece. */
 function batched(sink: (text: string) => void | Promise<void>) {
   let pending: string[] = [];
   let pendingChars = 0;
@@ -209,17 +208,17 @@ function batched(sink: (text: string) => void | Promise<void>) {
   };
 }
 
-/** Somewhere to write text to, plus whatever has to happen afterwards. */
+/** A destination for the text, and the cleanup to run after the last write. */
 interface Sink {
   write: (text: string) => void | Promise<void>;
   close: () => void;
 }
 
 /**
- * Write to stdout, waiting when the consumer falls behind and stopping
+ * Writes to stdout, waiting when the reader falls behind and stopping
  * when it goes away. `suss extract | head` closes the pipe as soon as
- * head has what it wants, which is that reader saying "enough" rather
- * than this run failing.
+ * head has its lines. The user asked for that, so the write stops
+ * quietly instead of failing the run.
  */
 function stdoutSink(): Sink {
   let broken = false;
@@ -237,8 +236,8 @@ function stdoutSink(): Sink {
         try {
           await once(process.stdout, "drain");
         } catch {
-          // The consumer went away mid-write. `noteBrokenPipe` has
-          // already decided whether that is worth stopping for.
+          // The reader closed the pipe during the write. `noteBrokenPipe`
+          // has already set `broken` if that should stop the writes.
         }
       }
     },
@@ -269,7 +268,7 @@ interface WriteJsonOptions {
 }
 
 /**
- * Write `value` as JSON followed by a newline, in pieces. The bytes match
+ * Writes `value` as JSON followed by a newline, in pieces. The bytes match
  * `${JSON.stringify(value, null, indent)}\n`.
  */
 export async function writeJson(options: WriteJsonOptions): Promise<void> {

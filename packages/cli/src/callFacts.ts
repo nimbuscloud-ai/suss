@@ -1,17 +1,15 @@
 /**
- * The call facts a summary set states, and the reach questions asked
- * over them as rules.
+ * The call facts in a set of summaries, and the reach questions asked
+ * over them as datalog rules.
  *
- * A summary says "this calls that" three ways: an invocation effect the
- * run resolved, a wrapper the framework runs on the way in, and a
- * caller-kind unit's own binding to the export it calls. All three are
- * one-hop facts here, `calls` joins them, and a reach
- * question in either direction is the fixpoint over `calls` with the
- * shortest call path kept as the tag on each derived fact.
- *
- * The node is the function, keyed by where it is, since one function
- * is several summaries when it is bound to several exports. A call
- * into any of them is a call into the function.
+ * A summary records a call four ways: an invocation effect the run
+ * resolved, a wrapper the framework runs on the way in, a caller unit's
+ * binding to the export it calls, and a function passed to a callee that
+ * calls its parameter. Each becomes a one-hop fact, the `calls` rules join
+ * them, and a reach question is the fixpoint over `calls`, with the
+ * shortest call path kept as the tag on each fact. A node is a function,
+ * keyed by its location, because a function bound to several exports has
+ * several summaries and a call into any of them is a call into it.
  */
 
 import {
@@ -44,13 +42,12 @@ import type { ResolvedTarget, TargetTouch } from "./target.js";
 export type FunctionKey = string;
 
 /**
- * Where a call came from: the caller's body, only the caller's binding
- * to the export it imports, or a function the caller passed to
- * something else that calls it back, or a wrapper the framework runs in
- * front of the caller. A written call can be proved from source; a
- * bound one has no call expression to find; a passed one runs
- * through a parameter one hop further in; a wrapping one is nowhere in
- * the caller's own body.
+ * How a call was recorded. `written` is a call expression in the
+ * caller's body. `bound` comes only from the caller's binding to an
+ * export, so there is no call expression to point at. `passed` is a
+ * function the caller hands to a callee, which calls it through a
+ * parameter. `wraps` is a wrapper the framework runs in front of the
+ * caller, which appears nowhere in the caller's body.
  */
 export type CallRecord = "written" | "bound" | "passed" | "wraps";
 
@@ -64,7 +61,7 @@ export interface CallHop {
 /** The calls from one function to another, in the order they are made. */
 export type CallPath = readonly CallHop[];
 
-/** The callees along a path, which is how an answer prints it. */
+/** The callees along a path, as an answer prints them. */
 export function callSpellings(path: CallPath): string[] {
   return path.map((hop) => hop.callee);
 }
@@ -73,12 +70,12 @@ export interface CallFacts {
   /** Every summary of each function, in the order the run wrote them. */
   units: ReadonlyMap<FunctionKey, BehavioralSummary[]>;
   /**
-   * Every call from one function to another, for a caller doing its own
-   * walk. A reach question per unit would run a fixpoint per unit,
-   * which a project with a thousand routes cannot afford.
+   * Every call from one function to another, for a caller that walks the
+   * graph itself. Asking a reach question per unit would run one fixpoint
+   * per unit, which is too slow on a project with a thousand routes.
    */
   edges(): CallEdge[];
-  /** Who calls a function directly, one entry per caller function. */
+  /** The direct callers of a function, one entry per caller and call spelling. */
   callersOf(target: ReachTarget): DirectCall[];
   /** Every function that ends up calling into the target, with the shortest path. */
   reaching(target: ReachTarget): Map<FunctionKey, CallPath>;
@@ -86,27 +83,26 @@ export interface CallFacts {
   reachedFrom(start: Iterable<FunctionKey>): Map<FunctionKey, CallPath>;
 }
 
-/** What a reach question ends at, as the facts spell it. */
+/** Where a reach question ends. */
 export interface ReachTarget {
-  /** The functions themselves, which nothing reaches by being one of them. */
+  /** The target functions. They are left out of the answer themselves. */
   functions: ReadonlyArray<FunctionKey>;
   /** The package exports they provide, which a caller can be bound to. */
   keys: ReadonlyArray<string>;
-  /** Functions at the target already, when it is a boundary and not a function. */
+  /** Functions that touch the target directly, when it is a boundary. */
   at?: ReadonlyArray<FunctionKey>;
 }
 
-/** One call, as a walk over the graph reads it. */
 export interface CallEdge {
   from: FunctionKey;
   to: FunctionKey;
-  /** The call as the caller writes it, which is how a chain prints. */
+  /** The call as the caller's source writes it, which a printed chain shows. */
   callee: string;
 }
 
 export interface DirectCall {
   caller: FunctionKey;
-  /** The call as the caller writes it, or the export's label when only the binding records it. */
+  /** The call as the caller's source writes it, or the export's label when only the binding records the call. */
   callee: string;
 }
 
@@ -185,8 +181,8 @@ export function readCallFacts(
     }
   }
 
-  // A question adds its own facts and derives from them, so each one
-  // gets a database of its own over the same base facts.
+  // Each question adds its own facts before evaluating, so each one gets
+  // a fresh database loaded with the same base facts.
   const database = (): Database => {
     const db = new Database();
     for (const fact of invocation) {
@@ -219,7 +215,7 @@ export function readCallFacts(
   };
 }
 
-/** Where a function is, which is the one thing all of its summaries share. */
+/** A function's key is its location, since every summary of one function shares it. */
 export function functionOf(summary: BehavioralSummary): FunctionKey {
   const { file, range, workspace } = summary.location;
   return [workspace ?? "", file, range.start, range.end].join(" ");
@@ -259,9 +255,9 @@ const CALLS: Rule[] = [
     [lit("wraps", F, G, L)],
     "calls-wraps",
   ),
-  // F passes G to B at position I, and B calls its own parameter I: the
-  // join is what makes a callback reachable through the function it was
-  // handed to, and L is the sentence B's own scan wrote for that call.
+  // F passes G to B at position I, and B calls its parameter I. This join
+  // makes a callback reachable through the function it was passed to. L
+  // is the description B's summary recorded for that call.
   rule(
     "calls",
     [F, G, L, constant("passed")],
@@ -271,9 +267,9 @@ const CALLS: Rule[] = [
   rule("provided", [K], [lit("provides", G, K)], "provided"),
 ];
 
-// When some summary provides the export, the calls-bound rule already
-// links the caller to that provider. The reaches-bound rule is for an
-// export nothing here provides, so the chain can still end at it.
+// When a summary provides the export, the calls-bound rule already links
+// the caller to that provider. The reaches-bound rule covers an export no
+// summary provides, so a chain can still end at it.
 const REACHING: Rule[] = [
   ...CALLS,
   rule("reaches", [F], [lit("atTarget", F)], "reaches-at"),
@@ -313,7 +309,7 @@ const REACHED: Rule[] = [
   ),
 ];
 
-/** Which `CallRecord` a `calls` fact's kind slot spells, "written" for anything else. */
+/** The `CallRecord` for a `calls` fact's kind slot. Unknown kinds fall back to "written". */
 const CALL_RECORD_OF: Record<string, CallRecord> = {
   written: "written",
   bound: "bound",
@@ -334,7 +330,7 @@ function callAt(body: readonly BodyMatch[], index: number): CallHop {
   };
 }
 
-/** The hop recorded by the `boundTo` fact at `index`, which lands in no function here. */
+/** The hop recorded by the `boundTo` fact at `index`. No summary provides its export, so it has no function. */
 function bindingAt(body: readonly BodyMatch[], index: number): CallHop {
   const match = body[index];
   return {
@@ -361,7 +357,7 @@ const PATH_OF: Record<
   "reached-onward": (body, tags) => [...tags[0], callAt(body, 1)],
 };
 
-/** The shortest path wins, and between two of one length the spelling that sorts first. */
+/** Keeps the shortest path. Between two of the same length, it keeps the one whose callees sort first. */
 const SHORTEST_PATH: TagAlgebra<CallPath> = {
   asserted: [],
   absent: [],
@@ -422,7 +418,7 @@ function reachedFunctions(
   return paths;
 }
 
-/** Every derived call, once per caller, callee and spelling. */
+/** Every derived call, once per caller, target function and call spelling. */
 function callEdges(db: Database): CallEdge[] {
   evaluate(db, CALLS);
   const edges: CallEdge[] = [];
@@ -444,17 +440,17 @@ function callEdges(db: Database): CallEdge[] {
 }
 
 /**
- * One entry per caller function and spelling. A caller the invocation
- * effects already place is not repeated from its binding, which
- * spells the same call a second way.
+ * One entry per caller function and call spelling. A caller already found
+ * through an invocation effect is not listed again from its binding,
+ * since the binding records the same call a second way.
  */
 function directCallers(db: Database, target: ReachTarget): DirectCall[] {
   const own = new Set(target.functions);
   const calls: DirectCall[] = [];
   const seen = new Set<string>();
-  // Bound callers are placed below from boundTo/provides directly,
-  // since a "calls" fact of that kind says the same thing a second way.
-  // A wrapped unit does not call its wrapper, so it is left out too.
+  // Bound callers come from the boundTo facts below, which record the
+  // callee as the export's label. A wrapped unit does not call its
+  // wrapper, so wraps facts are skipped too.
   evaluate(db, CALLS);
   for (const fn of target.functions) {
     for (const tuple of db.lookup("calls", 1, fn)) {
@@ -493,16 +489,16 @@ export type SpelledFunctions =
   | {
       found: true;
       target: ReachTarget;
-      /** What the answer calls the subject. */
+      /** The subject's label in the answer. */
       label: string;
     }
   | { found: false; headline: string };
 
 /**
- * The functions a spelling picks out, and the exports they provide. A
- * boundary spelling picks out the export itself, so a caller bound to
- * it counts even when no summary here provides it. A bare name that
- * is two functions is turned down with both listed.
+ * The functions a spelling matches, and the exports they provide. A
+ * boundary spelling matches the export itself, so a caller bound to it
+ * counts even when no summary provides it. A bare name that matches
+ * several functions is rejected, and the headline lists them.
  */
 export function functionsSpelled(
   spec: string,
@@ -555,10 +551,10 @@ export function functionsSpelled(
 }
 
 /**
- * What a reach question ends at. A boundary is reached by touching it
- * or by calling into whatever serves it; a unit is reached by calling
- * it. A caller bound to a function-call boundary is placed by that
- * binding, and anything else touching the boundary is at it already.
+ * Where a reach question ends. A function reaches a boundary by touching
+ * it or by calling into the unit that serves it, and reaches a unit by
+ * calling it. A caller bound to a function-call boundary is linked by
+ * that binding. Any other unit that touches the boundary counts as at it.
  */
 export function reachTargetOf(target: ResolvedTarget): ReachTarget {
   if (target.kind !== "boundary") {
@@ -622,9 +618,9 @@ function reachTargetOfUnits(
 }
 
 /**
- * The summary an answer prints for a function: the one for the export
- * it provides, since that is the id its callers know it by, else the
- * first one written.
+ * The summary an answer prints for a function. That is the provider
+ * summary when there is one, because callers refer to the function by
+ * that id, and otherwise the first summary the run wrote.
  */
 export function representativeUnit(
   facts: CallFacts,

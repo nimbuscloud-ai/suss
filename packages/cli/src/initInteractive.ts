@@ -1,16 +1,16 @@
 /**
- * The guided setup.
+ * The guided form of `suss init`.
  *
- * `suss init` on its own reads the project and prints the commands,
- * which is the right output for a script or for anyone who would rather
- * see what a tool intends before it acts. It is a poor first run for a
- * person, who then has to copy four commands in order.
+ * The printed form lists the commands to run. That suits a script, or a
+ * user who wants to see what a tool will do before it does it. A person
+ * trying suss for the first time would instead have to copy four
+ * commands in order.
  *
- * So with a terminal attached, the same findings become a set of
- * offers: install these packs, run the first check, keep a suppressions
- * file, add a CI step. Nothing touches the disk until one is accepted.
- * Without a terminal this falls through to the printed form, which a CI
- * job piping `suss init` depends on.
+ * With a terminal attached, init turns the same findings into offers:
+ * install the packs, run the first check, add a suppressions file, add a
+ * CI step. Nothing is written to disk until the user accepts one. Without
+ * a terminal, init prints the commands, which CI jobs that pipe
+ * `suss init` rely on.
  */
 
 import fs from "node:fs";
@@ -40,7 +40,7 @@ import type { InitReport, PackSuggestion } from "./init.js";
 import type { Workspace } from "./workspaces.js";
 
 interface Target {
-  /** Relative to where init was pointed. "." for a single project. */
+  /** Relative to the directory init ran in, or "." for a single project. */
   directory: string;
   label: string;
   report: InitReport;
@@ -58,7 +58,6 @@ export async function initInteractive(
   const root = path.resolve(options.dir ?? process.cwd());
   const targets = await findTargets(root);
 
-  // No terminal means no prompts.
   if (options.plain === true || !p.isTTY(process.stdout) || p.isCI()) {
     process.stdout.write(printable(root, targets));
     return 0;
@@ -66,8 +65,8 @@ export async function initInteractive(
 
   p.intro("suss init");
 
-  // A project whose manifest suss could not read has nothing to install
-  // and something to say.
+  // With no packs to install, the setup still reports what suss could
+  // not read, so the user knows why nothing matched.
   const withPacks = targets.filter(
     (target) => declaredPacks(target.report).length > 0,
   );
@@ -120,8 +119,8 @@ async function findTargets(root: string): Promise<Target[]> {
           label: pkg.name ?? pkg.directory,
         }));
 
-  // No workspace file lists a Python or Ruby service beside an npm
-  // workspace, nor a root that is itself the Rails app the packages sit in.
+  // An npm workspace file never lists a Python or Ruby service next to
+  // the packages, or a root that is itself a Rails app, so look for those.
   for (const directory of projectDirectoriesAtOrBelow(root)) {
     if (!directories.some((known) => known.directory === directory)) {
       directories.push({ directory, label: directory });
@@ -157,9 +156,9 @@ function projectDirectoriesAtOrBelow(root: string): string[] {
 }
 
 /**
- * The root's own report counts the source files of every project below
- * it, so it would report the language a project below already has packs
- * for as one suss could not place.
+ * The root's report counts source files in every project below it. Drop
+ * from the root the languages a project below already has packs for, or
+ * the root would report them as languages suss could not place.
  */
 function withoutLanguagesCoveredBelow(targets: Target[]): Target[] {
   const coveredBelow = new Set(
@@ -184,9 +183,9 @@ function withoutLanguagesCoveredBelow(targets: Target[]): Target[] {
 }
 
 /**
- * A directory of Python with no requirements file beside it produces no
- * suggestions and no unread manifest, and is still worth telling the
- * reader about.
+ * Whether a target has anything to report. A Python directory with no
+ * requirements file gets no suggestions and has no unread manifest, but
+ * the user still needs to hear about it.
  */
 const worthReporting = (report: InitReport): boolean =>
   declaredPacks(report).length > 0 ||
@@ -299,15 +298,14 @@ function uniquePacks(targets: Target[]): PackSuggestion[] {
 }
 
 interface Progress {
-  /** Called with each line the command prints, so the spinner can show
-   * where it has got to. */
+  /** Called with each line the command prints, so the spinner can show progress. */
   saw: (line: string) => void;
   stop: (message: string) => void;
 }
 
 /**
- * Shows seconds elapsed and the last line the command printed, so a
- * long install is distinguishable from a hang.
+ * Shows seconds elapsed and the last line the command printed, so the
+ * user can tell a long install from a hang.
  */
 function startProgress(label: string): Progress {
   const spin = p.spinner();
@@ -323,7 +321,6 @@ function startProgress(label: string): Progress {
   };
 
   const tick = setInterval(redraw, 1000);
-  // This timer must not keep the process alive on its own.
   tick.unref?.();
 
   return {
@@ -466,7 +463,7 @@ function runCommandsFor(target: Target): RunnableCommand[] {
   const code = target.report.suggestions.filter((s) => s.kind !== "contract");
   const languages = [...new Set(code.map((s) => s.language ?? "typescript"))];
   for (const language of languages) {
-    // One command per language: a pack is written against one
+    // One command per language, because each pack works with one
     // language's adapter.
     const args = ["extract"];
     if (target.directory !== ".") {
@@ -523,11 +520,10 @@ function runCommandsFor(target: Target): RunnableCommand[] {
 }
 
 /**
- * Write down what this run found, so a later command can read it.
- *
- * Without it the artifacts a project declares are known once, here, and
- * a run that forgets one of them pairs those boundaries with nothing
- * and cannot say why.
+ * Offers to write the project file, so later commands know which specs
+ * and templates this project has. Without it, init is the only place that
+ * finds them, and a run that leaves one out pairs those boundaries with
+ * nothing and cannot say why.
  */
 async function offerProjectFile(root: string, chosen: Target[]): Promise<void> {
   if (fs.existsSync(path.join(root, PROJECT_FILE))) {
@@ -580,8 +576,8 @@ async function offerSuppressions(root: string): Promise<void> {
     return;
   }
 
-  // The schema requires `version` and rejects unknown keys, so a
-  // `$comment` note would stop the file loading.
+  // The schema rejects unknown keys, so the starter explains itself in an
+  // example rule's `reason` instead of in a `$comment` key.
   const starter = {
     version: 1,
     rules: [

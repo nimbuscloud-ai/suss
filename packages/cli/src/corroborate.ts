@@ -1,25 +1,17 @@
-// corroborate.ts: upgrade derivations with observations (experimental).
-//
-// For each transition of a handler summary: generate inputs that
-// satisfy the transition's own extracted conditions (rejection
-// sampling with the three-valued interpreter as the oracle, no
-// constraint solver), execute the real handler function in a vm with
-// a stub response object, and compare the observed status with the
-// claimed one. The verdict lands on
-// `transition.confidence.corroboration`:
-//
-//   - observed: every satisfying run produced the claimed status
-//   - refuted: some satisfying run produced a different status;
-//                 the counterexample is attached (an extractor bug or
-//                 a genuine surprise: both are product output)
-//   - untested: no satisfying input was found (conditions abstain
-//                 or sampling missed), or every run hit a dependency
-//                 the harness cannot supply (a bare `ReferenceError`
-//                 in the sandbox marks the path as dependency-gated)
-//
-// Scope (v0): `handler`-kind summaries with rest semantics recognized
-// by the express or fastify packs, the response-object protocols the
-// vm stub can speak. Everything else is skipped untouched.
+/**
+ * Checks a handler's extracted transitions by running the handler, for
+ * the experimental `suss corroborate` command.
+ *
+ * For each transition, it samples random inputs and keeps those that
+ * `evalConditions` says satisfy the transition's conditions. It runs the
+ * handler in a vm with a stub response object and compares the status
+ * sent with the claimed one. The verdict goes on
+ * `transition.confidence.corroboration`. DESIGN.md explains the verdicts.
+ *
+ * Only `handler` summaries with REST bindings from the express or
+ * fastify packs are in scope, because the stub only imitates their
+ * response objects. Other summaries are left untouched.
+ */
 
 import vm from "node:vm";
 
@@ -34,7 +26,7 @@ import {
 } from "@suss/behavioral-ir";
 
 // ---------------------------------------------------------------------------
-// Input synthesis: pools from the summary's own predicates
+// Sampling inputs from the paths and literals in the summary's conditions
 // ---------------------------------------------------------------------------
 
 interface InputPath {
@@ -112,7 +104,7 @@ function collectPredicateFacts(
   }
 }
 
-/** mulberry32: deterministic PRNG so corroboration runs reproduce. */
+/** The mulberry32 generator, seeded so that two runs sample the same inputs. */
 function mulberry32(seed: number): () => number {
   let state = seed;
   return () => {
@@ -140,7 +132,7 @@ function buildCandidate(
   };
   for (const { root, path } of paths) {
     if (random() < 0.25) {
-      continue; // leave this field absent sometimes
+      continue; // a quarter of candidates omit each field, to reach the missing-field branches
     }
     let cursor = enter(roots, root);
     for (let i = 0; i < path.length - 1; i++) {
@@ -233,9 +225,9 @@ async function executeOnce(
 // ---------------------------------------------------------------------------
 
 export interface CorroborateOptions {
-  /** Verdict-producing executions to aim for per transition. */
+  /** How many runs per transition should reach a verdict. Defaults to 25. */
   runs?: number;
-  /** Sampling attempts per transition before giving up. */
+  /** How many inputs to sample per transition before giving up. Defaults to 300. */
   attempts?: number;
 }
 
@@ -283,9 +275,11 @@ function claimedStatus(transition: Transition): number | null {
 }
 
 /**
- * Corroborate one summary in place: stamps
+ * Corroborates one summary in place, setting
  * `transition.confidence.corroboration` on every response transition
- * with a literal status. Returns true when the summary was in scope.
+ * that has a literal status.
+ *
+ * @returns true when the summary was in scope.
  */
 export async function corroborateSummary(
   summary: BehavioralSummary,

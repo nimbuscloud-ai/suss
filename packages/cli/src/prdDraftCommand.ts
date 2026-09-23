@@ -1,16 +1,16 @@
 /**
- * `suss infer prd`: turn curated boundary intent into starting PRD
- * documents, one per boundary, with a scenario per outcome.
+ * `suss infer prd` drafts a PRD for each curated boundary intent, with
+ * one scenario per outcome.
  *
- * The link is the part a machine can supply, since it is the boundary
- * document's name and the outcome's id. The words are not, so `when`
- * and `expect` are left blank with a hint beside each.
+ * suss can fill in each scenario's link, because the link is the boundary
+ * document's name plus the outcome's id. Only a person can write `when`
+ * and `expect`, so those are left blank with a hint beside each.
  *
- * Reading intent rather than summaries is what puts this after
- * curation: an uncurated boundary document has blank purpose and
- * audience and does not load. Linking to `200-ok` before somebody
- * renames that outcome would write a dangling link into a file suss
- * produced itself.
+ * The command reads the boundary intent documents, so it only runs once
+ * the boundary documents are curated. An uncurated one has a blank
+ * purpose and audience and does not load. Drafting from it would link to
+ * an outcome id like `200-ok` that the curator may yet rename, and the
+ * file suss wrote would then contain a broken link.
  */
 
 import fs from "node:fs";
@@ -34,14 +34,14 @@ export interface PrdDraftOptions {
   from: string;
   /** Where the documents go. Default: the folder they were read from. */
   out?: string;
-  /** Same destination, but it refuses to write over PRDs already there. */
+  /** Like `out`, but refuses a folder that already contains PRDs. */
   into?: string;
 }
 
 export interface DraftedPrd {
   /** File name within the destination directory. */
   file: string;
-  /** The boundary intent it covers, by that document's `name`. */
+  /** The `name` of the boundary intent the PRD covers. */
   intent: string;
   scenarios: number;
   yaml: string;
@@ -49,13 +49,13 @@ export interface DraftedPrd {
 
 export interface PrdDraftResult {
   drafted: DraftedPrd[];
-  /** Boundary intents a scenario already points at, left alone. */
+  /** Boundary intents that an existing scenario already links to. They get no draft. */
   covered: string[];
 }
 
 const PRD_DOC = /\.prd\.(yaml|yml|json)$/;
 
-/** The blanks, and the hint written beside each one. */
+/** The hint written beside each blank. */
 const BLANKS: Record<string, string> = {
   title: "what this document covers, in your words",
   purpose: "why it matters",
@@ -64,7 +64,7 @@ const BLANKS: Record<string, string> = {
   expect: "what should happen, in your words",
 };
 
-/** Keys a blank line comes before, so the file reads in parts. */
+/** Keys that get a blank line before them, to split the file into sections. */
 const PARAGRAPHS = new Set(["title", "scenarios"]);
 
 function header(intent: BoundaryIntentSummary, from: string): string[] {
@@ -98,8 +98,8 @@ function draftDocument(
     })),
   };
 
-  // Filling the blanks first means the only thing the reader can
-  // complain about in the file this writes is the blanks.
+  // Validate with the blanks filled, so that once written, the file fails
+  // to load for the blanks and nothing else.
   loadIntentDoc({
     ...doc,
     title: FILLED_IN,
@@ -120,7 +120,7 @@ function draftDocument(
   };
 }
 
-/** `from` is the folder the intent was read from, for each header. */
+/** `from` is the folder the intent was read from. Each draft's header mentions it. */
 export function prdDraftResult(
   intents: IntentSummary[],
   from: string,
@@ -155,9 +155,9 @@ export function prdDraftResult(
 // ---------------------------------------------------------------------------
 
 /**
- * A directory of intent that does not load, said the way a person can
- * act on it. An uncurated draft is the case worth naming, since running
- * these two commands back to back is what produces one.
+ * Loads the intent folder, and when it fails to load, says why a PRD
+ * needs it to. The usual cause is an uncurated boundary draft, from
+ * running `suss infer intent` and then this command straight away.
  */
 function readIntentDirectory(from: string): IntentSummary[] {
   const resolved = path.resolve(from);
@@ -218,7 +218,7 @@ export function prdDraft(options: PrdDraftOptions): number {
   return 0;
 }
 
-/** How many already-covered intents get written out before a count takes over. */
+/** How many covered intents the report lists by name before it switches to a count. */
 const COVERED_SHOWN = 10;
 
 function coveredReport(covered: string[]): string {
