@@ -1,21 +1,12 @@
-// graphqlContractAgreement.ts: sibling of contractAgreement.ts for
-// the GraphQL response model.
-//
-// When two or more sources describe the same `gql:Type.field` boundary
-// and each carries `metadata.graphql.declaredContract`, compare them.
-// Today's contributors include `@suss/contract-graphql` (SDL → contract
-// summaries). Future server-side population from
-// `framework-nestjs-graphql` (decorator return types) and Apollo
-// resolverMap (SDL stored on the resolver's metadata) will let this
-// fire on contract-vs-implementation mismatches in real codebases.
-//
-// Reuses the existing `contractDisagreement` finding kind; the
-// description has the GraphQL-specific shape disagreement detail.
-//
-// Provenance gate: skip pairs where any contributor's contract is
-// `derived` AND the other side is the same source (tautological self-
-// comparison). Cross-source comparison still runs even when one side
-// is `derived`: that's the point.
+/**
+ * Compares the GraphQL contracts that two or more sources declare for
+ * the same `gql:Type.field` boundary, under
+ * `metadata.graphql.declaredContract`. `@suss/contract-graphql` writes
+ * these contracts from an SDL file.
+ *
+ * A disagreement is reported as `contractDisagreement`, the same kind
+ * REST agreement uses, with the GraphQL detail in the description.
+ */
 
 import { summaryRef } from "@suss/behavioral-ir";
 
@@ -44,21 +35,15 @@ interface GraphqlBoundaryGroup {
 }
 
 /**
- * Walk a flat summary list, group sources by graphql-resolver
- * boundary key, and emit `contractDisagreement` findings for every
- * boundary where 2+ sources declare contracts that disagree.
+ * Group GraphQL resolver contracts by boundary key and report every
+ * boundary where two sources disagree. Two sources disagree when their
+ * return types do not match under `bodyShapesMatch`, or when an
+ * argument appears in only one of them, or has types that do not
+ * match.
  *
- * Disagreement axes (v0):
- *   - return type incompatible (via bodyShapesMatch, same machinery
- *     REST agreement uses)
- *   - argument set differs (a present on one source, absent on the
- *     other; or types incompatible at a shared name)
- *
- * Argument REQUIRED-ness is recorded but not flagged as disagreement
- * yet: the precise rule (does adding required args break
- * compatibility?) depends on whether the contract is provider-side
- * or consumer-side, which we don't separate cleanly today. Tracked
- * as a follow-up.
+ * Whether an argument is required is not compared. Adding a required
+ * argument breaks a caller and not a resolver, and these contracts do
+ * not record which side they describe.
  */
 export function checkGraphqlContractAgreement(
   summaries: BehavioralSummary[],
@@ -121,7 +106,6 @@ function compareGraphqlSources(
       continue;
     }
 
-    // Return-type compatibility: same matcher REST agreement uses.
     const returnMatch = bodyShapesMatch(
       baseline.contract.returnType,
       other.contract.returnType,
@@ -141,8 +125,6 @@ function compareGraphqlSources(
       });
     }
 
-    // Argument-set comparison: name-based union, then per-name type
-    // check on shared names.
     const baseArgs = new Map(baseline.contract.args.map((a) => [a.name, a]));
     const otherArgs = new Map(other.contract.args.map((a) => [a.name, a]));
     const allNames = new Set([...baseArgs.keys(), ...otherArgs.keys()]);
@@ -168,10 +150,9 @@ function compareGraphqlSources(
         }
         continue;
       }
-      // Argument present on one side and missing from the other.
-      // Only flag when both contracts are "independent", derived
-      // contracts often summarise differently and missing args may
-      // just mean the source didn't enumerate them.
+      // A derived contract may leave out arguments its source did not
+      // list, so a missing argument counts only when both contracts are
+      // independent.
       if (
         baseline.contract.provenance === "independent" &&
         other.contract.provenance === "independent"

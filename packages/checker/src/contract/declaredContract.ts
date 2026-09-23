@@ -1,12 +1,11 @@
-// declared-contract.ts: shared helpers for reading the HTTP-scoped
-// metadata a summary may carry: the declared response contract, the
-// body accessors a consumer uses (axios `.data`, fetch `.body`), and
-// the status-code accessors it uses (almost always `.status` today).
-//
-// All three live under `metadata.http.*` so the namespace is explicitly
-// HTTP-scoped; a future GraphQL / Lambda-invoke / queue pack would use
-// its own sibling namespace (`metadata.graphql`, `metadata.lambda`, …).
-// See `docs/theory/boundary-semantics.md`.
+/**
+ * Reads the HTTP metadata a summary may have: the declared response
+ * contract, the property a consumer reads the body from (axios `.data`,
+ * fetch `.body`), and the properties it reads the status from.
+ *
+ * All of it lives under `metadata.http`. Other protocols keep theirs in
+ * their own namespace, such as `metadata.graphql`.
+ */
 
 import { readHttpMetadata } from "@suss/behavioral-ir";
 
@@ -34,23 +33,20 @@ export interface DeclaredContract {
    */
   defaultResponse: { body: TypeShape | null } | null;
   /**
-   * "derived": the contract is extracted from the same source that
-   *   drives this summary's `transitions[]` (e.g. an OpenAPI stub's
-   *   contract and its transitions both come from the same operation's
-   *   `responses` block). Self-comparison via checkContractConsistency
-   *   would be tautological and is skipped.
+   * "derived" means the contract comes from the same source as this
+   * summary's `transitions`, as with an OpenAPI stub, where both come
+   * from one operation's `responses` block. Comparing the two would
+   * prove nothing, so `checkContractConsistency` skips them.
    *
-   * "independent": the contract is a separate statement from the
-   *   transitions (ts-rest router declaration vs handler code, CFN
-   *   MethodResponses vs integration-derived transitions, etc.).
-   *   Contract-consistency comparison is meaningful.
+   * "independent" means the contract is a separate statement, such as a
+   * ts-rest router declaration beside the handler code, so comparing
+   * the two can find something.
    *
-   * Defaults to "independent" when a pack doesn't explicitly say; we'd
-   * rather investigate a spurious finding than silently drop one that
-   * mattered.
+   * A pack that does not say gets "independent", because a spurious
+   * finding costs less than a missed one.
    */
   provenance: ContractProvenance;
-  /** Framework tag recorded by the producing pack (passed through). */
+  /** The framework the producing pack recorded. */
   framework?: string;
 }
 
@@ -111,8 +107,8 @@ export function bodyAccessorsFor(consumer: BehavioralSummary): string[] {
   if (fromMetadata !== undefined && fromMetadata.length > 0) {
     return fromMetadata;
   }
-  // Fallback for summaries produced before bodyAccessors metadata existed
-  // (or written by hand): assume the historical fetch wrapper.
+  // A hand-written summary, or one from before packs recorded body
+  // accessors, gets the fetch wrapper's `body`.
   return ["body"];
 }
 
@@ -141,11 +137,10 @@ export function unwrapBodyField(
 }
 
 /**
- * Names of properties that a consumer summary uses to read the HTTP
- * status code from a response. Adapter writes these from the pack's
- * `responseSemantics`; falls back to the historical names for
- * hand-written summaries or summaries produced before this metadata
- * existed.
+ * The properties a consumer reads the HTTP status from. The adapter
+ * records them from the pack's `responseSemantics`. A hand-written
+ * summary, or an older one without them, gets `status` and
+ * `statusCode`.
  */
 export function statusAccessorsFor(
   summary: BehavioralSummary,
@@ -158,11 +153,11 @@ export function statusAccessorsFor(
 }
 
 /**
- * Names of properties a consumer summary uses to ask whether a response
- * succeeded, rather than which status it returned. `fetch` calls it `ok`,
- * and a consumer guarding on it handles the whole 2xx class. Kept apart
- * from the status accessors because the two answer different questions
- * and only one of them compares against a number.
+ * The properties a consumer reads to learn whether a response
+ * succeeded, as opposed to which status it had. `fetch` calls it `ok`,
+ * and a consumer guarding on it handles the whole 2xx class. These are
+ * kept apart from the status accessors because only a status accessor
+ * compares against a number.
  */
 export function successAccessorsFor(
   summary: BehavioralSummary,

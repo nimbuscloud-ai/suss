@@ -1,6 +1,5 @@
-// The read-set rule moved into @suss/behavioral-ir so the intent
-// checker can ask it too, and the intent checker does not depend on
-// this package. The passes here keep importing it from where it was.
+// The intent checker uses the read-set rule too and does not depend on
+// this package, so the rule lives in @suss/behavioral-ir.
 
 export {
   boundaryInputReads,

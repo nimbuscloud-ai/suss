@@ -1,25 +1,16 @@
-// routingFacts.ts: what the reachability walk needs, read once off a
-// summary set.
-//
-// That means the routing edges as joinable tuples, each router's match
-// records grouped for its language's selector, the resources that are
-// deployable units, and the serving claims placed inside those units.
-//
-// Everything here reads the routing metadata namespace and the
-// summaries' own identity fields. Nothing here mentions a protocol or a
-// resource kind. An edge with an unresolved end contributes no tuple,
-// because there is nothing to join it on, and the summary still keeps
-// the unresolved record for a reader to render.
-//
-// Every node the walk joins on is keyed by (document scope, name),
-// never by the bare name. A logical id is unique inside one document
-// and nowhere else, so two unrelated stacks that both declare an
-// `HttpListener` are two separate nodes, and neither can stand in for
-// the other. The scope is the root document label read off the
-// summary's own provenance (`rootDocumentLabel`), so every document of
-// one nested tree shares one scope and joins within the tree still
-// work. The summaries themselves keep their bare names; only the walk's
-// keying is scoped.
+/**
+ * Reads what the reachability walk needs from a summary set, once: the
+ * routing edges as joinable tuples, each router's match records grouped
+ * for its language's selector, the deployable units, and the serving
+ * claims placed inside those units.
+ *
+ * Only the routing metadata and the summaries' identity fields are
+ * read, and nothing here depends on a protocol or a resource kind. An
+ * edge with an unresolved end adds no tuple, since there is nothing to
+ * join on, and the summary keeps the unresolved record for a reader.
+ * Every node is keyed by (document scope, name). The flow README
+ * explains why.
+ */
 
 import {
   BOUNDARY_ROLE,
@@ -345,8 +336,8 @@ function namedUnitScopes(summaries: BehavioralSummary[]): NamedUnitScope[] {
 }
 
 /**
- * Placement only. Whether a claim serves any particular request is a
- * question for its protocol, asked once per query.
+ * This only places claims in units. Whether a claim serves a given
+ * request depends on its protocol, and is asked once per query.
  */
 function collectUnitsAndClaims(
   summaries: BehavioralSummary[],

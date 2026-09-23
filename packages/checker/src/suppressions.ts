@@ -1,16 +1,14 @@
-// suppressions.ts: apply .sussignore rules to behavioural findings.
-//
-// The pipeline (rule shape, first-match-wins, effect application,
-// threshold counting) lives in @suss/ir-core so the intent checker
-// shares it without depending on this package; the rule types are
-// re-exported here for existing consumers. What this module owns is
-// the behavioural matcher: how a rule's `boundary` / `consumer` /
-// `provider` discriminators match a two-sided `Finding` (boundary key
-// computed from the finding's BoundaryBinding, per-side summary and
-// transitionId compared directly).
-//
-// File I/O stays out: the CLI reads .sussignore.yml / .sussignore.json
-// from disk and hands the parsed rules here.
+/**
+ * Applies .sussignore rules to behavioural findings.
+ *
+ * The rule format, and how a matching rule is applied, live in
+ * @suss/ir-core so the intent checker can share them without depending
+ * on this package. This module decides whether a rule's `boundary`,
+ * `consumer` and `provider` match a two-sided `Finding`: the boundary
+ * by key, and each side by summary and transition id.
+ *
+ * The CLI reads the rule file from disk and passes the parsed rules in.
+ */
 
 import {
   namesDocumentByFileName,
@@ -36,16 +34,13 @@ export {
 } from "@suss/ir-core";
 
 /**
- * Does a rule's `summary` refer to this summary? Exact match first.
- * Then the one legacy spelling: a manifest reader used to label a
- * document by its file name alone, so `cloudformation:template.yaml`
- * covered every template.yaml a run read at once. The label now
- * includes the path, and an old rule would quietly stop matching, so a
- * rule written with a bare file name still matches that reader's
- * documents with that file name. It matches exactly the set it matched
- * before the label changed and nothing more: a rule with no reader
- * label and a rule already written with a path both take the exact
- * comparison above.
+ * Whether a rule's `summary` refers to this summary. An exact match
+ * counts. So does a rule that gives a document by file name alone, such
+ * as `cloudformation:template.yaml`, which matches every document from
+ * that reader with that file name. Rules written before document labels
+ * included the path look like that, and this keeps them matching the
+ * same documents. A rule with a path, or with no reader label, needs
+ * the exact match.
  */
 function summaryMatches(ruleSummary: string, findingSummary: string): boolean {
   if (ruleSummary === findingSummary) {
@@ -64,10 +59,6 @@ function summaryMatches(ruleSummary: string, findingSummary: string): boolean {
   );
 }
 
-/**
- * Both sides of a finding have the same two discriminators, so one
- * helper works for either side.
- */
 function ruleSideMatches(
   side: SuppressionRule["consumer"],
   findingSide: Finding["consumer"],
@@ -91,8 +82,8 @@ function ruleSideMatches(
 }
 
 /**
- * Dedupe keeps one representative and lists the other contributing
- * providers in `sources`; a rule that gives any contributor matches.
+ * Dedupe keeps one finding per group and lists the other providers in
+ * `sources`, so a rule that gives any of them matches.
  */
 function providerSideMatches(
   side: SuppressionRule["provider"],

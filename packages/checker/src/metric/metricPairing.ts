@@ -1,16 +1,16 @@
 /**
- * metricPairing.ts: pair the side that declares a metric against the
- * sides that read it, and report a reading that asks the series for a
- * value it does not have.
+ * Compares the side that declares a metric with the sides that read it,
+ * and reports a reading that asks the series for a value it does not
+ * have.
  *
- * The declaring side says what one measurement is under
- * `metricContract`, and a reading says under `metricReading` what shape
- * it compares against and what it turns each window into first.
- * Comparing those two is the whole rule, so no pack runs at check time.
+ * The declaring side records what one measurement is under
+ * `metricContract`. A reading records under `metricReading` which shape
+ * it compares against and what it reduces each window to first. The
+ * check compares those two fields, so no pack runs at check time.
  *
  * Both sides key on (metricSystem, metricType), so the generic pairing
- * pass already put them together and recorded the pair. This one only
- * judges.
+ * pass has already paired them and recorded the pair. This pass only
+ * compares them.
  */
 
 import {
@@ -106,8 +106,8 @@ function shapeMismatch(
   if (needs === undefined || wanted === undefined) {
     return null;
   }
-  // What the reading gets: what it reduces each window to when it
-  // reduces, and otherwise what the series measures.
+  // A reading that reduces each window gets the reduced value, and one
+  // that does not gets the raw measurement.
   const got = needs.reducesTo ?? readMetricContractMetadata(provider)?.values;
   const binding = reading.identity.boundaryBinding;
   if (got === undefined || got === wanted || binding === null) {
@@ -126,9 +126,9 @@ function shapeMismatch(
 }
 
 /**
- * The setting that would give the reading the shape it compares
- * against, and the values of it that would, when whoever read the
- * reading said how one is written.
+ * A hint giving the setting, and the values of it, that would reduce
+ * each window to the shape the reading compares against. Empty when the
+ * reading's metadata does not describe its reduction setting.
  */
 function howToFix(
   needs: MetricReadingMetadata,

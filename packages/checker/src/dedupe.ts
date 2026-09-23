@@ -1,24 +1,17 @@
-// dedupe.ts: Collapse identical findings produced by overlapping providers.
-//
-// When a boundary is described by more than one provider summary
-// (e.g. an OpenAPI stub AND a CloudFormation stub for the same REST
-// endpoint), each provider pairs independently with every consumer,
-// and the checker emits N findings where one would do. This pass
-// collapses identical findings into a single representative carrying
-// the list of contributing provider-summary identifiers in
-// `finding.sources`.
-//
-// Two findings are "identical" iff they agree on:
-//   - kind
-//   - boundary key (method + normalized path, HTTP-shaped today)
-//   - description
-//   - consumer identity (summary + transitionId)
-//
-// Provider identity is explicitly *not* part of the key. That is the
-// axis we are collapsing across. The first finding seen wins as the
-// representative; its `provider` field is unchanged. `sources` lists
-// every contributing provider-summary identifier, sorted
-// deterministically for stable output.
+/**
+ * Collapses identical findings that overlapping providers produce.
+ *
+ * When more than one provider summary describes a boundary, such as an
+ * OpenAPI stub and a CloudFormation stub for one endpoint, each pairs
+ * with every consumer and the checker reports the same thing N times.
+ * Two findings count as the same when their kind, boundary key,
+ * description and consumer side (summary and transition) all match.
+ * The provider is left out of the key because it is what differs.
+ *
+ * The first finding seen is kept with its `provider` unchanged, and
+ * `sources` lists every contributing provider summary, sorted so the
+ * output is stable.
+ */
 
 import { boundaryKey } from "./pairing/pairing.js";
 
@@ -36,14 +29,12 @@ function moreSevere(a: FindingSeverity, b: FindingSeverity): FindingSeverity {
 
 function keyFor(f: Finding): string {
   const key = boundaryKey(f.boundary);
-  // description is freeform text, if two checks ever produced
-  // descriptions that differed only in trivial whitespace, that would
-  // foil dedup. Normalize whitespace before keying.
+  // Descriptions that differ only in whitespace still collapse.
   const desc = f.description.replace(/\s+/g, " ").trim();
   const consumerTxn = f.consumer.transitionId ?? "";
-  // Collapsing across providers needs the key to say the two findings
-  // are about one boundary. A boundary with no key cannot say that, so
-  // the provider stays in and two of them keep their own findings.
+  // Without a boundary key nothing shows that two providers describe one
+  // boundary, so the provider stays in the key and each keeps its own
+  // finding.
   const boundaryPart = key ?? `_noboundary_|${f.provider.summary}`;
   return `${f.kind}|${boundaryPart}|${desc}|${f.consumer.summary}|${consumerTxn}`;
 }
@@ -51,12 +42,10 @@ function keyFor(f: Finding): string {
 /**
  * Collapse identical findings across overlapping provider summaries.
  *
- * Input order is preserved for the representative of each collapsed
- * group. When two findings collapse, the representative keeps the
- * most-severe severity observed and unions the `sources` lists.
- *
- * Safe to call on a single-provider result, single-source findings
- * pass through untouched with `sources` unset.
+ * Each group keeps the position of its first finding, takes the most
+ * severe severity in the group, and merges the `sources` lists. A
+ * finding with nothing to collapse into comes back unchanged, with
+ * `sources` unset.
  */
 export function dedupeFindings(findings: Finding[]): Finding[] {
   const byKey = new Map<string, Finding>();
@@ -73,8 +62,6 @@ export function dedupeFindings(findings: Finding[]): Finding[] {
     }
 
     const sources = new Set<string>();
-    // Seed with representative's contributor (either its existing list
-    // or its own provider.summary when it hasn't been collapsed before).
     if (existing.sources !== undefined) {
       for (const s of existing.sources) {
         sources.add(s);

@@ -1,19 +1,14 @@
-// contract-agreement.ts: Layer 2 cross-source contract consistency.
-//
-// When multiple providers describe the same boundary (an OpenAPI stub,
-// a CloudFormation stub, an extracted handler, …) each may carry its
-// own declaredContract. Layer 1 (checkContractConsistency) tells us
-// whether *each* provider is consistent with its *own* contract. This
-// layer tells us whether the contracts **agree with each other**.
-//
-// Cross-source contract comparison is strictly simpler than
-// cross-source transition comparison: contracts are just
-// `{ statusCode, body }` tuples, no conditions or platform-injected
-// transitions. Set comparison on status codes, shape comparison on
-// matching body schemas.
-//
-// Emits `contractDisagreement` findings. No IR or checker change is
-// required for Layer 1; this is additive.
+/**
+ * Checks that the contracts several providers declare for one boundary
+ * agree with each other. An OpenAPI stub, a CloudFormation stub and an
+ * extracted handler can each declare a contract for the same route.
+ * `checkContractConsistency` compares each provider with its own
+ * contract, and this pass compares the contracts with each other.
+ *
+ * A contract is a list of `{ statusCode, body }` entries with no
+ * conditions, so the pass compares the sets of statuses, and then the
+ * body shapes at each status the sources share.
+ */
 
 import { summaryRef } from "@suss/behavioral-ir";
 
@@ -38,14 +33,9 @@ interface ContractSource {
 }
 
 /**
- * Scan a flat list of summaries and emit findings for every boundary
- * where multiple sources carry declared contracts that disagree.
- * Sources with no declared contract are ignored. Boundaries described
- * by only one source are ignored (no comparison to make).
- *
- * Intended to run at the `checkAll` level, where multiple summaries
- * per boundary are available. `checkPair` operates on one pair at a
- * time and has no way to see sibling providers.
+ * Report every boundary where two or more declared contracts disagree.
+ * This runs from `checkAll`, because `checkPair` sees one pair at a
+ * time and never sees the other providers at a boundary.
  */
 export function checkContractAgreement(
   summaries: BehavioralSummary[],
@@ -103,7 +93,6 @@ function compareSources(
 ): Finding[] {
   const findings: Finding[] = [];
 
-  // --- Status-set disagreements ------------------------------------------
   // A source declaring "4XX" or `default` also declares 404, since a
   // range is a weaker statement about the same status.
   const statusAttribution = new Map<number, Set<string>>();
@@ -126,7 +115,7 @@ function compareSources(
 
   for (const [status, declaringSources] of statusAttribution) {
     if (declaringSources.size === allSourceSet.size) {
-      continue; // unanimous
+      continue;
     }
     const missing = [...allSourceIds].filter((id) => !declaringSources.has(id));
     const representative =
@@ -139,18 +128,16 @@ function compareSources(
       kind: "contractDisagreement",
       boundary,
       provider: makeSide(representative.summary),
-      consumer: makeSide(representative.summary), // no consumer involved; reuse the representative
+      consumer: makeSide(representative.summary), // no consumer is involved
       description: `Sources disagree on status ${status} at ${boundaryKey(boundary) ?? "this boundary"}: declared by [${[...declaringSources].sort().join(", ")}], not declared by [${missing.sort().join(", ")}]`,
       severity: "warning",
       sources: sortedSources,
     });
   }
 
-  // --- Body-shape disagreements at shared statuses -----------------------
-  // For each (status, source) tuple where both sources declare a body,
-  // check shape compatibility in both directions. Only flag at the
-  // first-vs-each-other level to avoid N×(N-1)/2 expansion, one
-  // finding per (status, disagreeing-pair-of-sources) is enough signal.
+  // Each body at a shared status is compared with the first source's,
+  // which gives one finding per disagreeing source instead of one per
+  // pair of sources.
   for (const [status, declaringSources] of statusAttribution) {
     const contributors = sources.filter((s) =>
       declaringSources.has(s.summary.identity.name),
@@ -164,7 +151,7 @@ function compareSources(
         null,
     );
     if (baseline === undefined) {
-      continue; // nobody declared a body for this status; nothing to compare
+      continue;
     }
     const baselineBody = baseline.contract.responses.find(
       (r) => r.statusCode === status,
@@ -181,14 +168,14 @@ function compareSources(
         (r) => r.statusCode === status,
       )?.body;
       if (otherBody === null || otherBody === undefined) {
-        continue; // this source didn't constrain the body; no disagreement
+        continue; // a status with no body agrees with any body
       }
       const result = bodyShapesMatch(baselineBody, otherBody);
       if (result === "match") {
         continue;
       }
       if (result === "unknown") {
-        continue; // punt on unknowns — Layer 1 already surfaces these
+        continue; // a comparison that cannot be settled is not a disagreement
       }
       findings.push({
         kind: "contractDisagreement",

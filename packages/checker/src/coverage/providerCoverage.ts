@@ -76,7 +76,6 @@ export function checkProviderCoverage(
 
   const covers = coverageOf(provider, consumer);
 
-  // Group provider transitions by status code for sub-case analysis
   const providerByStatus = new Map<number, Transition[]>();
 
   for (const pt of provider.transitions) {
@@ -95,9 +94,9 @@ export function checkProviderCoverage(
     const status = extractResponseStatus(pt);
     if (status == null) {
       const range = extractResponseStatusRange(pt);
-      // A range declares one response the provider may send with any
-      // status in it, so it is covered when any member is, and
-      // uncovered as one thing rather than once per member.
+      // A range is one response that may arrive with any status in it,
+      // so covering any member covers the range, and an uncovered range
+      // gets one finding.
       if (range !== null && !rangeIsCovered(range, covers)) {
         findings.push({
           kind: "unhandledProviderCase",
@@ -125,22 +124,19 @@ export function checkProviderCoverage(
       continue;
     }
 
-    // Status is covered: track for sub-case analysis
     if (!providerByStatus.has(status)) {
       providerByStatus.set(status, []);
     }
     providerByStatus.get(status)?.push(pt);
   }
 
-  // Sub-case analysis: when a provider has multiple transitions for the
-  // same status code (e.g., two 200s gated by different conditions), check
-  // whether the consumer distinguishes between them.
+  // When the provider returns one status under several conditions, such
+  // as two 200s, check whether the consumer tells them apart.
   for (const [status, providerTransitions] of providerByStatus) {
     if (providerTransitions.length <= 1) {
       continue;
     }
 
-    // Find consumer transitions that handle this status
     const consumerForStatus = consumer.transitions.filter(
       (ct) =>
         (ct.isDefault && isSuccessStatus(status)) ||
@@ -151,23 +147,18 @@ export function checkProviderCoverage(
         ),
     );
 
-    // Extract non-status predicates from consumer transitions (the conditions
-    // beyond "status === N" that distinguish sub-cases)
     const consumerNonStatusPredicates = consumerForStatus.flatMap((ct) =>
       getNonStatusConditions(ct, statusAccessors, successAccessors),
     );
 
-    // If the consumer has no conditions beyond the status check, it's
-    // collapsing all provider sub-cases into one branch
+    // A consumer with no condition beyond the status treats every
+    // sub-case the same way.
     if (consumerNonStatusPredicates.length === 0) {
-      // Check if any provider sub-case has predicates the consumer ignores
       const conditionalProviderTransitions = providerTransitions.filter(
         (pt) => !pt.isDefault && pt.conditions.length > 0,
       );
 
       if (conditionalProviderTransitions.length > 0) {
-        // Provider has N conditional sub-cases for this status, consumer
-        // doesn't distinguish: emit a warning per unmatched sub-case
         for (const pt of conditionalProviderTransitions) {
           findings.push({
             kind: "unhandledProviderCase",
@@ -182,8 +173,6 @@ export function checkProviderCoverage(
       continue;
     }
 
-    // Consumer has non-status predicates, try to match each provider
-    // transition against consumer branches
     for (const pt of providerTransitions) {
       if (pt.isDefault || pt.conditions.length === 0) {
         continue;
@@ -198,7 +187,6 @@ export function checkProviderCoverage(
         continue;
       }
 
-      // Check if any consumer non-status predicate matches this provider condition
       const matched = ptNonStatus.some((provPred) =>
         consumerNonStatusPredicates.some(
           (consPred) => predicatesMatch(provPred, consPred) === "match",
@@ -206,7 +194,7 @@ export function checkProviderCoverage(
       );
 
       if (!matched) {
-        // Check for opaque/unresolved: if either side is opaque, lowConfidence
+        // An opaque or unresolved predicate on either side cannot be compared.
         const hasOpaque = ptNonStatus.some((provPred) =>
           consumerNonStatusPredicates.some(
             (consPred) => predicatesMatch(provPred, consPred) === "unknown",
@@ -223,11 +211,9 @@ export function checkProviderCoverage(
             severity: "info",
           });
         }
-        // If predicates are fully structured but don't match, that's expected,
-        // provider conditions are about server-side values, consumer conditions
-        // are about response fields. We don't emit a finding for this case;
-        // cross-boundary body comparison (checkBodyCompatibility) handles the
-        // field-level mismatch.
+        // Structured predicates that do not match are expected. Provider
+        // conditions test server state and consumer conditions test response
+        // fields, and checkBodyCompatibility compares the fields.
       }
     }
   }
@@ -249,8 +235,8 @@ function rangeIsCovered(
 }
 
 /**
- * Extract conditions from a transition that are NOT status-code comparisons.
- * These are the conditions that distinguish sub-cases within a single status code.
+ * The conditions on a transition that test something other than the
+ * status. These are what tell the sub-cases of one status apart.
  */
 function getNonStatusConditions(
   t: Transition,
@@ -263,10 +249,10 @@ function getNonStatusConditions(
 }
 
 /**
- * Whether `p` says something about the response status rather than about
- * what came back in the body. A `!res.ok` guard reaches here as a
- * compound of two comparisons, which is why the range reader gets a say
- * and not only the two direct shapes below.
+ * Whether `p` tests the response status, as opposed to what came back
+ * in the body. A `!res.ok` guard arrives as a compound of two
+ * comparisons, so the range reader is asked as well as the two direct
+ * cases below.
  */
 function isStatusPredicate(
   p: Predicate,

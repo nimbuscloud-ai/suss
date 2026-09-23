@@ -43,7 +43,7 @@ import type {
 
 /**
  * One response with a body. A literal status spans `[status, status]`,
- * "4XX" spans its whole class, and the label is how a finding says which.
+ * "4XX" spans its whole class, and `label` is what a finding prints.
  */
 interface ProviderResponse {
   min: number;
@@ -84,7 +84,7 @@ function providerResponses(provider: BehavioralSummary): ProviderResponse[] {
   return out;
 }
 
-/** Statuses both spans admit exist. */
+/** Whether some status falls in both spans. */
 function spansIntersect(
   a: { min: number; max: number },
   b: { min: number; max: number },
@@ -154,7 +154,7 @@ function requiredBodyFields(
   return out;
 }
 
-/** Whether a body may carry `field`; anything unreadable may. */
+/** Whether a body may include `field`. A shape suss cannot see into may. */
 function carriesField(shape: TypeShape, field: string): boolean {
   if (shape.type === "record") {
     if (shape.properties[field] !== undefined) {
@@ -300,8 +300,8 @@ export function checkResponseMisread(
       // The absence proof takes in every response the same status may
       // arrive with: a declared 404 and a declared 4XX alike.
       const arrivals = responses.filter((r) => spansIntersect(r, span));
-      // A field a failure body marks the case with is not a claim
-      // about the 2xx; the coverage README says why.
+      // A field only a failure body includes marks that case, so reading
+      // it says nothing about the 2xx. The coverage README explains.
       const success = span.min >= 200 && span.max < 300;
       const claims = success
         ? reads.filter((field) => !failureOnly.has(field))
@@ -325,8 +325,8 @@ export function checkResponseMisread(
           boundary,
           provider: makeSide(provider, group[0].transitionId),
           consumer: makeSide(consumer, ct.id),
-          // The path runs on an input the provider produces and reads a
-          // value that is not there, which is the error sentence (#471).
+          // The path runs on a response the provider sends and reads a
+          // value that is not there, so this is an error (#471).
           description: describeMisread(ct, field, span.label, carrier),
           severity: "error",
         });

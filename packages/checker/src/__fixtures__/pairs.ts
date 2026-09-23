@@ -185,10 +185,9 @@ export function provider(
     identity: {
       name,
       exportPath: [name],
-      // No REST routing on the fixture: tests that need one use
-      // `providerWithPath` which overrides the binding. Function-call
-      // semantics keep the binding valid under the new schema without
-      // pretending a method/path were extracted.
+      // A function-call binding keeps the fixture valid without claiming
+      // a method and path were extracted. A test that needs a route uses
+      // `providerWithPath`.
       boundaryBinding: functionCallBinding({
         transport: "http",
         recognition: opts?.framework ?? "ts-rest",
@@ -281,8 +280,7 @@ export function unhandledCaseGap(description: string): Gap {
   };
 }
 
-/** A gap saying part of the unit went undescribed, rather than that it
- * misbehaved. */
+/** A gap saying suss could not read part of the unit. */
 export function unreadOutcomeGap(description: string): Gap {
   return {
     type: "unreadOutcome",

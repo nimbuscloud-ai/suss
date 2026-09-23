@@ -1,17 +1,16 @@
 /**
- * What a storage access reaches when the unit it lives in was told.
+ * What a storage access reaches when its unit gets the target from
+ * outside.
  *
- * A storage layer takes the bucket as an argument, so its access says
- * `{location.bucket}`, which says which value to go and ask about. The
- * callers are in the same run, and each call already records which
- * summary it reaches and what it passed, so the answer is a join rather
- * than another walk over source.
+ * A storage layer can take the bucket as an argument, so its access
+ * records `{location.bucket}`, the value to look up. The callers are in
+ * the same run, and each call records which summary it reaches and what
+ * it passed, so grounding is a join and needs no further walk.
  *
- * The other half is `{SOME_TABLE}`, a variable the deployment sets
- * rather than an argument anybody passes, and the runtime that runs the
- * code is where that answer comes from. The pairing pass classifies
- * the container through the one boundary-name parser and hands the
- * reference over, so nothing here reads the string again.
+ * `{SOME_TABLE}` is a variable the deployment sets, and its value comes
+ * from the runtime that runs the code. The pairing pass parses the
+ * container with the shared boundary-name parser and passes the
+ * reference in, so nothing here parses the string again.
  */
 
 import {
@@ -188,7 +187,7 @@ function configuredNames(
   };
 }
 
-/** The call this effect is, when it says which summary it reaches. */
+/** The call this effect makes, when it records which summary it reaches. */
 function invocationInto(
   effect: Effect,
 ): { summary: string; args: Argument[] } | null {
@@ -213,8 +212,8 @@ function valueAt(argument: Argument, fields: string[]): Argument {
 /**
  * The name an argument states. A template states a pattern, the same
  * way a name built from a stage prefix does anywhere else. An argument
- * that names another value says where to look again rather than what
- * the name is, and grounding that is somebody else's call site.
+ * that refers to another value gives no name here, because grounding it
+ * would need that value's own call site.
  */
 function nameOf(argument: Argument): string | null {
   if (argument === null) {

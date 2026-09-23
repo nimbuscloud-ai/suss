@@ -1,14 +1,14 @@
 /**
  * A summary with its named types put back into its shapes.
  *
- * An extract writes a named type once and refers to it after that, so a
- * reader following a name has somewhere to look and one megabyte of
- * repeated expansion never happens. Comparing two refs can only tell
- * you whether the names match, which is not what a check is for, so the
- * table goes back in before anything compares them.
+ * An extract writes a named type once and refers to it by name after
+ * that, which keeps the file from growing by a megabyte of repeated
+ * expansion. Comparing two refs only tells you whether the names match,
+ * and a check needs to compare the shapes, so the definitions go back
+ * in before anything compares them.
  *
- * Nothing is modified in place: the shapes handed back are new and the
- * summary that was passed in is untouched.
+ * The summary passed in is left unchanged, and the shapes returned are
+ * new objects.
  */
 
 import { withDefinitionsInlined } from "@suss/ir-core";
@@ -46,8 +46,7 @@ export function summaryWithDefinitionsInlined(
   };
 }
 
-/** What an interaction returns is a shape too, and refers to types the
- * same way. */
+/** An interaction's response shape can refer to named types too. */
 function effectSpelledOut(
   effect: BehavioralSummary["transitions"][number]["effects"][number],
   spellOut: (shape: TypeShape) => TypeShape,

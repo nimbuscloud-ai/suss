@@ -4,8 +4,8 @@
  *
  * A branch is described as a set of status codes. `and` intersects, `or`
  * unions, a negation complements. A predicate that says nothing about the
- * status gives null and stays out of the intersection, which is what stops a
- * consumer with no status check from looking like it covers everything.
+ * status gives null and stays out of the intersection. Otherwise a consumer
+ * with no status check would look like it covers every status.
  *
  * Comparisons against one number stay with `consumerExpectedStatuses`. The
  * README beside this file says why.
@@ -112,10 +112,10 @@ export interface StatusGuards {
   successAccessors: StatusAccessors;
   /**
    * True on an arm the consumer wrote. The `else` of
-   * `if (res.status === 404)` runs on every status but 404, so the
-   * equality says what that arm covers. On the path left over after a
-   * guard the consumer wrote no `else` for, they said nothing about the
-   * other statuses, and this stays false.
+   * `if (res.status === 404)` runs on every status but 404, so
+   * complementing the equality gives what that arm covers. On the path
+   * left over after a guard with no `else`, the consumer wrote nothing
+   * about the other statuses, and this stays false.
    */
   readsEquality: boolean;
 }
@@ -135,13 +135,16 @@ const BOUND_BY_OP: Record<string, (n: number) => StatusRange> = {
   lt: (n) => ({ min: STATUS_MIN, max: n - 1 }),
 };
 
-/** Read only on an arm the consumer wrote; `StatusGuards` says why. */
+/** Used only on an arm the consumer wrote. See `readsEquality`. */
 const EQUALITY_BY_OP: Record<string, (n: number) => StatusSet> = {
   eq: (n) => [{ min: n, max: n }],
   neq: (n) => complement([{ min: n, max: n }]),
 };
 
-/** `400 <= status` describes what `status >= 400` does, read the other way. */
+/**
+ * `400 <= status` means `status >= 400`. Equality reads the same both
+ * ways round, so it has no entry.
+ */
 const FLIPPED_OP: Record<string, string> = {
   gte: "lte",
   gt: "lt",
@@ -149,7 +152,6 @@ const FLIPPED_OP: Record<string, string> = {
   lt: "gt",
 };
 
-/** `status === 404` and `404 === status` say the same thing, so no flip. */
 function setForOp(
   op: string,
   n: number,
@@ -181,9 +183,9 @@ function comparisonRange(
 }
 
 /**
- * A pack's success flag reads as the 2xx class. `res.ok` normally reaches the
- * checker already rewritten into a range, but a summary written by hand or by
- * an adapter that does not rewrite it arrives with the flag still on it.
+ * A pack's success flag means the 2xx class. `res.ok` usually reaches the
+ * checker already rewritten as a range, but a summary written by hand, or by
+ * an adapter that does not rewrite it, still has the flag.
  */
 function truthinessRange(
   pred: Extract<Predicate, { type: "truthinessCheck" }>,
@@ -264,7 +266,7 @@ function rangesInclude(
   return ranges.some((r) => status >= r.min && status <= r.max);
 }
 
-/** Whether one branch handles `status`, by naming it or by admitting it. */
+/** Whether one branch handles `status`, by comparing against it or by a range that includes it. */
 export function branchHandlesStatus(
   conditions: readonly Predicate[],
   guards: StatusGuards,
@@ -291,9 +293,9 @@ export function guardsForBranch(
 }
 
 /**
- * Whether any of the consumer's branches handles `status`. Two checks ask
- * this, and a consumer read as covered by one and uncovered by the other
- * is how the same code gets reported twice, once each way.
+ * Whether any of the consumer's branches handles `status`. Two checks use
+ * this, so they cannot disagree about a consumer and report the same code
+ * twice, once as covered and once as not.
  */
 export function consumerHandlesStatus(
   consumer: BehavioralSummary,
