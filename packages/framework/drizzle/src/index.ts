@@ -1,43 +1,14 @@
-// @suss/framework-drizzle: recognize Drizzle ORM query-builder calls
-// in TypeScript and emit `interaction(class: "storage-access")` effects
-// on the transitions that contain them.
-//
-// Recognition is AST-based via ts-morph. Drizzle spells a query as a
-// method chain, so each supported shape has one ANCHOR call the
-// recognizer fires on: exactly once per chain: and the rest of the
-// chain is read by walking up from the anchor:
-//
-//   db.select({...}).from(users).where(eq(users.id, id))   anchor: .from(t)
-//   db.insert(users).values({...})                         anchor: db.insert(t)
-//   db.update(users).set({...}).where(...)                 anchor: db.update(t)
-//   db.delete(users).where(...)                            anchor: db.delete(t)
-//   db.query.users.findMany({...})                         anchor: .findMany()
-//   db.execute(sql`SELECT ...`)                            anchor: db.execute(s)
-//
-// The receiver (`db`, or `tx` inside a transaction callback) is
-// verified by TYPE: its symbol declaration must live under
-// `node_modules/drizzle-orm/`. That covers `drizzle(...)` results from
-// every driver entry point (node-postgres, mysql2, better-sqlite3, …)
-// without naming any of them.
-//
-// Table identity: the table argument is an identifier declared as
-// `pgTable("users", {...})` (or mysqlTable / sqliteTable). The
-// recognizer walks the identifier back to that declaration and takes
-// the FIRST STRING ARGUMENT: the real SQL table name: as the
-// pairing channel. This intentionally differs from the Prisma pack's
-// PascalCase model channel: Drizzle's schema speaks SQL names, so its
-// summaries pair against SQL-flavored contracts. The two correspond
-// exactly through the schema: a Prisma model's physical table is its
-// model name unless `@@map` renames it, and contract-prisma records that
-// rename as `storageContract.physicalTable`, which the checker accepts as a
-// pairing alias, so accesses from both ORMs land on the same schema provider
-// with no name guessing. When the declaration cannot be resolved, we use the
-// identifier's own name, which is what the source says rather than a guess.
-//
-// Out of scope for v0:
-//   - `alias(users, "u")` self-join aliases.
-//   - Join clauses (`.leftJoin(orders, ...)`): the joined table isn't
-//     yet emitted as a second effect; deferred to keep v0 focused.
+/**
+ * Recognizes Drizzle ORM query-builder calls and raw `db.execute`
+ * statements, and records each one as a storage access on the SQL table
+ * it touches.
+ *
+ * The builder path reads ts-morph nodes directly. Each chain has one
+ * anchor call, and the recognizer reads the rest of the chain by walking
+ * up from it. The raw path is a `@suss/recognize` declaration. The README
+ * lists the anchors, how the receiver and the table name are settled, and
+ * what is left out.
+ */
 
 import { type CallExpression, Node as N, type Node } from "ts-morph";
 import { z } from "zod";
@@ -68,27 +39,25 @@ import type { SqlStatements } from "@suss/recognize";
 
 const QUERY_API_METHODS = new Set(["findMany", "findFirst"]);
 
-/** Schema-declaration callees whose first string argument gives the table's name. */
 const TABLE_FACTORIES = new Set(["pgTable", "mysqlTable", "sqliteTable"]);
 
-/** The package every table factory and the client itself come from. */
 const DRIZZLE_PACKAGE = "drizzle-orm";
 
 const CHAIN_WALK_LIMIT = 12;
 
 /**
- * What `-f drizzle=config.json` may say. The CLI parses the file against it
- * before the factory runs.
+ * The options a `-f drizzle=config.json` file may set. The CLI checks
+ * the file against this schema before it calls the factory.
  */
 export const optionsSchema = z
   .object({
     /**
-     * Storage system the recognized calls target. Must match the
-     * `storageSystem` on provider summaries for pairing keys to line
-     * up. Defaults to `"postgresql"`, the dominant Drizzle deployment.
+     * The storage system the calls target, `"postgresql"` when unset. It
+     * has to match the `storageSystem` on provider summaries, or the
+     * calls do not pair.
      */
     storageSystem: storageSystemOption.optional(),
-    /** Scope label for the storage binding. Defaults to `"default"`. */
+    /** Scope for the storage binding, `"default"` when unset. */
     scope: scopeOption.optional(),
   })
   .strict();
@@ -98,9 +67,9 @@ export type DrizzleRecognizerOptions = z.infer<typeof optionsSchema>;
 interface RecognizedQuery {
   kind: "read" | "write";
   operation: string;
-  /** Null when this reader could not settle which table the query names. */
+  /** Null when the table name could not be settled. */
   table: string | null;
-  /** Source text of the table expression, for column-ref matching. */
+  /** Compared with each property read in `.where(...)` to find the selector. */
   tableExprText: string | null;
   fields: string[];
   selector: string[] | null;
@@ -108,17 +77,9 @@ interface RecognizedQuery {
 }
 
 /**
- * A statement handed to the store as SQL rather than built up link by
- * link. The parse settles which tables it touches and what it does to
- * each, so a join comes out as one effect per table.
- *
- * The method is `execute`. The SQLite driver's own methods take a
- * statement too, and they are called `run`, `all` and `get`, which are
- * too ordinary to match on: a map's `get` in a Drizzle file would read
- * as a query.
- *
- * A statement that interpolates a table interpolates the schema object,
- * and the factory call behind it gives the SQL name.
+ * Only `execute` counts. The SQLite driver's `run`, `all` and `get` also
+ * take a statement, but a map's `get` in a Drizzle file would then be
+ * read as a query.
  */
 function rawStatements(opts: DrizzleRecognizerOptions): SqlStatements {
   const storageSystem = opts.storageSystem ?? "postgresql";
@@ -187,9 +148,8 @@ function recognizeAnchor(
 }
 
 /**
- * `<db>.select({...}).from(users)` / `<db>.selectDistinct(...).from(t)`.
- * The anchor is the `.from(...)` call, because that is where the table is
- * named, and every select chain has exactly one of them.
+ * In `db.select({...}).from(users)` the anchor is `.from(t)`, since every
+ * select chain has exactly one and it has the table.
  */
 function recognizeSelect(
   fromCall: CallExpression,
@@ -218,8 +178,7 @@ function recognizeSelect(
   const table = resolveTableName(tableArg, resolution);
   const tableExprText = tableArg.getText();
 
-  // Projected columns: keys of the select's object argument;
-  // a bare `select()` reads the whole row.
+  // A bare `select()` returns the whole row.
   const selectArg = receiver.getArguments()[0];
   const projected =
     selectArg === undefined ? [] : objectKeys(selectArg, resolution);
@@ -240,9 +199,9 @@ function recognizeSelect(
 }
 
 /**
- * `<db>.insert(t)` / `<db>.update(t)` / `<db>.delete(t)`: the anchor
- * is the operation call itself; `.values(...)`, `.set(...)`, and
- * `.where(...)` are read from the chain above it.
+ * For `db.insert(t)`, `db.update(t)` and `db.delete(t)` the anchor is the
+ * operation call, and `.values`, `.set` and `.where` come from the chain
+ * above it.
  */
 function recognizeMutation(
   call: CallExpression,
@@ -281,9 +240,9 @@ function recognizeMutation(
 }
 
 /**
- * Relational query API: `<db>.query.<schemaExport>.findMany({...})`.
- * The table property is the schema export itself, so its declaration is the
- * same `pgTable("...")` call the builder-path tables go through.
+ * In `db.query.users.findMany({...})` the `users` property is the schema
+ * export, so its table name comes from the same `pgTable(...)` call the
+ * builder path reads.
  */
 function recognizeQueryApi(
   call: CallExpression,
@@ -307,9 +266,8 @@ function recognizeQueryApi(
 
   const table = resolveTableName(receiver, resolution) ?? receiver.getName();
 
-  // `columns: { id: true, email: true }` narrows the read set;
-  // `with: { orders: true }` pulls in relations: both are field
-  // knowledge. Anything else reads the whole row.
+  // `columns` narrows the fields read and `with` adds relations, so the
+  // keys of both count as fields. A call with neither reads the whole row.
   const optionsArg = call.getArguments()[0];
   const options =
     optionsArg === undefined ? null : objectLiteralOf(optionsArg, resolution);
@@ -338,9 +296,8 @@ function recognizeQueryApi(
 // ---------------------------------------------------------------------------
 
 /**
- * Walk UP from an anchor call through the fluent chain, collecting
- * `methodName → call` for each link above it. First occurrence wins;
- * the walk is bounded so a pathological chain can't loop.
+ * Maps each method name in the chain above the anchor to its first call.
+ * The walk stops after `CHAIN_WALK_LIMIT` links.
  */
 function collectChainCalls(
   anchor: CallExpression,
@@ -366,11 +323,9 @@ function collectChainCalls(
 }
 
 /**
- * The receiver must BE a Drizzle database (or transaction) by type:
- * its type symbol's declaration lives under `node_modules/drizzle-orm/`.
- * Checking the type rather than the identifier covers bare instances
- * (`const db = drizzle(pool)`), wrapped context (`ctx.db`), and
- * transaction callbacks (`db.transaction(async (tx) => tx.insert(...))`).
+ * Checks the receiver's type, so `drizzle(pool)`, a wrapped `ctx.db` and
+ * a transaction's `tx` all count whatever they are called. The type has
+ * to be declared in a file under a `drizzle-orm` directory.
  */
 function isDrizzleReceiver(node: Node): boolean {
   const type = node.getType();
@@ -387,17 +342,9 @@ function isDrizzleReceiver(node: Node): boolean {
 }
 
 /**
- * Resolve a table expression to its SQL table name: walk the
- * identifier (or `schema.users` property access) to its declaration
- * and read the first string argument of the `pgTable(...)` /
- * `mysqlTable(...)` / `sqliteTable(...)` initializer. Falls back to
- * the expression's trailing identifier name when the declaration cannot be
- * resolved, which is what the source says rather than something invented.
- */
-/**
- * The table name a declaration states, or null when this reader could
- * not settle it. Returning the written source text instead would pair
- * against a schema table that merely spells the same way (#121).
+ * Returns null when the `pgTable(...)` call behind the expression cannot
+ * be found. Falling back to the identifier's name would pair with a
+ * schema table that happens to share it (#121).
  */
 function resolveTableName(
   tableExpr: Node,
@@ -415,7 +362,6 @@ function resolveTableName(
   return first === undefined ? null : stringValueOf(first, resolution);
 }
 
-/** Whether a callee is one of Drizzle's own table-declaring functions. */
 function isTableFactory(
   callee: Node,
   resolution: ResolutionStore | undefined,
@@ -450,7 +396,6 @@ function objectKeys(
   return keys;
 }
 
-/** `.values({...})`: object keys; array of objects unions the keys. */
 function valuesKeys(
   valuesCall: CallExpression | undefined,
   resolution: ResolutionStore | undefined,
@@ -486,10 +431,9 @@ function setKeys(
 }
 
 /**
- * Columns a `.where(...)` filters on: property accesses on the same
- * table expression (`eq(users.id, id)` filtered by `users` → ["id"]).
- * Drizzle where-clauses are operator expressions, not object literals,
- * so this reads column references rather than keys.
+ * A Drizzle where clause is an operator expression such as
+ * `eq(users.id, id)`, so the selector is every property read on the
+ * table expression, here `id`.
  */
 function selectorFromWhere(
   whereCall: CallExpression | undefined,
@@ -517,11 +461,9 @@ function selectorFromWhere(
 }
 
 /**
- * Pack export. The builder path is a recognizer written as code and the
- * raw path is a declaration, so the pack assembles itself rather than
- * going through `pack()`. No discovery patterns or terminals: Drizzle
- * calls aren't boundaries themselves, they're effects on
- * already-discovered handlers / services.
+ * The pack is built by hand because the builder path is a recognizer
+ * written as code, which `pack()` does not take. It discovers no units,
+ * so its effects need a handler pack such as Express to attach to.
  */
 export function drizzleFramework(
   options: DrizzleRecognizerOptions = {},
@@ -534,9 +476,8 @@ export function drizzleFramework(
     discovery: [],
     terminals: [],
     inputMapping: { type: "positionalParams", params: [] },
-    // Gate on drizzle-orm imports (matches subpaths like
-    // drizzle-orm/pg-core and driver entry points): files without
-    // them can't type-check as Drizzle receivers anyway.
+    // A file with no `drizzle-orm` import, subpaths included, has no
+    // value whose type Drizzle declares.
     requiresImport: ["drizzle-orm"],
     invocationRecognizers: [makeRecognizer(options)],
     // A statement can be written as a tagged template, which the
@@ -546,7 +487,6 @@ export function drizzleFramework(
   };
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "effects",
   package: "@suss/framework-drizzle",
