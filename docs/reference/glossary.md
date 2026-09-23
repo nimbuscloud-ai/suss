@@ -5,15 +5,13 @@ description: One definition each for boundary, summary, code unit, terminal, pac
 
 # Glossary
 
-Each term is defined once here, and the other pages link to it.
-
 **Boundary**, a place where two pieces of code meet across a contract. A REST endpoint, a GraphQL operation, a queue, a database table, a package export, an environment variable, a React parent rendering a child. One side is the *provider*, which produces the value, and the other is the *consumer*, which acts on it. They can be in the same process.
 
 **[Boundary binding](/reference/ir#boundarybinding)**, the value on a summary that identifies which boundary the unit is on. It has three parts: the *transport* the bytes move over (`http`, `in-process`), the *semantics* that give the boundary its pairing rule (`rest`, `storage`, `message-bus`, and six more), and the *recognition* that records which pack found the unit. The pairing layer reads it to decide which summaries to compare. See [Boundary semantics](/theory/boundary-semantics).
 
 **Summary / [`BehavioralSummary`](/reference/ir#behavioralsummary)**, the description suss writes for one code unit: its transitions, the conditions gating each, what each produces, the effects it causes, and the gaps. It is JSON, and nothing in it identifies the language or framework it came from. Checking, inspection and every downstream tool read summaries.
 
-**Code unit**, one callable piece of code: a handler, a loader, a component, a resolver, a queue consumer, a library function. Every code unit has a **kind** ([`CodeUnitKind`](/reference/ir#codeunitkind)), and the kind decides how inputs arrive and what counts as output.
+**Code unit**, one callable piece of code: a handler, a loader, a component, a resolver, a queue consumer, a library function. Every code unit has a **kind** ([`CodeUnitKind`](/reference/ir#codeunitkind)). How inputs arrive and what counts as output depend on the kind.
 
 **Terminal**, a place in a code unit that produces something observable. A `return`, `res.status(400).json(...)` in Express, a `throw` through a project's own error helper, a JSX return in a React component.
 
@@ -35,7 +33,7 @@ Each term is defined once here, and the other pages link to it.
 
 **[Finding](/reference/ir#finding)**, a record that two paired summaries disagree. It has a `kind`, a `severity` (`error`, `warning` or `info`), the boundary, both sides, and a sentence saying what is wrong. The [findings catalog](/reference/findings) lists every kind. The behavioral checker emits `Finding`; the intent checker emits `IntentFinding`, which has a document on one side instead of a second piece of code.
 
-**Pack**, a set of declarative patterns (a `PatternPack`) that tells the adapter and the extractor how to recognize a framework, a runtime or a library. A pack is data. See [What a pack is](/packs/what-a-pack-is).
+**Pack**, a set of declarative patterns (a `PatternPack`) that the adapter and the extractor use to recognize a framework, a runtime or a library. A pack is a data object. See [What a pack is](/packs/what-a-pack-is).
 
 **Recognizer**, a rule in a pack that fires when the extractor meets a particular call or property access, such as `setTimeout(...)` or `process.env.X`. It attaches an effect or some metadata to whichever unit it fired inside.
 

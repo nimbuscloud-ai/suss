@@ -5,7 +5,7 @@ description: Every type in the behavioral IR, field by field, grouped by what it
 
 # IR types
 
-The types below come from two packages. `@suss/behavioral-ir` owns the summary, the transition and the finding; `@suss/ir-core` owns the primitives every suss IR shares, which are the boundary binding, the type shape, the source location and the confidence block. Both are generated from zod schemas, and the JSON Schema the package publishes is generated from those at build time.
+The types below come from two packages. `@suss/behavioral-ir` defines the summary, the transition and the finding. `@suss/ir-core` defines the primitives every suss IR shares, which are the boundary binding, the type shape, the source location and the confidence block. Both are generated from zod schemas, and the JSON Schema the package publishes is generated from those at build time.
 
 Install `@suss/behavioral-ir` (one peer dependency on `zod`) and call `parseSummaries(json)` to validate and narrow in one step, or `safeParseSummaries(json)` to handle errors without throwing. From another language, validate against the published [`behavioral-summary.schema.json`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/behavioral-ir/schema/behavioral-summary.schema.json).
 
@@ -29,7 +29,7 @@ interface BehavioralSummary {
 }
 ```
 
-One of these per code unit. It is flat JSON with no cycles, apart from the recursive `ValueRef`, `Predicate`, `TypeShape` and `RenderNode` trees.
+suss writes one of these per code unit. It is flat JSON with no cycles, apart from the recursive `ValueRef`, `Predicate`, `TypeShape` and `RenderNode` trees.
 
 - **`schemaVersion`** is absent on a summary written by 0.3.x, which the parsers read as version 1. Version 6 is current. [Summary format](/reference/summary-format#versions) lists what each version changed.
 - **`definitions`** is the table a `ref` shape points into, keyed the way `typeDefinitionKey` in `@suss/ir-core` builds a key. `withDefinitionsInlined` puts a definition back into a shape, and every comparison reads the inlined form.
@@ -56,15 +56,15 @@ type CodeUnitKind =
   | "scheduled-callback"; // a function handed to setTimeout or a library hook
 ```
 
-The kind decides how inputs arrive and what counts as output. A handler takes a request and produces a response. A component takes props and state and produces a UI tree. A consumer takes a message and produces effects.
+How inputs arrive and what counts as output depend on the kind. A handler takes a request and produces a response. A component takes props and state and produces a UI tree. A consumer takes a message and produces effects.
 
-**`consumer` against `client`.** Both sit downstream of a boundary, but suss models them differently. A consumer receives a message and produces effects. A client makes a request, branches on the response status and reads fields off the body, so a client's transitions have `expectedInput` on them where a consumer's have effects. The checker applies different rules to each.
+**`consumer` against `client`.** Both are downstream of a boundary, but suss models them differently. A consumer receives a message and produces effects. A client makes a request, branches on the response status and reads fields off the body, so a client's transitions have `expectedInput` on them where a consumer's have effects. The checker applies different rules to each.
 
 **`library` and `caller`** are the two sides of an in-process `function-call` boundary. The `packageExports` discovery variant produces the `library` side, one per function reachable through the package's `package.json` entry points. The `packageImport` variant produces the `caller` side, one per (enclosing function, consumed binding). They pair by `fn:<package>::<exportPath>`.
 
 **`module-init`** is what a source file does at import time, one per file, and it is always a consumer: it reads channels other units declare. **`scheduled-callback`** is a function the runtime calls at some later point, and what it reaches is recorded on its own summary.
 
-The union is closed. A pack cannot invent a kind, because each kind comes with assumptions the rest of extraction makes, and a new framework that needs a new kind needs an IR change first.
+The union is closed, so a pack cannot add a kind. The rest of extraction makes assumptions about each kind, and a new framework that needs a new kind needs an IR change first.
 
 ### `SourceLocation` and `CodeUnitIdentity`
 
@@ -95,9 +95,9 @@ interface DeployableUnit {
 Location tells you where the code is. Identity tells you what it is, whatever file somebody moves it to. Move `services/api/handlers/users.ts` to `services/api/routes/users/index.ts` and the location changes, while the identity, a `getUser` handler bound to `GET /users/:id`, stays the same.
 
 - **`range` and `span`.** The line range is for a reader and an editor link. The character span is what identity and joins measure with, because two functions can share a line and never an offset range. A summary with no source position behind it, such as one read from a contract artifact, has no `span`.
-- **`workspace`** is the name the project being extracted calls itself. Paths are relative to wherever the extract ran, so two services in one repository both report `src/handlers.ts`, and the workspace is what tells them apart once their summaries are merged.
+- **`workspace`** is the extracted project's own name. Paths are relative to wherever the extract ran, so two services in one repository both report `src/handlers.ts`. Once their summaries are merged, the workspace is how you tell them apart.
 - **`id`** is workspace, file and export path together. A name on its own collides with other names too often to identify a unit.
-- **`nameKind`** records where the name came from. `"binding"` means other code can call the unit by it. `"label"` means discovery coined it, and a label is never used as a binding.
+- **`nameKind`** records where the name came from. `"binding"` means other code can call the unit by it. `"label"` means discovery made the name up, and a label is never used as a binding.
 - **`exportPath`** is an array, because deep module namespaces (`namespace.submodule.getUser`) turn up in some frameworks and an array is easier to compare than a dotted string.
 - **`boundaryBinding`** is nullable on purpose. A utility function or an internal helper doesn't take part in any contract. An explicit `null` forces a consumer to handle that case.
 - **`deployableUnit`** records what runs this code, where the pack can work it out: the Lambda's logical id from a SAM template, or the container or deployment name elsewhere. The checker joins on it. Several Lambdas can each subscribe to one channel with their own handler, and the channel alone doesn't tell you which handler runs where. The field is optional, because a React component or a library export is never deployed on its own, so there is nothing to record.
@@ -116,7 +116,7 @@ interface BoundaryBinding {
 
 `recognition: "reachable"` marks a unit found through the transitive closure of a unit a pack recognised. No pack pattern matched it directly. Such a unit has no pairing identity, so nothing cross-checks it, and its transitions and effects are extracted in full.
 
-Each protocol is one module under `packages/ir-core/src/semantics`, carrying its own schema, its pairing key and its agreement rule:
+Each protocol is one module under `packages/ir-core/src/semantics`, which defines its schema, its pairing key and its agreement rule:
 
 ```typescript
 type Semantics =
@@ -142,13 +142,13 @@ type MessageBus =
   | "cloudflare-queues" | "cloudflare-cron" | "cloudflare-tail";
 ```
 
-An identity field is null when the source does not say what it is. The empty string is invalid there, because one empty string agrees with every other. REST's `method` also takes `"*"`, for a handler that serves every method, and it pairs with whatever method each consumer uses.
+An identity field is null when the source does not say what it is. The empty string is invalid there, because every empty string would pair with every other. REST's `method` also takes `"*"`, for a handler that serves every method, and it pairs with whatever method each consumer uses.
 
 `runtime-config` and `unit-invocation` both take their two fields from `DeployableUnit`, because the pairing key is a deployed unit, and one deployed unit has both of those boundaries on it. `unit-invocation` makes `instanceName` nullable, since only the provider side always has the name.
 
-Storage's `container` and `accessPath` use the boundary-name syntax: a literal (`orders-v1`), a pattern with deploy-time holes (`{stage}-orders-v1`), or a reference to somewhere else that has the value (`{ORDER_TABLE}`). You can tell the three apart by the braces. `parseBoundaryName` in `@suss/ir-core` is the one reader of that syntax, and the package's README covers the three forms. A REST `path` also uses braces, and a route parameter stops at the `/` between segments, so the two conventions stay apart.
+Storage's `container` and `accessPath` use the boundary-name syntax: a literal (`orders-v1`), a pattern with deploy-time holes (`{stage}-orders-v1`), or a reference to somewhere else that has the value (`{ORDER_TABLE}`). You can tell the three apart by the braces. `parseBoundaryName` in `@suss/ir-core` is the only function that parses that syntax, and the package's README describes the three forms. A REST `path` also uses braces, but a route parameter stops at the `/` between segments, so the two conventions do not collide.
 
-[Boundary semantics](/theory/boundary-semantics) covers each variant's pairing rule and the builder helpers packs use.
+[Boundary semantics](/theory/boundary-semantics) describes each variant's pairing rule and the builder helpers packs use.
 
 ## Behavior
 
@@ -235,11 +235,11 @@ type Output =
   | { type: "void" };
 ```
 
-What a terminal produces. The pack decides which variants matter for its framework; the union itself is framework-agnostic.
+`Output` is what a terminal produces. Each pack uses the variants its framework needs, and the union itself has nothing framework-specific in it.
 
 - **`response`** is an HTTP response. `statusCode` is a `ValueRef`, because the status can be dynamic (`res.status(code).json(...)`). A literal 200 arrives as `{ "type": "literal", "value": 200 }`.
 - **`throw`** keeps the constructor expression as text (`"HttpError.NotFound"`), because the class itself cannot be resolved statically in general.
-- **`render`** is a component render result. `component` is the root element's name. `root` is the whole tree, filled in by packs that understand their language's render form, so a checker can compare structural output against a contract source such as a Storybook story.
+- **`render`** is a component render result. `component` is the root element's name. `root` is the whole tree, filled in by packs that read their language's render form, so a checker can compare structural output against a contract source such as a Storybook story.
 - **`return`** is a plain return. `value` is a `TypeShape`, because for a hook or a utility the shape is the contract.
 - **`delegate`** passes control on, to the next middleware or handler. `to` is a symbolic name such as `"next"`.
 - **`emit`** puts an event or a message on a channel.
@@ -257,7 +257,7 @@ type RenderNode =
       whenTrue: RenderNode; whenFalse: RenderNode | null };
 ```
 
-The tree under `Output.render.root`. `attrs` gives attribute values as source text, quotes included, and a boolean shorthand such as `<input disabled>` maps to the empty string. `target` records where the tag's component is declared, when the walk managed to resolve it, using the file and name that child's summary is keyed on. A checker can then join this render edge to that summary. A host tag leaves `target` unset. On a `conditional`, a null `whenFalse` covers both `{cond && <X/>}` and an else written as `null`, since React renders nothing either way.
+`RenderNode` is the tree under `Output.render.root`. `attrs` gives attribute values as source text, quotes included, and a boolean shorthand such as `<input disabled>` maps to the empty string. `target` records where the tag's component is declared, when the walk managed to resolve it, using the file and name that child's summary is keyed on. A checker can then join this render edge to that summary. A host tag leaves `target` unset. On a `conditional`, a null `whenFalse` covers both `{cond && <X/>}` and an else written as `null`, since React renders nothing either way.
 
 ### `Effect`
 
@@ -283,7 +283,7 @@ interface DeclarationPlace {
 }
 ```
 
-What a transition does besides producing a value. There are two layers.
+An effect is what a transition does besides producing a value. Effects come in two layers.
 
 A transition lists each effect once. `count` says how many sites on that path produced it, so a path that validates the same schema thirteen times has one effect with `count: 13`. It is absent when there was only one, and a call written across several lines counts with the same call written on one, since `callee` is the source text with its whitespace collapsed.
 
@@ -291,7 +291,7 @@ A transition lists each effect once. `count` says how many sites on that path pr
 
 On an `invocation`, `summary` is the summary this call reaches, the one whose unit is declared where the type checker resolved `callee`. It is absent when the callee is declared outside the run, when more than one summary describes that unit, or when nothing resolved and no summary in the same file has that name. `declaredAt` and `argsDeclaredAt` are the raw declaration places an adapter sets while extracting; naming turns them into `summary` and `argsSummary` and removes them, so you see them only in the extraction cache. `calleeParameter` is set when the callee is one of this unit's own parameters, and gives its index among them, so a caller that passes a function into that parameter reaches this call through it.
 
-**`interaction` effects** are the typed boundary crossings. Each one includes the `BoundaryBinding` of the thing it talks to, plus a payload discriminated on `class`:
+**`interaction` effects** are the typed boundary crossings. Each one includes the `BoundaryBinding` of the resource it reaches, plus a payload discriminated on `class`:
 
 ```typescript
 type Interaction =
@@ -321,7 +321,7 @@ type Interaction =
 - **`metadata-read`** is a read of something the runtime provides on its own: `__dirname`, `import.meta.url`, `process.cwd`, `process.platform`. It goes on the same runtime-config boundary as a config read, and nothing pairs against it, because no deploy file declares these.
 - **`schedule`** is a callback handed to `setTimeout`, `process.nextTick` or a library hook. Nothing pairs against these, so the enclosing binding uses `function-call` semantics and the interaction is there for dataflow and for `inspect`. `hasDelay` records only that a delay argument was passed, without its value.
 
-Adding a class is an additive IR change. Each class maps one to one onto a `binding.semantics.name` by convention; the IR does not enforce that and every shipped recognizer follows it. See [Pack patterns](/packs/patterns#recognizers) for the recognizers that emit them.
+Adding a class is an additive IR change. Each class maps one to one onto a `binding.semantics.name` by convention. The IR does not enforce that, but every shipped recognizer follows it. See [Pack patterns](/packs/patterns#recognizers) for the recognizers that emit them.
 
 `preconditions` on `invocation` and `interaction` are the ancestor conditions gating the effect within its transition. They are absent for a call that always fires.
 
@@ -337,7 +337,7 @@ type Input =
   | { type: "closure"; name: string };
 ```
 
-How values reach a code unit. An HTTP handler usually has only `parameter` inputs; the rest are mostly for components and hooks.
+An `Input` is one way a value reaches a code unit. An HTTP handler usually has only `parameter` inputs; the rest are mostly for components and hooks.
 
 `role` records what the parameter means to the framework (`"request"`, `"response"`, `"pathParams"`, `"requestBody"`), and `InputMappingPattern` in the pack sets it. When suss cannot work out a parameter's role, it writes null and records a gap saying why. A role often depends on something the reader had to work out first. If the route's path went unread, for instance, there is no way to separate a path parameter from a query parameter.
 
@@ -355,7 +355,7 @@ interface Gap {
 }
 ```
 
-Something the summary could not account for. The run keeps going and the gap goes into the output, so you can see that a case exists even where suss could not work out what happens in it.
+A gap is something the summary could not account for. The run keeps going and the gap goes into the output, so you can see that a case exists even where suss could not work out what happens in it.
 
 **`unhandledCase`** is about the code. The declared contract lists a response no transition produces, or a transition produces a status the contract never declared. The checker turns each one into a `providerContractViolation` at error severity.
 
@@ -369,7 +369,7 @@ Something the summary could not account for. The run keeps going and the gap goe
 }
 ```
 
-The handler may well be responding correctly, in a form nobody has taught the pack yet, so the checker reports `lowConfidence` at info severity. Teach the pack that terminal shape and the gap goes away.
+The handler may well be responding correctly, in a form the pack has no pattern for yet, so the checker reports `lowConfidence` at info severity. Add that terminal shape to the pack and the gap goes away.
 
 **`unfollowedCall`** is the other one about how suss read the code. The walk met a call it could not resolve to a function with a body, so whatever runs behind it is missing from this summary and from every effect derived from it. `callee` gives the call as the source writes it:
 
@@ -407,7 +407,7 @@ type Derivation =
   | { type: "indexAccess"; index: string | number };
 ```
 
-A reference to a value inside a code unit. Each variant records where the value came from, without interpreting it.
+A `ValueRef` points at a value inside a code unit. Each variant records where the value came from, without interpreting it.
 
 - **`input`**, a function parameter. `inputRef` is the parameter name and `path` is the property chain from there (`args.params.id` becomes `{ inputRef: "args", path: ["params", "id"] }`).
 - **`dependency`**, the result of a call. `name` is the callee expression as text (`"db.findById"`), and `accessChain` is any property access before the value is tested.
@@ -416,7 +416,7 @@ A reference to a value inside a code unit. Each variant records where the value 
 - **`state`**, component state, a closure variable or a module-level variable.
 - **`unresolved`**, the extractor could not work out where the value came from. It keeps the source text, so the reference still shows you what was tested.
 
-The structure is shallow on purpose. Two predicates that both test the result of `db.findById(id).deletedAt` have to be recognizable as the same subject even though nothing here knows what `findById` does. Shallow references survive a mechanical rename, cost nothing to compute, and mean the same thing in another language: Python's `db.find_by_id(id)` produces an analogous `ValueRef`.
+The structure is shallow on purpose. Two predicates that both test the result of `db.findById(id).deletedAt` have to be recognizable as the same subject, even though the IR records nothing about what `findById` does. Shallow references survive a mechanical rename and cost nothing to compute. They also mean the same thing in another language: Python's `db.find_by_id(id)` produces an analogous `ValueRef`.
 
 ### `TypeShape`
 
@@ -438,19 +438,19 @@ type TypeShape =
   | { type: "unknown" };
 ```
 
-Enough structure to describe a response body or a return value, without reproducing a whole type system. The Python adapter produces these same shapes. Serializing each language's compiler types instead would leave nothing that compares across languages.
+A `TypeShape` has enough structure to describe a response body or a return value without reproducing a whole type system. The Python adapter produces these same shapes. Serializing each language's compiler types instead would leave nothing that compares across languages.
 
 **Record against dictionary.** A `record` is a closed struct with a fixed set of named fields. A `dictionary` is an index signature (`Record<string, T>`), where the key set is open and every access returns a `T`. A comparison has to keep them apart, because a dictionary accepts any key and a record accepts only the ones listed.
 
-**`ref` is the escape hatch.** It means the extractor got as far as "this is typed as `User`" and did not inline the definition. A name on its own does not identify a type: two modules can each declare a `User`, and every instantiation of one generic reports the generic's own name, so `Omit<User, "secret">` and `Omit<Order, "total">` are both `Omit`. `from` says which file declares the type, when the project declares it, and `def` is the key into the summary's `definitions` table, built from what the type actually is. A name the language or a dependency owns has neither.
+**`ref` is the escape hatch.** It means the extractor got as far as "this is typed as `User`" and did not inline the definition. A name on its own does not identify a type: two modules can each declare a `User`, and every instantiation of one generic reports the generic's own name, so `Omit<User, "secret">` and `Omit<Order, "total">` are both `Omit`. `from` says which file declares the type, when the project declares it, and `def` is the key into the summary's `definitions` table, built from what the type actually is. A type the language or a dependency declares has neither.
 
 #### What crosses the wire
 
-`TypeShape` describes values as they cross a serialization boundary: HTTP bodies, messages on a queue, return values a caller reads. It is not the in-memory type system of the source language, and two things follow from that.
+`TypeShape` describes values as they cross a serialization boundary: HTTP bodies, messages on a queue, return values a caller reads. It does not model the source language's in-memory types, which leads to the points below.
 
 **Numeric precision.** JavaScript's `number` is an IEEE 754 double. Integers past `Number.MAX_SAFE_INTEGER`, high-precision decimals, hex and scientific notation, and underscore separators all lose information through it. A numeric `literal` keeps the exact source text in `raw`, so a consumer that needs the precision never has to guess. Strings and booleans round-trip and have no `raw`.
 
-**Types with no wire form.** `BigInt`, `Date`, `Map`, `Set`, `Buffer`, a regex: none of these has a canonical JSON representation. The extractor surfaces them as `ref` with the declared name. What goes on the wire is up to the producer and consumer: a `Date` may be an ISO string from `toJSON`, an epoch number, or absent.
+**Types with no wire form.** `BigInt`, `Date`, `Map`, `Set`, `Buffer`, a regex: none of these has a canonical JSON representation. The extractor records them as a `ref` with the declared name. What goes on the wire is up to the producer and consumer: a `Date` may be an ISO string from `toJSON`, an epoch number, or absent.
 
 **`undefined`.** It is modelled for source fidelity, for optional fields and explicit `undefined` returns, and JSON omits it. A record with `email: undefined` serializes to a body where `email` is absent, so a contract checker should treat `{ value: T | undefined }` and `{ value?: T }` as the same thing at the wire boundary.
 
@@ -473,7 +473,7 @@ interface Corroboration {
 }
 ```
 
-How much of the behavior suss read, and where the claim came from.
+`ConfidenceInfo` records how much of the behavior suss read, and where the claim came from.
 
 - **`inferred_static`**, structural analysis of the source, which is the common case.
 - **`inferred_ai`**, reserved for LLM-assisted labels on opaque predicates. Nothing writes it today.
@@ -484,7 +484,7 @@ A return the pack could not read sets the level to `low` on its own, and suss ap
 
 `corroboration` is what came of running the code with `suss corroborate`. Inputs satisfying the claim's own conditions are generated and run through the function, and the observation either agreed every time (`observed`), disagreed at least once (`refuted`, with the input that disagreed), or never produced a verdict (`untested`, with the reason). Corroboration adds evidence to a derivation and never rewrites the derived claim.
 
-The checker does not change a finding's severity because of confidence, though a tool reading the findings is free to. A high-confidence mismatch is almost certainly a bug your users will hit. A low-confidence one is worth a look before you break the build over it.
+The checker does not change a finding's severity because of confidence, though a tool reading the findings is free to. A high-confidence mismatch is almost certainly a bug your users will hit. Look at a low-confidence one before you break the build over it.
 
 ## Findings
 
@@ -519,7 +519,7 @@ type BoundaryAspect =
   | "read" | "write" | "send" | "receive" | "construct" | "selector";
 ```
 
-What the pairwise checker emits. The [findings catalog](/reference/findings) lists every `kind` with its severity, when it fires and what to do about it; `FindingKindSchema` in `packages/behavioral-ir/src/schemas.ts` is the authoritative enumeration.
+A `Finding` is what the pairwise checker emits. The [findings catalog](/reference/findings) lists every `kind` with its severity, when it fires and what to do about it; `FindingKindSchema` in `packages/behavioral-ir/src/schemas.ts` is the authoritative enumeration.
 
 - **Both sides are always named.** Even when only the provider is at fault, as with `providerContractViolation`, the finding still points at a consumer summary, often the same one, used as the pairing anchor. Tooling can then attribute every finding to a pairing.
 - **`aspect`** records which side of a field the finding concerns. `send` and `receive` are a payload's two directions, `construct` is a scenario setting an input, and `selector` is a query's `where` clause. It is absent where the aspect is irrelevant or spans several.
@@ -541,7 +541,7 @@ interface RunFinding {
 }
 ```
 
-A problem with the run rather than with a boundary. A boundary finding points at two sides that disagree, and a run finding has no two sides to point at, so these go in their own list under `run`, each with a `remedy` telling you what to do next.
+A `RunFinding` reports a problem with the run itself. A boundary finding points at two sides that disagree. A run finding has no two sides to point at, so these go in their own list under `run`, each with a `remedy` telling you what to do next.
 
 ### `SummaryDiff`
 
@@ -553,7 +553,7 @@ interface SummaryDiff {
 }
 ```
 
-What `diffSummaries` returns for one unit. A transition counts as changed when its `id` survives and its content moved. That is the reason transition ids leave source offsets out.
+`diffSummaries` returns one of these for each unit. A transition counts as changed when its `id` survives and its content moved. Transition ids leave source offsets out for that reason.
 
 ## The adapter interface
 
@@ -590,10 +590,10 @@ interface RawBranch {
 }
 ```
 
-Every field is plain JSON: no AST nodes, no compiler types. Three things follow from that split.
+Every field is plain JSON, with no AST nodes or compiler types in it. Three things follow from that split.
 
 1. **The extractor can be tested without a compiler.** Hand-written `RawCodeStructure` values drive its whole test suite in milliseconds.
-2. **One place decides the hard parts.** Opaque wrapping, gap detection, confidence, and the final summary structure are all decided in the extractor, so no adapter reimplements them.
+2. **The hard parts happen in one place.** The extractor does the opaque wrapping, gap detection, confidence and the final summary structure, so no adapter reimplements them.
 3. **Adding a language is adding an adapter.** The Python adapter produces the same structure, and nothing in the extractor depends on which compiler filled it in.
 
-[The extraction algorithm](/theory/extraction-algorithm) covers how the TypeScript adapter produces one from source files.
+[The extraction algorithm](/theory/extraction-algorithm) describes how the TypeScript adapter produces one from source files.

@@ -63,7 +63,7 @@ You do need your project's own dependencies installed, because some packs resolv
 
 ## Does it require annotations or changes to my code?
 
-No. suss reads your source exactly as it is. You add no decorators, no JSDoc tags and nothing else to the code.
+No. suss reads your source exactly as it is, without decorators or JSDoc tags.
 
 It needs two things from you: your `tsconfig.json`, so type resolution matches what your compiler sees, and the packs for your stack.
 
@@ -97,7 +97,7 @@ The agreement was about behavior, so the types may not have changed at all:
 
 - A handler used to return `404` for soft-deleted users and now returns `200 { status: "deleted" }`. The caller still takes `200` to mean the user exists.
 - A Prisma write used to set `email` and the schema dropped the column. The field is still in the input type, so the type checker says nothing and only the database refuses it.
-- A queue producer used to send `{ userId: string }` and the consumer parses `userId` as a number. Both compile, both run, and the wrong value gets stored.
+- A queue producer used to send `{ userId: string }` and the consumer parses `userId` as a number. Both compile and run, and the wrong value gets stored.
 
 ## What languages does it support?
 
@@ -114,7 +114,7 @@ myapp/fastapi_app.py
        -> 201 TodoResponse
 ```
 
-None of that reaches the IR or the checker. Both of them read `BehavioralSummary[]` JSON, so a Python service and a TypeScript client compare against each other in one `check` run. [Read Python or Ruby](/guides/python-and-ruby) covers what each adapter reads and where it stops.
+The IR and the checker never see which language a summary came from. Both read `BehavioralSummary[]` JSON, so a Python service and a TypeScript client compare against each other in one `check` run. [Read Python or Ruby](/guides/python-and-ruby) lists what each adapter reads and where it stops.
 
 ## Does it work in monorepos?
 
@@ -126,7 +126,7 @@ The contract commands are independent of the source repo, so a spec that lives s
 
 Almost always because the pack list does not match the stack, or because a pack needs a dependency that is not installed.
 
-The run reports where it stopped, file by file and pack by pack. [Fix a run that found nothing](/guides/fix-an-empty-run) reads that output case by case.
+The run reports where it stopped, file by file and pack by pack. [Fix a run that found nothing](/guides/fix-an-empty-run) goes through that output case by case.
 
 ## Does it produce false positives?
 
@@ -180,7 +180,7 @@ The `packageExports` discovery variant writes one provider summary per public ex
 
 The IR (`@suss/behavioral-ir`) and its JSON Schema are versioned, and a breaking change gets a major version bump.
 
-The CLI surface and the `inspect` rendering are still settling, so build any tool of yours on the JSON. The text rendering can change under you. [Summary format](/reference/summary-format#what-a-consumer-can-rely-on) covers what is guaranteed.
+The CLI flags and the `inspect` output still change between releases, so build any tool of yours on the JSON. [Summary format](/reference/summary-format#what-a-consumer-can-rely-on) lists what is guaranteed.
 
 ## How is it different from the tools I already run?
 
@@ -194,7 +194,7 @@ Anything that needs a running system, a database of history, or a server.
 
 - Cross-service aggregation, dashboards and historical drift tracking. Those all consume summaries suss produces.
 - Continuous monitoring. suss runs on demand, locally or in CI, and never as a daemon.
-- Authorial intent, mostly. suss derives what the code does rather than what it should do. Written contracts express some of it, and team-authored [intent docs](/guides/check-against-intent) are their own stream.
+- Authorial intent, mostly. suss derives what the code does. Written contracts say some of what it should do, and [intent docs](/guides/check-against-intent) your team writes are checked separately.
 - Runtime instrumentation. Nothing suss reads comes from your running system. `suss corroborate --experimental` does run handlers, locally, against inputs it generates, and it records what it saw beside the derived claim, which stays as it was.
 
 ## How do I add a new framework?
