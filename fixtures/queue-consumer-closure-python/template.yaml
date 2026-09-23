@@ -1,0 +1,37 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: The same layout as the TypeScript fixture, in Python. SAM
+  spells a Python handler's module with dots.
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 10
+
+Resources:
+  OrdersQueue:
+    Type: AWS::SQS::Queue
+    Properties: {}
+
+  OrdersWorker:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: src.handlers.orders.handler
+      Events:
+        FromOrders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
+
+  AccountsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: src.handlers.accounts.handler
+      Events:
+        CreateAccount:
+          Type: HttpApi
+          Properties:
+            Method: POST
+            Path: /accounts
