@@ -1,6 +1,6 @@
 /**
- * The directories a Python project's absolute imports resolve against,
- * as well as the directory the run starts in.
+ * The directories a Python project's absolute imports resolve against:
+ * the project directory, and the source directories it declares.
  *
  * A project that keeps its package under `src/` imports it as
  * `orders.routes`, because installing the project puts `src/` on
@@ -15,33 +15,74 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { readTomlFile, tableAt } from "./dependencyManifests.js";
+import { parse as parseToml } from "smol-toml";
 
-import type { TomlTable } from "./dependencyManifests.js";
-
-export interface PythonSourceRoots {
-  /** Absolute directories under the project root, not including the root itself. */
-  roots: string[];
-  /** A manifest that might have declared a source directory and could not be read. */
-  unread: Array<{ where: string; reason: string }>;
+export interface UnreadManifest {
+  /** The file, relative to the project root. */
+  where: string;
+  /** Why it could not be read, in one line. */
+  reason: string;
 }
 
-export function pythonSourceRoots(root: string): PythonSourceRoots {
-  const resolvedRoot = path.resolve(root);
-  const { declared, unread } = declaredInPyproject(resolvedRoot);
+export interface PythonSourceRoots {
+  /** Absolute: the project directory first, then each source directory declared or found under it. */
+  roots: string[];
+  /** A manifest that might have declared a source directory and could not be read. */
+  unread: UnreadManifest[];
+}
 
-  const roots = directoriesUnder(resolvedRoot, declared);
-  if (roots.length > 0) {
-    return { roots, unread };
+export type TomlTable = Record<string, unknown>;
+
+export type TomlFileRead =
+  | { kind: "parsed"; value: unknown }
+  | { kind: "unreadable"; reason: string };
+
+export function readTomlFile(file: string): TomlFileRead {
+  try {
+    return { kind: "parsed", value: parseToml(fs.readFileSync(file, "utf8")) };
+  } catch (err) {
+    return { kind: "unreadable", reason: tomlErrorReason(err) };
+  }
+}
+
+/** The parser follows its first line with an excerpt of the file, which is more than a one-line reason needs. */
+function tomlErrorReason(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  const first = message.split("\n")[0] ?? message;
+  const line = (err as { line?: unknown }).line;
+  const at = typeof line === "number" ? ` (line ${line})` : "";
+  return `it is not valid TOML: ${first}${at}`;
+}
+
+export function tableAt(value: unknown, ...keys: string[]): TomlTable | null {
+  let current = value;
+  for (const key of keys) {
+    if (current === null || typeof current !== "object") {
+      return null;
+    }
+    current = (current as TomlTable)[key];
+  }
+  return current !== null && typeof current === "object"
+    ? (current as TomlTable)
+    : null;
+}
+
+export function pythonSourceRoots(projectRoot: string): PythonSourceRoots {
+  const root = path.resolve(projectRoot);
+  const { declared, unread } = declaredInPyproject(root);
+
+  const found = directoriesUnder(root, declared);
+  if (found.length > 0) {
+    return { roots: [root, ...found], unread };
   }
 
-  const src = path.join(resolvedRoot, "src");
-  return { roots: containsPackage(src) ? [src] : [], unread };
+  const src = path.join(root, "src");
+  return { roots: containsPackage(src) ? [root, src] : [root], unread };
 }
 
 function declaredInPyproject(root: string): {
   declared: string[];
-  unread: PythonSourceRoots["unread"];
+  unread: UnreadManifest[];
 } {
   const pyproject = path.join(root, "pyproject.toml");
   if (!fs.existsSync(pyproject)) {
@@ -56,25 +97,6 @@ function declaredInPyproject(root: string): {
     };
   }
   return { declared: declaredSourceDirectories(read.value), unread: [] };
-}
-
-/** Empty when every manifest was read. */
-export function formatUnreadSourceRoots(
-  sourceRoots: PythonSourceRoots,
-  projectRoot: string,
-  roots: readonly string[],
-): string {
-  const searched = roots
-    .map((dir) => path.relative(projectRoot, dir) || ".")
-    .join(", ");
-  // The parser follows its first line with an excerpt of the file,
-  // which is more than a warning in the middle of an extract needs.
-  return sourceRoots.unread
-    .map(
-      ({ where, reason }) =>
-        `[suss] Could not read ${where} to find where the Python sources are, because ${reason.split("\n")[0]}\n[suss] Absolute imports resolve against ${searched}.\n`,
-    )
-    .join("");
 }
 
 /** Kept only when it exists and is below the root, since files outside the root are never read. */

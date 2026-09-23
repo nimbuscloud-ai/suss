@@ -663,3 +663,11 @@ Not read yet:
 ## What a file imports from the project
 
 Every summary has `metadata.moduleImports`, the project files its own file's imports resolved to, relative to the workspace root and sorted. A file whose imports all resolve outside the project gets an empty list rather than no field, so a Lambda handler that imports only the standard library still tells the checker that its closure is the handler module alone. A checker rebuilds the import graph from that field to work out which modules a template's handler entry loads; the entry `app.handler` under `CodeUri: src/` matches `src/app.py`, and a dotted module such as `shop.app.handler` matches `src/shop/app.py`.
+
+## Where an absolute import is looked for
+
+`import orders.routes` is looked for under each root: the project directory, then the source directories the project declares. `sourceRoots.ts` reads those from `pyproject.toml` (setuptools `package-dir` and `packages.find`, hatch `packages`, poetry `packages`), because installing the project is what puts them on `sys.path`, and suss does not install anything. When nothing is declared, `src/` is a root if it contains a package and is not a package itself. `extractPythonProject` and `PythonWhySession` both work the roots out from the project directory, so a library caller gets the same roots as the CLI. `roots` overrides them, and `additionalRoots` adds what the directory cannot tell, such as a checked-out submodule.
+
+When two roots both have a file for an import, `moduleResolver.ts` abstains instead of choosing, since the order of `sys.path` exists only at run time. So an extra root never picks a wrong module. At worst it turns a resolved import into an ambiguous one.
+
+A `pyproject.toml` that does not parse comes back in `unreadManifests` with a one-line reason, and the `src/` fallback still applies.

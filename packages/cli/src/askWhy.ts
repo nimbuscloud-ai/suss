@@ -26,8 +26,8 @@ import {
   reachTargetOfTouches,
   representativeUnit,
 } from "./callFacts.js";
+import { checkedOutSubmodules } from "./gitSubmodules.js";
 import { LANGUAGE_LABEL, languageOfFile } from "./language.js";
-import { pythonSourceRoots } from "./pythonSourceRoots.js";
 import { providesKeyOf, resolveTarget } from "./target.js";
 
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
@@ -74,10 +74,7 @@ const SESSION_FOR: Record<
   python: (options) =>
     new PythonWhySession({
       ...options,
-      roots: [
-        path.resolve(options.dir),
-        ...pythonSourceRoots(options.dir).roots,
-      ],
+      additionalRoots: checkedOutSubmodules(path.resolve(options.dir)),
     }),
   ruby: (options) => new RubyWhySession(options),
 };

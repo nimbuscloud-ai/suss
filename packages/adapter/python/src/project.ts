@@ -53,6 +53,7 @@ import { moduleLoadInvocationEffects } from "./paths/effects.js";
 import { reachedFunctions } from "./reach/closure.js";
 import { buildRouterIndex } from "./routers.js";
 import { bindModule } from "./scope.js";
+import { pythonSourceRoots } from "./sourceRoots.js";
 import { bindEvaluator } from "./values/evaluator.js";
 import { adapterStamp } from "./version.js";
 import { buildWrapperIndex } from "./wrappers.js";
@@ -72,14 +73,22 @@ import type { PyNode } from "./parser.js";
 import type { Seed } from "./reach/closure.js";
 import type { BoundPythonFile } from "./routers.js";
 import type { ModuleBinding } from "./scope.js";
+import type { UnreadManifest } from "./sourceRoots.js";
 import type { StorageLookup } from "./storage.js";
 
 export interface ExtractPythonOptions {
   /** Absolute paths of the files to parse and extract. */
   files: string[];
   packs: PythonPack[];
-  /** Directories an absolute import is resolved against. */
-  roots: string[];
+  /**
+   * Directories an absolute import is resolved against. When absent,
+   * they are read from `projectRoot`: the directory itself and the
+   * source directories its `pyproject.toml` declares, or `src/` when
+   * it contains a package.
+   */
+  roots?: string[];
+  /** Roots the project directory cannot tell, such as a checked-out submodule. Added after the others. */
+  additionalRoots?: string[];
   /** When set, `location.file` on each summary is relativized against this. */
   workspaceRoot?: string;
   /** The directory a summary's id measures its file from, when that differs from `workspaceRoot`. */
@@ -99,6 +108,31 @@ export interface ExtractPythonOptions {
 export interface ExtractPythonResult {
   summaries: BehavioralSummary[];
   facts: Database;
+  /** The roots absolute imports were resolved against. */
+  roots: string[];
+  /** A manifest that might have declared a source directory and could not be read. */
+  unreadManifests: UnreadManifest[];
+}
+
+function rootsOfRun(options: ExtractPythonOptions): {
+  roots: string[];
+  unreadManifests: UnreadManifest[];
+} {
+  const additional = options.additionalRoots ?? [];
+  if (options.roots !== undefined) {
+    return { roots: [...options.roots, ...additional], unreadManifests: [] };
+  }
+
+  if (options.projectRoot === undefined) {
+    throw new Error(
+      "extractPythonProject needs roots, or a projectRoot to read them from.",
+    );
+  }
+  const found = pythonSourceRoots(options.projectRoot);
+  return {
+    roots: [...found.roots, ...additional],
+    unreadManifests: found.unread,
+  };
 }
 
 /**
@@ -112,17 +146,18 @@ export interface ExtractPythonResult {
  * not the right test here; whether some file imports it is.
  */
 function reportUnresolvedProjectModules(
-  options: ExtractPythonOptions,
+  packs: readonly PythonPack[],
+  roots: readonly string[],
   db: Database,
 ): void {
   const imported = new Set(db.facts("pyImport").map((row) => String(row[1])));
-  for (const pack of options.packs) {
+  for (const pack of packs) {
     for (const module of pack.projectModules ?? []) {
       if (imported.has(module)) {
         continue;
       }
       process.stderr.write(
-        `[suss] ${pack.name}: no file under ${options.roots.join(", ")} imports ${module}, so the stub for it changes nothing.\n`,
+        `[suss] ${pack.name}: no file under ${roots.join(", ")} imports ${module}, so the stub for it changes nothing.\n`,
       );
     }
   }
@@ -202,6 +237,7 @@ interface ModuleRoot {
 export async function extractPythonProject(
   options: ExtractPythonOptions,
 ): Promise<ExtractPythonResult> {
+  const { roots, unreadManifests } = rootsOfRun(options);
   const timer = options.onTiming !== undefined ? createTimer() : noopTimer();
 
   const cacheDir = adapterStamp.declineWhenRunFromSource(
@@ -226,7 +262,7 @@ export async function extractPythonProject(
     adapterPacksDigest:
       cacheDir === null
         ? packsDigest
-        : `${runDigest(packsDigest, options.packs, options.files)}|roots:${options.roots.join(path.delimiter)}`,
+        : `${runDigest(packsDigest, options.packs, options.files)}|roots:${roots.join(path.delimiter)}`,
   };
   const lookup = await timer.timeAsync("cache.lookup", () =>
     cache.lookup(cacheInput),
@@ -234,7 +270,12 @@ export async function extractPythonProject(
   options.onCacheDiagnostic?.(lookup.diagnostic);
   if (lookup.kind === "hit") {
     options.onTiming?.(timer.report());
-    return { summaries: lookup.summaries, facts: new Database() };
+    return {
+      summaries: lookup.summaries,
+      facts: new Database(),
+      roots,
+      unreadManifests,
+    };
   }
 
   const db = new Database();
@@ -309,7 +350,7 @@ export async function extractPythonProject(
   const definitions = new Map<string, PyNode>();
   timer.time("discover", () => {
     for (const { file, root, module: moduleBinding } of bound) {
-      emitModuleImportFacts(db, file, moduleBinding, { roots: options.roots });
+      emitModuleImportFacts(db, file, moduleBinding, { roots });
       if (needsValues) {
         emitValueFacts(db, file, root);
       }
@@ -322,7 +363,7 @@ export async function extractPythonProject(
     addPackWords(db, packWordsOf(options.packs));
   });
 
-  reportUnresolvedProjectModules(options, db);
+  reportUnresolvedProjectModules(options.packs, roots, db);
 
   // A chain that matches starts at a method some file importing the library
   // declares, so its name is in here. A project that renames one on the way
@@ -334,7 +375,7 @@ export async function extractPythonProject(
 
   const routerIndex = timer.time("discover", () =>
     buildRouterIndex(bound, options.packs, {
-      roots: options.roots,
+      roots,
       ...(mountsRouters ? { facts: db } : {}),
     }),
   );
@@ -357,7 +398,7 @@ export async function extractPythonProject(
   const wrapperIndex = timer.time("discover", () =>
     buildWrapperIndex(bound, {
       packs: options.packs,
-      roots: options.roots,
+      roots,
       facts: needsValues ? db : undefined,
       definitions,
       storageFor,
@@ -448,7 +489,7 @@ export async function extractPythonProject(
   const reached = timer.time("summarize", () =>
     reachedFunctions(seeds, {
       files: bound,
-      roots: options.roots,
+      roots,
       gapHandling,
       storageFor,
       facts: db,
@@ -559,7 +600,12 @@ export async function extractPythonProject(
   );
   options.onTiming?.(timer.report());
 
-  return { summaries: composed, facts: db };
+  return {
+    summaries: composed,
+    facts: db,
+    roots,
+    unreadManifests,
+  };
 }
 
 /** The files each file's imports resolved to, spelled the way a summary's location.file is. */
