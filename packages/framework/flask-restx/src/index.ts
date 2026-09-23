@@ -1,24 +1,12 @@
-// @suss/framework-flask-restx: PatternPack for flask-restx `Resource`
-// routes, including a project's own wrapper module that re-exports the
-// route decorator.
-//
-// flask-restx declares a route by decorating a `Resource` subclass with
-// `Namespace.route(path)` or `Api.route(path)`. The HTTP verb comes
-// from which of the class's own methods is defined (`get`, `post`,
-// `put`, `delete`, `patch`, `head`, `options`) rather than from a
-// per-method decorator.
-//
-// Production services usually put their routes behind one internal
-// wrapper module instead of importing `flask_restx` directly, so
-// `wrapperModules` is the project-supplied half of `importModule`. The
-// library's own module is always accepted, and a project adds its
-// wrapper alongside it. The TypeScript decorator packs accept a
-// project's own re-export of a framework decorator the same way.
-//
-// This slice covers discovery, prefix composition, and declared-shape
-// reading from parameter and return annotations. It does not read
-// terminals or bodies, and it does not read response marshaling
-// (`@ns.marshal_with`, `@ns.expect`).
+/**
+ * flask-restx `Resource` routes for the Python adapter. A route is a
+ * class decorated with `Namespace.route(path)` or `Api.route(path)`, and
+ * each of its methods named after a verb (`get`, `post`, ...) serves
+ * that verb.
+ *
+ * The pack does not read response marshaling (`@ns.marshal_with`,
+ * `@ns.expect`).
+ */
 
 import { z } from "zod";
 
@@ -26,17 +14,15 @@ import type { PythonPack } from "@suss/adapter-python";
 import type { PackDeclaration } from "@suss/ir-core";
 
 /**
- * What this pack's options may say. The CLI parses a
- * `-f flask-restx=config.json` file against it, minus the keys a dependency
- * stub fills, which a config file may not set.
+ * The CLI checks a `-f flask-restx=config.json` file against this schema.
+ * A config file may not set a key that only a dependency stub fills.
  */
 export const optionsSchema = z
   .object({
     /**
-     * Modules a project's own wrapper re-exports flask-restx's route
-     * decorator from. flask-restx's own module is always accepted. The
-     * wrapper's name is the project's own choice, so it is supplied by
-     * whoever configures the pack rather than hardcoded here.
+     * Modules that re-export flask-restx's route decorator, on top of
+     * `flask_restx` itself. A dependency stub fills this in; a project's
+     * config file may not set it.
      */
     wrapperModules: z.array(z.string()).optional(),
   })
@@ -70,8 +56,8 @@ export function flaskRestxFramework(
         decoratorName: "route",
         verbMethodNames: VERB_METHOD_NAMES,
         pathParamSyntax: "flaskConverters",
-        // What each of these settings means for a written prefix is the
-        // grid in the Python adapter's README.
+        // The Python adapter's README has a table of what each of these
+        // settings does to a written prefix.
         pathRepeatedSlashes: "merged",
         routerComposition: {
           routerConstructorName: "Namespace",
@@ -93,11 +79,9 @@ export function flaskRestxFramework(
             },
           },
         },
-        // Flask returns 200 from a resource method that returns a value
-        // and sets no status of its own.
         defaultStatusCode: 200,
         // Flask reads a status out of `return body, 201`, so the 200
-        // above only applies where the body writes no status of its own.
+        // above applies only when the return writes no status.
         statusFromReturnedTuple: true,
         // flask-restx re-exports Flask's function, which re-exports
         // Werkzeug's, and a project may import it from any of the three.
@@ -110,8 +94,8 @@ export function flaskRestxFramework(
           {
             type: "decoratedWrapper",
             attribute: "before_request",
-            // A blueprint's own hook is not read: a route is decorated on
-            // a namespace, and the blueprint it is served under is a mount.
+            // A blueprint's own hook is skipped, because a route is decorated
+            // on a namespace and the blueprint only mounts it.
             registrars: [
               {
                 constructorName: "Flask",
@@ -144,7 +128,6 @@ export function flaskRestxFramework(
   };
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "framework",
   package: "@suss/framework-flask-restx",

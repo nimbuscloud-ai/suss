@@ -32,15 +32,22 @@ A route found here pairs with a client that calls the same URL. It also
 pairs with a provider in another framework that serves it, since
 `/api/orders/{id}` and `/api/orders/:id` compare equal.
 
+## Pages handlers and server actions
+
+A `pages/api` handler is one default export that switches on
+`req.method` inside, so it serves every method. The pack records its
+method as `*`, and pairing matches it against whichever method a caller
+uses.
+
+A `"use server"` directive turns a function into an endpoint that a
+client component calls as if it were local, while the runtime sends a
+POST. The pack makes each such function an `action` unit, so its
+summary shows what a button press runs on the server. A directive at
+the top of a file makes every exported function an action. A directive
+inside a function marks that function alone, exported or not.
+
 ## What it does not cover yet
 
-- **Server actions.** A `"use server"` function is reached through an
-  ID the compiler generates. It has no URL, so there is no boundary to
-  pair it on.
-- **Pairing a pages handler.** One default export handles every method
-  and switches on `req.method` inside, so the pack reports the path and
-  leaves the method blank. A summary with no method does not pair with
-  a caller, so those routes show up in an inventory and go no further.
 - **Page components.** `@suss/framework-react` already reads those.
 - **A route a library serves.** NextAuth's route file is
   `export { GET, POST } from "@/auth"`, where those names come from

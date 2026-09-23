@@ -1,28 +1,13 @@
-// @suss/framework-graphql-ruby: RubyPack for graphql-ruby's class-based
-// field DSL.
-//
-// graphql-ruby declares a GraphQL type as a Ruby class extending a
-// project's own base object class, which `rails g graphql:install`
-// generates as `Types::BaseObject` extending `GraphQL::Schema::Object`.
-// Each field is declared by a `field` call in the class body.
-//
-// The GraphQL type name comes from the class's own short name with a
-// trailing `Type` removed, which is the library's `default_graphql_name`
-// convention, and the pack selects it as the adapter's
-// `stripTypeSuffix` naming. Root Query and Mutation fields wired
-// through `mutation:` or `resolver:` read their declared shape from the
-// referenced class's own file, found by the Rails constant-to-path
-// convention (the adapter's `railsUnderscore`) under `root`.
-//
-// Everything graphql-ruby defines is stated here rather than in the
-// adapter: the `field`, `type` and `argument` calls, the `required:`
-// and `camelize:` keywords and their defaults, and the built-in scalars
-// with their `GraphQL::Types::` spelling. The adapter reads only these
-// fields.
-//
-// This slice covers discovery and declared-shape reading. `routes.rb`
-// is a separate and much larger macro-expansion problem, and it is out
-// of scope here.
+/**
+ * Reads graphql-ruby's class-based field DSL for the Ruby adapter. The
+ * README covers discovery, `mutation:` and `resolver:` wiring, and how a
+ * class name becomes a GraphQL type name.
+ *
+ * Every name graphql-ruby defines is set in this file, and the adapter
+ * has none of them: the `field`, `type` and `argument` calls, the
+ * `required:` and `camelize:` keywords with their defaults, and the
+ * built-in scalars with their `GraphQL::Types::` spelling.
+ */
 
 import path from "node:path";
 
@@ -34,27 +19,31 @@ import type { GraphqlObjectFields, RubyPack } from "@suss/adapter-ruby";
 import type { PackDeclaration } from "@suss/ir-core";
 
 /**
- * What this pack's options may say. The CLI parses a
- * `-f graphql-ruby=config.json` file against it, minus the keys a dependency
- * stub fills, which a config file may not set.
+ * The CLI checks a `-f graphql-ruby=config.json` file against this
+ * schema. A config file may not set a key that only a dependency stub
+ * fills.
  */
 export const optionsSchema = z
   .object({
     /**
-     * Directory a `mutation:` / `resolver:` field's referenced class is
-     * looked up under, e.g. `path.join(repoRoot, "app/graphql")`.
-     * Written relative, it is read relative to `configDirectory`, and
-     * relative to the working directory when there is none.
+     * The directory the pack looks under for the class a `mutation:` or
+     * `resolver:` field references, for example
+     * `path.join(repoRoot, "app/graphql")`. A relative path resolves
+     * against `configDirectory`, or the working directory when that is
+     * unset.
      */
     root: z.string(),
     /**
-     * The directory a relative `root` is read against: the config file's
-     * own directory, or the directory the run reads when the options came
-     * without one. The CLI supplies this; it is not written in the file
-     * itself.
+     * The CLI fills this in with the config file's directory, or with the
+     * directory the run reads when there is no file. A config file does
+     * not set it.
      */
     configDirectory: z.string().optional(),
-    /** Base classes beyond `Types::BaseObject` that also mark a class as declaring GraphQL fields. */
+    /**
+     * Base classes beyond the generated `Types::Base*` ones whose
+     * subclasses declare GraphQL fields. A config file may not set this; a
+     * dependency stub fills it.
+     */
     baseClassNames: z.array(z.string()).optional(),
     /** The schema-wide camelCase default. A `field` or `argument` call's own `camelize:` keyword overrides it for that one name. */
     camelize: z.boolean().optional(),
@@ -64,9 +53,9 @@ export const optionsSchema = z
 export type GraphqlRubyPackOptions = z.infer<typeof optionsSchema>;
 
 /**
- * The classes graphql-ruby's own generated base classes extend or mix
- * in. A project's ancestry walk ends at one of them, so putting one in
- * a stub changes nothing; `suss infer stub` reads this list to say so.
+ * The library classes that graphql-ruby's generated base classes extend
+ * or mix in. The ancestry walk stops at these, so a stub statement for
+ * one adds nothing, and `suss infer stub` skips them.
  */
 export const GRAPHQL_RUBY_ROOT_CLASS_NAMES: readonly string[] = [
   "GraphQL::Schema::Object",
@@ -80,11 +69,10 @@ export const GRAPHQL_RUBY_ROOT_CLASS_NAMES: readonly string[] = [
 ];
 
 /**
- * The type-level base classes `rails g graphql:install` scaffolds. A
- * type extends one of these, or mixes one in for an interface, so all
- * of them mark a definition as declaring GraphQL fields. The generator
- * also writes BaseArgument and BaseField, which back single fields
- * rather than types, so they are not in this list.
+ * The type-level base classes `rails g graphql:install` generates. An
+ * interface mixes its base in where other types extend theirs. The
+ * generator also writes BaseArgument and BaseField, which back single
+ * fields, so they are left out.
  */
 const DEFAULT_BASE_CLASS_NAMES = [
   "Types::BaseObject",
@@ -96,10 +84,10 @@ const DEFAULT_BASE_CLASS_NAMES = [
 ];
 
 /**
- * A `root` written in a config file is written relative to that file.
- * Resolving it against the working directory instead makes the same
- * config find nothing from anywhere but the project root, and finding
- * nothing looks exactly like a schema whose fields are all unwired.
+ * A `root` in a config file is relative to that file. Resolved against
+ * the working directory, the same config would find nothing when run
+ * from anywhere but the project root, and finding nothing looks the
+ * same as a schema whose fields are all unwired.
  */
 function rootDirectory(options: GraphqlRubyPackOptions): string {
   if (options.configDirectory === undefined || path.isAbsolute(options.root)) {
@@ -139,10 +127,9 @@ export function graphqlRubyFramework(
     requiredDefault: true,
     camelizeKeyword: "camelize",
     camelizeDefault: options.camelize ?? true,
-    // The standard scalars come from the shared SDL table, so a
-    // contract read from Ruby compares against one read from SDL
-    // without a vocabulary mismatch. graphql-ruby accepts Ruby's own
-    // `Integer` class as a synonym for its `Int` scalar.
+    // The standard scalars come from the shared SDL table, so a contract
+    // read from Ruby uses the same shapes as one read from SDL.
+    // graphql-ruby also accepts Ruby's `Integer` class for `Int`.
     scalars: {
       ...SCALAR_SHAPES,
       Integer: { type: "number" },
@@ -165,7 +152,7 @@ export function graphqlRubyFramework(
     discovery: [pattern],
     // A resolver that reads a model through the dataloader passes the model
     // as an argument, so the read is recorded against that model when a
-    // storage pack in the same run says it is one.
+    // storage pack in the same run recognizes it as one.
     loaders: [
       {
         loader: "dataloader",
@@ -185,7 +172,6 @@ export function graphqlRubyFramework(
   };
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "framework",
   package: "@suss/framework-graphql-ruby",

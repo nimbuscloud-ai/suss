@@ -1,41 +1,6 @@
-// @suss/framework-nestjs-rest: the PatternPack for NestJS REST controllers
-// (`@nestjs/common`).
-//
-// NestJS expresses REST endpoints as classes decorated with
-// `@Controller(pathPrefix?)`, where each method has an HTTP-verb decorator on
-// it (`@Get`, `@Post`, `@Put`, `@Delete`, `@Patch`, `@Options`, `@Head`, or
-// `@All`). The framework wires routing internally, so there is no
-// `app.get(...)` or `router.get(...)` registration call in user code, and the
-// existing Express and Fastify
-// `registrationCall` discovery finds nothing here. Decorator-driven
-// route discovery covers it.
-//
-// Route path is the class decorator's first arg (path prefix) joined
-// with the method decorator's first arg (path suffix). Both are
-// optional. `@Controller()` mounts at root, and `@Get()` matches the
-// controller's prefix exactly.
-//
-// HTTP method comes from the method decorator's name itself (`@Get`
-// becomes "GET", `@Post` becomes "POST", and so on). `@All` maps to "*",
-// which downstream pairing treats as a wildcard matching every method.
-//
-// Inputs map by parameter decorator. NestJS uses `@Body`, `@Param`,
-// `@Query`, `@Headers`, `@Req` / `@Request`, `@Res` / `@Response`,
-// and `@Next`. `@Param('id')` and `@Query('search')` accept an
-// optional field name: v0 surfaces these uniformly as their role,
-// not the field path.
-//
-// Deferred:
-//   - `@Param('id') id: string` field-level shape: today every
-//     `@Param` lands as a single "pathParams" Input regardless of the
-//     declared field name. Adequate for the binding identity; pairing
-//     logic that wants per-arg type checking will need richer
-//     decorator-arg parsing.
-//   - Path normalisation for NestJS-style globs (`*` / `(.*)`) is
-//     deferred: the joined path goes through unchanged today.
-//   - Class inheritance / mixins: controllers split across an
-//     abstract base + concrete child are discovered separately but
-//     pairing doesn't yet collapse them.
+// NestJS wires routing itself, so user code has no `app.get(...)` call to
+// find and this pack discovers routes by their decorators. The README
+// covers how a path and method are built and what is not read yet.
 
 import { z } from "zod";
 
@@ -43,21 +8,16 @@ import type { PatternPack } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
 /**
- * What this pack's options may say. The CLI parses a
- * `-f nestjs-rest=config.json` file against it, minus the keys a dependency
- * stub fills, which a config file may not set.
+ * The CLI checks a `-f nestjs-rest=config.json` file against this schema.
+ * A config file may not set a key that only a dependency stub fills.
  */
 export const optionsSchema = z
   .object({
     /**
-     * Class decorators this project composes `@Controller()` into, for
-     * the cases the adapter cannot follow on its own.
-     *
-     * A wrapper written in the project needs no entry here: the adapter
-     * resolves a class decorator to the function behind it and accepts it
-     * when calling that function calls `Controller` from
-     * `@nestjs/common`. What is left for this option is a wrapper whose
-     * body is not in the project, so there is nothing to read.
+     * Class decorators that wrap `@Controller()` in a package outside the
+     * project. A dependency stub fills this. A wrapper written in the
+     * project needs no entry, because the adapter reads its body and
+     * sees it call `Controller` from `@nestjs/common`.
      */
     classDecorators: z.array(z.string()).optional(),
   })
@@ -79,8 +39,8 @@ export function nestjsRestFramework(
         match: {
           type: "decoratedRoute",
           importModule: "@nestjs/common",
-          // First match wins, so the framework's own decorator is
-          // tried before any wrapper a project names.
+          // The first match wins, so the framework's own decorator is
+          // tried before any wrapper.
           classDecorators: ["Controller", ...(options.classDecorators ?? [])],
           methodDecoratorRouteMap: {
             Get: "GET",
@@ -98,11 +58,9 @@ export function nestjsRestFramework(
     ],
 
     terminals: [
-      // NestJS controllers serialise the returned value as the
-      // response body and pick a 200 default unless the method
-      // declares `@HttpCode(N)` (deferred: that decorator is
-      // metadata-only). Match bare returns and treat object literals
-      // / identifiers / awaited calls as 200 responses.
+      // NestJS sends the returned value as the body with status 200.
+      // `@HttpCode(N)` can change the status, but the pack does not read
+      // that decorator yet.
       {
         kind: "response",
         match: { type: "returnStatement", excludeCallReturns: false },
@@ -111,11 +69,9 @@ export function nestjsRestFramework(
         },
       },
       {
-        // `throw new HttpException(msg, status)` / `throw new
-        // BadRequestException()` etc. NestJS maps these to HTTP
-        // responses; v0 records the exception type so downstream
-        // contract-checking can pair it with the wire status that
-        // the framework would emit.
+        // `throw new BadRequestException()`: NestJS turns the exception
+        // into a response. The throw records the exception type, and the
+        // contract check pairs it with the status NestJS would send.
         kind: "throw",
         match: { type: "throwExpression" },
         extraction: {},
@@ -154,7 +110,6 @@ export function nestjsRestFramework(
   };
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "framework",
   package: "@suss/framework-nestjs-rest",

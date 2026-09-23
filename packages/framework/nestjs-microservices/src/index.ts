@@ -1,36 +1,17 @@
-// @suss/framework-nestjs-microservices: the PatternPack for NestJS
-// microservice handlers (`@nestjs/microservices`).
-//
-// A microservice handler is a method on a `@Controller()` class
-// decorated with `@EventPattern("order.placed")` or
-// `@MessagePattern("get.order")`. The decorator's argument is the
-// channel, and the transport (NATS, Kafka, Redis, and the rest) is
-// wired at bootstrap, so the source states the channel and the project
-// states the wire.
-//
-// This is the first pack on a declared binding: the same decorator
-// discovery the REST pack uses, with the boundary stated on the
-// pattern instead of read as a route. The handler pairs against
-// whatever produces on the same channel.
-//
-// The wire defaults to NATS and a project on another transport says so
-// through pack config (`-f nestjs-microservices=config.json` with
-// `{ "transport": "kafka" }`), because nothing in the handler's file
-// says which broker bootstrap picked.
-//
-// Deferred:
-//   - `@Payload("field")` narrowing: every payload lands as one input.
-//   - Reply pairing for `@MessagePattern` (request/reply is a second
-//     boundary the reply side states nowhere readable yet).
-//   - Object-form patterns, `@MessagePattern({ cmd: "sum" })`: the
-//     channel is a structured key and v0 reads only strings.
+/**
+ * Discovery works the way it does in the REST pack, by decorator, and
+ * the boundary comes from a declared binding. The channel is the first
+ * argument of `@EventPattern` or `@MessagePattern`. The broker comes from
+ * pack options, because bootstrap wires the transport and the handler's
+ * file never mentions it. The README lists what the pack does not read.
+ */
 
 import { z } from "zod";
 
 import type { DeclaredBinding, PatternPack } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
-/** The wires NestJS ships transports for that suss can spell. */
+/** The NestJS transports that suss has a message bus name for. */
 export type NestjsTransport = Extract<
   DeclaredBinding["messageBus"],
   "nats" | "kafka" | "bullmq"
@@ -43,21 +24,20 @@ const TRANSPORTS = [
 ] as const satisfies readonly NestjsTransport[];
 
 /**
- * What this pack's options may say. The CLI parses a
- * `-f nestjs-microservices=config.json` file against it, minus the keys a dependency
- * stub fills, which a config file may not set.
+ * The CLI checks a `-f nestjs-microservices=config.json` file against this
+ * schema. A config file may not set a key that only a dependency stub
+ * fills.
  */
 export const optionsSchema = z
   .object({
     /**
-     * The broker bootstrap connects, which the handler's own file never
-     * states. Defaults to NATS.
+     * The broker the project connects at bootstrap. The handler's file
+     * never mentions it. Defaults to NATS.
      */
     transport: z.enum(TRANSPORTS).optional(),
     /**
-     * Class decorators this project composes `@Controller()` into, the
-     * same escape the REST pack takes for wrappers whose body is not in
-     * the project.
+     * Class decorators that wrap `@Controller()` in a package outside the
+     * project, as in the REST pack. A dependency stub fills this.
      */
     classDecorators: z.array(z.string()).optional(),
   })
@@ -85,8 +65,8 @@ export function nestjsMicroservicesFramework(
           type: "decoratedRoute",
           importModule: ["@nestjs/microservices", "@nestjs/common"],
           classDecorators: ["Controller", ...(options.classDecorators ?? [])],
-          // The values label the handler for a reader; the boundary
-          // comes from the declared binding below.
+          // These values only label the handler. The boundary comes from
+          // the declared binding.
           methodDecoratorRouteMap: {
             EventPattern: "event",
             MessagePattern: "message",
@@ -98,9 +78,9 @@ export function nestjsMicroservicesFramework(
     ],
 
     terminals: [
-      // An @MessagePattern handler's return is the reply; an
-      // @EventPattern handler's return is dropped by the framework.
-      // Both are recorded as returns, and reply pairing is deferred.
+      // An `@MessagePattern` handler's return value is the reply, and
+      // NestJS drops an `@EventPattern` handler's. Both are recorded as
+      // returns, and nothing pairs the reply yet.
       {
         kind: "return",
         match: { type: "returnStatement", excludeCallReturns: false },
@@ -123,7 +103,6 @@ export function nestjsMicroservicesFramework(
   };
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "framework",
   package: "@suss/framework-nestjs-microservices",

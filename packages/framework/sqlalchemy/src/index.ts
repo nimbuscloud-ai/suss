@@ -1,6 +1,8 @@
-// @suss/framework-sqlalchemy: which calls a Python body makes against the
-// database, for a project using SQLAlchemy. The adapter matches a call chain
-// on what the method behind it says it returns, and the README says why.
+/**
+ * The calls a Python body makes against the database through SQLAlchemy.
+ * The adapter matches a call chain by the declared return type of the
+ * method behind it, and the README explains why.
+ */
 
 import { z } from "zod";
 
@@ -15,15 +17,14 @@ import type {
 import type { PackDeclaration } from "@suss/ir-core";
 
 /**
- * What `-f sqlalchemy=config.json` may say. The CLI parses the file against it
- * before the factory runs.
+ * The CLI checks a `-f sqlalchemy=config.json` file against this schema
+ * before it calls the factory.
  */
 export const optionsSchema = z
   .object({
     /**
-     * Which database is behind the connection. SQLAlchemy talks to all of
-     * them and the URL says which, so this is the project's own choice
-     * rather than something the library settles.
+     * Which database is behind the engine. SQLAlchemy works with several,
+     * and the connection URL picks one, so the project has to set this.
      */
     storageSystem: storageSystemOption,
   })
@@ -32,10 +33,9 @@ export const optionsSchema = z
 export type SqlalchemyPackOptions = z.infer<typeof optionsSchema>;
 
 /**
- * The types SQLAlchemy hands back from a query, and the methods that change
- * what is stored rather than read it. Everything here is SQLAlchemy's own. A
- * project base class that wraps it is matched by resolving through it, so
- * nothing about any project belongs in this list.
+ * SQLAlchemy's query types and the methods that write. The list has only
+ * SQLAlchemy's own names, because the adapter follows a project's base
+ * class through to these types.
  */
 export function sqlalchemyStorage(
   options: SqlalchemyPackOptions,
@@ -56,8 +56,8 @@ export function sqlalchemyStorage(
         "bulk_insert_mappings",
         "bulk_update_mappings",
       ],
-      // A Session runs a statement built by `select`/`update`/... whose
-      // own chain is read, and the rest of these manage the session.
+      // `execute` and the scalar calls run a statement whose own chain is
+      // read already, and the rest only manage the session.
       recordsNothing: [
         "execute",
         "scalars",
@@ -76,9 +76,9 @@ export function sqlalchemyStorage(
       module: "sqlalchemy",
       queryTypes: ["Select", "Update", "Delete", "Insert"],
       writes: ["update", "delete", "insert", "commit"],
-      // 2.0 style writes `select(User.id).where(...)`, importing the
-      // constructor rather than reaching it through a mapped class, so there
-      // is no project method in between whose return says what it is.
+      // A 2.0 statement such as `select(User.id).where(...)` calls an
+      // imported constructor directly, so there is no project method in
+      // the chain whose return type the adapter could read.
       queryFunctions: ["select", "insert", "update", "delete"],
       valueMethods: ["values"],
       storageSystem: options.storageSystem,
@@ -86,14 +86,14 @@ export function sqlalchemyStorage(
   ];
 }
 
-/** The names a mapped class's ancestry arrives at, across the ways SQLAlchemy lets a project declare a base. */
+/** SQLAlchemy has several ways to declare a base, and every mapped class inherits from one of these. */
 const MODEL_BASE_NAMES = [
   "DeclarativeBase",
   "declarative_base",
   "DeclarativeBaseNoMeta",
 ];
 
-/** Methods that hand back a query over the same model, which a later read narrows to one row. */
+/** These return a query over the same model, so the chain stays on that model. */
 const NARROWS_A_QUERY = [
   "filter",
   "filter_by",
@@ -109,7 +109,6 @@ const NARROWS_A_QUERY = [
   "having",
 ];
 
-/** Methods that run the query and hand back rows of the model. */
 const RUNS_A_QUERY = [
   "first",
   "one",
@@ -122,7 +121,7 @@ const RUNS_A_QUERY = [
   "all",
 ];
 
-/** Session methods that take the mapped class itself and give back one of it. */
+/** Session methods whose first argument settles which model the result is. */
 const SESSION_ENTRY_METHODS = [
   { method: "get", argument: 0 },
   { method: "query", argument: 0 },
@@ -130,11 +129,11 @@ const SESSION_ENTRY_METHODS = [
 ];
 
 /**
- * What SQLAlchemy gives back when a call is passed a mapped class, so a
- * method read off the result runs the one the project's model declares.
- * `session.execute(stmt)` takes a statement rather than the class, and
- * the statement has already settled on one, which is the same argument
- * as far as the rules are concerned.
+ * The calls that give back the mapped class they were passed, so a method
+ * called on the result resolves to the one the project's model declares.
+ * `session.execute(stmt)` takes a statement instead of the class, but the
+ * statement has already settled on one model, so the rules treat the two
+ * the same way.
  */
 export function sqlalchemyModels(): PyModelQueries[] {
   return [
@@ -149,9 +148,8 @@ export function sqlalchemyModels(): PyModelQueries[] {
 }
 
 /**
- * The function SQLAlchemy gives a project for handing the database a
- * statement it wrote itself. `text` is the one, and it comes from the
- * package root.
+ * `text`, imported from the package root, is how a project hands
+ * SQLAlchemy a statement it wrote itself.
  */
 export function sqlalchemyRawSql(
   options: SqlalchemyPackOptions,
@@ -166,9 +164,9 @@ export function sqlalchemyRawSql(
 }
 
 /**
- * Add the storage patterns to the route pack a run already uses. A web
- * framework and a database library are separate libraries and a project picks
- * both, so this composes rather than replacing anything.
+ * Adds the storage patterns to the route pack a run already uses. A
+ * project picks its web framework and its database library separately,
+ * so the two packs combine.
  */
 export function withSqlalchemy(
   pack: PythonPack,
@@ -185,8 +183,8 @@ export function withSqlalchemy(
 export function sqlalchemyFramework(
   options: SqlalchemyPackOptions,
 ): PythonPack {
-  // The CLI passes on a config somebody wrote by hand, with nothing
-  // typed in front of it, so it can arrive here unset.
+  // A bare `-f sqlalchemy` skips the CLI's schema check, so the options
+  // can arrive here without `storageSystem`.
   if (typeof options?.storageSystem !== "string") {
     throw new Error(
       "it needs `storageSystem`, which database is behind the engine: postgresql, mysql, or sqlite. SQLAlchemy talks to all of them and the connection URL settles which, so the pack cannot.",
@@ -202,7 +200,6 @@ export function sqlalchemyFramework(
   };
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "effects",
   package: "@suss/framework-sqlalchemy",

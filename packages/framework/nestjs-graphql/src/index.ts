@@ -1,16 +1,11 @@
 /**
- * The PatternPack for NestJS GraphQL resolvers (`@nestjs/graphql`).
+ * NestJS wires GraphQL resolvers itself, so there is no resolver map for
+ * the apollo pack to find, and this pack discovers them by decorator.
  *
- * NestJS expresses resolvers as classes decorated with `@Resolver()`,
- * where each method has a GraphQL operation decorator on it. The
- * framework wires them internally, so there is no
- * `new ApolloServer({ resolvers: {...} })` call for the resolver-map
- * discovery in `@suss/framework-apollo` to find.
- *
- * Which type owns a field is the part that is easy to get backwards:
- * `@Query` and `@Mutation` settle it themselves, and
- * `@Resolver(() => User)` is there for `@ResolveField`. The README
- * beside this file spells that out, along with what v0 leaves out.
+ * `@Query`, `@Mutation` and `@Subscription` put their field on the root
+ * type whatever the class decorator says. `@Resolver(() => User)` gives
+ * the type only for `@ResolveField`. The README walks through that rule
+ * and lists what the pack does not read yet.
  */
 import { z } from "zod";
 
@@ -18,21 +13,17 @@ import type { PatternPack } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
 /**
- * What this pack's options may say. The CLI parses a
- * `-f nestjs-graphql=config.json` file against it, minus the keys a dependency
- * stub fills, which a config file may not set.
+ * The CLI checks a `-f nestjs-graphql=config.json` file against this
+ * schema. A config file may not set a key that only a dependency stub
+ * fills.
  */
 export const optionsSchema = z
   .object({
     /**
-     * Class decorators this project composes `@Resolver()` into, for the
-     * cases the adapter cannot follow on its own.
-     *
-     * A wrapper written in the project needs no entry here: the adapter
-     * resolves a class decorator to the function behind it and accepts it
-     * when calling that function calls `Resolver` from
-     * `@nestjs/graphql`. What is left for this option is a wrapper whose
-     * body is not in the project, so there is nothing to read.
+     * Class decorators that wrap `@Resolver()` in a package outside the
+     * project. A dependency stub fills this. A wrapper written in the
+     * project needs no entry, because the adapter reads its body and
+     * sees it call `Resolver` from `@nestjs/graphql`.
      */
     classDecorators: z.array(z.string()).optional(),
   })
@@ -46,10 +37,8 @@ export function nestjsGraphqlFramework(
   return {
     name: "nestjs-graphql",
     languages: ["typescript"],
-    // Apollo Server runs underneath via `GraphQLModule.forRoot({...
-    // ApolloDriver })`; the wire transport stays HTTP regardless of
-    // whether the resolver was discovered via decorator or via an
-    // object-literal resolver map.
+    // Apollo Server runs underneath `GraphQLModule.forRoot`, so the
+    // transport is HTTP here as it is for the apollo pack.
     protocol: "http",
 
     discovery: [
@@ -58,8 +47,8 @@ export function nestjsGraphqlFramework(
         match: {
           type: "decoratedMethod",
           importModule: "@nestjs/graphql",
-          // First match wins, so the framework's own decorator is
-          // tried before any wrapper a project names.
+          // The first match wins, so the framework's own decorator is
+          // tried before any wrapper.
           classDecorators: ["Resolver", ...(options.classDecorators ?? [])],
           methodDecorators: [
             "Query",
@@ -67,9 +56,8 @@ export function nestjsGraphqlFramework(
             "ResolveField",
             "Subscription",
           ],
-          // The three that settle their own type, each named after the
-          // type it puts its field on. `ResolveField` is deliberately
-          // absent: it is the one that needs the class decorator.
+          // `ResolveField` is left out because its type comes from the
+          // class decorator.
           methodDecoratorTypeMap: {
             Query: "Query",
             Mutation: "Mutation",
@@ -81,10 +69,8 @@ export function nestjsGraphqlFramework(
     ],
 
     terminals: [
-      // Resolvers return a value; errors propagate as thrown
-      // exceptions (NestJS / Apollo map them to `errors[]` on the
-      // outgoing response). No framework-specific response-call
-      // shape: return + throw cover the observable behaviour.
+      // A resolver has no response call. It returns a value or throws,
+      // and NestJS turns a thrown exception into `errors[]`.
       {
         kind: "return",
         match: { type: "returnStatement" },
@@ -96,10 +82,8 @@ export function nestjsGraphqlFramework(
         extraction: {},
       },
       {
-        // Resolver methods can fall through and return `undefined` when the
-        // field is optional and the parent object already has the value. Keep a
-        // default transition so the unit does not come out with no transitions
-        // at all.
+        // A resolver for an optional field can fall off the end. Without
+        // this terminal that unit would come out with no transitions.
         kind: "return",
         match: { type: "functionFallthrough" },
         extraction: {},
@@ -118,7 +102,6 @@ export function nestjsGraphqlFramework(
   };
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "framework",
   package: "@suss/framework-nestjs-graphql",

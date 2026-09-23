@@ -1,10 +1,9 @@
 /**
- * Rack's own `Rack::Utils::SYMBOL_TO_STATUS_CODE`, the table behind every
- * status symbol a Rails action writes.
+ * A copy of Rack's `Rack::Utils::SYMBOL_TO_STATUS_CODE`, which Rails uses
+ * to turn a status symbol into a number.
  *
- * Rack has renamed four of these over its releases, and an app pins
- * whichever Rack it pins, so both spellings of each are here and both
- * give the same number.
+ * Rack has renamed four of these codes across releases, and an app can
+ * pin any of them, so every spelling of each is listed with its number.
  */
 export const RACK_STATUS_CODE_NAMES: Record<string, number> = {
   continue: 100,

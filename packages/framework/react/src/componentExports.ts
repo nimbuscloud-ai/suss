@@ -1,10 +1,5 @@
-// componentExports.ts: React's named-component-export discovery.
-//
-// React doesn't have its own DiscoveryMatch variant; it ships this
-// callback for the `discoverUnits` hook. The pack-author conventions
-// live HERE, not in the extractor, PascalCase naming, JSX-return
-// detection, story-file exclusion. New frontend frameworks (Vue,
-// Solid) own their conventions the same way.
+// React's conventions for what counts as a component live in this pack
+// so the extractor stays free of them. The README lists the conventions.
 
 import type {
   FunctionRoot,
@@ -25,22 +20,15 @@ function startsWithUppercase(name: string): boolean {
 }
 
 /**
- * Pack-supplied discovery callback for React function components.
+ * Finds every named export whose function has a statement that returns
+ * JSX, and records it as a component.
  *
- * Matches every export (default OR named) whose declaration is a
- * function whose body has a JSX-returning statement, after applying
- * three React conventions:
- *
- * 1. Skip files matching `.stories.tsx?` / `.test.tsx?` / `.spec.tsx?`
- *. Those export functions returning JSX too, but they're not
- *    components.
- * 2. Skip the `default` export, the data-driven
- *    `namedExport(["default"])` already handles it; emitting it again
- *    would produce duplicate units (the cross-pack dedup would catch
- *    them but at higher cost).
- * 3. Require PascalCase names. Lowercase exports returning JSX are
- *    typically render-prop helpers (`renderRow = (item) => <Row .../>`)
- *    or other utilities, not components.
+ * Story and test files are skipped, since their exports return JSX too.
+ * The default export is skipped because `namedExport(["default"])`
+ * already covers it, and a second unit for it would have to be removed
+ * by the cross-pack dedup later. A lowercase export that returns JSX is
+ * skipped, because it is usually a render-prop helper such as
+ * `renderRow = (item) => <Row />`.
  */
 export const reactComponentExports: NonNullable<
   PatternPack["discoverUnits"]

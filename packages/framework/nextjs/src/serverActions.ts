@@ -1,11 +1,7 @@
 /**
- * Server actions: functions the `"use server"` directive turns into
- * RPC endpoints. The call in a client component reads as a local call
- * while the runtime sends a POST, so the boundary is invisible in the
- * types; discovery makes each action its own unit, and its summary
- * shows what a button press actually runs on the server. A file-level
- * directive makes every exported function an action; a function-level
- * one marks that function alone, exported or not.
+ * Finds the functions a `"use server"` directive turns into server
+ * actions and makes each one an `action` unit. The README describes which
+ * functions count.
  */
 
 import { Node, SyntaxKind } from "ts-morph";
@@ -68,17 +64,17 @@ function actionUnit(
     name,
     terminals: ACTION_TERMINALS,
     inputMapping: { type: "allPositional" },
-    // The identity intent and the keyed pairing pass refer to the
-    // action by. The path is absolute here and the CLI makes it
-    // project-relative with every other path on the summary.
+    // Intent files and keyed pairing find the action by module and export
+    // name. The path is absolute here, and the CLI makes it relative to
+    // the project along with every other path on the summary.
     functionCallInfo: { module, exportName: name },
   };
 }
 
 /**
- * The name an inline action goes by: the variable or property it is
- * assigned to, and a positional fallback when it is passed anonymously
- * (a `<form action={async () => {...}}>` prop).
+ * The variable or property an inline action is assigned to. An action
+ * passed anonymously, as in `<form action={async () => {...}}>`, gets
+ * null here, and the caller numbers it.
  */
 function inlineName(fn: ArrowFunction | FunctionExpression): string | null {
   const parent = fn.getParent();

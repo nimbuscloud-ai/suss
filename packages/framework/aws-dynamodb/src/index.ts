@@ -1,16 +1,15 @@
 /**
- * Recognize DynamoDB calls and emit `storage-access` effects.
+ * Recognizes DynamoDB calls and records each one as a storage access on
+ * the table, with the index, the key attributes, and the attributes the
+ * call reads or writes.
  *
- * The anchor is the command, wherever a call takes one, and the command
- * says which table, which index, whether the call reads or writes, and
- * which attributes it touches. A project that signs and posts the
- * request itself writes no command class, so a second declaration reads
- * a function the project lists in pack config, and the request object
- * is read the same way from there on.
+ * The pack matches on the command object a call is given. A project that
+ * signs and posts its own requests has no command class, so the pack also
+ * finds the project's request helpers by the `DynamoDB_20120810.` prefix
+ * and reads each call to one the same way.
  *
- * The README says what each input contributes, why two links here are
- * code rather than data, and why a table name often comes out as a
- * pattern like `{stage}-orders-v1`.
+ * The README explains what each input becomes, why the expression readers
+ * are code, and why a table name often comes out as `{stage}-orders-v1`.
  */
 
 import { z } from "zod";
@@ -33,7 +32,6 @@ import type {
   ValueOps,
 } from "@suss/recognize";
 
-/** The modules a command class can come from. */
 const COMMAND_MODULES = [
   "@aws-sdk/lib-dynamodb",
   "@aws-sdk/client-dynamodb",
@@ -42,9 +40,8 @@ const COMMAND_MODULES = [
 const RECOGNITION = "@suss/framework-aws-dynamodb";
 
 /**
- * The command a call was handed, wherever the call takes it. Saying
- * which module built it settles the match on the argument itself, so
- * the chain reads nothing out of the arguments beside it.
+ * Callers take the command at different positions, so the step picks
+ * whichever argument was built from a DynamoDB command class.
  */
 const COMMAND: CallStep = {
   to: "argument",
@@ -52,22 +49,16 @@ const COMMAND: CallStep = {
   origin: constructedFrom(...COMMAND_MODULES),
 };
 
-/** Where a command states everything about the access. */
 const COMMAND_INPUT: OneArgument = { at: 0 };
 
-/**
- * Where a command says which table and which index, and where it says
- * which tables when it reaches several at once.
- */
 const TABLE: ArgumentPick = { at: 0, property: ["TableName"] };
 const INDEX: ArgumentPick = { at: 0, property: ["IndexName"] };
 const TABLES: OneArgument = { at: 0, property: ["RequestItems"] };
 
 /**
- * The attributes a call touches. A read states them in its projection,
- * and a write states them as the item it puts, so an absent projection
- * is a read of everything the item has. A batch states them once per
- * table, inside that table's own entry.
+ * A read lists its attributes in `ProjectionExpression` and a write in the
+ * item it puts, so a read with no projection reads everything. A batch
+ * lists them per table, inside that table's entry.
  */
 const ATTRIBUTES: InputRule = ({ input, entry, kind }: StatedInputs) => {
   if (entry !== null) {
@@ -90,10 +81,9 @@ const ATTRIBUTES: InputRule = ({ input, entry, kind }: StatedInputs) => {
 };
 
 /**
- * What a call gives DynamoDB to pick items by: the key an item-level
- * command states, or the attributes a query's key condition uses. A
- * batch picks its items inside each table's entry, which is where the
- * attributes it touches are read from already.
+ * The key an item command gives, or the attributes a query's key
+ * condition uses. A batch returns none here, because `ATTRIBUTES`
+ * already reads the keys inside each table's entry.
  */
 const KEY_ATTRIBUTES: InputRule = ({ input, entry }: StatedInputs) => {
   if (entry !== null) {
@@ -109,7 +99,7 @@ const KEY_ATTRIBUTES: InputRule = ({ input, entry }: StatedInputs) => {
     : keyConditionAttributes(condition, aliasesIn(input));
 };
 
-/** What a call that states no attributes touched: all of them, or none. */
+/** A read that lists no attributes reads all of them. */
 function everything(kind: "read" | "write"): string[] {
   return kind === "read" ? ["*"] : [];
 }
@@ -126,9 +116,8 @@ const WRITE: StorageMethod = {
 };
 
 /**
- * Every command this reads, and whether it reads or writes. The
- * document-client name and the raw-client name both appear, since a
- * project picks one and the input shape is the same either way.
+ * Each command appears under its document-client and raw-client name,
+ * since both put the table and attribute names at the same paths.
  */
 const COMMANDS: Record<string, StorageMethod> = {
   GetCommand: READ,
@@ -161,7 +150,6 @@ const COMMAND_CALLS = storageCalls({
     'client.send(new GetCommand({ TableName: "orders-v1", Key: { orderId: "a" } }))',
   );
 
-/** What the properties of one object are called. */
 function namesIn(value: ValueOps | null): string[] {
   const found: string[] = [];
   for (const entry of value?.entries("nothing") ?? []) {
@@ -172,7 +160,7 @@ function namesIn(value: ValueOps | null): string[] {
   return found;
 }
 
-/** The attributes a read asks for, or null when it asks for none by name. */
+/** Null when the read has no `ProjectionExpression`. */
 function projectedAttributes(input: ValueOps): string[] | null {
   const projection = input.property("ProjectionExpression")?.text() ?? null;
   if (projection === null) {
@@ -187,8 +175,8 @@ function projectedAttributes(input: ValueOps): string[] | null {
 }
 
 /**
- * What DynamoDB calls a name in an expression, when the code hides it
- * behind an alias to keep clear of the reserved words.
+ * Maps each `#alias` in `ExpressionAttributeNames` to the attribute it
+ * replaces. Code uses an alias to avoid DynamoDB's reserved words.
  */
 function aliasesIn(input: ValueOps): Map<string, string> {
   const names = new Map<string, string>();
@@ -202,7 +190,7 @@ function aliasesIn(input: ValueOps): Map<string, string> {
   return names;
 }
 
-/** The attributes an UpdateExpression states it writes, or none when it is not a string literal. */
+/** Empty when `UpdateExpression` is missing or is not a string literal. */
 function updatedAttributes(input: ValueOps): string[] {
   const expression = input.property("UpdateExpression")?.text() ?? null;
   return expression === null
@@ -210,14 +198,13 @@ function updatedAttributes(input: ValueOps): string[] {
     : updateExpressionAttributes(expression, aliasesIn(input));
 }
 
-/** Where a batch's requests state the attributes they touch. */
+/** The keys in a batch entry whose values list attributes. */
 const REQUESTED = ["Item", "Key", "Keys"];
 
 /**
- * The attributes a batch's requests touch: what a put writes, and the
- * keys a get or a delete states. Each command nests them differently
- * inside its entry, so this looks wherever they are rather than at one
- * path.
+ * Collects what a batch put writes and the keys a batch get or delete
+ * gives. Each batch command nests these at a different depth in its
+ * entry, so the walk searches the whole entry.
  */
 function requestedAttributes(requests: ValueOps): string[] {
   const found = new Set<string>();
@@ -238,17 +225,16 @@ function requestedAttributes(requests: ValueOps): string[] {
   return [...found];
 }
 
-/** The attributes one request states, as one item or as a list of them. */
+/** A request gives one item or a list of them. */
 function attributeNames(value: ValueOps): string[] {
   const items = value.items();
   return items.length > 0 ? items.flatMap(namesIn) : namesIn(value);
 }
 
 /**
- * Where an attribute appears in a key condition: before a comparison,
- * as the first argument of a function, or before a range keyword and
- * the value it compares against. Matching on position rather than on a
- * list of keywords keeps DynamoDB's own words out of this source.
+ * In a key condition an attribute comes before a comparison, as the first
+ * argument of a function, or before a range keyword and its value.
+ * Matching on position keeps DynamoDB's keywords out of this source.
  */
 const ATTRIBUTE_POSITIONS = [
   /([#\w.]+)\s*(?:<>|<=|>=|=|<|>)/g,
@@ -257,9 +243,8 @@ const ATTRIBUTE_POSITIONS = [
 ];
 
 /**
- * A collector that resolves a token through the aliases a call declares
- * and keeps each settled attribute once. An alias with nothing behind it
- * in the map is left out rather than guessed at.
+ * Resolves each `#alias` token through the call's aliases and keeps each
+ * attribute once. An alias missing from the map is dropped.
  */
 function attributeCollector(names: Map<string, string>): {
   found: string[];
@@ -278,10 +263,6 @@ function attributeCollector(names: Map<string, string>): {
   return { found, add };
 }
 
-/**
- * The attributes a key condition keys on, with an alias looked up
- * through what the call says each one is written as.
- */
 function keyConditionAttributes(
   expression: string,
   names: Map<string, string>,
@@ -295,14 +276,11 @@ function keyConditionAttributes(
   return found;
 }
 
-/** An update expression clause keyword, always written before its list of items. */
 type UpdateClauseKeyword = "set" | "remove" | "add" | "delete";
 
 /**
- * An update expression split at each clause keyword, so its SET, REMOVE,
- * ADD and DELETE parts can be read one at a time. Built with `exec`
- * rather than `matchAll`, since `exec` always says where a match started,
- * where `matchAll`'s result types that as optional.
+ * Splits an update expression at each clause keyword. The loop uses
+ * `exec` because `matchAll` types a match's `index` as optional.
  */
 function updateClauses(
   expression: string,
@@ -333,18 +311,14 @@ function updateClauses(
   }));
 }
 
-/**
- * The first whitespace-separated token in an ADD or DELETE item, always
- * non-empty since the caller trims the item before this runs.
- */
+/** The caller trims the item first, so the token is never empty. */
 function firstToken(item: string): string {
   return item.split(/\s+/)[0];
 }
 
 /**
- * How to read the attribute path out of one item of a clause: before the
- * `=` in a SET assignment, the whole item in a REMOVE, or the first
- * token ahead of the value in an ADD or a DELETE.
+ * The attribute path is before the `=` in a SET item, the whole item in a
+ * REMOVE, and the first token in an ADD or a DELETE.
  */
 const CLAUSE_PATH: Record<
   UpdateClauseKeyword,
@@ -359,21 +333,15 @@ const CLAUSE_PATH: Record<
   delete: firstToken,
 };
 
-/**
- * The first path element of an attribute reference, before a `.` or a
- * `[`, since `b.c` and `items[0]` both touch the attribute they start
- * with.
- */
+/** `b.c` and `items[0]` both touch the attribute they start with. */
 function firstPathElement(path: string): string | undefined {
   return /^[#\w]+/.exec(path.trim())?.[0];
 }
 
 /**
- * The attributes an update expression writes, with an alias looked up
- * the same way a key condition resolves one. A SET item split apart by
- * a comma inside a function call, as in `if_not_exists(a, :x)`, still
- * settles on the same attribute, because only the text before its `=`
- * ever says what one is.
+ * Splitting on commas also breaks up a call like `if_not_exists(a, :x)`
+ * in a SET item. The piece after that comma has no `=`, so it is skipped
+ * and the item still gives one attribute.
  */
 function updateExpressionAttributes(
   expression: string,
@@ -397,31 +365,22 @@ function updateExpressionAttributes(
 }
 
 /**
- * A function of the project's own that signs and posts a DynamoDB
- * request itself, so there is no command class to match on. The index
- * reads it out of the project before extraction; the README says how.
+ * A project's own function that signs and posts a DynamoDB request. The
+ * pack finds these by reading the project's helpers before extraction.
  */
 interface DynamoRequestFunction {
-  /** What the function is called where it is called. */
   name: string;
-  /** Which argument says which operation the request performs. */
   operationArg: number;
-  /** Which argument is the request itself. */
   requestArg: number;
-  /** What each operation the function accepts does to the table. */
   operations: Record<string, "read" | "write">;
 }
 
-/**
- * What `-f aws-dynamodb=config.json` may say. The CLI parses the file against it
- * before the factory runs.
- */
 export const optionsSchema = z
   .object({
     /**
-     * Further modules whose presence makes a file worth reading. A helper
-     * imported by a relative path gives the gate nothing to match on; the
-     * signing library that helper imports gives it something.
+     * More modules that get a file read when it imports them. A relative
+     * import of a helper matches no module, so the usual entry is the
+     * signing library the helper imports.
      */
     requiresImport: z.array(z.string()).optional(),
   })
@@ -430,9 +389,8 @@ export const optionsSchema = z
 export type DynamoPackOptions = z.infer<typeof optionsSchema>;
 
 /**
- * A call to a request function the index found. The operation argument
- * decides whether the call reads or writes, and the request argument is
- * the same object a command class takes.
+ * The operation argument picks read or write, and the request argument
+ * has the same layout as a command's input.
  */
 function requestFunctionCalls(spec: DynamoRequestFunction): StorageCalls {
   const operation: ArgumentPick = { at: spec.operationArg };
@@ -441,8 +399,8 @@ function requestFunctionCalls(spec: DynamoRequestFunction): StorageCalls {
     property: [property],
   });
 
-  // No origin: a project reaches its own helper by a relative path,
-  // which is spelled differently at every depth.
+  // There is no origin check, because a call site imports the helper by
+  // a relative path that is written differently at every depth.
   return storageCalls({ system: "aws.dynamodb" })
     .methods({
       [spec.name]: {
@@ -459,7 +417,7 @@ function requestFunctionCalls(spec: DynamoRequestFunction): StorageCalls {
     .example(exampleCall(spec));
 }
 
-/** A call to the configured function, written the way the config says. */
+/** An example call to the helper, with its operation and request in place. */
 function exampleCall(spec: DynamoRequestFunction): string {
   const [operation] = Object.keys(spec.operations);
   const written: string[] = [];
@@ -469,7 +427,6 @@ function exampleCall(spec: DynamoRequestFunction): string {
   return `${spec.name}(${written.join(", ")})`;
 }
 
-/** What the example passes in one position. */
 function argumentText(
   spec: DynamoRequestFunction,
   at: number,
@@ -481,14 +438,13 @@ function argumentText(
   if (at === spec.requestArg) {
     return '{ TableName: "orders-v1", Key: { orderId: "a" } }';
   }
-  // Whatever else the function takes is the project's own business, and
-  // the declaration reads none of it.
+  // The declaration never reads the helper's other arguments.
   return "undefined";
 }
 
 /**
- * What each operation the wire accepts does to the table, so a project
- * that posts its own request needs to say nothing about them.
+ * DynamoDB defines whether each operation reads or writes, so a project
+ * that posts its own requests never has to list them.
  */
 const WIRE_OPERATIONS: Record<string, "read" | "write"> = {
   GetItem: "read",
@@ -503,20 +459,19 @@ const WIRE_OPERATIONS: Record<string, "read" | "write"> = {
   TransactWriteItems: "write",
 };
 
-/** The header every DynamoDB request states its operation in. */
+/** Every DynamoDB request gives its operation in this header. */
 const TARGET_HEADER = "X-Amz-Target";
 
-/** The service part of that header, before the operation itself. */
 const TARGET_SERVICE = "DynamoDB_20120810";
 const TARGET_PREFIX = `${TARGET_SERVICE}.`;
 
-/** Where a request body goes on its way to `fetch`. */
+/** The `fetch` options where a helper puts the request and its headers. */
 const BODY_PROPERTY = "body";
 const HEADERS_PROPERTY = "headers";
 
 /**
- * The helpers this project wrote in front of DynamoDB's HTTP API, and
- * the calls to each of them, recognized the way a command class is.
+ * Finds the project's helpers over DynamoDB's HTTP API by the target
+ * prefix, and recognizes each call to one the way a command is.
  */
 const REQUEST_HELPERS: ProjectHelpers = {
   find: { by: "text", contains: [TARGET_PREFIX] },
@@ -528,8 +483,8 @@ const REQUEST_HELPERS: ProjectHelpers = {
 };
 
 /**
- * A helper read as a request function, or null when its body posts no
- * DynamoDB request whose operation and body both come from a parameter.
+ * Null unless the helper posts a DynamoDB request whose operation and
+ * body both come from its parameters.
  */
 function requestFunctionOf(
   helper: ProjectHelper,
@@ -554,7 +509,7 @@ function requestFunctionOf(
   return null;
 }
 
-/** Which parameter reaches the target header, after the wire's prefix. */
+/** The parameter that fills the target header after the service prefix. */
 function operationParameter(
   properties: Record<string, HelperValue>,
 ): number | null {
@@ -569,7 +524,7 @@ function operationParameter(
   return slotIn(target.text.slice(TARGET_PREFIX.length));
 }
 
-/** A whole value that is one parameter, `JSON.stringify` or not. */
+/** The parameter the body is, passed directly or through `JSON.stringify`. */
 function requestParameter(value: HelperValue | undefined): number | null {
   if (value === undefined) {
     return null;
@@ -582,16 +537,15 @@ function requestParameter(value: HelperValue | undefined): number | null {
     : null;
 }
 
-/** The parameter a piece of text is nothing but, as in `"{2}"`. */
+/** The parameter position when the text is only a slot, as in `"{2}"`. */
 function slotIn(text: string): number | null {
   const slot = /^\{(\d+)\}$/.exec(text);
   return slot === null ? null : Number(slot[1]);
 }
 
 /**
- * Pack export. One declaration per anchor, gated on a file importing a
- * DynamoDB client module, which is where a command class comes from, or
- * any further module the project configured.
+ * The pack reads a file that imports a DynamoDB client module or one of
+ * the modules in `requiresImport`.
  */
 export function dynamoFramework(options: DynamoPackOptions = {}): PatternPack {
   return pack("aws-dynamodb", [COMMAND_CALLS], {
@@ -605,7 +559,6 @@ export function dynamoFramework(options: DynamoPackOptions = {}): PatternPack {
   });
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "effects",
   package: "@suss/framework-aws-dynamodb",

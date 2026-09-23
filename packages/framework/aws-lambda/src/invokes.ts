@@ -1,16 +1,15 @@
 /**
- * The calls that reach a Lambda by name.
- *
- * The template says which events reach a function and nothing in it
- * says which function calls which, so this reads that off the code:
+ * Recognizes calls that invoke a Lambda by name. The template lists the
+ * events that reach a function but not which function calls which, so
+ * the pack reads that from the code:
  *
  *   client.send(new InvokeCommand({
  *     FunctionName: process.env.WORKER_FUNCTION,
  *     Payload: JSON.stringify({ orderId }),
  *   }));
  *
- * The README says how a name written as an env var or an ARN meets the
- * function the template declares.
+ * The README explains how a name written as an env var or an ARN is
+ * matched to the function the template declares.
  */
 
 import { constructedFrom, unitInvokes } from "@suss/recognize";
@@ -19,7 +18,7 @@ import type { Match } from "@suss/recognize";
 
 const LAMBDA = "@aws-sdk/client-lambda";
 
-/** Where an invoke states its request: one argument into the command. */
+/** An invoke's request is the first argument to the command constructor. */
 const INSIDE_THE_COMMAND = (named: string[]) => ({
   send: {
     input: {
@@ -36,9 +35,8 @@ const INSIDE_THE_COMMAND = (named: string[]) => ({
 });
 
 /**
- * The two invoke commands. They spell the payload differently, which is
- * a fact about each command rather than a setting on one declaration,
- * so each gets its own.
+ * The two invoke commands put the payload under different keys, so each
+ * command gets its own declaration.
  */
 export function invokeDeclarations(): Match[] {
   return [

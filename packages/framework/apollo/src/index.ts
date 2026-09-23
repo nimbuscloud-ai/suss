@@ -1,24 +1,8 @@
-// @suss/framework-apollo: PatternPack for Apollo Server (code-first).
-//
-// Discovers resolver functions attached to the `resolvers` property of
-// an `ApolloServer` constructor-argument object. Each inner property
-// becomes a `resolver`-kind BehavioralSummary whose boundary binding
-// is `graphql-resolver(typeName, fieldName)`.
-//
-// Deferred:
-//   - Schema-first shapes where resolvers are attached via
-//     `addResolversToSchema` or `makeExecutableSchema`: separate
-//     discovery pattern, tracked with the stub-appsync work.
-//   - `mergeResolvers(...)` and anything else that composes the map by
-//     calling a function. A map assembled by naming and spreading
-//     objects reads, whichever module each part was written in, because
-//     the adapter follows the names; a map some function returns has no
-//     written form to follow.
-//   - Subscription resolver shape: `Subscription.fieldName` can be
-//     either a function or `{ subscribe, resolve }`. v0 discovers only
-//     the function form; the `{ subscribe }` shape is opt-out via
-//     `excludeTypes` today and becomes its own variant once consumer-
-//     side pairing lands.
+/**
+ * Each property of the `resolvers` map passed to `ApolloServer` becomes a
+ * resolver unit. The README lists the resolver wiring the pack does not
+ * read yet, such as schema-first setups and `mergeResolvers(...)`.
+ */
 
 import type { PatternPack } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
@@ -27,9 +11,8 @@ export function apolloFramework(): PatternPack {
   return {
     name: "apollo",
     languages: ["typescript", "javascript"],
-    // Apollo Server runs over HTTP; GraphQL semantics are discriminated
-    // at the resolver level (decision: resolver-level, not field-level)
-    // and surfaced via `graphql-resolver` semantics in the binding.
+    // Apollo Server runs over HTTP. The GraphQL type and field are set
+    // per resolver, on the `graphql-resolver` binding.
     protocol: "http",
 
     discovery: [
@@ -39,14 +22,12 @@ export function apolloFramework(): PatternPack {
           type: "resolverMap",
           importModule: "@apollo/server",
           importName: "ApolloServer",
-          // Apollo v4 convention: the config key is `resolvers`.
           mapProperty: "resolvers",
         },
         requiresImport: ["@apollo/server"],
       },
-      // Pre-v4 path: `import { ApolloServer } from "apollo-server"` /
-      // `"apollo-server-express"` / similar. Same shape, different
-      // module. Covers the bulk of real-world Apollo code before v4.
+      // Apollo before v4 exported the same `ApolloServer` from
+      // `apollo-server` and `apollo-server-express`.
       {
         kind: "resolver",
         match: {
@@ -70,10 +51,8 @@ export function apolloFramework(): PatternPack {
     ],
 
     terminals: [
-      // Resolvers return a value; errors propagate as thrown
-      // exceptions (Apollo maps them to `errors[]` on the outgoing
-      // response). No framework-specific response-call shape to
-      // match; return + throw cover the observable behavior.
+      // A resolver has no response call. It returns a value or throws,
+      // and Apollo turns a thrown error into `errors[]`.
       {
         kind: "return",
         match: { type: "returnStatement" },
@@ -84,10 +63,9 @@ export function apolloFramework(): PatternPack {
         match: { type: "throwExpression" },
         extraction: {},
       },
-      // Resolvers often fall off the end without an explicit return,
-      // a type resolver can delegate to the default-resolver behavior
-      // by returning nothing. Keep the default transition so
-      // `transitions: []` isn't the shape we ship.
+      // A resolver that returns nothing hands off to Apollo's default
+      // resolver. Without this terminal it would come out with no
+      // transitions.
       {
         kind: "return",
         match: { type: "functionFallthrough" },
@@ -95,11 +73,9 @@ export function apolloFramework(): PatternPack {
       },
     ],
 
-    // Apollo resolvers have a fixed 4-positional shape:
-    //   (parent, args, context, info) => ...
-    // Most resolvers ignore `parent` / `info`. We surface all four by
-    // role so downstream checks can distinguish "uses args" from
-    // "delegates to context" etc.
+    // All four positions get a role, even though most resolvers ignore
+    // `parent` and `info`, so a check can tell a resolver that reads
+    // `args` from one that hands off to `context`.
     inputMapping: {
       type: "positionalParams",
       params: [
@@ -112,7 +88,6 @@ export function apolloFramework(): PatternPack {
   };
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "framework",
   package: "@suss/framework-apollo",

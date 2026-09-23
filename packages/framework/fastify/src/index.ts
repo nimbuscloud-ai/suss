@@ -1,5 +1,3 @@
-// @suss/framework-fastify: PatternPack for Fastify
-
 import { z } from "zod";
 
 import { httpRouteDiscovery, routeHelperIndex } from "@suss/extractor";
@@ -18,7 +16,7 @@ const METHODS = [
   ".all",
 ];
 
-/** The fastify pack takes no configuration. */
+/** The fastify pack takes no options, so the CLI refuses any key. */
 export const optionsSchema = z.object({}).strict();
 
 export type FastifyPackOptions = z.infer<typeof optionsSchema>;
@@ -31,8 +29,8 @@ export function fastifyFramework(
     protocol: "http",
     languages: ["typescript", "javascript"],
 
-    // Fastify exposes the routable via either default `Fastify` or
-    // named `fastify()`. Both drive handler registration the same way.
+    // Projects import the app factory as the default `Fastify` or the
+    // named `fastify`, and both register routes the same way.
     discovery: [
       ...httpRouteDiscovery({
         importModule: "fastify",
@@ -64,7 +62,7 @@ export function fastifyFramework(
         },
       },
       {
-        // reply.status(N).send(body), `.status` is the Express-style alias
+        // reply.status(N).send(body), the alias for `code`
         kind: "response",
         match: {
           type: "parameterMethodCall",
@@ -90,9 +88,8 @@ export function fastifyFramework(
         },
       },
       {
-        // reply.redirect(url) or reply.redirect(N, url)
-        // Arg 0 is a status code only in the 2-arg form; minArgs prevents
-        // extracting the URL string as a status code in the 1-arg form.
+        // reply.redirect(url) or reply.redirect(N, url). `minArgs` keeps
+        // the URL in the one-argument form from being read as a status.
         kind: "response",
         match: {
           type: "parameterMethodCall",
@@ -105,19 +102,16 @@ export function fastifyFramework(
         },
       },
       {
-        // throw new Error(...) / throw httpErrors.notFound() / etc.
-        // Status code is left for the consumer to infer from exception type;
-        // Fastify error libraries vary too widely to map here.
+        // throw httpErrors.notFound(). Fastify error libraries differ too
+        // much to map a status here, so the throw does not record one.
         kind: "throw",
         match: { type: "throwExpression" },
         extraction: {},
       },
       {
-        // `return user`, `return { id, name }`, `return await db.find(id)`,
-        // Fastify serialises the returned value as a 200 response body.
-        // `excludeCallReturns: true` keeps `return reply.send(...)` out
-        // of this branch: that call already lands as a parameterMethodCall
-        // terminal above, and matching it here would double-fire.
+        // `return user`: Fastify sends the value as a 200 body. Without
+        // `excludeCallReturns`, `return reply.send(...)` would match here
+        // and again as the `send` terminal above.
         kind: "response",
         match: {
           type: "returnStatement",
@@ -148,7 +142,6 @@ export function fastifyFramework(
   };
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "framework",
   package: "@suss/framework-fastify",

@@ -1,16 +1,12 @@
 /**
- * Reads `config/routes.rb`, or whatever file a project points this
- * pack at, into a table of controller action -> HTTP method and path.
+ * Reads `config/routes.rb`, or the file a project points this pack at,
+ * into a table from controller action to HTTP method and path.
  *
- * The grammar read here is bounded on purpose: `resources`/`resource`
- * with `only:`/`except:`, `member`/`collection` blocks, nested
- * resources, `namespace`, `scope`, the bare HTTP-verb methods and
- * `match ... via:`, `root`, `draw(:name)`, `constraints` and
- * `with_options` blocks, `concern`/`concerns`, `.each` over a literal
- * list, `mount` of an engine the project keeps in its own tree, and a
- * gem's block call whose body is written in that grammar. Anything
- * else, `direct` and a gem's own routing call among them, is left
- * unread and reported once as a gap. The README says why each stops.
+ * The grammar is fixed on purpose, and the README lists every call it
+ * covers and where each one stops. A call outside it, such as `direct`
+ * or a gem's own routing call, is left unread and reported once per file
+ * as a gap. A gem's block whose body is written in the grammar is walked
+ * as if the call were not there.
  */
 
 import fs from "node:fs";
@@ -35,11 +31,19 @@ export interface Route {
 }
 
 export interface RouteTable {
-  /** The method and path this reading gives one controller's action, keyed the way `config/routes.rb` itself keys a controller: lowercase, slash-joined, `admin/orders` for `namespace :admin do resources :orders end`. Null when this reading found no route for it. */
+  /**
+   * The method and path for one controller's action, or null when nothing
+   * routes to it. `controllerKey` is lowercase and slash-joined the way
+   * the routes file writes it: `admin/orders` for
+   * `namespace :admin do resources :orders end`.
+   */
   routeFor(controllerKey: string, actionName: string): Route | null;
-  /** One message per routing declaration kind this reading left uncovered, or because the file was not there at all. */
+  /** Messages about declarations left unread, or one saying the routes file does not exist. */
   readonly gaps: readonly string[];
-  /** False when there was no file at the path this run was given, the one case a caller falls back to a naming convention instead of `routeFor`. */
+  /**
+   * False when the routes file does not exist. Only then does a caller
+   * fall back to the naming convention.
+   */
   readonly fileFound: boolean;
 }
 
@@ -48,12 +52,16 @@ interface ResourceScope {
   collectionBase: string;
   memberBase: string;
   /**
-   * The prefix a resource nested one level inside this one is written
-   * under: `/orders/:order_id` for a plural resource, and the
-   * resource's own path for a singular one, which has no id to key on.
+   * The prefix a resource nested one level inside this one goes under:
+   * `/orders/:order_id` for a plural resource, and the resource's own
+   * path for a singular one, which has no id.
    */
   nestedBase: string;
-  /** Which base a bare verb call with no `on:` uses: `nestedBase` directly inside a resource block, and the member or collection base inside a `member` or `collection` block. */
+  /**
+   * The base a bare verb with no `on:` uses: `nestedBase` directly inside
+   * a resource block, and the member or collection base inside a `member`
+   * or `collection` block.
+   */
   ambientBase: string;
 }
 
@@ -63,14 +71,20 @@ interface RouteContext {
   resource?: ResourceScope;
   /** Keywords an enclosing `with_options` gives every call inside it; a call's own keyword wins. */
   defaults: Record<string, RbNode>;
-  /** The element an enclosing `%w[a b].each do |name|` is replaying its block for, so a string that reads `name` comes out spelled. */
+  /**
+   * The loop variables an enclosing `%w[a b].each do |name|` binds, so a
+   * string that interpolates `name` reads as a literal.
+   */
   bindings?: ParameterBindings;
 }
 
 interface SimpleArgs {
   positional: RbNode[];
   keyword: Record<string, RbNode>;
-  /** The one `"key" => value` pair a call argument list can carry, tree-sitter's shape for a bare hash literal argument written with the hash-rocket operator instead of a `key:` shorthand. */
+  /**
+   * A `"path" => "controller#action"` argument. tree-sitter parses a bare
+   * hash written with `=>` as a pair in the argument list.
+   */
   hashRocketPair: { key: RbNode; value: RbNode } | null;
 }
 
@@ -106,7 +120,7 @@ function readSimpleArgs(
   return { positional, keyword, hashRocketPair };
 }
 
-/** The one string `node` spells, with the loop element an enclosing `.each` bound. */
+/** The string `node` evaluates to, with any loop variable an enclosing `.each` binds. */
 function textValue(node: RbNode, ctx: RouteContext): string | null {
   return stringValueOf(node, undefined, ctx.bindings);
 }
@@ -132,7 +146,10 @@ function splitControllerAction(
 interface ResolvedTarget {
   controllerKey: string;
   action: string;
-  /** Set when the path came bundled with the target, the `"path" => "controller#action"` spelling; read from the call's own first argument otherwise. */
+  /**
+   * Set for the `"path" => "controller#action"` form. Otherwise the path
+   * comes from the call's first argument.
+   */
   path: string | null;
 }
 
@@ -189,7 +206,10 @@ const RESTFUL_ROUTES_SINGULAR: Record<string, (base: string) => Route> = {
   destroy: (base) => ({ method: "DELETE", path: base }),
 };
 
-/** Naive English pluralization, enough to round-trip the resource names a project actually spells in its own routes file. */
+/**
+ * A small pluralizer that covers the regular names a routes file uses.
+ * The README lists what it leaves out.
+ */
 function pluralize(word: string): string {
   if (/[^aeiou]y$/.test(word)) {
     return `${word.slice(0, -1)}ies`;
@@ -217,31 +237,31 @@ interface EngineRouteSet {
   readonly modulePrefix: string;
   /** The block of the engine's `Name::Engine.routes.draw do ... end`, or null when its routes file draws none. */
   readonly body: RbNode | null;
-  /** The engine's routes file as written into a gap. */
+  /** The engine's routes file, as a gap message prints it. */
   readonly displayPath: string;
 }
 
 class RouteAccumulator {
   private readonly byKey = new Map<string, Route>();
   private readonly unread = new Map<string, Set<string>>();
-  /** Per file, each gem block call whose body was walked as though the call changed nothing about it. */
+  /** Per file, the gem block calls whose bodies were walked as if the call were not there. */
   private readonly walkedBlocks = new Map<string, Set<string>>();
   private readonly missingDrawn: { file: string; name: string }[] = [];
   /** The block each `concern :name do ... end` declared, for `concerns` to replay. */
   readonly concerns = new Map<string, RbNode>();
   /** Files `draw(:name)` has already read, so a file drawing itself stops. */
   readonly drawn = new Set<string>();
-  /** Every engine a `mount` may refer to, by the class name it is written with. */
+  /** Every engine a `mount` may refer to, keyed by class name. */
   readonly engines = new Map<string, EngineRouteSet>();
   /** Engines whose route set is being walked, so an engine that mounts itself stops. */
   readonly mounting = new Set<string>();
-  /** The file whose statements are being walked, as a gap writes it. */
+  /** The file whose statements are being walked, as a gap message prints it. */
   file = "";
 
   /** `drawDirectory` is where `draw(:name)` finds `name.rb`. */
   constructor(readonly drawDirectory: string) {}
 
-  /** The first route written for an action wins, the way Rails matches the first route it declared. */
+  /** The first route written for an action wins, because Rails matches routes in the order they are declared. */
   add(controllerKey: string, action: string, route: Route): void {
     const key = `${controllerKey}#${action}`;
     if (!this.byKey.has(key)) {
@@ -403,7 +423,7 @@ function handleOnBlock(
   walkBody(body, { ...ctx, resource: { ...ctx.resource, ambientBase } }, out);
 }
 
-/** Where a bare verb inside a resource scope hangs its path, given what `on:` said. */
+/** The base path for a bare verb inside a resource, given its `on:` keyword. */
 function baseForOn(resource: ResourceScope, on: string | null): string {
   if (on === "collection") {
     return resource.collectionBase;
@@ -422,8 +442,8 @@ function handleVerb(
 ): void {
   const args = readSimpleArgs(call, ctx.defaults);
   const on = wordValue(args.keyword.on, ctx);
-  // Inside a resource block the path continues from the resource, the
-  // same place a bare verb hangs its own.
+  // Inside a resource block, the path starts from the resource's base for
+  // this `on:` value.
   const base =
     ctx.resource === undefined ? ctx.pathPrefix : baseForOn(ctx.resource, on);
   const target = readRouteTarget(args, ctx);
@@ -447,8 +467,8 @@ function handleVerb(
   if (segment === null) {
     return;
   }
-  // `post :recording, action: :start_recording` serves the action named
-  // by the keyword at the path the first argument spells.
+  // `post :recording, action: :start_recording` routes to the `action:`
+  // keyword's action, at the path the first argument gives.
   const action = wordValue(args.keyword.action, ctx) ?? segment;
   const controller = wordValue(args.keyword.controller, ctx);
   const controllerKey =
@@ -498,8 +518,8 @@ function handleNamespace(
 /**
  * The context a `namespace` or `scope` block walks under. Inside a
  * resource block the path continues from where a nested resource would
- * go, `/users/:user_id`, and the resource itself is left behind, so a
- * bare verb inside the scope is unread rather than guessed at.
+ * go, such as `/users/:user_id`. The resource itself is dropped, so a
+ * bare verb inside the scope with no `controller:` is not read.
  */
 function enterScope(
   ctx: RouteContext,
@@ -540,7 +560,12 @@ function handleScope(
 const LITERAL_LIST_TYPES = new Set(["array", "string_array", "symbol_array"]);
 const LOOP_METHODS = new Set(["each", "each_with_index"]);
 
-/** `%w[users u].each do |root_path| ... end` declares its block once per element, so it is walked once per element with the parameter bound. A loop over anything else is left alone, since nothing here can say what it iterates. */
+/**
+ * `%w[users u].each do |root_path| ... end` declares its block once per
+ * element, so the block is walked once per element with the parameter
+ * bound. A loop over anything else is skipped, because its elements are
+ * unknown here.
+ */
 function replayLiteralLoop(
   call: RbNode,
   ctx: RouteContext,
@@ -678,8 +703,8 @@ function handleMatch(
 
 /**
  * Where `draw(:name)` reads `name.rb` from: the directory beside the
- * routes file that shares its stem, `config/routes/` for
- * `config/routes.rb`, which is where Rails reads it from too.
+ * routes file that shares its stem, so `config/routes/` for
+ * `config/routes.rb`. Rails reads from the same directory.
  */
 export function drawDirectoryOf(routesFile: string): string {
   return path.join(
@@ -741,11 +766,11 @@ const HANDLERS: Record<string, StatementHandler> = {
 };
 
 /**
- * `mount Billing::Engine, at: "/billing"` serves the engine's own route
- * set under that path, its controllers keyed under the engine's
- * namespace whatever module the mount was written in. A mount of
- * anything but an engine this run knows, a gem's `Sidekiq::Web` say,
- * is recorded as unread.
+ * `mount Billing::Engine, at: "/billing"` serves the engine's route set
+ * under that path. Its controllers are keyed under the engine's
+ * namespace, whatever `module:` the mount is written inside. A mount of
+ * anything other than a known engine, such as `Sidekiq::Web`, is
+ * recorded as unread.
  */
 function handleMount(
   call: RbNode,
@@ -828,11 +853,11 @@ function walkStatements(
 }
 
 /**
- * A gem's own block call, `devise_scope :user do ... end` or
+ * A gem's block call, such as `devise_scope :user do ... end` or
  * `authenticated :admin do ... end`, wraps routes written in the
- * ordinary grammar and, in every gem read so far, leaves their path
- * and controller alone. One whose block is something else, a `direct`
- * building a URL say, stays unread with the call's own name.
+ * ordinary grammar and leaves their path and controller alone. A block
+ * with no routing call at its top level, such as `direct` building a
+ * URL, stays unread under the call's own name.
  */
 function blockWrittenInRoutesGrammar(call: RbNode): boolean {
   const block = field(call, "block");
@@ -850,7 +875,10 @@ function blockWrittenInRoutesGrammar(call: RbNode): boolean {
 
 type DeclarationKind = "prepend" | "draw" | "append";
 
-/** The calls that add routes to a route set, in the order Rails runs them: every `prepend` block first, then each `draw`, then every `append`. */
+/**
+ * Rails runs every `prepend` block first, then each `draw`, then every
+ * `append`.
+ */
 const DECLARATION_ORDER: Record<DeclarationKind, number> = {
   prepend: 0,
   draw: 1,
@@ -924,14 +952,14 @@ function isApplication(owner: string): boolean {
   return owner === "Rails.application" || /(^|::)Application$/.test(owner);
 }
 
-/** A routes file to read, with the path a gap writes it under. */
+/** A routes file to read, with the path a gap message prints for it. */
 export interface RoutesSource {
   readonly file: string;
   readonly displayPath: string;
 }
 
 export interface RoutesInput {
-  /** The app's own routes file, which decides whether routing is read at all. */
+  /** The app's own routes file. When it is missing, no routing is read. */
   readonly routesFile: RoutesSource;
   /** Engines a `mount` may refer to, each with its own routes file to read the engine's route set from. */
   readonly engines: readonly (RailsEngine & { readonly displayPath: string })[];
@@ -949,11 +977,10 @@ function parseDeclarations(source: RoutesSource): RouteDeclaration[] {
 
 /**
  * Reads the app's routes file, every engine's, and any other file that
- * adds routes, into one table keyed the way routing keys a controller.
- * An engine's own `Name::Engine.routes.draw` block is kept aside and
- * walked under the path each `mount Name::Engine, at:` gives it; every
- * other declaration adds to the app's route set, in the order Rails
- * runs them.
+ * adds routes, into one table keyed by controller routing key. An
+ * engine's `Name::Engine.routes.draw` block is set aside and walked
+ * under the path each `mount Name::Engine, at:` gives it. Every other
+ * declaration adds to the app's route set, in the order Rails runs them.
  */
 export function readRoutes(input: RoutesInput): RouteTable {
   if (!fs.existsSync(input.routesFile.file)) {
