@@ -1,17 +1,16 @@
 /**
  * The boundaries a Terraform configuration declares.
  *
- * This reads HCL and matches what it finds against the packs a run
- * loads. A pack says what `aws_dynamodb_table` is; nothing about any
+ * This module reads HCL and matches it against the packs a run loads. A
+ * pack describes what `aws_dynamodb_table` is, and nothing about any
  * provider is written here.
  *
- * A name is usually built at deploy time, and Terraform interpolates
- * the same way CloudFormation does, so `"${local.environment}-orders"`
- * becomes the pattern `{local.environment}-orders` and pairs with code
- * that builds the same name from its own variable. An interpolation
- * that refers to another resource in the same configuration resolves
- * instead, since that resource states the value. The README says how a
- * block that HCL states once or many times is read.
+ * Terraform interpolates the same way CloudFormation does, so
+ * `"${local.environment}-orders"` becomes the pattern
+ * `{local.environment}-orders` and pairs with code that builds the same
+ * name from its own variable. A reference to another resource in the
+ * same configuration resolves instead, since that resource writes the
+ * value. DESIGN.md covers references, module calls and repeated blocks.
  */
 
 import fs from "node:fs";
@@ -100,14 +99,14 @@ export type {
 } from "./pack.js";
 
 export interface TerraformReadOptions {
-  /** The packs that say what this configuration's resources are. */
+  /** The packs that describe this configuration's resources. */
   packs: TerraformPack[];
   /**
-   * The directory each deployable unit's code is in, by the instance
-   * name the unit is keyed by. A configuration says which handler runs
-   * and never which directory the artifact was built from, so a
-   * container whose image is built elsewhere has no code at all until
-   * somebody says where it is.
+   * The directory each deployable unit's code is in, by the unit's
+   * instance name. A configuration gives the handler that runs but never
+   * the directory the artifact was built from, so a container whose
+   * image is built elsewhere has no code until the caller gives its
+   * location.
    */
   codeScopes?: Record<string, string>;
 }
@@ -117,9 +116,9 @@ interface KeyedShape {
   accessPath: string | null;
   keyFields: string[];
   /**
-   * Every field this can serve, for a way in that copies part of an
-   * item. Null when it serves whatever the item has, which is what the
-   * container itself does.
+   * Every field an access path can return, when it copies only part of
+   * an item. Null when it returns the whole item, as the container
+   * itself does.
    */
   serves: string[] | null;
 }
@@ -143,7 +142,7 @@ export function terraformToSummaries(
 }
 
 /**
- * Read one `.tf` file, or every one directly inside a directory, and
+ * Reads one `.tf` file, or every one directly inside a directory, and
  * every local module the configuration calls.
  */
 export function terraformFileToSummaries(
@@ -174,7 +173,6 @@ interface SourceFile {
   sourceFile: string;
 }
 
-/** What one file states, once the parser has been through it. */
 interface ParsedFile {
   sourceFile: string;
   constraints: Map<string, string>;
@@ -184,7 +182,7 @@ interface ParsedFile {
   defaults: Record<string, unknown>;
   /** Every child module the file calls, as `[label, arguments]`. */
   modules: Array<[string, Record<string, unknown>]>;
-  /** What each `output` block states, as `[name, value]`. */
+  /** The value of each `output` block, as `[name, value]`. */
   outputs: Array<[string, unknown]>;
 }
 
@@ -195,16 +193,15 @@ interface ModuleRead {
   children: ModuleRead[];
 }
 
-/** A `source` that says which directory beside this one, not which registry. */
+/** A `source` that points at a nearby directory with `./` or `../`. */
 const LOCAL_SOURCE = /^\.\.?[/\\]/;
 
-/** The `module` attribute that says where the child is, not what it takes. */
+/** The `module` attribute that gives the child's location. Every other one is an argument. */
 const MODULE_SOURCE = "source";
 
 /**
- * How deep a chain of local modules is followed. A configuration nests
- * a few modules and stops, and a cycle is caught on the way down, so
- * this is the guard against a tree nobody meant to write.
+ * How deep a chain of local modules is followed. Cycles are caught
+ * separately, so this only stops an unusually deep tree.
  */
 const MODULE_DEPTH_LIMIT = 8;
 
@@ -221,10 +218,8 @@ function readSourceFile(file: string): SourceFile {
 }
 
 /**
- * One module and its children, with everything a reference in each of
- * them resolves against. A module states its resources across several
- * files and a reference in one of them may refer to a resource another
- * one states, so every file contributes to the one scope.
+ * A reference in one file of a module may point at a resource another
+ * file declares, so every file contributes to one scope.
  */
 function moduleOf(opts: {
   files: SourceFile[];
@@ -251,8 +246,8 @@ function moduleOf(opts: {
       continue;
     }
     children.push(child);
-    // The parent reads the child through its outputs, and the child has
-    // already said what each one comes to.
+    // The parent reaches the child only through its outputs, which are
+    // resolved already.
     scope.resources.set(`module.${label}`, outputValues(child));
   }
   return { files, scope, children };
@@ -297,12 +292,9 @@ function isDirectory(target: string): boolean {
 }
 
 /**
- * What each argument comes to, read in the module doing the calling.
- * A string built at deploy time is a hole with another name on it, so
- * it passes nothing and the child's own `${var.x}` stays the hole it
- * was. A map passes whatever it has: its keys are what a `for_each`
- * over it writes, and an entry the parent could not settle crosses as
- * written and becomes a hole in the child the way any other value does.
+ * A string that still has a hole after resolving is not passed, so the
+ * child's `${var.x}` stays a hole. A map is passed whole, and DESIGN.md
+ * explains how its entries resolve.
  */
 function passedArguments(
   call: Record<string, unknown>,
@@ -328,13 +320,16 @@ function passedArguments(
   return passed;
 }
 
-/** The same value with every reference in it read in the given module. */
+/** Resolves every reference in a value against the given module's scope. */
 function resolvedThroughout(value: unknown, scope: ReferenceScope): unknown {
   const resolveHere = (text: string) => resolveReferences(text, scope);
   return mapStrings(value, resolveHere);
 }
 
-/** What each of a child's outputs comes to, read in the child's own scope. */
+/**
+ * A child's outputs, resolved in the child's scope. An output that
+ * still has a hole is left out, so the parent never pairs on half a name.
+ */
 function outputValues(child: ModuleRead): Record<string, unknown> {
   const stated: Record<string, unknown> = {};
   for (const [name, value] of child.files.flatMap((file) => file.outputs)) {
@@ -383,7 +378,7 @@ function moduleSummaries(
   return summaries;
 }
 
-/** What one file states, or null when the parser could not read it. */
+/** Null when the parser could not read the file. */
 function parseSource(file: SourceFile): ParsedFile | null {
   const document = parseHclDocument(file.source);
   if (document === null) {
@@ -403,7 +398,7 @@ function parseSource(file: SourceFile): ParsedFile | null {
   };
 }
 
-/** Every block a document states once per label, as `[label, body]`. */
+/** Every labelled block in a document, as `[label, body]`. */
 function labelledBlocks(
   declared: unknown,
 ): Array<[string, Record<string, unknown>]> {
@@ -422,9 +417,8 @@ function labelledBlocks(
 }
 
 /**
- * The `default` each `variable` block states. Only a `for_each` reads
- * these, since a default says what a deployment would get if it passed
- * nothing, which is not what production runs with.
+ * Only a `for_each` reads these. A default is what a deployment gets
+ * when it passes nothing, which is a guess about what production runs.
  */
 function variableDefaults(
   document: Record<string, unknown>,
@@ -444,9 +438,9 @@ function variableDefaults(
 }
 
 /**
- * The version each provider is pinned to, by the name
- * `required_providers` gives it. A configuration that pins nothing says
- * nothing, and an entry is then read whatever version it describes.
+ * The version each provider is pinned to, keyed by its
+ * `required_providers` name. With no pin, every entry is read whatever
+ * version it describes.
  */
 function providerConstraints(
   document: Record<string, unknown>,
@@ -472,16 +466,9 @@ function providerConstraints(
 }
 
 /**
- * The entry a pack has for this resource, when the configuration's own
- * provider pin allows it and the entry's own gate lets it read the
- * resource. A pin outside the entry's range means the entry describes a
- * different version of the provider, so it says nothing here.
- *
- * A pack states several entries for one resource type when the provider
- * spells it differently across versions, and again when one attribute
- * decides whether the resource is the thing the entry describes at all.
- * Both are settled here, so an entry whose gate turns it down does not
- * stop a later entry reading the same resource.
+ * A pack can have several entries for one resource type, split by
+ * provider version or by an `appliesWhen` gate. An entry that is ruled
+ * out does not stop a later entry from reading the same resource.
  */
 function patternFor(
   pack: TerraformPack,
@@ -509,15 +496,14 @@ function versionAllows(
   try {
     return semver.intersects(pinned, providerVersions, { loose: true });
   } catch {
-    // A pin nobody can read settles nothing, so the entry is read.
+    // An unparseable pin rules nothing out, so the entry is read.
     return true;
   }
 }
 
 /**
- * Whether the entry's own gate lets it read this resource. A value the
- * configuration builds at deploy time settles nothing, so the resource
- * goes unread rather than read as something it may not be.
+ * A value built at deploy time does not match the gate, so the resource
+ * is skipped instead of being read as something it may not be.
  */
 function entryApplies(
   pattern: TerraformResourcePattern,
@@ -541,13 +527,12 @@ interface ResourceSite {
   body: Record<string, unknown>;
   sourceFile: string;
   resourceType: string;
-  /** What the rest of the configuration states, for a reference in it. */
+  /** The scope a reference in this resource resolves against. */
   scope: ReferenceScope;
-  /** What the run was asked to read, for the options a reader consults. */
   options: TerraformReadOptions;
 }
 
-/** One reader per kind of thing a pack entry can say a resource is. */
+/** One reader for each kind of resource a pack entry can describe. */
 type ResourceReaders = {
   [K in TerraformResource["kind"]]: (
     site: ResourceSite,
@@ -572,8 +557,8 @@ function summariesFor(
   opts: ResourceSite & { pattern: TerraformResourcePattern },
 ): BehavioralSummary[] {
   const { pattern, ...site } = opts;
-  // The one cast joining a table that narrows per kind to a lookup that
-  // does not, the way `dispatchByType` does it for the IR's own unions.
+  // The table is typed per kind and the lookup is not, so one cast joins
+  // them, as `dispatchByType` does for the IR's own unions.
   const read = READERS[pattern.boundary.kind] as (
     site: ResourceSite,
     boundary: TerraformResource,
@@ -593,9 +578,9 @@ function storageSummary(
   // address Terraform itself refers to a resource by.
   const address = `${opts.scope.namePrefix}${opts.resourceType}.${label}`;
   const storageSystem = storageSystemOf(opts.body, boundary, opts.scope);
-  // A resource that only says the store exists gets no container name
-  // and no physical name: either one would claim accesses that spell
-  // the same text, and nothing the resource declares is a container.
+  // A resource that only declares the store gets no container name and
+  // no physical name. Either one would claim any access that uses the
+  // same text, and the resource declares no container.
   const declaresContainer = boundary.declares !== "store";
   const physicalTable =
     !declaresContainer || boundary.nameAttribute === undefined
@@ -640,10 +625,9 @@ function storageSummary(
 }
 
 /**
- * Which store the resource is, or null when the entry reads the engine
- * off an attribute and the configuration does not settle it there. The
- * resource is deployed and has a name either way, so it is still read,
- * and the gap below says the engine is the part that went missing.
+ * Null when the engine comes from an attribute the configuration does
+ * not resolve. The resource is deployed and has a name, so it is still
+ * read, and the gap below records that the engine is missing.
  */
 function storageSystemOf(
   body: Record<string, unknown>,
@@ -658,9 +642,8 @@ function storageSystemOf(
 }
 
 /**
- * What a reader of the summary is told about an engine nobody settled.
- * The store shows up with no engine on it, and a reader who cannot see
- * why would take the blank for a defect in the pack.
+ * A store with no engine and no explanation would look like a bug in
+ * the pack, so a gap on the summary explains the missing engine.
  */
 function unknownEngineGaps(
   storageSystem: string | null,
@@ -706,8 +689,8 @@ function declaredFieldSet(
   shape: KeyedShape,
   listedFields: StorageContractMetadata["fields"] | null,
 ): StorageResource["fieldSet"] {
-  // A way in that copies part of an item has every field it will ever
-  // have, whatever the container itself stores.
+  // An access path that copies part of an item lists every field it will
+  // ever have, whatever the container itself stores.
   if (shape.serves !== null) {
     return "exhaustive";
   }
@@ -715,9 +698,8 @@ function declaredFieldSet(
 }
 
 /**
- * Every field a resource states as JSON, or null when it states none
- * there. A schema a file or a variable supplies is not written in the
- * configuration, so nothing is recorded rather than a guess.
+ * Null when the resource writes no fields as JSON. A schema a file or a
+ * variable supplies is not in the configuration, so nothing is recorded.
  */
 function jsonFields(
   body: Record<string, unknown>,
@@ -752,7 +734,7 @@ function jsonFields(
   return fields.length === 0 ? null : fields;
 }
 
-/** Whether a field entry says the store always has a value for it. */
+/** Whether a field entry marks the field as always set. */
 function alwaysSet(
   field: Record<string, unknown>,
   requires: { key: string; values: string[] },
@@ -762,8 +744,8 @@ function alwaysSet(
 }
 
 /**
- * The namespace the container belongs to, `"default"` when the entry
- * says a store has only one.
+ * The namespace the container belongs to, or `"default"` when the entry
+ * gives no scope attribute or the resource leaves it unset.
  */
 function containerScope(
   body: Record<string, unknown>,
@@ -821,9 +803,9 @@ function busSummary(
 const TEMPLATE_HOLE = /\{([^{}]+)\}/g;
 
 /**
- * The string a template spells, or null when the resource leaves any of
- * its holes unset. Half an identity pairs with the wrong metric as
- * readily as with the right one, so nothing is recorded instead.
+ * Null when the resource leaves any of the template's attributes unset,
+ * because half an identity pairs with the wrong metric as readily as
+ * with the right one.
  */
 function metricTypeFrom(
   template: string,
@@ -877,7 +859,7 @@ function metricSummary(
   };
 }
 
-/** What the resource says its measurements are, in suss's own words. */
+/** The resource's measurement type and accumulation, in suss's terms. */
 function metricContract(
   body: Record<string, unknown>,
   boundary: MetricResource,
@@ -892,10 +874,9 @@ function metricContract(
 }
 
 /**
- * One summary per metric a resource reads. A reading whose query this
- * could not read, or which states no metric, still becomes a summary,
- * with no metric type on it: a resource watching something nobody can
- * spell is worth seeing, and it pairs with nothing.
+ * A reading whose metric cannot be read still becomes a summary with no
+ * metric type. A resource watching an unknown metric is worth seeing,
+ * even though it does not pair with anything.
  */
 function readingSummaries(
   opts: ResourceSite & { boundary: MetricReadingResource },
@@ -941,7 +922,7 @@ function readingSummaries(
   return summaries;
 }
 
-/** One reader per way a pack says a reading spells its metric. */
+/** One reader for each way a reading can identify its metric. */
 const READING_IDENTITIES: {
   [K in MetricIdentity["from"]]: (
     reading: Record<string, unknown>,
@@ -961,17 +942,16 @@ const READING_IDENTITIES: {
 };
 
 /**
- * Every metric one reading is about, or one null when it spells none
- * this could read. A resource watching something nobody can spell is
- * still worth seeing, and it pairs with nothing.
+ * Every metric one reading is about, or a single null when none can be
+ * read, so the reading still gets a summary.
  */
 function metricsRead(
   reading: Record<string, unknown>,
   identity: MetricIdentity,
   scope: ReferenceScope,
 ): Array<string | null> {
-  // The one cast joining a table that narrows per kind to a lookup that
-  // does not, the way the resource readers above do it.
+  // The same single cast as in `summariesFor`: the table is typed per
+  // kind and the lookup is not.
   const read = READING_IDENTITIES[identity.from] as (
     reading: Record<string, unknown>,
     identity: MetricIdentity,
@@ -981,7 +961,7 @@ function metricsRead(
 }
 
 /**
- * Every metric a query says it is about, or one null when the query is
+ * Every metric a query selects, or a single null when the query is
  * missing, unreadable, or has no value under this key.
  */
 function metricTypesIn(
@@ -1003,10 +983,9 @@ function metricTypesIn(
 }
 
 /**
- * What one reading needs from the series, in suss's own words, plus the
- * setting a fix would be written in. The table goes through as the pack
- * wrote it, so a pack states its aligners once and a finding can name
- * the ones that would help without knowing Google.
+ * What one reading needs from the series, in suss's terms. The pack's
+ * table passes through unchanged, so a finding can name the setting and
+ * values that would fix it without knowing the provider's vocabulary.
  */
 function metricReading(
   reading: Record<string, unknown>,
@@ -1036,7 +1015,7 @@ interface DeployedProcess {
   containerName: string | null;
 }
 
-/** What a deployment gives one process, in the terms the checker asks in. */
+/** The environment a deployment gives one process, in the form the checker reads. */
 interface DeclaredEnv {
   names: string[];
   values: Record<string, string>;
@@ -1139,9 +1118,9 @@ function deployableSummary(
 }
 
 /**
- * Which code the unit runs. A configuration says which handler runs and
- * never which directory the artifact was built from, so the entry is
- * all the checker gets until the caller says where the code is.
+ * A configuration gives the handler that runs but never the directory
+ * the artifact was built from, so the entry is all the checker gets
+ * until the caller supplies a directory.
  */
 function declaredCodeScope(
   directory: string | undefined,
@@ -1190,16 +1169,15 @@ function deployedProcesses(
 
 /** Which code the platform calls, as the configuration writes it. */
 interface CodePointer {
-  /** The handler string, verbatim, or null when the resource states none. */
+  /** The handler string as written, or null when the resource has none. */
   entryPoint: string | null;
-  /** The file that handler is in, for a spelling that says which. */
+  /** The file the handler is in, when the spelling includes one. */
   entry: string | null;
 }
 
 /**
- * How each spelling says which module the handler is in. A bare
- * exported name says nothing about a file, so nothing is claimed for
- * it and the unit is placed by whatever else the run knows.
+ * Gets the module from each handler spelling. A bare exported name has
+ * no file, so the unit is placed by whatever else the run has found.
  */
 const HANDLER_MODULE: Record<
   HandlerSpelling,
@@ -1220,7 +1198,7 @@ function codePointer(
     return { entryPoint: null, entry: null };
   }
   // Splitting a handler with a hole in it at its last dot picks a file
-  // nobody deploys, so the unit is placed by whatever else the run knows.
+  // nobody deploys, so the unit is placed by whatever else the run has found.
   return {
     entryPoint: written,
     entry: hasNameHole(written) ? null : HANDLER_MODULE[spec.spelling](written),
@@ -1273,8 +1251,8 @@ function declaredEnv(
 ): DeclaredEnv {
   const declared: DeclaredEnv = { names: [], values: {}, targets: {} };
   for (const declaration of declarations) {
-    // The one cast joining a table that narrows per style to a lookup
-    // that does not, the way the resource readers above do it.
+    // The same single cast as in `summariesFor`: the table is typed per
+    // style and the lookup is not.
     const read = ENV_READERS[declaration.style] as (
       body: Record<string, unknown>,
       declaration: EnvDeclaration,
@@ -1287,9 +1265,8 @@ function declaredEnv(
 }
 
 /**
- * A variable the process starts with, and what the configuration sets
- * it to. A value that is one reference says both what the resource
- * states and which resource it was, so both go on.
+ * A value that is a single reference gives both the resource's literal
+ * value and the resource itself, so both are recorded.
  */
 function setVariable(
   into: DeclaredEnv,
@@ -1311,9 +1288,9 @@ function setVariable(
 }
 
 /**
- * The resource a variable's value refers to. A secret comes through
- * here alone: what the process reads is the secret's contents, which no
- * configuration writes down, so only the resource goes on.
+ * A secret goes only through here. The process reads the secret's
+ * contents, which no configuration contains, so only the resource is
+ * recorded.
  */
 function setTarget(
   into: DeclaredEnv,
@@ -1327,7 +1304,7 @@ function setTarget(
   }
 }
 
-/** The attribute's value as text, or null when the entry states none. */
+/** The attribute's value as text, or null when the entry has none. */
 function attributeText(
   body: Record<string, unknown>,
   attribute: string | undefined,
@@ -1336,9 +1313,8 @@ function attributeText(
 }
 
 /**
- * The attribute's value as a boundary name, so an image and a handler a
- * variable supplies are spelled the way every other unsettled value in
- * a summary is.
+ * The attribute's value as a name pattern, so an image or handler that a
+ * variable supplies is written like every other unresolved value.
  */
 function attributePattern(
   body: Record<string, unknown>,
@@ -1350,7 +1326,7 @@ function attributePattern(
     : namePattern(valueAt(body, attribute), scope);
 }
 
-/** One reader per way a pack says a value picks an entry in its table. */
+/** How a value selects an entry in the `means` table, for each `matches` mode. */
 const MEANING_KEYS: Record<
   NonNullable<AttributeMeaning<string>["matches"]>,
   (stated: string, keys: string[]) => string | undefined
@@ -1360,9 +1336,9 @@ const MEANING_KEYS: Record<
 };
 
 /**
- * What the pack says the value at that attribute means, or undefined
- * when the resource states nothing there, states something built at
- * deploy time, or states something the pack does not list.
+ * The pack's meaning for the value at the attribute. An unset attribute
+ * gets `whenUnset`. A value built at deploy time, or one the pack does
+ * not list, gets undefined.
  */
 function meaningOf<T extends string>(
   body: Record<string, unknown>,
@@ -1389,9 +1365,9 @@ function meaningOf<T extends string>(
 }
 
 /**
- * The value at a dotted path, stepping into a block on the way. A block
- * HCL states once and a block it states many times both arrive as a
- * list, and a path takes the first, since a path is about one value.
+ * The value at a dotted path, stepping into blocks on the way. A path
+ * points at one value, so a repeated block contributes only its first
+ * instance.
  */
 function valueAt(body: Record<string, unknown>, path: string): unknown {
   const steps = path.split(".");
@@ -1409,7 +1385,7 @@ function valueAt(body: Record<string, unknown>, path: string): unknown {
 
 /**
  * Every block at the end of a chain of nested block names, including
- * the ones a `dynamic` writes rather than the module writing each out.
+ * blocks that a `dynamic` block expands to.
  */
 function blocksAt(
   body: Record<string, unknown>,
@@ -1427,9 +1403,9 @@ function blocksAt(
 }
 
 /**
- * Every record a value states. A provider that takes a whole structure
- * as one attribute, ECS's container definitions above all, writes it
- * inside a string, and the same deployed value comes back either way.
+ * ECS container definitions and similar structures can arrive as plain
+ * blocks, a JSON string or a `for` expression, and each form comes back
+ * as the same records.
  */
 function nestedRecords(
   value: unknown,
@@ -1446,9 +1422,9 @@ function nestedRecords(
 }
 
 /**
- * The resource's own key, then one entry per block that declares
- * another way in. A resource whose entry states no keys has one shape
- * and no key fields, which is what a bucket is.
+ * The resource's own key, then one shape per access path block. An
+ * entry with no `identifies` gives one shape with no key fields, as a
+ * bucket has.
  */
 function keyedShapes(
   body: Record<string, unknown>,
@@ -1480,9 +1456,9 @@ function keyedShapes(
 }
 
 /**
- * Every field a way in can serve, or null when it serves whatever the
- * item has. A store always sends the keys, its own and the container's,
- * so those count as served however narrow the copy is.
+ * Null when the access path returns the whole item. A store always
+ * returns the index keys and the table keys, so those count however
+ * narrow the copy is.
  */
 function servedFields(
   block: Record<string, unknown>,
@@ -1507,7 +1483,7 @@ function servedFields(
 }
 
 /**
- * The keys a block states, in the order the entry lists them. DynamoDB
+ * The key fields a block lists, in the order the entry gives. DynamoDB
  * takes them that way, so a caller that supplies the sort key without
  * the partition key has supplied neither.
  */
@@ -1544,7 +1520,6 @@ function fieldTypes(
   return types;
 }
 
-/** Every `locals` block a file states, each a name to a value. */
 function localsIn(
   document: Record<string, unknown>,
 ): Array<Record<string, unknown>> {
@@ -1558,7 +1533,7 @@ function localsIn(
   return found;
 }
 
-/** Every resource a configuration states, as `[type, label, body]`. */
+/** Every resource in a document, as `[type, label, body]`. */
 function resourcesIn(
   document: Record<string, unknown>,
 ): Array<[string, string, Record<string, unknown>]> {
@@ -1589,8 +1564,8 @@ function resourcesIn(
 }
 
 /**
- * The name a value states. A reference to a resource this configuration
- * states is read as that resource's value rather than as a hole.
+ * A reference to a resource in this configuration resolves to that
+ * resource's value first, so it does not become a hole in the pattern.
  */
 function namePattern(value: unknown, scope: ReferenceScope): string | null {
   return namePatternFromSub(

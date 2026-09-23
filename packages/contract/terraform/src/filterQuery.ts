@@ -1,16 +1,15 @@
 /**
  * A filter written as comparisons joined by AND and OR.
  *
- * Several cloud APIs take a selector as one string in this shape:
+ * Several cloud APIs take a selector as one string such as
  * `metric.type = "x" AND resource.type = "y"`, with quoted or bare
  * values, parentheses, NOT, and terms written next to each other for
  * AND. A resource that reads what another resource declares usually
- * says which one inside such a string, so reading the string is how
- * this reader finds out what a resource refers to.
+ * identifies it inside such a string, so the reader parses the string.
  *
- * A pack says which key it wants. This file knows the grammar and no
- * provider's key names. What comes back is a tree, since OR and NOT
- * change what a term claims and only the caller can judge that.
+ * The pack gives the key to look for, and this file contains only the
+ * grammar. It returns a tree, because OR and NOT change what a term
+ * means and only the caller can decide how to treat that.
  */
 
 /** One comparison, as the filter writes it. */
@@ -28,7 +27,7 @@ export interface FilterTerm {
   value: string;
 }
 
-/** A call standing where a comparison would, with its arguments. */
+/** A function call in place of a comparison, with its arguments. */
 export interface FilterCall {
   type: "call";
   name: string;
@@ -41,7 +40,7 @@ export type FilterQuery =
   | { type: "junction"; operator: "and" | "or"; operands: FilterQuery[] }
   | { type: "negation"; operand: FilterQuery };
 
-/** A filter nobody could read says why, rather than reading as empty. */
+/** A parse failure includes the reason, so it is never mistaken for an empty filter. */
 export type FilterParse =
   | { ok: true; query: FilterQuery }
   | { ok: false; reason: string };
@@ -76,7 +75,7 @@ export function filterTerms(query: FilterQuery): FilterTerm[] {
   return query.operands.flatMap(filterTerms);
 }
 
-/** Every call in the tree, for a caller that reads one of them. */
+/** Every call in the tree, in the order the filter writes them. */
 export function filterCalls(query: FilterQuery): FilterCall[] {
   if (query.type === "call") {
     return [query];
@@ -90,7 +89,7 @@ export function filterCalls(query: FilterQuery): FilterCall[] {
   return query.operands.flatMap(filterCalls);
 }
 
-/** Read one filter string, or say what stopped the reading. */
+/** Parses one filter string, or returns what stopped the parse. */
 export function parseFilterQuery(source: string): FilterParse {
   const tokens = tokenize(source);
   if (!tokens.ok) {
@@ -185,7 +184,7 @@ function readQuoted(
   return null;
 }
 
-/** Whether a token is a key waiting for the segment after its dot. */
+/** A key ending in a dot is followed by a quoted segment. */
 function isPartialKey(token: Token): boolean {
   return token.type === "word" && token.text.endsWith(".");
 }
@@ -296,9 +295,9 @@ class TokenReader {
   }
 
   /**
-   * A call where a comparison would be. Cloud Monitoring writes an SLO
-   * burn-rate condition that way, and the call says what the condition
-   * is about instead of any comparison.
+   * A call in place of a comparison. Cloud Monitoring writes an SLO
+   * burn-rate condition that way, and the call's arguments identify what
+   * the condition is about.
    */
   private readCall(): FilterCall | null {
     const name = this.tokens[this.at] as Token;

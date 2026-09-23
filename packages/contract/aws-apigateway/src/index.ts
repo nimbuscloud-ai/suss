@@ -1,10 +1,11 @@
-// @suss/contract-aws-apigateway: Generate behavioral summaries for AWS
-// API Gateway (REST + HTTP API) given normalized configuration.
-//
-// Manifest readers (CFN, CDK, Terraform) are responsible for parsing
-// their own format and constructing a RestApiConfig / HttpApiConfig.
-// This package owns the resource semantics: which response transitions
-// fire given which configuration knobs.
+/**
+ * @suss/contract-aws-apigateway builds summaries for AWS API Gateway REST
+ * and HTTP APIs from a normalized configuration.
+ *
+ * A manifest reader such as the CloudFormation pack parses its own format
+ * and builds a RestApiConfig or HttpApiConfig. This package decides which
+ * responses the platform adds for each configuration setting.
+ */
 
 export { httpApiToSummaries } from "./http.js";
 export { restApiToSummaries } from "./rest.js";

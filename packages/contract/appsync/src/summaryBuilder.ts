@@ -1,14 +1,12 @@
-// summaryBuilder.ts: Assemble BehavioralSummary objects from the
-// normalized AppSync model (raw AWS::AppSync::* and SAM
-// AWS::Serverless::GraphQLApi converge here).
-//
-// The schema-first angle drives most of the shape: every resolver's
-// observable behavior is gated by its SDL field declaration. One summary
-// is emitted per (TypeName, FieldName) declared by a resolver. Dangling
-// resolvers (no SDL declaration for the target field) still produce a
-// summary: they're a boundary AppSync would fail at deploy time, and
-// surfacing them beats silently dropping. Lambda data-source attribution
-// rides on each summary so it can later correlate to handler code.
+/**
+ * Builds one resolver summary per resolver in the AppSync model, and one
+ * schema document summary per API whose SDL resolved. A resolver's
+ * inputs and return type come from its SDL field.
+ *
+ * A resolver whose field the SDL does not declare still gets a summary.
+ * AppSync would reject that stack at deploy time, so the boundary is
+ * reported instead of dropped.
+ */
 
 import {
   graphqlResolverBinding,
@@ -37,7 +35,7 @@ import type { FieldInfo, SchemaIndex } from "./schema.js";
 import type { ResolvedSchema } from "./schemaSource.js";
 
 export interface BuildOptions {
-  /** Logical source path recorded on each summary's `location.file`. */
+  /** Path recorded on each summary's `location.file`. */
   source?: string;
 }
 
@@ -85,13 +83,9 @@ export function buildResolverSummaries(
 }
 
 /**
- * One summary per API whose schema the reader resolved, which is where
- * the SDL goes. The type definitions belong to the API's schema rather
- * than to any one resolver, and a client crosses `Query.users`, not the
- * schema. Each resolver points here through the document label.
- *
- * A template can declare two APIs, so the label says which one, the way
- * a nested stack's does.
+ * The SDL belongs to the whole API, so it goes on its own summary. The
+ * label includes the API's logical id, as a nested stack's does, since
+ * one template can declare two APIs.
  */
 function schemaDocumentSummaries(
   resolvedByApi: Map<string, ResolvedSchema>,
@@ -186,10 +180,7 @@ function buildOne(
       name: ownerKey,
       exportPath: null,
       boundaryBinding: graphqlResolverBinding({
-        // AppSync is invoked over HTTPS-to-AWS. Keeping transport
-        // explicit here matches the aws-apigateway reader's posture
-        // and leaves room for a future AWS-SDK-direct transport
-        // ("aws-sdk") once Lambda-invoke semantics land.
+        // Clients reach AppSync over HTTPS to an AWS endpoint.
         transport: "aws-https",
         recognition: "appsync",
         typeName: resolver.typeName,
@@ -222,9 +213,8 @@ function buildMetadata(
   const metadata: Record<string, unknown> = {
     appsync: buildAppsyncMetadata(resolver, api, resolved, field, indexes),
   };
-  // Which schema document declares this field, so the checker can find
-  // the SDL and resolve a consumer's nested selections against this
-  // resolver's return type.
+  // The checker follows this label to the SDL to resolve a consumer's
+  // nested selections against the resolver's return type.
   if (schemaDocument === null) {
     return metadata;
   }
@@ -245,28 +235,22 @@ function buildAppsyncMetadata(
     apiLogicalId: resolver.apiLogicalId,
     apiName: api?.name ?? null,
     dataSourceLogicalId: resolver.dataSourceLogicalId,
-    // Lambda behind this resolver's own data source (UNIT resolvers).
-    // PIPELINE resolvers attribute per-function below; their top-level
-    // data source is null, so this is null too.
+    // Only a UNIT resolver has its own data source. A pipeline records
+    // the Lambda behind each of its functions instead.
     lambdaFunctionLogicalId: lambdaBehind(
       resolver.dataSourceLogicalId,
       indexes,
     ),
     kind: resolver.kind,
     authenticationType: api?.authenticationType ?? null,
-    // SAM JS/VTL resolver code location + runtime (null for raw
-    // AWS::AppSync::Resolver resources).
     codeUri: resolver.codeUri,
     runtime: resolver.runtime,
-    // Distinguish "schema said X" from "we didn't see a schema at all"
-    // (field-level), and record how the SDL itself was obtained
-    // (source-level) so a genuinely-remote schema is never silent.
+    // Keeps a field the SDL does not declare apart from a schema that was
+    // never read, such as a remote one.
     schemaMatched: field !== null,
     schemaSource: schemaSourceMetadata(resolved),
-    // For PIPELINE resolvers, surface the ordered function chain so
-    // downstream tools can show the dispatch path. Empty for UNIT
-    // resolvers; empty with `kind: "PIPELINE"` means the Functions
-    // array was dynamically-referenced and we couldn't resolve it.
+    // Left out for a UNIT resolver, and for a pipeline whose Functions
+    // list cannot be read statically.
     ...(pipelineFunctions.length > 0 ? { pipelineFunctions } : {}),
   };
 }
@@ -335,21 +319,9 @@ function buildInputs(field: FieldInfo | null): Input[] {
 }
 
 /**
- * Default transitions for a v0 AppSync resolver summary:
- *
- *   1. Success: returns the SDL-declared shape. Marked default so
- *      unmatched consumer branches pair against it.
- *   2. Throw: AppSync resolvers surface failures as errors[] on the
- *      response (per GraphQL spec). V0 emits one generic throw
- *      transition so downstream consumer-satisfaction checking has
- *      somewhere to pair against when the consumer branches on an
- *      error path. Richer modeling (request-mapping validation 400,
- *      auth 401, datasource 502) is a follow-up tied to VTL / JS
- *      resolver parsing.
- *
- * When the schema doesn't declare the field, the success transition
- * falls back to a `ref: unknown` return. We still model the boundary,
- * just without shape detail.
+ * A default success returning the declared type, or `unknown` when the
+ * SDL lacks the field, and one generic throw for `errors[]`. Telling
+ * failures apart would need the VTL or JS resolver code read.
  */
 function buildTransitions(
   ownerKey: string,

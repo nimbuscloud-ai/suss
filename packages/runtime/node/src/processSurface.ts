@@ -1,14 +1,13 @@
-// processSurface.ts: recognize reads of the Node `process` global
-// (argv, cwd, platform, version, versions). Each becomes an effect
-// stamped with an opacity reason so downstream tooling sees the
-// dependency on the runtime surface.
-//
-// `process.env.X` reads are deliberately NOT handled here, the
-// sibling `envVarRecognizer` (envVars.ts) owns that slice and emits
-// a pairing-grade `config-read` interaction. The two recognizers
-// partition the `process.*` space without duplication: the env-var
-// recognizer fires only on `process.env.X`, and the process-surface
-// recognizer here skips that shape explicitly.
+/**
+ * Reads of the `process` global other than `process.env`. A read of
+ * `process.argv` becomes a config read, the same kind of effect an
+ * environment variable gets. Reads such as `process.cwd` or
+ * `process.platform` become metadata reads, which record the unit's
+ * dependency on the runtime without being paired against anything.
+ *
+ * `envVarRecognizer` handles `process.env.X`, and this recognizer skips
+ * it, so no read produces two effects.
+ */
 
 import {
   type ElementAccessExpression,
@@ -24,11 +23,7 @@ import type { DeploymentOptions } from "./configBinding.js";
 
 export type ProcessSurfaceOptions = DeploymentOptions;
 
-/**
- * Read of `process.env.X`, let the sibling `envVarRecognizer`
- * handle these. Returns true when `node` is the outer `.X` access on
- * a `process.env` chain.
- */
+/** True when `node` is the `.X` access in `process.env.X`. */
 function isProcessEnvVarRead(node: PropertyAccessExpression): boolean {
   const inner = node.getExpression();
   if (!Node.isPropertyAccessExpression(inner)) {
@@ -46,9 +41,8 @@ function isProcessIdentifier(node: Node): boolean {
 }
 
 /**
- * Property accesses we treat as opaque runtime-metadata reads.
- * Excludes `env` (handled by env-var pack) and `argv` (handled
- * separately as a runtime-config channel).
+ * `env` and `argv` are left out because they are config reads.
+ * envVarRecognizer handles `env`, and argvRead handles `argv`.
  */
 const OPAQUE_PROPERTY_NAMES = new Set([
   "cwd",
@@ -81,7 +75,6 @@ function recognizeProperty(
   node: PropertyAccessExpression,
   where: DeploymentOptions,
 ): Effect[] | null {
-  // Skip env-var reads: handled by the sibling envVarRecognizer.
   if (isProcessEnvVarRead(node)) {
     return null;
   }
@@ -89,12 +82,10 @@ function recognizeProperty(
   const subject = node.getExpression();
   const name = node.getName();
 
-  // process.argv as a runtime-config channel, same shape as env vars.
   if (isProcessIdentifier(subject) && name === "argv") {
     return [argvRead(where, node.getText(), null)];
   }
 
-  // process.cwd / .platform / .version / etc. opaque metadata.
   if (isProcessIdentifier(subject) && OPAQUE_PROPERTY_NAMES.has(name)) {
     return [opaqueRuntimeRead(node.getText())];
   }
@@ -106,9 +97,8 @@ function recognizeElementAccess(
   node: ElementAccessExpression,
   where: DeploymentOptions,
 ): Effect[] | null {
-  // Only `process.argv[N]` is recognized via element access. Other
-  // element-access patterns (process[someComputedKey]) are too
-  // dynamic to attribute statically.
+  // Only `process.argv[N]`. A computed key such as `process[key]` could
+  // be any property.
   const subject = node.getExpression();
   if (!Node.isPropertyAccessExpression(subject)) {
     return null;
@@ -134,8 +124,8 @@ function argvRead(
   callee: string,
   indexLabel: string | null,
 ): Effect {
-  // argv[N] as `argv[0]`, `argv[1]`, …; bare `argv` (slice / loop) as
-  // `argv`. The pairing dispatcher treats both as the same channel.
+  // `process.argv[1]` is named `argv[1]` and any other use is named
+  // `argv`. Pairing treats both as the same channel.
   const name = indexLabel !== null ? `argv[${indexLabel}]` : "argv";
   return {
     type: "interaction",

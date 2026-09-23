@@ -1,25 +1,13 @@
-// sam.ts: Normalize the SAM shorthand AWS:Serverless:GraphQLApi into
-// the same AppSync model the raw AWS::AppSync::* walk produces.
-//
-// One AWS::Serverless::GraphQLApi resource contains what the SAM transform
-// would otherwise expand into a GraphQLApi + GraphQLSchema + DataSources +
-// FunctionConfigurations + Resolvers. We read those inline blocks and emit
-// the same normalized records so both authoring shapes feed a single
-// summaryBuilder path.
-//
-//   Properties:
-//     Name: optional API name
-//     SchemaInline | SchemaUri: SDL text or a path/URI to a .graphql file
-//     Auth.Type: authentication type
-//     DataSources.<Category>.<Name>: Lambdas carry FunctionArn; others typed
-//     Functions.<Name>: Runtime/CodeUri + DataSource (pipeline steps)
-//     Resolvers.<Type>.<Field>: Runtime/CodeUri + DataSource (UNIT) or
-//                                     Pipeline: [functionName...] (PIPELINE)
-//
-// Synthesized logical IDs prefix the API's logical ID so cross-references
-// (resolver → data source, resolver → pipeline function, function → data
-// source) line up without a separate lookup table, and so summaries stay
-// distinct when a template declares several GraphQL APIs.
+/**
+ * Reads the SAM shorthand AWS::Serverless::GraphQLApi into the same model
+ * the raw AWS::AppSync walk produces. One SAM resource has inline blocks
+ * that the SAM transform would expand into an API, a schema, data
+ * sources, functions and resolvers.
+ *
+ * Generated logical ids start with the API's logical id. Resolvers,
+ * functions and data sources can then refer to each other without a
+ * lookup table, and two GraphQL APIs in one template stay apart.
+ */
 
 import { asRecord, resolveLogicalRef, stringField } from "./refs.js";
 
@@ -34,7 +22,6 @@ import type {
 
 const RESOLVER_ROOT_TYPES = ["Query", "Mutation", "Subscription"];
 
-/** Map SAM `DataSources` category keys to normalized data-source types. */
 const DATA_SOURCE_CATEGORIES: Record<string, string> = {
   Lambda: "lambda",
   Lambdas: "lambda",
@@ -218,10 +205,9 @@ function readRuntime(raw: unknown): string | null {
 }
 
 /**
- * A resolver / function references a data source by its SAM-local name.
- * Map that to the synthesized data-source logical ID so the builder can
- * resolve Lambda attribution. Unknown / dynamic references collapse to
- * null (no data source to attribute).
+ * A SAM resolver or function refers to its data source by its key under
+ * `DataSources`, which maps to the generated logical id. A reference that
+ * is not a plain string gives null.
  */
 function referencedDataSourceId(
   apiLogicalId: string,

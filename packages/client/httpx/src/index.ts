@@ -1,18 +1,16 @@
 /**
- * @suss/client-httpx: PythonPack for the calls
- * [httpx](https://www.python-httpx.org/) gives a project for making an
- * HTTP request.
+ * @suss/client-httpx: the Python pack for HTTP requests made with
+ * [httpx](https://www.python-httpx.org/).
  *
- * A function that calls one of them is a client of the route it names.
- * The verb functions say the method themselves, `request` takes it as
- * its first argument, and both clients take the same calls. See the
- * README for what the pack reads and where it stops.
+ * A function that calls httpx becomes a client of the route in the
+ * call. Each verb function sends one method, `request` takes the method
+ * as its first argument, and both client classes have the same calls.
+ * The README lists what the pack reads and where it stops.
  */
 
 import type { PythonPack } from "@suss/adapter-python";
 import type { PackDeclaration } from "@suss/ir-core";
 
-/** The functions httpx exports at the top level, and the method each one sends. */
 const VERB_FUNCTIONS: Record<string, string> = {
   get: "GET",
   post: "POST",
@@ -40,11 +38,9 @@ export function httpxClient(): PythonPack {
           methodKeyword: "method",
           urlPosition: 1,
         },
-        // Both are written as a context manager as often as they are
-        // assigned, and the adapter reads a `with ... as` the same way.
         receiverConstructors: ["Client", "AsyncClient"],
-        // httpx spells the response the way requests does, which is
-        // deliberate on its part.
+        // httpx copies the requests response API, with `is_success` in
+        // place of `ok`.
         response: {
           statusCode: ["status_code"],
           success: ["is_success"],
@@ -53,7 +49,7 @@ export function httpxClient(): PythonPack {
         },
       },
     ],
-    // Both classes document `__enter__` as giving back the client, so
+    // Both classes document `__enter__` as returning the client, so
     // `with httpx.Client() as c` puts the constructed client in c.
     contextManagers: [
       { module: "httpx", returnsSelf: ["Client", "AsyncClient"] },

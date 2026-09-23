@@ -2,14 +2,15 @@
  * The configuration contract a Wrangler document declares.
  *
  * A Worker reads its variables off the second argument to every
- * trigger, so the channel is the same one a Node process reads through
- * `process.env`, and the summary is the same shape the CloudFormation
- * reader writes for a Lambda: a runtime-config provider, one per
- * deployment, keyed on the deployable unit.
+ * trigger. That is the same channel a Node process reads through
+ * `process.env`, so the summary follows what the CloudFormation reader
+ * writes for a Lambda: one runtime-config provider per deployment, keyed
+ * on the deployable unit.
  *
- * The values go on it as well as the names. A Worker addresses a store
- * through a variable rather than by name, `TableName: env.EDITION_TABLE`,
- * so the value is what says which store the access reaches.
+ * The summary records variable values as well as names. A Worker
+ * addresses a store through a variable, as in
+ * `TableName: env.EDITION_TABLE`, so only the value shows which store
+ * the access reaches.
  */
 
 import { withRuntimeContractMetadata } from "@suss/behavioral-ir";
@@ -28,7 +29,7 @@ export interface Deployment {
   environment: string | null;
   /** The environment's document with the top-level one behind it. */
   merged: WranglerDocument;
-  /** Which variables the top-level document supplied rather than this one. */
+  /** The variables and bindings this environment takes from the top level. */
   inherited: Set<string>;
 }
 
@@ -73,9 +74,8 @@ export function environmentDocuments(document: WranglerDocument): Deployment[] {
 }
 
 /**
- * The variables and bindings an environment takes from the top-level
- * document. An environment that declares a block of its own replaces
- * the whole block, which is Wrangler's rule rather than a merge.
+ * Wrangler replaces a whole block when an environment declares its own,
+ * so a block is inherited only when the environment leaves it out.
  */
 function inheritedNames(
   document: WranglerDocument,

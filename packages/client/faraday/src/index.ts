@@ -1,18 +1,17 @@
 /**
- * @suss/client-faraday: RubyPack for the calls
- * [Faraday](https://lostisland.github.io/faraday/) gives a project for
- * making an HTTP request.
+ * @suss/client-faraday: the Ruby pack for HTTP requests made with
+ * [Faraday](https://lostisland.github.io/faraday/).
  *
- * A method that calls one of them is a client of the route it names,
- * whether it calls the constant itself or a connection built with
- * `Faraday.new`. See the README for what the pack reads and where it
- * stops.
+ * A method that calls a Faraday verb becomes a client of the route in
+ * the call. The call can be on the `Faraday` constant or on a connection
+ * built with `Faraday.new`. The README lists what the pack reads and
+ * where it stops.
  */
 
 import type { RubyPack } from "@suss/adapter-ruby";
 import type { PackDeclaration } from "@suss/ir-core";
 
-/** The methods Faraday gives both the module and a connection, and the method each one sends. */
+/** Faraday has these methods on both the module and a connection. */
 const VERB_METHODS: Record<string, string> = {
   get: "GET",
   post: "POST",
@@ -32,14 +31,13 @@ export function faradayClient(): RubyPack {
       {
         constantName: "Faraday",
         verbMethodNames: VERB_METHODS,
-        // Every one of them takes the URL first.
         url: { position: 0 },
         receiverBuilders: ["new"],
-        // `Faraday.new(url: "https://api.example.com/v1")` serves every
-        // call on that connection under the path of its own URL.
+        // Calls on a connection from `Faraday.new(url: ".../v1")` get the
+        // path of that URL in front of their own.
         builderUrlKeyword: "url",
-        // What a caller reads off the response it got back. A test on
-        // one of these says which statuses the caller handles.
+        // A caller's condition on one of these members shows which
+        // statuses it handles.
         response: {
           statusCode: ["status"],
           success: ["success?"],

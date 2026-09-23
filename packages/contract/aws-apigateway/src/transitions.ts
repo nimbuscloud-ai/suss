@@ -1,15 +1,15 @@
-// transitions.ts: Helpers for building Transition records that carry
-// the conventions this package promises to consumers:
-//
-//  - Handler-attributed transitions: no opaque predicate, metadata
-//    points at the integration that declared the status. Used for
-//    status codes the backend itself can produce.
-//
-//  - Platform-injected transitions: one per status code, with a single
-//    opaque "platform:apiGateway:..." predicate so the checker treats
-//    them as a single sub-case (consumers don't have to disambiguate
-//    why a 403 fired). Metadata aggregates the contributing causes
-//    so inspect/diff can still attribute them.
+/**
+ * Builds the two kinds of transition this package emits.
+ *
+ * A status the backend itself can produce gets a transition with no
+ * conditions, and its metadata points at the integration that declared it.
+ *
+ * A status the platform adds gets one transition per status code, guarded
+ * by a single opaque `aws:apigateway:status-<code>` predicate. The checker
+ * then treats every cause of, say, a 403 as one case, so a consumer does
+ * not have to tell them apart. The causes are listed in the metadata for
+ * inspect and diff.
+ */
 
 import type { Predicate, Transition } from "@suss/behavioral-ir";
 import type { ConfigRef, PlatformCause } from "./config.js";
@@ -18,16 +18,16 @@ export interface PlatformContribution {
   cause: PlatformCause;
   configRef?: ConfigRef;
   /**
-   * Free-form note shown alongside `cause` in inspect output. Kept on
-   * the metadata, not the predicate, so it doesn't force consumer
-   * disambiguation.
+   * A note printed next to `cause` in inspect output. It goes in the
+   * metadata because a distinct predicate would split the status into
+   * cases a consumer would have to handle separately.
    */
   note?: string;
 }
 
 /**
- * Build a PlatformContribution that respects exactOptionalPropertyTypes,
- * `configRef` is omitted when undefined rather than set to undefined.
+ * Leaves `configRef` off when it is undefined, as
+ * exactOptionalPropertyTypes requires.
  */
 export function makeContribution(
   cause: PlatformCause,
@@ -66,9 +66,9 @@ export function handlerTransition(args: {
 }
 
 /**
- * Build a single transition for a status code that the platform can
- * produce, aggregating every configuration-driven contribution that
- * lands on the same code. Returns null if `contributions` is empty.
+ * One transition for a status code the platform can produce, merging
+ * every configuration setting that leads to that code. Returns null when
+ * `contributions` is empty.
  */
 export function platformTransition(args: {
   ownerKey: string;

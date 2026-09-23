@@ -1,17 +1,17 @@
-// config.ts: Normalized, manifest-agnostic configuration shapes.
-//
-// All readers (CFN, CDK, Terraform) build one of these and hand it to
-// restApiToSummaries / httpApiToSummaries. Carry the *behavioral* knobs,
-// not just structural identity, authorizers, CORS, throttling, etc.
-// produce platform-injected transitions that wouldn't otherwise show up
-// in a handler's static summary.
+/**
+ * The configuration a manifest reader builds and passes to
+ * restApiToSummaries or httpApiToSummaries, whatever format it read.
+ *
+ * Besides routes, it includes the settings that change behavior:
+ * authorizers, CORS, throttling and request validation. Each one adds
+ * responses the platform returns that no handler code shows.
+ */
 
 /**
- * Reference back into the source manifest that introduced a piece of
- * configuration. Carried in `Transition.metadata.configRef` so inspect/
- * diff can attribute platform-injected transitions to the file + path
- * where the user authored them. Always emit an absolute file path; the
- * pointer is a JSON-Pointer-ish hint, intentionally not validated.
+ * Where in the source manifest a piece of configuration was written.
+ * Inspect and diff use it to point a platform-added response at the line
+ * that caused it. The file is always absolute, and the pointer is a hint
+ * in the style of a JSON Pointer that nothing validates.
  */
 export interface ConfigRef {
   /** Absolute path to the source manifest file. */
@@ -21,10 +21,9 @@ export interface ConfigRef {
 }
 
 /**
- * One of the well-known platform contracts that produce extra response
- * transitions. Used as the `cause` token in opaque predicates and as a
- * key for collapsing per-status transitions. Closed enum so the checker
- * and renderers can switch on it.
+ * The platform behaviors that add responses. Each value is the `cause` in
+ * a platform transition's metadata, and every cause that lands on one
+ * status code is merged into a single transition.
  */
 export type PlatformCause =
   | "authorization"
@@ -45,10 +44,9 @@ export type AuthorizerType =
 export interface AuthorizerConfig {
   type: AuthorizerType;
   /**
-   * When true, missing/invalid credentials produce 401; authenticated
-   * but denied produces 403. When false, the authorizer is configured
-   * but anonymous calls bypass it (mostly relevant for public-fallback
-   * IAM and Lambda authorizers with caching off).
+   * When true or unset, missing or invalid credentials return 401 and a
+   * denied caller gets 403. When false, anonymous calls pass the
+   * authorizer, so only 403 is added.
    */
   identitySourceRequired?: boolean;
   configRef?: ConfigRef;
@@ -78,22 +76,20 @@ export interface RequestValidationConfig {
 }
 
 /**
- * Pointer from a declared route to the code that implements it. A
- * manifest reader (CFN/SAM, CDK, Terraform) fills this in when it knows
- * which module + export backs the route, e.g. a SAM Lambda proxy
- * integration whose `Handler` gives the file and export. The fields are
- * generic "where is the code" identity, not any one manifest's
- * semantics; `aws-apigateway` puts the pointer onto the summary
- * (`metadata.http.implementingHandler`) without interpreting it, so a
- * checker can later correlate the declared route with the extracted
- * handler summary with the same REST binding.
+ * The code that implements a declared route. A manifest reader fills it
+ * in when it can tell which module and export serve the route, as with a
+ * SAM Lambda proxy integration whose `Handler` gives both.
+ *
+ * This package copies it to `metadata.http.implementingHandler` without
+ * reading it, so the checker can match the declared route to the handler
+ * summary extracted from that code.
  */
 export interface HandlerPointer {
   /** Raw handler reference, e.g. "src/handlers/confirmToken.handler". */
   handler: string;
   /** Module-path portion (before the final dot), e.g. "src/handlers/confirmToken". */
   modulePath: string;
-  /** Exported symbol the handler names, e.g. "handler". */
+  /** The exported function, e.g. "handler". */
   exportName: string;
   /** Base directory the module path resolves against (SAM CodeUri). */
   codeUri?: string;
@@ -110,29 +106,25 @@ export type IntegrationType =
   | "aws-service"
   | "vpc-link"
   /**
-   * The manifest declared an endpoint but didn't specify the integration
-   * type. We can't claim 502/504 will fire without knowing what's behind
-   * the route, so platform-failure transitions are suppressed for this
-   * type. Used by manifest readers as a fallback rather than fabricating
-   * a guessed integration.
+   * The manifest declared an endpoint without an integration type. A
+   * reader uses this in place of a guess, and no 502 or 504 is added,
+   * because nothing is known about the backend.
    */
   | "unknown";
 
 export interface IntegrationConfig {
   type: IntegrationType;
   /**
-   * Status codes the backend integration can produce. For proxy
-   * integrations this is what the handler emits; for non-proxy it's
-   * what `IntegrationResponses` map to. Empty array is allowed and
-   * means "we don't know", only platform-injected transitions will
-   * be emitted.
+   * Status codes the backend can return: what the handler returns for a
+   * proxy integration, or what `IntegrationResponses` map to otherwise.
+   * An empty array means they are unknown, and only the platform's
+   * responses are emitted.
    */
   statusCodes: number[];
   /**
-   * REST API Gateway hard cap is 29s; HTTP API is 30s. When set,
-   * a synthetic 504 is added if the integration could exceed it.
-   * Default behavior: emit 504 unconditionally for lambda/http/aws-service
-   * integrations because the timeout *can* fire.
+   * The integration timeout from the manifest. Summaries do not read it
+   * yet: a 504 is added for every integration that can time out, since
+   * the platform cap (29s for REST, 30s for HTTP APIs) always applies.
    */
   timeoutMs?: number;
   configRef?: ConfigRef;
@@ -144,47 +136,42 @@ export interface RestEndpointConfig {
   path: string;
   integration: IntegrationConfig;
   /**
-   * `null` (or undefined) means no authorizer. To opt out of an
-   * inherited API-level default, pass `null` explicitly.
+   * Undefined inherits the API's default authorizer, and `null` turns it
+   * off for this endpoint.
    */
   authorizer?: AuthorizerConfig | null;
   apiKeyRequired?: boolean;
   requestValidation?: RequestValidationConfig;
   throttle?: ThrottleConfig;
-  /**
-   * Optional override label for the synthesized handler name. Defaults
-   * to `${method.toUpperCase()} ${path}`.
-   */
+  /** The summary's name. Defaults to `<api id>:<METHOD>:<path>`. */
   name?: string;
   /**
-   * Code that implements this endpoint, when the manifest says which
-   * (SAM Lambda proxy `Handler`). Emitted as
-   * `metadata.http.implementingHandler`; purely additive.
+   * The code behind this endpoint, when the manifest says which, as a SAM
+   * Lambda proxy `Handler` does. Copied to
+   * `metadata.http.implementingHandler`.
    */
   implementingHandler?: HandlerPointer;
   configRef?: ConfigRef;
 }
 
 export interface RestApiConfig {
-  /** Logical identifier for the API (used in summary identity). */
+  /** The API's logical id, used in each summary's name. */
   id: string;
   /** Recorded as `SourceLocation.file` on each summary. */
   source?: string;
   endpoints: RestEndpointConfig[];
-  /** API-level defaults that cascade onto endpoints unless overridden. */
+  /** Applies to every endpoint that does not set its own. */
   defaultAuthorizer?: AuthorizerConfig;
   defaultThrottle?: ThrottleConfig;
-  /** API-level CORS: produces an OPTIONS endpoint per resource path. */
+  /** Adds an OPTIONS preflight summary for each resource path. */
   cors?: CorsConfig;
-  /** Binary media types declared on the API; doesn't affect transitions. */
+  /** Recorded from the manifest. No transition depends on it. */
   binaryMediaTypes?: string[];
 }
 
-// HTTP API (API Gateway v2) differs structurally: routes carry the
-// method and path together (`POST /foo`), CORS is API-wide rather than
-// per-method, and the authorizer set is restricted to JWT + Lambda.
-// Express the differences in the type rather than overloading the REST
-// shape.
+// An HTTP API (API Gateway v2) route key has the method and path together
+// (`POST /foo`), CORS covers the whole API, and fewer authorizer types
+// exist, so it gets its own types instead of reusing the REST ones.
 
 export type HttpAuthorizerType = "jwt" | "lambda-request" | "iam";
 
@@ -196,9 +183,9 @@ export interface HttpAuthorizerConfig {
 
 export interface HttpRouteConfig {
   /**
-   * Route key in API Gateway's native form: `"<METHOD> <path>"`, or
-   * `"$default"` for the catch-all route. The package re-parses this
-   * to fill `BoundaryBinding.method` / `path`.
+   * API Gateway's route key, `"<METHOD> <path>"`, or `"$default"` for the
+   * catch-all route. The method and path in the binding are parsed from
+   * it, and a `$default` route gets no summary.
    */
   routeKey: string;
   integration: IntegrationConfig;
@@ -206,9 +193,9 @@ export interface HttpRouteConfig {
   throttle?: ThrottleConfig;
   name?: string;
   /**
-   * Code that implements this route, when the manifest says which (SAM
-   * Lambda proxy `Handler`). Emitted as
-   * `metadata.http.implementingHandler`; purely additive.
+   * The code behind this route, when the manifest says which, as a SAM
+   * Lambda proxy `Handler` does. Copied to
+   * `metadata.http.implementingHandler`.
    */
   implementingHandler?: HandlerPointer;
   configRef?: ConfigRef;

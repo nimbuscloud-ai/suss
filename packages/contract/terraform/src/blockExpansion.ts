@@ -1,15 +1,15 @@
 /**
  * The blocks a module writes once and deploys many times.
  *
- * A container's environment is the usual case. HCL has two spellings, a
- * `dynamic "env"` block around a `content` body and a `for` expression
- * producing a list, and both leave the reader looking at one block with
- * an iterator in it rather than at the variables the process starts
- * with. This gives back the blocks the deployment will see.
+ * A container's environment is the usual case. HCL writes it either as
+ * a `dynamic "env"` block around a `content` body or as a `for`
+ * expression that produces a list. Either way the parser returns one
+ * block with an iterator in it, and this module expands it into the
+ * blocks the deployment gets.
  *
- * Whatever the iteration cannot settle is left as written, so a value
- * built at deploy time comes out as the same hole it would have had if
- * somebody had typed the block out by hand.
+ * Whatever the iteration cannot resolve is left as written, so a value
+ * built at deploy time leaves the same hole it would if somebody had
+ * typed the block out by hand.
  */
 
 import { parseHclExpression } from "./hclDocument.js";
@@ -28,17 +28,17 @@ import type { ReferenceScope } from "./references.js";
 /** The block HCL wraps a repeated one in, labelled by what it writes. */
 const DYNAMIC = "dynamic";
 
-/** `${item}`, which is how an `iterator` attribute arrives. */
+/** `${item}`, the form the parser returns an `iterator` attribute in. */
 const BARE_NAME = /^\$\{([A-Za-z_][\w-]*)\}$/;
 
 /** `[for k, v in <collection> : <body>]`, over a map. */
 const FOR_EXPRESSION =
   /^\$\{\s*\[\s*for\s+([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s+in\s+([^:]+):([\s\S]*)\]\s*\}$/;
 
-/** What one step of an iteration settles, or null when it settles nothing. */
+/** The value one iteration step gives a reference, or null when it gives none. */
 type Settle = (reference: string) => string | null;
 
-/** Every block one `dynamic` under this name writes. */
+/** The blocks that `dynamic` blocks with this label expand to. */
 export function dynamicBlocks(
   body: Record<string, unknown>,
   block: string,
@@ -65,9 +65,9 @@ export function dynamicBlocks(
 }
 
 /**
- * The block for one entry, or none at all. An entry that leaves part of
- * the iterator unfilled is not the one the content was written for, so
- * the block goes unread rather than read with the reference still in it.
+ * An entry that leaves an iterator reference unfilled does not match
+ * what the content expects, so its block is dropped instead of being
+ * read with the reference still in it.
  */
 function filledBlock(
   content: Record<string, unknown>,
@@ -79,9 +79,9 @@ function filledBlock(
 }
 
 /**
- * Every record a `for` expression over a map produces, or null when the
- * value is not one this can settle. ECS takes its containers as JSON,
- * so a module builds the environment list this way rather than with a
+ * The records a `for` expression over a map produces, or null when the
+ * expression cannot be resolved. ECS takes its containers as JSON, so a
+ * module builds the environment list this way instead of with a
  * `dynamic` block.
  */
 export function iteratedRecords(
@@ -115,15 +115,15 @@ export function iteratedRecords(
 
 /**
  * The body of a `for` expression, as the record it writes each time.
- * The parser leaves the two iterators in it as interpolations, which is
- * what the substitution then fills.
+ * The parser leaves the two iterators in it as interpolations, and the
+ * substitution fills them in.
  */
 function parseBody(body: string): Record<string, unknown> | null {
   const trimmed = body.trim();
   return trimmed.startsWith("{") ? asRecord(parseHclExpression(trimmed)) : null;
 }
 
-/** What the module calls each entry: the `iterator` it states, or the label. */
+/** The name each entry goes by: the `iterator` attribute if set, else the label. */
 function iteratorName(
   declared: Record<string, unknown>,
   block: string,

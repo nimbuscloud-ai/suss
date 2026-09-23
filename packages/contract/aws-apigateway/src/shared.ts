@@ -1,8 +1,9 @@
-// shared.ts: Helpers used by both REST (v1) and HTTP API (v2).
-// REST and HTTP API differ in routing structure (per-method+path vs
-// `<METHOD> <path>` route keys) and authorizer types, but the platform
-// contracts that produce 502/504/429 and the CORS preflight synthesis
-// are identical. Centralize them here so both layers stay in lockstep.
+/**
+ * Helpers for both REST (v1) and HTTP (v2) APIs. The two differ in how
+ * routes and authorizers are declared, and they produce 502, 504 and 429
+ * and the CORS preflight response the same way, so that logic lives here
+ * once.
+ */
 
 import { restBinding } from "@suss/behavioral-ir";
 
@@ -17,27 +18,23 @@ export const FRAMEWORK = "apigateway";
 export const PROTOCOL = "http";
 
 export function throttleEnforces(throttle: ThrottleConfig): boolean {
-  // A config with both limits absent or set to 0 doesn't actually
-  // throttle. -1 is API Gateway's "unlimited" sentinel and shouldn't
-  // emit 429 either.
+  // A limit that is absent or 0 does not throttle, and API Gateway uses
+  // -1 to mean unlimited, so neither produces a 429.
   const enforces = (v: number | undefined) => v !== undefined && v > 0;
   return enforces(throttle.burstLimit) || enforces(throttle.rateLimit);
 }
 
 export function integrationCanTimeOut(integration: IntegrationConfig): boolean {
-  // Mock integrations are synthetic and can't time out. Unknown means
-  // the manifest didn't declare an integration; we don't fabricate
-  // 504 in that case. Everything else talks to a backend whose latency
-  // we can't bound statically.
+  // A mock integration responds from its template and cannot time out. An
+  // unknown one was never declared in the manifest, so no 504 is claimed.
+  // Any other integration waits on a backend with unbounded latency.
   return integration.type !== "mock" && integration.type !== "unknown";
 }
 
 export function integrationCanFail(integration: IntegrationConfig): boolean {
-  // 502 fires when the backend produces a malformed response or, for
-  // lambda integrations, when the function throws. HTTP and AWS-service
-  // integrations also surface 502 on bad gateway. Mock integrations
-  // produce only what their template defines; unknown means we don't
-  // know what's behind the endpoint, so don't claim 502.
+  // A backend returns 502 on a malformed response, and a Lambda also does
+  // when the function throws. A mock returns only its template, and with an
+  // unknown integration nothing is known about the backend.
   return integration.type !== "mock" && integration.type !== "unknown";
 }
 
@@ -47,18 +44,17 @@ export interface CorsPreflightOptions {
   cors: CorsConfig;
   sourceFile: string;
   /**
-   * Extra metadata merged into the synthesized summary's top-level
-   * `metadata`. Used by HTTP API to add `apiVersion: "v2"`.
+   * Merged into the summary's top-level `metadata`. The HTTP API adds
+   * `apiVersion: "v2"` here.
    */
   extraMetadata?: Record<string, unknown>;
 }
 
 /**
- * Build a synthesized OPTIONS preflight summary for one resource path.
- * The platform genuinely responds at this boundary. There's no handler
- * code, but a real OPTIONS request gets a real 204 with CORS headers.
- * Treating it as a real boundary lets a TS consumer that does
- * `fetch(path, { method: "OPTIONS" })` pair against it normally.
+ * A summary for the OPTIONS preflight on one resource path. No handler
+ * code exists for it, but API Gateway responds to an OPTIONS request with a
+ * 204 and the CORS headers, so a consumer that sends
+ * `fetch(path, { method: "OPTIONS" })` has a provider to pair with.
  */
 export function buildCorsPreflightSummary(
   options: CorsPreflightOptions,

@@ -16,12 +16,10 @@ const HTTP_METHODS = [
 ] as const;
 
 /**
- * A function that builds an axios instance the way axios.create(...)
- * does, declared in a dependency stub rather than
- * shipped as a default. A project that wraps axios.create in its
- * own helper, to set shared defaults across every service, writes no
- * axios.create(...) call at its own use sites, only a call to the
- * helper, so the built-in factoryMethods entry never sees it.
+ * A project function that builds an axios instance the way
+ * axios.create(...) does, declared in a dependency stub. A project that
+ * wraps axios.create in its own helper calls only the helper at its use
+ * sites, so the built-in factoryMethods entry would miss those clients.
  */
 const clientFactory = z
   .object({
@@ -35,18 +33,16 @@ const clientFactory = z
 export type AxiosClientFactory = z.infer<typeof clientFactory>;
 
 /**
- * What this pack's options may say. The CLI parses a
- * `-f axios=config.json` file against it, minus the keys a dependency
- * stub fills, which a config file may not set.
+ * The options this pack accepts. The CLI checks a `-f axios=config.json`
+ * file against it, except for the keys a dependency stub fills in, which
+ * a config file may not set.
  */
 export const optionsSchema = z
   .object({
     /**
-     * Project functions this project builds axios instances through,
-     * beyond the built-in axios.create. Each site importing one of
-     * these and calling it is a client instance the same way an
-     * axios.create() result is, wherever the call it delegates to
-     * lives.
+     * Project functions that build axios instances, in addition to
+     * axios.create. Calling one of these gives a client instance, the
+     * same as an axios.create() result.
      */
     factories: z.array(clientFactory).optional(),
   })
@@ -60,12 +56,9 @@ function discoveryForVerb(
 ): DiscoveryPattern[] {
   const patterns: DiscoveryPattern[] = [
     {
-      // Matches both shapes:
-      //   axios.<verb>("/path", ...)
-      //   const api = axios.create({ ... }); api.<verb>("/path", ...)
-      // The factoryMethods entry tells the adapter that variables initialized
-      // from axios.create(...) are also clients, wherever that call and
-      // this one turn out to live.
+      // Matches `axios.<verb>(path)` and `api.<verb>(path)`. factoryMethods
+      // makes a variable set from axios.create(...) a client too, even
+      // when it is created in another file.
       kind: "client",
       match: {
         type: "clientCall",
@@ -83,10 +76,9 @@ function discoveryForVerb(
     },
   ];
 
-  // One pattern per configured factory. The factory itself stands in
-  // for the "import" a plain clientCall pattern already knows how to
-  // read, since calling it directly (const api = createApiClient())
-  // is the same shape initClient(...)-style clients already match.
+  // A configured factory is matched in place of the axios import, because
+  // `const api = createApiClient()` returns a client the same way
+  // axios.create does.
   for (const factory of factories) {
     patterns.push({
       kind: "client",
@@ -101,18 +93,9 @@ function discoveryForVerb(
         method: { type: "literal", value: verb.toUpperCase() },
         path: { type: "fromArgument", position: 0 },
       },
-      // A bare specifier gates the way "axios" above does: cheap and
-      // exact, since two files spelling a package name the same way
-      // mean the same package. A path-shaped module ("./apiClient")
-      // points at a location relative to wherever it's written, and the
-      // pre-filter only ever reads a file's own import text before
-      // anything is parsed, so it has no way to tell "./apiClient"
-      // and a consumer's "../apiClient" apart from string text alone.
-      // Narrowing on that string would exclude the consumer roughly
-      // as often as include it, so a path-shaped factory gives no
-      // gate at all and every file is walked; the discovery layer
-      // resolves the module correctly once it's reading a file's
-      // imports against a parsed project.
+      // Each importing file spells a relative path differently, so the
+      // import-text prefilter cannot match one and a path-shaped factory
+      // walks every file. The README has the details.
       requiresImport: isPathShapedSpecifier(factory.module)
         ? []
         : [factory.module],
@@ -122,16 +105,13 @@ function discoveryForVerb(
   return patterns;
 }
 
-/** A relative or absolute specifier points at a location rather than a package. */
 function isPathShapedSpecifier(specifier: string): boolean {
   return specifier.startsWith(".") || specifier.startsWith("/");
 }
 
 /**
- * A request written as one config object: `axios({ url, method })`,
- * `api({ url })` on an instance, or `axios.request(config)`. The method
- * is whatever the object says, and GET when it says nothing, which is
- * what axios does with it.
+ * A request written as one config object, as in `axios({ url, method })`
+ * or `axios.request(config)`. The method defaults to GET, as in axios.
  */
 function configCallDiscovery(
   factories: AxiosClientFactory[],
@@ -161,8 +141,8 @@ function configCallDiscovery(
       requiresImport: ["axios"],
     },
   ];
-  // Calling a declared factory builds a client rather than sending a
-  // request, so only `.request(config)` is read on what it returns.
+  // Calling a declared factory builds a client and sends nothing, so only
+  // `.request(config)` on its result is matched.
   for (const factory of factories) {
     patterns.push({
       kind: "client",
@@ -213,14 +193,14 @@ export function axiosPack(options: AxiosPackOptions = {}): PatternPack {
     },
 
     responseSemantics: [
-      // axios returns AxiosResponse: body lives on .data, not .body or .json()
+      // axios puts the parsed response body on `.data`.
       { name: "data", access: "property", semantics: { type: "body" } },
       { name: "status", access: "property", semantics: { type: "statusCode" } },
       { name: "headers", access: "property", semantics: { type: "headers" } },
     ],
 
-    // A non-2xx rejects, so the caller never gets a response to read a
-    // status off, and its catch is where every failure arrives.
+    // axios rejects on a non-2xx status, so every failure reaches the
+    // caller's catch block instead of coming back as a response.
     failureDelivery: "exception",
   };
 }

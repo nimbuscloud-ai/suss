@@ -1,4 +1,5 @@
-// @suss/contract-openapi: Generate behavioral summaries from OpenAPI 3.x specs.
+// Reads an OpenAPI 3.x or Swagger 2.0 document into one handler summary
+// per operation.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -11,16 +12,14 @@ import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { OpenApiSpec } from "./spec.js";
 
 export interface OpenApiToSummariesOptions {
-  /** Override the logical source file recorded on each summary. */
+  /** The source label recorded on each summary, in place of the default. */
   source?: string;
 }
 
 /**
- * Convert an in-memory OpenAPI specification into a `BehavioralSummary[]`.
- *
- * One summary is produced per `paths.<path>.<method>` operation, with one
- * transition per declared response status. `$ref`s in schemas are resolved
- * against `components.schemas` with cycle protection.
+ * Converts an OpenAPI document already in memory. Each operation becomes
+ * one summary with one transition per declared response status. A `$ref`
+ * to a named schema is resolved, and a recursive one stops at a `ref`.
  */
 export function openApiToSummaries(
   spec: OpenApiSpec,
@@ -30,10 +29,10 @@ export function openApiToSummaries(
 }
 
 /**
- * Load an OpenAPI specification from a YAML or JSON file and convert it
- * into behavioral summaries. Format is detected by extension; `.json` is
- * parsed as JSON, everything else (including `.yaml`/`.yml`) goes through
- * the YAML parser, which also accepts JSON.
+ * Reads an OpenAPI document from a YAML or JSON file and converts it. A
+ * `.json` file is parsed as JSON, and any other file goes through the
+ * YAML parser, which also accepts JSON. Throws when the file is missing
+ * or does not contain an object.
  */
 export function openApiFileToSummaries(
   specPath: string,

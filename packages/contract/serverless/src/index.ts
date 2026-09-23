@@ -1,36 +1,17 @@
-// @suss/contract-serverless: behavioral summaries from a Serverless
-// Framework service file.
-//
-// A serverless.yml deploys working functions, and before this reader
-// existed suss saw none of them: no deployable unit, no environment
-// contract, no event wiring. The functions block states the same facts
-// a SAM template states, in the framework's own spelling, so this
-// reader translates the spelling and hands the result to
-// @suss/contract-cloudformation. Every boundary a service declares
-// then comes out the way the same wiring comes out of a SAM template,
-// and the two manifest languages cannot drift apart.
-//
-// What a service file says, and what this reader does with it:
-//
-//   provider        the runtime, and the environment every function
-//                   inherits, read as SAM Globals. The region is read
-//                   and left symbolic, since no boundary keys on it.
-//   functions       one Lambda each, keyed by the name it is written
-//                   under, with the handler saying where its code is.
-//   events          httpApi and http become API Gateway routes; sqs,
-//                   sns, schedule and eventBridge become the message
-//                   bus wirings they compile to.
-//   resources       raw CloudFormation, read by the CloudFormation
-//                   reader as its own document.
-//   custom          read only through `${self:custom...}` references.
-//
-// Two documents, one service. The functions block and the resources
-// block deploy into a single stack, so a logical id means the same
-// thing in both, and a queue declared in `resources:` is the queue an
-// `sqs` event points at. They get different provenance labels
-// (`serverless:<file>` and `serverless:<file>#resources`), built the
-// way a nested stack's label is, so a reader can tell which block
-// declared what while the flow walk still scopes both to one service.
+/**
+ * @suss/contract-serverless: behavioral summaries from a Serverless
+ * Framework service file.
+ *
+ * This reader rewrites the service as SAM resources and passes them to
+ * @suss/contract-cloudformation, so a service file and a SAM template
+ * with the same wiring produce the same summaries.
+ *
+ * The functions block and the `resources:` block deploy into one stack
+ * but are read as two documents, labelled `serverless:<file>` and
+ * `serverless:<file>#resources` the way a nested stack is, so the flow
+ * walk still scopes both to one service. The README maps each block to
+ * what it becomes.
+ */
 
 import path from "node:path";
 
@@ -79,8 +60,10 @@ const RESOURCES_DOCUMENT = "resources";
 export interface ServerlessToSummariesOptions {
   /** Override the logical source file recorded on each summary. */
   source?: string;
-  /** Called once per wiring the reader did not translate. Defaults to
-   * printing a line on stderr. */
+  /**
+   * Called once for each wiring the reader did not translate. Defaults to
+   * printing a line on stderr.
+   */
   onUnread?: (wiring: UnreadWiring) => void;
 }
 
@@ -112,7 +95,10 @@ export function serverlessToSummaries(
   ];
 }
 
-/** The path may be the service file itself or the directory it is in. */
+/**
+ * Reads a service file and returns its summaries. The path may be the
+ * service file itself or the directory it is in.
+ */
 export function serverlessFileToSummaries(
   servicePath: string,
   options: ServerlessToSummariesOptions = {},

@@ -1,28 +1,17 @@
-// translate.ts: a Serverless Framework service, written as the
-// CloudFormation resources it deploys.
-//
-// The framework compiles a serverless.yml into one CloudFormation
-// stack. Each function becomes a Lambda, each event becomes the
-// resource that triggers it, and the `resources:` block is copied in
-// as written. So this reader states the same thing in SAM's shapes and
-// hands them to the CloudFormation reader, rather than growing a
-// second set of summary builders that would drift from it.
-//
-// Two things map onto SAM closely enough to be worth spelling out:
-//
-//   provider.environment is SAM's `Globals.Function.Environment`. Both
-//   supply a default that every function in the document inherits and
-//   that the function's own block overrides, so the provenance a
-//   reader gets back ("globals") is already the right claim: a
-//   variable written once for the whole service says something about
-//   the service.
-//
-//   provider.runtime and the service's code directory are SAM's
-//   `Globals.Function.Runtime` and `CodeUri`.
-//
-// A function's identity is the key it is written under. That key is
-// what a person types when they deploy, invoke, or tail the function,
-// and it is what the framework builds its own logical id out of.
+/**
+ * A Serverless Framework service, rewritten as the CloudFormation
+ * resources it deploys, for the CloudFormation reader to summarize.
+ *
+ * `provider.environment` becomes SAM's `Globals.Function.Environment`.
+ * Both give every function a default that its own block can override,
+ * so an inherited variable gets `globals` provenance, which fits a
+ * variable written once for the whole service. `provider.runtime` and
+ * the service directory become `Globals.Function.Runtime` and `CodeUri`.
+ *
+ * A function's identity is the key it is written under. People type
+ * that key to deploy, invoke or tail the function, and the framework
+ * builds its logical id from it.
+ */
 
 import { EVENT_TRANSLATIONS, type SamEvent } from "./events.js";
 import { createVariableResolver } from "./variables.js";
@@ -36,7 +25,7 @@ import type { ResolvedValue } from "./variables.js";
 
 /** A wiring the document declares that this reader did not translate. */
 export interface UnreadWiring {
-  /** Null for a service-level abstention. */
+  /** Null when the wiring belongs to the whole service. */
   functionName: string | null;
   /** The event kind as the framework spells it, or the block name. */
   kind: string;
@@ -161,9 +150,8 @@ export function translateService(
 }
 
 /**
- * The provider block as a SAM `Globals.Function` section. `CodeUri` is
- * the service root, since `package.individually` goes unread and would
- * narrow it per function.
+ * `CodeUri` is the service root because this reader does not read
+ * `package.individually`, which can narrow it per function.
  */
 function providerGlobals(
   document: ServerlessDocument,

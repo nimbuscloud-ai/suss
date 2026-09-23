@@ -2,14 +2,12 @@
  * @suss/contract-wrangler: behavioral summaries from a Wrangler
  * configuration document.
  *
- * A `wrangler.toml` deploys a working Worker, and before this reader
- * existed suss saw none of it: no deployable unit, no configuration
- * contract, no stores and no queues. `name` and `main` give the unit
- * and the code it runs, `vars` gives the configuration, the three
- * binding blocks give stores, `queues` gives the channels it sends on
- * and drains, and each `env.<name>` deploys the same Worker again with
- * the top-level document as its default. The README says how each half
- * pairs.
+ * `name` and `main` give the deployable unit and the code it runs.
+ * `vars` gives its configuration, the three binding blocks give its
+ * stores, and `queues` gives the channels it sends on and drains. Each
+ * `env.<name>` deploys the same Worker again, with the top-level
+ * document as its default. The README describes how each summary pairs
+ * with the code side.
  */
 
 import path from "node:path";
@@ -55,8 +53,8 @@ export function wranglerToSummaries(
 ): BehavioralSummary[] {
   const summaries: BehavioralSummary[] = [];
   // An environment that overrides no binding block is bound to the same
-  // store, so the second deployment restates a boundary the first one
-  // already declared. Naming each summary once collapses those.
+  // stores as the top level, so its store summaries repeat earlier ones.
+  // Keeping the first summary under each name drops the repeats.
   const named = new Set<string>();
   for (const deployment of environmentDocuments(document)) {
     const context = {
@@ -83,7 +81,10 @@ export function wranglerToSummaries(
   return summaries;
 }
 
-/** The path may be the document itself or the directory the Worker is in. */
+/**
+ * Reads a Wrangler document and returns its summaries. The path may be
+ * the document itself or the directory the Worker is in.
+ */
 export function wranglerFileToSummaries(
   target: string,
   options: WranglerToSummariesOptions = {},
@@ -102,9 +103,8 @@ export function wranglerFileToSummaries(
 }
 
 /**
- * A path as suss writes one: relative to the run, with forward slashes.
- * A file outside the working directory keeps its absolute path, which
- * is unlovely and unique.
+ * A file outside the working directory keeps its absolute path, so two
+ * such files never end up with the same source name.
  */
 function relativeToRun(file: string): string {
   const relative = path.relative(process.cwd(), path.resolve(file));
@@ -115,10 +115,9 @@ function relativeToRun(file: string): string {
 }
 
 /**
- * Where the Worker's code is and which file it enters. `main` is often
- * a bundle a build step writes, and an entry nothing matches leaves the
- * directory in charge, so recording it costs nothing and helps wherever
- * it does point at source.
+ * `main` often points at a bundle a build step writes. An entry that
+ * matches no source file falls back to the directory, so recording it
+ * does no harm when it misses.
  */
 function codeScopeFor(
   document: WranglerDocument,

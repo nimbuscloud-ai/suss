@@ -1,18 +1,16 @@
 /**
- * @suss/client-requests: PythonPack for the calls
- * [requests](https://requests.readthedocs.io/) gives a project for
- * making an HTTP request.
+ * @suss/client-requests: the Python pack for HTTP requests made with
+ * [requests](https://requests.readthedocs.io/).
  *
- * A function that calls one of them is a client of the route it names.
- * The seven verb functions say the method themselves, `request` takes
- * it as its first argument, and a `Session` takes the same calls. See
- * the README for what the pack reads and where it stops.
+ * A function that calls requests becomes a client of the route in the
+ * call. Each of the seven verb functions sends one method, `request`
+ * takes the method as its first argument, and a `Session` has the same
+ * calls. The README lists what the pack reads and where it stops.
  */
 
 import type { PythonPack } from "@suss/adapter-python";
 import type { PackDeclaration } from "@suss/ir-core";
 
-/** The seven functions `requests` exports, and the method each one sends. */
 const VERB_FUNCTIONS: Record<string, string> = {
   get: "GET",
   post: "POST",
@@ -33,9 +31,8 @@ export function requestsClient(): PythonPack {
         type: "clientCall",
         importModule: ["requests"],
         verbAttributeNames: VERB_FUNCTIONS,
-        // Every one of them takes the URL first, and `url=` is the
-        // keyword for all of them but `request`, which takes `url`
-        // second and still calls it that.
+        // The verb functions take the URL first and `request` takes it
+        // second. All of them accept it as `url=`.
         url: { position: 0, keyword: "url" },
         methodCall: {
           attribute: "request",
@@ -44,8 +41,8 @@ export function requestsClient(): PythonPack {
           urlPosition: 1,
         },
         receiverConstructors: ["Session"],
-        // What a caller reads off the response it got back. A test on
-        // one of these says which statuses the caller handles.
+        // A caller's condition on one of these members shows which
+        // statuses it handles.
         response: {
           statusCode: ["status_code"],
           success: ["ok"],
