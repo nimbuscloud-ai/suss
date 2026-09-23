@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { runtimeConfigBinding } from "@suss/ir-core";
 
-import { placeRuntimes } from "./placement.js";
+import { buildModuleGraph } from "./entryClosure.js";
+import { placeDeclared, placeRuntimes } from "./placement.js";
 import {
   contestedFiles,
   readCodeScope,
@@ -310,5 +311,28 @@ describe("placeRuntimes", () => {
     expect(unplaced.map((one) => one.runtime.identity.name)).toEqual([
       "Confirm",
     ]);
+  });
+});
+
+describe("placeDeclared", () => {
+  it("places a queue consumer through the handler entry it states", () => {
+    const declared = runtime({ name: "Worker", scope: "", entry: "src/work" });
+    const consumer: BehavioralSummary = {
+      ...declared,
+      kind: "consumer",
+      identity: { ...declared.identity, boundaryBinding: null },
+    };
+    const graph = buildModuleGraph([
+      importing("src/work.ts", ["src/shared/log.ts"]),
+      importing("src/shared/log.ts", []),
+      importing("scripts/backfill.ts", []),
+    ]);
+
+    const scope = placeDeclared(consumer, graph);
+    expect([...(scope?.closure ?? [])].sort()).toEqual([
+      "src/shared/log.ts",
+      "src/work.ts",
+    ]);
+    expect(scope?.unit).toEqual(lambda("Worker"));
   });
 });

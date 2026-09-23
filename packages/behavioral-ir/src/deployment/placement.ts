@@ -19,6 +19,7 @@ import { buildModuleGraph, entryClosure } from "./entryClosure.js";
 import { readCodeScope } from "./unitScope.js";
 
 import type { BehavioralSummary, BoundaryBinding } from "../index.js";
+import type { ModuleGraph } from "./entryClosure.js";
 import type { UnitScope } from "./unitScope.js";
 
 /** A runtime and the answer to "which code runs in it". */
@@ -43,12 +44,14 @@ export function isRuntimeConfigProvider(summary: BehavioralSummary): boolean {
 }
 
 /**
- * Place every runtime-config provider in the set. A runtime whose entry
- * matches a file in the module graph gets that entry's import closure,
- * which decides membership instead of the directory.
+ * Place every runtime-config provider in the set. A caller that places
+ * other declared summaries too passes the graph it built, so the
+ * summaries are walked once.
  */
-export function placeRuntimes(summaries: BehavioralSummary[]): Placement {
-  const graph = buildModuleGraph(summaries);
+export function placeRuntimes(
+  summaries: BehavioralSummary[],
+  graph: ModuleGraph = buildModuleGraph(summaries),
+): Placement {
   const placed: PlacedRuntime[] = [];
   const unplaced: Placement["unplaced"] = [];
 
@@ -60,27 +63,40 @@ export function placeRuntimes(summaries: BehavioralSummary[]): Placement {
       continue;
     }
     /* v8 ignore stop */
-    const codeScope = readCodeScope(runtime);
-    const closure =
-      codeScope.entry !== undefined
-        ? entryClosure(codeScope.entry, graph)
-        : null;
-    // Falling back to the directory needs one to have been stated.
-    if (closure === null && codeScope.path === undefined) {
+    const scope = placeDeclared(runtime, graph);
+    if (scope === null) {
       unplaced.push({ runtime, binding });
       continue;
     }
 
-    placed.push({
-      runtime,
-      binding,
-      scope: {
-        unit: runtime.identity.deployableUnit,
-        ...(codeScope.path !== undefined ? { codeScope: codeScope.path } : {}),
-        ...(closure !== null ? { closure } : {}),
-      },
-    });
+    placed.push({ runtime, binding, scope });
   }
 
   return { placed, unplaced };
+}
+
+/**
+ * Which code runs in the unit a declared summary describes, from the
+ * code scope it states. An entry that matches a file in the module
+ * graph gives that entry's import closure, which decides membership
+ * instead of the directory. Null when the summary states neither a
+ * matching entry nor a directory.
+ */
+export function placeDeclared(
+  summary: BehavioralSummary,
+  graph: ModuleGraph,
+): UnitScope | null {
+  const codeScope = readCodeScope(summary);
+  const closure =
+    codeScope.entry !== undefined ? entryClosure(codeScope.entry, graph) : null;
+  // Falling back to the directory needs one to have been stated.
+  if (closure === null && codeScope.path === undefined) {
+    return null;
+  }
+
+  return {
+    unit: summary.identity.deployableUnit,
+    ...(codeScope.path !== undefined ? { codeScope: codeScope.path } : {}),
+    ...(closure !== null ? { closure } : {}),
+  };
 }

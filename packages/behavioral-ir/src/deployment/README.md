@@ -88,6 +88,9 @@ not tell.
 - `deployedRefs.ts:deployedRefs` reads the references channel.
 - `placement.ts:placeRuntimes` pairs each runtime-config provider with the code
   it runs, and reports the ones that said nothing about where their code is.
+  `placeDeclared` does the same for one declared summary, so a queue consumer,
+  which states the same code scope as the function it runs on, is placed by
+  its handler entry the way that function is.
 - `unitScope.ts:runsIn` is the predicate the pairing passes call. The directory
   is the path itself rather than a test over it, so two passes cannot disagree
   about what counts as inside; `fileInCodeScope` in `@suss/ir-core` owns that
