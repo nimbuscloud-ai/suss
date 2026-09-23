@@ -1,6 +1,6 @@
 # Adapter owns the ECMAScript spec: design proposal
 
-Two related changes to the TypeScript adapter, so that it understands language-level scope and how Promise values flow without every runtime pack having to redeclare them. They close the recognizer scope-isolation gap, and they let a consumer follow a value across several hops through `.then` chains. Runtime packs no longer have to walk bodies around expressions that only create a scope; the adapter does that on its own.
+This proposes two related changes to the TypeScript adapter. The adapter handles language-level scope and follows Promise values itself, so a runtime pack no longer has to redeclare either. The changes close the recognizer scope-isolation gap, and a consumer can then follow a value across several hops through `.then` chains. Runtime packs stop walking bodies around expressions that only create a scope, because the adapter walks them.
 
 ## Why this exists
 
@@ -17,9 +17,9 @@ never gets the `fetch` recognizer to fire on the call inside the `.then` callbac
 Two costs:
 
 1. Every runtime pack reinvents the same descent logic. Adding Bun, Deno, Cloudflare Workers, or a browser runtime means redeclaring the same language primitives (`setTimeout`, `setInterval`, `Promise.then`, and so on) when none of them are runtime behaviors. They're ECMAScript.
-2. Promise chains are unbound. Even after walking inside `.then(cb)`, the analyzer doesn't know that `cb`'s parameter is the resolved value of the upstream expression. So `fetch(url).then(r => r.json()).then(data => use(data))` leaves `data` opaque, and consumer packs (e.g. `client-web` reasoning about `.json()` shapes) can't pair the parsed body against a contract.
+2. Promise chains are unbound. Even after walking inside `.then(cb)`, the analyzer has no record that `cb`'s parameter is the resolved value of the upstream expression. So `fetch(url).then(r => r.json()).then(data => use(data))` leaves `data` opaque, and consumer packs (e.g. `client-web` reasoning about `.json()` shapes) can't pair the parsed body against a contract.
 
-Both fall on the adapter, not on packs, because both are language-level. ECMAScript defines what a nested function expression is and what `Promise.then` resolves to. Runtime packs should only own runtime-specific behavior: timer semantics, the `process` surface, module loading.
+Both belong in the adapter because both are language-level. ECMAScript defines what a nested function expression is and what `Promise.then` resolves to. A runtime pack should only declare behavior specific to its runtime, such as timer semantics, the `process` surface and module loading.
 
 We hit this when dogfooding `runtime-node` against Twenty, where the recognizer scope-isolation gap surfaced, and again when drafting `docs/guides/check-against-openapi.md`: the `.then(res => res.json()).then(data => setName(data.name))` chain produced no findings against the OpenAPI contract.
 
@@ -48,11 +48,11 @@ Sub-units stay explicit. `framework-react`'s `useEffect` callbacks remain sub-un
 
 When the adapter sees `expr.then(cb)` where `cb` is a function expression, the first parameter of `cb` binds to the resolved value of `expr`.
 
-The TypeScript checker already knows the resolved type: `Promise<Response>` for `fetch(url)`, `Promise<unknown>` for generic Promise. The new piece is a symbol-table annotation: the parameter symbol gets `derivedFrom: { kind: "promise.then", upstream: SymbolRef }`. Recognizers that resolve a parameter's value follow this link and find the upstream expression's value.
+The TypeScript checker already computes the resolved type: `Promise<Response>` for `fetch(url)`, `Promise<unknown>` for generic Promise. The new piece is a symbol-table annotation: the parameter symbol gets `derivedFrom: { kind: "promise.then", upstream: SymbolRef }`. Recognizers that resolve a parameter's value follow this link and find the upstream expression's value.
 
 `.catch(cb)` binds the parameter to the rejected value (typically opaque). `.finally(cb)` has no parameter binding.
 
-This is what lets a consumer follow a value across several hops:
+With the binding, a consumer can follow a value across several hops:
 
 ```ts
 fetch("/users/" + id)
@@ -76,7 +76,7 @@ After this lands, `client-web`'s existing `responseSemantics` for `.json()` flow
 
 Today's walker (around `packages/adapter/typescript/src/walkers/`) treats every `FunctionExpression` and `ArrowFunctionExpression` as a hard stop. The change is that it descends through them by default, and the only reason to stop is a sub-unit boundary a pack declared.
 
-The mechanism is structural. There's no opt-in for packs to declare "yes I want my recognizer to fire inside callbacks": every recognizer fires everywhere by default. The opt-out is a sub-unit declaration: if a pack declares a callback as a sub-unit, recognizers still fire there, but with the sub-unit's identity rather than the parent's.
+A pack does not opt in to having its recognizer fire inside callbacks. Every recognizer fires everywhere by default. A pack opts out by declaring a callback as a sub-unit. Recognizers still fire inside that callback, and what they find attaches to the sub-unit instead of the parent.
 
 ### Promise binding
 
@@ -91,12 +91,12 @@ The existing parameter-value resolver follows `derivedFrom` when it is there, an
 
 `nodeSchedulingSubUnits` (in `packages/runtime/node/src/scheduling.ts`) loses its body-walking responsibility. The pack continues to declare which callbacks are sub-units (scheduling callbacks remain units of record); the walker handles descent.
 
-In concrete terms, the declaration keeps its shape. We delete the body-walking helper the pack calls internally, because the adapter is already walking.
+The declaration itself does not change. We delete the body-walking helper the pack calls internally, because the adapter already walks those bodies.
 
 ## Confidence
 
-- **Walker descent** has no confidence axis. It's structural: recognizers fire or don't based on syntactic presence.
-- **Promise binding** inherits confidence from the upstream expression. `Promise.resolve(literal).then(cb)` resolves to the literal (high). `fetch(url).then(r => r.json())` resolves `r` to `Response` (high; the TypeScript checker knows). `someOpaqueFn().then(cb)` resolves to opaque (low).
+- **Walker descent** has no confidence level. A recognizer fires when the syntax is there and does not fire when it is absent.
+- **Promise binding** takes its confidence from the upstream expression. `Promise.resolve(literal).then(cb)` resolves to the literal (high). `fetch(url).then(r => r.json())` resolves `r` to `Response` (high, because the TypeScript checker has the type). `someOpaqueFn().then(cb)` resolves to opaque (low).
 
 Recognizers already handle opacity. The new annotation either gives them a resolved upstream value or it doesn't, and they degrade the way they would for any other unresolved expression.
 
@@ -148,19 +148,19 @@ Total: ~4 days, single pass.
 - This ships before we re-test the pair-frontend-backend tutorial. The tutorial depends on the `.then` chain producing field-level findings.
 - It is independent of #45 (the env-var recognizer merge into `runtime-node`, since landed) and #47 (`excludeCallReturns` fix), and it can ship in any order.
 - It is independent of #48 (URL inputs for contract reader).
-- It connects to the broader project direction: the PRD / intent generative-doc arc depends on field-level findings being trustworthy on consumer code, which this change enables.
+- It feeds the longer plan to generate PRD and intent documents. That plan needs field-level findings on consumer code that people can trust, and this change produces them.
 
 ## Decision log (as shipped)
 
-Walker descent shipped complete, including class-method bodies. Promise `.then` binding shipped at the parameter-value resolver. What is explicitly left over is the consumer field-access flow that unblocks the tutorial end to end.
+Walker descent shipped complete, including class-method bodies. Promise `.then` binding shipped in the parameter-value resolver. The part explicitly left over is the consumer field-access flow that unblocks the tutorial end to end.
 
-Structural knowledge landed in the adapter (`packages/adapter/typescript/src/walk/descent.ts`); no runtime or framework pack gained language-specific logic.
+The descent logic went into the adapter (`packages/adapter/typescript/src/walk/descent.ts`). No runtime or framework pack gained language-specific logic.
 
 - **D1: descent scope is function expressions and arrows only.** The body walkers descend through nested `FunctionExpression` / `ArrowFunction` (Promise executors, `.then` / `.catch` / `.finally` callbacks, `forEach` / `map` bodies, IIFEs). Nested `FunctionDeclaration` / `MethodDeclaration` remain hard stops: they are named units of record reached through discovery or the reachable-closure pass, and descending into them would double-attribute their behavior. This matches the proposal's wording ("Any `FunctionExpression` or `ArrowFunctionExpression`").
 
 - **D2: sub-unit boundaries are the only opt-out, computed from the discovering pack.** A single helper, `isDescentStop(node, func, barriers)`, puts the rule in one place; `barriers` is the set of nested functions that the discovering pack's `subUnits` hook claims. `extractFromSourceFile` computes the barriers by calling the same hook `synthesizeSubUnits` runs later, so the barrier set is exactly the functions that become sub-units. Without it, descent would attribute the calls in a React handler or a `useEffect` body to the component *and* to the handler or effect summary. Packs do not change: the adapter reads the `subUnits` declaration they already have.
 
-- **D3: terminal descent is gated to escaping outputs.** The proposal frames descent around recognizers and effects (position-independent behavior). Terminal discovery descends too, but inside a nested function we only match the terminal kinds whose observable output leaves through a channel the unit owns. Today that is `parameterMethodCall`, a `res.json(...)` on the unit's own `res` parameter. Terminals that produce a value (`return`, a returned object shape, a JSX render) stay scoped to the nearest enclosing function, because a `return` inside a `.then` callback produces the callback's value rather than the unit's. We left `throwExpression` and `functionCall` scoped to be safe, since a throw in an async callback does not escape to the unit; revisit them if a concrete case needs them.
+- **D3: terminal descent is gated to escaping outputs.** The proposal frames descent around recognizers and effects (position-independent behavior). Terminal discovery descends too, but inside a nested function we only match the terminal kinds whose observable output leaves through a channel the unit owns. Today that is `parameterMethodCall`, a `res.json(...)` on the unit's own `res` parameter. Terminals that produce a value (`return`, a returned object shape, a JSX render) stay scoped to the nearest enclosing function, because a `return` inside a `.then` callback produces the callback's value and the unit never returns it. We left `throwExpression` and `functionCall` scoped to be safe, since a throw in an async callback does not escape to the unit; revisit them if a concrete case needs them.
 
 - **D4: class-method bodies descend exactly like function bodies.** `func` (the unit root) is never a descent stop, whether it is a `FunctionDeclaration`, arrow, or `MethodDeclaration`. The walker walks the body of a class method that is the discovered unit, and it descends into a nested arrow inside it (say a `.then` callback producing `res.json(...)`) and finds its terminal. Regression fixture (c) covers this.
 

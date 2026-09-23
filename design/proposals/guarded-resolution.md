@@ -7,16 +7,15 @@ Status: draft, seeking alignment. Nothing implemented.
 When the rules reach two different functions for one value, the store
 returns nothing, since picking one would make the answer depend on the
 order facts arrived in. That policy is right when the ambiguity is
-inherent and wrong for a choice the code spells out:
+inherent. It is wrong when the code spells out the choice:
 
 ```ts
 export const handler = flag ? handlerA : handlerB;
 ```
 
-The code says the value is both functions, and says which one applies
-when. Today it resolves
-to nothing, so a handler behind a feature flag disappears from the
-summaries entirely.
+The value is one of two functions, and the code shows which one applies
+when. Today it resolves to nothing, so a handler behind a feature flag
+disappears from the summaries entirely.
 
 ## The change
 
@@ -42,8 +41,9 @@ still gets null from it.
 
 Nothing that resolves today can regress, because a ternary already
 dead-ends in extraction. The new fact adds answers where there were
-none. There is no guard column on `comesTo`, no `and`, no guard
-algebra, and no change to `@suss/datalog`.
+none. The change stays small: `comesTo` keeps its columns, the rules
+need neither `and` nor a guard algebra, and `@suss/datalog` does not
+change.
 
 Discovery uses the alternatives for the feature-flag case. It makes one
 unit per alternative, and the condition joins that unit's conditions the
@@ -56,11 +56,11 @@ way a branch condition already does.
   framework-rules proposal covers that case with `serves(U, M)` and
   method sets.
 - **The config-object factory.** "Which property gives the value" is a
-  pack judgment, not a condition in the code. When a pack says which
-  property to use, that is the same kind of statement as
-  `transparentWrappers` saying which argument to look through, and the
-  resolution rules README records it.
-- **Reassignment.** `let h = a; if (c) h = b;` drags in statement
+  judgment the pack makes, and the code has no condition that says it.
+  When a pack declares which property to use, that is the same kind of
+  declaration as `transparentWrappers` listing which argument to look
+  through, and the resolution rules README documents it.
+- **Reassignment.** `let h = a; if (c) h = b;` brings in statement
   ordering, and the initializer form covers the production cases seen
   so far.
 
@@ -68,8 +68,8 @@ way a branch condition already does.
 
 The backlog entry on provenance ({#datalog-provenance}) describes an
 engine that keeps a record of what supports every derived fact. Full
-provenance would subsume this: a store that knows why it believes a
-resolution could work out the alternatives from the support graph. This
+provenance would cover this case too: a store that records the support
+for each resolution could work out the alternatives from the support graph. This
 proposal does not foreclose that. `chooses` is an extraction fact
 either way, and `choosesResolved` would become one query over the
 support graph instead of its own rule.

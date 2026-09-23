@@ -21,16 +21,16 @@ export default function Page() {
 ```
 
 Today's discovery finds `UserCard` and `Page` (both exported, PascalCase,
-JSX-returning) and misses `Avatar` (never exported). It also learns
-nothing about who renders whom: `UserCard`, `Avatar`, and `Page` come
-out as three unrelated units, even though the whole point of a component
-boundary is that `Page` passes props into `UserCard` and `UserCard` may
-read props `Page` never passes.
+JSX-returning) and misses `Avatar` (never exported). It also records
+nothing about which component renders which. `UserCard`, `Avatar`, and
+`Page` come out as three unrelated units. But the reason to treat a
+component as a boundary is that `Page` passes props into `UserCard`, and
+`UserCard` may read props `Page` never passes.
 
-Export-based discovery answers "which functions look like components".
-It cannot answer "what does this app render, and how do components pass
-data to each other". The second question is the React cross-boundary
-story, and it needs a different discovery strategy.
+Export-based discovery tells you which functions look like components.
+It cannot tell you what the app renders or how components pass data to
+each other. suss needs that second answer to check React boundaries,
+and getting it takes a different discovery strategy.
 
 ## Two strategies, and why we want both
 
@@ -54,11 +54,12 @@ what it renders:
 Root-walk catches non-exported components, and it produces the render
 edges that let the checker compare props a parent passes against props a
 child reads. It also visits only reachable code instead of every file's
-exports, so on a large app it does less work, not more.
+exports, so on a large app it does less work.
 
-Neither strategy dominates. The export heuristic finds a component
-library's exports that no local root renders. Root-walk finds the
-wired-up tree and the non-exported pieces. A production app wants both, deduplicated.
+Neither strategy covers the other. The export heuristic finds a
+component library's exports that no local root renders. Root-walk finds
+the wired-up tree and the non-exported pieces. A production app needs
+both, with duplicates removed.
 
 ## The design: discovery modes as a composable list
 
@@ -89,8 +90,8 @@ framework needs instead of inheriting one baked-in arrangement. The
 React pack becomes `[default-export, export-heuristic, root-walk]`, and
 a stricter pack could be `[root-walk]` alone.
 
-The dedup key is declaration identity, not name, so a component found by
-both the heuristic (because it is exported) and the walk (because a root
+The dedup key is declaration identity, and the name plays no part, so a
+component found by both the heuristic (because it is exported) and the walk (because a root
 renders it) collapses to one unit that has the render edges from the
 walk.
 
@@ -104,8 +105,8 @@ from seed functions, project-wide, over shared datalog `entry` /
 `calls` / `reachable` facts, and it took an `extraRoots` seam so a
 recognizer-only pack's exports could feed it (#647).
 
-Root-walk should be this closure with two additions, never a second
-walker:
+Root-walk should be this closure with two additions. It should not be a
+second walker.
 
 - **Roots feed `extraRoots`.** A pack-declared root pattern
   (`createRoot(el).render(<App/>)`, `hydrateRoot`, a route element)
@@ -125,21 +126,22 @@ This answers open question 1: the closure already runs after per-file
 discovery, project-scoped, so the mode list only distinguishes
 file-scoped modes from "seeds for the closure", and the adapter
 schedules nothing new. It also shrinks step 2 of the build order from
-"build the walk" to "teach the walk JSX edges and root seeds".
+"build the walk" to "add JSX edges and root seeds to the walk".
 
 ## What root-walk needs from the adapter
 
 - **Root recognition.** A small set of patterns for the boot calls and
-  route elements. These are pack-declared (React knows `createRoot`;
-  Vue knows `createApp(...).mount`), so the vocabulary stays in the
-  pack, not the adapter. The adapter provides the JSX-reference walk and
-  the reference resolution, and the pack says what a root looks like.
+  route elements. Packs declare these (the React pack declares
+  `createRoot`, and a Vue pack would declare `createApp(...).mount`), so
+  the vocabulary stays in the pack. The adapter provides the
+  JSX-reference walk and the reference resolution, and the pack declares
+  what a root looks like.
 - **Reference resolution.** Given a JSX element `<UserCard .../>`,
   resolve `UserCard` to its declaration. Three cases: a local function,
   an imported binding (follow the import), and a variable bound to a
   component (the adapter's existing binding resolution, `subjects.ts`).
   A reference that resolves to none of these is recorded as an unresolved
-  render edge with a reason, never dropped.
+  render edge with a reason. It is not dropped.
 - **Render edges.** For each child it renders, the parent unit gains an
   edge with the child's identity and the props expression passed at the
   call site on it. That edge is where the props-passed side of the
@@ -152,7 +154,7 @@ schedules nothing new. It also shrinks step 2 of the build order from
 
 1. **Discovery-mode composition** in the pack interface. Refactor the
    two existing React discovery paths into named modes behind one list.
-   No behavior change, and this is the seam root-walk plugs into.
+   Behavior does not change, and root-walk plugs into this seam.
 2. **Root recognition and the reference walk.** Emit non-exported
    components reachable from a root. We measure this against an actual
    app: how many components does root-walk add over the heuristic, and
@@ -166,13 +168,13 @@ schedules nothing new. It also shrinks step 2 of the build order from
    the parent's attrs and the child's summary join. The check itself
    has to clear the bar the story check set: TypeScript already rejects
    a missing required prop and an unknown extra one at compile time, so
-   findings there are noise. What TypeScript does not give:
+   findings there are noise. TypeScript does not catch three things:
    a prop the child declares and never reads (a dead contract field,
    which needs prop-read collection, the `collectClientFieldAccesses`
    analog); a pair whose two sides were extracted separately, the way a
    design-system package is consumed from another repo; and the
    form-to-API hop, where the attrs on a form element meet an HTTP
-   contract rather than a component. Those three are the build order
+   contract instead of a component. Those three are the build order
    within this step.
 
    The original sketch: A new checker pass: the
@@ -182,32 +184,32 @@ schedules nothing new. It also shrinks step 2 of the build order from
    Collecting those into the set of props the child actually consumes is
    part of this step, the same kind of work `collectClientFieldAccesses`
    does for HTTP consumers. This is the React analogue of
-   provider/consumer status coverage, and it is the reason root-walk is
-   worth building.
+   provider/consumer status coverage, and it is why we want root-walk at
+   all.
 
 Steps 1 through 3 are discovery and IR. Step 4 is the payoff and can
 follow once edges are reliable.
 
 ## Guardrails
 
-- **Modes compose, they do not replace.** Adding root-walk must not drop
-  a component the export heuristic finds. The union-and-dedup is the
+- **Modes add to each other.** Adding root-walk must not drop a
+  component the export heuristic finds. The union-and-dedup is the
   contract.
 - **Unresolved is a value.** A JSX reference the walk cannot resolve
-  (dynamic component, HOC, a component chosen by a runtime map) becomes
-  an unresolved render edge with a reason. The tree says where it stopped
-  seeing, and it never silently prunes a branch.
+  (a dynamic component, or a component chosen by a runtime map) becomes
+  an unresolved render edge with a reason. The tree shows where the walk
+  stopped, and the walk does not silently prune a branch.
 - **Root vocabulary stays in the pack.** The adapter walks and resolves.
-  What counts as a render root is React's knowledge, expressed as
-  pack-declared patterns, so a framework's death takes only its pack.
+  The React pack declares what counts as a render root, as patterns, so
+  if the framework dies, only its pack goes with it.
 - **No new authoring surface.** Discovery is extraction. Users write no
   markers to be found.
 
-## Beyond discovery: the joins that make the tree worth having
+## Beyond discovery: joins from the render tree
 
-The render tree and props checking are one of the questions a frontend
-team would ask of this tool. Walking the rest of the question space
-surfaced four more, each a join from the render tree to a boundary suss
+The render tree and props checking answer one of the questions a
+frontend team would ask of this tool. Going through the other questions
+turned up four more, each a join from the render tree to a boundary suss
 already reads. Agreed 2026-08-28, in this order.
 
 **1. Data-fetching hooks (build first).** The client packs read raw
@@ -218,17 +220,17 @@ up as a consumer today, so "which component reads GET /orders" comes
 back empty on the apps most teams have. The HTTP call itself lives in
 the query function and the fetch pack already reads it; what is
 missing is the attribution of that call to the component through the
-hook. The hook is pack-declared scheduling: the pack says `queryFn`
-runs, and the walk carries the component through it. Per-library
+hook. The pack declares that the hook runs `queryFn`, as scheduling,
+and the walk attributes the call inside it to the component. This is per-library
 config over existing primitives, the same conclusion the GraphQL
 client work reached.
 
 **2. Next.js server actions.** A `"use server"` function called from a
 button is an RPC crossing with no visible HTTP: the types make it look
 like a local call, and nothing in the file says what it writes. The
-nextjs pack reads route handlers and pages but not actions. The most
-suss-shaped gap of the four, a boundary crossing the source hides, and
-App Router apps are where new frontend code is written.
+nextjs pack reads route handlers and pages but not actions. Of the four,
+this gap fits suss best: the source hides a boundary crossing, and App
+Router apps are where new frontend code is written.
 
 **3. Client state stores.** "What reads this Zustand or Redux slice"
 is the reads/writes question suss already answers for DynamoDB,
@@ -238,13 +240,13 @@ makes the answers navigable by component.
 
 **4. Form-to-API field checking.** The fields a form submits against
 the fields the endpoint reads: a provider/consumer pair joining the
-render IR to the HTTP contracts that already exist. The cheapest
+render IR to the HTTP contracts that already exist. It is the cheapest
 striking demo ("this form submits `phone` and the API drops it"), and
 it waits only on render edges.
 
-The thread through all four: frontend value is the join from UI to the
-boundaries suss already reads, extending the flow story one hop into
-the browser. Stores and forms follow once render edges land.
+All four join the UI to boundaries suss already reads, so a flow reaches
+one hop further, into the browser. Stores and forms follow once
+render edges land.
 
 ## Open questions for alignment
 
@@ -268,5 +270,5 @@ the browser. Stores and forms follow once render edges land.
    single-hop import plus single const binding covers the common case.
    HOCs, component maps, and `React.lazy` are the unresolved tail.
    Proposal: v1 resolves the three common cases, records the tail as
-   unresolved edges, and revisits once production-app numbers show which tail
-   cases are worth chasing.
+   unresolved edges, and revisits once production-app numbers show which
+   tail cases we should chase.
