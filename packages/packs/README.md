@@ -8,24 +8,23 @@ Every pack suss ships, as one package with a subpath per pack.
 npm install --save-dev @suss/packs
 ```
 
-A pack is reached by its own subpath, which is the name `suss extract -f`
-takes:
+Each pack has its own subpath, and the subpath is the name that
+`suss extract -f` takes:
 
 ```ts
 import mongoose from "@suss/packs/mongoose";
 import express from "@suss/packs/express";
 ```
 
-The CLI resolves `-f mongoose` to `@suss/packs/mongoose` on its own, so
-running `suss` needs no import.
+The CLI resolves `-f mongoose` to `@suss/packs/mongoose` itself, so you
+do not need an import to run `suss`.
 
 ## Why one package
 
-npm exchanges a publishing credential against a trusted publisher that
-each package configures for itself, by hand, on npmjs.com. One package
-means that happens once rather than once per pack, so adding a pack is a
-directory and a line in the exports map.
+npm issues a publishing credential through a trusted publisher, and each
+package has to configure its trusted publisher by hand on npmjs.com.
+With one package that setup happens once for every pack. Adding a pack
+takes a directory and a line in the exports map.
 
-The packs have no dependencies outside `@suss/*`, and all of them
-together come to about 1.2 MB, so there is nothing to save by splitting
-them up.
+The packs have no dependencies outside `@suss/*`, and together they come
+to about 1.2 MB, so splitting them up would save nothing.

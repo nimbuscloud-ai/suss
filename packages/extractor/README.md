@@ -2,11 +2,11 @@
 
 Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and says where the two disagree.
 
-Assembly engine that turns raw language-adapter output into a `BehavioralSummary`.
+The assembly engine that turns raw language-adapter output into a `BehavioralSummary`.
 
 ## What this package is
 
-`@suss/extractor` is the core assembly layer of the suss pipeline. Language adapters (such as `@suss/adapter-typescript`) parse source code and produce a `RawCodeStructure`, a normalized, adapter-specific intermediate form. The extractor's `assembleSummary` function converts that structure into the final `BehavioralSummary` IR, handling condition polarity, terminal mapping, gap detection, confidence assessment, and `expectedInput` pass-through for client field tracking. It also exports the `RawCodeStructure` type, the `PatternPack` interface, and all related raw types so adapters can share a common contract.
+`@suss/extractor` is the core assembly layer of the suss pipeline. Language adapters such as `@suss/adapter-typescript` parse source code and produce a `RawCodeStructure`, a normalized intermediate form that each adapter fills in its own way. The extractor's `assembleSummary` function converts that structure into the final `BehavioralSummary` IR. Along the way it handles condition polarity, terminal mapping, gap detection and confidence assessment, and passes `expectedInput` through for client field tracking. The package also exports the `RawCodeStructure` type, the `PatternPack` interface, and the related raw types, so every adapter shares one contract.
 
 ## Where it fits in suss
 
@@ -14,7 +14,7 @@ It imports `@suss/behavioral-ir` for the IR types it produces. `@suss/adapter-ty
 
 ## Status
 
-Stable. `assembleSummary`, `detectGaps`, and `assessConfidence` are the public API. The `RawCodeStructure` and `PatternPack` interfaces are the contract that language adapters and framework packs implement against.
+Stable. `assembleSummary`, `detectGaps`, and `assessConfidence` are the public API. Language adapters and framework packs implement against the `RawCodeStructure` and `PatternPack` interfaces.
 
 ## Minimal usage
 

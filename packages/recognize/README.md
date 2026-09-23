@@ -2,10 +2,10 @@
 
 Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and says where the two disagree.
 
-Write a pack as data. A pack states where a match starts, which methods
-count, and what each one reads or writes; this package compiles that
-into the recognizer hooks the adapters already call, and any adapter
-that implements the executor ops can run it.
+Write a pack as data. A pack declares where a match starts, which
+methods count, and what each one reads or writes. This package compiles
+that declaration into the recognizer hooks the adapters already call,
+and any adapter that implements the executor ops can run it.
 
 ```ts
 import { declaredBy, pack, storageCalls } from "@suss/recognize";
@@ -29,9 +29,9 @@ export default pack("redis", [calls], {
 });
 ```
 
-Nothing here imports a syntax tree, so the same declaration drives the
-TypeScript adapter today and the Python and Ruby adapters once they
-implement the ops.
+This package never imports a syntax tree. The same declaration runs on
+the TypeScript adapter today, and will run on the Python and Ruby
+adapters once they implement the ops.
 
 ## More
 

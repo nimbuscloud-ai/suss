@@ -1,27 +1,27 @@
 # bootstrap/
 
-Bootstrap sets up the ts-morph `Project` lazily, gates which files get parsed, and provides O(1) lookup for later passes that need to find a source file by path or path suffix.
+Bootstrap sets up the ts-morph `Project` lazily and decides which files get parsed. It also gives later passes an O(1) lookup for finding a source file by path or path suffix.
 
 ## Place in the pipeline
 
-Bootstrap runs once at the start of an extraction. Before discovery dispatches, the cache layer checks whether the run can be served from a previous extraction's manifest. If not, bootstrap creates the `Project`, computes which files are candidates for each pack via `requiresImport` gates, and pre-parses the candidates. Discovery then runs against those parsed files; later passes (reachable-closure, rethrow enrichment) lazy-add additional files via `lazyAddSourceFile` and find them again via the source-file lookup.
+Bootstrap runs once at the start of an extraction. Before discovery dispatches, the cache layer checks whether a previous extraction's manifest can serve the run. If it can't, bootstrap creates the `Project`, uses each pack's `requiresImport` gate to work out which files are candidates for it, and pre-parses the candidates. Discovery then runs against those parsed files. Later passes, such as the reachable closure and rethrow enrichment, add more files on demand through `lazyAddSourceFile` and find them again through the source-file lookup.
 
 ## Key files
 
-- `lazyProjectInit.ts:createLazyProject` — builds the `Project` and the `projectFileSet` the closure pass needs to know what's "in" the project vs. node_modules.
-- `lazyProjectInit.ts:lazyAddSourceFile` — on-demand file addition. It always calls `addSourceFileAtPath` even when `getSourceFile` succeeds, because type-checker symbol resolution surfaces files that aren't in `project.getSourceFiles()` until you re-add them.
-- `bootstrap/preFilter.ts:computePackApplicability` — per-file dispatch gate based on import declarations. `requiresImport: []` means "ungated" (every file). Sub-path imports match by prefix.
-- `bootstrap/sourceFileLookup.ts:createSourceFileLookup` — exact-path and `bySuffix` lookup. The suffix path scans the cached file list (linear in file count, not tree depth).
+- `lazyProjectInit.ts:createLazyProject` builds the `Project`, plus the `projectFileSet` that the closure pass uses to tell files "in" the project from files in node_modules.
+- `lazyProjectInit.ts:lazyAddSourceFile` adds a file on demand. It always calls `addSourceFileAtPath`, even when `getSourceFile` succeeds, because type-checker symbol resolution can surface files that `project.getSourceFiles()` does not list until they are added again.
+- `bootstrap/preFilter.ts:computePackApplicability` is the per-file dispatch gate, based on import declarations. `requiresImport: []` means "ungated", so every file qualifies. Sub-path imports match by prefix.
+- `bootstrap/sourceFileLookup.ts:createSourceFileLookup` provides exact-path and `bySuffix` lookup. The suffix lookup scans the cached file list, so its cost grows with the number of files and not with tree depth.
 
-## Non-obvious things
+## Gotchas
 
-- **Order matters.** The cache layer reads the tsconfig file list (via `readTsconfigFileList`, which doesn't parse) BEFORE pack applicability runs. That feeds the cache key. Bootstrap's `Project` construction happens AFTER the cache check decides extraction is needed.
-- **`requiresImport: []` vs. `undefined`.** Both mean "ungated," but the empty array is the explicit "I considered this and decided every file" signal. Recognizer-only packs without discovery patterns rely on this — without a gate they walk every file, which is correct but slow on large monorepos.
-- **`lazyAddSourceFile` is idempotent and re-adds.** ts-morph's `getSourceFile` returns the parsed file if present, but the type checker can hold references to symbols in files that aren't in the current `Project` view. Re-calling `addSourceFileAtPath` is safe and ensures the file's available for symbol resolution during closure walks.
-- **`bySuffix` lookup is O(N) in file count.** For the rethrow-enrichment pass, that's fine — it runs once per summary and the file count is bounded by the project. For higher-frequency lookups, prefer exact-path.
+- **Order matters.** The cache layer reads the tsconfig file list (via `readTsconfigFileList`, which doesn't parse) BEFORE pack applicability runs, and that list feeds the cache key. Bootstrap builds the `Project` only AFTER the cache check decides an extraction is needed.
+- **`requiresImport: []` vs. `undefined`.** Both mean "ungated". The empty array is the explicit form: the pack author considered the gate and chose every file. Recognizer-only packs without discovery patterns rely on this. Without a gate they walk every file, which gives the right result but is slow on large monorepos.
+- **`lazyAddSourceFile` is idempotent and adds the file again.** ts-morph's `getSourceFile` returns the parsed file if it is present, but the type checker can refer to symbols in files that the current `Project` view does not include. Calling `addSourceFileAtPath` again is safe, and it makes sure the file is available for symbol resolution during closure walks.
+- **`bySuffix` lookup is O(N) in file count.** That cost is acceptable for the rethrow-enrichment pass, which runs once per summary over a file count the project bounds. For lookups that run more often, use the exact path.
 
 ## Sibling modules
 
 - `discovery/` consumes the loaded files and the per-pack applicability map.
-- `resolve/reachableClosure.ts` calls `lazyAddSourceFile` to bring in callees that the discovery pass didn't pre-parse.
+- `resolve/reachableClosure.ts` calls `lazyAddSourceFile` to load callees that the discovery pass didn't pre-parse.
 - `resolve/rethrowEnrichment.ts` uses `createSourceFileLookup` to locate summaries by their file path.
