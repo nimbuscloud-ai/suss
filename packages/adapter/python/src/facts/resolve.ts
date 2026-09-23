@@ -6,6 +6,7 @@ import {
   allocationSitesOf,
   askResolution,
   askResolutionUnder,
+  declaredTypesOf,
   writtenValueOf as sharedWrittenValueOf,
   writtenValuesOf as sharedWrittenValuesOf,
   writtenValueUnder as sharedWrittenValueUnder,
@@ -117,6 +118,36 @@ export function originsOf(db: Database, nameKey: string): SubjectOrigin[] {
     .facts("wantedComesFrom")
     .filter((row) => String(row[0]) === nameKey)
     .map((row) => ({ module: String(row[1]), name: String(row[2]) }));
+}
+
+/**
+ * Where the class a value's declarations give it came from, as the
+ * origins every one of them shares. An alias lists each import on the
+ * way to the library, so `SessionDep` in one file and `Session` in
+ * another agree on the library's `Session` and on nothing else.
+ */
+export function declaredTypeOrigins(
+  db: Database,
+  key: string,
+): SubjectOrigin[] {
+  let shared: SubjectOrigin[] | null = null;
+  for (const typeKey of declaredTypesOf(db, key)) {
+    const origins = originsOf(db, typeKey);
+    shared =
+      shared === null
+        ? origins
+        : shared.filter((one) =>
+            origins.some((other) => sameOrigin(one, other)),
+          );
+    if (shared.length === 0) {
+      return [];
+    }
+  }
+  return shared ?? [];
+}
+
+function sameOrigin(one: SubjectOrigin, other: SubjectOrigin): boolean {
+  return one.module === other.module && one.name === other.name;
 }
 
 /** The call a value was built by, and where that call's callee came from. */

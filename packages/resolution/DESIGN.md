@@ -46,6 +46,8 @@ readsKeyed(site, o, x)      site reads the entry of o at the value of
                             out. A written key is a readsProperty
 environmentObject(w)        w is written as the object a pack calls
                             the process environment
+statesType(x, t)            the source declares the name x with the
+                            type written at t
 ```
 
 `declaresName` is the one fact an adapter states after asking these
@@ -415,6 +417,49 @@ for that adornment, and the walk runs from the argument to the
 parameter it refers to, out to that parameter's callers, and on until
 it reaches an `environmentObject` or runs out of callers. The store
 exposes it as `isEnvironmentValue`.
+
+## A type the callers declare
+
+A helper often takes a session, a client or a connection without
+saying what it is, because the code that calls it already did:
+
+```python
+def read_order(session: SessionDep, order_id: int):
+    return get(session=session, order_id=order_id)
+
+def get(*, session, order_id):
+    return session.query(Order).filter(Order.id == order_id).first()
+```
+
+A recognizer that reads the annotation at the call site finds nothing
+on `get`. The adapter states `statesType(x, t)` for every annotated
+parameter and annotated assignment, with `x` the name's key and `t` the
+key of the name or expression the annotation is written as. `typedAs`
+then gives a value the type its own declaration states, the type of a
+name it is declared as, and the type of every argument a caller passes
+to the parameter it refers to. The last one recurses, so a chain of
+unannotated helpers gets the type the outermost caller declared, in
+the same direction `paramNamesEnv` runs.
+
+`wantedType` seeds it. The answers are the types (`wantedTypedAs`),
+every argument passed straight to the parameter (`wantedTypePassed`),
+the ones among those that have a type (`wantedPassedTypedAs`), and the
+ones that are a parameter of the caller's own (`wantedPassedParam`).
+`declaredTypesOf` reads the four. A direct caller that passes a value
+it built or read, with no type, means the parameter could be anything
+that caller had, so the answer is none. A caller passing on its own
+parameter is different: that parameter's callers either declare a type,
+which arrives through `typedAs`, or make no claim, the way a fallback
+branch that settles on nothing makes none. A helper nobody in the run
+calls is the common case, and refusing on it would refuse every helper
+it calls. Saying the same of a caller further out takes `not typedAs`,
+which the rewrite refuses, so only the direct callers are checked.
+
+Two callers can declare different types, and two type keys can be the
+same class written two ways: `Session` in one file and an alias of it
+in another. Only the adapter can tell those apart, by asking where each
+key comes from, so `declaredTypesOf` hands back every key it found and
+the adapter applies the single-answer policy to what they refer to.
 
 ## The anchor behind a receiver
 

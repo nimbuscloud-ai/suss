@@ -17,6 +17,7 @@ import {
   writesRunInOrder,
 } from "@suss/resolution";
 
+import { annotationTarget } from "../annotations.js";
 import {
   children,
   enclosingFunction,
@@ -24,6 +25,7 @@ import {
   fields,
   isFunction,
   LATER_BODY_TYPES,
+  parameterNameAndType,
   stringLiteralValue,
 } from "../ast.js";
 
@@ -321,6 +323,10 @@ export type CallArgument =
  * The arguments a call writes out, in source order. A caller that wants
  * the argument sitting at a parameter reads them the same way the facts
  * were keyed, so the two never disagree about which one is at position 1.
+ *
+ * `*args` and `**kwargs` fill parameters nobody can name from the call,
+ * so neither is an argument here, and a positional argument after
+ * `*args` has no position anyone can count.
  */
 export function callArguments(call: PyNode): CallArgument[] {
   const args = field(call, "arguments");
@@ -328,7 +334,7 @@ export function callArguments(call: PyNode): CallArgument[] {
     return [];
   }
   const written: CallArgument[] = [];
-  let position = 0;
+  let position: number | null = 0;
   for (const argument of children(args)) {
     if (argument.type === "keyword_argument") {
       const name = field(argument, "name");
@@ -338,11 +344,21 @@ export function callArguments(call: PyNode): CallArgument[] {
       }
       continue;
     }
+    if (argument.type === "list_splat") {
+      position = null;
+      continue;
+    }
+    if (NOT_AN_ARGUMENT.has(argument.type) || position === null) {
+      continue;
+    }
     written.push({ kind: "positional", position, node: argument });
     position += 1;
   }
   return written;
 }
+
+/** Written in an argument list without taking a position of its own. */
+const NOT_AN_ARGUMENT = new Set(["dictionary_splat", "comment"]);
 
 /**
  * The key a value joins on. A bare name joins on the name in the scope that
@@ -411,6 +427,61 @@ function emitAttribute(emitter: Emitter, attribute: PyNode): void {
     valueKey(emitter, object),
     property.text,
   );
+}
+
+/**
+ * The key the class an annotation writes joins on, past the wrappers
+ * that do not change which class it is. A dotted class is keyed on its
+ * own node, with the property reads the rules follow to its module.
+ */
+function statedTypeKey(emitter: Emitter, annotation: PyNode): string | null {
+  const target = annotationTarget(annotation);
+  if (target?.type === "attribute") {
+    emitExpressionFact(emitter, target);
+    emitExpressionFacts(emitter, target);
+    return nodeId(emitter.filePath, target);
+  }
+  return target === null ? null : classReferenceKey(emitter, target);
+}
+
+/** `name: T` on a parameter or an assignment, as the two keys the rules join. */
+function emitStatedType(
+  emitter: Emitter,
+  nameKey: string,
+  annotation: PyNode | null,
+): void {
+  const typeKey =
+    annotation === null ? null : statedTypeKey(emitter, annotation);
+  if (typeKey !== null) {
+    add(emitter, "statesType", nameKey, typeKey);
+  }
+}
+
+/** Whether a statement is written in a class body, where a name it assigns is a field of the class. */
+function writtenInClassBody(statement: PyNode): boolean {
+  for (let at = statement.parent; at !== null; at = at.parent) {
+    if (at.type === "class_definition") {
+      return true;
+    }
+    if (isFunction(at)) {
+      return false;
+    }
+  }
+  return false;
+}
+
+/** `name: T = value` in a function or a module. */
+function emitAssignedType(emitter: Emitter, assignment: PyNode): void {
+  const left = field(assignment, "left");
+  const annotation = field(assignment, "type");
+  if (
+    left?.type !== "identifier" ||
+    annotation === null ||
+    writtenInClassBody(assignment)
+  ) {
+    return;
+  }
+  emitStatedType(emitter, valueKey(emitter, left), annotation);
 }
 
 /** Every expression under a node, without crossing into a nested function. */
@@ -503,6 +574,9 @@ function emitExpressionFact(emitter: Emitter, child: PyNode): void {
   if (child.type === "attribute") {
     emitAttribute(emitter, child);
   }
+  if (child.type === "assignment") {
+    emitAssignedType(emitter, child);
+  }
   if (WRITTEN_VALUE_TYPES.has(child.type)) {
     add(emitter, "writtenValue", nodeId(emitter.filePath, child));
   }
@@ -543,9 +617,12 @@ function emitFunctionFacts(
   let byPosition = true;
   let receiver: MethodReceiver | null = null;
   for (const param of params === null ? [] : children(params)) {
-    if (SPLAT_TYPES.has(param.type)) {
+    if (SPLAT_TYPES.has(param.type) || param.type === "keyword_separator") {
       // What follows a `*` can only be passed by name.
       byPosition = false;
+      continue;
+    }
+    if (param.type === "positional_separator") {
       continue;
     }
     const paramName = parameterName(param);
@@ -561,6 +638,12 @@ function emitFunctionFacts(
         add(emitter, "instanceOf", paramKey, classKey);
       }
       add(emitter, "paramNamed", funcKey, paramName.text, paramKey);
+      // The annotation is read in the scope around the function.
+      emitStatedType(
+        emitter,
+        paramKey,
+        parameterNameAndType(param)?.typeNode ?? null,
+      );
     }
     position += 1;
   }

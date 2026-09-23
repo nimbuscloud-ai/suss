@@ -472,6 +472,65 @@ describe("python value facts", () => {
     expect(rows(db, "paramNamed").map((row) => row[1])).toEqual(["a", "flag"]);
   });
 
+  it("gives a keyword-only parameter no position, since no positional argument reaches it", async () => {
+    const db = await factsFor("def build(a, /, b, *, flag=False):\n    pass\n");
+    expect(rows(db, "paramOf").map((row) => row[1])).toEqual(["0", "1"]);
+    expect(rows(db, "paramNamed").map((row) => row[1])).toEqual([
+      "a",
+      "b",
+      "flag",
+    ]);
+  });
+
+  it("leaves a splat out of the positions a call fills", async () => {
+    const spread = await factsFor("build(first, **options)\n");
+    expect(rows(spread, "callArg").map((row) => [row[1], row[2]])).toEqual([
+      ["0", "#first"],
+    ]);
+    const unpacked = await factsFor("build(*rest, last)\n");
+    expect(rows(unpacked, "callArg")).toEqual([]);
+  });
+
+  it("says which type a parameter and an annotated assignment declare", async () => {
+    const db = await factsFor(
+      [
+        "def handler(db: Session, other, count: int = 0):",
+        "    local: Optional[Store] = make()",
+        "",
+        "shared: Session = make()",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "statesType")).toEqual([
+      [`${funcKey}#db`, "#Session"],
+      [`${funcKey}#count`, "#int"],
+      [`${funcKey}#local`, "#Store"],
+      ["#shared", "#Session"],
+    ]);
+  });
+
+  it("reads the type through Annotated, a forward reference and a module", async () => {
+    const source =
+      'def handler(a: Annotated[Session, Depends(x)], b: "Store", c: orm.Session):\n    pass\n';
+    const db = await factsFor(source);
+    const stated = rows(db, "statesType").map((row) => row[1]);
+    expect(stated.slice(0, 2)).toEqual(["#Session", "#Store"]);
+    expect(textAt(source, stated[2] ?? "")).toBe("orm.Session");
+    expect(rows(db, "readsProperty")).toContainEqual([
+      stated[2],
+      "#orm",
+      "Session",
+    ]);
+  });
+
+  it("states no type for a class field, which is not a name anything reads", async () => {
+    const db = await factsFor(
+      ["class Event:", '    kind: Literal["a"] = "a"', ""].join("\n"),
+    );
+    expect(rows(db, "statesType")).toEqual([]);
+  });
+
   it("keys a name two functions both write under each of them", async () => {
     const db = await factsFor(
       [

@@ -234,6 +234,38 @@ function shapeFromSubscript(
   );
 }
 
+/**
+ * The node an annotation writes its class at, past the wrappers that
+ * do not change which class it is: the grammar's `type` node, the first
+ * argument of an `Annotated` or an `Optional`, the named side of
+ * `X | None`, and the outer name of any other generic.
+ */
+export function annotationTarget(annotation: PyNode): PyNode | null {
+  if (annotation.type === "type" && annotation.namedChildren[0]) {
+    return annotationTarget(annotation.namedChildren[0]);
+  }
+  if (annotation.type === "binary_operator") {
+    const named = [field(annotation, "left"), field(annotation, "right")].find(
+      (side) => side !== null && side.type !== "none",
+    );
+    return named === undefined || named === null
+      ? null
+      : annotationTarget(named);
+  }
+  if (annotation.type === "generic_type") {
+    const outer = annotation.namedChildren[0];
+    const first = genericTypeArgs(annotation)[0];
+    if (
+      (outer?.text === "Annotated" || outer?.text === "Optional") &&
+      first !== undefined
+    ) {
+      return annotationTarget(first);
+    }
+    return outer ?? null;
+  }
+  return annotation;
+}
+
 /** The `type` nodes inside the brackets of `Outer[A, B]`. */
 export function genericTypeArgs(node: PyNode): PyNode[] {
   const typeParameter = node.namedChildren.find(
