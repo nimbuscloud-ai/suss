@@ -166,7 +166,8 @@ explanation each.
 17 of them derive `stepsTo(x, y, kind)`, which says the value `x` leads
 to the value `y` in one hop. Fifteen of those are stated as `hop` and
 given a `stepsTo` twin, since a walk under a receiver context reads
-`hop`. The TypeScript adapter adds a sixteenth hop, for `.bind`.
+`hop`. The TypeScript adapter adds two hops of its own, for `.bind` and
+`Object.assign`.
 
 ```ts
 rule(
