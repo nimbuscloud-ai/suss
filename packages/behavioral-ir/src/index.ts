@@ -144,6 +144,7 @@ export {
   isRuntimeConfigProvider,
   type PlacedRuntime,
   type Placement,
+  placeDeclared,
   placeRuntimes,
 } from "./deployment/placement.js";
 export {

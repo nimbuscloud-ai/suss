@@ -15,12 +15,13 @@
 
 import {
   deployedRefs,
+  deploymentScope,
+  placeDeclared,
   readMessageBusMetadata,
   referenceFromName,
   runsIn,
   summaryIdentifier,
   summaryRef,
-  unitsByFile,
 } from "@suss/behavioral-ir";
 import { bindingIs, busIdentityKey, displayLabel } from "@suss/ir-core";
 
@@ -50,6 +51,7 @@ import {
 import type {
   BehavioralSummary,
   BoundaryBinding,
+  DeploymentScope,
   Finding,
   MessageBusSemantics,
   UnitScope,
@@ -111,8 +113,8 @@ export function checkMessageBus(
     "message-bus",
   ).map((record) => ({ ...record, resolvedChannel: null }));
 
-  const byFile = unitsByFile(summaries);
-  resolveProducerChannels(producers, summaries);
+  const deployment = deploymentScope(summaries);
+  resolveProducerChannels(producers, summaries, deployment);
 
   const providerChannels: ChannelSet = createChannelSet();
   const consumerChannels: ChannelSet = createChannelSet();
@@ -268,7 +270,7 @@ export function checkMessageBus(
       cfnConsumers: consumers,
       producers,
       allSummaries: summaries,
-      byFile,
+      deployment,
     }),
   );
 
@@ -277,7 +279,7 @@ export function checkMessageBus(
       consumers,
       queueProviders,
       allSummaries: summaries,
-      byFile,
+      deployment,
     }),
   );
 
@@ -301,7 +303,7 @@ function checkRepeatSafety(opts: {
   consumers: BehavioralSummary[];
   queueProviders: BehavioralSummary[];
   allSummaries: BehavioralSummary[];
-  byFile: UnitsByFile;
+  deployment: DeploymentScope;
 }): Finding[] {
   const findings: Finding[] = [];
   for (const consumer of opts.consumers) {
@@ -312,16 +314,12 @@ function checkRepeatSafety(opts: {
     if (!redelivers(semantics, opts.queueProviders)) {
       continue;
     }
-    const codeScope = readCodeScope(consumer);
-    if (codeScope === null) {
+    const scope = placeDeclared(consumer, opts.deployment.graph);
+    if (scope === null) {
       continue;
     }
-    const scope = {
-      unit: consumer.identity.deployableUnit,
-      codeScope,
-    };
     for (const summary of opts.allSummaries) {
-      if (!runsIn(summary, scope, opts.byFile)) {
+      if (!runsIn(summary, scope, opts.deployment.byFile)) {
         continue;
       }
       for (const call of repeatedCalls(summary)) {
@@ -507,8 +505,9 @@ function effectiveChannel(p: ProducerRecord): string | null {
 function resolveProducerChannels(
   producers: ProducerRecord[],
   summaries: BehavioralSummary[],
+  deployment: DeploymentScope,
 ): void {
-  const pointsAt = deployedRefs(summaries);
+  const pointsAt = deployedRefs(summaries, deployment);
 
   for (const producer of producers) {
     const semantics = producer.effect.binding.semantics;
@@ -755,7 +754,7 @@ function checkBodyShapes(opts: {
   cfnConsumers: BehavioralSummary[];
   producers: ProducerRecord[];
   allSummaries: BehavioralSummary[];
-  byFile: UnitsByFile;
+  deployment: DeploymentScope;
 }): Finding[] {
   const findings: Finding[] = [];
   for (const cfnConsumer of opts.cfnConsumers) {
@@ -768,18 +767,15 @@ function checkBodyShapes(opts: {
       continue;
     }
 
-    const codeScope = readCodeScope(cfnConsumer);
-    if (codeScope === null) {
+    const scope = placeDeclared(cfnConsumer, opts.deployment.graph);
+    if (scope === null) {
       continue;
     }
 
     const receives = collectReceives(
       opts.allSummaries,
-      {
-        unit: cfnConsumer.identity.deployableUnit,
-        codeScope,
-      },
-      opts.byFile,
+      scope,
+      opts.deployment.byFile,
     );
     if (receives.length === 0) {
       continue;
@@ -804,17 +800,6 @@ function checkBodyShapes(opts: {
     }
   }
   return findings;
-}
-
-function readCodeScope(summary: BehavioralSummary): string | null {
-  const meta = summary.metadata as
-    | { codeScope?: { kind?: string; path?: string } }
-    | undefined;
-  const scope = meta?.codeScope;
-  if (scope?.kind !== "codeUri" || scope.path === undefined) {
-    return null;
-  }
-  return scope.path;
 }
 
 /**
