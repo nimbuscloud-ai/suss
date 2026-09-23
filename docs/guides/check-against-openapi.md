@@ -5,7 +5,7 @@ description: Read an OpenAPI 3.x document into summaries and compare it against 
 
 # Check against OpenAPI
 
-Compare an OpenAPI 3.x document against the code on either side of it. `suss contract` reads the document into the same form `extract` produces from source, and `check` compares the two.
+Compare an OpenAPI 3.x document against the code on either side of it. `suss contract` reads the document and writes summaries in the same format `extract` writes from source, and `check` compares the two.
 
 ```bash
 npx suss contract --from openapi openapi.yaml -o summaries/contract.json
@@ -17,7 +17,7 @@ Everything ships inside `@suss/cli`, so `npm install --save-dev @suss/cli` is th
 There are two directions, and they catch different things:
 
 - **You call the API.** The document is the provider. If it declares a status your client never branches on, your client will meet that status in production.
-- **You serve the API.** The document is the promise you made. If your handler produces a status the document leaves out, no client written against the document will handle it.
+- **You serve the API.** The document says what you promised your clients. If your handler produces a status the document leaves out, no client written against the document will handle it.
 
 <!-- suss:example -->
 
@@ -142,7 +142,7 @@ suss check --dir consumer/ --all
 
 The client falls through to `res.json()` on a 429 and reads `body.email` off a rate-limit payload that has no `email` in it. Add the branch, or accept the finding with a `.sussignore` rule when the path is unreachable for your use of the API.
 
-Re-run this when the vendor publishes a new version of the document and you will see what your client stopped covering.
+When the vendor publishes a new version of the document, re-run this to see what your client stopped covering.
 
 The axios and Apollo packs work the same way: `-f axios` recognizes both `axios.get(...)` and a factory-bound `const api = axios.create({ baseURL }); api.get(...)`, and `-f apollo-client` reads the hooks and `client.query`.
 
@@ -217,7 +217,7 @@ A status the handler produces that the document leaves out is an error, because 
 
 ## Both at once
 
-Put all three summaries in one folder and every pair gets compared: the handler against the client, the handler against the document, and the document against the client.
+Put all three summaries in one folder and suss compares every pair: the handler against the client, the handler against the document, and the document against the client.
 
 ```bash
 suss extract --dir . -f express -f fetch -o summaries/code.json
@@ -264,7 +264,7 @@ suss inspect --dir summaries/
 The usual causes, in order:
 
 - **A base URL in front of the path.** The document's `servers[0].url` (or a Swagger 2.0 `basePath`) goes in front of every route it declares, and a `baseURL` on an axios instance goes in front of every path the client writes. So `axios.create({ baseURL: "/v1" })` plus `api.get("/users/1")` pairs with a document serving `/users/{id}` under `/v1`. An absolute base keeps only its path, and a base of `/` adds nothing. When suss cannot read the base, because it is computed at run time from something like `process.env.API_URL`, the path stays bare, and that is where the two sides can still disagree.
-- **The path is a parameter rather than a literal.** `axios.get(url)` where `url` is an argument leaves the pack nothing to read.
+- **The path is a parameter instead of a literal.** In `axios.get(url)`, where `url` is an argument, the pack has no path to read.
 - **Encoded segments.** `/search/{q}` against ``axios.get(`/search/${encodeURIComponent(q)}`)`` parses the same on both sides, so this one is rarely the problem.
 
 ## A slice of a large document
