@@ -1,25 +1,23 @@
 /**
  * The one call into the HCL parser.
  *
- * The parser gives back what it read and what stopped it, and text it
- * could not read comes back as nothing rather than as an error. The
- * `try` is there for the case it does raise, which no input found so
- * far does.
+ * The parser returns nothing for text it cannot read, without raising
+ * an error. The `try` covers the case where it does raise, which no
+ * input has triggered so far.
  *
- * An expression written on its own, the argument of a `jsonencode` or
- * the collection a `for_each` iterates over, is read by giving the
- * parser an attribute to hang it on. What comes back for an
- * interpolation the parser cannot settle is the text as written, which
- * is the same hole a name keeps.
+ * A bare expression, such as the argument of a `jsonencode` or the
+ * collection a `for_each` iterates over, is parsed by wrapping it in an
+ * attribute. An interpolation the parser cannot resolve comes back as
+ * the text as written, which leaves the same hole a name does.
  */
 
 // The parser ships CommonJS, so ESM reaches it through the default.
 import hcl2 from "hcl2-parser";
 
-/** The name a bare expression is parsed back under. */
+/** The attribute a bare expression is wrapped in for parsing. */
 const WRAPPER = "value";
 
-/** What a piece of HCL states, or null when the parser could not read it. */
+/** The parsed document, or null when the parser could not read it. */
 export function parseHclDocument(
   source: string,
 ): Record<string, unknown> | null {
@@ -35,7 +33,7 @@ export function parseHclDocument(
     : null;
 }
 
-/** What one HCL expression evaluates to, or null when nothing settles it. */
+/** The value of one HCL expression, or null when the parser cannot read it. */
 export function parseHclExpression(expression: string): unknown {
   return parseHclDocument(`${WRAPPER} = ${expression}`)?.[WRAPPER] ?? null;
 }
