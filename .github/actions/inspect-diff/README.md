@@ -1,6 +1,6 @@
 # suss inspect --diff as a pull request comment
 
-The action reads every boundary in the repository at the base of a pull request and again at its head, then posts what changed as one comment on the pull request. A later push edits the same comment rather than adding another. The `push` trigger is optional; it reads each commit on `main` ahead of the pull requests that branch from it (see [Caching](#caching)).
+The action reads every boundary in the repository at the base of a pull request and again at its head, then posts what changed as one comment on the pull request. A later push edits that comment instead of adding another. The `push` trigger is optional. With it, the action reads each commit on `main` before the pull requests that branch from it need it (see [Caching](#caching)).
 
 ```yaml
 name: suss
@@ -25,7 +25,7 @@ jobs:
       - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@main
 ```
 
-The action reads the packs from the project's `suss.json`, which `suss init` writes. Without one it picks the packs `init` would. Set `extract` to choose them yourself:
+The action reads the packs from the project's `suss.json`, which `suss init` writes. Without that file, it picks the packs `init` would pick. Set `extract` to choose them yourself:
 
 ```yaml
       - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@main
@@ -64,7 +64,7 @@ The comment looks like this:
 | `extract` | empty | The arguments to `suss extract`, after the command. Empty reads the packs from `suss.json`, or the ones `suss init` would pick when there is no file. `-p tsconfig.json -f express` chooses them for a TypeScript project, `--dir src -f fastapi` for Python, `--dir app -f rails` for Ruby. |
 | `working-directory` | `.` | The directory to run `suss extract` in, relative to the repository root. |
 | `version` | `latest` | The version of `@suss/cli` to install. |
-| `install` | empty | A shell command that installs dependencies in the base checkout, such as `pnpm install --frozen-lockfile` or `npm ci && npm run build`. When it is empty the base checkout shares the head's `node_modules` directories, which is right when the pull request does not change dependencies. |
+| `install` | empty | A shell command that installs dependencies in the base checkout, such as `pnpm install --frozen-lockfile` or `npm ci && npm run build`. When it is empty, the base checkout shares the head's `node_modules` directories, which works when the pull request does not change dependencies. |
 | `comment` | `true` | Whether to post the comment. Set it to `false` to read the outputs and do something else with them. |
 | `artifact-name` | `suss-diff` | The name of the run artifact that keeps both summary files and the diff. Two uses of the action in one workflow need two names. |
 | `cache` | `true` | Whether to keep suss's per-file cache and each commit's summaries in the repository's actions cache. See [Caching](#caching). |
@@ -79,7 +79,7 @@ The comment looks like this:
 | `before` | The path of the summaries read from the base commit. |
 | `after` | The path of the summaries read from the head commit. |
 
-`changed` is what a job condition reads:
+A job condition can read `changed`:
 
 ```yaml
       - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@main
@@ -92,9 +92,9 @@ The comment looks like this:
 
 ## How it reads the base
 
-The head is already checked out by `actions/checkout`. The action fetches the base commit and adds it as a git worktree under the runner's temporary directory, then runs the same `suss extract` there. The worktree is named after the repository, so a file path reads the same on both sides and every unit pairs with itself.
+`actions/checkout` has already checked out the head. The action fetches the base commit, adds it as a git worktree under the runner's temporary directory, and runs the same `suss extract` there. The worktree is named after the repository, so file paths are the same on both sides and every unit pairs with itself.
 
-A pull request from a fork gets a read-only token, so the comment step fails there. The diff is still in the job log and in the artifact. Set `comment: false` on fork pull requests if the failure is unwelcome:
+A pull request from a fork gets a read-only token, so the comment step fails there. The diff is still in the job log and in the artifact. If you would rather not see the failure, set `comment: false` for pull requests from forks:
 
 ```yaml
         with:
@@ -104,11 +104,11 @@ A pull request from a fork gets a read-only token, so the comment step fails the
 
 ## Caching
 
-Reading a large project takes a while, and the action reads it twice. Two caches cut that down, both in the repository's actions cache and both on by default.
+Reading a large project takes a while, and the action reads it twice. Two caches cut that time down. Both live in the repository's actions cache, and both are on by default.
 
 The first is suss's own per-file cache, the `.suss/cache` directory next to the project. The action restores it before it reads the head and saves it afterwards, so a file the pull request did not touch is not read again. A run that changes one file reads that file and whatever depends on it.
 
-The second is the summaries of each commit. Run the action on a push to the default branch as well as on pull requests:
+The second cache stores the summaries for each commit. To use it, run the action on a push to the default branch as well as on pull requests:
 
 ```yaml
 on:
@@ -117,24 +117,24 @@ on:
     branches: [main]
 ```
 
-On a push the action reads the commit, saves its summaries under the commit, and stops; there is no diff and no comment, and `changed` is empty. A pull request whose base is that commit restores those summaries and skips the base checkout. A pull request whose base was never read this way reads the base itself and saves it for its later pushes.
+On a push, the action reads the commit, saves its summaries under that commit, and stops. There is no diff and no comment, and `changed` is empty. A pull request whose base is that commit restores those summaries and skips the base checkout. A pull request whose base was never read this way reads the base itself, and saves it for its later pushes.
 
-Both caches are keyed on the installed version of `@suss/cli` and on `extract` and `working-directory`, so a new release or a change to the packs starts them over. Set `cache: false` to read everything on every run.
+Both caches are keyed on the installed version of `@suss/cli` and on `extract` and `working-directory`, so a new release or a change to the packs starts them again from empty. Set `cache: false` to read everything on every run.
 
 ## How the comment is organized
 
-The first line counts what moved: how many boundaries, how many of their outcomes and effects, and how many units further in the project changed as well.
+The first line counts what changed: how many boundaries, how many of their outcomes and effects, and how many units further inside the project changed as well.
 
-An outcome that reached several routes from one filter, middleware or error handler is printed once under `From <wrapper>`, with the routes that have it and the routes the wrapper runs on that still do not, so fourteen routes gaining a 401 is printed as the one edit it was. A route that already responded the same way is left off both lines, since nothing about it moved.
+When one filter, middleware or error handler adds the same outcome to several routes, that outcome is printed once under `From <wrapper>`. It lists the routes that have it, and the routes the wrapper runs on that still do not. So fourteen routes gaining a 401 is printed as the single edit it was. A route that already responded that way is left off both lines, since nothing about it changed.
 
-Then comes a block per boundary that moved, with `outcomes` for what it returns and under what test, and `effects` for what a request now reaches or stopped reaching through the calls it makes. A unit deeper in the project gets no block of its own, since the boundaries that reach it already show what its change did. When no boundary moved, the first line says so.
+Next comes a block for each boundary that changed. `outcomes` shows what it returns and under what test, and `effects` shows what a request now reaches, or no longer reaches, through the calls it makes. A unit deeper in the project does not get a block of its own, since the boundaries that reach it already show what its change did. When no boundary changed, the first line says so.
 
-Last come the files with units that moved. A unit with a couple of lines to its name has them written out, one with more gets a count of the outcomes and the effects that moved, and a unit in a file the pull request edited gets the count either way, since the reviewer has that file's diff in front of them.
+Last come the files that contain units that changed. A unit with only a couple of changed lines has them written out. A unit with more gets a count of the outcomes and effects that changed. A unit in a file the pull request edited gets the count either way, since the reviewer already has that file's diff in front of them.
 
-The action asks GitHub which files the pull request changed and passes them to `suss inspect --diff --changed-files`. Those files come last and are marked. When the call to GitHub fails, every file is treated as untouched.
+The action asks GitHub which files the pull request changed and passes them to `suss inspect --diff --changed-files`. Those files come last and are marked. If the call to GitHub fails, every file is treated as untouched.
 
-A comment stops at 65,536 characters, so the action renders it with `--budget` and the report counts what it left out. The whole diff is in the run's artifact.
+A comment is limited to 65,536 characters, so the action renders it with `--budget`, and the report counts what it left out. The whole diff is in the run's artifact.
 
 ## Where the diff comes from
 
-`suss extract` reads every unit a pack recognizes, a route handler or a queue consumer or a Lambda, into a summary of what it produces on each path. `suss inspect --diff` compares two sets of summaries by unit and prints the paths that differ. Nothing runs and no model is involved, so the same source produces the same diff every time. The [reference for `inspect`](https://github.com/nimbuscloud-ai/suss/blob/main/docs/reference/cli/inspect.md) says what each line of the rendering means.
+`suss extract` reads every unit a pack recognizes, such as a route handler, a queue consumer or a Lambda, into a summary of what it produces on each path. `suss inspect --diff` compares two sets of summaries unit by unit and prints the paths that differ. Nothing runs and no model is involved, so the same source produces the same diff every time. The [reference for `inspect`](https://github.com/nimbuscloud-ai/suss/blob/main/docs/reference/cli/inspect.md) explains what each line of the output means.

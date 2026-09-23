@@ -1,10 +1,10 @@
 # @suss/framework-pg
 
-Says which Postgres tables a TypeScript service reads and writes through node-postgres.
+This pack records which Postgres tables a TypeScript service reads and writes through node-postgres.
 
 ## What this package is
 
-A pattern pack. It emits the same `storage-access` effects the Drizzle and Prisma packs do, so a table one service writes through an ORM and another reads through a raw query are two ends of one boundary.
+A pattern pack. It records the same `storage-access` effects the Drizzle and Prisma packs do. So when one service writes a table through an ORM and another reads it with a raw query, the two are ends of one boundary.
 
 ```ts
 import { pgFramework } from "@suss/framework-pg";
@@ -12,13 +12,13 @@ import { pgFramework } from "@suss/framework-pg";
 const pack = pgFramework();
 ```
 
-Every query in the library goes through one method, and the statement says the rest:
+Every query in the library goes through one method, and the pack reads everything else from the statement:
 
 ```ts
 await pool.query("SELECT id, email FROM users WHERE id = $1", [id]);
 ```
 
-`@suss/sql` parses that and settles the table, whether the call reads or writes, the fields it touches and what it picks rows by. A join comes out as one effect per table, each with its own fields.
+`@suss/sql` parses that and works out the table, whether the call reads or writes, the fields it touches, and what it selects rows by. A join comes out as one effect per table, each with its own fields.
 
 ## What each part contributes
 
@@ -29,20 +29,20 @@ await pool.query("SELECT id, email FROM users WHERE id = $1", [id]);
 | the columns the statement states | the fields |
 | the columns in the `WHERE` | the selector |
 
-A placeholder stays a placeholder. `WHERE tier = $1` records `tier` as the selector rather than reading a value that only exists at run time.
+A placeholder stays a placeholder. `WHERE tier = $1` records `tier` as the selector, since the value only exists at run time.
 
 ## Which calls it reads
 
-`query` on a `Client`, on a `Pool`, and on the client a `pool.connect()` hands back. Both spellings of the call count:
+`query` on a `Client`, on a `Pool`, and on the client that `pool.connect()` returns. Both ways of calling it count:
 
 ```ts
 pool.query("SELECT email FROM users WHERE id = $1", [id]);
 pool.query({ text: "SELECT email FROM users WHERE id = $1", values: [id] });
 ```
 
-The receiver is settled by type rather than by what the program called it, so a project that builds its pool in one module and exports it is read without this pack knowing what that module is called. A `query` on something a project wrote itself is left alone.
+The pack settles the receiver by its type, whatever the program calls the variable. So if a project builds its pool in one module and exports it, the pack reads it without knowing the module's name. A `query` on something the project wrote itself is ignored.
 
-A statement built from a template reads too, when the source settles what goes in the holes:
+A statement built from a template is read too, when the source settles what goes in the holes:
 
 ```ts
 const USERS_TABLE = "users";
@@ -50,9 +50,9 @@ await pool.query(`SELECT id FROM ${USERS_TABLE} WHERE id = $1`, [id]);
 await pool.query(`SELECT id FROM "${USERS_TABLE}"`);
 ```
 
-Both holes are where the statement writes a name, straight after `FROM` in the first and inside a quoted name in the second, so what the source settled becomes the table. A hole anywhere else stays a parameter, since a constant written in a value position would parse as a column and land in the selector.
+In both statements the hole is where a name goes: straight after `FROM` in the first, and inside a quoted name in the second. So the value the source gives it becomes the table. A hole anywhere else stays a parameter, because a constant in a value position would parse as a column and end up in the selector.
 
-A query built with `pg-template-tag` reads as well, because the text of a tagged template comes back through the tag:
+A query built with `pg-template-tag` is read as well, because the tag returns the text of the tagged template:
 
 ```ts
 await client.query(sql`SELECT id FROM users WHERE id = ${id}`);
@@ -60,11 +60,11 @@ await client.query(sql`SELECT id FROM users WHERE id = ${id}`);
 
 ## What it will not tell you
 
-- **A table nothing settles produces nothing.** `` pool.query(`SELECT * FROM ${table}`) `` where `table` is a parameter says nothing rather than recording a guess.
+- **A table that cannot be settled produces nothing.** For `` pool.query(`SELECT * FROM ${table}`) ``, where `table` is a parameter, the pack records nothing instead of a guess.
 - **A statement that touches no table produces nothing.** `BEGIN`, `COMMIT` and `SET` are calls against the store, but there is no container to record them under.
-- **A bare `sql` tag is not read.** The porsager `postgres` client writes its queries as `` sql`SELECT ...` `` with no receiver, so nothing settles which library the tag came from. That needs a way to pin down a bare tag by where it was made.
-- **Which database.** Every access records the scope the pack was built with, so a project with two Postgres connections has both under one name.
+- **A bare `sql` tag is not read.** The porsager `postgres` client writes its queries as `` sql`SELECT ...` `` with no receiver, so the pack cannot tell which library the tag came from. Reading it needs a way to trace a bare tag back to where it was created.
+- **Which database.** Every access records the scope the pack was built with, so a project with two Postgres connections gets both under one name.
 
 ## Where it fits in suss
 
-Depends on `@suss/recognize` for the chain and, through it, on `@suss/sql` for the parse. The storage pass in `@suss/checker` pairs what this emits against whatever declares the table, which is a Prisma schema, a Drizzle schema, or a Terraform database.
+The pack depends on `@suss/recognize` for the chain, and through it on `@suss/sql` for the parse. The storage pass in `@suss/checker` pairs what this pack records with whatever declares the table, such as a Prisma schema, a Drizzle schema, or a Terraform database.

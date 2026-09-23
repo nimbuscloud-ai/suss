@@ -1,10 +1,16 @@
 # @suss/framework-aws-ssm
 
-Pattern pack for AWS SSM Parameter Store. It reads the calls a service makes against a parameter and emits storage-access interactions, so `suss ask "what reads aws.ssm:/prod/db/host"` has an answer.
+Pattern pack for AWS SSM Parameter Store. It reads the calls a service makes against a parameter and records each one as a storage access, so `suss ask "what reads aws.ssm:/prod/db/host"` has an answer.
+
+```ts
+import { GetParameterCommand } from "@aws-sdk/client-ssm";
+
+await client.send(new GetParameterCommand({ Name: process.env.DB_HOST_PARAM }));
+```
 
 ## What this package is
 
-`@suss/framework-aws-ssm` returns a `PatternPack` built from one `@suss/recognize` declaration and no hand-written walk. The anchor is the command, the same way the S3 pack reads an object call: the method is `send` at every AWS SDK v3 call site and the command class says which operation it is.
+`@suss/framework-aws-ssm` exports a `PatternPack` built from one `@suss/recognize` declaration, with no walk written by hand. The pack matches on the command, the same way the S3 pack reads an object call. The method is `send` at every AWS SDK v3 call site, and the command class tells you which operation it is.
 
 | Command | What it records |
 |---|---|
@@ -13,25 +19,25 @@ Pattern pack for AWS SSM Parameter Store. It reads the calls a service makes aga
 | `PutParameterCommand`, `DeleteParameterCommand` | a write of the parameter `Name` gives |
 | `DeleteParametersCommand` | one write per parameter in `Names` |
 
-A parameter is one value rather than a set of fields, so a call records which parameter it reached and claims nothing about what is inside. A `Name` the code takes from `process.env.DB_HOST_PARAM` keeps the env var name, so the access records container `{DB_HOST_PARAM}` and a later resolver can ground it. A `Names` list this run cannot read into names records one access with no container, because a service that reads parameters should not read as one that reads none.
+A parameter is one value with no fields, so a call records which parameter it reached and nothing about what is inside. When the code takes the `Name` from `process.env.DB_HOST_PARAM`, suss keeps the env var name. The access records the container `{DB_HOST_PARAM}`, and a later resolver can ground it. If the run cannot read a `Names` list as names, it records one access with no container, so a service that reads parameters still shows up as reading them.
 
-`GetParametersByPathCommand` is not covered. Its `Path` is a prefix over many parameters rather than one parameter, so recording it as a container would put a read against a string that is nothing's name. Reaching a set of containers by prefix wants a pattern container, which is a separate change.
+`GetParametersByPathCommand` is not covered. Its `Path` is a prefix over many parameters, so recording it as a container would put a read against a string that is not the name of anything. Reaching a set of containers by prefix needs a pattern container, which is a separate change.
 
-Only the AWS SDK v3 call shape is covered, and the command class has to come from `@aws-sdk/client-ssm`, so a class of the same name from somewhere else is left alone.
+The pack covers only the AWS SDK v3 call pattern. The command class has to come from `@aws-sdk/client-ssm`, so a class with the same name from another module is ignored.
 
-## Why a parameter is a store rather than runtime config
+## Why suss treats a parameter as a store
 
-Reading a parameter is reading configuration, and suss already has a `runtime-config` boundary for that, so this is the question worth answering before reading the code.
+Reading a parameter is reading configuration, and suss already has a `runtime-config` boundary for that. So the choice needs explaining before the code.
 
-`runtime-config` is the wrong home for two reasons. Its identity is `(deploymentTarget, instanceName)`, which is a deployable unit, and its fields are the env var names that unit declares. A parameter belongs to neither: it is a resource outside the unit, and two services reading one parameter is a relationship the unit-shaped boundary cannot express. Worse, `checkRuntimeConfig` reports a config read the unit's environment does not declare as `boundaryFieldUnknown` at error severity, so putting parameter names on that boundary would fail a run for every parameter a service reads.
+`runtime-config` does not fit, for two reasons. First, its identity is `(deploymentTarget, instanceName)`, which is a deployable unit, and its fields are the env var names that unit declares. A parameter is neither. It is a resource outside the unit, and a boundary built around one unit cannot express two services reading the same parameter. Second, `checkRuntimeConfig` reports a config read that the unit's environment does not declare as `boundaryFieldUnknown`, at error severity. Putting parameter names on that boundary would fail the run once for every parameter a service reads.
 
-`storage` says what is happening without stretching. A parameter is a named container that many units read and write, addressed by name, with a read and a write side, which is the same shape a bucket or a table has. Nothing declares parameters as storage providers today, and an unpaired storage access is silent, so recording one adds a fact without adding a finding. When a template reader starts emitting `AWS::SSM::Parameter` as a provider, these accesses pair with it and nothing here has to change.
+`storage` describes what happens without stretching. A parameter is a named container that many units read and write, addressed by name, the same way a bucket or a table is. Nothing declares parameters as storage providers today, and suss stays silent about a storage access with no pair, so recording one adds a fact and no finding. When a template reader starts recording `AWS::SSM::Parameter` as a provider, these accesses will pair with it and nothing here has to change.
 
 ## Where it fits in suss
 
-Depends on `@suss/recognize`, which compiles the declaration into the recognizer hook the adapters call. Nothing else, and no `ts-morph`.
+The pack depends only on `@suss/recognize`, which compiles the declaration into the recognizer hook the adapters call. It does not use `ts-morph`.
 
-`aws.ssm` is suss's own name for the store. OpenTelemetry's `db.system.name` has no value for it, the way it has none for `s3`.
+`aws.ssm` is suss's own name for the store. OpenTelemetry's `db.system.name` has no value for it, the same as for `s3`.
 
 ## Coverage
 

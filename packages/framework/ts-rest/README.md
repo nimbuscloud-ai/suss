@@ -1,20 +1,20 @@
 # @suss/framework-ts-rest
 
-Framework pack for [ts-rest](https://ts-rest.com/). Declarative patterns describing how to find ts-rest handlers and client call sites, what terminals look like, and how to read declared contracts.
+Framework pack for [ts-rest](https://ts-rest.com/). It finds ts-rest handlers and client call sites, reads what each handler returns, and reads the contract both sides are built from.
 
 ## What this package is
 
-`@suss/framework-ts-rest` returns a `PatternPack` object: data the adapter interprets, with no code of its own. The language adapter interprets these patterns against the AST. This pack describes:
+`@suss/framework-ts-rest` exports a `PatternPack`. The pack is data with no code of its own, and the language adapter applies its patterns to the AST. It covers:
 
-- **Provider discovery** via `initServer().router(contract, handlers)` registration calls
-- **Client discovery** via `initClient(contract)` call sites
-- **Terminals**: `return { status, body }` object literals
-- **Contract reading**: `initContract().router(...)` with `responses` and `pathParams` extraction
-- **Input mapping**: destructured `{ params, body, query, headers }` with semantic roles
+- **Provider discovery**: `initServer().router(contract, handlers)` registration calls.
+- **Client discovery**: `initClient(contract)` call sites.
+- **Terminals**: `return { status, body }` object literals.
+- **Contract reading**: `initContract().router(...)`, from which it reads `responses` and `pathParams`.
+- **Input mapping**: the destructured `{ params, body, query, headers }`, each with its role.
 
 ## Where it fits in suss
 
-Depends only on `@suss/extractor` (for the `PatternPack` type). Contains no analysis logic; the adapter does all the work.
+The pack depends only on `@suss/extractor`, for the `PatternPack` type. It has no analysis logic of its own, and the adapter does all the work.
 
 ## Coverage
 

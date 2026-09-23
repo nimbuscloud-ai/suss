@@ -9,26 +9,27 @@ assignees: ""
 ## The problem
 
 <!--
-What are you trying to do? What's getting in your way today?
-Lead with the use case, not the proposed solution.
+What are you trying to do, and what gets in your way today?
+Start with the use case. The proposed solution comes next.
 -->
 
 ## Proposed direction
 
 <!--
-A sketch of how you'd like it to work. CLI command, API surface, summary
-output, etc. It's fine if this is rough — the discussion can refine it.
+A sketch of how you would like it to work: a CLI command, an API, the
+summary output. A rough sketch is fine, and the discussion can refine it.
 -->
 
 ## Alternatives considered
 
-<!-- Other approaches you thought about and why they don't fit. -->
+<!-- Other approaches you thought about, and why they do not fit. -->
 
 ## Scope
 
 <!--
 Which package(s) would this touch? (ir, extractor, adapter, cli, checker,
-a framework pack, etc.) Is this additive or does it change existing behavior?
+a framework pack, etc.) Does it only add something, or does it change
+existing behavior?
 -->
 
 ## Additional context

@@ -1,27 +1,29 @@
 # @suss/differential
 
-Differential fuzzer for extraction fidelity. Internal tool: a private
-workspace package under `tools/`, never published.
+A differential fuzzer that checks how faithfully suss extracts. It is an
+internal tool, a private workspace package under `tools/`, and never
+published.
 
-Full reference (architecture, adjudication semantics, tier/corpus
-protocol, per-pack extension checklist, the JSX/render-boundary
-design, second-language path):
+The full reference covers the architecture, how verdicts are decided,
+the tier and corpus protocol, a checklist for extending it to a pack,
+the design for JSX and render boundaries, and the path to a second
+language:
 [`design/docs-internal/differential-fuzzing.md`](../../design/docs-internal/differential-fuzzing.md).
 
 ## In one paragraph
 
 The extraction algorithm promises exhaustiveness and "no false
 conditions" ([`docs/theory/extraction-algorithm.md`](../../docs/theory/extraction-algorithm.md)).
-This package checks both mechanically. fast-check generates
-handler-shaped programs from a small framework-neutral DSL. Each
-program is extracted through the real pipeline (an in-memory ts-morph
-project plus the target pack) *and* executed in `node:vm` against a
-deterministic battery of requests. A three-valued interpreter (opaque →
-abstain, never guess) evaluates the summary's transition conditions
-against each concrete request and flags `falseClaim` / `uncovered`
-verdicts. Framework syntax lives entirely in `target.ts`
-(`FuzzTarget`). Express and Fastify are wired up, and the sound-tier
-property runs against both.
+This package checks both automatically. fast-check generates handler
+programs from a small DSL that is not tied to any framework. Each
+program is extracted through the production pipeline (an in-memory
+ts-morph project plus the target pack) *and* run in `node:vm` against a
+fixed set of requests. A three-valued interpreter evaluates the
+summary's transition conditions against each concrete request, and
+reports `falseClaim` or `uncovered` verdicts. When a condition is
+opaque, the interpreter abstains and never guesses. All framework
+syntax is in `target.ts` (`FuzzTarget`). Express and Fastify are
+connected, and the sound-tier property runs against both.
 
 ## Layout
 
@@ -30,7 +32,7 @@ property runs against both.
 | `src/program.ts` | handler-program DSL + framework-neutral renderer |
 | `src/generators.ts` | fast-check arbitraries, tiered (sound vs documented-gap) |
 | `src/target.ts` | per-pack seam: pack + terminal syntax + module wrapper + vm stub |
-| `src/extract.ts` | real-pipeline extraction (shared in-memory project) |
+| `src/extract.ts` | extraction through the production pipeline (shared in-memory project) |
 | `src/execute.ts`, `src/requests.ts` | vm execution + deterministic request batteries |
 | `src/interpret.ts` | three-valued Predicate/ValueRef interpreter (future `suss corroborate` core) |
 | `src/differential.ts` | adjudicator: `falseClaim` / `uncovered` |
@@ -43,10 +45,10 @@ property runs against both.
 
 ## The families under `src/shape`
 
-Each family generates a whole program around a boundary of one kind. It
-then runs the invariants, compares the program for equivalence against
-the plainest spelling of the same behaviour, and, where a generated
-program can be run, runs it.
+Each family generates a whole program around one kind of boundary. It
+then runs the invariants, and checks that the program is equivalent to
+the plainest way of writing the same behavior. Where a generated
+program can be run, it runs it.
 
 | Family | What it varies |
 |---|---|
@@ -58,10 +60,11 @@ program can be run, runs it.
 | `queueShape.ts` | a queue consumer: how it is built, and how the project configures the subject it responds to |
 | `packageShape.ts` | a package boundary: how a function is published and how another package calls it |
 
-The last two write files and read a template or a manifest back off
-disk, so they cost several times what the in-memory families do. They
-take smaller samples on each pull request (`SUSS_FUZZ_QUEUE_RUNS`,
-`SUSS_FUZZ_PACKAGE_RUNS`), and the scheduled run does the volume.
+The last two write files and read a template or a manifest back from
+disk, so they cost several times as much as the in-memory families.
+They take smaller samples on each pull request (`SUSS_FUZZ_QUEUE_RUNS`,
+`SUSS_FUZZ_PACKAGE_RUNS`), and the scheduled run covers the larger
+volume.
 
 ## Running
 

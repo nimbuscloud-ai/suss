@@ -1,21 +1,22 @@
 # @suss/contract-intent
 
-Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and says where the two disagree.
+Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and reports where the two disagree.
 
-Read team-authored intent specs (`*.intent` / `*.prd`, YAML or JSON) into
-`IntentSummary[]` for the intent checker to pair against derived code.
+This package reads intent specs your team writes (`*.intent` / `*.prd`, YAML
+or JSON) into `IntentSummary[]`, which the intent checker pairs with the
+summaries derived from code.
 
 ## What this is
 
-The file-reading layer for intent. An intent spec declares what a
-boundary *should* do (system intent) or the human scenarios a feature
-*should* satisfy (PRD outcome intent). This package handles file and
-directory discovery plus YAML / JSON parsing; the schema and the
-normalisation to `IntentSummary` live in [`@suss/intent-ir`](../../intent-ir).
+The layer that reads intent files. An intent spec declares what a
+boundary *should* do (system intent), or the scenarios people expect a
+feature to satisfy (PRD outcome intent). This package finds the files
+and directories and parses the YAML or JSON. The schema, and the
+conversion to `IntentSummary`, are in [`@suss/intent-ir`](../../intent-ir).
 
 Unlike the other contract readers, intent does **not** produce
-`BehavioralSummary`; it's a separate citizen with its own type and its
-own checker. The full design is in
+`BehavioralSummary`. It has its own type and its own checker. The full
+design is in
 [`design/proposals/intent-specs.md`](../../../design/proposals/intent-specs.md).
 
 ## Usage
@@ -31,12 +32,12 @@ const one = loadIntentFile("intents/users.intent.yaml"); // IntentSummary
 const all = loadIntentDirectory("intents/"); // IntentSummary[]
 ```
 
-The CLI loads intent through `suss check --intent <dir>` (intent is
-checked against code, not emitted as a contract).
+The CLI loads intent through `suss check --intent <dir>`. Intent is
+checked against code, so `suss contract` does not write it out.
 
 ## Spec shape
 
-Two kinds, discriminated by the top-level `kind`. System intent:
+There are two kinds, told apart by the top-level `kind`. System intent:
 
 ```yaml
 kind: boundary
@@ -66,13 +67,14 @@ transitions:
           fullName: { type: string }
 ```
 
-Each transition declares exactly one outcome: `response` (REST status +
-body), `returns` (a function/handler return value), or `throws` (an
-error). PRD docs (`kind: prd`) contain `when` / `expect` scenarios that
-can `link` to a system-intent outcome by `<name>.<id>`.
+Each transition declares exactly one outcome: `response` (a REST status
+and body), `returns` (a function or handler return value), or `throws`
+(an error). PRD docs (`kind: prd`) contain `when` / `expect` scenarios,
+and each scenario can `link` to a system-intent outcome by
+`<name>.<id>`.
 
 Body properties accept the primitive type names `string`, `integer`,
-`number`, `boolean`, `null`, and `unknown`.
+`number`, `boolean`, `null` and `unknown`.
 
 ## More
 

@@ -1,20 +1,24 @@
 # @suss/client-web
 
-Client pack for the web `fetch` API. It discovers `fetch()` call sites, extracts the method and path from the arguments, and produces client behavioral summaries.
+Client pack for the web `fetch` API. It finds `fetch()` call sites, reads the method and path from the arguments, and produces client summaries.
+
+```ts
+const response = await fetch("/api/orders/42", { method: "DELETE" });
+```
 
 ## What this package is
 
-`@suss/client-web` returns a `PatternPack` object describing:
+`@suss/client-web` exports a `PatternPack`, which is data the adapter reads. It covers:
 
-- **Discovery** via global `fetch()` call sites (not an import; `fetch` is a built-in), written bare or through the global object as `globalThis.fetch()`, `window.fetch()`, `self.fetch()` or `global.fetch()`
-- **Binding extraction**: URL path from the first argument (literal strings only), HTTP method from `options.method` (defaults to `GET`)
-- **Terminals**: `returnStatement` (any return) and `throwExpression`
+- **Discovery**: calls to the global `fetch()`. There is no import to match, since `fetch` is built in. The call can be written bare or through the global object, as `globalThis.fetch()`, `window.fetch()`, `self.fetch()` or `global.fetch()`.
+- **Binding extraction**: the URL path from the first argument (literal strings only), and the HTTP method from `options.method`, which defaults to `GET`.
+- **Terminals**: `returnStatement` (any return) and `throwExpression`.
 
-This is a "client pack": `fetch` is a built-in web API, not a third-party framework. It uses the same `PatternPack` interface because the adapter interprets both of them identically.
+`fetch` is a web API built into the runtime and has no framework behind it, so this is a client pack. It uses the same `PatternPack` interface because the adapter reads both kinds of pack the same way.
 
 ## Where it fits in suss
 
-This package depends only on `@suss/extractor` (for the `PatternPack` type). It contains no analysis logic.
+This package depends only on `@suss/extractor`, for the `PatternPack` type. It has no analysis logic of its own.
 
 ## Coverage
 

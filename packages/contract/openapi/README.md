@@ -1,19 +1,19 @@
 # @suss/contract-openapi
 
-Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and says where the two disagree.
+Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and reports where the two disagree.
 
-Generate suss `BehavioralSummary[]` from an [OpenAPI 3.x](https://swagger.io/specification/) specification. Lets you check TypeScript consumers against a published API contract, or your own provider against a contract you publish, without having extracted summaries from the provider's source code.
+This package builds suss `BehavioralSummary[]` from an [OpenAPI 3.x](https://swagger.io/specification/) specification. With it you can check TypeScript consumers against a published API contract, or check your own provider against a contract you publish, without extracting summaries from the provider's source code.
 
 ## What this package is
 
-`@suss/contract-openapi` reads an OpenAPI document and emits one `BehavioralSummary` per operation. Each summary has:
+`@suss/contract-openapi` reads an OpenAPI document and produces one `BehavioralSummary` per operation. Each summary has:
 
-- A `kind: "handler"` provider-side form
-- `boundaryBinding: { protocol: "http", method, path, framework: "openapi" }`: pairs with extracted handlers/clients via the checker's path normalization (`:id` ↔ `{id}`)
-- One transition per declared response status, with body shapes converted from OpenAPI Schema → suss `TypeShape`
-- `confidence: { source: "derived", level: "high" }`: declared rather than inferred
+- A `kind: "handler"` provider-side form.
+- `boundaryBinding: { protocol: "http", method, path, framework: "openapi" }`, which pairs with extracted handlers and clients through the checker's path normalization (`:id` ↔ `{id}`).
+- One transition per declared response status, with body shapes converted from OpenAPI Schema to suss `TypeShape`.
+- `confidence: { source: "derived", level: "high" }`, since the behavior is declared and not inferred.
 
-The summaries plug into `suss check` exactly like extracted ones.
+`suss check` accepts these summaries exactly as it accepts extracted ones.
 
 ## Minimal usage
 
@@ -25,13 +25,13 @@ const summaries = openApiFileToSummaries("openapi.yaml");
 fs.writeFileSync("provider.json", JSON.stringify(summaries, null, 2));
 ```
 
-Then pair against a consumer extracted from your TS code:
+Then pair it with a consumer extracted from your TS code:
 
 ```sh
 suss check provider.json consumer.json
 ```
 
-Or programmatically:
+Or from code:
 
 ```ts
 import { openApiToSummaries } from "@suss/contract-openapi";
@@ -53,21 +53,21 @@ const summaries = openApiToSummaries(spec);
 
 ## Range codes and `default`
 
-A document may declare a response as `"4XX"` rather than as one code. That entry promises the operation can return some status between 400 and 499, without saying which. The reader keeps that meaning in two places: the transition for the entry has `statusCode: null` with the range under `metadata.http.statusRange`, and the declared contract records it under `responseRanges`. The checker treats a consumer branch on any member of the range (a branch on 404 against a declared `4XX`) as agreeing with the contract, and asks whether the consumer covers the range at all, not whether it covers every member.
+A document can declare a response as `"4XX"` instead of one code. That entry means the operation can return some status between 400 and 499, without saying which. The reader keeps that meaning in two places. The entry's transition has `statusCode: null`, with the range under `metadata.http.statusRange`, and the declared contract records it under `responseRanges`. The checker treats a consumer branch on any status in the range (a branch on 404 against a declared `4XX`) as agreeing with the contract. It asks whether the consumer covers the range at all, and does not require it to cover every status in it.
 
-`default` in OpenAPI documents every status the other entries leave out. It becomes the summary's `isDefault` transition and the contract's `defaultResponse`, and the checker reads it as "the provider may return any status", so no consumer status is ever undeclared or dead against an operation with a `default`. The checker does not ask the consumer to cover the default bucket: the bucket has no concrete status to state an outcome about, and requiring a catch-all would be a style claim rather than a behavioral one.
+In OpenAPI, `default` covers every status the other entries leave out. It becomes the summary's `isDefault` transition and the contract's `defaultResponse`. The checker reads it as "the provider may return any status", so against an operation with a `default`, no consumer status is ever undeclared or dead. The checker does not ask the consumer to handle the default case either. That case has no concrete status to state an outcome for, and requiring a catch-all would be a rule about style, with no behavior behind it.
 
 ## Limitations (v0)
 
-- **Headers, links, callbacks, webhooks** sections are not modeled.
-- **Security schemes** are not represented as transitions (no synthetic 401/403).
-- **Multiple content types** per response: one media type gives the body shape, and which one it was is not recorded, so a producer and a consumer are never compared on the media type itself. #387 tracks that.
-- **Polymorphism via `discriminator`** is not modeled (the union shape is correct, but the discriminator field isn't called out).
-- **Spec validation is not strict**; invalid specs may produce odd summaries rather than errors.
+- **Headers, links, callbacks and webhooks** sections are not modeled.
+- **Security schemes** do not become transitions, so there is no synthetic 401/403.
+- **Multiple content types** per response: one media type gives the body shape, and the reader does not record which one. So a producer and a consumer are never compared on the media type itself. #387 tracks that.
+- **Polymorphism through `discriminator`** is not modeled. The union shape is correct, but the discriminator field is not marked.
+- **Spec validation is not strict.** An invalid spec may produce odd summaries instead of errors.
 
 ## Where it fits in suss
 
-Depends only on `@suss/behavioral-ir` (for the IR types it produces) and `yaml` (for spec parsing). It is independent of the language adapter and pattern packs; it doesn't extract from source.
+The package depends only on `@suss/behavioral-ir`, for the IR types it produces, and `yaml`, for parsing the spec. It does not use the language adapter or pattern packs, since it does not extract from source.
 
 ## More
 
