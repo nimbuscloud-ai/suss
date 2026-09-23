@@ -4,10 +4,9 @@
  * "Why did this run produce nothing" is always "at which stage did the
  * count reach zero", so the report is a funnel: files in the tsconfig,
  * files the import gates selected, units discovered, summaries built.
- * Each row is recorded by the stage that owns it, because the
- * alternative is the CLI re-deriving the pre-filter's decisions from a
- * second copy of its logic, and a second copy drifting from the first
- * is what made an entire pack family extract nothing in silence.
+ * Each stage records its own row, so the CLI never works the counts out
+ * from a second copy of the pre-filter's logic that could drift from the
+ * first.
  *
  * TypeScript, Python and Ruby all build one of these, though only
  * TypeScript gates files by import specifier today. A pack with no gate
@@ -23,9 +22,9 @@ import type { PackDeclarations } from "./framework.js";
 export interface PackFunnel {
   pack: string;
   /**
-   * What the pack calls this build of itself, or null when it declares
-   * nothing. The cache keys on it, so a pack that never changes its
-   * stamp can serve a later run with an earlier build's results.
+   * The version stamp the pack declares, or null when it declares none.
+   * The cache keys on it, so a pack that never changes its stamp can
+   * serve a later run with an earlier build's results.
    */
   version: string | null;
   /**
@@ -47,11 +46,10 @@ export interface PackFunnel {
    */
   gates: string[];
   /**
-   * Gate specifiers that do not resolve from the project. Non-empty
-   * here usually means the target project's dependencies are not
-   * installed, which stops symbol-resolution packs while leaving
-   * textual-gate packs working, so the run half-succeeds in a way
-   * nothing else surfaces.
+   * Gate specifiers that do not resolve from the project. A non-empty
+   * list usually means the target project's dependencies are not
+   * installed. Packs that resolve symbols then stop working while packs
+   * with a textual gate still run, and nothing else in the report shows it.
    */
   unresolvedGates: string[];
   /** Files the pre-filter selected for this pack. */
@@ -110,9 +108,9 @@ export interface PackFunnel {
   /**
    * What the pack wrote as data rather than as code, or null for a pack
    * written as a hand-rolled walk, or for a language whose packs have
-   * no declared-pattern system at all. This is the one thing in the
-   * funnel that no run produces: it is the pack's own shape, and it is
-   * here so the migration onto the declared surface can be measured.
+   * no declared-pattern system at all. Unlike the counts, this comes from
+   * the pack's definition and not from the run. It is reported so the
+   * move of packs onto declared patterns can be measured.
    */
   declarations: PackDeclarations | null;
 }
@@ -128,11 +126,10 @@ export interface ExtractionReport {
    * Files whose exports the checker could not follow, so the run read
    * them as exporting nothing.
    *
-   * Without this the artifact cannot tell the two apart: a module whose
-   * barrel chain outran the call stack and a module that really does
-   * export nothing both produce no summaries and exit 0.
-   * Anything reachable only through these files is missing, and every
-   * count below is a floor while this is non-empty.
+   * Without this list, a module whose barrel chain overflowed the call
+   * stack looks the same as a module that exports nothing: both produce
+   * no summaries and exit 0. Anything reachable only through these files
+   * is missing, and every count below is a floor while this is non-empty.
    */
   filesWithUnreadableExports: string[];
   /**
@@ -141,10 +138,9 @@ export interface ExtractionReport {
    */
   emptyStage: EmptyStage | null;
   /**
-   * Reassigned names the run stated nothing for, because control flow
-   * decides which write a reader sees. Each is a value resolution the
-   * facts decline; the count across a large corpus says whether scoped
-   * reaching definitions is worth writing.
+   * Reassigned names the run stated no value for, because control flow
+   * decides which write a reader sees. Across a large corpus, the count
+   * shows how much a scoped reaching-definitions analysis would recover.
    */
   reassignedNamesUnstated: number;
 }
@@ -165,7 +161,7 @@ export type EmptyStage =
  * that looked and found nothing.
  */
 export interface PackFailure {
-  /** The hook that threw, called what a pack author would call it. */
+  /** The hook that threw, by the name a pack author uses for it. */
   hook: string;
   /** The file the pack was reading. */
   file: string;
@@ -197,9 +193,9 @@ export const emptyTally = (): PackTally => ({
 });
 
 /**
- * Record that a pack's hook threw, and phrase it in one sentence a caller
- * can print. Both callers want the same wording, and a failure that only
- * reached stderr left the counts looking like an empty pack.
+ * Record that a pack's hook threw, and return one line a caller can print.
+ * The failure also goes on the tally, so the pack's counts do not look
+ * like those of a pack that found nothing.
  */
 export function recordPackFailure(
   tally: PackTally | undefined,
@@ -248,8 +244,8 @@ export function tallyUnit(
  * it, because the summaries a pack is responsible for are not all built
  * where the pack is in scope: wrapper expansion and sub-unit synthesis
  * both add summaries after discovery has moved on. Every summary
- * records what recognised it, so grouping on that gets each one back to
- * the pack that owns it however late it arrived.
+ * records the pack that recognised it, so grouping on that credits each
+ * summary to its pack however late it was built.
  */
 interface SummaryCounts {
   bound: number;

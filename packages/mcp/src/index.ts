@@ -1,14 +1,14 @@
 /**
- * index.ts: the MCP server over suss.
+ * The MCP server over suss.
  *
  * A model working in a repository can ask what a route serves, what
  * reads a table, and where the two sides of a boundary disagree, at the
- * moment it decides the question is worth asking. That is the point of
- * this over a document: a document is read once at the start of a
- * session, and a tool arrives with the decision.
+ * point in a task where the question comes up. A document is read once
+ * at the start of a session and then forgotten, and a tool is there
+ * each time the model has to decide.
  *
  * The server keeps the summaries current while it runs, so an answer
- * describes the working tree rather than whatever was last extracted.
+ * describes the working tree as it is now.
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -42,10 +42,10 @@ export type { BuildReport, ProjectOptions } from "./project.js";
  * A server with the tools registered, not yet connected.
  *
  * The caller connects it to a transport, so the same server runs over
- * stdio from the binary or inside a host that speaks something else.
- * The project starts building in the background rather than being
- * awaited here, so the caller can connect before the first extract
- * finishes; a tool call that arrives first waits on project.settled().
+ * stdio from the binary or over whatever transport a host uses. The
+ * project starts building in the background, so the caller can connect
+ * before the first extract finishes. A tool call that arrives before
+ * then waits on project.settled().
  */
 export function createServer(options: ProjectOptions): {
   server: McpServer;
@@ -185,5 +185,5 @@ const READ_ONLY = {
   openWorldHint: false,
 } as const;
 
-/** The version this package was published at. See version.ts. */
+/** The version this package was published at, read from its manifest. */
 const VERSION = versionFrom(new URL("../package.json", import.meta.url));

@@ -27,8 +27,9 @@ export interface RanExample {
 export type RunOverCode = (code: string) => Effect[];
 
 /**
- * Every example a pack declares, run. A declaration with no example is
- * left out, which is what the pack health check catches separately.
+ * Runs every example a pack declares. A declaration with no example is
+ * skipped here; `examplesMissing` lists those, and the pack health
+ * check reports them.
  */
 export function runExamples(pack: PatternPack, run: RunOverCode): RanExample[] {
   const declared = pack.declarations?.declarations ?? [];

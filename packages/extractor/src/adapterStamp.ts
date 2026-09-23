@@ -1,15 +1,14 @@
 /**
- * adapterStamp.ts: the language-neutral half of an adapter's cache key.
+ * The language-neutral half of an adapter's cache key.
  *
- * An adapter's own version.ts calls `createAdapterStamp` with its own
+ * Each adapter calls `createAdapterStamp` once, with its own
  * `import.meta.url` and its hand-bumped version, and keeps the result for
- * the life of the process. The stamp hashes the adapter's own dist file
- * plus every analysis package it ships beside (this package,
- * `@suss/resolution`, `@suss/datalog`, `@suss/behavioral-ir`), so a
- * release that changes any of them invalidates an older cache, and a
- * dev rebuild invalidates on its own with no version bump by hand.
- * Running from source has no dist file to hash, and that mode declines
- * to cache. The extraction cache's design is in this package's README.
+ * the life of the process. The stamp hashes the adapter's dist file and
+ * every analysis package shipped with it (this package, `@suss/resolution`,
+ * `@suss/datalog`, `@suss/behavioral-ir`). A release that changes any of
+ * them invalidates an older cache, and so does a local rebuild, with no
+ * version bump. Running from source leaves no dist file to hash, so that
+ * mode turns the cache off. This package's DESIGN.md describes the cache.
  */
 
 import { createHash } from "node:crypto";
@@ -27,9 +26,8 @@ const ANALYSIS_PACKAGES = [
 
 /**
  * Whether this process can see the adapter's own code. `bundle` includes
- * a hash that changes whenever the code does. `source` means nothing
- * here could find it, so a cache key built from this stamp says nothing
- * about the code that will produce the results.
+ * a hash that changes whenever the code does. `source` means no bundle was
+ * found, so a cache key built from this stamp cannot tell two builds apart.
  */
 export type AdapterCodeStamp =
   | { kind: "bundle"; hash: string }
@@ -37,23 +35,21 @@ export type AdapterCodeStamp =
 
 const SOURCE_STAMP: AdapterCodeStamp = { kind: "source" };
 
-/** What `createAdapterStamp` hands back to an adapter's own version.ts. */
 export interface AdapterStamp {
   /** The stamp for the running adapter, computed once per process. */
   codeStamp(): AdapterCodeStamp;
   /**
-   * Cache-friendly identity for this adapter plus its packs. Stable
-   * across processes given the same inputs; bumps when any pack arrives
-   * with a new version stamp, the adapter version changes, or the
-   * loaded adapter dist file changes (dev-mode rebuild auto-invalidation).
+   * A cache key for this adapter and its packs. It is the same across
+   * processes for the same inputs, and changes when a pack's version, the
+   * adapter's version, or the adapter's dist file changes.
    */
   packsDigest(
     packVersions: ReadonlyArray<{ name: string; version?: string }>,
   ): string;
   /**
-   * `cacheDir` unless this process loaded the adapter from source, where
-   * nothing can tell one build of it from another; then this returns
-   * null and, once per process, says why on stderr.
+   * Returns `cacheDir`, or null when this process loaded the adapter from
+   * source, since then one build cannot be told from another. The first
+   * null in a process also prints the reason to stderr.
    */
   declineWhenRunFromSource(cacheDir: string | null): string | null;
 }
@@ -111,9 +107,8 @@ export function createAdapterStamp(config: {
 
 function readAdapterCodeStamp(moduleUrl: string): AdapterCodeStamp {
   try {
-    // At runtime under ESM, `import.meta.url` points at this module's
-    // file. In a published package that's `dist/index.js` (tsup bundles
-    // version.ts into the same file). Hash that file.
+    // A published adapter bundles the calling module into its dist entry
+    // file, so the directory `moduleUrl` points into contains the bundle.
     const selfPath = fileURLToPath(moduleUrl);
     const hash = computeDistHashFrom(path.dirname(selfPath));
     return hash.length > 0 ? { kind: "bundle", hash } : SOURCE_STAMP;
@@ -125,7 +120,7 @@ function readAdapterCodeStamp(moduleUrl: string): AdapterCodeStamp {
 /**
  * The hash for a bundle directory: the bundle itself plus every analysis
  * package that can be located. Empty when the directory has no bundle in
- * it, which is what running from source looks like.
+ * it, as happens when running from source.
  */
 export function computeDistHashFrom(dir: string): string {
   const candidates = [path.join(dir, "index.js"), path.join(dir, "index.cjs")];
@@ -169,11 +164,9 @@ export function computeContentHash(paths: readonly string[]): string {
  * content go in, so a file that moves counts as a change even when
  * every byte in it stayed the same.
  *
- * A file that cannot be read stamps as absent rather than voiding the
- * whole stamp, which is what `computeContentHash` does. These files
- * belong to the project rather than to the installed tool: one of them
- * being gone is a fact about the project the next run should notice,
- * not a reason to stop telling runs apart.
+ * A file that cannot be read is hashed as absent, where
+ * `computeContentHash` would return an empty stamp. These files belong
+ * to the project, so a missing one is a change the next run should see.
  */
 export function projectFileStamp(paths: readonly string[]): string {
   if (paths.length === 0) {
@@ -198,7 +191,7 @@ export function projectFileStamp(paths: readonly string[]): string {
  * project files that are not among the ones a run walks, a SAM template
  * that decides which handlers exist for instance, so those belong in
  * the key next to the pack's own config. Which files they are depends
- * on the files this run walks, so the digest is settled per run rather
+ * on the files this run walks, so the digest is computed per run rather
  * than once per adapter.
  */
 export function runDigest(

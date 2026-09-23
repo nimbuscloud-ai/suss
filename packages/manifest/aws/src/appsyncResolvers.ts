@@ -1,16 +1,16 @@
 /**
- * appsyncResolvers.ts works out which GraphQL field each Lambda serves.
+ * Works out which GraphQL field each Lambda serves.
  *
  * AppSync does not wire a field to a handler in code. The template does it,
  * over three hops: a resolver points at a pipeline function, the function
  * points at a data source, and the data source points at a Lambda. Both ways
- * of writing that are covered, the raw AWS::AppSync::* resources and the SAM
- * AWS::Serverless::GraphQLApi shorthand whose DataSources, Functions, and
+ * of writing that are read here: the raw AWS::AppSync::* resources, and the
+ * SAM AWS::Serverless::GraphQLApi shorthand whose DataSources, Functions and
  * Resolvers blocks the transform expands into those same resources.
  *
- * Like the rest of this package, this reports only what the template says.
+ * Like the rest of this package, it reports only what the template says.
  * Whether a field has an implementation, and whether that implementation
- * matches the schema, is for a reader above to decide.
+ * matches the schema, is left to the reader that consumes these bindings.
  */
 
 import { refTarget } from "./templateLoader.js";
@@ -144,9 +144,9 @@ function dataSourcesReached(
 /**
  * A resolver refers to a data source either by logical id or by the Name
  * property, and the two need not match. Logical ids are unique across a
- * template, unique only within one API, and every one of these resources says
- * which API it belongs to. So a name is looked up against the resolver's own
- * API, and two APIs are free to use the same one.
+ * template, but a name is unique only within one API, and every one of these
+ * resources says which API it belongs to. So a name is looked up against the
+ * resolver's own API, and two APIs are free to use the same one.
  */
 function fromRawResources(
   resources: Record<string, CloudFormationResource | undefined>,

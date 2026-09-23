@@ -43,9 +43,9 @@ export type Value =
   | { readonly kind: "deferred"; readonly force: () => Value };
 
 /**
- * A set of literals wider than this becomes a hole. It is wide enough
- * for a string literal union or an enum of ordinary size, which a
- * declared type hands over whole.
+ * A set of literals wider than this becomes a hole. The cap is wide
+ * enough that a string literal union or an enum of ordinary size, read
+ * from a declared type, stays a set of literals.
  */
 export const SET_CAP = 16;
 

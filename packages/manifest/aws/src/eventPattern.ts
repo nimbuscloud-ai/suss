@@ -1,6 +1,6 @@
 /**
- * eventPattern.ts reads what an EventBridge rule says about the events it
- * matches, and which bus those events arrive on.
+ * Reads what an EventBridge rule says about the events it matches, and
+ * which bus those events arrive on.
  *
  * A rule's EventPattern and its EventBusName are written the same way in a
  * CloudFormation template and in a serverless.yml eventBridge event, so
@@ -20,9 +20,9 @@ export type PatternReduction =
 
 /**
  * Reduce a rule's EventPattern to the exact set of DetailTypes it
- * matches. v0 handles only a literal `detail-type` array; anything else
- * (absent detail-type, content-filter objects, empty array) is
- * unresolvable, surfaced by the checker, never silently dropped.
+ * matches. Only a literal `detail-type` array reduces. Anything else,
+ * such as a missing detail-type, a content filter or an empty array,
+ * comes back unresolvable with a reason, and the checker reports it.
  */
 export function reduceEventPattern(pattern: unknown): PatternReduction {
   if (pattern === null || typeof pattern !== "object") {

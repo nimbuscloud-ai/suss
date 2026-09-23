@@ -1,11 +1,11 @@
 /**
  * Join and widen over abstract values.
  *
- * `join` is what a value is after two branches, and it keeps whatever
- * the two sides agree on: pieces line up from both ends of a string,
- * elements line up by position in a sequence, and fields line up by
- * name. `widen` is what a value is after a loop ran some number of
- * times, and it gives up on anything the loop body changed.
+ * `join` computes a value where two branches meet. It keeps whatever
+ * the two sides agree on: pieces are matched from both ends of a
+ * string, elements by position in a sequence, and fields by name.
+ * `widen` computes a value after a loop has run an unknown number of
+ * times, and it keeps only the parts the loop body left unchanged.
  */
 
 import {

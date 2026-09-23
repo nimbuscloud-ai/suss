@@ -2,13 +2,13 @@
  * The entry point for a pack whose calls hand the store a statement
  * written as SQL.
  *
- * A typed client says what it reached in its arguments, so the chain
- * asks the call. A raw statement says it in the text, so the chain
- * hands the text to `@suss/sql` and the parse settles the container,
- * the kind, the fields and the selector of every table the statement
- * touches. The links up to that point are the same ones every chain
- * states, which is why this is an ending rather than a grammar of its
- * own.
+ * With a typed client, the call's arguments show which table it
+ * reached. With a raw statement that information is in the SQL text,
+ * so the chain passes the text to `@suss/sql`. The parse gives the
+ * container, the kind, the fields and the selector of every table the
+ * statement touches. Every link before that point is one any other
+ * chain uses too, so SQL is a chain ending and needs no separate
+ * grammar.
  */
 
 import { chainStart } from "./chain.js";

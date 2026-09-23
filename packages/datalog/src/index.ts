@@ -148,8 +148,8 @@ export class Database {
 
   /**
    * The key this relation gives a tuple, whether or not the fact is
-   * present. Evaluation keys its ledger of derived facts by it; a
-   * caller outside this module has nowhere to spend one.
+   * present. Evaluation keys its ledger of derived facts by it. Nothing
+   * outside this module accepts a key.
    */
   keyFor(relationName: string, tuple: Tuple): FactKey {
     return this.relation(relationName).index.key(tuple);
@@ -266,9 +266,9 @@ export class Database {
     for (const key of going) {
       index.remove(key);
     }
-    // Emptying a relation is what `clearRelations` does after every
-    // question, and walking the tuples to find that none of them stay is
-    // the slowest way to arrive at an empty list.
+    // `clearRelations` empties relations after every question. When
+    // nothing is left, reset the list instead of filtering every tuple
+    // out of it.
     if (index.size === 0) {
       relation.tuples = [];
       index.clear();
@@ -359,7 +359,7 @@ export interface Derivation {
 /**
  * Assign each derived relation a stratum such that positive
  * dependencies never decrease the stratum and negative dependencies
- * strictly increase it. Iterates to fixpoint. A stratum above the
+ * strictly increase it, iterating to a fixpoint. A stratum above the
  * relation count means there is a negation cycle, which cannot be
  * stratified, so this throws.
  */
@@ -519,15 +519,14 @@ const allBound = (literal: Literal, bindings: Bindings | null): boolean =>
 
 /**
  * How many rows the joins of one evaluation may read, and how many they
- * have read so far. Counting rows rather than new tuples is what catches
- * a question that walks: the walk finds the same conclusions over and
- * over, so nothing new arrives while the reading runs away.
+ * have read so far. The budget counts rows read rather than new tuples.
+ * A question that runs away keeps finding conclusions it already has, so
+ * the tuple count stays flat while the rows read keep growing.
  *
- * The caller builds one with `rowBudget` and reads `examined` back after
- * the call, which is how it learns what a question cost whether or not
- * the question settled. An evaluation with no budget gets a limit of
- * Infinity, so the hot loop does the same increment and the same
- * compare either way.
+ * The caller builds one with `rowBudget` and reads `examined` after the
+ * call to learn what the question cost, whether or not it settled. An
+ * evaluation with no budget gets a limit of Infinity, so the hot loop
+ * does the same increment and the same compare either way.
  */
 export interface RowBudget {
   examined: number;
@@ -563,9 +562,9 @@ export class BudgetExhausted extends Error {
     readonly ruleSet: string,
     readonly examined: number,
   ) {
-    // A rule set is called after every relation it derives, which runs
-    // to thousands of characters for the resolution program, so it
-    // stays a field and the message says the number a reader acts on.
+    // A rule set's name lists every relation it derives, thousands of
+    // characters for the resolution program, so the name stays a field
+    // and the message gives only the row count.
     super(`gave up after reading ${examined} rows without settling`);
     this.name = "BudgetExhausted";
   }
@@ -578,7 +577,7 @@ export class BudgetExhausted extends Error {
  *
  * The delta is read first. The rest of the body is walked in whatever
  * order the bindings so far make cheapest, chosen afresh under each
- * binding; the DESIGN notes say why a fixed order loses. A bitmask
+ * binding; DESIGN.md shows what a fixed order costs. A bitmask
  * records which literals a branch has taken, so a body is limited to
  * 31 literals.
  */
@@ -729,13 +728,13 @@ interface TaggedDerivation<Tag> {
   tag: Tag;
 }
 
-/**
- * `evaluateRule` with tag collection. A separate walk rather than a
- * flag on the shared one, so evaluation without an algebra keeps its
- * inner loop free of per-tuple checks.
- */
 const EMPTY_TAGS: readonly never[] = [];
 
+/**
+ * `evaluateRule` with tag collection. It is a separate walk so that
+ * evaluation without an algebra keeps its inner loop free of per-tuple
+ * checks.
+ */
 function evaluateRuleTagged<Tag>(
   db: Database,
   deltas: Map<string, readonly Tuple[]>,
@@ -828,10 +827,9 @@ function evaluateRuleTagged<Tag>(
 /**
  * What one rule set has worked out about a database, so a later call
  * with the same rules can pick up from there instead of starting over.
- * Kept off to the side rather than on Database, which stays a plain
- * fact store, and kept per rule set: two rule sets sharing a database
- * are each responsible for their own conclusions, and neither removes
- * the other's.
+ * It lives in a side table so Database stays a plain fact store. Each
+ * rule set has its own state, so two rule sets sharing a database never
+ * retract each other's conclusions.
  */
 interface RuleSetState {
   /**
@@ -843,8 +841,8 @@ interface RuleSetState {
   /**
    * Every fact this rule set derived, per relation, keyed so a caller
    * asserting the same fact can take it off the list. A tuple the
-   * caller had already added never shows up here: `add` said it was
-   * nothing new, so evaluation never claimed it.
+   * caller had already added never appears here, because `add` returned
+   * "unchanged" for it and evaluation did not record it.
    */
   derived: Map<string, Map<FactKey, Tuple>>;
 }
@@ -960,8 +958,8 @@ function currentMarks(db: Database): Map<string, number> {
  * database: a resumed run tags only what the new facts reach.
  *
  * With a `budget`, evaluation gives up once its joins have read that
- * many rows and throws `BudgetExhausted`. Either way the budget says
- * afterwards what the evaluation cost.
+ * many rows and throws `BudgetExhausted`. Either way, `budget.examined`
+ * afterwards gives what the evaluation cost.
  */
 export function evaluate<Tag = never>(
   db: Database,
@@ -994,25 +992,18 @@ export function evaluate<Tag = never>(
 }
 
 /**
- * Empty these relations, and leave `rules` able to carry on from where
- * it got to.
+ * Empty these relations and let `rules` resume from its last fixpoint.
  *
- * `retract` cannot do this. A fact leaving the database can take away a
- * conclusion drawn anywhere, so it sends the next run back to the base
- * facts. A caller here is saying something stronger than "these facts
- * are gone": nothing outside `relations` was derived from them, so what
- * is left is already the fixpoint and the next run has only the facts
- * that arrive after this to work through.
+ * After `retract`, the next run starts again from the base facts, since
+ * a fact leaving the database can take away a conclusion drawn anywhere.
+ * A caller of this function promises more: nothing outside `relations`
+ * was derived from these facts. What is left is already the fixpoint,
+ * and the next run works through only the facts added after this.
  *
- * That is what a demand-driven rule set gives a caller between
- * questions. Every relation `deriveOnDemand` restricts is derived under
- * a demand fact, so clearing the demand together with everything under
- * it costs one question's worth of derivation rather than every
- * question asked so far. The relations listed as complete keep their
- * contents, which are the answers a caller has already read.
- *
- * Any other rule set over the same database does start over, since a
- * relation it derived from may be one of these.
+ * A demand-driven caller clears `deriveOnDemand`'s demand-driven
+ * relations between questions, and the complete ones keep the answers
+ * already read (DESIGN.md has an example). Any other rule set over the
+ * same database starts over, since it may have derived from these.
  */
 export function clearRelations(
   db: Database,
@@ -1066,7 +1057,7 @@ function shapeOf(rules: Rule[]): RuleSetShape {
 /**
  * Whether a rule can produce anything at all right now. A join reads every
  * positive literal, so one of them being empty means there is nothing to
- * find, and a rule set has rules for shapes a given project never writes.
+ * find, and a rule set has rules for code patterns a given project never uses.
  * A relation that fills up later gets the rule run in a later round.
  */
 function couldProduce(db: Database, rule: Rule): boolean {

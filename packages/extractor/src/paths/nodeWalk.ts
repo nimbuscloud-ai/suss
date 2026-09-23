@@ -1,23 +1,24 @@
 /**
- * nodeWalk.ts: the one recursion the adapters use to read a declaration
- * wherever the language allows it to be written.
+ * The recursion the adapters use to find a declaration wherever the
+ * language allows one to be written.
  *
- * A declaration goes where a statement goes, and every language has more
- * places for a statement than a reader remembers to list. So an adapter
- * does not list the containers it descends into. It walks every named
- * child and says only which nodes keep their own body, because that set
- * is short and a grammar's own vocabulary already names it.
+ * A declaration can go anywhere a statement can, and every language has
+ * more places for a statement than anyone remembers to list. So an adapter
+ * does not list the containers to descend into. The walk visits every
+ * named child, and the adapter only lists the nodes whose body belongs to
+ * what they declare, because that list is short and the grammar already
+ * has a node type for each.
  */
 
-/** A parse tree, however a grammar spells one. */
+/** The one thing the walk needs from a parse tree node. */
 export interface WalkableNode<T> {
   readonly namedChildren: ReadonlyArray<T | null>;
 }
 
 /**
  * Returned by `into` for a node whose children the walk should leave
- * unread, such as one whose body belongs to what it declares. A symbol,
- * so it cannot collide with whatever a caller carries.
+ * unread, such as one whose body belongs to what it declares. It is a
+ * symbol so it cannot collide with any value a caller passes down.
  */
 export const SKIP_CHILDREN: unique symbol = Symbol("skipChildren");
 

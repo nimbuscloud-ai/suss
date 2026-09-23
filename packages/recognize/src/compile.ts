@@ -1,16 +1,16 @@
 /**
- * Turning a chain into the recognizer hook the adapters already call.
+ * Turns a chain into the recognizer hook the adapters already call.
  *
- * The links are guards, so the compiled hook checks the cheap one
- * first: looking a method up in a table costs nothing, while following
- * a receiver to the library that made it walks declarations. The chain
- * says which questions to ask, not the order to ask them in. A link
- * that changes what the receiver is, the way Prisma's model property
- * does, will need that order back, and the note here is where to start.
+ * Every link is a guard, and the compiled hook checks the cheapest one
+ * first. Looking a method up in a table costs nothing, while following
+ * a receiver to the library that made it walks declarations. So the
+ * hook ignores the order the pack declared its links in. A link that
+ * changes what the receiver is, as a Prisma model property would, needs
+ * declared order back, and that change goes here.
  *
  * A chain that states a subject asks its questions of a call next to
- * the one in hand, so the walk lives here. The README beside this file
- * says what each step reaches and why the walk is bounded.
+ * the one in hand, and the walk to that call is also here. DESIGN.md
+ * describes what each step reaches and why the walk is bounded.
  */
 
 import {
@@ -69,8 +69,8 @@ import type {
 
 /**
  * How many receivers a walk climbs before it gives up. A receiver chain
- * can come back round to where it started through a variable, and a
- * pack that meant eight hops has written something else by mistake.
+ * can loop back to where it started through a variable, and no pack
+ * means a step eight hops away.
  */
 const MAX_RECEIVER_HOPS = 8;
 
@@ -145,9 +145,9 @@ function linkIn<TAsks extends Link<MethodMeaning>["asks"]>(
 
 /**
  * A bare call of the tracked client itself, when the chain has a calls
- * link. There is no method name to key a table on, so the link's one
- * meaning is the whole answer, and the proof is the callee: a bound
- * name whose written value came from the chain's origin.
+ * link. There is no method name to look up, so the link's one meaning
+ * applies. The call matches only when its callee is a bound name whose
+ * written value came from the chain's origin.
  */
 function bareCall(
   chain: Chain<MethodMeaning>,
@@ -390,7 +390,7 @@ function reachedBy(
       stated: true,
     }));
     // A list this run cannot read is still a call against the store.
-    // Dropping it made a unit that reads look like one that does not.
+    // Dropping it would make a unit that reads look like one that does not.
     return named.length === 0 ? alone : named;
   }
   return stated.entries(unsettled).map((entry) => ({
@@ -447,7 +447,7 @@ function accessPathOf(
     : (namesAt(subject, link.argument, unsettled)[0] ?? null);
 }
 
-/** Which namespace the call reached, when the chain says where it says so. */
+/** Which namespace the call reached, when a scope link picks the argument. */
 function scopeOf(
   chain: Chain<MethodMeaning>,
   subject: CallOps,
@@ -565,15 +565,6 @@ function nameOf(
 }
 
 /**
- * Every table the statement touches, as one effect each.
- *
- * The kind, the fields and the selector come out of the parse rather
- * than out of anything the chain asked, so nothing here reads the
- * method table beyond finding where the call put the statement. A
- * statement nobody can read gives back nothing, and the call goes
- * unrecorded rather than recorded with a guessed kind.
- */
-/**
  * One effect per message the call sends.
  *
  * A library either takes the message as the call's input or takes a
@@ -592,10 +583,9 @@ function messageSend(matched: Matched): Effect[] | null {
     return null;
   }
 
-  // A batch whose list this run cannot read into messages is still a
-  // send. It is recorded once, with the input-side channel parts read
-  // and nothing claimed about the messages, because dropping it made a
-  // service that sends read as one that sends nothing.
+  // A batch whose messages this run cannot read is still a send. Record
+  // it once, with only the channel parts on the input, so a service that
+  // sends never looks like one that sends nothing.
   const messages = messagesIn(input, ending.messages);
   const sent = messages.length === 0 ? [NOTHING_STATED] : messages;
   const effects: Effect[] = [];
@@ -641,7 +631,7 @@ function messagesIn(
  */
 const CHANNEL_CAP = 16;
 
-/** One message and what it was sent with, which is where its channel is read from. */
+/** One message and the call input it was sent with, to read its channel from. */
 interface Sending {
   readonly message: ValueOps;
   readonly input: ValueOps;
@@ -665,7 +655,7 @@ function oneName(
 /**
  * `` `record.${op}` `` with `op` typed `"a" | "b"` is two strings, so
  * the send is two sends. A value that is only ever one string, or that
- * could be anything, is read as one name the way it always was.
+ * could be anything, is read as one name.
  */
 function everyString(
   written: ValueOps,
@@ -722,10 +712,10 @@ function crossed(
  * The strings one part of a channel can be, or null when it is unsaid.
  *
  * A part that is absent and a part that is written but unsettled mean
- * different things. Absent means the library fills it in, which is
- * what `whenAbsent` is for. Written-but-unsettled means the code did
- * say, somewhere this run cannot read, and claiming the library's
- * default there would place the send on a channel it never goes to.
+ * different things. When the part is absent the library fills it in,
+ * and `whenAbsent` gives that value. When it is written but unsettled,
+ * the code set it somewhere this run cannot read, and using the
+ * library's default would put the send on a channel it never goes to.
  */
 function partValues(
   part: ChannelPart,
@@ -745,8 +735,8 @@ function partValues(
 
 /**
  * The first of these properties the message wrote. Trying them in order
- * means the pack decides which spelling wins where a message writes two
- * of them, rather than that depending on how the source was typed.
+ * means the pack decides which spelling wins when a message writes two
+ * of them, whatever order the source wrote them in.
  */
 function firstWritten(
   holder: ValueOps,
@@ -797,9 +787,9 @@ function routingKeyOf(
  *
  * A call reaches one callee however much it hands over, so this yields
  * a single effect and reads the name off the call's own request object.
- * A call whose request this run cannot read is not one of these calls;
- * one that states a name nothing settles is recorded with no name, so a
- * service that invokes does not read as one that invokes nothing.
+ * A call whose request this run cannot read does not match. A call that
+ * states a name nothing settles is recorded with no name, so a service
+ * that invokes never looks like one that invokes nothing.
  */
 function unitInvoke(matched: Matched): Effect[] | null {
   const { ops, subject, chain, recognition } = matched;
@@ -856,6 +846,14 @@ function payloadOf(
   return stated === null ? {} : { payload: stated };
 }
 
+/**
+ * Every table the statement touches, as one effect each.
+ *
+ * The kind, the fields and the selector come from the parse, so the
+ * method table is read only to find where the call put the statement.
+ * A statement the parser cannot read yields nothing, and the call goes
+ * unrecorded instead of recorded with a guessed kind.
+ */
 function sqlAccess(matched: Matched): Effect[] | null {
   const { ops, subject, method, chain, recognition } = matched;
   const ending = chain.ending as SqlEnding;
@@ -904,8 +902,8 @@ interface Statement {
 
 /**
  * The first of a method's picks that reaches text. A pick that lands on
- * something with no text in it is the wrong spelling of the call rather
- * than a call with no statement, so the next pick gets a turn.
+ * something with no text means the call was written the other way, so
+ * the next pick is tried.
  */
 function statementIn(
   subject: CallOps,
@@ -932,9 +930,9 @@ function settledHoles(stated: ValueOps): (string | null)[] {
 }
 
 /**
- * What each hole in the statement comes to, in the order the source
- * wrote them. A chain that says nothing about its holes leaves them all
- * as parameters, which is what a value would have been anyway.
+ * The table name each hole in the statement gives, in source order. A
+ * chain without an interpolates link leaves every hole as a parameter,
+ * the same as any interpolated value.
  */
 function namesInHoles(
   chain: Chain<MethodMeaning>,

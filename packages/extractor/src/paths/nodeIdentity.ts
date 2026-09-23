@@ -1,8 +1,6 @@
-// nodeIdentity.ts: collections keyed by a node's id rather than by the object.
-// A parser that hands back a fresh wrapper on every read, which tree-sitter
-// does, makes a plain Set or Map match nothing. See the adapters' READMEs.
+// tree-sitter hands back a fresh wrapper object on every read, so a plain Set
+// or Map keyed on the object never matches. These collections key on the id.
 
-/** Anything with a stable id, which is what these key on. */
 export interface Identified {
   readonly id: number;
 }
@@ -26,7 +24,7 @@ export class IdSet<T extends Identified> implements Iterable<T> {
     return this.byKey.has(node.id);
   }
 
-  /** The node this set was built with, which is the caller's own handle for it. */
+  /** The wrapper that was added, which may be a different object from `node`. */
   get(node: T): T | undefined {
     return this.byKey.get(node.id);
   }

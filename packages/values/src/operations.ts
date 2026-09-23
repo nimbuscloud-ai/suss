@@ -150,10 +150,10 @@ export function equals(a: Value, b: Value): Value {
 }
 
 /**
- * Whether a value settles to a string that starts with `literal`. The
- * pieces before the first hole or set of literals are read as one
- * settled head; once that head is long enough to decide the question,
- * the rest of the value is never folded.
+ * Whether a value is known to be a string that starts with `literal`.
+ * The pieces before the first hole or set of literals form a known
+ * head. Once that head is long enough to decide, the rest of the value
+ * is never folded.
  */
 export function startsWith(value: Value, literal: string): Value {
   const forced = force(value);
@@ -230,15 +230,16 @@ export function isPresent(value: Value): boolean | null {
   return present.some(Boolean) ? null : false;
 }
 
-/** An operand a row was handed nothing for. */
+/** An operand the row received no value for becomes a hole. */
 export function operand(value: Value | null | undefined): Value {
   return value ?? hole("value");
 }
 
 /**
- * `a ?? b` and `a || b` when one side is a hole: the other side, which
- * is how the resolution rules read a fallback. `process.env.X ?? "/v1"`
- * is then `/v1`, the one thing the source says about its shape.
+ * `a ?? b` and `a || b` when one side is a hole return the other side,
+ * because the resolution rules read a fallback that way. The value of
+ * `process.env.X ?? "/v1"` becomes `/v1`, since the literal is the only
+ * part of that expression the source spells out.
  */
 export function readableFallback(
   a: Value,
@@ -321,8 +322,8 @@ export function stripped(
 
 /**
  * A string with each literal in it changed the same way, as a lower or
- * upper case call does. A set changes member by member, and a hole
- * stays a hole, since nobody knows what case it was in.
+ * upper case call does. A set changes member by member. A hole stays a
+ * hole, because its case is unknown.
  */
 export function recased(value: Value, change: (text: string) => string): Value {
   const forced = force(value);
@@ -336,7 +337,7 @@ export function recased(value: Value, change: (text: string) => string): Value {
   );
 }
 
-/** The rows for a language's lower and upper case methods, under the names it spells them. */
+/** The rows for a language's lower and upper case methods, under that language's method names. */
 export function caseRows(lower: string, upper: string): Row[] {
   return [
     {

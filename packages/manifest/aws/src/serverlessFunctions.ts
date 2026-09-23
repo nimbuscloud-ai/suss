@@ -1,14 +1,13 @@
 /**
- * serverlessFunctions.ts reads AWS::Serverless::Function resources into a
- * code-facing view: which module and export each function points at, and
- * which route and non-route Events it declares.
+ * Reads AWS::Serverless::Function resources into a code-facing view:
+ * which module and export each function points at, and which route and
+ * non-route Events it declares.
  *
- * The summary-generation paths expand SAM Events into API Gateway route
- * summaries. This reader covers the other question the code-side pairing
- * needs: given the template, where is each handler's implementation, and
- * what routes is it bound to? The manifest semantics (how a Handler string
- * is laid out, how CodeUri is inherited from Globals, Api versus HttpApi
- * Events) stay here rather than being reconstructed in a framework pack.
+ * The contract readers expand SAM Events into API Gateway route summaries.
+ * The code-side pairing needs something else from the template: where each
+ * handler's implementation is, and which routes it is bound to. CodeUri
+ * inheritance from Globals and the difference between Api and HttpApi
+ * Events are handled here, so a framework pack does not work them out again.
  */
 
 import { codeScopePath, parseHandler } from "@suss/ir-core";

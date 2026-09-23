@@ -1,14 +1,15 @@
-// tupleKey.ts: turning several values into one string key, reversibly.
-//
-// A tuple value can be any string a caller interns, so no separator
-// character is safe to join on. Pick one, and the day a module
-// specifier or an identifier contains it, two different tuples produce
-// the same key and a lookup returns the wrong facts. Each part is
-// written with its own length instead, which no value can forge.
-//
-// The database keys its tuples this way, and anything outside it that
-// joins values into a map key has the same problem, so the encoding
-// lives here for both to share.
+/**
+ * Turns several values into one string key, reversibly.
+ *
+ * A tuple value can be any string a caller interns, so no separator
+ * character is safe to join on. Pick one, and the day a module
+ * specifier or an identifier contains it, two different tuples produce
+ * the same key and a lookup returns the wrong facts. Each part is
+ * written with its own length instead, which no value can forge.
+ *
+ * Any caller that joins values into a map key has the same problem, so
+ * the encoding is exported for them to share.
+ */
 
 import type { Atom } from "./index.js";
 

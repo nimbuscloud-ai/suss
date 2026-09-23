@@ -1,6 +1,6 @@
 /**
- * nestedStacks.ts reads a template and every child template it embeds, as a
- * list of documents.
+ * Reads a template and every child template it embeds, as a list of
+ * documents.
  *
  * A stack resource points at another template, and CloudFormation deploys that
  * template's resources alongside the parent's. Each document keeps its own
@@ -10,7 +10,7 @@
  *
  * A child's reference to one of its own parameters is not followed to what the
  * parent bound, and a `Fn::GetAtt` on a stack resource is not followed to the
- * child's output. Both point at nothing, like any reference we can't resolve.
+ * child's output. Both point at no resource, like any other unresolved reference.
  */
 
 import fs from "node:fs";
@@ -94,7 +94,7 @@ export interface TemplateTree {
  * The root template plus every template it embeds, directly or through
  * another child.
  *
- * A missing or malformed ROOT throws, matching
+ * A missing or malformed root template throws, matching
  * `loadCloudFormationTemplate`: the caller asked for that file by name.
  * A child that cannot be read never throws; it lands in `unfollowed` so
  * the caller can report which one and why.
