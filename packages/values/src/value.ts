@@ -42,8 +42,12 @@ export type Value =
   | { readonly kind: "ref"; readonly id: number }
   | { readonly kind: "deferred"; readonly force: () => Value };
 
-/** A set of literals wider than this becomes a hole. */
-export const SET_CAP = 4;
+/**
+ * A set of literals wider than this becomes a hole. It is wide enough
+ * for a string literal union or an enum of ordinary size, which a
+ * declared type hands over whole.
+ */
+export const SET_CAP = 16;
 
 export function text(literal: string): Value {
   return { kind: "string", pieces: normalizePieces([textPiece([literal])]) };
@@ -187,6 +191,34 @@ export function literalOf(value: Value): string | null {
     return null;
   }
   return only.options[0] ?? null;
+}
+
+/**
+ * Every literal a value can be, when each of its pieces is text, in
+ * sorted order. Null when a piece is a hole, or when there are more
+ * than `cap` of them, since two sets side by side multiply.
+ */
+export function literalsOf(
+  value: Value,
+  cap: number,
+): readonly string[] | null {
+  const forced = force(value);
+  if (forced.kind !== "string") {
+    return null;
+  }
+  let literals = [""];
+  for (const piece of forced.pieces) {
+    if (piece.kind === "hole") {
+      return null;
+    }
+    if (literals.length * piece.options.length > cap) {
+      return null;
+    }
+    literals = literals.flatMap((head) =>
+      piece.options.map((option) => `${head}${option}`),
+    );
+  }
+  return uniqueSorted(literals);
 }
 
 export function constantOf(value: Value): Constant | undefined {

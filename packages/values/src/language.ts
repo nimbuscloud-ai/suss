@@ -176,6 +176,14 @@ export interface Lowering<N> {
   /** The name to give a hole that replaces this expression. */
   holeNameOf(node: N): string;
   /**
+   * What the declared type of a name or member read limits it to, for
+   * one nothing in the source writes a value for, such as a parameter
+   * typed as a string literal union. Null when the type does not narrow
+   * the value to a few literals. A language with no declared types
+   * leaves it out.
+   */
+  declaredValueOf?(node: N): Value | null;
+  /**
    * One key per node, for a parser that hands back a fresh object on
    * every read of the same node. The engine compares and memoizes nodes
    * by this key. Left out, the node itself is the key.

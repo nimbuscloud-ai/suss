@@ -94,6 +94,14 @@ export interface ValueOps {
    */
   name(unsettled: UnsettledName): string | null;
   /**
+   * Every string this value can be, when the source limits it to a
+   * few. `` `record.${op}` `` with `op` typed `"a" | "b"` is
+   * `record.a` and `record.b`. Null when part of it could be anything,
+   * or when there are more than `cap`. An adapter that has not
+   * implemented this leaves it out, and a reader has only `name`.
+   */
+  names?(cap: number): readonly string[] | null;
+  /**
    * The yes or no the source wrote here, or null for anything else. A
    * library that asks which fields a call wants states them as a map of
    * flags, `{ name: 1, password: 0 }`, and a number and a boolean mean

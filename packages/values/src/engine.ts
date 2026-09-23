@@ -57,6 +57,16 @@ const UNDER_SITE = "under site";
 const CONTEXT_FREE = "context free";
 type OuterAsk = typeof UNDER_SITE | typeof CONTEXT_FREE;
 
+/**
+ * What the node an outer read is about is. A read that nothing wrote
+ * takes what its declared type allows. A call stays a hole whatever its
+ * return type says, because a call that comes back a hole is what lets
+ * go of the arrays it was handed.
+ */
+const A_READ = "read";
+const A_CALL = "call";
+type OuterShape = typeof A_READ | typeof A_CALL;
+
 interface State {
   readonly bindings: Map<string, Value>;
   readonly heap: Map<number, Value>;
@@ -543,7 +553,7 @@ export class Evaluator<N extends object> {
           ? String(index.options[0])
           : literalOfValue(index);
       return name === null
-        ? hole(this.lowering.holeNameOf(node))
+        ? this.unwritten(node)
         : this.member(node, shape.object, name, state, depth);
     }
     if (shape.kind === "array") {
@@ -583,7 +593,7 @@ export class Evaluator<N extends object> {
         this.expression(shape.whenFalse, state, depth),
       );
     }
-    return hole(this.lowering.holeNameOf(node));
+    return this.unwritten(node);
   }
 
   private allocate(content: Value, state: State): Value {
@@ -688,7 +698,7 @@ export class Evaluator<N extends object> {
     }
     return (
       this.memberOf(this.contentOf(object, state), name, node) ??
-      hole(this.lowering.holeNameOf(node))
+      this.declaredValue(node)
     );
   }
 
@@ -702,9 +712,7 @@ export class Evaluator<N extends object> {
         return constant(content.items.length);
       }
       const item = content.items[Number(name)];
-      return item === undefined
-        ? hole(this.lowering.holeNameOf(node))
-        : item.value;
+      return item === undefined ? this.unwritten(node) : item.value;
     }
     if (content.kind === "unbounded" && Number.isInteger(Number(name))) {
       return content.element;
@@ -721,9 +729,7 @@ export class Evaluator<N extends object> {
     if (item !== undefined) {
       return item.value;
     }
-    return content.open
-      ? hole(this.lowering.holeNameOf(node))
-      : constant(undefined);
+    return content.open ? this.unwritten(node) : constant(undefined);
   }
 
   /**
@@ -774,30 +780,39 @@ export class Evaluator<N extends object> {
     return this.outerValue(node);
   }
 
-  /** The value of the expression a name or member was written as. */
-  private outerValue(node: N, ask: OuterAsk = UNDER_SITE): Value {
+  /** The value of the expression a name, a member or a call was written as. */
+  private outerValue(
+    node: N,
+    ask: OuterAsk = UNDER_SITE,
+    shape: OuterShape = A_READ,
+  ): Value {
     const id = this.idOf(node);
     if (this.computing.has(id)) {
-      return hole(this.lowering.holeNameOf(node));
+      return this.unwritten(node);
     }
     const cached = this.remembers() ? this.writtenByNode.get(id) : undefined;
     if (cached !== undefined) {
       return cached;
     }
-    const value = this.writtenValue(node, id, ask);
+    const value = this.writtenValue(node, id, ask, shape);
     if (this.remembers()) {
       this.writtenByNode.set(id, value);
     }
     return value;
   }
 
-  private writtenValue(node: N, id: unknown, ask: OuterAsk): Value {
+  private writtenValue(
+    node: N,
+    id: unknown,
+    ask: OuterAsk,
+    shape: OuterShape,
+  ): Value {
     const written = this.lowering.writtenTo(
       node,
       ask === UNDER_SITE ? this.underSite : undefined,
     );
     if (written === null || this.same(written, node)) {
-      return hole(this.lowering.holeNameOf(node));
+      return shape === A_READ ? this.declaredValue(node) : this.unwritten(node);
     }
     this.computing.add(id);
     try {
@@ -810,6 +825,16 @@ export class Evaluator<N extends object> {
     } finally {
       this.computing.delete(id);
     }
+  }
+
+  /** What a name or member read nothing wrote is limited to by its type. */
+  private declaredValue(node: N): Value {
+    return this.lowering.declaredValueOf?.(node) ?? this.unwritten(node);
+  }
+
+  /** A hole in place of an expression, named the way the lowering names it. */
+  private unwritten(node: N): Value {
+    return hole(this.lowering.holeNameOf(node));
   }
 
   private call(
@@ -859,7 +884,7 @@ export class Evaluator<N extends object> {
     }
     // A call the lowering can follow to what it is worth, such as a
     // declared wrapper that passes one argument through.
-    const written = this.outerValue(node);
+    const written = this.outerValue(node, UNDER_SITE, A_CALL);
     if (written.kind !== "hole") {
       return written;
     }

@@ -5,7 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
-import { literalOf, pathOf } from "@suss/values";
+import { literalOf, literalsOf, pathOf } from "@suss/values";
 
 import { bodyStatements, field } from "../ast.js";
 import {
@@ -214,6 +214,14 @@ describe("formatting", () => {
     expect(await literal('subject = "/a\\n".chomp')).toBe("/a");
     expect(await literal('subject = " /a".lstrip')).toBe("/a");
     expect(await literal('subject = "/a ".rstrip')).toBe("/a");
+  });
+
+  it("changes the case of every string a branch leaves", async () => {
+    const value = await subjectOf(
+      'kind = flag ? "INSERT" : "UPDATE"\nsubject = "record." + kind.downcase',
+    );
+    expect(literalsOf(value, 16)).toEqual(["record.insert", "record.update"]);
+    expect(await literal('subject = "placed".upcase')).toBe("PLACED");
   });
 
   it("leaves a strip with an argument, or of an unknown string, as a hole", async () => {

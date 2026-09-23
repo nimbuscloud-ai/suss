@@ -29,6 +29,8 @@ channel = `${bus}#${detailType}`
 
 The bus is nearly always deploy-named, so the code writes `process.env.ORDER_EVENT_BUS_NAME` and the declaration keeps the reference, giving `{ORDER_EVENT_BUS_NAME}#OrderPlaced`. The message-bus checker resolves that reference to the CloudFormation `EventBus` logical id through the producing Lambda's `Environment` block. A bus written nowhere at all is the account's default bus. A `DetailType` decided at run time leaves the channel null, because a channel spelled by half of itself would pair across buses.
 
+A `DetailType` built from a value typed as a few strings is a send to each of them. `` `record.${event.operation.toLowerCase()}` `` with `operation: "INSERT" | "UPDATE" | "DELETE"` records three sends, on `record.insert`, `record.update` and `record.delete`, and a string enum reads the same way. Past 16 channels for one entry the send is recorded once, with a hole where the value goes.
+
 ### The consumer side
 
 There is no consumer-side recognizer here yet. A target Lambda gets its message-bus boundary binding from the pass that walks CloudFormation and SAM `AWS::Events::Rule` resources and `Events: { Type: EventBridgeRule | Schedule }` blocks, which lives in `@suss/contract-cloudformation`. An EventBridge target handler reads `event.detail`, and a message-receive recognizer for that shape is a follow-up. Until then body-shape pairing is unavailable for EventBridge, while the orphan, unused, unresolvable, and schedule accounting all work off the CloudFormation summaries.
