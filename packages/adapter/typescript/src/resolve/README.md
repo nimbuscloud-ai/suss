@@ -34,7 +34,7 @@ The effects come out in the order the calls finish. A call in argument position 
 
 `async` is true when the caller awaits the result, `await f()`, through any parentheses. An `async` arrow whose concise body is a call no longer marks that call `async`. The arrow returns a promise, but the call inside it may be synchronous.
 
-The walk descends into arrows and function expressions the unit itself runs, such as `.then` callbacks, `forEach` bodies and Promise executors. It stops at named nested declarations and at sub-unit boundaries a pack declares, following the same rule every body walker takes from `walk/descent.ts`. A decorator's calls run when the class is defined, not when the method runs, so the walk skips decorators too.
+The walk descends into arrows and function expressions the unit itself runs, such as `.then` callbacks, `forEach` bodies and Promise executors. It stops at named nested declarations and at sub-unit boundaries a pack declares, following the same rule every body walker takes from `walk/descent.ts`. A decorator's calls run when the class is defined, before the method ever runs, so the walk skips decorators too.
 
 ## Module scope is a closure root
 
@@ -118,7 +118,7 @@ to look.
 | `buildKey("users", id)`, one return of `parts.join(":")` | `users:{id}` |
 | a parameter, a call result, a helper with branches | null |
 
-A hole takes the name of what the caller passed, not the name of the parameter it landed on. So `keyFor(userId)` reading `` `session:${id}` `` gives `session:{userId}`, which is the name a reader at the call site knows.
+A hole takes the name of what the caller passed, and the name of the parameter it landed on is dropped. So `keyFor(userId)` reading `` `session:${id}` `` gives `session:{userId}`, which is the name a reader at the call site knows.
 
 A fallback reads differently depending on where it is. At the top of a name, `process.env.TABLE ?? "orders-prod"` reads as the default, because a whole name that is one hole would pair with every table there is. Inside a longer name, `` `${process.env.STAGE || "staging"}-orders` `` keeps the hole. A deployment sets that variable, and the default is what runs when nobody did.
 
@@ -145,8 +145,8 @@ Following a helper stops after two hops. It also stops at a body that does more 
 - **The `isInformativeInitializer` filter.** When walking a variable's initializer, we descend only into call, await and new. Those are the cases where the AST tells you something the type checker would not. For example, `const u = await db.find()` returns `T | null`, but past a null guard the use site is only `T`. For other initializers, such as literals and plain expressions, we use the type at the use site.
 - **Recognizer errors are isolated.** When a recognizer throws, the error is caught, logged to stderr with file:line, and that call is skipped. Extraction continues, so a buggy recognizer does not crash the run.
 - **The closure walk goes one hop.** `reachableClosure` resolves the direct callees of discovered units to library summaries. Transitive throws (`A` throws because `A → B → C` throws) are left to `rethrowEnrichment`, which walks try blocks only one level deep.
-- **Terminal dedup is by node, not by line.** Each invocation effect records the call node it came from, and assembly drops only the calls that are a terminal or a link in a terminal's receiver chain. Two calls on the line of a terminal, `return [...f(), ...g()]`, both survive.
-- **Rethrow lookup is by line range, not by symbol.** The lookup key is `summary.location.range` (`startLine-endLine`), with no use of the function name or symbol identity. That works because we never have two summaries for the same function at the same line range.
+- **Terminal dedup compares nodes.** Each invocation effect records the call node it came from, and assembly drops only the calls that are a terminal or a link in a terminal's receiver chain. Two calls on the same line as a terminal, `return [...f(), ...g()]`, both survive.
+- **Rethrow lookup goes by line range.** The lookup key is `summary.location.range` (`startLine-endLine`). It does not use the function name or symbol identity. That works because we never have two summaries for the same function at the same line range.
 
 ## Sibling modules
 
