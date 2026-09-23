@@ -23,7 +23,8 @@
 
 import {
   BOUNDARY_ROLE,
-  readCodeScope,
+  buildModuleGraph,
+  placeDeclared,
   readRoutingMetadata,
   rootDocumentLabel,
   runsIn,
@@ -316,6 +317,7 @@ interface NamedUnitScope {
  * deployed into it, deduped by scoped instance name.
  */
 function namedUnitScopes(summaries: BehavioralSummary[]): NamedUnitScope[] {
+  const graph = buildModuleGraph(summaries);
   const byNode = new Map<string, NamedUnitScope>();
   for (const summary of summaries) {
     const unit = summary.identity.deployableUnit;
@@ -329,14 +331,14 @@ function namedUnitScopes(summaries: BehavioralSummary[]): NamedUnitScope[] {
       continue;
     }
 
-    const codeScope = readCodeScope(summary);
-    if (codeScope.kind !== "codeUri" || codeScope.path === undefined) {
+    const scope = placeDeclared(summary, graph);
+    if (scope === null) {
       continue;
     }
 
     byNode.set(node, {
       unit: { scope: documentScope, instanceName: unit.instanceName },
-      scope: { unit, codeScope: codeScope.path },
+      scope,
     });
   }
   return [...byNode.values()];
