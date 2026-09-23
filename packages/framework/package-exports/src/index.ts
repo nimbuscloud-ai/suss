@@ -1,16 +1,12 @@
 /**
- * @suss/framework-package-exports: the PatternPack for the boundary
- * between packages in one workspace.
+ * The boundary between packages in one workspace. Each public export is
+ * a `library` unit and each function that imports one from a sibling
+ * package is a `caller` unit. No library defines which packages exist,
+ * so the patterns set `workspaces: true` and the adapter applies them
+ * once per package in the workspace manifest.
  *
- * A workspace package's public API is whatever its package.json makes
- * reachable, and every import of it from a sibling package is a use of
- * that contract. The pack marks both sides: one `library` unit per
- * public export, one `caller` unit per importing function. Which
- * packages exist belongs to the project, not to any library, so the
- * patterns say `workspaces: true` and the adapter reads the workspace
- * manifest (npm, yarn, or pnpm) and applies them once per package.
- * Every positional parameter becomes an input under its own declared
- * name, which the workspace's source spells out.
+ * Every positional parameter becomes an input under the name the source
+ * gives it, since the workspace's own code is there to read.
  */
 
 import type { PatternPack } from "@suss/extractor";
@@ -50,7 +46,6 @@ export function packageExportsFramework(): PatternPack {
   };
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "framework",
   package: "@suss/framework-package-exports",
