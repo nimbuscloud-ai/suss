@@ -1,14 +1,11 @@
 /**
- * Recognize AWS SSM Parameter Store calls and emit `storage-access`
- * effects.
+ * Recognizes AWS SSM Parameter Store calls and records each one as a
+ * storage access on the parameter it reached. A parameter is a single
+ * value with no fields, so the access records the parameter name and
+ * nothing about its contents.
  *
- * A parameter is a container other units read by name, so it is a store
- * rather than part of the reading unit's own configuration contract.
- * The README beside this file argues that against the alternative.
- *
- * The anchor is the command, wherever a call takes one, the same way
- * the S3 pack reads an object call. A parameter is one value with no
- * fields to compare, so what a call says is which parameter it reached.
+ * The README explains why a parameter counts as a store instead of
+ * runtime config, and which commands are left out.
  */
 
 import { constructedFrom, pack, storageCalls } from "@suss/recognize";
@@ -21,22 +18,17 @@ import type {
   StorageMethod,
 } from "@suss/recognize";
 
-/** The module a command class comes from. */
 const COMMAND_MODULE = "@aws-sdk/client-ssm";
 
-/** The command a call was handed, wherever the call takes it. */
 const COMMAND: CallStep = { to: "argument", at: { from: 0 } };
 
-/** Which parameter the command reached. */
 const PARAMETER: ArgumentPick = { at: 0, property: ["Name"] };
 
-/** Where a call that reaches several parameters at once lists them. */
 const PARAMETERS: ArgumentPick = { at: 0, property: ["Names"] };
 
 const READ_PARAMETER: StorageMethod = { kind: "read" };
 const WRITE_PARAMETER: StorageMethod = { kind: "write" };
 
-/** Every command this reads, and whether it reads or writes. */
 const COMMANDS: Record<string, StorageMethod> = {
   GetParameterCommand: READ_PARAMETER,
   GetParametersCommand: READ_PARAMETER,
@@ -57,8 +49,8 @@ const PARAMETER_CALLS = storageCalls({
   .example('client.send(new GetParameterCommand({ Name: "/prod/db/host" }))');
 
 /**
- * Pack export. One declaration, gated on a file importing the SSM
- * client, which is where a command class can come from.
+ * A command counts only when its class is imported from the SSM client,
+ * so a class with the same name from another module is ignored.
  */
 export function ssmFramework(): PatternPack {
   return pack("aws-ssm", [PARAMETER_CALLS], {
@@ -68,7 +60,6 @@ export function ssmFramework(): PatternPack {
   });
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "effects",
   package: "@suss/framework-aws-ssm",
