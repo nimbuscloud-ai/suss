@@ -1,16 +1,16 @@
 /**
- * The grounded half of a boundary question.
+ * Matches a boundary question against storage accesses by their deployed
+ * names as well as their written ones.
  *
- * A boundary question matches by tokens against what a binding
- * spells, and a storage access whose container is a reference spells
- * `{SUBSCRIBER_TABLE}` rather than the store it reaches when
- * deployed. The deployed name comes out of grounding: the value a
- * wrangler `[vars]` block sets, or the argument a caller passed. The
- * join is the checker's (`groundStorageAccesses`), the same one the
- * check pass attributes findings with. Matching closes over the
- * claims, so a question that picked out one side of a provider-access
- * pair reports the other side too, and both spellings of one store
- * give the same pairs.
+ * A question matches a binding by its tokens, and a storage access whose
+ * container is a reference is written `{SUBSCRIBER_TABLE}` instead of the
+ * store it reaches once deployed. Grounding supplies the deployed name:
+ * the value a wrangler `[vars]` block sets, or the argument a caller
+ * passed. The join is the checker's `groundStorageAccesses`, the same one
+ * `check` uses to attribute findings. Matching then follows the
+ * provider-access claims, so a question that matched one side of a pair
+ * reports the other side too, and both names for one store give the same
+ * answer.
  */
 
 import { summaryIdentifier } from "@suss/behavioral-ir";
@@ -35,7 +35,7 @@ import type { TargetTouch } from "./target.js";
 /** One deployed name an access grounds to, and who supplied it. */
 export interface GroundingNote {
   to: string;
-  /** The answer's spelling of the supplier: a manifest file or a caller. */
+  /** Who supplied the name, as the answer prints it: a manifest file or a caller's id. */
   by: string;
 }
 
@@ -47,18 +47,17 @@ export interface GroundedTouch extends TargetTouch {
 export interface GroundedTouches {
   touches: GroundedTouch[];
   /**
-   * One sentence per access on the asked storage system whose name
-   * nothing here grounds, saying which input would settle whether it
-   * belongs in the answer.
+   * One sentence per ungrounded access on the storage system the question
+   * mentions, saying which input would show whether it belongs in the
+   * answer.
    */
   hints: string[];
 }
 
 /**
- * Every unit that does something at the boundary somebody asked
- * about, matched by the binding's own words, by the deployed names
- * grounding computes, and through the provider-access claims between
- * them.
+ * Every unit that does something at the boundary in the question. A unit
+ * matches by its binding's own words, by a deployed name that grounding
+ * found, or through a provider-access claim between the two.
  */
 export function groundedTouchesAt(
   subject: string,
@@ -84,17 +83,13 @@ export function groundedTouchesAt(
   closeOverClaims(accesses, matchedBindings, matchedProviders);
 
   const touches: GroundedTouch[] = [];
-  // One unit doing one thing at one boundary is one line, however many
-  // accesses say so, and the walk below adds only what is missing here.
-  // Of two records of the one thing, the one that says which call it
-  // went through is the line worth keeping.
+  // One line per unit, boundary and relation, however many accesses
+  // record it. See `keep` for which record wins.
   const answered = new Map<string, number>();
 
-  // Storage comes from the grounded accesses rather than from the
-  // effects, because only these say which table a read written under a
-  // relation arrives at. Walking the effects here would put that read
-  // on the table the query addressed, which is the table `check` says
-  // it does not touch.
+  // Storage touches come from the grounded accesses because only they say
+  // which table a read through a relation arrives at. The effects would
+  // put it on the queried table, which `check` says it does not touch.
   for (const record of accesses) {
     if (!matchedBindings.has(record.binding)) {
       continue;
@@ -141,10 +136,9 @@ export function groundedTouchesAt(
 }
 
 /**
- * Keep one line per key. A later record replaces an earlier one only
- * when it says which call the touch went through and the earlier one
- * does not, so the informative line survives whichever order the two
- * walks found them in.
+ * Keeps one line per key. A later record replaces an earlier one only
+ * when it has the callee and the earlier one does not, so the line with
+ * the callee is kept whichever loop found it first.
  */
 function keep(
   touches: GroundedTouch[],
@@ -169,11 +163,9 @@ function keep(
 }
 
 /**
- * One unit doing one thing at one boundary.
- *
- * The callee stays out of the key. One read recorded twice, once with
- * the call it went through and once without, is one thing the unit
- * does, and a reader asked who reads a boundary counted it twice.
+ * The key for one unit doing one thing at one boundary. The callee is
+ * left out, because a read recorded once with its callee and once without
+ * would otherwise print twice and look like two reads.
  */
 function asTouchKey(touch: {
   summary: BehavioralSummary;
@@ -187,9 +179,9 @@ function asTouchKey(touch: {
 }
 
 /**
- * A question that picked out one side of a claim picks out the other,
- * to a fixpoint: the provider a grounded access pairs with brings in
- * the other accesses it claims.
+ * Adds the other side of every claim the question matched, until nothing
+ * new is added. A matched access brings in its providers, and a matched
+ * provider brings in the other accesses it claims.
  */
 function closeOverClaims(
   accesses: ReadonlyArray<GroundedStorageAccess>,
@@ -232,9 +224,9 @@ function matchesAccess(
 }
 
 /**
- * Whether the subject picks out this provider: by its binding's own
- * words, or by any other name it is declared under, which is what a
- * deployment calls the store.
+ * Whether the subject matches this provider, either by its binding's own
+ * words or by another name the provider is declared under, such as the
+ * name a deployment gives the store.
  */
 function matchesProvider(
   subject: string,
@@ -275,11 +267,7 @@ function groundingNotes(
   return notes;
 }
 
-/**
- * A runtime's configuration is a manifest somebody can open, so the
- * note points at the file. A caller is a unit, so the note uses its
- * id.
- */
+/** A runtime manifest is printed as its file, so a reader can open it, and a caller as its summary id. */
 function supplierSpelling(groundedBy: GroundedBy): string {
   if (groundedBy.role === "runtime") {
     return groundedBy.summary.location.file;
@@ -288,9 +276,10 @@ function supplierSpelling(groundedBy: GroundedBy): string {
 }
 
 /**
- * What would connect the question to an access nothing here grounds.
- * Only accesses on the storage system the question mentions are worth
- * a sentence; a question about DynamoDB is not missing a Redis value.
+ * For each ungrounded access, the input that would show whether it
+ * matches the question. Only accesses on the storage system the question
+ * mentions get a hint, so a DynamoDB question does not ask for a Redis
+ * value.
  */
 function ungroundedHints(
   subject: string,

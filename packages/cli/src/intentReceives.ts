@@ -1,16 +1,15 @@
 /**
- * The `receives` block of a drafted intent document: every path the
- * unit reads off the value its boundary hands it.
+ * The `receives` block of a drafted intent document: every path the unit
+ * reads from the input its boundary passes in.
  *
- * A field comes out `required: true` when some branch rejects on a null
- * or truthiness check of that path, because rejecting on a missing
- * value is a unit saying it needs one. A 4xx, a throw and a null return
- * are the three ways a branch rejects.
+ * A field is marked `required: true` when some branch rejects the call
+ * after a null or truthiness check on that path, since a unit that
+ * refuses a missing value needs it. A branch rejects by returning a 4xx,
+ * throwing, or returning null.
  *
- * The shape comes from `expectedInput`. A REST draft writes the
- * sections of the request rather than the handler's own parameter, and
- * `expectedInput` is keyed the way the handler reads, so a REST field
- * comes out with no shape.
+ * Field shapes come from `expectedInput`. That is keyed by the handler's
+ * own parameter, while a REST draft is laid out by request section, so a
+ * REST field usually has no shape.
  */
 
 import {
@@ -36,23 +35,18 @@ import type {
 } from "@suss/intent-ir";
 import type { Semantics } from "@suss/ir-core";
 
-/** A REST boundary writes its fields in sections; every other kind writes a flat map. */
+/** A REST boundary groups its fields by request section. Every other kind uses a flat map of dotted paths. */
 export type DraftedReceives = AuthoredReceives | AuthoredRestReceives;
 
-/** One drafted field, before it is written in whichever spelling the boundary takes. */
+/** One drafted field, before it is laid out for its boundary's protocol. */
 interface DraftedField {
   path: string[];
   required: boolean;
-  /** Null when the extractor said nothing about what is at this path. */
+  /** Null when the summary has no expected type at this path. */
   shape: TypeShape | null;
 }
 
-/**
- * The block, or null when nothing readable came back. A boundary whose
- * protocol has not said how it spells a read gets no block, which is
- * what keeps a draft from inventing a spelling the checker cannot
- * compare.
- */
+/** The `receives` block, or null when no unit reads anything from the input. */
 export function draftedReceives(
   summaries: BehavioralSummary[],
   binding: BoundaryBinding,
@@ -65,7 +59,7 @@ export function draftedReceives(
   return RECEIVES_BLOCK[binding.semantics.name](drafted);
 }
 
-/** How each protocol writes the block a reader has to be able to load back. */
+/** The layout each protocol's `receives` block must have for the intent loader to accept it. */
 const RECEIVES_BLOCK: Record<
   Semantics["name"],
   (drafted: readonly DraftedField[]) => DraftedReceives
@@ -81,7 +75,7 @@ const RECEIVES_BLOCK: Record<
   metric: dottedBlock,
 };
 
-/** Every path read, once each, with what the code says about it. */
+/** Every path read across the summaries, once each, with whether it is required and its shape. */
 function draftedFields(
   summaries: BehavioralSummary[],
   binding: BoundaryBinding,
@@ -123,10 +117,9 @@ function dottedBlock(drafted: readonly DraftedField[]): AuthoredReceives {
 }
 
 /**
- * The four sections a request comes in. A body field becomes a
- * property of the body shape rather than an entry in a map, because
- * that is how the schema spells a body: one value with properties
- * under it, and the ones it needs listed beside them.
+ * Lays fields out under the four request sections. A body field becomes
+ * a property of one body shape, with required fields listed beside the
+ * properties, because the intent schema describes a body that way.
  */
 function restBlock(drafted: readonly DraftedField[]): AuthoredRestReceives {
   const block: AuthoredRestReceives = {};
@@ -156,9 +149,9 @@ function restBlock(drafted: readonly DraftedField[]): AuthoredRestReceives {
 }
 
 /**
- * The body section, or nothing when the route never touched one. A
- * route that read the body without naming a field says only that it
- * takes one, and curating the document is where its shape gets written.
+ * The body section, or nothing when the route never reads the body. When
+ * the route reads the body as a whole, the draft marks the body `unknown`
+ * and the curator writes its shape.
  */
 function draftedBody(
   body: { properties: Record<string, AuthoredShape>; required: string[] },
@@ -176,9 +169,9 @@ function draftedBody(
 }
 
 /**
- * A body read written as its outermost property. A read of
- * `body.items.sku` drafts `items`, since that is the field an author
- * has to know about and the nesting under it is the shape's business.
+ * Adds only the outermost property of a body read. A read of
+ * `body.items.sku` drafts `items`, because that is the field an author
+ * must know about, and anything nested under it belongs in its shape.
  */
 function addBodyProperty(
   body: { properties: Record<string, AuthoredShape>; required: string[] },
@@ -196,7 +189,7 @@ function addBodyProperty(
   }
 }
 
-/** A field with nothing to say about it is written `{}`, not left out. */
+/** A field with no known shape and no requirement is still written, as `{}`. */
 function declaredField(
   required: boolean,
   shape: TypeShape | null,
@@ -208,7 +201,7 @@ function declaredField(
   } as AuthoredInputField;
 }
 
-/** The paths some branch rejects on, spelled the way a read of one is. */
+/** The paths some rejecting branch checks, formatted the same way as the paths read. */
 function rejectedPaths(
   summary: BehavioralSummary,
   binding: BoundaryBinding,
@@ -227,7 +220,7 @@ function rejectedPaths(
   return paths;
 }
 
-/** Whether this branch turns the caller away rather than serving it. */
+/** Whether this branch refuses the call: a 4xx response, a throw, or a null return. */
 function rejects(transition: Transition): boolean {
   const output = transition.output;
   if (output.type === "throw") {
@@ -252,8 +245,8 @@ function returnsNothing(value: TypeShape | null): boolean {
 }
 
 /**
- * Every input path a predicate checks for a missing value. A compound
- * guard is walked through, so `if (!a && !b)` says both.
+ * Every input path a predicate checks for a missing value. Compound
+ * guards are walked, so `if (!a && !b)` returns both paths.
  */
 function missingValueChecks(
   summary: BehavioralSummary,
@@ -275,7 +268,7 @@ function missingValueChecks(
   return path === null ? [] : [path];
 }
 
-/** What the extractor said the branch expects at this path, when it said anything. */
+/** The first expected type any transition records at this path, or null. */
 function shapeAt(
   summary: BehavioralSummary,
   path: readonly string[],

@@ -1,9 +1,11 @@
-// processRun.ts: run a command and collect what it said.
-//
-// Guided init shells out to npm and to suss itself. Both are shown to
-// the person as a spinner line, and both need their output kept rather
-// than streamed, so a failure can be reported as its last few lines
-// instead of scrolling the prompts away.
+/**
+ * Runs a child process and collects its output.
+ *
+ * Guided init runs npm and suss itself as child processes. The user sees
+ * each one as a spinner line. The output is collected instead of streamed,
+ * so when a command fails, init can show its last few lines without
+ * scrolling the prompts off the screen.
+ */
 
 import { spawn } from "node:child_process";
 
@@ -13,13 +15,13 @@ export interface RunResult {
 }
 
 /**
- * stdout and stderr interleaved, since that is how they were printed.
+ * Runs `bin` and resolves with its exit code and its stdout and stderr
+ * interleaved in the order they were printed.
  *
- * `onLine` sees each line as it arrives, which is what lets a spinner
- * say where a slow command has got to rather than only that it is still
- * going. Cursor moves and colour codes are taken out first, because npm
- * redraws its progress bar in place and the escape sequences would
- * corrupt the line the spinner is drawing on.
+ * `onLine` is called with each line as it arrives, so a spinner can show
+ * how far a slow command has got. Cursor moves and colour codes are
+ * removed first, because npm redraws its progress bar in place and those
+ * escape sequences would corrupt the spinner's line.
  */
 export function run(
   bin: string,

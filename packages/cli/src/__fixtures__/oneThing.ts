@@ -1,8 +1,8 @@
 /**
- * A small world for the tests that ask about one thing: a store with a
- * declared index, the code that reads it, a route, and a client of that
- * route. Enough for a target to match a file, a line, a boundary, a
- * summary id, and nothing at all, and for one unit to record a gap.
+ * Summaries for the tests that target one file, line, boundary or summary
+ * id: a table with a declared index, the code that reads it, a route, and
+ * a client of that route. A target can match each of these or nothing at
+ * all, and one unit records a gap.
  */
 
 import { restBinding, storageBinding } from "@suss/behavioral-ir";
@@ -70,8 +70,8 @@ export const indexContract: BehavioralSummary = {
 };
 
 /**
- * The unit somebody is editing. Its read asks for an attribute the
- * index does not copy, and the walk stopped at one call inside it.
+ * The unit a user is editing. Its read asks for an attribute the index
+ * does not project, and extraction could not follow one call inside it.
  */
 export const dao: BehavioralSummary = {
   kind: "library",

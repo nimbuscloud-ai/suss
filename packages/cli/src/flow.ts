@@ -1,16 +1,16 @@
 /**
- * `suss inspect --flow`: who serves this request.
+ * `suss inspect --flow`: what serves one request.
  *
- * The output is the entry the request came in by, every hop it took
- * along with the rule that let it through, the unit it landed in, and
- * the handler inside that unit.
+ * The output lists the entry the request came in by, every hop it took
+ * with the rule that let it through, the unit it landed in, and the
+ * handler inside that unit.
  *
- * Two things this rendering will not do. It will not print a possible
- * answer as though it were settled: a chain gated on a condition nobody
- * here evaluates says so on the gated hop, in the heading above it, and
- * on the line somebody pastes into a ticket. And it will not report an
- * absence it did not find: when nothing serves the request it says
- * where the walk stopped and why.
+ * A chain that depends on a condition suss does not evaluate is printed
+ * as possible. The gated hop, the heading above it and the final line all
+ * say "may", because the final line is the one people paste into a
+ * ticket. When nothing serves the request, the output says where the walk
+ * stopped and why, so a gap in what suss read is not reported as a
+ * missing route.
  */
 
 import fs from "node:fs";
@@ -54,11 +54,10 @@ export interface FlowOptions {
 }
 
 /**
- * The condition languages this run can settle, one per manifest reader
- * that emits routing edges. A reader owns the glob rules and the
- * ordering of the language it stamps, so both the selector and the name
- * it goes by come from the reader; all that happens here is assembling
- * the table.
+ * The condition languages this run can evaluate, one per manifest reader
+ * that emits routing edges. Each reader defines the glob rules and the
+ * rule ordering for its language, so the selector and the language name
+ * both come from the reader package. This function only builds the table.
  */
 async function routerSelectors(): Promise<Record<string, RouterMatchSelector>> {
   const cloudformation = await import("@suss/contract-cloudformation");
@@ -93,10 +92,9 @@ function targetOf(raw: string): { host: string | null; path: string } | null {
 }
 
 /**
- * The request a person typed: a method and a URL, or a method and a
- * path when the question gives no host. A host-header rule cannot be
- * settled without a host, and the rendering says so rather than
- * guessing one.
+ * Parses the request a person typed: a method and a URL, or a method and
+ * a path with no host. Without a host, a host-header rule cannot be
+ * evaluated, and the output says so instead of guessing a host.
  */
 export function parseFlowRequest(raw: string): ParsedRequest {
   const words = raw.trim().split(/\s+/).filter(Boolean);
@@ -139,8 +137,7 @@ function listEntries(entries: FlowEntry[]): string {
     .join("\n");
 }
 
-/** The entry the caller asked for, checked against the documents that
- * declare it. */
+/** The entry the caller asked for, checked against the documents that declare it. */
 function namedEntry(
   analysis: FlowAnalysis,
   name: string,
@@ -184,8 +181,7 @@ function namedEntry(
   return { ok: true, entry: { name, scope: scopes[0] } };
 }
 
-/** Where the request comes in: whatever the caller asked for, or the
- * single way in if that is all the summaries have. */
+/** The entry the caller asked for, or the only entry when the summaries have one. */
 function chooseEntry(
   analysis: FlowAnalysis,
   options: FlowOptions,
@@ -217,8 +213,7 @@ function chooseEntry(
 // Rendering
 // ---------------------------------------------------------------------------
 
-/** How a condition is printed: the field, what it compares against, and
- * whether anyone settled it. */
+/** A condition's field, the values it compares against, and whether suss evaluated it. */
 function conditionText(condition: RoutingMatchCondition): string {
   const field = condition.field ?? "a condition with no field";
   const values = condition.values.join(", ");
@@ -253,8 +248,7 @@ function hopLine(hop: FlowHop): string {
   return `    -> ${hop.to}   ${HOP_REASONS[hop.edge](hop)}`;
 }
 
-/** A response as it is printed: the status, the type, and the body a
- * client gets. */
+/** A response the router returns itself: the status, the content type and the body. */
 function responseText(
   end: Extract<FlowEnd, { type: "answers" }>,
   certainty: FlowCertainty,
@@ -282,10 +276,10 @@ function refusedLines(matches: RoutingMatchRecord[]): string {
 }
 
 /**
- * Where a reference went, and why nobody could follow it. When a reader
- * gives the node itself as the reference (a target group nothing
- * registers behind) it has already said which node this is, so the line
- * does not repeat it.
+ * Where each reference pointed, and why suss could not follow it. When
+ * the reference is the node itself (a target group with nothing
+ * registered behind it), the line leaves the target out, since the
+ * heading above already shows that node.
  */
 function unfollowedLines(node: string, edges: UnfollowedEdge[]): string {
   return edges
@@ -302,8 +296,7 @@ function unfollowedLines(node: string, edges: UnfollowedEdge[]): string {
     .join("\n");
 }
 
-/** A serving claim, written the way a person talks about code: the
- * handler, what it serves, and where it is written. */
+/** A handler that serves the request, with the boundary it serves and its file. */
 function claimLine(
   ref: string,
   certainty: FlowCertainty,
@@ -327,10 +320,9 @@ interface FlowRenderContext {
 
 interface EndContext extends FlowRenderContext {
   /**
-   * The certainty of the chain this ending closes, which every line of
-   * it has to reflect. A hop nobody could settle leaves the whole chain
-   * unsettled, and the terminal line saying a handler answers the
-   * request is the line somebody pastes into a ticket.
+   * The certainty of the whole chain. One hop suss could not evaluate
+   * makes every line of the ending say "may", including the final line
+   * that people paste into a ticket.
    */
   certainty: FlowCertainty;
 }
@@ -380,9 +372,9 @@ function renderChain(chain: FlowChain, context: FlowRenderContext): string {
 }
 
 /**
- * What to call a group of chains. A group nothing serves says so
- * first, and a group whose hops are unsettled never claims to have
- * settled anything.
+ * The heading over a group of chains. When nothing serves the request,
+ * the heading says so first. A group with an unevaluated hop gets a
+ * heading that says the answer depends on run time.
  */
 function heading(certainty: FlowCertainty, chains: FlowChain[]): string {
   const openEnded =
@@ -405,10 +397,9 @@ function heading(certainty: FlowCertainty, chains: FlowChain[]): string {
 }
 
 /**
- * What was left out, when the walk found more chains than an answer
- * keeps. Once the walk stops enumerating the count is only a lower
- * bound, and the line says so, because a wrong number is worse than an
- * admitted floor.
+ * The line for chains left out of the answer. When the walk stopped
+ * counting, the count is only a lower bound, so the line prints "more
+ * than N" instead of a number that could be wrong.
  */
 function omittedLine(omitted: FlowChainsOmitted): string {
   const count = omitted.exact
@@ -460,7 +451,6 @@ function renderFlow(
 // The command
 // ---------------------------------------------------------------------------
 
-/** The summaries to walk, loaded the way the rest of inspect loads them. */
 function readSummaries(options: FlowOptions): BehavioralSummary[] | null {
   if (options.dir !== undefined) {
     return readSummariesFromDir(options.dir);
@@ -475,9 +465,9 @@ function readSummaries(options: FlowOptions): BehavioralSummary[] | null {
 }
 
 /**
- * Ask who serves one request. Returns the exit code. A request nothing
- * serves is still an answer rather than a failure, so only a question
- * suss could not parse exits non-zero.
+ * Prints what serves one request and returns the exit code. A request
+ * that nothing serves exits 0, because that is a valid answer. It exits 1
+ * only when the request, the entry or the summary input is unusable.
  */
 export async function inspectFlow(options: FlowOptions): Promise<number> {
   const parsed = parseFlowRequest(options.request);

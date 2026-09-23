@@ -1,11 +1,10 @@
-// run.ts: CLI dispatch. It returns exit codes and never calls
-// process.exit, so a test can drive it directly.
-//
-// index.ts is a thin entry point. It forwards process.argv.slice(2)
-// here, awaits the exit code, and passes that to process.exit.
-// Splitting the dispatch out lets tests drive the CLI surface without
-// subprocess overhead, and without the runtime swallowing assertions
-// through process.exit.
+/**
+ * The command dispatch behind the `suss` executable, and the usage text.
+ *
+ * The executable passes its arguments here and sets the exit code this
+ * returns. The dispatch never calls process.exit, so a test can call
+ * runCli in process and still see its assertions fail.
+ */
 
 import {
   existsSync,
@@ -286,7 +285,10 @@ the registry. Piped output and CI never see it, and setting
 SUSS_NO_UPDATE_NOTICE turns it off everywhere.
 `.trim();
 
-/** Returns the exit code rather than calling process.exit, so tests can run it. */
+/**
+ * Runs one `suss` command line and resolves to its exit code. It never
+ * calls process.exit, so a test can call it in process.
+ */
 export async function runCli(args: string[]): Promise<number> {
   try {
     const code = await dispatch(args);
@@ -298,8 +300,8 @@ export async function runCli(args: string[]): Promise<number> {
       throw err;
     }
 
-    // A --json caller pipes stdout to a parser, so the reason has to
-    // arrive as JSON there; the sentence stays on stderr for a person.
+    // A caller that passed --json is parsing stdout, so the reason goes
+    // there as JSON too. The sentence still goes to stderr for a person.
     if (args.includes("--json")) {
       process.stdout.write(`${JSON.stringify({ error: sentence })}\n`);
     }
@@ -310,9 +312,9 @@ export async function runCli(args: string[]): Promise<number> {
 }
 
 /**
- * What to print for a throw a person caused, or null when the throw is a
- * bug in suss. Node's own argument parser counts: an unquoted flag value
- * reaches it as a TypeError whose message is already the right sentence.
+ * The message to print for an error the user caused, or null when the
+ * error is a bug in suss. Errors from node's argument parser count as the
+ * user's, because their message already says which flag was wrong.
  */
 function asSentence(err: unknown): string | null {
   if (err instanceof UsageError) {
@@ -328,10 +330,8 @@ function asSentence(err: unknown): string | null {
 }
 
 async function dispatch(args: string[]): Promise<number> {
-  // Asking any command for help prints the usage. Without this, every
-  // command that parses flags strictly rejects `--help` as unknown,
-  // and `init` treats it as neither a flag it knows nor a directory
-  // and starts scanning the repository instead.
+  // Handle --help here for every command. A command with strict flag
+  // parsing would reject it, and `init` would take it for a directory.
   const flags = args.slice(0, endOfFlags(args));
   if (args.length === 0 || flags.some((a) => a === "--help" || a === "-h")) {
     process.stdout.write(`${USAGE}\n`);
@@ -386,9 +386,9 @@ function endOfFlags(args: string[]): number {
 }
 
 /**
- * `--fail-on-empty` used to be the opt-in. A run that finds nothing now
- * fails by default, so the flag is refused with what changed rather
- * than silently ignored.
+ * A run that pairs nothing fails by default, so `--fail-on-empty` has
+ * nothing left to do. Refuse it with a message saying so, because a flag
+ * that is silently ignored looks like it worked.
  */
 function refuseFailOnEmpty(): never {
   throw new UsageError(
@@ -406,9 +406,9 @@ async function runInit(args: string[]): Promise<number> {
 }
 
 /**
- * The packs to read with when none were given: the project's own entry
- * for the language, from `suss.json` or from what `init` would pick.
- * Null after saying why there is none.
+ * The packs to use when the command line gave none: the project's entry
+ * for the language in `suss.json`, or else what `init` would pick. Returns
+ * null after printing why no packs apply.
  */
 async function packsFromProject(source: {
   command: "extract" | "corroborate";
@@ -477,8 +477,9 @@ const EXAMPLE_PACK_FLAGS: Record<Language, string> = {
 };
 
 /**
- * Read the project into a directory of its own, say what ran, and hand
- * the directory to a command that was given no summaries to read.
+ * For a command given no summaries to read: extract the project into a
+ * temporary directory, print the commands that ran, and pass the
+ * directory to the command.
  */
 async function withProjectRead(run: (dir: string) => number): Promise<number> {
   const root = process.cwd();
@@ -588,9 +589,8 @@ async function runExtract(args: string[]): Promise<number> {
     return 1;
   }
 
-  // parseArgs only takes one value per --files occurrence, so
-  // `--files a b` leaves "b" as a bare positional instead of a second
-  // file. Both are files the flag was given.
+  // parseArgs takes one value per --files, so `--files a b` leaves "b"
+  // as a positional. The user meant both as files.
   const files =
     values.files !== undefined && values.files.length > 0
       ? [...values.files, ...positionals]
@@ -614,19 +614,18 @@ async function runExtract(args: string[]): Promise<number> {
     ...(values["fail-on-pack-error"] === true ? { failOnPackError: true } : {}),
   };
 
-  // extract() reports failure by setting process.exitCode, so each run
-  // has to clear it first rather than read a stale failure a previous
-  // run in this process left behind.
+  // extract() reports failure through process.exitCode. Clear it first so
+  // a failure left by an earlier run in this process is not read as ours.
   process.exitCode = undefined;
   await extract(options);
 
   return process.exitCode === 1 ? 1 : 0;
 }
 
-/** What plain `inspect` takes. `--flow` is handled before this. */
+/** The flags plain `inspect` accepts. `--flow` is dispatched before this check. */
 const INSPECT_FLAGS = new Set(["--dir", "--diff", "--flow", "--json"]);
 
-/** A `--flag value` pair taken out of the arguments, value and all. */
+/** Removes a `--flag value` pair from the arguments and returns the value. */
 function takeValued(
   args: string[],
   flag: string,
@@ -640,8 +639,9 @@ function takeValued(
 }
 
 /**
- * How much of a call chain a diff prints: a count, `"full"` for all of
- * it, or nothing when the flag was left off.
+ * How many hops of a call chain a diff prints: a count, `"full"` for the
+ * whole chain, undefined when the flag was left off, or `"bad"` when the
+ * value is neither.
  */
 function chainHops(
   text: string | undefined,
@@ -656,7 +656,7 @@ function chainHops(
   return Number.isInteger(hops) && hops >= 0 ? hops : "bad";
 }
 
-/** The files a change touched, one path per line, as git writes them. */
+/** Reads the list of files a change touched, one path per line, as `git diff --name-only` prints it. */
 function readChangedFiles(file: string): string[] {
   return readFileSync(file, "utf-8")
     .split("\n")
@@ -665,9 +665,8 @@ function readChangedFiles(file: string): string[] {
 }
 
 /**
- * A flag inspect does not take, said rather than dropped. `--json` is
- * the one people try, so it gets pointed somewhere: the summaries file
- * is already JSON, and ask gives an answer in JSON.
+ * The message for a flag inspect does not accept. `--json` is the one
+ * people try most, so its message also says where JSON output is.
  */
 function inspectFlagMessage(flag: string): string {
   const where =
@@ -704,9 +703,8 @@ async function runInspect(argv: string[]): Promise<number> {
     );
     return 1;
   }
-  // `--diff` is the one form that takes it. Everything else inspect
-  // does reads a file that is already JSON, so the flag is refused
-  // here rather than in each branch, where --dir used to drop it.
+  // Only `--diff` takes --json. Refuse it here once, so no branch can
+  // quietly ignore it.
   if (json && args[0] !== "--diff") {
     process.stderr.write(inspectFlagMessage("--json"));
     return 1;
@@ -770,8 +768,8 @@ async function runInspect(argv: string[]): Promise<number> {
   }
   const file = args[0];
   if (file === undefined) {
-    // Given nothing to read, inspect reads the project it is run in and
-    // renders each file it produced, the same as being handed the file.
+    // With no file given, extract the current project and render each
+    // summaries file as if the user had passed it.
     return await withProjectRead((dir) => {
       for (const name of readdirSync(dir).sort()) {
         inspect({ file: path.join(dir, name), ...(types ? { types } : {}) });
@@ -857,8 +855,8 @@ async function runCheck(args: string[]): Promise<number> {
     return 1;
   }
 
-  // --at is already scoped to one thing, so it prints in full and has
-  // nothing to collapse.
+  // --all stays out of `shared` because checkAt reports on one thing and
+  // always prints it in full.
   const all = values.all === true ? { all: true } : {};
 
   const shared = {
@@ -903,7 +901,7 @@ async function runCheck(args: string[]): Promise<number> {
     return checkFolder(values.dir);
   }
 
-  // Given nothing to read, check reads the project it is run in.
+  // With no files given, extract the current project and check that.
   if (positionals.length === 0) {
     return await withProjectRead(checkFolder);
   }
@@ -929,8 +927,8 @@ async function runCheck(args: string[]): Promise<number> {
     return 1;
   }
 
-  // Two-file check compares every provider against every consumer
-  // without building pairs, so it has no empty count to opt out of.
+  // A two-file check compares every provider with every consumer without
+  // pairing them, so there is no empty pairing for --allow-empty to accept.
   if (values["allow-empty"] === true) {
     process.stderr.write(
       "--allow-empty needs --dir. Comparing two files checks every provider against every consumer without pairing them, so there is no count of what paired.\n",
@@ -959,9 +957,8 @@ async function runAsk(args: string[]): Promise<number> {
     allowPositionals: true,
   });
 
-  // The question comes first, and a summaries file may follow it, the
-  // same way `inspect` takes one. No question gets the same treatment
-  // as one that matched nothing: the ten it does answer, printed back.
+  // The question comes first, then an optional summaries file. With no
+  // question, ask prints the list of questions it accepts.
   const question = positionals[0];
   if (question === undefined) {
     return ask({
@@ -1120,8 +1117,8 @@ async function runContract(args: string[]): Promise<number> {
 }
 
 /**
- * Where each unit's code is, by instance name, or null when one of the
- * pairs was not written as `<instance>=<dir>`.
+ * The directory of each unit's code, keyed by instance name, or null when
+ * a pair was not written as `<instance>=<dir>`.
  */
 function parsedCodeScopes(
   written: string[] | undefined,

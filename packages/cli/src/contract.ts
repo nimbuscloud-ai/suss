@@ -1,9 +1,12 @@
-// contract.ts: `suss contract` command implementation
-//
-// Generates BehavioralSummary[] from a declared contract source rather than
-// from TypeScript code. Each --from value maps to a tiny loader that knows
-// how to turn a file path into summaries; future contract sources (GraphQL SDL,
-// gRPC proto, etc.) plug in the same way.
+/**
+ * `suss contract`: summaries from a declared artifact such as an OpenAPI
+ * document or a Terraform module, in place of source code.
+ *
+ * Each `--from` value has a loader in the table below that turns a path
+ * into summaries. The loaders import their contract package on demand, so
+ * a run pays only for the reader it uses. A new contract source is one
+ * more entry in the table.
+ */
 
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -31,20 +34,19 @@ export interface ContractOptions {
   spec: string;
   output?: string;
   /**
-   * The directory each deployable unit's code is in, by instance name.
-   * A Terraform configuration never says which directory a container's
-   * image was built from, so `check` has nothing to pair the unit's
-   * code against until somebody says where it is.
+   * The directory each deployable unit's code is in, keyed by instance
+   * name. A Terraform configuration never says which directory a
+   * container's image was built from, so without this `check` cannot pair
+   * the unit with its code.
    */
   codeScopes?: Record<string, string>;
 }
 
 /**
- * `source` is the label to record on every summary, and it is set only
- * for a spec that came from a URL: a reader reading a file off disk
- * labels it by where it is in the repository, which is the better
- * answer and one only the reader can give, since a directory spec
- * resolves to its file inside the reader.
+ * `source` is the label recorded on every summary, and the CLI sets it
+ * only for a spec fetched from a URL. For a file on disk the reader labels
+ * summaries by the file's place in the repository. Only the reader can do
+ * that, because it is the reader that turns a directory into a file.
  */
 type ContractLoader = (
   specPath: string,
@@ -64,9 +66,9 @@ const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
     });
   },
   terraform: async (specPath, _source, options) => {
-    // A path may be one `.tf` file or the directory a module lives in,
-    // since a module states its resources across several files. Every
-    // shipped pack loads; another provider's goes here beside them.
+    // The path may be a module's directory, because a module usually
+    // spreads its resources across several `.tf` files. A new provider
+    // pack gets loaded here beside these two.
     const [reader, aws, gcp] = await Promise.all([
       import("@suss/contract-terraform"),
       import("@suss/terraform-aws"),
@@ -80,71 +82,41 @@ const CONTRACT_LOADERS: Record<ContractSource, ContractLoader> = {
     });
   },
   serverless: async (specPath, source) => {
-    // `--from serverless` reads a Serverless Framework service file
-    // (the path may be the file itself or the directory it is in) and
-    // emits the same summaries the wiring would produce from a SAM
-    // template: one runtime-config provider per function, routes for
-    // httpApi / http events, and message-bus summaries for the rest.
     const mod = await import("@suss/contract-serverless");
     return mod.serverlessFileToSummaries(specPath, {
       ...(source !== undefined ? { source } : {}),
     });
   },
   storybook: async (specPath) => {
-    // `--from storybook` accepts a single `.stories.ts[x]` file path or
-    // a glob pattern that resolves to one or more stories files. The
-    // contract reader walks CSF3 shape and emits one summary per named story.
     const mod = await import("@suss/contract-storybook");
     const files = expandStoryPaths(specPath);
     return mod.generateSummariesFromStories(files);
   },
   appsync: async (specPath) => {
-    // `--from appsync` reads a CFN / SAM template with AWS::AppSync::*
-    // resources and emits one summary per resolver with
-    // graphql-resolver semantics.
     const mod = await import("@suss/contract-appsync");
     return mod.appsyncFileToSummaries(specPath);
   },
   prisma: async (specPath) => {
-    // `--from prisma` reads a `schema.prisma` file and emits one
-    // `library`-kind summary per model with storage semantics
-    // that the checker pairs against `interaction(class: "storage-access")` effects in code.
     const mod = await import("@suss/contract-prisma");
     return mod.prismaSchemaFileToSummaries(specPath);
   },
   graphql: async (specPath) => {
-    // `--from graphql` reads a plain GraphQL SDL file and emits one
-    // `resolver`-kind summary per Query / Mutation / Subscription
-    // field with graphql-resolver semantics. Pairs against server-side
-    // resolvers extracted by framework-apollo / framework-nestjs-graphql.
     const mod = await import("@suss/contract-graphql");
     return mod.graphqlSdlFileToSummaries(specPath);
   },
   wrangler: async (specPath, source) => {
-    // `--from wrangler` reads a Cloudflare Worker's configuration. The
-    // path may be the file or the directory the Worker is in, and what
-    // comes out is the Worker as a deployable with the configuration it
-    // is given, plus a summary per store and queue it is bound to.
     const mod = await import("@suss/contract-wrangler");
     return mod.wranglerFileToSummaries(specPath, {
       ...(source !== undefined ? { source } : {}),
     });
   },
   "graphql-documents": async (specPath) => {
-    // `--from graphql-documents` reads committed `.graphql` / `.gql`
-    // operation documents (a single file or a directory walked
-    // recursively) and emits one `client`-kind summary per query /
-    // mutation / subscription with graphql-operation semantics. Pairs
-    // against resolver summaries the same way call-site-traced
-    // operations do.
     const mod = await import("@suss/contract-graphql");
     return mod.graphqlDocumentsPathToSummaries(specPath);
   },
 };
 
 function expandStoryPaths(spec: string): string[] {
-  // Check if it's a direct file path first. If the path exists on
-  // disk, use it: simplest and covers the single-file case.
   const absolute = path.resolve(spec);
   if (fs.existsSync(absolute)) {
     const stat = fs.statSync(absolute);
@@ -152,16 +124,11 @@ function expandStoryPaths(spec: string): string[] {
       return [absolute];
     }
     if (stat.isDirectory()) {
-      // Directory: walk for `.stories.ts[x]` files (one level of
-      // recursion; callers can pass a deeper subdirectory if they
-      // want finer scope).
       return walkForStoryFiles(absolute);
     }
   }
-  // Not an existing path: treat it as a shell-expanded list of paths
-  // (the shell usually does glob expansion before we see it). When
-  // the shell has passed multiple files, the caller would typically
-  // invoke us once per file; we surface a useful error otherwise.
+  // The shell expands a glob before the CLI sees it, so a path that does
+  // not exist here is a mistake in the path itself.
   throw new Error(
     `No stories found at "${spec}". Pass a .stories.ts[x] file or a directory containing them.`,
   );
@@ -184,15 +151,13 @@ function walkForStoryFiles(dir: string): string[] {
 }
 
 /**
- * If `spec` looks like an http(s) URL, fetch it and write the body to a
- * temp file so the existing file-based loaders can read it unchanged.
- * Returns the local path plus a cleanup callback the caller must run
- * after the loader is done. Non-URL specs are returned unchanged.
+ * Fetches a spec given as an http(s) URL into a temp file, so the loaders
+ * only ever read files. The caller runs `cleanup` once the loader is done.
+ * Any other spec comes back unchanged.
  *
- * The temp file's extension is preserved from the URL path when present
- * (so loaders that branch on `.json` vs `.yaml` still pick the right
- * parser); falls back to `.yaml` because OpenAPI / CloudFormation / SAM
- * documents on the public web are most often served as YAML.
+ * The temp file keeps the URL's extension because loaders pick a JSON or
+ * YAML parser by extension. With no extension it gets `.yaml`, since
+ * OpenAPI and CloudFormation documents on the web are most often YAML.
  */
 async function resolveSpec(
   spec: string,
@@ -218,7 +183,7 @@ async function resolveSpec(
       try {
         fs.unlinkSync(tmpPath);
       } catch {
-        // Best-effort cleanup; ignore.
+        // A temp file left behind does no harm, so a failed delete is ignored.
       }
     },
   };
@@ -235,8 +200,8 @@ export async function contract(
   }
 
   const resolved = await resolveSpec(options.spec);
-  // A fetched spec lands in a temp file whose name says nothing about
-  // which document it is, so the URL it came from stays its identity.
+  // The temp file's name is random, so a fetched spec is labelled by its
+  // URL instead.
   const source =
     resolved.fetchedFrom === undefined
       ? undefined

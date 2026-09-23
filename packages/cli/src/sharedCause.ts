@@ -1,13 +1,13 @@
 /**
- * One statement for a change that reached many boundaries from one
- * place.
+ * Groups a diff line that one wrapper produced at many boundaries into a
+ * single statement.
  *
  * A filter, a middleware or an error handler runs around every route
- * registered with it, so editing one of them moves every route it
- * covers. Printed route by route, that is the same line fifty times and
- * a reader has to work out for themselves that it came from one edit.
- * Printed once, with how many routes have it and which ones do not, it
- * is the sentence they were going to write in the review anyway.
+ * registered with it, so editing one of them changes every route it
+ * covers. Printed route by route, the same line would appear fifty times
+ * and the reader would have to work out that one edit caused all of them.
+ * The report prints it once instead, with how many routes have it and
+ * which covered routes do not.
  */
 
 import type { WrapperReference } from "@suss/behavioral-ir";
@@ -16,7 +16,7 @@ import type { WrapperReference } from "@suss/behavioral-ir";
 export interface CausedLine {
   /** The block this line belongs to, as `file::unit`. */
   readonly key: string;
-  /** How the report names the boundary, for the exceptions. */
+  /** The boundary's label in the report, which the exception list uses. */
   readonly boundary: string;
   readonly text: string;
   readonly wrapper: WrapperReference | undefined;
@@ -26,9 +26,9 @@ export interface CausedLine {
 export interface SharedCause {
   readonly wrapper: WrapperReference;
   readonly text: string;
-  /** The blocks this line came out of, so they can drop it. */
+  /** The blocks this line came from, so the report can drop it from each one. */
   readonly keys: ReadonlySet<string>;
-  /** The boundaries that got this line, by the label the report gives them. */
+  /** The labels of the boundaries that got this line. */
   readonly boundaries: readonly string[];
   /** The boundaries the wrapper runs on that did not get this line. */
   readonly exceptions: readonly string[];
@@ -36,7 +36,7 @@ export interface SharedCause {
   readonly covered: number;
 }
 
-/** Past this many boundaries, a statement gives the count instead. */
+/** Above this many boundaries, the statement prints a count instead of the labels. */
 const NAMED = 3;
 
 function wrapperKey(wrapper: WrapperReference): string {
@@ -44,11 +44,10 @@ function wrapperKey(wrapper: WrapperReference): string {
 }
 
 /**
- * Whether a boundary the change missed is already the way the change
- * left the others: it produced this outcome before, or it never did and
- * the change was to take the outcome away. Either way nothing about it
- * moved, and calling it an exception would send a reviewer looking for
- * something that is not there.
+ * Whether a boundary the change missed already ends up like the others:
+ * it produced an added outcome before the change, or it never produced a
+ * removed one. Nothing about that boundary changed, so listing it as an
+ * exception would send a reviewer looking for a problem that is not there.
  */
 function alreadySo(
   text: string,
@@ -62,9 +61,9 @@ function alreadySo(
 }
 
 /**
- * Every line that turned up at more than one boundary from the same
- * wrapper. `runsOn` gives the boundaries a wrapper covers, which is
- * what the count and the exceptions are measured against.
+ * Every line that the same wrapper produced at more than one boundary.
+ * `runsOn` returns the boundaries a wrapper covers, and the count and the
+ * exceptions are measured against that list.
  */
 export function sharedCauses(
   lines: readonly CausedLine[],
@@ -117,9 +116,9 @@ function inWords(items: readonly string[]): string {
 }
 
 /**
- * Which boundaries have this now, and which ones the same wrapper runs
- * on without it. A reviewer reads the second line to check a route they
- * thought was covered.
+ * The boundaries that have this line now, and the ones the same wrapper
+ * runs on without it. The second line lets a reviewer check a route they
+ * expected the change to cover.
  */
 export function scopeLines(cause: SharedCause): string[] {
   const at =

@@ -1,5 +1,5 @@
-// @suss/cli: public exports. The bin entry lives in bin.ts so importing
-// this module is side-effect free.
+// The package's public exports. The `suss` executable has its own entry
+// point, so importing this module runs nothing.
 
 export {
   type AskOptions,

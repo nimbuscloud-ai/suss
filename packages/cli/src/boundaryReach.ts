@@ -1,9 +1,9 @@
 /**
- * What a unit does at each boundary a summary mentions.
+ * What a unit does at each boundary its summary mentions.
  *
- * How somebody spells a boundary, and whether what they wrote picks one
- * out, is `boundarySpelling.ts` in `@suss/ir-core`, which the intent
- * checker reads too.
+ * Parsing a boundary the user typed, and deciding whether it matches a
+ * binding, happens in `@suss/ir-core` so that the intent checker uses the
+ * same rules. This module re-exports those helpers for the CLI.
  */
 
 import {
@@ -31,15 +31,16 @@ export {
 
 export type { Relation } from "@suss/ir-core";
 
-/** How a report writes this boundary, and how somebody types it back. */
+/** The label a report prints for this boundary, which a user can also type into a question. */
 export function boundarySpelling(binding: BoundaryBinding): string {
   return displayLabel(binding);
 }
 
 /**
- * What the effect says past the boundary's own label. A store's label
- * says which container, but a config or metadata read's label is only
- * the recognizer, so the name read is the detail.
+ * Detail about an effect that the boundary label leaves out. A store's
+ * label already includes the container, but the label of a config or
+ * metadata read only identifies the recognizer, so the detail is the name
+ * that was read.
  */
 export function interactionDetail(
   interaction: Interaction,
@@ -59,26 +60,24 @@ export interface TouchedBoundary {
   relation: Relation;
   /** The call as the source writes it, when the effect recorded one. */
   callee: string | undefined;
-  /** What the effect says past the label; see `interactionDetail`. */
+  /** Detail the label leaves out; see `interactionDetail`. */
   detail: string | undefined;
   transitionId: string | undefined;
 }
 
 /**
- * Every boundary this unit touches: the one it serves, and one entry
- * per relation for each call site that goes through one. The call sites
- * narrow to the given transitions when a caller asks about part of a
- * unit.
+ * Every boundary this unit touches: its own boundary, plus one entry per
+ * relation for each call site that goes through a boundary. Pass
+ * `transitionIds` to count only the call sites on those transitions.
  */
 export function boundariesTouchedBy(
   summary: BehavioralSummary,
   transitionIds?: ReadonlySet<string>,
 ): TouchedBoundary[] {
   const touched: TouchedBoundary[] = [];
-  // What a unit does at its own boundary is true of every line in it,
-  // so asking about one line still reports it. A unit on the calling
-  // side of a boundary is bound to it too, and it reads and writes
-  // there the same way a call to a service does.
+  // The unit's own boundary applies to every line in it, so it is reported
+  // even when the caller asks about some transitions. A consumer is bound
+  // to its boundary too and reads and writes there like a service call.
   const own = summary.identity.boundaryBinding;
   if (own !== null) {
     for (const relation of OWN_BINDING[BOUNDARY_ROLE[summary.kind]]) {
@@ -101,9 +100,8 @@ export function boundariesTouchedBy(
       if (effect.type !== "interaction") {
         continue;
       }
-      // Which container an access written under a relation touches
-      // comes from the provider's contract, and this walk has one
-      // summary.
+      // Only the provider's contract says which container an access
+      // through a relation touches, and this function sees one summary.
       if (goesThroughRelation(effect.interaction)) {
         continue;
       }

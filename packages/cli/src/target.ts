@@ -1,14 +1,15 @@
 /**
- * One thing somebody can point at, and what it turns out to be.
+ * Resolves what a user points at with `--at` or in a question to the
+ * summaries and boundary touches it means.
  *
- * Four spellings, resolved in this order: a summary id, which is
- * anything with `::` in it; a file and a line, `src/dao.ts:43`; a file;
- * and a boundary, `aws.dynamodb:editions#by-publication`. A file wins over
- * a boundary, so a path is never read as a boundary whose words happen
- * to line up.
+ * The spellings are tried in this order: a summary id, which is anything
+ * with `::` in it; a file and a line, `src/dao.ts:43`; a file; a summary
+ * by its function name; and a boundary,
+ * `aws.dynamodb:editions#by-publication`. A file comes before a boundary,
+ * so a path is never read as a boundary whose words happen to match.
  *
- * A spelling that matches nothing leaves the caller a sentence to
- * print. An empty report reads as agreement, and this is not that.
+ * When a spelling matches nothing, the result has a message for the caller
+ * to print. An empty report would look like agreement.
  */
 
 import path from "node:path";
@@ -39,9 +40,8 @@ export interface TargetTouch {
   summary: BehavioralSummary;
   touched: TouchedBoundary;
   /**
-   * The calls between the unit somebody asked about and this one, when
-   * the touch was found by following calls rather than in the asked
-   * unit's own body.
+   * The calls from the unit the user asked about to this one. Set only
+   * when the touch was found by following calls out of that unit.
    */
   through?: string[];
 }
@@ -50,7 +50,7 @@ export interface ResolvedTarget {
   kind: TargetKind;
   /** What the caller typed. */
   spelledAs: string;
-  /** What it turned out to be, as a report prints it. */
+  /** What the spelling resolved to, as a report prints it. */
   detail: string;
   /** The units the target picked out. */
   summaries: BehavioralSummary[];
@@ -78,9 +78,9 @@ export function resolveTarget(
     };
   }
 
-  // A package export boundary, `fn:@suss/checker::checkAll`, has the
-  // same `::` in it as a summary id, so a spelling that matches no
-  // summary is tried as a boundary before it is turned down.
+  // A package export boundary such as `fn:@suss/checker::checkAll` also
+  // contains `::`, so a spelling that matches no summary id is tried as a
+  // boundary before it is rejected.
   if (spec.includes("::")) {
     const asSummary = summaryTarget(spec, summaries);
     if (asSummary.matched) {
@@ -99,9 +99,8 @@ export function resolveTarget(
     return fileTarget(spec, summaries);
   }
 
-  // A handler can be pointed at by its function name as well as by its
-  // route, since a report prints both and either one is what somebody
-  // has in hand.
+  // A report prints both a handler's function name and its route, so a
+  // user may type either one.
   const asSummary = summaryTarget(spec, summaries);
   if (asSummary.matched) {
     return asSummary;
@@ -207,13 +206,12 @@ function lineTarget(
 }
 
 /**
- * The touches at the one boundary a spelling meant, or null when it
- * meant several. Words that name a boundary exactly beat words that
- * are only part of its name, so `POST /articles` picks the collection
- * route and leaves the comments route under it alone. Without an exact
- * one, several boundaries matching the same words is a question nobody
- * can settle, and picking one of them silently is how a report ends up
- * about a boundary the code never touches.
+ * The touches at the one boundary a spelling means, or null when it could
+ * mean several. An exact match wins over a partial one, so
+ * `POST /articles` picks the collection route and not the comments route
+ * under it. Without a single exact match there is no way to choose, and
+ * picking one silently could produce a report about a boundary the user
+ * did not mean.
  */
 function narrowedToOne(
   spec: string,
@@ -239,7 +237,7 @@ function boundaryMatches(
   );
 }
 
-/** The message `--at` gives up with: how many boundaries a spelling could mean, and a few of them by name. */
+/** The error for an ambiguous spelling: how many boundaries it could mean, and the first few labels. */
 function ambiguousBoundaryMessage(
   spec: string,
   matching: readonly TargetTouch[],
@@ -253,10 +251,10 @@ function ambiguousBoundaryMessage(
 }
 
 /**
- * Whether a boundary spelling picks out more than one boundary here,
- * judged the way `--at` judges a boundary spec. Null when the spelling
- * matches nothing or narrows to one, so `suss ask` only has to act on
- * the case its own answer would otherwise get wrong.
+ * The ambiguity message when a boundary spelling matches more than one
+ * boundary, using the same rules as `--at`. Returns null when the
+ * spelling matches nothing or narrows to one, so `suss ask` only handles
+ * the case its own answer would get wrong.
  */
 export function ambiguousBoundarySpelling(
   spec: string,
@@ -311,9 +309,9 @@ function boundaryTarget(
 // ---------------------------------------------------------------------------
 
 /**
- * The files these summaries came from that the caller could mean. Both
- * sides are compared as paths, so `dao.ts` and `src/editions/dao.ts`
- * both reach `/repo/src/editions/dao.ts`, and `ao.ts` reaches nothing.
+ * The summary files the caller could mean. Paths match on whole segments,
+ * so `dao.ts` and `src/editions/dao.ts` both match
+ * `/repo/src/editions/dao.ts`, and `ao.ts` matches nothing.
  */
 export function filesMatching(
   spec: string,
@@ -342,11 +340,11 @@ function endsWithSegments(whole: string, tail: string): boolean {
 }
 
 /**
- * A summary id matches the whole id or a tail of it, so somebody who
- * saw `src/dao.ts::byPublication` in one report can type it at a run
- * whose ids have a workspace in front. The tail is read against the
- * id before settling, so `evaluate` is the function called that and
- * not every caller settled with `#fn:...::evaluate` on the end.
+ * A spelling matches a whole summary id or a tail of it, so somebody who
+ * saw `src/dao.ts::byPublication` in one report can type it against a run
+ * whose ids start with a workspace. The tail is compared with the id
+ * before its settling suffix, so `evaluate` matches the function of that
+ * name and not every caller whose id ends in `#fn:...::evaluate`.
  */
 function idMatches(spec: string, summary: BehavioralSummary): boolean {
   const id = summaryIdentifier(summary);
@@ -368,7 +366,7 @@ function isTailOf(spec: string, id: string): boolean {
   return id === spec || id.endsWith(`::${spec}`);
 }
 
-/** One line's worth of what a unit does at one boundary. */
+/** What one unit does at one boundary, printed as one line. */
 export interface CollapsedTouch {
   boundary: string;
   unit: string;
@@ -376,14 +374,14 @@ export interface CollapsedTouch {
   callee: string | undefined;
   /** The boundary the unit itself provides, when it provides one. */
   provides?: string;
-  /** The calls between the asked unit and this one, when there were any. */
+  /** The calls from the unit the user asked about to this one, when there were any. */
   through?: string[];
 }
 
 /**
- * One entry per unit and boundary, with the relations gathered onto it.
- * A call both reads and writes, and printing that as two lines about
- * the same call reads like two calls.
+ * One entry per unit, boundary and call, with the relations merged onto
+ * it. A call that both reads and writes would otherwise print as two
+ * lines, and a reader would count two calls.
  */
 export function collapseTouches(
   touches: ReadonlyArray<TargetTouch>,
@@ -414,10 +412,9 @@ export function collapseTouches(
 }
 
 /**
- * What the units behind a target do at every boundary, which is not
- * the same as what the target picked out: a boundary target picks out
- * the units serving it, and what those units go on to touch is a
- * separate list.
+ * What the given units do at every boundary they touch. For a boundary
+ * target this list is wider than the target's own touches, which only
+ * cover the boundary the user asked about.
  */
 export function touchesOfUnits(
   summaries: ReadonlyArray<BehavioralSummary>,
@@ -426,9 +423,9 @@ export function touchesOfUnits(
 }
 
 /**
- * The units serving a boundary, which are the ones whose downstream a
- * question about it is asking after. A client of the boundary reaches
- * it rather than through it, so its calls belong to its own answer.
+ * The units that provide the boundary. A question about a boundary
+ * follows calls out of these units only. A client of the boundary calls
+ * into it, so what the client calls afterwards is not downstream of it.
  */
 export function unitsServing(
   touches: ReadonlyArray<TargetTouch>,
@@ -443,9 +440,9 @@ export function unitsServing(
 }
 
 /**
- * The boundary key a unit provides on its own binding, when it is a
- * provider. Undefined when it provides nothing, so an answer item can
- * leave the field out rather than say it provides nothing.
+ * The boundary key a provider unit serves on its own binding. Returns
+ * undefined for any other unit, so an answer item can leave the field
+ * out.
  */
 export function providesKeyOf(summary: BehavioralSummary): string | undefined {
   const binding = summary.identity.boundaryBinding;

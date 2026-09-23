@@ -1,15 +1,15 @@
 /**
- * `suss check --at`: the findings for one thing.
+ * `suss check --at`, which reports the findings for one file, line,
+ * boundary or summary.
  *
- * The run is the same run. `checkDirectory` reads the folder and every
- * pass looks at every summary, exactly as a full check does, and what
- * changes is how much of the result gets printed. So a scoped answer
- * cannot disagree with the full one, and there is no second checker to
- * keep in step.
+ * It runs the full check. `checkDirectory` reads the folder and every
+ * pass looks at every summary, and only the printing is narrowed to the
+ * target. A scoped report therefore cannot disagree with the full one,
+ * and there is no second checker to keep in step.
  *
- * A target with a gap on it says so. "No findings here" means less when
- * part of the unit could not be read, and a reader who is not told that
- * will take the quiet for agreement.
+ * When the target has gaps, the report lists them. Without that, a
+ * reader would take "no findings" to mean the two sides agree, when part
+ * of the unit was never read.
  */
 
 import { summaryIdentifier, summaryRef } from "@suss/behavioral-ir";
@@ -45,12 +45,12 @@ export interface CheckAtOptions {
 
 export interface CheckAtResult {
   findings: Finding[];
-  /** False when the target picked out nothing at all. */
+  /** False when nothing in the summaries matched the target. */
   matched: boolean;
   hasErrors: boolean;
 }
 
-/** What one unit records that suss could not read. */
+/** The gaps one unit recorded, as printable lines. */
 interface UnitGaps {
   summary: string;
   records: string[];
@@ -72,8 +72,8 @@ export function checkAt(options: CheckAtOptions): CheckAtResult {
       ? `${JSON.stringify({ at: options.at, matched: false, message: resolution.message }, null, 2)}\n`
       : `${resolution.message}\n`;
     writeReport(rendered, options.output);
-    // A target nobody can find is not a pass. Exiting zero here would
-    // read as "checked, and it agreed".
+    // Fail when the target matches nothing, because exit code 0 would tell
+    // a script that the target was checked and agreed.
     return { findings: [], matched: false, hasErrors: true };
   }
 
@@ -129,11 +129,11 @@ function scopeTo(
 }
 
 /**
- * A finding about a boundary belongs to that boundary's report. A
- * finding about a unit belongs to the unit's, and when the target gave
- * a line, only to the branches that line falls in: a status the rest of
- * the function returns is not what somebody pointing at line 43 asked
- * about.
+ * For a boundary target, keeps the findings on that boundary. For a unit,
+ * keeps the findings on either side of it. When the target includes a
+ * line, keeps only the findings on the branches containing that line,
+ * because a user pointing at line 43 is asking about that branch and not
+ * about statuses the rest of the function returns.
  */
 function findingInScope(
   finding: Finding,
@@ -160,7 +160,7 @@ function findingInScope(
   );
 }
 
-/** Whether a key a pass wrote is the boundary somebody asked about. */
+/** Whether a pairing key contains every token of the boundary the user asked about. */
 function spellingCovers(subject: string, key: string): boolean {
   const wanted = spellingTokens(subject);
   if (wanted.length === 0) {
@@ -235,8 +235,8 @@ function renderScoped(
     lines.push("", ...unpaired);
   }
 
-  // Narrowing to one target is already the reader saying what they want
-  // to see, so nothing here is collapsed to a count.
+  // The user already narrowed the report to one target, so every finding
+  // prints in full instead of being collapsed to a count.
   if (view.findings.length > 0) {
     lines.push(
       "",
@@ -255,7 +255,7 @@ function renderScoped(
   return `${lines.join("\n")}\n`;
 }
 
-/** Each boundary the target touches, and which unit does what at it. */
+/** Each boundary the target touches, with the units there and what each one does. */
 function renderTouches(target: ResolvedTarget): string[] {
   const byBoundary = new Map<string, string[]>();
   for (const touch of collapseTouches(target.touches)) {

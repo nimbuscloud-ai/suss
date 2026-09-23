@@ -1,12 +1,14 @@
-// corroborateCommand.ts: `suss corroborate` (experimental).
-//
-// Extract, then execute: run the normal extraction, then run each
-// handler's real function in a sandbox against inputs that satisfy
-// its own extracted conditions, and write the verdicts back onto the
-// summaries (`transition.confidence.corroboration`). The engine and
-// its scope live in `corroborate.ts`; this file is the command shell
-// around it: source resolution, the human report, and the optional
-// annotated-summaries output.
+/**
+ * The experimental `suss corroborate` command.
+ *
+ * It runs the normal extraction, then runs each handler's own function in
+ * a sandbox with inputs that satisfy the conditions extracted for it, and
+ * writes each verdict onto the summary under
+ * `transition.confidence.corroboration`. `corroborateSummary` does the
+ * sandboxed runs and decides which summaries are in scope. This module
+ * finds the source, prints the report, and writes the annotated summaries
+ * when asked.
+ */
 
 import path from "node:path";
 
@@ -27,16 +29,15 @@ import { writeJson } from "./jsonStream.js";
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 export interface CorroborateCommandOptions {
-  /** Path to the tsconfig covering the code to read. Optional. */
   tsconfig?: string;
   /** Directory to read when no tsconfig is given. Defaults to cwd. */
   dir?: string;
   frameworks: string[];
-  /** Write the annotated summaries here instead of discarding them. */
+  /** Where to write the annotated summaries. Without it they are discarded. */
   output?: string;
-  /** Verdict-producing executions to aim for per claim. */
+  /** How many runs per claim should reach a verdict. */
   runs?: number;
-  /** Sampling attempts per claim before giving up. */
+  /** How many inputs to try per claim before giving up. */
   attempts?: number;
 }
 
@@ -57,9 +58,8 @@ export interface CorroborateResult {
 function summaryLabel(summary: BehavioralSummary): string {
   const binding = summary.identity.boundaryBinding;
   if (binding !== null && binding.semantics.name === "rest") {
-    // A wildcard route serves every method, and an unnamed one gives no
-    // method at all. Neither label should start with the gap where a
-    // method would go.
+    // A wildcard route serves every method and some routes have no method,
+    // so their labels show the path alone.
     const { method, path } = binding.semantics;
     if (path === null) {
       return summary.identity.name;
@@ -157,10 +157,10 @@ function formatReport(reports: SummaryReport[], total: number): string {
 }
 
 /**
- * Extract the project, corroborate every in-scope summary against the
- * same source, print the report to stdout, and optionally write the
- * annotated summaries. Returns counts so the CLI can pick an exit
- * code (refuted claims fail the run: they are findings).
+ * Extracts the project, corroborates every summary in scope against the
+ * same source, prints the report to stdout, and writes the annotated
+ * summaries when `output` is set. The returned counts let the CLI choose
+ * the exit code. A refuted claim is a finding, so it fails the run.
  */
 export async function corroborate(
   options: CorroborateCommandOptions,
@@ -177,9 +177,8 @@ export async function corroborate(
       : { project: createProjectWithoutTsconfig(source.root).project }),
     projectRoot: runRoot,
     frameworks: packs,
-    // Corroboration re-runs extraction to keep the Project and the
-    // summaries in the same session; a cache hit would skip the file
-    // loading the sandbox needs.
+    // The sandbox needs the files loaded into the same Project that
+    // produced the summaries, and a cache hit would skip loading them.
     cacheDir: null,
   });
 
@@ -201,8 +200,7 @@ export async function corroborate(
     }
   }
 
-  // Extract's portability rule, through the same helper: relative
-  // paths in anything written, bindings and render targets included.
+  // Written summaries use relative paths, the same as `suss extract` writes.
   for (const summary of summaries) {
     relativizeSummaryPaths(summary, runRoot);
   }
