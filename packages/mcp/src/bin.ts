@@ -1,9 +1,9 @@
 /**
- * bin.ts: run the server over stdio.
+ * Runs the server over stdio.
  *
- * A host starts this as a subprocess and speaks MCP down the pipe, so
- * nothing may go to stdout except the protocol. Anything worth saying
- * to a person goes to stderr.
+ * A host starts this as a subprocess and talks MCP over the pipe, so
+ * nothing but the protocol may go to stdout. Messages for a person go to
+ * stderr.
  */
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";

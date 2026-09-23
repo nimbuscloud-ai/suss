@@ -1,22 +1,16 @@
 /**
- * project.ts: the summaries for one project, kept current while the
- * server runs.
+ * The summaries for one project, kept current while the server runs.
  *
- * The CLI extracts to files and later reads them back, which is right
- * for a command that runs once. A server answers many questions over
- * one working tree, and an answer computed from an extract taken ten
- * minutes ago is worse than no answer, because the code it describes is
- * the code somebody has since changed.
+ * The CLI extracts to files and reads them back later, which suits a
+ * command that runs once. A server gets many questions about one
+ * working tree while somebody edits it, and an answer from a stale
+ * extract describes code that has since changed.
  *
- * So this owns a directory of summaries, re-runs the commands
- * `suss.json` says when a source file changes, and hands out the path
- * every question reads from. Re-extracting is cheap after the first
- * run: `suss extract` keeps a per-file cache keyed on content, so an
- * edit to one file rebuilds one file's worth of work.
- *
- * The debounce exists because an agent writing code produces bursts of
- * writes, and re-extracting on each one would spend the whole burst
- * rebuilding work the next write throws away.
+ * So a `Project` keeps its own summary directory and re-runs the
+ * commands in `suss.json` when a source file changes. After the first
+ * run this is cheap, because `suss extract` caches per file by content.
+ * Rebuilds are debounced, since an agent writes files in bursts and a
+ * rebuild per write would be thrown away by the next one.
  */
 
 import fs from "node:fs";
@@ -75,14 +69,12 @@ export class Project {
   private running: Promise<BuildReport> | null = null;
   /** The summary directory as last read, dropped when a build rewrites it. */
   private loaded: LoadedSummaries | null = null;
-  /** Whether a build has ever finished, so lastBuild() is known to describe the project rather than the placeholder set before the first one. */
+  /** Set once a build finishes. Before that, lastBuild() is a placeholder. */
   private everBuilt = false;
 
   constructor(options: ProjectOptions) {
-    // Resolved through any symlink, because a recursive watch reports
-    // the paths the operating system knows, and those are the resolved
-    // ones. Watching the link and comparing against the link's own name
-    // misses every event.
+    // A recursive watch reports resolved paths, so a root compared by
+    // its symlinked name would miss every event.
     this.root = realPath(path.resolve(options.root));
     this.summaryDir =
       options.summaryDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "suss-mcp-"));
@@ -134,12 +126,15 @@ export class Project {
     return this.running !== null;
   }
 
-  /** Whether a build has ever finished, so a caller can tell the placeholder before the first one apart from a project that has no suss.json. */
+  /**
+   * Whether a build has ever finished. Before the first one, lastBuild()
+   * looks the same as a project with no suss.json.
+   */
   hasBuilt(): boolean {
     return this.everBuilt;
   }
 
-  /** Wait for a build in flight, whether the first one or a rebuild, so a question reads a settled directory. */
+  /** Waits for any build in flight, so a question reads a settled directory. */
   async settled(): Promise<void> {
     await this.running;
   }
@@ -239,8 +234,8 @@ export class Project {
         },
       );
     } catch {
-      // A platform without recursive watch answers from whatever the
-      // first build produced. Stale is better than refusing to start.
+      // Without recursive watch, questions read what the first build
+      // produced. Stale summaries beat a server that refuses to start.
       this.watcher = null;
     }
   }

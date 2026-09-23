@@ -8,8 +8,8 @@
  * Nothing here touches a language-specific AST node. A language adapter
  * lowers its own tree into `StructuredStatement` and hands that over.
  *
- * Constructs a lowering declines to model come back as thrown
- * `PathBudgetExceeded` or `UnmodeledFlow`, and the caller falls back to
+ * On a construct it does not model, or on too many paths, the engine throws
+ * `UnmodeledFlow` or `PathBudgetExceeded`, and the caller falls back to
  * enclosure conditions plus an opaque conjunct instead of guessing.
  */
 
@@ -27,7 +27,7 @@ import type {
 /** The cap on how many paths to enumerate. Past it the caller falls back to degraded conditions. */
 export const MAX_PATHS = 256;
 
-/** A construct the lowering step will not model safely, such as switch and case rules the enumeration does not cover. Callers catch this and degrade. */
+/** A construct the engine does not model, such as a stray break in a switch clause or a finally that exits. Callers catch this and degrade. */
 export class UnmodeledFlow extends Error {}
 
 /** The path budget was exceeded. Callers catch this and degrade. */
@@ -155,9 +155,8 @@ function classify<Cond>(
 
 /**
  * Every direct statement child, across every construct that has one. A
- * callback body counts: the statements in it belong to this statement,
- * which is what makes a terminal inside one findable and gives its
- * conditions somewhere to hang.
+ * callback body counts, so a terminal inside one is found and has this
+ * statement as an ancestor.
  */
 function childrenOf<Cond>(
   stmt: StructuredStatement<Cond>,
@@ -274,7 +273,7 @@ function recordTerminal<Cond, Terminal>(
   ctx.state.byTerminal.set(terminal, existing);
 }
 
-/** Does this statement's subtree contain any of the terminals the caller gave us? */
+/** Whether this statement's subtree contains any of the caller's terminals. */
 function containsTerminal<Cond, Terminal>(
   ctx: Ctx<Cond, Terminal>,
   stmt: StructuredStatement<Cond>,
@@ -302,8 +301,8 @@ function stepIf<Cond, Terminal>(
     ...path,
     branchCond(stmt, stmt.condition, "positive", elseExit),
   ];
-  // An else somebody wrote is an arm rather than the path left over
-  // after a guard, so failing the test is not an early return there.
+  // With a written else, failing the test runs that arm, so it is never
+  // an early return.
   const elsePath = [
     ...path,
     branchCond(
@@ -383,11 +382,9 @@ function stepLoop<Cond, Terminal>(
   const bodyExit = exitKindOfList(stmt.body);
 
   if (containsTerminal(ctx, stmt)) {
-    // A terminal inside the body sees the path so far, plus "some
-    // iteration" (opaque, because a run may never enter the loop), plus its
-    // own in-body branching. The continuations are not collected
-    // here; the recursive enumerate call records them through its own
-    // side effects on ctx.state.
+    // A terminal in the body gets the path so far, an opaque "some iteration"
+    // condition (the loop may never run), and its own branching. The call
+    // records terminals on ctx.state, so its continuations are dropped here.
     enumerate(ctx, stmt.body, [
       ...path,
       loopIterationCond(stmt.condition.sourceText),
@@ -405,9 +402,9 @@ function stepTry<Cond, Terminal>(
   path: PathCond<Cond>[],
   ctx: Ctx<Cond, Terminal>,
 ): PathCond<Cond>[][] {
-  // A `finally` is only allowed to be cleanup. One that exits the unit, or
-  // that contains a terminal the caller gave us, degrades instead: how a
-  // return from a finally interleaves is not something to guess at.
+  // A `finally` may only be cleanup. One that exits the unit or contains a
+  // caller's terminal degrades instead, since how a return from a finally
+  // interleaves with the others would be a guess.
   if (stmt.finallyBody !== null) {
     const finallyHasTerminal = stmt.finallyBody.some((s) =>
       containsTerminal(ctx, s),
@@ -456,10 +453,9 @@ function stepOpaque<Cond, Terminal>(
   return [path];
 }
 
-// A dispatch table with the generics erased, the same way the RawEffect and
-// RawTerminal converters do it: build once against `unknown`, narrow each
-// key with `Extract`, and cast at the single call site below.
-// Cond and Terminal are erased at runtime, so that cast is exact.
+// The step handlers are generic, so the table is typed against `unknown` and
+// cast at its one call site. Cond and Terminal are erased at runtime, so the
+// cast is exact.
 type AnyStructuredStatement = StructuredStatement<unknown>;
 type AnyPathCond = PathCond<unknown>;
 type AnyCtx = Ctx<unknown, unknown>;
@@ -539,11 +535,6 @@ function stepStatement<Cond, Terminal>(
 }
 
 /**
- * Enumerate paths through a statement list. Returns the condition prefixes
- * of every path that falls through past the end, which are the continuations
- * the caller resumes from.
- */
-/**
  * The one position where two paths disagree about the same branch, or null
  * when they disagree about nothing or about more than that. Conditions from a
  * shared prefix are the same objects, so this compares by identity.
@@ -583,11 +574,10 @@ function soleDisagreement<Cond>(
  * Two paths that reach the next statement differing only over one branch
  * reach it whether that branch fired or not, so the two become one path
  * without it. The arms recorded their own terminals on the way through
- * and keep their conditions. This is what stops a run of guards
- * multiplying: nine that each rejoin are one path into the next
- * statement rather than five hundred and twelve. Nothing asks it of the
- * paths a body hands back, since no statement follows those, and what
- * they still say about the branch is the body's last word.
+ * and keep their conditions. This keeps a run of guards from multiplying:
+ * nine that each rejoin are one path into the next statement rather than
+ * five hundred and twelve. It is not applied to the paths a body returns,
+ * since no statement follows those.
  */
 function mergeRejoined<Cond>(paths: PathCond<Cond>[][]): PathCond<Cond>[][] {
   let current = paths;
@@ -627,8 +617,8 @@ function mergeRejoined<Cond>(paths: PathCond<Cond>[][]): PathCond<Cond>[][] {
  * The paths as walked, and, when some of them rejoined, what they come
  * to with the branch they disagreed over taken back off. Both are true
  * of the code: each arm of a closing `if`/`else` says what it did, and
- * the rejoined path says the unit got here whichever arm ran, which is
- * what makes it the default. Nothing is added when nothing rejoined,
+ * the rejoined path says the unit got here whichever arm ran, so it is
+ * the default path. Nothing is added when nothing rejoined,
  * so a guard that ended one arm early leaves no such claim behind.
  */
 function withRejoined<Cond>(paths: PathCond<Cond>[][]): PathCond<Cond>[][] {
@@ -636,6 +626,11 @@ function withRejoined<Cond>(paths: PathCond<Cond>[][]): PathCond<Cond>[][] {
   return merged.length === paths.length ? paths : [...merged, ...paths];
 }
 
+/**
+ * Enumerate paths through a statement list. Returns the condition prefixes
+ * of every path that falls through past the end, which are the continuations
+ * the caller resumes from.
+ */
 function enumerate<Cond, Terminal>(
   ctx: Ctx<Cond, Terminal>,
   stmts: StatementBlock<Cond>,
@@ -670,11 +665,11 @@ export interface StructuredPathConditionsInput<Cond, Terminal> {
   statements: StatementBlock<Cond>;
   /**
    * Every StructuredStatement reachable from `statements`, mapped to the
-   * terminals the caller gave us that sit directly at that node: its own
-   * position (a return, throw, or opaque leaf) or, for a branching
-   * construct, its header or test expression. A lowering builds this at the
-   * same time as the tree, so the engine never walks a raw source AST to
-   * find where a terminal lives.
+   * caller's terminals found directly at that node: at its own position
+   * (a return, throw, or opaque leaf) or, for a branching construct, in
+   * its header or test expression. A lowering builds this at the same
+   * time as the tree, so the engine never walks a raw source AST to find
+   * where a terminal is.
    */
   terminalsByStmt: ReadonlyMap<StructuredStatement<Cond>, readonly Terminal[]>;
 }
@@ -756,11 +751,10 @@ export function enumerateStructuredPaths<Cond, Terminal>(
 }
 
 /**
- * Enumerate, and when the engine gives up say so instead of throwing. Each
- * terminal comes back reachable under one condition nobody can read, which
- * keeps everything the caller already knew about it. A caller that can do
- * better, by walking the terminal's own ancestors for the conditions that
- * enclose it, should.
+ * Enumerate, and when the engine gives up, report why instead of throwing.
+ * Each terminal comes back reachable under one opaque marker condition, so
+ * no terminal is lost. A caller that can walk a terminal's own ancestors
+ * for the conditions that enclose it should use those instead.
  */
 export function enumerateOrDegrade<Cond, Terminal>(
   input: StructuredPathConditionsInput<Cond, Terminal>,

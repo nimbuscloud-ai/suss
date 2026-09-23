@@ -1,5 +1,5 @@
 /**
- * moduleImports.ts: writing `metadata.moduleImports` on a summary set.
+ * Writes `metadata.moduleImports` on a set of summaries.
  *
  * Every adapter records the project files a summary's own file depends
  * on, and a checker rebuilds the module graph from that field to find

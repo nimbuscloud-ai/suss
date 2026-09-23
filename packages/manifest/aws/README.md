@@ -8,7 +8,7 @@ Two kinds of reader work from that data. `@suss/contract-cloudformation` and `@s
 
 ## Where it fits
 
-It depends on `@suss/behavioral-ir` and a YAML parser. It produces plain data, and the readers build summaries from it. The readers also decide what each resource means, and this package leaves that to them.
+It depends on `@suss/ir-core` and a YAML parser. It produces plain data, and the readers build summaries from it. The readers also decide what each resource means, and this package leaves that to them.
 
 ## More
 

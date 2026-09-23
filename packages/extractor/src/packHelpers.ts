@@ -1,10 +1,7 @@
 /**
- * Small helpers for pattern packs that are built the same way.
- *
- * The pack interface is deliberately declarative: a PatternPack is a data
- * object the adapter interprets, and most differences between frameworks are
- * best expressed that way. A few patterns, though, repeat word for word
- * across packs, and this module collects those so they are written once.
+ * Builders for the pack entries that several packs would otherwise copy
+ * word for word. A pack is still a data object the adapter interprets;
+ * these functions only write that data out.
  */
 
 import type { DiscoveryPattern } from "./framework.js";
@@ -22,15 +19,14 @@ import type {
  * like.
  *
  * Each `importNames` entry produces one DiscoveryPattern, because a library
- * usually exposes both a default export and a named export that each produce
- * the routable instance (Express has `express()` and
- * `Router()`, Fastify has `fastify()` and `Fastify`). The binding
- * extraction, method from the registration and path from position 0, is
- * the same for every HTTP server framework we support.
+ * usually exports more than one function that makes the routable instance
+ * (Express has `express()` and `Router()`, Fastify has `fastify()` and
+ * `Fastify`). The binding extraction, method from the registration and
+ * path from position 0, is the same for every supported HTTP framework.
  *
- * Callers still pass the `methods` list themselves, because frameworks
- * support different HTTP verbs. Fastify includes `.head` and `.options`;
- * Express historically does not by default.
+ * Callers pass the `methods` list themselves, because frameworks accept
+ * different verbs: Fastify has `.head` and `.options`, and Express does
+ * not by default.
  *
  * @example
  *   discovery: httpRouteDiscovery({
@@ -62,8 +58,8 @@ export function httpRouteDiscovery(opts: {
       registrationChain: [...opts.methods],
     },
     bindingExtraction: {
-      // `.all` registers every method, so it records "*", which the pairing
-      // engine treats as agreeing with any method at all.
+      // `.all` registers every method, so it records "*", which pairs with
+      // any method.
       method: {
         type: "fromRegistration",
         position: "methodName",
@@ -76,16 +72,15 @@ export function httpRouteDiscovery(opts: {
   }));
 
   if (opts.importNames.length === 0) {
-    // No import, no routable to guard the loop with.
+    // With no import name there is no routable to tie the loop pattern to.
     return calls;
   }
 
   return [
     ...calls,
-    // Routes registered in a loop over an array of specs, a shape
-    // registration-call discovery cannot see. The receiver comes from
-    // the same import declaration as the calls above, so a loop that
-    // never touches this library's routable is left alone.
+    // Routes registered in a loop over an array of specs, which the calls
+    // above cannot see. The receiver must come from the same import, so a
+    // loop that never touches this library's routable is left alone.
     {
       kind,
       match: {
@@ -106,7 +101,7 @@ export function httpRouteDiscovery(opts: {
  * handlers: middleware, error handlers, validation hooks.
  *
  * A wrapper becomes a unit of its own, summarized like any other, so
- * these entries carry no `bindingExtraction` and no registration chain.
+ * these entries have no `bindingExtraction` and no registration chain.
  * Their `match` is there for the import and the imported name, which is
  * how wrapper discovery works out which variables in a file are the
  * routable. One entry per (import name, wrapper shape) pair, since a
@@ -135,10 +130,10 @@ export function wrapperDiscovery(opts: {
 }
 
 /**
- * The property names a route-spec object conventionally uses. One
- * convention across every HTTP framework pack, so a project whose
- * specs spell them differently is out of scope rather than a per-pack
- * setting nobody remembers to set.
+ * The property names a route-spec object conventionally uses. Every HTTP
+ * framework pack shares this one convention instead of a per-pack setting
+ * nobody remembers to set, and a project whose specs use other names is
+ * not read.
  */
 const LOOP_ELEMENT_SHAPE = {
   methodKey: "method",
@@ -151,7 +146,7 @@ const LOOP_ELEMENT_SHAPE = {
  * placeholders for the call's positional arguments.
  */
 export interface RegistrationHelper {
-  /** What the helper is called, as the project's code writes it. */
+  /** The helper's name as the project's code writes it. */
   helperName: string;
   /** The file declaring it, so a same-named function elsewhere is left alone. */
   importModule?: string;
@@ -196,9 +191,8 @@ export function registrationHelperDiscovery(
 }
 
 /**
- * The standing request an HTTP pack makes to have the project's own
- * route helpers read, so what each one registers is a fact about the
- * code rather than something the project restates in config.
+ * Asks for the project's own route helpers to be read, so what each one
+ * registers comes from the code instead of being restated in config.
  */
 export function routeHelperIndex(opts: {
   importModule: string;
@@ -259,9 +253,9 @@ function routesRegisteredBy(
 }
 
 /**
- * One call in the body, as a route the call site fills in. Anything the
- * reading left unread drops the registration, the way a route's own
- * path does when it cannot be resolved.
+ * One call in the body, as a route the call site fills in. If any part
+ * could not be read, the registration is dropped, the same as a route
+ * whose own path cannot be resolved.
  */
 function routeRegisteredBy(
   helper: ProjectHelper,
@@ -314,8 +308,8 @@ function handlerSlot(value: HelperValue): string | null {
 /**
  * The payload behind a `JSON.stringify(...)` call, or the argument
  * unchanged when it is anything else. A producer serializes its message
- * before sending it, and the shape worth comparing across the boundary
- * is what went in, not the string that came out.
+ * before sending it, so the value compared across the boundary is the
+ * object that went into the string.
  */
 export function unwrapJsonStringify(body: EffectArg | null): EffectArg | null {
   if (body === null || typeof body !== "object") {

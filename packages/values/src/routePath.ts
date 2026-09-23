@@ -1,15 +1,15 @@
 /**
- * routePath.ts: spell a value as the path a boundary serves.
+ * Turns an evaluated value into the path a boundary serves.
  *
  * A provider writes `app.get(USERS, handler)` and a consumer writes
- * `fetch(USERS)`, and the two only pair when both are read the same way.
- * Every adapter reads a path through here, so a prefix constant, a
- * joined path, or a name written in a branch spell the same in each
- * language. A hole the evaluator could not fill is spelled `{name}`, or
- * `{name*}` when it is a joined list, and a piece that is one of a few
- * texts is spelled `(v1|v2)`. An absolute URL loses its origin, since
- * the host is the deployable unit rather than the path, and a query
- * string ends the path where it starts.
+ * `fetch(USERS)`, and the two pair only when both are read the same way.
+ * Every adapter reads a path through this module, so a prefix constant,
+ * a joined path, or a name assigned in a branch comes out the same in
+ * each language. A hole the evaluator could not fill is written
+ * `{name}`, or `{name*}` when it is a joined list. A piece that is one
+ * of a few texts is written `(v1|v2)`. An absolute URL loses its origin,
+ * because the host identifies the deployable unit and only the path
+ * goes into the boundary. A query string ends the path.
  */
 
 import { patternHole, rangedHole, setPiece } from "@suss/ir-core";
@@ -124,10 +124,10 @@ function flattenedPiece(piece: Piece): string {
 }
 
 /**
- * How a piece the evaluator could not settle to one text is spelled in
- * the path. A hole keeps the number of segments it takes, and a piece
- * that is one of a few texts is spelled as that set, so a version
- * prefix written in a branch is read back as each of its branches.
+ * How a piece the evaluator could not reduce to one text is written in
+ * the path. A hole keeps the number of segments it covers. A piece that
+ * is one of a few texts is written as that set, so a version prefix
+ * assigned in a branch comes back as each of its branches.
  */
 function openPiece(piece: Piece): string {
   if (piece.kind === "hole") {
@@ -170,9 +170,9 @@ function pathFromPieces(pieces: readonly Piece[]): string | undefined {
 }
 
 /**
- * The path a forced value states. Undefined when the value is not a
- * string or has no path in it, which leaves the boundary unbound rather
- * than bound to a guess.
+ * The path in a forced value. Undefined when the value is not a string
+ * or has no path in it, so the caller leaves the boundary unbound
+ * instead of guessing one.
  */
 export function pathOf(value: Value): string | undefined {
   if (value.kind !== "string") {

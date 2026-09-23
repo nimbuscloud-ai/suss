@@ -3,14 +3,14 @@
  * value in.
  *
  * A reader that returns `T | null` makes null mean three things at once: the
- * source left the value out, the source states it and the reader could not
+ * source left the value out, the source wrote it and the reader could not
  * evaluate it, or several candidates matched and the reader picked none.
- * Each needs something different said about it on the summary, and the type
- * does not show which the reader meant, so every new reader decides it again
- * and some of them decide wrong.
+ * Each needs a different note on the summary, and `T | null` does not show
+ * which case happened, so every new reader has to choose again and some
+ * choose wrong.
  *
  * The rule that turns a reading into a claim, a library default, or a gap
- * lives in the summary builder in this package and is not exported.
+ * is in the summary builder in this package and is not exported.
  */
 
 /** Where in a file a value is written, as byte offsets into that file. */
@@ -60,9 +60,9 @@ export function unreadableReading<T>(
 }
 
 /**
- * Several values could be right and the reader picked none. Keeping the
- * candidates leaves what was found available to whoever later teaches the
- * reader how to choose, and every step afterwards keeps them too.
+ * Several values could be right and the reader picked none. The candidates
+ * are kept through every later step, so code that can choose among them
+ * still has them.
  *
  * The range is where somebody should look to see the ambiguity. An ambiguity
  * often spans more than one place (two mounts of one router, in two files),
@@ -80,8 +80,7 @@ export function ambiguousReading<T>(
 /**
  * A reading paired with what the library does when the source says nothing.
  * Only a pack may supply that default, so the value a summary claims for an
- * unstated field is library-defined and lives in the pack alongside
- * everything else the pack already declares.
+ * unstated field always comes from a pack's declaration about the library.
  */
 export interface DefaultedReading<T> {
   /** What the source said. */
@@ -132,9 +131,8 @@ export function mapReading<T, U>(
  *
  * `f` runs on each of an ambiguous reading's candidates too, and the ones
  * that do read come back as the candidates of an ambiguous reading with the
- * same reason. That way the alternatives stay next to the chosen value all
- * the way to the summary, instead of being dropped at the first step
- * that reads further.
+ * same reason. The alternatives reach the summary instead of being dropped
+ * at the first step that reads further.
  */
 export function andThenReading<T, U>(
   reading: Reading<T>,
@@ -169,10 +167,10 @@ export interface ChosenReading<T> {
    */
   reading: Reading<T>;
   /**
-   * The readings the choice passed over that nobody could resolve. A later
-   * reading supplying the value does not settle what an earlier one said
-   * and could not be read, so these still go to the
-   * builder and their reasons still reach the summary.
+   * The unreadable or ambiguous readings the choice passed over. A later
+   * reading that supplies the value does not settle an earlier one that
+   * could not be read, so these still go to the builder and their reasons
+   * reach the summary.
    */
   passedOver: readonly Reading<T>[];
 }
@@ -209,17 +207,14 @@ export function firstWrittenReading<T>(
  * parameters that decide what each of the handler's parameters is, and
  * that has to be settled before there is a summary field to fill in.
  *
- * This applies no default and gives no reason, so most of what a summary
- * says must not be written from it. Hand the reading to the
- * builder instead, and the fixed rule gets applied to it once, somewhere
- * review can see it.
+ * This applies no default and gives no reason, so most summary fields must
+ * not be written from it. Pass the reading to the builder instead, which
+ * applies the one rule for readings in a place a reviewer can find.
  *
  * The identity fields of a boundary binding are the exception, and the path
- * this reads is one of them. A binding either says where a unit is or says
- * nothing and pairs with nothing, and no pack declares a
- * default for what a boundary is called, so the value the builder would
- * put there is the value this gives back. Hand the reading over as well and
- * the reason still becomes a gap.
+ * is one of them. No pack declares a default for what a boundary is called,
+ * so the builder would write the same value this returns. Pass the reading
+ * to the builder as well, so its reason still becomes a gap.
  */
 export function valueToReadFurtherFrom<T>(reading: Reading<T>): T | null {
   return reading.kind === "written" ? reading.value : null;

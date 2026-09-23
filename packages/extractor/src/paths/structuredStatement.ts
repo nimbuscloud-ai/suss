@@ -5,8 +5,8 @@
  * again.
  *
  * The `Cond` type parameter is the language's own handle for a condition
- * expression (a ts-morph Expression for TypeScript, a tree-sitter node for a
- * language added later). The engine passes it through untouched for a caller
+ * expression (a ts-morph Expression in TypeScript, a tree-sitter node in
+ * Python and Ruby). The engine passes it through untouched for a caller
  * to parse afterwards, and never looks inside it.
  */
 
@@ -58,18 +58,18 @@ export interface CaseGroup<Cond> {
 }
 
 /**
- * What every lowered statement has on it, whichever construct it is.
+ * The fields every lowered statement has, whichever construct it is.
  *
  * The lowering works `exitKind` out by scanning the statement's own
  * subtree for a return or a throw, skipping every nested function body.
  *
  * `callbacks` is the bodies of the functions this statement passes to
- * calls it makes, as far as the language counts those as running for the
+ * calls it makes, when the language treats those as running for the
  * enclosing unit. The engine walks them on the same path as the
  * statement, so their branches are the unit's branches. Their `return`
- * is not the unit's, so a path that ends inside one continues past the
- * statement. A lowering that leaves the field out behaves as it did
- * before there was one.
+ * does not leave the unit, so a path that ends inside one continues past
+ * the statement. When a lowering leaves the field out, no callback bodies
+ * are walked.
  */
 export interface LoweredStatementParts<Cond> {
   readonly exitKind: ExitKind;
@@ -105,7 +105,7 @@ export type StructuredStatement<Cond = unknown> =
       readonly kind: "try";
       readonly tryBody: StatementBlock<Cond>;
       readonly catchBody: StatementBlock<Cond> | null;
-      /** Here only so it can be validated. A finally that exits, or that contains a terminal the caller gave us, is not modeled, and its own conditions are never enumerated. */
+      /** Kept only for validation. The engine does not model a finally that exits or contains one of the caller's terminals, and never enumerates its conditions. */
       readonly finallyBody: StatementBlock<Cond> | null;
     })
   | (LoweredStatementParts<Cond> & {

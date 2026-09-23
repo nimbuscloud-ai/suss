@@ -5,11 +5,10 @@
  * Evaluate under the `witnesses` algebra and every derived fact stores
  * a `Witness`: the rule that fired and one entry per body literal. The
  * merge keeps whatever is already stored, so a fact derived nine ways
- * keeps its first witness and the fixpoint behaves exactly as it does
- * untagged. First-wins means a proof, not the shortest proof; the
- * algebra interface already allows a different merge. `proofOf` walks
- * the stored witnesses into a tree when somebody asks, the way
- * Soufflé's provenance mode does, and never re-runs a rule.
+ * keeps its first witness and the fixpoint runs the same as untagged.
+ * The proof that comes back is therefore valid but may not be the
+ * shortest. `proofOf` walks the stored witnesses into a tree when asked,
+ * the way Soufflé's provenance mode does, and never re-runs a rule.
  */
 
 import { tupleKey } from "./tupleKey.js";
@@ -50,9 +49,7 @@ export type WitnessTag = Witness | "asserted" | "absent";
 export const witnesses: TagAlgebra<WitnessTag> = {
   asserted: "asserted",
   absent: "absent",
-  // A witness is built from the derivation alone, and saying so lets
-  // the evaluator skip the body-tag lookups, which were most of the
-  // tagged path's cost on a large sweep.
+  // A witness is built from the derivation alone.
   ignoresBodyTags: true,
   combine: (_bodyTags, derivation: Derivation) =>
     new Witness(derivation.rule, derivation.body),
@@ -91,11 +88,11 @@ const DEFAULT_MAX_DEPTH = 128;
  * Rebuild the proof of one fact from stored witnesses, without
  * re-running any evaluation. A `fact` leaf has no witness: the caller
  * asserted it, or it was derived without the `witnesses` algebra. An
- * `absence` leaf is a tuple missing from the database, at the root
- * when the asked-about fact was never derived, and under a derivation
- * where a negated literal relied on it being missing, reported as
- * evaluation saw it rather than re-checked now. `truncated` is where
- * the depth cap or the cycle guard stopped the walk.
+ * `absence` leaf is a tuple missing from the database. It appears at the
+ * root when the fact asked about was never derived, and under a
+ * derivation where a negated literal relied on it being missing, as
+ * evaluation saw it at the time. `truncated` marks where the depth cap
+ * or the cycle guard stopped the walk.
  */
 export function proofOf(
   db: Database,

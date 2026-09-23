@@ -1,11 +1,10 @@
 /**
- * templateLoader.ts parses a CloudFormation or SAM template file into a
- * plain object, resolving the shorthand YAML tags CFN uses for intrinsics.
+ * Parses a CloudFormation or SAM template file into a plain object,
+ * resolving the shorthand YAML tags CFN uses for intrinsics.
  *
- * This is the one place that turns a template on disk into data. The
- * summary-generation paths and the code-side handler pairing both read
- * through it, so the YAML and JSON parsing, along with the handling of
- * intrinsic tags, lives here instead of being repeated per consumer.
+ * The contract readers and the code-side handler pairing both load
+ * templates through this module, so YAML and JSON parsing and intrinsic
+ * tag handling are written once.
  */
 
 import fs from "node:fs";
@@ -35,23 +34,17 @@ export interface CloudFormationTemplate {
 // CloudFormation YAML intrinsic tags
 // ---------------------------------------------------------------------------
 
-/**
- * CloudFormation YAML uses shorthand tags (`!Ref X`, `!GetAtt X.Y`,
- * `!Sub "..."`) that the default `yaml` schema doesn't know about. Without a
- * handler the parser would either error out or leave them as opaque tagged
- * nodes. We register a small set covering the intrinsics that affect resource
- * references, and anything else collapses to its raw scalar value instead of
- * failing the whole parse.
- */
+// CloudFormation YAML writes intrinsics as shorthand tags (`!Ref X`,
+// `!GetAtt X.Y`) the default `yaml` schema does not know. The tags below
+// cover the standard intrinsics, and any other tag keeps its raw value.
 
 /**
- * Every node kind an intrinsic can be written as.
+ * One tag registration per node kind an intrinsic can be written as.
  *
  * `!If [cond, a, b]` is a sequence and `!Sub ["x", { A: 1 }]` contains a
- * map, and a tag registered only for scalars leaves those unresolved.
- * The value still came through, but the parser warned once per
- * occurrence, which on a template of any size buried everything else
- * suss had to say.
+ * map. With only a scalar registration the value still comes through, but
+ * the parser warns once per occurrence, and on a large template those
+ * warnings bury the rest of suss's output.
  */
 const everyNodeKind = (
   tag: string,

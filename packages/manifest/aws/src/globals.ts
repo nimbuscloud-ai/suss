@@ -1,7 +1,7 @@
 /**
- * globals.ts folds the SAM `Globals` section into the resources that
- * inherit from it, so every reader sees one set of properties per resource
- * and none of them has to know that `Globals` exists.
+ * Folds the SAM `Globals` section into the resources that inherit from it,
+ * so every reader sees one set of properties per resource and none of them
+ * has to know that `Globals` exists.
  *
  * SAM applies a section's properties to each resource of the matching type,
  * and the resource's own value wins where both declare one, per
@@ -9,8 +9,8 @@
  *
  * That page has the combining rules too. A map is merged key by key, a list
  * becomes the section's entries followed by the resource's, and anything
- * else is replaced outright. Merging keys is what makes a function that sets
- * one environment variable of its own still get the section's others.
+ * else is replaced outright. Because maps merge by key, a function that sets
+ * one environment variable of its own still gets the section's others.
  */
 
 import type {
@@ -59,10 +59,9 @@ export function resourcesWithGlobals(
 /**
  * Per function logical id, the environment variables the `Function`
  * section supplies that the function does not declare for itself. A
- * consumer that treats a function's environment as its own contract
- * needs the difference, because a variable every function in the
- * document receives tells you about the document, not about one
- * function.
+ * consumer that treats a function's environment as that function's
+ * contract needs the difference, because every function in the document
+ * receives these variables.
  */
 export function inheritedEnvVars(
   template: CloudFormationTemplate,

@@ -12,9 +12,8 @@ import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 export interface LanguageAdapter {
   /**
-   * Extract summaries from a specific list of files. Returns a
-   * Promise so an implementation can do concurrent I/O during
-   * discovery without bottlenecking on synchronous reads.
+   * Summaries for the listed files. It is async so an implementation can
+   * read files concurrently during discovery.
    */
   extractFromFiles(filePaths: string[]): Promise<BehavioralSummary[]>;
   /** Extract summaries from every source file the adapter's project knows about. */

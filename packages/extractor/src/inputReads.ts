@@ -1,14 +1,14 @@
 /**
- * What a unit reads out of what it was given.
+ * What a unit reads out of its inputs.
  *
  * A summary already describes this, but only as a chain of `derived` nodes
  * nested one inside the next, which anyone who wants the list has to walk
  * themselves. The `path` on an input reference is empty, so querying the
  * field that looks like the answer gives nothing back.
  *
- * This module flattens that into the list directly: everything a unit reaches
- * for through its inputs, once each, in the order somebody would say them out
- * loud. It goes on the summary as `inputReads`.
+ * This module flattens those chains into a list of everything a unit reads
+ * through its inputs, once each, sorted by input and then by path. The list
+ * goes on the summary as `inputReads`.
  */
 
 import type { Predicate, ValueRef } from "@suss/behavioral-ir";
@@ -25,10 +25,9 @@ export interface InputRead {
  * Everything a unit reads out of its inputs, once each.
  *
  * A read is a chain of derivations ending at an input, so the walk goes
- * down to the input and builds the path back up. A derivation with no name
- * to give, an element access or a call in the middle, ends
- * the path there. What was reached is still worth reporting, and inventing
- * a name for how it was reached would be worse than stopping.
+ * down to the input and builds the path back up. A derivation with no
+ * name, such as an element access or a call, ends the path there. The read
+ * is still reported, with a shorter path instead of an invented step.
  */
 export function inputReadsOf(args: {
   conditions: Predicate[][];

@@ -1,16 +1,16 @@
 /**
- * The `PatternPack` interface, which is what a framework pack gives a language
- * adapter. The pack says WHAT to look for (which import, which call, which
- * decorator); the adapter knows HOW to find that in its language's AST.
+ * The `PatternPack` interface a framework pack hands to a language adapter.
+ * The pack describes what to look for (an import, a call, a decorator), and
+ * the adapter finds it in its own language's syntax tree.
  *
- * Everything here is data, never code. A pack describes a library once and any
- * adapter that understands these patterns can apply it. If you want a pack to
- * compute something, the answer is usually another declarative field here.
+ * Most of a pack is data, so one pack description works with any adapter
+ * that reads these patterns. When a pack needs to compute something, the
+ * usual fix is another declarative field here. The function hooks
+ * (`subUnits`, `discoverUnits` and the recognizers) cover what data cannot.
  *
- * The sections run in the order an adapter uses them: discovery finds candidate
- * code units, terminals describe how a unit finishes, contract reading and
- * input mapping describe what it declares and takes in, and response property
- * semantics say which property is the body and which is the status.
+ * Sections follow the order an adapter uses them. The pack patterns
+ * reference at https://suss.sh/packs/patterns shows each variant with the
+ * code it matches.
  */
 
 import type {
@@ -52,21 +52,18 @@ export type DiscoveryMatch =
        *  Unset means any method call (or bare call for globals). */
       methodFilter?: string[];
       /**
-       * Method names on the import that produce a client-equivalent instance,
-       * so variables initialized from those calls also act as discovery
-       * subjects. axios uses `axios.create({...})` to build a baseURL-bound
-       * instance; declaring `factoryMethods: ["create"]` lets the adapter
-       * treat `api.get(...)` (where `api = axios.create(...)`) the same as
-       * `axios.get(...)`.
+       * Methods on the import that build a client instance. A variable
+       * initialized from one of these calls is a client too, so with
+       * `factoryMethods: ["create"]`, `api.get(...)` after
+       * `api = axios.create(...)` matches the same as `axios.get(...)`.
        */
       factoryMethods?: string[];
       /**
-       * The property of the factory call's config object that every
-       * request through the instance is sent under, `baseURL` for axios.
-       * Both sides of a boundary have to read one route the same way,
-       * and a spec's `servers[0].url` already goes in front of the
-       * provider's paths, so a base written here goes in front of the
-       * consumer's.
+       * The option on the factory call's config that sets a base path for
+       * every request through the instance, `baseURL` for axios. The
+       * adapter puts it in front of each call's path, so the consumer's
+       * route lines up with a spec whose `servers[0].url` adds the same
+       * prefix to the provider's paths.
        */
       basePathOption?: string;
       /**
@@ -78,89 +75,55 @@ export type DiscoveryMatch =
     }
   | {
       /**
-       * A constructor or factory call that takes a configuration object
-       * containing a resolver map, which is how code-first GraphQL servers
-       * are usually written. The map is two levels deep: outer keys are
-       * GraphQL type names (`Query`, `Mutation`, `Subscription`, or
-       * object-type names like `User`), and inner keys are field names
-       * whose values are resolver functions.
+       * A constructor or factory call whose config object contains a
+       * two-level resolver map, the usual way to write a code-first GraphQL
+       * server. Outer keys are type names and inner keys are field names:
        *
-       * Example (Apollo Server v4):
        * ```ts
-       * new ApolloServer({
-       *   typeDefs,
-       *   resolvers: {
-       *     Query:    { users: async () => {...} },
-       *     Mutation: { createUser: async (_, {input}) => {...} },
-       *     User:     { fullName: (parent) => `${parent.first} ${parent.last}` },
-       *   },
-       * });
+       * new ApolloServer({ typeDefs, resolvers: { Query: { users: async () => {...} } } });
        * ```
        *
-       * Each inner function becomes one discovered unit whose binding
-       * semantics is `graphql-resolver(typeName, fieldName)`. Both
-       * `new Ctor(cfg)` and `ctor(cfg)` match, because Apollo's standalone
-       * server uses `new` and yoga uses a bare call.
+       * Each inner function becomes one unit bound as
+       * `graphql-resolver(typeName, fieldName)`. Both `new Ctor(cfg)` and
+       * `ctor(cfg)` match, since Apollo's standalone server uses `new` and
+       * yoga uses a bare call.
        */
       type: "resolverMap";
       importModule: string;
       importName: string;
       /**
-       * The property on the config object that contains the resolver map.
-       * This is the library's own config key, so the pack has to give it and
-       * the adapter ships no default. Apollo, yoga, and graphql-tools all
-       * spell it `"resolvers"`.
+       * The config property that contains the resolver map. The key belongs
+       * to the library, so the adapter has no default. Apollo, yoga and
+       * graphql-tools all use `"resolvers"`.
        */
       mapProperty: string;
       /**
-       * GraphQL types whose fields we DON'T treat as resolvers. This is the
-       * opt-out for meta-types like `Subscription` that we may want to handle
-       * differently later. Leave it unset to discover every type.
+       * Types whose fields are not discovered as resolvers, such as
+       * `Subscription`. Leave it unset to discover every type.
        */
       excludeTypes?: string[];
     }
   | {
       /**
        * A consumer-side GraphQL hook call, the way Apollo Client and urql
-       * are normally used. Each call to one of the listed hooks becomes
-       * a `client`-kind code unit whose binding semantics is
-       * `graphql-operation(operationType, operationName?)`.
+       * are normally used. Each call to a listed hook becomes a `client`
+       * unit bound as `graphql-operation(operationType, operationName?)`.
        *
-       * The document argument can be written several ways: an inline
-       * `gql`-tagged template, a const binding (in this module or imported
-       * from another one), a `.graphql` or `.gql` file import, or a
-       * generated `TypedDocumentNode` object literal from graphql-codegen
-       * client-preset. When the document body cannot be read statically,
-       * the operation header falls back to the `TypedDocumentNode` type
-       * arguments. A document that still cannot be resolved shows up on the
-       * summary as `metadata.graphql.unresolvedDocument`, so the boundary is
-       * kept rather than dropped.
-       *
-       * Example:
-       * ```ts
-       * import { gql, useQuery } from "@apollo/client";
-       * const GET_USER = gql`query GetUser($id: ID!) { user(id: $id) { id } }`;
-       * function UserPage({ id }) {
-       *   const { data } = useQuery(GET_USER, { variables: { id } });
-       *   ...
-       * }
-       * ```
-       *
-       * The adapter records the operation name and type on the
-       * DiscoveredUnit's `operationInfo`, and binding construction uses that
-       * to emit `graphql-operation(...)`. The per-hook `operationType`
-       * wins when the document header cannot be read, the same way
-       * `graphqlImperativeCall.methods` does.
+       * The document can be an inline `gql` template, a const in this
+       * module or an imported one, a `.graphql` or `.gql` file import, or a
+       * `TypedDocumentNode` from graphql-codegen. When the body cannot be
+       * read, the operation header comes from the `TypedDocumentNode` type
+       * arguments. A document that still cannot be resolved is kept on the
+       * summary as `metadata.graphql.unresolvedDocument`, so the boundary
+       * stays.
        */
       type: "graphqlHookCall";
       importModule: string;
       /**
-       * Hooks to match on that import, each mapped to the operation type it
-       * performs (`useQuery` to query, `useMutation` to mutation,
-       * `useSubscription` to subscription). That mapping supplies the
-       * operation type when the document body cannot be read statically.
-       * Each hook is reported as `kind = "client"` unless a pack overrides
-       * that through the enclosing `DiscoveryPattern.kind`.
+       * Hooks on that import, each with the operation type it performs
+       * (`useQuery` performs a query). The type is used when the document's
+       * header cannot be read. A matched call is a `client` unit unless the
+       * enclosing `DiscoveryPattern.kind` says otherwise.
        */
       hooks: Array<{
         hookName: string;
@@ -169,21 +132,17 @@ export type DiscoveryMatch =
     }
   | {
       /**
-       * An imperative Apollo-Client-style call: `client.query({ query })`,
-       * `client.mutate({ mutation })`, `client.subscribe({ query })`. This is
-       * separate from hook calls because the document is on a config-object
-       * property rather than the first positional argument.
+       * An imperative Apollo Client call: `client.query({ query })`,
+       * `client.mutate({ mutation })` or `client.subscribe({ query })`. The
+       * document is on a config property instead of the first argument,
+       * which is why this is separate from `graphqlHookCall`.
        *
-       * Discovery only fires when the named constructor (usually
-       * `ApolloClient`) is imported, because otherwise any object at all
-       * with a `query` method would look like a match.
-       *
-       * Each entry in `methods` specifies the method called on the client
-       * (`"query"`, `"mutate"`, or `"subscribe"`) and the config-object
-       * property that contains the gql document
-       * (`"query"`, `"mutation"`, and `"query"` respectively). The method
-       * name decides the operation type when the gql document's header is
-       * anonymous. When the document has a name, its header wins.
+       * Discovery fires only when the named constructor (usually
+       * `ApolloClient`) is imported, since otherwise any object with a
+       * `query` method would match. Each `methods` entry gives the method,
+       * the config property with the document on it, and the operation type
+       * to use when the document's header is anonymous. A named header takes
+       * precedence.
        */
       type: "graphqlImperativeCall";
       importModule: string;
@@ -196,41 +155,29 @@ export type DiscoveryMatch =
     }
   | {
       /**
-       * Treats a TypeScript package's public export surface as a
-       * boundary. The adapter reads `package.json` at `packageJsonPath`,
-       * resolves each reachable entry point (root `.` and any sub-path
-       * `exports`), follows barrel re-exports, and emits one discovered
-       * unit per exported function. Those units are the provider side of
-       * an in-process `function-call` boundary.
+       * A TypeScript package's public exports, as the provider side of an
+       * in-process `function-call` boundary. The adapter reads
+       * `package.json`, resolves each entry point (the root `.` and any
+       * sub-path in `exports`), follows barrel re-exports, and emits one
+       * unit per exported function.
        *
-       * The bindings this produces have the identity
-       * `{ transport: "in-process",
-       *    semantics: { name: "function-call",
-       *                 package: <pkg.name>,
-       *                 exportPath: [...] },
-       *    recognition: <pack.name> }`.
-       *
-       * A sub-path export is identified as, for example,
-       * `@suss/behavioral-ir/schemas::BehavioralSummarySchema`, giving
-       * `exportPath = ["schemas", "BehavioralSummarySchema"]`. A root export
-       * leaves the sub-path segment out.
-       *
-       * As of v0 this resolves the `types`, `default`, and `import`
-       * conditions on `exports`, and falls back to `types`, `main`, `module`
-       * when there is no `exports` field. Pattern exports (`./utils/*`) and
-       * `development` conditions are not handled yet.
+       * Each binding is keyed by package and export path, so
+       * `@suss/behavioral-ir/schemas::BehavioralSummarySchema` has
+       * `exportPath = ["schemas", "BehavioralSummarySchema"]`. The `types`,
+       * `default` and `import` conditions are resolved, with `types`, `main`
+       * and `module` as the fallback when there is no `exports` field.
+       * Pattern exports (`./utils/*`) and `development` conditions are not.
        */
       type: "packageExports";
       /**
        * Absolute path to the package's `package.json`. Left out when
-       * `workspaces` is set, since the workspace decides the list.
+       * `workspaces` is set, since the workspace manifest lists the packages.
        */
       packageJsonPath?: string;
       /**
-       * One pattern for every package the workspace declares. The pack
-       * cannot list the packages, because they belong to the project
-       * rather than to any library, so the adapter reads the workspace
-       * manifest and applies this pattern once per package it finds.
+       * Apply the pattern to every package the workspace declares. Those
+       * packages belong to the project, so the pack cannot list them; the
+       * adapter reads the workspace manifest and applies the pattern to each.
        */
       workspaces?: true;
       /**
@@ -247,115 +194,82 @@ export type DiscoveryMatch =
     }
   | {
       /**
-       * Class methods with a particular decorator, on classes with a
-       * particular class-level decorator. NestJS-style frameworks work this
-       * way: resolvers, handlers, and controllers are declared by decorator
-       * rather than by registering a function in an object literal.
+       * Methods with one of `methodDecorators` on a class with one of
+       * `classDecorators`, the way NestJS declares resolvers. At least one
+       * method decorator has to be imported from `importModule`, so a
+       * project decorator that only shares a name does not match. A NestJS
+       * GraphQL pack sets `classDecorators: ["Resolver"]` and
+       * `methodDecorators: ["Query", "Mutation", "ResolveField", "Subscription"]`.
        *
-       * Discovery only fires when `classDecorator` and each
-       * `methodDecorators` entry come from `importModule`, so a user-defined
-       * decorator that happens to share a name will not match.
-       *
-       * For a NestJS GraphQL pack:
-       * `{ importModule: "@nestjs/graphql",
-       *    classDecorator: "Resolver",
-       *    methodDecorators: ["Query", "Mutation", "ResolveField",
-       *                       "Subscription"] }`
-       *
-       * The adapter fills in `DiscoveredUnit.resolverInfo` so the binding
-       * comes out as `graphql-resolver(typeName, fieldName)`.
-       * `typeName` resolves from `methodDecoratorTypeMap` when the
-       * method decorator is in it, and otherwise from the class
-       * decorator's first argument (`@Resolver(() => User)` gives
-       * `"User"`). `fieldName` comes from the method decorator's `{ name }`
-       * option when that is set, and otherwise from the method name.
+       * The binding comes out as `graphql-resolver(typeName, fieldName)`.
+       * `typeName` comes from `methodDecoratorTypeMap` when the method
+       * decorator is in it, and otherwise from the class decorator's first
+       * argument (`@Resolver(() => User)` gives `"User"`). `fieldName` comes
+       * from the method decorator's `{ name }` option, or the method name.
        */
       type: "decoratedMethod";
       /**
-       * The module a decorator has to be imported from before discovery will
-       * fire. Codebases sometimes re-export a framework decorator wrapped
-       * with extra metadata of their own, and checking one module would miss
-       * those. Pass an array of acceptable modules and any one of them
-       * matching is enough.
+       * The modules a decorator may be imported from. A project that wraps
+       * a framework decorator and re-exports it needs its own module listed
+       * too. Any one module in the list matching is enough.
        */
       importModule: string | string[];
       /**
-       * Class decorators to recognise. The first one that appears on a class
-       * is the one typeName is read from; the rest are fallbacks for
-       * codebases with several wrapper styles. A pack ships only what its own
-       * framework declares here, and takes a project's own wrappers through
-       * its options instead.
+       * Class decorators to match. The first one found on a class supplies
+       * `typeName`, and the rest are fallbacks for projects with several
+       * wrapper styles. A pack lists only its own framework's decorators and
+       * takes a project's wrappers through its options.
        */
       classDecorators: string[];
       methodDecorators: string[];
       /**
-       * Maps a method decorator to the type its field belongs to, for the
-       * decorators that settle it. NestJS puts `@Query` on the root
-       * `Query` type and `@Mutation` on `Mutation` no matter what the class
-       * says, so an entry here wins over the class decorator's argument.
+       * Maps a method decorator to the type its field belongs to. NestJS
+       * puts `@Query` on the root `Query` type whatever the class says, so an
+       * entry here takes precedence over the class decorator's argument.
        *
-       * When the map leaves a decorator out and the class decorator gives no
-       * type either, nothing here works out which type owns the field. The
-       * binding then goes out with no type and pairs with nothing, instead
-       * of claiming a field the schema does not have.
+       * When neither the map nor the class decorator gives a type, the
+       * binding goes out with no type and pairs with nothing. That is safer
+       * than claiming a field the schema does not have.
        */
       methodDecoratorTypeMap: Record<string, string>;
     }
   | {
       /**
-       * NestJS-style REST controller discovery: a class decorated with
-       * `@Controller(pathPrefix?)`, and methods decorated with
-       * `@Get(subpath?)`, `@Post`, `@Put`, `@Delete`, and so on. The
-       * decorator's NAME is what determines the HTTP method, through
-       * `methodDecoratorRouteMap`. The route path is the class decorator's
-       * first argument joined with a slash to the method decorator's first
-       * argument, and both of those are optional.
+       * A NestJS-style REST controller: a class decorated with
+       * `@Controller(prefix?)` and methods decorated with `@Get(subpath?)`,
+       * `@Post` and so on. The method decorator's name gives the HTTP method
+       * through `methodDecoratorRouteMap`. The path is the class decorator's
+       * first argument joined to the method decorator's, and both are
+       * optional. The binding comes out as `rest(method, path)`.
        *
-       * Wrapper decorators are tolerated the same way as in
-       * `decoratedMethod`: at least one method-route decorator has to come
-       * from the framework module, but class decorators
-       * are matched by name alone, so a project's own wrapper around the
-       * framework's decorator matches once the project lists it in the
-       * pack's options.
-       *
-       * The adapter fills in `DiscoveredUnit.routeInfo` so the binding comes
-       * out as `rest(method, path)`.
+       * At least one route decorator on a method has to be imported from
+       * `importModule`. Class decorators match by name alone, so a project's
+       * own wrapper matches once the project lists it in the pack's options.
        */
       type: "decoratedRoute";
       importModule: string | string[];
       classDecorators: string[];
       /**
-       * Maps a decorator to an HTTP method. NestJS uses one decorator per
-       * verb (`@Get`, `@Post`, `@Put`, `@Delete`, `@Patch`, `@Options`,
-       * `@Head`, `@All`), and other frameworks may do the same. The values
-       * become the `method` field on the REST binding, and `"*"` is fine for
-       * a catch-all decorator.
+       * Decorator name to HTTP method, one entry per verb decorator. The
+       * value becomes the REST binding's `method`; use `"*"` for a
+       * catch-all decorator such as NestJS's `@All`.
        */
       methodDecoratorRouteMap: Record<string, string>;
     }
   | {
       /**
-       * Loop expansion: a `for-of` loop over a literal array of
-       * route specs is treated as if each element were an inline
-       * registration. Used for patterns like:
+       * A `for-of` loop over a literal array of route specs, read as one
+       * inline registration per element:
        *
-       *   const routes = [
-       *     { method: "get", path: "/users", handler: getUsers },
-       *     ...
-       *   ];
-       *   for (const r of routes) app[r.method](r.path, r.handler);
+       * ```ts
+       * const routes = [{ method: "get", path: "/users", handler: getUsers }];
+       * for (const r of routes) app[r.method](r.path, r.handler);
+       * ```
        *
-       * `elementShape` declares which keys on each element give the method,
-       * the path, and the handler. The loop body has to contain at least
-       * one call expression that references the
-       * loop variable, which filters out unrelated loops. Nothing else
-       * about that call is checked.
-       *
-       * An iterable that resolves to an `ArrayLiteralExpression`, inline or
-       * bound to a `const` one hop away, gets expanded. Cross-file and
-       * computed iterables are outside v0.
-       *
-       * Pack-author docs: `design/proposals/dynamic-registration.md`.
+       * `elementShape` says which keys give the method, path and handler.
+       * The loop body has to contain a call that uses the loop variable,
+       * which filters out unrelated loops. The array can be inline or a
+       * `const` one hop away. An array from another file is not expanded.
        */
       type: "registrationLoop";
       elementShape: {
@@ -378,33 +292,26 @@ export type DiscoveryMatch =
     }
   | {
       /**
-       * Helper-call expansion: one function call at the user's site is
-       * treated as if it were N inline registrations, with the call's
-       * arguments substituted into a template per registration. Used
-       * for calls like `registerCrud(app, 'users', userHandlers)` that
-       * `registrationCall` discovery cannot see today.
+       * A helper call read as several inline registrations, with the call's
+       * arguments substituted into a template for each. It covers helpers
+       * like `registerCrud(app, "users", userHandlers)`, which
+       * `registrationCall` cannot see.
        *
-       * Each entry in `registrations` describes one virtual route
-       * the helper produces. `pathTemplate` and `handlerArg` use
-       * `{N}` placeholders that resolve to the call's positional
-       * arguments. `{N}` substitutes the argument's literal value
-       * (for string-literal args) or its source text (for
-       * non-literal args, with the slot marked opaque). `{N}.prop`
-       * reads `prop` from the argument's resolved object.
-       *
-       * `importModule` optionally narrows matches to helpers imported from
-       * one specific module, which helps when two packages happen to export
-       * a function with the same name.
-       *
-       * Pack-author docs: `design/proposals/dynamic-registration.md`.
+       * Each `registrations` entry is one route the helper produces.
+       * `pathTemplate` and `handlerArg` use `{N}` for the call's Nth
+       * argument: its value when it is a string literal, and otherwise its
+       * source text with the slot marked opaque. `{N}.prop` reads `prop` from
+       * the argument's resolved object. `importModule` narrows matches to a
+       * helper imported from that module, for when two packages export the
+       * same name.
        */
       type: "registrationTemplate";
       helperName: string;
       importModule?: string;
       /**
-       * Which argument is the routable, so a route the helper writes
-       * keys on the same app as one written beside it and the
-       * middleware registered there covers it too.
+       * Which argument is the routable. A route the helper registers then
+       * belongs to the same app as a route written beside the call, and the
+       * middleware registered on that app applies to it too.
        */
       subject?: {
         argument: number;
@@ -419,32 +326,23 @@ export type DiscoveryMatch =
     }
   | {
       /**
-       * Routes declared as JSX elements, the way client-side routers
-       * write them: an element imported from the router library whose
-       * attributes give a URL path pattern and the element it
-       * renders. Covers the tree form (route elements nested inside
-       * one another, child paths joining the parent's, index routes
-       * taking the parent's path) and the object-array form (a
-       * factory call whose first argument is an array of route
-       * objects using the same property names).
+       * Routes declared as JSX elements, the way client-side routers write
+       * them. It reads the tree form, where a child path joins its parent's
+       * and an index route takes its parent's path, and the object form,
+       * where a factory call takes an array of route objects with the same
+       * property names. The pack supplies every name, and the adapter only
+       * walks JSX and arrays.
        *
-       * The pack says what its library exports: the route element, the
-       * path, element, and index attributes, and any factories that
-       * take an array of route objects. The adapter walks JSX and arrays,
-       * and knows none of those names itself.
-       *
-       * Each route with a readable path becomes one unit whose target
-       * is the component the element attribute references, resolved
-       * only when the reference is a single identifier. A route whose
-       * component cannot be read is still reported, as a boundary with
-       * nothing behind it. A route whose path cannot be read gets no path
-       * and reports that in a gap instead of guessing at one.
+       * Each route with a readable path becomes one unit whose target is the
+       * component its element attribute references, when that reference is
+       * a single identifier. A route whose component cannot be read is still
+       * reported, as a boundary with nothing behind it. A route whose path
+       * cannot be read gets no path and a gap saying why.
        */
       type: "jsxElementRoute";
       /**
-       * Module(s) the route element and factories must be imported
-       * from. Exact module specifiers, matched against the file's
-       * import declarations; aliased imports are followed.
+       * Modules the route element and factories must be imported from,
+       * matched exactly. An aliased import still matches.
        */
       importModule: string | string[];
       /** The route element's exported name. */
@@ -474,12 +372,10 @@ export type DiscoveryMatch =
        */
       routeObjectFactories?: string[];
       /**
-       * Factory functions that turn JSX route elements into the route
-       * objects the library consumes. The elements themselves are read
-       * by the JSX walk wherever they appear, so a route-object factory
-       * handed one of these calls has nothing more to add. Listing them
-       * here is what stops that case from being reported as an
-       * unreadable route array.
+       * Factory functions that turn JSX route elements into route objects.
+       * The JSX walk already reads those elements wherever they appear.
+       * Listing the factory keeps a route-object factory that is handed one
+       * of these calls from being reported as an unreadable route array.
        */
       elementsFactories?: string[];
       /**
@@ -491,23 +387,17 @@ export type DiscoveryMatch =
     }
   | {
       /**
-       * Consumer side of the package-export boundary. Scans source files for
-       * imports of the listed packages and records every call site,
-       * emitting one `caller`-kind unit per enclosing
-       * function. The bindings this produces are
-       * `function-call { package, exportPath }`, which match the provider
-       * summaries `packageExports` produces.
+       * The consumer side of the package-export boundary. The adapter finds
+       * imports of the listed packages, records every call site, and emits
+       * one `caller` unit per enclosing function, bound as
+       * `function-call { package, exportPath }` to pair with the providers
+       * `packageExports` finds.
        *
-       * `packages` lists exact package names to track imports of, possibly
-       * with a sub-path such as `"@suss/behavioral-ir/schemas"`. Pass
-       * several package names to track a family at
-       * once. Imports of any other package are ignored.
-       *
-       * As of v0 this covers named and default imports. Namespace imports
-       * (`import * as X from`) are not tracked yet. Re-imports within
-       * the consumer repo (consumer A imports from consumer B which
-       * re-exports from pkg) produce units against the intermediate rather
-       * than the original, because full symbol resolution is not built yet.
+       * `packages` takes exact package names, with a sub-path where needed,
+       * such as `"@suss/behavioral-ir/schemas"`. Named and default imports
+       * are tracked. Namespace imports (`import * as X`) are not yet. When a
+       * file in the consumer's repo re-exports the package and another file
+       * imports it from there, the unit binds to that intermediate file.
        */
       type: "packageImport";
       /** Left out when `workspaces` is set. */
@@ -560,11 +450,9 @@ export type BindingExtraction = {
       }
     | {
         /**
-         * The route path comes from where the file is on disk, which is how
-         * Next.js and React Router describe their routes. The pack spells
-         * out its own convention here, because the adapter knows
-         * about files and the pack knows what the framework does with their
-         * names.
+         * The route path comes from where the file is on disk, the way
+         * Next.js and React Router describe routes. The pack gives the
+         * framework's filename convention, and the adapter applies it.
          *
          * `app/api/orders/[id]/route.ts` under `{ root: "app",
          * dropBasenames: ["route"], dynamic: "brackets" }` comes out as
@@ -609,8 +497,8 @@ export type BindingExtraction = {
  * `decoratorArgument` reads the argument off the same decorator the
  * match selected the handler by, so `@EventPattern("order.placed")`
  * gives "order.placed". `literal` is for a wire whose channel the
- * library fixes. `unstated` says the wire is known and the channel is
- * not, which pairs the way a null channel always has.
+ * library fixes. `unstated` means the wire is known and the channel is
+ * not, and it pairs the same as a null channel.
  */
 export type ChannelSource =
   | { from: "decoratorArgument"; position: number }
@@ -619,15 +507,10 @@ export type ChannelSource =
 
 /**
  * A binding the pattern states outright, for a boundary the match
- * cannot read from the source.
- *
- * `bindingExtraction` speaks REST and nothing else, so a declarative
- * pack whose boundary is a queue or a topic had nowhere to say so and
- * was pushed into a callback, which pack health then reports as an
- * ast-link. This is the same vocabulary `DiscoveredCustomUnit` already
- * has, declared instead of returned. Message bus only for now; the
- * design note in the proposals directory says what comes next and why
- * the rest stays put.
+ * cannot read from the source. `bindingExtraction` only covers REST, so
+ * a declarative pack for a queue or a topic states its binding here
+ * instead of writing a callback. The fields are the ones a
+ * `DiscoveredCustomUnit` returns. Only the message bus is supported.
  */
 export type DeclaredBinding = {
   semantics: "message-bus";
@@ -709,22 +592,17 @@ export interface DiscoveryPattern {
   /** A binding the pattern states outright. See `DeclaredBinding`. */
   binding?: DeclaredBinding;
   /**
-   * How the routable this pattern discovers (Express's `Router()`,
-   * Hono's `new Hono()`, and similar) can itself be mounted onto
-   * another one under a path prefix, as in Express's
-   * `app.use(prefix, router)` or Hono's `app.route(prefix, sub)`.
-   * This only means anything when `match.type` is `"registrationCall"`,
-   * because mount discovery reuses that match's `importModule` and
-   * `importName` to work out which variables in a file are the routable
-   * that a mount call is being made on.
+   * How the routable this pattern discovers (Express's `Router()`, Hono's
+   * `new Hono()`) is mounted on another under a path prefix, as in
+   * `app.use(prefix, router)` or `app.route(prefix, sub)`. It only applies
+   * when `match.type` is `"registrationCall"`, since mount discovery uses
+   * that match's `importModule` and `importName` to find the routables.
    *
-   * When set, the adapter composes the mount's prefix into the path
-   * of every route discovered on the mounted value, whether it is
-   * declared in the mounting file or, by following the mounted value
-   * through an import, in whichever file declares it. A mount whose
+   * The adapter adds the prefix to every route on the mounted value, in
+   * the mounting file or in the file an import leads to. A mount whose
    * prefix is not a string literal, or whose target the resolution store
-   * cannot follow to a concrete value, contributes nothing, and the routes
-   * under it keep the path they were written with.
+   * cannot follow, adds nothing, and its routes keep the path they were
+   * written with.
    */
   mount?: {
     /** Method name that registers a sub-router at a prefix, e.g. "use" or "route". */
@@ -749,22 +627,14 @@ export interface DiscoveryPattern {
    */
   wraps?: WrapperRegistration;
   /**
-   * This pattern only runs against files that import one of these module
-   * specifiers, or a sub-path of one. An empty array means no gate at all
-   * (the pattern is dispatched against
-   * every file). Leaving it undefined does the same, but pack authors
-   * SHOULD write it out, because `[]` is the deliberate
-   * "match every file" choice, usually because the pattern keys on
-   * something other than imports. The fetch runtime does that, since it
-   * matches global `fetch(...)` calls.
+   * Run this pattern only on files that import one of these module
+   * specifiers or a sub-path of one, so `"@nestjs/graphql"` also matches
+   * `"@nestjs/graphql/dist/foo"`. An empty array runs it on every file, the
+   * same as leaving it unset. Write `[]` out when that is deliberate, as
+   * the fetch runtime does for global `fetch(...)` calls.
    *
-   * Matching is by prefix on the import module specifier. An entry of
-   * `"@nestjs/graphql"` matches `from "@nestjs/graphql"` and
-   * `from "@nestjs/graphql/dist/foo"` and any other sub-path.
-   *
-   * This pre-filter is only there for speed. The closure walk and the other
-   * post-passes can still reach every loaded file through symbol
-   * resolution.
+   * The gate only saves time. The closure walk and the passes after
+   * discovery can still reach every loaded file through symbol resolution.
    */
   requiresImport?: string[];
 }
@@ -781,13 +651,10 @@ export type TerminalMatch =
   | {
       type: "returnStatement";
       /**
-       * Skip ReturnStatements whose returned expression is a CallExpression
-       * (or NewExpression). For frameworks where `return reply.send(...)`
-       * also lands as a `parameterMethodCall` match on the inner call,
-       * this stops the same `return reply.send(...)` producing two
-       * terminals, one from the wrapping returnStatement and one from
-       * the inner method-call chain. Bare returns (`return user`,
-       * `return { id }`, `return await fn()`) still match.
+       * Skip a return whose value is a call or `new` expression. Set it when
+       * a `parameterMethodCall` terminal already matches the inner call, so
+       * `return reply.send(...)` produces one terminal instead of two.
+       * Returns like `return user` and `return await fn()` still match.
        */
       excludeCallReturns?: boolean;
     }
@@ -811,22 +678,16 @@ export type TerminalMatch =
       type: "functionCall";
       functionName: string; // e.g. "json", "redirect". Matches calls to a function with this name
       /**
-       * Only match when the name was imported from one of these modules.
-       * The field works exactly like a DiscoveryPattern's gate, matching by
-       * prefix: "react-router" also matches "react-router/server".
+       * Only match when the name was imported from one of these modules,
+       * by prefix, the same as `DiscoveryPattern.requiresImport`.
        *
-       * Set it whenever the function belongs to a library, because matching
-       * on a bare name picks up every function with that name in the
-       * user's project too. `json` is a common name for a project's own
-       * response helper, and reading a library's argument order into one
-       * of those gives you a confident wrong answer.
-       *
-       * Leave it unset only when the function belongs to no library at all.
-       * A pack should generally not target a project's own helper. Declare
-       * the envelope structure instead, with a `returnShape` terminal, and
-       * the adapter follows a returned call into the project and reads
-       * the helper's parameters. That covers a helper whatever it is called
-       * and whatever order its arguments come in.
+       * Set it whenever the function belongs to a library. A bare name also
+       * matches the project's own functions, and `json` is a common name
+       * for a project's response helper. Reading a library's argument order
+       * into one of those gives a confident wrong answer. To cover a project
+       * helper, declare the envelope with a `returnShape` terminal instead:
+       * the adapter follows a returned call into the project and reads the
+       * helper's parameters, whatever the helper is called.
        */
       requiresImport?: string[];
     }
@@ -841,27 +702,22 @@ export type TerminalMatch =
     }
   | {
       /**
-       * A synthetic terminal for the implicit fall-through at the end of a
-       * function body. It fires when the function's last statement is
-       * neither a `ReturnStatement` nor a `ThrowStatement`, which
-       * covers the common case of handler and effect bodies that run
-       * side effects and return `undefined` implicitly. Without this,
-       * handler summaries come out with `transitions: []` because
-       * `findTerminals` has nothing to match. A pack that always expects
-       * explicit returns (HTTP handlers) should leave this out of
-       * its terminals. A pack for callback bodies (React handlers,
-       * `useEffect` bodies, Node `.on(...)` callbacks) should include it.
+       * The implicit fall-through at the end of a function body. It fires
+       * when the last statement is neither a return nor a throw, which is
+       * how most event handlers and effect bodies end. Without it, such a
+       * summary comes out with no transitions. Packs for callback bodies
+       * (React handlers, `useEffect`, Node `.on(...)`) include it, and HTTP
+       * handler packs that expect explicit returns leave it out.
        */
       type: "functionFallthrough";
     }
   | {
       /**
        * A call to the parameter at this position, `next()` inside a
-       * middleware. Nothing declares this in a pack: the adapter builds
-       * it from `DiscoveryPattern.wraps.continuationParam`, so a
-       * wrapper's path that hands control on ends in a `delegate`
-       * output and a path that responds first does not. That is how
-       * composition tells the two apart.
+       * middleware. Packs do not declare it; the adapter builds it from
+       * `DiscoveryPattern.wraps.continuationParam`. A wrapper path that
+       * hands control on then ends in a `delegate` output, and composition
+       * uses that to tell it from a path that responds first.
        */
       type: "parameterCall";
       parameterPosition: number;
@@ -881,20 +737,16 @@ export interface TerminalExtraction {
         name: string;
       }
     | {
-        // throw wrap(new NotFound(...)): look inside the argument at
-        // `position` and match its constructor name against `codes`. This
-        // covers a project helper wrapping `new HttpError.NotFound("...")`,
-        // where the status comes from that argument's class rather than
-        // from the expression actually thrown.
+        // throw wrap(new NotFound(...)): a project helper wraps the error, so
+        // the status comes from the class of the argument at `position`,
+        // matched against `codes`, instead of from what is thrown.
         from: "argumentConstructor";
         position: number;
         codes: Record<string, number>;
       };
-  body?: // { body: data } gives name: "body". `unwrapJsonStringify` peels a
-  // `JSON.stringify(x)` initializer back to the type of `x`, which is the
-  // Lambda-proxy convention where `body` is the serialized
-  // payload string rather than the payload. It is off by default, so a
-  // pack that wants the literal property value keeps it.
+  body?: // { body: data } gives name: "body". `unwrapJsonStringify` reads
+  // `JSON.stringify(x)` as the type of `x`, for Lambda proxy handlers whose
+  // body is the serialized payload. Off by default.
     | { from: "property"; name: string; unwrapJsonStringify?: boolean }
     | { from: "argument"; position: number; minArgs?: number }; // res.json(data) → position: 0
   /** Fallback status code when none is extracted. e.g. Express res.json() defaults to 200. */
@@ -933,9 +785,8 @@ export interface ContractPattern {
   };
   /**
    * The properties an endpoint states its HTTP method and path under.
-   * Both ts-rest and zod-openapi happen to spell them `method` and
-   * `path`, but they are the library's words, so the pack says them
-   * and the adapter reads whatever it is told.
+   * The names belong to the library, so the pack supplies them. ts-rest
+   * and zod-openapi both use `method` and `path`.
    */
   methodProperty: string;
   pathProperty: string;
@@ -1002,34 +853,24 @@ export type InputMappingPattern =
     }
   | {
       /**
-       * Emit one `Input` per declared parameter, in source order, using the
-       * parameter's name as its role, or `defaultRole` when set. Used by the
-       * reachable-closure pass for internal library functions, where no
-       * framework declares a set of roles, so the name a caller sees IS
-       * the role. Destructured parameters are captured the
-       * same way `objectParam` captures them, so `(ctx, { userId })`
-       * gives two inputs, `ctx` and `userId`.
+       * One input per declared parameter, in source order, with the
+       * parameter's name as its role unless `defaultRole` is set. The
+       * reachable-closure pass uses it for internal library functions,
+       * where no framework assigns roles. Destructured parameters work as
+       * in `objectParam`, so `(ctx, { userId })` gives `ctx` and `userId`.
        */
       type: "allPositional";
       defaultRole?: string;
     }
   | {
       /**
-       * Decorator-driven parameter mapping, NestJS-style. For each declared
-       * parameter, the adapter reads the parameter's first decorator and
-       * looks its name up in `decoratorRoleMap`.
-       * A decorator that matches gives the parameter that role. One that
-       * matches nothing falls back to `defaultRole`, or is skipped when
-       * `defaultRole` is unset.
-       *
-       * For `@nestjs/graphql` resolvers:
-       * `{ "Args": "args", "Parent": "parent",
-       *    "Context": "context", "Info": "info" }`.
-       *
-       * Decorators are matched by name alone, so if several frameworks
-       * define `@Args`, all of them map. Packs that need to
-       * tell them apart by import module can add that later, once there
-       * is a use case worth the cost.
+       * NestJS-style parameter decorators. The adapter looks up each
+       * parameter's first decorator in `decoratorRoleMap`. A match gives the
+       * role, and a parameter that matches nothing gets `defaultRole` or is
+       * skipped. For `@nestjs/graphql` resolvers the map is
+       * `{ Args: "args", Parent: "parent", Context: "context", Info: "info" }`.
+       * Decorators match by name alone, so every framework's `@Args` maps
+       * the same way.
        */
       type: "decoratedParams";
       decoratorRoleMap: Record<string, string>;
@@ -1088,18 +929,14 @@ export interface TransparentWrapper {
 export interface PatternPack {
   name: string;
   /**
-   * Pack version stamp, which feeds the cache invalidation key. Bump on
-   * any change that affects discovered units / extracted summaries.
-   * Format is opaque to the adapter, so semver or a content hash both
-   * work.
+   * The pack's version, part of the cache key. Change it whenever a change
+   * affects discovered units or summaries; any string works.
    *
-   * Optional, because whoever loads the pack knows more about it than
-   * the pack does. The CLI folds a hash of the file it loaded and of
-   * the config it passed into this stamp, so a pack run through the CLI
-   * invalidates on an edit whether or not it declares a version. A host
-   * that builds packs some other way takes on that responsibility itself.
-   * A pack with nothing to stamp comes out as `"unset"`, and a warm cache
-   * will then serve results for code that has since changed.
+   * It is optional because the CLI hashes the pack file it loaded and the
+   * config it passed into the key, so an edit invalidates the cache
+   * whether or not the version moved. A host that loads packs another way
+   * has to do that itself. A pack with nothing to stamp is keyed as
+   * `"unset"`, and a warm cache then serves stale results after an edit.
    */
   version?: string;
   /**
@@ -1133,18 +970,12 @@ export interface PatternPack {
    */
   requestSpelling?: RequestSpellingMetadata;
   /**
-   * Transport (wire protocol) used in the `BoundaryBinding.transport`
-   * of discovered units. Every pack has to say what its transport is
-   * rather than falling back on a hardcoded HTTP default. "What transport
-   * does this pack cover?" is a question every pack should have to
-   * answer, and requiring the field stops a later pack (React, GraphQL,
-   * Lambda-invoke, queues) from quietly inheriting an HTTP-shaped default
-   * that does not fit it.
-   *
-   * The pack's `name` separately fills in `BoundaryBinding.recognition`
-   * on the summaries, so `{ transport, recognition }` come from
-   * the pack directly and the adapter derives `semantics` from the
-   * discovery pattern's binding-extraction rules.
+   * The transport written into `BoundaryBinding.transport` on discovered
+   * units, such as `"http"` or `"in-process"`. It is required so a pack
+   * for React, queues or Lambda invocation never inherits an HTTP default
+   * that does not fit it. The pack's `name` fills in
+   * `BoundaryBinding.recognition`, and the adapter derives `semantics`
+   * from the discovery pattern's binding extraction.
    */
   protocol: string;
   /**
@@ -1162,140 +993,60 @@ export interface PatternPack {
    */
   failureDelivery?: FailureDelivery;
   /**
-   * Synthesize extra code units out of a parent unit's body, for when one
-   * construct the user wrote implicitly spawns several units the runtime
-   * schedules. Used when a framework's runtime
-   * schedules callbacks that aren't visible as top-level declarations:
-   * React event handlers on JSX elements, React `useEffect` bodies,
-   * Node `emitter.on("event", handler)`, class-component lifecycle
-   * methods, and similar.
+   * Build extra code units from a parent unit's body, for callbacks the
+   * runtime schedules that are not top-level declarations: React event
+   * handlers on JSX elements, `useEffect` bodies, Node `emitter.on(...)`
+   * handlers. Each returned unit goes through the same extraction as a
+   * discovered one and gets its own summary. Set `terminals` or
+   * `inputMapping` on a sub-unit when it differs from the pack's defaults.
    *
-   * `ctx` is typed `unknown` here because the extractor has no
-   * knowledge of which adapter is driving it; each language adapter
-   * defines its own context type (`TsSubUnitContext` in
-   * `@suss/adapter-typescript`, say) with the primitives a pack needs to
-   * walk the parent's AST. Packs import and cast to the adapter
-   * context they were written against, and that cast is how a pack says
-   * out loud that it requires the TypeScript adapter.
-   *
-   * Returned units are fed through the adapter's extraction pipeline
-   * the same way top-level discovered units are, so each becomes its
-   * own `BehavioralSummary`. Put per-unit `terminals` and `inputMapping`
-   * on the `DiscoveredUnit` when a sub-unit is written differently from
-   * the parent pack's defaults.
+   * `ctx` is `unknown` because each adapter defines its own context type
+   * (`TsSubUnitContext` in `@suss/adapter-typescript`) with the primitives
+   * for walking the parent's syntax tree. A pack casts to the context it
+   * was written against, which ties the pack to that adapter.
    */
   subUnits?: (
     parent: DiscoveredSubUnitParent,
     ctx: unknown,
   ) => DiscoveredSubUnit[];
   /**
-   * A top-level discovery callback the pack supplies. It is to discovery
-   * what `subUnits` is to sub-units: when a framework's convention does
-   * not fit one of the data-driven `DiscoveryMatch` variants (REST
-   * registration, decorator-based controllers, named-export shapes,
-   * etc.), the pack ships its own walker here. The adapter calls it
-   * once per source file alongside the data-driven dispatch.
+   * The pack's own top-level discovery, for a convention none of the
+   * `DiscoveryMatch` variants fits, such as React's component-export
+   * heuristic or Storybook's `.stories.tsx` files. Keeping those in the
+   * pack leaves the `DiscoveryMatch` union to patterns any pack can share.
+   * The adapter calls it once per source file beside the data-driven
+   * discovery, and the units it returns go through the normal pipeline
+   * with the same per-unit overrides.
    *
-   * Use this for framework-specific patterns that do not generalize:
-   * React's component-export heuristic (PascalCase plus a JSX return),
-   * Vue's `.vue` SFC slots, Solid's component conventions, Storybook's
-   * `.stories.tsx` file convention. Those are all legitimate conventions,
-   * but baking each one into the central `DiscoveryMatch` union forces
-   * every unrelated pack to know about them. Callbacks leave the central
-   * union for the generic primitives and let each pack own its own
-   * conventions.
-   *
-   * `ctx` is typed `unknown` for the same reason as in `subUnits`: each
-   * adapter ships its own context primitive (`TsDiscoveryContext` in
-   * `@suss/adapter-typescript`) and a pack casts to whichever one it was
-   * written against. That cast is how the pack says it requires the TS
-   * adapter.
-   *
-   * The units you return go through the adapter's normal pipeline. They
-   * get their terminals and effects extracted, sub-units synthesized, and
-   * summaries assembled exactly as units from data-driven discovery
-   * do. Per-unit `terminals` and `inputMapping` overrides on
-   * `DiscoveredUnit` work the same way too.
-   *
-   * **Cross-pack dedup.** When this callback discovers a unit at the
-   * same `(func, kind)` as a unit from another pack's data-driven
-   * discovery, the adapter's cross-pack claim dedup keeps whichever
-   * claimed it first. The order packs appear in the framework list is
-   * what decides precedence.
+   * `ctx` is `unknown` for the same reason as in `subUnits`
+   * (`TsDiscoveryContext` in `@suss/adapter-typescript`). When this finds
+   * a unit at the same function and kind as another pack's discovery, the
+   * pack that comes first in the framework list claims it.
    */
   discoverUnits?: (sourceFile: unknown, ctx: unknown) => DiscoveredCustomUnit[];
   /**
-   * Per-call-site recognizers that emit typed `Effect`s alongside the
-   * generic `invocation` effect the adapter already captures.
+   * Per-call recognizers that emit typed `Effect`s beside the generic
+   * `invocation` effect. The adapter calls each one on every call in the
+   * function body, whichever pack discovered the function, and skips
+   * nested functions, which are units of their own. Calls the invocation
+   * walk skips, such as `const x = await fn(...)` initializers, are included.
    *
-   * **Scope contract.** The adapter walks every CallExpression in
-   * the function body and dispatches to every registered recognizer
-   * for each call. Walking skips nested function bodies (those are
-   * their own units with their own recognizer dispatch). The walk is
-   * INDEPENDENT of the existing invocation-effect walker, which is
-   * deliberately narrow (it only captures
-   * `invocation` effects from bare expression statements and container
-   * composition, to avoid double-counting calls that already become
-   * terminals). Recognizers do not have that problem, so they fire on
-   * every call regardless of position, including
-   * `const x = await fn(...)` initializers and nested call args
-   * (which the invocation walker skips). This independence means
-   * recognizer authors can rely on seeing every call in scope.
-   *
-   * **Cross-pack visibility.** Recognizers fire regardless of which pack
-   * discovered the enclosing function, so
-   * `@suss/framework-prisma`'s recognizer can fire on Prisma calls
-   * inside an `@suss/framework-express` handler. Pack authors don't
-   * need to coordinate.
-   *
-   * **Emission contract.** Returning effects ADDS them to the enclosing
-   * default-branch transition, and the generic `invocation` effect is
-   * kept either way (typed effects live alongside the raw
-   * call capture, so inspect can still render the callee text and
-   * arguments while the checker pairs on the typed form). Return `null`
-   * or `[]` for no match.
-   *
-   * **Dedup is the recognizer's responsibility.** The dispatcher does
-   * not dedupe across calls. A recognizer that wants to fire
-   * once per identifier, to collapse reads bound to a const used N
-   * times, has to track that state itself across invocations.
-   *
-   * **Exceptions are caught and logged.** A recognizer that throws gets
-   * logged to stderr with the file path and line number, and is skipped
-   * for that one call while the extraction carries on. A buggy
-   * recognizer will not crash the run.
-   *
-   * `call` is the language adapter's call-expression handle (opaque
-   * here; ts-morph `CallExpression` in `@suss/adapter-typescript`).
-   * `ctx` is the adapter's recognizer context (source file, an
-   * `extractArgs()` helper that reuses the adapter's own EffectArg
-   * builder). A recognizer casts both to the adapter context it was
-   * written against, which is the same way `subUnits` says a pack
-   * requires the TypeScript adapter.
+   * Returned effects are added to the enclosing default transition, and
+   * the `invocation` effect stays. Return `null` or `[]` for no match.
+   * Nothing dedupes across calls, so a recognizer that should fire once
+   * per identifier tracks that itself. One that throws is logged with its
+   * file and line and skipped for that call. `call` and `ctx` are the
+   * adapter's own types, which a recognizer casts to as `subUnits` does.
    */
   invocationRecognizers?: InvocationRecognizer[];
   /**
-   * Optional pack-level import gate. When set, the adapter's
-   * pre-filter only considers this pack applicable to source files
-   * whose imports include at least one of the listed modules
-   * (matched by prefix, so `"@aws-sdk/client-sqs"` matches that module
-   * and any `"@aws-sdk/client-sqs/sub-path"`).
-   *
-   * Useful for recognizer-only packs that target a specific library:
-   * `@suss/framework-aws-sqs` declares `["@aws-sdk/client-sqs"]`,
-   * `@suss/framework-prisma` declares `["@prisma/client"]`. Without
-   * a gate, a recognizer-only pack walks every file in the project. That
-   * is correct but wasteful in a large monorepo where most files never
-   * import the library.
-   *
-   * A discovery-pattern pack already has a per-pattern `requiresImport`
-   * on `DiscoveryPattern`. This is the pack-level version of that, for a
-   * pack whose ONLY mechanism is recognizers and which has no discovery.
-   *
-   * Empty or undefined means no gate, so the pack walks every file (the
-   * default for universal recognizers like `@suss/runtime-node`'s
-   * process-surface and env-var recognizers, since `process.*` is
-   * available without importing anything).
+   * A pack-level import gate: the pack applies only to files that import
+   * one of these modules, matched by prefix. A pack with only recognizers
+   * uses it the way a discovery pattern uses its own `requiresImport`;
+   * `@suss/framework-prisma` declares `["@prisma/client"]`. Without a gate
+   * the pack walks every file, which gives the same result and is slow in
+   * a large monorepo. Leave it empty for recognizers that apply
+   * everywhere, such as `process.env` reads, which need no import.
    */
   requiresImport?: string[];
   /**
@@ -1316,14 +1067,13 @@ export interface PatternPack {
    */
   projectHelpers?: ProjectHelpers;
   /**
-   * Environment variables the pack's library reads from inside
-   * node_modules, where no walk ever looks. Declaring them keeps the
-   * checker from telling a template that a variable is unused when the
-   * library reads it on every invocation. The adapter emits one marker
-   * summary per entry whose `module` some project file imports, and
-   * the runtime-config pairing consults the markers before it accuses.
-   * The module match is a specifier prefix, so one entry covers a
-   * scoped family like `@aws-lambda-powertools/`.
+   * Environment variables the library reads from inside node_modules,
+   * where no walk looks. Without them the checker would report a variable
+   * in a template as unused when the library reads it on every invocation.
+   * The adapter emits one marker summary per entry whose `module` some
+   * project file imports, and runtime-config pairing checks the markers
+   * before reporting. `module` matches as a prefix, so one entry covers a
+   * family like `@aws-lambda-powertools/`.
    */
   libraryEnvVars?: Array<{
     /** Module-specifier prefix the library's imports start with. */
@@ -1334,14 +1084,9 @@ export interface PatternPack {
     names?: string[];
   }>;
   /**
-   * Library wrappers that return the function they wrapped. The adapter
-   * works this out on its own for a factory inside the project by reading
-   * its body. A library wrapper's body is not there to read, so the
-   * pack has to say it: a call to `callee` resolves to its
-   * `argument`-th argument.
-   *
-   * `callee` matches the call expression text as written, e.g.
-   * `"Sentry.wrapHandler"`.
+   * Library wrappers that return the function they were handed. A call to
+   * `callee` resolves to its `argument`-th argument. See
+   * `TransparentWrapper`.
    */
   transparentWrappers?: TransparentWrapper[];
   /**
@@ -1400,42 +1145,27 @@ export interface PatternPack {
    */
   graphqlOperationScopes?: Array<{ files: string[]; workspace: string }>;
   /**
-   * Per-property-access recognizers, the counterpart to
-   * `invocationRecognizers`. Use these for patterns that read a value
-   * through property access without invoking it: `process.env.X`
-   * env-var reads, `Date.now()`-style time reads (which is actually a
-   * call, see invocationRecognizers), bare `module.constant` reads.
-   *
-   * A recognizer here is handed a property access, a call, or a tagged
-   * template, and guards its own shapes. The tagged template is there
-   * for a library that takes its whole argument as one, the way
-   * `prisma.$queryRaw` and `gql` do.
-   *
-   * The scope rules are the same as for invocationRecognizers: it fires
-   * on every such node in the function body and skips nested function
-   * bodies. The emission contract is the same, so effects land on the
-   * enclosing default-branch transition.
-   *
-   * The arguments are opaque here and narrowed by the adapter, for the
-   * same reason as in invocationRecognizers.
+   * Per-access recognizers, the counterpart to `invocationRecognizers` for
+   * values read without a call, such as `process.env.X`. A recognizer is
+   * handed a property access, a call or a tagged template, and checks the
+   * node itself. The tagged template covers libraries that take a whole
+   * template as one argument, like `prisma.$queryRaw` and `gql`. Scope,
+   * emission and argument types follow the `invocationRecognizers` rules.
    */
   accessRecognizers?: AccessRecognizer[];
   /**
-   * What the pack wrote as data rather than as code, for the health
-   * report. Absent for a pack written as a hand-rolled walk, which is
-   * itself the thing the report says.
+   * What the pack wrote as data, for the pack health report. A pack
+   * written as a hand-rolled walk leaves it out, and the report says so.
    */
   declarations?: PackDeclarations;
 }
 
 /**
- * The price a pack paid for what it matches, so the migration onto the
- * declared surface can be measured rather than asserted.
- *
- * Expressiveness is bought link by link: a link answered with data is
- * inspectable, serializable and runs on any adapter, while a link
- * answered with a function is code that only its own language runs.
- * Both are allowed, and the report says which is which.
+ * How much of what a pack matches is declared as data and how much is
+ * code, counted for the pack health report. A link given as data can be
+ * inspected, serialized and run by any adapter. A link given as a
+ * function only runs in its own language. Both are allowed, and the
+ * report counts each kind.
  */
 export interface PackDeclarations {
   declarations: DeclaredMatch[];
@@ -1460,8 +1190,8 @@ export interface DeclaredMatch {
 }
 
 /**
- * Per-call-site recognizer hook. See `PatternPack.invocationRecognizers`
- * for the contract and threading model.
+ * Per-call recognizer hook. `PatternPack.invocationRecognizers` says when
+ * it is called and what it returns.
  */
 export type InvocationRecognizer<TCtx = unknown> = (
   call: unknown,
@@ -1469,8 +1199,8 @@ export type InvocationRecognizer<TCtx = unknown> = (
 ) => Effect[] | null;
 
 /**
- * Per-property-access recognizer hook. See
- * `PatternPack.accessRecognizers` for the contract and threading model.
+ * Per-access recognizer hook. `PatternPack.accessRecognizers` says when
+ * it is called and what it returns.
  */
 export type AccessRecognizer<TCtx = unknown> = (
   access: unknown,
@@ -1478,12 +1208,9 @@ export type AccessRecognizer<TCtx = unknown> = (
 ) => Effect[] | null;
 
 /**
- * The bare minimum a `subUnits` hook needs to know about the parent code
- * unit it is working inside. `func` is left opaque here because each
- * language adapter brands its own FunctionRoot type. This interface lives in
- * the extractor only so `PatternPack` can refer to it, and the adapter-level
- * context types like `TsSubUnitContext` narrow `func` to a concrete AST
- * handle.
+ * The parent unit a `subUnits` hook works inside. `func` is opaque because
+ * each adapter has its own function-root type; adapter context types such
+ * as `TsSubUnitContext` narrow it.
  */
 export interface DiscoveredSubUnitParent {
   /** Handle to the parent's function body. Opaque at extractor level. */
@@ -1495,15 +1222,11 @@ export interface DiscoveredSubUnitParent {
 }
 
 /**
- * What a pack's `discoverUnits` hook returns for each top-level unit it
- * finds. It is to discovery what `DiscoveredSubUnit` is to sub-units. The
- * adapter widens these into its own internal `DiscoveredUnit` type, which has
- * adapter-specific fields like `routeInfo` and `packageExportInfo` on it, and
- * then runs them through the normal extraction pipeline.
- *
- * Pack authors only ever see opaque handles: `func` is whatever the adapter's
- * primitive returned, and the adapter narrows it to its concrete
- * function-root type (`FunctionRoot` in `@suss/adapter-typescript`).
+ * One top-level unit a pack's `discoverUnits` hook found. The adapter
+ * widens it into its own internal unit type and runs it through the
+ * normal extraction pipeline. `func` is whatever the adapter's primitive
+ * returned, and the adapter narrows it to its function-root type
+ * (`FunctionRoot` in `@suss/adapter-typescript`).
  */
 export interface DiscoveredCustomUnit {
   /** Function body handle, opaque here. */
@@ -1513,10 +1236,9 @@ export interface DiscoveredCustomUnit {
   /** Discovered name (e.g. "UserCard"). */
   name: string;
   /**
-   * The unit's callable identity, when the pack states one: the module
-   * it lives in and the name it goes by there. A server action is the
-   * case, so intent and the keyed pairing pass can refer to it. The
-   * adapter puts both on the unit's function-call binding.
+   * The module the unit is exported from and its export name, when the
+   * pack states them. Server actions use this so intent and keyed pairing
+   * can refer to them. The adapter puts both on the function-call binding.
    */
   functionCallInfo?: { module: string; exportName: string };
   /**
@@ -1530,19 +1252,15 @@ export interface DiscoveredCustomUnit {
    */
   inputMapping?: InputMappingPattern;
   /**
-   * REST route identity for units a callback discovers against an
-   * external manifest (a SAM/CFN template's `Events` block, an infra
-   * routing declaration, and so on) rather than an in-code registration.
-   * When set, the adapter builds a `rest` binding from `(method, path)`,
-   * the same binding a NestJS controller gets from decorator-derived
-   * `routeInfo`, and the discoverUnits callback never has to reach into
-   * the adapter's binding machinery. Either half is null when the
-   * source does not state it, and a binding missing one pairs with
-   * nothing.
+   * The REST route for a unit found through an external manifest, such as
+   * a SAM template's `Events` block, instead of an in-code registration.
+   * The adapter builds a `rest` binding from it, the same one a NestJS
+   * controller gets. Leave either half null when the source does not
+   * state it; a binding missing one pairs with nothing.
    *
-   * One function bound to several routes emits one DiscoveredCustomUnit
-   * per route. The adapter's per-file claim dedup keys on
-   * `(func, kind, method, path)`, so all of those variants survive.
+   * A function bound to several routes returns one unit per route. The
+   * per-file claim dedup keys on function, kind, method and path, so all
+   * of them are kept.
    */
   routeInfo?: { method: string | null; path: string | null };
   /**
@@ -1583,9 +1301,8 @@ export interface DiscoveredCustomUnit {
 }
 
 /**
- * What a pack's `subUnits` hook returns per synthesized child. The
- * adapter pipes each of these through the same extraction + assembly
- * pipeline used for top-level-discovered units.
+ * One child unit a pack's `subUnits` hook built. The adapter extracts and
+ * assembles it the same way as a top-level unit.
  */
 export interface DiscoveredSubUnit {
   /** Function body handle, opaque here. */

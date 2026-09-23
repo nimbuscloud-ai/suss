@@ -1,14 +1,11 @@
 /**
- * Lightweight phase-timing instrumentation.
+ * Wall time per named phase of an adapter run, so the CLI can print
+ * "extract took 17s, of which 11s was in the reachable closure" without
+ * a profiler. It is cheap enough to leave on, and a phase that never
+ * runs adds nothing.
  *
- * Measures wall time spent in named phases of an adapter run so the
- * CLI can surface "extract took 17s, of which 11s was in the
- * reachable closure" without engaging a profiler. Cheap enough to
- * always be on; a phase that isn't entered contributes zero.
- *
- * Not OpenTelemetry: this is single-process, stdout-bound, and should
- * not ship transitively to consumers. If suss ever becomes a
- * long-running daemon (LSP / file-watcher), revisit then.
+ * Everything stays in one process and goes to stdout, so there is no
+ * OpenTelemetry dependency for consumers to inherit.
  */
 
 interface PhaseStat {
@@ -26,17 +23,13 @@ export interface TimingReport {
 export interface Timer {
   /** Run `fn`, accumulate wall time under `label`, return its result. */
   time<T>(label: string, fn: () => T): T;
-  /** Async variant: same accumulation rule. */
+  /** The same as `time`, for an async `fn`. */
   timeAsync<T>(label: string, fn: () => Promise<T>): Promise<T>;
   /** Snapshot of all accumulated phases, ordered by total time descending. */
   report(): TimingReport;
 }
 
-/**
- * Build a fresh timer. Each adapter run gets its own, keeps
- * concurrent extracts independent (irrelevant today, will matter if
- * we add a server mode).
- */
+/** Each adapter run gets its own timer, so two runs at once never mix their phases. */
 export function createTimer(): Timer {
   const phases = new Map<string, PhaseStat>();
   const start = performance.now();
@@ -82,7 +75,7 @@ export function createTimer(): Timer {
   };
 }
 
-/** Null implementation for callers that opt out of timing entirely. */
+/** A timer that runs `fn` and records nothing, for callers that do not want timing. */
 export function noopTimer(): Timer {
   return {
     time<T>(_label: string, fn: () => T): T {

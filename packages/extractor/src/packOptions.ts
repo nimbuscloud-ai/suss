@@ -2,13 +2,12 @@
  * Option declarations more than one pack takes.
  *
  * A pack exports `optionsSchema` beside its factory, and the CLI parses
- * a `-f pack=config.json` file against it before the factory runs, so a
- * key nobody declared is refused by name instead of read as nothing.
+ * a `-f pack=config.json` file against it before the factory runs, so an
+ * undeclared key is refused by name instead of being silently ignored.
  *
- * Four packs accept `storageSystem` and three accept `scope`. A copy
- * per pack is how one of them ends up allowing a value the others
- * reject, which is what happened when two doc comments named
- * `"postgres"` and the union allowed only `"postgresql"`.
+ * Four packs accept `storageSystem` and three accept `scope`, so each
+ * option is declared once here. With a copy per pack, one pack can end up
+ * accepting a value the others reject.
  */
 
 import { z } from "zod";
@@ -36,9 +35,9 @@ export const scopeOption = z.string();
  * A call the project has declared to be its own dispatcher, which both
  * message-bus packs take under `producers`.
  *
- * `receiver` is the type rather than the variable: a service keeps its
- * dispatcher in a field, a closure or a constructor parameter, and the
- * type is the only thing stable across all three.
+ * `receiver` is a type name because a service may keep its dispatcher in
+ * a field, a closure or a constructor parameter, and the type is the same
+ * in all three.
  */
 export const configuredCallOption = z
   .object({
@@ -48,7 +47,7 @@ export const configuredCallOption = z
     receiver: z.string(),
     /** Method that performs the send. */
     method: z.string(),
-    /** Argument index carrying the subject. */
+    /** Index of the argument that is the subject. */
     subjectArg: z.number(),
     /**
      * Which argument the message body is. Left out when the method has no

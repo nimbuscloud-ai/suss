@@ -1,11 +1,10 @@
 /**
- * unitInvokes.ts: a pack that recognizes a call invoking one deployed
- * unit by name.
+ * A pack that recognizes a call invoking one deployed unit by name.
  *
- * The AWS SDK shape is the one this was written against, and it is the
- * same shape a send has: an operation is a command class and its
- * arguments are one object, so the pack says which command and which of
- * its properties says which unit the call reaches.
+ * It was written against the AWS SDK, where an invoke looks like a
+ * message send: an operation is a command class and its arguments are
+ * one object. The pack says which command, and which of its properties
+ * identifies the unit the call reaches.
  *
  *   client.send(new InvokeCommand({ FunctionName, Payload }))
  */
