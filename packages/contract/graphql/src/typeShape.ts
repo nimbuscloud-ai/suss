@@ -1,6 +1,6 @@
-// SDL / operation TypeNode → TypeShape conversion, shared by the
-// schema reader (field arguments, return types) and the documents
-// reader (operation variable definitions).
+// Converts GraphQL type references to TypeShapes. The schema reader uses
+// it for field arguments and return types, and the documents reader for
+// operation variables.
 
 import {
   type DocumentNode,
@@ -13,9 +13,9 @@ import {
 import type { TypeShape } from "@suss/behavioral-ir";
 
 /**
- * The five standard GraphQL scalars, mapped to the shapes they read
- * as. Exported so packs whose library exposes the same scalars under
- * its own spelling can build on this table instead of restating it.
+ * The TypeShape for each of the five standard GraphQL scalars. A pack
+ * whose library spells the same scalars its own way can build on this
+ * table instead of copying it.
  */
 export const SCALAR_SHAPES: Record<string, TypeShape> = {
   String: { type: "text" },
@@ -27,8 +27,8 @@ export const SCALAR_SHAPES: Record<string, TypeShape> = {
 
 export function typeNodeToShape(node: TypeNode): TypeShape {
   if (node.kind === Kind.NON_NULL_TYPE) {
-    // Non-null is enforced by GraphQL, so drop the wrapper:
-    // TypeShape's nullability is implicit (non-union with null/undefined).
+    // A TypeShape is non-null unless its union includes null, so the
+    // wrapper adds nothing.
     return typeNodeToShape(node.type);
   }
 
@@ -45,12 +45,14 @@ function scalarOrRef(node: NamedTypeNode): TypeShape {
 }
 
 /**
- * Every named type the document defines, with the record behind it.
+ * A record shape for every object, interface and input type the document
+ * defines, keyed by type name. An `extend type` adds its fields to the
+ * same record.
  *
- * A field's return type is a name, and a name has no structure to
- * compare against what a resolver in code returns. A summary states
- * these under `definitions`, and the reader that loads it puts them
- * back into the shapes that refer to them.
+ * A field's return type is only a name, which gives nothing to compare
+ * with what a resolver in code returns. The summary stores these records
+ * under `definitions`, and loading the summary substitutes them back into
+ * the shapes that refer to them by name.
  */
 export function typeDefinitionsIn(
   doc: DocumentNode,
@@ -83,7 +85,7 @@ export function typeDefinitionsIn(
   return definitions;
 }
 
-/** The definitions a schema is made of, as graphql-js names them. */
+/** Definition kinds that only appear in a schema. */
 const SCHEMA_KINDS: ReadonlySet<string> = new Set([
   Kind.SCHEMA_DEFINITION,
   Kind.SCHEMA_EXTENSION,
@@ -101,12 +103,12 @@ const SCHEMA_KINDS: ReadonlySet<string> = new Set([
   Kind.SCALAR_TYPE_EXTENSION,
 ]);
 
-/** Whether a document declares types. A document that does is a schema. */
+/** True when the document declares a type, which makes it a schema. */
 export function describesTypes(text: string): boolean {
   return definitionKinds(text).some((kind) => SCHEMA_KINDS.has(kind));
 }
 
-/** Whether a document has an operation to read, rather than fragments alone. */
+/** True when the document has at least one operation. A file of fragments has none. */
 export function describesOperations(text: string): boolean {
   return definitionKinds(text).includes(Kind.OPERATION_DEFINITION);
 }
