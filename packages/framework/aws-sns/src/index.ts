@@ -1,15 +1,11 @@
 /**
- * Recognize AWS SNS publish calls and emit `message-send` effects.
+ * Recognizes AWS SNS publish calls and records each message as a
+ * `message-send` effect on the topic.
  *
- * The anchor is the command, the way it is for every AWS SDK v3 client:
- * the method is `send` at every call site and the command class says
- * which operation it is. `PublishCommand` carries one message and
- * `PublishBatchCommand` carries a list of them beside one topic, so
- * they are two declarations rather than one with a setting on it.
- *
- * A publish writes its destination as `TopicArn` or as `TargetArn`, and
- * a `PhoneNumber` publish reaches a handset that nothing subscribes to.
- * The README beside this file says how a channel comes to be named.
+ * `PublishCommand` sends one message. `PublishBatchCommand` sends a list
+ * of them and gives the topic once, beside the list, so the two commands
+ * need separate declarations. The README explains how a topic ARN held in
+ * an env var becomes the channel.
  */
 
 import { constructedFrom, messageSends, pack } from "@suss/recognize";
@@ -17,10 +13,12 @@ import { constructedFrom, messageSends, pack } from "@suss/recognize";
 import type { PackDeclaration } from "@suss/ir-core";
 import type { Match, MessageSendMethod, PatternPack } from "@suss/recognize";
 
-/** The module a command class comes from. */
 const SNS = "@aws-sdk/client-sns";
 
-/** Where a publish states its message: one argument into the command. */
+/**
+ * The message is the first argument to the command's constructor, and
+ * the command is the first argument to `send`.
+ */
 const INSIDE_THE_COMMAND = (
   named: string[],
 ): Record<string, MessageSendMethod> => ({
@@ -38,20 +36,13 @@ const INSIDE_THE_COMMAND = (
   },
 });
 
-/**
- * Which topic a publish reached. `TargetArn` is the same destination
- * under another name, so a message that writes either one says where it
- * went.
- */
+/** `TargetArn` is the same destination as `TopicArn` under another name. */
 const TOPIC = ["TopicArn", "TargetArn"];
 
 /**
- * One publish, and the batch form.
- *
- * `Subject` rides along as the routing key. It scopes the message for
- * somebody reading the summary, the way EventBridge's `Source` does,
- * and it stays out of the channel, because a subscription filters on
- * the message rather than on the subject line.
+ * `Subject` is recorded as the routing key, the way EventBridge's
+ * `Source` is, so a reader of the summary can tell messages apart. It is
+ * kept out of the channel because a subscription cannot filter on it.
  */
 const PUBLISH: Match = messageSends({
   wire: "aws.sns",
@@ -70,7 +61,7 @@ const PUBLISH_BATCH: Match = messageSends({
   wire: "aws.sns",
   client: constructedFrom(SNS),
   messages: { each: "in", property: "PublishBatchRequestEntries" },
-  // A batch states the topic once beside the list of messages.
+  // The topic is on the command input, once, beside the list of messages.
   channel: [{ property: TOPIC, on: "theInput" }],
   routingKey: "Subject",
   body: "Message",
@@ -81,8 +72,8 @@ const PUBLISH_BATCH: Match = messageSends({
   );
 
 /**
- * Pack export. Two declarations, gated on a file importing the SNS
- * client, which is where a command class can come from.
+ * A command counts only when its class is imported from the SNS client,
+ * so a class with the same name from another module is ignored.
  */
 export function snsFramework(): PatternPack {
   return pack("aws-sns", [PUBLISH, PUBLISH_BATCH], {
@@ -92,7 +83,6 @@ export function snsFramework(): PatternPack {
   });
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "effects",
   package: "@suss/framework-aws-sns",
