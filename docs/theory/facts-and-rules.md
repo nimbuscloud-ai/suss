@@ -5,13 +5,13 @@ description: How suss's whole-program analyses are written, as Datalog rules ove
 
 # Facts and rules
 
-Extraction's whole-program analyses are Datalog rules over a shared fact database, and a three-layer boundary keeps each one reviewable on its own.
+Extraction's whole-program analyses are Datalog rules over a shared fact database. The work is split into three layers that stay apart, so you can review each analysis on its own.
 
-Value resolution is the largest rule set over this engine and has a page of its own. [How suss follows a value](/theory/resolving-values) covers the fact vocabulary, the closure the rules build over it, and the proof `suss ask why` prints.
+Value resolution is the largest rule set over this engine and has a page of its own. [How suss follows a value](/theory/resolving-values) describes the fact vocabulary, the closure the rules build over it, and the proof `suss ask why` prints.
 
 ## Why rules
 
-Every whole-program analysis in extraction works the same way underneath. Start from some seed facts, apply a step repeatedly, stop when nothing new appears. Reachability and re-throw resolution both do that. Writing it as rules states the pattern once and gives you four properties:
+Every whole-program analysis in extraction works the same way underneath. It starts from some seed facts, applies a step repeatedly, and stops when nothing new appears. Reachability and re-throw resolution both do that. Writing it as rules states the pattern once and gives you four properties:
 
 - **Termination comes from the engine.** The evaluator (`@suss/datalog`) runs semi-naive fixpoint iteration. Every analysis written in it terminates by construction, because there are finitely many possible facts and rules only add.
 - **Negation is sound.** Rules are stratified before evaluation, and a cycle through negation is a hard error at evaluation time.
@@ -29,12 +29,12 @@ Layer 3: assembly     reads derived facts, stamps results onto summaries.
 Three boundary rules keep the layers apart:
 
 1. **Only Layer 1 touches the AST.** A rule never gets a node, a `Project`, or anything from ts-morph. If a rule needs information, Layer 1 emits it as a fact.
-2. **One owner per relation.** Exactly one pass writes each relation name (see the table below). Consumers join against it; they never add to it.
+2. **One owner per relation.** Exactly one pass writes each relation name (see the table below). Other passes join against it and never add to it.
 3. **Derived facts land as additive metadata.** Layer 3 stamps results onto summaries (the resolved sources on a re-throw transition, say) without rewriting what any transition itself claims. A rules pass can add knowledge, but it can never edit what extraction reported.
 
 ## The engine: `@suss/datalog`
 
-It is a published package with no dependencies, and there is not much API to learn:
+`@suss/datalog` is a published package with no dependencies and a small API:
 
 - `Database`: a set of facts, keyed by relation name. `add`, `has`, `facts`, `size`.
 - `rule(head, headTerms, body)` with `lit` / `notLit` / `variable` / `constant`: rules as plain data.
@@ -121,7 +121,7 @@ No production rule uses negation yet, but the engine supports it, and here is wh
 untested(u) :- entry(u), not covered(u).
 ```
 
-Two requirements apply. First, a positive literal (`entry`) must bind the variable `u` before the negated literal uses it, so the rule asks a closed question about units it already knows. Second, the rule set must stratify: every rule that derives `covered` must run before any rule that reads its absence. The evaluator enforces that by running strata in order and rejecting rule sets where negation forms a cycle.
+Two requirements apply. First, a positive literal (`entry`) must bind the variable `u` before the negated literal uses it, so the rule only asks about units it has already found. Second, the rule set must stratify: every rule that derives `covered` must run before any rule that reads its absence. The evaluator enforces that by running strata in order and rejecting rule sets where negation forms a cycle.
 
 One rule in value resolution would be written this way if it could be. Take a name written in several places with nothing ordering the writes. The rule should step to each write, but only where the adapter managed to read a value out of every one of them, and the natural way to say that is the absence of `writesUnstated`. Two things get in the way. `deriveOnDemand` rejects a negated literal outright, because a relation derived only where somebody asked for it is smaller than the one `not p(x)` was written against, so the literal matches where it should not. And any negation in a rule set makes the evaluator retract what it derived and start again from the base facts on every pass, which the resolution store runs once per wave of files. So the adapter states `writesAllStated` outright and the rule joins on that instead.
 
@@ -138,7 +138,7 @@ interface ClosureFacts {
 ```
 
 - **Unit keys** identify functions in fact space: `${filePath}:${startOffset}-${endOffset}`. Offsets rather than line numbers, because offsets stay stable under the same parse and are unique within a file.
-- `unitKeyBySummary` is the bridge between fact space and summary space. Layer 1 registers a summary when it seeds or reaches it, and Layer 3 uses the map to find each summary's derived facts.
+- `unitKeyBySummary` connects fact space to summary space. Layer 1 registers a summary when it seeds or reaches it, and Layer 3 uses the map to find each summary's derived facts.
 
 The reachable-closure pass fills the store as it expands. It is demand-driven: scan the unscanned reachable frontier for call edges, emit `calls` facts, re-evaluate, repeat. That is the lazy variant of pure evaluation, so files that nothing reachable calls are never parsed. Passes after it get the call graph for free.
 
@@ -156,7 +156,7 @@ Re-throw enrichment writes into the same store and identifies units with the sam
 | `siteCalls` | 2 | rethrow enrichment | that rethrow site's try block calls this unit |
 | `contributes` | 2 | derived (rethrow rules) | a throw source reaches this unit's re-throw |
 
-Derived results surface to users as:
+Users see derived results as:
 
 - `library` summaries with `recognition: "reachable"` (from `reachable`);
 - resolved messages on re-throw transitions' metadata (from `contributes`).
@@ -175,4 +175,4 @@ Two kinds of work do not belong here. Per-function local analysis stays in the p
 
 - **CFG edges as facts.** What the path engine enumerates is what a query over the lowered control-flow graph would return. Put `cfgEdge` facts into the shared store and a path-sensitive analysis, `mayThrow` through plain calls or path-scoped effect attribution, becomes a rule rather than a new traversal.
 - **Cascade checking.** `inspect --diff` already walks what each boundary reaches. Joining that against the other boundaries' identities would tell you which boundary's promises depend on which other boundary. The checker-side join is unwritten.
-- **A second language.** This layer asks an adapter for three things: discover units, emit summaries, emit these facts. Layers 2 and 3 come along unchanged.
+- **A second language.** A new adapter has to discover units, emit summaries, and emit these facts. Layers 2 and 3 then work unchanged.

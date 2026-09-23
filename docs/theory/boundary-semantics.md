@@ -6,17 +6,17 @@ description: The transport, semantics and recognition layers of a boundary bindi
 # Boundary semantics
 
 The IR's `BoundaryBinding` has all three layers of a boundary description as
-separate fields: what bytes travel (transport), what the participants think
-they're doing (semantics), and how a particular library expresses that in
+separate fields: what bytes travel (transport), what the two sides mean by
+the exchange (semantics), and how a particular library expresses that in
 source code (recognition).
 
 Nine semantics variants ship today: `rest`, `function-call`,
 `graphql-resolver`, `graphql-operation`, `runtime-config`,
 `storage`, `message-bus`, `metric`, and `unit-invocation`, each as its
 own module under `packages/ir-core/src/semantics/`. To find out whether
-a protocol already works, jump to
+a protocol already works, see
 [What's shipped vs what's deferred](#whats-shipped-vs-whats-deferred).
-The rest is the model those nine variants share.
+The sections before it describe the model those nine variants share.
 
 ## The three layers
 
@@ -25,22 +25,22 @@ sibling fields on `BoundaryBinding`:
 
 ### Transport
 
-What bytes travel on the wire.
+Transport is what bytes travel on the wire.
 
 - HTTP / HTTPS
 - TCP, AMQP, Kafka's own framing
 - In-process function call
 - AWS SDK over HTTPS (to an AWS service API)
 
-Transport is mostly beside the point for cross-boundary checking. It
-matters for tooling concerns (authentication, retries, transport-level
-errors, TLS, timeouts) but not for "does the provider's contract match
-what the consumer reads?"
+Transport matters for tooling concerns such as authentication, retries,
+transport-level errors, TLS and timeouts. It does not affect whether the
+provider's contract matches what the consumer reads, so cross-boundary
+checking mostly ignores it.
 
 ### Semantics
 
-What the participants think they're doing. This is the layer cross-boundary
-checking actually cares about.
+Semantics is what the two sides mean by the exchange. Cross-boundary
+checking depends on this layer.
 
 - **REST resource**: discriminated by HTTP status code; payload is the
   response body (typically JSON). Pairing key: `(method, normalizedPath)`.
@@ -81,9 +81,9 @@ semantics with different transports.
 
 ### Recognition
 
-How a particular library expresses a given semantics in source code. This
-is what today's `PatternPack` already describes and what
-`responseSemantics` partially captures.
+Recognition is how a particular library expresses a given semantics in
+source code. Today's `PatternPack` describes it, and `responseSemantics`
+covers part of it.
 
 - For REST semantics, axios recognises the response via `.data` and the
   status via `.status`; fetch via `.body` / `.json()` / `.status`; ts-rest
@@ -98,8 +98,8 @@ is what today's `PatternPack` already describes and what
   a direct call through `lambda.invoke().promise()` (v2 SDK) returns
   something different.
 
-Recognition is a per-pack concern. Semantics says what the pack is
-describing in the end, not what its recognition rules look like.
+Each pack has its own recognition rules. Semantics says what the pack is
+describing in the end, whatever those rules look like.
 
 ## Shipped shape
 
@@ -143,7 +143,7 @@ URL that comes from a variable is the common case:
 { "name": "message-bus", "messageBus": "aws_sqs", "channel": null }
 ```
 
-The send is recorded. It pairs with nothing. The empty string is
+The send is recorded, and it pairs with nothing. The empty string is
 invalid in these fields, and the builders throw on it. REST's method
 also allows `"*"`, which means the handler responds to every method.
 
@@ -185,7 +185,7 @@ it, checking that the return types are compatible and the argument sets agree.
 **`runtime-config`** treats the env-var channel of a deployable unit as a
 boundary. Env var names are fields on that channel's contract, the same way
 response body fields are fields on a REST endpoint's contract. Pairing key:
-`(deploymentTarget, instanceName)`. The env var list lives in
+`(deploymentTarget, instanceName)`. The env var list is in
 `metadata.runtimeContract.envVars`, and `metadata.codeScope` says which source
 files run inside the channel.
 
@@ -199,9 +199,9 @@ reads and writes against `metadata.storageContract.fields`. Pairing key: `(stora
 container, accessPath)`. `storageSystem` is null on a store whose deploy configuration picks its
 engine from a variable, and a null there meets an access on any engine.
 
-Whether a field the code touches can be called unknown is a property the
-provider declares, not something the store's name implies:
-`metadata.storageContract.fieldSet` is `"exhaustive"` for a SQL schema that
+Whether a field the code touches can be called unknown depends on what the
+provider declares in `metadata.storageContract.fieldSet`, whatever the
+store is called. `fieldSet` is `"exhaustive"` for a SQL schema that
 declares every column, `"partial"` for a store that declares its keys and lets
 the rest vary, and `"none"` for a blob. Only an exhaustive contract produces
 `boundaryFieldUnknown`. `metadata.storageContract.identifies` says what picks
@@ -213,8 +213,8 @@ Producer-side `interaction(class: "message-send")` effects pair against it, and
 consumer-side handlers get the same binding from the deployment-manifest
 contract source (CFN event-source mappings and similar). Pairing key:
 `(messageBus, channel)`. A send whose queue the code works out at runtime
-has a null channel. A receive effect always has one: the event-source
-mapping is what states which queue the handler drains, and the checker joins
+has a null channel. A receive effect always has one, because the
+event-source mapping states which queue the handler drains, and the checker joins
 the two by code scope.
 
 **`metric`** is a named series of measurements: one side declares it, another
@@ -226,22 +226,21 @@ that summary's metadata, the way a storage contract's field list does.
 
 **`unit-invocation`** is a deployed unit something else calls by name: a
 Lambda another Lambda invokes, a Cloud Function, a state machine. Its
-identity is the platform plus the name that platform calls the unit by,
+identity is the platform plus the name the platform knows the unit by,
 which is exactly a `DeployableUnit`, so the two fields come from
 `DeployableUnitSchema` and a unit's config channel and its invoke
 channel key the same way. Pairing key: `(deploymentTarget,
 instanceName)`, spelled `unit:lambda ReportBuilder`.
 
-An ARN is a spelling of that name and not the identity, since it has an
-account and a region in it and a dev ARN and a prod ARN name one
-function. `resourceNameIn` reduces one to the name where the effect is
+An ARN is one way of spelling that name. It has an account and a region
+in it, so a dev ARN and a prod ARN refer to one function. `resourceNameIn` reduces one to the name where the effect is
 recorded, so the two sides compare the part both can know. A name that
 only exists at deploy time reaches the code as an env var, and
 `deployedRefs` collapses that chain against the invoking unit's own
 environment, the same way a queue URL is collapsed. Every reader of a
 boundary name takes that step through `groundBinding`, so the pairing
 pass, a drafted intent document and the intent checker all arrive at
-one name; see [grounding a deploy-time name](#grounding-a-deploy-time-name).
+one name. See [grounding a deploy-time name](#grounding-a-deploy-time-name).
 
 ### Pack helpers
 
@@ -269,13 +268,13 @@ makes call sites declarative. It defaults `transport` to `"in-process"`.
 
 ## Where the words come from
 
-A summary says what a unit can reach; a trace says what it did reach.
-Comparing them is what neither static analysis nor observability does
-today, and it needs both sides to spell a boundary the same way. So
+A summary says what a unit can reach, and a trace says what it did reach.
+Neither static analysis nor observability compares the two today, and
+comparing them needs both sides to spell a boundary the same way. So
 wherever OpenTelemetry's semantic conventions have a word for something
-in a binding, suss writes their word, and the rest of the vocabulary is
-ours. A span stays a record of one execution and a summary stays a
-statement about a unit, and suss does not emit traces.
+in a binding, suss uses their word, and the rest of the vocabulary is
+suss's own. suss does not emit traces. A span is still a record of one
+execution, and a summary is still a statement about a unit.
 
 ### Values suss borrows
 
@@ -344,8 +343,8 @@ module says which case it is in:
 - **suss supplied the value because no source stated one.**
   `storage.scope` is `"default"` when nothing said which database, and
   `rest.method` is `"*"` for a route that responds to every method. A
-  span says neither, so emitting them would only ever produce a
-  mismatch.
+  span says neither, so emitting them would produce nothing but
+  mismatches.
 - **The same thing under a different string.** `service.name` and
   `cloud.resource_id` both point at the deployable that a
   `runtime-config` boundary belongs to, but `instanceName` is the
@@ -365,15 +364,15 @@ SDK call.
 
 A boundary that nothing crosses at run time never gets a span, so no
 convention outside suss has had to give it a name, and suss reads
-plenty of those. When you add a protocol, fill in its `semconv`, empty
-included, and the compiler makes you answer the question.
+plenty of those. When you add a protocol, fill in its `semconv`, even
+when it is empty. The compiler requires it.
 
 ## Dispatching on semantics
 
 Each protocol is one module under `@suss/ir-core`'s `semantics/`
-directory: its schema and its `BoundaryBehavior` live together, and
-the registry composes the modules into the `Semantics` union and the
-runtime lookup. Each behavior has to answer three questions:
+directory, which defines its schema and its `BoundaryBehavior` together.
+The registry composes the modules into the `Semantics` union and the
+runtime lookup. Each behavior defines three things:
 
 - `identityKey`: the name a reader sees and a suppression targets
   (`"GET /users/{id}"`, `"* /api/users"`, `"bus:aws_sqs order.placed"`), or
@@ -381,7 +380,7 @@ runtime lookup. Each behavior has to answer three questions:
 - `pairingKey`: the bucket that pairing groups by. It contains what both
   sides always know. A REST bucket contains the path alone, so
   `GET /users` and `* /users` both land in `rest /users`.
-- `sidesAgree`: decides the part the bucket left out. `GET` agrees with
+- `sidesAgree`: checks the part the bucket left out. `GET` agrees with
   `GET` and with `"*"`. `default#order.placed` agrees with
   `order.placed` and disagrees with `staging#order.placed`.
 
@@ -406,9 +405,9 @@ A queue URL, a function name and a table name only exist once a stack
 is deployed, so the source reaches them through a variable and the
 template says what that variable is. Two more behaviors cover that:
 
-- `nameReference`: where this boundary's name says to go and ask, or
-  null when the source stated a name outright.
-- `groundName`: the same boundary with what the deployment fills in put
+- `nameReference`: where to look up this boundary's name, or null when
+  the source stated a name outright.
+- `groundName`: the same boundary with the deployment's values filled
   in. REST puts a base URL back into the front of a path,
   unit-invocation swaps the callee for the resource the template points
   the variable at, and storage swaps the container for the string the
@@ -429,7 +428,7 @@ drafted from that run spells it the same way.
 
 ### Metadata namespaced by semantics
 
-Two sets of keys have already moved there: `metadata.http.{declaredContract,
+Two sets of keys are already namespaced this way: `metadata.http.{declaredContract,
 bodyAccessors, statusAccessors}` for REST, and
 `metadata.graphql.{declaredContract, schemaSdl}` for GraphQL. The same
 naming convention applies across all semantics:
@@ -459,11 +458,11 @@ One variant is still to come:
 
 A `lambda-invoke` variant was planned here and `unit-invocation` shipped
 in its place. Keying on a function name plus a qualifier would have made
-one identity per cloud and per published copy of a function, and the
-thing both sides of an invoke can spell is the platform and the name.
+one identity per cloud and per published copy of a function, and what
+both sides of an invoke can spell is the platform and the name.
 
-Each one ships as another discriminated-union variant, and none of them
-reshape the variants already there. Anything that would move REST's
+A new variant ships as another member of the discriminated union, and
+the variants already there do not change. Anything that would move REST's
 method and path out of `semantics` needs a variant of its own.
 
 ## Boundaries compose
@@ -493,9 +492,9 @@ need to be true:
    the hop, and there is currently no way to declare that mapping.
 
 A `binding.role: "proxy" | "handler" | "transform"` enum was considered and
-rejected. Transformation is a continuum, so the right way to model it is a
-transformation descriptor (path-rewrite rules, header-add list, etc.) rather
-than a category enum.
+rejected. Transformation is a continuum, so it is better modelled as a
+transformation descriptor, such as path-rewrite rules or a list of headers
+to add, than as a category enum.
 
 Assembling multi-hop chains belongs in the query layer.
 Once pairing works two sides at a time over binding identities detailed enough
@@ -524,8 +523,7 @@ Shipped:
 5. `boundaryKey` dispatches on `semantics.name`. Summaries without a
    matchable key go to `unmatched.unpairable`, and each entry says why.
 
-The dispatch registry has shipped since the list above was first written.
-Each variant declares its behavior (`identityKey`, `pairingKey`,
+The dispatch registry has also shipped. Each variant declares its behavior (`identityKey`, `pairingKey`,
 `sidesAgree`) in its own module under `packages/ir-core/src/semantics/`,
 and `registry.ts` composes them with a compile-time completeness check.
 
@@ -545,7 +543,7 @@ See also:
 - Four decisions built the model on this page: the checker reads pack
   metadata rather than hardcoding frameworks, a summary states its
   `BOUNDARY_ROLE`, packs supply the accessor that reads a status off a
-  response, and the three layers below got written down. The
+  response, and the three layers on this page were written down. The
   [status design record](https://github.com/nimbuscloud-ai/suss/blob/main/design/status.md) keeps the log as the work
   happens.
 - [Architecture](/theory/architecture), the current package

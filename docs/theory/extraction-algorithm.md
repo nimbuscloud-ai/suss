@@ -5,7 +5,7 @@ description: "The five steps that take one function AST to a raw code structure:
 
 # Extraction algorithm
 
-The TypeScript adapter turns one function's AST into a `RawCodeStructure`, and every stage below it trusts that structure to be right.
+The TypeScript adapter turns one function's AST into a `RawCodeStructure`, and every later stage relies on that structure being correct.
 
 For each code unit, extraction runs in five steps that compose:
 
@@ -50,13 +50,13 @@ For each code unit, extraction runs in five steps that compose:
 
 </svg>
 
-Steps 2 and 3 walk the AST and nothing else: no framework knowledge, no symbol resolution. Each can be tested on its own with a tiny fixture function.
+Steps 2 and 3 only walk the AST. They use no framework knowledge and resolve no symbols. Each can be tested on its own with a tiny fixture function.
 
 Step 4 resolves symbols through ts-morph's type checker. It is the most language-specific step and the one that makes the most compiler calls.
 
-Each step lives in its own file: `paths/pathConditions.ts` for the path engine, `conditions.ts` for the expression-level walker it composes, then `predicates.ts`, `subjects.ts` and `terminals/`. None of them calls another directly. `assembly.ts` puts them together.
+Each step is in its own file: `paths/pathConditions.ts` for the path engine, `conditions.ts` for the expression-level walker it composes, then `predicates.ts`, `subjects.ts` and `terminals/`. None of them calls another directly. `assembly.ts` puts them together.
 
-This page covers one function at a time. The whole-program passes that run afterward, the reachable closure, re-throw enrichment and boundary effects, are rules over a shared fact database; see [Facts and rules](/theory/facts-and-rules).
+All five steps work on one function at a time. The whole-program passes that run afterward, the reachable closure, re-throw enrichment and boundary effects, are rules over a shared fact database. See [Facts and rules](/theory/facts-and-rules).
 
 ## Step 1: `findTerminals`
 
@@ -108,7 +108,7 @@ Response bodies and return values are extracted into `TypeShape` (see [IR types]
 
 ## Steps 2+3: CFG path conditions
 
-The path engine (`paths/pathConditions.ts`) computes steps 2 and 3, and it is the only condition engine. It enumerates every entry-to-terminal control-flow path over the function's statement flow and emits **one RawBranch per path**, so a terminal reached along several paths becomes several transitions, each with its own conjunction of conditions. That is the exhaustiveness principle below, implemented literally, and it closed the nested-guard and loop-return gaps. The hand-written condition collectors it replaced were unsound on the shapes they still served, and they have been deleted, so there is no fallback path:
+The path engine (`paths/pathConditions.ts`) computes steps 2 and 3, and it is the only condition engine. It enumerates every entry-to-terminal control-flow path over the function's statement flow and emits **one RawBranch per path**, so a terminal reached along several paths becomes several transitions, each with its own conjunction of conditions. It implements the exhaustiveness principle below directly, and it handles nested guards and returns inside loops. The hand-written condition collectors it replaced were unsound and have been deleted, so there is no fallback path:
 
 - `if (a) { if (b) return X; } Y` → Y gets the paths `[¬a]` and `[a, ¬b]`, never a fabricated `¬a ∧ ¬b` or an empty list;
 - sibling guards inside a block gate their tails (`if (a) { if (b) return X; T }` → T gets `[a, ¬b]`);
@@ -118,18 +118,18 @@ The path engine (`paths/pathConditions.ts`) computes steps 2 and 3, and it is th
 
 Expression-level branching *below* a statement (ternaries, `&&` and `||`, case clauses inside nested callbacks) is appended from the scoped ancestor walker in `conditions.ts`. The path engine walks statements, and the walker covers the expression tree beneath them.
 
-The engine's fidelity is verified mechanically by the differential fuzzer (`tools/differential`; see [the differential-fuzzing record](https://github.com/nimbuscloud-ai/suss/blob/main/design/docs-internal/differential-fuzzing.md)).
+The differential fuzzer checks the engine mechanically (`tools/differential`; see [the differential-fuzzing record](https://github.com/nimbuscloud-ai/suss/blob/main/design/docs-internal/differential-fuzzing.md)).
 
 ### What the engine models
 
-It models the whole structured statement language: `if`/`else`, `switch` (case groups, trailing breaks, fallthrough into an empty clause), every loop form, `try`/`catch` (plus `finally` where it is only cleanup), `break`/`continue`, `return`/`throw`, and expression-bodied arrows. Two constructs defeat it:
+It models the whole structured statement language: `if`/`else`, `switch` (case groups, trailing breaks, fallthrough into an empty clause), every loop form, `try`/`catch` (plus `finally` where it is only cleanup), `break`/`continue`, `return`/`throw`, and expression-bodied arrows. Two constructs are beyond what it can decide:
 
 - **Loops.** No static reader can decide whether a condition held *on some iteration*, so an in-loop terminal gets an opaque "some iteration of:" condition and a post-loop terminal gets an opaque "loop exited" negation.
 - **Catch blocks.** No static reader can decide which statement threw, so a catch-body terminal gets a single opaque `catch` condition (`source: "catchBlock"`).
 
 ### Callbacks the unit hands to its own calls
 
-A nested arrow or function expression is part of the unit that wrote it unless a pack claimed it as a sub-unit. `walk/descent.ts` decides that once, and every pass asks it there: the recognizer walk, the invocation-effect walk, terminal discovery, and the statement lowering. So a `.then`, `.map`, or promise-executor callback contributes its branches to the unit the same way its calls already contributed their effects, and a route handler or event subscription a pack declared stays a unit of its own.
+A nested arrow or function expression is part of the unit that wrote it unless a pack claimed it as a sub-unit. `walk/descent.ts` makes that decision once, and every pass uses it: the recognizer walk, the invocation-effect walk, terminal discovery, and the statement lowering. So a `.then`, `.map`, or promise-executor callback contributes its branches to the unit the same way its calls already contributed their effects, and a route handler or event subscription a pack declared stays a unit of its own.
 
 Its exits are its own, though. A `return` or a `throw` inside a callback ends the callback rather than the unit, so the enclosing path picks up again past the call and the code after it stays reachable. The callback's `return` never becomes one of the unit's terminals. In `fetch(u).then((r) => r.json())` the callback resolves the promise the unit returns, and treating that as a second exit would invent a transition that is not in the source.
 
@@ -139,7 +139,7 @@ A branch that rejoins leaves nothing behind on the terminals after it. `if (a) {
 
 ### Shapes the engine declines
 
-The engine does not model labeled statements, `finally` blocks that exit or contain terminals, `switch` fallthrough into a non-empty clause, non-trailing `switch` breaks, or a function past the 256-path budget. There is no second engine behind these. Each terminal keeps its enclosure conditions, the ancestor branches it is inside, which gate it however the flow weaves, plus one opaque `unmodeled control flow (<reason>)` conjunct. The transition then stops claiming a complete condition set, and that is the second correctness principle below.
+The engine does not model labeled statements, `finally` blocks that exit or contain terminals, `switch` fallthrough into a non-empty clause, non-trailing `switch` breaks, or a function past the 256-path budget. There is no second engine behind these. Each terminal keeps its enclosure conditions, the ancestor branches it is inside, which gate it whatever path the flow takes, plus one opaque `unmodeled control flow (<reason>)` conjunct. The transition then no longer claims a complete condition set, as the second correctness principle below requires.
 
 ### Below statements: the expression-level walker
 
@@ -332,7 +332,7 @@ Two post-passes follow in `assembly.ts`:
 - **Fall-through synthesis.** When the pack opted in with a `functionFallthrough` terminal pattern and no existing terminal covers the default path, the adapter adds a synthetic terminal whose condition lists are the paths that fall off the end of the body (`pathConditions`' `fallthrough` result). Making the pack opt in keeps the semantics where they are declared: HTTP packs treat no-response as a gap, and React event handlers treat an implicit return as normal.
 - **Effect attachment.** Every call in the body, wherever it is written, becomes an invocation effect, and it attaches to each branch whose path runs it: the call's preconditions must be true on the branch, and the call's statement must come before the branch's terminal (or the call runs on every path, as a `finally` body does). A call that is itself a terminal, or a link in a terminal's receiver chain, is dropped, since the terminal already records it. Recognizer-typed effects attach by the same two tests.
 
-The `RawBranch[]` then flows to `assembleSummary()` in `@suss/extractor`, which handles the opaque-wrapping, gap detection, confidence scoring, and `expectedInput` pass-through. That logic is already implemented and tested. Only the adapter side is described here.
+The `RawBranch[]` then flows to `assembleSummary()` in `@suss/extractor`, which handles the opaque-wrapping, gap detection, confidence scoring, and `expectedInput` pass-through. The steps here are the adapter's side of that handoff.
 
 ### Step 5b: Client field tracking
 
@@ -357,7 +357,7 @@ collectClientFieldAccesses(callExpr, func, branchLocations):
         //     properties: { name: { type: "unknown" }, email: { type: "unknown" } } } } }
 ```
 
-`expectedInput` flows through `RawBranch` to `assembleSummary` to `Transition.expectedInput`, where the checker's `checkBodyCompatibility` compares it against the provider's output body shape. Every leaf type is `unknown`, because the adapter records which fields a branch reads and stops there. So the comparison decides field presence and nothing more.
+`expectedInput` flows through `RawBranch` to `assembleSummary` to `Transition.expectedInput`, where the checker's `checkBodyCompatibility` compares it against the provider's output body shape. Every leaf type is `unknown`, because the adapter records which fields a branch reads and stops there. The comparison therefore checks only whether each field is present.
 
 ## Testing strategy
 
@@ -380,7 +380,7 @@ Beyond fixtures, a differential fuzzer (`tools/differential`) checks the correct
 Three properties must hold for the algorithm to be trusted:
 
 1. **Exhaustiveness.** Every path through the function body maps to exactly one `RawBranch`. If it doesn't, the missing path becomes a gap, and it is never dropped silently.
-2. **No false conditions.** A predicate that appears on a transition must actually gate that transition in the source code. Under-specifying is fine (fall back to opaque); reporting a condition that isn't there is not.
+2. **No false conditions.** A predicate that appears on a transition must actually gate that transition in the source code. Under-specifying is fine, because the condition falls back to opaque. Reporting a condition that isn't there is not.
 3. **Stable subjects across renames.** `ValueRef`s should be structurally equal across mechanical renames. If a user renames `user` to `account`, the subject should still resolve to `dependency("db.findById")` plus the same property path, unchanged.
 
 Violations of #1 degrade confidence but don't invalidate the summary. Violations of #2 or #3 are bugs and must be fixed.
