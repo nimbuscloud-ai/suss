@@ -106,4 +106,38 @@ describe("resolveConstantFile", () => {
       atRoot,
     );
   });
+
+  it("finds a concern in the concerns directory under a directory Rails autoloads from", () => {
+    const model = path.join(tmpDir, "models", "concerns", "archivable.rb");
+    const controller = path.join(
+      tmpDir,
+      "controllers",
+      "concerns",
+      "reporting",
+      "paged.rb",
+    );
+    fs.mkdirSync(path.dirname(model), { recursive: true });
+    fs.mkdirSync(path.dirname(controller), { recursive: true });
+    fs.writeFileSync(model, "module Archivable\nend\n");
+    fs.writeFileSync(controller, "module Reporting::Paged\nend\n");
+
+    expect(resolveConstantFile(tmpDir, "Archivable", "railsUnderscore")).toBe(
+      model,
+    );
+    expect(
+      resolveConstantFile(tmpDir, "Reporting::Paged", "railsUnderscore"),
+    ).toBe(controller);
+  });
+
+  it("takes a file in a directory under the root over one in a concerns directory", () => {
+    const direct = path.join(tmpDir, "models", "archivable.rb");
+    const concern = path.join(tmpDir, "models", "concerns", "archivable.rb");
+    fs.mkdirSync(path.dirname(concern), { recursive: true });
+    fs.writeFileSync(direct, "class Archivable\nend\n");
+    fs.writeFileSync(concern, "module Archivable\nend\n");
+
+    expect(resolveConstantFile(tmpDir, "Archivable", "railsUnderscore")).toBe(
+      direct,
+    );
+  });
 });

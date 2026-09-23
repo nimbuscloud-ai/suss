@@ -187,10 +187,13 @@ file defines a constant is only settled once every file has been read.
 A class reached by name rather than by a reading site, as an ancestry walk
 reaches it, goes through the naming convention instead: the constant
 underscores to a path, and that path is looked for under the configured root
-and then under each directory directly beneath it. Rails autoloads from every
-directory under `app`, so `ApplicationController` is
-`app/controllers/application_controller.rb`. The root's own file wins where
-both exist, and no other spelling is tried.
+and then under each directory directly beneath it, and last under each
+`concerns` directory inside those. Rails autoloads from every directory under
+`app`, so `ApplicationController` is
+`app/controllers/application_controller.rb`. It autoloads from
+`app/controllers/concerns` and `app/models/concerns` as well, so a concern
+written there as `module Auditable` is found by that bare name. The root's own
+file wins where both exist, and no other spelling is tried.
 
 ## What a class inherits
 
