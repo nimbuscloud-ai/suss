@@ -1,17 +1,13 @@
-// refs.ts: CloudFormation scalar / reference readers shared by the raw
-// AWS::AppSync::* walk (cfn.ts) and the SAM AWS::Serverless::GraphQLApi
-// normalizer (sam.ts).
+// CloudFormation value readers shared by the raw AWS::AppSync walk and
+// the SAM AWS::Serverless::GraphQLApi reader.
 
 import { refTarget } from "@suss/manifest-aws";
 
 /**
- * The logical id a CloudFormation reference field names, or null when
- * a static reader cannot say. `!Sub`, `!Join` and `!ImportValue` are
- * deployment-time values, so they answer null.
- *
- * The shapes a reference is written in belong to the template loader,
- * which every AWS reader parses through, so this asks it rather than
- * matching the shapes again here.
+ * The logical id a CloudFormation reference points at, or null for a
+ * value only known at deploy time, such as `!Sub`, `!Join` or
+ * `!ImportValue`. The template loader recognizes every way a reference
+ * can be written, so this delegates to it.
  */
 export function resolveLogicalRef(value: unknown): string | null {
   return refTarget(value);
@@ -21,7 +17,6 @@ export function stringField(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
-/** Narrow an unknown to a plain (non-array) object record. */
 export function asRecord(value: unknown): Record<string, unknown> | null {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return null;

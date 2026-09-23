@@ -1,28 +1,12 @@
-// @suss/contract-appsync: Generate behavioral summaries from AWS AppSync
-// CloudFormation / SAM templates.
-//
-// AppSync is schema-first: the SDL is authored by hand, either inline in
-// the template or in a separate `.graphql` file. This reader covers both
-// authoring shapes for the resolver surface:
-//
-//   - Raw AWS::AppSync::* resources (GraphQLApi + GraphQLSchema + Resolver
-//     + FunctionConfiguration + DataSource).
-//   - The SAM shorthand AWS::Serverless::GraphQLApi, whose inline
-//     DataSources / Functions / Resolvers blocks are normalized into the
-//     same model.
-//
-// Schema text is read from inline `Definition` / `SchemaInline`, or loaded
-// from disk when `DefinitionS3Location` / `SchemaUri` is a local path
-// (via @suss/contract-graphql's SDL loader). Genuinely-remote `s3://`
-// schema URIs can't be fetched statically and surface as an explicit
-// unresolved-schema gap in each affected resolver's accounting metadata.
-//
-// Fields are indexed by (TypeName, FieldName); one `resolver`-kind
-// BehavioralSummary is emitted per resolver with `graphql-resolver`
-// semantics: pairing key `gql:<TypeName>.<fieldName>` matches the Apollo
-// side of the story without additional plumbing. Lambda data-source
-// attribution rides on each summary so it can later correlate to handler
-// code.
+/**
+ * Reads an AWS AppSync API from a CloudFormation or SAM template and
+ * writes one resolver summary per resolver. Each is keyed by type and
+ * field name, the same way as a resolver found in code, so the two pair
+ * directly. The Lambda behind each data source is recorded so the
+ * summary can later be matched to handler code.
+ *
+ * The README lists the resources and schema sources this reads.
+ */
 
 import path from "node:path";
 
@@ -41,21 +25,18 @@ import type { ResolvedSchema } from "./schemaSource.js";
 export type { CfnTemplate } from "./cfn.js";
 
 export interface AppsyncToSummariesOptions {
-  /** Logical source path recorded on each summary's `location.file`. */
+  /** Path recorded on each summary's `location.file`. */
   source?: string;
   /**
-   * Directory used to resolve relative external schema paths
-   * (`DefinitionS3Location` / `SchemaUri`). `appsyncFileToSummaries`
-   * sets this to the template's directory; in-memory callers pass it
-   * when their schema references are relative.
+   * The directory a relative `DefinitionS3Location` or `SchemaUri`
+   * resolves against. `appsyncFileToSummaries` sets it to the template's.
    */
   baseDir?: string;
 }
 
 /**
- * Convert an already-parsed CloudFormation / SAM template to AppSync
- * resolver summaries. Call this when the caller has a template object in
- * memory (CDK `Template.fromStack`, JSON from a build tool, etc.).
+ * Converts a template already in memory, such as a CDK
+ * `Template.fromStack` result, to AppSync resolver summaries.
  */
 export function appsyncToSummaries(
   template: CfnTemplate,
@@ -94,9 +75,8 @@ function indexSchemas(
 }
 
 /**
- * Read a CloudFormation / SAM template from disk and emit resolver
- * summaries. Accepts JSON and YAML (SAM / CDK-synth shapes). Relative
- * external schema paths resolve against the template's directory.
+ * Reads a CloudFormation or SAM template, in JSON or YAML, and converts
+ * it. A relative schema path resolves against the template's directory.
  */
 export function appsyncFileToSummaries(
   filePath: string,

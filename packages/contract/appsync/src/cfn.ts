@@ -1,24 +1,11 @@
-// cfn.ts: CloudFormation template traversal for AppSync resources.
-//
-// Two authoring shapes converge on one normalized model:
-//
-//   Raw AWS::AppSync::* resources (this file):
-//     AWS:AppSync:GraphQLApi: the API itself (auth config, name)
-//     AWS:AppSync:GraphQLSchema: SDL (inline Definition or S3 location)
-//     AWS:AppSync:Resolver: binds (TypeName, FieldName) → DataSource
-//     AWS:AppSync:FunctionConfiguration: pipeline sub-functions
-//     AWS:AppSync:DataSource: where resolvers read from / write to
-//
-//   SAM shorthand AWS::Serverless::GraphQLApi (sam.ts):
-//     one resource carries SchemaUri/SchemaInline + DataSources + Functions
-//     + Resolvers blocks, which the SAM transform expands into the raw
-//     resources above. We normalize it into the same model here so both
-//     shapes feed a single summaryBuilder path.
-//
-// Static-reader scope: inline / on-disk SDL, UNIT and PIPELINE resolvers,
-// static TypeName/FieldName values. Dynamic intrinsic resolution (`!Ref`
-// to a parameter, `!Join` of a dynamic string) is left unresolved and
-// surfaces in accounting rather than being guessed.
+/**
+ * Reads the raw AWS::AppSync resources in a template and adds what the
+ * SAM AWS::Serverless::GraphQLApi reader finds, so both ways of writing
+ * an API reach the summary builder as one model.
+ *
+ * A value written with a dynamic intrinsic, such as `!Ref` to a
+ * parameter, is left unresolved and reported. The reader never guesses it.
+ */
 
 import { asRecord, resolveLogicalRef, stringField } from "./refs.js";
 import { readServerlessGraphQLApis } from "./sam.js";
@@ -33,10 +20,9 @@ export interface CfnResource {
 }
 
 /**
- * How an API's SDL was declared in the template, before any on-disk
- * resolution. `location` is the raw `DefinitionS3Location` / `SchemaUri`
- * string (a local path or an `s3://` URI); resolution to text happens in
- * schemaSource.ts.
+ * How the template declares an API's SDL, before anything is read from
+ * disk. `location` is the `DefinitionS3Location` or `SchemaUri` string as
+ * written, either a local path or a remote URI.
  */
 export type RawSchemaSource =
   | { kind: "inline"; sdl: string }
@@ -57,23 +43,17 @@ export interface AppSyncResolver {
   typeName: string;
   fieldName: string;
   dataSourceLogicalId: string | null;
-  /** "UNIT" (single-datasource) or "PIPELINE" (function chain). */
+  /** `"UNKNOWN"` when the template sets a Kind AppSync does not define. */
   kind: "UNIT" | "PIPELINE" | "UNKNOWN";
   /**
-   * For PIPELINE resolvers, the ordered list of FunctionConfiguration
-   * logical IDs the resolver dispatches through. Each entry pairs
-   * with an `AppSyncFunction` in `AppSyncConfig.functions`.
-   * Empty for UNIT resolvers (and for PIPELINE resolvers whose
-   * PipelineConfig we couldn't statically resolve. Those still
-   * report `kind: "PIPELINE"` so downstream consumers can filter).
+   * The FunctionConfiguration logical ids a pipeline runs, in order. Empty
+   * when the list cannot be read statically; `kind` stays `"PIPELINE"`.
    */
   pipelineFunctionLogicalIds: string[];
   /**
-   * For SAM `AWS::Serverless::GraphQLApi` resolvers written as JS/VTL
-   * resolver code, the `CodeUri` and `Runtime.Name` so the summary can
-   * later correlate to the resolver source file. Null for raw
-   * AWS::AppSync::Resolver resources (their code lives in separate
-   * request/response mapping template properties).
+   * Where a SAM resolver's JS or VTL code lives, so the summary can later
+   * be matched to it. Null on a raw resolver, whose mapping templates are
+   * separate properties.
    */
   codeUri: string | null;
   runtime: string | null;
@@ -89,15 +69,18 @@ export interface AppSyncFunction {
 }
 
 /**
- * A resolver's / function's backing data source. `lambdaFunctionLogicalId`
- * is populated for Lambda data sources (raw `LambdaConfig.LambdaFunctionArn`
- * or SAM `DataSources.Lambdas.<name>.FunctionArn`) so a resolver summary
- * can correlate to the handler code behind it.
+ * `lambdaFunctionLogicalId` is set for a Lambda data source, from the raw
+ * `LambdaConfig.LambdaFunctionArn` or the SAM
+ * `DataSources.Lambdas.<name>.FunctionArn`, so a resolver summary can be
+ * matched to the handler code behind it.
  */
 export interface AppSyncDataSource {
   logicalId: string;
   apiLogicalId: string | null;
-  /** "lambda" | "dynamodb" | "http" | "none" | "unknown" and similar. */
+  /**
+   * The AppSync type in lowercase, such as `"lambda"`, or `"unknown"` for
+   * a type AppSync does not define.
+   */
   type: string;
   lambdaFunctionLogicalId: string | null;
 }
@@ -110,11 +93,9 @@ export interface AppSyncConfig {
 }
 
 /**
- * Walk a CloudFormation template and collect AppSync APIs, resolvers,
- * functions, and data sources from both the raw AWS::AppSync::* resources
- * and the SAM AWS::Serverless::GraphQLApi shorthand. Unknown / malformed
- * entries are skipped rather than thrown, a template can mix AppSync with
- * unrelated resources, and a partial block shouldn't fail the whole read.
+ * Collects AppSync APIs, resolvers, functions and data sources from both
+ * the raw resources and the SAM shorthand. An entry missing a required
+ * field is skipped, so one partial block does not fail the whole read.
  */
 export function readAppSyncFromCfn(template: CfnTemplate): AppSyncConfig {
   const resources = template.Resources ?? {};
@@ -154,12 +135,7 @@ function collectApis(
   return apis;
 }
 
-/**
- * Build `apiLogicalId -> RawSchemaSource` from every GraphQLSchema
- * resource's `ApiId` back-reference. Inline `Definition` is captured as
- * text; `DefinitionS3Location` is captured as a location string for
- * on-disk / remote resolution in schemaSource.ts.
- */
+/** A GraphQLSchema resource points back at its API through `ApiId`. */
 function indexSchemasByApi(
   resources: Record<string, CfnResource | undefined>,
 ): Map<string, RawSchemaSource> {
@@ -184,9 +160,9 @@ function indexSchemasByApi(
       continue;
     }
 
-    // A schema declared through an intrinsic (`!Sub` on the S3 URI,
-    // say) exists, but its value comes from the template's computation.
-    // Recording it as computed keeps it apart from "no schema declared".
+    // A schema set through an intrinsic, such as `!Sub` on the S3 URI,
+    // still exists. Recording it as computed keeps it apart from an API
+    // that declares no schema.
     if (
       props.Definition !== undefined ||
       props.DefinitionS3Location !== undefined
@@ -227,12 +203,9 @@ function collectResolvers(
 }
 
 /**
- * Extract ordered FunctionConfiguration logical IDs from a PIPELINE
- * resolver's `PipelineConfig.Functions` array. Each entry is
- * typically `!GetAtt FunctionResource.FunctionId`. We collapse to
- * the logical-ID head. Non-resolvable entries (dynamic Fn::Sub,
- * ImportValue) fall out silently; the resolver still reports its
- * pipeline kind with an empty list.
+ * An entry is usually `!GetAtt Fn.FunctionId`, which reduces to the
+ * logical id `Fn`. An entry only known at deploy time, such as `Fn::Sub`,
+ * is dropped.
  */
 function pipelineFunctionIds(pipelineConfig: unknown): string[] {
   const config = asRecord(pipelineConfig);
@@ -274,11 +247,6 @@ function collectFunctions(
   return out;
 }
 
-/**
- * Collect AWS::AppSync::DataSource resources, keyed by logical ID (the
- * form resolvers reference via `!Ref`). Lambda data sources carry the
- * backing function's logical ID from `LambdaConfig.LambdaFunctionArn`.
- */
 function collectDataSources(
   resources: Record<string, CfnResource | undefined>,
 ): AppSyncDataSource[] {

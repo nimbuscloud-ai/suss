@@ -1,13 +1,5 @@
-// schema.ts: SDL parsing for AppSync schema-first resolver info.
-//
-// AppSync's schema is hand-authored SDL. The reader parses it once per
-// API and indexes every (TypeName, FieldName) pair with its argument
-// shape and return-type reference. Resolvers then look themselves up
-// by (TypeName, FieldName) and pick up the shape declared in SDL.
-//
-// Uses graphql-js's parser (the same reference impl AppSync itself
-// uses) so compatibility is guaranteed, any SDL AppSync accepts, we
-// accept.
+// Parses an API's SDL once and indexes every field by type and field
+// name, so each resolver can look up its argument and return types.
 
 import {
   type DocumentNode,
@@ -21,28 +13,24 @@ import type { TypeShape } from "@suss/behavioral-ir";
 export interface FieldInfo {
   typeName: string;
   fieldName: string;
-  /** Type shape of this field's return (schema-declared). */
   returnShape: TypeShape;
   /**
-   * Input arguments declared on this field. Each arg has a name and a
-   * reference-typed TypeShape (the SDL type printed as-is). Consumers
-   * that want structural details can re-parse the name later.
+   * Each argument's shape is a `ref` named with the SDL type as written,
+   * such as `[ID!]!`.
    */
   args: Array<{ name: string; shape: TypeShape; required: boolean }>;
 }
 
 export type SchemaIndex = Map<string, FieldInfo>;
 
-/** Key format: `${typeName}.${fieldName}`. */
 export function schemaKey(typeName: string, fieldName: string): string {
   return `${typeName}.${fieldName}`;
 }
 
 /**
- * Parse an SDL string and index every field across Query, Mutation,
- * Subscription, and object-type extensions. Returns an empty index if
- * the SDL fails to parse, matches the reader's broader posture that
- * partial input shouldn't halt extraction.
+ * Indexes every field on every object type and interface, extensions
+ * included. SDL that does not parse gives an empty index, so one bad
+ * schema does not stop the rest of the template from being read.
  */
 export function parseSchema(sdl: string): SchemaIndex {
   const index: SchemaIndex = new Map();
@@ -56,8 +44,8 @@ export function parseSchema(sdl: string): SchemaIndex {
       def.kind !== Kind.OBJECT_TYPE_DEFINITION &&
       def.kind !== Kind.OBJECT_TYPE_EXTENSION &&
       def.kind !== Kind.INTERFACE_TYPE_DEFINITION &&
-      // A schema splits an interface the same way it splits a type, so
-      // wherever an interface counts, so does an extension of one.
+      // `extend interface` splits an interface the same way `extend type`
+      // splits a type.
       def.kind !== Kind.INTERFACE_TYPE_EXTENSION
     ) {
       continue;
@@ -97,10 +85,8 @@ function describeField(
 }
 
 /**
- * Reconstruct the source-form of a GraphQL type node. `User!`, `[ID!]!`,
- * `[[Int]]` etc. read the same way as written. Keeps the downstream
- * IR representation aligned with what a human reader would expect
- * when inspecting a summary.
+ * Prints a type node as the SDL wrote it, such as `[ID!]!`, so a summary
+ * shows the type the way the schema spells it.
  */
 function sourceOfType(node: FieldDefinitionNode["type"]): string {
   if (node.kind === Kind.NON_NULL_TYPE) {
