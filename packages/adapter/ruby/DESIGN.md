@@ -645,6 +645,10 @@ process the file runs in.
 | `ENV.fetch("X", "d")`, `ENV.fetch("X", nil)` | a read of `X` | yes |
 | `ENV.fetch("X") { "d" }`, `ENV.fetch("X") do ... end` | a read of `X` | yes |
 | any of these followed by `\|\|` (`ENV["X"] \|\| "d"`) | a read of `X` | yes |
+| `use(ENV["X"]) if ENV["X"]`, `return fallback unless ENV["X"]` and the reads after it, `ENV.fetch("X") if ENV.key?("X")` | a read of `X` | yes: used only where a test passed |
+| `x = ENV["X"]` in a method, then `x` used only inside `if x` or after `return if x.nil?` | a read of `X` | yes |
+| `x = ENV["X"]`, then `x` used both inside and outside `if x` | a read of `X` | no |
+| `if ENV.fetch("X")`, or `x = ENV.fetch("X")` then `if x` | a read of `X` | no: `fetch` raises before the test runs |
 | `Settings.setting("X")`, where the method reads `ENV[key]` or `ENV.fetch(key)` | a read of `X` at the call | whatever the read inside the method says, or yes when an `\|\|` follows the call |
 | `GET.call("X")`, where `GET` is a lambda reading `ENV.fetch(key)` | nothing: the callee is a value, not a method | |
 | `ENV[name]`, `ENV.fetch("#{prefix}_X")`, `ENV[:X]` | nothing: the name is not a string literal, and no caller supplies one | |

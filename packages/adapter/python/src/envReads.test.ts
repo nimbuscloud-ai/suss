@@ -186,6 +186,206 @@ describe("os.environ spellings", () => {
   });
 });
 
+/** The reads in `handler` of a module that imports os. */
+async function handlerReads(body: string[]): Promise<Read[]> {
+  const source = [
+    "import os",
+    "def handler():",
+    ...body.map((line) => `    ${line}`),
+    "",
+  ].join("\n");
+  return functionReads(source, "handler");
+}
+
+describe("a read the program uses only behind a presence test", () => {
+  it("marks a local used only inside the branch its test passes", async () => {
+    expect(
+      await handlerReads([
+        'version = os.getenv("APP_VERSION")',
+        "if version:",
+        "    resolved = version",
+        "    return resolved",
+        "look_up_version_elsewhere()",
+      ]),
+    ).toEqual([{ name: "APP_VERSION", defaulted: true }]);
+  });
+
+  it("marks a read that is only tested, and a read its own test guards", async () => {
+    expect(
+      await handlerReads([
+        'if os.environ.get("FEATURE_FLAG"):',
+        "    enable_feature()",
+        'region = os.environ["REGION"] if os.getenv("REGION") is not None else "us-east-1"',
+      ]),
+    ).toEqual([
+      { name: "FEATURE_FLAG", defaulted: true },
+      { name: "REGION", defaulted: true },
+      { name: "REGION", defaulted: true },
+    ]);
+  });
+
+  it("marks a local whose None branch returns early", async () => {
+    expect(
+      await handlerReads([
+        'url = os.getenv("CACHE_URL")',
+        "if url is None:",
+        "    return no_cache()",
+        "return use_cache(url)",
+      ]),
+    ).toEqual([{ name: "CACHE_URL", defaulted: true }]);
+  });
+
+  it("marks a read an in test guards, in the branch and after an early return", async () => {
+    expect(
+      await handlerReads([
+        'if "CACHE_URL" in os.environ:',
+        '    use_cache(os.environ["CACHE_URL"])',
+        'if "REGION" not in os.environ:',
+        "    return None",
+        'return os.environ["REGION"]',
+      ]),
+    ).toEqual([
+      { name: "CACHE_URL", defaulted: true },
+      { name: "REGION", defaulted: true },
+    ]);
+  });
+
+  it("marks a read in an elif or else once an earlier test ruled the missing case out", async () => {
+    expect(
+      await handlerReads([
+        'if not os.getenv("REGION"):',
+        "    pass",
+        "elif other:",
+        '    use(os.getenv("REGION"))',
+        "else:",
+        '    use(os.getenv("REGION"))',
+      ]),
+    ).toEqual([
+      { name: "REGION", defaulted: true },
+      { name: "REGION", defaulted: true },
+      { name: "REGION", defaulted: true },
+    ]);
+  });
+
+  it("leaves a local undefaulted when it is also used outside the test", async () => {
+    expect(
+      await handlerReads([
+        'url = os.getenv("CACHE_URL")',
+        "if url:",
+        "    use(url)",
+        "use(url)",
+      ]),
+    ).toEqual([{ name: "CACHE_URL", defaulted: false }]);
+  });
+
+  it("leaves a read undefaulted when the test is on a different variable", async () => {
+    expect(
+      await handlerReads([
+        'url = os.getenv("CACHE_URL")',
+        "if flag:",
+        "    use(url)",
+        'if os.getenv("OTHER"):',
+        '    use(os.getenv("REGION"))',
+      ]),
+    ).toEqual([
+      { name: "CACHE_URL", defaulted: false },
+      { name: "OTHER", defaulted: true },
+      { name: "REGION", defaulted: false },
+    ]);
+  });
+
+  it("leaves a read undefaulted when the missing branch falls through or raises", async () => {
+    expect(
+      await handlerReads([
+        'if not os.getenv("CACHE_URL"):',
+        "    log()",
+        'use(os.getenv("CACHE_URL"))',
+        'region = os.getenv("REGION")',
+        "if region is None:",
+        '    raise RuntimeError("REGION is required")',
+        "use(region)",
+      ]),
+    ).toEqual([
+      { name: "CACHE_URL", defaulted: true },
+      { name: "CACHE_URL", defaulted: false },
+      { name: "REGION", defaulted: false },
+    ]);
+  });
+
+  it("leaves a subscript undefaulted when only its own value is tested, since it raises first", async () => {
+    expect(
+      await handlerReads([
+        'if os.environ["FEATURE_FLAG"]:',
+        "    enable_feature()",
+        'url = os.environ["CACHE_URL"]',
+        "if url:",
+        "    use(url)",
+      ]),
+    ).toEqual([
+      { name: "FEATURE_FLAG", defaulted: false },
+      { name: "CACHE_URL", defaulted: false },
+    ]);
+  });
+
+  it("follows a test through and, or, not and parentheses", async () => {
+    expect(
+      await handlerReads([
+        'if (os.getenv("A")) and ready:',
+        '    use(os.getenv("A"))',
+        'os.getenv("B") and enable()',
+        'mode = "on" if os.getenv("C") else "off"',
+        'if not (os.getenv("D")) or not ready:',
+        "    return None",
+        'use(os.getenv("D"))',
+      ]),
+    ).toEqual([
+      { name: "A", defaulted: true },
+      { name: "A", defaulted: true },
+      { name: "B", defaulted: true },
+      { name: "C", defaulted: true },
+      { name: "D", defaulted: true },
+      { name: "D", defaulted: true },
+    ]);
+  });
+
+  it("finds nothing about the variable in a test on anything else", async () => {
+    expect(
+      await handlerReads([
+        "if 0 < count < 10:",
+        '    use(os.getenv("A"))',
+        "if count < 3 or other:",
+        '    use(os.getenv("B"))',
+        'url = os.getenv("C")',
+        'if "C" in settings:',
+        "    use(url)",
+      ]),
+    ).toEqual([
+      { name: "A", defaulted: false },
+      { name: "B", defaulted: false },
+      { name: "C", defaulted: false },
+    ]);
+  });
+
+  it("reads obj.name and f(name=...) as no use of a local called name", async () => {
+    expect(
+      await handlerReads([
+        'url = os.getenv("CACHE_URL")',
+        "if url:",
+        "    use(url)",
+        "use(settings.url, url=1)",
+      ]),
+    ).toEqual([{ name: "CACHE_URL", defaulted: true }]);
+  });
+
+  it("leaves a module-level name undefaulted, since another module can import it", async () => {
+    expect(
+      await moduleReads(
+        'import os\nURL = os.getenv("CACHE_URL")\nif URL:\n    use(URL)\n',
+      ),
+    ).toEqual([{ name: "CACHE_URL", defaulted: false }]);
+  });
+});
+
 describe("what runs at import time", () => {
   it("reads the module body and class bodies, and leaves function bodies to their own units", async () => {
     expect(
@@ -279,6 +479,45 @@ describe("a call to a helper that reads the environment", () => {
     ).toEqual([
       { name: "DATABASE_URL", defaulted: true },
       { name: "POOL_SIZE", defaulted: true },
+    ]);
+  });
+
+  it("takes the fallback from a helper that checks membership before its read", async () => {
+    expect(
+      await moduleReadsWithFacts(
+        [
+          "import os",
+          "",
+          "",
+          "def optional(key):",
+          "    if key in os.environ:",
+          "        return os.environ[key]",
+          "    return None",
+          "",
+          "",
+          "def required(key):",
+          "    return os.environ[key]",
+          "",
+          "",
+          'CACHE_URL = optional("CACHE_URL")',
+          'DATABASE_URL = required("DATABASE_URL")',
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual([
+      { name: "CACHE_URL", defaulted: true },
+      { name: "DATABASE_URL", defaulted: false },
+    ]);
+  });
+
+  it("takes the fallback from a test the caller wrote around the call", async () => {
+    expect(
+      await moduleReadsWithFacts(
+        `${SUBSCRIPT_HELPER}if env("CACHE_URL"):\n    use(env("CACHE_URL"))\n`,
+      ),
+    ).toEqual([
+      { name: "CACHE_URL", defaulted: true },
+      { name: "CACHE_URL", defaulted: true },
     ]);
   });
 

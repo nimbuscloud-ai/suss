@@ -117,6 +117,19 @@ describe("runtime-config integration", () => {
     ).toBeUndefined();
   });
 
+  it("accepts an undeclared var the code only uses behind a presence test", async () => {
+    const findings = await runPipeline();
+    const unprovided = findings.filter(
+      (f) => f.kind === "boundaryFieldUnknown",
+    );
+    expect(
+      unprovided.find((f) => f.description.includes("APP_VERSION")),
+    ).toBeUndefined();
+    expect(
+      unprovided.find((f) => f.description.includes("REPORT_PREFIX"))?.severity,
+    ).toBe("error");
+  });
+
   it("emits no runtimeScopeUnknown — every Lambda has CodeUri", async () => {
     const findings = await runPipeline();
     expect(

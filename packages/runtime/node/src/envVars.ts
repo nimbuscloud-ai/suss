@@ -256,7 +256,8 @@ function bindingRead(element: BindingElement): EnvRead[] {
       name,
       // A binding default supplies the value the variable is missing,
       // which is what `??` does for the other two spellings.
-      defaulted: element.getInitializer() !== undefined,
+      defaulted:
+        element.getInitializer() !== undefined || isDefaultedAt(element),
       node: element,
     },
   ];
