@@ -184,12 +184,15 @@ export function schemaEnvReads(
     ) {
       continue;
     }
-    const environment = environmentArgument(call, reader, resolution);
-    if (environment === null || !resolution.isEnvironmentValue(environment)) {
+    // The schema comes first: asking whether a parameter is the
+    // environment reads every file that calls its function, and most
+    // `parse(text)` calls are not parsing against a schema at all.
+    const reads = readsFromSchema(call, reader, resolution);
+    if (reads.length === 0) {
       continue;
     }
-    const reads = readsFromSchema(call, reader, resolution);
-    if (reads.length > 0) {
+    const environment = environmentArgument(call, reader, resolution);
+    if (environment !== null && resolution.isEnvironmentValue(environment)) {
       return reads;
     }
   }
