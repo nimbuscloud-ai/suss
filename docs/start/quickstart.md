@@ -13,8 +13,9 @@ npx suss extract -o summaries/code.json
 npx suss inspect summaries/code.json
 ```
 
-Your code never runs and nothing has to be annotated first. The output
-below comes from a small Hono API with a Prisma schema behind it.
+suss does not run your code, and you do not have to annotate anything
+first. The output below comes from a small Hono API with a Prisma schema
+behind it.
 
 <!-- suss:example -->
 
@@ -139,8 +140,9 @@ npx suss extract -f hono -f fetch -f prisma -f node -o summaries/code.json
 Wrote 2 summaries to summaries/code.json in 0.24s
 ```
 
-A summary is one unit of code that suss read. Here that is a route
-handler; in another project it might be a queue consumer or a Lambda. The
+Each summary describes one unit of code that suss read. Here each unit is
+a route handler. In another project it might be a queue consumer or a
+Lambda. The
 file is JSON, and `inspect` prints it in a form you can read.
 
 Those `-f` flags are the ones `init` printed. If you leave them off,

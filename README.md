@@ -2,7 +2,7 @@
 
 suss reads your code and checks what it does at every boundary, such as a route or a table, against the clients, specs and infrastructure on the other side. It works on TypeScript, Python and Ruby.
 
-Code is written faster than anyone can read it. Large pull requests land all day, and no reviewer can keep one of them in their head. A diff shows you which lines of text changed, and you still have to work out what the service does now. Tests written alongside the change only check what their author meant. suss reads the code and writes down what it does on every path, from the request or message that comes in to the table or queue it touches, so you can read that instead. It runs the same way every time, and there is no model in it.
+Code is written faster than anyone can read it. Large pull requests land all day, and no reviewer can keep one of them in their head. A diff shows you which lines of text changed, and you still have to work out what the service does now. Tests written alongside the change only check what their author meant. suss reads the code and writes down what it does on every path, from the request or message that comes in to the table or queue it touches, so you can read that instead. There is no model in it, so the same code gives you the same description every time.
 
 ## Read one service
 
@@ -10,7 +10,7 @@ Code is written faster than anyone can read it. Large pull requests land all day
 npx @suss/cli inspect
 ```
 
-`inspect` reads the project you run it in. It works out which packs the project needs from its dependencies, the way `suss init` does, and tells you which ones it picked. `suss init` writes that choice down in `suss.json`, so every later command reads the same thing.
+`inspect` reads the project you run it in. It works out which packs the project needs from its dependencies, the same way `suss init` does, and prints the ones it picked. `suss init` also saves that choice to `suss.json`, so every later command uses the same packs.
 
 ```
 src/api.ts
@@ -29,7 +29,7 @@ src/api.ts
          -> 201 { id, name }
 ```
 
-That is every path each handler can take, with the status and the body fields it produces. Where suss could not follow a call, it reports that under the handler instead of leaving the path out.
+Each handler is listed with every path it can take, and each path shows the status and the body fields it produces. When suss cannot follow a call, it lists that call under the handler, so a path it could not read still shows up.
 
 The same summaries are available to a coding agent over MCP, so it can ask what a route reaches or what writes a table before it edits either:
 
@@ -57,7 +57,7 @@ handler:GET /users/{id}
       -> 200 { id, name }  (default)
 ```
 
-A deleted account used to get a `410` and now gets a `200` with `status: "deleted"`, and `email` has left the response. Both versions compile and the types still line up, and every caller that treats a `200` as a usable account is now wrong. On a large pull request, read this output first.
+A deleted account used to get a `410` and now gets a `200` with `status: "deleted"`, and `email` is no longer in the response. Both versions compile and the types still line up. Every caller that treats a `200` as a usable account is now wrong. On a large pull request, read this output first.
 
 ## What you use it for
 
@@ -79,18 +79,18 @@ Here is what a finding looks like, taken from the [runnable example](examples/pe
 
 ## Adopting it
 
-Each step costs a little more and asks a little more of the codebase. Stop at whichever one pays for itself. The [adoption guide](docs/guides/adopting-suss.md) walks each step with the command, what it tells you, and what a false positive looks like there.
+Each step takes a little more work than the one before, and needs a little more from the codebase. You can stop at any step that already gives you enough. The [adoption guide](docs/guides/adopting-suss.md) gives the command for each step, what it reports, and what a false positive looks like at that step.
 
-1. Read one service with `extract` and `inspect`. Nothing to triage.
+1. Read one service with `extract` and `inspect`. There is nothing to triage yet.
 2. Question it with `suss ask` or the MCP server.
 3. Compare it against a document you already keep with `suss contract` and `check`. `suss init` sets this up.
 4. Add the consumer side, so a finding points at the caller that breaks.
 5. Gate on it: `check --fail-on error` in CI, `inspect --diff` on every pull request.
-6. Reuse the summaries: agent context, endpoint docs, the list of paths a test suite should cover.
+6. Reuse the summaries as agent context, as endpoint docs, or as the list of paths a test suite should cover.
 
 ## What it reads
 
-TypeScript is the furthest along: Express, Fastify, Hono, NestJS, Next.js and ts-rest on the server, fetch, axios and Apollo on the client, Prisma, Drizzle, Mongoose, node-postgres and BigQuery for storage, Lambda handlers, and the AWS clients for SQS, SNS, EventBridge, DynamoDB and S3. In Python, suss reads FastAPI and flask-restx routes and SQLAlchemy queries. In Ruby, it reads Rails controllers, graphql-ruby schemas and ActiveRecord. The full list is in [Packs](#packs) below. suss checks a boundary inside one repository. You can compare summaries from two repositories by putting the files in one directory, and nothing does that for you yet.
+TypeScript is the furthest along: Express, Fastify, Hono, NestJS, Next.js and ts-rest on the server, fetch, axios and Apollo on the client, Prisma, Drizzle, Mongoose, node-postgres and BigQuery for storage, Lambda handlers, and the AWS clients for SQS, SNS, EventBridge, DynamoDB and S3. In Python, suss reads FastAPI and flask-restx routes and SQLAlchemy queries. In Ruby, it reads Rails controllers, graphql-ruby schemas and ActiveRecord. The full list is in [Packs](#packs) below. suss checks a boundary inside one repository. To compare summaries from two repositories, put both files in one directory. Nothing does that step for you yet.
 
 ## Install
 
@@ -100,7 +100,7 @@ suss ships as `@suss/cli`, with every pack inside it, so there is one install:
 npm install --save-dev @suss/cli
 ```
 
-You reach a pack by name, as in `suss extract -f ts-rest -f axios`, and a declared artifact with `suss contract --from openapi`. Without `-f`, `extract` reads the packs from `suss.json`, and when there is no such file it picks the ones `init` would have. A Python or Ruby project is read with `--dir` instead of a tsconfig; see [Read Python or Ruby](docs/guides/python-and-ruby.md).
+You pick packs by name, as in `suss extract -f ts-rest -f axios`, and read a declared artifact with `suss contract --from openapi`. Without `-f`, `extract` reads the packs from `suss.json`, and when there is no such file it picks the ones `init` would have. A Python or Ruby project is read with `--dir` instead of a tsconfig; see [Read Python or Ruby](docs/guides/python-and-ruby.md).
 
 `suss init` reads your project, works out which packs it needs, writes them to `suss.json`, and offers to set them up:
 
@@ -145,7 +145,7 @@ All four work on the same `BehavioralSummary[]`:
 
 `extract` and `contract` produce the same format, so a TypeScript handler compares directly against the OpenAPI document for it, a CloudFormation template against the Lambda code it deploys, or a Storybook file against the React component it documents.
 
-For every function reachable from a recognized entry point, suss emits a `BehavioralSummary`: the transitions the function produces, one per execution path, the predicates that guard each of them, the outputs, and the side effects along the way. `@suss/checker` and any downstream tool read that JSON, and `inspect` is one renderer over it.
+suss writes a `BehavioralSummary` for every function reachable from a recognized entry point. The summary lists the transitions the function produces, one per execution path. Each transition records the predicates that guard it, its output, and the side effects along the way. `@suss/checker` and any other downstream tool read that JSON, and `inspect` is one way of printing it.
 
 ## A complete example
 
@@ -170,9 +170,9 @@ Reference and theory: [Summary format](./docs/reference/summary-format.md), [IR 
 
 ## Packs
 
-The behavioral summary format and the IR types in `@suss/behavioral-ir` are stable. The extraction pipeline and the cross-boundary checker are in active development against a growing set of packs.
+The behavioral summary format and the IR types in `@suss/behavioral-ir` are stable. The extraction pipeline and the cross-boundary checker are still in active development, and the set of packs keeps growing.
 
-Forty-nine packs read code today, reached by name with `-f`:
+Forty-nine packs read code today. You pick them by name with `-f`:
 
 | What it reads | Packs |
 |---|---|
@@ -192,7 +192,7 @@ Forty-nine packs read code today, reached by name with `-f`:
 | Runtime surface | `node`, which includes `process.env` |
 | In-process, between workspace packages | `package-exports` |
 
-Ten contract readers turn a declared artifact into the same format, reached with `--from`: `openapi`, `graphql` (SDL), `graphql-documents` (committed `.graphql` operations), `cloudformation` (including SAM, and the API Gateway resources in it), `serverless`, `appsync`, `storybook`, `prisma`, `terraform`, `wrangler`. Intent docs your team writes are handled separately, by `suss check --intent`.
+Ten contract readers turn a declared artifact into the same format, reached with `--from`: `openapi`, `graphql` (SDL), `graphql-documents` (committed `.graphql` operations), `cloudformation` (including SAM, and the API Gateway resources in it), `serverless`, `appsync`, `storybook`, `prisma`, `terraform`, `wrangler`. The intent docs your team writes are read separately, by `suss check --intent`.
 
 ## License
 

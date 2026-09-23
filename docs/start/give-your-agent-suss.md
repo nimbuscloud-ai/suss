@@ -23,8 +23,8 @@ Claude Code reads `.mcp.json` at the repository root and Cursor reads
 path argument, the server reads whichever directory the host started it
 in.
 
-The server reads `suss.json`. That file lists which packs to read the code
-with and where your contracts are, and `npx @suss/cli init` writes it. If
+The server reads `suss.json`, which `npx @suss/cli init` writes. The file
+lists which packs to read the code with and where your contracts are. If
 you do not have one, the server picks the packs `init` would have picked
 and prints a note on stderr. When nothing in the project matches a pack,
 every answer comes back empty, and `suss_status` explains why.
@@ -69,20 +69,20 @@ blanks for you or the agent to fill in from the package's source. [Teach
 suss a dependency](/guides/teach-a-dependency) covers the file it writes.
 
 `suss_intent_outcomes` lists the outcomes your boundary intent documents
-declare, each as the `<intent-name>.<outcome-id>` a PRD scenario puts in
-its `link`. An agent calls it before it writes or edits a `link`, since
-both halves of one are written inside a document somebody else wrote and
-a link nothing declares comes back from `suss_check` as
-`danglingScenarioLink`. Pass an `intentDir` when the documents are
-somewhere other than `intent/`.
+declare. Each one comes back as `<intent-name>.<outcome-id>`, the string
+a PRD scenario puts in its `link`. An agent calls it before it writes or
+edits a `link`. Both halves of a link are written inside a document
+somebody else wrote, and a link to an outcome nothing declares comes
+back from `suss_check` as `danglingScenarioLink`. Pass an `intentDir`
+when the documents are somewhere other than `intent/`.
 
 `suss_status` shows which extract and contract commands ran, which of
 them failed, and whether they came from a `suss.json` or the server
 picked them itself. Call it when an answer looks thinner than you would
 expect from the code.
 
-Every one is marked read-only and none of them changes anything in your
-tree, so the host does not have to ask you before it calls one.
+Every tool is marked read-only, and none of them changes anything in
+your tree, so the host does not have to ask you before it calls one.
 
 ## What an answer looks like
 
@@ -116,8 +116,8 @@ suss_ask { "question": "what can I project from GET /orders/{reference}" }
 Read `found` first. When it is false, `needs` lists the input that would
 let suss answer, and that is usually what to go and fix. `caveats`
 contains one `warning:` line for every call suss could not follow, with
-the file and line of the unit it was in. That is how an agent can tell a
-complete answer from one that stopped partway.
+the file and line of the unit it was in. An agent uses those lines to
+tell a complete answer from one that stopped partway.
 
 ## Staying current
 

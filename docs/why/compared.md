@@ -18,19 +18,19 @@ suss reads each unit of code and works out what it produces on every path it can
 
 ## Type checkers
 
-A type checker covers the whole program. suss does not. It reads the units a pack recognizes, plus everything reachable from them. A type checker decides whether the structure lines up: `User` is still `User` whether the account is active or soft-deleted, and `Response<200, User>` type-checks the same whichever branch of the handler built it. suss records which branch produced what and under what condition, so two 200s with different bodies come out as two cases and not one type. You run both. suss reads type information through the compiler API and never reports a type error of its own.
+A type checker covers the whole program. suss does not. It reads the units a pack recognizes, plus everything reachable from them. A type checker decides whether the structure lines up: `User` is still `User` whether the account is active or soft-deleted, and `Response<200, User>` type-checks the same whichever branch of the handler built it. suss records which branch produced what and under what condition, so two 200s with different bodies come out as two separate cases. You run both. suss reads type information through the compiler API and never reports a type error of its own.
 
 ## Linters and pattern matchers
 
-A linter matches syntax, such as a forbidden call or a missing `await`. CodeQL and Semgrep go further and query a whole-program database of the code, and both of them see files that no entry point reaches, which suss skips. None of them model what a function produces under what conditions, so none of them can compare one side of a call against the other. A suss finding points at one path on the provider side that disagrees with one path on the consumer side, and gives you a file and a line for each. suss has no opinions about style either, and what it produces is structured data instead of warnings.
+A linter matches syntax, such as a forbidden call or a missing `await`. CodeQL and Semgrep go further and query a whole-program database of the code, and both of them see files that no entry point reaches, which suss skips. None of them model what a function produces under what conditions, so none of them can compare one side of a call against the other. A suss finding points at one path on the provider side that disagrees with one path on the consumer side, and gives you a file and a line for each. suss also has no opinions about style. A linter prints warnings, and suss produces structured data.
 
 ## OpenAPI and schema validators
 
-Spectral checks that a document is well-formed, and ajv or Zod check that a payload matches a schema at run time. Both of those are about the document. Neither one reads the handler, so both of them pass a document that declares a 500 no branch produces, and both of them pass a handler that returns a 418 the document never mentions. `suss contract --from openapi` turns the document into summaries in the same form `extract` produces, and `check` compares them against the handler and against every call site. [Check against OpenAPI](/guides/check-against-openapi) walks through that.
+Spectral checks that a document is well-formed, and ajv or Zod check that a payload matches a schema at run time. Both of those check against the document. Neither one reads the handler, so both of them pass a document that declares a 500 no branch produces, and both of them pass a handler that returns a 418 the document never mentions. `suss contract --from openapi` turns the document into summaries in the same form `extract` produces, and `check` compares them against the handler and against every call site. [Check against OpenAPI](/guides/check-against-openapi) walks through that.
 
 ## Contract testing
 
-Pact records an interaction that actually ran. The consumer states what it expects, the provider is replayed against it, and both sides execute. That catches run-time behavior no static reader can see, including serialization and middleware. What it covers is whatever somebody wrote an interaction for. suss works the cases out from the source, so a branch nobody thought to record still shows up, and it needs no test harness on either side. If you run both, you get the run-time check from Pact and the full set of cases from suss.
+Pact records an interaction that actually ran. The consumer states what it expects, the provider is replayed against it, and both sides execute. That catches run-time behavior no static reader can see, including serialization and middleware. It covers only the interactions somebody wrote. suss works the cases out from the source, so a branch nobody thought to record still shows up, and it needs no test harness on either side. If you run both, you get the run-time check from Pact and the full set of cases from suss.
 
 ## AI review
 
@@ -38,9 +38,9 @@ A model reading a diff can judge naming, intent and whether the change was a goo
 
 ## grep
 
-grep finds every occurrence of a string in any file in any language, faster than suss will ever load a project. To answer "what calls this" with grep, you read the hits and decide which ones matter, and that gets harder the more indirection the codebase has, such as a barrel re-export or a client built by a factory. suss follows the value through those hops and works out which function a name comes down to, and `suss ask why` prints the chain it followed, one reason per hop. [How suss follows a value](/theory/resolving-values) covers the machinery.
+grep finds every occurrence of a string in any file in any language, much faster than suss can load a project. To answer "what calls this" with grep, you read the hits and decide which ones matter, and that gets harder the more indirection the codebase has, such as a barrel re-export or a client built by a factory. suss follows the value through those hops and works out which function a name comes down to, and `suss ask why` prints the chain it followed, one reason per hop. [How suss follows a value](/theory/resolving-values) explains how that works.
 
 ## Related
 
-- [Kinds of contract](/why/kinds-of-contract#three-kinds-of-truth) sorts specifications, observations and derivations, and explains why comparing across two of those kinds is what turns up findings.
+- [Kinds of contract](/why/kinds-of-contract#three-kinds-of-truth) sorts specifications, observations and derivations, and explains why findings come from comparing two of those kinds against each other.
 - [The FAQ](/reference/faq) answers the shorter versions of these questions.
