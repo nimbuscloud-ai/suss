@@ -87,7 +87,7 @@ It is read at three checkpoints:
 
 2. **At extract time (adapter).** When the adapter dispatches recognizers, it checks each effect a recognizer would emit against the loaded packs' `consumes` sets. If no pack consumes it, and the pack opted in with `skipUnconsumed: true` on the capability, the adapter skips the emission. This is the work-skipping path. It is off by default in v0, and each pack opts in until we measure how much it saves.
 
-3. **At check time (checker).** The checker builds the predicted `FindingKind` set from the loaded packs' boundary capabilities. Each boundary leads to a known set of finding kinds; for example, any pack with `boundary: storage-relational` brings in `boundaryFieldUnknown` / `boundaryFieldUnused`. `suss inspect` shows this set as the "predicted findings" preview.
+3. **At check time (checker).** The checker builds the predicted `FindingKind` set from the loaded packs' boundary capabilities. Each `boundary` capability leads to a known set of finding kinds; for example, any pack with `boundary: storage-relational` brings in `boundaryFieldUnknown` / `boundaryFieldUnused`. `suss inspect` shows this set as the "predicted findings" preview.
 
 ### Decentralizing checker dispatch
 

@@ -38,8 +38,7 @@ p99. Each returns a zod schema.
 
 Twenty's frontend has the same distribution with a smaller tail. Its
 largest summary is 2,258 times its median, and its p99 is within 7% of
-Saleor's, which is the point: the middle of both runs is fine and the top
-of both is not.
+Saleor's. In both runs the middle is fine and the top is not.
 
 Counted in shape nodes rather than bytes, Saleor has 6,739,780 nodes
 across 6,756 shapes, and 5,012,652 of them belong to that one hook.
@@ -73,10 +72,10 @@ and after:
 
 The file it now writes is forty-nine times smaller, 15.9MB of indented
 JSON. Extraction is about a fifth faster, and the DOM hook and both zod
-schema builders have dropped out of the top ten. That is a good change,
-and it is not the model.
+schema builders have dropped out of the top ten. It is a good change,
+and it is still not the right model.
 
-What the fix leaves behind says why. The largest remaining summary is
+What the fix leaves behind shows why. The largest remaining summary is
 `useExtensions` at 241,646 bytes, still 183 times the median, and p99
 only came down 27%. Every one of the top ten after the fix is a type the
 project declared itself, expanded to depth six for no better reason than
@@ -93,7 +92,8 @@ out that they agree about it.
 
 ## What TypeScript does that we do not
 
-Three things, and each one is a decision we made differently.
+TypeScript does three things, and in each case we decided the other
+way.
 
 **Display is by reference even though identity is structural.** The
 checker prints `HTMLElement`, not its members. A name is what a reader
@@ -111,25 +111,25 @@ Within a run the adapter can copy the first two, because the program is
 alive and keeping a reference to a compiler type costs nothing. It
 cannot copy the third, because suss compares a summary from one
 repository against a summary from another, months apart, with no
-compiler and no source for either side. That is the part of the design
-we have to work out rather than borrow.
+compiler and no source for either side. We have to work that part of the
+design out ourselves, because there is nothing to borrow.
 
 ## The model
 
-A shape has three things on it, each doing a different job.
+A shape records three things, each doing a different job.
 
 **The members the boundary touches.** This is what settles a mismatch,
 and it is the part that changes what the check means.
 
 **Provenance.** Where the type came from. This is what a person reads in
-a diff, and what lets somebody redeem the reference.
+a diff, and what lets somebody resolve the reference.
 
 **A content hash, built as a Merkle tree.** This is a fast path to
 "these agree", and a way to narrow down a difference without sending the
 structure.
 
-In the IR these are optional fields on variants that already exist, not
-a new variant:
+In the IR these are optional fields on variants that already exist. No
+new variant is needed:
 
 ```ts
 | { type: "record"; properties: …; spreads?: …; name?: string; hash?: string }
@@ -146,10 +146,10 @@ config, and false for function call and package export, where a callback
 or a class instance is the contract itself rather than an accident of
 it.
 
-The instinct was right and the test was too narrow. The question is not
-what can be serialized. It is what this boundary touches, and that one
-works for all six kinds. A consumer that only ever calls one method of
-an injected service depends on that method, not on the class. A handler
+The instinct was right and the test was too narrow. The question to ask
+is what this boundary touches, and that question works for all six
+kinds. A consumer that only ever calls one method of an injected service
+depends on that method and on nothing else in the class. A handler
 that returns a library type, where something reads two of its fields
 across the wire, has a contract of two fields. `HTMLElement` collapses
 to a reference because nothing touches it, which is a stronger reason
@@ -165,8 +165,7 @@ nobody reads stops being a finding, and one that changes a member
 somebody reads becomes one.
 
 That is the difference between checking types and checking dependencies,
-and it is worth stating plainly because it is the reason to do this at
-all. The size win is a consequence.
+and it is the reason to do this at all. The size win follows from it.
 
 ### The two sides record different things
 
@@ -202,24 +201,24 @@ touchesPath(v, [n, ...p]) <- readsProperty(x, o, n), comesTo(o, v),
 ```
 
 A member that gets called rather than read is the same relation joined
-with `bodyCalls`, and it is worth telling the two apart, because a
-consumer that calls `service.charge(...)` requires a member it can call
-rather than one that is merely there.
+with `bodyCalls`. The two should be told apart, because a consumer that
+calls `service.charge(...)` requires a member it can call, and a member
+that merely exists does not satisfy it.
 
 The checker already has the consumer half of this in another form.
 `providerCoversConsumerFields` documents that consumer leaves are
 `unknown` because the extractor tracked which fields were accessed
 rather than what types they contain. That is already a participation
-set, computed at check time and then thrown away. This promotes it to
+set, computed at check time and then thrown away. This proposal makes it
 something a summary records.
 
-**The provider side is partly new.** What a function produces falls out
-of the paths through it, and the extractor already builds a body shape
+**The provider side is partly new.** What a function produces follows
+from the paths through it, and the extractor already builds a body shape
 from the return expression, so where the provider builds the value, the
 participating members are the keys it wrote. Where the provider hands
 back a value it got from somewhere else without looking at it, it
 produces the whole type and nothing narrows participation. That case has
-to say so rather than report an empty set.
+to record this, instead of reporting an empty set.
 
 ### Unknown is not empty
 
@@ -247,7 +246,7 @@ in, for the same reason that field exists.
 
 What the checker does with it:
 
-- **Both sides known.** You can decide required against produced. A
+- **Both sides known.** Required can be decided against produced. A
   required member the provider does not produce is a mismatch, and there
   is a path that points at it.
 - **Consumer unenumerable.** What it requires has no bound, so
@@ -294,7 +293,7 @@ name is a label rather than a pointer. Nobody who has the summary can
 expand it later, because that needs the compiler and the same library
 version in hand, and the summary records neither.
 
-Make it a thing you can follow. We can work out at extraction time where
+It should be something you can follow. We can work out at extraction time where
 a type came from, and the answer comes out differently for two kinds of
 type.
 
@@ -322,7 +321,7 @@ competing:
 ```
 
 Provenance is what a person reads in a diff, and what lets somebody
-redeem the reference. The hash is what comparison uses. Neither one
+resolve the reference. The hash is what comparison uses. Neither one
 substitutes for the other, and the section on comparison says why.
 
 ### Why comparison uses the hash rather than the version
@@ -377,7 +376,7 @@ they belong in a run-level header that ambient refs point at, which also
 keeps them off thousands of individual refs.
 
 There are five more cases where we can derive an answer but the answer
-is wrong or misleading, and this proposal has to say so out loud:
+is wrong or misleading, and this proposal has to state them:
 
 - **`@types/*` packages.** The walk gives back `@types/express` and the
   types package's version, rather than `express` and the runtime
@@ -440,9 +439,9 @@ thousands of files.
 ## The hash is a Merkle tree
 
 A shape's hash is built from its members' hashes rather than from a
-flattened rendering of its structure. That is one mechanism doing four
-jobs the design wants anyway, which is the reason to choose it rather
-than an optimization bolted on afterwards.
+flattened rendering of its structure. That one mechanism does four jobs
+the design needs anyway, which is why to choose it now instead of adding
+it later as an optimization.
 
 **Equality** is the root hash. Two sides compare one string.
 
@@ -453,13 +452,13 @@ one-hash-per-member scheme is a one-level Merkle tree, so the question
 was never whether to do this, only how deep to carry it.
 
 **Deduplication** falls out, because identical subtrees hash identically.
-That is content addressing, and the measurement below is what decides
-whether it is worth having.
+That is content addressing, and the measurement below decides whether it
+pays off.
 
 **Incremental recompute** falls out of the same property. A subtree whose
-hash has not changed does not need re-deriving, which is what the
-incremental-extraction work in the backlog wants, and it can use this
-store rather than a second one.
+hash has not changed does not need re-deriving. The
+incremental-extraction work in the backlog needs exactly that, and it
+can use this store instead of a second one.
 
 Here is what each of the alternatives fails to do: a flat hash gives
 equality and nothing else, provenance lets somebody redeem the reference
@@ -504,8 +503,9 @@ The measurement forced two decisions about normalization:
   numeric literal kept its source text, `0` against `0` written as
   `"0"`. Those are the same value on the wire and should hash the same.
   This showed up as an apparent collision count that was identical at 64
-  and at 128 bits, which is what a difference in normalization looks
-  like rather than a difference in the hash.
+  and at 128 bits. A count that stays the same when the hash gets wider
+  comes from a difference in normalization, and the hash is not the
+  cause.
 - **`spreads` is included.** 41 of Saleor's 2,136 record shapes have
   spreads, meaning the reader could not enumerate them. A hash that
   ignored the field would report those records as fully known, which is
@@ -621,8 +621,8 @@ codebases.
 That is a claim about shapes rather than about files, and the two are
 easy to confuse. Shapes are about a fifth of a summary's bytes now that
 #66 has landed, so a 65% saving on them is 11% of Saleor's output and
-10% of Twenty's, measured end to end below. Worth having and not worth
-overselling.
+10% of Twenty's, measured end to end below. That is a useful saving, but it
+should not be oversold.
 
 **Where the two designs cross.** Write `f` for the share of a type's
 members that one site touches, and charge each design for what it has to
@@ -718,9 +718,9 @@ than looking it up. Not storing it loses nothing.
 type is inlined or referenced is a decision about layout, so two
 summaries that decide it differently have to compare equal. That falls
 out as long as we compute the hash over the type, meaning its normalized
-member tree, rather than over the JSON that got written. It is worth a
-sentence to say so, because computing the hash over the serialized form
-would let the format's own layout decide the answer.
+member tree, rather than over the JSON that got written. This needs
+saying, because computing the hash over the serialized form would let
+the format's own layout decide the answer.
 
 ### Display is a separate step
 
@@ -729,8 +729,7 @@ the data, and it already exists for that reason. So choose the stored
 form for what it costs and what it can answer, and leave legibility to
 `inspect`.
 
-That changes what `inspect` does under this model, in two ways worth
-having.
+Under this model that changes what `inspect` does, in two useful ways.
 
 **`inspect` resolves references and expands only what is in use.** That
 is the participating-members idea again, pointed at display instead of
@@ -748,15 +747,15 @@ today is `useExtensions` at 241,646 bytes. A diff of it against a
 changed version currently renders both copies, so a reader looks at
 roughly half a megabyte to find one changed field. Descending renders
 only the branch that changed. The median summary is 1,323 bytes and
-would barely notice, which is how these things usually go: the change is
-invisible where things are small and decisive where they are not.
+would barely notice. The change matters for the large summaries, and
+there it matters a great deal.
 
 ## Getting a summary to another repository
 
 Once a summary contains references it is no longer self-contained, and
 reading one means having the nodes it points at. Inside a run that costs
-nothing. Sending it to another repository, which is the case this design
-exists for, that is the whole question.
+nothing. When the summary goes to another repository, which is the case
+this design exists for, getting those nodes is the whole question.
 
 There are two ways to do it. The file can include its own shape table,
 the way a packfile bundles the objects it needs, which is
@@ -764,7 +763,7 @@ self-contained, larger, and duplicated between files that share types.
 Or a summary can become an index into a store that the tooling fetches,
 which is smaller and shared and adds a resolution step that can fail.
 
-**Bundle the table with the file.** The measurement is one-sided.
+**Bundle the table with the file.** The measurement clearly favours it.
 
 Two unrelated codebases share almost nothing. Of Saleor's 433 shared
 nodes and Twenty's 804, exactly 15 appear in both, worth 975 bytes. A
@@ -801,11 +800,11 @@ A bundled table makes this rare rather than impossible. A file can be
 truncated, hand-edited, or produced by a version that wrote nodes a
 reader does not understand.
 
-An unresolved reference means a shape we could not read. It is not an
-empty record, not a missing field, and not silence. The repo already
+An unresolved reference means a shape we could not read, and it must
+never be read as an empty record or a missing field. The repo already
 keeps "we could not read this" apart from "there is nothing here", and
-this is squarely the first, so it surfaces as `unknown` with the hash it
-could not resolve, the checker treats it the way it treats every other
+this is squarely the first. So it surfaces as `unknown` with the hash it
+could not resolve. The checker treats it the way it treats every other
 `unknown`, and `inspect` shows the name and says the structure is
 missing.
 
@@ -830,8 +829,9 @@ set.
 
 **Signing** belongs to a different layer. It makes a published summary
 trustworthy to someone who did not produce it, which is a cross-repo
-product concern rather than a format one. Worth knowing that the content
-hashes make it easy later. We are not designing it here.
+product concern rather than a format one. The content hashes will make
+it easy to add later. We are not designing it here.
+
 ## Comparison without a compiler
 
 The checker compares with the program in hand: it can force a type,
@@ -850,8 +850,8 @@ answer.
 
 1. **Root hashes equal, same normalization version.** `match`, nothing
    expanded. Every unchanged shared type lands here.
-2. **Root hashes differ.** Not a verdict, and not a finding. Descend
-   into the branches whose member hashes differ.
+2. **Root hashes differ.** This is neither a verdict nor a finding.
+   Descend into the branches whose member hashes differ.
 3. **The differing branches are ones the consumer does not touch.**
    `match`. This is the rung that makes the check about dependencies
    rather than types, and it is the reason a provider adding a field
@@ -865,7 +865,7 @@ answer.
    member out again and turns this into a verdict.
 
 Every verdict the checker reaches today it still reaches. Rung 1 is
-free, rung 3 removes findings that were never about anything, and rung 4
+free, rung 3 removes findings about members nobody depends on, and rung 4
 gives an answer in a case that used to fall through to `unknown`.
 
 ### The wrong answer this fixes
@@ -909,16 +909,16 @@ match the declared schema`, and it never says which field. The one place
 a shape path reaches a person is the optional-field warning in
 `bodyCompatibility`, which already has `string[]` paths.
 
-What the model does is make the missing half worth building. Rung 4
-knows the path, and the finding should record it as a structured field.
-Not in `description`, because findings dedupe on that string, and
-putting a path in it would stop findings collapsing that collapse today.
+This model gives a reason to build the missing half. Rung 4 has the path,
+and the finding should record it as a structured field. It should not go
+in `description`, because findings dedupe on that string, and a path in
+it would stop findings collapsing that collapse today.
 
 ## The design that would collapse this
 
-This is worth taking seriously as an alternative, because if it is right
-then most of the above is unnecessary: **provenance plus participating
-members, with hashing only as an in-run optimization.**
+This alternative deserves a serious look, because if it is right, most
+of the above is unnecessary: **provenance plus participating members,
+with hashing only as an in-run optimization.**
 
 The argument for it is direct. If what settles a mismatch only ever
 looks at the members a boundary touches, then a hash over the full
@@ -927,7 +927,7 @@ will differ across patch releases in members nobody reads, so the fast
 path fails constantly and every comparison falls through to a structural
 walk that then filters down to nothing.
 
-Three things it cannot do, which is why it is not the recommendation.
+It cannot do three things, and that is why it is not the recommendation.
 
 **It cannot share.** Copying the participating members per site means a
 type used at 135 boundaries becomes 135 unrelated partial records, with
@@ -957,11 +957,12 @@ serialized.
 So participation says which branches a boundary depends on, and the
 graph is what those branches point into. Without the graph, participation
 is a copied subset. With it, participation is a reference.
+
 ## Language neutrality
 
 Structural identity, reference by name, expansion on demand, and
 recording what a boundary touches are statements about boundaries rather
-than about TypeScript. Two checks on that.
+than about TypeScript. Two other languages test that claim.
 
 **A Python adapter** has no structural type system to force. It has
 `TypedDict`, dataclasses, pydantic models, and annotations that may be
@@ -984,9 +985,9 @@ too.
 Both point the same way. The normalization and the hash belong in
 `@suss/ir-core`, which already owns `TypeShape` and `bodyShapesMatch`
 and is where the two checkers were deliberately kept from drifting. Each
-adapter supplies a name for a type, a list of `(wireName, optional,
-memberShape)` triples, and the paths each boundary touches. Nothing
-else. That is the same split
+adapter supplies only a name for a type, a list of `(wireName, optional,
+memberShape)` triples, and the paths each boundary touches. That is the
+same split
 `@suss/resolution` already uses, where the rules are language-neutral
 and the adapter supplies facts, so shapes should follow it and no new
 package is needed.
@@ -1007,7 +1008,7 @@ exception: it ships in the tarball with `additionalProperties: false` in
 would reject a new summary. That schema is regenerated from the zod
 definitions, so the fix is a release rather than a design change, but it
 is the one place a consumer is affected and it should be called out in
-the release notes. A minor version, not a format version.
+the release notes. It needs a minor version, not a format version.
 
 **Committed fixtures.** This costs close to nothing. The repo commits no
 summaries: 140 tracked JSON files totalling 564,924 bytes, and the only
@@ -1041,8 +1042,8 @@ nobody needed more is a complete answer. A shape cut short at depth six
 is an incomplete one. A shape we failed to read is `unknown` and stays
 `unknown`. One more optional field on `ref` records which it is, and the
 checker can then treat a complete reference as comparable and a
-truncated one as `unknown`, which is what each of them deserves and
-neither gets today.
+truncated one as `unknown`. Each of them deserves that treatment, and
+neither gets it today.
 
 ## The questions this has to answer
 
@@ -1079,8 +1080,8 @@ the check means and needs no hash, no sharing and no provenance.
 **Naming.** `hash` for the field, since what it contains is a content
 hash, and calling it a fingerprint in one place and a hash in another
 would cost every later reader a lookup. `touches` for participation and
-`from` for provenance, because each one reads like the answer it gives
-back. `hashOf(shape)` and `touchesOf(unit, value)` for the functions,
+`from` for provenance, because each name describes what the field
+records. `hashOf(shape)` and `touchesOf(unit, value)` for the functions,
 rather than `computeHash` or `getParticipation`. The shared store
 contains `nodes`, and a reference is a node's hash, so neither "Merkle"
 nor "content-addressed" needs to appear in a field name.
@@ -1117,8 +1118,8 @@ that we can measure each one without the ones after it.
    were about members nobody reads, and how many consumers come back
    unenumerable.
 
-   This is the step worth arguing about first, because it changes what
-   the check means rather than what it costs.
+   This is the step to argue about first, because it changes what the
+   check means rather than what it costs.
 
 3. **The content hash, depth 1.** It adds rungs 1 and 2, fixes the
    reference-against-reference answer that is wrong today, and costs 41%
@@ -1126,7 +1127,7 @@ that we can measure each one without the ones after it.
    the exact differing member for 93% of shapes. 128 bits, because a
    collision is a correctness bug and a difference only costs time.
 
-4. **Provenance, then sharing.** Provenance is what lets somebody redeem
+4. **Provenance, then sharing.** Provenance is what lets somebody resolve
    a reference and what makes a diff legible. We can derive it for a
    module-declared dependency and not for an ambient type, so it ships
    with the run-level compiler header that covers the second case. The
