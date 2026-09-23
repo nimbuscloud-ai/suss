@@ -56,13 +56,13 @@ In each directory suss takes the first of these it finds:
 3. `.sussignore.yaml`
 4. `.sussignore.json`
 
-A `.sussignore.json` in the summaries directory is read as suppression config, not as a summaries file.
+suss reads a `.sussignore.json` in the summaries directory as suppression config and does not load it as summaries.
 
 Two flags override the search. `--sussignore <path>` points at a file directly. `--no-suppressions` ignores every file, so you can see what the run would report if the list were empty.
 
 ## Effects
 
-A rule's `effect` decides what happens when it matches. The default is `mark`.
+A rule's `effect` sets what happens when it matches. The default is `mark`.
 
 | Effect | In the report | In the exit code |
 |---|---|---|
@@ -145,17 +145,17 @@ Intent findings from `suss check --intent` take the same rules. `kind` and `boun
 
 ## When a rule stops matching
 
-Nothing expires. The thing that changes under a rule is the transition id. suss builds that id from the enclosing function's name, the terminal kind, the status and a hash of the branch's conditions. If you edit the body of a branch, the id stays the same. If you rename the function, change the status or change a guard, the id is new, the rule stops matching, and the finding comes back so you can look at the branch again.
+Rules do not expire. What changes under a rule is the transition id. suss builds that id from the enclosing function's name, the terminal kind, the status and a hash of the branch's conditions. If you edit the body of a branch, the id stays the same. If you rename the function, change the status or change a guard, the id is new, the rule stops matching, and the finding comes back so you can look at the branch again.
 
-The other case to know about is a rule that points at a summary read from a deploy template. The name of one of those summaries includes the document's path, as in `cloudformation:services/orders/template.yaml::GetOrders`. A rule written the older way, with the file name alone, still matches, and it matches every document that reader reads with that file name. suss prints a note on stderr when that happens. Write the full path to tie the rule to one document.
+A rule that points at a summary read from a deploy template can also behave unexpectedly. The name of one of those summaries includes the document's path, as in `cloudformation:services/orders/template.yaml::GetOrders`. A rule written the older way, with the file name alone, still matches, and it matches every document that reader reads with that file name. suss prints a note on stderr when that happens. Write the full path to tie the rule to one document.
 
 ## The review habit
 
-An accepted finding is a piece of context the next maintainer has to read, so keep the list short and go back to it.
+The next maintainer has to read every finding you accept, so keep the list short and review it from time to time.
 
 - **Write the reason for a stranger.** "legacy" tells them nothing. "the load balancer is the only caller and it does not read the body" tells them why you accepted it.
-- **Audit with `--no-suppressions`.** It reports everything the rules currently take out. Run it before a release, or whenever the file has grown.
-- **Delete the rule with the fix.** When the migration ships or the endpoint goes away, the rule goes with it. Nothing prompts you, so the pull request that does the work is the place to do it.
+- **Audit with `--no-suppressions`.** It reports everything the rules currently remove. Run it before a release, or whenever the file has grown.
+- **Delete the rule with the fix.** When the migration ships or the endpoint goes away, delete the rule too. Nothing reminds you, so do it in the pull request that does the work.
 - **Watch the count.** A suppressed finding is still in the report and still in `--json`, so CI can publish how many there are. If that number only ever goes up, the list needs attention.
 
-If you cannot write a reason, you have not accepted the finding. Fix it instead. Suppression is for drift you have decided to live with. If you are not ready for a whole severity yet, use `--fail-on error`.
+If you cannot write a reason, fix the finding instead. Suppress only drift you have decided to live with. If you are not ready for a whole severity yet, use `--fail-on error`.
