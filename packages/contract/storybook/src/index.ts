@@ -1,39 +1,14 @@
-// @suss/contract-storybook: generate behavioral summaries from Storybook CSF.
-//
-// A Storybook story file declares (a) a default export with meta info
-// (the `component` being storied) and (b) named exports, each a story
-// object whose `args` describe one canonical scenario. For cross-shape
-// contract checking, each story is a *specification* of "this component
-// supports this prop configuration" (docs/why/kinds-of-contract.md). Comparing an
-// inferred component summary against its stories answers: does the
-// component accept the args every story supplies? Does every inferred
-// branch have a story that reaches it?
-//
-// v0 scope:
-//   * Parse `.stories.ts[x]` via ts-morph.
-//   * Find the default export and extract `meta.component` (usually an
-//     identifier referring to the component under test). Preserve the
-//     identifier name: resolving it to a module path is a follow-up
-//     when we formalise cross-module component references.
-//   * Find each named export and extract `args` as a literal object.
-//     Each story produces one `component`-kind BehavioralSummary with
-//     the args surfaced as inputs.
-//   * Mark `confidence.source = "derived"`, `level = "medium"`. Stories
-//     are authored by humans; they're authoritative where they speak
-//     but don't enumerate the full behavior space.
-//
-// Explicitly deferred:
-//   * `play` function parsing, capturing the event sequence that
-//     exercises an interactive story. Useful for cross-referencing
-//     event-handler sub-units once Phase 3 lands.
-//   * `argTypes` extraction: per-arg metadata (control type, option
-//     list). Informs stricter type checking in later phases.
-//   * `decorators` / `parameters`, Storybook-specific runtime
-//     plumbing, not behavioral.
-//   * CSF1 / MDX stories, CSF3 is the supported format.
-//   * Cross-file component resolution. We preserve the meta component
-//     identifier but don't follow the import to the component's
-//     module. Follow-up when a downstream consumer needs it.
+/**
+ * Reads Storybook CSF3 story files into one component summary per story.
+ * A story is a hand-written claim that its component supports one set of
+ * props. Comparing stories with the component's inferred summary shows
+ * whether the component accepts every story's args, and whether each
+ * inferred branch has a story that reaches it.
+ *
+ * Confidence is `medium`, because a story is accurate about what it covers
+ * but stories never list everything a component does. The README lists
+ * what the reader leaves out.
+ */
 
 import path from "node:path";
 
@@ -67,15 +42,16 @@ import type {
 
 export interface StorybookStubOptions {
   /**
-   * Project root: used to compute portable relative paths in each
-   * summary's `location.file`. Defaults to the cwd.
+   * Each summary's `location.file` is relative to this, so it is the same
+   * on every machine. Defaults to the working directory.
    */
   projectRoot?: string;
 }
 
 /**
- * Read one or more `.stories.ts[x]` files and emit one
- * BehavioralSummary per named story export.
+ * Reads `.stories.ts` and `.stories.tsx` files and returns one summary per
+ * named story export. A file whose default export has no `component` is
+ * skipped.
  */
 export function generateSummariesFromStories(
   filePaths: string[],
@@ -121,7 +97,7 @@ export function generateSummariesFromStories(
 // ---------------------------------------------------------------------------
 
 interface MetaInfo {
-  /** Identifier name of the component being storied (e.g. "Button"). */
+  /** The `component` identifier as written, such as `Button`. */
   componentName: string;
 }
 
@@ -134,7 +110,8 @@ function extractMeta(
     if (meta === null) {
       continue;
     }
-    // Commonly an identifier (`component: Button`). Record its name.
+    // Usually an identifier. Its text is kept and the import is never
+    // followed.
     const component = propertyOf(meta, "component", resolution);
     if (component !== null) {
       return { componentName: component.getText() };
@@ -144,7 +121,7 @@ function extractMeta(
   return null;
 }
 
-/** The object a declaration or an expression comes down to. */
+/** The object literal a declaration or expression resolves to, or null. */
 function objectBehind(
   value: Node,
   resolution: ResolutionStore,
@@ -171,9 +148,8 @@ function extractStories(
 ): StoryInfo[] {
   const results: StoryInfo[] = [];
 
-  // CSF3: each named export is a `const Name: Story = { args: { ... } }`.
-  // We don't type-check the `Story` annotation, just look at the
-  // shape.
+  // Any named export that resolves to an object literal counts as a story.
+  // The `Story` type annotation is never checked.
   for (const [name, decls] of exportedDeclarationsOf(sf, resolution)) {
     if (name === "default") {
       continue;
@@ -196,11 +172,9 @@ function extractStories(
 }
 
 /**
- * What a story hands its component, one entry per arg. A string comes
- * back as the string, so a name and a template read the same as a
- * quoted literal. Anything the evaluator does not settle to a string,
- * a number, a JSX element or an object among them, keeps its source
- * text, which is all a reader can be given for it.
+ * An arg that evaluates to a string gives that string, so a constant or a
+ * template gives the same value as a quoted literal. Anything else, such
+ * as a number or JSX, keeps its source text.
  */
 function storyArgs(
   story: ObjectLiteralExpression,
@@ -237,19 +211,13 @@ function buildSummary(
     name,
     position: 0,
     role: name,
-    // Args are authored literals; record the source text in the shape's
-    // `ref.name` so consumers can see the concrete value. Promoting
-    // this to a structured literal shape is a follow-up (would need to
-    // parse each arg's source into a TypeShape; for v0 we surface the
-    // text).
+    // The arg's value goes in `ref.name` so a reader can see what the
+    // story passes. It is never parsed into a structured TypeShape.
     shape: { type: "ref", name: value } as TypeShape,
   }));
 
-  // Single default transition: "this story renders the component."
-  // v0 doesn't simulate the render; the transition records the
-  // component identity as the render output's `component` field and
-  // leaves `root` unset. Later work can populate `root` by evaluating
-  // the inferred render tree against the story's args.
+  // The render is not evaluated, so the output records which component
+  // renders and leaves `root` unset.
   const transition: Transition = {
     id: `${meta.componentName}-${story.name}`,
     conditions: [],
