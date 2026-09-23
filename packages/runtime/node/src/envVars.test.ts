@@ -1722,6 +1722,15 @@ describe("env-var recognizer — a schema parsed against process.env", () => {
     expect(readsOf(file)).toEqual([["PORT", false]]);
   });
 
+  it("says nothing about a schema parsed against no argument", () => {
+    const file = makeProject(`
+      import { z } from "zod";
+      const Env = z.object({ ACCOUNTS_TABLE: z.string() });
+      export const env = Env.parse();
+    `);
+    expect(readsOf(file)).toEqual([]);
+  });
+
   it("says nothing about a parse given the environment and no schema", () => {
     const file = makeProject(`
       import { cleanEnv } from "envalid";
