@@ -1,206 +1,209 @@
 # Strategy review, July 2026
 
-State of the project measured against its stated goals, and the
-shortest defensible path to external users. It goes through where the
-architecture and philosophy stand, where the code diverges from the
-strategy, and then a sequenced recommendation with explicit decision
-points. Everything here cites the doc or package it comes from.
+This measures the state of the project against its stated goals and
+lays out the shortest path to external users that we can defend. It
+covers where the architecture and philosophy stand and where the code
+has drifted from the strategy. Then it gives a recommended order of
+work, with the decisions that need to be made along the way. Every
+claim cites the doc or package it comes from.
 
-## Verdict in three sentences
+## Summary
 
-The architecture is coherent and the philosophy is now written down;
-the intent layer gives suss a differentiated story no adjacent tool
-has. What blocks us strategically is distribution rather than
-capability: nothing is published, so every tutorial, README
-instruction, and CI snippet describes a product no one can install. Close the loop that
-exists (publish + finish PRD coverage + one audience-named demo)
-before widening it (new packs, new protocols, new adapters).
+The architecture is coherent, and the philosophy is now written down.
+The intent layer gives suss a story that no neighboring tool has. The
+strategic blocker is distribution, and capability is not the problem:
+nothing is published, so every tutorial, README instruction and CI
+snippet describes a product nobody can install. Close the loop that
+exists first (publish, finish PRD coverage, and build one demo for a
+named audience), and widen it afterwards with new packs, protocols and
+adapters.
 
 ## What the project claims to be
 
-From `architecture.md`, `contracts.md`, `motivation.md`, and the
-positioning decision: a **behavioral understanding platform**. The
-summary is the product; checkers, inspect, and the intent layer are
-consumers of it. Explicitly not a linter. The long-term arc
-(`backlog.md`, "the Jackson arc") runs intent specs → workflow
-intent → concept declarations → observation adapters: progressively
-richer statements of *what was meant*, each checkable against *what
-shipped*.
+`architecture.md`, `contracts.md`, `motivation.md` and the positioning
+decision all describe suss as a **behavioral understanding platform**.
+The summary is the product, and checkers, inspect and the intent layer
+all consume it. It is explicitly not a linter. The long-term plan
+(`backlog.md`, "the Jackson arc") goes from intent specs to workflow
+intent, then to concept declarations, then to observation adapters.
+Each step is a richer statement of *what was meant*, and each can be
+checked against *what shipped*.
 
-The scope split is settled: OSS owns single-repo, single-moment
-primitives; cross-repo, temporal, and org-level features are product
-scope.
+The scope split is settled. Open source owns primitives that work on a
+single repo at a single moment. Features that span repos, time or a
+whole organization are product scope.
 
 ## Philosophy: consistent, and now stated
 
-These design principles recur across the shipped code. They are worth
-naming because new work should be checked against them:
+These design principles come up again and again in the shipped code.
+We list them so new work can be checked against them:
 
-1. **The summary is the product.** Downstream tools consume IR, never
-   ASTs or source. Everything serializes.
-2. **Severity follows epistemic character** (`contracts.md`): a
-   derivation that violates a specification is an error, an
-   observation is weaker, and two specifications that disagree get a
-   reconcile.
+1. **The summary is the product.** Downstream tools consume the IR and
+   never ASTs or source. Everything serializes.
+2. **Severity follows epistemic character** (`contracts.md`). A
+   derivation that violates a specification is an error. An
+   observation is weaker evidence. Two specifications that disagree get
+   a reconcile finding.
 3. **Open vs closed specifications.** Intent docs declare the floor
-   (what must exist), and code that exceeds them is info. Schema
-   contracts (OpenAPI) are closed enumerations, and code that exceeds
-   them is a violation.
-4. **Pending vs broken.** A state declared before we could check it
-   (unlinked scenario, unkeyable boundary) is valid and gets surfaced
-   at low severity, while a malformed artifact is a load-time error.
-   Nothing is ever silently skipped: checkers report checked and
-   unchecked accounting, not findings alone.
-5. **Degradation is explicit.** Opaque predicates, gaps, and
-   confidence levels say "we don't know" rather than fabricating.
-6. **Packs are data; the adapter owns the language; runtimes own
-   their built-ins.** Ownership rules in `architecture.md`.
-7. **Checkers are pure IR-only functions; the CLI is the
-   dispatch point.** No checker depends on another.
+   (what must exist), and code that goes beyond them gets an info
+   finding. Schema contracts (OpenAPI) are closed lists, and code that
+   goes beyond them is a violation.
+4. **Pending vs broken.** A state declared before we could check it,
+   such as an unlinked scenario or an unkeyable boundary, is valid and
+   is reported at low severity. A malformed artifact is an error at
+   load time. Nothing is ever skipped silently: checkers report what
+   they checked and what they did not, as well as their findings.
+5. **Degradation is explicit.** Opaque predicates, gaps and confidence
+   levels say "we don't know" instead of making something up.
+6. **Packs are data, the adapter owns the language, and runtimes own
+   their built-ins.** The ownership rules are in `architecture.md`.
+7. **Checkers are pure functions over the IR, and the CLI is where
+   dispatch happens.** No checker depends on another.
 
-All of these are true across the behavioural and intent layers today.
-The known violations are listed as debts below. None of them are
-philosophical conflicts; every one is unfinished mechanics.
+All of these are true across the behavioural and intent layers today. The
+known violations are listed as debts below. None of them conflicts
+with the philosophy. Each one is work that isn't finished.
 
 ## Strategic issues, ranked
 
 ### 1. Distribution: the product cannot be installed
 
-Every package is `"private": true`, version 0.0.1, no
-`publishConfig`. The README, both tutorials, and the CI guide
-instruct `npm install @suss/cli`, which fails. The only working
-path is clone + build + `node packages/cli/dist/index.js`. Secondary
-drift compounds it: the petstore Makefile still calls the removed
-`suss stub` command, and the README documents a `-i` flag `suss
-contract` doesn't have.
+Every package is `"private": true` at version 0.0.1, with no
+`publishConfig`. The README, both tutorials and the CI guide tell you
+to run `npm install @suss/cli`, which fails. The only path that works
+is to clone, build, and run `node packages/cli/dist/index.js`. Other
+drift makes it worse: the petstore Makefile still calls the removed
+`suss stub` command, and the README documents a `-i` flag that
+`suss contract` doesn't have.
 
-This gates everything else. No demo, blog post, or dogfood result
-converts into a user without an install path. It is also the
-cheapest item on this list: the packages already have publish
-metadata, licenses, and READMEs.
+This blocks everything else. No demo, blog post or dogfood result can
+turn into a user without a way to install. It is also the cheapest
+item on this list, because the packages already have publish
+metadata, licenses and READMEs.
 
-Decisions needed: npm scope availability (`@suss` may be taken;
-verify, and have a fallback), versioning workflow (changesets vs
-manual), and whether all 30 packages publish or only the consumer
-surface (recommendation: all, because packs are the extension story
-and they are already set up for it).
+Decisions needed: whether the npm scope is available (`@suss` may be
+taken, so check and have a fallback), how to version (changesets or by
+hand), and whether all 30 packages publish or only the ones consumers
+use. We recommend all of them, because packs are how people extend
+suss and they are already set up for publishing.
 
 ### 2. The wedge: who is the first user, doing what
 
-Per the demo-gating rule every feature needs a named beneficiary in a
-named setting. The project supports three candidate wedges today:
+Under the demo-gating rule, every feature needs a named beneficiary in
+a named setting. The project supports three candidate wedges today:
 
-- **(a) Frontend ↔ backend drift**: the anatomy-of-an-integration-bug
-  story. We can demo it now (petstore example, Express/React
-  fixtures). Audience: full-stack teams without shared types. The
-  adjacent space is crowded (typed clients and OpenAPI generators
-  solve the 80% case).
-- **(b) Intent → code verification for AI-generated code**: the
-  intent layer's story. An agent writes code from a spec, and suss
-  checks structurally that the spec was satisfied, before review.
-  Audience: teams running AI codegen at volume (including agent
-  harnesses themselves). No incumbent does this. It is the
+- **(a) Frontend ↔ backend drift**, the anatomy-of-an-integration-bug
+  story. We can demo it now with the petstore example and the Express
+  and React fixtures. The audience is full-stack teams without shared
+  types. The space around it is crowded, since typed clients and
+  OpenAPI generators solve 80% of the problem.
+- **(b) Checking AI-generated code against intent**, the intent layer's
+  story. An agent writes code from a spec, and suss checks the
+  structure to confirm the spec was satisfied, before review. The
+  audience is teams running AI code generation at volume, including the
+  agent harnesses themselves. Nobody does this yet. It is the
   "verification is the bottleneck" argument from the intent proposal,
   and the market is forming right now.
-- **(c) Package-boundary drift inside monorepos**: the dogfood
-  machinery (packageExports / packageImport pairing). Audience:
-  platform teams in large TS monorepos. The pain exists, but
-  discovery gaps (member-call chains, namespace imports) are known
-  and bite production code first.
+- **(c) Drift between packages inside monorepos**, using the dogfood
+  machinery (packageExports and packageImport pairing). The audience is
+  platform teams in large TypeScript monorepos. The pain exists, but we
+  know about gaps in discovery (chains of member calls, namespace
+  imports), and production code runs into them first.
 
-Recommendation: **(b) as the headline, (a) as the on-ramp.** (b) is
-the differentiated story and matches the moment. (a) is the
-five-minute demo that doesn't require a team to author intent before
-seeing value. (c) waits, because its extraction gaps make first
-impressions risky. That means finishing PRD coverage and the `suss
-infer` brownfield path outranks any new framework pack.
+We recommend **(b) as the headline and (a) as the on-ramp.** (b) is
+the story that sets suss apart, and it fits the moment. (a) is the
+five-minute demo where a team sees value before writing any intent.
+(c) waits, because its extraction gaps make first impressions risky.
+So finishing PRD coverage and the `suss infer` path for existing
+codebases comes before any new framework pack.
 
 ### 3. Credibility: dogfood results are private
 
-Suss-on-suss runs in `scripts/dogfood.mjs` with a committed report.
-External runs (Twenty, Saleor) are ad-hoc local clones with no
-committed harness or published results. For a tool whose pitch is
-"we find drift you didn't know about," the strongest marketing
-artifact is a reproducible run against a known open-source codebase
-with findings triaged (found-real / false-positive / gap). It would
-also drive the recognizer and discovery fixes that matter, in the
-order production code shows rather than the order we guess.
+suss runs on itself in `scripts/dogfood.mjs`, with a committed report.
+The runs on external code (Twenty, Saleor) are one-off local clones,
+with no committed harness and no published results. The tool's pitch
+is "we find drift you didn't know about", so the strongest marketing
+artifact would be a reproducible run against a well-known open-source
+codebase, with findings triaged into true positive, false positive and
+gap. It would also tell us which recognizer and discovery fixes
+matter, in the order production code shows us instead of the order we
+guess.
 
 ### 4. Doc integrity: a drift tool whose docs drift
 
-The README flag mismatch, the stale Makefile command, an unreferenced
-draft tutorial, and (until this branch) a proposal doc describing a
-schema that never shipped. Each one is small, but together they
-undermine the exact claim the product makes. Two responses, both
-cheap: fix
-the current drift now, and make #52 (self-dogfood: suss's own intent
-specs against its own CLI surface) the standing mechanism. The
-project catching its own docs drifting is the recursive story the
-strategy memo already commits to.
+The README flag mismatch, the stale Makefile command, a draft tutorial
+nothing links to, and (until this branch) a proposal doc describing a
+schema that never shipped. Each is small, but together they undercut
+the exact claim the product makes. Both fixes are cheap. Fix the
+current drift now, and make #52 (suss checking its own intent specs
+against its own CLI surface) the standing mechanism. The strategy memo
+already commits to the story of the project catching its own docs
+drifting.
 
 ### 5. Architecture debts (tracked, not blocking)
 
-None of these block the wedge, and we have decided a direction for
-each one:
+None of these block the wedge, and we have chosen a direction for each
+one:
 
-- **Suppressions don't cover intent findings**: `applySuppressions`
-  is typed to the behavioural `Finding`, and decision 2 of the intent
-  proposal says the pipeline operates on the thin base. Generalize
-  the matcher when someone first needs to suppress an intent finding
-  in anger.
-- **Sync I/O in readers**: we follow one convention today (all
-  contract readers are sync, and checkers are pure and correctly
-  sync). It is fine for a batch CLI and wrong for a server, an LSP,
-  or a watch consumer. Convert the reader layer when such a consumer
-  exists, not before.
-- **Module-level boundary keying**: intent can declare intra-repo
-  function boundaries the keyer can't pair (surfaced as
-  `unkeyableBoundary`). This needs a design for normalizing paths,
-  which is also part of what #52 needs.
-- **Inspect is HTTP-centric and flat**: we agreed on collapsing to
-  L0 plus graph query, but nobody has built it. It matters for the
-  "platform" positioning. Do it after the wedge demo, since inspect
-  is the second thing a curious evaluator plays with.
-- **PatternPack's provider side has client patterns in it**: a known
-  tension, with a written-down threshold (refactor at the fourth
-  client pack).
-- **Recognizer descent into nested arrows / scope primitive**: we
-  tracked this from Twenty dogfooding. The priority for fixing it
-  should come from the committed dogfood harness (issue 3) rather
-  than from intuition.
+- **Suppressions don't cover intent findings.** `applySuppressions` is
+  typed to the behavioural `Finding`, and decision 2 of the intent
+  proposal says the pipeline works on the thin base. Generalize the
+  matcher the first time someone needs to suppress an intent finding
+  in practice.
+- **Sync I/O in readers.** We follow one convention today: all
+  contract readers are sync, and checkers are pure and correctly sync.
+  That is fine for a batch CLI and wrong for a server, an LSP or a
+  watch consumer. Convert the reader layer when such a consumer exists,
+  and not before.
+- **Module-level boundary keying.** Intent can declare function
+  boundaries inside a repo that the keyer can't pair, and they are
+  reported as `unkeyableBoundary`. This needs a design for normalizing
+  paths, which #52 also needs.
+- **Inspect is HTTP-centric and flat.** We agreed to collapse it to L0
+  plus a graph query, but nobody has built it. It matters for
+  positioning suss as a platform. Do it after the wedge demo, since
+  inspect is the second thing a curious evaluator tries.
+- **PatternPack's provider side has client patterns in it.** This is a
+  known tension, with a threshold we wrote down: refactor at the fourth
+  client pack.
+- **Recognizer descent into nested arrows, and a scope primitive.** We
+  tracked this from dogfooding on Twenty. The committed dogfood harness
+  (issue 3) should set its priority, and intuition should not.
 
 ## Sequenced recommendation
 
-The order is chosen so each step turns the previous one into
-something people outside can see. Capability work that no step pulls
-on is deliberately left out.
+Each step in this order makes the previous one visible to people
+outside the project. We deliberately left out capability work that no
+step depends on.
 
-1. **Publish alpha** (gate for everything). Scope check, changesets,
-   CI release job, `0.1.0-alpha`. Fix README `-i` flag, petstore
-   Makefile, and decide the draft tutorial's fate in the same pass.
-2. **Finish intent v0.1**: PRD coverage checker (#51) + provenance
-   downgrade. This completes the PRD → system intent → code chain
-   the proposal's worked example already scripts.
-3. **Ship the wedge demo**: one repo, agent-written feature from a
-   PRD, `suss check --intent` failing before the fix and passing
-   after: the (b) story with the (a) demo inside it. Reuse the
-   fastify-users worked example.
-4. **Commit the external dogfood harness** + a triaged findings
-   report for one target (Twenty is furthest along). Feed its gap
-   list into the backlog ordering.
-5. **`suss infer` (v0.1.1)**: the brownfield on-ramp, which the
-   demo will make people ask for ("I have 400 endpoints, I'm not
-   hand-writing intent").
+1. **Publish an alpha** (this blocks everything). Check the scope, set
+   up changesets, add a CI release job, and publish `0.1.0-alpha`. In
+   the same pass, fix the README `-i` flag and the petstore Makefile,
+   and decide what happens to the draft tutorial.
+2. **Finish intent v0.1**: the PRD coverage checker (#51) and the
+   provenance downgrade. This completes the chain from PRD to system
+   intent to code that the proposal's worked example already scripts.
+3. **Ship the wedge demo**: one repo, a feature an agent wrote from a
+   PRD, and `suss check --intent` failing before the fix and passing
+   after it. That is the (b) story with the (a) demo inside it. Reuse
+   the fastify-users worked example.
+4. **Commit the external dogfood harness**, plus a triaged findings
+   report for one target (Twenty is furthest along). Use its list of
+   gaps to order the backlog.
+5. **`suss infer` (v0.1.1)**: the on-ramp for existing codebases,
+   which the demo will make people ask for ("I have 400 endpoints, I'm
+   not hand-writing intent").
 
 ## Decision points needing a call
 
-1. **Decision 4 amendment**: accept the CLI as the dispatch point
-   (deviation flagged in `proposals/intent-specs.md`), or build
-   the library-level orchestrator the original text described.
-2. **Wedge choice**: endorse (b)-headline / (a)-on-ramp, or
-   reorder.
-3. **Publish scope + versioning**: all packages vs consumer
-   surface; changesets vs manual.
+1. **Amending decision 4**: accept the CLI as the place where dispatch
+   happens (the deviation is flagged in `proposals/intent-specs.md`),
+   or build the library-level orchestrator the original text
+   described.
+2. **Wedge choice**: endorse (b) as the headline and (a) as the
+   on-ramp, or reorder them.
+3. **Publish scope and versioning**: all packages or only the ones
+   consumers use, and changesets or versioning by hand.
 4. **Draft tutorial** (`docs/guides/check-against-openapi.md`,
-   currently untracked): finish and wire into the docs nav during
-   step 1, or drop.
+   currently untracked): finish it and add it to the docs nav during
+   step 1, or drop it.
