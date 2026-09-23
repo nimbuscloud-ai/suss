@@ -33,8 +33,8 @@ import type {
 import type { ReceiverOrigin } from "./ops.js";
 
 /**
- * One thing a pack matches, as whichever entry point built it hands it
- * over. `storageCalls` and `sqlStatements` both come out as this.
+ * One thing a pack matches, as an entry point returns it. `storageCalls`
+ * and `sqlStatements` both return this.
  */
 export interface Match {
   readonly declared: Chain<MethodMeaning>;
@@ -42,7 +42,7 @@ export interface Match {
 
 /** What a pack says about itself, beyond the calls it matches. */
 export interface PackSpec {
-  /** The languages the pack runs on, as the adapters name them. */
+  /** The languages the pack runs on, spelled as the adapters spell them. */
   languages: string[];
   /**
    * The name effects from this pack are recorded under, which is the
@@ -56,24 +56,23 @@ export interface PackSpec {
    */
   version?: string;
   /**
-   * What the pack itself speaks, when that is not the wire its accesses
-   * record. An S3 access goes over the AWS SDK and says so on every
-   * effect, while the pack speaks S3.
+   * The pack's own protocol, when it differs from the wire its accesses
+   * record. An S3 pack records the AWS SDK as the wire on every effect,
+   * and its protocol is S3.
    */
   protocol?: string;
   /**
-   * Further modules whose presence makes a file worth reading, beyond
-   * the ones the chains match on. A helper a project reaches by a
-   * relative path gives the gate nothing; the library that helper
-   * imports gives it something.
+   * More modules that make a file worth reading, beyond the ones the
+   * chains match on. A helper imported by a relative path does not open
+   * the import gate, so the pack lists the library the helper imports.
    */
   requiresImport?: string[];
   /**
    * Recognizers written against the adapter directly, run alongside the
-   * declared chains. A pack migrating one call at a time keeps what is
-   * not declared yet here, and a pack that needs a shape the endings
-   * cannot say keeps it here for good. Health reporting counts these as
-   * function links, so the cost of staying here is visible.
+   * declared chains. A pack moving to chains one call at a time keeps
+   * the calls it has not declared yet here, and a call no ending can
+   * describe stays here for good. The pack health report counts these
+   * as function links, so a reader sees how many are left.
    */
   recognizers?: InvocationRecognizer[];
   /**
@@ -89,8 +88,8 @@ export interface PackSpec {
  *
  * A statement written as a tagged template is not an invocation, so the
  * invocation walk never reaches it. The access walk visits calls as
- * well as templates, which is why a chain over statements goes there
- * whichever of the two the source wrote.
+ * well as templates, so a chain over statements is dispatched there
+ * whether the source wrote a call or a template.
  */
 const DISPATCHED_ON: Record<Ending["yields"], "invocation" | "access"> = {
   storageAccess: "invocation",
@@ -143,9 +142,10 @@ export function pack(
 }
 
 /**
- * What a set of chains cost, for a pack that assembles itself. A pack
- * part way through the migration still has a hand-rolled walk beside
- * its declarations, and this is how the part that moved is priced.
+ * Describes a set of chains for the pack health report, for a pack that
+ * builds its `PatternPack` by hand. A pack partway through moving to
+ * declared chains keeps hand-written recognizers beside them, and this
+ * reports on the part that has moved.
  */
 export function declarationsIn(matches: readonly Match[]): PackDeclarations {
   return { declarations: matches.map((match) => describe(match.declared)) };
@@ -163,9 +163,8 @@ function wireOf(ending: Ending): string {
 }
 
 /**
- * What a declaration is called where it is priced. A storage chain is
- * known by its store rather than by the wire it reaches over, since one
- * wire carries several stores.
+ * The name a declaration gets in the pack health report. A storage
+ * chain goes by its store, because one wire can reach several stores.
  */
 function declaredName(ending: Ending): string {
   if (ending.yields === "messageSend") {
@@ -203,9 +202,9 @@ function gateOf(chains: readonly Chain<MethodMeaning>[]): string[] {
 }
 
 /**
- * Every origin a chain states. A chain says where its match starts, and
- * a chain about a command says where that command came from as it steps
- * to it, so both are places a module can only be reached from.
+ * Every origin a chain states: where its match starts, and, for a chain
+ * about a command, the module that command was imported from. A file
+ * that imports none of these modules cannot match the chain.
  */
 function originsIn(chain: Chain<MethodMeaning>): ReceiverOrigin[] {
   const found: ReceiverOrigin[] = [];
@@ -228,13 +227,13 @@ function originsIn(chain: Chain<MethodMeaning>): ReceiverOrigin[] {
   return found;
 }
 
-/** One question a pack settled with code, and how far down it reached. */
+/** A question a pack settled with a function, and whether it reads the tree. */
 interface WrittenAsCode {
   asks: string;
   reachesAst: boolean;
 }
 
-/** What one chain cost, as the health report reads it. */
+/** One chain, counted the way the pack health report counts it. */
 function describe(chain: Chain<MethodMeaning>): DeclaredMatch {
   const links = chain.links.filter(isFunctionLink);
   const written: WrittenAsCode[] = [
@@ -246,8 +245,8 @@ function describe(chain: Chain<MethodMeaning>): DeclaredMatch {
   ];
   return {
     name: declaredName(chain.ending),
-    // A method table with a rule inside it is still a table, so that
-    // link stays counted as data and the rule is priced beside it.
+    // A method table with a rule inside still counts as a data link. The
+    // rule is counted on its own, as a function link.
     dataLinks: chain.links.length - links.length,
     functionLinks: written.map((rule) => rule.asks),
     astLinks: written
@@ -264,7 +263,7 @@ function isFunctionLink(
   return link.asks === "container" && "from" in link;
 }
 
-/** The questions a rule inside a meaning settles, by name. */
+/** The questions a rule inside a method's meaning settles, one per entry. */
 function rulesIn(chain: Chain<MethodMeaning>): WrittenAsCode[] {
   const link = chain.links.find(
     (candidate): candidate is MethodsLink<MethodMeaning> =>
@@ -295,9 +294,9 @@ function rulesIn(chain: Chain<MethodMeaning>): WrittenAsCode[] {
 
 /**
  * The rule a method gave for one question, whether it reads the inputs
- * the chain found or a value it pointed itself at. Both are code and
- * both are priced, so the pack health report does not go quiet when a
- * pack moves from one form to the other.
+ * the chain found or a value it pointed itself at. Both forms are
+ * functions and both are counted, so moving a pack from one form to the
+ * other does not hide the rule from the pack health report.
  */
 function ruleFor(says: StorageMethod["selector"]): InputRule | null {
   if (typeof says === "function") {

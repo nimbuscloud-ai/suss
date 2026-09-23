@@ -2,10 +2,10 @@
  * The entry point for a pack that recognizes storage calls, and the
  * chain it builds.
  *
- * The entry point says what comes out rather than how, so a pack author
- * writes `storageCalls` and never meets an `Effect`. Each method on the
- * returned value adds one link and gives back a new chain, so a chain
- * is finished data by the time `pack` receives it.
+ * A pack author writes `storageCalls` and never builds an `Effect` by
+ * hand. Each method on the returned value adds one link and returns a
+ * new chain, so by the time `pack` receives a chain it is plain data
+ * that nothing changes afterwards.
  */
 
 import { chainStart } from "./chain.js";
@@ -32,8 +32,8 @@ export interface StorageCallsSpec {
   scope?: string;
   /**
    * How the pack pins down the client its calls are on. A pack that
-   * matches a helper a project lists in its own config leaves this out,
-   * because the name that project gave is the whole of what it has.
+   * matches a helper listed in a project's own config leaves this out,
+   * because the helper's name is the only thing it has to match on.
    */
   client?: ReceiverOrigin;
   /**
@@ -57,9 +57,9 @@ export interface StorageCalls {
     options?: { ignoringCase?: boolean },
   ): StorageCalls;
   /**
-   * What a bare call of the client itself does. A store hook is the
-   * case: `useAppStore((s) => s.bears)` reaches for no method, so the
-   * one meaning here is the whole answer.
+   * What a bare call of the client itself does. A store hook such as
+   * `useAppStore((s) => s.bears)` calls no method, so this meaning
+   * applies to every call.
    */
   calls(meaning: StorageMethod): StorageCalls;
   /**

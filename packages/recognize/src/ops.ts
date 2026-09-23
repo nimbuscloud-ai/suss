@@ -28,8 +28,8 @@ import type {
 
 /**
  * A receiver whose method one of these modules declared. Pass every
- * module that ships the same client, the way three packages all speak
- * one wire protocol.
+ * module that ships the same client, for example several packages that
+ * implement one wire protocol.
  */
 export function declaredBy(...importedFrom: readonly string[]): DeclaredBy {
   return { origin: "declaredBy", importedFrom };

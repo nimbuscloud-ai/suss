@@ -1,11 +1,11 @@
 /**
- * The floor: a link that reads the adapter's own syntax tree.
+ * A link that reads the adapter's own syntax tree, for a pack the ops
+ * cannot serve.
  *
- * A pack that outgrows the ops still gets the tree, and this is the
- * only door to it. Going through a separate import puts the decision in
- * the diff, and `astLink` marks the link so the pack health report says
- * which packs went through, the way it says which declare no version.
- * Allowed, observable, and slightly inconvenient.
+ * This is the only way a pack reaches the tree. It needs a separate
+ * import, so a pack that starts using it shows up in the diff. `astLink`
+ * also marks the link, and the pack health report lists every pack that
+ * used it, the same way it lists packs that declare no version.
  *
  * The node comes back as `unknown` because this package does not read
  * any one language. A pack casts it to the adapter it was written
@@ -16,8 +16,8 @@ import type { AstCapableOps, CallOps } from "@suss/extractor";
 import type { LinkFunction } from "./chain.js";
 
 /**
- * A link answered by reading the call's own node. `read` is handed the
- * node and whatever the link would have been handed anyway.
+ * A link that reads the call's own node. `read` gets the node first,
+ * then the arguments the link would have received anyway.
  */
 export function astLink<A extends unknown[], R>(
   read: (node: unknown, ...given: A) => R,

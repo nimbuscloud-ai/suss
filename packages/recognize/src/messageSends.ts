@@ -1,18 +1,16 @@
 /**
- * messageSends.ts: a pack that recognizes a call putting a message on a
- * wire.
+ * A pack that recognizes a call putting a message on a wire.
  *
- * The AWS SDK shape is the one this was written against. An operation
- * is a command class and its arguments are one object, so the pack says
- * which command, where the message is inside it, and which of the
- * message's properties name the channel:
+ * It was written against the AWS SDK. There an operation is a command
+ * class and its arguments are one object, so the pack says which
+ * command, where the message is inside it, and which of the message's
+ * properties make up the channel:
  *
  *   client.send(new SendMessageCommand({ QueueUrl, MessageBody }))
  *   client.send(new PutEventsCommand({ Entries: [{ EventBusName, DetailType }] }))
  *
- * A library taking one message and a batch of them offers two commands,
- * so a pack writes two declarations. Which of the two a command is
- * belongs to the command rather than to a setting on one declaration.
+ * A library that sends one message and a batch through separate
+ * commands gets two declarations, one per command.
  */
 
 import { chainStart } from "./chain.js";
@@ -35,19 +33,19 @@ export interface MessageSendsSpec {
   messages: MessageLocation;
   /** The parts of the channel, joined in the order they are written. */
   channel: readonly ChannelPart[];
-  /** What joins the parts. Defaults to "#", which is what a bus and a subject use. */
+  /** What joins the parts. Defaults to "#", as used between a bus and a subject. */
   channelSeparator?: string;
   /** The property a message states its body on. */
   body?: string;
   /**
-   * The property whose literal value rides along as the routing key,
-   * scoping the message for a reader without joining the channel.
+   * The property whose literal value is recorded as the routing key. A
+   * reader can filter on it, and it stays out of the channel name.
    */
   routingKey?: string;
   /**
    * What a reader gives back for a channel nothing in the source
-   * settles. Defaults to keeping the reference, since a queue named
-   * only at deploy time is the common case rather than the exception.
+   * settles. Defaults to keeping the reference, because most queues get
+   * their name at deploy time.
    */
   unsettledName?: UnsettledName;
   /** How the pack pins down the client its calls are on. */

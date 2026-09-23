@@ -1,16 +1,16 @@
 /**
- * The spine every pack shares, as a chain of links.
+ * The chain of links every declared pack is written as.
  *
  * A pack does four jobs, and all four start the same way: match the
- * receiver, match the method, read the arguments, then yield. What
- * differs is the ending. Recognition yields effects, discovery yields a
- * unit, a terminal yields a response write, and a claimed callback
- * yields a sub-unit. Only recognition is built as a chain so far, with
- * four endings in `Ending`. The other three jobs would each join
- * `Ending` with an entry in the compile table.
+ * receiver, match the method, read the arguments, then yield. Only the
+ * ending differs. Recognition yields effects, discovery yields a unit,
+ * a terminal yields a response write, and a claimed callback yields a
+ * sub-unit. Only recognition endings exist so far: storage, SQL,
+ * message send and unit invoke. Each of the other jobs would be one
+ * more member of `Ending` with an entry in the compile table.
  *
- * A link's answer is data wherever it can be. A link given a function
- * instead is code, that link alone, and pack health says which ones.
+ * A pack writes each link as data where it can. A link written as a
+ * function is code, and the pack health report lists those links.
  */
 
 import type { DeployableUnit, MessageBusSemantics } from "@suss/behavioral-ir";
@@ -21,7 +21,7 @@ import type {
   ValueOps,
 } from "./ops.js";
 
-/** A link whose answer a pack wrote as code rather than as data. */
+/** A link the pack wrote as a function instead of as data. */
 export interface LinkFunction<A extends unknown[], R> {
   (...args: A): R;
   /** Set when the function was built through `@suss/recognize/ast`. */
@@ -31,11 +31,10 @@ export interface LinkFunction<A extends unknown[], R> {
 /**
  * What a match starts from.
  *
- * Most of what the shipped packs match starts from a receiver, and none
- * of what discovery matches does: an exported name, a file path, a
- * decorator, a parameter's type, a template file beside the module and
- * a function's return type each start somewhere else. So the start is
- * its own axis, and a receiver origin is one value on it.
+ * Every recognition chain starts from a receiver. Discovery starts
+ * elsewhere, for example from an exported name or a decorator. The start
+ * is a union of its own so a discovery ending can add a member, and a
+ * receiver is its only member today.
  */
 export type MatchStart = FromReceiver;
 
@@ -47,8 +46,8 @@ export interface FromReceiver {
 
 /**
  * The link a chain opens with, when the pack says which client its calls
- * are on. A pack that names no client matches the method wherever it is
- * written, which is what a global send does.
+ * are on. Without a client the chain matches the method on any receiver,
+ * as a global send needs.
  */
 export function chainStart<TMeaning>(
   client: ReceiverOrigin | undefined,
@@ -69,17 +68,17 @@ export interface StartLink {
  *
  * A pack that has to read a chain of calls, or a command a call was
  * handed, states the steps to it and asks the same questions there. The
- * steps are data, so a pack that reads three calls still declares three
- * links rather than one function that walks.
+ * steps are data, so a pack that reads three calls states three steps
+ * and never writes a function that walks the calls itself.
  */
 export type CallStep = ToReceiver | ToArgument;
 
 /**
  * The call the receiver is. With a method, the walk keeps going up the
- * receivers until it reaches a call to that method, which is how a pack
- * says which hop it means where the shape varies:
+ * receivers until it reaches a call to that method. That lets a pack
+ * pick the hop it means when the distance varies:
  * `bucket(b).file(p).download()` and `bucket(b).getFiles()` put the
- * bucket a different distance away.
+ * bucket at different distances.
  */
 export interface ToReceiver {
   readonly to: "receiver";
@@ -94,8 +93,8 @@ export interface ToArgument {
   /**
    * Where the argument has to have come from, for a step that tries
    * several. `send(command)` takes one argument and a presigner takes
-   * two, and the one that matters is the command the SDK declares, so
-   * the step says so rather than reading whatever it lands on.
+   * two. Only the command the SDK declares matters, so the step requires
+   * that origin and skips any other argument.
    */
   readonly origin?: ReceiverOrigin;
 }
@@ -138,10 +137,9 @@ export interface ContainerArgument {
 }
 
 /**
- * The container worked out by the pack. The call the chain is about
- * comes second so that a rule written over the selector alone, which is
- * most of them, ignores it. A rule that has to read the syntax tree
- * goes through `astLink`, which is what puts the call to use.
+ * The container worked out by the pack. The call comes second so that a
+ * rule over the selector alone, as most are, can leave it out. A rule
+ * that has to read the syntax tree gets the call through `astLink`.
  */
 export interface ContainerRule {
   readonly asks: "container";
@@ -155,10 +153,10 @@ export interface AccessPathLink {
 }
 
 /**
- * Which of the store's namespaces a call reached, when the call says
- * rather than the pack. Most clients connect to one namespace and the
- * pack states it once, but a BigQuery caller names the dataset on the
- * way to the table, so a project reading two datasets would otherwise
+ * Which of the store's namespaces a call reached, when the call states
+ * it instead of the pack. Most clients connect to one namespace and the
+ * pack states it once. A BigQuery caller writes the dataset on the way
+ * to the table, and without this a project reading two datasets would
  * record both accesses under the same scope.
  */
 export interface ScopeLink {
@@ -177,20 +175,19 @@ export interface ContainersLink {
   readonly asks: "containers";
   readonly in: OneArgument;
   /**
-   * What one of them is. An entry keys the container by name and says
-   * what the call did there, which is how a batch write is written. A
-   * name is the container on its own, which is how a call that reads
-   * several parameters at once is written. Defaults to an entry.
+   * How to read each item. An entry keys the container by name and its
+   * value says what the call did there, as in a batch write. A name is
+   * the container on its own, as in a call that reads several parameters
+   * at once. Defaults to an entry.
    */
   readonly each?: "entry" | "name";
 }
 
 /**
  * Where a call states its inputs, when it states them as one object
- * rather than as positional arguments. A call that states none is not
- * one of these calls, so the chain stops there, and a rule the pack
- * writes over the inputs is handed the object rather than a position to
- * go looking in.
+ * instead of as positional arguments. A call without that object does
+ * not match. A rule the pack writes over the inputs receives the object
+ * itself, so it never has to find the right position.
  */
 export interface InputLink {
   readonly asks: "input";
@@ -198,19 +195,19 @@ export interface InputLink {
 }
 
 /**
- * What the values a statement interpolates come to.
+ * How to read the values interpolated into a statement.
  *
- * A query that says which table it reached by handing over the schema
- * object leaves the name out of the text, and a parameter in its place
- * does not parse. Only the pack knows the object is a table rather than
- * a value, so the pack says which argument of the call behind it gives
- * the name, and where that call had to have come from.
+ * A query that interpolates a schema object for its table leaves the
+ * table name out of the SQL text, and a parameter in its place does not
+ * parse. Nothing in the statement shows that the object is a table, so
+ * the pack says which argument of the call that built the object gives
+ * the name, and where that call must have come from.
  */
 export interface InterpolatesLink {
   readonly asks: "interpolates";
-  /** Which argument of the call the value was written as gives the name. */
+  /** Which argument of the call that built the value gives the name. */
   readonly named: ArgumentPick;
-  /** Where the value had to have come from. Left out, every hole is read. */
+  /** Where the value must come from. Without it, every hole is read. */
   readonly from?: ReceiverOrigin;
 }
 
@@ -228,10 +225,10 @@ export type Link<TMeaning> =
   | InterpolatesLink;
 
 /**
- * The meaning of a bare call of the tracked client itself. A store
- * hook is the case: `useAppStore((s) => s.bears)` reaches for no
- * method, so there is no name for a methods table to list; the call
- * matches by what its callee was written as.
+ * The meaning of a bare call of the tracked client itself. A store hook
+ * such as `useAppStore((s) => s.bears)` calls no method, so a methods
+ * table has nothing to list. The call matches on how its callee was
+ * written.
  */
 export interface CallsLink<TMeaning> {
   readonly asks: "calls";
@@ -259,8 +256,8 @@ export interface OneArgument {
   readonly of?: readonly CallStep[];
   readonly at: number;
   /**
-   * Properties of the object the argument states, tried in order, when
-   * what the call reached is inside the argument rather than being it.
+   * Properties of the object the argument states, tried in order, for
+   * when the thing the call reached is a property of the argument.
    */
   readonly property?: readonly string[];
 }
@@ -280,17 +277,16 @@ export interface ArgumentsFrom {
  */
 export type AccessKind = "read" | "write" | KindAsAsked;
 
-/** A method the caller tells which way round it goes. */
+/** A method whose argument says whether the call reads or writes. */
 export interface KindAsAsked {
-  /** Where the call says what it is for. */
+  /** The argument that says what the call is for. */
   readonly asks: ArgumentPick;
-  /** What each thing the caller can ask for comes to. */
+  /** Whether each value that argument can take reads or writes. */
   readonly means: Readonly<Record<string, "read" | "write">>;
   /**
-   * What it comes to when the call says nothing. Left out, a call that
-   * asks for something the table does not list is not one of these
-   * calls, which is how a pack reads a helper whose operations a
-   * project lists in its own config.
+   * The kind to use when `means` does not list what the call asked for.
+   * Without it such a call does not match. A pack reading a helper whose
+   * operations a project lists in its own config relies on that.
    */
   readonly otherwise?: "read" | "write";
 }
@@ -298,12 +294,11 @@ export interface KindAsAsked {
 /** What a pack's own rule is handed: one value, and what the call does. */
 export interface StatedInputs {
   /**
-   * The value the rule reads. That is the object the call states its
-   * inputs as when the chain says where with `input`, and the value the
-   * rule was pointed at when it says where for itself. A call that
-   * passed nothing there states nothing, rather than the rule being
-   * skipped: a projection the caller left out is still a read of every
-   * field there is, and only the pack knows that.
+   * The value the rule reads: the inputs object when the chain locates
+   * it with `input`, or the value the rule was pointed at otherwise.
+   * When the call passed nothing there, the rule still runs, over a
+   * value that states nothing. A caller that leaves out a projection
+   * still reads every field, and only the pack's rule can say so.
    */
   readonly input: ValueOps;
   /** The container's own entry, when the call reached several. */
@@ -314,7 +309,7 @@ export interface StatedInputs {
 
 /**
  * A pack's own rule over the inputs a call states, for a library that
- * writes what a reader wants somewhere no pick can reach.
+ * puts the selector or the fields somewhere no argument pick can reach.
  */
 export type InputRule = LinkFunction<[StatedInputs], readonly string[]>;
 
@@ -322,12 +317,12 @@ export type InputRule = LinkFunction<[StatedInputs], readonly string[]>;
  * A pack's own rule, pointed at the value it reads.
  *
  * `input` says where a call that states one request object states it,
- * and every rule on that chain reads the one value. A library that
- * spreads what a reader wants over several places needs each rule
- * pointed somewhere of its own: Mongoose picks documents by the first
- * argument and reads the fields the second asks for, and Drizzle puts
- * the fields, the table and the condition on three calls of one chain,
- * which the pick's own `of` steps reach.
+ * and every rule on that chain reads that one value. A library that
+ * spreads a request over several places needs each rule pointed at its
+ * own value. Mongoose picks documents by the first argument and reads
+ * the fields the second asks for. Drizzle puts the fields, the table
+ * and the condition on three calls of one chain, which the pick's own
+ * `of` steps reach.
  */
 export interface StatedRule {
   /** Which value the rule reads. */
@@ -341,14 +336,14 @@ export interface StorageMethod {
   readonly kind: AccessKind;
   /**
    * Which argument says which operation the call performs, when the
-   * name the call goes to does not. A project's own request helper is
-   * the case: every operation goes through the one function.
+   * method name does not. A project's own request helper needs this,
+   * because every operation goes through the one function.
    */
   readonly operation?: ArgumentPick;
   /**
-   * What the call reached. An argument the call passes, a rule the pack
-   * wrote, or the plain list a method whose own name settles it states
-   * outright: `findById` picks by `_id` however the id is spelt.
+   * What the call reached: an argument the call passes, a rule the pack
+   * wrote, or a fixed list for a method whose name already settles it.
+   * `findById` picks by `_id` however the id is spelt.
    */
   readonly selector?:
     | readonly string[]
@@ -357,9 +352,9 @@ export interface StorageMethod {
     | InputRule
     | StatedRule;
   /**
-   * Which fields the call touched, said the same three ways. A delete
-   * touches the whole document and states `["*"]`, since nothing in its
-   * arguments says so.
+   * Which fields the call touched, stated any of the ways a selector
+   * is. A delete touches the whole document and states `["*"]`, since
+   * nothing in its arguments says so.
    */
   readonly fields?:
     | readonly string[]
@@ -377,19 +372,18 @@ export interface StorageMethod {
  */
 export interface SqlMethod {
   /**
-   * Where the call states the statement. The pick's steps reach a call
-   * beside this one, which is how a pack reads a statement handed to
-   * `execute` as a tagged template rather than written on the call.
+   * Where the call states the statement. The pick's steps can reach a
+   * call beside this one, so a pack can read a statement built as a
+   * tagged template and passed to `execute`.
    *
-   * A list is tried in order until one of the picks reaches text. One
-   * library takes the statement either way round: `query(sql)` and
-   * `query({ query: sql })` are the same call, and the pack says both
-   * rather than picking whichever its author happened to meet first.
+   * A list is tried in order until one of the picks reaches text. Some
+   * libraries take the statement either way: `query(sql)` and
+   * `query({ query: sql })` are the same call, so the pack lists both
+   * picks.
    */
   readonly statement: OneArgument | readonly OneArgument[];
 }
 
-/** What one method table can say a method does. */
 /** What one send method does, as the message-send ending reads it. */
 export interface MessageSendMethod {
   /** Where the call states the message, or the collection of them. */
@@ -403,6 +397,7 @@ export interface MessageSendMethod {
  */
 export type UnitInvokeMethod = MessageSendMethod;
 
+/** What one method table can say a method does. */
 export type MethodMeaning = StorageMethod | SqlMethod | MessageSendMethod;
 
 /** What a chain produces when every link matches. */
@@ -428,11 +423,10 @@ export interface StorageEnding {
 /**
  * Every table a statement touches, as one effect each.
  *
- * The storage ending settles what a call reached by asking the call. This
- * one settles it by reading the statement, so one call yields as many
- * effects as the statement has tables, and each of them states its own
- * kind: a statement that writes one table while reading another says
- * both.
+ * The other endings settle what a call reached from the call's
+ * arguments. This one reads the statement, so one call yields one
+ * effect per table, each with its own kind. A statement that writes one
+ * table while reading another yields a write and a read.
  */
 export interface SqlEnding {
   readonly yields: "sqlAccess";
@@ -456,11 +450,10 @@ export interface SqlEnding {
  * Where the messages a call sends are written.
  *
  * A library either takes one message as the call's input or takes a
- * collection of them under a property. Which of the two is a fact about
- * the command, so a library offering both spells them as two
- * declarations rather than one with a setting on it: SQS has
- * `SendMessageCommand` and `SendMessageBatchCommand`, and they are
- * different shapes.
+ * collection of them under a property. Which one applies depends on the
+ * command, so a library offering both gets two declarations. SQS has
+ * `SendMessageCommand` and `SendMessageBatchCommand`, and their inputs
+ * differ.
  */
 export type MessageLocation = OneMessage | ManyIn;
 
@@ -503,10 +496,10 @@ export interface ChannelPart {
   /**
    * What a reader gives back when this part is written but nothing in
    * the source settles it, overriding the ending's `unsettledName`.
-   * EventBridge wants both: its bus is nearly always an env var, whose
-   * name both sides of the boundary agree on, and its subject is a
-   * domain string, where a run-time value should leave the channel
-   * unnamed rather than pair against everything.
+   * EventBridge needs both settings. Its bus is nearly always an env
+   * var, whose name both sides of the boundary agree on. Its subject is
+   * a domain string, and a value known only at run time there should
+   * leave the channel unnamed so it does not pair against everything.
    */
   readonly unsettled?: UnsettledName;
 }
@@ -525,9 +518,9 @@ export interface MessageSendEnding {
   /** The property the message states its body on, when the pack can say. */
   readonly body?: string;
   /**
-   * The property whose literal value rides along as the routing key.
-   * Not part of the channel: it scopes the message for a reader without
-   * being what the two sides pair on.
+   * The property whose literal value is recorded as the routing key. It
+   * stays out of the channel, so a reader can filter on it but the two
+   * sides do not pair on it.
    */
   readonly routingKey?: string;
   /**
