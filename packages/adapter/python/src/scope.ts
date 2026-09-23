@@ -4,11 +4,11 @@
  * whether that was an import, an assignment, a def, a parameter, or a `global`
  * or `nonlocal` redirect to another scope.
  *
- * It never has to be complete, because "I could not resolve this name" is a
- * legal answer everywhere a name is read. What it has to avoid is being wrong.
- * So it only binds names written directly in a body's own statement list. A
- * definition or import nested inside an `if`, `try`, or `with` block is not
- * found, and a read of it comes back unresolved rather than as a guess.
+ * Every reader of a name accepts an unresolved answer, so the binder can
+ * leave names out, and a wrong binding is what it avoids. It binds names
+ * written directly in a body's statement list, plus the statements of a
+ * `with` body. A definition or import nested inside an `if` or `try` is
+ * left out, and a read of it comes back unresolved instead of guessed.
  */
 
 import {
@@ -57,7 +57,7 @@ export type Binding =
   | { kind: "classDef"; node: PyNode }
   | { kind: "functionDef"; node: PyNode }
   | { kind: "parameter" }
-  /** The right-hand side, when there is one, so we can trace a decorator's base object one hop back to whatever constructed it. */
+  /** The right-hand side, when there is one, so a reader can follow a name one hop back to what constructed it. */
   | { kind: "assignment"; value: PyNode | null }
   /** `global x` inside a function: reads of `x` in this scope resolve in the module scope instead. */
   | { kind: "global" }
@@ -68,7 +68,7 @@ export interface ModuleBinding {
   moduleScope: Scope;
   /** The scope a class_definition, a function_definition, or the module node opens, keyed by that node's id. */
   scopeFor: Map<number, Scope>;
-  /** The modules a `from X import *` pulls in. We cannot list what a wildcard brings in, so nothing expands them here. */
+  /** The modules a `from X import *` pulls in. The binder cannot list what a wildcard brings in, so nothing expands them here. */
   openImports: string[];
 }
 
@@ -134,12 +134,11 @@ const STATEMENT_BINDERS: Record<
 };
 
 /**
- * `with httpx.Client() as client:` binds the name to what the call
- * returns. A context manager may hand `__enter__` something other than
- * itself, and this binds the call anyway, since every one a project
- * opens for its own use does return itself. Python has no block scope, so the
- * name goes in the scope the statement is written in, and the body's
- * own statements bind there too.
+ * `with httpx.Client() as client:` binds the name to the call. `__enter__`
+ * can return something other than the manager, and this still binds the
+ * call, because the clients and sessions a project opens this way return
+ * themselves. Python has no block scope, so the name and the body's own
+ * statements bind in the scope the statement is written in.
  */
 function bindWithStatement(
   stmt: PyNode,
@@ -424,8 +423,8 @@ function bindExpressionStatement(stmt: PyNode, scope: Scope): void {
   if (left === null) {
     return;
   }
-  // An unpacking target such as `a, b = ...` has no identifier on the left, so
-  // we leave it unbound.
+  // An unpacking target such as `a, b = ...` has no identifier on the left,
+  // so its names stay unbound.
   if (left.type === "identifier") {
     bindName(scope, left.text, {
       kind: "assignment",

@@ -17,11 +17,11 @@ import type { PyNode } from "./parser.js";
 import type { Scope } from "./scope.js";
 
 /**
- * `definitions` stores each converted class shape once, however many annotations
- * mention it. `scopeMaps` is here so a name written inside a referenced class's
- * body resolves too, not only one written at the annotation's use site; a class
- * read from another file brings that file's scopes along. `importedDefinition`
- * is absent when a caller reads one file on its own, and an imported name is
+ * `definitions` stores each converted class shape once, however many
+ * annotations mention it. `scopeMaps` lets a name written inside a
+ * referenced class's body resolve as well as one at the annotation, and a
+ * class read from another file adds that file's scopes. `importedDefinition`
+ * is null when a caller reads one file on its own, and an imported name is
  * then a ref by name and nothing more.
  */
 export interface AnnotationContext {
@@ -121,7 +121,7 @@ const TUPLE_SET_NAMES = new Set([
   "FrozenSet",
 ]);
 
-/** `scope` is where the annotation is written, which is how we tell a project-local class from an external name. */
+/** `scope` is where the annotation is written. Resolving the name there tells a project class apart from an external name. */
 export function annotationToShape(
   typeNode: PyNode,
   scope: Scope,

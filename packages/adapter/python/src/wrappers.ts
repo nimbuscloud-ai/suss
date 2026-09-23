@@ -1,16 +1,16 @@
 /**
  * The project functions a library runs around a route, read from where
  * they are registered: a dependency on a route's parameter or decorator,
- * a dependency list on the app or a router, a function decorated with
- * `@app.middleware(...)` or `@app.exception_handler(...)`. Each one
- * becomes a unit of its own, and every route it reaches lists it, so the
- * extractor can fold its outcomes into the route's. The README says which
- * registrations are read and which are not.
+ * a dependency list on the app or a router, or a function decorated with
+ * `@app.middleware(...)` or `@app.exception_handler(...)`. Each becomes a
+ * unit of its own, and every route it reaches lists it, so the extractor
+ * can fold its outcomes into the route's. DESIGN.md, under "What runs
+ * around a route", lists which registrations are read.
  *
  * A registration on the app reaches every route of the pack in the run,
- * since an app is one per run for every pack that has one. A registration
- * on a router reaches the routes decorated on that same router object,
- * and nothing mounted onto it.
+ * because the run treats a pack's app as the only one. A registration on
+ * a router reaches the routes decorated on that same router object, and
+ * nothing mounted onto it.
  */
 
 import { absentReading, walkDescendants } from "@suss/extractor";
@@ -314,7 +314,7 @@ function runOrder(form: PyWrapperForm): number {
 
 interface RegistrarMatch {
   registrar: PyWrapperRegistrar;
-  /** The value key of the construction call, which is what a registration is filed under. */
+  /** The value key of the construction call. A router's registrations are stored under it. */
   key: string;
   call: PyNode;
 }

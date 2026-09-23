@@ -1,13 +1,12 @@
 /**
- * The Python side of the value evaluator: each tree-sitter node lowered
- * to one of the engine's expression or statement shapes, on demand.
+ * The Python side of the value evaluator. It lowers each tree-sitter node
+ * to one of the engine's expressions or statements when the engine asks.
  *
- * A root is the module or a function; a class body is a root for the
- * methods inside it and opaque to the module around it. The engine
- * keys nodes by `node.id`, because tree-sitter hands back a fresh
- * wrapper on every read. The two cross-file questions, which
- * expression a name was written as and which function a callee is, go
- * to the resolution facts through `EvaluationContext`.
+ * A root is the module, a function or a lambda. A class body is opaque to
+ * the module around it. The engine keys nodes by `node.id`, because
+ * tree-sitter returns a new wrapper on every read. The two questions that
+ * cross files, which expression a name was written as and which function
+ * a callee is, go to the resolution facts through `EvaluationContext`.
  */
 
 import {
@@ -35,8 +34,8 @@ import type { PyNode } from "../parser.js";
 export interface EvaluationContext {
   /**
    * The expression a name or call resolves to through the facts, or
-   * null. With a site, only what it resolves to when the receiver
-   * behind it is the instance that site made.
+   * null. With a site, what it resolves to when its receiver is the
+   * instance built at that site.
    */
   writtenTo(node: PyNode, site?: string): PyNode | null;
   /** The function definition a call's callee resolves to, or null. */

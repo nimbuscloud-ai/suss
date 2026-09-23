@@ -1,10 +1,11 @@
-// parser.ts: loads the Python grammar behind web-tree-sitter.
-//
-// tree-sitter is the settled parser choice. It runs as WASM, needs no
-// native build step, and can be swapped behind this one module if a
-// fuzzer run ever asks for a different Python grammar. The rest of the
-// adapter never imports `web-tree-sitter` directly. It goes through
-// `parsePython` and the node helpers in `ast.ts`.
+/**
+ * Loads the Python grammar into web-tree-sitter and parses a file.
+ *
+ * tree-sitter runs as WASM, so the adapter needs no native build step.
+ * The rest of the adapter reaches the parser only through this module
+ * and the node helpers in the `ast` module, so a different Python grammar would
+ * be a change here alone.
+ */
 
 import fs from "node:fs";
 import path from "node:path";

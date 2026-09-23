@@ -7,8 +7,8 @@
  * facts, each scanned body adds a `calls` fact per callee it could
  * follow, and the rules derive what is reachable until the set stops
  * growing. A call that could not be followed is recorded as an
- * unfollowed-call gap on the summary of the body it is in. The package
- * README says how a callee is resolved and where the walk stops.
+ * unfollowed-call gap on the summary of the body it is in. DESIGN.md
+ * lists how a callee is resolved and where the walk stops.
  */
 
 import {
@@ -82,9 +82,9 @@ export interface ReachOptions {
   readonly files: readonly BoundPythonFile[];
   readonly roots: string[];
   readonly gapHandling: ExtractorOptions["gapHandling"];
-  /** What a pack needs to say a body in this file talks to the database. */
+  /** The storage patterns that apply to a file, for recognizing a body's database work. */
   readonly storageFor: (file: BoundPythonFile) => StorageLookup | undefined;
-  /** The value facts, which are where a callee is settled. */
+  /** The value facts the rules settle a callee from. */
   readonly facts: Database;
   /** The function each function key was read from. */
   readonly definitions: ReadonlyMap<string, PyNode>;
@@ -326,12 +326,12 @@ function outsideNestedDef(node: PyNode): boolean {
 }
 
 /**
- * Settle the values every reached body states, one file at a time. The
- * rules run over the whole project's facts, so a file's worth of values
- * costs what one of them does; asking as each summary is built costs
- * one question per argument the file writes. A whole run at once is
- * one question again, but a big project derives far more for it than
- * the sum of the files does.
+ * Settles the values every reached body reads, one file at a time. Each
+ * round of the rules runs over the whole project's facts, so batching a
+ * file costs about the same as asking about one value, where asking per
+ * summary would cost a round per argument. Batching the whole run into
+ * one round derives far more on a large project than the per-file rounds
+ * add up to.
  */
 function settleBodyValues(
   reached: readonly string[],
@@ -366,7 +366,7 @@ function passedNameKeyOf(
   return readKey(file.file, arg, enclosingFunction(arg));
 }
 
-/** Every name one call passes by position, which is what says a project function was handed over. */
+/** Every bare name one call passes as an argument, since a project function is passed by its name. */
 function passedNameKeys(file: BoundPythonFile, call: PyNode): string[] {
   const args = field(call, "arguments");
   if (args === null) {
@@ -462,7 +462,7 @@ function scanBody(
     );
 
     // One record per callee, however many times the body calls it. A call
-    // storage recognition read is not lost, whatever the walk made of it.
+    // that storage recognition already read is not reported as a stop.
     if (outcome.kind === "stopped") {
       const stopKey = `${outcome.reason}:${callee}`;
       if (
@@ -642,11 +642,11 @@ function positionalParameters(node: PyNode, isMethod: boolean): RawParameter[] {
 }
 
 /**
- * A function's own parameters, in call order, with a method's leading
- * `self`/`cls` left out since a caller never spells it. This is the
- * position a `callerSupplied` call through one of them joins to a
- * caller's argument by, which needs the receiver left out the way
- * `positionalParameters` counts it in for a different purpose.
+ * A function's own parameters in call order, with a method's leading
+ * `self` or `cls` left out, since a caller never passes it. A
+ * `callerSupplied` call through a parameter joins a caller's argument by
+ * this index. `positionalParameters` skips the receiver as well, but
+ * still counts its position.
  */
 function callParameterNames(node: PyNode, isMethod: boolean): string[] {
   const parameters = field(node, "parameters");

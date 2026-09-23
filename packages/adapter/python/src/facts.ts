@@ -1,20 +1,15 @@
-// facts.ts: what the binder and the module resolver hand to the shared
-// fact store.
-//
-// This is the Layer 1 contract: discover units, emit summaries, emit
-// these facts.
-//
-// `entry` reuses the existing relation name and shape, where the unit
-// is a pack-discovered entry point, so a Python-discovered route is an
-// entry the same way a TypeScript one is, ready for whatever rule wants
-// to join against it later.
-//
-// `pyImport`, `pyImportResolved` and `pyOpenImport` are the two
-// additions Python needs. The first two record repo-scoped module
-// resolution as facts, where abstaining comes back as a status with no
-// resolved file rather than a guess. The third records `from module
-// import *` for a future rule to consult when it needs to, rather than
-// expanding it here.
+/**
+ * The facts the binder and the module resolver add to the shared store.
+ *
+ * A discovered route goes into `entry`, the same relation a TypeScript
+ * entry point goes into, so a rule joining on entries sees both.
+ *
+ * The `py` relations are specific to Python. `pyImport` and
+ * `pyImportResolved` record how each import resolved, and an import the
+ * resolver abstains on gets its reason as the status instead of a guessed
+ * file. `pyOpenImport` records each `from module import *` as written,
+ * and nothing expands it here.
+ */
 
 import { NAMESPACE_IMPORT_NAME } from "@suss/resolution";
 
@@ -25,9 +20,8 @@ import type { ModuleResolverOptions } from "./moduleResolver.js";
 import type { ModuleBinding } from "./scope.js";
 
 /**
- * The name is part of the key because the range is measured in lines, two
- * units can start on the same line, and `entry` is a set, so keying on the range
- * alone would drop one of them.
+ * The range is in lines and two units can start on the same line. `entry`
+ * is a set, so a key without the name would drop one of the two.
  */
 export function unitKey(
   filePath: string,
@@ -84,29 +78,30 @@ export function emitModuleImportFacts(
       ]);
       const importedName =
         binding.kind === "import" ? binding.localName : binding.importedName;
-      // Which name came from which module, for a library nobody can read.
+      // Recorded for every import so a name from a library outside the run
+      // still says which module it came from.
       db.add("pyImportedName", [nameKey, moduleText, importedName]);
       // A module-scope name is one another file can import back out.
       if (scope.kind === "module") {
         db.add("exportsAs", [filePath, localName, nameKey]);
       }
-      // `import fastapi` brings in the whole module, and the shared
-      // rules spell that `*`, which is what turns `fastapi.APIRouter`
-      // into fastapi's own `APIRouter`.
+      // `import fastapi` brings in the whole module. The shared rules spell
+      // that `*`, and it lets them resolve `fastapi.APIRouter` to fastapi's
+      // own `APIRouter`.
       const exportedName =
         binding.kind === "import" && binding.bindsWholeModule
           ? NAMESPACE_IMPORT_NAME
           : importedName;
       if (resolution.status === "resolved") {
         db.add("pyImportResolved", [filePath, moduleText, resolution.file]);
-        // The shared rules follow a name across files through these two, so a
-        // resolved module is keyed by the file it resolved to.
+        // The shared rules follow a name across files through `imports` and
+        // `exportsAs`, so a resolved module is keyed by its file.
         db.add("imports", [nameKey, resolution.file, exportedName]);
         continue;
       }
-      // A third-party package resolves to no file, and the shared rules
-      // still have to say a name came out of it: that is how `FastAPI()`
-      // is told from a same-named constructor the project wrote itself.
+      // A third-party package resolves to no file. Keying the import on the
+      // module text still tells `FastAPI()` apart from a constructor of the
+      // same name that the project wrote itself.
       db.add("imports", [nameKey, moduleText, exportedName]);
     }
   }

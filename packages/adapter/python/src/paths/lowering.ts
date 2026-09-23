@@ -1,6 +1,8 @@
-// lowering.ts: Python tree-sitter statements to StructuredStatement<PyNode>.
-// The shared path engine is generic over the language's condition handle,
-// so the README's table of what each construct lowers to is the contract.
+/**
+ * Lowers Python statements into the `StructuredStatement` form the shared
+ * path engine walks. The table of what each construct lowers to is in the
+ * package's DESIGN.md, under "What a body lowers to".
+ */
 
 import { field, NodeMap, NodeSet } from "../ast.js";
 
@@ -30,7 +32,7 @@ export interface PythonLowering {
   terminalHome: NodeMap<StructuredStatement<PyNode>>;
 }
 
-/** A raise anywhere beats a return anywhere, which is what the engine expects. */
+/** When the subtree has both, the raise wins wherever each one is, as the engine expects. */
 function exitKindOf(node: PyNode, thrown: NodeSet): ExitKind {
   let sawReturn = false;
   const raises = (current: PyNode): boolean => {
@@ -200,8 +202,8 @@ class Lowerer {
   }
 
   lower(node: PyNode): StructuredStatement<PyNode> {
-    // A call that raises inside the library leaves the unit as surely as
-    // a `raise` does, and only the caller knows which calls those are.
+    // A call that raises inside the library ends the unit the same as a
+    // `raise`. The caller passes those calls in, because the pack lists them.
     if (this.thrown.has(node)) {
       return this.attach({ kind: "exit", exit: "throw", exitKind: "throw" }, [
         node,
@@ -252,11 +254,11 @@ class Lowerer {
 }
 
 /**
- * Lower one function body, and say where each terminal ended up. The
- * terminals are whatever the caller wants paths to, which for a route is
- * its return statements and the calls its pack says end the request.
+ * Lowers one function body and records where each terminal ended up. The
+ * terminals are the statements the caller wants paths to. For a route
+ * they are its returns and the calls its pack declares end the request.
  *
- * `thrown` is the set of statements that leave the unit without being
+ * `thrown` is the set of statements that end the unit without being
  * written as a `raise`, such as a call to Flask's `abort`.
  */
 export function lowerPythonBody(

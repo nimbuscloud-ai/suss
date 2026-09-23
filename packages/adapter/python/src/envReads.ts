@@ -1,16 +1,15 @@
 /**
- * envReads.ts: the environment variables a body reads, whether through
- * the standard library itself or through a project helper.
- * `os.environ["X"]`, `os.environ.get("X", d)` and `os.getenv("X", d)`
- * become the config-read effect the TypeScript adapter emits for
- * `process.env.X`, with the same defaulted flag, so the runtime-config
- * checker pairs them against a template the same way.
+ * The environment variables a body reads, through the standard library
+ * or through a project helper. `os.environ["X"]`, `os.environ.get("X", d)`
+ * and `os.getenv("X", d)` become the config-read effect the TypeScript
+ * adapter emits for `process.env.X`, with the same defaulted flag, so the
+ * runtime-config checker pairs them against a template the same way.
  *
- * `os` is the language's own module, so this belongs to the adapter and
- * not to a pack. Every expression that spells `os.environ` and hands it
- * somewhere states `environmentObject`, the value facts state the read,
- * and one question keyed on those objects gives back the parameters
- * that end up as a variable's name. The README lists the spellings.
+ * `os` is part of the standard library, so the adapter reads it without a
+ * pack. Each expression that passes `os.environ` somewhere is recorded as
+ * `environmentObject`, the value facts record the read, and one question
+ * keyed on those objects returns the parameters that end up as a
+ * variable's name. DESIGN.md lists the spellings.
  */
 
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
@@ -67,8 +66,8 @@ export function envReadEffects(
   facts?: Database,
 ): Effect[] {
   const slots: ReadSlot[] = [];
-  // A run that stated no site has no helper to find behind a call, so
-  // the calls are not collected at all.
+  // Without any sites in the run there is no helper to find behind a
+  // call, so the calls are not collected at all.
   const readsHelpers = facts !== undefined && sitesByDb.has(facts);
   const startScope = module.scopeFor.get(root.id) ?? module.moduleScope;
   walkDescendants<PyNode, Scope>(root, startScope, {
@@ -142,9 +141,9 @@ function hasFallback(
 }
 
 /**
- * A read whose variable name the source does not write out: the site
- * the shared rules land on, and what a reader reports when it lands
- * there.
+ * A read whose variable name the source does not write out. The shared
+ * rules join a parameter to this site, and a reader reports the read at
+ * the call that supplies the name.
  */
 export interface EnvNameSite {
   /** The read expression, keyed the way the value facts key a node. */
@@ -154,8 +153,8 @@ export interface EnvNameSite {
   defaulted: boolean;
   /**
    * The environment reference a read written as a call goes through.
-   * The value facts state the container of `os.environ[name]`;
-   * `os.getenv(name)` has no container for them to state.
+   * The value facts record the container of `os.environ[name]`, and
+   * `os.getenv(name)` has no container for them to record.
    */
   functionKey: string | null;
 }
@@ -168,11 +167,11 @@ export interface EnvFileFacts {
 }
 
 /**
- * What a file says about the environment: every read whose variable
- * name is not a string literal, and every expression that spells the
- * environment object and hands it somewhere. Function bodies are
- * included, since a helper's own read is written in one, which is why
- * this walk does not stop where `envReadEffects` does.
+ * What a file does with the environment: every read whose variable name
+ * is not a string literal, and every expression that passes the
+ * environment object somewhere. This walk goes into function bodies,
+ * where `envReadEffects` stops, because a helper's own read is written
+ * inside one.
  */
 export function envFactsIn(
   filePath: string,
@@ -208,7 +207,7 @@ const keyOf = (filePath: string, node: PyNode): string =>
 /**
  * The `os.getenv` reference a read goes through, when the source writes
  * the read as a bare function call. `os.environ.get(name)` reads a
- * container the value facts already state.
+ * container the value facts already record.
  */
 function functionReadKey(
   filePath: string,
@@ -261,22 +260,22 @@ function firstArgumentOf(call: PyNode): PyNode | null {
   return first?.node ?? null;
 }
 
-/** What one run knows about the environment before the rules are asked. */
+/** What one run recorded about the environment before the rules are asked. */
 interface EnvSiteIndex {
-  /** Each site by its node id, so a reader at a call can say whether it has a fallback. */
+  /** Each site by its node id, so a reader at a call can tell whether the read has a fallback. */
   byId: Map<string, EnvNameSite>;
-  /** Every expression the run says spells the environment, which is what the question is seeded with. */
+  /** Every expression recorded as the environment. The rules are seeded with these. */
   objects: Set<string>;
-  /** Which sites each parameter ends up naming. Null until the rules have been asked. */
+  /** For each parameter, the sites whose variable name it ends up as. Null until the rules have been asked. */
   sitesByParameter: Map<string, string[]> | null;
 }
 
 const sitesByDb = new WeakMap<Database, EnvSiteIndex>();
 
 /**
- * State what the files said about the environment and keep the part the
- * rules do not carry, so a reader standing at a call can ask whether one
- * of the callee's parameters is a variable's name.
+ * Adds the files' environment facts to the database, and keeps the parts
+ * the rules do not record, so a reader at a call can ask whether one of
+ * the callee's parameters is a variable's name.
  */
 export function bindEnvFacts(
   db: Database,
@@ -308,11 +307,12 @@ export function bindEnvFacts(
 }
 
 /**
- * Which sites each parameter ends up naming, from one question over
- * every expression the run says spells the environment. Asked the first
- * time a reader reaches a call, by when every file's facts are in the
- * database. The reads cannot be the seed: one written through a
- * parameter is off an object no scan of the source would pick out.
+ * For each parameter, the sites whose variable name it ends up as, from
+ * one question over every expression recorded as the environment. It is
+ * asked the first time a reader reaches a call, when every file's facts
+ * are in the database. The question is seeded with objects instead of
+ * reads, because a read through a parameter is taken off an object that
+ * no scan of the source would pick out.
  */
 function sitesEachParameterNames(
   db: Database,
@@ -334,9 +334,9 @@ function sitesEachParameterNames(
 }
 
 /**
- * The reads each of these calls makes through the helper it calls, by
- * the call's node. A run that stated no site gives back an empty map
- * before it looks at a single call.
+ * The reads each of these calls makes through the helper it calls, keyed
+ * by the call's node id. Without any sites in the run it returns an empty
+ * map before looking at a call.
  */
 function helperReadsByCall(
   calls: readonly PyNode[],

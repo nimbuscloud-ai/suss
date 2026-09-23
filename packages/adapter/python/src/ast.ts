@@ -24,7 +24,7 @@ export function rangeOf(node: PyNode): Range {
   };
 }
 
-/** Byte offsets, which identity measures with; lines above are for reading. */
+/** Byte offsets, for keying a unit's identity. `rangeOf` gives lines, for a reader. */
 export function spanOf(node: PyNode): Range {
   return { start: node.startIndex, end: node.endIndex };
 }
@@ -84,11 +84,10 @@ export function enclosingFunction(node: PyNode): PyNode | null {
 
 /**
  * The text of one `string_content` run, with an f-string's doubled braces
- * halved. Python serves `f"/v1/{{id}}"` at `/v1/{id}`, so a reader that kept
- * the doubling would pair the route with a path no request ever arrives at.
- * The grammar marks each doubled brace with an `escape_interpolation` child
- * and emits none of them for a plain string, which keeps its braces as
- * written.
+ * halved. `f"/v1/{{id}}"` is the string `/v1/{id}`, and keeping the doubling
+ * would pair the route with a path no request arrives at. The grammar marks
+ * each doubled brace with an `escape_interpolation` child, and a plain
+ * string has none, so its braces stay as written.
  */
 export function stringContentValue(content: PyNode): string {
   const base = content.startIndex;
@@ -166,7 +165,7 @@ export function booleanLiteralValue(node: PyNode): boolean | null {
   return null;
 }
 
-/** tree-sitter types a named child as nullable; dropping them once keeps every walk below flat. */
+/** tree-sitter types a named child as nullable. Dropping the nulls here saves every walk a check. */
 export function children(node: PyNode): PyNode[] {
   return node.namedChildren.filter((child): child is PyNode => child !== null);
 }
@@ -221,12 +220,10 @@ export function stripDecorators(node: PyNode): {
 }
 
 /**
- * tree-sitter hands back a fresh wrapper object every time a child is read,
- * so two reads of one node are never `===`. These key on the node id, and
- * `checkStyle` fails a build that keys a plain Set or Map on a node.
+ * A set of nodes keyed on the node id. tree-sitter returns a new wrapper
+ * each time a child is read, so two reads of one node are never `===`.
  */
-/** A set of nodes, compared the way tree-sitter compares them. */
 export class NodeSet extends IdSet<PyNode> {}
 
-/** A map keyed by node, compared the way tree-sitter compares them. */
+/** A map keyed on the node id, for the same reason as `NodeSet`. */
 export class NodeMap<V> extends IdMap<PyNode, V> {}
