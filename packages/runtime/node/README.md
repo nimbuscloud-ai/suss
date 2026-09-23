@@ -39,6 +39,25 @@ it reported `__dirname read by handler but <instance> declares no
 __dirname in its environment` at error severity, once for every Lambda
 that resolved a path.
 
+A `config-read` is `defaulted` when the program copes with the variable
+being unset, and the checker then does not require a template to
+declare it. A `??` or `||` after the read does that, and so does a
+presence test the value is used only behind:
+
+```ts
+const version = process.env.APP_VERSION;
+if (version) {
+  resolved = version;
+  return;
+}
+lookUpVersionElsewhere();
+```
+
+The test can be on the read or on a local it initializes inside a
+function, and an `if` that returns early when the value is missing
+counts for everything after it. A local used anywhere a test has not
+passed, or a missing branch that throws, leaves the read undefaulted.
+
 ## Reads through a project's own helper
 
 Most services read their environment through one helper:
