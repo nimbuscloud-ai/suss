@@ -133,7 +133,7 @@ The 500 is an error and the other six findings are warnings. The difference come
 
 ## Three kinds of truth
 
-Any artifact about code tells you one sort of thing, and which sort it is decides how suss treats it.
+Every artifact about code tells you one of three sorts of thing. suss treats an artifact differently depending on which sort it is.
 
 | Kind of truth | What it tells you | Examples | Completeness |
 |---|---|---|---|
@@ -162,7 +162,7 @@ Every boundary has all three of these, whether or not anyone writes them down. [
 
 ## Contract shapes
 
-The three contracts above are all HTTP. In other domains, contracts come in more shapes than a schema, and a large domain usually uses several of them. Each shape is one of the three kinds of truth.
+The three contracts above are all HTTP. In other domains a contract can take more shapes than a schema, and a large domain usually uses several of them. Each shape is one of the three kinds of truth.
 
 | Shape | What it declares | Kind of truth |
 |---|---|---|
@@ -174,13 +174,13 @@ The three contracts above are all HTTP. In other domains, contracts come in more
 
 Everything suss reads today is schema-shaped, across the HTTP, GraphQL, AppSync, message-bus, storage and component domains. Point `suss contract --from <source>` at one and you get summaries in the same form `extract` produces; [Contract sources](/packs/contract-sources) lists the readers that ship.
 
-The other shapes have no reader. The one observation that reaches a summary comes from `suss corroborate --experimental`, which runs your code. It generates inputs that satisfy a claim's own conditions, runs the handler on them, and records the verdict in `confidence.corroboration` as `observed`, as `refuted` along with the input that disagreed, or as `untested`. Design shapes are left out on purpose. Design files rarely live in the repository, and integrating with those APIs would cost more than the result is worth.
+The other shapes have no reader. The one observation that reaches a summary comes from `suss corroborate --experimental`, which runs your code. It generates inputs that satisfy a claim's own conditions, runs the handler on them, and records the verdict in `confidence.corroboration` as `observed`, as `refuted` along with the input that disagreed, or as `untested`. Design shapes are left out on purpose. Design files are rarely in the repository, and integrating with those APIs would cost more than it gives back.
 
-Team-authored intent is a kind of truth of its own, with an artifact stream separate from the contract sources. [Check against your intent](/guides/check-against-intent) covers the two document kinds and the commands that read them.
+Intent your team writes is a kind of truth of its own, and suss reads it separately from the contract sources. [Check against your intent](/guides/check-against-intent) covers the two document kinds and the commands that read them.
 
 ## Severity follows the kind of truth
 
-A finding's severity comes from the kinds of truth being compared, not from the file format the contract arrived in:
+A finding's severity depends on which kinds of truth were compared. The file format the contract came in makes no difference:
 
 - A derivation violates a specification: `error`. The code has drifted from what it promised. That is the `providerContractViolation` in the invoice run, where the router promises a 500 and no branch produces one.
 - An observation violates a specification: `warning`. Something happened that the specification said could not happen.
