@@ -10,8 +10,8 @@
  * signal. What makes zero a signal is the count before it. A pack whose
  * import gate picked forty files and whose discovery then found no unit
  * in any of them said "look here" and failed to look. Every later stage
- * works the same way, which is why these checks are one comparison run
- * over a list of pairs rather than one check written per stage.
+ * works the same way, so the check is one comparison run over a list of
+ * stage pairs instead of one check written per stage.
  */
 
 import type {
@@ -56,16 +56,9 @@ export interface HealthCheck {
 /**
  * A pack's funnel, as the ordered stages a health check walks.
  *
- * The discovery pair comes first, and it only means something when the
- * pack gated itself: an ungated pack is handed every file in the
- * project, so its candidate count only tells you the project has files.
- *
- * Every count compared here is the pack's own work, which is why a pack
- * made only of recognisers is counted and never judged. A recogniser
- * fires inside units some other pack discovered, so any count of what it
- * had to look at is really a count of what the packs beside it found.
- * Measuring against that made the same pack look working or broken
- * depending on which unrelated pack was passed alongside it.
+ * The discovery pair only means something when the pack gated itself: an
+ * ungated pack is handed every file in the project, so its candidate
+ * count only says the project has files.
  */
 interface FunnelStage {
   from: { count: number; name: string };
@@ -77,12 +70,9 @@ function stagesOf(funnel: PackFunnel): FunnelStage[] {
   const gateSaysSomething =
     funnel.gates.length > 0 && funnel.unresolvedGates.length === 0;
 
-  // A pack that recognises calls had its chance the moment some pack
-  // walked a body in a file its gate selected. Matching nothing there
-  // means either the library is installed and not usable yet, the way
-  // a Prisma client is before it is generated, or the code calls it in
-  // a shape the pack does not describe. The count only means something
-  // when the gate resolved, since an unresolved gate has its own copy.
+  // A recogniser had its chance once any pack walked a body in a gated file.
+  // Matching nothing then means the library is not usable yet, as with an
+  // ungenerated Prisma client, or the pack does not describe how it is called.
   if (funnel.recognizes && !funnel.discovers && gateSaysSomething) {
     stages.push({
       from: { count: funnel.unitsInGatedFiles, name: "unit bodies" },
@@ -129,26 +119,14 @@ function funnelDrops(packs: ReadonlyArray<PackFunnel>): HealthViolation[] {
 }
 
 /**
- * A pack declares no version.
- *
- * The extraction cache keys on the pack's name and version together. A
- * pack that never stamps a version looks identical to every earlier
- * build of itself, so editing it and re-running gives you back what the
- * code that was there before produced.
- *
- * This is the one check that needs no codebase to decide, and the one
- * that costs a pack author something: it asks for a field.
- */
-/**
  * A recognizer pack whose gate selected files, in a run where no pack
  * discovered a unit in any of them.
  *
  * A recognizer reads calls inside units other packs discover, so a run
  * with the recognizer alone walks nothing and writes nothing, and the
  * funnel's own drop check stays quiet because its first count is
- * already zero. Somebody who ran `-f prisma` on a working application
- * saw exactly that silence, and the missing pack is the one thing the
- * output did not say.
+ * already zero. Running `-f prisma` alone on a working application
+ * gives that silence, and this check says which pack is missing.
  */
 function recognizersWithNoUnits(
   packs: ReadonlyArray<PackFunnel>,
@@ -163,8 +141,8 @@ function recognizersWithNoUnits(
         funnel.candidateFiles > 0 &&
         funnel.unitsInGatedFiles === 0 &&
         // The closure walks a recognizer-only pack's gated exports as
-        // roots, so effects recognized there mean the run worked and
-        // the missing framework pack costs attribution, not existence.
+        // roots, so effects recognized there mean the run worked and only
+        // the framework pack's attribution is missing.
         funnel.effectsRecognized === 0,
     )
     .map((funnel) => ({
@@ -179,8 +157,8 @@ function recognizersWithNoUnits(
  * Every later count starts at zero, so no other check has anything to
  * compare, and the run says nothing at all about the pack somebody
  * asked for. The gate follows imports through a project's own modules,
- * so this means the code here really does not use the library, or it
- * reaches it a way the gate cannot follow.
+ * so either the code does not use the library or it reaches it in a way
+ * the gate cannot follow.
  */
 function gatedPacksWithNoFiles(
   packs: ReadonlyArray<PackFunnel>,
@@ -216,6 +194,14 @@ function helpersThatMatchedNothing(
   );
 }
 
+/**
+ * A pack declares no version.
+ *
+ * The extraction cache keys on the pack's name and version together. A
+ * pack that never stamps a version looks identical to every earlier
+ * build of itself, so after editing it a re-run returns what the old
+ * code produced.
+ */
 function unversionedPacks(packs: ReadonlyArray<PackFunnel>): HealthViolation[] {
   return packs
     .filter((funnel) => funnel.version === null)
@@ -233,9 +219,8 @@ function unversionedPacks(packs: ReadonlyArray<PackFunnel>): HealthViolation[] {
  * check says so, because a pack that broke on every file it was given
  * reports the same zero as a pack that looked and found nothing.
  *
- * This is the one check whose finding is never about the codebase. The
- * pack is at fault, and the person running it is told anyway, since
- * their numbers are the ones that came out short.
+ * The pack is at fault, but the finding goes to the person running it,
+ * since their numbers are the ones that came out short.
  */
 function threwWhileReading(
   packs: ReadonlyArray<PackFunnel>,
@@ -254,13 +239,13 @@ function threwWhileReading(
 }
 
 /**
- * What one pack paid for what it matches.
+ * How much of one pack is data and how much is code (#542).
  *
- * Expressiveness is bought link by link, and #542 asks for the price to
- * be printed. A pack with every link written as data runs on any
- * adapter with the executor ops. A link written as a function runs only
- * where its own language does, and one that reads the syntax tree is
- * the floor. All three are allowed, and this says which is which.
+ * A pack with every link written as data runs on any adapter with the
+ * executor ops. A link written as a function runs only where its own
+ * language does, and one that reads the syntax tree runs only on the
+ * adapter whose tree it reads. All three are allowed, and this counts
+ * each kind.
  */
 export interface PackGradient {
   pack: string;
@@ -315,9 +300,9 @@ function gradientOf(
 /**
  * A declared pack wrote a link as a function.
  *
- * The function is the pack's own domain knowledge and it is meant to be
- * there. What the report adds is the price beside it, so a pack
- * drifting back towards a hand-rolled walk shows up while it happens.
+ * A function link is allowed. Reporting it beside the count of data
+ * links shows a pack drifting back towards a hand-rolled walk while it
+ * happens.
  */
 function opaqueLinks(
   gradients: ReadonlyArray<PackGradient>,
@@ -333,8 +318,8 @@ function opaqueLinks(
 /**
  * A declared pack reads the adapter's own syntax tree.
  *
- * Reaching the tree needs its own import, so a pack cannot arrive here
- * by accident. Saying so on every run is what keeps the escape rare.
+ * Reaching the tree needs its own import, so a pack cannot do it by
+ * accident. Reporting every such link keeps the escape rare.
  */
 function reachesTheSyntaxTree(
   gradients: ReadonlyArray<PackGradient>,

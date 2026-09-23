@@ -7,10 +7,10 @@
  * is a parameter. The call site has the literals and no library; the
  * helper body has the library and no literals.
  *
- * A pack asks here for the helper to be read once, over the whole
- * project, before any file is walked. What comes back says what the
- * body does in terms of the helper's own parameters, and the pack turns
- * that into the patterns and recognizers it used to take as config.
+ * A pack asks for the helper to be read once, over the whole project,
+ * before any file is walked. What comes back says what the body does in
+ * terms of the helper's own parameters, and the pack turns that into
+ * discovery patterns and invocation recognizers.
  */
 
 import type { DiscoveryPattern, InvocationRecognizer } from "./framework.js";
@@ -23,8 +23,8 @@ import type { DiscoveryPattern, InvocationRecognizer } from "./framework.js";
  */
 export type HelperValue =
   /**
-   * A string, with `{N}` standing where parameter N was interpolated.
-   * A literal with no interpolation is the literal itself.
+   * A string, with `{N}` wherever parameter N was interpolated. A
+   * literal with no interpolation comes back unchanged.
    */
   | { as: "text"; text: string }
   /** Parameter N, or one named property of it. */
@@ -47,11 +47,11 @@ export interface HelperSink {
 
 /** A function the project declares, as the index read it. */
 export interface ProjectHelper {
-  /** What the declaration calls it, which is what a call site writes. */
+  /** The declared name, which is the name call sites use. */
   name: string;
   /** Absolute path of the file declaring it. */
   file: string;
-  /** Its parameters, in order, by name. */
+  /** Parameter names in declaration order. */
   parameters: string[];
   /**
    * Parameters some caller handed this pack's own value to. Empty when
@@ -65,11 +65,11 @@ export interface ProjectHelper {
 /**
  * How the index picks out which of the project's functions to read.
  *
- * `subject` starts at a call site: a function the project hands one of
- * this pack's own values to is a helper of this pack's, whatever the
+ * `subject` starts at a call site: a function the project passes one of
+ * this pack's own values to is one of the pack's helpers, whatever the
  * helper's file imports. `text` starts at the body, for a pack whose
  * library is reached over the wire and has no import to look for. Both
- * come from the library itself, which is the bar `requiresImport` meets.
+ * searches use only facts about the library, as `requiresImport` does.
  */
 export type HelperSearch =
   | { by: "subject" }
@@ -81,13 +81,13 @@ export interface HelperDeclarations {
   invocationRecognizers?: InvocationRecognizer[];
 }
 
-/** A pack's standing request to have the project's helpers read. */
+/** A pack's request to have the project's helpers read before extraction. */
 export interface ProjectHelpers {
   find: HelperSearch;
   /**
-   * Turned into patterns and recognizers before the first file is
-   * walked. It is handed data, never an AST, so a pack that declares
-   * one still runs on any adapter that implements the reading.
+   * Called once, before the first file is walked, to turn the helpers
+   * into patterns and recognizers. It receives data and never an AST, so
+   * a pack that declares it runs on any adapter that reads helpers.
    */
   declare(helpers: readonly ProjectHelper[]): HelperDeclarations;
 }

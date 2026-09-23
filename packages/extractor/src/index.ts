@@ -1,13 +1,13 @@
 /**
- * The assembly engine: a `RawCodeStructure` from a language adapter goes in,
- * a `BehavioralSummary` comes out. The package README explains where that step
- * fits in the pipeline.
+ * The assembly engine. A language adapter hands over a `RawCodeStructure`,
+ * and `assembleSummary` turns it into a `BehavioralSummary`. The package
+ * README explains where that step fits in the pipeline.
  *
- * Two things surprise people reading this file. First, `RawCodeStructure` and
- * the raw types around it are the contract every adapter and pack implements,
- * so a field added here is a change to that contract. Second, this is the only
- * module allowed to turn a `Reading` into a claim on a summary; adapters hand
- * readings over uncollapsed and the rule for collapsing them lives here.
+ * `RawCodeStructure` and the raw types around it are the contract every
+ * adapter and pack implements, so adding a field here changes that
+ * contract. This is also the only module that turns a `Reading` into a
+ * claim on a summary. Adapters pass readings over uncollapsed, and the rule
+ * for collapsing them is below.
  */
 
 import { createHash } from "node:crypto";
@@ -160,9 +160,8 @@ export interface RawParameter {
   name: string;
   position: number;
   /**
-   * What the parameter is for, in the library's own vocabulary. When the
-   * adapter could not tell, this is null rather than a guess, and the reason
-   * goes in `readings`.
+   * What the parameter is for, in the library's own vocabulary. Null when
+   * the adapter could not tell, with the reason in `readings`.
    */
   role: string | null;
   typeText: string | null;
@@ -239,7 +238,7 @@ export type RawEffect =
       callee: string;
       args: EffectArg[];
       async: boolean;
-      /** Empty means the call always fires, not that nobody looked. */
+      /** An empty list means the call is not under any guard, so it always fires. */
       preconditions?: RawCondition[];
     }
   | { type: "emission"; event: string }
@@ -350,14 +349,14 @@ export interface RawCodeStructure {
   bodyContent?: BodyContent;
   dependencyCalls: RawDependencyCall[];
   /**
-   * Reads the adapter saw in the body that never flow into a condition
-   * or an output value, a render tree's `props.title` say. Merged into
-   * `inputReads` beside the derived ones.
+   * Reads the adapter saw in the body that never flow into a condition or
+   * an output value, such as a render tree's `props.title`. They are merged
+   * into `inputReads` with the ones derived from conditions and outputs.
    */
   extraInputReads?: InputRead[];
   declaredContract: RawDeclaredContract | null;
-  /** The property a consumer goes through to get at the body, `data` for
-   * axios say, so the checker can unwrap it without knowing each pack. */
+  /** The property a consumer reads the body through, such as `data` for
+   * axios, so the checker can unwrap it without a rule per pack. */
   bodyAccessors?: string[];
   /** The same, for the status: `status` for fetch and for axios. */
   statusAccessors?: string[];
@@ -456,16 +455,14 @@ export function makeTransitionId(
 }
 
 /**
- * What follows is the one place a `Reading` turns into a field on a summary,
- * and the rule is fixed. A written reading becomes a claim. An absent one
- * takes a default only where the pack declared that default as data, so the
- * value is library-defined and shows up somewhere review will see it.
- * Unreadable and ambiguous readings claim nothing and report their reason as
- * a gap instead.
+ * The one place a `Reading` becomes a field on a summary. A written reading
+ * becomes a claim. An absent one takes a default only where the pack
+ * declared that default as data, so the value comes from the library and a
+ * reviewer can see it. Unreadable and ambiguous readings claim nothing and
+ * report their reason as a gap.
  *
- * None of this is exported. Callers compose readings with the combinators in
- * reading.ts, and the only way to get a value they can claim is to hand the
- * reading over to this module.
+ * None of this is exported. Callers combine readings with the reading
+ * combinators, and hand the result to this module to get a claim.
  */
 type ReadingCollapse<T, R> = {
   [K in Reading<T>["kind"]]: (reading: Extract<Reading<T>, { kind: K }>) => R;
@@ -543,8 +540,7 @@ function branchWithCollapsedReadings(branch: RawBranch): RawBranch {
   };
 }
 
-/** Ordered so that the gap sentences they produce come out in a sensible
- * order. */
+/** Body before status, which is the order their gap sentences appear in. */
 function readingsOfBranch(branch: RawBranch): Reading<unknown>[] {
   return [
     ...(branch.bodyShapeReading !== undefined
@@ -821,8 +817,8 @@ export function detectGaps(
 // Confidence
 // =============================================================================
 
-/** True when a summary says nothing because of what the pack could read, not
- * because the unit does nothing. */
+/** True when a summary is empty because the pack could not read the body.
+ * A unit whose body does nothing gives false. */
 function bodyWentUnread(raw: RawCodeStructure): boolean {
   if (raw.bodyContent === "absent" || raw.bodyContent === "elsewhere") {
     return true;
@@ -830,8 +826,8 @@ function bodyWentUnread(raw: RawCodeStructure): boolean {
   return raw.bodyContent === "statements" && raw.branches.length === 0;
 }
 
-/** Why an empty summary is empty, in a sentence, or null when the summary is
- * not empty. The transitions on their own will never tell a reader this. */
+/** Why an empty summary is empty, as a gap sentence, or null when it is not
+ * empty. A reader cannot tell this from the transitions alone. */
 function describeUnreadBody(raw: RawCodeStructure): string | null {
   if (!bodyWentUnread(raw)) {
     return null;

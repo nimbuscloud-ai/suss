@@ -1,16 +1,15 @@
 /**
  * The on-disk extraction cache, shared by every language adapter.
  *
- * A run reuses the previous one's summaries whole when nothing
- * changed, and per file when some files did. The entry directory is
- * named after everything that has to agree before any reuse is sound:
- * schema version, adapter version and code hash, pack versions, the
- * extraction config stamp and the config file path. The manifest
- * inside records a stamp and content hash per file, each summary's
- * owning files, and per owning file the other files its walk read.
- * An adapter attaches whatever it needs to a cached file's record
- * through `meta`, which the cache stores and returns opaquely. The
- * full design is in this package's README.
+ * A run reuses the previous run's summaries whole when nothing changed,
+ * and per file when some files did. The entry directory's name is a hash
+ * of the schema version, the adapter and packs digest, and the config
+ * path, so two builds that disagree on any of them never read each
+ * other's entry. The manifest inside records a stamp and content hash per
+ * file, the files each summary belongs to, and for each of those files the
+ * other files its walk read. An adapter can store its own data on a file's
+ * record through `meta`, which the cache never reads. The package's
+ * design notes describe the cache in full.
  */
 
 import { createHash } from "node:crypto";
@@ -22,10 +21,9 @@ import type { BehavioralSummary } from "@suss/behavioral-ir";
 const SCHEMA_VERSION = "7";
 
 /**
- * How many keys' worth of entries a cache directory keeps. Two lets a
- * pair of builds alternate (a branch switch, an adapter rebuild and a
- * revert) without either losing its entry, and bounds a directory at
- * twice one manifest.
+ * How many entries a cache directory keeps. Two lets a pair of builds
+ * alternate, as on a branch switch or an adapter rebuild and revert,
+ * without either losing its entry, and keeps a directory to two manifests.
  */
 export const MAX_ENTRIES = 2;
 
@@ -45,14 +43,13 @@ interface FileStamp {
 /**
  * What one walked file contributed to the run, and what its walk read.
  * `deps` are the other files whose content went into this file's
- * summaries; a change to any of them re-extracts this file. `claims`
- * are the units this file's walk claimed, replayed before a partial
- * run walks anything so precedence comes out the same. `meta` is
- * whatever else the adapter needs to revalidate this file on a
- * partial run (a route's mount prefixes, for instance); the cache
- * never reads it. A file marked `cacheable: false` recorded a
- * dependency the cache cannot pin to files, and is re-extracted on
- * every partial run.
+ * summaries, and a change to any of them re-extracts this file. `claims`
+ * are the units this file's walk claimed. A partial run replays them
+ * before walking anything, so the same pack wins each unit as before.
+ * `meta` is whatever else the adapter needs to check this file again on
+ * a partial run, such as a route's mount prefixes. A file marked
+ * `cacheable: false` depends on something the cache cannot tie to files,
+ * and is re-extracted on every partial run.
  */
 export interface RootRecord<Meta = unknown> {
   path: string;
@@ -65,9 +62,9 @@ export interface RootRecord<Meta = unknown> {
 }
 
 /**
- * Which files each summary belongs to. `owners[i]` lists the walked
- * files whose reuse keeps `summaries[i]` alive; an empty list marks a
- * run-level summary that a partial run always recomputes.
+ * Which files each summary belongs to. `summaries[i]` is reused while at
+ * least one file in `owners[i]` is. An empty list marks a summary built
+ * over the whole run, which a partial run always recomputes.
  */
 export interface CacheAttribution<Meta = unknown> {
   roots: RootRecord<Meta>[];
@@ -136,12 +133,12 @@ export type CacheLookup =
   | { kind: "miss"; diagnostic: CacheDiagnostic };
 
 /**
- * What a `files-changed` miss can still reuse. `validRoots` is the
- * cache's own verdict from hashes and recorded dependencies; the
- * caller may demote further (a mount prefix that no longer matches)
- * before calling `reuse`. `reuse` returns the summaries owned by at
- * least one surviving root, in stored order, with their owners, so
- * the caller can merge them and write the result back.
+ * What a `files-changed` miss can still reuse. `validRoots` are the files
+ * whose hashes and recorded dependencies are unchanged. The caller can
+ * drop more of them, such as a file whose mount prefix no longer matches,
+ * before calling `reuse`. `reuse` returns the summaries that belong to at
+ * least one remaining file, in stored order, with their owners, so the
+ * caller can merge them and write the result back.
  */
 export interface PartialPlan<Meta = unknown> {
   /** Paths whose content hash differs, plus paths new to the set. */
@@ -163,8 +160,8 @@ export interface CacheLayer<Meta = unknown> {
   /** The summary list on a hit, null on a miss. */
   tryHit(input: CacheInput): Promise<BehavioralSummary[] | null>;
   /**
-   * The lookup behind `tryHit`, with the reason a miss missed. Costs
-   * stats alone: no file reads, no AST work.
+   * The lookup behind `tryHit`, with the reason for a miss. It only stats
+   * files and never reads or parses them.
    */
   lookup(input: CacheInput): Promise<CacheLookup>;
   /**
@@ -174,10 +171,9 @@ export interface CacheLayer<Meta = unknown> {
    */
   plan(input: CacheInput): Promise<PartialPlan<Meta> | null>;
   /**
-   * Persist a fresh extraction's summaries to the cache, keyed
-   * against the same file list. Subsequent `lookup` calls with the
-   * same files return them. Without `attribution` the entry can only
-   * ever be reused whole.
+   * Save a fresh extraction's summaries against this file list, so a later
+   * `lookup` with the same files returns them. Without `attribution` the
+   * entry can only be reused whole.
    */
   write(
     input: CacheInput,
@@ -191,18 +187,16 @@ export interface CacheInput {
   files: ReadonlyArray<string>;
   adapterPacksDigest: string;
   /**
-   * One file whose stamp guards the whole entry alongside the file
-   * list, such as a tsconfig or a project manifest. Optional because
-   * not every adapter has one.
+   * A file whose change invalidates the whole entry, such as a tsconfig or
+   * a project manifest. Not every adapter has one.
    */
   configPath?: string;
 }
 
 /**
- * Construct a cache layer rooted at `cacheDir`. Pass `null` to
- * opt out of caching entirely, the returned layer's `tryHit`
- * always misses and `write` is a no-op. Useful for one-shot
- * extracts where caching adds latency without payoff.
+ * A cache layer rooted at `cacheDir`. With `null`, every lookup misses and
+ * `write` does nothing, for a one-shot extract where the cache would only
+ * add time.
  */
 export function createCacheLayer<Meta = unknown>(
   cacheDir: string | null,
@@ -229,9 +223,9 @@ export function createCacheLayer<Meta = unknown>(
         path.join(entryDir, "manifest.json"),
       );
       if (manifest === null) {
-        // Nothing compares the manifest's own schema, digest and
-        // config path against this run's: the entry directory is
-        // named after them, so reaching a manifest at all settles it.
+        // The entry directory's name is a hash of the schema, digest and
+        // config path, so a manifest found here already agrees with this
+        // run on all three.
         return missDiag(await describeAbsentEntry(cacheDir));
       }
       const currentConfigStamp = await stampConfigFile(input.configPath);
@@ -242,9 +236,8 @@ export function createCacheLayer<Meta = unknown>(
       if (!fileStampsEqual(manifest.files, currentFiles)) {
         return missDiag("files-changed");
       }
-      // Eviction goes by how recently an entry was used, and a run that
-      // hits never writes, so the hit is the only chance to say this
-      // entry is still wanted.
+      // Eviction keeps the most recently used entries, and a run that hits
+      // never writes, so the hit has to mark the entry as used.
       await markUsed(entryDir);
       return {
         kind: "hit",
@@ -302,10 +295,10 @@ export function createCacheLayer<Meta = unknown>(
 }
 
 /**
- * Compare the stored per-file layer against the current stamps. A
- * file whose stamp moved is read and hashed, so a touch that left the
- * content alone does not count as a change. A stored file without a
- * hash counts as changed whenever its stamp moved.
+ * Compare the stored per-file records against the current stamps. A file
+ * whose stamp moved is read and hashed, so a touch that left the content
+ * alone does not count as a change. A stored file without a hash counts as
+ * changed whenever its stamp moved.
  */
 async function buildPlan<Meta>(
   manifest: Manifest<Meta>,
@@ -486,9 +479,9 @@ async function hashFile(filePath: string): Promise<string | null> {
 }
 
 /**
- * Why a lookup did not find an entry: whether some other build has cached
- * here, or whether nothing ever has. Only consulted on a miss, where
- * the run is about to spend seconds re-extracting anyway.
+ * Why a lookup did not find an entry: another build has cached here, or
+ * nothing has. It reads the directory, which is cheap next to the
+ * re-extraction a miss is about to start.
  */
 async function describeAbsentEntry(
   cacheDir: string,
@@ -504,10 +497,9 @@ async function describeAbsentEntry(
 }
 
 /**
- * The directory an entry lives in. Everything the manifest would have
- * had to agree about before a hit was possible goes into the name, so
- * two builds that disagree land in different directories instead of
- * overwriting each other.
+ * The directory for this run's entry. Everything a hit depends on besides
+ * the file stamps goes into the name, so two builds that disagree write to
+ * different directories instead of overwriting each other.
  */
 function entryDirFor(cacheDir: string, input: CacheInput): string {
   const key = [
@@ -520,9 +512,9 @@ function entryDirFor(cacheDir: string, input: CacheInput): string {
 }
 
 /**
- * Whether a directory under the cache directory is one this module
- * wrote. Eviction deletes recursively and a caller can point `cacheDir`
- * at anything, so it only ever considers names of this shape.
+ * Eviction deletes recursively and a caller can point `cacheDir` at any
+ * directory, so it only touches directories whose names this module
+ * could have written.
  */
 function isEntryDir(name: string): boolean {
   return ENTRY_DIR_NAME.test(name);
@@ -534,9 +526,9 @@ async function markUsed(entryDir: string): Promise<void> {
   try {
     await fs.utimes(entryDir, now, now);
   } catch {
-    // The entry may have been evicted by another process between the
-    // read and here. Losing the timestamp costs the entry its place in
-    // the eviction order, and the run that misses re-extracts.
+    // Another process may have evicted the entry since the read. The
+    // worst case is that the entry is evicted early and a later run
+    // re-extracts.
   }
 }
 
@@ -569,9 +561,8 @@ async function evictOldEntries(
       doomed.map((d) => fs.rm(d.dir, { recursive: true, force: true })),
     );
   } catch {
-    // Eviction is housekeeping. A directory another process is writing
-    // to, or a permission the run does not have, costs disk rather than
-    // correctness.
+    // A failed eviction only leaves extra entries on disk, whether another
+    // process is writing to the directory or the run lacks permission.
   }
 }
 
@@ -592,9 +583,8 @@ async function readManifest<Meta>(
     const raw = await fs.readFile(manifestPath, "utf-8");
     return JSON.parse(raw) as Manifest<Meta>;
   } catch {
-    // Missing file, invalid JSON, permission denied, all manifest
-    // failures collapse to "miss." Cache reads are advisory; the
-    // worst case is a redundant extraction.
+    // A missing, unparseable or unreadable manifest is a miss. The worst
+    // case is an extraction the cache could have saved.
     return null;
   }
 }
@@ -615,33 +605,31 @@ async function stampConfigFile(
 
 /** Resolve the file list, sorted and stamped with mtime and size. */
 async function resolveFileStamps(input: CacheInput): Promise<FileStamp[]> {
-  // Concurrent stats: bounded by Node's libuv thread pool. For
-  // 5,500-file projects this is the dominant cost of the coarse
-  // key (~25ms total).
+  // The stats run concurrently, limited by libuv's thread pool. On a
+  // project of several thousand files they take around 25ms, most of the
+  // cost of a whole-entry lookup.
   const stamped = await Promise.all(
     input.files.map(async (p) => {
       try {
         const stat = await fs.stat(p);
         return { path: p, mtimeMs: stat.mtimeMs, size: stat.size };
       } catch {
-        // File disappeared between enumeration and stat. Returning a
-        // sentinel makes the cache always miss, that's correct; the
-        // file list is in flux.
+        // The file was deleted after the list was made. The sentinel never
+        // matches a stored stamp, so the lookup misses.
         return { path: p, mtimeMs: -1, size: -1 };
       }
     }),
   );
-  // Sort by path so the manifest is stable regardless of the caller's
-  // enumeration order: important for git-friendly storage if anyone
-  // ever versions the cache.
+  // `fileStampsEqual` compares two lists position by position, so both
+  // have to be in path order whatever order the caller listed the files in.
   stamped.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   return stamped;
 }
 
 /**
- * Whether two include sets stamp the same. Both arrive sorted by path,
- * so one pass settles it. Content hashes stay out of it: the fast
- * lookup compares stats alone, and `plan` is where hashes decide.
+ * Whether two file lists have the same stamps. Both arrive sorted by path,
+ * so one pass is enough. Content hashes are left out, since the fast
+ * lookup compares stats alone and `plan` is where hashes are compared.
  */
 function fileStampsEqual(
   a: ReadonlyArray<FileStamp>,

@@ -1,15 +1,15 @@
 /**
- * composeWrappers.ts: what a unit does once the code registered around
- * it is folded in.
+ * Folds the code registered around a unit, such as middleware, into what
+ * the unit does.
  *
  * A wrapper is a meta-function: it takes a unit and returns a unit. The
  * call to its continuation comes through as a `delegate` transition, so
  * a path that ends before that call is a response the caller gets
  * instead of the unit's own, and a path that reaches it hands the
- * request on without responding. The responses go beside the unit's own
- * outcomes and the pass-throughs go nowhere, because the unit's
- * outcomes already say what happens on them. The package README works
- * the example through and says what composition does not read.
+ * request on without responding. The responses are added beside the
+ * unit's own outcomes. The pass-throughs are dropped, because the unit's
+ * outcomes already say what happens on them. This package's DESIGN.md
+ * works through an example and lists what composition does not read.
  */
 
 import {
@@ -157,11 +157,11 @@ function handledThrows(wrappers: readonly ResolvedWrapper[]): Transition[] {
 
 /**
  * The unit's gaps with the declared-contract comparison redone over the
- * composed transitions. The comparison first ran over the handler's own
- * body, before anything around it was read, so a 401 the contract
- * declares and the middleware produces was reported as never produced.
- * The earlier gaps are the ones the same comparison gives for the
- * uncomposed transitions, so they can be taken out without parsing.
+ * composed transitions. The first comparison ran over the handler's own
+ * body before anything around it was read, so a 401 that the contract
+ * declares and the middleware produces shows up there as never produced.
+ * Running the same comparison over the uncomposed transitions gives those
+ * earlier gaps back, so they can be removed without parsing descriptions.
  *
  * An error handler's outcomes count as produced whether or not a path
  * through the handler was seen to throw, since anything the handler
@@ -218,7 +218,7 @@ function coversUnit(
   return binding !== null && withinScope(binding, reference.scope);
 }
 
-/** Say which wrapper produced each of these outcomes. */
+/** Marks each outcome with the wrapper that produced it. */
 function attribute(
   transitions: readonly Transition[],
   reference: WrapperReference,
@@ -231,8 +231,8 @@ function attribute(
 
 /**
  * The same transitions with any repeated id made unique, since a reader
- * keying on one would otherwise lose all but the last. Two wrappers of
- * the same name in different files is what gets here.
+ * keying on one would otherwise lose all but the last. Ids repeat when
+ * two wrappers in different files share a name.
  */
 function withDistinctIds(transitions: readonly Transition[]): Transition[] {
   const seen = new Map<string, number>();

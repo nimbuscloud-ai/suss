@@ -1,6 +1,6 @@
 /**
- * contractStatusGaps.ts: the statuses a unit's declared contract and its
- * outcomes disagree on, as gaps on the unit.
+ * Reports the statuses a unit's declared contract and its outcomes
+ * disagree on, as gaps on the unit.
  *
  * A route declares its responses in one place, a router declaration or
  * a route object, and produces them somewhere else, and the two drift.

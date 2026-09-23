@@ -1,13 +1,12 @@
 /**
- * moduleInit.ts: the raw structure for what a module does when it loads.
+ * Builds the raw structure for what a module does when it loads.
  *
  * A module's top-level statements run once, when it is first imported,
- * and a service that reads its configuration there reads it there for
- * good. Walking unit bodies alone never sees that read, so the read gets
- * a unit of its own, one per file, named after the file, with no
- * boundary. Attributing it to each handler would report one read as
- * several. The calls those statements make go on the same unit, so the
- * closure can reach the functions behind them.
+ * and a service often reads its configuration there. Walking unit bodies
+ * never sees that read, so the read gets a unit of its own: one per file,
+ * named after the file, with no boundary. Attributing it to each handler
+ * would report one read as several. The calls those statements make go on
+ * the same unit, so the closure can reach the functions behind them.
  *
  * The one default branch has a `void` terminal, because module
  * initialization returns to nobody. Every adapter builds it the same way.

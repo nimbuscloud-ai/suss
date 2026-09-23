@@ -8,8 +8,8 @@
  * attributes effects to branches reads from here, so they all decide
  * it the same way.
  *
- * Neither test is enough alone, and the README beside this file says
- * why with the two shapes that go wrong.
+ * Neither test is enough alone. This package's DESIGN.md shows the two
+ * cases where one test on its own gets the branch wrong.
  */
 
 import type { RawCondition } from "./index.js";
