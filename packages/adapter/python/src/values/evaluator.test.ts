@@ -5,7 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
-import { literalOf, pathOf } from "@suss/values";
+import { literalOf, literalsOf, pathOf } from "@suss/values";
 
 import { children, field, isFunction } from "../ast.js";
 import { emitValueFacts, nodeId } from "../facts/values.js";
@@ -565,6 +565,76 @@ describe("functions", () => {
     const value = subject("app.py");
     expect(literalOf(value)).toBeNull();
     expect(pathOf(value)).toBe("{base}/x");
+  });
+});
+
+describe("a parameter annotated as a few strings", () => {
+  /** The `subject = ...` line inside the first function of a file. */
+  function subjectInFunction(root: PyNode): PyNode {
+    const fn = functionsIn(root)[0] as PyNode;
+    return subjectNodeIn(field(fn, "body") as PyNode);
+  }
+
+  async function subjectsIn(source: string): Promise<readonly string[] | null> {
+    const tree = await parsePython(source);
+    return literalsOf(evaluatedValue(subjectInFunction(tree.rootNode)), 16);
+  }
+
+  it("reads a Literal annotation through a lower-cased f-string", async () => {
+    expect(
+      await subjectsIn(
+        [
+          "from typing import Literal",
+          "",
+          'def publish(operation: Literal["INSERT", "UPDATE", "DELETE"]):',
+          '    subject = f"record.{operation.lower()}"',
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual(["record.delete", "record.insert", "record.update"]);
+  });
+
+  it("reads Literal through the typing module and beside a default", async () => {
+    expect(
+      await subjectsIn(
+        [
+          "import typing",
+          "",
+          'def publish(kind: typing.Literal["opened", "closed"] = "opened"):',
+          '    subject = "account." + kind.upper()',
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual(["account.CLOSED", "account.OPENED"]);
+  });
+
+  it("reads a Literal alias declared in another file", async () => {
+    const { db, parsed } = await projectValues({
+      "periods.py":
+        'from typing import Literal\n\nReportPeriod = Literal["daily", "weekly"]\n',
+      "app.py": [
+        "from periods import ReportPeriod",
+        "",
+        "def publish(period: ReportPeriod):",
+        '    subject = f"report.{period}"',
+        "",
+      ].join("\n"),
+    });
+    const app = parsed.find((entry) => entry.file.endsWith("app.py"));
+    const node = subjectInFunction(app?.root as PyNode);
+    expect(literalsOf(evaluatedValue(node, db), 16)).toEqual([
+      "report.daily",
+      "report.weekly",
+    ]);
+  });
+
+  it("leaves a parameter annotated as any string a hole", async () => {
+    const tree = await parsePython(
+      'def publish(kind: str):\n    subject = f"record.{kind}"\n',
+    );
+    expect(pathOf(evaluatedValue(subjectInFunction(tree.rootNode)))).toBe(
+      "record.{kind}",
+    );
   });
 });
 

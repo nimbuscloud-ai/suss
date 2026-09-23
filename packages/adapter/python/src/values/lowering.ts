@@ -17,6 +17,7 @@ import {
   stringLiteralValue,
 } from "../ast.js";
 import { parameterShapes } from "../facts/values.js";
+import { declaredValueOf } from "./declaredType.js";
 
 import type {
   Element,
@@ -106,6 +107,10 @@ export function pythonLowering(options: LoweringOptions): Lowering<PyNode> {
     },
     freeNamesOf,
     holeNameOf: placeholderName,
+    declaredValueOf: (node) =>
+      declaredValueOf(peelValue(node), (name) =>
+        context === null ? null : context.writtenTo(name),
+      ),
     rows,
   };
 }

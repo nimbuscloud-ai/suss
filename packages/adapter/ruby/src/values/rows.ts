@@ -7,6 +7,7 @@
 
 import {
   appended,
+  caseRows,
   concat,
   environmentRead,
   equals,
@@ -137,6 +138,7 @@ const stringRows: Row[] = [
     on: "any",
     apply: () => ({ result: "receiver" }),
   },
+  ...caseRows("downcase", "upcase"),
   ...["concat", "<<"].map(
     (method): Row => ({
       kind: "method",

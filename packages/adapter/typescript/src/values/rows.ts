@@ -7,6 +7,7 @@
 
 import {
   appended,
+  caseRows,
   concat,
   constant,
   equals,
@@ -110,6 +111,7 @@ const stringRows: Row[] = [
       result: concat([operand(receiver), ...args]),
     }),
   },
+  ...caseRows("toLowerCase", "toUpperCase"),
 ];
 
 const sequenceRows: Row[] = ["sequence", "unbounded"].flatMap((on): Row[] => [
