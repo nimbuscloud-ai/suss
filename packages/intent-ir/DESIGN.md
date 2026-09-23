@@ -86,7 +86,7 @@ A clause can say more, because the summary records more. `fields` lists the colu
         fields: [email, phone, address]
 ```
 
-Both are optional, and a clause with only the verb and the name means what it always did. With them, "the customer's contact details are erased" is no longer satisfied by any write at all to that table. The checker requires the access to cover every column the clause stated. An access that states no columns counts as unread, not as empty, since no pack parses a DynamoDB `UpdateExpression`. An access that asked for every column covers whatever the clause stated.
+Both are optional, and a clause with only the verb and the name means what it always did. With them, "the customer's contact details are erased" is no longer satisfied by any write at all to that table. The checker requires the access to cover every column the clause stated. An access that states no columns counts as unread, and the checker does not treat it as empty, since no pack parses a DynamoDB `UpdateExpression`. An access that asked for every column covers whatever the clause stated.
 
 The outcome id stays free-form on purpose. A person writes what the outcome means there, and a PRD scenario links to it: `invoice-intake.invoice-recorded`, meaning "a duplicate delivery changes nothing". A `kind: prd` document is where a scenario is written as prose. `kind: boundary` is system intent for engineers, so it stays structural.
 

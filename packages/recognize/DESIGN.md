@@ -389,7 +389,7 @@ nothing records the scope the pack was built with.
 
 `parts()` returns the text on either side of each hole. By default,
 whatever the query interpolated goes into the statement as a parameter,
-which is what it would have been at runtime anyway. Drizzle does not
+as it would at runtime. Drizzle does not
 fit that: a Drizzle query passes the schema object to say which table
 it reached.
 
