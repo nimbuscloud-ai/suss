@@ -321,6 +321,10 @@ export type CallArgument =
  * The arguments a call writes out, in source order. A caller that wants
  * the argument sitting at a parameter reads them the same way the facts
  * were keyed, so the two never disagree about which one is at position 1.
+ *
+ * `*args` and `**kwargs` fill parameters nobody can name from the call,
+ * so neither is an argument here, and a positional argument after
+ * `*args` has no position anyone can count.
  */
 export function callArguments(call: PyNode): CallArgument[] {
   const args = field(call, "arguments");
@@ -328,7 +332,7 @@ export function callArguments(call: PyNode): CallArgument[] {
     return [];
   }
   const written: CallArgument[] = [];
-  let position = 0;
+  let position: number | null = 0;
   for (const argument of children(args)) {
     if (argument.type === "keyword_argument") {
       const name = field(argument, "name");
@@ -338,11 +342,21 @@ export function callArguments(call: PyNode): CallArgument[] {
       }
       continue;
     }
+    if (argument.type === "list_splat") {
+      position = null;
+      continue;
+    }
+    if (NOT_AN_ARGUMENT.has(argument.type) || position === null) {
+      continue;
+    }
     written.push({ kind: "positional", position, node: argument });
     position += 1;
   }
   return written;
 }
+
+/** Written in an argument list without taking a position of its own. */
+const NOT_AN_ARGUMENT = new Set(["dictionary_splat", "comment"]);
 
 /**
  * The key a value joins on. A bare name joins on the name in the scope that
@@ -543,9 +557,12 @@ function emitFunctionFacts(
   let byPosition = true;
   let receiver: MethodReceiver | null = null;
   for (const param of params === null ? [] : children(params)) {
-    if (SPLAT_TYPES.has(param.type)) {
+    if (SPLAT_TYPES.has(param.type) || param.type === "keyword_separator") {
       // What follows a `*` can only be passed by name.
       byPosition = false;
+      continue;
+    }
+    if (param.type === "positional_separator") {
       continue;
     }
     const paramName = parameterName(param);

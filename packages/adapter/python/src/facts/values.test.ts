@@ -472,6 +472,25 @@ describe("python value facts", () => {
     expect(rows(db, "paramNamed").map((row) => row[1])).toEqual(["a", "flag"]);
   });
 
+  it("gives a keyword-only parameter no position, since no positional argument reaches it", async () => {
+    const db = await factsFor("def build(a, /, b, *, flag=False):\n    pass\n");
+    expect(rows(db, "paramOf").map((row) => row[1])).toEqual(["0", "1"]);
+    expect(rows(db, "paramNamed").map((row) => row[1])).toEqual([
+      "a",
+      "b",
+      "flag",
+    ]);
+  });
+
+  it("leaves a splat out of the positions a call fills", async () => {
+    const spread = await factsFor("build(first, **options)\n");
+    expect(rows(spread, "callArg").map((row) => [row[1], row[2]])).toEqual([
+      ["0", "#first"],
+    ]);
+    const unpacked = await factsFor("build(*rest, last)\n");
+    expect(rows(unpacked, "callArg")).toEqual([]);
+  });
+
   it("keys a name two functions both write under each of them", async () => {
     const db = await factsFor(
       [
