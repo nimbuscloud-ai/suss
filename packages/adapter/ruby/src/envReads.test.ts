@@ -188,6 +188,210 @@ describe("ENV spellings", () => {
   });
 });
 
+/** The reads in a method `handler` with this body. */
+async function handlerReads(body: string[]): Promise<Read[]> {
+  const source = [
+    "def handler",
+    ...body.map((line) => `  ${line}`),
+    "end",
+    "",
+  ].join("\n");
+  return methodReads(source, "handler");
+}
+
+describe("a read the program uses only behind a presence test", () => {
+  it("marks a local used only inside the branch its test passes", async () => {
+    expect(
+      await handlerReads([
+        'version = ENV["APP_VERSION"]',
+        "if version",
+        "  @resolved = version",
+        "  return",
+        "end",
+        "look_up_version_elsewhere",
+      ]),
+    ).toEqual([{ name: "APP_VERSION", defaulted: true }]);
+  });
+
+  it("marks a read that is only tested, and a read its own test guards", async () => {
+    expect(
+      await handlerReads([
+        'enable_feature if ENV["FEATURE_FLAG"]',
+        'region = ENV["REGION"].nil? ? "us-east-1" : ENV["REGION"]',
+        'return fallback unless ENV["CACHE_URL"]',
+        'use_cache(ENV["CACHE_URL"])',
+      ]),
+    ).toEqual([
+      { name: "FEATURE_FLAG", defaulted: true },
+      { name: "REGION", defaulted: true },
+      { name: "REGION", defaulted: true },
+      { name: "CACHE_URL", defaulted: true },
+      { name: "CACHE_URL", defaulted: true },
+    ]);
+  });
+
+  it("marks a read a key? test guards, in the branch and after an early return", async () => {
+    expect(
+      await handlerReads([
+        'if ENV.key?("CACHE_URL")',
+        '  use_cache(ENV.fetch("CACHE_URL"))',
+        "end",
+        'return nil unless ENV.include?("REGION")',
+        'ENV.fetch("REGION")',
+      ]),
+    ).toEqual([
+      { name: "CACHE_URL", defaulted: true },
+      { name: "REGION", defaulted: true },
+    ]);
+  });
+
+  it("marks a local whose nil branch returns early", async () => {
+    expect(
+      await handlerReads([
+        'url = ENV["CACHE_URL"]',
+        "if url.nil?",
+        "  return no_cache",
+        "end",
+        "use_cache(url)",
+      ]),
+    ).toEqual([{ name: "CACHE_URL", defaulted: true }]);
+  });
+
+  it("marks a read in an elsif or else once an earlier test ruled the missing case out", async () => {
+    expect(
+      await handlerReads([
+        'if !ENV["REGION"]',
+        "  nothing",
+        "elsif other",
+        '  use(ENV["REGION"])',
+        "else",
+        '  use(ENV["REGION"])',
+        "end",
+      ]),
+    ).toEqual([
+      { name: "REGION", defaulted: true },
+      { name: "REGION", defaulted: true },
+      { name: "REGION", defaulted: true },
+    ]);
+  });
+
+  it("leaves a local undefaulted when it is also used outside the test", async () => {
+    expect(
+      await handlerReads([
+        'url = ENV["CACHE_URL"]',
+        "use(url) if url",
+        "use(url)",
+      ]),
+    ).toEqual([{ name: "CACHE_URL", defaulted: false }]);
+  });
+
+  it("leaves a read undefaulted when the test is on a different variable", async () => {
+    expect(
+      await handlerReads([
+        'url = ENV["CACHE_URL"]',
+        "use(url) if flag",
+        'use(ENV["REGION"]) if ENV["OTHER"]',
+      ]),
+    ).toEqual([
+      { name: "CACHE_URL", defaulted: false },
+      { name: "REGION", defaulted: false },
+      { name: "OTHER", defaulted: true },
+    ]);
+  });
+
+  it("leaves a read undefaulted when the missing branch falls through or raises", async () => {
+    expect(
+      await handlerReads([
+        'unless ENV["CACHE_URL"]',
+        "  log",
+        "end",
+        'use(ENV["CACHE_URL"])',
+        'region = ENV["REGION"]',
+        'raise "REGION is required" if region.nil?',
+        "use(region)",
+      ]),
+    ).toEqual([
+      { name: "CACHE_URL", defaulted: true },
+      { name: "CACHE_URL", defaulted: false },
+      { name: "REGION", defaulted: false },
+    ]);
+  });
+
+  it("leaves ENV.fetch undefaulted when only its own value is tested, since it raises first", async () => {
+    expect(
+      await handlerReads([
+        'enable_feature if ENV.fetch("FEATURE_FLAG")',
+        'url = ENV.fetch("CACHE_URL")',
+        "use(url) if url",
+      ]),
+    ).toEqual([
+      { name: "FEATURE_FLAG", defaulted: false },
+      { name: "CACHE_URL", defaulted: false },
+    ]);
+  });
+
+  it("follows a test through &&, ||, and, or, nil comparisons and parentheses", async () => {
+    expect(
+      await handlerReads([
+        'if (ENV["A"]) && ready',
+        '  use(ENV["A"])',
+        "end",
+        'ENV["B"] and enable',
+        'return if ENV["C"] == nil || !ready',
+        'use(ENV["C"])',
+        'use(ENV["D"]) if ready and nil != ENV["D"]',
+        'use(ENV["E"]) unless (not ENV["E"]) or ready',
+      ]),
+    ).toEqual([
+      { name: "A", defaulted: true },
+      { name: "A", defaulted: true },
+      { name: "B", defaulted: true },
+      { name: "C", defaulted: true },
+      { name: "C", defaulted: true },
+      { name: "D", defaulted: true },
+      { name: "D", defaulted: true },
+      { name: "E", defaulted: true },
+      { name: "E", defaulted: true },
+    ]);
+  });
+
+  it("finds nothing about the variable in a test on anything else", async () => {
+    expect(
+      await handlerReads([
+        'use(ENV["A"]) if ready?',
+        'use(ENV["B"]) if count > 3 || count == 1',
+        'url = ENV["C"]',
+        'use(url) if settings.key?("C")',
+      ]),
+    ).toEqual([
+      { name: "A", defaulted: false },
+      { name: "B", defaulted: false },
+      { name: "C", defaulted: false },
+    ]);
+  });
+
+  it("reads obj.name as no use of a local called name", async () => {
+    expect(
+      await handlerReads([
+        'url = ENV["CACHE_URL"]',
+        "use(url) if url",
+        "use(settings.url)",
+      ]),
+    ).toEqual([{ name: "CACHE_URL", defaulted: true }]);
+  });
+
+  it("leaves a name in the file body undefaulted", async () => {
+    expect(
+      await fileReads(
+        'URL = ENV["CACHE_URL"]\nurl = ENV["REGION"]\nuse(url) if url\n',
+      ),
+    ).toEqual([
+      { name: "CACHE_URL", defaulted: false },
+      { name: "REGION", defaulted: false },
+    ]);
+  });
+});
+
 describe("what runs when the file loads", () => {
   it("reads the file body, class bodies and blocks, and leaves method bodies to their own units", async () => {
     expect(
@@ -251,6 +455,51 @@ describe("a name handed to a project helper", () => {
         "use.rb": 'URL = Settings.setting("REDIS_URL", "redis://localhost")\n',
       }),
     ).toEqual([{ name: "REDIS_URL", defaulted: true }]);
+  });
+
+  it("takes defaulted from a helper that checks key? before its read", async () => {
+    expect(
+      await projectReads({
+        "settings.rb": [
+          "module Settings",
+          "  def self.optional(key)",
+          "    return nil unless ENV.key?(key)",
+          "    ENV.fetch(key)",
+          "  end",
+          "",
+          "  def self.required(key)",
+          "    ENV.fetch(key)",
+          "  end",
+          "end",
+          "",
+        ].join("\n"),
+        "use.rb": [
+          'CACHE = Settings.optional("CACHE_URL")',
+          'DB = Settings.required("DATABASE_URL")',
+          "",
+        ].join("\n"),
+      }),
+    ).toEqual([
+      { name: "CACHE_URL", defaulted: true },
+      { name: "DATABASE_URL", defaulted: false },
+    ]);
+  });
+
+  it("takes the fallback from a test the caller wrote around the call", async () => {
+    expect(
+      await projectReads({
+        "settings.rb": SETTINGS,
+        "use.rb": [
+          'if Settings.setting("CACHE_URL")',
+          '  use(Settings.setting("CACHE_URL"))',
+          "end",
+          "",
+        ].join("\n"),
+      }),
+    ).toEqual([
+      { name: "CACHE_URL", defaulted: true },
+      { name: "CACHE_URL", defaulted: true },
+    ]);
   });
 
   it("follows a helper that hands the name to another helper", async () => {
