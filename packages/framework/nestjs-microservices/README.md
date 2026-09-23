@@ -26,3 +26,8 @@ A channel passed as a constant resolves to the string it was set to.
 The pack does not read an object-form pattern such as
 `@MessagePattern({ cmd: "sum" })` yet. suss still records that handler
 as a consumer on the wire, with no channel name.
+
+Two more cases are not read yet. `@Payload("field")` does not narrow
+the input, so every payload becomes one input. An `@MessagePattern`
+handler's return value is the reply, and nothing pairs that reply with
+the caller waiting for it.
