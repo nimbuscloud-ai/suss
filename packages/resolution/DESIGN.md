@@ -1,6 +1,6 @@
 # How resolution follows a value
 
-The reference for `@suss/resolution`: the facts an adapter supplies, the relation the rules build, and what comes out. The [README](./README.md) says what the package is for.
+An adapter supplies facts about the source it read. The rules in `@suss/resolution` build one relation of steps over those facts, and callers read their answers out of it. The [README](./README.md) explains what the package is for.
 
 ## The facts an adapter supplies
 
@@ -50,122 +50,122 @@ statesType(x, t)            the source declares the name x with the
                             type written at t
 ```
 
-`declaresName` is the one fact an adapter states after asking these
-rules a question of its own. Ruby's `define_method(key)`, Python's
+`declaresName` is the only fact an adapter records after asking these
+rules a question first. Ruby's `define_method(key)`, Python's
 `setattr(cls, name, fn)` and a computed class member in TypeScript all
-put a method on a class under a name nothing writes out. The adapter
-says where the name comes from, settles it through the value evaluator,
-which reads these same facts, and states what it came to.
-`wantedDeclaredName` then reports it beside the names written out, so a
-caller asking which methods a class declares never has to know which
-kind it got.
+put a method on a class under a name the source never writes out. The
+adapter records where the name comes from and settles it through the
+value evaluator, which reads these same facts. Then it records the name
+it got. `wantedDeclaredName` returns that name next to the names written
+out, so a caller asking which methods a class declares does not need to
+know which kind each one is.
 
-Two more come from a pack rather than from source, for a wrapper whose
-body nobody can read: `unwrapsByName(name, k)` and
-`wrapperModule(name, module)`. Both are checked against `calleeName` and
-`calleeOrigin`, so a local function that happens to be spelled the same
-as the library's does not match.
+Two more facts come from a pack, for a wrapper whose body is not in the
+source suss reads: `unwrapsByName(name, k)` and
+`wrapperModule(name, module)`. The rules check both against `calleeName`
+and `calleeOrigin`, so a local function with the same name as the
+library's does not match.
 
-Every fact a pack states goes in through `addPackWords`, which takes the
-declarations in one language-neutral shape. Each adapter maps its own
-pack type onto that shape, so a new pack word is written once here
-rather than once per language.
+Every fact a pack declares goes in through `addPackWords`, which takes
+the declarations in one format for every language. Each adapter
+converts its own pack type to that format. A new pack word is then
+written once, in this package, and every language gets it.
 
-A third comes from a pack for the same reason: `givesBackOne(base, m)`
-says that calling `m` on a class whose ancestry reaches the base written
-as `base` gives back one of that class. That covers a Rails finder,
-where the library declares `find` and the project's model never mentions
-it. `libraryBase` walks `extends` up to the name no node in the run
-backs, so a model two or ten classes below `ActiveRecord::Base` matches
-the same way. The step lands back on the class, so a chain composes:
+A third pack fact exists for the same reason. `givesBackOne(base, m)`
+means that calling `m` on a class whose ancestry reaches the base
+written as `base` returns one of that class. A Rails finder needs it:
+the library declares `find`, and the project's model never mentions it.
+`libraryBase` walks `extends` up to the name that no node in the run
+defines, so a model two or ten classes below `ActiveRecord::Base`
+matches the same way. The step ends on the class again, so steps chain:
 `Account.where(x)` is one Account, and `first` read off that is one
-Account again.
+Account too.
 
-Keying on the base is what keeps a project class that writes its own
-`find` on an unrelated hierarchy out of it, the same reason the declared
-wrapper keys on `wrapperModule`. A class that does override a declared
-method gets both the declared step and the step through the method it
-wrote. When that method gives back one of the class the two agree and
-the caller sees one answer; when it gives back something else the caller
-sees two and its single-answer policy refuses the pair. Letting the
-written method win would take a negated literal on `contains`, and
-`contains` is derived from `comesTo`, so the rule set stops being
-stratifiable. The on-demand rewrite refuses negation anywhere, before
-stratification is even reached.
+Matching on the base keeps out a project class on an unrelated
+hierarchy that writes its own `find`. The declared wrapper matches on
+`wrapperModule` for the same reason. A class that overrides a declared
+method gets two steps: the declared one, and the one through the method
+it wrote. When the method it wrote returns one of the class, the two
+steps agree and the caller sees one answer. When it returns something
+else, the caller sees two answers, and its single-answer policy refuses
+the pair. Letting the written method win would need a negated literal on
+`contains`. Since `contains` is derived from `comesTo`, the rule set
+would stop being stratifiable. The on-demand rewrite refuses any
+negation anyway, before the engine gets as far as stratifying.
 
-Some libraries take the class as an argument rather than as the
-receiver, which is how SQLAlchemy and SQLModel are written:
-`session.get(User, id)`, `session.query(User)`, `select(User)`. Two
-more pack-declared facts cover that. `givesBackOneOfArgument(base, m,
-k)` says that calling `m` with a class reaching the base at position
-`k` gives back one of that class, and `givesBackOneOfImport(module, n,
-k)` says the same for a function called on its own rather than read off
-anything. The first keys on the base the argument reaches, which is
-what keeps a call of `dict.get` out; the second keys on the module the
-function was imported from, the way the declared wrapper does, because
-a project can write a `select` of its own.
+SQLAlchemy and SQLModel take the class as an argument instead of as the
+receiver: `session.get(User, id)`, `session.query(User)`,
+`select(User)`. Two more pack facts cover that.
+`givesBackOneOfArgument(base, m, k)` means that calling `m` with a
+class that reaches the base at position `k` returns one of that class.
+`givesBackOneOfImport(module, n, k)` means the same for a function
+called by itself, such as `select(User)`. The first matches on the base
+the argument reaches, which keeps a call of `dict.get` out. The second
+matches on the module the function was imported from, as the declared
+wrapper does, because a project can write a `select` of its own.
 
-Once the class is settled the chain is the same one a Rails finder
-walks, and `givesBackOne` covers it: `where`, `filter` and `order_by`
-give back one of the class, and so do `first`, `one` and `all`.
+Once the class is settled, the rest of the chain works like a Rails
+finder, and `givesBackOne` covers it. `where`, `filter` and `order_by`
+return one of the class, and so do `first`, `one` and `all`.
 
-`libraryBase` reaches a name three ways: a base the source writes as a
-name (`extendsNamed`), a base some project class in between extends,
-and a base a library hands back from a call. The last is SQLAlchemy's
-`Base = declarative_base()`, where the walk stops at the call and the
-imported function is the name to match on.
+`libraryBase` finds the name in three ways: a base the source writes as
+a name (`extendsNamed`), a base that some project class in between
+extends, and a base a library returns from a call. The last is
+SQLAlchemy's `Base = declarative_base()`, where the walk stops at the
+call and the imported function is the name to match on.
 
-An association is the same idea in every language that has models: a
-field on one class whose value is one or many of another. Rails writes
-one as `has_many :statuses`, SQLModel as `items: list[Item] =
-Relationship(...)`, and in both the library gives back the other model
-when that name is read off an instance. An adapter says so one of two
-ways, and both land on `contains`.
+Every language with models has associations: a field on one class whose
+value is one or many instances of another. Rails declares one as
+`has_many :statuses`, and SQLModel as
+`items: list[Item] = Relationship(...)`. In both, reading that name off
+an instance returns the other model. An adapter can record an
+association in one of two ways, and both end up in `contains`.
 
-An adapter that read the declaration itself says
-`declaresAssociation(cls, n, t)`, with `t` a reference the run's own
-bindings settle on the class it targets. One whose language buries
-the declaration in an ordinary assignment says what it read of every
-class-body field given a call, `fieldCall(cls, n, callee, t)`, and a
-pack says which callable makes one an association,
-`associationConstructor(module, name)`. The rule joins the callee
-through `comesFrom`, the way the declared import finder does, so a
-project function spelled `relationship` matches nothing. Stating the
-field either way and letting a rule decide is what keeps the adapter out
-of the matching.
+An adapter that reads the declaration itself records
+`declaresAssociation(cls, n, t)`. Here `t` is a reference that the
+run's own bindings settle on the target class. In some languages the
+declaration is an ordinary assignment. An adapter for one of those
+records `fieldCall(cls, n, callee, t)` for every class-body field whose
+value is a call, and a pack declares which callable makes that field an
+association with `associationConstructor(module, name)`. The rule joins
+the callee through `comesFrom`, as the declared import finder does, so
+a project function named `relationship` matches nothing. The adapter
+records the field in either case and a rule decides whether it is an
+association, so the adapter does no matching of its own.
 
-Both go to `contains` rather than to a step of their own, because
-`contains` already walks the ancestry: a model that gets its
-associations from a concern or a base class declares them too, and the
-property read already steps to what `contains` gives back. The target
-lands on the class, so a finder composes from there and
+Both kinds feed `contains` instead of a step of their own, because
+`contains` already walks the ancestry. A model that gets its
+associations from a concern or a base class declares them too, and a
+property read already steps to whatever `contains` returns. The target
+is the class itself, so a finder chains on from there:
 `@account.statuses.find(id)` is one Status.
 
-They go to `contains` directly rather than through a relation of their
-own that says what an association is. `declaresAssociation`, `fieldCall`
-and `associationConstructor` stay things an adapter states and the rules
-only read, the way `holdsProperty` is. Give an adapter's own relation a
-rule as well and the demand rewrite empties it between questions, taking
-the adapter's facts with it, which is what a relation derived on demand
-is allowed to do.
+They feed `contains` directly, with no relation in between that defines
+an association. `declaresAssociation`, `fieldCall` and
+`associationConstructor` stay as facts that an adapter records and the
+rules only read, like `holdsProperty`. If one of an adapter's relations
+also had a rule deriving it, the demand rewrite would empty it between
+questions, and the adapter's facts would go with it. The rewrite is
+allowed to do that to any relation derived on demand.
 
-Nothing says whether an association is a collection. A relation and a
-record settle on the same class today, the way `Account.where(x)` and
-`Account.find(x)` both do, so no rule has anything to do with the
+No fact records whether an association is a collection. A relation and
+a single record settle on the same class today, in the same way that
+`Account.where(x)` and `Account.find(x)` both do, so no rule needs the
 difference.
 
-`holdsProperty` is something an adapter states and the rules only read.
-What a value contains, a base class included, comes out as `contains`,
-so a method a base declares is found on a subclass that never overrode
-it. Deriving that into `holdsProperty` instead turns it from a fact into
-a derived relation, and the on-demand rewrite then gates it behind a
-demand nothing generates.
+`holdsProperty` is a fact that an adapter records and the rules only
+read. What a value contains, including what its base classes contain,
+is derived as `contains`, so a method a base declares is found on a
+subclass that never overrode it. Deriving those rows into
+`holdsProperty` would turn it into a derived relation, and the on-demand
+rewrite would then fill it only in answer to a demand that nothing
+generates.
 
-Node identity is the adapter's business. The rules only join on it.
+The adapter assigns node ids, and the rules only join on them.
 
 ## One relation of steps
 
-Every construct states its hops once, in one relation:
+Every construct's hops go into one relation:
 
 ```
 hop(x, y, kind)             following x leads to y in one hop
@@ -176,9 +176,9 @@ reachesUnder(x, c, z, c2, kind)   the same closure under one site
 ```
 
 Each hop is written twice, once as a `hop` and once as a `stepsTo`,
-rather than passed from one to the other. A demand for `stepsTo` is one
-of the largest relations a run derives, and passing it through `hop`
-would copy the lot.
+instead of one being derived from the other. A demand for `stepsTo` is
+one of the largest relations a run derives, and deriving it through
+`hop` would copy every row.
 
 A value step goes to the value x is written as: a name to its
 declaration, an import to what the module exports, a parameter to what a
@@ -186,92 +186,94 @@ call passes it, a property read to what the object contains under that
 name, a construction to the class, a transparent wrapper to the argument
 it wraps. A result step goes the other way, from a call to what the
 function it invokes returns. A walk counts as a result walk once it has
-run a call anywhere along it. That rule keeps a factory call out of
-the results that stop at a value.
+run a call anywhere along it, which keeps a factory call out of the
+results that stop at a value.
 
-A language with a hop of its own states it as a step too. JavaScript's
-`.bind` and Ruby's `Const.new` are each one rule, and every question
-below picks them up without being told.
+A hop that only one language has is written as a step too. JavaScript's
+`.bind` and Ruby's `Const.new` are one rule each, and every question
+below uses them with no change.
 
-A fallback expression (`a || b`, `a ?? b`, Python's `a or b`) says its
-value is one of its branches, so each branch is a value step. That is
-the whole rule. When one branch is something no static reader can
-settle, a global cache or a parameter, that branch derives nothing, and
-the branch that does resolve is the only claim the source makes. The
-idiomatic client singleton, `global.prisma || new PrismaClient()`, is
-exactly this: the global read makes no claim, so the construction is
+The value of a fallback expression (`a || b`, `a ?? b`, Python's
+`a or b`) is one of its branches, so each branch is a value step. No
+other rule is involved. When a branch is something no static reader can
+settle, such as a global cache or a parameter, that branch derives
+nothing. The branch that does resolve is then the only claim the source
+makes. The usual client singleton, `global.prisma || new PrismaClient()`,
+works this way: the global read makes no claim, so the construction is
 the answer. When both branches resolve to different things, both
-derive, and the caller's single-answer policy refuses the pair. That is
-the same refusal every other two-candidate chain gets, because a value
-that is one of two different things is not one thing.
+derive, and the caller's single-answer policy refuses the pair. Every
+other chain with two candidates gets the same refusal, since the value
+could be either one.
 
-Each question is that one closure with its own stopping condition. So
-adding a construct is one step and every question gets it, and adding a
-question is a stopping condition and no steps at all.
+Every question is this one closure with its own stopping condition.
+Adding a construct means adding one step, and every question picks it
+up. Adding a question means writing a stopping condition, with no new
+steps.
 
 ### Under one allocation site
 
 `reachesUnder` has two more columns: the site the walk started under,
-and the site whatever it arrived at is read under. A context is
-an allocation site or the constant `none`. Three hops differ from the
+and the site that whatever it arrived at is read under. A context is an
+allocation site or the constant `none`. Three hops differ from the
 context-free ones:
 
 - The receiver under a site is that site, so a field read inside a
   method is the field of the construction the question named.
-- A property read goes on under the site the object was made at, which
-  is the object's own site rather than the one the question named.
+- A property read goes on under the site the object was made at. That
+  is the object's own site, which can differ from the one the question
+  named.
 - A parameter goes on at the arguments of the calls that run its
-  function under that site. `entersUnder` says which those are: a
-  construction runs its constructor under the site it makes, a method
-  call runs under the site its receiver is, a call written as a plain
-  name runs under the site the body around it has, and every other call
-  runs with no site, which is every caller the way `argument` reads.
+  function under that site. `entersUnder` lists those calls. A
+  construction runs its constructor under the site it makes. A method
+  call runs under the site its receiver is. A call written as a plain
+  name runs under the site the body around it has. Every other call
+  runs with no site, which takes every caller the way `argument` does.
 
-`callsNamed` is the half of `callsFunction` that finds a callee by a
-name it binds to rather than by a property read off a receiver. Both
-halves make a `callsFunction` row, so nothing context-free moves, and
-`entersUnder` reads the name-bound half on its own. A call written as a
-name runs with whatever receiver the body around it has, which is what
-lets a walk follow it without leaving the site.
+`callsNamed` is the half of `callsFunction` that finds a callee through
+a name it binds to. The other half finds it through a property read off
+a receiver. Both halves produce `callsFunction` rows, so nothing
+context-free changes, and `entersUnder` reads the name-bound half by
+itself. A call written as a name runs with whatever receiver the body
+around it has, so a walk can follow it without leaving the site.
 
-`callUnder` says which site a call is made under: the class whose
-method or constructor the call is written in, and the site a plain
-function was entered under for the calls that function makes, so a
-chain of plain functions off one method keeps the site. It is recursive
-through `entersUnder` and positive, which the demand rewrite allows.
-`callOutsideMethod` is the adapter's word for a call written at module
-level, in a plain function, in a class body, or in a static method; it
-is a fact rather than a negation because the rewrite refuses negation.
+`callUnder` gives the site a call is made under. For a call in a method
+or constructor, that is the class the method belongs to. For a call in
+a plain function, it is the site that function was entered under, so a
+chain of plain functions called from one method keeps the site.
+`callUnder` is recursive through `entersUnder` and positive, which the
+demand rewrite allows. `callOutsideMethod` is the fact an adapter
+records for a call written at module level, in a plain function, in a
+class body, or in a static method. It is a fact instead of a negation
+because the rewrite refuses negation.
 
-One level of receiver is all of it. The site is lost where a call is
-made outside every method body, and the walk then takes every caller. A
-condition is not evaluated either, so `env === "prod" ? a : b` gives
-both branches.
+The context covers one level of receiver and no more. Where a call is
+made outside every method body the site is lost, and the walk takes
+every caller. Conditions are not evaluated either, so
+`env === "prod" ? a : b` gives both branches.
 
-`askResolutionUnder` puts the question, and `isWrittenAsUnder`,
+`askResolutionUnder` asks the question, and `isWrittenAsUnder`,
 `comesToUnder` and `objectOfUnder` read the answers. `objectOfUnder`
-gives back a site, which `objectOf` does not, since a site is what a
-context is.
+returns a site, because a context is a site, and `objectOf` does not.
 
-The three questions run on a program of their own,
-`resolutionUnderProgram`. Leaving them out of what the ordinary program
-has to answer drops every rule behind them from the rewrite, so a run
-that never mentions a context gets none of the second closure. The
-engine reads every rule once a round, and the thousand rules the
-rewrite makes of `reachesUnder` were measured at two and a half times
-the wall time of a whole extraction.
+The three questions run on their own program, `resolutionUnderProgram`.
+Because the ordinary program does not have to answer them, the rewrite
+drops every rule behind them there, and a run that never mentions a
+context derives none of the second closure. This matters because the
+engine reads every rule once a round. The thousand rules the rewrite
+makes of `reachesUnder` took two and a half times the wall time of a
+whole extraction when they were measured.
 
 The closure is written with the walk so far first and the next hop after
 it: `reaches(x, z) <- reaches(x, y), stepsTo(y, z)`. The order matters
-under demand. Every question here asks about one value, and with the
-walk first, the demand stays on that value and each round extends the
-walks it already has by one hop. Written hop first, `reaches(x, z) <-
-stepsTo(x, y), reaches(y, z)`, a question about `x` becomes a question
-about every `y` a hop leads to, so the closure is derived from every
-value the walk passes through, and each new walk is joined back against
-every hop that lands on its start. Extracting the TypeScript adapter's
-own sources, the hop first order spent two seconds in the closure, and
-the walk first order spends forty milliseconds.
+under demand. Every question here asks about one value. With the walk
+first, the demand stays on that value, and each round extends the walks
+it already has by one hop. Written hop first,
+`reaches(x, z) <- stepsTo(x, y), reaches(y, z)`, a question about `x`
+becomes a question about every `y` a hop leads to. The closure is then
+derived from every value the walk passes through, and each new walk is
+joined back against every hop that lands on its start. On the
+TypeScript adapter's own sources, the closure took two seconds with the
+hop first and takes forty milliseconds with the walk first.
 
 ## What comes out
 
@@ -288,94 +290,94 @@ returnsCall(f, c)           running f hands back the expression c
 ```
 
 `resolves` is the question most callers ask. `comesTo` is the one
-underneath it, and it can come back with an object, because a chain has
-to pass through objects for `routes.list` to reach whatever `list`
-contains.
+underneath it, and it can return an object, because a chain has to pass
+through objects for `routes.list` to reach whatever `list` contains.
 
-`givesBack` is the other direction of function application. `comesTo`
-says what a value comes down to, and it stops at a call on purpose: a
-factory call is usually the wrapper itself, so resolving it to the
-function it returned would fight the unwrapping answer. That leaves
-nobody able to ask what a call returned, which is the whole question
-when a factory builds a dependency. `givesBack` asks it, over the same
-steps and with the same stopping condition, of the walks that ran a
-call.
+`givesBack` follows function application in the other direction.
+`comesTo` finds what a value comes down to, and it stops at a call on
+purpose. A factory call is usually the wrapper itself, so resolving it
+to the function it returned would contradict the unwrapping answer. On
+its own, though, `comesTo` gives no way to ask what a call returned, and
+when a factory builds a dependency, that is the question that matters.
+`givesBack` answers it over the same steps and with the same stopping
+condition, for the walks that ran a call.
 
-Both directions run at once without interfering, because they answer
+The two directions run together without interfering, because they are
 different questions about the same call. `const dao = makeDao()` comes
-to nothing and gives back the class `makeDao` constructed, so
-`dao.findByCustomer` finds the method that class declares while
+to nothing and gives back the class `makeDao` constructed. So
+`dao.findByCustomer` finds the method that class declares, while
 `withAuth(handler)` still comes to `handler`.
 
 `isWrittenAs` follows the same names to the expression a value is
-written as, whatever kind of expression that turns out to be. A GraphQL
-document is neither a function nor an object, so `comesTo` never
-reaches one.
+written as, whatever kind of expression that is. A GraphQL document is
+neither a function nor an object, so `comesTo` never reaches one.
 
-`comesFrom` covers the direction `comesTo` cannot. Every `comesTo` chain
-ends at something written out in the source suss is reading, so a name
-for a library's own function ends nowhere, because the library's body is
-not here. `comesFrom` walks the same steps and stops at the import
-instead, so it comes back with the module plus the name that module
-exports.
+`comesFrom` handles the case `comesTo` cannot. Every `comesTo` chain
+ends at something written out in the source suss is reading. A name for
+a library's own function has nowhere to end, because the library's body
+is not in that source. `comesFrom` walks the same steps but stops at the
+import, and returns the module and the name that module exports.
 
-`paramAt` is the one question that keeps the call it went through.
-`comesTo` merges call sites, so a function called from two places leaves
-its parameter with two values and a caller wanting one gets nothing.
-`paramAt` says which call put which value there.
+`paramAt` is the only question that keeps track of the call it went
+through. `comesTo` merges call sites: a function called from two places
+has two values for its parameter, and a caller that wants one value
+gets nothing. `paramAt` returns which call put which value there.
 
-`passesArgument` is the hop underneath it, and a caller can ask for it
-directly. `paramAt` settles the value through `comesTo`, so a parameter
-given a GraphQL document gets no answer at all. Asking for the argument
-as the caller wrote it leaves the reading to whoever knows what they are
-looking at.
+`passesArgument` is the hop underneath `paramAt`, and a caller can ask
+for it directly. `paramAt` settles the value through `comesTo`, so a
+parameter given a GraphQL document gets no answer at all.
+`passesArgument` returns the argument as the calling code wrote it, and
+leaves reading it to the code asking, which knows what kind of value to
+expect.
 
-Both of them go through `callsFunction`, which starts from the function
-and asks which calls reach it. A function written as `const f = (x) =>
-...` splits that in two: the name is the declaration, and the parameters
-are on the arrow the declaration was given. So `callsFunction` follows
-one binds hop out of what a call arrives at, and a function reached
-through a name is the same function as one reached directly.
+Both go through `callsFunction`, which starts from the function and
+finds the calls that reach it. A function written as
+`const f = (x) => ...` comes in two pieces: the name is the
+declaration, and the parameters belong to the arrow function the
+declaration is bound to. `callsFunction` therefore follows one `binds`
+hop out of whatever a call arrives at, so a function reached through its
+name is the same function as one reached directly.
 
-A callee a factory returned is the other half of that. `const requireEnv
-= makeReader(env)` gives the name no function at all, only a call, so
-one rule joins the two: `callsFunction(r, f) :- returnsValue(g, f),
-callsFunction(r0, g), callsNamed(r, r0)`. It is written from the
-factory's own call, which `callsFunction` has already settled, so
-nothing new starts from the call on the name.
+A callee that a factory returned needs one more rule.
+`const requireEnv = makeReader(env)` binds the name to a call, with no
+function at all, so one rule joins the two:
+`callsFunction(r, f) :- returnsValue(g, f), callsFunction(r0, g), callsNamed(r, r0)`.
+The rule starts from the factory's own call, which `callsFunction` has
+already settled, so nothing new starts from the call made through the
+name.
 
-`returnsCall` is `isWrittenAs` asked of what a function returns, so a
-caller can tell a wrapper that hands the library's call straight back
-from one that hands back something of its own. A name the result was
-written into first is the same answer, and a call whose own callee the
-rules cannot follow is not.
+`returnsCall` asks `isWrittenAs` about what a function returns. A caller
+uses it to tell a wrapper that returns the library's call directly from
+one that returns something of its own. A result assigned to a name
+first and then returned gives the same answer. A call whose own callee
+the rules cannot follow does not count.
 
-`callsInto` puts that together with the calls a function makes. A
-project writes its own decorator that calls `Resolver()` and applies
-that one to its classes, and the class is a resolver even though nothing
-about it says `Resolver`. Getting several answers for one function is
-normal rather than ambiguous, because a wrapper that combines two
-library decorators applies both of them, so a caller asks whether the
-one it cares about is among them.
+`callsInto` combines that with the calls a function makes. A project
+can write its own decorator that calls `Resolver()` and apply that
+decorator to its classes. Each of those classes is a resolver, even
+though `Resolver` appears nowhere on it. Several answers for one
+function are expected, because a wrapper that combines two library
+decorators applies both, so a caller checks whether the one it cares
+about is among them.
 
-Two relations exist for the rules' own use rather than for callers:
+Two relations are for the rules' own use, and callers do not read them:
 
 ```
 objectOf(x, obj)            x is the object literal obj
 invokes(r, f)               the call r runs the function f
 ```
 
-An object arrives two ways, through a name or as what a factory call
-gives back. `objectOf` gives that step a name, so the rule for
-`routes.list` and the rule for `make(body).handle` are the same rule.
-This is where the two directions meet: a factory call gets an
-`objectOf` answer without getting a `comesTo` answer.
+A walk reaches an object in two ways: through a name, or as what a
+factory call returns. `objectOf` covers both, so `routes.list` and
+`make(body).handle` go through the same rule. The two directions meet
+here, because a factory call gets an `objectOf` answer without getting a
+`comesTo` answer.
 
-`invokes` is the callee half of `givesBack`, kept apart so the case
-where the callee is itself a call, `daoBuilder()()`, is one rule rather
-than a copy of every other. It differs from `callsFunction`, which
-starts from the function because a caller asking for call sites has the
-function in hand.
+`invokes` is the callee half of `givesBack`. It is a separate relation
+so that a callee that is itself a call, as in `daoBuilder()()`, needs
+one rule instead of a copy of every other rule. It differs from
+`callsFunction`, which starts from the function, because a caller
+asking for call sites already has the function.
 
 ## A read of the environment
 
@@ -390,33 +392,34 @@ const requireEnv = makeReader(process.env);
 const table = requireEnv("TABLE_NAME");
 ```
 
-An adapter cannot tell at emission time that `env[name]` reads the
-environment, so it states the two things it does know: `readsKeyed` for
-a read off any container, and `environmentObject` for the expression
-that spells `process.env`. `environmentValue(w, o)` walks out of the
-object, through the names declared as it and the parameters callers
-hand it to, however many calls deep. A parameter written with the
-environment as its default is one of those too, since a caller that
-passes nothing leaves the default in place; `paramDefault(p, d)` is
-what the adapter states about that. `environmentRead` joins the walk to
-a keyed read, `readsEnvNamed` drops the object column, and
-`paramNamesEnv` says which parameters end up as a variable's name.
+When an adapter emits facts, it cannot tell that `env[name]` reads the
+environment. It records the two things it can see: `readsKeyed` for a
+read off any container, and `environmentObject` for the expression that
+spells `process.env`. `environmentValue(w, o)` walks outward from the
+object, through the names declared as it and the parameters that
+callers pass it to, however many calls deep. A parameter whose default
+is the environment counts too, because a caller that passes nothing
+leaves the default in place. The adapter records that default as
+`paramDefault(p, d)`. `environmentRead` joins the walk to a keyed read,
+`readsEnvNamed` is the same relation without the object column, and
+`paramNamesEnv` lists the parameters that end up as a variable's name.
 
-`wantedEnvObject` seeds the question, because a project writes the
-environment object in a handful of places and the read a helper makes
-is somewhere no scan of the source would look. Every join then runs in
-the direction it was built for: `refersToObject` from the object,
-`passesArgument` from the argument through `callArg`, and
-`paramNamesEnv` from the site to its callers.
+`wantedEnvObject` seeds the question from the environment object. A
+project writes that object in a handful of places, while the read a
+helper makes can be anywhere, somewhere no scan of the source would
+look. Starting from the object, every join runs in the direction it was
+built for: `refersToObject` from the object, `passesArgument` from the
+argument through `callArg`, and `paramNamesEnv` from the site to its
+callers.
 
-A caller that already has one expression in hand asks the other way
-round. `wantedEnvironmentValue(o, w)` binds the expression and leaves
-the object free, so a pack standing at `cleanEnv(source, schema)` can
-ask about `source` alone. The demand rewrite turns every join around
-for that adornment, and the walk runs from the argument to the
-parameter it refers to, out to that parameter's callers, and on until
-it reaches an `environmentObject` or runs out of callers. The store
-exposes it as `isEnvironmentValue`.
+A caller that already has one expression asks in the other direction.
+`wantedEnvironmentValue(o, w)` binds the expression and leaves the
+object free, so a pack looking at `cleanEnv(source, schema)` can ask
+about `source` alone. For that adornment the demand rewrite reverses
+every join. The walk runs from the argument to the parameter it refers
+to, out to that parameter's callers, and on until it reaches an
+`environmentObject` or runs out of callers. The store exposes this
+question as `isEnvironmentValue`.
 
 ## A type the callers declare
 
@@ -432,221 +435,228 @@ def get(*, session, order_id):
 ```
 
 A recognizer that reads the annotation at the call site finds nothing
-on `get`. The adapter states `statesType(x, t)` for every annotated
-parameter and annotated assignment, with `x` the name's key and `t` the
-key of the name or expression the annotation is written as. `typedAs`
-then gives a value the type its own declaration states, the type of a
-name it is declared as, and the type of every argument a caller passes
-to the parameter it refers to. The last one recurses, so a chain of
-unannotated helpers gets the type the outermost caller declared, in
-the same direction `paramNamesEnv` runs.
+on `get`. The adapter records `statesType(x, t)` for every annotated
+parameter and every annotated assignment. `x` is the key of the name,
+and `t` is the key of the name or expression the annotation is written
+as. `typedAs` then gives a value the type its own declaration states,
+the type of the name it is declared as, and the type of every argument
+a caller passes to the parameter it refers to. The last case recurses,
+so a chain of unannotated helpers gets the type the outermost caller
+declared. It runs in the same direction as `paramNamesEnv`.
 
-`wantedType` seeds it. The answers are the types (`wantedTypedAs`),
-every argument passed straight to the parameter (`wantedTypePassed`),
-the ones among those that have a type (`wantedPassedTypedAs`), and the
-ones that are a parameter of the caller's own (`wantedPassedParam`).
-`declaredTypesOf` reads the four. A direct caller that passes a value
-it built or read, with no type, means the parameter could be anything
-that caller had, so the answer is none. A caller passing on its own
-parameter is different: that parameter's callers either declare a type,
-which arrives through `typedAs`, or make no claim, the way a fallback
-branch that settles on nothing makes none. A helper nobody in the run
-calls is the common case, and refusing on it would refuse every helper
-it calls. Saying the same of a caller further out takes `not typedAs`,
-which the rewrite refuses, so only the direct callers are checked.
+`wantedType` seeds the question, and the answers come back in four
+relations: the types (`wantedTypedAs`), every argument passed directly
+to the parameter (`wantedTypePassed`), the ones among those that have a
+type (`wantedPassedTypedAs`), and the ones that are a parameter of the
+caller (`wantedPassedParam`). `declaredTypesOf` reads all four.
+
+When a direct caller passes a value it built or read, with no type, the
+parameter could be anything that caller had, so the answer is none. A
+caller that passes on its own parameter is treated differently. That
+parameter's callers either declare a type, which arrives through
+`typedAs`, or make no claim, in the same way that a fallback branch
+which settles on nothing makes none. The common case is a helper that
+nothing in the run calls, and refusing there would refuse every helper
+it calls. Applying the same check to a caller further out would need
+`not typedAs`, which the rewrite refuses, so only the direct callers
+are checked.
 
 Two callers can declare different types, and two type keys can be the
 same class written two ways: `Session` in one file and an alias of it
-in another. Only the adapter can tell those apart, by asking where each
-key comes from, so `declaredTypesOf` hands back every key it found and
-the adapter applies the single-answer policy to what they refer to.
+in another. Only the adapter can tell whether they are the same, by
+asking where each key comes from. So `declaredTypesOf` returns every
+key it found, and the adapter applies the single-answer policy to what
+those keys refer to.
 
 ## The anchor behind a receiver
 
-A pack sometimes wants a call handed back, not a yes or no. Mongoose is
-the picture: `model("User", schema)` is the anchor, and the pack reads
-the model name and the collection off that call's own arguments. The
-receiver in front of a matched method can be the model, a construction
-of it (`new User({...})`), or a document a query returned
-(`await User.findById(id)`), and each is a different number of hops
-from the anchor.
+Sometimes a pack needs the call itself back, and a yes or no is not
+enough. Mongoose is an example: `model("User", schema)` is the anchor,
+and the pack reads the model name and the collection off that call's
+own arguments. The receiver in front of a matched method can be the
+model, a construction of it (`new User({...})`), or a document a query
+returned (`await User.findById(id)`). Each is a different number of
+hops from the anchor.
 
-`anchorChain` is the reachability that covers all three. From an asked
-value (`wantedAnchor`) it follows names (`binds`, `endsHolding`,
-`fallbackBranch`), imports through the export table, a call to its
-callee, and a method's callee to its receiver. Every call the chain
-passes lands in `wantedAnchorCall`, keyed by the asked value.
+`anchorChain` is the reachability relation that covers all three.
+Starting from the value asked about (`wantedAnchor`), it follows names
+(`binds`, `endsHolding`, `fallbackBranch`), imports through the export
+table, a call to its callee, and a method's callee to its receiver.
+Every call the chain passes goes into `wantedAnchorCall`, keyed by the
+value asked about.
 
-Candidates, not one answer: the chain has no way to rank a nearer call
-above a farther one, and ranking inside the rules would be a depth
-bound in a new spelling. The asking side filters the candidates against
-its own origin (which module, which callee name) and applies the
-single-answer policy: exactly one distinct match is the anchor, none or
-several is a refusal.
+The chain returns candidates instead of one answer. It has no way to
+rank a nearer call above a farther one, and ranking inside the rules
+would amount to a depth bound written another way. The asking side
+filters the candidates against its own origin (which module, which
+callee name) and applies the single-answer policy: exactly one distinct
+match is the anchor, and none or several is a refusal.
 
-The demand cone stays on the base facts named above. Nothing here pulls
-`reaches` or `callsInto`, so asking about a receiver does not price in
-call-graph closure.
+The demand stays on the base facts listed above. Nothing here pulls in
+`reaches` or `callsInto`, so asking about a receiver does not pay for
+the call-graph closure.
 
 ## The subject behind a registration
 
-Discovery keeps asking one question: is this receiver the app, the
-router, the thing built by calling what a library exports? Which
-`.get(...)` calls are routes and which `.use(...)` calls are mounts
-both hang on the answer, and every language feature that moves a value
-is a place the receiver can be written: a class field, a destructured
-name, a property on an object another file built. Enumerating those
-spellings in a walker loses to the language, so the question is asked
-of the rules instead.
+Discovery asks one question over and over: is this receiver the app,
+the router, the thing built by calling what a library exports? The
+answer decides which `.get(...)` calls are routes and which `.use(...)`
+calls are mounts. Any language feature that moves a value is a place
+the receiver can be written: a class field, a destructured name, a
+property on an object another file built. A walker that lists those
+spellings one by one falls behind the language, so discovery asks the
+rules instead.
 
 The answer comes back in two relations, both seeded by
-`wantedSubject`.
-`wantedSubjectWritten` is the written-value walk from the asked
-receiver, so the asking side can apply the single-answer policy over
-everything the receiver could be. `wantedSubjectConstruction` keeps
-only the answers that are a call or a `new`, and pairs each with where
-its callee was imported from, through however many aliases the callee
-went. The asking side checks that pair against the (module, name) a
-pack declares: exactly one distinct construction with a matching
-origin is the subject, none or several is a refusal.
+`wantedSubject`. `wantedSubjectWritten` is the written-value walk from
+the receiver asked about, so the asking side can apply the
+single-answer policy over everything the receiver could be.
+`wantedSubjectConstruction` keeps only the answers that are a call or a
+`new`, and pairs each with where its callee was imported from, through
+however many aliases the callee went. The asking side checks that pair
+against the (module, name) a pack declares: exactly one distinct
+construction with a matching origin is the subject, and none or several
+is a refusal.
 
-The construction end needs no fact of its own. Every call is already a
-`call` fact, a `new` expression included, and the join against
-`comesFrom` is what makes one of them a subject seed.
+The construction end needs no fact of its own. Every call, `new`
+expressions included, is already a `call` fact, and the join against
+`comesFrom` picks out the ones that seed a subject.
 
-A call is written as itself, the same base case that makes a class its
-own ancestor at the top of the chain. So when an adapter asks
+Every call is written as itself. This is the same base case that makes a
+class its own ancestor at the top of the chain. So when an adapter asks
 `wantedSubjectWritten` about a call directly, the answers include the
-call itself next to whatever the walk reaches. A call with one other
-answer would count as two and be refused as ambiguous. `singleAnswers`
-drops the row whose answer is its own key before counting, and every
-adapter reads the relation through it.
+call itself as well as whatever the walk reaches. A call with one other
+answer would then count as two and be refused as ambiguous.
+`singleAnswers` drops the row whose answer is its own key before
+counting, and every adapter reads the relation through it.
 
-A name written as a placeholder before a guard fills it in, `_client =
-None` at module level and `_client = make_client()` inside a getter, is
-two answers the same way. An adapter marks the placeholder write with
-`placeholderValue(x)` and passes those keys to `singleAnswers`, which
-sets them aside whenever the key has another answer. A name written only
-as a placeholder keeps that answer. `valueLeftByWrites` sets `null` and
-`undefined` aside the same way when it compares the writes to a name.
+A name that is set to a placeholder until a guard fills it in also has
+two answers, for example `_client = None` at module level and
+`_client = make_client()` inside a getter. An adapter marks the
+placeholder write with `placeholderValue(x)` and passes those keys to
+`singleAnswers`, which sets them aside whenever the key has another
+answer. A name written only as a placeholder keeps that answer.
+`valueLeftByWrites` sets `null` and `undefined` aside in the same way
+when it compares the writes to a name.
 
-A name bound to a call is a separate case. Its one answer is the call,
-and the rule that says a call is written as what its callee returns
-only fires for the call itself, never for a name that reaches one. An
-adapter that wants the deeper answer asks `wantedSubject` a second
-time with the call as the subject and takes that answer. The
-TypeScript store does the same in `resolveWrittenValue` and in
-`subjectConstructionOf`, whenever a name resolves to a call.
+A name bound to a call is a separate case. Its only answer is the call.
+The rule that treats a call as written as what its callee returns fires
+only for the call itself, and never for a name that reaches the call. An
+adapter that needs the deeper answer asks `wantedSubject` a second time
+with the call as the subject, and uses that answer. The TypeScript store
+does this in `resolveWrittenValue` and in `subjectConstructionOf`
+whenever a name resolves to a call.
 
 ## Explaining an answer
 
-Evaluate the same rules under `@suss/datalog`'s `witnesses` algebra and
-every derived fact keeps the rule that fired and the facts it consumed,
-so `proofOf` can rebuild the derivation tree of any answer on demand.
-`explainResolutionProof` flattens that tree into the chain a person
-reads: the step rules are the hops, `reaches` is the glue between them,
-and the base cases ("x is already a function") end a chain without
-adding to it. Each hop comes back with one sentence saying why it is
-true, written from the rule's own name: `alias`, `import`, `argument`,
-`factory unwrap`, and so on.
+When the same rules are evaluated under `@suss/datalog`'s `witnesses`
+algebra, every derived fact keeps the rule that fired and the facts it
+used, so `proofOf` can rebuild the derivation tree of any answer on
+demand. `explainResolutionProof` flattens that tree into a chain a
+person can read. The step rules become the hops, `reaches` connects
+them, and the base cases ("x is already a function") end a chain without
+adding a hop. Each hop comes with one sentence explaining why it is
+true, generated from the rule's own name: `alias`, `import`,
+`argument`, `factory unwrap`, and so on.
 
-Two kinds of detail ride under a hop rather than beside it. A barrel
-chain under an `import` hop lists which files forwarded the name. A
-`declared wrapper` hop rests on a pack's word rather than on source, so
-it surfaces as an assumption: "a pack declares that withSentry from
-@sentry/serverless passes argument 0 through to its result". A proof
-cut short by the depth cap says so instead of trailing off.
+Two kinds of detail are nested under a hop instead of appearing as hops
+of their own. An `import` hop lists the barrel files that forwarded the
+name. A `declared wrapper` hop depends on a pack declaration and not on
+source, so the explanation shows it as an assumption: "a pack declares
+that withSentry from @sentry/serverless passes argument 0 through to its
+result". A proof cut short by the depth cap says that it was cut short.
 
-Atoms in a proof are whatever node ids the adapter interned, so both
-functions take a `describe` callback that says an atom in source terms.
-`renderExplanation` turns the flattened chain into printable lines;
-`suss ask 'why does … reach …'` is this pipeline end to end.
+The atoms in a proof are the node ids the adapter interned, so both
+functions take a `describe` callback that turns an atom into source
+terms. `renderExplanation` turns the flattened chain into printable
+lines. `suss ask 'why does … reach …'` runs this whole pipeline.
 
 ## Why rules and not a walker
 
-Each rule describes one hop. The chains people write are longer than
-that, and nobody writes a rule for them: a factory handing off to
-another factory, a closure three levels down calling the argument, a
-barrel re-exporting a wrapper. The engine composes what it has, so all
-of those work without anyone writing a rule for them.
+Each rule describes one hop. The chains people write are longer: a
+factory handing off to another factory, a closure three levels down
+calling the argument, a barrel re-exporting a wrapper. The engine
+composes the one-hop rules into those chains, so each of them resolves
+without a rule of its own.
 
-That tells you where to look when something comes back empty. Suspect
-the facts before the rules. Against one production service, suss
-resolved 11 handlers and missed most of what the template declared. The
-fix was one condition in fact extraction, and the existing rules found
-the rest without any change.
+So when something comes back empty, suspect the facts before the rules.
+On one production service, suss resolved 11 handlers and missed most of
+what the template declared. The fix was one condition in fact
+extraction, and the existing rules found the rest with no change.
 
 ## Changing a rule
 
-Every rule here composes with every other one, so a change meant for one
-construct lands on chains nobody had in mind. `@suss/resolution-fuzz`
-generates four thousand fact bases, runs these rules over each, and
-compares what came out against a committed baseline, so a rule change
-shows up as a diff a reviewer reads. Run `npm run resolution:baseline`
-to accept one, and commit the rewritten file with the rule.
+Every rule composes with every other rule, so a change meant for one
+construct also affects chains nobody had in mind.
+`@suss/resolution-fuzz` generates four thousand fact bases, runs these
+rules over each one, and compares the output against a committed
+baseline. A rule change then shows up as a diff for a reviewer to read.
+Run `npm run resolution:baseline` to accept the diff, and commit the
+rewritten baseline with the rule.
 
 ## What is not modelled
 
-**A handler passed as one property of a config.** `make({ body:
-handler })`, where the factory reads `opts.body`, does not resolve. We
-tried a rule for it and took it back out. A wrapper often reads several
-callbacks off the same config object, the rule made each one a
-candidate for the whole call, and the ambiguity that produced nulled out
-handlers that used to resolve. Working out which property is the handler
-needs something the structure does not tell you: either "the only
-property that gets called" (which needs negation) or a pack that says
-which property it is. Until one of those exists, this pattern stays
-unresolved on purpose.
+**A handler passed as one property of a config.**
+`make({ body: handler })`, where the factory reads `opts.body`, does not
+resolve. A rule for it was tried and taken back out. A wrapper often
+reads several callbacks off the same config object. The rule made each
+of them a candidate for the whole call, and the ambiguity that produced
+nulled out handlers that used to resolve. Deciding which property is the
+handler needs information the structure does not give: either "the only
+property that gets called", which needs negation, or a pack that
+declares which property it is. Until one of those exists, this pattern
+stays unresolved on purpose.
 
-**An element of an array.** `all[0]` has no fact for what an array
-contains.
+**An element of an array.** No fact records what an array contains, so
+`all[0]` has nothing to step to.
 
 **Which write a read sees, once control flow decides it.** A name
 written twice in a module's own statement list does resolve. Those
-statements run once each, top to bottom, so the last write is what
-anything importing the name gets, and the adapter says so with
-`endsHolding`. A write inside a branch, a loop, or a function body is a
-different claim. The adapter says `mayHold` once per write instead, and
-the rules step the name to every one of them, so a caller that can use
-several values gets them all and a caller that needs one gets none.
-Which write a particular read sees is still unanswered.
+statements run once each, top to bottom, so anything importing the name
+gets the last write, and the adapter records that with `endsHolding`. A
+write inside a branch, a loop or a function body is different. For those
+the adapter records `mayHold` once per write, and the rules step the
+name to every one of them. A caller that can use several values gets
+them all, and a caller that needs one value gets none. Which write a
+particular read sees is still unanswered.
 
-Answering that in general is reaching definitions, per use rather than
-per name. That needs facts saying which statement follows which and
-which branch each one is in, and no adapter emits any of those today.
+Answering that in general is reaching definitions, computed per use
+instead of per name. It needs facts about which statement follows which
+and which branch each statement is in, and no adapter emits any of those
+today.
 
-We have the adapter pick the write rather than a rule, and that is a
-cost decision. Ordering writes inside the rules means asking which
-writes have no later write. Negation says that in one line, but this
-evaluator has to throw its last fixpoint away and start over whenever a
-rule set uses negation. The store evaluates after every wave of facts,
-so one negated rule turned a 66 second run on the Saleor dashboard into
-one that had not finished in ten minutes. The on-demand rewrite refuses
-negation before that, since a relation derived only where somebody
-asked is smaller than the one `not p(x)` was written against. Source
-order is something every adapter already knows.
+The adapter picks the write, instead of a rule, because of cost.
+Ordering writes inside the rules means asking which writes have no later
+write. Negation can say that in one line, but this evaluator throws away
+its last fixpoint and starts over whenever a rule set uses negation. The
+store evaluates after every wave of facts, so one negated rule turned a
+66 second run on the Saleor dashboard into one that had not finished
+after ten minutes. The on-demand rewrite refuses negation before it gets
+that far, because a relation derived only where somebody asked is
+smaller than the relation `not p(x)` was written against. Every adapter
+already knows source order.
 
-`writesAllStated` is what makes stepping to each write safe, and it is
-the same trade. Some writes leave the adapter with no value to record:
-a loop target, an `except ... as`, and a parameter, whose value is the
-caller's and which a later write may or may not have replaced by the
-time a read runs. The writes it did record are then not the whole set,
-and stepping to them would say a name is one of two things when it
-could be a third. Saying that in a rule takes `not writesUnstated(x)`,
-so the adapter states the other side of it and the rule joins on that.
+`writesAllStated` makes stepping to each write safe, and it comes from
+the same trade. Some writes leave the adapter with no value to record: a
+loop target, an `except ... as`, and a parameter, whose value comes from
+the caller and may or may not have been replaced by a later write when a
+read runs. The recorded writes are then not the whole set, and stepping
+to them would say a name is one of two things when it could be a third.
+A rule would need `not writesUnstated(x)` to express that, so the
+adapter records the positive side instead, and the rule joins on it.
 
-What the adapter supplies is the reading: the values in source order,
-and a description of its grammar. `writesRunInOrder` walks the scope
-with that description and says whether the writes run once each in the
-order they are written, and `valueLeftByWrites` picks the value the name
-comes down to. Both decisions are written once here rather than once per
+The adapter supplies what it read: the values in source order, and a
+description of its grammar. `writesRunInOrder` walks the scope with that
+description and returns whether the writes run once each in the order
+they are written. `valueLeftByWrites` picks the value the name comes
+down to. Both decisions are written once, in this package, for every
 language.
 
-A description says four things: what a bare name is spelled as, which
-node types open a body that runs later than the statements around it,
-how to enumerate a node's children, and which spellings of a name are
-reads rather than writes or declarations. The walk itself never touches
-a parser, so a Python `def` and a Ruby block are the same case to it.
+A description lists four things: how a bare name is spelled, which node
+types open a body that runs later than the statements around it, how to
+enumerate a node's children, and which spellings of a name are reads
+and not writes or declarations. The walk itself never touches a parser,
+so a Python `def` and a Ruby block are the same case to it.
 
 **Ambiguity is the caller's problem.** When the rules reach two
 different functions, the store returns nothing, because picking one
