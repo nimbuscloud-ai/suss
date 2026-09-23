@@ -1,41 +1,41 @@
 # @suss/framework-aws-sns
 
-Pattern pack for AWS SNS. It reads the publisher side, where a service puts a message on a topic, and emits interaction effects that pair with the Lambda a subscription triggers.
+Pattern pack for AWS SNS. It reads the publisher side, where a service puts a message on a topic, and records interaction effects that pair with the Lambda a subscription triggers.
 
 ## What this package is
 
-`@suss/framework-aws-sns` returns a `PatternPack` built from two `@suss/recognize` declarations and no hand-written walk:
+`@suss/framework-aws-sns` exports a `PatternPack` built from two `@suss/recognize` declarations, with no walk written by hand:
 
 - **`PublishCommand`**: `client.send(new PublishCommand({ TopicArn, Message }))` becomes one `interaction(class: "message-send")` effect on wire `aws.sns`, with `Message` as the body and `Subject` as the routing key.
-- **`PublishBatchCommand`**: the topic is stated once beside `PublishBatchRequestEntries`, and each entry is one message, so one call yields one effect per entry.
+- **`PublishBatchCommand`**: the topic is given once, next to `PublishBatchRequestEntries`, and each entry is one message, so one call produces one effect per entry.
 
-The command class has to come from `@aws-sdk/client-sns`, so a class of the same name from somewhere else is left alone. Only the AWS SDK v3 call shape is covered; SDK v2, `new AWS.SNS().publish(...).promise()`, is a follow-up.
+The command class has to come from `@aws-sdk/client-sns`, so a class with the same name from another module is ignored. The pack covers only the AWS SDK v3 call pattern. SDK v2, `new AWS.SNS().publish(...).promise()`, is not read yet.
 
 ### Why the publisher side was the gap
 
-suss could already see a Lambda a topic triggers. `@suss/contract-cloudformation` turns an `AWS::SNS::Subscription` with `Protocol: lambda`, and a SAM `Events: { Type: SNS }` block, into a consumer summary on the topic's channel, and `@suss/framework-aws-lambda` maps an `SNS` event source onto the `aws.sns` wire. Nothing read the other half, so a publish came out as a bare `sns.send` invocation with no boundary and no target. This pack is that other half.
+suss could already see the Lambda a topic triggers. `@suss/contract-cloudformation` turns an `AWS::SNS::Subscription` with `Protocol: lambda`, and a SAM `Events: { Type: SNS }` block, into a consumer summary on the topic's channel. `@suss/framework-aws-lambda` maps an `SNS` event source onto the `aws.sns` wire. Nothing read the publishing side, so a publish came out as a bare `sns.send` call with no boundary and no target. This pack reads that side.
 
 ### Channel identity
 
-A topic ARN contains the account and the region, so code writes `process.env.ORDER_EVENTS_TOPIC_ARN` rather than the ARN itself. The reader keeps the env var name, so the publish records channel `{ORDER_EVENTS_TOPIC_ARN}`. Pairing resolves that name to a CloudFormation logical resource through the publishing Lambda's `Environment` declaration, and that resource is the topic the subscription is on. It is the same chain collapse `@suss/framework-aws-sqs` relies on for `QueueUrl`.
+A topic ARN contains the account and the region, so code usually writes `process.env.ORDER_EVENTS_TOPIC_ARN` instead of the ARN. The pack keeps the env var name, so the publish records the channel `{ORDER_EVENTS_TOPIC_ARN}`. Pairing resolves that name to a CloudFormation logical resource through the publishing Lambda's `Environment` declaration, and that resource is the topic the subscription is on. `@suss/framework-aws-sqs` relies on the same chain for `QueueUrl`.
 
-`TargetArn` is the same destination under another name, so a publish that writes either one says which topic it reached. A `PhoneNumber` publish reaches a handset that nothing subscribes to, so it records the send with no channel rather than claiming one.
+`TargetArn` is the same destination under another name, so a publish that sets either one records which topic it reached. A `PhoneNumber` publish goes to a handset that nothing subscribes to, so it records the send with no channel.
 
-An ARN written out in full is recorded as the whole string. The CloudFormation reader reduces an ARN to the resource segment, so a publish to a literal ARN does not pair with a topic in the same template and comes out as `messageBusProducerOrphan`. That is the same treatment `@suss/framework-aws-sqs` gives a literal `QueueUrl`, and reducing both to the resource name is a change to make in one place rather than two.
+An ARN written out in full is recorded as the whole string. The CloudFormation reader cuts an ARN down to the resource segment, so a publish to a literal ARN does not pair with a topic in the same template, and comes out as `messageBusProducerOrphan`. `@suss/framework-aws-sqs` treats a literal `QueueUrl` the same way, and cutting both down to the resource name should happen in one shared place.
 
 ### What a subscriber contributes
 
-Nothing here yet. The consumer's channel comes from the template, and its body arrives as `record.Sns.Message`, which no recognizer reads, so a publisher's `Message` shape is not compared against what the subscriber destructures. `@suss/framework-aws-sqs` does that comparison with a hand-written walk over `JSON.parse(record.body)`; the same shape for SNS belongs in a declaration rather than in a second walk.
+Nothing yet. The consumer's channel comes from the template, and its body arrives as `record.Sns.Message`, which no recognizer reads. So suss does not compare a publisher's `Message` against what the subscriber destructures. `@suss/framework-aws-sqs` makes that comparison with a walk over `JSON.parse(record.body)` written by hand. For SNS the same check belongs in a declaration, so there is no second walk.
 
 ### Publishing through your own wrapper
 
-A service that publishes through a wrapper of its own writes no `PublishCommand`, so nothing here fires on it. SQS and EventBridge take a dependency stub for that case, under `system: aws.sqs` and `system: aws.events`. SNS does not yet: the recognizer behind those two is written twice already, and a third copy is the point to extract it instead.
+A service that publishes through a wrapper of its own never writes `PublishCommand`, so this pack matches nothing in it. SQS and EventBridge accept a dependency stub for that case, under `system: aws.sqs` and `system: aws.events`. SNS does not yet. The recognizer behind those two already exists in two copies, and the next step is to extract it into a shared one before adding a third.
 
 ## Where it fits in suss
 
-Depends on `@suss/recognize`, which compiles the declarations into the recognizer hooks the adapters call. Nothing else, and no `ts-morph`: the declarations reach the syntax tree through the adapter's own vocabulary.
+The pack depends only on `@suss/recognize`, which compiles the declarations into the recognizer hooks the adapters call. It does not use `ts-morph`, because the declarations reach the syntax tree through the adapter's own vocabulary.
 
-Consumer-side handlers get their topic boundary binding from the pass that walks CloudFormation and SAM SNS subscriptions, which lives in `@suss/contract-cloudformation`.
+A consumer-side handler gets its topic boundary binding from the pass in `@suss/contract-cloudformation` that walks CloudFormation and SAM SNS subscriptions.
 
 ## Coverage
 

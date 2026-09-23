@@ -1,10 +1,10 @@
 # @suss/framework-aws-eventbridge
 
-Pattern pack for AWS EventBridge. It reads the producer side, where a service publishes an event, and emits one `interaction(class: "message-send")` effect per `PutEvents` entry.
+Pattern pack for AWS EventBridge. It reads the producer side, where a service publishes an event, and records one `interaction(class: "message-send")` effect per `PutEvents` entry.
 
 ## What this package is
 
-`@suss/framework-aws-eventbridge` returns a `PatternPack` built from a `@suss/recognize` declaration:
+`@suss/framework-aws-eventbridge` exports a `PatternPack` built from a `@suss/recognize` declaration:
 
 ```ts
 await client.send(new PutEventsCommand({
@@ -17,27 +17,27 @@ await client.send(new PutEventsCommand({
 }));
 ```
 
-Each entry in `Entries` is one send on wire `eventbridge`. `Detail` is the body, and `Source` rides along as the routing key for a reader, since it scopes an event on the bus without keying the pairing today. The command has to be constructed from `@aws-sdk/client-eventbridge`, so a `PutEventsCommand` from somewhere else is left alone. Only the AWS SDK v3 call shape is covered; SDK v2, `new AWS.EventBridge().putEvents(...).promise()`, is a follow-up.
+Each entry in `Entries` is one send on wire `eventbridge`. `Detail` is the body. `Source` is recorded as the routing key for anyone reading the summary, since it scopes an event on the bus, but pairing does not use it today. The command has to be constructed from `@aws-sdk/client-eventbridge`, so a `PutEventsCommand` from another module is ignored. The pack covers only the AWS SDK v3 call pattern. SDK v2, `new AWS.EventBridge().putEvents(...).promise()`, is not read yet.
 
 ### Channel identity
 
-One event bus multiplexes many event types, and a rule subscribes to a subset of them keyed by `DetailType`, so the channel is both parts:
+Many event types share one event bus, and a rule subscribes to some of them by `DetailType`. So the channel is made of both parts:
 
 ```
 channel = `${bus}#${detailType}`
 ```
 
-The bus is nearly always deploy-named, so the code writes `process.env.ORDER_EVENT_BUS_NAME` and the declaration keeps the reference, giving `{ORDER_EVENT_BUS_NAME}#OrderPlaced`. The message-bus checker resolves that reference to the CloudFormation `EventBus` logical id through the producing Lambda's `Environment` block. A bus written nowhere at all is the account's default bus. A `DetailType` decided at run time leaves the channel null, because a channel spelled by half of itself would pair across buses.
+The bus name is nearly always set at deploy time, so the code writes `process.env.ORDER_EVENT_BUS_NAME`. The declaration keeps that reference, which gives `{ORDER_EVENT_BUS_NAME}#OrderPlaced`. The message-bus checker resolves the reference to the CloudFormation `EventBus` logical id through the producing Lambda's `Environment` block. If the code never gives a bus, the event goes to the account's default bus. If the `DetailType` is decided at run time, the channel is null, because a channel with only half its parts would pair across buses.
 
-A `DetailType` built from a value typed as a few strings is a send to each of them. `` `record.${event.operation.toLowerCase()}` `` with `operation: "INSERT" | "UPDATE" | "DELETE"` records three sends, on `record.insert`, `record.update` and `record.delete`, and a string enum reads the same way. Past 16 channels for one entry the send is recorded once, with a hole where the value goes.
+When the `DetailType` is built from a value typed as a few strings, the pack records a send to each of them. `` `record.${event.operation.toLowerCase()}` `` with `operation: "INSERT" | "UPDATE" | "DELETE"` records three sends, on `record.insert`, `record.update` and `record.delete`. A string enum is read the same way. Past 16 channels for one entry, the send is recorded once, with a hole where the value goes.
 
 ### The consumer side
 
-There is no consumer-side recognizer here yet. A target Lambda gets its message-bus boundary binding from the pass that walks CloudFormation and SAM `AWS::Events::Rule` resources and `Events: { Type: EventBridgeRule | Schedule }` blocks, which lives in `@suss/contract-cloudformation`. An EventBridge target handler reads `event.detail`, and a message-receive recognizer for that shape is a follow-up. Until then body-shape pairing is unavailable for EventBridge, while the orphan, unused, unresolvable, and schedule accounting all work off the CloudFormation summaries.
+This pack has no consumer-side recognizer yet. A target Lambda gets its message-bus boundary binding from the pass in `@suss/contract-cloudformation` that walks CloudFormation and SAM `AWS::Events::Rule` resources and `Events: { Type: EventBridgeRule | Schedule }` blocks. An EventBridge target handler reads `event.detail`, and a message-receive recognizer for that has not been written yet. Until it is, suss cannot compare message bodies for EventBridge. The orphan, unused, unresolvable and schedule checks all still work from the CloudFormation summaries.
 
 ## Telling it about your own publisher
 
-A service that publishes through its own publisher does not write a `PutEventsCommand`, so the declaration never fires on it. Such a project says which publisher does the publishing, in a dependency stub under `suss/stubs/`.
+A service that publishes through a publisher of its own never writes `PutEventsCommand`, so the declaration never fires on it. The project declares which publisher does the publishing in a dependency stub under `suss/stubs/`.
 
 ```yaml
 # suss/stubs/acme-async.yaml
@@ -52,20 +52,20 @@ statements:
       bodyArg: 1
 ```
 
-That reads `publisher.emit("user.deleted", data, opts)` as a send on channel `user.deleted`, with no bus segment. A publisher takes its bus from constructor config the call site never states, and the checker treats an unstated bus as agreeing with any, so the subject on its own pairs against the rule that routes it. The pack emits nothing when the subject is not a literal string in the source.
+With that stub, `publisher.emit("user.deleted", data, opts)` is read as a send on channel `user.deleted`, with no bus part. A publisher takes its bus from constructor config that the call site never shows, and the checker treats a missing bus as matching any bus, so the subject alone pairs with the rule that routes it. When the subject is not a literal string in the source, the pack does not record the send.
 
-The stub's `package` is the module that declares the receiver's type, and it widens the pack's import gate to that module. In the `spec`:
+The stub's `package` is the module that declares the receiver's type, and the pack also reads files that import that module. In the `spec`:
 
 - `receiver`: the type name of the receiver, as that module exports it.
 - `method`: the method that performs the send.
 - `subjectArg`: which argument position the subject is in.
-- `bodyArg`: which argument the message body is. Leave it out when the method does not take a single body argument, as a batch method taking a list of entries does, and then no body is reported.
+- `bodyArg`: which argument is the message body. Leave it out when the method does not take a single body argument, such as a batch method that takes a list of entries. No body is reported then.
 
-The `producers` pack option said the same thing until 0.21.0 removed it. A config file setting it now stops the run and points here.
+The `producers` pack option did the same job until 0.21.0 removed it. A config file that sets it now stops the run and points here.
 
 ## Where it fits in suss
 
-Depends on `@suss/recognize`, which compiles the send declaration into the recognizer hooks the adapters call, `@suss/behavioral-ir` for the message-bus binding, `@suss/adapter-typescript` for the configured-call reader, and `@suss/extractor` for the `PatternPack` type. `ts-morph` is a peer dependency.
+The pack depends on `@suss/recognize`, which compiles the send declaration into the recognizer hooks the adapters call. It also uses `@suss/behavioral-ir` for the message-bus binding, `@suss/adapter-typescript` for the configured-call reader, and `@suss/extractor` for the `PatternPack` type. `ts-morph` is a peer dependency.
 
 ## Coverage
 
