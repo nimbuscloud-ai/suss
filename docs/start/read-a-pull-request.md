@@ -40,9 +40,9 @@ users.get("/users/:id", async (c) => {
 npx suss extract -f hono -o summaries/before.json
 ```
 
-The pull request rewrites two of those returns. A deleted account now
-gets a `200` with a status field in it where it used to get a `410`, and
-`email` comes off the success body:
+The pull request rewrites two of those returns. A deleted account used to
+get a `410`, and now it gets a `200` with a status field in it. `email`
+is also gone from the success body:
 
 <!-- suss:file src/routes/users.ts -->
 

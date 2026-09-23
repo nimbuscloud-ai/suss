@@ -11,8 +11,8 @@ Almost everything suss does comes down to four words.
 
 A boundary is where two units of code meet and neither one can see the
 other. A route and the client that calls it are a boundary, and so are a
-query and the table it reads. suss writes every boundary down the same
-way, and `check` prints the two sides it paired up on one:
+query and the table it reads. suss records every boundary in the same
+format. `check` prints the two sides it paired on each one:
 
 ```
 Compared 1 boundary:
@@ -54,10 +54,10 @@ of it, and a file and line to open:
 
 ## Pack
 
-A pack teaches suss one library. It describes which calls in that library
-make a route and which make a query, and what each of those calls does.
-You pick the packs for a run with `-f`, and `suss init` works out which
-ones your project needs:
+A pack describes one library to suss. It lists which calls in that
+library create a route and which run a query, and what each of those
+calls does. You pick the packs for a run with `-f`, and `suss init`
+works out which ones your project needs:
 
 ```bash
 suss extract -f hono -f prisma -o summaries/code.json
