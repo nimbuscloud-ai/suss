@@ -312,6 +312,70 @@ describe("a read the program uses only behind a presence test", () => {
     ]);
   });
 
+  it("leaves a read undefaulted when the present branch returns and the code after the test raises", async () => {
+    expect(
+      await handlerReads([
+        'url = os.getenv("CACHE_URL")',
+        "if url:",
+        "    return url",
+        'raise RuntimeError("CACHE_URL is not set")',
+      ]),
+    ).toEqual([{ name: "CACHE_URL", defaulted: false }]);
+    expect(
+      await handlerReads([
+        'if os.getenv("REGION"):',
+        '    return os.getenv("REGION")',
+        'raise RuntimeError("REGION is not set")',
+      ]),
+    ).toEqual([
+      { name: "REGION", defaulted: false },
+      { name: "REGION", defaulted: false },
+    ]);
+  });
+
+  it("leaves a read undefaulted when the branch a missing value takes raises, however the test is written", async () => {
+    expect(
+      await handlerReads([
+        'if not os.getenv("A"):',
+        '    raise RuntimeError("A")',
+        'if os.getenv("B") is None:',
+        '    raise RuntimeError("B")',
+        'if os.getenv("C"):',
+        '    use(os.getenv("C"))',
+        "else:",
+        '    raise RuntimeError("C")',
+        'if os.getenv("D"):',
+        '    use(os.getenv("D"))',
+        "elif other:",
+        "    return None",
+        "else:",
+        '    raise RuntimeError("D")',
+      ]),
+    ).toEqual([
+      { name: "A", defaulted: false },
+      { name: "B", defaulted: false },
+      { name: "C", defaulted: false },
+      { name: "C", defaulted: false },
+      { name: "D", defaulted: false },
+      { name: "D", defaulted: false },
+    ]);
+  });
+
+  it("marks a read whose code after the test leaves without raising", async () => {
+    expect(
+      await handlerReads([
+        'if os.getenv("REGION"):',
+        '    return os.getenv("REGION")',
+        "if other:",
+        '    raise RuntimeError("unrelated")',
+        'return "us-east-1"',
+      ]),
+    ).toEqual([
+      { name: "REGION", defaulted: true },
+      { name: "REGION", defaulted: true },
+    ]);
+  });
+
   it("leaves a subscript undefaulted when only its own value is tested, since it raises first", async () => {
     expect(
       await handlerReads([

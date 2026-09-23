@@ -3,7 +3,8 @@
  *
  * A read is defaulted when the program still works where the value is
  * missing. Either an `or` supplies a fallback value, or the program
- * tests the value for presence and only uses it where the test passed.
+ * tests the value for presence and only uses it where the test passed,
+ * and the path a missing value takes does not end in a raise.
  * The test can be on the read itself or on a local the read initializes
  * inside a function: a truthiness check, a comparison with `None`, or an
  * `in` membership test. The TypeScript and Ruby adapters define the
@@ -56,7 +57,7 @@ export function isDefaultedAt(
   if (variable?.spelling.raises === true) {
     return false;
   }
-  if (isPresenceTest(read)) {
+  if (isPresenceTest(read, subject)) {
     return true;
   }
   const local = localNamedBy(read);
@@ -127,30 +128,47 @@ function hasFallbackOperand(node: PyNode): boolean {
  * Whether the value is only tested here and never passed on: `if x:`,
  * `not x`, `x is None`, or a conditional expression's condition. An
  * `and` or `or` operand counts when the whole expression is tested the
- * same way or its result is thrown away.
+ * same way or its result is thrown away. A test that branches counts
+ * only when the path a missing value takes does not raise, so
+ * `if not x: raise ...` leaves the read required.
  */
-function isPresenceTest(node: PyNode): boolean {
+function isPresenceTest(node: PyNode, subject: ReadSubject): boolean {
   let child = climbParens(node);
-  let throughLogical = false;
+  const seen = { tested: false, throughLogical: false };
   let parent = child.parent;
   while (parent !== null) {
     if (parent.type === "not_operator") {
-      return true;
+      seen.tested = true;
+    } else if (parent.type === "comparison_operator") {
+      if (comparedWithNone(parent)?.tested.id !== child.id) {
+        return false;
+      }
+      seen.tested = true;
+    } else if (parent.type === "boolean_operator") {
+      seen.throughLogical = true;
+    } else {
+      return isTestedAt(parent, child, subject, seen);
     }
-    if (parent.type === "comparison_operator") {
-      return comparedWithNone(parent)?.tested.id === child.id;
-    }
-    if (parent.type !== "boolean_operator") {
-      return (
-        conditionOf(parent)?.id === child.id ||
-        (throughLogical && parent.type === "expression_statement")
-      );
-    }
-    throughLogical = true;
     child = climbParens(parent);
     parent = child.parent;
   }
   return false;
+}
+
+/** Where a test's value ends up: the condition of a branch, a statement of its own, or a boolean kept for later. */
+function isTestedAt(
+  parent: PyNode,
+  child: PyNode,
+  subject: ReadSubject,
+  seen: { tested: boolean; throughLogical: boolean },
+): boolean {
+  if (conditionOf(parent)?.id === child.id) {
+    return !absentPathRaises(parent, subject);
+  }
+  if (seen.throughLogical && parent.type === "expression_statement") {
+    return !continuationRaises(parent);
+  }
+  return seen.tested;
 }
 
 /** The test an `if`, an `elif`, a loop or a conditional expression branches on. */
@@ -177,7 +195,8 @@ function isPresentAt(node: PyNode, subject: ReadSubject): boolean {
   let parent = node.parent;
   while (parent !== null) {
     if (
-      isBranchWherePresent(parent, child, subject) ||
+      (isBranchWherePresent(parent, child, subject) &&
+        !absentPathRaises(parent, subject)) ||
       followsExitWhenAbsent(parent, child, subject)
     ) {
       return true;
@@ -283,10 +302,94 @@ function leavesWhenAbsent(statement: PyNode, subject: ReadSubject): boolean {
     statement.type === "if_statement" &&
     test !== null &&
     body !== null &&
-    alwaysLeaves(body) &&
+    exitOf(body) === "leave" &&
     isPresentWhen(test, false, subject)
   );
 }
+
+/**
+ * Whether a missing value can end in a raise once it reaches this
+ * branch point. For an `if` or `elif`, that is any branch a missing
+ * value can take which raises, or falls through to a raise after the
+ * whole `if`. For a conditional expression, a loop or `and`, it is what
+ * runs after the whole expression.
+ */
+function absentPathRaises(owner: PyNode, subject: ReadSubject): boolean {
+  const test = field(owner, "condition");
+  const statement = owner.type === "elif_clause" ? owner.parent : owner;
+  if (
+    (owner.type !== "if_statement" && owner.type !== "elif_clause") ||
+    test === null ||
+    statement === null
+  ) {
+    return continuationRaises(owner);
+  }
+  const arms: (PyNode | null)[] = [];
+  if (!isPresentWhen(test, true, subject)) {
+    arms.push(field(owner, "consequence"));
+  }
+  if (!isPresentWhen(test, false, subject)) {
+    arms.push(alternativeAfter(statement, owner));
+  }
+  return arms.some((arm) => armRaises(arm, statement, subject));
+}
+
+/** The `elif` or `else` that runs when this clause's test fails, or null when the `if` falls through. */
+function alternativeAfter(statement: PyNode, clause: PyNode): PyNode | null {
+  const alternatives = fields(statement, "alternative");
+  const at = alternatives.findIndex((one) => one.id === clause.id);
+  return alternatives[at + 1] ?? null;
+}
+
+/** Whether one branch of an `if` raises, itself or in what runs after the `if`. */
+function armRaises(
+  arm: PyNode | null,
+  statement: PyNode,
+  subject: ReadSubject,
+): boolean {
+  if (arm?.type === "elif_clause") {
+    return absentPathRaises(arm, subject);
+  }
+  const body = arm?.type === "else_clause" ? field(arm, "body") : arm;
+  const exit = body === null || body === undefined ? null : exitOf(body);
+  return exit === "raise" || (exit === null && continuationRaises(statement));
+}
+
+/**
+ * Whether the statements that run after this node, up to the end of the
+ * function, reach a `raise` before a `return`, `continue` or `break`.
+ * A loop body that falls off its end goes round again, so the climb
+ * stops at a loop as it does at a function.
+ */
+function continuationRaises(from: PyNode): boolean {
+  let current = from;
+  let parent = current.parent;
+  while (parent !== null) {
+    if (parent.type === "block" || parent.type === "module") {
+      const statements = parent.namedChildren;
+      const at = statements.findIndex((one) => one?.id === current.id);
+      const exit = firstExit(statements.slice(at + 1));
+      if (exit !== null) {
+        return exit === "raise";
+      }
+    }
+    if (PATH_END_TYPES.has(parent.type)) {
+      return false;
+    }
+    current = parent;
+    parent = current.parent;
+  }
+  return false;
+}
+
+const PATH_END_TYPES = new Set([
+  "function_definition",
+  "lambda",
+  "class_definition",
+  "while_statement",
+  "for_statement",
+  "return_statement",
+]);
 
 const LEAVING_TYPES = new Set([
   "return_statement",
@@ -294,11 +397,28 @@ const LEAVING_TYPES = new Set([
   "break_statement",
 ]);
 
-/** A block with a `return`, `continue` or `break` among its own statements. */
-function alwaysLeaves(block: PyNode): boolean {
-  return block.namedChildren.some(
-    (statement) => statement !== null && LEAVING_TYPES.has(statement.type),
-  );
+type Exit = "raise" | "leave";
+
+/** How the first of these statements that ends the path ends it, or null when they all fall through. */
+function firstExit(statements: readonly (PyNode | null)[]): Exit | null {
+  for (const statement of statements) {
+    const exit = statement === null ? null : exitOf(statement);
+    if (exit !== null) {
+      return exit;
+    }
+  }
+  return null;
+}
+
+/** A `raise`, or a `return`, `continue` or `break`, alone or among a block's own statements. */
+function exitOf(statement: PyNode): Exit | null {
+  if (statement.type === "raise_statement") {
+    return "raise";
+  }
+  if (LEAVING_TYPES.has(statement.type)) {
+    return "leave";
+  }
+  return statement.type === "block" ? firstExit(statement.namedChildren) : null;
 }
 
 /**
@@ -502,6 +622,8 @@ function memberNameIn(parent: PyNode | null): PyNode | null {
 /** Whether a missing value never reaches this use. */
 function isSafeUse(use: PyNode, subject: ReadSubject): boolean {
   return (
-    hasFallbackOperand(use) || isPresenceTest(use) || isPresentAt(use, subject)
+    hasFallbackOperand(use) ||
+    isPresenceTest(use, subject) ||
+    isPresentAt(use, subject)
   );
 }

@@ -538,6 +538,7 @@ A module-level mount is never dropped this way. It runs whichever factory the ap
 | `x = os.getenv("X")` in a function, then `if x is None: return ...` and `x` after it | a read of `X` | yes, when every use of `x` comes after a test passed |
 | `x = os.getenv("X")`, then `x` used both inside and outside `if x:` | a read of `X` | no |
 | `if os.environ["X"]:`, or `x = os.environ["X"]` then `if x:` | a read of `X` | no: the subscript raises before the test runs |
+| `if not os.getenv("X"): raise ...`, or `if x: return x` then `raise ...` | a read of `X` | no: a missing value ends in a raise |
 | `import os as _os`, `from os import environ, getenv` | the same reads, through the alias | |
 | `os.environ[name]` where `name` is a parameter | nothing here, and a read at each call that supplies the name (below) | |
 | `os.environ.get(f"{prefix}_X")`, `os.environ[opts["key"]]` | nothing: nothing in the run says which variable that is | |
