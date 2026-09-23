@@ -222,10 +222,11 @@ export async function extractPythonProject(
   );
   const cacheInput: CacheInput = {
     files: cacheDir === null ? [] : options.files,
+    // The same files read against other roots resolve other imports.
     adapterPacksDigest:
       cacheDir === null
         ? packsDigest
-        : runDigest(packsDigest, options.packs, options.files),
+        : `${runDigest(packsDigest, options.packs, options.files)}|roots:${options.roots.join(path.delimiter)}`,
   };
   const lookup = await timer.timeAsync("cache.lookup", () =>
     cache.lookup(cacheInput),
