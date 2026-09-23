@@ -1,17 +1,16 @@
 /**
- * What a SQL statement touches: which tables, which fields, and what it
- * picks rows by.
+ * Reads what a SQL statement touches: which tables, which fields, and
+ * what it picks rows by.
  *
- * A pack that meets a query written as SQL rather than through an ORM
- * hands the text here and gets the same shape its own recognizer would
- * have produced. The statement is parsed rather than pattern-matched,
- * so a join contributes every table it reads and a `WHERE` contributes
- * a selector.
+ * A pack that finds a query written as SQL instead of through an ORM
+ * passes the text here and gets back the same `SqlAccess` records its
+ * own recognizer would have produced. The statement is parsed with a
+ * grammar, so a join contributes every table it reads and a `WHERE`
+ * contributes a selector.
  *
- * A statement this cannot parse gives back nothing, which is what a
- * reader that cannot settle something says everywhere else. The README
- * says which dialects it reads and what it leaves out. A spelling the
- * grammar turns down is rewritten and tried again rather than given up.
+ * A statement the grammar rejects is rewritten and tried again. If it
+ * still fails the result is empty, and nothing is guessed from the
+ * words in the text. The README lists the dialects and what is left out.
  */
 
 import bigquery from "node-sql-parser/build/bigquery.js";
@@ -23,15 +22,15 @@ import sqlite from "node-sql-parser/build/sqlite.js";
 export interface SqlAccess {
   table: string;
   /**
-   * The namespaces the statement put in front of the table, outermost
-   * first. BigQuery writes `project.dataset.table`, so a reader that
-   * kept the whole string would record a container no provider spells.
-   * A part the caller could not settle is left out rather than carried
-   * through as a parameter.
+   * The namespaces written in front of the table, outermost first.
+   * BigQuery writes `project.dataset.table`, and keeping the whole
+   * string as the table would record a name no provider declares. A
+   * part the caller could not resolve, and every part outside it, is
+   * left out.
    */
   qualifier: string[];
   kind: "read" | "write";
-  /** The fields the statement states, or `["*"]` for a whole row. */
+  /** The fields the statement lists, or `["*"]` for a whole row. */
   fields: string[];
   /** The fields it picks rows by. */
   selector: string[];
@@ -50,11 +49,7 @@ interface ParserModule {
   Parser: new () => SqlParser;
 }
 
-/**
- * The dialects this reads, by the name a pack calls its store. Both
- * sides say `postgresql` now, so the second spelling this kept for
- * Postgres is gone.
- */
+/** The grammars, keyed by the store name a pack declares. */
 const DIALECTS: Record<string, Grammar> = {
   postgresql: { module: postgresql as ParserModule, database: "postgresql" },
   mysql: { module: mysql as ParserModule, database: "mysql" },
@@ -67,7 +62,7 @@ interface Grammar {
   database: string;
 }
 
-/** Every table a statement touches, or nothing when it cannot be read. */
+/** Every table a statement touches. Empty when the dialect is unknown or the statement cannot be parsed. */
 export function readSqlAccess(
   sql: string,
   options: SqlReadOptions = {},
@@ -82,10 +77,10 @@ export function readSqlAccess(
 }
 
 /**
- * Three readings of the same statement, each tried when the one before
- * it came to nothing: as written, with the spellings the grammar turns
- * down rewritten, and with a `WITH` clause the grammar takes only in
- * front of a select split off and read a query at a time.
+ * Tries three readings of the statement, each only when the one before
+ * it fails to parse: first as written, then with the spellings the
+ * grammar rejects rewritten, then with a leading `WITH` clause split
+ * off so each query is parsed on its own.
  */
 function accessesInSql(sql: string, grammar: Grammar): SqlAccess[] {
   const written = parsedAccesses(sql, grammar);
@@ -97,11 +92,7 @@ function accessesInSql(sql: string, grammar: Grammar): SqlAccess[] {
   return rewritten ?? accessesAroundWith(readable, grammar);
 }
 
-/**
- * What a statement the grammar takes touches, or nothing at all when it
- * turns the statement down. A statement this cannot read says nothing,
- * rather than a guess built out of whatever the text happens to spell.
- */
+/** The accesses in a statement, or null when the grammar rejects it and the caller should try another reading. */
 function parsedAccesses(
   sql: string,
   grammar: Grammar,
@@ -119,7 +110,6 @@ function parsedAccesses(
   return statements.flatMap((statement) => accessesIn(statement, defined));
 }
 
-/** What separates the namespaces in front of a table from the table. */
 const QUALIFIER_SEPARATOR = ".";
 
 /** A table name, split from the namespaces written in front of it. */
@@ -130,10 +120,10 @@ export interface QualifiedTable {
 }
 
 /**
- * A table split from the namespaces written in front of it, or nothing
- * when the table itself came through as a parameter. A pack that reads
- * a table off an argument splits it through here too, so it agrees with
- * a table read out of a statement. The README says more.
+ * Splits a table name from the namespaces written in front of it.
+ * Returns null when the table itself came through as a parameter. A
+ * pack that reads a table off a call's argument splits it here too, so
+ * the result matches the same table read out of a statement.
  */
 export function splitQualifiedTable(name: string): QualifiedTable | null {
   const parts = name.split(QUALIFIER_SEPARATOR);
@@ -145,11 +135,10 @@ export function splitQualifiedTable(name: string): QualifiedTable | null {
 }
 
 /**
- * The namespaces a reader can stand behind, read from the table
- * outward. A part nothing settled leaves everything further out
- * unplaceable: the part beside the table is the one a scope is read
- * from, so a project read as though it were a dataset would put the
- * access somewhere it never went.
+ * The namespaces in front of a table, read from the table outward and
+ * stopping at the first part that is empty or a parameter. The part
+ * next to the table is the one a scope comes from, so reading a project
+ * as if it were a dataset would record the access in the wrong place.
  */
 function namespacesAround(namespaces: readonly string[]): string[] {
   const found: string[] = [];
@@ -163,32 +152,32 @@ function namespacesAround(namespaces: readonly string[]): string[] {
   return found;
 }
 
-/** One parsed access, with its table split the same way. */
+/** One parsed access, with its table split from its namespaces. */
 function qualified(access: SqlAccess): SqlAccess | null {
   const split = splitQualifiedTable(access.table);
   return split === null ? null : { ...access, ...split };
 }
 
 /**
- * Whether a piece of a name says anything. A hole the caller could not
- * settle comes through `sqlFromParts` as `$1`, and the parse cannot
- * tell that from a name somebody chose.
+ * Whether a part of a name is known. A hole the caller could not
+ * resolve comes out of `sqlFromParts` as `$1`, and the parser accepts
+ * that as an ordinary name.
  */
 function isSettled(part: string): boolean {
   return part !== "" && !/^\$\d+$/.test(part);
 }
 
 /**
- * The SQL a tagged template states, with each interpolation written as
- * a parameter. What a query interpolates is a value nearly every time,
- * and a parameter is how the statement would carry one anyway, so the
- * text parses as what it means.
+ * Joins a tagged template's parts into SQL, writing each interpolation
+ * as a parameter (`$1`, `$2`). A query interpolates a value nearly every
+ * time, and a parameter is how the statement would pass a value anyway,
+ * so the text parses with the meaning it has at run time.
  *
- * A caller that knows what an interpolation is passes it in
- * `substitutions`, which is how a table interpolated as an object
- * reaches the statement as its own name. An interpolation nobody can
- * settle stays a parameter, and a statement that needed one somewhere a
- * parameter cannot go reads as nothing.
+ * `substitutions` replaces a hole wherever it is, for a caller that
+ * knows the hole is a table, such as an interpolated schema object.
+ * `settled` replaces a hole only where the statement writes a name.
+ * Any other hole stays a parameter, and a statement with a parameter
+ * where the grammar does not allow one parses to no accesses.
  */
 export function sqlFromParts(
   parts: readonly string[],
@@ -211,9 +200,9 @@ export function sqlFromParts(
 }
 
 /**
- * The words a statement writes a table's name after, and nothing else.
- * Postgres code leaves a table unquoted nearly every time, so the quote
- * alone would miss the commonest way a project interpolates one.
+ * The keywords a table name follows. Postgres code nearly always leaves
+ * a table unquoted, so checking for a quote alone would miss most
+ * interpolated tables.
  */
 const TABLE_KEYWORD = /\b(?:from|join|into|update|table)\s+$/i;
 
@@ -264,7 +253,7 @@ const TEXT_RUNS: ReadonlyArray<{
 /** What opens and closes a Postgres dollar-quoted literal. */
 const DOLLAR_TAG = /\$(?:[A-Za-z_]\w*)?\$/y;
 
-/** The run of text a statement opens at `index`, or nothing for code. */
+/** The run of text that opens at `index`, or null when `index` is in code. */
 function textRunAt(sql: string, index: number): TextRun | null {
   DOLLAR_TAG.lastIndex = index;
   const tag = DOLLAR_TAG.exec(sql)?.[0];
@@ -287,9 +276,9 @@ function closingAt(sql: string, from: number, close: string): number {
 }
 
 /**
- * Which characters the grammar reads as code. A rewrite that ran over a
- * literal, a quoted name or a comment would change what the statement
- * says rather than how it is spelled.
+ * Which characters are code, as opposed to a literal, a quoted name or
+ * a comment. The rewrites apply to code only, because rewriting inside
+ * text would change the statement's meaning.
  */
 function codeMask(sql: string): boolean[] {
   const mask = new Array<boolean>(sql.length).fill(true);
@@ -331,24 +320,24 @@ function replaceInCode(
 /** A name a type can go by, quoted or bare. */
 const TYPE_WORD = String.raw`(?:"[^"]*"|\w+)`;
 
-/** How wide or how precise a type is, which some types state. */
+/** The optional length or precision after a type, as in `varchar(20)` or `numeric(10, 2)`. */
 const TYPE_SIZE = String.raw`(?:\s*\(\s*\d+\s*(?:,\s*\d+\s*)?\))?`;
 
-/** The types whose name the standard spells as more than one word. */
+/** The words after a type name the standard writes as more than one word, as in `double precision`. */
 const TYPE_TAIL = String.raw`(?:\s+(?:precision|varying|with(?:out)?\s+time\s+zone))?`;
 
-/** A type a statement can cast to, however many dimensions it has. */
+/** A type a statement can cast to, including a schema-qualified name and array dimensions. */
 const CAST_TYPE =
   `${TYPE_WORD}(?:\\s*\\.\\s*${TYPE_WORD})?` +
   `${TYPE_SIZE}${TYPE_TAIL}${TYPE_SIZE}(?:\\s*\\[\\s*\\])*`;
 
-/** A parameter written with the type the statement reads it as. */
+/** A parameter with a cast, such as `$1::text`. */
 const PARAMETER_CAST = new RegExp(
   String.raw`(\$\d+)(?:\s*::\s*${CAST_TYPE})+`,
   "gi",
 );
 
-/** What a statement says it does to the rows a select picks out. */
+/** A row-locking clause on a select, such as `FOR UPDATE SKIP LOCKED`. */
 const LOCKING_CLAUSE = new RegExp(
   String.raw`\bfor\s+(?:no\s+key\s+update|key\s+share|update|share)` +
     String.raw`(?:\s+of\s+${TYPE_WORD}(?:\s*,\s*${TYPE_WORD})*)?` +
@@ -357,9 +346,8 @@ const LOCKING_CLAUSE = new RegExp(
 );
 
 /**
- * The same statement in the spellings the grammar takes. A cast on a
- * parameter and a locking clause both say nothing about which table is
- * touched, and the grammar turns down either one.
+ * The statement with parameter casts and locking clauses removed. The
+ * grammar rejects both, and neither affects which tables are touched.
  */
 function rewrittenForGrammar(sql: string): string {
   const uncast = replaceInCode(sql, PARAMETER_CAST, castAwayFrom);
@@ -371,12 +359,12 @@ function castAwayFrom(match: RegExpMatchArray): string {
   return match[1] ?? "";
 }
 
-/** What a clause the statement is read without comes back as. */
+/** The replacement for a clause that is removed. */
 function nothing(): string {
   return "";
 }
 
-/** One query a `WITH` clause states, and the name it gives it. */
+/** One query in a `WITH` clause, and its name. */
 interface CommonTable {
   name: string;
   body: string;
@@ -389,9 +377,10 @@ interface SplitWith {
 }
 
 /**
- * What a statement led by a `WITH` clause touches, read a query at a
- * time. The grammar takes such a clause only in front of a select, so
- * for anything else the parts are the most that can be read.
+ * The accesses in a statement that starts with a `WITH` clause, parsed
+ * one query at a time. The grammar accepts the clause only in front of
+ * a select, so for an insert, update or delete the separate parts are
+ * all that can be parsed.
  */
 function accessesAroundWith(sql: string, grammar: Grammar): SqlAccess[] {
   const split = splitWith(sql);
@@ -401,8 +390,8 @@ function accessesAroundWith(sql: string, grammar: Grammar): SqlAccess[] {
   const names = new Set<string>();
   const inside: SqlAccess[] = [];
   for (const table of split.tables) {
-    // A query in a `WITH` can read a sibling stated before it, so the
-    // names go in as each one is read.
+    // A query in a `WITH` can read from a sibling defined before it, so
+    // each name is added after its own query is read.
     inside.push(...(parsedAccesses(table.body, grammar, names) ?? []));
     names.add(table.name);
   }
@@ -410,7 +399,7 @@ function accessesAroundWith(sql: string, grammar: Grammar): SqlAccess[] {
   return [...own, ...inside];
 }
 
-/** The queries a `WITH` clause states, or nothing when it states none. */
+/** The queries in a leading `WITH` clause and the statement after it, or null when there is no such clause or it does not parse. */
 function splitWith(sql: string): SplitWith | null {
   const mask = codeMask(sql);
   let index = nextToken(sql, 0);
@@ -445,7 +434,7 @@ function splitWith(sql: string): SplitWith | null {
   }
 }
 
-/** Where a `WITH` clause goes on after a column list, if it wrote one. */
+/** The index past a query's optional column list, or -1 when the list is not closed. */
 function afterColumnList(sql: string, mask: boolean[], index: number): number {
   if (sql[index] !== "(") {
     return index;
@@ -454,7 +443,7 @@ function afterColumnList(sql: string, mask: boolean[], index: number): number {
   return end === null ? -1 : nextToken(sql, end);
 }
 
-/** Where a `WITH` clause goes on after saying how it is evaluated. */
+/** The index past an optional `MATERIALIZED` or `NOT MATERIALIZED`. */
 function pastMaterialized(sql: string, index: number): number {
   const past = wordAt(sql, index, "not") ? pastWord(sql, index, "not") : index;
   return wordAt(sql, past, "materialized")
@@ -462,7 +451,7 @@ function pastMaterialized(sql: string, index: number): number {
     : past;
 }
 
-/** Where the next thing the grammar reads begins, past blanks and comments. */
+/** The index of the next token, past whitespace and comments. */
 function nextToken(sql: string, from: number): number {
   let index = from;
   while (index < sql.length) {
@@ -479,13 +468,13 @@ function nextToken(sql: string, from: number): number {
   return index;
 }
 
-/** Whether the statement writes `word` at `index`, on its own. */
+/** Whether `word` appears at `index` as a whole word, ignoring case. */
 function wordAt(sql: string, index: number, word: string): boolean {
   const written = sql.slice(index, index + word.length).toLowerCase();
   return written === word && !/\w/.test(sql[index + word.length] ?? "");
 }
 
-/** Where the statement goes on after a word it writes at `index`. */
+/** The index of the next token after `word` at `index`. */
 function pastWord(sql: string, index: number, word: string): number {
   return nextToken(sql, index + word.length);
 }
@@ -540,17 +529,17 @@ interface Node {
 }
 
 /**
- * `defined` is every name a `WITH` clause above this one states, since
- * a query inside one can read from a sibling and that is a name rather
- * than a table.
+ * `defined` contains every query name from an enclosing `WITH` clause. A
+ * read of one of those names is a read of that query, so it is not
+ * reported as a table.
  */
 function accessesIn(statement: unknown, defined: Set<string>): SqlAccess[] {
   const node = asNode(statement);
   if (node === null) {
     return [];
   }
-  // A write can carry a `WITH` as readily as a select can, so the clause
-  // is read before the statement whatever the statement turns out to be.
+  // An insert, update or delete can start with a `WITH` as well as a
+  // select, so the clause is read before looking at the statement type.
   const clause = commonTables(node, defined);
   return [...ownAccesses(node, clause.names), ...clause.inside];
 }
@@ -558,8 +547,8 @@ function accessesIn(statement: unknown, defined: Set<string>): SqlAccess[] {
 /** What the statement itself touches, leaving its `WITH` clause aside. */
 function ownAccesses(node: Node, defined: Set<string>): SqlAccess[] {
   if (node.type === "select") {
-    // Each branch of a set operation past the first hangs off the one
-    // before it, and reads tables of its own.
+    // The parser links each branch of a set operation after the first
+    // through `_next`, and each branch reads its own tables.
     return [
       ...selectAccesses(node, defined),
       ...accessesIn(node._next, defined),
@@ -578,9 +567,9 @@ function ownAccesses(node: Node, defined: Set<string>): SqlAccess[] {
 }
 
 /**
- * An insert writes one table. The rows it writes can come from a query
- * rather than a list of values, and that query reads tables of its own,
- * so it is read as a statement in its own right.
+ * An insert writes one table. Its rows can come from a query instead of
+ * a list of values, and that query is read as a separate statement for
+ * the tables it reads.
  */
 function insertAccesses(node: Node, defined: Set<string>): SqlAccess[] {
   const conflict = conflictClauses(node);
@@ -600,9 +589,9 @@ function insertAccesses(node: Node, defined: Set<string>): SqlAccess[] {
 }
 
 /**
- * An update writes the first table it states and reads the rest. One
- * grammar takes a `FROM` beside the write for those, and another joins
- * them on to the table the update writes.
+ * An update writes its first table and reads the rest. Depending on the
+ * grammar, the other tables come in a `FROM` clause or are joined to
+ * the table being written.
  */
 function updateAccesses(node: Node, defined: Set<string>): SqlAccess[] {
   const sources = sourcesAcross([node.table, node.from], defined);
@@ -615,7 +604,7 @@ function updateAccesses(node: Node, defined: Set<string>): SqlAccess[] {
 
 /**
  * A delete writes the table it removes rows from and reads every other
- * table its `FROM` states.
+ * table in its `FROM`.
  */
 function deleteAccesses(node: Node, defined: Set<string>): SqlAccess[] {
   const written = deletedTable(node);
@@ -628,10 +617,10 @@ function deleteAccesses(node: Node, defined: Set<string>): SqlAccess[] {
 }
 
 /**
- * What an `ON CONFLICT` says about the table the insert writes: the
- * fields it matches an existing row by, the fields it sets when it
- * matches one, and what it narrows those rows to. One grammar spells
- * the same clause `ON DUPLICATE KEY UPDATE`, which states no condition.
+ * The fields an `ON CONFLICT` clause uses on the table the insert
+ * writes: the columns it matches an existing row by and the columns it
+ * sets, with its `WHERE` as the selector. The other grammars write the
+ * clause as `ON DUPLICATE KEY UPDATE`, which has no condition.
  */
 function conflictClauses(node: Node): Stated {
   const conflict = asNode(node.conflict);
@@ -653,9 +642,9 @@ interface CommonTables {
 }
 
 /**
- * A `WITH` clause states its own queries and gives each a name the rest
- * of the statement reads from. The tables are inside the clause, and the
- * names themselves are not tables at all.
+ * Reads the queries in a `WITH` clause. The tables they read go in
+ * `inside`, and each query's name goes in `names` so the rest of the
+ * statement does not report it as a table.
  */
 function commonTables(node: Node, outer: Set<string>): CommonTables {
   const names = new Set(outer);
@@ -669,8 +658,8 @@ function commonTables(node: Node, outer: Set<string>): CommonTables {
     if (name === null) {
       continue;
     }
-    // A query in a `WITH` can read a sibling stated before it, so the
-    // names go in as each one is read.
+    // A query in a `WITH` can read from a sibling defined before it, so
+    // each name is added after its own query is read.
     inside.push(...accessesIn(statementOf(cte.stmt), names));
     names.add(name);
   }
@@ -680,7 +669,7 @@ function commonTables(node: Node, outer: Set<string>): CommonTables {
 /**
  * The table a `DELETE` removes rows from. The BigQuery grammar reads the
  * `FROM` keyword itself as the table and leaves the name in the alias, so
- * the alias is the answer wherever that happened.
+ * in that case the alias is the table.
  */
 function deletedTable(node: Node): string | null {
   const first = asNode(Array.isArray(node.table) ? node.table[0] : null);
@@ -691,15 +680,15 @@ function deletedTable(node: Node): string | null {
   return firstTable(node.from) ?? firstTable(node.table);
 }
 
-/** The fields a statement states, in the two lists an access reports. */
+/** The fields a statement refers to, split into the two lists an access reports. */
 interface Stated {
-  /** The fields it states in what it reads or writes. */
+  /** The fields it reads or writes. */
   fields: FieldRef[];
   /** The fields it picks rows by. */
   selector: FieldRef[];
 }
 
-/** A select reads every table its `FROM` states. */
+/** A select reads every table in its `FROM`. */
 function selectAccesses(statement: Node, names: Set<string>): SqlAccess[] {
   const stated: Stated = {
     fields: refsIn(statement.columns),
@@ -709,12 +698,11 @@ function selectAccesses(statement: Node, names: Set<string>): SqlAccess[] {
 }
 
 /**
- * One access per table the statement reads or writes, with every field
- * on the table the statement qualified it to. A column that is not
- * qualified belongs to the table a write writes, or to the only table a
- * select reads. Where a statement reads from more than one source
- * nothing settles which one such a column came from, so it is left out
- * rather than attributed to all of them.
+ * One access per table the statement reads or writes, with each field
+ * on the table it is qualified with. An unqualified field goes on the
+ * table being written, or else on the only source. An unqualified
+ * selector column goes on the only source. When there is more than one
+ * source, such a column could come from any of them, so it is left out.
  */
 function accessesAcross(
   sources: FromSources,
@@ -741,8 +729,8 @@ function accessesAcross(
 
 /**
  * The fields one clause puts on each table, in the order the statement
- * writes them. `only` is where a field nothing qualifies belongs, or
- * null when nothing settles that.
+ * writes them. `only` is the table an unqualified field goes on, or
+ * null when that is ambiguous.
  */
 function byTable(
   refs: readonly FieldRef[],
@@ -765,24 +753,24 @@ function byTable(
   return found;
 }
 
-/** Everything a `FROM` reads from, a table or a query written in place. */
+/** Everything a `FROM` reads from: tables, and queries written in place of a table. */
 interface FromSources {
-  /** The tables, by every name the rest of the statement can use. */
+  /** Each table, keyed by its own name and by its alias. */
   tables: Map<string, string>;
   /** What a query written in place of a table reads. */
   inside: SqlAccess[];
   /**
-   * Whether the `FROM` reads from something no name in `tables` covers.
-   * A column nothing qualifies could belong to that instead, so nothing
-   * settles which table such a column comes from.
+   * Whether the `FROM` reads from a query written in place of a table.
+   * An unqualified column could come from that query, so it cannot be
+   * placed on a table.
    */
   derived: boolean;
 }
 
 /**
- * The tables a `FROM` states, by every name the rest of the statement
- * can call them: their own, and the alias when the query gives one. A
- * query written in place of a table is read for its own tables instead.
+ * The tables in a `FROM`, keyed by their own name and by their alias
+ * when there is one. A query written in place of a table is read for
+ * its own tables instead.
  */
 function sourcesIn(from: unknown, defined: Set<string>): FromSources {
   const tables = new Map<string, string>();
@@ -795,8 +783,8 @@ function sourcesIn(from: unknown, defined: Set<string>): FromSources {
     }
     const table = stringOf(node.table);
     if (table === null) {
-      // The alias belongs to the query's own columns, so it goes into no
-      // name a column can be attributed through.
+      // The alias refers to the query's own columns, so it is left out
+      // of `tables`.
       const query = statementOf(node.expr);
       derived = derived || query !== null;
       inside.push(...accessesIn(query, defined));
@@ -812,9 +800,9 @@ function sourcesIn(from: unknown, defined: Set<string>): FromSources {
 }
 
 /**
- * The statement a node states, past the wrapper one grammar puts round
- * it. A query written in place of a table and a query a `WITH` clause
- * states both arrive either way.
+ * The statement inside a node, past the `ast` wrapper one grammar puts
+ * around it. A query written in place of a table and a query in a
+ * `WITH` clause can each come with or without the wrapper.
  */
 function statementOf(value: unknown): unknown {
   const node = asNode(value);
@@ -824,7 +812,7 @@ function statementOf(value: unknown): unknown {
   return node.ast ?? node;
 }
 
-/** The sources of a statement that states them in more than one clause. */
+/** The sources from several clauses of one statement, merged. */
 function sourcesAcross(
   clauses: readonly unknown[],
   defined: Set<string>,
@@ -844,9 +832,9 @@ function sourcesAcross(
 }
 
 /**
- * The same sources with the table a statement writes among them. One
- * grammar leaves the table of a delete out of the `FROM` it parses, so
- * the write goes in front of whatever the `FROM` did state.
+ * Adds the written table to the sources when it is missing. One grammar
+ * leaves a delete's table out of the `FROM` it parses, so the table is
+ * put first.
  */
 function withTable(sources: FromSources, table: string | null): FromSources {
   if (table === null || sources.tables.has(table)) {
@@ -893,16 +881,16 @@ function refsIn(value: unknown): FieldRef[] {
   return found;
 }
 
-/** Fields the statement stated without saying which table they are on. */
+/** Fields written without a table. */
 function unqualified(names: readonly string[]): FieldRef[] {
   return names.map((field) => ({ table: undefined, field }));
 }
 
 /**
- * The field each assignment in a `SET` states, with the table the
- * statement qualified it to. One grammar writes an assignment as a
- * column reference with the value hung off it and another as a plain
- * column beside its table, and both mean the same field.
+ * The field each assignment in a `SET` writes, with its table when the
+ * statement qualifies it. One grammar parses an assignment as a column
+ * reference with the value attached, and another as a plain column next
+ * to its table. Both put `column` and `table` on the entry.
  */
 function setTargets(value: unknown): FieldRef[] {
   if (!Array.isArray(value)) {
@@ -919,7 +907,7 @@ function setTargets(value: unknown): FieldRef[] {
   return found;
 }
 
-/** The columns an insert states, which it writes as plain values. */
+/** The columns an insert lists, which the parser returns without a table. */
 function namesOf(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
@@ -930,9 +918,8 @@ function namesOf(value: unknown): string[] {
 }
 
 /**
- * What a column is called. The parser writes a bare name as a string
- * and a quoted or qualified one as a value node, and both mean the
- * name.
+ * A column's name. The parser returns a bare name as a string and a
+ * quoted or qualified one as a value node.
  */
 function columnName(value: unknown): string | null {
   const direct = stringOf(value);
