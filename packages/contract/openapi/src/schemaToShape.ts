@@ -1,16 +1,13 @@
-// schema-to-shape.ts: Convert an OpenAPI Schema object into a suss TypeShape.
-//
-// $ref is resolved against `components.schemas`. Cycles are broken by
-// emitting a `{ type: "ref", name }` placeholder when we re-enter a ref
-// already on the resolution stack, so recursive schemas don't blow the
-// stack. Top-level use of a ref still gets resolved on the first encounter.
-//
-// Handles both OpenAPI 3.0 and 3.1 conventions:
-//   - 3.0 `nullable: true` and 3.1 `type: [..., "null"]` both widen the
-//     shape into a union with `{ type: "null" }`.
-//   - 3.1 `const` is treated as a single-valued enum.
-//   - 3.0/3.1 `discriminator` narrows the propertyName of each oneOf/anyOf
-//     variant to the literal that maps to that variant.
+/**
+ * Converts an OpenAPI Schema object into a TypeShape. A `$ref` resolves
+ * against the document's named schemas. A ref met again while it is still
+ * being resolved becomes a `ref` placeholder, so a recursive schema does
+ * not loop.
+ *
+ * 3.0's `nullable: true` and 3.1's `"null"` in `type` both add `null` to
+ * the shape. A `discriminator` mapping narrows the discriminator property
+ * of each variant to the value that selects it.
+ */
 
 import type { TypeShape } from "@suss/behavioral-ir";
 import type {
@@ -42,13 +39,11 @@ export function schemaToShape(
     return resolveRef(schema.$ref, ctx);
   }
 
-  // Normalize type + nullability before branching. OpenAPI 3.1 can say
-  // `type: ["string", "null"]`, which is equivalent to 3.0's
-  // `type: "string", nullable: true`. Extract whichever flavor is used.
+  // 3.1 writes `type: ["string", "null"]` where 3.0 writes
+  // `nullable: true`.
   const { primary, nullable } = normalizeType(schema);
 
-  // 3.1 `const` is a single-valued enum shorthand. Normalize it into the
-  // same enum-handling path.
+  // 3.1's `const` is shorthand for a one-value enum.
   const effectiveEnum =
     schema.const !== undefined ? [schema.const] : schema.enum;
 
@@ -105,7 +100,7 @@ export function schemaToShape(
     case "null":
       return { type: "null" };
     case null:
-      // No type, no enum, no $ref, no composition, really unknown.
+      // The schema does not constrain the value at all.
       return { type: "unknown" };
   }
 }
@@ -114,28 +109,25 @@ function normalizeType(schema: OpenApiSchema): {
   primary: SchemaTypeName | null;
   nullable: boolean;
 } {
-  // 3.0 shape: nullable flag is separate from type.
+  // 3.0 keeps the nullable flag apart from `type`.
   if (!Array.isArray(schema.type)) {
     return {
       primary: schema.type ?? null,
       nullable: schema.nullable === true,
     };
   }
-  // 3.1 shape: type is an array; "null" in the array means nullable.
+  // 3.1 lists "null" among the types instead.
   const nonNull = schema.type.filter((t): t is SchemaTypeName => t !== "null");
   const nullable = schema.type.length !== nonNull.length;
   if (nonNull.length === 0) {
     return { primary: "null", nullable: false };
   }
-  // For multi-type arrays (e.g. ["string", "integer"]) we take the first
-  // concrete type as primary. That's a v0 simplification, a proper
-  // handling would emit a union. Deferred; the common case in practice
-  // is [T, "null"].
+  // With several non-null types, only the first is kept. A union would be
+  // accurate, but nearly every spec writes `[T, "null"]`.
   return { primary: nonNull[0], nullable };
 }
 
 function objectToShape(schema: OpenApiSchema, ctx: SchemaContext): TypeShape {
-  // additionalProperties present without `properties` → dictionary shape
   if (
     schema.properties === undefined &&
     schema.additionalProperties !== undefined &&
@@ -148,10 +140,8 @@ function objectToShape(schema: OpenApiSchema, ctx: SchemaContext): TypeShape {
     return { type: "dictionary", values: schemaToShape(valueSchema, ctx) };
   }
 
-  // OpenAPI's `required` lists the property names that MUST be present.
-  // Anything not in the list is optional, encode that as a union with
-  // `undefined` so downstream consumers (and the cross-boundary checker)
-  // can distinguish guaranteed vs absent-able fields.
+  // A property missing from `required` may be absent, so its shape gets
+  // `undefined` and the checker can tell it apart from a guaranteed one.
   const required = new Set(schema.required ?? []);
   const properties: Record<string, TypeShape> = {};
   for (const [name, propSchema] of Object.entries(schema.properties ?? {})) {
@@ -175,8 +165,8 @@ function makeOptional(shape: TypeShape): TypeShape {
 }
 
 function mergeAllOf(parts: OpenApiSchema[], ctx: SchemaContext): TypeShape {
-  // For allOf we attempt a structural merge across object members. Anything
-  // non-object falls back to a union (the safe default).
+  // An allOf of objects merges their properties. When any part is not an
+  // object, the result is a union of the parts.
   const merged: Record<string, TypeShape> = {};
   let allObject = true;
   for (const part of parts) {
@@ -199,15 +189,9 @@ function mergeAllOf(parts: OpenApiSchema[], ctx: SchemaContext): TypeShape {
 }
 
 /**
- * Narrow the discriminator property of a oneOf/anyOf variant to the
- * literal value that maps to it. Operates on a synthesized allOf so the
- * narrowing composes with whatever the variant already declared.
- *
- * Without a mapping entry for this variant we return the variant
- * unchanged: consumers have to rely on the variant's own schema to
- * include the narrowed literal, if any. With a mapping entry, we add
- * a synthetic property declaration that pins the discriminator to the
- * mapping key.
+ * Wrapping the variant in an allOf lets the pinned discriminator value
+ * combine with whatever the variant declares. A variant the mapping does
+ * not list is left as it is.
  */
 function applyDiscriminator(
   variant: OpenApiSchema,
@@ -252,9 +236,9 @@ function wrapNullable(shape: TypeShape, nullable: boolean): TypeShape {
 }
 
 function resolveRef(ref: string, ctx: SchemaContext): TypeShape {
-  // 3.x keeps named schemas under components, 2.0 under definitions.
-  // Anything else becomes a named ref placeholder, so a consumer knows
-  // what was meant even when nothing here can resolve it.
+  // 3.x keeps named schemas under components and 2.0 under definitions.
+  // Any other ref stays a named placeholder, so a reader can still see
+  // what it pointed at.
   const match = /^#\/(?:components\/schemas|definitions)\/(.+)$/.exec(ref);
   if (match === null) {
     return { type: "ref", name: ref };
@@ -262,8 +246,8 @@ function resolveRef(ref: string, ctx: SchemaContext): TypeShape {
   const name = match[1];
 
   if (ctx.resolving.has(name)) {
-    // Cycle: emit a named ref instead of recursing. Consumers reading the
-    // summary as a graph can resolve back through their own component map.
+    // A recursive schema stops at a named ref, which a reader can follow
+    // through its own map of named schemas.
     return { type: "ref", name };
   }
 

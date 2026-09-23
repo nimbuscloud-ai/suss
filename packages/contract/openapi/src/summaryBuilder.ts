@@ -1,4 +1,5 @@
-// summary-builder.ts: Build BehavioralSummary objects from OpenAPI operations.
+// Builds one handler summary per OpenAPI operation, with one transition
+// per declared response status.
 
 import { restBinding, withHttpMetadata } from "@suss/behavioral-ir";
 
@@ -23,9 +24,8 @@ import type {
 
 export interface BuildOptions {
   /**
-   * Logical source location to record on each summary. Used as the `file`
-   * field on `SourceLocation`. Defaults to "openapi:<info.title>" or just
-   * "openapi" when no title is set.
+   * Recorded as each summary's `location.file`. Defaults to
+   * `openapi:<info.title>`, or `openapi` when the document has no title.
    */
   source?: string;
 }
@@ -62,13 +62,9 @@ export function specToSummaries(
 }
 
 /**
- * The path a request goes to, which is the prefix the document states in
- * front of the one written under `paths`. Swagger 2.0 writes the prefix
- * as `basePath` and OpenAPI 3 writes it in the first server's URL. A
- * document stating neither serves the path as written.
- *
- * A server URL can be absolute, and only its path belongs here. The host
- * says which deployment serves the route, not what route it serves.
+ * Swagger 2.0's `basePath`, or the path of OpenAPI 3's first server URL,
+ * goes in front of the route. A server URL's host is dropped, because it
+ * picks a deployment and leaves the route the same.
  */
 function servedPath(spec: OpenApiSpec, path: string): string {
   const prefix = statedPrefix(spec).replace(/\/+$/, "");
@@ -103,8 +99,8 @@ function buildSummary(
   const upper = method.toUpperCase();
   const name = op.operationId ?? `${upper} ${path}`;
 
-  // Path-level parameters apply to every operation; operation-level overrides
-  // by (name, in) take precedence.
+  // Path-level parameters apply to every operation. An operation's own
+  // parameter with the same name and location replaces the path's.
   const params = mergeParameters(pathItem.parameters, op.parameters);
 
   const inputs = buildInputs(params, op, ctx);
@@ -140,13 +136,9 @@ function buildSummary(
         },
       },
       {
-        // Declared contract from the same operation that drove
-        // `transitions[]` above. Provenance is "derived": self-
-        // consistency is tautological by construction, so the cross-
-        // boundary checker's per-summary contract check skips these.
-        // Other sources describing the same boundary (a CFN stub, a
-        // handler implementation) can still be compared against this
-        // contract via checkContractAgreement.
+        // "derived" because the transitions come from the same operation,
+        // so the per-summary contract check skips it. checkContractAgreement
+        // still compares it with other sources for the same route.
         declaredContract: buildDeclaredContract(op, ctx),
       },
     ),
@@ -154,10 +146,9 @@ function buildSummary(
 }
 
 /**
- * The operation's `responses` block, keeping every form the document
- * may use: a literal code, a range code ("4XX" promises some status
- * between 400 and 499), and `default`, which covers every status the
- * other entries leave out. The README says how the checker reads each.
+ * Keeps every form a `responses` key can take: a literal code, a range
+ * such as `4XX`, and `default`. The README describes how the checker
+ * reads each one.
  */
 function buildDeclaredContract(
   op: OpenApiOperation,
@@ -270,13 +261,7 @@ function buildInputs(
   return inputs;
 }
 
-/**
- * Swagger 2.0 puts a request body and a form field in the parameter list,
- * as `body` and `formData`. OpenAPI 3 moved both into `requestBody`, so
- * they take the role a `requestBody` takes and the two spellings of one
- * document pair with the same handler input.
- */
-/** Swagger 2.0 writes a scalar parameter's schema keywords on the parameter itself. */
+/** Swagger 2.0 writes a scalar parameter's schema on the parameter itself. */
 function parameterSchema(p: OpenApiParameter): OpenApiSchema | undefined {
   if (p.schema !== undefined) {
     return p.schema;
@@ -292,6 +277,10 @@ function parameterSchema(p: OpenApiParameter): OpenApiSchema | undefined {
   };
 }
 
+/**
+ * Swagger 2.0's `body` and `formData` parameters get the role OpenAPI 3's
+ * `requestBody` gets, so both versions pair with the same handler input.
+ */
 function locationToRole(loc: OpenApiParameter["in"]): string {
   switch (loc) {
     case "path":
@@ -325,8 +314,8 @@ function buildTransitions(
 
     if (code === "default") {
       // `default` covers every status the other entries leave out, so it
-      // becomes the isDefault transition and the checker reads it as
-      // "the provider may return any status". The README says why.
+      // is the isDefault transition. The README describes how the checker
+      // reads it.
       transitions.push({
         id: stubTransitionId(op, "default"),
         conditions: [],
@@ -360,9 +349,9 @@ function buildTransitions(
       continue;
     }
 
-    // A range code has no literal for the IR's statusCode field, so it
-    // is recorded on the transition as http.statusRange, which the
-    // coverage pass reads. Not isDefault: it is one bucket.
+    // A range has no single status code, so it goes in `http.statusRange`
+    // for the coverage pass. It covers one class of statuses, so it is
+    // not the default transition.
     transitions.push({
       id: stubTransitionId(op, code),
       conditions: [],
@@ -380,14 +369,9 @@ function buildTransitions(
 }
 
 /**
- * The schema for the media type a client is most likely to send or
- * read. An operation that offers several used to give whichever one
- * the document happened to list first, so a spec writing
- * application/xml above application/json handed back the XML schema
- * and every JSON caller was compared against it. JSON wins when it is
- * offered; otherwise the media types are taken in sorted order, so two
- * runs over one document agree. Comparing the media type itself is
- * #387.
+ * A JSON media type wins, so a JSON caller is never compared against an
+ * XML schema listed first. Otherwise the first in sorted order wins, so
+ * two runs agree. #387 tracks comparing the media type itself.
  */
 function chosenContent<T extends { schema?: unknown }>(
   content: Record<string, T> | undefined,
