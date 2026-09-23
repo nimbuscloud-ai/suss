@@ -1,14 +1,14 @@
 /**
- * The `receives` block of a boundary intent against the paths the unit
- * reads off the value it was handed.
+ * Compares the `receives` block of a boundary intent with the paths the
+ * unit reads off the value it was handed.
  *
- * Two questions, both one-sided. A declared field nothing reads is
+ * Both checks are one-sided. A declared field nothing reads is
  * `unreadInputField`, at warning when the author said the boundary
  * needs it. A read the block leaves out is `undeclaredInputRead`, at
  * info, because a handler often logs a field no author would declare.
  *
- * A doc with no block produces neither, and every stand-down
- * `boundaryInputReads` gives is silent. A required header is often
+ * A doc with no block produces neither finding, and neither does a
+ * stand-down from `boundaryInputReads`. A required header is often
  * checked in middleware, so what a wrapper around a route reads counts
  * as what the route reads.
  */
@@ -38,8 +38,8 @@ interface Pairing {
 /**
  * Whether two paths are talking about the same field. A read of
  * `provider` covers a declared `provider.identity`, and a read of
- * `provider.identity` covers a declared `provider`, so the relation is
- * the same in both directions and both findings ask it.
+ * `provider.identity` covers a declared `provider`, so the check is the
+ * same in both directions and both findings use it.
  */
 function overlaps(a: readonly string[], b: readonly string[]): boolean {
   const left = comparable(a);
@@ -73,9 +73,8 @@ export function checkReceivesBlock(pairing: Pairing): IntentFinding[] {
   if (declared.length === 0) {
     return [];
   }
-  // The intent's own boundary says which protocol this is, and pairing
-  // already settled that the code agrees, so the document is the side
-  // to ask rather than an implementation whose binding could be null.
+  // The intent's boundary gives the protocol, and pairing has already
+  // matched the code to it. The implementation's own binding can be null.
   const result = boundaryInputReads(
     pairing.impl,
     pairing.intent.boundary,

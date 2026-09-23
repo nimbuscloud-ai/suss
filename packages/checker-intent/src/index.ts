@@ -1,35 +1,17 @@
-// @suss/checker-intent: pair team-authored intent against derived code.
-//
-// Separate from @suss/checker (the behavioural peer checker) on purpose:
-// the inputs differ (IntentSummary vs BehavioralSummary), the output
-// differs (IntentFinding: one-sided coverage, not a peer mismatch), and
-// the two evolve independently. Shared comparison primitives
-// (boundaryKey, bodyShapesMatch) live in @suss/ir-core so neither
-// checker depends on the other.
-//
-// Two passes over the loaded intent docs:
-//   - System intent (kind: boundary) pairs against derived code.
-//   - Outcome intent (kind: prd) resolves each scenario's link against the
-//     loaded boundary intents (scenario coverage).
-//
-// Severity conventions:
-//   error: the code fails a declared structural commitment
-//             (unimplementedBoundary, uncoveredOutcome,
-//             outcomeShapeMismatch, renamedBoundary). Intent is a deliberately
-//             authored artifact; code that doesn't satisfy it is a defect,
-//             not a style concern.
-//   warning: the intent itself can't be checked (unkeyableBoundary), or a
-//             scenario refers to an outcome no system intent declares
-//             (danglingScenarioLink / ambiguousScenarioLink: a planning
-//             gap), or nothing reads a field the author said the
-//             boundary needs (unreadInputField). Never silent.
-//   info: the code exceeds the declaration (undeclaredOutcome, a status
-//             or a boundary the intent never mentions, or a field it
-//             reads that nobody declared: undeclaredInputRead), a scenario
-//             isn't linked yet (unlinkedScenario), or an outcome has no
-//             scenario (undescribedOutcome). A valid pending state.
-// Findings against `source: "inferred"` (not-yet-curated) intent are
-// downgraded one level by `withProvenance`; curation restores full severity.
+/**
+ * Compares the intent a team wrote with the summaries derived from code.
+ *
+ * This is kept apart from @suss/checker because the inputs and outputs
+ * differ: one side is an `IntentSummary`, and a finding says the code
+ * does not do what the team declared. The comparison primitives both
+ * checkers need, such as `boundaryKey` and `bodyShapesMatch`, live in
+ * @suss/ir-core, so neither depends on the other.
+ *
+ * A boundary intent is paired with the code at its boundary key. A PRD
+ * has its scenario links resolved against the loaded boundary intents.
+ * Which severity each finding gets, and why a finding against inferred
+ * intent drops a level, is in the package design notes.
+ */
 
 import {
   BOUNDARY_ROLE,
@@ -127,8 +109,7 @@ export interface CheckedPrd {
 /**
  * A declared intent that was compared, either a boundary intent paired
  * against code or a PRD whose scenario links were resolved. Discriminated
- * on `kind` so callers render both without a parallel structure; when a
- * third doc kind (workflow) ships it extends this union.
+ * on `kind`, so a caller renders both from one list.
  */
 export type CheckedIntent = CheckedBoundaryIntent | CheckedPrd;
 
@@ -142,15 +123,11 @@ export interface UncheckedIntent {
 }
 
 /**
- * The full result of an intent-agreement pass. Mirrors the behavioural
- * checker's shape philosophy (`checkAll` → findings + pairs +
- * unmatched): findings are what to fix; checked / unchecked are the
- * coverage accounting: which declared intent was actually compared.
- * Callers render or gate on this without knowing which doc kinds the
- * checker compared: boundary intents and PRDs both land in `checked`
- * (a discriminated union). `unchecked` is reserved for intent that
- * couldn't be compared at all (an unkeyable boundary), never silently
- * dropped.
+ * The result of an intent-agreement pass, laid out like the behavioural
+ * checker's `checkAll` result. `findings` are what to fix. `checked`
+ * lists every declared intent that was compared, boundary intents and
+ * PRDs alike. `unchecked` lists intent that could not be compared at
+ * all, such as an unkeyable boundary, so nothing is dropped silently.
  */
 export interface CheckIntentResult {
   findings: IntentFinding[];
@@ -179,9 +156,9 @@ export function checkIntentAgreement(
   const unchecked: UncheckedIntent[] = [];
   const codeByBoundary = indexCodeByBoundary(code);
   const boundaryByName = indexBoundaryIntentsByName(intents);
-  // The document was drafted with deploy-time names put in, so reading
-  // it back has to put the same ones in. `deploymentOf` is the step
-  // the drafter and the behavioural checker both go through.
+  // The drafter fills in deploy-time names, so this pass has to fill in
+  // the same ones. The drafter and the behavioural checker both use
+  // `deploymentOf` for it.
   const deploymentOfUnit = deploymentOf(code);
   const wrappersOfUnit = wrappersAround(code);
 
@@ -208,13 +185,12 @@ export function checkIntentAgreement(
 }
 
 /**
- * The coverage question asked from the outcome's side: which declared
- * behaviour has no scenario saying why it is there. That is what a
- * product reader wants from the same two artifacts the scenario passes
- * walk, and nothing else asks it.
+ * The coverage question from the outcome's side: which declared
+ * behaviour has no scenario explaining why it is there. A product
+ * reader asks this of the same two documents the scenario pass reads.
  *
- * It stays quiet until at least one PRD is loaded. Before that the
- * answer is "all of them", which tells nobody anything.
+ * It stays quiet until at least one PRD is loaded, because before that
+ * every outcome would be reported.
  */
 function checkOutcomesDescribed(intents: IntentSummary[]): IntentFinding[] {
   const prds = intents.filter((intent) => intent.kind === "prd");
@@ -266,10 +242,9 @@ function checkBoundaryIntent(
 ): IntentPassResult {
   const key = pairingKey(intent.boundary);
   if (key === null) {
-    // The intent is well-formed but its boundary can't be keyed for
-    // pairing (e.g. function-call without package + exportPath). The
-    // author declared coverage they aren't getting, a warning finding
-    // for gating plus an unchecked entry for accounting.
+    // The boundary cannot be keyed, as with a function call that has no
+    // package and export path. The author expects a check that is not
+    // happening, so this gets a warning and an unchecked entry.
     return {
       findings: [
         {
@@ -312,7 +287,7 @@ function checkBoundaryIntent(
           message: `Intent "${intent.name}" declares boundary ${label} with ${intent.outcomes.length} outcome(s); no code produces this boundary.`,
         },
       ],
-      // The comparison ran: finding no implementation IS the result.
+      // The comparison ran, and finding no implementation is its result.
       checked: [
         {
           kind: "boundary",
@@ -354,24 +329,12 @@ function codeRef(impl: BehavioralSummary): string {
   return summaryRef(impl);
 }
 
-// ---------------------------------------------------------------------------
-// PRD scenario coverage (kind: prd)
-// ---------------------------------------------------------------------------
-//
-// A PRD scenario carries `when` / `expect` (human terms) plus an optional
-// structured `link`: a list of `<intent-name>.<outcome-id>` refs into the
-// loaded boundary intents. Coverage resolves each ref against those intents
-// (the "PRD → system intent" hop of the checking pipeline). It deliberately
-// stops at resolution: whether the code implements a linked outcome is the
-// boundary pass's job (uncoveredOutcome / unimplementedBoundary), so the two
-// hops stay independently useful and a PRD can be checked before any code
-// exists.
-
 /**
  * Resolve every scenario's structured link against the loaded boundary
  * intents. Emits one finding per unlinked scenario (info, a valid pending
  * state) and per dangling / ambiguous link (warning, a planning gap the
  * author must fix). A scenario whose links all resolve produces nothing.
+ * The pass stops at resolving links, and the design notes explain why.
  */
 function checkPrdCoverage(
   prd: PrdSummary,
@@ -475,8 +438,8 @@ function resolveScenarioLink(
     return {
       kind: "danglingScenarioLink",
       severity: "warning",
-      // The intent resolved even though the outcome didn't, key on its
-      // boundary so a narrow .sussignore rule can target this finding.
+      // The intent resolved, so the finding is keyed on its boundary,
+      // where a narrow .sussignore rule can match it.
       boundary: boundaryKey(target.boundary) ?? prdBoundaryLabel(prd),
       intent: { name: prd.title },
       scenario: scenarioRef,
@@ -517,10 +480,6 @@ function indexBoundaryIntentsByName(
   return byName;
 }
 
-// ---------------------------------------------------------------------------
-// Provenance-aware severity
-// ---------------------------------------------------------------------------
-
 const SEVERITY_DOWNGRADE: Record<IntentFindingSeverity, IntentFindingSeverity> =
   {
     error: "warning",
@@ -547,13 +506,12 @@ function withProvenance(
 }
 
 /**
- * Apply .sussignore rules to intent findings, using the shared
- * pipeline from @suss/ir-core (same rule shape and semantics as the
- * behavioural checker's `applySuppressions`). Rule discriminators map
- * as: `kind` → the intent finding kind; `boundary` → the finding's
- * boundary key (exact for `fn:` / `gql:` keys, path-normalized for
- * REST). A rule that specifies `consumer` or `provider` never matches
- * an intent finding: it has neither side.
+ * Apply .sussignore rules to intent findings, through the same pipeline
+ * in @suss/ir-core that the behavioural checker's `applySuppressions`
+ * uses. A rule's `kind` matches the finding kind, and its `boundary`
+ * matches the finding's boundary key, exactly for `fn:` and `gql:` keys
+ * and path-normalized for REST. A rule that gives `consumer` or
+ * `provider` never matches, since an intent finding has neither side.
  */
 export function applyIntentSuppressions(
   findings: IntentFinding[],
@@ -584,17 +542,15 @@ function indexCodeByBoundary(
   // delivers to it, so without this it lands under no key at all and an
   // intent doc for that boundary pairs with nothing.
   for (const summary of withDeclaredDelivery(code)) {
-    // Intent declares what a boundary PROVIDES. A consumer at the same
-    // key (a client calling GET /users/{id}) is a caller, not an
-    // implementation: comparing intent outcomes against its
-    // return/render transitions would report every declared outcome as
-    // uncovered. Same role split the behavioural checker's pairing uses.
+    // Intent declares what a boundary provides. A client calling the same
+    // route is a caller, and comparing outcomes against its returns
+    // would report every declared outcome as uncovered.
     if (BOUNDARY_ROLE[summary.kind] !== "provider") {
       continue;
     }
-    // A manifest says a queue exists and no more, so an intent doc
-    // compared against it reads as behaviour nothing implements, when
-    // what implements it is the handler beside it in the same run.
+    // A manifest only says a queue exists. Compared against it, the
+    // intent would look unimplemented, though the handler beside it in
+    // the same run implements it.
     if (summary.confidence.source === "declared") {
       continue;
     }
@@ -737,12 +693,9 @@ function compareIntentToImpl(
     if (declaredBody === null) {
       continue;
     }
-    // Intent outcomes may share a status (two 200 outcomes with
-    // different bodies), so outcome↔transition pairing is many-to-many.
-    // A declared body is satisfied when SOME matching code outcome
-    // produces a conforming (or unknown) shape; comparing only one
-    // arbitrary match would report false mismatches whenever branches
-    // share a status.
+    // Two outcomes can share a status with different bodies, so a
+    // declared body is satisfied when any matching code outcome has a
+    // conforming or unknown shape.
     const bodied = matches.filter(
       (m): m is CodeOutcome & { body: TypeShape } => m.body !== null,
     );
@@ -780,9 +733,7 @@ function compareIntentToImpl(
     ) {
       continue;
     }
-    // One finding per undeclared status, several branches producing
-    // the same status (two catch arms both returning 500) are one
-    // deviation from the declaration, not many.
+    // Two catch arms that both return 500 are one undeclared status.
     undeclaredStatuses.add(co.status);
   }
   for (const status of undeclaredStatuses) {
@@ -872,7 +823,7 @@ function unmetConditionMessage(
 type VanishedBoundaryUse =
   | {
       finding: IntentFinding;
-      /** The boundary as the intent doc spelled it. */
+      /** The boundary as the intent doc wrote it. */
       boundary: string;
       does: Relation;
       kind: "effect";
@@ -906,7 +857,7 @@ function satisfiedBy(use: VanishedBoundaryUse, candidate: string): boolean {
 /** A boundary the code touches that the intent never declares, that could be the renamed counterpart. */
 interface UndeclaredBoundaryUse {
   finding: IntentFinding;
-  /** The boundary as the code spells it. */
+  /** The boundary as the code writes it. */
   boundary: string;
   does: Relation;
 }
@@ -1068,7 +1019,6 @@ function joinVerbs(verbs: Set<Relation>): string {
   return `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
 }
 
-/** Buckets by `.boundary` directly, rather than through a caller-supplied key function. */
 function groupByBoundary<T extends { boundary: string }>(
   items: T[],
 ): Map<string, T[]> {
@@ -1281,13 +1231,13 @@ function outcomeMatches(intent: IntentOutcome, code: CodeOutcome): boolean {
       intent.errorType === code.errorType
     );
   }
-  return true; // return — any code return matches; body compared separately.
+  return true; // any return matches, and the body is compared separately
 }
 
 /**
  * What each protocol needs before an intent doc written against one of
  * its boundaries can be paired, in the doc author's terms. The
- * drafter says the same thing about a boundary it could not write.
+ * drafter gives the same reason for a boundary it could not write.
  */
 export function whatWouldKeyIt(protocol: Semantics["name"]): string {
   return WHAT_KEYS[protocol];
