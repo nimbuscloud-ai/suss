@@ -1,128 +1,132 @@
 # Open source and product, revised
 
-Where the line falls between what ships open and what the company
-sells, what the July run against a production monorepo changed about
-that, and what the design that came out of it has to account for.
+This covers where the line falls between what ships as open source and
+what the company sells, what the July run against a production monorepo
+changed about that, and what the resulting design has to account for.
 
 ## The split still holds
 
-Single-repo, single-moment primitives ship open. Cross-repo, temporal,
-and org-level features are product. Nothing in the recent work argues
-against it.
+Primitives that work on a single repo at a single moment ship as open
+source. Features that span repos, time or a whole organization are
+product. Nothing in the recent work argues against that split.
 
 **Open source.** Extraction produces behavioral summaries from a
-codebase. Contract readers turn schemas and templates into that same
-form. Checkers compare a pair at a moment: contract consistency,
-GraphQL agreement, message-bus pairing, storage access, env-var
-config, intent coverage. This is already well past printing findings
-to stdout, and the product should not be positioned as the version
-that works.
+codebase. Contract readers turn schemas and templates into the same
+form. Checkers compare a pair at one moment: contract consistency,
+GraphQL agreement, message-bus pairing, storage access, env-var config
+and intent coverage. That is already a long way past printing findings
+to stdout, so we should not position the product as the version that
+works.
 
 **Product.** Summaries from every service in an organization, kept as
 one graph over time. The handler in service A changed its behavior in
-Tuesday's deploy and three consumers in B, C, and D have not caught
-up. History, correlation, alerting, workflow integration, and the
-context layer that agents query.
+Tuesday's deploy, and three consumers in B, C and D have not caught up.
+The product adds history, correlation, alerting, workflow integration,
+and the context layer that agents query.
 
 ## Four amendments
 
-### The adoption physics are not Sentry's
+### Adoption works differently from Sentry
 
-Sentry's SDK works because instrumentation happens at runtime and is
-universal. You import it, errors flow, and nothing about that depends
-on how your team writes code.
+Sentry's SDK works because it instruments at runtime and works the same
+everywhere. You import it and errors start arriving, whatever way your
+team writes code.
 
-Suss produces its data by static analysis that has to recognize how a
-team expresses its boundaries. The July run is the counterexample. A
-team that wraps Apollo in one local hook and calls that hook everywhere
-gets almost nothing from the Apollo pack, which looks for the library
-call itself; suss saw only the handful of call sites that still reached
-Apollo directly. A team that builds its Lambda response envelope
-through a local helper gets whatever argument order the pack guessed.
-The pack guessed wrong, so every status and body suss extracted came
-back inverted at high confidence. Neither pattern is unusual.
+suss produces its data by static analysis, and that analysis has to
+recognize how a team writes its boundaries. The July run showed where
+this breaks. One team wraps Apollo in a single local hook and calls that
+hook everywhere. The Apollo pack looks for the library call itself, so
+suss saw only the handful of call sites that still called Apollo
+directly, and the team got almost nothing from it. Another team builds
+its Lambda response envelope through a local helper, and suss got
+whatever argument order the pack guessed. The pack guessed wrong, so
+every status and body suss extracted came back swapped, at high
+confidence. Neither pattern is unusual.
 
-So the on-ramp is not three lines and no configuration. It is "does a
-pack recognize the way your team writes code." That is the largest
-threat to the funnel argument, because the whole model depends on
-producing the data being cheap.
+So getting started is not three lines and no configuration. It depends
+on whether a pack recognizes the way your team writes code. That is the
+biggest threat to the funnel argument, because the whole model depends
+on the data being cheap to produce.
 
-### The moat is the pack corpus, not the aggregation
+### The moat is the pack corpus
 
-If recognizing production code is the hard part, then accumulated
-knowledge of how codebases express boundaries is the asset that
-compounds, and it is harder to copy than an ingestion pipeline.
+If recognizing production code is the hard part, then what we learn
+about how codebases express boundaries is the asset that keeps growing
+in value. It is also harder to copy than an ingestion pipeline.
 
-That means there is a loop here that the Sentry framing does not
-have. Sentry's SDK
-does not improve because Sentry's backend saw your errors. Suss's
-extraction would. The design for it is below, because getting it right
-early is worth more than getting the graph right early.
+That gives us a feedback loop Sentry does not have. Sentry's SDK does
+not improve because Sentry's backend saw your errors. suss's extraction
+would improve from what the product sees. The design for that loop is
+below. Getting it right early matters more than getting the graph right
+early.
 
-### Self-hosting is a requirement, not an objection
+### Self-hosting is a requirement
 
-Sentry ingests runtime error events, which teams already accept
-shipping off-box. A behavioral summary is derived from source: function
-names, file paths, response shapes, branch conditions. It is closer to
-shipping a code index than to shipping error events, and enterprise
-buyers will treat it that way.
+Sentry ingests runtime error events, and teams already accept sending
+those off their machines. A behavioral summary is derived from source:
+function names, file paths, response shapes, branch conditions. Sending
+one is closer to sending a code index than to sending error events, and
+enterprise buyers will treat it that way.
 
-This does not break the model. It moves VPC and on-premises deployment
-and summary redaction from later concerns into requirements, and it
+This does not break the model. It turns VPC and on-premises deployment
+and summary redaction from later concerns into requirements. It also
 argues against assuming the hosted version is the only one anyone
 wants.
 
 ### The intent layer moved the center of gravity
 
-The earlier framing was built around drift between services over time,
-which is a graph and history product. The wedge the strategy review
-landed on is intent-to-code verification for generated code, which is
-a per-change gate that lives in the pull request.
+The earlier plan was built around drift between services over time,
+which needs a graph and history. The strategy review settled on a
+different way in: checking generated code against intent, as a gate on
+each change that runs in the pull request.
 
-Both can be true. They are different products with different first
-builds, and the gate is much cheaper to ship than the living graph.
-Build the gate first and let the graph be what it grows into.
+Both can be true. They are different products that need different
+things built first, and the gate is much cheaper to ship than the
+living graph. Build the gate first and let the graph grow out of it.
 
 ## Designing the recognition loop
 
 The claim is that extraction gets better because the product saw what
-it failed to recognize. That only works if three things are true:
-something captures the failure, the failure can leave the customer's
-network, and it arrives somewhere that turns it into a pack.
+extraction failed to recognize. That only works if three things are
+true. Something has to capture the failure, the failure has to be
+allowed to leave the customer's network, and it has to arrive somewhere
+that turns it into a pack.
 
 ### What the signal is
 
-Most of it already exists in the IR, produced for other reasons:
+The IR already records most of it, for other reasons:
 
 - **Confidence levels.** A summary or transition that came back `low`
-  marks a place where extraction reached for something and did not
-  find it.
-- **Gaps.** `detectGaps` runs both directions and records declared
-  outcomes never produced and produced outcomes never declared.
-- **Opaque predicates.** Every condition that failed to decompose
-  preserves its source text and a reason.
+  marks a place where extraction looked for something and did not find
+  it.
+- **Gaps.** `detectGaps` runs in both directions. It records declared
+  outcomes that are never produced and produced outcomes that are never
+  declared.
+- **Opaque predicates.** Every condition that could not be broken down
+  keeps its source text and a reason.
 - **Accounting units.** The Lambda pack emits `recognized-not-http`
-  units so a handler the template declares is never dropped without a
+  units, so a handler the template declares is never dropped without a
   record.
 - **Unmatched buckets.** Pairing already separates providers with no
   counterpart from summaries with no binding at all.
 
-The one missing piece is the extraction funnel: files in the include
-set, candidates surviving each pack's import gate, units discovered,
-units with no terminals. That is the diagnostics work already queued,
-and it is the part that captures total failure rather than partial
-failure. That changes the sequencing: the diagnostics item is not only
-a usability fix, it is the sensor the whole loop depends on.
+The one missing piece is the extraction funnel. It would count the
+files in the include set, the candidates that get past each pack's
+import gate, the units discovered, and the units with no terminals.
+That is the diagnostics work already queued. It captures extraction
+that failed completely, where the signals above only capture partial
+failure. So the sequencing changes. The diagnostics item fixes a
+usability problem, and it is also the sensor the whole loop depends on.
 
-### Fingerprints, not code
+### Report fingerprints instead of code
 
 The report cannot include source code. An organization that will not
-ship summaries certainly will not ship the code that failed to parse,
-and that constraint is where the Sentry model would otherwise break.
+send out summaries will certainly not send out the code that failed to
+parse, and that constraint is where the Sentry model would break.
 
-So the unit of feedback is a structural fingerprint: a description of
-what was not recognized, with every identifier, literal, and path
-removed. The response-helper case becomes something like
+So the unit of feedback is a structural fingerprint. It describes what
+was not recognized, with every identifier, literal and path removed.
+The response-helper case becomes something like
 
     unrecognized: call in return position
       callee: local function, same module
@@ -141,66 +145,65 @@ and the wrapper case becomes
       units discovered: 0
 
 Neither one includes a function name, a file path, or a business term.
-Two properties follow, and both matter more than the privacy framing
-suggests:
+Two properties follow, and both matter more than privacy alone would
+suggest:
 
-1. **It is aggregatable.** Fingerprints from different organizations
-   collide when the underlying pattern is the same, which is what turns
-   a pile of individual failures into a ranked list.
-2. **It survives on-premises deployment.** A self-hosted install can
-   ship fingerprints even when it will never ship summaries, so the
+1. **Fingerprints can be aggregated.** Fingerprints from different
+   organizations collide when the underlying pattern is the same, and
+   that turns a pile of individual failures into a ranked list.
+2. **They work with on-premises deployment.** A self-hosted install can
+   send fingerprints even when it will never send summaries. So the
    loop keeps running for exactly the customers the hosted model would
    otherwise lose.
 
 ### What the corpus produces
 
-Rank the fingerprints by how often they show up across installations,
-weight them by how many call sites each one blocks, and the corpus
-becomes a pack backlog written by the field rather than by intuition.
-The strategy review already flagged that recognizer and discovery
-fixes should be ordered by what production code shows rather than by
-what seems likely. This is the mechanism for that.
+Rank the fingerprints by how often they show up across installations
+and weight them by how many call sites each one blocks. The corpus then
+becomes a pack backlog driven by what happens in the field, and nobody
+has to guess. The strategy review already said recognizer and discovery
+fixes should be ordered by what production code shows and not by what
+seems likely. This gives us a way to do that.
 
-It also feeds the pack authoring tooling already on the backlog. A
+It also feeds the pack authoring tools already on the backlog. A
 fingerprint plus two or three anonymized examples is close to enough
-input for a person or a model to draft a pack pattern. The bottleneck
-named there was specifying the pattern vocabulary clearly, and a
-fingerprint is an example of that vocabulary by construction, because
-it is written in the vocabulary's own terms.
+input for a person or a model to draft a pack pattern. The backlog item
+said the bottleneck was specifying the pattern vocabulary clearly. A
+fingerprint is written in the terms of that vocabulary, so every
+fingerprint is an example of it.
 
-And it makes the moat measurable. Ship a pack version, watch the
+And it lets us measure the moat. Ship a pack version, then watch the
 unrecognized count for that fingerprint fall in the next extraction
-across the installed base. Recognition rate per language, per
-framework, per organization is a number that goes up, which is a
+across the installed base. The recognition rate per language, per
+framework and per organization is a number that goes up. That is a
 different kind of claim from "we have more integrations."
 
 ### Who owns which half
 
-Packs stay open. The corpus and the ranking are product.
+Packs stay open source. The corpus and the ranking are product.
 
-This is the defensible line, and it has a useful property: because the
-packs are open, a customer who hits an unrecognized pattern can write
-the pack themselves and contribute it, which is the behavior that
-sustains adoption. What they cannot reproduce is knowing which
-patterns matter most across everyone, which is the thing that decides
-where the next ten packs go.
+We can defend that line, and it has a useful property. The packs are
+open, so a customer who hits an unrecognized pattern can write the pack
+and contribute it, and that keeps adoption going. What they cannot
+reproduce is knowing which patterns matter most across every customer,
+and that knowledge decides where the next ten packs go.
 
 A team can copy every pack in the repository. They cannot copy the
 ranked list of what is still missing.
 
 ### Consequences for what gets built
 
-- The extraction funnel is on the critical path twice, once as a
-  usability fix and once as the sensor the loop runs on. Build it so
-  the report is structured data with a rendering on top, not a printed
-  string.
-- Fingerprinting should be designed alongside the funnel rather than
-  retrofitted. The funnel already has to describe why a stage produced
-  nothing; a fingerprint is that description with identifiers stripped.
-- Sending the reports is opt-in, and a user can look at what goes out.
-  A user should be able to run the command that prints exactly what
-  would be sent, in full, and that output should be short enough to
-  read.
-- The gate ships before the graph. Fingerprints flow from the gate as
-  readily as from the graph, so the loop does not have to wait for the
+- The extraction funnel is on the critical path twice: once as a
+  usability fix, and once as the sensor the loop runs on. Build it so
+  the report is structured data with a rendering on top, and not a
+  printed string.
+- Design fingerprinting together with the funnel, so it does not have
+  to be added afterwards. The funnel already has to describe why a
+  stage produced nothing, and a fingerprint is that description with
+  the identifiers removed.
+- Sending reports is opt-in, and a user can look at what goes out. A
+  user should be able to run a command that prints exactly what would
+  be sent, in full, and that output should be short enough to read.
+- The gate ships before the graph. Fingerprints come from the gate as
+  easily as from the graph, so the loop does not have to wait for the
   larger product.

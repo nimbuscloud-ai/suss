@@ -1,44 +1,44 @@
 # Releasing
 
 All 31 packages share one version. You raise that number once in the
-root `package.json`,
+root `package.json`.
 [`scripts/preparePublish.mjs`](https://github.com/nimbuscloud-ai/suss/blob/main/scripts/preparePublish.mjs)
-copies it out to every package, and
+copies it into every package, and
 [`scripts/release.mjs`](https://github.com/nimbuscloud-ai/suss/blob/main/scripts/release.mjs)
 publishes the whole set at whatever version is committed. The workflow
-never picks a version of its own.
+never picks a version by itself.
 
-Most of this page is about npm credentials, because that is the part
-that lives outside the repository and cannot be fixed by a commit.
+Most of what follows is about npm credentials. They live outside the
+repository, so a commit cannot fix them.
 
 ## Running a release
 
-Two steps, and a person does the first one.
+A release has two steps, and a person does the first one.
 
 **Raise the version, on a branch.** `npm run bump patch` moves the
-version up one patch. It also takes `minor`, `major`, or a version you
+version up one patch. It also accepts `minor`, `major`, or a version you
 type. It writes the root `package.json`, runs `preparePublish` over the
-packages, and refreshes `package-lock.json`, which `npm ci` would
-otherwise refuse to install from. Read the diff, commit it as
+packages, and refreshes `package-lock.json`, because `npm ci` refuses to
+install from a lockfile that is out of date. Read the diff, commit it as
 `chore: release <version>`, and open a pull request like any other
 change.
 
-**Publish it.** Once that is on `main`: Actions → Release → Run
-workflow. It reads the version out of the root `package.json`, stops if
-that version is already tagged, and publishes. `dry-run` publishes
-nothing and still writes the release notes to the job summary, so you
-can read what the release would say before it says it.
+**Publish it.** Once the bump is on `main`, go to Actions → Release →
+Run workflow. The workflow reads the version from the root
+`package.json`, stops if that version already has a tag, and publishes.
+With `dry-run` it publishes nothing but still writes the release notes
+to the job summary, so you can read them before anything goes out.
 
-Start with a dry run. Before it lists anything it asks the registry for
-a publishing credential for every package the run would write, which is
-the only thing that proves a package will publish. A rehearsal that says
-"would publish 31 packages" is one that would in fact have published
-them. A publishing run asks the same question before it writes the
-first package, so a release that cannot finish publishes nothing and says
-which packages need setting up.
+Start with a dry run. Before it lists anything, it asks the registry
+for a publishing credential for every package the run would write. That
+request is the only thing that proves a package will publish, so a
+rehearsal that prints "would publish 31 packages" would in fact have
+published them. A publishing run makes the same request before it
+writes the first package. If a release cannot finish, it publishes
+nothing and lists the packages that need setting up.
 
-Asking mints a short-lived token and writes nothing, so a dry run can
-ask about every package as often as you like.
+The request mints a short-lived token and writes nothing, so a dry run
+can check every package as often as you like.
 
 You can publish from a laptop with `npm run release -- --otp <code>`,
 which does the same thing without the tag or the GitHub release. It
@@ -48,12 +48,12 @@ prints the three commands for those at the end.
 
 [`scripts/changelog.mjs`](https://github.com/nimbuscloud-ai/suss/blob/main/scripts/changelog.mjs)
 reads the commits between the last release and `HEAD` and groups them by
-conventional-commit type, features first, then fixes, then the rest. A
-squash merge ends its subject with the pull request number, and that
-number becomes the link on the line. A commit that arrived without one
-links to itself instead.
+conventional-commit type: features first, then fixes, then the rest. A
+squash merge ends its subject with the pull request number, and the line
+in the notes links to that pull request. A commit without a number links
+to the commit.
 
-Run it any time to see where things stand:
+Run it any time to see what the next release would contain:
 
 ```sh
 npm run changelog                    # since the last release, to HEAD
@@ -61,36 +61,37 @@ npm run changelog -- --from v0.1.0 --version 0.2.0
 ```
 
 A subject that is not a conventional commit still gets a line, under
-"Other changes". Nothing is dropped for being written the wrong way.
+"Other changes". The script never drops a commit because of how its
+subject is written.
 
-The notes live on the GitHub release and nowhere else. There is no
-committed `CHANGELOG.md`, because the commits already say all of this
-and a second copy in the tree is one more thing to keep in step.
+The notes are published on the GitHub release and nowhere else. There
+is no committed `CHANGELOG.md`. The commits already record all of it,
+and a second copy in the tree would be one more thing to keep in step.
 
 ## How npm authenticates the publish
 
-Trusted publishing, and nothing else. npm takes the workflow's OIDC
-token, hands it to the registry, and gets back a short-lived credential.
-Nothing is stored, and there is no automation token behind it. That is
-deliberate, so there is no long-lived write credential to leak or
-rotate.
+The workflow uses trusted publishing and nothing else. npm takes the
+workflow's OIDC token, sends it to the registry, and gets back a
+short-lived credential. Nothing is stored, and there is no automation
+token behind it. We set it up this way on purpose, so there is no
+long-lived write credential to leak or rotate.
 
 If the job cannot mint an OIDC token at all, the release stops before it
-writes anything. That is what `ENEEDAUTH` on all 34 packages meant in
-the 0.0.2 run: npm had no credential at all, rather than the registry
-refusing one it had.
+writes anything. In the 0.0.2 run, `ENEEDAUTH` on all 34 packages meant
+exactly that: npm had no credential at all. The registry had not refused
+one.
 
 ## Setting up trusted publishing
 
-The exchange happens **once per package**, against a trusted publisher
-that each package configures for itself, at
+The token exchange happens **once per package**, against a trusted
+publisher that each package configures separately, at
 `POST /-/npm/v1/oidc/token/exchange/package/{name}`. A package that has
-not been set up gets nothing back, and with no token to fall back on,
-that package alone fails. There is no organization-wide setting and no
-bulk UI, so you do this once per package.
+not been set up gets nothing back. With no token to fall back on, that
+package fails and the others do not. npm has no organization-wide
+setting and no bulk UI, so you do this for each package.
 
-On npmjs.com, for each package: **Packages → the package → Settings →
-Trusted Publisher → GitHub Actions**, then
+On npmjs.com, for each package, go to **Packages → the package →
+Settings → Trusted Publisher → GitHub Actions** and fill in:
 
 | Field | Value |
 | --- | --- |
@@ -100,69 +101,72 @@ Trusted Publisher → GitHub Actions**, then
 | Environment name | *(leave empty)* |
 | Allowed actions | `npm publish` |
 
-The workflow filename is the name on its own (not
-`.github/workflows/release.yml`), and it keeps its extension. A package
-can have only one trusted publisher at a time; changing providers means
-editing the existing entry rather than adding a second.
+Enter the workflow filename without its directory (not
+`.github/workflows/release.yml`), and keep the extension. A package can
+have only one trusted publisher at a time, so to change providers you
+edit the existing entry instead of adding a second.
 
 ### A package npm has never seen
 
-That settings page belongs to a package, so a package that has never
-been published has nowhere to configure a publisher, and its first
-version cannot go out over OIDC. Every package that failed at 0.11.0
-was already on the registry from an earlier release and had never been
-set up, which is why setting them up and re-running worked.
+The settings page belongs to a package. A package that has never been
+published has no page to configure a publisher on, so its first version
+cannot go out over OIDC. Every package that failed at 0.11.0 was already
+on the registry from an earlier release but had never been set up. That
+is why setting them up and re-running worked.
 
-Publish the first version of a genuinely new package by hand, then
-configure its trusted publisher, and every release after that goes the
-same way as the rest. The dry run now catches this on its own: it asks
-for a credential per package and stops on the one that has none, and it
-says which of the other packages depend on it.
+Publish the first version of a new package by hand, then configure its
+trusted publisher. After that it releases the same way as the rest. The
+dry run catches a package in this state: it requests a credential for
+each package, stops on the one that gets none, and lists which other
+packages depend on it.
 
-Nothing needs to change in the repository. The pieces the workflow has
-to supply are already there:
+Nothing needs to change in the repository. The workflow already
+supplies everything the exchange needs:
 
-- `permissions: id-token: write` on the job, which is what lets the
-  runner mint an OIDC token at all. Without it npm skips the exchange
-  silently.
-- npm 11.5.1 or newer, which is ahead of what any Node release bundles,
-  hence the `npm install --global npm@latest` step.
-- Node 22.14.0 or newer. `.nvmrc` says `22`, which `setup-node`
-  resolves to the newest 22.x, so this holds on its own.
-- `registry-url` on `setup-node`, which decides the audience the token
-  is minted for.
+- `permissions: id-token: write` on the job. Without it the runner
+  cannot mint an OIDC token, and npm skips the exchange without saying
+  so.
+- npm 11.5.1 or newer. No Node release bundles a version that new yet,
+  so the workflow has an `npm install --global npm@latest` step.
+- Node 22.14.0 or newer. `.nvmrc` says `22`, and `setup-node` resolves
+  that to the newest 22.x, so this is satisfied with no extra step.
+- `registry-url` on `setup-node`. It sets the audience the token is
+  minted for.
 
 Self-hosted runners are not supported.
 
 npm attaches [provenance](https://docs.npmjs.com/generating-provenance-statements)
-by itself when it publishes this way, so nothing passes `--provenance`.
+automatically when it publishes this way, so nothing passes
+`--provenance`.
 
 ### Closing the other door
 
-Once a package is switched over, set **Settings → Publishing access → Require
-two-factor authentication and disallow tokens** on it. That setting does
-not affect trusted publishing, which is not token authentication, and it
-means a stolen token cannot publish even if one is minted later. A dry
-run exercises the exchange for every package, so a green dry run is
-enough to tell you the package is switched over.
+Once a package uses trusted publishing, turn on **Settings → Publishing
+access → Require two-factor authentication and disallow tokens** for it.
+The setting does not affect trusted publishing, because trusted
+publishing does not authenticate with a token. With it on, a stolen
+token cannot publish, even one minted later. A dry run tries the
+exchange for every package, so a green dry run tells you every package
+has switched over.
 
 ## When a release fails
 
-The publish step prints one failing package's npm output in full and
-then notes that the rest failed the same way, since 44 identical error
-codes tell you less than one full transcript does.
+When packages fail, the publish step prints npm's full output for one
+of them and then says that the rest failed the same way. One full
+transcript tells you more than 44 identical error codes.
 
-`--verbose` puts npm's own account of the token exchange in the log. It
-is the only level at which npm explains why a credential came back
-empty, and the workflow already passes it.
+`--verbose` makes npm log the details of the token exchange. npm only
+explains why a credential came back empty at that level, and the
+workflow already passes the flag.
 
-A run that publishes some packages and not others can be re-run as-is.
-Anything already on the registry at that version is skipped, so the
-second run picks up only what is left. A package published moments
-earlier can still look missing, because npm's read path trails its
-write path by minutes. Publishing it again returns "cannot publish over
-the previously published versions", and that counts as success, because
-the registry is confirming the version is up.
+You can re-run a release that published some packages and not others
+without changing anything. The script skips every package already on the
+registry at that version, so the second run publishes only what is left.
+A package published moments earlier can still look missing, because
+reads from npm lag behind writes by minutes. Publishing it again returns
+"cannot publish over the previously published versions". The script
+counts that as success, because the registry is confirming the version
+is up.
 
 ## What a release leaves behind
 
@@ -171,23 +175,23 @@ the registry is confirming the version is up.
 - A GitHub release at that tag, titled `v<version>`, with the notes
   the workflow generated from the commits since the last release.
 
-The version bump commit is already on `main` before any of this runs, so
-the workflow pushes a tag and nothing else. It stops before publishing
-if that tag is already there, which is what happens when somebody
-dispatches a run twice, or dispatches one without bumping the version
-first.
+The version bump commit is on `main` before the workflow runs, so the
+workflow pushes a tag and nothing else. It stops before publishing if
+the tag already exists. That happens when somebody dispatches a run
+twice, or dispatches one without bumping the version first.
 
-The tag has to be annotated. A lightweight one is skipped by
-`--follow-tags` and by anything else that reads tag objects, and that is
-how 0.0.2 reached npm and `main` with no tag on it. The release is
-created with `--verify-tag`, so if the tag did not reach the remote the
-release is not written either.
+The tag has to be annotated. `--follow-tags` skips a lightweight tag, as
+does anything else that reads tag objects. That is how 0.0.2 reached npm
+and `main` with no tag. The workflow creates the release with
+`--verify-tag`, so if the tag did not reach the remote, no release is
+written either.
 
 Publishing 31 packages, tagging, and writing the release are three
-steps, and a run can stop between them. Re-dispatching is safe: the
-packages already on the registry are skipped, and the tag check stops
-the run before it publishes a version that is already out. If the tag
-landed but the release did not, write it by hand:
+separate steps, and a run can stop between any two of them. Dispatching
+again is safe. The packages already on the registry are skipped, and the
+tag check stops the run before it publishes a version that is already
+out. If the tag was pushed but the release was not written, write it by
+hand:
 
 ```sh
 node scripts/changelog.mjs --from v0.0.2 --version 0.0.3 --output /tmp/notes.md
