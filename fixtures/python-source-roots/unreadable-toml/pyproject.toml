@@ -1,0 +1,9 @@
+[project]
+name = "orders"
+version = "0.1.0"
+dependencies = ["fastapi"]
+
+# TOML allows a key only once per table, so every reader rejects this.
+[tool.setuptools]
+package-dir = { "" = "src" }
+package-dir = { "" = "lib" }

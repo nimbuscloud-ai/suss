@@ -56,6 +56,7 @@
     "@suss/resolution": "0.33.1",
     "@suss/sql": "0.33.1",
     "@suss/values": "0.33.1",
+    "smol-toml": "^1.4.2",
     "web-tree-sitter": "^0.26.11"
   },
   "devDependencies": {
