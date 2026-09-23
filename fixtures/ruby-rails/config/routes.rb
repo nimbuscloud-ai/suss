@@ -17,6 +17,7 @@ Rails.application.routes.draw do
 
   namespace :admin do
     resources :reports, only: [:index]
+    resources :audits, only: [:index]
   end
 
   mount Sidekiq::Web => "/sidekiq"

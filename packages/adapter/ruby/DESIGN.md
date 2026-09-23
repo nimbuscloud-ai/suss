@@ -34,6 +34,8 @@ The library calls a field's method with `public_send`, so that method can be wri
 
 A bare superclass name is looked up the way Ruby looks it up: each level of the enclosing nesting, innermost first, then the top level. `module Api; class UsersController < ApplicationController` means `Api::ApplicationController` when a file or the same file defines that, and `ApplicationController` otherwise. When nothing defines any of them, the chain keeps the bare name as an unread ancestor, so a configured base that has no file of its own still matches by the name the project wrote.
 
+A module given to `include` or `prepend` is looked up the same way, through the same candidates. Inside `module Admin; class ReportsController`, `include Pagination` means `Admin::ReportsController::Pagination`, then `Admin::Pagination`, then `Pagination`, whichever the run defines first. So a concern at the top level is found from inside a namespaced class, and a module of the same name nested closer to the class wins over it, as it does in Ruby. A `resolver:` or `mutation:` reference is looked up the same way too. A module that is already somewhere in the chain the walk is building is left out, because Ruby rejects a cyclic include.
+
 The walk produces the same order Ruby does. Ruby builds a class's ancestors as each `include` runs. It works out the included module's own chain first, inserts that chain as a unit, skips anything already in the ancestors, and never moves a module that an earlier include or the superclass already placed. Two concerns sharing a base give `[C, B, A, Base]` rather than `[C, B, Base, A]`, and a base that the superclass already mixes in stays after the superclass. So the walk builds the superclass chain first, filters every later step against what is already there, and expands each sibling include on its own rather than descending into it with the set the siblings share. `include A, B` mixes in B before A, while `include A` followed by `include B` puts B first, so the walk reads calls in source order and reads a single call's arguments backwards.
 
 The tests check this behavior, and the linearization itself was compared against `Module#ancestors` in a running Ruby process for a diamond, a three-way diamond, a diamond crossing a superclass boundary, `prepend`, multi-argument `include`, a module included twice, and a nested module chain.
@@ -185,10 +187,13 @@ file defines a constant is only settled once every file has been read.
 A class reached by name rather than by a reading site, as an ancestry walk
 reaches it, goes through the naming convention instead: the constant
 underscores to a path, and that path is looked for under the configured root
-and then under each directory directly beneath it. Rails autoloads from every
-directory under `app`, so `ApplicationController` is
-`app/controllers/application_controller.rb`. The root's own file wins where
-both exist, and no other spelling is tried.
+and then under each directory directly beneath it, and last under each
+`concerns` directory inside those. Rails autoloads from every directory under
+`app`, so `ApplicationController` is
+`app/controllers/application_controller.rb`. It autoloads from
+`app/controllers/concerns` and `app/models/concerns` as well, so a concern
+written there as `module Auditable` is found by that bare name. The root's own
+file wins where both exist, and no other spelling is tried.
 
 ## What a class inherits
 

@@ -1,4 +1,6 @@
 class Account < ApplicationRecord
+  include Lapsable
+
   # A bare `connection` inside the model. Ruby sends it to the class, and
   # the class reaches ActiveRecord::Base through ApplicationRecord.
   def self.stale_ids

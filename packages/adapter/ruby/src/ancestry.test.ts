@@ -430,3 +430,134 @@ end
     });
   });
 });
+
+/** The file a found method is written in, or what the lookup came to instead. */
+async function foundIn(
+  files: Record<string, string>,
+  className: string,
+  name: string,
+): Promise<string | MethodLookup> {
+  const found = await lookupInRun(files, className, name);
+  return found.type === "found" ? found.block.file : found;
+}
+
+const TOP_LEVEL_PAGINATION = `
+module Pagination
+  def page_size
+    25
+  end
+end
+`;
+
+describe("a module mixed in by a bare name", () => {
+  it("finds a top-level concern included from inside a namespaced class", async () => {
+    const files = {
+      "/app/pagination.rb": TOP_LEVEL_PAGINATION,
+      "/app/reports.rb": `
+module Admin
+  class ReportsController < Base
+    include Pagination
+  end
+end
+`,
+      "/app/base.rb": BASE,
+    };
+    expect(await foundIn(files, "Admin::ReportsController", "page_size")).toBe(
+      "/app/pagination.rb",
+    );
+    expect(await foundIn(files, "Admin::ReportsController", "expires_in")).toBe(
+      "/app/base.rb",
+    );
+  });
+
+  it("takes the module nested closer to the class over a top-level one of the same name", async () => {
+    const files = {
+      "/app/pagination.rb": TOP_LEVEL_PAGINATION,
+      "/app/admin_pagination.rb": `
+module Admin
+  module Pagination
+    def page_size
+      100
+    end
+  end
+end
+`,
+      "/app/reports.rb": `
+module Admin
+  class ReportsController
+    include Pagination
+  end
+end
+`,
+    };
+    expect(await foundIn(files, "Admin::ReportsController", "page_size")).toBe(
+      "/app/admin_pagination.rb",
+    );
+  });
+
+  it("finds a module given to prepend the same way", async () => {
+    const files = {
+      "/app/pagination.rb": TOP_LEVEL_PAGINATION,
+      "/app/reports.rb": `
+module Admin
+  class ReportsController
+    prepend Pagination
+
+    def page_size
+      10
+    end
+  end
+end
+`,
+    };
+    expect(await foundIn(files, "Admin::ReportsController", "page_size")).toBe(
+      "/app/pagination.rb",
+    );
+  });
+
+  it("stops at an unread module under the name the source wrote", async () => {
+    const files = {
+      "/app/reports.rb": `
+module Admin
+  class ReportsController
+    include Sortable
+  end
+end
+`,
+    };
+    expect(
+      await lookupInRun(files, "Admin::ReportsController", "sort_key"),
+    ).toMatchObject({
+      type: "unsettled",
+      reason: "inherited from Sortable, which this run did not read",
+    });
+  });
+
+  it("ends the walk at a module that includes one already on the way to it", async () => {
+    const files = {
+      "/app/first.rb": `
+module First
+  include Second
+
+  def width
+    1
+  end
+end
+`,
+      "/app/second.rb": `
+module Second
+  include First
+end
+`,
+      "/app/subject.rb": `
+class Subject
+  include First
+end
+`,
+    };
+    expect(await foundIn(files, "Subject", "width")).toBe("/app/first.rb");
+    expect(await foundIn(files, "Subject", "height")).toEqual({
+      type: "none",
+    });
+  });
+});

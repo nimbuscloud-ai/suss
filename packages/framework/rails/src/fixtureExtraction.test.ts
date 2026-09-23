@@ -113,10 +113,11 @@ describe("extraction over fixtures/ruby-rails", () => {
       .filter((s) => s.kind === "handler")
       .map((s) => s.identity.name)
       .sort();
-    // OrdersController, ItemsController and Admin::ReportsController each
-    // define their own index, so the name repeats across three units.
+    // OrdersController, ItemsController, Admin::ReportsController and
+    // Admin::AuditsController each define their own index.
     expect(actionNames).toEqual(
       [
+        "index",
         "index",
         "index",
         "index",
@@ -621,5 +622,61 @@ describe("extraction over fixtures/ruby-rails", () => {
       name: "not_found",
       onThrow: true,
     });
+  });
+
+  it("applies a before_action declared in a concern under app/controllers/concerns", async () => {
+    const { summaries } = await extractFixture();
+    const index = action(summaries, "audits_controller", "index");
+    const applied = (
+      index.metadata?.wrappers as { applied?: { name: string }[] }
+    )?.applied;
+    expect(applied?.map((one) => one.name)).toEqual([
+      "require_login",
+      "require_audit_token",
+      "not_found",
+    ]);
+    expect(
+      index.transitions.some(
+        (t) =>
+          t.output.type === "response" &&
+          t.output.statusCode?.type === "literal" &&
+          t.output.statusCode.value === 403,
+      ),
+    ).toBe(true);
+  });
+
+  it("reaches a concern's method a namespaced controller includes by its bare name", async () => {
+    const { summaries } = await extractFixture();
+    const index = action(summaries, "audits_controller", "index");
+    expect(reaches(index)).toContain("record_audit");
+    const recorded = method(summaries, "record_audit");
+    expect(recorded.location.file).toContain("concerns/audited.rb");
+    expect(reaches(recorded)).toContain(
+      "Account.find(params[:account_id]).lapse!",
+    );
+  });
+
+  it("reaches a model concern's method on an instance of the model", async () => {
+    const { summaries } = await extractFixture();
+    const lapse = method(summaries, "lapse!");
+    expect(lapse.location.file).toContain("models/concerns/lapsable.rb");
+    expect(accesses(lapse)).toEqual([
+      {
+        storageSystem: "postgresql",
+        container: "dim_account",
+        kind: "write",
+        operation: "execute",
+      },
+    ]);
+  });
+
+  it("takes the module in the enclosing namespace over a top-level one of the same name", async () => {
+    const { summaries } = await extractFixture();
+    const pages = summaries.filter(
+      (s) => s.kind === "library" && s.identity.name === "page_size",
+    );
+    expect(pages.map((s) => s.location.file)).toEqual([
+      expect.stringContaining("admin/pagination.rb"),
+    ]);
   });
 });
