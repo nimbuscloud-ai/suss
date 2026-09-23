@@ -87,16 +87,17 @@ export function placeDeclared(
   graph: ModuleGraph,
 ): UnitScope | null {
   const codeScope = readCodeScope(summary);
+  const directory = codeScope.kind === "codeUri" ? codeScope.path : undefined;
   const closure =
     codeScope.entry !== undefined ? entryClosure(codeScope.entry, graph) : null;
   // Falling back to the directory needs one to have been stated.
-  if (closure === null && codeScope.path === undefined) {
+  if (closure === null && directory === undefined) {
     return null;
   }
 
   return {
     unit: summary.identity.deployableUnit,
-    ...(codeScope.path !== undefined ? { codeScope: codeScope.path } : {}),
+    ...(directory !== undefined ? { codeScope: directory } : {}),
     ...(closure !== null ? { closure } : {}),
   };
 }
