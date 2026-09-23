@@ -181,6 +181,34 @@ describe("askWhy", () => {
       expect(answer.headline).toContain("resolves to fetch (helpers.py:1)");
     });
 
+    it("resolves an import of a package kept under src", () => {
+      const pkg = path.join(dir, "src", "shop");
+      fs.mkdirSync(pkg, { recursive: true });
+      fs.writeFileSync(path.join(pkg, "__init__.py"), "");
+      fs.writeFileSync(
+        path.join(pkg, "helpers.py"),
+        "def fetch():\n    return 1\n",
+      );
+      fs.writeFileSync(
+        path.join(pkg, "app.py"),
+        "from shop.helpers import fetch\n\nx = fetch()\n",
+      );
+      const question: ParsedQuestion = {
+        shape: "whyResolves",
+        subject: "fetch",
+        at: { file: "src/shop/app.py", line: 3 },
+        object: "fetch",
+      };
+
+      const answer = askWhy(question, options(), () => {
+        throw new Error("a resolve question should not load summaries");
+      });
+
+      expect(answer.found).toBe(true);
+      expect(answer.headline).toContain("resolves to fetch");
+      expect(answer.headline).toContain("helpers.py:1");
+    });
+
     it("says so and exits without a crash when a name is not on that line", () => {
       fs.writeFileSync(path.join(dir, "app.py"), "x = 1\n");
       const question: ParsedQuestion = {

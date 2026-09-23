@@ -27,6 +27,7 @@ import {
   representativeUnit,
 } from "./callFacts.js";
 import { LANGUAGE_LABEL, languageOfFile } from "./language.js";
+import { pythonSourceRoots } from "./pythonSourceRoots.js";
 import { providesKeyOf, resolveTarget } from "./target.js";
 
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
@@ -70,7 +71,14 @@ const SESSION_FOR: Record<
   (options: { dir: string }) => WhySessionLike
 > = {
   typescript: (options) => new TypeScriptWhySession(options),
-  python: (options) => new PythonWhySession(options),
+  python: (options) =>
+    new PythonWhySession({
+      ...options,
+      roots: [
+        path.resolve(options.dir),
+        ...pythonSourceRoots(options.dir).roots,
+      ],
+    }),
   ruby: (options) => new RubyWhySession(options),
 };
 
