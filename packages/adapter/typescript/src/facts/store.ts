@@ -75,6 +75,13 @@ const JS_RULES = alsoSteps([
     [lit("bindCall", v("r"), v("t"))],
     "bind",
   ),
+  // Object.assign(t, ...) hands back t with the other arguments copied on.
+  rule(
+    "hop",
+    [v("r"), v("t"), VALUE_STEP],
+    [lit("objectAssignCall", v("r"), v("t"))],
+    "Object.assign",
+  ),
 ]);
 
 const RESOLUTION_PROGRAM: OnDemandRules = resolutionProgram(JS_RULES);

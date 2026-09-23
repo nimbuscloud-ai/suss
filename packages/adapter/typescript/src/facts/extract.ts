@@ -998,6 +998,37 @@ function insideMethodBody(call: Node): boolean {
   return false;
 }
 
+/**
+ * The target of `Object.assign(target, ...sources)`, which the call
+ * hands back once the sources are copied onto it. `Object` has to be
+ * the global one, so a project's own object spelled that way is left out.
+ * A literal target is left out too: `Object.assign({}, a, b)` makes a
+ * copy, and the empty literal would stand in for an object it does not
+ * describe.
+ */
+function objectAssignTargetOf(callee: Node, args: Node[]): Expression | null {
+  if (
+    !Node.isPropertyAccessExpression(callee) ||
+    callee.getName() !== "assign"
+  ) {
+    return null;
+  }
+  const receiver = unwrapExpression(callee.getExpression());
+  if (!Node.isIdentifier(receiver) || receiver.getText() !== "Object") {
+    return null;
+  }
+  const declarations = receiver.getSymbol()?.getDeclarations() ?? [];
+  const global = declarations.every((one) =>
+    one.getSourceFile().isDeclarationFile(),
+  );
+  const target = args[0];
+  if (!global || target === undefined || !Node.isExpression(target)) {
+    return null;
+  }
+  const written = unwrapExpression(target);
+  return Node.isObjectLiteralExpression(written) ? null : written;
+}
+
 function emitCallFacts(
   db: Database,
   table: NodeTable,
@@ -1016,6 +1047,11 @@ function emitCallFacts(
     const target = unwrapExpression(callee.getExpression());
     fact(db, "bindCall", callId, emitValue(db, table, target));
     return;
+  }
+
+  const assignTarget = objectAssignTargetOf(callee, call.getArguments());
+  if (assignTarget !== null) {
+    fact(db, "objectAssignCall", callId, emitValue(db, table, assignTarget));
   }
 
   fact(db, "call", callId, emitValue(db, table, callee));

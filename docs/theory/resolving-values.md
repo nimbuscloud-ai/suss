@@ -142,8 +142,10 @@ returns is never contradicted by its annotation.
 
 The rules read relations that no rule derives, so something has to
 supply them. The TypeScript adapter reads most of them out of source,
-and emits two more of its own on top: `bindCall`, for the JavaScript
-`.bind` rule, and `importsModule`, for walking module edges. `extends`,
+and emits three more of its own on top: `bindCall` and
+`objectAssignCall`, for the JavaScript rules that `f.bind(...)` leads
+to `f` and `Object.assign(t, ...)` leads to `t`, and
+`importsModule`, for walking module edges. `extends`,
 `extendsNamed` and `callKeywordArg` come from the Python and Ruby
 adapters. `unwrapsByName`, `wrapperModule` and the `givesBackOne` family
 come from a pack's declarations, so no source file contains them at
