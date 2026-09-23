@@ -1,12 +1,12 @@
 # @suss/terraform-aws
 
-Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and says where the two disagree.
+Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and reports where the two disagree.
 
-Says what AWS's Terraform provider declares, for `@suss/contract-terraform` to read.
+This pack declares what the AWS Terraform provider's resources are, for `@suss/contract-terraform` to read.
 
 ## What this package is
 
-A pack, and nothing but data. The reader walks HCL and knows nothing about any provider; this says that `aws_dynamodb_table` is a store keyed by `hash_key` and `range_key`, that `aws_sqs_queue` is a channel, and which provider versions each of those statements is about.
+A pack, made of data and nothing else. The reader walks HCL and has no knowledge of any provider. This pack declares that `aws_dynamodb_table` is a store keyed by `hash_key` and `range_key`, that `aws_sqs_queue` is a channel, and which provider versions each of those declarations applies to.
 
 ```ts
 import { terraformFileToSummaries } from "@suss/contract-terraform";
@@ -37,13 +37,13 @@ terraformFileToSummaries("infra/terraform/dynamodb", { packs: [awsTerraform()] }
 | `aws_lambda_function` | a deployable, with the variables it sets and the handler it calls |
 | `aws_ecs_task_definition` | a deployable per container, with that container's variables, secrets and image |
 
-Everything else a configuration declares, a security group, a subnet, an IAM policy, is how the deployment is wired rather than something a caller addresses, so nothing reads it.
+Everything else a configuration declares, such as a security group, a subnet or an IAM policy, is part of how the deployment is wired and is not something a caller addresses. So nothing reads it.
 
-A database instance and a Redis cluster are the two that pair with nothing: code addresses tables and key namespaces inside them, and no attribute of either lists one, so each declares the store and claims no access. Kinesis pairs with nothing yet either, since no code pack records a send to a stream. [What each entry decided](./DESIGN.md) says why for each of them, and what an alarm and a metric filter share.
+A database instance and a Redis cluster are the two that do not pair with anything. Code addresses tables and key namespaces inside them, and no attribute of either lists those, so each one declares the store and claims no access. Kinesis does not pair with anything yet either, since no code pack records a send to a stream. [Why each entry reads what it reads](./DESIGN.md) explains each of these, and what an alarm and a metric filter have in common.
 
 ## Why every entry states a version range
 
-The provider moves things between releases. Version 4 split a bucket's settings into resources of their own, so `aws_s3_bucket_server_side_encryption_configuration` is a separate resource in a v4 configuration and an inline block in a v3 one. An entry that describes the v4 shape says so, and a configuration pinned to v3 is read by the entries written for v3 and by none of the others.
+The provider moves things around between releases. Version 4 split a bucket's settings into separate resources, so `aws_s3_bucket_server_side_encryption_configuration` is a separate resource in a v4 configuration and an inline block in a v3 one. An entry written for the v4 layout declares that, and a configuration pinned to v3 is read only by the entries written for v3.
 
 A configuration states its own pin:
 
@@ -55,7 +55,7 @@ terraform {
 }
 ```
 
-The reader takes that pin and hands it to the pack. A configuration that pins nothing is read by every entry, since nothing said otherwise.
+The reader takes that pin and passes it to the pack. A configuration with no pin is read by every entry, since nothing rules any of them out.
 
 Every entry here was written against `>=4 <7`, from these pages of the provider's own documentation:
 
@@ -68,10 +68,10 @@ Every entry here was written against `>=4 <7`, from these pages of the provider'
 
 ## Where it fits in suss
 
-Depends on `@suss/contract-terraform` for the shape of an entry, and on `@suss/ir-core` for the variables each deployment target injects on its own. A pack for another provider, `google` or `cloudflare`, is the same file with different entries.
+The pack depends on `@suss/contract-terraform` for the type of an entry, and on `@suss/ir-core` for the variables each deployment target injects by itself. A pack for another provider, such as `google` or `cloudflare`, is the same file with different entries.
 
 ## More
 
-- [What each entry decided](./DESIGN.md)
+- [Why each entry reads what it reads](./DESIGN.md)
 - [Documentation](https://suss.sh/)
 - [Source and issues](https://github.com/nimbuscloud-ai/suss)
