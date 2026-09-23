@@ -58,7 +58,6 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.7.0",
-    "@iarna/toml": "^2.2.5",
     "@suss/adapter-python": "0.33.1",
     "@suss/adapter-ruby": "0.33.1",
     "@suss/adapter-typescript": "0.33.1",

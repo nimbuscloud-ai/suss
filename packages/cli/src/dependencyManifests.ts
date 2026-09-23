@@ -17,9 +17,9 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { parse as parseToml } from "@iarna/toml";
 import { parsePipRequirementsLine } from "pip-requirements-js";
 
+import { readTomlFile, tableAt } from "@suss/adapter-python";
 import {
   absentReading,
   unreadableReading,
@@ -277,34 +277,6 @@ function joinContinuations(contents: string): string[] {
     joined.push(carried);
   }
   return joined;
-}
-
-export type TomlTable = Record<string, unknown>;
-
-export type TomlFileRead =
-  | { kind: "parsed"; value: unknown }
-  | { kind: "unreadable"; reason: string };
-
-export function readTomlFile(file: string): TomlFileRead {
-  try {
-    return { kind: "parsed", value: parseToml(fs.readFileSync(file, "utf8")) };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { kind: "unreadable", reason: `it is not valid TOML: ${message}` };
-  }
-}
-
-export function tableAt(value: unknown, ...keys: string[]): TomlTable | null {
-  let current = value;
-  for (const key of keys) {
-    if (current === null || typeof current !== "object") {
-      return null;
-    }
-    current = (current as TomlTable)[key];
-  }
-  return current !== null && typeof current === "object"
-    ? (current as TomlTable)
-    : null;
 }
 
 /** pyproject spells dependencies three ways: standard, and Poetry's two. */
