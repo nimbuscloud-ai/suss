@@ -39,7 +39,7 @@ Comparing two sides of a boundary means assuming something about how the protoco
 
 ## Status
 
-The checker runs six checks: provider coverage (with sub-case analysis), consumer satisfaction, contract consistency (status and body shapes), body compatibility (field presence), and semantic condition bridging (Level 5). It pairs boundaries automatically through `checkAll` / `pairSummaries`, and normalizes paths as it goes (`:id` ↔ `{id}`). See [`design/status.md`](../../design/status.md).
+`checkPair` runs seven checks on each pair: provider coverage (with sub-case analysis), response misreads (a field read off a response whose body lacks it), consumer satisfaction, contract consistency (status and body shapes), the consumer against the declared contract, body compatibility (field presence), and semantic condition bridging (Level 5). It pairs boundaries automatically through `checkAll` / `pairSummaries`, and normalizes paths as it goes (`:id` ↔ `{id}`). See [`design/status.md`](../../design/status.md).
 
 ## More
 

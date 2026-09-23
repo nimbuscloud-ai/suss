@@ -132,7 +132,7 @@ Every spelling normalises to the same list on `BoundaryIntentSummary.receives`. 
 
 Reaching those paths from a REST handler takes one more step, and that step is outside this package. A handler reads a header at `request.headers` under Express and at `event.headers` under an AWS Lambda proxy integration. So each pack declares where its handlers read the four parts, the adapter stamps that on every route it recognizes, and `@suss/behavioral-ir` rewrites a read into the section an author wrote. Header names compare case-insensitively.
 
-Every boundary block is a `z.strictObject`, so a misspelt `recieves:` stops the run with `boundary: Unrecognized key: "recieves"` instead of disappearing. The two document shapes, a transition and a scenario are all strict for the same reason, so `scenario:` for `scenarios:`, `respones:` on a transition and `titel:` on a scenario each stop the run. Only unknown keys are rejected. The fields that were optional stay optional, so a module-level function-call boundary can still be authored and `source:` can still be left off.
+Every boundary block is a `z.strictObject`, so a misspelt `recieves:` stops the run with `boundary: Unrecognized key: "recieves"` instead of disappearing. The boundary intent document, the PRD document, a boundary's transition and a PRD scenario are strict objects too, so `scenario:` for `scenarios:`, `respones:` on a transition and `titel:` on a scenario each stop the run. Only unknown keys are rejected. The fields that were optional stay optional, so a module-level function-call boundary can still be authored and `source:` can still be left off.
 
 ## Which boundaries pair, and which are pending
 
@@ -142,7 +142,7 @@ A store has no key either. `storage.ts` in `@suss/ir-core` returns null for a st
 
 What does pair today is a store written as the target of an effect. Put `- writes: aws.dynamodb:Invoices` on an outcome of the boundary that touches the store, and the checker compares it against the storage accesses on that boundary's transitions.
 
-Every boundary kind has its own label in `@suss/ir-core`, `storageLabel` being the one this change added, so an effect always takes a label and never a structured block. A binding with no name at all, such as a REST call whose method and path the code never settles, is left out of a draft. Writing it as a string would give something nobody would type back.
+Every boundary kind has its own label in `@suss/ir-core` (a store's is `storageLabel`), so an effect always takes a label and never a structured block. A binding with no name at all, such as a REST call whose method and path the code never settles, is left out of a draft. Writing it as a string would give something nobody would type back.
 
 ```ts
 import { IntentDocSchema, intentDocToSummary } from "@suss/intent-ir";

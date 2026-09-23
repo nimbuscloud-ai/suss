@@ -36,7 +36,7 @@ registerCrud(app, "users", userHandlers);
 registerCrud(app, "orders", orderHandlers);
 ```
 
-suss reads helpers like this itself now. Before it walks any file, it finds every function the project passes its app to and records what each one registers in terms of its own parameters (`GET /{1}` with the handler at `{2}.list`). Then it fills those in at each call site, so the two calls above give four routes. A config file that still sets the option gets a warning, and in 0.22.0 it stops the run with a line saying so.
+suss reads helpers like this itself now. Before it walks any file, it finds every function the project passes its app to and records what each one registers in terms of its own parameters (`GET /{1}` with the handler at `{2}.list`). Then it fills those in at each call site, so the two calls above give four routes. A config file that still sets the option gets a warning saying to delete it, and the run keeps going without it.
 
 If suss reads a helper and then no call matches it, the helper shows up under `no-helper` in [pack health](../../../docs/guides/fix-an-empty-run.md). The bug is in suss, since suss found the call site in the first place.
 
