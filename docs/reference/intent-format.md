@@ -5,11 +5,11 @@ description: The two kinds of intent document, field by field, and the JSON Sche
 
 # Intent format
 
-An intent document is a file your team writes and commits, saying what a piece of the system should do. `suss check --intent <dir>` reads every `*.intent.yaml` and `*.prd.yaml` under that directory and compares each one against the summaries of what the code does. `.yml` and `.json` work as well, and the `kind` at the top of a file decides which shape it has, whatever the file is called.
+An intent document is a file your team writes and commits, saying what a piece of the system should do. `suss check --intent <dir>` reads every `*.intent.yaml` and `*.prd.yaml` under that directory and compares each one against the summaries of what the code does. `.yml` and `.json` work as well. Whatever the file is called, the `kind` at the top of it sets which fields it takes.
 
 There are two kinds. Boundary intent (`kind: boundary`) says what one boundary should do: every outcome it can produce, what each one turns on, and what each one sends back or does. An engineer writes it, and the checker compares it against the code. A PRD (`kind: prd`) says what should happen for the person using the feature, as scenarios in that person's terms. A scenario can link to an outcome a boundary document declares, and that link ties the words to the code.
 
-[Check against your intent](/guides/check-against-intent) walks through writing both from a codebase that already exists, and [the findings catalog](/reference/findings#intent-findings) says what the checker reports when the two disagree.
+[Check against your intent](/guides/check-against-intent) walks through writing both from a codebase that already exists, and [the findings catalog](/reference/findings#intent-findings) lists what the checker reports when the two disagree.
 
 ## Boundary intent
 
@@ -71,7 +71,7 @@ transitions:
 
 ### The boundary block
 
-`semantics` says which sort of boundary this is, and the rest of the block follows from it. A GraphQL field, a runtime-config read and a metric have no block yet.
+`semantics` is the sort of boundary, and the other fields in the block depend on it. A GraphQL field, a runtime-config read and a metric have no block yet.
 
 A block can leave out what the checker pairs on. The checker reports it as `unkeyableBoundary` and puts it under the unchecked count, so you can write intent ahead of the code.
 
@@ -165,7 +165,7 @@ Each field takes:
 | `items` | no | The shape of an element, when `type` is `array`. |
 | `properties` | no | The fields under it, when `type` is `object`. |
 
-Naming a field is a complete declaration on its own, so `consumer: {}` says the field is there and says nothing more about it. The block lists the fields you want checked, and it can leave the rest out. A field the code reads that the block does not list is reported at info.
+A field with nothing under it is still a complete declaration. `consumer: {}` says the field is there and nothing more. The block lists the fields you want checked, and it can leave the rest out. A field the code reads that the block does not list is reported at info.
 
 ### Transitions
 
@@ -180,7 +180,7 @@ Each transition describes one outcome, and a document has one for every outcome 
 | `throws` | no | The outcome raises an error. |
 | `results` | no | The effects the outcome has. |
 
-A transition ends one way, so it takes at most one of `response`, `returns` and `throws`. It also has to say something, so it needs one of those three or a `results` list.
+A transition ends one way, so it takes at most one of `response`, `returns` and `throws`. It cannot be empty either, so it needs one of those three or a `results` list.
 
 `response` takes a `status` between 100 and 599, required, and an optional `body`. `returns` takes an optional `body`. `throws` takes an optional `errorType`, the name of the error class.
 
@@ -228,7 +228,7 @@ results:
 | `fields` | no | The columns the access touches. |
 | `by` | no | What the access picks the item out by. One name or a list of them. |
 
-`suss ask "what writes aws.dynamodb:Invoices"` is the question and a `results` line is the assertion, spelled the same way. Where a line has a `fields` list, the checker requires that the access cover every column on it.
+A `results` line is spelled the same way as the matching `suss ask` question, here `suss ask "what writes aws.dynamodb:Invoices"`. Where a line has a `fields` list, the checker requires that the access cover every column on it.
 
 ## A PRD
 
@@ -286,7 +286,7 @@ link:
   - order-intake.queued-for-processing
 ```
 
-A scenario can have no `link`. The words read on their own, and nothing has tied them to an outcome yet. The checker reports that as `unlinkedScenario` at info. A link to an outcome nothing declares is `danglingScenarioLink` at warning. A link to a name that two boundary documents share is `ambiguousScenarioLink`, also at warning.
+A scenario can have no `link`. Its words then describe the feature without pointing at any outcome. The checker reports that as `unlinkedScenario` at info. A link to an outcome nothing declares is `danglingScenarioLink` at warning. A link to a name that two boundary documents share is `ambiguousScenarioLink`, also at warning.
 
 ## Where a document came from
 
@@ -298,13 +298,13 @@ A scenario can have no `link`. The words read on their own, and nothing has tied
 | `inferred` | `suss infer` drafted it from the code and nobody has been through it. |
 | `inferred, curated` | `suss infer` drafted it and somebody has been through it. |
 
-The checker reads `source` to decide how loudly to report. A finding against bare `inferred` intent is downgraded one level, because nobody has confirmed the declaration yet. Curating restores the full severity.
+The checker uses `source` to set severity. A finding against bare `inferred` intent is downgraded one level, because nobody has confirmed the declaration yet. Curating restores the full severity.
 
 Curating a boundary document means writing the `purpose` and `audience` that `suss infer` left blank, renaming the outcome ids to what your team calls them, and setting `source` to `"inferred, curated"`. Curating a PRD means writing the `when` and `expect` of every scenario. A draft with a blank still in it does not satisfy the schema, so a run over the folder refuses it and says which files are waiting.
 
 ## The JSON Schema
 
-`@suss/intent-ir` publishes [`intent-doc.schema.json`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/intent-ir/schema/intent-doc.schema.json), generated at build time from the same zod schemas the CLI parses with, so the two say the same thing. A tool in any language can validate a document against it.
+`@suss/intent-ir` publishes [`intent-doc.schema.json`](https://github.com/nimbuscloud-ai/suss/blob/main/packages/intent-ir/schema/intent-doc.schema.json), generated at build time from the same zod schemas the CLI parses with, so the schema and the CLI accept the same documents. A tool in any language can validate a document against it.
 
 To have an editor check a document as you type, put a comment on its first line saying where the schema is. The YAML language server reads that comment, and VS Code and Neovim both run it:
 
@@ -318,6 +318,6 @@ purpose: GET /users/:id retrieves a single user record.
 audience: web-client
 ```
 
-Every field has a description in the schema, so hovering over one says what it means, and completion offers the keys the document kind takes.
+Every field has a description in the schema, so hovering over one shows what it means, and completion offers the keys the document kind takes.
 
 The schema is generated from the authoring side of the zod schemas, so a field with a default is optional in it, the way it is for somebody writing the file by hand. A test in `@suss/intent-ir` runs both the schema and the parser over every intent document in this repository and fails when the two disagree.

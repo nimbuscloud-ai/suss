@@ -151,8 +151,8 @@ all.
 
 Some of them take both. Python's `with httpx.Client() as client` gives
 `entersAs(client, the call)` from the adapter, which says only that the
-block opened over that call. What `__enter__` gave back is the
-library's to decide, so the pack says `entersAsSelf(httpx, Client)`. A
+block opened over that call. What `__enter__` returns depends on the
+library, so the pack declares `entersAsSelf(httpx, Client)`. A
 rule joins the two and `client` resolves to the client.
 
 `packages/resolution/README.md` lists the vocabulary with a line of
@@ -176,8 +176,8 @@ rule(
 ```
 
 Read that as `hop(x, y, value) :- binds(x, y)`. The fourth
-argument is the rule's name. Nothing in the evaluation uses that name; it
-is there so that when suss explains an answer it can say which rule
+argument is the rule's name. Nothing in the evaluation uses that name.
+It is there so that when suss explains an answer it can say which rule
 took each hop, and this one prints as `alias`.
 
 The `kind` column separates three sorts of hop. A value step goes to what
@@ -187,8 +187,9 @@ that hop, because `app` was written as the construction and not as the
 class. A result step runs the call `x` is and goes to what that call
 handed back. Eight more rules turn those single hops into
 `reaches(x, z, kind)`, which is true when you can get from `x` to `z` by
-taking one hop after another, however many that takes. A walk takes the
-strongest kind it stepped, value weakest and result strongest.
+taking one hop after another, however many that takes. A walk records
+the strongest kind of hop it took. Value is the weakest and result the
+strongest.
 
 A construction is an object in its own right, called an allocation site.
 It contains whatever the class's constructor and its other methods put
@@ -228,7 +229,7 @@ a construction runs its constructor under the site it makes, a method
 call runs under the site its receiver is, and a call written as a plain
 name runs under the site the body around it has.
 
-That last one is what keeps a site through a plain function. In
+The last rule is how a site survives a call to a plain function. In
 `this.client = axios.create(url(base))` the call to `url` is written in
 the constructor, so `url` runs under the site being made and its
 parameter comes back to that construction's argument alone. A plain
@@ -236,14 +237,15 @@ function calling another passes the site along the same way, however
 many of them there are. The site is lost only where a call is made
 outside every method body, and then the walk takes every caller.
 
-One level of receiver is all of it. A condition is not read either:
+The rules track only one level of receiver. They do not read a
+condition either:
 `env === "prod" ? a : b` gives both branches under a site, because the
 rules record the branches and do not evaluate the comparison.
 
-`askResolutionUnder` puts the question and `isWrittenAsUnder`,
-`comesToUnder` and `objectOfUnder` read the answers. No context-free
-answer moves: the two closures share their hops, and `reaches` is
-untouched. The three questions run on a program of their own, so a run
+`askResolutionUnder` asks the question, and `isWrittenAsUnder`,
+`comesToUnder` and `objectOfUnder` read the results. A question asked
+without a site gets the same result as before, because the two
+closures share their hops and `reaches` is untouched. The three questions run on a program of their own, so a run
 that never mentions a context is rewritten without the second closure
 and pays nothing for it.
 
@@ -286,7 +288,7 @@ chain.
 ## A worked value graph: the Prisma singleton
 
 `const prisma = global.prisma || new PrismaClient()` is the smallest
-case that shows the shape. The facts above give three edges over four
+case that shows how this works. The facts above give three edges over four
 nodes.
 
 <svg class="suss-diagram" viewBox="0 0 660 336" role="img" aria-labelledby="prisma-title prisma-desc">
@@ -423,11 +425,11 @@ derived that no question ever touched.
 
 So `deriveOnDemand` in `packages/datalog/src/onDemand.ts` rewrites the
 program before it ever runs. This is the magic sets transform. Each
-derived relation gains a companion relation saying which of its rows
-somebody is waiting on, every rule gets that companion as its first
-literal, and demand propagates down each rule body the way the join
-binds variables. A rule that needs `comesTo(y, z)` in order to answer
-`comesTo(x, z)` says so, and the engine derives the inner pair because
+derived relation gets a companion relation listing the rows somebody is
+waiting on, and every rule gets that companion as its first literal.
+Demand then propagates down each rule body the way the join binds
+variables. A rule that needs `comesTo(y, z)` to derive `comesTo(x, z)`
+puts in a demand for it, and the engine derives the inner pair because
 the outer one was asked for. A relation nothing asks for is not derived
 at all.
 
@@ -599,8 +601,8 @@ The three highlighted rows are the `stepsTo` nodes, and they are the
 three lines the command printed. The other twelve are the joins that
 produced those hops and the facts they rest on.
 
-A proof node marked `fact` is a leaf. No rule derived it; the adapter
-emitted it from source. That is what makes an answer checkable: follow
+A proof node marked `fact` is a leaf. No rule derived it, because the
+adapter emitted it from source. That makes an answer checkable: follow
 the tree down and you arrive at lines of source, and where the answer
 is wrong the tree says which fact to doubt.
 

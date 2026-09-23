@@ -9,7 +9,7 @@ description: "Draft a file for a person to finish: a dependency stub, one bounda
 
 - [`suss infer stub`](#suss-infer-stub) drafts a [dependency stub](/guides/teach-a-dependency), a YAML file that describes what a third-party package's exports do so suss can follow calls into a library whose source it cannot read. The draft goes to `suss/stubs/<package>.yaml`. You fill in what each call reaches and what its arguments mean.
 - [`suss infer intent`](#suss-infer-intent) drafts one [boundary intent doc](/guides/check-against-intent) per boundary in a set of summaries, describing what that boundary does today. The drafts go to `intent/`. You fill in what the boundary is for and who observes it, then rename the outcome ids to what your team calls them.
-- [`suss infer prd`](#suss-infer-prd) drafts a product-level document from boundary intent you have already curated, with one scenario per outcome, written beside the intent it read. You write the scenarios themselves; suss supplies the link from each one to the outcome it covers.
+- [`suss infer prd`](#suss-infer-prd) drafts a product-level document from boundary intent you have already curated, with one scenario per outcome, written beside the intent it read. You write the scenarios themselves, and suss supplies the link from each one to the outcome it covers.
 
 Each draft has a placeholder everywhere reading code cannot tell you the answer, and suss refuses to read a file that still has one.
 
@@ -125,7 +125,7 @@ An outcome id comes from the status code, and the body from the shape the handle
         where: settledAt is set
 ```
 
-The last branch spells out its own condition instead of saying `otherwise`. The summary already records its guards as the negations of the ones above it, and these files get hand-edited, so a word meaning "none of the branches above" would quietly change what the document claims as soon as somebody inserts a transition ahead of it. `otherwise` is reserved for a default branch whose guards the summary never recorded. When a guard fits none of these forms, suss writes it out as a sentence, and a `when` you write as one plain string is valid too.
+The last branch spells out its own condition instead of saying `otherwise`. The summary already records its guards as the negations of the ones above it. These files also get edited by hand, and a word meaning "none of the branches above" would quietly change what the document claims as soon as somebody inserts a transition ahead of it. `otherwise` is reserved for a default branch whose guards the summary never recorded. When a guard fits none of these forms, suss writes it out as a sentence, and a `when` you write as one plain string is valid too.
 
 A boundary that is not HTTP gets a doc the same way, and then `results` says what the transition did at other boundaries:
 
@@ -147,11 +147,11 @@ No document for 1 boundary:
   - function-call:reachable: it has no key the checker could pair intent against: a function-call boundary needs package + exportPath
 ```
 
-A store is reported too, for a different reason. Storage has no identity key, so the checker could never pair a document written against one. The report tells you what to do instead: write `- writes: aws.dynamodb:Invoices` on an outcome of the boundary that touches the store.
+A store is reported too, for a different reason. Storage has no identity key, so the checker cannot pair a document written against one. The report tells you what to do instead: write `- writes: aws.dynamodb:Invoices` on an outcome of the boundary that touches the store.
 
-Curating a doc means filling in purpose and audience, renaming the outcome ids to what your team calls them, and setting `source: "inferred, curated"`. `source` is what the checker reads to decide severity: a finding against bare `inferred` intent is downgraded one level, and curation restores it. Until then `suss check --intent` reports which drafts are still waiting.
+Curating a doc means filling in purpose and audience, renaming the outcome ids to what your team calls them, and setting `source: "inferred, curated"`. The checker uses `source` to set severity. A finding against bare `inferred` intent is downgraded one level, and curation restores it. Until then `suss check --intent` reports which drafts are still waiting.
 
-Re-inference is naive. It writes the docs again from the current code and overwrites whatever you had curated. Use `--into` to put a fresh run beside the curated one so you can reconcile the two by hand.
+Re-inference does not keep your edits. It writes the docs again from the current code and overwrites whatever you had curated. Use `--into` to put a fresh run beside the curated one so you can reconcile the two by hand.
 
 ## `suss infer prd`
 

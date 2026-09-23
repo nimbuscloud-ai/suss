@@ -133,7 +133,7 @@ The `id` is content-addressed: `${functionName}:${terminalKind}:${statusKey}:${h
 
 ## One effect
 
-The transition above has an `invocation` effect, which records that a call fired and with what. The other layer is `interaction`, the typed boundary crossings. This one is from `suss extract -f aws-lambda -f aws-dynamodb` over a Lambda that reads a DynamoDB table:
+The transition above has an `invocation` effect, which records that a call fired and what it was passed. The other kind is `interaction`, which records a typed boundary crossing. This one is from `suss extract -f aws-lambda -f aws-dynamodb` over a Lambda that reads a DynamoDB table:
 
 ```json
 {
@@ -162,7 +162,7 @@ The transition above has an `invocation` effect, which records that a call fired
 
 A transition lists each effect once, however many sites on that path produced it. The repeats become `count`, so a path that calls the same validator thirteen times has one effect with `"count": 13`, and a path that calls it once has no `count` at all. `callee` is the source text with its whitespace collapsed, so a chain broken across lines and the same chain written on one line are one effect.
 
-Every `interaction` includes the `BoundaryBinding` of the thing it talks to, so the checker can pair it against whatever declares that thing, such as a Prisma schema or a CloudFormation table. The eight classes are `storage-access`, `service-call`, `message-send`, `message-receive`, `unit-invoke`, `config-read`, `metadata-read` and `schedule`. [IR types](/reference/ir#effect) has each one's fields.
+Every `interaction` includes the `BoundaryBinding` of the resource it reaches, so the checker can pair it against whatever declares that thing, such as a Prisma schema or a CloudFormation table. The eight classes are `storage-access`, `service-call`, `message-send`, `message-receive`, `unit-invoke`, `config-read`, `metadata-read` and `schedule`. [IR types](/reference/ir#effect) has each one's fields.
 
 ## How two summaries pair
 
@@ -174,7 +174,7 @@ An identity field is null when the source never said what it is. A send whose qu
 { "name": "message-bus", "messageBus": "aws_sqs", "channel": null }
 ```
 
-That summary pairs with nothing, and suss means it to. Pairing a null against whatever the source text happened to spell would put two unrelated boundaries together. A REST `method` of `"*"` means the handler responds to every method, and it pairs with whatever method each consumer uses.
+That summary pairs with nothing on purpose. Pairing a null against whatever the source text happened to spell would put two unrelated boundaries together. A REST `method` of `"*"` means the handler responds to every method, and it pairs with whatever method each consumer uses.
 
 ### Route paths
 
@@ -214,7 +214,7 @@ The format is stable enough to build on. These are the guarantees:
 - **Adding an interaction class, a code unit kind or a semantics variant is additive.** A tool that dispatches on `class`, `kind` or `semantics.name` needs a default branch, and it never gets a new required field on a shape it already reads.
 - **Transition ids survive reordering and reformatting.** They are computed from the condition chain's source text, with source offsets left out, so a diff across two points in time matches by id.
 - **A null identity field means the source did not say.** It never means the empty string, which is invalid from version 2 on.
-- **The JSON is the canonical artifact.** The text `suss inspect` prints is written for people to read, and it changes with the CLI, so build your tool on the JSON. [Format stability](/reference/cli/inspect#format-stability) covers the parts of the text that do stay put.
+- **The JSON is the canonical artifact.** The text `suss inspect` prints is written for people to read, and it changes with the CLI, so build your tool on the JSON. [Format stability](/reference/cli/inspect#format-stability) lists the parts of the text that do stay put.
 
 Two ways to read a file:
 

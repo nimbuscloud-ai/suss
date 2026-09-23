@@ -26,7 +26,7 @@ suss extract [-p <tsconfig> | --dir <directory>] [--lang typescript|python|ruby]
 | `--gaps <mode>` | `permissive` | `permissive` records in the summary the returns and declared statuses a pack could not account for. `strict` records the same and then exits non-zero. `silent` skips gap detection. |
 | `--explain` | off | Print where the summaries came from, file by file and pack by pack. A run that found nothing prints it either way. |
 | `--timing` | off | Print how long each phase took, to stderr. |
-| `--datalog-profile` | off | Print what the Datalog evaluator spent its time on, rule by rule, with how many rows its joins read. Reach for it when `--timing` says the rules phase is the slow one. |
+| `--datalog-profile` | off | Print what the Datalog evaluator spent its time on, rule by rule, with how many rows its joins read. Use it when `--timing` shows the rules phase is the slow one. |
 | `--no-cache` | off | Skip the on-disk cache for this run. |
 | `--allow-empty` | off | Exit `0` even when the run produced nothing. Without it that run fails, because a silent zero looks the same in CI as a passing check. |
 | `--fail-on-pack-error` | off | Exit non-zero when a pack throws while it reads. By default the run reports the throw and keeps going with the other packs. |
