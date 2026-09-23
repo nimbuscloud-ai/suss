@@ -1,42 +1,32 @@
 /**
- * @suss/framework-bigquery-python: which calls a Python body makes
- * against BigQuery.
- *
- * Two libraries reach the same warehouse. `google-cloud-bigquery` hands
- * a project a `Client`, and the Google provider for Airflow hands it a
- * `BigQueryHook` that wraps one. Both take the statement the project
- * wrote, so the adapter reads it through the value evaluator and the
- * SQL reader says which table it touches. The README says what each
- * method is read as and what this leaves out.
+ * The calls a Python body makes against BigQuery, through the
+ * `google-cloud-bigquery` client or the Airflow Google provider's hook.
+ * The adapter reads each statement through the value evaluator and
+ * `@suss/sql` finds the tables in it. The README lists what each method
+ * is read as and what the pack leaves out.
  */
 
 import type { PythonPack, SqlClientPattern } from "@suss/adapter-python";
 import type { PackDeclaration } from "@suss/ir-core";
 
-/** BigQuery's name in the style of OpenTelemetry's `db.system` values. */
+/** Spelled the way OpenTelemetry writes its `db.system` values. */
 const STORAGE_SYSTEM = "gcp.bigquery";
 
-/** The dialect BigQuery statements are written in, which `@suss/sql` reads under that name. */
+/** `@suss/sql` looks the dialect up by this name. */
 const DIALECT = "bigquery";
 
-/** The module the client library exports its client from. */
 const CLIENT_MODULE = "google.cloud.bigquery";
 
-/** The module the Airflow provider exports its hook from. */
 const HOOK_MODULE = "airflow.providers.google.cloud.hooks.bigquery";
 
-/**
- * The client's own calls that take a statement. Each takes it first
- * positionally and also under the keyword the library gives it.
- */
 const CLIENT_STATEMENTS = [
   { method: "query", argument: 0, keyword: "query" },
   { method: "query_and_wait", argument: 0, keyword: "query" },
 ];
 
 /**
- * The client's calls that say which table rather than writing SQL. The
- * loaders take the table second, after the rows they are loading.
+ * Calls that take a table name instead of SQL. The loaders take the table
+ * second, after the rows they load.
  */
 const CLIENT_TABLES = [
   { method: "get_table", argument: 0, keyword: "table", kind: "read" as const },
@@ -86,9 +76,8 @@ const CLIENT_TABLES = [
 ];
 
 /**
- * The hook's calls that take a statement. `insert_job` takes a whole job
- * configuration, and the statement is two keys inside it. `run_query` is
- * the older spelling of the same thing.
+ * `insert_job` takes a whole job configuration, with the statement two
+ * keys down. `run_query` is the older spelling of the same call.
  */
 const HOOK_STATEMENTS = [
   { method: "get_records", argument: 0, keyword: "sql" },
@@ -103,7 +92,6 @@ const HOOK_STATEMENTS = [
   },
 ];
 
-/** The hook's calls that say which table. It spells the argument `table_id`. */
 const HOOK_TABLES = [
   {
     method: "delete_table",
@@ -114,9 +102,8 @@ const HOOK_TABLES = [
 ];
 
 /**
- * What the two libraries hand a project, and what a call on one means.
- * Everything here is the libraries' own: the modules, the class names,
- * the method names, and where each method takes what it is given.
+ * The BigQuery client and the Airflow hook, with the calls on each that
+ * take a statement or a table. Only the libraries' own names go here.
  */
 export function bigqueryClients(): SqlClientPattern[] {
   return [
@@ -133,8 +120,8 @@ export function bigqueryClients(): SqlClientPattern[] {
       clientTypes: ["BigQueryHook"],
       statements: HOOK_STATEMENTS,
       tables: HOOK_TABLES,
-      // The hook documents `get_client` as handing back the client
-      // library's own `Client`, so a chain off it reads as one.
+      // The hook documents `get_client` as returning the client library's
+      // own `Client`, so a chain off it is read the same way.
       handsBack: [
         { method: "get_client", module: CLIENT_MODULE, name: "Client" },
       ],
@@ -145,9 +132,9 @@ export function bigqueryClients(): SqlClientPattern[] {
 }
 
 /**
- * Add the BigQuery patterns to the route pack a run already uses. A web
- * framework and a warehouse client are separate libraries and a project
- * picks both, so this composes rather than replacing anything.
+ * Adds the BigQuery patterns to the route pack a run already uses. A
+ * project picks its web framework and its warehouse client separately,
+ * so the two packs combine.
  */
 export function withBigquery(pack: PythonPack): PythonPack {
   return {
@@ -165,7 +152,6 @@ export function bigqueryFramework(): PythonPack {
   };
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "effects",
   package: "@suss/framework-bigquery-python",
