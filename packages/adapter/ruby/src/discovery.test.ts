@@ -511,6 +511,29 @@ describe("discoverUnits: mutation: / resolver: one-hop wiring", () => {
     });
   });
 
+  it("finds a resolver class written as a bare name the way Ruby looks it up", async () => {
+    write(
+      "campaign_query.rb",
+      "class CampaignQuery < Queries::BaseQuery\n" +
+        "  type Types::CampaignType, null: true\n" +
+        "end\n",
+    );
+    const tree = await parseRuby(
+      "class Types::QueryType < Types::BaseObject\n" +
+        "  field :campaign, resolver: CampaignQuery\n" +
+        "end\n",
+    );
+    const units = await discoverUnits(tree.rootNode, {
+      packs: [pack],
+      filePath: "types/query_type.rb",
+      cache: diskCache(),
+    });
+    expect(units[0]?.graphqlDeclaredContract?.returnType).toEqual({
+      type: "ref",
+      name: "Campaign",
+    });
+  });
+
   it("defaults a graphql-ruby argument to required when the keyword is absent", async () => {
     write(
       "queries/campaign_query.rb",
