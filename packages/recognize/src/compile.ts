@@ -598,9 +598,11 @@ function messageSend(matched: Matched): Effect[] | null {
   // service that sends read as one that sends nothing.
   const messages = messagesIn(input, ending.messages);
   const sent = messages.length === 0 ? [NOTHING_STATED] : messages;
-  return sent.flatMap((message) =>
-    channelsOf({ message, input, ending }).map(
-      (channel): Effect => ({
+  const effects: Effect[] = [];
+  for (const message of sent) {
+    const channels = channelsOf({ message, input, ending });
+    for (const channel of channels) {
+      effects.push({
         type: "interaction",
         binding: messageBusBinding({
           recognition,
@@ -613,9 +615,10 @@ function messageSend(matched: Matched): Effect[] | null {
           ...bodyOf(message, ending),
           ...routingKeyOf(message, ending),
         },
-      }),
-    ),
-  );
+      });
+    }
+  }
+  return effects;
 }
 
 /** Each message the call sends, however the library takes them. */
