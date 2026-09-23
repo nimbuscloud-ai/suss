@@ -1,5 +1,4 @@
-// entryClosure.ts: which files a runtime's handler entry reaches
-// through imports.
+// Which files a runtime's handler entry reaches through imports.
 
 import { readModuleImports } from "../metadata.js";
 
@@ -24,10 +23,10 @@ export function buildModuleGraph(
 /**
  * Every file the entry reaches through the graph, the entry's own file
  * included. The entry comes from a template's `Handler`, written
- * without an extension ("src/handlers/confirm"), so it matches a graph
- * file by comparing with the extension stripped. Null when no file
- * matches the entry, which means the graph cannot say what the runtime
- * loads and the caller falls back to the directory.
+ * without an extension ("src/handlers/confirm"), so it is compared with
+ * each graph file's extension stripped. Null when no file matches the
+ * entry. The graph then does not show what the runtime loads, and the
+ * caller falls back to the directory.
  */
 export function entryClosure(
   entry: string,
@@ -51,7 +50,7 @@ export function entryClosure(
   const queue = [entryFile];
   while (queue.length > 0) {
     const file = queue.pop();
-    // The loop condition guarantees one; this keeps the narrowing.
+    // The loop condition guarantees a file. The check only narrows the type.
     /* v8 ignore start */
     if (file === undefined) {
       break;

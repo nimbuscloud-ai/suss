@@ -1,10 +1,10 @@
 /**
- * The work both channels do before either can say anything: place every
- * runtime against the code it runs, and group the units by file.
+ * The setup both deployment lookups share: place every runtime against
+ * the code it runs, and group the units by file.
  *
- * Both `deployedValues` and `deployedRefs` need it, and a caller that
- * wants both, which is anything asking a `Deployment`, would otherwise
- * walk the module graph twice for one result.
+ * `deployedValues` and `deployedRefs` both need it. A caller that wants
+ * both, which is anything that builds a `Deployment`, would otherwise
+ * walk the module graph twice.
  */
 
 import { buildModuleGraph } from "./entryClosure.js";
@@ -19,7 +19,7 @@ import type { UnitsByFile } from "./unitScope.js";
 export interface DeploymentScope {
   placed: PlacedRuntime[];
   byFile: UnitsByFile;
-  /** Kept so a caller placing other declared summaries reuses it. */
+  /** Kept so a caller placing more declared summaries can reuse it. */
   graph: ModuleGraph;
 }
 

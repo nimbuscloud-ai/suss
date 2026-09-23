@@ -1,16 +1,14 @@
 /**
- * What a branch guard turns on, said in boundaries rather than in the
- * names the source happened to use.
+ * What a branch guard depends on, expressed as boundaries and not as
+ * the local names the source used.
  *
  * A route that returns 404 when a table has no such row records that as
  * a truthiness check on the result of `dynamo.send`, and records
  * `dynamo.send` as a read of `aws.dynamodb:Invoices` in the same unit.
- * Joining the two says the 404 turns on a read of that table finding
- * nothing, which survives a rename of `dynamo` and which a checker can
- * compare.
- *
- * The join spans the unit rather than the transition: the call runs
- * before the branch, and only the path past it records the effect.
+ * Joining the two shows that the 404 depends on a read of that table
+ * finding nothing. That survives a rename of `dynamo`, and a checker
+ * can compare it. The join covers the whole unit, because the call runs
+ * before the branch and only the path past it records the effect.
  */
 
 import { relationsOf } from "./relations.js";
@@ -51,19 +49,20 @@ export interface BoundaryGuard {
    * caller can tell which of its conditions are already accounted for.
    */
   condition: Predicate;
-  /** The guard inside it, which is what a sentence would write out. */
+  /** The guard inside `condition`, the part a sentence about it writes out. */
   predicate: Predicate;
 }
 
-/** One call that crosses a boundary, by the name the source calls it. */
+/** One call that crosses a boundary: what it does there, and which boundary. */
 export interface BoundaryCall {
   does: Relation;
   binding: BoundaryBinding;
 }
 
 /**
- * The calls this unit makes that cross a boundary. A guard reading one
- * of those results says which boundary through this.
+ * The calls this unit makes that cross a boundary, keyed by callee. A
+ * guard that reads one of their results is joined to its boundary
+ * through this map.
  */
 export function boundaryCalls(
   summary: BehavioralSummary,
@@ -85,9 +84,9 @@ export function boundaryCalls(
 }
 
 /**
- * Every guard on this transition that says which boundary. A guard the
- * join cannot settle is left out, and whatever wants a line for it
- * writes the guard itself instead.
+ * Every guard on this transition that can be joined to a boundary. A
+ * guard the join cannot resolve is left out, and a caller that wants to
+ * describe it writes out the guard itself.
  */
 export function boundaryGuardsOf(
   transition: Transition,
@@ -139,8 +138,8 @@ function flipped(polarity: Polarity, negated: boolean): Polarity {
 }
 
 /**
- * Whether the guard passed because its subject was there. Null for a
- * guard that asks something else, a comparison or a type check.
+ * Whether the guard passed because its subject was there. Null for any
+ * other kind of guard, such as a comparison or a type check.
  */
 export function polarityOf(condition: Predicate): Polarity | null {
   if (condition.type === "truthinessCheck") {

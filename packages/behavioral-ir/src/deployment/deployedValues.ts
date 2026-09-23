@@ -1,15 +1,14 @@
 /**
- * deployedValues.ts: what the deployment sets a variable to, for the
- * code that runs in it.
+ * What the deployment sets a variable to, for the code that runs in it.
  *
  * A name filled in at deploy time is written one way in the source and
- * another way in the thing that runs it. `{SUBSCRIBER_TABLE}` in the
- * code and `prod-subscribers-v1` in the template are one table, and
- * pairing the two means asking the runtime.
+ * another way in the template that deploys it. `{SUBSCRIBER_TABLE}` in
+ * the code and `prod-subscribers-v1` in the template are one table, and
+ * pairing the two means looking the variable up in the runtime.
  *
- * Scope decides the answer. Two services in one repository can both
- * set `API_BASE` to different hosts, so a lookup asks which runtime
- * the code in question runs in rather than taking the first match.
+ * The answer depends on scope. Two services in one repository can both
+ * set `API_BASE` to different hosts, so a lookup checks which runtime
+ * the code in question runs in and does not take the first match.
  */
 
 import { readRuntimeContractMetadata } from "../metadata.js";
@@ -25,10 +24,11 @@ export interface DeployedValue {
 }
 
 /**
- * Ask what a variable is set to, for a given unit.
+ * A lookup of the values a variable is set to, for a given unit.
  *
- * Empty when no runtime in the run sets it, or when the runtimes that
- * do are not the ones this unit runs in.
+ * The lookup returns an empty list when no runtime in the run sets the
+ * variable, or when the runtimes that do are not the ones this unit
+ * runs in.
  */
 export function deployedValues(
   summaries: BehavioralSummary[],

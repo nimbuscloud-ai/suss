@@ -1,16 +1,16 @@
 /**
  * Which code each declared runtime runs.
  *
- * A runtime-config provider says what a deployable is given and where
- * its code is. Working out which summaries that covers is the same
- * question whether you are checking that a variable is supplied or
- * asking what a variable is set to, so both passes ask it here.
+ * A runtime-config provider declares what a deployable is given and
+ * where its code is. The check that a variable is supplied and the
+ * lookup of what a variable is set to both need the summaries that
+ * covers, so both use this module.
  *
- * Two things can say where the code is, and either will do. A handler
- * entry that matches a module gives the import closure, which is the
- * exact answer. A source directory gives a prefix, which is the rough
- * one. A Terraform configuration states only the handler, since the
- * zip it deploys is built somewhere the configuration never says.
+ * Either of two things places the code. A handler entry that matches a
+ * module gives its import closure, which is exact. A source directory
+ * gives a path prefix, which is approximate. A Terraform configuration
+ * gives only the handler, because the zip it deploys is built somewhere
+ * the configuration never mentions.
  */
 
 import { bindingIs } from "@suss/ir-core";
@@ -22,7 +22,7 @@ import type { BehavioralSummary, BoundaryBinding } from "../index.js";
 import type { ModuleGraph } from "./entryClosure.js";
 import type { UnitScope } from "./unitScope.js";
 
-/** A runtime and the answer to "which code runs in it". */
+/** A runtime and the scope of the code that runs in it. */
 export interface PlacedRuntime {
   runtime: BehavioralSummary;
   binding: BoundaryBinding;
@@ -30,11 +30,11 @@ export interface PlacedRuntime {
 }
 
 export interface Placement {
-  /** The runtimes whose code scope this could work out. */
+  /** The runtimes whose code scope could be worked out. */
   placed: PlacedRuntime[];
   /**
-   * The runtimes that said nothing about where their code is, paired
-   * with the binding a caller needs to report them.
+   * The runtimes that do not say where their code is, each with the
+   * binding a caller needs to report it.
    */
   unplaced: Array<{ runtime: BehavioralSummary; binding: BoundaryBinding }>;
 }
@@ -77,10 +77,10 @@ export function placeRuntimes(
 
 /**
  * Which code runs in the unit a declared summary describes, from the
- * code scope it states. An entry that matches a file in the module
- * graph gives that entry's import closure, which decides membership
- * instead of the directory. Null when the summary states neither a
- * matching entry nor a directory.
+ * code scope it gives. An entry that matches a file in the module graph
+ * gives that entry's import closure, and the closure is used in place
+ * of the directory. Null when the summary gives neither a matching
+ * entry nor a directory.
  */
 export function placeDeclared(
   summary: BehavioralSummary,

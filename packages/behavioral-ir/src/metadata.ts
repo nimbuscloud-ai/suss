@@ -1,16 +1,15 @@
 /**
  * The typed namespaces inside a summary's metadata bag.
  *
- * A namespace is a claim two parties share: a contract reader writes it
- * and a checker or renderer reads it back. Both sides import the schema
- * from here, so renaming a field is a compile error at both ends. While
- * this was only a convention, writers and readers cast the same objects
- * by hand and renaming a key made findings disappear with no error
- * anywhere.
+ * A namespace is data two parties share: a contract reader writes it,
+ * and a checker or renderer reads it back. Both import the schema from
+ * here, so renaming a field is a compile error at both ends. Without
+ * the shared schema, a renamed key would make findings disappear with
+ * no error anywhere.
  *
  * Reading validates one field at a time. A field that does not parse
- * gets dropped and its siblings still come through, so an artifact
- * written before a namespace changed gives up what it still can.
+ * is dropped and its siblings still come through, so an artifact
+ * written before a namespace changed still yields the fields that parse.
  */
 
 import { z } from "zod";
@@ -22,9 +21,8 @@ import type { BehavioralSummary, Transition } from "./index.js";
 /**
  * What the message-bus contract reader records beside a summary's
  * binding: the queue a consumer drains, the rule or subscription and
- * bus a subscription came from, how far a rule's EventPattern, an SNS
- * FilterPolicy, or an S3 notification Filter reduced, and which S3
- * events and target an S3 bucket notification points at.
+ * bus a consumer came from, how far a filter pattern reduced, and which
+ * S3 events and target a bucket notification points at.
  */
 export const MessageBusMetadataSchema = z.object({
   /** CFN logical id of the queue a subject-channelled consumer drains. */
@@ -59,10 +57,10 @@ export const MessageBusMetadataSchema = z.object({
    */
   enabled: z.boolean().optional(),
   /**
-   * "aws_sqs" when an SNS subscription delivers through a queue rather
-   * than invoking the function directly, the SAM SqsSubscription
-   * shape. The `queue` field then says which queue, or
-   * "<sam-managed>" for the one SAM creates outside the template.
+   * "aws_sqs" when an SNS subscription delivers through a queue instead
+   * of invoking the function directly, as SAM's SqsSubscription does.
+   * The `queue` field then gives the queue, or "<sam-managed>" for the
+   * one SAM creates outside the template.
    */
   deliveredThrough: z.literal("aws_sqs").optional(),
   /** Whether a declared queue is FIFO. */
@@ -161,8 +159,9 @@ const WrapperReferenceSchema = z.object({
   name: z.string(),
   /**
    * The line that summary starts on, set when the name alone does not
-   * pick it out of the file. A function written out at its registration
-   * goes by the registering method, and one file can register several.
+   * pick it out of the file. An inline function passed at its
+   * registration is named after the registering method, and one file
+   * can register several.
    */
   line: z.number().optional(),
   /**
@@ -182,9 +181,9 @@ const WrapperMetadataSchema = z.object({
   /** Every wrapper registered on the routable this unit was registered on. Set on a summary. */
   applied: z.array(WrapperReferenceSchema).optional(),
   /**
-   * Set on a transition composition brought in: the wrapper whose body
-   * produced this outcome. A transition the unit's own body produced
-   * has none, which is how a reader tells the two apart.
+   * Set on a transition that composition added: the wrapper whose body
+   * produced this outcome. A transition from the unit's own body has
+   * none, which is how a reader tells the two apart.
    */
   from: WrapperReferenceSchema.optional(),
 });
@@ -195,14 +194,14 @@ export type WrapperMetadata = z.infer<typeof WrapperMetadataSchema>;
 export type WrapperReference = z.infer<typeof WrapperReferenceSchema>;
 
 /**
- * A handler's wire behaviour is not only what its own body does.
+ * A handler's wire behavior includes more than its own body.
  * Middleware, error handlers and validation hooks produce responses for
  * it without appearing in it, so a unit records which ones run around
- * it, and each outcome one of them contributed says which one that was.
+ * it, and each outcome one of them contributed records which one.
  *
- * An `applied` entry points at the wrapper's own summary the way
- * `sourceDocument` points at a schema. What the wrapper does lives on
- * that summary, in its transitions.
+ * An `applied` entry points at the wrapper's own summary, as
+ * `sourceDocument` points at a schema. The wrapper's behavior is in
+ * that summary's transitions.
  */
 export function withWrapperMetadata(
   metadata: Record<string, unknown> | undefined,
@@ -216,8 +215,8 @@ export function withWrapperMetadata(
 
 /**
  * The wrappers namespace on a summary or one of its transitions.
- * `applied` lives on the summary and `from` on the transition, and both
- * carriers have a `metadata` bag of the same kind, so one reader covers
+ * `applied` is set on the summary and `from` on the transition, and
+ * both have a `metadata` bag of the same kind, so one reader covers
  * both.
  */
 export function readWrapperMetadata(
@@ -285,8 +284,8 @@ export const RuntimeContractMetadataSchema = z.object({
   /**
    * The function the platform calls, verbatim: a Lambda `handler`, a
    * Cloud Functions `entry_point`. `codeScope.entry` is the file this
-   * resolves to; this is what the configuration wrote, which is the
-   * only thing to show a reader when nothing resolved.
+   * resolves to. This field keeps what the configuration wrote, which is
+   * all a reader can be shown when nothing resolved.
    */
   entryPoint: z.string().optional(),
   /**
@@ -344,13 +343,11 @@ const RoutingMatchConditionSchema = z.object({
 });
 
 /**
- * A non-forward action's response: the fixed-response listener default
- * the flow-reachability fixture uses gives a status, a content type,
- * and a body. Other non-forward action types (redirect,
- * authenticate-cognito, authenticate-oidc) still produce a record, with
- * `type` set to the action's own CFN type string and no further fields,
- * since v0 does not read them. Null when the template declares no
- * action at all.
+ * A non-forward action's response. A fixed-response action gives a
+ * status, a content type and a body. Other non-forward actions, such as
+ * a redirect, still produce a record, with `type` set to the action's
+ * CFN type string and no other fields, since v0 does not read them.
+ * `type` is null when the template declares no action at all.
  */
 const RoutingResponseSchema = z.object({
   type: z.string().nullable(),
@@ -363,8 +360,8 @@ const RoutingResponseSchema = z.object({
  * A reference the template makes that the CFN reader could not resolve
  * to a declared resource of the expected kind: the value as written (or
  * its JSON when it is not a plain string), and why resolution stopped.
- * Recorded rather than dropped, so an edge with nothing behind it in
- * the template is a fact about the template, not a gap in the reader.
+ * It is recorded instead of dropped, so an edge with nothing behind it
+ * is reported as a fact about the template.
  */
 const UnresolvedRoutingRefSchema = z.object({
   reference: z.string(),
@@ -373,24 +370,17 @@ const UnresolvedRoutingRefSchema = z.object({
 
 /**
  * What the ALB flow contract reader records beside a summary's
- * identity: one row per routing edge `design/proposals/
- * flow-reachability.md` describes. `edge` says which relation this
- * summary states; the other fields contain that relation's own data. One
- * summary states exactly one edge, the same way one CFN resource states
- * one thing.
+ * identity: one routing edge per summary. `edge` gives the kind:
  *
- *   routesTo   a listener rule, or a listener's own forward default
- *              action, naming the target group its match forwards to.
- *   answers    a listener rule's or a listener's own non-forward
- *              action: the response a matched (or unmatched, for a
- *              listener default) path gets without forwarding
- *              anywhere.
- *   fronts     a target group naming the resource that backs it.
- *   belongsTo  a listener naming the load balancer it belongs to, so
- *              a chain of balancers (an NLB fronting an ALB) composes:
- *              a `fronts` edge ends at the fronted balancer's logical
- *              id, and this edge is how a walk continues into that
- *              balancer's own listeners.
+ *   routesTo   a listener rule or forward default action, and the
+ *              target group its match forwards to.
+ *   answers    a non-forward action, and the response a matched path
+ *              (or an unmatched one, for a listener default) gets.
+ *   fronts     a target group, and the resource that backs it.
+ *   belongsTo  a listener, and the load balancer it belongs to. A
+ *              `fronts` edge can end at another balancer (an NLB in
+ *              front of an ALB), and a walk continues into that
+ *              balancer's listeners through this edge.
  */
 export const RoutingMetadataSchema = z.object({
   edge: z.enum(["routesTo", "answers", "fronts", "belongsTo"]),
@@ -416,13 +406,13 @@ export const RoutingMetadataSchema = z.object({
   /** routesTo / answers: every condition field the rule declares. Empty when the rule (or the listener default) declares none. */
   conditions: z.array(RoutingMatchConditionSchema).optional(),
   /**
-   * routesTo / answers: which condition language the match's
-   * conditions are written in ("alb"), so a reachability pass can hand
-   * the record to the matcher that owns that language. The languages
-   * disagree in corners (an ALB `*` crosses `/`; Express changed its
-   * own rules across majors), so no matcher may evaluate a record
-   * outside its language: a match whose language has no matcher is
-   * reachable-unknown, never admitted and never refused.
+   * routesTo / answers: the condition language the match's conditions
+   * are written in ("alb"), so a reachability pass can pass the record
+   * to the matcher for that language. The languages disagree in corners
+   * (an ALB `*` crosses `/`, and Express changed its own rules across
+   * majors), so no matcher may evaluate a record outside its language.
+   * A match whose language has no matcher is reachable-unknown, and is
+   * never admitted or refused.
    */
   matchLanguage: z.string().optional(),
   /** routesTo: this target's share of a weighted ForwardConfig, when the action lists more than one target group. */
@@ -434,8 +424,8 @@ export const RoutingMetadataSchema = z.object({
    * or a Lambda function's `instanceName`, or another load balancer's
    * logical id when a target group fronts one directly (an NLB in
    * front of an ALB). belongsTo: the load balancer the listener
-   * belongs to. Spelled the same way the resource's own summary spells
-   * itself, so a later join finds it by string equality.
+   * belongs to. Written the same way the resource's own summary
+   * identifies it, so a later join finds it by string equality.
    */
   resource: z.string().nullable().optional(),
   unresolvedResource: UnresolvedRoutingRefSchema.optional(),
@@ -445,8 +435,8 @@ export type RoutingMetadata = z.infer<typeof RoutingMetadataSchema>;
 
 /**
  * A metadata bag with the routing namespace set. Writes are strict: a
- * field the schema does not name throws here, next to its cause. Reads
- * stay lenient so older artifacts keep reading.
+ * field the schema does not declare throws here, next to its cause.
+ * Reads stay lenient so older artifacts keep reading.
  */
 export function withRoutingMetadata(
   metadata: Record<string, unknown> | undefined,
@@ -472,7 +462,7 @@ const GraphqlContractProvenanceSchema = z.enum(["derived", "independent"]);
  * same source (an SDL field driving both), so comparing them against
  * each other would be tautological. "independent": a separate
  * statement, such as a server-side framework's own type declarations
- * against an SDL, worth comparing.
+ * against an SDL, which is useful to compare.
  */
 export type GraphqlContractProvenance = z.infer<
   typeof GraphqlContractProvenanceSchema
@@ -481,8 +471,8 @@ export type GraphqlContractProvenance = z.infer<
 /**
  * A resolver field's declared shape, as one source states it: a return
  * type, its arguments, and the error types it may throw. Two sources
- * naming the same `Type.field` boundary each have one of these, and
- * the checker compares them.
+ * that describe the same `Type.field` boundary each have one of these,
+ * and the checker compares them.
  */
 const GraphqlDeclaredContractSchema = z.object({
   /** Declared return shape for this resolver field. */
@@ -500,14 +490,14 @@ const GraphqlDeclaredContractSchema = z.object({
     }),
   ),
   /**
-   * Error variants the resolver may throw. Most contracts don't
-   * enumerate these; absent means the source doesn't say, not "no
-   * errors."
+   * Error variants the resolver may throw. Most contracts do not list
+   * these, so absent means the source does not say whether there are
+   * any.
    */
   errorTypes: z.array(z.string()).optional(),
   /**
-   * Defaults to "independent" when a source doesn't say. Investigating
-   * a spurious agreement finding beats quietly dropping one that counts.
+   * Defaults to "independent" when a source does not say. A spurious
+   * agreement finding is cheaper to investigate than a missed one.
    */
   provenance: GraphqlContractProvenanceSchema.default("independent"),
   /** Framework / source tag the producing pack records. */
@@ -538,8 +528,8 @@ export const GraphqlMetadataSchema = z.object({
    */
   declaredContract: GraphqlDeclaredContractSchema.optional(),
   /**
-   * The schema SDL, on the summary standing for the schema document
-   * rather than on each resolver the document declares. The checker's
+   * The schema SDL, on the summary that represents the schema document
+   * and not on each resolver the document declares. The checker's
    * pairing pass finds it from a resolver through the document label
    * they share, and walks the consumer operation's nested selections
    * against the resolver's return type.
@@ -581,10 +571,10 @@ export const GraphqlMetadataSchema = z.object({
    */
   fragmentRegistry: z.enum(["configured", "absent", "unknown"]).optional(),
   /**
-   * Set when a consumer's document reference was recognized (an
-   * imported `TypedDocumentNode`, say) but its body couldn't be read
-   * statically. The boundary is still recorded; this says what
-   * defeated resolution rather than dropping it silently.
+   * Set when a consumer's document reference was recognized, such as an
+   * imported `TypedDocumentNode`, but its body could not be read
+   * statically. The boundary is still recorded, and this field says why
+   * the body could not be read.
    */
   unresolvedDocument: z
     .object({ reference: z.string(), reason: z.string() })
@@ -616,8 +606,8 @@ export type GraphqlMetadata = z.infer<typeof GraphqlMetadataSchema>;
 
 /**
  * A metadata bag with the graphql namespace set. Writes are strict: a
- * field the schema does not name throws here, next to its cause. Reads
- * stay lenient so older artifacts keep reading.
+ * field the schema does not declare throws here, next to its cause.
+ * Reads stay lenient so older artifacts keep reading.
  */
 export function withGraphqlMetadata(
   metadata: Record<string, unknown> | undefined,
@@ -639,15 +629,15 @@ export function readGraphqlMetadata(
 /**
  * The document a summary was read out of.
  *
- * One document declares many boundaries and states things every one of
- * them relies on: a GraphQL schema's type definitions, an OpenAPI
- * document's `components.schemas`. Those belong to the document, so a
- * reader puts them on a summary standing for the document and gives
- * every summary from that document the same label. A checker that needs
- * them goes from a boundary to its document and reads them once.
+ * One document declares many boundaries and states things all of them
+ * rely on: a GraphQL schema's type definitions, an OpenAPI document's
+ * `components.schemas`. Those belong to the document, so a reader puts
+ * them on a summary that represents the document and gives every
+ * summary from that document the same label. A checker that needs them
+ * goes from a boundary to its document and reads them once.
  *
  * The label is the one the reader records on `location.file`, so
- * `parseDocumentLabel` reads it the same way here as it does there.
+ * `parseDocumentLabel` reads it the same way in both places.
  */
 export const SourceDocumentMetadataSchema = z.object({
   label: z.string(),
@@ -688,10 +678,10 @@ const HttpContractProvenanceSchema = z.enum(["derived", "independent"]);
  * so comparing them against each other is tautological.
  * "independent": a separate statement, such as CFN `MethodResponses`
  * against an integration-derived transition, or a ts-rest router
- * declaration against its handler implementation. Worth comparing.
+ * declaration against its handler, which is useful to compare.
  *
- * Defaults to "independent" when a writer doesn't say. A spurious
- * finding someone can look into beats missing one that mattered.
+ * Defaults to "independent" when a writer does not say. A spurious
+ * finding someone can look into is better than a missed one.
  */
 export type HttpContractProvenance = z.infer<
   typeof HttpContractProvenanceSchema
@@ -700,8 +690,8 @@ export type HttpContractProvenance = z.infer<
 /**
  * A declared response contract for one HTTP boundary: the status codes
  * a source promises and, where the source states it, each one's body
- * shape. Two sources naming the same boundary each have one of these,
- * and the checker compares them.
+ * shape. Two sources that describe the same boundary each have one of
+ * these, and the checker compares them.
  */
 const HttpDeclaredContractSchema = z.object({
   /** Framework / source tag the producing pack records. */
@@ -742,11 +732,10 @@ const HttpDeclaredContractSchema = z.object({
 export type HttpDeclaredContract = z.infer<typeof HttpDeclaredContractSchema>;
 
 /**
- * Pointer from a declared route to the code that implements it, a SAM
- * Lambda proxy integration's `Handler`, say. Generic "where is the
- * code" identity, not any one manifest's semantics, so a checker can
- * later correlate the declared route with the extracted handler summary
- * that has the same REST binding.
+ * A pointer from a declared route to the code that implements it, such
+ * as a SAM Lambda proxy integration's `Handler`. The fields are generic
+ * to any manifest, so a checker can later match the declared route to
+ * the extracted handler summary with the same REST binding.
  */
 const HttpHandlerPointerSchema = z.object({
   /** Raw handler reference, e.g. "src/handlers/confirmToken.handler". */
@@ -823,8 +812,8 @@ export type HttpMetadata = z.infer<typeof HttpMetadataSchema>;
 
 /**
  * A metadata bag with the http namespace set. Writes are strict: a
- * field the schema does not name throws here, next to its cause. Reads
- * stay lenient so older artifacts keep reading.
+ * field the schema does not declare throws here, next to its cause.
+ * Reads stay lenient so older artifacts keep reading.
  */
 export function withHttpMetadata(
   metadata: Record<string, unknown> | undefined,
@@ -838,9 +827,9 @@ export function withHttpMetadata(
 
 /**
  * The http namespace on a summary or one of its transitions, or
- * undefined when absent or not an object. Most fields live on a
- * summary; `statusRange` lives on the transition it describes. Both
- * have a `metadata` bag of the same kind, so one reader covers both.
+ * undefined when absent or not an object. Most fields are set on a
+ * summary, and `statusRange` on the transition it describes. Both have
+ * a `metadata` bag of the same kind, so one reader covers both.
  */
 export function readHttpMetadata(
   carrier: BehavioralSummary | Transition,
@@ -889,7 +878,7 @@ export type RequestSpellingMetadata = z.infer<
 
 /**
  * A metadata bag with the request-spelling namespace set. Writes are
- * strict: a field the schema does not name throws here, next to its
+ * strict: a field the schema does not declare throws here, next to its
  * cause. Reads stay lenient so older artifacts keep reading.
  */
 export function withRequestSpellingMetadata(
@@ -993,10 +982,10 @@ const StorageContractMetadataSchema = z.object({
         /**
          * The columns of THIS container that a write through this
          * relation sets. A Prisma relation declaring
-         * `@relation(fields: [authorId])` owns the foreign key, so
-         * connecting a row to it sets `authorId` here. Absent when the
-         * key lives on the other side or in a join table, where such a
-         * write changes no column of this container.
+         * `@relation(fields: [authorId])` has the foreign key on this
+         * side, so connecting a row to it sets `authorId` here. Absent
+         * when the key is on the other side or in a join table, where
+         * such a write does not change a column of this container.
          */
         relationKey: z.array(z.string()).optional(),
         /**
@@ -1126,7 +1115,7 @@ const CodeScopeMetadataSchema = z.object({
 
 export type CodeScopeMetadata = z.infer<typeof CodeScopeMetadataSchema>;
 
-/** Which code a deployable unit runs, or the unknown marker when nothing said. */
+/** Which code a deployable unit runs, or undefined when the summary has no code scope. */
 export function readCodeScopeMetadata(
   summary: BehavioralSummary,
 ): CodeScopeMetadata | undefined {
