@@ -3,7 +3,8 @@
  *
  * A read is defaulted when the program still works where the value is
  * missing. Either an `||` supplies a fallback value, or the program
- * tests the value for presence and only uses it where the test passed.
+ * tests the value for presence and only uses it where the test passed,
+ * and the path a missing value takes does not end in a raise.
  * The test can be on the read itself or on a local the read initializes
  * inside a method: a truthiness check, `nil?` or a comparison with
  * `nil`, or a membership test such as `ENV.key?`. The TypeScript and
@@ -47,7 +48,7 @@ export function isDefaultedAt(read: RbNode, variable?: EnvSpelling): boolean {
   if (variable?.raises === true) {
     return false;
   }
-  if (isPresenceTest(read)) {
+  if (isPresenceTest(read, subject)) {
     return true;
   }
   const local = localNamedBy(read);
@@ -159,31 +160,47 @@ const MEMBERSHIP_METHODS = new Set(["key?", "has_key?", "include?", "member?"]);
  * Whether the value is only tested here and never passed on: `if x`,
  * `!x`, `x.nil?`, `x == nil`, or a ternary's condition. An `&&` or `||`
  * operand counts when the whole expression is tested the same way or
- * its result is thrown away.
+ * its result is thrown away. A test that branches counts only when the
+ * path a missing value takes does not raise, so `raise "..." unless x`
+ * leaves the read required.
  */
-function isPresenceTest(node: RbNode): boolean {
+function isPresenceTest(node: RbNode, subject: ReadSubject): boolean {
   let child = climbParens(node);
-  let throughLogical = false;
+  const seen = { tested: false, throughLogical: false };
   let parent = child.parent;
   while (parent !== null) {
     if (isNegation(parent) || isNilCheckOn(parent, child)) {
-      return true;
+      seen.tested = true;
+    } else if (parent.type === "binary" && isLogical(parent)) {
+      seen.throughLogical = true;
+    } else if (parent.type === "binary") {
+      if (comparedWithNil(parent)?.tested.id !== child.id) {
+        return false;
+      }
+      seen.tested = true;
+    } else {
+      return isTestedAt(parent, child, subject, seen);
     }
-    if (parent.type === "binary" && !isLogical(parent)) {
-      return comparedWithNil(parent)?.tested.id === child.id;
-    }
-    if (parent.type !== "binary") {
-      return (
-        (parent.type in BRANCHES &&
-          field(parent, "condition")?.id === child.id) ||
-        (throughLogical && STATEMENT_LIST_TYPES.has(parent.type))
-      );
-    }
-    throughLogical = true;
     child = climbParens(parent);
     parent = child.parent;
   }
   return false;
+}
+
+/** Where a test's value ends up: the condition of a branch, a statement of its own, or a boolean kept for later. */
+function isTestedAt(
+  parent: RbNode,
+  child: RbNode,
+  subject: ReadSubject,
+  seen: { tested: boolean; throughLogical: boolean },
+): boolean {
+  if (parent.type in BRANCHES && field(parent, "condition")?.id === child.id) {
+    return !absentPathRaises(parent, subject);
+  }
+  if (seen.throughLogical && STATEMENT_LIST_TYPES.has(parent.type)) {
+    return !continuationRaises(child);
+  }
+  return seen.tested;
 }
 
 /**
@@ -196,7 +213,8 @@ function isPresentAt(node: RbNode, subject: ReadSubject): boolean {
   let parent = node.parent;
   while (parent !== null) {
     if (
-      isBranchWherePresent(parent, child, subject) ||
+      (isBranchWherePresent(parent, child, subject) &&
+        !absentPathRaises(parent, subject)) ||
       followsExitWhenAbsent(parent, child, subject)
     ) {
       return true;
@@ -285,7 +303,7 @@ function leavesWhenAbsent(statement: RbNode, subject: ReadSubject): boolean {
     branches === undefined ||
     test === null ||
     body === null ||
-    !alwaysLeaves(body)
+    exitOf(body) !== "leave"
   ) {
     return false;
   }
@@ -293,13 +311,129 @@ function leavesWhenAbsent(statement: RbNode, subject: ReadSubject): boolean {
   return runsWhen !== null && isPresentWhen(test, !runsWhen, subject);
 }
 
-/** A `return`, `next` or `break`, alone or among a body's own statements. */
-function alwaysLeaves(body: RbNode): boolean {
-  if (LEAVING_TYPES.has(body.type)) {
-    return true;
+/**
+ * Whether a missing value can end in a raise once it reaches this
+ * branch point: any branch a missing value can take which raises, or
+ * falls through to a raise after the whole conditional. For a loop or
+ * `&&`, it is what runs after the whole expression.
+ */
+function absentPathRaises(owner: RbNode, subject: ReadSubject): boolean {
+  const branches = BRANCHES[owner.type];
+  const test = field(owner, "condition");
+  if (branches === undefined || test === null || LOOP_TYPES.has(owner.type)) {
+    return continuationRaises(owner);
   }
-  return body.namedChildren.some(
-    (statement) => statement !== null && LEAVING_TYPES.has(statement.type),
+  const arms: (RbNode | null)[] = [];
+  if (!isPresentWhen(test, true, subject)) {
+    arms.push(armOf(owner, branches.whenTrue));
+  }
+  if (!isPresentWhen(test, false, subject)) {
+    arms.push(armOf(owner, branches.whenFalse));
+  }
+  return arms.some((arm) => armRaises(arm, owner, subject));
+}
+
+const LOOP_TYPES = new Set([
+  "while",
+  "while_modifier",
+  "until",
+  "until_modifier",
+]);
+
+function armOf(owner: RbNode, name: string | undefined): RbNode | null {
+  return name === undefined ? null : field(owner, name);
+}
+
+/** Whether one branch of a conditional raises, itself or in what runs after the conditional. */
+function armRaises(
+  arm: RbNode | null,
+  owner: RbNode,
+  subject: ReadSubject,
+): boolean {
+  if (arm?.type === "elsif") {
+    return absentPathRaises(arm, subject);
+  }
+  const exit = arm === null ? null : exitOf(arm);
+  return exit === "raise" || (exit === null && continuationRaises(owner));
+}
+
+/**
+ * Whether the statements that run after this node, up to the end of the
+ * method, reach a `raise` before a `return`, `next` or `break`. A loop
+ * or block body that falls off its end hands control back to its
+ * caller, so the climb stops there as it does at a method.
+ */
+function continuationRaises(from: RbNode): boolean {
+  let current = from;
+  let parent = current.parent;
+  while (parent !== null) {
+    if (STATEMENT_LIST_TYPES.has(parent.type)) {
+      const statements = parent.namedChildren;
+      const at = statements.findIndex((one) => one?.id === current.id);
+      const exit = firstExit(statements.slice(at + 1));
+      if (exit !== null) {
+        return exit === "raise";
+      }
+    }
+    if (PATH_END_TYPES.has(parent.type)) {
+      return false;
+    }
+    current = parent;
+    parent = current.parent;
+  }
+  return false;
+}
+
+const PATH_END_TYPES = new Set([
+  "method",
+  "singleton_method",
+  "lambda",
+  "block",
+  "do_block",
+  "return",
+  ...LOOP_TYPES,
+]);
+
+type Exit = "raise" | "leave";
+
+/** How the first of these statements that ends the path ends it, or null when they all fall through. */
+function firstExit(statements: readonly (RbNode | null)[]): Exit | null {
+  for (const statement of statements) {
+    const exit = statement === null ? null : exitOf(statement);
+    if (exit !== null) {
+      return exit;
+    }
+  }
+  return null;
+}
+
+/**
+ * A `raise` or `fail`, or a `return`, `next` or `break`, alone or among a
+ * body's own statements.
+ */
+function exitOf(statement: RbNode): Exit | null {
+  if (isRaise(statement)) {
+    return "raise";
+  }
+  if (LEAVING_TYPES.has(statement.type)) {
+    return "leave";
+  }
+  return STATEMENT_LIST_TYPES.has(statement.type)
+    ? firstExit(statement.namedChildren)
+    : null;
+}
+
+const RAISING_METHODS = new Set(["raise", "fail"]);
+
+/** `raise`, `raise "..."` or `fail Error`, called on `self`. */
+function isRaise(node: RbNode): boolean {
+  if (node.type === "identifier") {
+    return RAISING_METHODS.has(node.text);
+  }
+  return (
+    node.type === "call" &&
+    field(node, "receiver") === null &&
+    RAISING_METHODS.has(field(node, "method")?.text ?? "")
   );
 }
 
@@ -500,6 +634,8 @@ function usesOf(local: Local): RbNode[] {
 /** Whether a missing value never reaches this use. */
 function isSafeUse(use: RbNode, subject: ReadSubject): boolean {
   return (
-    hasFallbackOperand(use) || isPresenceTest(use) || isPresentAt(use, subject)
+    hasFallbackOperand(use) ||
+    isPresenceTest(use, subject) ||
+    isPresentAt(use, subject)
   );
 }

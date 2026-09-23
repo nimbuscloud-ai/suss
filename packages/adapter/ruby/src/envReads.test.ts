@@ -317,6 +317,68 @@ describe("a read the program uses only behind a presence test", () => {
     ]);
   });
 
+  it("leaves a read undefaulted when the present branch returns and the code after the test raises", async () => {
+    expect(
+      await handlerReads([
+        'url = ENV["CACHE_URL"]',
+        "return url if url",
+        'raise "CACHE_URL is not set"',
+      ]),
+    ).toEqual([{ name: "CACHE_URL", defaulted: false }]);
+    expect(
+      await handlerReads([
+        'if ENV["REGION"]',
+        '  return ENV["REGION"]',
+        "end",
+        'fail ArgumentError, "REGION is not set"',
+      ]),
+    ).toEqual([
+      { name: "REGION", defaulted: false },
+      { name: "REGION", defaulted: false },
+    ]);
+  });
+
+  it("leaves a read undefaulted when the branch a missing value takes raises, however the test is written", async () => {
+    expect(
+      await handlerReads([
+        'raise "A is required" unless ENV["A"]',
+        'raise "B is required" if ENV["B"].nil?',
+        'if ENV["C"]',
+        '  use(ENV["C"])',
+        "else",
+        "  raise",
+        "end",
+        'if ENV["D"]',
+        '  use(ENV["D"])',
+        "elsif other",
+        "  return nil",
+        "else",
+        '  raise "D is required"',
+        "end",
+      ]),
+    ).toEqual([
+      { name: "A", defaulted: false },
+      { name: "B", defaulted: false },
+      { name: "C", defaulted: false },
+      { name: "C", defaulted: false },
+      { name: "D", defaulted: false },
+      { name: "D", defaulted: false },
+    ]);
+  });
+
+  it("marks a read whose code after the test leaves without raising", async () => {
+    expect(
+      await handlerReads([
+        'return ENV["REGION"] if ENV["REGION"]',
+        'raise "unrelated" if other',
+        '"us-east-1"',
+      ]),
+    ).toEqual([
+      { name: "REGION", defaulted: true },
+      { name: "REGION", defaulted: true },
+    ]);
+  });
+
   it("leaves ENV.fetch undefaulted when only its own value is tested, since it raises first", async () => {
     expect(
       await handlerReads([
