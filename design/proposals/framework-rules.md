@@ -15,14 +15,13 @@ The Next.js work widened it three times in one afternoon.
 then a `new` expression. `statusCode` grew `argumentProperty`. Each one
 is a knob every other pack now inherits.
 
-The cost lands in two different places, and telling them apart is what
-decides how much of this to do.
+The cost lands in two different places. How much of this we should do
+depends on telling them apart.
 
 ## Two problems that look alike
 
 **Some of it is the walkers being wrong.** Review found three bugs in
-the new code, and none of them needs a pack to say anything it cannot
-say today:
+the new code, and fixing any of them needs nothing new from a pack:
 
 - `functionCall` matching `new` made `throw new Response(...)` produce a
   throw *and* a response, for every pack, because the walker never asks
@@ -33,8 +32,8 @@ say today:
   the walker applies it in the wrong place.
 - The route root is found by searching the path and guessing which
   occurrence, so a segment named `app` truncates the route. Anchoring
-  at the project root fixes it, and the project root is something the
-  adapter knows.
+  at the project root fixes it, and the adapter already has the project
+  root.
 
 **Some of it is the vocabulary running out.** React Router derives
 routes from filenames only when the project opted in by importing
@@ -44,8 +43,8 @@ for a pack to state a condition the language did not anticipate.
 
 That second kind is rarer, and it is the kind that decides whether
 somebody outside this repo can write a pack for a framework we have not
-seen. "Add a framework in one file" is true today for frameworks that
-fit the vocabulary we already wrote down.
+seen. "Add a framework in one file" is true today only for frameworks
+that fit the vocabulary we already wrote down.
 
 ## What already exists
 
@@ -58,8 +57,8 @@ says why:
 > combination. That is the reason to write rules rather than one walker
 > per pattern.
 
-That argument is not specific to resolution. Discovery and terminals
-are where the walkers are.
+The same argument applies outside resolution, and discovery and
+terminals are where the walkers are.
 
 ## The change, in three layers
 
@@ -67,24 +66,24 @@ are where the walkers are.
 pack stays data that can be validated and reviewed.
 
 **The adapter compiles a pack to rules** instead of switching on
-`match.type` in a walker per variant. None of this is user-visible.
-What it buys is one evaluation model rather than a dozen walkers, and
-derived facts that compose the way the resolution facts already do.
+`match.type` in a walker per variant. Users see none of this. It gives
+us one evaluation model in place of a dozen walkers, and derived facts
+that compose the way the resolution facts already do.
 
-**A pack can state a rule where the declarative form cannot say what it
-means.** This is the escape hatch rather than the front door. React
-Router's opt-in is the first case in this batch that needs it.
+**A pack can state a rule where the declarative form cannot express what
+it means.** This is an escape hatch for the rare case. React Router's
+opt-in is the first case in this batch that needs it.
 
-Keeping it rare is the point. A pack that drops to rules is harder to
-write and harder to review, and two packs using the same relation name
-can mean different things. Rules are worth it where the framework's
-judgment is conditional or compositional, which is where the knobs have
+It should stay rare. A pack that drops to rules is harder to write and
+harder to review, and two packs using the same relation name can mean
+different things. Rules pay off where the framework's decision depends
+on a condition or on composing facts, and that is where the knobs have
 been piling up.
 
-## What the facts have to carry
+## What the facts have to include
 
-Facts stay mechanical and framework-neutral, which is the discipline
-that keeps this from turning into a second language. The adapter
+Facts stay mechanical and framework-neutral. That rule keeps this from
+turning into a second language. The adapter
 parses, and the rules decide. There are three families beyond what the
 facts include today:
 
@@ -106,9 +105,9 @@ not compute strings. A rule can ask whether a segment is bracketed and what
 was inside the brackets, because the parser wrote both down. It cannot
 ask for a regular expression.
 
-Separating `returnedValue` from `thrownValue` is what makes the
-throw-counted-as-a-response bug unrepresentable rather than fixed,
-which is worth more than the fix.
+Separating `returnedValue` from `thrownValue` means the
+throw-counted-as-a-response bug cannot be expressed at all. That is
+better than fixing it.
 
 ## What a rule looks like when a pack needs one
 
@@ -130,8 +129,8 @@ room for either way:
 
 The fact base grows, and extraction is already the expensive stage. The
 existing store responds in waves and widens only when an answer is
-missing, and routing facts are per file and cheap, but we need to
-measure this on a production repo rather than assume it.
+missing, and routing facts are per file and cheap. We still need to
+measure this on a production repo before relying on it.
 
 An open relation namespace is the risk that comes with the escape
 hatch. Giving each pack a namespace for its own relations, and
@@ -144,7 +143,6 @@ prevents a collision.
    small, whatever happens to the architecture underneath.
 2. Compile discovery and terminals to rules, with no pack changing.
    This is the piece that pays for itself and the piece to measure.
-3. Open the escape hatch, driven by React Router's opt-in rather than
-   designed in the abstract.
+3. Open the escape hatch, designed around React Router's opt-in.
 4. Method sets, which need the binding to have room for more than one
    method whichever way the rest goes.
