@@ -62,8 +62,12 @@ const PATH_CONVENTIONS: Record<
  * Null when there is no file at that path. Rails autoloads from every
  * directory directly under `app`, so `ApplicationController` is
  * `app/controllers/application_controller.rb` and not
- * `app/application_controller.rb`; those directories are tried after
- * the root itself, in name order, and no other spelling is tried.
+ * `app/application_controller.rb`. It also autoloads from each
+ * `concerns` directory under those, so a concern in
+ * `app/models/concerns/archivable.rb` is `Archivable`. The root is tried
+ * first, then the directories under it in name order, then their
+ * `concerns` directories in the same order, which is the order Rails'
+ * own autoload glob lists them. No other spelling is tried.
  */
 export function resolveConstantFile(
   root: string,
@@ -82,6 +86,16 @@ export function resolveConstantFile(
 }
 
 function autoloadDirectories(root: string): string[] {
+  const directories = subdirectories(root);
+  const concerns = directories
+    .map((directory) => path.join(directory, CONCERNS_DIRECTORY))
+    .filter((directory) => isDirectory(directory));
+  return [...directories, ...concerns];
+}
+
+const CONCERNS_DIRECTORY = "concerns";
+
+function subdirectories(root: string): string[] {
   try {
     return fs
       .readdirSync(root, { withFileTypes: true })
@@ -90,5 +104,13 @@ function autoloadDirectories(root: string): string[] {
       .sort();
   } catch {
     return [];
+  }
+}
+
+function isDirectory(directory: string): boolean {
+  try {
+    return fs.statSync(directory).isDirectory();
+  } catch {
+    return false;
   }
 }

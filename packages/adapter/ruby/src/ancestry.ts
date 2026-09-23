@@ -11,7 +11,7 @@ import {
 import { resolveConstantFile } from "./constantPath.js";
 import { couldBeDefined, definedNamesOf } from "./defineMethod.js";
 import { nodeId } from "./facts/values.js";
-import { qualifyConstantRef, walkDefinitions } from "./scope.js";
+import { constantRefCandidates, walkDefinitions } from "./scope.js";
 
 import type { Database } from "@suss/datalog";
 import type { BlockConfigures, BodyBlocks } from "./ast.js";
@@ -151,24 +151,76 @@ async function superclassChain(
   active: ReadonlySet<string>,
 ): Promise<AncestorEntry[]> {
   const candidates = superclassCandidatesOf(self.blocks);
+  const settled = await settleConstant(
+    candidates,
+    lookup.ancestryRootClassNames,
+    lookup,
+    active,
+  );
+  if (settled === null) {
+    return unreadConstant(candidates);
+  }
+  if (settled.type === "root") {
+    return [{ type: "root", name: settled.name }];
+  }
+  if (settled.type === "cycle") {
+    return [];
+  }
+  return chainOf(
+    { type: "bodies", name: settled.name, blocks: settled.blocks },
+    lookup,
+    new Set([...active, settled.name]),
+  );
+}
+
+/** Which of a constant reference's candidates Ruby would take, the first match winning. */
+type SettledConstant =
+  | { type: "root"; name: string }
+  /** A candidate the walk is already inside, which Ruby would reject as a cyclic ancestry. */
+  | { type: "cycle"; name: string }
+  | { type: "bodies"; name: string; blocks: ReachedBody[] };
+
+/**
+ * Tries each candidate in the order Ruby looks a constant up and
+ * settles on the first one that is a library root, one the walk is
+ * already inside, or one the run defines. Null when it is none of them.
+ */
+async function settleConstant(
+  candidates: readonly string[],
+  roots: readonly string[],
+  lookup: AncestorLookup,
+  active: ReadonlySet<string>,
+): Promise<SettledConstant | null> {
   for (const candidate of candidates) {
-    if (lookup.ancestryRootClassNames.includes(candidate)) {
-      return [{ type: "root", name: candidate }];
+    if (roots.includes(candidate)) {
+      return { type: "root", name: candidate };
     }
     if (active.has(candidate)) {
-      return [];
+      return { type: "cycle", name: candidate };
     }
     const blocks = await definitionOf(candidate, lookup);
     if (blocks !== null) {
-      return chainOf(
-        { type: "bodies", name: candidate, blocks },
-        lookup,
-        new Set([...active, candidate]),
-      );
+      return { type: "bodies", name: candidate, blocks };
     }
   }
-  // Ruby would raise NameError here. The bare name is the one a configured
-  // base is written as, so an unread base still matches by that name.
+  return null;
+}
+
+/** The class or module a constant reference settles on, or null when the run defines none of its candidates. */
+export async function reachConstant(
+  candidates: readonly string[],
+  lookup: AncestorLookup,
+): Promise<{ name: string; blocks: ReachedBody[] } | null> {
+  const settled = await settleConstant(candidates, [], lookup, new Set());
+  return settled?.type === "bodies" ? settled : null;
+}
+
+/**
+ * Ruby would raise NameError for a constant none of the candidates
+ * defines. The bare name is the one a configured base is written as, so
+ * an unread ancestor still matches by that name.
+ */
+function unreadConstant(candidates: readonly string[]): AncestorEntry[] {
   const bare = candidates.at(-1);
   return bare === undefined ? [] : [{ type: "unfollowed", name: bare }];
 }
@@ -198,15 +250,7 @@ async function mixinChain(
 ): Promise<AncestorEntry[]> {
   let chain: AncestorEntry[] = [];
   for (const ref of moduleRefs(self.blocks, callName)) {
-    if (present.has(ref.name)) {
-      continue;
-    }
-    if (!ref.readable) {
-      present.add(ref.name);
-      chain = [{ type: "unfollowed", name: ref.name }, ...chain];
-      continue;
-    }
-    const inserted = (await chainFor(ref.name, lookup, active)).filter(
+    const inserted = (await mixinEntries(ref, lookup, active, present)).filter(
       (ancestor) => !present.has(ancestor.name),
     );
     for (const ancestor of inserted) {
@@ -217,26 +261,36 @@ async function mixinChain(
   return chain;
 }
 
-async function chainFor(
-  qualifiedName: string,
+/** The entries one mixed-in module puts in the chain: its own chain when the run defines it, or its name alone when it does not. */
+async function mixinEntries(
+  ref: ModuleRef,
   lookup: AncestorLookup,
   active: ReadonlySet<string>,
+  present: ReadonlySet<string>,
 ): Promise<AncestorEntry[]> {
-  const blocks = await definitionOf(qualifiedName, lookup);
-  if (blocks === null) {
-    return [{ type: "unfollowed", name: qualifiedName }];
+  if (ref.candidates.length === 0) {
+    return [{ type: "unfollowed", name: ref.text }];
+  }
+  const settled = await settleConstant(ref.candidates, [], lookup, active);
+  if (settled === null) {
+    return unreadConstant(ref.candidates);
+  }
+  // Ruby skips a module the chain already has, and rejects a cyclic include.
+  if (settled.type !== "bodies" || present.has(settled.name)) {
+    return [];
   }
   return chainOf(
-    { type: "bodies", name: qualifiedName, blocks },
+    { type: "bodies", name: settled.name, blocks: settled.blocks },
     lookup,
-    new Set([...active, qualifiedName]),
+    new Set([...active, settled.name]),
   );
 }
 
-/** A constant an `include`/`prepend` call names. `readable` is false for anything but a constant path, which is named by the text it was written with. */
+/** One argument to an `include` or `prepend` call. `candidates` is empty for anything but a constant path, and the walk then uses the text as written. */
 interface ModuleRef {
-  name: string;
-  readable: boolean;
+  text: string;
+  /** Every name the constant could mean, in the order Ruby tries them. */
+  candidates: readonly string[];
 }
 
 /**
@@ -256,12 +310,10 @@ function moduleRefs(
     }
     for (const group of bareCallArgumentGroups(block.info.bodyNode, callName)) {
       for (const arg of [...group].reverse()) {
-        const qualified = qualifyConstantRef(arg, block.info.bodyNesting);
-        refs.push(
-          qualified !== null
-            ? { name: qualified, readable: true }
-            : { name: arg.text, readable: false },
-        );
+        refs.push({
+          text: arg.text,
+          candidates: constantRefCandidates(arg, block.info.bodyNesting),
+        });
       }
     }
   }
