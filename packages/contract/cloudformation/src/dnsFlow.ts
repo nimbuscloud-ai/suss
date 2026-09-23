@@ -1,23 +1,23 @@
-// dnsFlow.ts: Route 53 records as the first hop of a flow.
-//
-// A client reaches a load balancer by name, and the alias record is
-// what makes that name mean the balancer. Without it a walk starts at
-// the listener, and the host header the listener matches on has
-// nothing to match against (#174).
-//
-// A record becomes a routesTo edge: the record is the router, the
-// aliased resource is the target, and the record's own name is a
-// host-header condition written in the "dns" match language. No
-// matcher owns that language yet, so a reachability pass reports these
-// hops as unknown rather than admitting or refusing them, which is
-// what matchLanguage already promises.
+/**
+ * Route 53 records as the first hop of a flow.
+ *
+ * A client reaches a load balancer by name, and the alias record maps
+ * that name to the balancer. Without the record, a walk starts at the
+ * listener, and the listener's host-header rules have no host to match
+ * against (#174).
+ *
+ * Each record becomes a routesTo edge from the record to the aliased
+ * resource, with the record's name as a host-header condition in the
+ * "dns" match language. No selector handles that language yet, so a
+ * reachability pass reports these hops as unknown.
+ */
 
 import { withRoutingMetadata } from "@suss/behavioral-ir";
 
 import type { BehavioralSummary, RoutingMetadata } from "@suss/behavioral-ir";
 import type { CloudFormationResource } from "./index.js";
 
-/** The record types Route 53 answers with an address a client can open. */
+// Record types that resolve to an address a client can connect to.
 const ADDRESS_RECORD_TYPES = new Set(["A", "AAAA", "CNAME"]);
 
 export function buildDnsFlowSummaries(
@@ -42,7 +42,7 @@ export function buildDnsFlowSummaries(
     if (resource.Type !== "AWS::Route53::RecordSetGroup") {
       continue;
     }
-    // A group states its records inline, and each one is its own hop.
+    // Each record inside a group is its own hop.
     const inner = resource.Properties?.RecordSets;
     if (!Array.isArray(inner)) {
       continue;
@@ -115,9 +115,8 @@ function recordSummary(
 }
 
 /**
- * The logical id an alias points at. `Fn::GetAtt` on a balancer's
- * DNSName is how a template states this. A literal domain belongs to
- * something the template does not declare, so it gets no edge.
+ * The logical id in an alias's `Fn::GetAtt` on a DNSName. A literal
+ * domain points outside the template, so it gets no edge.
  */
 function aliasedResource(
   dnsName: unknown,

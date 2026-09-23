@@ -36,6 +36,28 @@ Recognised resource types:
 
 A template's `AWS::DynamoDB::Table` resources become storage boundaries as well. The table gets one summary and each of its secondary indexes gets another, because a query through an index keys on that index's own fields. The contract records the key attributes and marks them as only part of what an item has, so code that reads an ordinary attribute does not produce a finding.
 
+### Message buses
+
+Each channel gets a provider summary, and each Lambda that receives from it gets a consumer summary on the same channel. Producers found in code pair with the provider.
+
+- **SQS**: one channel per `AWS::SQS::Queue`, named by its logical id. A Lambda receives from a queue through a SAM `Events` entry of type SQS or an `AWS::Lambda::EventSourceMapping`.
+- **EventBridge**: one channel for each bus and detail type a rule routes, written `<bus>#<detailType>` the way `@suss/framework-aws-eventbridge` writes it. The bus is the event bus's logical id, or `default`. A producer that sends a detail type no rule routes is reported as `messageBusProducerOrphan`. A rule whose pattern does not reduce to literal detail types still gives its Lambda a consumer, marked `patternResolution: "unresolvable"` so it is reported and never paired on a guess. A scheduled rule sends no message, and its consumer is marked `"schedule"` so it is not reported as orphaned. The event bus gets no summary of its own, because every channel already includes it.
+- **SNS**: one channel per `AWS::SNS::Topic`. A subscription with protocol `lambda` gives a consumer. Protocols other than `lambda` and `sqs` do not reach code and are skipped. A subscription with a FilterPolicy is marked unresolvable.
+- **S3**: one channel per bucket that declares a notification or that a SAM S3 event refers to. A LambdaConfiguration gives a consumer. A TopicConfiguration gets its own consumer on the bucket's channel, with the topic in its metadata. A Filter is marked unresolvable, the same as an SNS FilterPolicy.
+
+When exactly one subject reaches a queue from upstream, the queue's Lambda consumers use that subject's channel in place of the queue's, so the upstream producer pairs with the Lambda that handles its message. The subject can come from an EventBridge rule with one detail type, or from an SNS subscription with protocol `sqs` or an S3 QueueConfiguration that has no filter. The queue's logical id moves to `metadata.messageBus.queue`. A queue that several subjects reach keeps its own channel.
+
+### Load balancer routing
+
+A request's path through an Application Load Balancer is recorded as one-hop edges, which the reachability walk follows. The checker does not pair them.
+
+- `routesTo`: a listener rule, or a listener's default forward action, and the target group it forwards to. The rule's conditions and priority are on the same record.
+- `answers`: a rule or default action that responds without forwarding, such as a fixed response.
+- `fronts`: what a target group sends traffic to, which is a Lambda function, an ECS container, or another load balancer.
+- `belongsTo`: the load balancer a listener belongs to. A `fronts` edge that ends at a load balancer continues through this edge into that balancer's listeners.
+
+A Route 53 alias record that points at a resource in the template becomes a `routesTo` edge, with the record's name as a host-header condition.
+
 ## Minimal usage
 
 ```ts

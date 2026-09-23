@@ -1,63 +1,16 @@
-// messageBus.ts: emit message-bus provider + consumer summaries for
-// four AWS bus families:
-//
-//   SQS         : provider per AWS::SQS::Queue, consumer per Lambda
-//                 wired via SAM Events:{Type: SQS} or an
-//                 AWS::Lambda::EventSourceMapping. Channel = queue CFN
-//                 logical id, except when an EventBridge rule, an SNS
-//                 subscription, or an S3 QueueConfiguration routes
-//                 exactly one subject into the queue. In that case the
-//                 consumer's channel is that subject instead: the
-//                 routing bus's `${bus}#${detailType}`, the topic's own
-//                 channel, or the bucket's own channel, so the upstream
-//                 producer pairs with the Lambda that ends up handling
-//                 it. Pairs against @suss/framework-aws-sqs producer
-//                 effects too.
-//
-//   EventBridge: provider + consumer per (bus, detailType) a rule
-//                 routes, plus schedule / unresolvable-pattern
-//                 accounting. Channel = `${bus}#${detailType}`. Pairs
-//                 against @suss/framework-aws-eventbridge producer
-//                 effects. See buildEventBridgeSummaries for the scheme.
-//
-//   SNS         : provider per AWS::SNS::Topic, channel = topic CFN
-//                 logical id. A Subscription (standalone
-//                 AWS::SNS::Subscription, or inline on the topic's own
-//                 Subscription list) with Protocol "lambda" gets a
-//                 consumer summary on that channel; Protocol "sqs"
-//                 feeds the queue-routing scheme above instead of its
-//                 own consumer; other protocols (email, https, ...)
-//                 don't reach analysable code and are skipped. A SAM
-//                 Events:{Type: SNS} entry is the same subscription
-//                 shape, declared on the Lambda side. See
-//                 buildTopicProviderSummary / buildSnsLambdaConsumerSummary.
-//
-//   S3          : provider per AWS::S3::Bucket that declares a
-//                 NotificationConfiguration, or that a SAM Type: S3
-//                 event names (SAM injects the notification at
-//                 transform time, so a bucket declared in this
-//                 template that no notification names here still gets
-//                 one). Channel = bucket CFN logical id. Each
-//                 LambdaConfiguration (standalone only; S3
-//                 notifications are always inline on the bucket) gets
-//                 a consumer summary on that channel,
-//                 same shape as SAM Events:{Type: S3} on the Lambda
-//                 side. A QueueConfiguration feeds the queue-routing
-//                 scheme above, the same way an SNS Protocol "sqs"
-//                 subscription does. A TopicConfiguration cannot
-//                 override the topic's own Lambda subscribers'
-//                 channel the way the queue bridge can, so it gets its
-//                 own bucket-channelled consumer instead, naming the
-//                 targeted topic in metadata. An S3Key Filter on any
-//                 configuration is unresolvable, the same posture as
-//                 an SNS FilterPolicy. See buildBucketProviderSummary /
-//                 buildS3LambdaConsumerSummary / buildS3TopicBridgeConsumerSummary.
-//
-// Provider summaries (kind: library) describe "this channel exists;
-// messages cross it": producers pair against them. Consumer summaries
-// (kind: consumer) describe "this Lambda receives from channel X" and
-// share the channel identity so the pairing dispatcher joins producers
-// to consumers.
+/**
+ * Provider and consumer summaries for SQS queues, SNS topics,
+ * EventBridge rules and S3 bucket notifications. The README describes
+ * the channel each family uses.
+ *
+ * A provider summary (kind library) says a channel exists, and producers
+ * in code pair with it. A consumer summary (kind consumer) says a Lambda
+ * receives from a channel, and has the same channel as the provider.
+ *
+ * A queue's consumers take the channel of the single subject routed into
+ * the queue, when there is one, so a producer upstream pairs with the
+ * Lambda that ends up handling its message.
+ */
 
 import { messageBusBinding, withMessageBusMetadata } from "@suss/behavioral-ir";
 import { formatChannel } from "@suss/ir-core";
@@ -82,34 +35,15 @@ interface CloudFormationResource {
 }
 
 /**
- * Walk the resources for AWS::SQS::Queue + Lambdas with SAM-style
- * `Events: { Type: SQS, Properties: { Queue: !GetAtt X.Arn } }` and
- * emit:
+ * Every message-bus provider and consumer summary in the template.
+ * Producers are not emitted here; the aws-sqs, aws-sns and
+ * aws-eventbridge packs find them in code.
  *
- *   - One library-kind QUEUE PROVIDER summary per AWS::SQS::Queue.
- *     Identity binding: messageBus(channel = CFN logical ID). Carries
- *     a fifoQueue flag in metadata when the queue is FIFO (used by
- *     future ordering checks).
- *
- *   - One consumer-kind LAMBDA CONSUMER summary per Lambda+Event
- *     pair. Identity binding: messageBus(channel = CFN logical ID
- *     of the queue resolved via the event's Queue Ref/GetAtt).
- *     metadata.codeScope mirrors the runtime-config summary's so
- *     the pairing layer can scope code reads to this consumer.
- *
- *     When the template also routes the queue from an EventBridge
- *     rule with exactly one exact detail-type, the consumer's channel
- *     is `${bus}#${detailType}` instead. That is the same channel the
- *     EventBridge producer emits, so a producer that publishes the
- *     subject pairs with the Lambda that drains the queue the rule
- *     feeds. The queue's logical id moves to metadata.messageBus.queue
- *     so queue-level accounting still sees the consumer. A queue
- *     routed with several subjects (several detail-types, or the same
- *     detail-type from two buses) keeps the logical-id channel,
- *     because no one subject identifies what it carries.
- *
- * Producer effects on the consumer side are NOT emitted here. Those
- * are recognized at extraction time by `@suss/framework-aws-sqs`.
+ * A consumer's `metadata.codeScope` matches its function's runtime-config
+ * summary, so code reads can be scoped to the consumer. When a queue's
+ * consumer takes an upstream subject's channel, the queue's logical id
+ * moves to `metadata.messageBus.queue`, so accounting per queue still
+ * sees the consumer.
  */
 export function buildMessageBusSummaries(
   resources: Record<string, CloudFormationResource>,
@@ -124,12 +58,8 @@ export function buildMessageBusSummaries(
     snsSubscriptions,
     s3Notifications.queue,
   );
-  // Buckets a SAM Type: S3 event names, collected as the Lambda-side
-  // loop (step 2) walks them, so section 6 can grant them a provider
-  // too: SAM injects the NotificationConfiguration onto the bucket at
-  // transform time, so the template does declare the wiring even
-  // though it reads on the Lambda side rather than the bucket's own
-  // Properties.
+  // SAM adds a NotificationConfiguration to each bucket a Type: S3 event
+  // refers to when it deploys, so step 6 gives those buckets a provider.
   const samS3Buckets = new Set<string>();
 
   // 1. Provider summaries: one per AWS::SQS::Queue.
@@ -142,12 +72,7 @@ export function buildMessageBusSummaries(
     );
   }
 
-  // 2. Consumer summaries: walk Lambdas (AWS::Serverless::Function or
-  //    AWS::Lambda::Function with EventSourceMapping) and detect SQS and
-  //    SNS event sources. Both are declared the same way, a SAM Events
-  //    entry naming the resource the Lambda subscribes to, so they
-  //    share this walk; only the target-property name and the summary
-  //    builder differ.
+  // 2. Consumers from SAM `Events` entries of type SQS, SNS and S3.
   for (const [logicalId, resource] of Object.entries(resources)) {
     if (resource.Type !== "AWS::Serverless::Function") {
       continue;
@@ -225,10 +150,8 @@ export function buildMessageBusSummaries(
     }
   }
 
-  // 3. AWS::Lambda::EventSourceMapping (for AWS::Lambda::Function-style
-  //    Lambdas; SAM expands SQS Events into one of these but raw CFN
-  //    declares it directly). Pairs the EventSourceArn (which Refs the
-  //    queue) with the FunctionName (which Refs the Lambda).
+  // 3. Consumers from an EventSourceMapping, which plain CloudFormation
+  //    declares where SAM would use an SQS event.
   for (const [, resource] of Object.entries(resources)) {
     if (resource.Type !== "AWS::Lambda::EventSourceMapping") {
       continue;
@@ -260,20 +183,14 @@ export function buildMessageBusSummaries(
     );
   }
 
-  // 4. EventBridge: AWS::Events::Rule + SAM Events:{Type: EventBridgeRule
-  //    | Schedule}.
+  // 4. EventBridge rules and SAM EventBridgeRule and Schedule events.
   summaries.push(
     ...buildEventBridgeSummaries(resources, sourceFile, recognition),
   );
 
-  // 5. SNS: one provider per AWS::SNS::Topic, plus a consumer per
-  //    Protocol "lambda" subscription (standalone or inline). A
-  //    Protocol "sqs" subscription isn't a code consumer of its own,
-  //    it already fed queueSubjects above, the same way a queue-
-  //    targeting EventBridge rule does, so the queue's own Lambda
-  //    consumer(s) pick up the topic's channel there. Any other
-  //    protocol (email, https, sms, application, firehose) doesn't
-  //    reach analysable code and is skipped.
+  // 5. SNS topics, and a consumer per "lambda" subscription. An "sqs"
+  //    subscription was already counted in queueSubjects, and other
+  //    protocols do not reach code.
   for (const [logicalId, resource] of Object.entries(resources)) {
     if (resource.Type !== "AWS::SNS::Topic") {
       continue;
@@ -311,15 +228,8 @@ export function buildMessageBusSummaries(
     );
   }
 
-  // 6. S3: one provider per AWS::S3::Bucket that names at least one
-  //    notification, or is the target of a SAM Type: S3 event (a
-  //    bucket with neither isn't a message bus). A LambdaConfiguration
-  //    gets a consumer summary on the bucket's channel; a
-  //    QueueConfiguration already fed queueSubjects above, the same
-  //    way a Protocol "sqs" SNS subscription does; a TopicConfiguration
-  //    gets its own bucket-channelled consumer, naming the topic it
-  //    targets, since nothing lets it override the topic's own Lambda
-  //    subscribers' channel the way the queue bridge can.
+  // 6. Buckets with a notification, and their Lambda and topic consumers.
+  //    A QueueConfiguration was already counted in queueSubjects.
   const notifiedBuckets = new Set([
     ...s3Notifications.lambda.map((n) => n.bucketId),
     ...s3Notifications.queue.map((n) => n.bucketId),
@@ -329,10 +239,7 @@ export function buildMessageBusSummaries(
     ),
   ]);
   for (const bucketId of notifiedBuckets) {
-    // Every id in notifiedBuckets was either found under an
-    // AWS::S3::Bucket resource by collectS3Notifications, or passed
-    // the AWS::S3::Bucket type filter above, so the lookup always
-    // resolves.
+    // Every id here is a declared AWS::S3::Bucket, so the lookup succeeds.
     summaries.push(
       buildBucketProviderSummary(
         bucketId,
@@ -419,7 +326,6 @@ function buildQueueProviderSummary(
   };
 }
 
-/** One AWS::SNS::Topic provider summary, mirroring buildQueueProviderSummary. */
 function buildTopicProviderSummary(
   logicalId: string,
   resource: CloudFormationResource,
@@ -460,13 +366,9 @@ interface LambdaConsumerOpts {
   lambdaId: string;
   lambdaResource: CloudFormationResource;
   eventName: string;
-  /** CFN logical id of the queue the Lambda consumes from. */
+  // The queue's logical id.
   channel: string;
-  /**
-   * The one (bus, detail-type) an EventBridge rule routes into the
-   * queue, or null when the queue is not rule-fed (command queues) or
-   * is routed with several subjects.
-   */
+  // Null when no subject, or more than one, is routed into the queue.
   routed: RoutedSubject | null;
   sourceFile: string;
   recognition: string;
@@ -484,8 +386,7 @@ function buildLambdaConsumerSummary(
       exportName: null,
     },
     identity: {
-      // Compose the lambda's logical id with the event name so multiple
-      // events on one Lambda produce distinguishable summaries.
+      // The event name keeps several events on one Lambda apart.
       name: `${opts.lambdaId}.${opts.eventName}`,
       exportPath: null,
       boundaryBinding: messageBusBinding({
@@ -522,48 +423,18 @@ function buildLambdaConsumerSummary(
   };
 }
 
-/**
- * One upstream subject that overrides a queue's own logical-id channel
- * on its Lambda consumer(s): either the (bus, detailType) an
- * EventBridge rule routes into the queue, or the channel of an SNS
- * topic a Protocol "sqs" subscription feeds it from. `eventBus` /
- * `detailType` are set only for the EventBridge case, an SNS topic's
- * channel already gives the topic directly, nothing to decompose.
- */
+// A subject routed into a queue from an EventBridge rule, an SNS topic or
+// an S3 bucket. `eventBus` and `detailType` are only set for a rule.
 interface RoutedSubject {
-  /** `${eventBus}#${detailType}` for a rule, or the topic's own channel for an SNS subscription. */
+  // `<bus>#<detailType>` for a rule, or the topic's or bucket's logical id.
   channel: string;
   eventBus?: string;
   detailType?: string;
 }
 
-/**
- * Map each SQS queue's CFN logical id to the set of upstream channels
- * routed into it, keyed by channel so the same subject routed twice
- * counts once. Three origins contribute:
- *
- *   - An EventBridge rule targeting the queue, whose EventPattern
- *     reduces to exact detail-types. Scheduled rules carry no message
- *     subject and are skipped. Only a target's own `Arn` counts, so a
- *     target's DeadLetterConfig queue (which receives failed
- *     deliveries, not the routed subject) is left alone.
- *
- *   - An SNS subscription (standalone or inline) with Protocol "sqs"
- *     and no FilterPolicy, whose Endpoint resolves to the queue. A
- *     FilterPolicy narrows which messages the queue actually sees, and
- *     v0 doesn't reduce it, so a filtered subscription doesn't
- *     contribute here, mirroring how a rule whose EventPattern doesn't
- *     reduce to exact detail-types is left out too.
- *
- *   - An S3 bucket's QueueConfiguration with no Filter, whose Queue
- *     resolves to the queue. A Filter (S3Key prefix/suffix rules)
- *     narrows which objects notify the queue, and v0 doesn't reduce
- *     it either, so a filtered configuration is left out the same way.
- *
- * Any origin can make a queue's Lambda consumer(s) take the upstream
- * channel instead of the queue's own logical id; see
- * `singleRoutedSubjectOf`.
- */
+// The subjects routed into each queue, keyed by channel so one subject
+// routed twice counts once. A rule's DeadLetterConfig queue gets failed
+// deliveries only, so only a target's own `Arn` counts.
 function buildQueueSubjectMap(
   resources: Record<string, CloudFormationResource>,
   snsSubscriptions: SnsSubscription[],
@@ -604,6 +475,8 @@ function buildQueueSubjectMap(
     }
   }
 
+  // A filter narrows which messages reach the queue, and filters are not
+  // reduced yet, so a filtered subscription or notification is left out.
   for (const sub of snsSubscriptions) {
     if (sub.protocol !== "sqs" || sub.filterPolicy !== undefined) {
       continue;
@@ -633,12 +506,7 @@ function buildQueueSubjectMap(
   return map;
 }
 
-/**
- * The one channel routed into the queue, or null when several sources
- * (rules and/or SNS subscriptions) route into it, or none do. Only a
- * single-channel queue can lend its consumer an unambiguous subject
- * identity.
- */
+// With several subjects, no single one describes the queue's messages.
 function singleRoutedSubjectOf(
   queueSubjects: Map<string, Map<string, RoutedSubject>>,
   queueId: string,
@@ -653,45 +521,6 @@ function singleRoutedSubjectOf(
 // ---------------------------------------------------------------------------
 // EventBridge
 // ---------------------------------------------------------------------------
-//
-// CHANNEL SCHEME. One event bus multiplexes many event types; a rule
-// subscribes to a subset keyed by DetailType. So the channel carries
-// BOTH parts: `${bus}#${detailType}`, matching the producer scheme in
-// @suss/framework-aws-eventbridge:
-//
-//   - `bus` is the event bus CFN logical id when the rule's
-//     EventBusName is a Ref/GetAtt (or an EventBus ARN we can segment),
-//     or "default" when EventBusName is omitted (EventBridge default
-//     bus). Producers name the bus via an env var that the checker
-//     chain-collapses to the same logical id.
-//   - `detailType` is each literal from the rule's EventPattern
-//     `detail-type` array.
-//
-// ROLES.
-//   - Each (bus, detailType) a rule routes → one PROVIDER summary
-//     (kind: library). Producers pair against it; a producer emitting a
-//     detailType no rule routes surfaces as messageBusProducerOrphan.
-//   - Each (rule, detailType, Lambda target) → one CONSUMER summary
-//     (kind: consumer), scoped to the target Lambda's code.
-//
-// PATTERN REDUCTION (v0). Only literal `detail-type` arrays reduce to
-// exact detail-types. A rule whose pattern can't be reduced (no
-// detail-type field, content filters like `{ prefix: … }`, `anything-
-// but`, etc.) still emits a consumer summary, flagged
-// `metadata.messageBus.patternResolution = "unresolvable"` so the
-// checker surfaces it (never silent) rather than pairing on a guessed
-// channel. Pattern subsumption is out of v0 scope.
-//
-// SCHEDULES. A scheduled rule (ScheduleExpression, or SAM Events
-// {Type: Schedule}) is time-triggered, no message, no producer. Its
-// target Lambda emits a consumer summary flagged
-// `patternResolution = "schedule"` so the checker accounts for it
-// without flagging it as an orphaned consumer.
-//
-// The EventBus resource itself doesn't get a standalone provider
-// summary: its identity rides inside every rule channel's `bus`
-// segment, and a bare bus-level channel (no detailType) that no
-// producer or consumer uses would otherwise mis-report as unused.
 
 interface RuleTarget {
   lambdaId: string;
@@ -701,14 +530,14 @@ interface RuleTarget {
 interface EventBridgeConsumerOpts {
   lambdaId: string;
   lambdaResource: CloudFormationResource;
-  /** Rule identity for the summary name (CFN logical id or SAM event name). */
+  // The rule's logical id, or the SAM event name.
   ruleLabel: string;
   channel: string;
   patternResolution: "exact" | "schedule" | "unresolvable";
   eventBus: string;
   sourceFile: string;
   recognition: string;
-  /** Whether the rule deploys switched on, when the manifest says. */
+  // Whether the rule is deployed enabled, when the template says.
   enabled?: boolean;
   detailType?: string;
   unresolvableReason?: string;
@@ -720,9 +549,8 @@ function buildEventBridgeSummaries(
   recognition: string,
 ): BehavioralSummary[] {
   const summaries: BehavioralSummary[] = [];
-  // Dedup provider summaries by channel, two rules can route the same
-  // (bus, detailType), but the checker keys pairing on the channel Set,
-  // so one provider per channel is enough.
+  // Two rules can route the same bus and detail type, and the checker
+  // pairs by channel, so one provider per channel is enough.
   const emittedProviderChannels = new Set<string>();
 
   function emitProvider(
@@ -747,7 +575,7 @@ function buildEventBridgeSummaries(
     );
   }
 
-  // 1. Raw AWS::Events::Rule resources.
+  // 1. AWS::Events::Rule resources.
   for (const [ruleId, resource] of Object.entries(resources)) {
     if (resource.Type !== "AWS::Events::Rule") {
       continue;
@@ -756,10 +584,8 @@ function buildEventBridgeSummaries(
     if (!Array.isArray(rawTargets) || rawTargets.length === 0) {
       continue;
     }
-    // Lambda targets get consumer summaries. A rule routing only to a
-    // queue has none, but it still declares the subject crosses the
-    // bus, so its provider summary is emitted either way, otherwise
-    // the producer that sends the subject reads as an orphan.
+    // A rule that only targets a queue has no Lambda consumer, but it
+    // still gets a provider so the producer is not reported as an orphan.
     const targets = readRuleTargets(rawTargets, resources);
     const eventBus = resolveEventBusToken(resource.Properties?.EventBusName);
     const scheduleExpr = resource.Properties?.ScheduleExpression;
@@ -795,8 +621,8 @@ function buildEventBridgeSummaries(
     });
   }
 
-  // 2. SAM Events:{Type: EventBridgeRule | Schedule} on Serverless
-  //    Functions. The owning Lambda is the target.
+  // 2. SAM EventBridgeRule and Schedule events, which target their own
+  //    function.
   for (const [lambdaId, resource] of Object.entries(resources)) {
     if (resource.Type !== "AWS::Serverless::Function") {
       continue;
@@ -863,7 +689,7 @@ interface EmitRuleOpts {
   targets: RuleTarget[];
   sourceFile: string;
   recognition: string;
-  /** What the rule's State said, when it said anything (#207). */
+  // From the rule's State, when it is set (#207).
   enabled?: boolean;
   emitProvider: (
     channel: string,
@@ -1002,12 +828,8 @@ function buildEventBridgeConsumerSummary(
   };
 }
 
-/**
- * What an AWS::Events::Rule's `State` says about whether it deploys
- * switched on. A rule deployed DISABLED invokes nothing until someone
- * turns it on, so its consumer is wired but idle. A state the template
- * does not write, or writes as something neither value, says nothing.
- */
+// A DISABLED rule invokes nothing until someone turns it on, so its
+// consumer is wired but idle. Any other State leaves `enabled` unset.
 function ruleEnablement(state: unknown): { enabled?: boolean } {
   if (state === "ENABLED") {
     return { enabled: true };
@@ -1019,11 +841,8 @@ function ruleEnablement(state: unknown): { enabled?: boolean } {
   return {};
 }
 
-/**
- * Read a rule's Targets array and return the Lambda targets (resolved
- * to their CFN resource). Non-Lambda targets (SQS, SNS, Step Functions)
- * are out of v0 scope and skipped.
- */
+// Only Lambda targets. A queue target is handled by buildQueueSubjectMap,
+// and other targets are skipped.
 function readRuleTargets(
   targets: unknown,
   resources: Record<string, CloudFormationResource>,
@@ -1060,34 +879,20 @@ function readRuleTargets(
 // SNS
 // ---------------------------------------------------------------------------
 
-/** One AWS::SNS::Subscription, standalone or inline on its topic. */
+// A standalone AWS::SNS::Subscription, or an entry inline on its topic.
 interface SnsSubscription {
-  /** CFN logical id of the topic this subscription is declared on, also the channel a Protocol "lambda" consumer binds to. */
+  // The topic's logical id, which is also its channel.
   topicId: string;
-  /**
-   * Distinguishes this subscription from others reaching the same
-   * Lambda or queue: the standalone resource's own logical id, or a
-   * synthesized label for an inline entry (which has none).
-   */
+  // The standalone resource's logical id, or a made-up label for an
+  // inline entry, which has none.
   label: string;
   protocol: string;
   endpoint: unknown;
-  /** The subscription's FilterPolicy, verbatim, or undefined when it declares none. */
   filterPolicy: unknown;
 }
 
-/**
- * Every AWS::SNS::Subscription the template declares: standalone
- * resources (TopicArn points at the topic) and entries inline on a Topic's
- * own `Subscription` list (the owning Topic is implicit). The two
- * shapes are not the same. CFN's inline `Subscription` property type
- * has only {Protocol, Endpoint}. FilterPolicy, and the rest of a
- * subscription's attributes, exist only on the standalone
- * AWS::SNS::Subscription resource. An inline entry's `filterPolicy` is
- * always undefined here, so it always resolves to "exact". Future
- * FilterPolicy-reduction work only has actual policies to reduce on
- * the standalone side.
- */
+// Standalone subscriptions and entries inline on a topic's `Subscription`
+// list. CloudFormation's inline entry has only Protocol and Endpoint.
 function collectSnsSubscriptions(
   resources: Record<string, CloudFormationResource>,
 ): SnsSubscription[] {
@@ -1135,8 +940,7 @@ function collectSnsSubscriptions(
         label: `${topicId}.Subscription${index}`,
         protocol,
         endpoint: (entry as { Endpoint?: unknown }).Endpoint,
-        // CFN's inline Subscription property type has no FilterPolicy
-        // field at all; only the standalone resource does.
+        // Only the standalone resource can have a FilterPolicy.
         filterPolicy: undefined,
       });
     }
@@ -1148,24 +952,20 @@ function collectSnsSubscriptions(
 interface SnsLambdaConsumerOpts {
   lambdaId: string;
   lambdaResource: CloudFormationResource;
-  /** Distinguishes this subscription among others reaching the Lambda: a Subscription's logical id / synthesized label, or the SAM event name. */
+  // The subscription's label, or the SAM event name.
   label: string;
-  /** CFN logical id of the topic, also the consumer's channel. */
   topicId: string;
   filterPolicy: unknown;
-  /** A SAM event's SqsSubscription value, which puts a queue on the wire between the topic and the function (#154). */
+  // A SAM event's SqsSubscription, which puts a queue between the topic
+  // and the function (#154).
   sqsSubscription?: unknown;
   sourceFile: string;
   recognition: string;
 }
 
-/**
- * What SqsSubscription says about the delivery leg. `true` makes SAM
- * create a queue that exists only in the deployed stack; the map form
- * points at a queue the template declares. Either way the function
- * consumes the queue, not the topic, so the summary says so rather
- * than hiding a resource a reader of the stack will meet.
- */
+// `true` makes SAM create a queue that exists only once deployed, and the
+// map form points at a declared queue. Either way the function reads from
+// a queue, and the summary records it.
 function sqsDeliveryOf(
   sqsSubscription: unknown,
 ): { deliveredThrough: "aws_sqs"; queue: string } | null {
@@ -1180,16 +980,8 @@ function sqsDeliveryOf(
   return { deliveredThrough: "aws_sqs", queue: queue ?? "<unresolved>" };
 }
 
-/**
- * One Protocol "lambda" SNS subscription's consumer summary, whether
- * declared as a standalone/inline Subscription or a SAM
- * Events:{Type: SNS} entry. Mirrors buildLambdaConsumerSummary /
- * buildEventBridgeConsumerSummary's shape: shared codeScope
- * resolution, `${lambdaId}.${label}` identity naming (there's no
- * per-message subject to key on the way EventBridge's detailType does
- *, a subscription with no FilterPolicy receives the whole topic, so
- * the label plays the differentiating role eventName plays for SQS).
- */
+// SNS has no subject per message to name a consumer by, so the name uses
+// the subscription's label, as an SQS consumer uses its event name.
 function buildSnsLambdaConsumerSummary(
   opts: SnsLambdaConsumerOpts,
 ): BehavioralSummary {
@@ -1238,15 +1030,8 @@ type FilterPolicyResolution =
   | { kind: "exact" }
   | { kind: "unresolvable"; reason: string };
 
-/**
- * FilterPolicy reduction (v0): absent means the subscription receives
- * every message the topic carries, the same shape as a rule with a
- * single exact detail-type. Present means v0 can't tell which messages
- * get through, so it's unresolvable, surfaced by the checker, never
- * silently dropped, mirroring how an EventPattern content filter is
- * unresolvable. Reducing a FilterPolicy to the subset of messages it
- * actually admits is out of v0 scope.
- */
+// With no FilterPolicy the subscription gets every message. Filters are
+// not reduced yet, so one that is present is reported as unresolvable.
 function reduceFilterPolicy(filterPolicy: unknown): FilterPolicyResolution {
   if (filterPolicy === undefined) {
     return { kind: "exact" };
@@ -1262,7 +1047,6 @@ function reduceFilterPolicy(filterPolicy: unknown): FilterPolicyResolution {
 // S3
 // ---------------------------------------------------------------------------
 
-/** One AWS::S3::Bucket LambdaConfiguration entry. */
 interface S3LambdaNotification {
   bucketId: string;
   label: string;
@@ -1271,7 +1055,6 @@ interface S3LambdaNotification {
   filter: unknown;
 }
 
-/** One AWS::S3::Bucket QueueConfiguration entry. */
 interface S3QueueNotification {
   bucketId: string;
   label: string;
@@ -1280,7 +1063,6 @@ interface S3QueueNotification {
   filter: unknown;
 }
 
-/** One AWS::S3::Bucket TopicConfiguration entry. */
 interface S3TopicNotification {
   bucketId: string;
   label: string;
@@ -1289,15 +1071,8 @@ interface S3TopicNotification {
   filter: unknown;
 }
 
-/**
- * Every notification entry every AWS::S3::Bucket declares, split by
- * the kind of target it names. S3 notifications are always inline on
- * the bucket's own NotificationConfiguration, unlike SNS, which also
- * has a standalone AWS::SNS::Subscription resource, so each entry's
- * label is synthesized from the bucket id, the configuration kind, and
- * the entry's position, the same way an inline SNS Subscription's
- * label is.
- */
+// S3 notifications are always inline on the bucket and have no logical id
+// of their own, so each label is made from the bucket, kind and position.
 function collectS3Notifications(
   resources: Record<string, CloudFormationResource>,
 ): {
@@ -1374,7 +1149,6 @@ function collectS3Notifications(
   return { lambda, queue, topic };
 }
 
-/** One AWS::S3::Bucket provider summary, mirroring buildTopicProviderSummary. */
 function buildBucketProviderSummary(
   logicalId: string,
   resource: CloudFormationResource,
@@ -1412,9 +1186,8 @@ function buildBucketProviderSummary(
 interface S3LambdaConsumerOpts {
   lambdaId: string;
   lambdaResource: CloudFormationResource;
-  /** Distinguishes this notification among others reaching the Lambda: a synthesized LambdaConfiguration label, or the SAM event name. */
+  // The LambdaConfiguration's label, or the SAM event name.
   label: string;
-  /** CFN logical id of the bucket, also the consumer's channel. */
   bucketId: string;
   event: unknown;
   filter: unknown;
@@ -1422,13 +1195,6 @@ interface S3LambdaConsumerOpts {
   recognition: string;
 }
 
-/**
- * One LambdaConfiguration's consumer summary, whether declared inline
- * on the bucket or as a SAM Events:{Type: S3} entry. Mirrors
- * buildSnsLambdaConsumerSummary's shape: shared codeScope resolution,
- * `${lambdaId}.${label}` identity naming, and a Filter reduced the
- * same way a FilterPolicy is.
- */
 function buildS3LambdaConsumerSummary(
   opts: S3LambdaConsumerOpts,
 ): BehavioralSummary {
@@ -1473,18 +1239,9 @@ function buildS3LambdaConsumerSummary(
   };
 }
 
-/**
- * One TopicConfiguration's consumer summary. Unlike a QueueConfiguration,
- * this can't hand its channel to the topic's own Lambda subscribers:
- * those are built independently in the SNS section, from whatever
- * subscribes to the topic, not from what feeds it, and nothing today
- * lets an upstream source override that channel the way
- * buildQueueSubjectMap does for SQS. So the bridge gets its own
- * bucket-channelled consumer instead, naming the topic it targets in
- * metadata rather than a deployableUnit, since an SNS topic doesn't
- * run code. Returns null when the Topic reference doesn't resolve to
- * an AWS::SNS::Topic in this template.
- */
+// Nothing lets a source upstream of a topic change its subscribers'
+// channel, as buildQueueSubjectMap does for a queue, so the bucket gets a
+// consumer that records the topic. Null when the topic is not declared.
 function buildS3TopicBridgeConsumerSummary(
   notification: S3TopicNotification,
   resources: Record<string, CloudFormationResource>,
@@ -1529,15 +1286,7 @@ function buildS3TopicBridgeConsumerSummary(
   };
 }
 
-/**
- * S3 notification Filter reduction (v0): absent means the notification
- * receives every event of the type it declares, the same shape as an
- * SNS subscription with no FilterPolicy. Present means v0 can't tell
- * which keys the S3Key prefix/suffix rules admit, so it's unresolvable,
- * surfaced by the checker, never silently dropped, mirroring
- * reduceFilterPolicy. Reducing a Filter to the subset of keys it
- * actually admits is out of v0 scope.
- */
+// The same rule as reduceFilterPolicy, for S3Key prefix and suffix filters.
 function reduceS3Filter(filter: unknown): FilterPolicyResolution {
   if (filter === undefined) {
     return { kind: "exact" };
@@ -1549,13 +1298,8 @@ function reduceS3Filter(filter: unknown): FilterPolicyResolution {
   };
 }
 
-/**
- * Normalize a CFN S3 Event value to a list of event types. A
- * LambdaConfiguration / QueueConfiguration / TopicConfiguration's
- * `Event` is always a single string, wrapped here in a one-element
- * list; SAM's `Events` on a Type: S3 event source accepts a string or
- * a list of strings, so either shape ends up in one field.
- */
+// A notification's `Event` is one string, and SAM's S3 `Events` can be a
+// string or a list.
 function eventList(value: unknown): string[] | undefined {
   if (typeof value === "string") {
     return [value];

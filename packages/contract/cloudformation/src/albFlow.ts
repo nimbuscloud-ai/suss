@@ -1,45 +1,17 @@
-// albFlow.ts: read an Application Load Balancer's routing chain as
-// the edges design/proposals/flow-reachability.md names:
-//
-//   routesTo(router, target, matchId)   a listener rule, or a
-//                                       listener's own forward default
-//                                       action, naming the target group
-//                                       its match forwards to. The
-//                                       match's conditions and priority
-//                                       live on the same record.
-//   answers(router, matchId, response)  a rule's or a listener's own
-//                                       non-forward action: the
-//                                       response a path gets without
-//                                       forwarding anywhere. A rule's
-//                                       conditions and priority live on
-//                                       this record too; a listener's
-//                                       own default has neither.
-//   fronts(target, resource)            what a target group backs onto:
-//                                       an ECS container, a Lambda
-//                                       function, or another load
-//                                       balancer (an NLB in front of an
-//                                       ALB).
-//   belongsTo(listener, loadBalancer)   which load balancer a listener
-//                                       belongs to, read from its
-//                                       LoadBalancerArn, so a chain of
-//                                       balancers composes: a fronts
-//                                       edge ends at a balancer's
-//                                       logical id and this edge is how
-//                                       the walk continues into that
-//                                       balancer's own listeners.
-//
-// One summary states exactly one edge, carried in the `routing`
-// metadata namespace (@suss/behavioral-ir). No boundaryBinding: these
-// edges are not a provider/consumer pairing the checker matches today,
-// they are the fact base a future reachability rule walks. Nothing here
-// resolves what an edge ultimately reaches across more than one hop:
-// the ECS chain (target group to service to task definition to
-// container) is a fixed, bounded lookup this reader settles, the same
-// way the manifests-as-facts proposal treats a nested stack's
-// parameter chain; a target group fronting another load balancer stops
-// at that load balancer's own logical id, and composing the chain
-// beyond it is the reachability rule's job (slice 3), never this
-// reader's.
+/**
+ * Reads an Application Load Balancer's routing as one-hop edges for the
+ * reachability walk: `routesTo`, `answers`, `fronts` and `belongsTo`.
+ * The README describes each edge.
+ *
+ * Each summary has exactly one edge, in the `routing` metadata, and no
+ * boundary binding, since the checker does not pair these.
+ *
+ * No edge here spans more than one hop. The ECS lookup from target group
+ * through service and task definition to container is fixed in length,
+ * so it is settled here. A target group in front of another load
+ * balancer stops at that balancer's logical id, and the reachability
+ * rules follow the chain from there.
+ */
 
 import { withRoutingMetadata } from "@suss/behavioral-ir";
 import { ecsContainerInstanceName } from "@suss/ir-core";
@@ -50,13 +22,11 @@ import { ALB_MATCH_LANGUAGE } from "./albMatch.js";
 import type { BehavioralSummary, RoutingMetadata } from "@suss/behavioral-ir";
 import type { CloudFormationResource } from "@suss/manifest-aws";
 
-/** A reference this reader could not resolve to a declared resource of the expected kind. */
 interface UnresolvedRoutingRef {
   reference: string;
   reason: string;
 }
 
-/** Either a resolved logical id, or why resolution stopped. */
 interface RefResolution {
   logicalId: string | null;
   unresolved?: UnresolvedRoutingRef;
@@ -65,7 +35,7 @@ interface RefResolution {
 type MatchCondition = NonNullable<RoutingMetadata["conditions"]>[number];
 type RoutingResponse = NonNullable<RoutingMetadata["response"]>;
 
-/** Every ALB condition `Field` CFN defines, and the nested config property its values live under. */
+// Each ALB condition `Field`, and the property that contains its values.
 const CONDITION_CONFIG_KEYS: Record<string, string> = {
   "path-pattern": "PathPatternConfig",
   "host-header": "HostHeaderConfig",
@@ -75,14 +45,13 @@ const CONDITION_CONFIG_KEYS: Record<string, string> = {
   "source-ip": "SourceIpConfig",
 };
 
-/** Condition fields v0 actually matches against a request. Every other declared field is still read and recorded, marked unevaluated. */
+// Other fields are still recorded, marked unevaluated.
 const EVALUATED_CONDITION_FIELDS = new Set(["path-pattern", "host-header"]);
 
 /**
- * Walk a template's ALB resources and emit one `library`-kind summary
- * per routing edge: a `routesTo` or `answers` row per listener rule and
- * per listener's own default action, a `belongsTo` row per listener,
- * and a `fronts` row per target group.
+ * One summary per routing edge: `routesTo` or `answers` for each listener
+ * rule and each listener's default action, `belongsTo` for each listener,
+ * and `fronts` for each target group.
  */
 export function buildAlbFlowSummaries(
   resources: Record<string, CloudFormationResource>,
@@ -153,7 +122,7 @@ export function buildAlbFlowSummaries(
 // ---------------------------------------------------------------------------
 
 interface MatchSummariesOpts {
-  /** Rule (or listener, for a default action) logical id: the summary's own identity and the matchId's base. */
+  // The rule's logical id, or the listener's for a default action.
   identityBase: string;
   router: string | null;
   unresolvedRouter?: UnresolvedRoutingRef;
@@ -165,14 +134,9 @@ interface MatchSummariesOpts {
   sourceFile: string;
 }
 
-/**
- * One match (a rule, or a listener's own default action) becomes one or
- * more `routesTo` rows sharing a matchId (several, for a weighted
- * forward naming more than one target group) or a single `answers` row.
- * An action list naming neither a forward target nor a readable
- * non-forward action still produces one row: never dropped, its target
- * or response recorded as unresolved instead.
- */
+// A weighted forward gives one `routesTo` per target group, all with one
+// matchId. A match with no readable action still gets a row, with its
+// target or response marked unresolved.
 function buildMatchSummaries(opts: MatchSummariesOpts): BehavioralSummary[] {
   const classification = classifyActions(opts.actionsRaw);
 
@@ -254,14 +218,9 @@ type ActionClassification =
   | { kind: "forward"; targets: ForwardTarget[] }
   | { kind: "answers"; response: RoutingResponse };
 
-/**
- * An action list's terminal disposition: the forward action if the list
- * has one (auth actions such as authenticate-cognito may precede it;
- * v0 does not model the auth gate, only where traffic ends up), else
- * the response the first non-authenticate action states. A list that is
- * nothing but authenticate actions falls back to its first entry, so
- * the row still records the only type the template gives.
- */
+// Where traffic ends up: the forward action, or else the first action
+// that is not an authenticate step. Authentication itself is not modelled.
+// A list of only authenticate actions records the first one's type.
 function classifyActions(actionsRaw: unknown): ActionClassification {
   const actions = Array.isArray(actionsRaw) ? actionsRaw : [];
   const forward = actions.find(
@@ -278,7 +237,6 @@ function classifyActions(actionsRaw: unknown): ActionClassification {
   return { kind: "answers", response: readResponse(terminal ?? actions[0]) };
 }
 
-/** authenticate-cognito / authenticate-oidc: a gate before the action that answers, never the answer itself. */
 function isAuthenticateAction(action: unknown): boolean {
   if (action === null || typeof action !== "object") {
     return false;
@@ -288,7 +246,7 @@ function isAuthenticateAction(action: unknown): boolean {
   return typeof type === "string" && type.startsWith("authenticate-");
 }
 
-/** A forward action's target group(s): the plain single-target shape, or a weighted ForwardConfig's list. */
+// A single TargetGroupArn, or the weighted list in ForwardConfig.
 function readForwardTargets(action: Record<string, unknown>): ForwardTarget[] {
   if (action.TargetGroupArn !== undefined) {
     return [{ targetRef: action.TargetGroupArn }];
@@ -316,7 +274,6 @@ function readForwardTargets(action: Record<string, unknown>): ForwardTarget[] {
     });
 }
 
-/** A non-forward action's response, or the null-typed record when the template gives no readable action. */
 function readResponse(action: unknown): RoutingResponse {
   if (action === null || typeof action !== "object") {
     return { type: null };
@@ -363,16 +320,6 @@ function readPriority(raw: unknown): number | undefined {
   return undefined;
 }
 
-/**
- * Every condition a rule (or a listener default, which names none)
- * declares. Each field reads its values out of its own nested
- * `*Config.Values` shape, or the legacy bare `Values` property on the
- * condition itself for the two fields old enough to have one.
- * `path-pattern` and `host-header` are the only fields v0 matches
- * against a request; every other field, and a condition with no
- * readable Field at all, is still recorded, marked unevaluated rather
- * than dropped.
- */
 function readConditions(raw: unknown): MatchCondition[] {
   if (!Array.isArray(raw)) {
     return [];
@@ -385,6 +332,8 @@ function readConditions(raw: unknown): MatchCondition[] {
     .map(readCondition);
 }
 
+// Values come from the field's `*Config.Values`, or from the older bare
+// `Values` that path-pattern and host-header also accept.
 function readCondition(condition: Record<string, unknown>): MatchCondition {
   const field =
     typeof condition.Field === "string" && condition.Field.length > 0
@@ -407,12 +356,8 @@ function readCondition(condition: Record<string, unknown>): MatchCondition {
   };
 }
 
-/**
- * A condition's `Values` array as strings. Most fields list plain
- * strings; `query-string` lists `{Key?, Value}` pairs instead, flattened
- * to `key=value` (or the bare value with no Key) so every field fits
- * the one string list on the match record.
- */
+// `query-string` lists `{ Key?, Value }` pairs, flattened to `key=value`
+// so every field fits the match record's list of strings.
 function readConditionValues(raw: unknown): string[] | null {
   if (!Array.isArray(raw)) {
     return null;
@@ -443,11 +388,8 @@ function flattenConditionValue(entry: unknown): string | null {
 // belongsTo
 // ---------------------------------------------------------------------------
 
-/**
- * The listener's own membership: which load balancer its
- * LoadBalancerArn points at. One row per listener, named apart from the
- * listener's default-action row so the two summaries stay two facts.
- */
+// Named `<listener>#loadBalancer` to keep it apart from the listener's
+// default-action row, which uses the listener's own id.
 function buildBelongsToSummary(
   listenerId: string,
   resource: CloudFormationResource,
@@ -495,18 +437,9 @@ function buildFrontsSummary(
   });
 }
 
-/**
- * What a target group ultimately points at as its own registered target,
- * one hop: a Lambda function, the ECS container behind whichever
- * service registers it, or, for an NLB fronting an ALB directly,
- * another load balancer. Never follows a second target group itself, so
- * a chain (or a cycle) between load balancers is several one-hop
- * `fronts` facts rather than something this function walks; composing
- * the chain is the reachability rule's job. `visited` guards it anyway:
- * nothing below calls back into this function today, so it never grows
- * past one entry, but a hop added here later inherits cycle safety for
- * free rather than needing to invent it.
- */
+// A Lambda, the ECS container behind the registering service, or another
+// load balancer. Nothing below recurses yet, so `visited` never grows past
+// one entry; it guards against cycles if a later hop does.
 function resolveFrontedResource(
   targetGroupId: string,
   resource: CloudFormationResource,
@@ -584,14 +517,9 @@ function resolveLoadBalancerTarget(
   );
 }
 
-/**
- * The ECS chain a target group of any other TargetType (ip, instance,
- * or unset) resolves through: search every AWS::ECS::Service for the
- * one whose LoadBalancers entry points at this target group, then that
- * service's TaskDefinition, then the container name the same
- * LoadBalancers entry gives. A fixed three-hop lookup the reader
- * settles once here, not a walk.
- */
+// For TargetType ip, instance or unset: the ECS service that registers
+// this group, then its TaskDefinition, then the ContainerName from the
+// same LoadBalancers entry.
 function resolveEcsTarget(
   targetGroupId: string,
   resources: Record<string, CloudFormationResource>,
@@ -664,13 +592,8 @@ function resolveEcsTarget(
 // Shared ref resolution and summary building
 // ---------------------------------------------------------------------------
 
-/**
- * Follow a CFN reference and confirm it points at a declared resource of
- * one of the expected types. Every failure mode, an unset value, a
- * value that points at nothing CFN resolves, a dangling logical id, or a
- * resource of the wrong type, comes back as `unresolved` with a reason
- * rather than as an exception or a silently dropped edge.
- */
+// Every way this can fail comes back as `unresolved` with a reason, so
+// an edge is never dropped without a record of why.
 function resolveRefOfType(
   value: unknown,
   resources: Record<string, CloudFormationResource>,
@@ -715,13 +638,6 @@ function resolveRefOfType(
   return { logicalId: id };
 }
 
-/**
- * The unrecognized reference `resolveRefOfType` names as its
- * `unresolved.reference`. Its only caller reaches this after
- * `refTarget` returns null, which happens for an object shape it does
- * not know, never for a plain string (`refTarget` resolves those to
- * themselves), so there is always something to stringify.
- */
 function describeRef(value: unknown): string {
   try {
     return JSON.stringify(value);

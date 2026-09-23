@@ -1,15 +1,11 @@
 /**
- * A DynamoDB table as a storage boundary.
+ * Summaries for DynamoDB tables as storage boundaries, so a writer in one
+ * service and a reader in another have a table to pair on (#143).
  *
- * The template already reaches a function's runtime config when a Ref
- * wires a table name into an env var, but nothing recorded the table
- * itself, so a writer in one service and a reader in another had
- * nothing to pair on (#143).
- *
- * A table declares its key attributes and nothing else, so the contract
- * says `fieldSet: "partial"` and the pass leaves an ordinary attribute
- * alone. Each secondary index gets its own summary, because a query
- * through an index keys on that index's fields rather than the table's.
+ * A table declares only its key attributes, so the contract has
+ * `fieldSet: "partial"` and reading any other attribute is not a finding.
+ * Each secondary index gets its own summary, because a query through an
+ * index uses that index's key fields.
  */
 
 import { namePatternFromSub, storageBinding } from "@suss/behavioral-ir";
@@ -17,7 +13,6 @@ import { namePatternFromSub, storageBinding } from "@suss/behavioral-ir";
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { CloudFormationResource } from "@suss/manifest-aws";
 
-/** Every attribute a table declares a type for, by name. */
 type AttributeTypes = Map<string, string>;
 
 interface KeyedShape {
@@ -63,11 +58,9 @@ function tableSummary(opts: {
   recognition: string;
 }): BehavioralSummary {
   const { logicalId, props, shape, types } = opts;
-  // The rest of the template refers to a table by its logical id, so
-  // that is the container, and a stated TableName is the other name
-  // code can spell. The storage pass matches an access against either.
-  // A TableName built at deploy time is recorded with its parameter as
-  // a hole, since code that builds the same name pairs on the rest.
+  // The container is the logical id, since the rest of the template uses
+  // it, and a TableName is kept as a second name code may use. A name
+  // built with `!Sub` keeps its parameters as wildcards.
   const physicalTable = readPhysicalName(props.TableName);
   const name =
     shape.accessPath === null ? logicalId : `${logicalId}#${shape.accessPath}`;
@@ -85,8 +78,7 @@ function tableSummary(opts: {
       boundaryBinding: storageBinding({
         recognition: opts.recognition,
         storageSystem: "aws.dynamodb",
-        // A caller reaches the table through the AWS SDK over HTTPS,
-        // rather than through a wire protocol of its own.
+        // Callers reach DynamoDB through the AWS SDK over HTTPS.
         transport: "aws-sdk",
         scope: "default",
         container: logicalId,
@@ -112,11 +104,8 @@ function tableSummary(opts: {
   };
 }
 
-/**
- * A stated name, as a pattern when the template builds one. YAML's
- * `!Sub` tag resolves to the string it was written with, and the JSON
- * form arrives as an object, so both go through the same reading.
- */
+// YAML's `!Sub` tag parses to its plain string and the JSON form to an
+// object, so both are handled here.
 function readPhysicalName(declared: unknown): string | null {
   if (typeof declared === "string") {
     return namePatternFromSub(declared);
@@ -127,11 +116,7 @@ function readPhysicalName(declared: unknown): string | null {
   return namePatternFromSub((declared as { "Fn::Sub"?: unknown })["Fn::Sub"]);
 }
 
-/**
- * The table's own key, then one entry per secondary index. A local
- * index and a global one both key differently from the table, and a
- * caller states which it queries, so each is its own boundary.
- */
+/** The table's own key, then one entry per local or global index. */
 function keyedShapes(props: Record<string, unknown>): KeyedShape[] {
   const shapes: KeyedShape[] = [
     { accessPath: null, keyFields: keyFields(props.KeySchema) },
@@ -158,11 +143,8 @@ function keyedShapes(props: Record<string, unknown>): KeyedShape[] {
   return shapes;
 }
 
-/**
- * The attributes a key schema states, partition key first. DynamoDB
- * takes them in that order, so a caller that supplies the sort key
- * without the partition key has supplied neither.
- */
+// Partition key first: DynamoDB cannot use a sort key without the
+// partition key.
 function keyFields(schema: unknown): string[] {
   if (!Array.isArray(schema)) {
     return [];
