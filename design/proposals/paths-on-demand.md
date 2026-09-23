@@ -16,24 +16,24 @@ under one condition nobody can read:
 unmodeled control flow (path budget exceeded, more than 256 paths)
 ```
 
-This looks like the bounded walks we took out in 0.20.0, and it is a
-different thing. Those stopped after four hops because somebody picked
+This looks like the bounded walks we took out in 0.20.0, but the cause
+is different. Those stopped after four hops because somebody picked
 four, and they missed answers that were sitting right there. This one
-stops because a function with n branches in a row really does have 2^n
-paths, and we build each one.
+stops because a function with n branches in a row does have 2^n paths,
+and we build each one.
 
 We build each one on purpose. When a terminal can be reached three ways,
 we want three entries with their own conditions instead of one entry
-with a made-up conjunction. That is what a transition tells you that a
-count of `if` statements does not.
+with a made-up conjunction. A transition tells you that, and a count of
+`if` statements does not.
 
 ## Facts do not fix this one
 
 A rule deriving `pathCondition(terminal, conjunction)` produces
 exponentially many tuples for the same function. The engine has no cap
-and runs to fixpoint, so a body that degrades today would grind. I am
-writing this down because we spent 0.20.0 replacing walks with rules and
-this is the case where that trade does not work.
+and runs to fixpoint, so a body that degrades today would instead run
+for a very long time. We spent 0.20.0 replacing walks with rules, and
+this is a case where that trade does not work.
 
 ## What a graph would look like
 
@@ -43,8 +43,9 @@ State the control flow instead of its paths:
 - `guard(edge, condition, polarity)` where a branch chose it
 - `ends(node, terminal)` where a path can stop
 
-That is linear in the size of the body. Ask what conditions apply at a
-terminal and you get that without the other 2^n paths ever being built.
+Its size is linear in the size of the body. A question about which
+conditions apply at a terminal can then be answered without building
+the other 2^n paths.
 
 ## What the numbers say
 
@@ -61,51 +62,55 @@ Transitions are 70% of a summary's bytes. Inside them:
 | conditions | 10% |
 | everything else | 3% |
 
-Conditions are the only part a graph deduplicates, so they are about 7%
-of the file, and they repeat 1.32 times on average. Moving to a graph
-saves under 2% of the bytes.
+A graph deduplicates only the conditions. They are about 7% of the
+file, and they repeat 1.32 times on average. Moving to a graph saves
+under 2% of the bytes.
 
-The tail does not rescue it. Ten of the 412 units have five or more
-transitions and repeat conditions 2.02 times. The widest is 8
-transitions and 16KB, and those bytes are response shapes rather than
-repeated conditions. A graph keeps response shapes exactly as they are.
+The largest units do not change that. Ten of the 412 units have five
+or more transitions and repeat conditions 2.02 times. The widest is 8
+transitions and 16KB, and those bytes are response shapes, not repeated
+conditions. A graph keeps response shapes exactly as they are.
 
-## So the answer is no, for the published summary
+## No change to the published summary
 
-The reason size mattered is that summaries travel. A library ships them
-beside its types, and an agent pays tokens to read one. A change that
-saves 2% does not earn a migration of `BehavioralSummary.transitions`,
-which every checker reads and anything outside this repo may read too.
+Size mattered because summaries travel. A library ships them beside its
+types, and an agent pays tokens to read one. A 2% saving does not
+justify migrating `BehavioralSummary.transitions`, which every checker
+reads and anything outside this repo may read too.
 
-The exponential the cap guards against does not fire either. The
-heaviest corpus run degrades no transitions at all.
+The exponential case the cap guards against does not happen in
+practice either. The heaviest corpus run does not degrade a single
+transition.
 
-That leaves answering questions without building every path, which is a
-matter of how extraction works inside rather than what it publishes.
+What remains is answering questions without building every path. That
+concerns how extraction works inside, and leaves what it publishes
+alone.
 
 ## What to do instead
 
 - Keep enumerated transitions as the published artifact. Nothing about
   the schema changes and no consumer migrates.
-- Keep the cap and its degradation. It is the right answer for a body
-  suss cannot read affordably, and it says so instead of guessing.
+- Keep the cap and its degradation. It is the right response to a body
+  suss cannot read at a reasonable cost, and it reports that instead of
+  guessing.
 - If composing meta-functions (#726) ever wants a graph, build it inside
-  extraction and enumerate at the end. Composing on a graph is adding
-  edges, and the multiplication never happens. The measured composition
+  extraction and enumerate at the end. Composing on a graph means adding
+  edges, so the multiplication never happens. The measured composition
   cost today is about 12 paths for a route wrapped in an auth
   middleware, against a cap of 256, so nothing forces this yet.
 
 ## What this leaves open
 
-`suss ask` answers one question about one boundary and enumerates
-everything to do it. Watch mode and the agent-facing work want a graph
-that can be queried. Both are arguments about how suss works out an answer rather than about
-what a summary contains, and either can be taken up without touching
-the format.
+`suss ask` takes one question about one boundary, and enumerates
+everything to reply to it. Watch mode and the agent-facing work would benefit
+from a graph that can be queried. Both concern how suss works out an
+answer, and neither changes what a summary contains, so either can be
+taken up without touching the format.
 
-The checkers turned out not to be the obstacle I assumed. Eighteen
-production files read `.transitions`, and they ask for existence
+I assumed the checkers would be the obstacle, and they are not.
+Eighteen production files read `.transitions`. They ask for existence
 (`.some(ct => ct.isDefault)`), a subset by status, emptiness, or a fold
-gathering every field some path tests. A graph can answer all of those directly, and the folds get cheaper. Nothing indexes into
-paths as an ordered list. So if a reason to move ever does turn up, the
-checkers will not be what blocks it.
+gathering every field some path tests. A graph can answer all of those
+directly, and the folds get cheaper. Nothing indexes into paths as an
+ordered list. So if a reason to move ever turns up, the checkers will
+not block it.

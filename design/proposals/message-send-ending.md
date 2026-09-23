@@ -1,20 +1,21 @@
-# A pack says a call sends a message
+# A pack declares that a call sends a message
 
 Status: draft, seeking alignment. Nothing implemented.
 
-`@suss/recognize` has two endings. `storageAccess` settles what a call
-reached by asking the call. `sqlAccess` settles it by reading the
+`@suss/recognize` has two endings. `storageAccess` works out what a call
+reached from the call itself. `sqlAccess` works it out by reading the
 statement the call was handed, so one call yields one effect per table.
 
-Both are about a store. A pack whose call sends a message fits neither,
-so aws-sqs and aws-eventbridge are hand-rolled walks of about five
-hundred lines each. They are the largest pair of invocation recognizers
-left, and nothing else about them needs the toolkit to grow.
+Both endings describe access to a store. A call that sends a message
+fits neither, so aws-sqs and aws-eventbridge are hand-rolled walks of
+about five hundred lines each. They are the two largest invocation
+recognizers left, and apart from an ending they need nothing new from
+the toolkit.
 
 ## What the two packs read
 
-Both read the same shape. The AWS SDK v3 puts the operation in a command
-class and the arguments in one object:
+Both read the same pattern. The AWS SDK v3 puts the operation in a
+command class and the arguments in one object:
 
 ```ts
 await client.send(new SendMessageCommand({
@@ -29,9 +30,9 @@ await client.send(new PutEventsCommand({
 }));
 ```
 
-So the pieces are: which command class, which property of its input names
-the channel, which property carries the body, and whether one call sends
-one message or many.
+So a pack has to declare four things: the command class, the property
+of its input that gives the channel, the property that contains the
+body, and whether one call sends one message or many.
 
 ## The ending
 
@@ -55,8 +56,8 @@ export interface MessageSendEnding {
 }
 ```
 
-`ChannelRule` is where the two libraries differ and where the design has
-to be decided. SQS states one queue:
+The two libraries differ in `ChannelRule`, and that part of the design
+still has to be decided. SQS states one queue:
 
 ```ts
 channel: { from: "property", name: "QueueUrl" }
@@ -78,19 +79,20 @@ channel: {
 ## What this settles and what it does not
 
 **Settles.** aws-sqs and aws-eventbridge become declarations. The
-message-bus boundary stops being adapter code, which matters for the
-other adapters: a Python or Ruby pack that sends on a queue cannot say so today.
+message-bus boundary stops being adapter code. That matters for the
+other adapters, because a Python or Ruby pack that sends on a queue has
+no way to declare it today.
 
 **Does not settle.** SQS's channel is usually `process.env.ORDERS_QUEUE_URL`,
-so what pairs with a provider is the env var's name rather than a URL
-the source states. That reading exists in the hand-rolled pack
-and belongs to the symbolic-reference direction rather than here. Until
-it is decided, `unsettledName: "reference"` keeps the behaviour the pack
-has.
+so what pairs with a provider is the env var's name, since the source
+states no URL. The hand-rolled pack already reads it that way. That
+question belongs to the symbolic-reference direction, and this proposal
+leaves it there. Until it is decided, `unsettledName: "reference"` keeps
+the pack's current behaviour.
 
-**Decided.** A library that puts an intermediate collection between the
-call and the messages states that, and one that does not says the input
-is the message:
+**Decided.** When a library puts an intermediate collection between the
+call and the messages, its declaration states that. When it does not,
+the declaration states that the input is the message:
 
 ```ts
 // SendMessageCommand: the input is the message.
@@ -101,13 +103,13 @@ messages: { each: "in", property: "Entries" }
 ```
 
 So SQS writes two declarations and EventBridge writes one, because SQS's
-two commands are two shapes. Making the fan-out an optional field on one
-declaration would hide that difference behind a setting.
+two commands have two different shapes. Making the fan-out an optional
+field on one declaration would hide that difference behind a setting.
 
 ## Why this one first
 
-The remaining hand-rolled packs split three ways, and only this third
-needs nothing new beyond the ending:
+The remaining hand-rolled packs fall into three groups, and only this
+group needs nothing beyond the ending:
 
 | | Lines | What it needs |
 |---|---|---|
@@ -115,5 +117,5 @@ needs nothing new beyond the ending:
 | Access recognizers (node envVars and processSurface, cloudflare envBindings) | about 1050 | a match that starts somewhere other than a call receiver |
 | Discovery (aws-lambda, cloudflare, react) | about 940 | [`declared-boundary-binding.md`](./declared-boundary-binding.md) |
 
-`MatchStart` is `FromReceiver` and nothing else, so `process.env.X`
-cannot be stated at all. That is its own proposal.
+`MatchStart` has only `FromReceiver`, so a pack cannot declare
+`process.env.X` at all. That needs its own proposal.
