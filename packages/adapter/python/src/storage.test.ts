@@ -735,6 +735,126 @@ describe("the database work a Python body does", () => {
   });
 });
 
+/** A helper that takes its session bare, for the callers in `callers` to hand one to. */
+const LOOKUP = [
+  "def lookup(*, db, order_id):",
+  "    return db.query(Orders).filter_by(id=order_id).first()",
+  "",
+  "def lookup_at(db, order_id):",
+  "    return db.query(Orders).filter_by(id=order_id).first()",
+  "",
+].join("\n");
+
+/** The operations `lookup` or `lookup_at` records once its callers are in the run. */
+async function lookupOperations(
+  callers: string[],
+  inFunction = "lookup",
+): Promise<(string | undefined)[]> {
+  const effects = await effectsFor(LOOKUP, callers.join("\n"), inFunction);
+  return effects.map((effect) => accessOf(effect)?.operation);
+}
+
+describe("a session the callers declare", () => {
+  it("reads a session every caller passes by keyword as a Session", async () => {
+    const operations = await lookupOperations([
+      "from sqlalchemy.orm import Session",
+      "from handler import lookup",
+      "",
+      "def read_order(db: Session, order_id: int):",
+      "    return lookup(db=db, order_id=order_id)",
+      "",
+    ]);
+    expect(operations).toEqual(["first"]);
+  });
+
+  it("reads a session a caller passes by position", async () => {
+    const operations = await lookupOperations(
+      [
+        "from sqlalchemy.orm import Session",
+        "from handler import lookup_at",
+        "",
+        "def read_order(session: Session):",
+        "    return lookup_at(session, 1)",
+        "",
+      ],
+      "lookup_at",
+    );
+    expect(operations).toEqual(["first"]);
+  });
+
+  it("reads a session one caller declares through an Annotated alias and another as Session", async () => {
+    const operations = await lookupOperations([
+      "from typing import Annotated",
+      "from fastapi import Depends",
+      "from sqlalchemy.orm import Session",
+      "from handler import lookup",
+      "",
+      "SessionDep = Annotated[Session, Depends(get_db)]",
+      "",
+      "def read_order(db: SessionDep):",
+      "    return lookup(db=db, order_id=1)",
+      "",
+      "def sync_order(session: Session):",
+      "    return lookup(db=session, order_id=2)",
+      "",
+    ]);
+    expect(operations).toEqual(["first"]);
+  });
+
+  it("reads a session handed down through two helpers that take it bare", async () => {
+    const operations = await lookupOperations([
+      "from sqlalchemy.orm import Session",
+      "from handler import lookup",
+      "",
+      "def load(*, db, order_id):",
+      "    return lookup(db=db, order_id=order_id)",
+      "",
+      "def fetch(db, order_id):",
+      "    return load(db=db, order_id=order_id)",
+      "",
+      "def read_order(db: Session):",
+      "    return fetch(db, 1)",
+      "",
+    ]);
+    expect(operations).toEqual(["first"]);
+  });
+
+  it("reads nothing when two callers declare different classes", async () => {
+    const operations = await lookupOperations([
+      "from sqlalchemy.orm import Session",
+      "from redis import Redis",
+      "from handler import lookup",
+      "",
+      "def read_order(db: Session):",
+      "    return lookup(db=db, order_id=1)",
+      "",
+      "def cached_order(db: Redis):",
+      "    return lookup(db=db, order_id=1)",
+      "",
+    ]);
+    expect(operations).toEqual([]);
+  });
+
+  it("reads nothing when a caller passes a value nothing declares", async () => {
+    const operations = await lookupOperations([
+      "from sqlalchemy.orm import Session",
+      "from handler import lookup",
+      "",
+      "def read_order(db: Session):",
+      "    return lookup(db=db, order_id=1)",
+      "",
+      "def job(context):",
+      "    return lookup(db=context.db, order_id=1)",
+      "",
+    ]);
+    expect(operations).toEqual([]);
+  });
+
+  it("reads nothing when no caller is in the run", async () => {
+    expect(await lookupOperations([""])).toEqual([]);
+  });
+});
+
 function containerOf(effect: Effect): string | null {
   const semantics =
     effect.type === "interaction" ? effect.binding.semantics : null;

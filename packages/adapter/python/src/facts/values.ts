@@ -17,6 +17,7 @@ import {
   writesRunInOrder,
 } from "@suss/resolution";
 
+import { annotationTarget } from "../annotations.js";
 import {
   children,
   enclosingFunction,
@@ -24,6 +25,7 @@ import {
   fields,
   isFunction,
   LATER_BODY_TYPES,
+  parameterNameAndType,
   stringLiteralValue,
 } from "../ast.js";
 
@@ -427,6 +429,61 @@ function emitAttribute(emitter: Emitter, attribute: PyNode): void {
   );
 }
 
+/**
+ * The key the class an annotation writes joins on, past the wrappers
+ * that do not change which class it is. A dotted class is keyed on its
+ * own node, with the property reads the rules follow to its module.
+ */
+function statedTypeKey(emitter: Emitter, annotation: PyNode): string | null {
+  const target = annotationTarget(annotation);
+  if (target?.type === "attribute") {
+    emitExpressionFact(emitter, target);
+    emitExpressionFacts(emitter, target);
+    return nodeId(emitter.filePath, target);
+  }
+  return target === null ? null : classReferenceKey(emitter, target);
+}
+
+/** `name: T` on a parameter or an assignment, as the two keys the rules join. */
+function emitStatedType(
+  emitter: Emitter,
+  nameKey: string,
+  annotation: PyNode | null,
+): void {
+  const typeKey =
+    annotation === null ? null : statedTypeKey(emitter, annotation);
+  if (typeKey !== null) {
+    add(emitter, "statesType", nameKey, typeKey);
+  }
+}
+
+/** Whether a statement is written in a class body, where a name it assigns is a field of the class. */
+function writtenInClassBody(statement: PyNode): boolean {
+  for (let at = statement.parent; at !== null; at = at.parent) {
+    if (at.type === "class_definition") {
+      return true;
+    }
+    if (isFunction(at)) {
+      return false;
+    }
+  }
+  return false;
+}
+
+/** `name: T = value` in a function or a module. */
+function emitAssignedType(emitter: Emitter, assignment: PyNode): void {
+  const left = field(assignment, "left");
+  const annotation = field(assignment, "type");
+  if (
+    left?.type !== "identifier" ||
+    annotation === null ||
+    writtenInClassBody(assignment)
+  ) {
+    return;
+  }
+  emitStatedType(emitter, valueKey(emitter, left), annotation);
+}
+
 /** Every expression under a node, without crossing into a nested function. */
 function walkExpressions(
   emitter: Emitter,
@@ -517,6 +574,9 @@ function emitExpressionFact(emitter: Emitter, child: PyNode): void {
   if (child.type === "attribute") {
     emitAttribute(emitter, child);
   }
+  if (child.type === "assignment") {
+    emitAssignedType(emitter, child);
+  }
   if (WRITTEN_VALUE_TYPES.has(child.type)) {
     add(emitter, "writtenValue", nodeId(emitter.filePath, child));
   }
@@ -578,6 +638,12 @@ function emitFunctionFacts(
         add(emitter, "instanceOf", paramKey, classKey);
       }
       add(emitter, "paramNamed", funcKey, paramName.text, paramKey);
+      // The annotation is read in the scope around the function.
+      emitStatedType(
+        emitter,
+        paramKey,
+        parameterNameAndType(param)?.typeNode ?? null,
+      );
     }
     position += 1;
   }
