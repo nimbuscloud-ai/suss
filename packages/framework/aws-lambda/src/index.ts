@@ -1,31 +1,17 @@
-// @suss/framework-aws-lambda: the PatternPack for AWS Lambda HTTP handlers.
-//
-// The template declares the routing (SAM `Events: { HttpApi | Api }`),
-// the code declares the behavior (what the handler returns). This
-// pack extracts the code side and binds it to the same REST identity the
-// declared route has, so the two pair by `(method, normalizedPath)`.
-//
-// Discovery is template-driven (see `discovery.ts`): handlers are found
-// by resolving each Serverless::Function's `Handler` back to a source
-// file + export, not by an in-code registration call.
-//
-// The pack declares one response shape: an object with a `statusCode`, where
-// `body` is `JSON.stringify(x)`, since the shape of `x` is what pairs with a
-// declared body.
-//
-// Most handlers build that object in a helper rather than at the return
-// site, and the helper belongs to the service, so this pack does not try
-// to name it. The adapter follows a returned call into the project and
-// applies the same declaration to the object it finds there, reading the
-// helper's parameters to see which argument supplies which field. A
-// service writing `json(status, payload)` and one writing
-// `json(payload, status)` both come out right, as does one that calls
-// the helper `respond`.
-//
-// SQS / Schedule / SNS event handlers surface as `recognized-not-http`
-// accounting units (see `discovery.ts`), and those read what they
-// return under a wider terminal list (see `terminals.ts`). The
-// message-bus pass in @suss/contract-cloudformation owns SQS consumers.
+/**
+ * Pattern pack for AWS Lambda handlers. The SAM or CloudFormation
+ * template declares which routes and events reach a handler, and the
+ * code shows what the handler returns. The pack extracts the code side
+ * and gives each route unit the same `(method, normalizedPath)` binding
+ * the declared route has, so the two pair.
+ *
+ * Handlers are found from the template: each Serverless::Function's
+ * `Handler` is resolved back to a source file and an export. A handler
+ * that an SQS, Schedule or SNS event reaches becomes a
+ * `recognized-not-http` accounting unit, and SQS consumers pair through
+ * the message-bus pass in @suss/contract-cloudformation. The README
+ * covers response helpers and why the pack has no import gate.
+ */
 
 import { z } from "zod";
 
@@ -43,8 +29,8 @@ export { awsLambdaDiscovery, METADATA_NAMESPACE } from "./discovery.js";
 export { clearTemplateCache } from "./templateIndex.js";
 
 /**
- * What `-f aws-lambda=config.json` may say. Everything this pack reads
- * comes off the template or the code, so there is nothing to configure.
+ * The pack reads everything from the template or the code, so it takes
+ * no options and the CLI refuses any key in a config file.
  */
 export const optionsSchema = z.object({}).strict();
 
@@ -57,10 +43,9 @@ export function awsLambdaFramework(
   return {
     name: "aws-lambda",
     protocol: "http",
-    // Sentry's wrapper is a library call whose body the adapter cannot
-    // read, so the pack states the judgment: the handler is argument 0.
-    // Project-local wrappers need no declaration; the adapter derives
-    // those by reading the factory body.
+    // The adapter cannot read Sentry's wrapper inside the library, so the
+    // pack declares that the handler is argument 0. A wrapper written in
+    // the project needs no entry, because the adapter reads its body.
     transparentWrappers: [
       {
         callee: "Sentry.wrapHandler",
@@ -70,37 +55,22 @@ export function awsLambdaFramework(
     ],
     languages: ["typescript", "javascript"],
 
-    // No data-driven discovery: routing lives in the SAM/CFN template,
-    // not in code. The callback resolves handlers against the template.
+    // The routing is in the template, so the callback finds handlers
+    // there and the pattern list stays empty.
     discovery: [],
     discoverUnits: awsLambdaDiscovery(),
 
-    // Everything this pack discovers comes off the template, so the
-    // cache has to key on it the way it keys on a pack's config.
+    // Discovery reads the templates, so they go into the cache key and an
+    // edited template makes the next run read the project again.
     discoveryInputs: templatesForFiles,
 
-    // No import gate, on purpose.
-    //
-    // A TypeScript handler writes `import type { APIGatewayProxyHandlerV2 }
-    // from "aws-lambda"`, which TypeScript resolves to
-    // `@types/aws-lambda`, to annotate its export. A JavaScript handler
-    // has nothing to annotate and writes no such import. Gating
-    // discovery on it therefore meant "TypeScript handlers that bothered
-    // to annotate", and every JavaScript Lambda service extracted
-    // nothing.
-    //
-    // The SAM template is the gate instead, and a better one, because it
-    // says which handlers outright. `discoverUnits` looks each file up in
-    // the template reachable from it, and a directory with no template
-    // resolves to null once and stays memoized.
+    // No import gate: a JavaScript handler imports nothing from
+    // `aws-lambda`, so the template acts as the gate. See the README.
 
-    // Route units extract against these. Non-HTTP accounting units get their
-    // own wider list, attached per unit by the discovery callback.
+    // A unit that is not HTTP gets a longer list from the discovery
+    // callback in place of this one.
     terminals: HTTP_TERMINALS,
 
-    // Lambda's handler signature is `(event, context, callback?)`. The
-    // HTTP request data (path params, query, body) lives on `event`;
-    // decomposing it into typed inputs is a follow-up.
     inputMapping: {
       type: "positionalParams",
       params: [
@@ -109,9 +79,9 @@ export function awsLambdaFramework(
       ],
     },
 
-    // A proxy integration hands the handler API Gateway's event. The
-    // body arrives on it as a string the handler parses, so a read of
-    // it says the body was taken whole and never which field.
+    // A proxy integration passes the handler API Gateway's event, with the
+    // body as a string the handler parses. A read of the body records that
+    // the handler took all of it, with no field name.
     requestSpelling: {
       headers: { path: ["event", "headers"], saysWhichField: true },
       query: {
@@ -122,8 +92,8 @@ export function awsLambdaFramework(
       body: { path: ["event", "body"], saysWhichField: false },
     },
 
-    // The powertools read their configuration from inside node_modules,
-    // so a template that declares these has a reader no walk ever sees.
+    // Powertools reads these variables from inside node_modules, where no
+    // walk over the project goes, so without this entry they look unread.
     libraryEnvVars: [
       {
         module: "@aws-lambda-powertools/",
@@ -131,9 +101,8 @@ export function awsLambdaFramework(
       },
     ],
 
-    // Still no pack-level `requiresImport`: it would gate
-    // `discoverUnits` as well, and each declaration checks the SDK its
-    // command came from anyway.
+    // A pack-level `requiresImport` would gate `discoverUnits` too. Each
+    // declaration already checks which SDK its command class came from.
     invocationRecognizers: invokes.map((match) =>
       compile(match.declared, "@suss/framework-aws-lambda"),
     ),
@@ -141,7 +110,6 @@ export function awsLambdaFramework(
   };
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "framework",
   package: "@suss/framework-aws-lambda",
