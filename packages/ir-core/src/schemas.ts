@@ -1,25 +1,23 @@
 /**
- * @suss/ir-core schemas: primitives shared by every suss IR.
+ * The zod schemas for the primitives every suss IR uses.
  *
- * These are the types that any IR built on suss references: the
- * structure of a value (`TypeShape`), the identity of a boundary
- * (`BoundaryBinding` and its `Semantics` variants), where something is
- * in the source (`SourceLocation`), and how much to trust a claim
- * (`Confidence`). Behavioural summaries, intent docs, and later on
- * observation records all speak in these terms, so they are defined
- * here, in one place none of those IRs needs another IR to reach.
+ * `TypeShape` is the structure of a value. `BoundaryBinding` and its
+ * `Semantics` variants identify a boundary. `SourceLocation` says where
+ * something is in the source, and `Confidence` says how much to trust a
+ * claim. Behavioral summaries and intent docs are both built from these,
+ * so they live in a package of their own and neither IR depends on the
+ * other.
  *
- * The schemas are the single source of truth, and the package's
- * `index.ts` derives the types from them with `z.infer`.
+ * The schemas are the source of truth. The package index derives the
+ * types from them with `z.infer`.
  */
 
 import { z } from "zod";
 
 import { SemanticsSchema } from "./semantics/registry.js";
 
-// The `@suss/ir-core/schemas` subpath is public, and each protocol's
-// schema is now its own module under `semantics/`. These re-exports are
-// what keep the subpath working for everyone importing from it.
+// The `@suss/ir-core/schemas` subpath is public, so it re-exports each
+// protocol's schema from that protocol's own module.
 export { DeployableUnitSchema } from "./deployableUnit.js";
 export { FunctionCallSemanticsSchema } from "./semantics/functionCall.js";
 export { GraphqlOperationSemanticsSchema } from "./semantics/graphqlOperation.js";
@@ -44,17 +42,17 @@ export const ConfidenceSourceSchema = z.enum([
 export const ConfidenceLevelSchema = z.enum(["high", "medium", "low"]);
 
 /**
- * What came of corroborating a claim by running the code
- * (`suss corroborate`). Inputs that satisfy the claim's own conditions
- * are generated and run through the function, and the observation
- * either agreed every time (`observed`), disagreed at least once
- * (`refuted`, which is either an extractor bug or a surprise, and the
- * counterexample says which input), or never produced a verdict
- * (`untested`, meaning no satisfying input was found, or every
- * satisfying run hit a dependency the harness cannot supply).
+ * The result of checking a claim by running the code (`suss
+ * corroborate`). The harness generates inputs that satisfy the claim's
+ * own conditions and runs the function on them.
  *
- * Corroboration adds observations to a derivation. It is extra
- * evidence, and it never rewrites the derived claim.
+ * - `observed`: every run agreed with the claim.
+ * - `refuted`: at least one run disagreed, which is either an extractor
+ *   bug or a surprise. `counterexample` gives the input.
+ * - `untested`: no run produced a verdict. No satisfying input was
+ *   found, or every run hit a dependency the harness cannot supply.
+ *
+ * Corroboration adds evidence to a derived claim and never rewrites it.
  */
 export const CorroborationSchema = z.object({
   outcome: z.enum(["observed", "refuted", "untested"]),
@@ -81,30 +79,28 @@ export const SourceLocationSchema = z.object({
   /** Line numbers, for a person reading the summary or an editor link. */
   range: z.object({ start: z.number(), end: z.number() }),
   /**
-   * Character offsets of the unit in its file. Identity and joins
-   * measure with these, since two functions can share a line and never
-   * an offset range; the line `range` above is the presentation of the
-   * same place. Absent on summaries no source position backs, a
-   * contract artifact's say.
+   * Character offsets of the unit in its file. Identity and joins use
+   * these, because two functions can share a line but never an offset
+   * range. `range` gives the same place in lines. Absent on a summary
+   * with no source position, such as one read from a contract.
    */
   span: z.object({ start: z.number(), end: z.number() }).optional(),
   exportName: z.string().nullable(),
   /**
-   * The project the extract was pointed at, by the name that project
-   * calls itself.
+   * The project the extract ran on, by the name the project gives
+   * itself.
    *
    * Paths are relative to wherever the extract ran, so two services in
-   * one repository both report `src/handlers.ts`, and merging their
-   * summaries puts them on top of each other. This field is what tells
-   * them apart, and what a reader groups by.
+   * one repository can both report `src/handlers.ts`, and merging their
+   * summaries would mix them up. This field tells them apart, and a
+   * reader groups by it.
    */
   workspace: z.string().optional(),
 });
 
 // ---------------------------------------------------------------------------
 // Boundary binding: transport (the wire), semantics (the pairing rule),
-// and recognition (how the unit was found). Each protocol's schema, and
-// the semantics union, are one module apiece under `semantics/`.
+// and recognition (how the unit was found).
 // ---------------------------------------------------------------------------
 
 export const BoundaryBindingSchema = z.object({
@@ -157,24 +153,22 @@ export type TypeShape =
       def?: string | undefined;
       /**
        * The file that declares this type, when the project declares it.
-       * Absent for a name the language or a dependency owns, which means
-       * the same thing everywhere.
+       * Absent for a name the language or a dependency defines, which
+       * means the same thing everywhere.
        *
-       * A name on its own does not identify a type. Two modules each
-       * declaring a `User` produce the same ref, and a checker comparing
-       * them has nothing to go on. This is what tells them apart.
+       * A name on its own does not identify a type. Two modules that each
+       * declare a `User` produce the same ref, and `from` is the only
+       * field that tells them apart.
        */
       from?: string | undefined;
     }
   | { type: "unknown" };
 
 /**
- * The key a table of definitions uses for the type a ref points at.
- *
- * A ref has the name and the file that declares it, and that pair
- * already identifies the type, so a table keyed on it needs nothing new
- * on the ref. A name that the language or a dependency owns has no
- * file, and keys on the name alone.
+ * The key a table of definitions uses for the type a ref points at,
+ * which is the ref's `def`. Null for a ref without one, such as a name
+ * the language or a dependency defines, and such a ref is never looked
+ * up.
  */
 export function typeDefinitionKey(ref: {
   def?: string | undefined;
@@ -219,7 +213,7 @@ export const TypeShapeSchema: z.ZodType<TypeShape> = z.lazy(() =>
 /**
  * How deep the walk goes while definitions are substituted back in.
  *
- * It is the same limit the shape walk itself stops at, so a shape read
+ * The extractor's shape walk stops at the same depth, so a shape read
  * back out of a table looks like one that was never in a table.
  */
 const MAX_DEFINITION_DEPTH = 6;
@@ -228,15 +222,14 @@ const MAX_DEFINITION_DEPTH = 6;
  * A shape with the definitions it refers to substituted back into it.
  *
  * Comparing two shapes means comparing their structure, and a ref has
- * none. Rather than teach every comparison to look in a table, the
- * definitions go back into the shape once and everything downstream
- * reads what it always read.
+ * none. Substituting the definitions once means no comparison has to
+ * look anything up in a table.
  *
- * Substituting a definition is not a level of nesting, so it does not
- * spend depth. Counting it meant a type six deep came back three deep,
- * and a consumer reading a field past that was told the provider did
- * not have it. A type that refers to itself is stopped by the names
- * already substituted on this path, the shape walk's own cycle guard.
+ * Substituting a definition does not count as a level of nesting. If it
+ * did, a type six levels deep would come back three deep, and a
+ * consumer reading a field past that would be told the provider lacks
+ * it. A type that refers to itself stops at a key already substituted
+ * on this path, the same cycle guard the shape walk uses.
  */
 export function withDefinitionsInlined(
   shape: TypeShape,
@@ -252,15 +245,15 @@ export function withDefinitionsInlined(
 
   if (shape.type === "ref") {
     const key = typeDefinitionKey(shape);
-    // A ref with no key was never written down anywhere, which is what
-    // a name the language owns looks like.
+    // A ref without a key has no definition anywhere, as with a name the
+    // language defines.
     if (key === null) {
       return shape;
     }
     const defined = definitions[key];
-    // A ref with nothing in the table stays a ref, which says what it
-    // means: here is the name, and nobody wrote the type down. A name
-    // already on this path stays a ref too, or recursion would not end.
+    // A ref missing from the table stays a ref, so a reader still sees
+    // the name. A key already on this path stays a ref too, or a
+    // recursive type would never finish.
     if (defined === undefined || inProgress.has(key)) {
       return shape;
     }

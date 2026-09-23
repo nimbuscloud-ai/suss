@@ -1,25 +1,22 @@
 /**
- * What the deployment running a piece of code fills its variables in
- * with.
+ * The values a deployment sets for the variables its code reads.
  *
  * A queue URL, a function name and a table name only exist once a stack
  * is deployed, so the source reaches them through a variable and the
- * template says what that variable is. Every protocol whose name has a
- * hole in it asks the same two questions here, and whoever knows which
- * deployment runs the code fills them in.
+ * template sets that variable. A protocol whose boundary name has a
+ * hole in it looks the hole up through this interface.
  *
- * The interface is declared next to the protocols because a protocol
- * has to ask without knowing what a summary is. `@suss/behavioral-ir`
- * works the values out from a set of summaries.
+ * The interface is declared in ir-core so a protocol can use it without
+ * depending on the summary types. `@suss/behavioral-ir` implements it
+ * from a set of summaries.
  */
 
 import type { Reference } from "./boundaryName.js";
 
 export interface Deployment {
   /**
-   * Which variable a reference asks about, or null when what settles it
-   * is an argument a caller passes rather than anything the deployment
-   * says.
+   * The variable a reference points at. Null when a caller's argument
+   * settles the reference and the deployment has no say in it.
    */
   variableFor(reference: Reference): string | null;
   /**
@@ -29,11 +26,10 @@ export interface Deployment {
    */
   setTo(reference: Reference): string | null;
   /**
-   * The declared resource this deployment wires that variable to, by
-   * the name the resource is declared under. A template that writes
-   * `!Ref ArchiveWorker` says which unit an invoke reaches without ever
-   * writing the deployed function's name, and that logical id is what
-   * the unit's own summary is keyed by.
+   * The logical id of the declared resource this deployment wires the
+   * variable to. A template that writes `!Ref ArchiveWorker` never gives
+   * the deployed function's name, but the unit's own summary is keyed by
+   * that logical id, so an invoke can still be matched to its unit.
    */
   pointsAt(reference: Reference): string | null;
 }

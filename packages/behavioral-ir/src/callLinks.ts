@@ -5,9 +5,9 @@
  * and writes that on the effect as `declaredAt`. The summary of the
  * unit declared there is the one the call reaches, so the link is a
  * join on location, which needs nothing from the language the adapter
- * read. Once the link is written the offsets have served their purpose
- * and come off the effect, so every adapter's output spells a reached
- * call the same way and the CLI reads one field.
+ * read. Once the link is written the offsets are removed from the
+ * effect, so every adapter writes a reached call the same way and the
+ * CLI reads one field.
  */
 
 import { normalizeCalleeText } from "./effectIdentity.js";
@@ -29,8 +29,8 @@ export interface ParameterCall {
 }
 
 /**
- * A place in a file by character offsets, spelled the one way every
- * writer of `declaredAt` and every reader of `location.span` agrees on.
+ * A place in a file by character offsets, in the one format that
+ * writers of `declaredAt` and readers of `location.span` share.
  */
 export function declarationKey(
   file: string,
@@ -39,7 +39,7 @@ export function declarationKey(
   return `${file}:${span.start}-${span.end}`;
 }
 
-/** Say on each invocation effect where its callee is declared, so the link step can find the summary there. */
+/** Record on each invocation effect where its callee is declared, so the link step can find the summary there. */
 export function placeCalls(
   summary: BehavioralSummary,
   targets: ReadonlyMap<string, DeclaredAt> | undefined,
@@ -62,11 +62,11 @@ export function placeCalls(
 
 /**
  * Where a scanned body's calls, and the arguments passed by name into
- * them, are declared: fed by `place`/`placeArg` as a walk visits each
- * call, and read back by `targets`/`argTargets` once it finishes, in
- * the shape `placeCalls` and `placeArgTargets` themselves take. Every
- * adapter's reachable-closure walk built this same bookkeeping by
- * hand; centralizing it here keeps the shadow-name rule in one place.
+ * them, are declared. A walk fills it with `place` and `placeArg` as it
+ * visits each call, and reads it back through `targets` and
+ * `argTargets` when it finishes, in the form `placeCalls` and
+ * `placeArgTargets` take. Every adapter's reachable-closure walk uses
+ * it, so the rule for a shadowed name is defined once.
  */
 export class TargetPlacements {
   private readonly byCallee = new Map<string, DeclaredAt | null>();
@@ -75,7 +75,10 @@ export class TargetPlacements {
     Map<number, DeclaredAt | null>
   >();
 
-  /** The same callee text placed two ways, a shadowed name say, has to say so rather than pick one. */
+  /**
+   * Record where a callee is declared. When one callee text is placed at
+   * two declarations, as with a shadowed name, neither is kept.
+   */
   place(calleeText: string, placed: DeclaredAt | null): void {
     if (placed === null) {
       return;
@@ -92,12 +95,12 @@ export class TargetPlacements {
     settle(byPosition, position, placed);
   }
 
-  /** Every callee text settled to one declaration, the shape `placeCalls` takes. */
+  /** Every callee text placed at exactly one declaration, as `placeCalls` takes it. */
   get targets(): ReadonlyMap<string, DeclaredAt> {
     return onlySettled(this.byCallee);
   }
 
-  /** Every callee text's settled argument positions, the shape `placeArgTargets` takes. */
+  /** Every callee text's argument positions placed at exactly one declaration, as `placeArgTargets` takes them. */
   get argTargets(): ReadonlyMap<string, ReadonlyMap<number, DeclaredAt>> {
     const settled = new Map<string, ReadonlyMap<number, DeclaredAt>>();
     for (const [calleeText, byPosition] of this.byCalleeAndPosition) {
@@ -142,14 +145,13 @@ function onlySettled<K>(
 }
 
 /**
- * Say on each invocation effect where an identifier argument that is
+ * Record on each invocation effect where an identifier argument that is
  * itself a project function is declared, keyed by its position among
  * the call's arguments. `linkArgs` later turns each entry into
  * `argsSummary`, the same way `placeCalls` feeds `declaredAt` into
- * `linkCallsToSummaries`. Shared by every adapter that follows an
- * argument passed by name into a call: matching the effect by callee
- * text and writing a location is language-independent once the walk
- * has resolved the argument to a declaration.
+ * `linkCallsToSummaries`. Every adapter that follows an argument passed
+ * by name uses this, because once the walk has resolved the argument,
+ * matching the effect by callee text is the same in every language.
  */
 export function placeArgTargets(
   summary: BehavioralSummary,
@@ -179,9 +181,9 @@ export function placeArgTargets(
 }
 
 /**
- * Say on each invocation effect which of the scanned unit's own
+ * Record on each invocation effect which of the scanned unit's own
  * parameters it calls. A caller elsewhere that passes a function into
- * that position joins to this call by it.
+ * that position is joined to this call through it.
  */
 export function placeCalleeParameters(
   summary: BehavioralSummary,
@@ -243,14 +245,14 @@ export function recordParameterGaps(
 /**
  * Point each call at the summary it reaches, and drop `declaredAt`.
  *
- * A call the adapter placed says where its callee is declared, and the
- * summary of the unit declared there is the one it reaches. A callee
- * declared outside the run has no summary there and gets no link,
- * whatever else in the run shares its name. Only a call the adapter
- * could not place at all is matched by name, and then only against the
- * summaries in its own file, since that is where an unqualified call
- * usually goes. Two summaries with one name leave the call saying only
- * what it said before: a reader can see a missing link, and cannot see
+ * A call the adapter placed records where its callee is declared, and
+ * the summary of the unit declared there is the one it reaches. A
+ * callee declared outside the run has no summary there and gets no
+ * link, whatever else in the run shares its name. Only a call the
+ * adapter could not place at all is matched by name, and then only
+ * against the summaries in its own file, since that is where an
+ * unqualified call usually goes. When two summaries share the name, the
+ * call stays unlinked, since a reader can notice a missing link but not
  * a wrong one.
  */
 export function linkCallsToSummaries(summaries: BehavioralSummary[]): void {
@@ -362,8 +364,8 @@ function summaryReachedBy(
  * Every summary at one place describes the same body: a function
  * exported through two packages has a provider summary per package,
  * and one that also calls out has a consumer summary beside them. The
- * link goes to a provider, since that is the id callers know it by,
- * else to the first one written.
+ * link goes to a provider, because callers know the function by the
+ * provider's id, and otherwise to the first summary.
  */
 function summaryAtPlace(found: BehavioralSummary[]): BehavioralSummary | null {
   const provider = found.find(

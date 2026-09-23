@@ -1,13 +1,12 @@
 /**
- * Naming the calls a walk stops at.
+ * Named reasons for the calls a walk stops at.
  *
  * An adapter follows a call by resolving its callee to a function with
  * a body. When that fails the edge is dropped, and a unit whose body is
  * full of dropped edges produces the same empty summary as a unit that
- * does nothing. The reasons here say which kind of stop a call site
- * is, and which kinds are worth leaving a gap for, in words every
- * adapter shares. How a stop is classified is each language's own
- * business and stays in its adapter.
+ * does nothing. The reasons here give each kind of stop a name every
+ * adapter shares, and say which kinds leave a gap in the summary. Each
+ * adapter classifies stops in its own language.
  */
 
 import type { Gap } from "./index.js";
@@ -15,16 +14,16 @@ import type { Gap } from "./index.js";
 /**
  * Why the walk stopped.
  *
- * `noBody` states a shape and nothing else, an interface method say.
- * `unsettledValue` is declared as something other than a function, with
- * something in it that could not be read. `multipleSources` reaches two
- * functions, so no single body can be followed. `outsideRun` is declared
- * in a dependency this run never read. `noDeclaration` is a callee
- * nothing declares. `callerSupplied` is a parameter, so the call runs
- * what the caller handed in. `multipleReceivers` is a registration whose
- * receiver comes down to more than one thing, and `unresolvedWrapper`
- * one whose function the run could not settle on. `definedAtLoadTime` is
- * a method the project writes while the file loads.
+ * `noBody`: a declaration without a body, such as an interface method.
+ * `unsettledValue`: a value declared as something other than a function, with a part that could not be read.
+ * `multipleSources`: the callee reaches two functions, so no single body can be followed.
+ * `outsideRun`: declared in a dependency this run never read.
+ * `noDeclaration`: nothing declares the callee.
+ * `callerSupplied`: a parameter, so the call runs whatever the caller passed in.
+ * `multipleReceivers`: a registration whose receiver resolves to more than one value.
+ * `unboundParameter`: a parameter that no caller in the run passes a function to by name.
+ * `unresolvedWrapper`: a registration whose function the run could not resolve.
+ * `definedAtLoadTime`: a method the project defines while the file loads.
  */
 export type UnfollowedReason =
   | "noBody"
@@ -40,20 +39,20 @@ export type UnfollowedReason =
 
 /** One call the walk met and could not follow. */
 export interface UnfollowedCall {
-  /** The callee as the source writes it, `this.dao.getEditions` say. */
+  /** The callee as the source writes it, such as `this.dao.getEditions`. */
   readonly callee: string;
   readonly reason: UnfollowedReason;
-  /** How many things the walk reached where it needed one. */
+  /** How many candidates the walk reached where it needed exactly one. */
   readonly candidates?: number;
 }
 
 /**
- * Whether a stop of this kind leaves a gap. The three that are left out
- * fail the same test: nothing about any of them says the callee is code
- * the project owns, so a gap on them buys volume rather than a place to
- * look. The run already describes a call into a dependency, as a
- * boundary crossing; a call on an untyped value could go anywhere; and a
- * call on a parameter runs whichever function each caller passes.
+ * Whether a stop of this kind leaves a gap. Three kinds do not, because
+ * nothing about them suggests the callee is the project's own code, and
+ * a gap would add noise without pointing anywhere useful. The run
+ * already describes a call into a dependency as a boundary crossing. A
+ * call on an untyped value could go anywhere. A call on a parameter
+ * runs whichever function each caller passes.
  */
 const RECORDED: Record<UnfollowedReason, boolean> = {
   noBody: true,

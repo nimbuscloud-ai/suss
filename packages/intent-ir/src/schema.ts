@@ -1,23 +1,17 @@
-// @suss/intent-ir schema: the team-authored intent file format.
-//
-// Two top-level shapes, discriminated by `kind`:
-//
-//   kind: boundary: system intent. What a single boundary (a REST
-//                     endpoint, or a function / package export) should
-//                     do: its outcomes, named by id.
-//   kind: prd: outcome intent. Human scenarios (when / then)
-//                     that reference system-intent outcomes by id.
-//
-// This is the *authoring* surface (what someone writes, or what a
-// reader / inference step produces). `./summary.ts` normalises it into
-// the shape the checker compares against derived behavioural summaries.
-//
-// Design notes:
-//   - Boundaries reuse @suss/ir-core's transport/semantics vocabulary,
-//     so intent and behaviour describe the same boundary the same way.
-//   - A transition says how it ends (`response`, `returns` or `throws`)
-//     and what it did (`results`). The README beside this file works
-//     through both halves and why a queue consumer needs the second.
+/**
+ * The intent file format a team writes, or `suss infer` drafts. There
+ * are two top-level forms, told apart by `kind`:
+ *
+ *   kind: boundary  system intent: what one boundary should do, as
+ *                   outcomes named by id.
+ *   kind: prd       outcome intent: human scenarios (when / expect)
+ *                   that refer to system-intent outcomes by id.
+ *
+ * Boundaries reuse @suss/ir-core's vocabulary, so intent and behavior
+ * describe a boundary the same way. A transition says how it ends and
+ * what it did, as DESIGN.md explains. `intentDocToSummary` normalizes a
+ * document into the form the checker compares against code.
+ */
 
 import { z } from "zod";
 
@@ -90,10 +84,10 @@ const PLACEHOLDER = "not written yet";
 const SCENARIO_BLANKS = new Set(["when", "expect"]);
 
 /**
- * The same draft with a placeholder written into each blank, so a
- * reader after the parts a draft does state can validate it and have
- * them. Nothing that fills the blanks this way should show them to
- * anybody: the words are suss's, not the team's.
+ * The same draft with a placeholder in each blank, so a reader that
+ * wants the parts a draft does state can validate it and get them. Code
+ * that fills blanks this way must not show the placeholders to anybody,
+ * since those words come from suss and not from the team.
  */
 export function fillBlanks(doc: unknown, blanks: string[]): unknown {
   const filled = { ...(doc as Record<string, unknown>) };
@@ -115,9 +109,7 @@ export function fillBlanks(doc: unknown, blanks: string[]): unknown {
 }
 
 // ---------------------------------------------------------------------------
-// Body shapes: friendly authoring form (object with primitive-typed
-// properties). Maps onto @suss/ir-core's TypeShape in ./summary.ts.
-// Nested objects / arrays / unions are deferred; they're additive.
+// Body shapes: the authoring form, which becomes an ir-core TypeShape.
 // ---------------------------------------------------------------------------
 
 const PrimitiveTypeName = z.enum([
@@ -136,9 +128,8 @@ export interface AuthoredShape {
   required?: string[] | undefined;
 }
 
-// Recursive: a property can itself be an array or a nested object, so
-// a declared body can commit to `Finding[]`-style returns and nested
-// records, not only flat objects of primitives.
+// A property can itself be an array or a nested object, so a declared
+// body can describe a `Finding[]` return or nested records.
 const ShapeSchema: z.ZodType<AuthoredShape> = z.lazy(() =>
   z.union([
     z.object({ type: PrimitiveTypeName }),
@@ -151,9 +142,9 @@ const ShapeSchema: z.ZodType<AuthoredShape> = z.lazy(() =>
   ]),
 );
 
-// Top level accepts either a full shape (`type: array`, `type: object`,
-// a bare primitive) or the record shorthand, `properties:` with no
-// `type:`: which existing docs use.
+// The top level accepts a full shape (`type: array`, `type: object`, a
+// bare primitive) or the shorthand `properties:` with no `type:`, which
+// existing documents use.
 export const BodyShapeSchema = z.union([
   ShapeSchema,
   z.object({
@@ -247,13 +238,9 @@ const RestBoundarySchema = z.strictObject({
   receives: RestReceivesSchema,
 });
 
-// Deliberately permissive: a function-call boundary is pairable today
-// only when `package` + `exportPath` are set (see @suss/ir-core
-// boundaryKey), but module-level boundaries stay authorable, declared-
-// ahead-of-capability intent is a valid pending state, same as an
-// unlinked PRD scenario. The checker reports such intent as unchecked
-// (unkeyableBoundary) rather than this schema rejecting it; don't
-// tighten this without also shipping module-level keying.
+// Permissive on purpose. A boundary without a key (`package` plus
+// `exportPath`, or `module` plus `exportName`) stays authorable as pending
+// intent, and the checker reports it as `unkeyableBoundary`.
 const FunctionCallBoundarySchema = z.strictObject({
   transport: z.string().default("in-process"),
   semantics: z.literal("function-call"),
@@ -282,9 +269,9 @@ const FunctionCallBoundarySchema = z.strictObject({
   receives: ReceivesSchema,
 });
 
-// Both fields come off the ir-core schema, so a bus added there is
-// authorable here with no edit. A doc that leaves the channel out is
-// authorable and unpairable, and the checker is what says so.
+// Both fields come from the ir-core schema, so a bus added there can be
+// written here with no edit. A doc without a channel is valid but cannot
+// pair, and the checker reports it.
 const MessageBusBoundarySchema = z.strictObject({
   semantics: z.literal("message-bus"),
   messageBus: MessageBusSemanticsSchema.shape.messageBus.describe(
@@ -298,9 +285,8 @@ const MessageBusBoundarySchema = z.strictObject({
   receives: ReceivesSchema,
 });
 
-// Same reuse, and the same pending state for a different reason: a
-// store has no identity key at all, so every storage boundary intent
-// is authorable and unpairable. See the README.
+// The same reuse. A store has no identity key at all, so every storage
+// boundary intent is valid but cannot pair. DESIGN.md explains why.
 const StorageBoundarySchema = z.strictObject({
   semantics: z.literal("storage"),
   storageSystem: StorageSemanticsSchema.shape.storageSystem
@@ -326,9 +312,9 @@ const StorageBoundarySchema = z.strictObject({
   receives: ReceivesSchema,
 });
 
-// Both fields come off the ir-core schema, the same reuse the bus and
-// the store get. A doc that leaves the name out is authorable and
-// unpairable, and the checker is what says so.
+// Both fields come from the ir-core schema, as for the bus and the store.
+// A doc without an instance name is valid but cannot pair, and the
+// checker reports it.
 const UnitInvocationBoundarySchema = z.strictObject({
   semantics: z.literal("unit-invocation"),
   deploymentTarget:
@@ -376,10 +362,9 @@ const ThrowsOutcomeSchema = z.object({
     .optional(),
 });
 
-// A key written with no value (`returns:` on its own line) parses to
-// null in YAML. Treat a null outcome as the empty outcome so `returns:`
-// and `returns: {}` mean the same body-less thing, instead of failing
-// with "expected object, received null".
+// A key with no value (`returns:` alone on a line) parses to null in
+// YAML. A null outcome is read as the empty one, so `returns:` and
+// `returns: {}` both mean an outcome with no body.
 function emptyIfNull<T extends z.ZodTypeAny>(schema: T) {
   return z
     .preprocess((v) => (v === null ? {} : v), schema)
@@ -402,7 +387,7 @@ export type DeclaredEffect = Partial<Record<EffectRelation, string>> & {
   by?: string | string[];
 };
 
-/** One field, or several, so a single one is written on the line. */
+/** One field or a list of them, so a single field can be written inline. */
 const ONE_OR_MORE = z.union([
   z.string().min(1),
   z.array(z.string().min(1)).min(1),
@@ -587,15 +572,14 @@ const PrdScenarioSchema = z.strictObject({
     .min(1)
     .describe("What should happen then, in the author's own words."),
   /**
-   * Optional structured link(s) to system-intent outcomes
-   * (`<intent-name>.<outcome-id>`). A scenario without `link` is a
-   * valid pending-link state: fully human-readable, not yet machine-
-   * linked. The link is filled in later by a facilitator (a person, a
-   * platform, or an LLM at authoring time), never required to author.
+   * Optional links to system-intent outcomes, each written
+   * `<intent-name>.<outcome-id>`. A scenario without a link is a valid
+   * pending state: it reads fully, and nobody has linked it yet. A
+   * person, a platform or a model can fill the link in later, and it is
+   * never required.
    *
-   * (The human-readable parts are `when` / `expect`; the field is named
-   * `link`, not `then`, because a data object with a `then` property is
-   * treated as a thenable by Promise resolution, a latent footgun.)
+   * The field is `link` and not `then`, because Promise resolution
+   * treats an object with a `then` property as a thenable.
    */
   link: z
     .union([z.string().min(1), z.array(z.string().min(1)).min(1)])

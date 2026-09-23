@@ -1,12 +1,12 @@
 /**
- * The formula that turns a summary's own fields into its id.
+ * How a summary's id is built from its own fields.
  *
- * The TypeScript adapter (nameSummaries) settles collisions across a
- * whole run before it stamps an id, and that takes every summary the
- * run produced. A producer that only ever sees one file at a time, a
- * contract reader or the legacy-artifact backfill, has no run to settle
- * against, so it gets the same base formula without the settling. Both
- * call this rather than keeping a copy, so the two cannot drift apart.
+ * The TypeScript adapter's `nameSummaries` settles collisions across a
+ * whole run before it assigns ids, which needs every summary in the
+ * run. A producer that sees one file at a time, such as a contract
+ * reader or the legacy-artifact backfill, has no run to settle against,
+ * so it uses the same base formula without the settling. Both call
+ * these functions, so the formula has one definition.
  */
 
 import { boundaryKey } from "@suss/ir-core";
@@ -14,27 +14,22 @@ import { boundaryKey } from "@suss/ir-core";
 import type { BehavioralSummary } from "./index.js";
 
 export interface SummaryIdParts {
-  /** What the summary's project calls itself, when anything does. */
+  /** The project's own name for itself, when it has one. */
   workspace: string | undefined;
-  /** The file the summary is in, spelled however the caller spells it. */
+  /** The file the summary is in, in whatever form the caller uses. */
   file: string;
   name: string;
   exportPath: string[] | null;
 }
 
 /**
- * The id built out of a summary's own fields: the workspace it calls
- * itself part of, the file it is in, and its export path when it has
- * one, or its name when it does not.
- */
-/**
  * Extend only the ids that more than one summary ended up with, and
- * leave the rest alone. An id nothing collides with stays short, and
+ * leave the rest alone. An id without a collision stays short, and
  * stays the same when the code around it moves. The boundary tells
  * same-named summaries apart first, and the line number settles what
  * the boundary cannot. The adapter runs this after assigning ids, and
  * the parse boundary runs it over a backfilled v1 artifact, whose
- * per-summary backfill can mint one id for two summaries.
+ * per-summary backfill can give two summaries one id.
  */
 export function disambiguateSummaryIds(summaries: BehavioralSummary[]): void {
   settleWith(summaries, (summary) =>
@@ -67,16 +62,17 @@ function settleWith(
 }
 
 /**
- * How a report should spell a summary that does not cross a boundary.
+ * How a report should refer to a summary that does not cross a
+ * boundary.
  *
- * A producer that ran through the parse boundary already has an id, and
- * that is what a reader should see, because the run settled its
- * collisions. A summary handed straight to a checker never went through
- * that step, so the same formula runs here over the fields it does
- * have: the file it is in and its export path. That leaves out the
- * workspace, which only the producer knows, and it leaves out the
- * collision settling, which needs the whole run. Both give a reader a
- * file to open, which a bare name does not.
+ * A summary that went through the parse boundary already has an id,
+ * and a reader should see that id, because the run settled its
+ * collisions. A summary passed straight to a checker skipped that step,
+ * so the same formula runs here over the fields it does have: its file
+ * and its export path. The result lacks the workspace, which only the
+ * producer knows, and the collision settling, which needs the whole
+ * run. Either form gives a reader a file to open, which a bare name
+ * does not.
  */
 export function summaryIdentifier(summary: BehavioralSummary): string {
   if (summary.identity.id !== undefined) {
@@ -91,10 +87,10 @@ export function summaryIdentifier(summary: BehavioralSummary): string {
 }
 
 /**
- * The id a summary has before settling adds a boundary or a line to
- * it, which is what a reader matches a typed tail against: the tail
- * `evaluate` is this function's own name, and not the export a caller
- * of it was settled with.
+ * The id a summary has before settling adds a boundary or a line to it.
+ * A reader matches a typed tail against this id, so the tail `evaluate`
+ * matches this function's own name and not the export a caller of it
+ * was settled with.
  */
 export function unsettledSummaryId(summary: BehavioralSummary): string {
   return summaryIdFromParts({
@@ -121,6 +117,11 @@ export function settlingSuffix(summary: BehavioralSummary): string {
   return at === -1 ? "" : id.slice(at + withoutWorkspace.length);
 }
 
+/**
+ * The id built from a summary's own fields: its workspace when it has
+ * one, its file, and its export path, or its name when it has no export
+ * path.
+ */
 export function summaryIdFromParts(parts: SummaryIdParts): string {
   const reached =
     parts.exportPath !== null && parts.exportPath.length > 0
@@ -132,12 +133,12 @@ export function summaryIdFromParts(parts: SummaryIdParts): string {
 }
 
 /**
- * The key a render edge joins on: the file a component is declared in
- * and one of its spellings. The producer writes `target` with the
- * declaration's name, the checker indexes each summary under its name
- * and its export path, and both sides mint the key here so the two
- * cannot drift apart. The separator cannot appear in a path, which a
- * space could.
+ * The key a render edge joins on: the file a component is declared in,
+ * and one of the component's names. The producer writes `target` with
+ * the declaration's name, and the checker indexes each summary under
+ * its name and its export path. Both build the key here so they always
+ * agree. The separator is a NUL character, which cannot appear in a
+ * path the way a space can.
  */
 export function renderTargetKey(file: string, name: string): string {
   return `${file}\u0000${name}`;

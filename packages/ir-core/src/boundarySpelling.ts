@@ -1,15 +1,15 @@
 /**
- * How somebody spells a boundary they want to talk about, and whether
- * what they wrote picks out a given one.
+ * How a person writes a boundary they want to ask about, and whether
+ * what they wrote picks out a given boundary.
  *
- * The words get cut into tokens, the boundary does too, and a boundary
- * matches when it has every token somebody wrote. So
+ * The text and the boundary are both split into tokens, and a boundary
+ * matches when it has every token in the text. So
  * `aws.dynamodb:editions` matches the table and every index on it, and
  * adding `#by-publication` narrows it to the one index.
  *
- * `suss ask`, `suss check --at` and an intent document that says which
- * store a write reaches all read this, so the question and the
- * assertion are spelled and resolved the same way.
+ * `suss ask`, `suss check --at` and an intent document that gives the
+ * store a write reaches all match through these functions, so a
+ * question and an assertion resolve the same way.
  */
 
 import { displayLabel } from "./boundaryKey.js";
@@ -17,17 +17,16 @@ import { displayLabel } from "./boundaryKey.js";
 import type { BoundaryBinding } from "./index.js";
 
 /**
- * The name inside a fully-qualified cloud resource id, and anything
- * else unchanged.
+ * The name inside a fully qualified cloud resource id. Any other string
+ * comes back unchanged.
  *
  * `arn:aws:lambda:us-east-1:1234:function:prod-worker` and
- * `projects/p/locations/l/functions/prod-worker` say the same thing as
- * `prod-worker` plus an account and a region. Keeping the whole string
- * makes one deployment's spelling of a resource disagree with
- * another's, so every reader that meets one reduces it here and the two
- * sides compare the part they can both know. A Lambda ARN's trailing
- * alias or version comes off with the rest: the function is the
- * boundary whichever published copy a call reaches.
+ * `projects/p/locations/l/functions/prod-worker` are `prod-worker` plus
+ * an account and a region. Two deployments of one resource have
+ * different full ids, so readers reduce an id to its name here and the
+ * two sides compare the part they both know. A Lambda ARN's trailing
+ * alias or version is dropped too, since the function is the boundary
+ * whichever published version a call reaches.
  */
 export function resourceNameIn(spelling: string): string {
   if (spelling.startsWith("arn:")) {
@@ -35,9 +34,8 @@ export function resourceNameIn(spelling: string): string {
     // arn:partition:service:region:account:type:name[:qualifier]
     return segments[6] ?? segments[5] ?? spelling;
   }
-  // A GCP-style id is an even number of key/value segments, and the
-  // last one is the resource. A path that is not that shape is somebody
-  // else's string and stays as written.
+  // A GCP resource id is an even number of key/value segments, and the
+  // last segment is the resource name. Any other path stays as written.
   const segments = spelling.split("/");
   if (segments.length >= 4 && segments.length % 2 === 0) {
     return segments[segments.length - 1] ?? spelling;
@@ -46,10 +44,9 @@ export function resourceNameIn(spelling: string): string {
 }
 
 /**
- * The words in a boundary spelling. Separators between parts of a name
- * are cut, and the characters inside one part are left alone, so
- * `by-publication` stays one word and `{id}` and `:id` both come out as
- * `id`.
+ * The lowercase words in a boundary spelling. The text is split at the
+ * separators between parts of a name, and each part is kept whole, so
+ * `by-publication` stays one word and `{id}` and `:id` both become `id`.
  */
 export function spellingTokens(text: string): string[] {
   return text
@@ -59,7 +56,7 @@ export function spellingTokens(text: string): string[] {
     .filter((token) => token.length > 0);
 }
 
-/** Every word this boundary can be asked about by. */
+/** Every word a person can use to ask about this boundary. */
 export function bindingTokens(binding: BoundaryBinding): Set<string> {
   const tokens = new Set(spellingTokens(displayLabel(binding)));
   for (const value of Object.values(binding.semantics)) {
@@ -69,8 +66,8 @@ export function bindingTokens(binding: BoundaryBinding): Set<string> {
       }
     }
   }
-  // A word OpenTelemetry spells with a dot in it, "aws.dynamodb", is
-  // askable by its parts too, so somebody types the product name.
+  // OpenTelemetry writes some systems with a dot, like "aws.dynamodb",
+  // and a person asking usually types only the product name.
   for (const token of [...tokens]) {
     for (const part of token.split(".")) {
       tokens.add(part);
@@ -80,9 +77,9 @@ export function bindingTokens(binding: BoundaryBinding): Set<string> {
 }
 
 /**
- * Whether what somebody typed is the whole of this boundary's name
- * rather than part of it. `POST /articles` is exactly the collection
- * route and only part of `POST /articles/{slug}/comments`.
+ * Whether the typed text has every word of this boundary's label and
+ * nothing more. `POST /articles` matches the collection route exactly,
+ * and only partly matches `POST /articles/{slug}/comments`.
  */
 export function namesBoundaryExactly(
   subject: string,
@@ -99,7 +96,7 @@ export function namesBoundaryExactly(
   return [...spelled].every((token) => wanted.has(token));
 }
 
-/** Whether what somebody typed picks out this boundary. */
+/** Whether the typed text picks out this boundary: every word in it is one of the boundary's words. */
 export function namesBoundary(
   subject: string,
   binding: BoundaryBinding,

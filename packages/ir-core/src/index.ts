@@ -1,12 +1,12 @@
 /**
  * @suss/ir-core: primitives shared across suss IRs.
  *
- * The schemas are the single source of truth, and the types come from
- * them. Each boundary protocol's schema and behavior are in one module
- * under `./semantics`, and everything else is in `./schemas`. The
- * boundary-binding constructors are here too, so that any package that
- * produces an IR object (pattern packs, contract readers, intent docs,
- * tests) can build a binding without depending on a specific IR.
+ * The zod schemas are the source of truth, and the types are derived
+ * from them. Each boundary protocol defines its schema and its pairing
+ * behavior together in one module. The boundary-binding constructors
+ * are here too, so any package that produces an IR object, such as a
+ * pattern pack or a contract reader, can build a binding without
+ * depending on a specific IR.
  */
 
 import { GraphqlOperationSemanticsSchema } from "./semantics/graphqlOperation.js";
@@ -92,9 +92,8 @@ export { ecsContainerInstanceName } from "./deployableUnit.js";
 import type { DeployableUnit } from "./deployableUnit.js";
 
 export type { DeployableUnit } from "./deployableUnit.js";
-// TypeShape is a hand-written named recursive type in ./schemas (re-exported
-// here) rather than a `z.infer`, so cross-package declarations reference it
-// by name instead of inlining the recursion.
+// TypeShape is hand-written, so other packages' declaration files refer
+// to it by name and do not inline the recursive union.
 export type { TypeShape } from "./schemas.js";
 export type { FunctionCallSemantics } from "./semantics/functionCall.js";
 export type { GraphqlOperationSemantics } from "./semantics/graphqlOperation.js";
@@ -113,41 +112,10 @@ export type { UnitInvocationSemantics } from "./semantics/unitInvocation.js";
 // ---------------------------------------------------------------------------
 // Shared comparison primitives
 // ---------------------------------------------------------------------------
-//
-// These are pure operations over the primitives above that more than one
-// checker needs and that all of them have to agree on. They are here so
-// that neither checker, behavioural or intent, owns them and the two
-// cannot drift apart.
 
-// ---------------------------------------------------------------------------
-// Shared comparison primitives
-// ---------------------------------------------------------------------------
-//
-// These are pure operations over the primitives above that more than one
-// checker needs and that all of them have to agree on. They are here so
-// that neither checker, behavioural or intent, owns them and the two
-// cannot drift apart.
-
-// ---------------------------------------------------------------------------
-// Shared comparison primitives
-// ---------------------------------------------------------------------------
-//
-// These are pure operations over the primitives above that more than one
-// checker needs and that all of them have to agree on. They are here so
-// that neither checker, behavioural or intent, owns them and the two
-// cannot drift apart.
-
-// ---------------------------------------------------------------------------
-// Shared comparison primitives
-// ---------------------------------------------------------------------------
-//
-// These are pure operations over the primitives above that more than one
-// checker needs and that all of them have to agree on. They are here so
-// that neither checker, behavioural or intent, owns them and the two
-// cannot drift apart.
-
-// normalizeRuleBoundary is defined in boundaryKey.ts too, but it is exported
-// below with the suppressions, next to the matcher that uses it.
+// The behavioral and intent checkers both use these and must agree on
+// them, so they are defined once here. `normalizeRuleBoundary` is
+// exported with the suppressions below.
 export {
   bindingIs,
   boundaryKey,
@@ -249,16 +217,14 @@ export { pathAfterOrigin, statesAnOrigin } from "./urlPath.js";
 // ---------------------------------------------------------------------------
 // Boundary binding constructors
 // ---------------------------------------------------------------------------
-//
-// These are the approved constructors for the three-layer binding structure.
-// You can also write a `{ transport, semantics, recognition }` literal
-// directly, but it has to follow the same rules.
+
+// A `{ transport, semantics, recognition }` literal is allowed too, but
+// it has to follow the rules these constructors enforce.
 
 /**
  * The identity part when the source gives one, or null when it does
- * not. An empty string throws: it used to mean "unnamed" by convention,
- * three packs got that convention wrong in three different ways, and
- * throwing here puts the failure right next to what caused it.
+ * not. An empty string throws, so a pack that means "unnamed" has to
+ * pass null, and the error points at the call that got it wrong.
  */
 function namedOrNull(value: string | null, field: string): string | null {
   if (value === "") {
@@ -298,8 +264,8 @@ export function restBinding(opts: {
 }
 
 /**
- * Build a function-call-semantics binding. Used by in-process packs
- * (React components, custom-hook boundaries, bare TS function exports).
+ * Build a function-call-semantics binding, for an in-process boundary
+ * such as a React component or an exported TypeScript function.
  */
 export function functionCallBinding(opts: {
   transport: string;
@@ -387,9 +353,9 @@ export function graphqlOperationBinding(opts: {
 }
 
 /**
- * Whether a binding is the consumer side of a GraphQL boundary,
- * settled by the protocol's own schema so callers do not compare the
- * semantics tag themselves.
+ * Whether a binding is the consumer side of a GraphQL boundary, checked
+ * against the protocol's own schema so callers do not compare the
+ * semantics tag by hand.
  */
 export function isGraphqlOperationBinding(
   binding: BoundaryBinding | null | undefined,
@@ -401,14 +367,14 @@ export function isGraphqlOperationBinding(
 }
 
 /**
- * Build a runtime-config binding for a runtime configuration channel
- * (env vars on a Lambda, ECS task, container, or k8s pod). Transport is
- * `"os"` because the OS hands env vars to the process at startup no
- * matter what the deployment medium is.
+ * Build a runtime-config binding, for the environment variables a
+ * deployed unit starts with. Transport is `"os"` because the operating
+ * system passes environment variables to the process at startup,
+ * whatever platform deployed it.
  *
- * A provider says which deployment it is. A recognizer standing at a
- * read in the code leaves both off, since nothing in the code says
- * which deployment will run it.
+ * A provider passes its deployment target and instance name. A
+ * recognizer at a read in the code leaves both out, since the code does
+ * not say which deployment runs it.
  */
 export function runtimeConfigBinding(opts: {
   recognition: string;
@@ -454,11 +420,11 @@ export function unitInvocationBinding(opts: {
 }
 
 /**
- * Build a storage binding, the side of a store that both a schema
- * reader and a call site can spell. `transport` defaults to the store's
- * own name, which is right for a database whose product and wire
- * protocol are the same word; a store reached over an SDK passes its
- * wire instead, and one whose engine nobody settled has none to pass.
+ * Build a storage binding, which describes a store in terms both a
+ * schema reader and a call site can write. `transport` defaults to the
+ * storage system's name, which suits a database whose product and wire
+ * protocol share a name. A store reached through an SDK passes its wire
+ * protocol. With no storage system either, the transport is `"storage"`.
  */
 export function storageBinding(opts: {
   recognition: string;

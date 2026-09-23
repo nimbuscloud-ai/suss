@@ -1,24 +1,16 @@
 /**
- * A declared summary describes one deployable unit: the environment a
- * SAM function runs with, the queue an ECS task drains. Pairing it
- * against code means working out which code runs in that unit, and
- * three things can tell you, in descending order of how much they know.
+ * Which code runs in a declared deployable unit, such as the
+ * environment a SAM function runs with. Three sources answer that, from
+ * most to least reliable.
  *
- * Best is the summary itself. A pack that discovers a handler under a
- * template entry knows which unit it will be deployed as.
- *
- * Next best are the summaries beside it in the same file. A module is
- * deployed whole, so a helper next to a discovered handler runs
- * wherever that handler runs, and most of the code that reads
- * configuration is in that rest of the module.
- */
-
-/**
- * Last comes the template's source directory, and only when it is the
- * one directory that could contain the file. A monorepo service builds
- * every function from the service root, so that directory covers all of
- * them, and going by it would put every file in every unit at once.
- * Where several directories contain the file, none of them decides.
+ * 1. The code summary's own `deployableUnit`, set by a pack that found
+ *    the handler under a template entry.
+ * 2. The other summaries in the same file. A module is deployed whole,
+ *    so its helpers run wherever its handler runs.
+ * 3. The template's source directory, only when it is the one directory
+ *    that contains the file. A monorepo service builds every function
+ *    from the service root, and that directory would put every file in
+ *    every unit.
  */
 
 import { fileInCodeScope } from "@suss/ir-core";
@@ -31,14 +23,12 @@ import type { CodeScopeMetadata } from "../metadata.js";
 
 export type { CodeScopeMetadata } from "../metadata.js";
 
-/** The code scope on a declaring summary, or the unknown marker when it
- * has none. */
+/** The code scope on a declaring summary, or `{ kind: "unknown" }` when it has none. */
 export function readCodeScope(summary: BehavioralSummary): CodeScopeMetadata {
   return readCodeScopeMetadata(summary) ?? { kind: "unknown" };
 }
 
-/** The units each file's code is deployed as, according to its own
- * summaries. */
+/** The units each file's code is deployed as, according to its own summaries. */
 export type UnitsByFile = ReadonlyMap<string, DeployableUnit[]>;
 
 export interface UnitScope {
@@ -46,15 +36,15 @@ export interface UnitScope {
   unit: DeployableUnit | undefined;
   /**
    * The source directory to fall back on when neither side gives a
-   * unit. Absent where nothing stated one, which is what a Terraform
-   * configuration does, and then only the closure places a file.
+   * unit. Absent when nothing gave one, as with a Terraform
+   * configuration, and then only the closure places a file.
    */
   codeScope?: string;
   /**
    * The files the runtime's handler entry reaches through imports.
-   * When set, membership decides instead of the directory: a shared
-   * helper pairs with every runtime whose closure loads it, and a file
-   * outside every closure pairs with none.
+   * When set, it replaces the directory test: a shared helper pairs
+   * with every runtime whose closure loads it, and a file outside every
+   * closure pairs with none.
    */
   closure?: ReadonlySet<string>;
 }
@@ -83,12 +73,12 @@ export function unitsByFile(summaries: BehavioralSummary[]): UnitsByFile {
 
 /**
  * The files that two or more of these scopes' directories contain,
- * among code that gives no unit of its own. Nothing tells the scopes
- * apart for such a file, so a caller that would otherwise pair it
- * against every one of them pairs it against none and says why.
+ * among code that does not give a unit of its own. The scopes cannot be
+ * told apart for such a file, so a caller pairs it against none of them
+ * and reports why, instead of pairing it against all of them.
  *
- * Code that gives a unit is never in here: the units decide, and the
- * directories are not consulted.
+ * Code that gives a unit is never in the set, since its unit places it
+ * and the directories are not checked.
  */
 export function contestedFiles(
   code: readonly BehavioralSummary[],
@@ -106,9 +96,8 @@ export function contestedFiles(
 
   const contested = new Set<string>();
   for (const file of unplaced) {
-    // A closure settles membership for its runtime, so a file in two
-    // closures is in both runtimes rather than in doubt, and only the
-    // scopes with no closure still tell files apart by directory.
+    // A file inside any closure is placed by that closure, even when it
+    // is in two of them. Only scopes without a closure go by directory.
     if (scopes.some((s) => s.closure?.has(file) === true)) {
       continue;
     }
@@ -148,8 +137,8 @@ export function runsIn(
   if (scope.closure !== undefined) {
     return scope.closure.has(code.location.file);
   }
-  // Nothing said which directory, so nothing places this file. A scope
-  // with neither a closure nor a directory was never built.
+  // With no directory, nothing places this file. `placeDeclared` never
+  // builds a scope with neither a closure nor a directory.
   return (
     scope.codeScope !== undefined &&
     fileInCodeScope(code.location.file, scope.codeScope)

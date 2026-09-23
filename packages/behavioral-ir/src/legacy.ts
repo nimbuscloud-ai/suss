@@ -1,16 +1,16 @@
 /**
- * Reading summaries written before the format said what it meant.
+ * Reading summaries written by older versions of the format.
  *
- * Version 1 is everything up to 0.3.x, plus any summary with no
- * `schemaVersion` at all. It writes "the source did not say what this
- * identity is" as an empty string in a binding's identity fields, and
- * version 2 writes null there and rejects the empty string. Nobody
- * rewrites a published artifact, so every parse entry point runs the
- * normalization here first and an old summary still reads.
+ * Version 1 is everything up to 0.3.x, plus any summary without a
+ * `schemaVersion`. It writes "the source did not say what this identity
+ * is" as an empty string in a binding's identity fields, and version 2
+ * writes null there and rejects the empty string. Nobody rewrites a
+ * published artifact, so every parse entry point runs the normalization
+ * here first, and an old summary still parses.
  *
- * The same boundary catches a summary whose identity never got an id.
- * Those read back with an id computed from the fields they do have, by
- * the same formula a full run would have arrived at.
+ * The same step handles a summary whose identity has no id. It gets an
+ * id computed from the fields it does have, by the same formula a full
+ * run uses.
  */
 
 import { summaryIdFromParts } from "./summaryId.js";
@@ -22,8 +22,8 @@ import { summaryIdFromParts } from "./summaryId.js";
  * 2: those fields are null instead, the empty string is invalid, and
  *    `"*"` is the REST method wildcard.
  * 3: a parameter input's `role` is null where nobody could read it.
- *    Older artifacts all name one, so nothing is rewritten on the way
- *    in and the bump only marks that null as allowed.
+ *    Older artifacts always have one, so nothing is rewritten on the
+ *    way in and the bump only marks that null as allowed.
  * 4: one `storage` variant replaces `storage-relational`.
  * 5: a store and a bus go by the name OpenTelemetry's semantic
  *    conventions give them, so a summary and a span spell the same
@@ -209,7 +209,7 @@ function renameMetricWordsInPlace(input: LooseRecord): void {
   }
 }
 
-/** The queue an SNS subscription delivers through goes by it too. */
+/** The queue an SNS subscription delivers through gets its OpenTelemetry name too. */
 function renameDeliveryToSemconvInPlace(input: LooseRecord): void {
   const metadata = input.metadata;
   if (!isRecord(metadata) || !isRecord(metadata.messageBus)) {
@@ -221,7 +221,11 @@ function renameDeliveryToSemconvInPlace(input: LooseRecord): void {
   }
 }
 
-/** A summary missing the fields the formula needs fails validation next. */
+/**
+ * Give a summary without an id the one the formula computes. Returns
+ * false when the summary lacks the fields the formula needs, and
+ * validation rejects it next.
+ */
 function backfillIdentityId(input: LooseRecord): boolean {
   const identity = input.identity;
   if (!isRecord(identity) || typeof identity.id === "string") {
@@ -248,10 +252,10 @@ function backfillIdentityId(input: LooseRecord): boolean {
 }
 
 /**
- * Normalize every element and say whether any id was backfilled. A
- * per-summary backfill can mint one id for two summaries of the same
- * function, so the parse boundary settles the collisions afterward,
- * and only then: an artifact that wrote its own ids keeps them.
+ * Normalize every element, and report whether any id was backfilled. A
+ * per-summary backfill can give two summaries of the same function one
+ * id, so the parse boundary settles collisions afterward, and only in
+ * that case: an artifact that wrote its own ids keeps them.
  */
 export function normalizeLegacyArray(input: unknown): {
   value: unknown;
@@ -269,7 +273,7 @@ export function normalizeLegacyArray(input: unknown): {
   return { value, anyIdBackfilled };
 }
 
-/** Mutates and returns its input, which a parse boundary owns. */
+/** Mutates and returns its input, so the caller must own that object, as a parse boundary does. */
 export function normalizeLegacySummary(input: unknown): unknown {
   return normalizeOne(input).value;
 }

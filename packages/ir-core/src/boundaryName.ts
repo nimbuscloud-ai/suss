@@ -1,50 +1,50 @@
 /**
  * The boundary-name syntax, parsed and printed in one place.
  *
- * A name in a summary means one of three things, told apart by the
- * braces alone: a literal (`orders-v1`), a pattern with deploy-time
- * holes (`{stage}-orders-v1`), or a reference saying where to go and
- * ask (`{location.bucket}`, `{ORDER_TABLE}`). A second parser can
- * disagree about which is which, and a second printer can spell a
- * value this one cannot read back, so everything that touches the
- * braces calls this module: `parseBoundaryName` and
- * `boundaryNameString` are the two directions, and the helpers below
- * are views over them. The package README tells the longer story,
- * including why REST route paths and message-bus channels stay apart.
+ * A name in a summary is one of three things, and the braces alone tell
+ * them apart: a literal (`orders-v1`), a pattern with holes a deployment
+ * fills (`{stage}-orders-v1`), or a reference that says where to look
+ * the name up (`{location.bucket}`, `{ORDER_TABLE}`). A second parser
+ * could classify a string differently, and a second printer could write
+ * a string this parser cannot read back. So all code that reads or
+ * writes the braces goes through `parseBoundaryName` and
+ * `boundaryNameString`, and the other helpers here are built on those
+ * two. The package README has the longer explanation, including why
+ * REST route paths and message-bus channels are handled separately.
  */
 
 import { type DispatchTable, dispatchByType } from "./dispatch.js";
 
-/** One piece of a pattern: text the writer stated, or a hole. */
+/** One piece of a pattern: fixed text, or a hole. */
 export type NamePart =
   | { type: "text"; text: string }
   | { type: "hole"; label: string };
 
 /**
- * What a name string means. A `reference` keeps its raw dot-separated
- * path, and `referenceOf` is the view that checks the parts are all
- * present, so a malformed spelling still classifies as a reference and
- * still pairs with nothing.
+ * A parsed boundary name. A `reference` keeps its raw dot-separated
+ * path, and `referenceOf` checks that every part is present. A
+ * malformed reference still classifies as a reference, so it still
+ * pairs with nothing.
  */
 export type BoundaryName =
   | { type: "literal"; value: string }
   | { type: "pattern"; parts: NamePart[] }
   | { type: "reference"; path: string[] };
 
-/** What a hole looks like once a writer has spelled one. */
+/** Splits a name into text and `{...}` holes, keeping the holes. */
 const HOLE_SPLIT = /(\{[^}]*\})/;
 
-/** `${X}` is a hole. */
+/** A CloudFormation `Fn::Sub` substitution, `${X}`. */
 const SUB_TOKEN = /\$\{([^}]*)\}/g;
 
-/** CloudFormation's escape for text that survives as a literal `${X}`. */
+/** CloudFormation's escape, `${!X}`, which comes out as a literal `${X}`. */
 const SUB_ESCAPE = /\$\{!/;
 
 function isHole(piece: string): boolean {
   return piece.startsWith("{") && piece.endsWith("}");
 }
 
-/** What a name string means. The exact inverse of `boundaryNameString`. */
+/** Parse a name string. The exact inverse of `boundaryNameString`. */
 export function parseBoundaryName(name: string): BoundaryName {
   const parts: NamePart[] = name
     .split(HOLE_SPLIT)
@@ -78,24 +78,24 @@ const nameString: DispatchTable<BoundaryName, string> = {
   reference: (name) => patternHole(name.path.join(".")),
 };
 
-/** The one serializer. Everything a summary spells goes through here. */
+/** The name as a summary writes it. The exact inverse of `parseBoundaryName`. */
 export function boundaryNameString(name: BoundaryName): string {
   return dispatchByType(nameString, name);
 }
 
 /**
- * How a hole is spelled. A reader that assembles a pattern a part at a
- * time, the way the adapter's name reader does, mints each hole here
- * so the spelling cannot drift from the parse above.
+ * The string for one hole. Code that builds a pattern one part at a
+ * time calls this for each hole, so the result always parses back.
  */
 export function patternHole(label: string): string {
   return `{${label}}`;
 }
 
 /**
- * The name a CloudFormation `Fn::Sub` value states. The array form
- * takes its template from the first element, and the variable map only
- * says where a substitution comes from, which does not change the name.
+ * The name pattern a CloudFormation `Fn::Sub` value produces, with each
+ * `${X}` turned into a hole. In the array form the template is the
+ * first element. The variable map only gives each substitution's
+ * source, which does not change the pattern.
  */
 export function namePatternFromSub(value: unknown): string | null {
   if (Array.isArray(value)) {
@@ -105,8 +105,8 @@ export function namePatternFromSub(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;
   }
-  // A name with an escaped substitution in it keeps literal braces, and
-  // braces are what a hole is written with here, so it has no pattern.
+  // An escaped substitution leaves literal braces in the name, and those
+  // would parse as a hole, so there is no pattern to return.
   if (SUB_ESCAPE.test(value)) {
     return null;
   }
@@ -116,24 +116,24 @@ export function namePatternFromSub(value: unknown): string | null {
 }
 
 /**
- * Whether a name says only that somebody else knows it. A wrapper that
- * takes its bucket as an argument states `{location.bucket}` and
- * nothing more, which says which parameter to ask rather than which
- * bucket. A name like that agrees with nothing until something grounds
- * it, since otherwise it would agree with every name there is.
+ * Whether a name is a reference, which gives where to look the name up
+ * and not the name itself. A wrapper that takes its bucket as an
+ * argument writes `{location.bucket}`. Such a name agrees with nothing
+ * until it is grounded, since otherwise it would agree with every name.
  */
 export function namesNothing(name: string): boolean {
   return parseBoundaryName(name).type === "reference";
 }
 
-/** Whether a name has anything a source left for deploy time to fill. */
+/** Whether a name has any hole left for the deployment to fill. */
 export function hasNameHole(name: string): boolean {
   return parseBoundaryName(name).type !== "literal";
 }
 
 /**
- * The form two patterns are compared in: every hole reduced to the same
- * token, since the two sides pick their own name for the parameter.
+ * The name with every hole label blanked, for comparing two patterns.
+ * Each side chooses its own label for a parameter, so labels never
+ * decide a match.
  */
 export function namePatternKey(name: string): string {
   return dispatchByType<BoundaryName, string>(
@@ -152,7 +152,7 @@ export function namePatternKey(name: string): string {
   );
 }
 
-/** How much of a name the writer stated rather than left for deploy time. */
+/** How many characters of fixed text a name has. A reference has none. */
 export function fixedTextLength(name: string): number {
   return dispatchByType<BoundaryName, number>(
     {
@@ -174,12 +174,11 @@ function quote(text: string): string {
 }
 
 /**
- * Whether a concrete name has the pattern's fixed text in those places.
- * A hole can cover anything, because a name has no separator every
- * project agrees on: a region is written `us-east-1` and a hole that
- * stopped at the first hyphen would miss it. Two patterns that both
- * cover a name are told apart by which states more fixed text, which
- * the checker does when it picks a container.
+ * Whether a concrete name has the pattern's fixed text in the pattern's
+ * places. A hole can cover anything, because projects do not share a
+ * separator: a region is written `us-east-1`, and a hole that stopped at
+ * the first hyphen would miss it. When two patterns cover one name, the
+ * checker prefers the one with more fixed text as it picks a container.
  */
 function admits(
   pattern: Extract<BoundaryName, { type: "pattern" }>,
@@ -194,10 +193,9 @@ function admits(
 /**
  * Whether two names are the same name. Two patterns agree when their
  * fixed parts line up, since a hole on one side meets a hole on the
- * other. A pattern and a concrete name agree when the fixed parts are
- * where the pattern says they are, which is what happens when one side
- * hardcoded what the other parameterized. A reference agrees with
- * nothing on either side.
+ * other. A pattern and a concrete name agree when the fixed text is
+ * where the pattern puts it. That happens when one side hardcoded what
+ * the other parameterized. A reference agrees with nothing.
  */
 export function namesAgree(a: string, b: string): boolean {
   const left = parseBoundaryName(a);
@@ -221,22 +219,21 @@ export function namesAgree(a: string, b: string): boolean {
   return a === b;
 }
 
-/** Where a reference says to go and ask. */
+/** A parsed reference: the value the code starts from, and the fields it reads inside it. */
 export interface Reference {
   /**
-   * The value the code starts from: a parameter of the unit the
-   * reference was written in, or a variable the deployment sets. Which
-   * of those it is depends on the unit's inputs, so the reader that
-   * grounds a reference decides, not the string.
+   * A parameter of the unit the reference was written in, or a variable
+   * the deployment sets. The string does not record which. The grounding
+   * pass works that out from the unit's inputs.
    */
   root: string;
-  /** The fields to read inside it, outermost first. */
+  /** The fields read inside the root, outermost first. */
   fields: string[];
 }
 
 /**
- * How a reference is written. Null when a part of it is empty, since a
- * reference has to say what to ask about.
+ * The string for a reference, such as `{location.bucket}`. Null when
+ * any part is empty, since such a reference could never be settled.
  */
 export function referenceName(reference: Reference): string | null {
   const path = [reference.root, ...reference.fields];
@@ -247,9 +244,8 @@ export function referenceName(reference: Reference): string | null {
 }
 
 /**
- * The place a parsed reference says to ask, or null for a name that is
- * not a reference, or for a reference with a part missing, which says
- * nothing anybody could answer.
+ * The `Reference` in a parsed name. Null when the name is not a
+ * reference, or when a part of it is empty and nothing could settle it.
  */
 export function referenceOf(name: BoundaryName): Reference | null {
   if (name.type !== "reference") {
@@ -262,10 +258,7 @@ export function referenceOf(name: BoundaryName): Reference | null {
   return { root, fields: name.path.slice(1) };
 }
 
-/**
- * The reference a name states, or null when the name states a name
- * rather than where to go and ask.
- */
+/** The `Reference` in a name string, or null when the name is a literal or a pattern. */
 export function referenceFromName(name: string): Reference | null {
   return referenceOf(parseBoundaryName(name));
 }

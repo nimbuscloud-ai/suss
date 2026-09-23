@@ -1,14 +1,13 @@
 /**
- * declaredDelivery.ts: give a deployed code unit the boundary a
- * declaration says delivers to it.
+ * Gives a deployed code unit the boundary a declaration says delivers
+ * to it.
  *
- * A queue consumer arrives as two summaries with half of it each. The
- * code says what the handler does with a message and cannot say which
- * queue delivers it, because a SAM template decides that. The
- * template's summary says which queue and knows nothing about the
- * handler's branches. Both give the same deployable unit, which is what
- * puts them back together. Anything that reads summaries by boundary
- * key needs this join before it looks.
+ * A queue consumer arrives as two summaries with half the picture each.
+ * The code summary says what the handler does with a message but not
+ * which queue delivers it, because a SAM template sets that. The
+ * template's summary gives the queue and nothing about the handler's
+ * branches. Both give the same deployable unit, and that joins them.
+ * Anything that reads summaries by boundary key needs this join first.
  */
 
 import { boundaryKey } from "@suss/ir-core";
@@ -33,10 +32,10 @@ function unitKey(unit: DeployableUnit): string {
 }
 
 /**
- * The declaration's boundary where this one left a blank, or null when
- * there is nothing to take. A field the code did state and the
- * declaration disagrees with stops the merge: the two are describing
- * different boundaries, and a value nobody wrote is worse than a gap.
+ * `mine` with its null fields filled from `theirs`, or null when there
+ * is nothing to take. A field the code gave that the declaration
+ * contradicts stops the merge: the two describe different boundaries,
+ * and a merged value neither side wrote is worse than a gap.
  */
 function filledFrom(mine: Semantics, theirs: Semantics): Semantics | null {
   if (mine.name !== theirs.name) {
@@ -59,9 +58,9 @@ function filledFrom(mine: Semantics, theirs: Semantics): Semantics | null {
 
 /**
  * What each deployed unit is declared to receive. A unit two
- * declarations disagree about is left out: nothing here can pick
+ * declarations disagree about maps to null: nothing here can pick
  * between two queues feeding one Lambda, and a guess would file a
- * handler's behaviour under a boundary it may never receive from.
+ * handler's behavior under a boundary it may never receive from.
  */
 function declaredByUnit(
   summaries: readonly BehavioralSummary[],
@@ -93,10 +92,9 @@ function declaredByUnit(
 
 /**
  * The same summaries, with a unit's boundary filled in from the
- * declaration that says what reaches it. A summary that can already be
- * keyed keeps what it has: a consumer built by a factory that states
- * its subject has said something the template cannot, and it is the
- * more specific answer.
+ * declaration of what reaches it. A summary that already has a key
+ * keeps its boundary. A consumer built by a factory that gives its own
+ * subject is more specific than the template.
  */
 export function withDeclaredDelivery(
   summaries: readonly BehavioralSummary[],

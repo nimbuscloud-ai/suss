@@ -1,16 +1,15 @@
 /**
- * deployedNames.ts: the one place a boundary name with a hole in it
- * gets filled in.
+ * Where a boundary name with a hole in it gets filled in.
  *
- * `deployedValues` and `deployedRefs` next door know half of it each,
- * and this puts a `Deployment` in front of them so a protocol can ask
- * without knowing which half it is. Everything that reads a name for
- * somebody to see comes through here: the pairing pass, the drafter
- * that writes an intent document, and the intent checker that reads
- * one back.
+ * `deployedValues` handles a variable set to a string, and
+ * `deployedRefs` handles one set to a resource. `deploymentOf` puts a
+ * `Deployment` in front of both, so a protocol can look a reference up
+ * without knowing which kind it is. The pairing pass, the drafter that
+ * writes an intent document and the intent checker that reads one back
+ * all go through here.
  *
- * The rule for which variable a reference asks about is here too. It
- * used to be written twice, and the two spellings could disagree.
+ * The rule for which variable a reference points at, `variableAsked`,
+ * is defined here once so no two callers can disagree about it.
  */
 
 import { deployedRefs } from "./deployedRefs.js";
@@ -20,21 +19,19 @@ import { deploymentScope } from "./deploymentScope.js";
 import type { Deployment, Reference } from "@suss/ir-core";
 import type { BehavioralSummary } from "../index.js";
 
-/** What a pack calls the argument a runtime's configuration arrives in. */
+/** The role a pack gives the parameter a runtime's configuration is passed in. */
 const CONFIG_ROLE = "config";
 
 /**
- * Ask what each unit's deployment fills its variables in with.
+ * A `Deployment` for each unit, built once for a set of summaries.
  *
- * Built once for a set of summaries and asked per unit, because two
- * services in one repository can both set `API_BASE` and only the unit
- * in question says which value applies.
+ * Lookups are per unit because two services in one repository can both
+ * set `API_BASE`, and only the unit shows which value applies.
  */
 export function deploymentOf(
   summaries: BehavioralSummary[],
 ): (code: BehavioralSummary) => Deployment {
-  // One placement for both channels: walking the module graph twice
-  // for one result is the kind of cost a caller cannot see.
+  // Both lookups share one placement, so the module graph is walked once.
   const scope = deploymentScope(summaries);
   const setTo = deployedValues(summaries, scope);
   const pointsAt = deployedRefs(summaries, scope);
@@ -65,13 +62,13 @@ export function deploymentOf(
 }
 
 /**
- * The variable a reference asks about, or null when what settles it is
- * an argument a caller passes.
+ * The variable a reference points at, or null when an argument a caller
+ * passes settles it.
  *
- * One bare name is a variable: that is how a pack spells a
- * `process.env` read. A path is one only when it goes through the
- * argument a pack calls the configuration, because what fills that
- * argument is the runtime rather than any call site in the run.
+ * A bare name is a variable, since that is how a pack writes a
+ * `process.env` read. A path is a variable only when it starts at the
+ * parameter a pack marks as the configuration, because the runtime
+ * fills that argument and no call site in the run does.
  */
 export function variableAsked(
   summary: BehavioralSummary,
@@ -84,7 +81,7 @@ export function variableAsked(
   return parameter?.role === CONFIG_ROLE ? reference.fields.join(".") : null;
 }
 
-/** The parameter of this unit a reference starts at, if it takes one. */
+/** The unit's parameter with this name, or null when it has none. */
 export function parameterNamed(
   summary: BehavioralSummary,
   name: string,

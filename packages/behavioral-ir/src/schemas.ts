@@ -2,15 +2,15 @@
  * The zod schemas for the behavioral summary IR, and the one place any
  * of it is written by hand.
  *
- * Everything else is generated from what is here. The TypeScript types
- * exported from `index.ts` come from these schemas through `z.infer`,
- * and the JSON Schema the package publishes is generated at build time
- * through `z.toJSONSchema`. Edit a schema here and both follow; edit
- * either of those directly and the next build throws it away.
+ * Everything else is generated from these. The TypeScript types the
+ * package exports come from them through `z.infer`, and the published
+ * JSON Schema is generated at build time through `z.toJSONSchema`. Edit
+ * a schema here and both follow. Edit either of those directly and the
+ * next build overwrites the change.
  *
  * The primitives shared with the other suss IRs come from
- * `@suss/ir-core`, and the schemas below build on them. What this
- * package exports is the types plus the parse functions, not these.
+ * `@suss/ir-core`, and these schemas build on them. The package exports
+ * the types and the parse functions, and these schemas stay internal.
  */
 
 import { z } from "zod";
@@ -52,8 +52,8 @@ export const CodeUnitKindSchema = z.enum([
   "module-init",
   /**
    * The function handed to `setTimeout`, `setInterval` or a library that
-   * runs work later. The runtime calls it rather than a request, so what
-   * it reaches is on it rather than on the unit that scheduled it.
+   * runs work later. The runtime calls it later, so what it reaches is
+   * recorded on this unit and not on the unit that scheduled it.
    */
   "scheduled-callback",
 ]);
@@ -177,7 +177,7 @@ export const CodeUnitIdentitySchema = z.object({
   name: z.string(),
   /**
    * "binding" means other code can call the unit by this name. "label"
-   * means discovery coined it, and it never stands in for a binding.
+   * means discovery made the name up, and it is never used as a binding.
    */
   nameKind: z.enum(["binding", "label"]).optional(),
   exportPath: z.array(z.string()).nullable(),
@@ -485,10 +485,10 @@ export const EffectSchema = z.discriminatedUnion("type", [
      */
     summary: z.string().optional(),
     /**
-     * Where the type checker found the callee declared. The adapter
-     * sets it while extracting and naming consumes it into `summary`,
-     * so it is present only in between, which is where the extraction
-     * cache stores a summary.
+     * Where the type checker found the callee declared. The adapter sets
+     * it while extracting, and the naming step replaces it with
+     * `summary`. It is present only between those two steps, which is
+     * when the extraction cache stores a summary.
      */
     declaredAt: DeclarationPlaceSchema.optional(),
     /**
@@ -679,9 +679,9 @@ export const GapSchema = z.object({
   description: z.string(),
   /**
    * The call the walk stopped at, as the source writes it, for an
-   * `unfollowedCall`. A reader deciding whether a gap could affect the
-   * question they asked needs to see which call it was, and the
-   * sentence says so in prose that nothing should be parsing.
+   * `unfollowedCall`. A reader deciding whether a gap affects their
+   * question needs to see which call it was, and `description` gives it
+   * only in prose that nothing should parse.
    */
   callee: z.string().optional(),
 });

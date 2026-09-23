@@ -2,13 +2,12 @@
  * @suss/behavioral-ir: the types, schemas, and helpers for the
  * behavioral summary format.
  *
- * The schemas in `./schemas` are the source of truth. The types here
- * come from them through `z.infer`, so there is nothing to keep in sync
- * by hand. The schemas themselves are not public API. What a consumer
- * gets is the types, plus `parseSummary` and `parseSummaries` for
- * validating at runtime. If you need to compose at the zod level you
- * can import the schema module by its internal path, but nothing
- * promises that path will keep working.
+ * The zod schemas are the source of truth, and the types here are
+ * derived from them with `z.infer`, so nothing is kept in sync by hand.
+ * The schemas are not public API. A consumer gets the types, plus
+ * `parseSummary` and `parseSummaries` for validation at run time. Code
+ * that needs to compose at the zod level can import the schema module
+ * by its internal path, with no promise that the path stays stable.
  */
 
 import { normalizeLegacyArray, normalizeLegacySummary } from "./legacy.js";
@@ -42,9 +41,8 @@ import { disambiguateSummaryIds } from "./summaryId.js";
 
 import type { z } from "zod";
 
-// Shared IR primitives live in @suss/ir-core. Re-export the types and the
-// binding constructors so existing `@suss/behavioral-ir` consumers reach
-// them unchanged; behaviour-specific types are derived from schemas.ts below.
+// Shared IR primitives are defined in @suss/ir-core and re-exported here,
+// so consumers can keep importing them from @suss/behavioral-ir.
 export {
   type BoundaryName,
   bindingIs,
@@ -287,7 +285,7 @@ export type {
 } from "@suss/ir-core";
 
 // ---------------------------------------------------------------------------
-// Derived types (single source of truth: schemas.ts)
+// Derived types
 // ---------------------------------------------------------------------------
 
 export type CodeUnitKind = z.infer<typeof CodeUnitKindSchema>;
@@ -296,9 +294,9 @@ export type OpaqueReason = z.infer<typeof OpaqueReasonSchema>;
 export type FindingKind = z.infer<typeof FindingKindSchema>;
 
 /**
- * Every behavioural finding kind, as runtime values. For consumers
- * that validate user-supplied kind references (e.g. .sussignore rules)
- * without reaching into the schema module, which is not public API.
+ * Every behavioral finding kind as a runtime value, for code that
+ * checks kind names a user wrote, such as `.sussignore` rules, without
+ * importing the schema module.
  */
 export const FINDING_KINDS: readonly FindingKind[] = FindingKindSchema.options;
 export type FindingSeverity = z.infer<typeof FindingSeveritySchema>;
@@ -334,25 +332,24 @@ export type Finding = z.infer<typeof FindingSchema>;
 // Naming a summary
 // ---------------------------------------------------------------------------
 
-/**
- * Refer to a summary the way a finding does.
- *
- * The string that comes back gets read as well as printed: the checker
- * deduplicates findings by it, and a `.sussignore` rule matches against
- * it. Both sides have to agree on the separator and on which two fields
- * go into it, so one function owns the format instead of every caller
- * writing out the template literal.
- *
- * It is file-and-name rather than `identity.id` on purpose: a rule
- * someone already wrote has to keep matching, and an id includes the
- * workspace, which changes the string for most projects. Code following
- * a link instead of printing one has `identity.id` and `effect.summary`.
- */
 declare const SummaryRefBrand: unique symbol;
 
 /** The `file::name` reference, with `summaryRef` its only constructor. */
 export type SummaryRef = string & { readonly [SummaryRefBrand]: "summaryRef" };
 
+/**
+ * Refer to a summary the way a finding does.
+ *
+ * The string is read as well as printed: the checker deduplicates
+ * findings by it, and a `.sussignore` rule matches against it. Both
+ * have to agree on the separator and the two fields, so this function
+ * builds the string and no caller writes the template literal.
+ *
+ * It uses file and name, and not `identity.id`, on purpose. A rule
+ * someone already wrote has to keep matching, and an id includes the
+ * workspace, which changes the string for most projects. Code that
+ * follows a link uses `identity.id` and `effect.summary` instead.
+ */
 export function summaryRef(summary: BehavioralSummary): SummaryRef {
   return `${summary.location.file}::${summary.identity.name}` as SummaryRef;
 }
@@ -362,10 +359,10 @@ export function summaryRef(summary: BehavioralSummary): SummaryRef {
 // ---------------------------------------------------------------------------
 
 /**
- * The source text a path engine writes on the condition that says a
- * branch was reached by an exception. It is the same in every language
- * so transition IDs stay stable, and `isCatchEntry` is how a check asks
- * without spelling the string a second time.
+ * The source text a path engine writes on the condition that marks a
+ * branch reached by an exception. It is the same in every language so
+ * transition ids stay stable, and checks call `isCatchEntry` so the
+ * string is written once.
  */
 export const CATCH_ENTRY_TEXT = "catch";
 
@@ -381,9 +378,8 @@ export function isCatchEntry(predicate: Predicate): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * The role a code unit plays at a boundary. Pairing logic looks this up
- * via `BOUNDARY_ROLE` so adding a new kind requires only a single edit
- * (and the lookup becomes a type error if a variant is missed).
+ * The role a code unit plays at a boundary. `BOUNDARY_ROLE` is a Record
+ * over every kind, so adding a kind without a role fails to compile.
  */
 export type BoundaryRole = "provider" | "consumer";
 
@@ -473,8 +469,8 @@ function behaviourOf(t: Transition): string {
  * in front of a branch gives that branch a new id. Matched by id alone,
  * the diff would then say the branch was removed and an identical one
  * added, which looks like a no-op. Pairing a removed and an added
- * transition that produce the same thing reports the guard change as
- * the one change it is.
+ * transition that produce the same thing reports the guard change as a
+ * single change.
  */
 function outcomeOf(t: Transition): string {
   const {

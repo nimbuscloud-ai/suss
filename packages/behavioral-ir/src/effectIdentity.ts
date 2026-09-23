@@ -1,5 +1,5 @@
 /**
- * When two effects say the same thing, and what to do with the repeats.
+ * When two effects are the same effect, and how repeats are folded.
  *
  * A transition lists each effect once, so a schema validator called
  * thirteen times on one path is one effect with `count: 13`. The count
@@ -17,11 +17,11 @@ import type { Effect } from "./index.js";
 const NOT_IN_KEY: ReadonlySet<string> = new Set(["groupId", "count"]);
 
 /**
- * One spelling for a callee, whatever the source looked like. A callee
- * is the call expression as it was written, so a chain broken across
- * lines arrives with its newlines and indentation and the same call
- * written on one line elsewhere is a different string. Anything that
- * matches an effect by its callee text goes through this first.
+ * A callee's text with its whitespace normalized. A callee is the call
+ * expression as it was written, so a chain broken across lines keeps
+ * its newlines and indentation, and the same call written on one line
+ * elsewhere is a different string. Code that matches an effect by its
+ * callee text should normalize it here first.
  */
 export function normalizeCalleeText(text: string): string {
   return text

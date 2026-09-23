@@ -1,14 +1,15 @@
 /**
- * What a unit does at a boundary, in the words `suss ask` asks with.
+ * What a unit does at a boundary, in the words `suss ask` uses.
  *
- * `what writes postgresql:invoices` is the question and "this outcome
- * writes postgresql:invoices" is the assertion, so the report, the
- * question parser and an intent doc all have to spell the verbs the
- * same way. They are here rather than beside any one of them.
+ * A user asks `what writes postgresql:invoices`, and an intent doc
+ * asserts "this outcome writes postgresql:invoices". The report, the
+ * question parser and the intent reader all have to spell the verbs the
+ * same way, so the verbs are defined here once.
  *
- * `provides` is the unit's own boundary; `reads`, `writes` and
- * `invokes` are what a call site does at somebody else's. Calling a
- * deployed unit by name is one act, so it gets a verb of its own.
+ * `provides` is a boundary the unit serves. `reads`, `writes` and
+ * `invokes` are what a call site does at a boundary somebody else
+ * serves. Calling a deployed unit by name is its own act, so it gets
+ * its own verb.
  */
 
 import { z } from "zod";

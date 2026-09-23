@@ -3,14 +3,13 @@
  *
  * It evaluates `Predicate` and `ValueRef` trees against a concrete
  * environment: a request, a props object, any record keyed by input
- * refs. The rule everything else follows from is that it abstains.
- * Anything the IR marks opaque, and any value it cannot trace to a
- * concrete one (a dependency result, an unresolved reference, a method
- * call), comes out `unknown` rather than guessed at. Predicates compose
- * under Kleene three-valued logic, so one unknown conjunct makes the
- * whole conjunction unknown instead of quietly true or false. The
- * differential fuzzer uses this to judge extracted claims against
- * executions, and `suss corroborate` uses it as its oracle.
+ * refs. Where it cannot be sure, it abstains. Anything the IR marks
+ * opaque, and any value it cannot trace to a concrete one (a dependency
+ * result, an unresolved reference, a method call), comes out `unknown`
+ * and is never guessed. Predicates compose under Kleene logic, so an
+ * unknown conjunct makes a conjunction unknown unless another conjunct
+ * is false. The differential fuzzer uses this to judge extracted claims
+ * against executions, and `suss corroborate` uses it as its oracle.
  */
 
 import { type DispatchTable, dispatchByType } from "@suss/ir-core";

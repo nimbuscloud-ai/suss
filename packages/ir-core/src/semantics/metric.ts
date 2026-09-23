@@ -1,16 +1,16 @@
 /**
  * A metric as a boundary: one side declares a named series of
- * measurements, the other side reads it back by that name.
+ * measurements, and the other side reads it back by that name.
  *
- * The name is the whole identity. A monitoring system gives a metric a
- * type string once it is deployed, an alert or a dashboard spells that
- * same string, and neither side can see the other's declaration, so the
- * string is all they share. What only the declaring side knows, whether
- * the measurements are a distribution or a single number, goes on its
- * summary's metadata instead.
+ * The name is the whole identity. A monitoring system gives a deployed
+ * metric a type string, and an alert or a dashboard writes the same
+ * string. Neither side can see the other's declaration, so that string
+ * is all they share. Whether the measurements are a distribution or a
+ * single number is known only to the declaring side, so it goes in that
+ * side's summary metadata.
  *
- * Reading a metric returns measurements rather than a status and a
- * body, so none of the HTTP-shaped checks apply.
+ * Reading a metric returns measurements, so the HTTP-style checks do
+ * not apply.
  */
 
 import { z } from "zod";
@@ -20,14 +20,14 @@ import { defineBoundarySemantics } from "./definition.js";
 
 export const MetricSemanticsSchema = z.object({
   name: z.literal("metric"),
-  /** Which system the series lives in: cloud-monitoring, cloudwatch. */
+  /** The system the series is stored in, such as `cloud-monitoring` or `cloudwatch`. */
   metricSystem: z.string(),
   /**
-   * The type string the system knows the metric by, spelled the way
-   * both sides spell it. Null when the source states one this reader
-   * could not settle, as with a query it could not read: a metric
-   * nobody could name pairs with nothing rather than with whatever
-   * happens to share its source text.
+   * The type string the system uses for the metric, written the same
+   * way on both sides. Null when the reader could not work the string
+   * out, as with a query it could not parse. A null type pairs with
+   * nothing, so it cannot pair with an unrelated metric that happens to
+   * share its source text.
    */
   metricType: z.string().nullable(),
 });
@@ -37,8 +37,8 @@ export type MetricSemantics = z.infer<typeof MetricSemanticsSchema>;
 export const metricSemantics = defineBoundarySemantics({
   name: "metric",
   schema: MetricSemanticsSchema,
-  // OpenTelemetry knows a metric by its instrument name, and has no
-  // attribute for the system it lives in or the type string it goes by.
+  // OpenTelemetry identifies a metric by its instrument name. It has no
+  // attribute for the metric's system or its type string.
   semconv: {},
   behavior: {
     exchangesHttpResponses: false,
