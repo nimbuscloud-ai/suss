@@ -1,9 +1,9 @@
 # Fact-based resolution
 
-Resolve indirection with a fact base and rules instead of one-off AST
-walkers. An exported value reaches its implementing function through any
-depth of aliasing, re-export barrels, wrapper factories, and `.bind`,
-because each pattern is a rule and rules compose.
+This proposes resolving indirection with a fact base and rules instead
+of one-off AST walkers. An exported value then reaches its implementing
+function through any depth of aliasing, re-export barrels, wrapper
+factories and `.bind`, because each pattern is a rule and rules compose.
 
 ## The problem
 
@@ -20,8 +20,8 @@ The adapter has four bespoke resolution walkers, each capped at one hop:
 They do not compose. Serverless projects rarely write a handler as a
 plain exported function. They write
 `export const handler = withAuth(inner)`, and they reach the AWS SDK
-through a barrel package rather than importing it directly. Both of
-those defeat a one-hop walker.
+through a barrel package instead of importing it directly. A one-hop
+walker cannot follow either.
 Against a production monorepo, suss found 8 of the 34 handlers the
 deployment template declared, and no SQS producers at all. Extraction
 was fine, and discovery never reached the function.
@@ -32,7 +32,7 @@ when each hop is individually supported.
 
 ## Design
 
-Two layers, both in `packages/adapter/typescript/src/facts/`.
+The design has two layers, both in `packages/adapter/typescript/src/facts/`.
 
 **Fact extraction** walks a source file once and emits flat tuples.
 No resolution logic lives here. It records what is syntactically
@@ -91,9 +91,9 @@ which feeds `unwrapsByName`.
   not directly a function.
 - `importsTransitively(file, packages)`: whether a file reaches any of
   the named packages through its imports, following project-local
-  re-export chains. We wire this into the `requiresImport` gate, which
-  today reads only the file's own import specifiers and is defeated by
-  barrels.
+  re-export chains. We wire this into the `requiresImport` gate. Today
+  the gate reads only the file's own import specifiers, so it misses a
+  package reached through a barrel.
 
 A query works out which file its value lives in, asks, and widens to
 that file's imports only when the answer is still missing, up to six
@@ -102,13 +102,13 @@ file. The gate skips the rules entirely and walks module specifiers
 instead, memoized per gate set. Deriving every file's set of reachable
 modules to answer one boolean costs far more than the answer is worth.
 
-## What this absorbs
+## What this replaces
 
 `factoryTracking` and `resolveImport` become fact extraction plus rules,
 and their bespoke traversals are deleted once callers migrate.
 `helperResolution`'s traversal becomes the shared `unwraps` derivation.
-The `.then` binding stays where it is (it feeds shapes, not discovery)
-until a later pass.
+The `.then` binding stays where it is until a later pass, because it
+feeds shapes and discovery does not use it.
 
 ## Out of scope for v0
 
@@ -126,5 +126,5 @@ local wrapper factory, two stacked wrappers, pack-declared wrapper,
 `.bind`, a namespace-imported wrapper, a wrapped default export, and a
 wrapper reached through a barrel (composition). On the production
 monorepo, suss goes from finding 8 of the 34 handlers the template
-declared to finding all 34, and it stops recognizing zero SQS
-producers.
+declared to finding all 34, and it finds SQS producers where it found
+none before.
