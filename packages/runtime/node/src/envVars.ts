@@ -448,7 +448,7 @@ function namesReadAtSites(
   if (resolution === undefined) {
     return () => null;
   }
-  const namers = resolution.envNamers(fn.getSourceFile());
+  const namers = resolution.envNamers(fn.getProject());
   return (parameter) => namers.sitesNaming(parameter);
 }
 

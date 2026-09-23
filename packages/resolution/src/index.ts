@@ -1709,6 +1709,29 @@ export const RESOLUTION_QUESTIONS = [
       lit("paramNamesEnv", v("p"), v("site")),
     ],
   ),
+  // The parameters the environment object is handed to, from the same
+  // seed, so a question about one is a lookup rather than a read of
+  // every file that could call its function.
+  rule(
+    "wantedEnvParameter",
+    [v("p")],
+    [
+      lit("wantedEnvObject", v("w")),
+      lit("environmentValue", v("w"), v("p")),
+      lit("paramNamed", v("f"), v("n"), v("p")),
+    ],
+  ),
+  // The calls that hand it on, for an asker to resolve, since the
+  // parameter on the other side is in a file nothing has read yet.
+  rule(
+    "wantedEnvPassingCall",
+    [v("r")],
+    [
+      lit("wantedEnvObject", v("w")),
+      lit("environmentValue", v("w"), v("a")),
+      lit("callArg", v("r"), v("k"), v("a")),
+    ],
+  ),
   // The same relation asked from one expression. Seeding from the
   // objects instead would settle it for every expression in the
   // project, and a caller holding an argument wants only that one.

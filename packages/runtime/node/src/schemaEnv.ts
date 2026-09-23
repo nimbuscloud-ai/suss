@@ -184,12 +184,14 @@ export function schemaEnvReads(
     ) {
       continue;
     }
-    const environment = environmentArgument(call, reader, resolution);
-    if (environment === null || !resolution.isEnvironmentValue(environment)) {
+    // Most `parse(text)` calls are not parsing against a schema, so the
+    // schema is read before the store is asked about the argument.
+    const reads = readsFromSchema(call, reader, resolution);
+    if (reads.length === 0) {
       continue;
     }
-    const reads = readsFromSchema(call, reader, resolution);
-    if (reads.length > 0) {
+    const environment = environmentArgument(call, reader, resolution);
+    if (environment !== null && resolution.isEnvironmentValue(environment)) {
       return reads;
     }
   }
