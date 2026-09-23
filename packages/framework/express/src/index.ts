@@ -1,5 +1,3 @@
-// @suss/framework-express: PatternPack for Express
-
 import { z } from "zod";
 
 import {
@@ -11,8 +9,8 @@ import {
 import type { PatternPack } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
-// Express routes every verb in the `methods` package. These are the
-// ones projects write; `router.search` is common in batch-read APIs.
+// Express accepts every verb in the `methods` package. This list has the
+// ones projects use, and `router.search` turns up in batch-read APIs.
 const METHODS = [
   ".get",
   ".post",
@@ -25,8 +23,8 @@ const METHODS = [
   ".all",
 ];
 
-// The response methods that return `res` itself, so a header set inside
-// the chain leaves what it sends unchanged.
+// These methods return `res`, so `res.set(...).status(404).json(body)`
+// sends the same response as it would without the header call.
 const HEADER_SETTERS = [
   "set",
   "header",
@@ -50,7 +48,7 @@ function responseChain(...methodChain: string[]) {
   };
 }
 
-/** The express pack takes no configuration. */
+/** The express pack takes no options, so the CLI refuses any key. */
 export const optionsSchema = z.object({}).strict();
 
 export type ExpressPackOptions = z.infer<typeof optionsSchema>;
@@ -63,12 +61,9 @@ export function expressFramework(
     protocol: "http",
     languages: ["typescript", "javascript"],
 
-    // Express exposes the routable via either `Router()` (named) or
-    // `express()` (default). Both drive handler registration the same
-    // way; `httpRouteDiscovery` emits one DiscoveryPattern per name.
-    // Either can also be mounted onto another with `app.use(prefix,
-    // router)`, so a route declared on the mounted router summarizes
-    // with the mount's prefix composed in.
+    // Routes go on `Router()` or on `express()`, and either can be mounted
+    // with `app.use(prefix, router)`. A route on a mounted router is
+    // summarized with the mount's prefix in front of its path.
     discovery: [
       ...httpRouteDiscovery({
         importModule: "express",
@@ -209,7 +204,6 @@ export function expressFramework(
   };
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "framework",
   package: "@suss/framework-express",

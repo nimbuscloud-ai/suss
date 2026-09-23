@@ -1,12 +1,11 @@
 /**
- * @suss/framework-rails: RubyPack for Rails controller actions and the
- * routes `config/routes.rb` gives them.
+ * Reads Rails controller actions and the routes `config/routes.rb` gives
+ * them. Every public instance method a controller defines is an action,
+ * and the routes file sets the method and path that reach it. The routes
+ * module reads that file with a fixed grammar.
  *
- * Every instance method a controller defines is one of its actions;
- * `config/routes.rb` decides which method and path answer it, read
- * here with the bounded grammar `routes.ts` describes. An action the
- * routes file does not reach is still discovered, with its calls
- * followed, only with no boundary. See the README for the rest.
+ * An action the routes file does not reach is still discovered and its
+ * calls followed, with no boundary. The README covers the rest.
  */
 
 import fs from "node:fs";
@@ -34,42 +33,51 @@ import type { PackDeclaration } from "@suss/ir-core";
 import type { Route, RoutesInput } from "./routes.js";
 
 /**
- * What `-f rails=config.json` may say. The CLI parses the file against
- * it before the factory runs.
+ * The CLI checks a `-f rails=config.json` file against this schema. A
+ * config file may not set a key that only a dependency stub fills.
  */
 export const optionsSchema = z
   .object({
-    /** The app directory a bare controller name is looked up under. Every Rails app scaffolds this at `app`. */
+    /**
+     * The directory a bare controller name is looked up under, `app` in a
+     * scaffolded Rails app.
+     */
     root: z.string().optional(),
     /**
-     * The directory a relative `root` or `routesFile` is read against: the
-     * config file's own directory, or the directory the run reads when the
-     * options came without one. The CLI supplies this; it is not written in
-     * the file itself.
+     * The CLI fills this in with the config file's directory, or with the
+     * directory the run reads when there is no file. A relative `root` or
+     * `routesFile` resolves against it. A config file does not set it.
      */
     configDirectory: z.string().optional(),
-    /** Base classes beyond `ApplicationController` that also mark a class as a controller. */
+    /**
+     * Base classes beyond `ApplicationController` whose subclasses are
+     * controllers. A config file may not set this; a dependency stub
+     * fills it.
+     */
     baseClassNames: z.array(z.string()).optional(),
     /**
-     * Methods beyond Rails' own that every controller in this project
-     * gets without defining them, from a gem such as Devise. They are
-     * left off an action's effects the same way Rails' own are.
+     * Controller methods a gem such as Devise adds, beyond the ones Rails
+     * defines. They are left off an action's effects the same way Rails'
+     * own are.
      */
     inheritedMethodNames: z.array(z.string()).optional(),
-    /** Where this project's routes live, relative to `configDirectory` when there is one. Every Rails app scaffolds this at `config/routes.rb`. */
+    /**
+     * The routes file, `config/routes.rb` in a scaffolded app. A relative
+     * path resolves against `configDirectory` when there is one.
+     */
     routesFile: z.string().optional(),
     /**
-     * Directories the project keeps its own engines under, each one the
-     * root a `Rails::Engine` subclass has its `lib/` and `config/routes.rb`
-     * in. A `*` in a segment matches any one directory, so `plugins/*`
-     * covers every plugin. Relative to `configDirectory`.
+     * Directories that each contain an engine, with its `Rails::Engine`
+     * class under `lib/` and its routes in `config/routes.rb`. A `*` in a
+     * segment matches any one directory, so `plugins/*` covers every
+     * plugin. Relative paths resolve against `configDirectory`.
      */
     engineRoots: z.array(z.string()).optional(),
     /**
-     * Files beyond the routes file that add routes through a
-     * `Rails.application.routes.draw`, `.append` or `.prepend` block,
-     * a plugin's `plugin.rb` being the usual one. Same `*` rule as
-     * `engineRoots`. Relative to `configDirectory`.
+     * Other files that add routes through a `Rails.application.routes.draw`,
+     * `.append` or `.prepend` block, most often a plugin's `plugin.rb`.
+     * They take `*` the same way `engineRoots` does, and relative paths
+     * resolve against `configDirectory`.
      */
     routesFiles: z.array(z.string()).optional(),
   })
@@ -78,16 +86,19 @@ export const optionsSchema = z
 export type RailsPackOptions = z.infer<typeof optionsSchema>;
 
 /**
- * The classes Rails' own generated `ApplicationController` extends.
- * A project's ancestry walk ends at one of them, so putting one in a
- * stub changes nothing.
+ * The classes Rails' generated `ApplicationController` extends. The
+ * ancestry walk stops at these, so a stub statement for one adds nothing,
+ * and `suss infer stub` skips them.
  */
 export const RAILS_ROOT_CLASS_NAMES: readonly string[] = [
   "ActionController::Base",
   "ActionController::API",
 ];
 
-/** Method and path template for each of Rails' seven conventional actions, `:resource` filled in from the controller's own name. Used only when a project has no routes file to read instead. */
+/**
+ * The naming-convention fallback, used only when the project has no
+ * routes file. `:resource` is filled in from the controller's name.
+ */
 const RESTFUL_ACTIONS: Record<
   string,
   { method: string; pathTemplate: string }
@@ -102,10 +113,9 @@ const RESTFUL_ACTIONS: Record<
 };
 
 /**
- * The four calls Rails gives an action for sending a response. `render`
- * takes the status as `status:`, `head` takes it first and also accepts
- * the keyword, and both redirects take the keyword. A redirect that writes
- * no status of its own sends 302 rather than the 200 the rest default to.
+ * `render` takes the status as `status:`, `head` takes it first or as the
+ * keyword, and both redirects take the keyword. A redirect with no status
+ * sends 302, where `render` and `head` default to 200.
  */
 const RESPONSE_STATUS_CALLS = [
   { name: "render", statusKeyword: "status" },
@@ -115,11 +125,10 @@ const RESPONSE_STATUS_CALLS = [
 ];
 
 /**
- * The two class-level calls that put a controller's own method in front
- * of its actions. A `before_action` runs before the action and ends the
- * request when it responds; a `rescue_from` runs only after the action
- * raised. `only:` and `except:` narrow either to some of the actions,
- * and `skip_before_action` takes a before_action back off.
+ * A `before_action` runs before the action and ends the request when its
+ * method responds. `only:` and `except:` limit it to some actions, and
+ * `skip_before_action` removes it again. A `rescue_from` handler runs
+ * only after the action raised.
  */
 const CONTROLLER_FILTERS = [
   {
@@ -136,12 +145,10 @@ const CONTROLLER_FILTERS = [
 ];
 
 /**
- * The methods `ActionController::Base` and `ActionController::API` give
- * every controller, so a project defines none of them and an action that
- * writes one is not reaching anything the project owns. Each one is an
- * instance method on one of those two bases; a controller helper a gem
- * adds, `current_user` from Devise being the common one, belongs to that
- * gem instead and comes in through `inheritedMethodNames`.
+ * Instance methods `ActionController::Base` and `ActionController::API`
+ * give every controller. A call to one reaches nothing in the project, so
+ * it is left off the action's effects. A helper a gem adds, such as
+ * Devise's `current_user`, comes in through `inheritedMethodNames`.
  */
 const RAILS_CONTROLLER_METHODS = [
   "params",
@@ -166,15 +173,10 @@ const RAILS_CONTROLLER_METHODS = [
 ];
 
 /**
- * The five ActiveSupport calls whose block runs as part of the class or
- * module body it is written in. A concern's `included` and `prepended`
- * evaluate their block against the class doing the including, and only
- * a module gets them; `class_methods` evaluates its block against a
- * nested `ClassMethods` module that the including class extends, so a
- * `def` there is a class method. `Module#concerning` module_evals its
- * block against a new module and mixes that module in, and
- * `Object#with_options` runs its block with extra keywords wherever it
- * is written, so both reach a class body as well as a module's.
+ * ActiveSupport calls whose block runs as part of the class or module
+ * body it is written in. `included`, `prepended` and `class_methods`
+ * exist only on a concern, and a `def` inside `class_methods` is a class
+ * method. The README explains what each call does with its block.
  */
 const BODY_BLOCKS = [
   { name: "included", moduleOnly: true },
@@ -184,7 +186,6 @@ const BODY_BLOCKS = [
   { name: "with_options" },
 ];
 
-/** What a project that registered nothing taught its inflector. */
 const EMPTY_INFLECTIONS: Required<RbInflections> = {
   acronyms: [],
   irregular: [],
@@ -192,7 +193,7 @@ const EMPTY_INFLECTIONS: Required<RbInflections> = {
   singular: [],
 };
 
-/** The routing key `config/routes.rb` gives a controller, from the class name the adapter reads: `Admin::OrdersController` -> `admin/orders`. */
+/** The routing key for a controller class: `Admin::OrdersController` becomes `admin/orders`. */
 function controllerKeyFromQualified(
   qualifiedName: string,
   acronyms: readonly string[],
@@ -203,7 +204,10 @@ function controllerKeyFromQualified(
   return underscoreConstantPath(withoutSuffix, acronyms);
 }
 
-/** The path and method Rails' naming convention gives one of the seven conventional actions. Null for any other action name, since a naming convention says nothing about a custom one. */
+/**
+ * The path and method Rails' naming convention gives one of the seven
+ * conventional actions, or null for any other name.
+ */
 function conventionalRoute(
   controllerKey: string,
   actionName: string,
@@ -245,7 +249,7 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
   const extraRoutesFiles = () =>
     expandPatterns(options.configDirectory, options.routesFiles);
 
-  // The acronyms decide how every constant maps to a file and a routing
+  // The acronyms change how every constant maps to a file and a routing
   // key, so they are read once, before anything is resolved.
   const inflections =
     options.configDirectory === undefined
@@ -271,8 +275,8 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
     })),
   });
 
-  // Lazy: the WASM grammar this reads with loads once the adapter's own
-  // file loop has started, and this pack is constructed before that.
+  // Read lazily, because the WASM grammar loads once the adapter's file
+  // loop has started, and this pack is built before that.
   let table: ReturnType<typeof readRoutes> | undefined;
   const routeTable = () => {
     table ??= readRoutes(routesInput());
@@ -301,8 +305,8 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
     routeFor: (controllerQualifiedName, actionName) => {
       const key = controllerKeyFromQualified(controllerQualifiedName, acronyms);
       const found = routeTable();
-      // A routes file that exists is the source of truth: an action it
-      // does not reach is unbound, not filled in from the convention.
+      // When the routes file exists, an action it does not reach stays
+      // unbound, even when its name is a conventional one.
       return found.fileFound
         ? found.routeFor(key, actionName)
         : conventionalRoute(key, actionName);
@@ -316,9 +320,9 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
     discovery: [pattern],
     bodyBlocks: BODY_BLOCKS,
     inflections,
-    // Every file routing or naming is read from decides an action's
-    // binding without being walked, so the cache key has to read them
-    // here. This runs before the grammar loads, so nothing parses Ruby.
+    // These files change an action's binding without being walked, so the
+    // cache key has to list them. This runs before the grammar loads, so
+    // nothing here parses Ruby.
     discoveryInputs: () => [
       routesFile,
       ...drawableRoutesFiles(routesFile),
@@ -354,7 +358,6 @@ function drawableRoutesFiles(routesFile: string): string[] {
     .map((name) => path.join(directory, name));
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "framework",
   package: "@suss/framework-rails",

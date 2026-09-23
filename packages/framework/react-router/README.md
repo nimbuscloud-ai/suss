@@ -27,6 +27,10 @@ no path, with a gap saying what went unread. A route whose path the pack can rea
 but whose element is computed is still discovered, as a boundary with nothing
 behind it.
 
+## No routes from file names
+
+The pack does not give a `loader` or an `action` a route based on its file name. React Router reads routes from the file layout only when the project imports `@react-router/fs-routes`, and a pack pattern cannot depend on whether that import is present. A guessed route would pair with any consumer that happened to match the guess, so the pack leaves the route off and the loader pairs with nothing.
+
 ## Where it fits in suss
 
 The pack depends only on `@suss/extractor`, for the `PatternPack` type. It has no analysis logic of its own.

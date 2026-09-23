@@ -1,15 +1,13 @@
 /**
- * KV, R2 and D1 calls on a trigger's env argument, as `storage-access`
- * effects.
+ * Records KV, R2 and D1 calls on a trigger's env argument, such as
+ * `env.SESSIONS.get(key)`, as `storage-access` interactions. The
+ * container is the binding name, which is also the identity
+ * `wrangler.toml` declares for the store, so the storage check pairs the
+ * two sides by name.
  *
- * A Worker reaches its stores through bindings: `env.SESSIONS.get(key)`
- * for a KV namespace, `env.ARCHIVE.put(key, body)` for an R2 bucket,
- * `env.LEDGER.prepare(sql)` for a D1 database. The binding name is the
- * identity `wrangler.toml` declares for the same store, so the
- * container is the property's name and the storage check pairs
- * name-to-name. Which store a binding is comes from the type its `Env`
- * declaration states (`KVNamespace`, `R2Bucket`, `D1Database`); the
- * README says why, and what an untyped Worker gets.
+ * The type on the binding's `Env` declaration (`KVNamespace`, `R2Bucket`
+ * or `D1Database`) shows which store it is. The README explains why, and
+ * what a Worker without those types gets.
  */
 
 import { Node as N } from "ts-morph";
@@ -26,7 +24,6 @@ import type { CallExpression, Node, PropertyAccessExpression } from "ts-morph";
 
 const RECOGNITION = "@suss/framework-cloudflare-workers";
 
-/** What one call says once a reader has settled it. */
 interface StoreAccess {
   kind: "read" | "write";
   /** The key the call addresses, when the call states one. */
@@ -35,7 +32,6 @@ interface StoreAccess {
 
 type Resolve = (value: Node) => Node | null;
 
-/** What the recognizer was handed for reading the values at a call. */
 interface Reading {
   /** One hop from a name to what it was written as, for `readName`. */
   resolve: Resolve;
@@ -43,14 +39,17 @@ interface Reading {
   resolution: ResolutionStore | undefined;
 }
 
-/** Reads one store's method call, or null for a method it is not. */
+/** Returns null for a method the store does not have. */
 type OperationReader = (
   method: string,
   call: CallExpression,
   reading: Reading,
 ) => StoreAccess | null;
 
-/** KV and R2 spell the same five operations, and the kinds line up. */
+/**
+ * KV and R2 share most of their method names, and a shared method reads
+ * or writes on both.
+ */
 const OBJECT_OPERATIONS: Record<string, "read" | "write"> = {
   get: "read",
   getWithMetadata: "read",
@@ -93,9 +92,9 @@ const objectStoreAccess: OperationReader = (method, call, reading) => {
 const D1_STATEMENT_METHODS = new Set(["prepare", "exec"]);
 
 /**
- * D1 is SQLite, so the statement says whether the call reads or
- * writes. A statement nobody can read settles neither, and the call
- * goes unrecorded rather than recorded with a guessed kind.
+ * D1 is SQLite, so the statement shows whether the call reads or writes.
+ * When the SQL reader cannot parse the statement, the call is left
+ * unrecorded so that no access gets a guessed kind.
  */
 const d1Access: OperationReader = (method, call, reading) => {
   if (!D1_STATEMENT_METHODS.has(method)) {
@@ -120,8 +119,8 @@ const d1Access: OperationReader = (method, call, reading) => {
 };
 
 /**
- * One reader per binding type Cloudflare declares for a store. The key
- * is the type the project's `Env` declaration spells.
+ * Keyed by the type a project writes on its `Env` declaration.
+ * Cloudflare defines these type names.
  */
 const STORES: Record<string, { storageSystem: string; read: OperationReader }> =
   {
@@ -178,8 +177,8 @@ export function storeBindingRecognizer(
       interaction: {
         class: "storage-access",
         kind: access.kind,
-        // KV and R2 keep opaque values and a D1 statement is judged at
-        // database level, so no call states a field.
+        // KV and R2 values are opaque, and a D1 statement is read at the
+        // database level, so a call never records a field.
         fields: [],
         operation: method,
         ...(access.selector !== undefined
@@ -193,20 +192,20 @@ export function storeBindingRecognizer(
 interface BoundReceiver {
   /** The binding's name, which is the property read off env. */
   name: string;
-  /** The type the Env declaration states for it. */
+  /** The type written for it on the Env declaration. */
   typeName: string;
 }
 
 /**
- * The env binding a call's receiver is, or null when the receiver is
- * something else. A receiver written into a variable first
- * (`const kv = env.SESSIONS`) is followed back to where it was built.
+ * Returns null when the receiver is not an env binding. A receiver put
+ * in a variable first (`const kv = env.SESSIONS`) is followed back to
+ * where it was built.
  */
 function boundReceiver(subject: Node, reading: Reading): BoundReceiver | null {
   let receiver: Node = subject;
   if (N.isIdentifier(receiver)) {
-    // The store's own resolution stops at module scope, and a handler
-    // body's `const kv = env.SESSIONS` is where these are written.
+    // The resolution store stops at module scope, and a binding is
+    // usually put in a local inside the handler body.
     const written = declaredInitializer(receiver) ?? reading.resolve(receiver);
     if (written !== null && written !== receiver) {
       receiver = written;
@@ -226,7 +225,7 @@ function boundReceiver(subject: Node, reading: Reading): BoundReceiver | null {
   return { name: receiver.getName(), typeName };
 }
 
-/** What a variable was written as, for a binding named in the body first. */
+/** A local variable's initializer, for a binding assigned to one first. */
 function declaredInitializer(identifier: Node): Node | null {
   for (const declaration of identifier.getSymbol()?.getDeclarations() ?? []) {
     if (N.isVariableDeclaration(declaration)) {
@@ -236,7 +235,10 @@ function declaredInitializer(identifier: Node): Node | null {
   return null;
 }
 
-/** The type the property's own declaration states, as written. */
+/**
+ * The type is read as source text, so it works whether or not
+ * `@cloudflare/workers-types` is installed.
+ */
 function declaredTypeName(receiver: PropertyAccessExpression): string | null {
   const declarations =
     receiver.getNameNode().getSymbol()?.getDeclarations() ?? [];

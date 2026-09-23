@@ -1,6 +1,8 @@
-// @suss/framework-sqlmodel: which calls a Python body makes against the
-// database, for a project using SQLModel. The README says why it is a pack
-// of its own rather than a line in the sqlalchemy one.
+/**
+ * The calls a Python body makes against the database through SQLModel.
+ * The README explains why SQLModel needs a pack of its own on top of the
+ * sqlalchemy one.
+ */
 
 import { z } from "zod";
 
@@ -20,15 +22,14 @@ import type {
 import type { PackDeclaration } from "@suss/ir-core";
 
 /**
- * What `-f sqlmodel=config.json` may say. The CLI parses the file against it
- * before the factory runs.
+ * The CLI checks a `-f sqlmodel=config.json` file against this schema
+ * before it calls the factory.
  */
 export const optionsSchema = z
   .object({
     /**
-     * Which database is behind the engine. SQLModel talks to all of them
-     * and the URL says which, so this is the project's own choice rather
-     * than something the library settles.
+     * Which database is behind the engine. SQLModel works with several,
+     * and the connection URL picks one, so the project has to set this.
      */
     storageSystem: storageSystemOption,
   })
@@ -36,7 +37,6 @@ export const optionsSchema = z
 
 export type SqlmodelPackOptions = z.infer<typeof optionsSchema>;
 
-/** The Session methods that change what is stored rather than read it. */
 const SESSION_WRITES = [
   "update",
   "delete",
@@ -51,9 +51,9 @@ const SESSION_WRITES = [
 ];
 
 /**
- * A Session runs a statement built by `select`/`update`/... whose own
- * chain is read, and the rest of these manage the session. `exec` is
- * SQLModel's own name for running a statement.
+ * `exec`, `execute` and the scalar calls run a statement whose own chain
+ * is read already, and the rest only manage the session. `exec` is
+ * SQLModel's name for `execute`.
  */
 const SESSION_RECORDS_NOTHING = [
   "exec",
@@ -70,10 +70,9 @@ const SESSION_RECORDS_NOTHING = [
 ];
 
 /**
- * The types SQLModel hands back from a query and the methods that write,
- * under the modules SQLModel exports them from, followed by SQLAlchemy's
- * own. Everything here is the library's; nothing about any project
- * belongs in this list.
+ * SQLModel's query types and write methods under the modules SQLModel
+ * exports them from, followed by SQLAlchemy's. A SQLModel project still
+ * imports from `sqlalchemy` for anything SQLModel does not re-export.
  */
 export function sqlmodelStorage(
   options: SqlmodelPackOptions,
@@ -97,9 +96,9 @@ export function sqlmodelStorage(
       module: "sqlmodel",
       queryTypes: ["Select", "SelectOfScalar", "Update", "Delete", "Insert"],
       writes: ["update", "delete", "insert", "commit"],
-      // `select(Item).where(...)` imports the constructor from the package
-      // root, so there is no project method in between whose return says
-      // what it is.
+      // `select(Item).where(...)` calls a constructor imported from the
+      // package root, so there is no project method in the chain whose
+      // return type the adapter could read.
       queryFunctions: ["select", "insert", "update", "delete"],
       valueMethods: ["values"],
       storageSystem: options.storageSystem,
@@ -109,10 +108,9 @@ export function sqlmodelStorage(
 }
 
 /**
- * What SQLModel gives back when a call is passed one of a project's
- * model classes. A model is written `class User(SQLModel, table=True)`,
- * and `exec` is SQLModel's own name for running a statement, so both go
- * on top of what SQLAlchemy already declares.
+ * SQLAlchemy's model rules with SQLModel's additions: a model inherits
+ * from `SQLModel` (`class User(SQLModel, table=True)`), and `exec` runs
+ * a statement.
  */
 export function sqlmodelModels(): PyModelQueries[] {
   return sqlalchemyModels().map((model) => ({
@@ -130,7 +128,7 @@ export function sqlmodelModels(): PyModelQueries[] {
   }));
 }
 
-/** `text` for a statement the project wrote itself, from SQLModel's root and from SQLAlchemy's. */
+/** SQLModel re-exports `text`, so a project may import it from either package. */
 export function sqlmodelRawSql(options: SqlmodelPackOptions): RawSqlPattern[] {
   return [
     {
@@ -143,9 +141,9 @@ export function sqlmodelRawSql(options: SqlmodelPackOptions): RawSqlPattern[] {
 }
 
 /**
- * Add the storage patterns to the route pack a run already uses. A web
- * framework and a database library are separate libraries and a project picks
- * both, so this composes rather than replacing anything.
+ * Adds the storage patterns to the route pack a run already uses. A
+ * project picks its web framework and its database library separately,
+ * so the two packs combine.
  */
 export function withSqlmodel(
   pack: PythonPack,
@@ -160,8 +158,8 @@ export function withSqlmodel(
 }
 
 export function sqlmodelFramework(options: SqlmodelPackOptions): PythonPack {
-  // The CLI passes on a config somebody wrote by hand, with nothing
-  // typed in front of it, so it can arrive here unset.
+  // A bare `-f sqlmodel` skips the CLI's schema check, so the options
+  // can arrive here without `storageSystem`.
   if (typeof options?.storageSystem !== "string") {
     throw new Error(
       "it needs `storageSystem`, which database is behind the engine: postgresql, mysql, or sqlite. SQLModel talks to all of them and the connection URL settles which, so the pack cannot.",
@@ -177,7 +175,6 @@ export function sqlmodelFramework(options: SqlmodelPackOptions): PythonPack {
   };
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "effects",
   package: "@suss/framework-sqlmodel",

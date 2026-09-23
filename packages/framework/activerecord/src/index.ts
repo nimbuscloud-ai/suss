@@ -1,6 +1,8 @@
-// @suss/framework-activerecord: which calls a Ruby body makes against the
-// database, for a project on Rails. The adapter matches a call by what its
-// receiver inherits, and the README says why ancestry.
+/**
+ * Records which calls a Ruby body makes against the database, for a
+ * project on Rails. The adapter matches a call by what its receiver's
+ * class extends, and the README explains why.
+ */
 
 import { z } from "zod";
 
@@ -14,14 +16,14 @@ import type {
 import type { PackDeclaration } from "@suss/ir-core";
 
 /**
- * What `-f activerecord=config.json` may say. The CLI parses the file against it
- * before the factory runs.
+ * The CLI checks a `-f activerecord=config.json` file against this schema
+ * before it calls the factory.
  */
 export const optionsSchema = z
   .object({
     /**
-     * Which database is behind the connection. ActiveRecord talks to all of
-     * them and database.yml says which, so the project supplies this.
+     * The database behind the connection. ActiveRecord works with several,
+     * and database.yml picks one, so the project has to supply it.
      */
     storageSystem: storageSystemOption,
   })
@@ -29,7 +31,6 @@ export const optionsSchema = z
 
 export type ActiveRecordPackOptions = z.infer<typeof optionsSchema>;
 
-/** Methods that hand back one record of the model they were called on. */
 const RETURNS_A_RECORD = [
   "find",
   "find_by",
@@ -52,10 +53,6 @@ const RETURNS_A_RECORD = [
   "reload",
 ];
 
-/**
- * Methods that run a query the moment they are called: the finders, and the
- * terminals that make a relation fetch its rows.
- */
 const RUNS_A_QUERY = [
   "find",
   "find_by",
@@ -94,7 +91,6 @@ const RUNS_A_QUERY = [
   "find_or_initialize_by",
 ];
 
-/** Methods that hand back a relation, which a later read narrows to one record. */
 const RETURNS_A_RELATION = [
   "where",
   "rewhere",
@@ -128,28 +124,21 @@ const RETURNS_A_RELATION = [
 ];
 
 /**
- * A relation builder runs no query until something asks it for rows, but a
- * body that writes one is asking for what it narrows to, so the builders
- * count as reads alongside the terminals. `where.not(...)` hangs off a bare
- * `where`, so the negation is a method of its own rather than a keyword on
- * the call before it.
+ * A relation builder runs no query by itself, but code only builds one to
+ * fetch the rows it narrows to, so the builders count as reads. `not` is
+ * listed separately because `where.not(...)` calls it on a bare `where`.
  */
 const READS = [...RUNS_A_QUERY, ...RETURNS_A_RELATION, "not"];
 
 /**
- * The two finders that take a statement rather than building one. Both
- * take it first, either on its own or at the head of an array whose rest
- * are the bind values.
+ * Both take the statement first, either alone or at the head of an array
+ * followed by the bind values.
  */
 const TAKES_A_STATEMENT = {
   find_by_sql: { at: 0 },
   count_by_sql: { at: 0 },
 };
 
-/**
- * The methods a connection gives for running a statement the project
- * wrote. Every one of them takes it first.
- */
 const CONNECTION_STATEMENTS = {
   execute: { at: 0 },
   exec_query: { at: 0 },
@@ -164,9 +153,9 @@ const CONNECTION_STATEMENTS = {
 };
 
 /**
- * What each write is, in the words ActiveRecord's own callbacks are
- * registered under. `save` and its bang are both, since the library
- * decides between them from whether the record was stored before.
+ * The callback events each write runs. `save` runs the create or the
+ * update callbacks depending on whether the record was stored before, so
+ * it lists both.
  */
 const EVENT_OF: Record<string, string[]> = {
   create: ["create"],
@@ -185,10 +174,9 @@ const EVENT_OF: Record<string, string[]> = {
 };
 
 /**
- * Each call a model writes to register one of its own methods, and the
- * events that method runs on when the call narrows to none. The
- * bulk writers are left out of `EVENT_OF` above because ActiveRecord
- * runs no callback for them.
+ * The events a callback runs on when its registering call has no `on:`
+ * keyword. The bulk writers are missing from `EVENT_OF` because
+ * ActiveRecord runs no callbacks for them.
  */
 const REGISTERED_BY: Record<string, string[]> = {
   before_validation: ["create", "update"],
@@ -213,10 +201,8 @@ const REGISTERED_BY: Record<string, string[]> = {
 };
 
 /**
- * The base class the library gives a model, the methods that read the
- * database and the methods that change what is stored. Everything here is
- * ActiveRecord's own. A project's `ApplicationRecord` is matched by
- * following what it extends, so nothing about any project belongs in
+ * Every name here is ActiveRecord's own. A project's `ApplicationRecord`
+ * is matched by following what it extends, so no project class goes in
  * these lists.
  */
 export function activeRecordStorage(
@@ -273,11 +259,10 @@ export function activeRecordStorage(
 }
 
 /**
- * The connection ActiveRecord hands out, and the calls on it that take a
- * statement. `ActiveRecord::Base` gives it, every model inherits the same
- * three calls, and a model's own class method writes a bare `connection`,
- * so all three spellings reach one store. ActiveRecord's dialect is the
- * database behind the connection, which is what the project supplies.
+ * Statements run through the connection. `ActiveRecord::Base.connection`,
+ * `Account.connection` and a bare `connection` inside a model's class
+ * method all reach the same store. The SQL dialect is the database the
+ * project set in `storageSystem`.
  */
 export function activeRecordRawSql(
   options: ActiveRecordPackOptions,
@@ -295,9 +280,9 @@ export function activeRecordRawSql(
 }
 
 /**
- * Add the storage patterns to whichever pack a run already uses. A GraphQL
- * schema and a database library are separate libraries and a project picks
- * both, so this composes rather than replacing anything.
+ * Adds the storage patterns to the pack a run already uses. A project
+ * picks its GraphQL library and its database library separately, so this
+ * keeps everything the pack already has.
  */
 export function withActiveRecord(
   pack: RubyPack,
@@ -329,7 +314,6 @@ export function activeRecordFramework(
   };
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "effects",
   package: "@suss/framework-activerecord",

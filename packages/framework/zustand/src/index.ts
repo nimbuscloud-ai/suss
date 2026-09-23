@@ -1,16 +1,7 @@
 /**
- * @suss/framework-zustand: the PatternPack for zustand stores.
- *
- * A store is client-side state with readers and writers the way a
- * table has them, so its accesses come out as `storage-access`
- * effects against `client-store:<name>`, and `ask "what writes
- * client-store:useAppStore"` reads like the same question about a
- * database. The client is anything built from zustand's `create`, and
- * the store's variable name is the container, since that is what a
- * person calls the store. The imperative surface (`setState`,
- * `getState`, `subscribe`) matches by method; the hook's selector
- * form (`useAppStore((s) => s.bears)`) matches as a bare call of the
- * store, with the fields read off the selector's parameter.
+ * Records each read and write of a zustand store as a storage access on
+ * `client-store:<name>`, where the name is the store's variable name.
+ * The README shows the forms it reads and what it leaves out.
  */
 
 import { constructedFrom, pack, storageCalls } from "@suss/recognize";
@@ -24,7 +15,7 @@ import type {
   StorageMethod,
 } from "@suss/recognize";
 
-/** What an object's properties are called. */
+/** The property names of the object a write passes, one field each. */
 const WRITTEN: InputRule = ({ input }) => {
   const found: string[] = [];
   for (const entry of input.entries("nothing")) {
@@ -38,10 +29,9 @@ const WRITTEN: InputRule = ({ input }) => {
 const payload = (at: number): StatedRule => ({ of: { at }, by: WRITTEN });
 
 /**
- * The imperative store surface. A functional `setState((s) => ...)`
- * states its fields in the lambda's return, which the payload rule
- * cannot see, so such a write comes out with no fields rather than
- * wrong ones.
+ * A functional `setState((s) => ...)` sets its fields in the lambda's
+ * return value, which the payload rule cannot read, so that write records
+ * no fields at all.
  */
 const METHODS: Record<string, StorageMethod> = {
   setState: { kind: "write", fields: payload(0) },
@@ -50,9 +40,8 @@ const METHODS: Record<string, StorageMethod> = {
 };
 
 /**
- * The store's own name, read off the callee. `useAppStore.setState`
- * is a call on the store, so everything before the method is what the
- * project calls it, and a bare `useAppStore(...)` is the store whole.
+ * In `useAppStore.setState(...)` the store's name is everything before
+ * the method, and a bare `useAppStore(...)` call is the store itself.
  */
 function storeNameOf(_names: readonly string[], call: CallOps): string | null {
   const callee = call.calleeText();
@@ -76,7 +65,6 @@ export function zustandFramework(): PatternPack {
   });
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "effects",
   package: "@suss/framework-zustand",

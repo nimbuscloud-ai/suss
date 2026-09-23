@@ -1,16 +1,16 @@
 /**
- * Recognize Mongoose model calls and emit `storage-access` effects.
+ * Recognizes Mongoose model calls and records each one as a storage
+ * access on the model's collection.
  *
- * A model spreads what one call does over two arguments rather than
- * one: `User.find({ email }, { name: 1 })` picks documents by the
- * filter and reads the fields the projection asks for. So each rule
- * says which argument it reads, and which argument that is changes with
- * the method.
+ * One call spreads over two arguments: `User.find({ email }, { name: 1 })`
+ * picks documents by the filter and reads the fields in the projection.
+ * Which argument is the filter and which is the projection depends on the
+ * method, so each entry in `METHODS` gives its own positions.
  *
- * A call is settled by where its method is declared, so `User` can be
- * called anything. The collection comes from the `model(...)` call the
- * receiver was written as, and the README says how the three ways of
- * settling one are ordered and what v0 leaves out.
+ * A call counts by where its method is declared, so `User` can have any
+ * name. The collection comes from the `model(...)` call behind the
+ * receiver. The README covers the order the collection is settled in and
+ * what is left out.
  */
 
 import { z } from "zod";
@@ -33,26 +33,22 @@ import type {
   ValueOps,
 } from "@suss/recognize";
 
-/** The library whose method declarations settle a call. */
 const CLIENT_MODULE = "mongoose";
 
-/** What a call touches when it states no fields: every field there is. */
 const WHOLE_DOCUMENT = ["*"];
 
-/** What the ...ById methods pick documents by, whatever the id is called. */
 const BY_ID = ["_id"];
 
 // ---------------------------------------------------------------------------
-// What one call states, argument by argument
+// Reading the fields out of each argument
 // ---------------------------------------------------------------------------
 
-/** The fields a filter picks documents by. */
 const FILTER_KEYS: InputRule = ({ input }) => keysOf(input);
 
 /**
- * The fields a read asks for. A projection states them as a map of
- * flags or as a space-delimited string, and one that only says which
- * fields to leave out still reads the rest of the document back.
+ * A projection is a map of flags or a space-delimited string. One that
+ * only excludes fields still returns the rest of the document, so it
+ * counts as reading all of it.
  */
 const PROJECTED: InputRule = ({ input }) => {
   const written = input.text();
@@ -64,9 +60,8 @@ const PROJECTED: InputRule = ({ input }) => {
 };
 
 /**
- * The fields an update touches. A `$`-prefixed key is an operator and
- * the fields are the keys under it; every other key is an assignment to
- * the field the key is written as.
+ * A `$` key such as `$set` is an operator, and the fields it touches are
+ * the keys under it. Any other key assigns the field of that name.
  */
 const UPDATED: InputRule = ({ input }) => {
   const touched = new Set<string>();
@@ -86,10 +81,9 @@ const UPDATED: InputRule = ({ input }) => {
 };
 
 /**
- * The fields a write states in full, as the one document it passes or
- * as every document of a list. A document this cannot read leaves the
- * write touching the whole row, since the fields it states are not all
- * of them.
+ * A payload is one document or a list of them. If any document cannot be
+ * read, the write counts as touching every field, since the fields that
+ * could be read may not be all of them.
  */
 const PAYLOAD: InputRule = ({ input }) => {
   const documents = input.items();
@@ -110,15 +104,12 @@ const PAYLOAD: InputRule = ({ input }) => {
   return [...union];
 };
 
-/** What marks a key as one of MongoDB's update operators. */
 const OPERATOR_PREFIX = "$";
 
-/** Whether a projection's flag asks for the field back. */
 function asksForIt(value: ValueOps): boolean {
   return value.flag() === true;
 }
 
-/** What an object's properties are called, keeping the ones a test allows. */
 function keysOf(
   value: ValueOps,
   keep: (value: ValueOps) => boolean = () => true,
@@ -133,9 +124,8 @@ function keysOf(
 }
 
 /**
- * The fields a space-delimited projection asks for. A leading `-`
- * leaves a field out and a leading `+` brings back one the schema hides
- * by default, so only the exclusions drop out.
+ * In a string projection, `-name` excludes a field and `+name` includes
+ * one the schema hides by default. Only the exclusions are dropped.
  */
 function namedInProjection(written: string): readonly string[] {
   const asked = written
@@ -147,7 +137,7 @@ function namedInProjection(written: string): readonly string[] {
 }
 
 // ---------------------------------------------------------------------------
-// The methods, and which argument each of them states what in
+// Which argument each method reads
 // ---------------------------------------------------------------------------
 
 const filter = (at: number): StatedRule => ({ of: { at }, by: FILTER_KEYS });
@@ -155,10 +145,8 @@ const projection = (at: number): StatedRule => ({ of: { at }, by: PROJECTED });
 const update = (at: number): StatedRule => ({ of: { at }, by: UPDATED });
 const payload = (at: number): StatedRule => ({ of: { at }, by: PAYLOAD });
 
-/**
- * Every method this reads. `countDocuments` and `exists` state no
- * fields at all, since neither reads one back.
- */
+// `countDocuments` and `exists` have no `fields`, since neither returns
+// a field.
 const METHODS: Record<string, StorageMethod> = {
   find: { kind: "read", selector: filter(0), fields: projection(1) },
   findOne: { kind: "read", selector: filter(0), fields: projection(1) },
@@ -182,9 +170,9 @@ const METHODS: Record<string, StorageMethod> = {
   },
   findByIdAndDelete: { kind: "write", selector: BY_ID, fields: WHOLE_DOCUMENT },
   findOneAndReplace: { kind: "write", selector: filter(0), fields: payload(1) },
-  // A document can be changed after it was built, which this does not
-  // track, so a save is not reported as touching the fields the
-  // constructor happened to state.
+  // The pack does not track changes to a document after it is built, so
+  // the constructor's fields may be stale by the save. A save touches
+  // every field.
   save: { kind: "write", fields: WHOLE_DOCUMENT },
 };
 
@@ -192,14 +180,11 @@ const METHODS: Record<string, StorageMethod> = {
 // The collection behind the receiver
 // ---------------------------------------------------------------------------
 
-/** What a model call is called, whether it goes through the library or not. */
 const MODEL_FACTORY = "model";
 
 /**
- * The collection the call reaches. Mongoose takes an explicit third
- * argument to `model(...)` first, then the schema's own `collection`
- * option, and pluralizes the model name when neither is there, so this
- * takes them in the same order.
+ * Checks in Mongoose's own order: the third argument to `model(...)`,
+ * then the schema's `collection` option, then the pluralized model name.
  */
 function collectionOf(
   _selector: readonly string[],
@@ -218,10 +203,9 @@ function collectionOf(
 }
 
 /**
- * The `model(...)` call behind the receiver, or null where the receiver
- * came from somewhere this cannot follow. A static call is made on the
- * model itself, a construction and a query result are hops further
- * along, and the anchor op follows all of them through the fact layer.
+ * `anchorCall` follows a static call on the model, a document built with
+ * `new`, and a document a query returned. It returns null when the
+ * receiver comes from somewhere the fact layer cannot follow.
  */
 function modelCallIn(call: CallOps): CallOps | null {
   return (
@@ -231,14 +215,14 @@ function modelCallIn(call: CallOps): CallOps | null {
   );
 }
 
-/** The collection a schema's options state, when the model call leaves it there. */
+/** Reads `collection` from the options in `new Schema(fields, options)`. */
 function schemaCollectionOf(model: CallOps): string | null {
   return model.argument(1)?.propertyAt(1, "collection", "nothing") ?? null;
 }
 
 /**
- * Regular-English pluralization, the part of Mongoose's own default
- * naming this pack reproduces. The README says what it leaves out.
+ * Covers only the regular English rules of Mongoose's pluralizer. The
+ * README lists the irregular nouns this gets wrong.
  */
 function pluralized(modelName: string): string {
   const lower = modelName.toLowerCase();
@@ -256,15 +240,15 @@ function pluralized(modelName: string): string {
 // ---------------------------------------------------------------------------
 
 /**
- * What `-f mongoose=config.json` may say. The CLI parses the file against it
- * before the factory runs.
+ * The options a `-f mongoose=config.json` file may set. The CLI checks
+ * the file against this schema before it calls the factory.
  */
 export const optionsSchema = z
   .object({
     /**
-     * Scope label for the storage binding. Defaults to `"default"`. Set
-     * this when a project keeps more than one MongoDB connection and
-     * wants their accesses paired separately.
+     * Scope for the storage binding, `"default"` when unset. Set it when a
+     * project has more than one MongoDB connection and their accesses
+     * should pair separately.
      */
     scope: scopeOption.optional(),
   })
@@ -272,7 +256,6 @@ export const optionsSchema = z
 
 export type MongooseRecognizerOptions = z.infer<typeof optionsSchema>;
 
-/** Every model call, whichever of the methods above it goes to. */
 function modelCalls(scope: string) {
   return storageCalls({
     system: "mongodb",
@@ -286,8 +269,8 @@ function modelCalls(scope: string) {
 }
 
 /**
- * Pack export. One declaration, gated on a file reaching Mongoose,
- * since that is where a model method can be declared.
+ * A model call counts only when Mongoose declares its method, so a
+ * `findOne` on a plain object is ignored.
  */
 export function mongooseFramework(
   options: MongooseRecognizerOptions = {},
@@ -299,7 +282,6 @@ export function mongooseFramework(
   });
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "effects",
   package: "@suss/framework-mongoose",

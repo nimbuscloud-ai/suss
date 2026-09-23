@@ -1,14 +1,12 @@
-// templateIndex.ts: locate the SAM/CFN template reachable from a source
-// file and index its Serverless::Function handlers by resolved module
-// path.
-//
-// The manifest parse (loading the template and the children it embeds,
-// reading function resources + Events) comes from @suss/manifest-aws,
-// this module only
-// does the filesystem discovery (walk up to the template) and the
-// code-path resolution (CodeUri + Handler → an absolute module path)
-// that a framework pack needs to map a handler export back to the
-// routes that invoke it.
+/**
+ * Finds the SAM or CloudFormation template above a source file and
+ * indexes its Serverless::Function handlers by module path, so discovery
+ * can map a handler export back to the routes that reach it.
+ *
+ * @suss/manifest-aws parses the template and its nested stacks. This
+ * module walks up the filesystem to the template and turns `CodeUri` and
+ * `Handler` into an absolute module path.
+ */
 
 import fs from "node:fs";
 import path from "node:path";
@@ -24,7 +22,7 @@ import {
   unfollowedStackMessage,
 } from "@suss/manifest-aws";
 
-/** One Serverless::Function's handler + the Events that reach it. */
+/** A Serverless::Function's handler and the events that reach it. */
 export interface HandlerEntry {
   /**
    * The function's logical id, qualified by the stack path that reaches
@@ -50,11 +48,9 @@ export type HandlerIndex = Map<string, HandlerEntry[]>;
 // SAM's default template filenames, in the order the CLI resolves them.
 const TEMPLATE_NAMES = ["template.yaml", "template.yml", "template.json"];
 
-// Per-directory template resolution (dir → template path or null) and
-// per-template parsed index. Process-lifetime memoization: one extraction
-// run touches a handful of templates but thousands of source files, so
-// re-walking / re-parsing per file would dominate. `clearTemplateCache`
-// resets both for test isolation.
+// A run reads a handful of templates for thousands of source files, so
+// these stay memoized for the process. Walking and parsing per file would
+// dominate the run. `clearTemplateCache` resets them between tests.
 const dirToTemplate = new Map<string, string | null>();
 const templateToIndex = new Map<string, HandlerIndex>();
 // Every document a template's index was read from, the nested stacks it
@@ -68,9 +64,8 @@ export function clearTemplateCache(): void {
 }
 
 /**
- * Walk up from `startDir` to the filesystem root looking for a SAM
- * template. Every directory visited on the way is memoized to the
- * result, so sibling files under the same service resolve in O(1).
+ * Every directory on the way up is memoized to the result, so sibling
+ * files under the same service need one map lookup.
  */
 function findTemplate(startDir: string): string | null {
   const chain: string[] = [];
@@ -108,9 +103,8 @@ function findTemplate(startDir: string): string | null {
 }
 
 /**
- * Parse a template into a handler index keyed by resolved module path.
- * A malformed template is surfaced on stderr and cached as an empty
- * index: the pack never crashes the extraction over a bad manifest.
+ * A malformed template is reported on stderr and cached as an empty
+ * index, so one bad manifest does not stop the extraction.
  */
 function indexForTemplate(templatePath: string): HandlerIndex {
   const cached = templateToIndex.get(templatePath);
@@ -129,15 +123,15 @@ function indexForTemplate(templatePath: string): HandlerIndex {
       process.stderr.write(
         `[suss] aws-lambda: ${unfollowedStackMessage(stack)}\n`,
       );
-      // A child that is missing or unparseable today is one somebody is
-      // about to fix, and the fix has to reach the next run.
+      // A missing or broken child still goes into the cache key, so the
+      // run after somebody fixes it reads the fix.
       if (stack.templatePath !== null) {
         documents.add(stack.templatePath);
       }
     }
     for (const document of tree.documents) {
-      // A child's CodeUri is written relative to the child's own file,
-      // and its AppSync graph names resources in its own document.
+      // A child's CodeUri is relative to the child's own file, and its
+      // AppSync resolvers refer to resources in the same document.
       const templateDir = path.dirname(document.path);
       const fieldsByFunction = groupFieldsByFunction(
         readAppSyncResolvers(document.template),
@@ -176,19 +170,12 @@ function indexForTemplate(templatePath: string): HandlerIndex {
   return index;
 }
 
-/** Drop a source file's extension, returning its absolute module path. */
 function toModulePath(filePath: string): string {
   const resolved = path.resolve(filePath);
   const ext = path.extname(resolved);
   return ext === "" ? resolved : resolved.slice(0, -ext.length);
 }
 
-/**
- * Handlers declared for the given source file by the template reachable
- * from it, or an empty array when no template covers the file. Matching
- * is by resolved module path (CodeUri + Handler module vs. the file's
- * path without extension).
- */
 /**
  * A Lambda can back more than one field, and a field can run more than
  * one Lambda, so this is many to many in both directions.
@@ -207,6 +194,12 @@ function groupFieldsByFunction(
   return out;
 }
 
+/**
+ * The handlers the nearest template declares for this source file, or an
+ * empty array when no template covers it. A handler matches when its
+ * `CodeUri` and `Handler` module resolve to the file's path without its
+ * extension.
+ */
 export function handlersForFile(filePath: string): HandlerEntry[] {
   const templatePath = findTemplate(path.dirname(path.resolve(filePath)));
   if (templatePath === null) {

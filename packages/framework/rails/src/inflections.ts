@@ -1,15 +1,15 @@
 /**
- * What a project teaches ActiveSupport's inflector.
+ * Reads the inflection rules a project registers with ActiveSupport.
  *
- * Rails runs every initializer under `config/initializers`, and the one
- * `rails new` scaffolds for this is `inflections.rb`, where a project
+ * Rails runs every initializer under `config/initializers`, and
+ * `rails new` scaffolds `inflections.rb` for these rules, where a project
  * writes `inflect.acronym "ActivityPub"` or `inflect.irregular "person",
  * "people"`. An acronym changes how a constant maps to a file, and the
  * rest change which class `has_many :people` reaches.
  *
  * The initializers are scanned as text, since this runs before the Ruby
  * grammar is loaded. Comments are dropped first, because the scaffolded
- * file writes every example out in one.
+ * file has every example written out in comments.
  */
 
 import fs from "node:fs";
@@ -36,15 +36,15 @@ const WORD_LIST = /%[wi][([{]([^)\]}]*)[)\]}]/;
 /** Every string literal in a fragment, for `uncountable "a", "b"`. */
 const EVERY_LITERAL = /(["'])([^"']*)\1/g;
 
-/** Whether an initializer teaches the inflector anything, which is what puts it in the cache key. */
+/** An initializer that makes one of these calls goes into the cache key. */
 const ANY_CALL = /\.(acronym|irregular|uncountable|singular)[\s("'/]/;
 
-/** The text a group matched. Every group in the patterns above is part of its match. */
+/** A group that took no part in the match reads as the empty string. */
 function group(match: RegExpMatchArray, at: number): string {
   return match[at] ?? "";
 }
 
-/** Everything the initializers under `configDirectory` teach the inflector. */
+/** The inflection rules the initializers under `configDirectory` register. */
 export function readInflections(
   configDirectory: string,
 ): Required<RbInflections> {
@@ -81,7 +81,7 @@ export function readInflections(
   };
 }
 
-/** A rule written as a string, or one written as a regex literal kept in the `/body/flags` spelling. */
+/** A string rule as written, or a regex rule rebuilt as `/body/flags`. */
 function ruleOf(match: RegExpMatchArray): string {
   const literal = match[2];
   return literal === undefined
@@ -105,7 +105,7 @@ function wordsIn(argument: string): string[] {
   return [...argument.matchAll(EVERY_LITERAL)].map((match) => group(match, 2));
 }
 
-/** The initializer files that teach the inflector anything, for the cache key. */
+/** The initializer files that register an inflection, for the cache key. */
 export function inflectionFiles(configDirectory: string): string[] {
   const directory = path.join(configDirectory, "config", "initializers");
   if (!fs.existsSync(directory)) {

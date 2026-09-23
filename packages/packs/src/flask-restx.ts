@@ -1,4 +1,3 @@
-// The pack factory, which is what `-f flask-restx` loads, and the options
-// schema. The CLI checks a `-f flask-restx=config.json` file against that
-// schema minus the keys a dependency stub fills.
+// The CLI checks a `-f flask-restx=config.json` file against
+// `optionsSchema` before it calls the factory.
 export { declares, default, optionsSchema } from "@suss/framework-flask-restx";

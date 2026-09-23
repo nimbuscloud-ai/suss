@@ -1,4 +1,3 @@
-// The pack factory, which is what `-f react-router` loads, and what a
-// `-f react-router=config.json` file may say, which the CLI parses the
-// file against before the factory runs.
+// The CLI checks a `-f react-router=config.json` file against
+// `optionsSchema` before it calls the factory.
 export { declares, default, optionsSchema } from "@suss/framework-react-router";

@@ -1,25 +1,13 @@
-// @suss/framework-fastapi: PatternPack for FastAPI routes.
-//
-// FastAPI declares a route by decorating a function with a verb-named
-// method on the app or on a router (`@app.get(path)`,
-// `@router.post(path)`), where the decorator's own attribute name is
-// the HTTP verb. The app and router objects are local variables rather
-// than imports, so the adapter recognizes them by how they are built:
-// a call to something imported from FastAPI's module, one assignment
-// back (`app = FastAPI()`, `router = APIRouter()`).
-//
-// A route on a router is served under up to two prefixes its own file
-// never writes: the router constructor's (`APIRouter(prefix="/items")`)
-// and the one at the mount call (`app.include_router(router,
-// prefix="/api")`). `routerComposition` gives FastAPI's spelling of
-// that mounting, so the adapter can compose both literal prefixes into
-// the route path, one mount hop deep. Anything past that reading, such
-// as a computed prefix, a router mounted through more than a single
-// variable binding, or a router mounted onto another router, keeps the
-// route discovered by name with no path, and the summary says why.
-//
-// It does not read mounted sub-apps. The README says which of the
-// dependencies, middleware and exception handlers around a route it reads.
+/**
+ * FastAPI routes for the Python adapter. The app and the router are local
+ * variables, so the adapter finds them by the call that built them
+ * (`app = FastAPI()`, `router = APIRouter()`), one assignment back from an
+ * import of `fastapi`.
+ *
+ * `routerComposition` lets the adapter put the router's prefix and the
+ * `include_router` prefix in front of a route's path, one mount deep. The
+ * README lists the cases where a route keeps its name and gets no path.
+ */
 
 import { z } from "zod";
 
@@ -27,17 +15,15 @@ import type { PythonPack } from "@suss/adapter-python";
 import type { PackDeclaration } from "@suss/ir-core";
 
 /**
- * What this pack's options may say. The CLI parses a
- * `-f fastapi=config.json` file against it, minus the keys a dependency
- * stub fills, which a config file may not set.
+ * The CLI checks a `-f fastapi=config.json` file against this schema. A
+ * config file may not set a key that only a dependency stub fills.
  */
 export const optionsSchema = z
   .object({
     /**
-     * Modules a project's own wrapper re-exports FastAPI's constructors
-     * from. FastAPI's own module is always accepted. The wrapper's name
-     * is the project's own choice, so it is supplied by whoever
-     * configures the pack rather than hardcoded here.
+     * Modules that re-export FastAPI's constructors, on top of `fastapi`
+     * itself. A dependency stub fills this in; a project's config file
+     * may not set it.
      */
     wrapperModules: z.array(z.string()).optional(),
   })
@@ -142,7 +128,6 @@ export function fastapiFramework(options: FastapiPackOptions = {}): PythonPack {
   };
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "framework",
   package: "@suss/framework-fastapi",

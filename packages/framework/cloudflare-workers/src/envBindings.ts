@@ -1,16 +1,14 @@
 /**
- * `env.SOME_VAR` reads, as `interaction(class: "config-read")` effects.
+ * Records `env.SOME_VAR` reads as `config-read` interactions. A Worker's
+ * configuration arrives as the second argument to every trigger, and a
+ * read from it is recorded the same way `@suss/runtime-node` records
+ * `process.env.X`, so `checkRuntimeConfig` pairs it with whatever
+ * `wrangler.toml` declares.
  *
- * A Worker gets no `process.env`. Its configuration arrives as the
- * second argument to every trigger, so a read off that argument is the
- * same channel `@suss/runtime-node` recognizes for a Node process, and
- * it is recorded the same way so `checkRuntimeConfig` pairs it against
- * whatever `wrangler.toml` declares.
- *
- * The argument is found by resolving the identifier back to its
- * declaration and asking whether that parameter belongs to a trigger,
- * rather than by matching the name `env`, which is the developer's
- * choice and not Cloudflare's.
+ * The recognizer finds the argument by resolving the identifier to its
+ * declaration and checking that the parameter belongs to a trigger. A
+ * project can call the argument anything, so matching the name `env`
+ * would miss some.
  */
 
 import { Node as N } from "ts-morph";
@@ -30,24 +28,22 @@ import type { Effect } from "@suss/behavioral-ir";
 import type { AccessRecognizer } from "@suss/extractor";
 import type { Node, ParameterDeclaration } from "ts-morph";
 
-/** Which argument of a trigger the bindings arrive in. */
 const ENV_PARAMETER_POSITION = 1;
 
-/** How a config-read spells the read, so a reader sees one channel. */
+/** Every read is spelled `env.<name>`, so a reader sees one channel. */
 const readName = (name: string): string => `env.${name}`;
 
 export interface EnvBindingRecognizerOptions {
   /**
-   * The name the deployment gives this Worker, recorded on the binding.
-   * Pairing goes by the variable name, so this is informational.
+   * The Worker's `name` from `wrangler.toml`, recorded on the binding.
+   * Pairing uses the variable name, so this value only helps a reader.
    */
   scriptName?: string | undefined;
 }
 
 /**
- * Access recognizer for a Worker's binding reads. It fires on the same
- * property-access nodes every other access recognizer sees, and returns
- * null for the ones that are not a read off a trigger's env argument.
+ * Runs on every property access, like any access recognizer, and returns
+ * null unless the access reads from a trigger's env argument.
  */
 export function envBindingRecognizer(
   options: EnvBindingRecognizerOptions = {},
@@ -111,11 +107,11 @@ function isTriggerEnvParameter(
 }
 
 /**
- * Whether a function is one of the entrypoint's triggers. Given the
- * run's store, discovery has already settled which functions those are,
- * wherever each was written. Without one, a handler written into the
- * object is all this can tell apart from any other function, and taking
- * more would make every second parameter in the file a set of bindings.
+ * With the run's resolution store, discovery has already found the
+ * trigger functions wherever they were written. Without it, only a
+ * handler written into the entrypoint object can be recognized, because
+ * accepting more would treat every second parameter in the file as
+ * bindings.
  */
 function isTriggerBody(
   owner: Node,
@@ -129,7 +125,7 @@ function isTriggerBody(
   return writtenUnderTriggerName(owner);
 }
 
-/** Whether the property this function is written under names a trigger. */
+/** Whether this function is the value of a property keyed by a trigger. */
 function writtenUnderTriggerName(owner: Node): boolean {
   const property: Node | undefined = N.isMethodDeclaration(owner)
     ? owner

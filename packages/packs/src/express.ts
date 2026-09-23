@@ -1,4 +1,3 @@
-// The pack factory, which is what `-f express` loads, and what a
-// `-f express=config.json` file may say, which the CLI parses the
-// file against before the factory runs.
+// The CLI checks a `-f express=config.json` file against
+// `optionsSchema` before it calls the factory.
 export { declares, default, optionsSchema } from "@suss/framework-express";

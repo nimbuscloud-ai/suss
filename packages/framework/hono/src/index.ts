@@ -1,18 +1,16 @@
-// @suss/framework-hono: PatternPack for Hono
-//
-// A Hono handler takes one context and returns its response, rather than
-// writing to a response object it was handed:
-//
-//   app.get("/users/:id", async (c) => {
-//     const user = await findUser(c.req.param("id"));
-//     if (!user) return c.json({ error: "not found" }, 404);
-//     return c.json(user);
-//   });
-//
-// So the terminals below read `c.json(body, status)` at parameter 0,
-// where Express reads `res.status(n).json(body)` at parameter 1. The
-// status is the second argument, and it defaults to 200 when the handler
-// leaves it off.
+/**
+ * A Hono handler gets one context and returns its response from it:
+ *
+ *   app.get("/users/:id", async (c) => {
+ *     const user = await findUser(c.req.param("id"));
+ *     if (!user) return c.json({ error: "not found" }, 404);
+ *     return c.json(user);
+ *   });
+ *
+ * So the terminals read `c.json(body, status)` on parameter 0, where the
+ * Express pack reads `res.status(n).json(body)` on parameter 1. The
+ * status defaults to 200 when the handler leaves it off.
+ */
 
 import { z } from "zod";
 
@@ -25,8 +23,7 @@ import {
 import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
-/** What Hono registers around a route, on either app constructor. */
-// `app.use(fn)` applies everywhere and `app.use(path, fn)` under a path.
+/** `app.use(fn)` applies to every route, `app.use(path, fn)` to a path. */
 const HONO_WRAPPERS: ReadonlyArray<NonNullable<DiscoveryPattern["wraps"]>> = [
   { method: "use", targetPosition: 0, continuationParam: 1 },
   {
@@ -39,9 +36,9 @@ const HONO_WRAPPERS: ReadonlyArray<NonNullable<DiscoveryPattern["wraps"]>> = [
 ];
 
 /**
- * The hook `new OpenAPIHono({ defaultHook })` runs, as `(result, c)`,
- * when a request fails a route's request schema. It responds in the
- * handler's place and never continues.
+ * `new OpenAPIHono({ defaultHook })` calls the hook as `(result, c)` when
+ * a request fails a route's request schema. The hook responds in place
+ * of the handler, and the handler never runs.
  */
 const ZOD_OPENAPI_WRAPPERS: ReadonlyArray<
   NonNullable<DiscoveryPattern["wraps"]>
@@ -51,9 +48,9 @@ const ZOD_OPENAPI_WRAPPERS: ReadonlyArray<
 ];
 
 /**
- * Status codes for Hono's `HTTPException`, thrown rather than returned.
- * The constructor takes the status as its first argument, so the codes
- * map is only consulted for the named subclasses some projects define.
+ * A literal status in the constructor's first argument wins, so
+ * `new HTTPException(404)` is a 404. The 500 applies when the status is
+ * not a literal.
  */
 const HTTP_EXCEPTION_CODES: Record<string, number> = {
   HTTPException: 500,
@@ -69,7 +66,7 @@ const METHODS = [
   ".all",
 ];
 
-/** The hono pack takes no configuration. */
+/** The hono pack takes no options, so the CLI refuses any key. */
 export const optionsSchema = z.object({}).strict();
 
 export type HonoPackOptions = z.infer<typeof optionsSchema>;
@@ -80,22 +77,16 @@ export function honoFramework(_options: HonoPackOptions = {}): PatternPack {
     protocol: "http",
     languages: ["typescript", "javascript"],
 
-    // createRoute wraps its config without changing it; the call IS the
-    // route object. Declared here because the wrapper's body lives in
-    // the library, where nobody can read it.
+    // `createRoute` returns its config unchanged, so the call is the route
+    // object. The pack has to declare this because the function's body is
+    // in the library, where suss cannot read it.
     transparentWrappers: [
       { callee: "createRoute", argument: 0, module: "@hono/zod-openapi" },
     ],
 
-    // `new Hono()` and `new OpenAPIHono()` both register the same way.
-    // Sub-apps mounted with `app.route(prefix, sub)` compose the
-    // prefix into a route declared on the sub-app, following the sub-app
-    // through an import when it's declared in another file. A mount
-    // nested more than one level deep composes too, since the same
-    // index a mount resolves to is asked again for its own mount; a
-    // mount the resolution store can't follow to a concrete sub-app,
-    // or whose prefix isn't a string literal, leaves the route's path
-    // as written.
+    // A route on a sub-app mounted with `app.route(prefix, sub)` gets the
+    // prefix in front of its path, at any depth of nesting. The README
+    // covers the mounts that leave a path as written.
     discovery: [
       ...httpRouteDiscovery({
         importModule: "hono",
@@ -110,11 +101,9 @@ export function honoFramework(_options: HonoPackOptions = {}): PatternPack {
         mount: { method: "route", prefixPosition: 0, targetPosition: 1 },
       }),
       {
-        // app.openapi(route, handler), where the route is a
-        // createRoute({ method, path, ... }) object that usually lives
-        // on a shared contract in another file. The fact layer follows
-        // the reference, and the route object has its own method and path on
-        // it.
+        // `app.openapi(route, handler)`, where the route is often a
+        // `createRoute({ method, path })` object in another file. The
+        // method and path come off that object.
         kind: "handler",
         match: {
           type: "registrationCall",
@@ -155,9 +144,9 @@ export function honoFramework(_options: HonoPackOptions = {}): PatternPack {
       methods: METHODS,
     }),
 
-    // The createRoute object registered alongside the handler declares
-    // the endpoint's responses, so a handler returning a status the
-    // route never declares is a contract finding, not a style choice.
+    // The `createRoute` object lists the endpoint's responses, so a
+    // handler that returns a status missing from that list gets a
+    // contract finding.
     contractReading: {
       discovery: {
         importModule: "@hono/zod-openapi",
@@ -237,8 +226,8 @@ export function honoFramework(_options: HonoPackOptions = {}): PatternPack {
         extraction: { defaultStatusCode: 404 },
       },
       {
-        // throw new HTTPException(status, { message }); hono sends the
-        // exception's status as the wire response.
+        // throw new HTTPException(status, { message }): Hono sends the
+        // exception's status as the response.
         kind: "throw",
         match: { type: "throwExpression" },
         extraction: {
@@ -251,15 +240,13 @@ export function honoFramework(_options: HonoPackOptions = {}): PatternPack {
       },
     ],
 
-    // One parameter, the context, carrying the request and the response
-    // methods together.
     inputMapping: {
       type: "positionalParams",
       params: [{ position: 0, role: "context" }],
     },
 
-    // `c.req.header("x-tenant-id")` puts the field in the argument, and
-    // a read records the method without it, so no read says which field.
+    // In `c.req.header("x-tenant-id")` the field is an argument, and the
+    // recorded read keeps only the method, so it loses which field it was.
     requestSpelling: {
       headers: { path: ["context", "req", "header"], saysWhichField: false },
       query: { path: ["context", "req", "query"], saysWhichField: false },
@@ -269,7 +256,6 @@ export function honoFramework(_options: HonoPackOptions = {}): PatternPack {
   };
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "framework",
   package: "@suss/framework-hono",

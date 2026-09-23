@@ -1,16 +1,9 @@
 /**
- * @suss/framework-react-query: the PatternPack for TanStack Query
- * (`@tanstack/react-query`, and the v3 `react-query` module).
- *
- * A component calling `useQuery({ queryKey, queryFn })` reaches an API
- * through the query function, and without this pack that reach is
- * invisible: the HTTP call lives in `queryFn` and nothing ties it to
- * the component. The pack recognizes the hook calls and emits a
- * schedule interaction saying which function the hook runs. An inline
- * `queryFn` becomes a sub-unit, so the client packs read the HTTP call
- * inside it; a named one is recorded by identifier for the walk to
- * follow. Components come from the react pack, and a run with only
- * this pack still reports effects through the closure roots.
+ * Links a component to the function its TanStack Query hook runs, so the
+ * HTTP call inside `queryFn` is tied to the component. An inline function
+ * becomes a sub-unit for the client packs to read, and a named one is
+ * recorded by identifier for the walk to follow. The README lists the
+ * hooks and what is left out.
  */
 
 import { Node } from "ts-morph";
@@ -30,7 +23,6 @@ import type { CallExpression, SourceFile } from "ts-morph";
 
 const QUERY_MODULES = ["@tanstack/react-query", "react-query"];
 
-/** Hook name to the options property its function lives under. */
 const HOOK_CALLBACK_PROPERTY: Record<string, string> = {
   useQuery: "queryFn",
   useSuspenseQuery: "queryFn",
@@ -39,7 +31,7 @@ const HOOK_CALLBACK_PROPERTY: Record<string, string> = {
   useMutation: "mutationFn",
 };
 
-/** Local spelling to the library hook it imports, aliases included. */
+/** Maps each local name, aliases included, to the library hook it imports. */
 function importedHooksOf(sourceFile: SourceFile): Map<string, string> {
   const hooks = new Map<string, string>();
   for (const [local, canonical] of importedNamesOf(sourceFile, QUERY_MODULES)) {
@@ -50,8 +42,6 @@ function importedHooksOf(sourceFile: SourceFile): Map<string, string> {
   return hooks;
 }
 
-/** The hook a call reaches: the local name it was called by, and the
- * library name that decides which options property to read. */
 function hookOf(call: CallExpression): { local: string; hook: string } | null {
   const callee = call.getExpression();
   if (!Node.isIdentifier(callee)) {
@@ -63,8 +53,8 @@ function hookOf(call: CallExpression): { local: string; hook: string } | null {
 }
 
 /**
- * The function the hook runs: the `queryFn` / `mutationFn` property of
- * an options object, or the positional function the v3 API takes
+ * The function the hook runs, from the `queryFn` or `mutationFn` property
+ * of an options object, or from the positional argument the v3 API takes
  * (`useQuery(key, fn)`, `useMutation(fn)`).
  */
 function callbackExpressionOf(call: CallExpression, hook: string): Node | null {
@@ -85,8 +75,8 @@ function callbackExpressionOf(call: CallExpression, hook: string): Node | null {
       Node.isFunctionExpression(arg) ||
       Node.isIdentifier(arg)
     ) {
-      // v3 positional form; the first argument is the key, so a bare
-      // identifier in position 0 is the key, never the function.
+      // In the v3 positional form the first argument is the key, except
+      // for `useMutation`, which takes the function first.
       if (call.getArguments().indexOf(arg) > 0 || hook === "useMutation") {
         return arg;
       }
@@ -205,7 +195,6 @@ export function reactQueryFramework(): PatternPack {
   };
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "framework",
   package: "@suss/framework-react-query",
