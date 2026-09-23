@@ -1,20 +1,17 @@
-// variables.ts: the Serverless Framework's `${...}` variable syntax,
-// resolved as far as the document itself can settle it.
-//
-// `${self:...}` points at a path inside the same document, so it
-// resolves here. Every other source (`env:`, `opt:`, `cf:`, `ssm:`,
-// `param:`, `file(...)`, and whatever a plugin registers) points at a
-// value that arrives at deploy time, so the reference is kept as a
-// symbolic token rather than resolved, guessed, or dropped. The token
-// is the reference text as written, minus the wrapper:
-// `env:AUDIT_QUEUE_ARN` tells a reader which question to ask of the
-// environment, where null would only say "decided at deploy time".
-//
-// A fallback (`${opt:region, 'us-east-1'}`) is applied only for a
-// `self:` reference, where the document states both sides. For a
-// deploy-time source the fallback is what the framework uses when the
-// CLI supplies nothing, and which way an invocation went is not a fact
-// this file can state, so the reference stays symbolic.
+/**
+ * The Serverless Framework's `${...}` variable syntax, resolved as far
+ * as the document itself allows.
+ *
+ * `${self:...}` points inside the same document, so it resolves here.
+ * Every other source, such as `env:` or `ssm:`, gets its value at deploy
+ * time, so the reference stays as a symbolic token: the reference text
+ * without the `${}` wrapper. `env:AUDIT_QUEUE_ARN` tells a reader what
+ * to look up, where null would only say the value is set elsewhere.
+ *
+ * A fallback applies only to a `self:` reference. The framework uses a
+ * deploy-time fallback only when the CLI supplies nothing, and the
+ * document cannot say whether it did.
+ */
 
 /** A symbolic token is the reference text as written, minus the wrapper. */
 export type ResolvedString =
@@ -30,19 +27,27 @@ const REFERENCE = /\$\{([^{}]*)\}/g;
 
 /** Resolves `${...}` references against one parsed serverless.yml document. */
 export interface VariableResolver {
-  /** A whole `${self:...}` reference resolves to whatever is at that
-   * path, object or scalar. */
+  /**
+   * A whole `${self:...}` reference resolves to whatever is at that path,
+   * object or scalar.
+   */
   resolveValue(raw: unknown): ResolvedValue;
-  /** A whole reference resolving to an object or array is symbolic, since no string was stated. */
+  /**
+   * A whole reference that resolves to an object or array comes back
+   * symbolic, since the document states no string there.
+   */
   resolveString(raw: string): ResolvedString;
-  /** A reference to anything the framework does not define is left
-   * exactly as written. */
+  /**
+   * Resolves every string in a tree. A reference whose source the
+   * framework does not define, such as `${AWS::Region}` inside an
+   * `Fn::Sub`, is left exactly as written.
+   */
   resolveTemplateTree(value: unknown): unknown;
 }
 
 /**
  * The variable sources the framework's own schema defines. A reference
- * to anything else belongs to whatever else reads the string.
+ * to any other source is meant for something else that reads the string.
  */
 const FRAMEWORK_SOURCES = [
   "self",
@@ -94,8 +99,8 @@ export function createVariableResolver(
       return resolveReference(wholeReference, inProgress);
     }
 
-    // A half-substituted string stays symbolic, so nothing downstream
-    // mistakes a half-substituted ARN for a whole one.
+    // A string with any reference left unresolved stays symbolic, so
+    // nothing downstream mistakes a partial ARN for a complete one.
     let anyUnresolved = false;
     const substituted = raw.replace(REFERENCE, (whole, body: string) => {
       const resolved = resolveReference(body, inProgress);
@@ -129,7 +134,7 @@ export function createVariableResolver(
 
     const path = primary.slice("self:".length);
     if (inProgress.has(path)) {
-      // A cycle says nothing, so keep the reference external.
+      // A cycle has no value, so the reference stays symbolic.
       return { kind: "symbolic", token: primary };
     }
     const target = documentPath(document, path);
@@ -150,8 +155,8 @@ export function createVariableResolver(
   }
 
   /**
-   * A reference to no framework source is left exactly as written,
-   * because something other than the framework owns that syntax.
+   * A reference to a source outside the framework is left exactly as
+   * written, because it belongs to another syntax such as `Fn::Sub`.
    */
   function resolveTemplateString(raw: string): unknown {
     const whole = wholeReferenceBody(raw);

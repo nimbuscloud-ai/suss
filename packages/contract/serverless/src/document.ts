@@ -1,15 +1,16 @@
-// document.ts: find and parse a Serverless Framework service file.
-//
-// The framework reads `serverless.yml`, `serverless.yaml`,
-// `serverless.json` and `serverless.ts`, in that order, from the
-// service directory. This reader handles the two YAML spellings and the
-// JSON one. A `.ts` service file is a program, and running it to find
-// out what it declares is not something a reader does.
-//
-// The `resources:` block contains raw CloudFormation, so the
-// CloudFormation intrinsic tags are registered on the parse. A
-// serverless.yml usually writes the full form (`Fn::GetAtt: [Q, Arn]`),
-// but the short form is accepted there too.
+/**
+ * Finding and parsing a Serverless Framework service file.
+ *
+ * The framework reads `serverless.yml`, `serverless.yaml`,
+ * `serverless.json` and `serverless.ts`, in that order. This reader
+ * parses the YAML and JSON files. A `.ts` or `.js` service file is a
+ * program, so the reader reports it and does not run it.
+ *
+ * The `resources:` block contains raw CloudFormation, so the parse
+ * registers the CloudFormation intrinsic tags. A serverless.yml usually
+ * writes the full form (`Fn::GetAtt: [Q, Arn]`), and the short form
+ * works too.
+ */
 
 import fs from "node:fs";
 import path from "node:path";
@@ -41,14 +42,14 @@ export interface ServerlessDocument {
   [key: string]: unknown;
 }
 
-/** In the framework's own order of preference. */
+/** The parseable service file names, in the framework's order of preference. */
 export const SERVICE_FILE_NAMES = [
   "serverless.yml",
   "serverless.yaml",
   "serverless.json",
 ] as const;
 
-/** Recognized in order to be reported rather than read. */
+/** Service files that are programs. The reader reports these and does not run them. */
 export const PROGRAM_SERVICE_FILE_NAMES = [
   "serverless.ts",
   "serverless.js",
@@ -60,9 +61,9 @@ export type ServiceLocation =
   | { kind: "missing" };
 
 /**
- * A path that points at a file is taken as that file. A directory is
- * searched parseable spellings first, so a service with both a yml and
- * a ts is read from the yml.
+ * A path to a file is used as it is. A directory is searched for the
+ * parseable files first, so a service with both a yml and a ts file is
+ * read from the yml.
  */
 export function locateServiceFile(candidate: string): ServiceLocation {
   const resolved = path.resolve(candidate);
