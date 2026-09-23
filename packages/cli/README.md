@@ -2,7 +2,7 @@
 
 Read a codebase and check what it does at every boundary, such as a route or a table, against the clients, specs and infrastructure on the other side. It works on TypeScript, Python and Ruby.
 
-This is the command line for [suss](https://github.com/nimbuscloud-ai/suss). It runs the same way every time, and there is no model in it.
+This package is the command line for [suss](https://github.com/nimbuscloud-ai/suss). It gives the same output every time for the same code, and it does not use a model.
 
 ## Read one service
 
@@ -28,7 +28,7 @@ src/api.ts
          -> 201 { id, name }
 ```
 
-That is every path each handler can take, with the status and the body fields it produces. Where suss could not follow a call, it reports that under the handler instead of leaving the path out.
+The output lists every path each handler can take, with the status and the body fields it produces. When suss could not follow a call, it reports that under the handler and keeps the path in the list.
 
 ## Install
 
