@@ -14,7 +14,7 @@
 import { Node } from "ts-morph";
 
 import { rootIdentifier } from "../configuredCall.js";
-import { propertyValueOf } from "../discovery/resolveValue.js";
+import { propertyValueOf, stringValuesOf } from "../discovery/resolveValue.js";
 import { parameterReads } from "../parameterReads.js";
 import { peelValue } from "../walk/unwrap.js";
 import {
@@ -42,6 +42,7 @@ import type {
   PropertyAssignment,
   TaggedTemplateExpression,
 } from "ts-morph";
+import type { ResolutionStore } from "../facts/store.js";
 
 /**
  * A call, a construction, or a tagged template, which all ask the same
@@ -176,14 +177,33 @@ function madeExpression(receiver: Receiver): Node {
   return written;
 }
 
+/**
+ * What the ops read a call through. A reading left out reads only what
+ * the source spells at the call.
+ */
+export interface CallReading {
+  /** One-hop lookup from a written name to the value it was bound to. */
+  readonly resolve?: Resolve;
+  readonly originatesFrom?: OriginatesFrom | undefined;
+  readonly anchorCallsOf?: AnchorCallsOf | undefined;
+  /** The run's store, which the value evaluator follows names through. */
+  readonly resolution?: ResolutionStore | undefined;
+}
+
+/** What the values inside a call, and the calls inside those, are read through. */
+interface ValueReading {
+  readonly resolve: Resolve;
+  readonly resolution: ResolutionStore | undefined;
+}
+
 /** What a declared pack can ask about one TypeScript call. */
 export function callOpsFor(
   call: Called,
-  resolveWrittenValue?: Resolve,
-  originatesFrom?: OriginatesFrom,
-  anchorCallsOf?: AnchorCallsOf,
+  reading: CallReading = {},
 ): AstCapableOps {
-  const resolve = resolveWrittenValue ?? (() => null);
+  const { originatesFrom } = reading;
+  const resolve = reading.resolve ?? (() => null);
+  const values: ValueReading = { resolve, resolution: reading.resolution };
   const expression = calleeOf(call);
   const callee = Node.isPropertyAccessExpression(expression)
     ? expression
@@ -219,22 +239,20 @@ export function callOpsFor(
     namedCallee: () => Node.isIdentifier(expression),
     parameterReadsAt: (index) => selectorReadsOf(argumentsOf()[index]),
     receiver: () =>
-      callee === null ? null : opsOverCall(callee.getExpression(), resolve),
-    argument: (index) => opsOverCall(argumentsOf()[index], resolve),
-    callee: () => opsOverCall(expression, resolve),
+      callee === null ? null : opsOverCall(callee.getExpression(), values),
+    argument: (index) => opsOverCall(argumentsOf()[index], values),
+    callee: () => opsOverCall(expression, values),
     propertyAt: (index, property, unsettled) =>
       propertyAt(argumentsOf()[index], property, unsettled, resolve),
     valueAt: (index) => {
       const argument = argumentsOf()[index];
-      return argument === undefined ? null : valueOpsFor(argument, resolve);
+      return argument === undefined ? null : valueOpsFor(argument, values);
     },
     anchorCall: (origin) =>
       anchorCallBehind(
         callee === null ? expression : callee.getExpression(),
         origin,
-        resolve,
-        originatesFrom,
-        anchorCallsOf,
+        reading,
       ),
     ast: () => call,
   };
@@ -249,10 +267,9 @@ export function callOpsFor(
 function anchorCallBehind(
   subject: Node,
   origin: ReceiverOrigin,
-  resolve: Resolve,
-  originatesFrom: OriginatesFrom | undefined,
-  anchorCallsOf: AnchorCallsOf | undefined,
+  reading: CallReading,
 ): CallOps | null {
+  const { originatesFrom, anchorCallsOf } = reading;
   if (
     anchorCallsOf === undefined ||
     originatesFrom === undefined ||
@@ -285,7 +302,7 @@ function anchorCallBehind(
   if (!Node.isCallExpression(only) && !Node.isNewExpression(only)) {
     return null;
   }
-  return callOpsFor(only, resolve, originatesFrom, anchorCallsOf);
+  return callOpsFor(only, reading);
 }
 
 /**
@@ -296,7 +313,8 @@ function anchorCallBehind(
  * values under them, and following a name it never reads costs a walk
  * out over the file's imports.
  */
-function valueOpsFor(value: Node, resolve: Resolve): ValueOps {
+function valueOpsFor(value: Node, reading: ValueReading): ValueOps {
+  const { resolve } = reading;
   let settledValue: Node | undefined;
   const written = (): Node => {
     settledValue ??= settled(value, resolve) ?? value;
@@ -306,20 +324,21 @@ function valueOpsFor(value: Node, resolve: Resolve): ValueOps {
   return {
     text: () => literalText(written()),
     name: (unsettled) => readName(written(), { resolve, unsettled }),
+    names: (cap) => stringValuesOf(value, reading.resolution, cap),
     flag: () => literalFlag(written()),
-    entries: (unsettled) => entriesOf(written(), unsettled, resolve),
-    items: () => itemsOf(written(), resolve),
+    entries: (unsettled) => entriesOf(written(), unsettled, reading),
+    items: () => itemsOf(written(), reading),
     asArg: () => effectArgOf(written()),
     property: (name) => {
       const object = written();
       const inside = Node.isObjectLiteralExpression(object)
         ? initializerOf(object, name)
         : null;
-      return inside === null ? null : valueOpsFor(inside, resolve);
+      return inside === null ? null : valueOpsFor(inside, reading);
     },
     parts: () => literalParts(written()),
-    holes: () => templateHoles(written(), resolve),
-    interpolated: () => interpolatedValues(written(), resolve),
+    holes: () => templateHoles(written(), reading),
+    interpolated: () => interpolatedValues(written(), reading),
   };
 }
 
@@ -349,7 +368,7 @@ function literalParts(value: Node): string[] | null {
 /** What the source interpolated between those pieces, hole by hole. */
 function templateHoles(
   value: Node,
-  resolve: Resolve,
+  reading: ValueReading,
 ): (AstCapableOps | null)[] {
   const written = untagged(value);
   if (!Node.isTemplateExpression(written)) {
@@ -357,18 +376,18 @@ function templateHoles(
   }
   return written
     .getTemplateSpans()
-    .map((span) => opsOverCall(span.getExpression(), resolve));
+    .map((span) => opsOverCall(span.getExpression(), reading));
 }
 
 /** What the source interpolated between those pieces, as values. */
-function interpolatedValues(value: Node, resolve: Resolve): ValueOps[] {
+function interpolatedValues(value: Node, reading: ValueReading): ValueOps[] {
   const written = untagged(value);
   if (!Node.isTemplateExpression(written)) {
     return [];
   }
   return written
     .getTemplateSpans()
-    .map((span) => valueOpsFor(span.getExpression(), resolve));
+    .map((span) => valueOpsFor(span.getExpression(), reading));
 }
 
 /**
@@ -384,7 +403,7 @@ function untagged(value: Node): Node {
 function entriesOf(
   value: Node,
   unsettled: UnsettledName,
-  resolve: Resolve,
+  reading: ValueReading,
 ): ValueEntry[] {
   if (!Node.isObjectLiteralExpression(value)) {
     return [];
@@ -393,7 +412,7 @@ function entriesOf(
   for (const written of value.getProperties()) {
     if (Node.isShorthandPropertyAssignment(written)) {
       const name = written.getNameNode();
-      found.push({ key: name.getText(), value: valueOpsFor(name, resolve) });
+      found.push({ key: name.getText(), value: valueOpsFor(name, reading) });
       continue;
     }
     if (!Node.isPropertyAssignment(written)) {
@@ -401,8 +420,8 @@ function entriesOf(
     }
     const stated = written.getInitializer();
     found.push({
-      key: entryKey(written, unsettled, resolve),
-      value: valueOpsFor(stated ?? written, resolve),
+      key: entryKey(written, unsettled, reading.resolve),
+      value: valueOpsFor(stated ?? written, reading),
     });
   }
   return found;
@@ -426,11 +445,11 @@ function entryKey(
 }
 
 /** What a list states, item by item. */
-function itemsOf(value: Node, resolve: Resolve): ValueOps[] {
+function itemsOf(value: Node, reading: ValueReading): ValueOps[] {
   if (!Node.isArrayLiteralExpression(value)) {
     return [];
   }
-  return value.getElements().map((element) => valueOpsFor(element, resolve));
+  return value.getElements().map((element) => valueOpsFor(element, reading));
 }
 
 /** The text of a string the source writes out, or null for anything else. */
@@ -487,13 +506,13 @@ function selectorReadsOf(argument: Node | undefined): readonly string[] | null {
 
 function opsOverCall(
   value: Node | undefined,
-  resolve: Resolve,
+  reading: ValueReading,
 ): AstCapableOps | null {
-  const written = settled(value, resolve);
+  const written = settled(value, reading.resolve);
   if (written === null || !isCalled(written)) {
     return null;
   }
-  return callOpsFor(written, resolve);
+  return callOpsFor(written, reading);
 }
 
 /** Whether a value is a call, a construction or a tagged template. */

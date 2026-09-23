@@ -1264,6 +1264,58 @@ describe("Evaluator", () => {
     });
   });
 
+  describe("a read whose declared type is a few literals", () => {
+    const operations = string([textPiece(["DELETE", "INSERT", "UPDATE"])]);
+
+    it("folds an unfilled parameter to the literals its type allows", () => {
+      const operation = name("operation");
+      operation.declared = operations;
+      const target = template("record.", operation);
+      module([fn(["operation"], [ret(target)])]);
+      expect(piecesOf(evaluate(target))).toEqual([
+        textPiece(["record."]),
+        textPiece(["DELETE", "INSERT", "UPDATE"]),
+      ]);
+    });
+
+    it("reads a member of a parameter the same way", () => {
+      const read = member(name("event"), "operation");
+      read.declared = operations;
+      module([fn(["event"], [ret(read)])]);
+      expect(evaluate(read)).toEqual(operations);
+    });
+
+    it("reads a member of a name declared with no value", () => {
+      const read = member(name("event"), "operation");
+      read.declared = operations;
+      module([declare({ event: null }), expr(read)]);
+      expect(evaluate(read)).toEqual(operations);
+    });
+
+    it("takes what the source wrote over what the type allows", () => {
+      const use = name("operation", lit("INSERT"));
+      use.declared = operations;
+      module([expr(fn(["operation"], [ret(use)]))]);
+      expect(evaluate(use)).toEqual(text("INSERT"));
+    });
+
+    it("takes a call site's value over what the type allows", () => {
+      const use = name("operation");
+      use.declared = operations;
+      module([fn(["operation"], [ret(use)])]);
+      expect(literalOf(evaluate(use, { operation: text("UPDATE") }))).toBe(
+        "UPDATE",
+      );
+    });
+
+    it("leaves a call a hole whatever its return type says", () => {
+      const made = call(null, "pick");
+      made.declared = operations;
+      module([expr(made)]);
+      expect(evaluate(made)).toEqual({ kind: "hole", name: "param" });
+    });
+  });
+
   describe("a lowering whose nodes are fresh objects on every read", () => {
     type Copied = TestNode & { id?: number };
     const ids = new Map<TestNode, number>();

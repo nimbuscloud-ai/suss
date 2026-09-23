@@ -7,6 +7,7 @@
 
 import {
   appended,
+  caseRows,
   concat,
   constant,
   environmentRead,
@@ -137,6 +138,7 @@ const stringRows: Row[] = [
           : hole("value"),
     }),
   },
+  ...caseRows("lower", "upper"),
 ];
 
 const sequenceRows: Row[] = ["sequence", "unbounded"].flatMap((on): Row[] => [

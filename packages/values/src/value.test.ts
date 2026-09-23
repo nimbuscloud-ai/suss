@@ -9,9 +9,11 @@ import {
   hole,
   holePiece,
   literalOf,
+  literalsOf,
   normalizePieces,
   piecesOf,
   record,
+  SET_CAP,
   sequence,
   string,
   text,
@@ -43,10 +45,14 @@ describe("normalizePieces", () => {
     ).toEqual([textPiece(["/a"]), textPiece(["x", "y"]), textPiece(["/b"])]);
   });
 
+  it("keeps a set as wide as the cap", () => {
+    const options = Array.from({ length: SET_CAP }, (_, i) => `v${i}`);
+    expect(normalizePieces([textPiece(options)])).toEqual([textPiece(options)]);
+  });
+
   it("turns a set wider than the cap into a hole", () => {
-    expect(normalizePieces([textPiece(["a", "b", "c", "d", "e"])])).toEqual([
-      holePiece("value"),
-    ]);
+    const options = Array.from({ length: SET_CAP + 1 }, (_, i) => `v${i}`);
+    expect(normalizePieces([textPiece(options)])).toEqual([holePiece("value")]);
   });
 
   it("sorts and dedupes a set", () => {
@@ -54,6 +60,43 @@ describe("normalizePieces", () => {
       kind: "text",
       options: ["a", "b"],
     });
+  });
+});
+
+describe("literalsOf", () => {
+  it("spells every literal a string of sets can be", () => {
+    const value = string([
+      textPiece(["record."]),
+      textPiece(["insert", "update"]),
+      textPiece([".", ":"]),
+      textPiece(["v1"]),
+    ]);
+    expect(literalsOf(value, 8)).toEqual([
+      "record.insert.v1",
+      "record.insert:v1",
+      "record.update.v1",
+      "record.update:v1",
+    ]);
+  });
+
+  it("gives the one literal of a settled string", () => {
+    expect(literalsOf(text("orders"), 8)).toEqual(["orders"]);
+  });
+
+  it("gives null for a string with a hole in it", () => {
+    expect(
+      literalsOf(string([textPiece(["a", "b"]), holePiece("id")]), 8),
+    ).toBeNull();
+  });
+
+  it("gives null past the cap rather than multiplying further", () => {
+    const value = string([textPiece(["a", "b", "c"]), textPiece(["x", "y"])]);
+    expect(literalsOf(value, 6)).toHaveLength(6);
+    expect(literalsOf(value, 5)).toBeNull();
+  });
+
+  it("gives null for anything that is not a string", () => {
+    expect(literalsOf(constant(1), 8)).toBeNull();
   });
 });
 

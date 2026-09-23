@@ -15,6 +15,7 @@ import { Node, SyntaxKind } from "ts-morph";
 
 import { hasBody } from "../resolve/unfollowedCall.js";
 import { peelValue } from "../walk/unwrap.js";
+import { declaredValueOf } from "./declaredType.js";
 
 import type {
   Callee,
@@ -141,6 +142,7 @@ export function typescriptLowering(options: LoweringOptions): Lowering<Node> {
     },
     freeNamesOf,
     holeNameOf: placeholderName,
+    declaredValueOf: (node) => declaredValueOf(peelValue(node)),
     rows,
   };
 }

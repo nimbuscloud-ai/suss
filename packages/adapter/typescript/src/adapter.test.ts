@@ -4256,7 +4256,7 @@ describe("consumer extraction", () => {
       "consumer.ts",
       `
       export async function search() {
-        const res = await fetch(\`/search/\${"x".toUpperCase()}\`);
+        const res = await fetch(\`/search/\${"x".padStart(3)}\`);
         return res.json();
       }
     `,

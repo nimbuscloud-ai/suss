@@ -74,9 +74,13 @@ function valueOps(stated: unknown): ValueOps {
     typeof stated === "object" && stated !== null && !Array.isArray(stated)
       ? (stated as Record<string, unknown>)
       : null;
+  const choices = oneOf(stated);
   return {
     text: () => (typeof stated === "string" ? stated : null),
-    name: () => (typeof stated === "string" ? stated : null),
+    name: () =>
+      typeof stated === "string" ? stated : (choices?.spelled ?? null),
+    names: (cap) =>
+      choices === null || choices.oneOf.length > cap ? null : choices.oneOf,
     asArg: () =>
       typeof stated === "string" ? { kind: "string", value: stated } : null,
     flag: () => (typeof stated === "boolean" ? stated : null),
@@ -94,6 +98,21 @@ function valueOps(stated: unknown): ValueOps {
     interpolated: () =>
       (interpolated(stated)?.settled ?? []).map((hole) => valueOps(hole)),
   };
+}
+
+/** A value a test writes as every string it can be, and as the one name it reads as. */
+interface OneOf {
+  readonly oneOf: string[];
+  readonly spelled: string;
+}
+
+function oneOf(stated: unknown): OneOf | null {
+  const written = stated as Partial<OneOf> | null;
+  return typeof written === "object" &&
+    written !== null &&
+    Array.isArray(written.oneOf)
+    ? (written as OneOf)
+    : null;
 }
 
 /** A statement a test writes as its pieces of text and what fills its holes. */
@@ -1482,6 +1501,101 @@ describe("a channel written in more than one place", () => {
         ),
       ),
     ).toEqual(["orders/Placed"]);
+  });
+});
+
+describe("a channel part that is one of a few strings", () => {
+  const twoParts = () =>
+    sends({
+      wire: "eventbridge",
+      messages: { each: "in", property: "Entries" },
+      channel: [
+        { property: ["EventBusName"], whenAbsent: "default" },
+        { property: ["DetailType"] },
+      ],
+      unsettledName: "nothing",
+    });
+
+  const entries = (entry: Record<string, unknown>) =>
+    callOps({
+      method: "send",
+      from: ["tapedeck"],
+      values: { 0: { Entries: [entry] } },
+    });
+
+  const numbered = (count: number, prefix: string): OneOf => ({
+    oneOf: Array.from({ length: count }, (_, i) => `${prefix}${i}`),
+    spelled: `${prefix}{n}`,
+  });
+
+  it("sends once per string", () => {
+    expect(
+      channelsOf(
+        runSend(
+          twoParts(),
+          entries({
+            EventBusName: "orders",
+            DetailType: {
+              oneOf: ["record.delete", "record.insert"],
+              spelled: "record.{op}",
+            },
+          }),
+        ),
+      ),
+    ).toEqual(["orders#record.delete", "orders#record.insert"]);
+  });
+
+  it("sends once per pair when two parts are each one of a few", () => {
+    expect(
+      channelsOf(
+        runSend(
+          twoParts(),
+          entries({
+            EventBusName: { oneOf: ["blue", "green"], spelled: "{bus}" },
+            DetailType: { oneOf: ["placed", "shipped"], spelled: "{kind}" },
+          }),
+        ),
+      ),
+    ).toEqual(["blue#placed", "blue#shipped", "green#placed", "green#shipped"]);
+  });
+
+  it("reads one name for a part with more strings than the cap", () => {
+    expect(
+      channelsOf(
+        runSend(
+          twoParts(),
+          entries({ EventBusName: "orders", DetailType: numbered(17, "m") }),
+        ),
+      ),
+    ).toEqual(["orders#m{n}"]);
+  });
+
+  it("reads one name for each part when the pairs run past the cap", () => {
+    expect(
+      channelsOf(
+        runSend(
+          twoParts(),
+          entries({
+            EventBusName: numbered(5, "bus"),
+            DetailType: numbered(5, "kind"),
+          }),
+        ),
+      ),
+    ).toEqual(["bus{n}#kind{n}"]);
+  });
+
+  it("reads one name for a value that is only ever one string", () => {
+    expect(
+      channelsOf(
+        runSend(
+          twoParts(),
+          entries({
+            EventBusName: "orders",
+            DetailType: { oneOf: ["placed"], spelled: "placed" },
+          }),
+        ),
+      ),
+    ).toEqual(["orders#placed"]);
   });
 });
 

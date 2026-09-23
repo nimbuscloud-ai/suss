@@ -1,0 +1,116 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: |
+  Producers whose detail type is built from a value typed as a few
+  strings, and one rule per detail type they can send.
+    1. RecordProducer builds `record.${operation.toLowerCase()}` from a
+       field typed "INSERT" | "UPDATE" | "DELETE". RecordRule routes all
+       three lower-cased detail types.
+    2. AccountProducer sends a string enum member. AccountRule routes
+       both of its values.
+    3. ReportProducer builds `report.${period}` from a type alias
+       declared in another file. ReportRule routes both periods.
+    4. MetricProducer builds `metric.${name}` from a union of twenty
+       names, more than one send is spelled out for. MetricRule routes
+       one of them, and stays unanswered.
+
+Resources:
+  DomainEventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: domain-events
+
+  RecordProducer:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/record-producer/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          DOMAIN_EVENT_BUS_NAME: !Ref DomainEventBus
+
+  AccountProducer:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/account-producer/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          DOMAIN_EVENT_BUS_NAME: !Ref DomainEventBus
+
+  ReportProducer:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/report-producer/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          DOMAIN_EVENT_BUS_NAME: !Ref DomainEventBus
+
+  MetricProducer:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/metric-producer/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          DOMAIN_EVENT_BUS_NAME: !Ref DomainEventBus
+
+  RecordRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventBusName: !Ref DomainEventBus
+      EventPattern:
+        detail-type:
+          - record.insert
+          - record.update
+          - record.delete
+      Targets:
+        - Arn: !GetAtt DomainConsumer.Arn
+          Id: RecordTarget
+
+  AccountRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventBusName: !Ref DomainEventBus
+      EventPattern:
+        detail-type:
+          - account.opened
+          - account.closed
+      Targets:
+        - Arn: !GetAtt DomainConsumer.Arn
+          Id: AccountTarget
+
+  ReportRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventBusName: !Ref DomainEventBus
+      EventPattern:
+        detail-type:
+          - report.daily
+          - report.weekly
+      Targets:
+        - Arn: !GetAtt DomainConsumer.Arn
+          Id: ReportTarget
+
+  MetricRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventBusName: !Ref DomainEventBus
+      EventPattern:
+        detail-type:
+          - metric.m01
+      Targets:
+        - Arn: !GetAtt DomainConsumer.Arn
+          Id: MetricTarget
+
+  DomainConsumer:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/domain-consumer/
+      Handler: index.handler
+      Runtime: nodejs20.x

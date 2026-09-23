@@ -572,7 +572,7 @@ describe("extractPythonProject", () => {
         "",
         'app.include_router(items_router, prefix="/api")',
         "app.include_router(admin_router, prefix=admin_prefix())",
-        "app.include_router(reports_router, prefix=admin_prefix().upper())",
+        "app.include_router(reports_router, prefix=admin_prefix().swapcase())",
         "",
       ].join("\n"),
     );

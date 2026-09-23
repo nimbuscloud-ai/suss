@@ -1013,7 +1013,7 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
       'SECTION = "summary"',
       "",
       "",
-      "@app.get(SECTION.upper())",
+      "@app.get(SECTION.swapcase())",
       "def report():",
       "    pass",
       "",

@@ -207,12 +207,12 @@ export function invocationContextFor(
     resolveWrittenValue,
     ...(resolution === undefined ? {} : { resolution }),
     get ops(): CallOps {
-      ops ??= callOpsFor(
-        call,
-        resolveWrittenValue,
+      ops ??= callOpsFor(call, {
+        resolve: resolveWrittenValue,
+        resolution,
         originatesFrom,
         anchorCallsOf,
-      );
+      });
       return ops;
     },
   };
@@ -611,12 +611,12 @@ export function accessContextFor(
   return {
     ...given,
     get ops(): CallOps {
-      ops ??= callOpsFor(
-        node,
-        resolveWrittenValue,
+      ops ??= callOpsFor(node, {
+        resolve: resolveWrittenValue,
+        resolution,
         originatesFrom,
         anchorCallsOf,
-      );
+      });
       return ops;
     },
   };

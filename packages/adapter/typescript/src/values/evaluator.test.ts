@@ -4,12 +4,13 @@
 import { SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import { createTestProject } from "@suss/test-project";
+import { createStrictTestProject, createTestProject } from "@suss/test-project";
 import {
   constantOf,
   force,
   hole,
   literalOf,
+  literalsOf,
   piecesOf,
   type Value,
 } from "@suss/values";
@@ -20,10 +21,14 @@ import { evaluatedValue } from "./evaluator.js";
 interface Fixture {
   readonly files?: Record<string, string>;
   readonly store?: boolean;
+  /** Whether the project checks with strict null checks on. */
+  readonly strict?: boolean;
 }
 
 function subjectOf(source: string, fixture: Fixture = {}): Value {
-  const project = createTestProject();
+  const project = fixture.strict
+    ? createStrictTestProject()
+    : createTestProject();
   for (const [path, text] of Object.entries(fixture.files ?? {})) {
     project.createSourceFile(path, text);
   }
@@ -76,6 +81,43 @@ describe("literals and names", () => {
       { kind: "hole", name: "stage", range: "one" },
       { kind: "text", options: ["/x"] },
     ]);
+  });
+});
+
+describe("a read whose declared type is a few strings", () => {
+  it("reads a string literal union, lower-cased", () => {
+    const value = subjectOf(
+      'declare const change: { op: "INSERT" | "DELETE" }; export const subject = `record.${change.op.toLowerCase()}`;',
+    );
+    expect(literalsOf(value, 16)).toEqual(["record.delete", "record.insert"]);
+  });
+
+  it("reads a string enum declared in another file, upper-cased", () => {
+    const value = subjectOf(
+      'import { Kind } from "./kinds"; declare const event: { kind: Kind }; export const subject = event.kind.toUpperCase();',
+      {
+        files: {
+          "/kinds.ts": 'export enum Kind { A = "placed", B = "shipped" }',
+        },
+      },
+    );
+    expect(literalsOf(value, 16)).toEqual(["PLACED", "SHIPPED"]);
+  });
+
+  it("names the hole after the read when the union is wider than a set", () => {
+    const members = Array.from({ length: 17 }, (_, i) => `"m${i}"`).join("|");
+    const value = subjectOf(
+      `declare const event: { metric: ${members} }; export const subject = event.metric;`,
+    );
+    expect(value).toEqual(hole("metric"));
+  });
+
+  it("gives up on a union with a member that is not a string", () => {
+    const value = subjectOf(
+      'declare const event: { op?: "a" | "b" }; export const subject = event.op;',
+      { strict: true },
+    );
+    expect(value).toEqual(hole("op"));
   });
 });
 
