@@ -1,8 +1,8 @@
-// http.ts: Convert a normalized HttpApiConfig (API Gateway v2) into
-// BehavioralSummary[]. The mechanics are mostly the same as REST: the
-// same platform contracts produce the same status codes. Differences:
-// authorizer set is restricted, throttling lives at API/stage level
-// only, and CORS is API-wide rather than per-method.
+/**
+ * Turns an HttpApiConfig (API Gateway v2) into one summary per route. The
+ * platform adds the same status codes as for a REST API, except that an
+ * HTTP API has no API keys and no request validation.
+ */
 
 import { restBinding, withHttpMetadata } from "@suss/behavioral-ir";
 
@@ -167,10 +167,6 @@ function buildRouteSummary(
             statusCode,
           })),
         },
-        // Additive pointer to the code that implements this route (SAM
-        // Lambda proxy Handler), so a checker can correlate the declared
-        // route with the extracted handler summary carrying the same
-        // REST binding.
         ...(route.implementingHandler !== undefined
           ? { implementingHandler: route.implementingHandler }
           : {}),
