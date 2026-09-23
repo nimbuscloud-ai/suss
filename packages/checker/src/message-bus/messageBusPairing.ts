@@ -2,15 +2,15 @@
  * Pair the message sends a recognizer found in code against the queue
  * and topic providers a deployment template declares.
  *
- * The two sides rarely spell a channel the same way. Code refers to the
+ * The two sides rarely write a channel the same way. Code refers to the
  * queue through an env var and the template refers to it by CFN resource,
- * so pairing collapses that chain first and only then compares
- * channels. Comparison is on the subject, with the bus required to
- * agree only when both sides give one; channelPairing.ts says why.
+ * so pairing resolves the env var first and then compares channels.
+ * Channels pair on the subject, and the bus has to agree only when both
+ * sides give one. The message-bus README explains why.
  *
  * Message bodies are compared too: what a producer writes at the send
- * against what the consumer reads off the message. Either side can be
- * opaque, and then nothing is compared, so silence is not agreement.
+ * against what the consumer reads off the message. When either side is
+ * opaque nothing is compared, so no finding does not mean agreement.
  */
 
 import {
@@ -154,9 +154,8 @@ export function checkMessageBus(
     if (ch === null) {
       continue;
     }
-    // messageBusProducerOrphan: a channel whose every subscription is
-    // disabled has no one behind it, so it does not satisfy "someone
-    // consumes this channel" and a producer sending to it is an orphan.
+    // A channel whose every subscription is disabled has no receiver, so
+    // a producer sending to it is still an orphan.
     if (declaredOnlyDisabled(ch, disabledChannels, consumerChannels)) {
       continue;
     }
@@ -230,9 +229,8 @@ export function checkMessageBus(
     if (semantics?.name !== "message-bus" || semantics.channel === null) {
       continue;
     }
-    // messageBusUnused: a channel routed only by disabled subscriptions
-    // is switched off on purpose, not left over, and the disabled
-    // finding on its consumer already says why nothing moves here.
+    // A channel routed only by disabled subscriptions was switched off on
+    // purpose, and the disabled finding on its consumer explains it.
     if (
       declaredOnlyDisabled(
         semantics.channel,
@@ -262,9 +260,8 @@ export function checkMessageBus(
     );
   }
 
-  // boundaryFieldUnknown: disabled subscriptions are not in `consumers`,
-  // so their handlers' bodies are not compared. No message crosses a
-  // disabled rule, so there is no drift to report on that path.
+  // Disabled subscriptions are not in `consumers`, so their handlers'
+  // bodies are not compared. No message crosses a disabled rule.
   findings.push(
     ...checkBodyShapes({
       cfnConsumers: consumers,
@@ -354,7 +351,7 @@ function redelivers(
   );
 }
 
-/** One call in this unit that a second delivery would make again; the label already spells the method. */
+/** A call a second delivery would make again. `label` includes the method. */
 interface RepeatedCall {
   callee: string | undefined;
   label: string;
@@ -365,9 +362,9 @@ interface RepeatedCall {
  *
  * The TypeScript packs record one as a service-call effect inside the
  * body. The Python and Ruby client packs make the calling function a
- * unit of its own, bound to the route it calls, so both shapes are
- * read here and a consumer in any of the three languages reports the
- * same thing.
+ * unit of its own, bound to the route it calls. Both forms are read
+ * here, so a consumer in any of the three languages gets the same
+ * finding.
  */
 function repeatedCalls(summary: BehavioralSummary): RepeatedCall[] {
   const own = summary.identity.boundaryBinding;
@@ -446,10 +443,6 @@ function recordCompared(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Walkers
-// ---------------------------------------------------------------------------
-
 function channelOf(s: BehavioralSummary): string | null {
   const sem = s.identity.boundaryBinding?.semantics;
   return sem?.name === "message-bus" ? sem.channel : null;
@@ -479,11 +472,11 @@ function consumedQueueOf(s: BehavioralSummary): string | null {
 }
 
 /**
- * Providers name their channels after template resources, so pairing
- * only succeeds on a resolved channel. Falling back to the env-var name
- * surfaces the producer as an orphan, which is the right thing to
- * report when resolution failed. Null means the code only works the
- * queue out at runtime, so there is nothing to pair on either way.
+ * Providers use template resource names for their channels, so only a
+ * resolved channel pairs. When resolution failed the env var name is
+ * used, and the producer is reported as an orphan, which is correct.
+ * Null means the code picks the queue at run time, so there is nothing
+ * to pair on.
  */
 function effectiveChannel(p: ProducerRecord): string | null {
   if (p.resolvedChannel !== null) {
@@ -525,9 +518,8 @@ function resolveProducerChannels(
       semantics.messageBus,
       semantics.channel,
     );
-    // A recognizer that keeps the reference spells the bus `{X}`, and
-    // an older one spells it `X`. One lookup takes both, so the two
-    // recognizer generations resolve against the same template.
+    // A recognizer that keeps the reference writes the bus as `{X}`, and
+    // older summaries write `X`. The lookup accepts both.
     const variable = referenceFromName(busToken)?.root ?? busToken;
     const logicalId = pointsAt(producer.summary, variable);
     if (logicalId !== null) {
@@ -570,16 +562,12 @@ function splitBusChannel(
   return { busToken: bus, detailSuffix: subject };
 }
 
-/** Null on every consumer but EventBridge, which is the only one marked. */
+/** How the reader resolved the consumer's routing pattern, or null when it recorded nothing. */
 function readPatternResolution(
   summary: BehavioralSummary,
 ): "exact" | "schedule" | "unresolvable" | null {
   return readMessageBusMetadata(summary)?.patternResolution ?? null;
 }
-
-// ---------------------------------------------------------------------------
-// Finding builders
-// ---------------------------------------------------------------------------
 
 function makeOrphanProducerFinding(
   producer: ProducerRecord,
@@ -623,18 +611,13 @@ function makeOrphanConsumerFinding(
 }
 
 /**
- * A subscription deployed switched off, `State: DISABLED` (#460). It
- * invokes nothing until someone turns it on, so the pass treats it as
- * absent wherever it would count as a consumer, and this one info
- * finding says why. Per finding kind:
- * - messageBusConsumerOrphan: not emitted for it; "nothing sends here"
- *   and "this is switched off" are different statements.
- * - messageBusProducerOrphan: it does not satisfy "someone consumes
- *   this channel", so a producer with only disabled subscribers is an
- *   orphan, and that finding says the subscription is disabled.
- * - messageBusUnused: skipped; switched off on purpose is not left over.
- * - boundaryFieldUnknown: its handler's bodies are not compared; no
- *   message crosses a disabled rule.
+ * A subscription deployed with `State: DISABLED` (#460) invokes nothing
+ * until someone turns it on. The pass treats it as absent wherever it
+ * would count as a consumer, and this info finding explains why. It is
+ * never reported as a consumer orphan. A producer whose only
+ * subscriptions are disabled is an orphan, and its finding says so. A
+ * queue it routes is not reported unused, and its handler's bodies are
+ * not compared. The message-bus README has the details.
  */
 function makeDisabledConsumerFinding(consumer: BehavioralSummary): Finding {
   const binding = consumer.identity.boundaryBinding as BoundaryBinding;
@@ -734,10 +717,6 @@ function makeSide(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Body-shape pairing
-// ---------------------------------------------------------------------------
-
 interface ReceiveRecord {
   summary: BehavioralSummary;
   transitionId?: string;
@@ -746,9 +725,8 @@ interface ReceiveRecord {
 
 /**
  * An opaque body on either side is skipped without a finding, so a
- * missing finding here does not mean the two sides agree. The rule
- * itself, and the rest of what it declines to compare, is in
- * `receive/inputContract.ts`.
+ * missing finding here does not mean the two sides agree. The rule,
+ * and the other cases it skips, are in `compareSupplied`.
  */
 function checkBodyShapes(opts: {
   cfnConsumers: BehavioralSummary[];
@@ -864,7 +842,7 @@ function destructuredReceives(summary: BehavioralSummary): ReceiveRecord[] {
  * The message-bus binding is what makes this unit the receiver rather
  * than a helper deployed beside it, whose inputs come from its caller.
  * The summary cannot tell the envelope from a message a wrapper parsed
- * out of it, so the envelope's own field names decide.
+ * out of it, so the envelope's own field names settle which it is.
  */
 function parameterReceive(summary: BehavioralSummary): ReceiveRecord | null {
   const binding = summary.identity.boundaryBinding;

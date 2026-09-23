@@ -31,20 +31,15 @@ export function checkContractConsistency(
 
   const findings: Finding[] = [];
   const boundary = makeBoundary(provider, consumer);
-  // When the contract is "derived" from the same source as the
-  // transitions (e.g. an OpenAPI stub's contract extracted from the
-  // same operation that produced its transitions), self-comparison is
-  // tautological: any mismatch would indicate a bug in the producing
-  // pack itself, not a contract violation. Skip the provider-vs-its-own-
-  // contract checks; consumer-vs-contract checks still run because the
-  // consumer is always an independent observation.
+  // A derived contract comes from the same source as the transitions, so
+  // a mismatch between them would be a pack bug. The provider checks are
+  // skipped for it, and the consumer checks still run.
   const skipSelfComparison = contract.provenance === "derived";
 
   if (!skipSelfComparison) {
     for (const gap of provider.gaps) {
-      // A gap saying part of the handler went unread means the pack has
-      // no shape for what it returns, which is a limit in what suss
-      // could read rather than a fault in the handler.
+      // An unread outcome is a part of the handler suss could not read,
+      // so it says nothing about the handler and gets low confidence.
       if (gap.type === "unreadOutcome") {
         findings.push({
           kind: "lowConfidence",
@@ -100,7 +95,8 @@ export function checkContractConsistency(
   }
 
   // A declared range promises one response with some status in it, so
-  // it is handled when any member is, and unhandled as one thing.
+  // handling any member handles the range, and an unhandled range gets
+  // one finding.
   for (const range of contract.responseRanges) {
     const someMemberHandled = (): boolean => {
       for (let status = range.min; status <= range.max; status++) {
@@ -136,9 +132,9 @@ export function checkContractConsistency(
       provider: makeSide(provider),
       consumer: makeSide(consumer),
       description: `Consumer handles status ${expected} but contract does not declare it`,
-      // The branch never runs if the contract is right, and nothing
-      // misreads at runtime either way; dead code is a judgement, the
-      // same call deadConsumerBranch makes (#471).
+      // If the contract is right the branch never runs, and nothing is
+      // misread either way, so this is a warning like deadConsumerBranch
+      // (#471).
       severity: "warning",
     });
   }
@@ -155,7 +151,7 @@ export function checkContractConsistency(
 }
 
 /**
- * Each body the provider returns on a declared status, against the
+ * Compare each body the provider returns on a declared status with the
  * body the contract declares for it. `other` is the summary on the
  * finding's consumer side: the caller in a pair, or the document the
  * contract came from when no caller is in the run.

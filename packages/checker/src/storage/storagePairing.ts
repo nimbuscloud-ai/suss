@@ -1,38 +1,17 @@
-// storagePairing.ts: pair storage provider summaries (Prisma model
-// declarations, Drizzle pgTable() declarations, raw SQL DDL) against
-// `interaction(class: "storage-access")` effects on code summaries.
-//
-// Four field-existence findings ship in v0, all on the generic
-// boundaryField* enum so cross-domain tooling sees one vocabulary:
-//   boundaryFieldUnknown  aspect=read   error    code reads X, schema doesn't declare X
-//   boundaryFieldUnknown  aspect=write  error    code writes X, schema doesn't declare X
-//   boundaryFieldUnused   (no aspect)   warning  schema declares X, no query asks for or writes X
-//   boundaryFieldUnused   aspect=read   warning  schema declares X, code writes X, no query asks for it
-//
-// Future-reserved value-constraint findings (storage type / nullable
-// / length / enum / selector-index) will use boundaryShapeMismatch
-// and boundarySelectorMismatch with appropriate aspects when emitters
-// land.
-//
-// Pairing key: (storageSystem, scope, container, accessPath), pulled
-// from the effect's `binding.semantics` (StorageSemantics), same as
-// the provider's. A declared store with no storageSystem on it meets
-// an access on any engine; the README says why. Multi-attribution is
-// intentional, a shared util file's storage access pairs against every
-// provider whose key matches, just like runtime-config did for env vars.
-//
-// An access written under a relation, the select inside a Prisma
-// `include` or the `connectOrCreate` inside its `data`, arrives keyed
-// to the container the query addressed and carrying `relationPath`.
-// `withRelationAccessesPlaced` walks that path over the contracts and
-// moves the access to the container it arrives at, before any of it is
-// claimed.
-//
-// Two containers can be declared under names that both cover what one
-// access reached, since a name built at deploy time has a hole in it.
-// The access pairs with the more specific of the two, and with neither
-// when they are equally specific: see `ambiguousProvider` below, and
-// the README beside this file.
+/**
+ * Pairs declared stores (Prisma models, Drizzle tables, SQL DDL,
+ * template resources) with the `storage-access` effects in code, keyed
+ * by (storageSystem, scope, container, accessPath). It reports a field
+ * the code reads or writes that the contract does not declare, a
+ * declared field nothing reads or writes, and a selector the container
+ * does not key on.
+ *
+ * Before any access is claimed, one written under a relation, such as
+ * the select inside a Prisma `include`, is moved to the container the
+ * relation reaches. When two containers' names both cover what an
+ * access reached, the more specific one takes it. The storage README
+ * explains each rule.
+ */
 
 import {
   dispatchByType,
@@ -74,11 +53,7 @@ import type { ComparedPair } from "../pairing/comparedPair.js";
 import type { NameCandidate, NameChoice } from "../pairing/mostSpecificName.js";
 
 type StorageAccessRecord = InteractionRecord<"storage-access"> & {
-  /**
-   * Cached storage semantics from the effect's binding, which has the
-   * pairing key on it. Pulled out so the inner-loop in-scope filter
-   * doesn't repeat the type narrow.
-   */
+  /** The effect's storage semantics, narrowed once for the claim loop. */
   semantics: StorageSemantics;
 };
 
@@ -125,9 +100,6 @@ export function checkStorage(
       });
     }
 
-    // Track field usage across all in-scope accesses for the
-    // unused / write-only checks below. Two flags per declared
-    // field: was it read by any access; was it written.
     const readNames = new Set<string>();
     const writtenNames = new Set<string>();
     let anyDefaultShapeRead = false;
@@ -138,10 +110,9 @@ export function checkStorage(
       const kind = access.effect.interaction.kind;
       const wildcards = fields.includes(ALL_FIELDS);
 
-      // A read that states no fields asks for the whole item. A way in
-      // that copies part of one cannot serve that, and the store sends
-      // what it has and reports no error, so the caller gets an item
-      // with fields missing and nothing says so.
+      // A read that states no fields asks for the whole item. An access
+      // path that copies only some fields returns what it has without an
+      // error, so the caller silently gets an item with fields missing.
       if (
         wildcards &&
         kind === "read" &&
@@ -151,9 +122,8 @@ export function checkStorage(
         findings.push(makeWholeItemFinding(provider, binding, access));
       }
 
-      // Field-existence checks per access. Wildcards skip per-field
-      // matching (the access reads "everything the schema declares,"
-      // so by definition no field can be unknown).
+      // A wildcard covers whatever the schema declares, so none of its
+      // fields can be unknown.
       if (!wildcards && fieldSetIsComplete) {
         for (const field of fields) {
           if (declaredFields.has(field)) {
@@ -166,14 +136,13 @@ export function checkStorage(
       }
 
       // A query that picks items by something the container does not key
-      // on fails at the store, so it is worth saying before it runs.
+      // on fails at the store, so it is reported before it runs.
       for (const field of selectorBeyondKey(contract, access)) {
         findings.push(
           makeSelectorMismatchFinding(provider, binding, access, field),
         );
       }
 
-      // Aggregate usage for the unused / write-only checks.
       if (kind === "read") {
         if (wildcards) {
           anyDefaultShapeRead = true;
@@ -196,19 +165,13 @@ export function checkStorage(
       }
     }
 
-    // Unused / write-only checks per declared field. Skip the unused
-    // check entirely when ANY caller used a default-shape read here: we
-    // can't tell whether that caller consumes the unused-looking field.
-    //
-    // A store no code in this run reaches says nothing about any of
-    // its fields. Reading a template on its own would otherwise give
-    // one warning per field every table declares, and none of them
-    // would mean what the words say.
+    // A wildcard read may use any field, so the field checks are skipped.
+    // So is a store no code in this run reaches, since a template read
+    // alone would warn about every field of every table.
     if (!anyDefaultShapeRead && inScope.length > 0) {
       for (const field of contract.fields ?? []) {
-        // A field the store serves without keeping it has nobody to
-        // write it, so both checks below would be about the wrong
-        // thing.
+        // The store computes a derived field, so nobody writes it and
+        // neither check applies.
         if (field.derived === true) {
           continue;
         }
@@ -322,7 +285,7 @@ function declaredContainers(
   for (const summary of summaries) {
     const binding = summary.identity.boundaryBinding;
     if (binding === null) {
-      // Defensive: the lookup above guarantees one. Skip rather than crash.
+      // providersOf returns only summaries with a binding.
       continue;
     }
     const contract = readStorageContract(summary);
@@ -343,8 +306,8 @@ function declaredContainers(
 /**
  * Which accesses each container is checked against. Every name an access
  * reaches is offered to every container declared under a name that
- * covers it, and the most specific of those takes it. An even contest
- * takes nothing and says so.
+ * covers it, and the most specific of those takes it. When two are
+ * equally specific, neither takes it and a finding says so.
  */
 function claimAccesses(
   containers: DeclaredContainer[],
@@ -373,8 +336,8 @@ function claimAccesses(
 }
 
 /**
- * The containers that could claim what one access reached, with the
- * even contest reported rather than settled.
+ * The containers that could claim what one access reached. A tie comes
+ * back for the caller to report.
  */
 function claimantsOf(
   containers: DeclaredContainer[],
@@ -394,7 +357,7 @@ function claimantsOf(
 /**
  * The candidates left once one of them states the engine the access
  * uses. A store with no engine on it covers an access on any of them,
- * so it gives way to one declared on the engine the access speaks, the
+ * so it gives way to one declared on the engine the access uses, the
  * same way a name stating more of itself wins over one with a hole.
  */
 function statedEngineFirst(
@@ -671,9 +634,9 @@ function movedTo(
 
 /**
  * Every storage access in a run, with the names it reaches and the
- * providers that claim it, attributed exactly as `checkStorage`
- * attributes findings. `suss ask` answers a question asked in a
- * deployed name from this, so the two never disagree on a pair.
+ * providers that claim it, attributed the same way `checkStorage`
+ * attributes findings. `suss ask` uses this for a question about a
+ * deployed name, so the two never disagree on a pair.
  */
 export interface GroundedStorageAccess {
   /** The unit the access is written in. */
@@ -818,8 +781,8 @@ function nameCovering(
  * Whether a declared store and an access are about the same engine. A
  * store whose deploy configuration picks its engine from a variable
  * says which instance it is and not which engine, so it meets an access
- * on any of them. An access always knows its own: a connection pool is
- * a pool for one product.
+ * on any of them. An access always records its own engine, since a
+ * connection pool is for one product.
  */
 function enginesAgree(
   declared: StorageSemantics,
@@ -828,7 +791,7 @@ function enginesAgree(
   return declared.storageSystem === null || enginesMatch(declared, access);
 }
 
-/** Whether both sides name the same engine, with neither leaving it out. */
+/** Whether both sides give the same engine. */
 function enginesMatch(
   declared: StorageSemantics,
   access: StorageSemantics,
@@ -895,15 +858,11 @@ function readStorageContract(
   return readStorageContractMetadata(summary) ?? {};
 }
 
-// ---------------------------------------------------------------------------
-// Finding builders
-// ---------------------------------------------------------------------------
-
 /**
- * How a report spells this store: `aws.dynamodb:editions#by-publication`.
- * The formula is the protocol's own `displayLabel` in `@suss/ir-core`,
- * so a reader who types the key back and this pass's index agree.
- * Returns null for semantics from any other protocol.
+ * How a report writes this store: `aws.dynamodb:editions#by-publication`.
+ * It is the storage protocol's `displayLabel` in `@suss/ir-core`, so a
+ * key a reader types back matches this pass's index. Returns null for
+ * semantics from any other protocol.
  */
 export function storageBoundaryKey(semantics: Semantics): string | null {
   return semantics.name === "storage" ? keyOf(semantics) : null;
@@ -953,7 +912,7 @@ function makeFieldUnknownFinding(
   };
 }
 
-/** A read of a whole item through a way in that copies part of one. */
+/** A read of a whole item through an access path that copies only some fields. */
 function makeWholeItemFinding(
   provider: BehavioralSummary,
   binding: BoundaryBinding,

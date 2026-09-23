@@ -20,7 +20,7 @@ export function extractResponseStatus(t: Transition): number | null {
   return null;
 }
 
-/** A response declared by class ("4XX"): some status in the range, unsaid which. */
+/** A response declared by class, such as "4XX", that arrives with some status in the range. */
 export interface DeclaredStatusRange {
   min: number;
   max: number;
@@ -69,12 +69,10 @@ export function isSuccessStatus(status: number): boolean {
 }
 
 /**
- * Whether a summary says nothing about behaviour because nothing could
- * be read, rather than because there was nothing to read. A boundary
- * declared with a handler nobody could follow comes through as a
- * summary with no transitions plus a gap saying why, and every check
- * that reasons from what a side does has to stop short of concluding
- * that it does nothing.
+ * Whether a summary is empty because suss could not read the handler.
+ * Such a summary has no transitions and an `unreadOutcome` gap, and a
+ * check that reasons from what a side does must not conclude that it
+ * does nothing.
  */
 export function nothingWasRead(summary: BehavioralSummary): boolean {
   return (
@@ -92,11 +90,9 @@ export function hasOpaqueStatus(t: Transition): boolean {
 }
 
 /**
- * Status property names recognised by `consumerExpectedStatuses` and
- * related helpers. Built once per check via `statusAccessorsFor(summary)`
- * (see declared-contract.ts) so the names track the consumer's pack ,
- * `["status"]` for fetch/axios today, but extensible without code changes
- * if a pack declares custom names.
+ * The property names a consumer reads a status from, as returned by
+ * `statusAccessorsFor`. The consumer's pack records them, so a client
+ * with its own names needs no change here.
  */
 export type StatusAccessors = ReadonlySet<string>;
 
@@ -164,20 +160,19 @@ function asStatusLiteral(
 }
 
 /**
- * Whether `v` is a `ValueRef` that reads a status property, meaning its
- * outermost accessor is one of the configured names.
+ * Whether `v` reads a status property, meaning its outermost accessor
+ * is one of the given names.
  *
- * Exported because provider-coverage filters out status-eq predicates
- * when computing sub-case discriminators; sharing this with the rest of
- * the response-match plumbing keeps the recognition rules in one place.
+ * Provider coverage uses this too, to leave status comparisons out of
+ * its sub-case discriminators, so both agree on what a status read is.
  */
 export function refLooksLikeStatus(
   v: ValueRef,
   accessors: StatusAccessors,
 ): boolean {
   if (v.type === "derived") {
-    // Destructured: `const { status } = await call()`; later `status === 404`
-    // is parsed as a derived value with a destructured derivation.
+    // `const { status } = await call()` makes a later `status === 404`
+    // a destructured derivation.
     if (v.derivation.type === "destructured") {
       return accessors.has(v.derivation.field);
     }

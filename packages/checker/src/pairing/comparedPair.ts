@@ -1,18 +1,18 @@
 /**
- * What a pass compared, in the one spelling every pass uses.
+ * One pair of summaries that a pass compared.
  *
- * Each protocol has its own pass, and a report that counted only the
- * boundaries the method-and-path pairing matched said nothing was
- * compared on a run whose whole point was the stores or the queues. So
- * every pass records what it looked at here, and the caller both counts
- * these and subtracts them from the unpaired lists.
+ * Each protocol has its own pass. If the report counted only the pairs
+ * that method-and-path pairing matched, a run over stores or queues
+ * would say nothing was compared. So every pass records its pairs in
+ * this form, and the caller counts them and removes them from the
+ * unpaired lists.
  *
  * `provider` and `consumer` are summary ids. Two files can each export
- * `update`, so a name on its own neither tells the two apart nor gives
- * the reader somewhere to go.
+ * `update`, and a bare name would not tell them apart or give a reader
+ * a file to open.
  */
 export interface ComparedPair {
-  /** The boundary the two sides met on, spelled by the owning pass. */
+  /** The boundary key, written the way the pass that paired them writes it. */
   key: string;
   provider: string;
   consumer: string;

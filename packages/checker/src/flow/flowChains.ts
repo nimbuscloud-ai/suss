@@ -1,18 +1,17 @@
-// flowChains.ts: the chain behind a reachability answer, meaning which
-// hops the request took, what admitted each one, and what happened at
-// the end.
-//
-// The fixpoint in `reachability.ts` settles which nodes a request can
-// get to. A person asking who serves a URL wants the route as well, so
-// this pass walks the same edges the fixpoint walked and records each
-// step together with the match record that admitted it. It never
-// widens the answer: a step is only taken into a node the fixpoint
-// already put in reach, so the chains and the sets cannot drift apart.
-//
-// Certainty travels with each hop. A hop whose match took the request
-// outright is certain. A hop whose match could take it once something
-// undeclared is decided at runtime is possible. A chain is only as
-// certain as its least certain hop and its end.
+/**
+ * The route behind a reachability result: which hops the request took,
+ * which match record admitted each one, and what happened at the end.
+ *
+ * The fixpoint in `analyzeFlow` settles which nodes a request can reach.
+ * A person asking who serves a URL wants the route too, so this walks
+ * the same edges and records each step with its match record. It only
+ * steps into nodes the fixpoint already put in reach, so the chains and
+ * the reachable sets cannot disagree.
+ *
+ * A hop whose match took the request outright is certain, and one that
+ * depends on something decided at run time is possible. A chain is as
+ * certain as its least certain hop and its end.
+ */
 
 import { scopedFlowNode } from "./routingFacts.js";
 
@@ -124,8 +123,8 @@ function adjacencyOf(inputs: FlowInputs): Map<string, Adjacency[]> {
     add(target, { to: resource, edge: "fronts" });
   }
 
-  // A balancer hands the request to its listeners, so the walk takes
-  // the declaration the other way round.
+  // A listener declares the balancer it belongs to, and requests go from
+  // the balancer to the listener, so the walk follows the edge backwards.
   for (const [listener, balancer] of inputs.edges.belongsTo) {
     add(balancer, { to: listener, edge: "belongsTo" });
   }

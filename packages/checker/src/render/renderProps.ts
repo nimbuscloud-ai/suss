@@ -1,16 +1,14 @@
 /**
- * The props check across render edges.
+ * Checks the props a parent passes to a component it renders.
  *
- * A render-tree element with a `target` says which component a parent
- * renders and what it passes (the attrs); the child's `inputReads`
- * say what it uses. TypeScript already rejects a missing required
- * prop and an unknown extra one at compile time, so those findings
- * would be noise. What it does not say is that a prop arrives and is
- * never read, which is the one finding this pass emits. The pass
- * skips an edge whenever the read set could be incomplete: the child
- * recorded nothing under `inputReads`, or it uses a props object
- * whole (forwarding). React's own plumbing props (`key`, `ref`,
- * `children`) are never reported.
+ * A render-tree element with a `target` says which component the parent
+ * renders and which attrs it passes, and the child's `inputReads` say
+ * which props it uses. TypeScript already rejects a missing required
+ * prop or an unknown extra one, so this pass reports only a prop that
+ * arrives and is never read. It skips an edge whenever the read set
+ * could be incomplete: the child has no `inputReads` recorded, or it
+ * forwards its props object whole. React's `key`, `ref` and `children`
+ * are never reported.
  */
 
 import {
@@ -73,10 +71,9 @@ function edgesOf(summary: BehavioralSummary): RenderEdge[] {
 }
 
 /**
- * The prop names a child observably uses. A prop is one segment deep,
- * so the outermost segment of each read path is the whole answer. Null
- * when the read set could be incomplete, and the caller reports
- * nothing rather than judging a partial list.
+ * The prop names a child reads. A prop name is the first segment of a
+ * read path. Null when the read set could be incomplete, so the caller
+ * reports nothing instead of judging a partial list.
  */
 function propsUsedBy(child: BehavioralSummary): Set<string> | null {
   const result = readSetOf(
