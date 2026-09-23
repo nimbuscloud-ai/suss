@@ -314,6 +314,27 @@ describe("env-var recognizer — happy path", () => {
     ]);
   });
 
+  it("leaves a read undefaulted when a missing value falls through to a throw", () => {
+    const file = makeProject(`
+      export const analyticsUrl = (): string => {
+        const url = process.env.ANALYTICS_URL;
+        if (url) return url;
+        throw new Error("ANALYTICS_URL environment variable is not set.");
+      };
+      export function requireRegion(): void {
+        if (!process.env.REGION) {
+          throw new Error("REGION is required");
+        }
+      }
+    `);
+    expect(findProcessEnvReads(file).map((r) => [r.name, r.defaulted])).toEqual(
+      [
+        ["ANALYTICS_URL", false],
+        ["REGION", false],
+      ],
+    );
+  });
+
   it("leaves a read undefaulted when its local is also used outside the test", () => {
     const file = makeProject(`
       declare function use(value: string | undefined): void;

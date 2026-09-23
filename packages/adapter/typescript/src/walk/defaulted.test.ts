@@ -206,6 +206,64 @@ describe("isDefaultedAt with a presence test", () => {
     expect(defaulted(source)).toBe(false);
   });
 
+  it("says no when the present branch leaves and the code after the test throws", () => {
+    const arrow = `
+      const url = (): string => {
+        const value = env.X;
+        if (value) return value;
+        throw new Error("X is not set");
+      };`;
+    expect(defaulted(arrow)).toBe(false);
+    const direct = `
+      function f() {
+        if (env.X) {
+          return env.X;
+        }
+        throw new Error("X is not set");
+      }`;
+    expect(defaultedReads(direct)).toEqual([false, false]);
+  });
+
+  it("says no when the branch a missing value takes throws, however the test is written", () => {
+    expect(
+      defaulted('function f() { if (!env.X) { throw new Error("X"); } }'),
+    ).toBe(false);
+    expect(
+      defaulted(
+        'function f() { if (env.X === undefined) throw new Error("X"); }',
+      ),
+    ).toBe(false);
+    expect(
+      defaultedReads(
+        'function f() { if (env.X) { use(env.X); } else { throw new Error("X"); } }',
+      ),
+    ).toEqual([false, false]);
+    expect(
+      defaulted(
+        'function f(a: boolean) { if (env.X) { use(env.X); } else if (a) { return; } else { throw new Error("X"); } }',
+      ),
+    ).toBe(false);
+  });
+
+  it("says yes when the code after the test leaves without throwing", () => {
+    const source = `
+      function f(): string {
+        if (env.X) {
+          return env.X;
+        }
+        if (other()) {
+          throw new Error("unrelated");
+        }
+        return "d";
+      }`;
+    expect(defaultedReads(source)).toEqual([true, true]);
+    expect(
+      defaulted(
+        "function f() { const v = { ...(env.X ? { x: env.X } : {}) }; use(v); }",
+      ),
+    ).toBe(true);
+  });
+
   it("says no to a strict comparison with null, which lets undefined through", () => {
     expect(
       defaultedReads("const a = env.X !== null ? env.X : other();"),

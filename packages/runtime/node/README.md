@@ -56,7 +56,9 @@ lookUpVersionElsewhere();
 The test can be on the read or on a local it initializes inside a
 function, and an `if` that returns early when the value is missing
 counts for everything after it. A local used anywhere a test has not
-passed, or a missing branch that throws, leaves the read undefaulted.
+passed leaves the read undefaulted. So does a missing value that ends
+in a `throw`, whether in the branch it takes or after the test:
+`if (url) return url; throw new Error(...)` still requires the variable.
 
 ## Reads through a project's own helper
 

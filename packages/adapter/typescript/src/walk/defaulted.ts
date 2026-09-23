@@ -3,8 +3,9 @@
  *
  * A read is defaulted when the program still works where the value is
  * missing. Either a `??` or `||` supplies a fallback value, or the
- * program tests the value for presence and only uses it where the test
- * passed. The test can be on the read itself or on a local the read
+ * program tests the value for presence, only uses it where the test
+ * passed, and the path a missing value takes does not end in a throw.
+ * The test can be on the read itself or on a local the read
  * initializes: a truthiness check, a comparison with `undefined` or
  * `null`, or an `in` membership test.
  *
@@ -15,7 +16,7 @@
 
 import { Node, SyntaxKind } from "ts-morph";
 
-import { findEnclosingFunction } from "../discovery/shared.js";
+import { findEnclosingFunction, isFunctionRoot } from "../discovery/shared.js";
 import { symbolBehind } from "../resolve/functionBehind.js";
 import { climbSyntax, peelSyntax } from "./unwrap.js";
 
@@ -92,7 +93,9 @@ function isKeyOfSubject(subject: Subject, key: Node, container: Node): boolean {
 /** Whether a missing value never reaches this use. */
 function isSafeUse(use: Node, subject: Subject): boolean {
   return (
-    hasFallbackOperand(use) || isPresenceTest(use) || isPresentAt(use, subject)
+    hasFallbackOperand(use) ||
+    isPresenceTest(use, subject) ||
+    isPresentAt(use, subject)
   );
 }
 
@@ -129,34 +132,73 @@ function hasFallbackOperand(node: Node): boolean {
  * Whether the value is only tested here and never passed on:
  * `if (env.X)`, `!env.X`, `env.X === undefined`, or a ternary's
  * condition. An `&&` or `||` operand counts when the whole expression
- * is tested the same way or its result is thrown away.
+ * is tested the same way or its result is thrown away. A test that
+ * branches counts only when the path a missing value takes does not
+ * throw, so `if (!env.X) throw ...` leaves the read required.
  */
-function isPresenceTest(node: Node): boolean {
+function isPresenceTest(node: Node, subject: Subject): boolean {
   let child = climbSyntax(node);
+  let tested = false;
   let throughLogical = false;
   let parent = child.getParent();
   while (parent !== undefined) {
-    if (negatedOperand(parent) !== null || Node.isTypeOfExpression(parent)) {
-      return true;
-    }
     if (!Node.isBinaryExpression(parent)) {
-      return (
-        conditionOf(parent) === child ||
-        (throughLogical && Node.isExpressionStatement(parent))
-      );
+      if (negatedOperand(parent) === null && !Node.isTypeOfExpression(parent)) {
+        return isTestedAt(parent, child, subject, { tested, throughLogical });
+      }
+      tested = true;
+    } else {
+      const step = logicalStep(parent, child);
+      if (step === null) {
+        return false;
+      }
+      tested ||= step === "tested";
+      throughLogical ||= step === "logical";
     }
-    const operator = parent.getOperatorToken().getText();
-    if (EQUALITY_OPERATORS.has(operator)) {
-      return missingSideOf(parent) === peelSyntax(child);
-    }
-    if (operator !== "&&" && operator !== "||") {
-      return false;
-    }
-    throughLogical = true;
     child = climbSyntax(parent);
     parent = child.getParent();
   }
   return false;
+}
+
+/**
+ * What a binary expression does with an operand that is the value: a
+ * comparison with missing turns it into a test, `&&` and `||` pass it on,
+ * and anything else uses it.
+ */
+function logicalStep(
+  parent: BinaryExpression,
+  child: Node,
+): "tested" | "logical" | null {
+  const operator = parent.getOperatorToken().getText();
+  if (operator === "&&" || operator === "||") {
+    return "logical";
+  }
+  if (!EQUALITY_OPERATORS.has(operator)) {
+    return null;
+  }
+  const operand = peelSyntax(child);
+  // `typeof x === "string"` is false for a missing value as surely as a
+  // comparison with "undefined" is true for one.
+  return Node.isTypeOfExpression(operand) || missingSideOf(parent) === operand
+    ? "tested"
+    : null;
+}
+
+/** Where a test's value ends up: the condition of a branch, a statement of its own, or a boolean kept for later. */
+function isTestedAt(
+  parent: Node,
+  child: Node,
+  subject: Subject,
+  seen: { tested: boolean; throughLogical: boolean },
+): boolean {
+  if (conditionOf(parent) === child) {
+    return !absentPathThrows(parent, subject);
+  }
+  if (seen.throughLogical && Node.isExpressionStatement(parent)) {
+    return !continuationThrows(parent);
+  }
+  return seen.tested;
 }
 
 /** The test an `if`, a loop or a ternary branches on. */
@@ -184,7 +226,8 @@ function isPresentAt(node: Node, subject: Subject): boolean {
   let parent = child.getParent();
   while (parent !== undefined) {
     if (
-      isBranchWherePresent(parent, child, subject) ||
+      (isBranchWherePresent(parent, child, subject) &&
+        !absentPathThrows(parent, subject)) ||
       followsExitWhenAbsent(parent, child, subject)
     ) {
       return true;
@@ -259,21 +302,108 @@ function followsExitWhenAbsent(
     .some(
       (statement) =>
         Node.isIfStatement(statement) &&
-        alwaysLeaves(statement.getThenStatement()) &&
+        exitOf(statement.getThenStatement()) === "leave" &&
         isPresentWhen(statement.getExpression(), false, subject),
     );
 }
 
-/** A `return`, `continue` or `break`, alone or among a block's own statements. */
-function alwaysLeaves(statement: Node): boolean {
-  if (Node.isBlock(statement)) {
-    return statement.getStatements().some(alwaysLeaves);
+/**
+ * Whether a missing value can end in a throw once it reaches this
+ * branch point. For an `if`, that is any branch a missing value can take
+ * which throws, or falls through to a throw after the `if`. For a
+ * ternary, a loop or `&&`, it is what runs after the whole expression.
+ */
+function absentPathThrows(owner: Node, subject: Subject): boolean {
+  if (!Node.isIfStatement(owner)) {
+    return continuationThrows(owner);
   }
+  const test = owner.getExpression();
+  const arms: (Node | undefined)[] = [];
+  if (!isPresentWhen(test, true, subject)) {
+    arms.push(owner.getThenStatement());
+  }
+  if (!isPresentWhen(test, false, subject)) {
+    arms.push(owner.getElseStatement());
+  }
+  return arms.some((arm) => armThrows(arm, owner, subject));
+}
+
+/** Whether one branch of an `if` throws, itself or in what runs after the `if`. */
+function armThrows(
+  arm: Node | undefined,
+  owner: Node,
+  subject: Subject,
+): boolean {
+  if (arm !== undefined && Node.isIfStatement(arm)) {
+    return absentPathThrows(arm, subject);
+  }
+  const exit = arm === undefined ? null : exitOf(arm);
+  return exit === "throw" || (exit === null && continuationThrows(owner));
+}
+
+/**
+ * Whether the statements that run after this node, up to the end of the
+ * function, reach a `throw` before a `return`, `continue` or `break`.
+ * A loop body that falls off its end goes round again, so the climb
+ * stops at a loop as it does at a function.
+ */
+function continuationThrows(from: Node): boolean {
+  let current = from;
+  let parent = current.getParent();
+  while (parent !== undefined) {
+    if (Node.isBlock(parent) || Node.isSourceFile(parent)) {
+      const statements = parent.getStatements();
+      const after = statements.slice(
+        statements.indexOf(current as Statement) + 1,
+      );
+      const exit = firstExit(after);
+      if (exit !== null) {
+        return exit === "throw";
+      }
+    }
+    if (endsThePath(parent)) {
+      return false;
+    }
+    current = parent;
+    parent = current.getParent();
+  }
+  return false;
+}
+
+function endsThePath(node: Node): boolean {
   return (
+    isFunctionRoot(node) ||
+    Node.isIterationStatement(node) ||
+    Node.isReturnStatement(node)
+  );
+}
+
+type Exit = "throw" | "leave";
+
+/** How the first of these statements that ends the path ends it, or null when they all fall through. */
+function firstExit(statements: readonly Node[]): Exit | null {
+  for (const statement of statements) {
+    const exit = exitOf(statement);
+    if (exit !== null) {
+      return exit;
+    }
+  }
+  return null;
+}
+
+/** A `throw`, or a `return`, `continue` or `break`, alone or among a block's own statements. */
+function exitOf(statement: Node): Exit | null {
+  if (Node.isThrowStatement(statement)) {
+    return "throw";
+  }
+  if (
     Node.isReturnStatement(statement) ||
     Node.isContinueStatement(statement) ||
     Node.isBreakStatement(statement)
-  );
+  ) {
+    return "leave";
+  }
+  return Node.isBlock(statement) ? firstExit(statement.getStatements()) : null;
 }
 
 /**
