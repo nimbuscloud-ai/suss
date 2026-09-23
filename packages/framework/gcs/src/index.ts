@@ -101,7 +101,8 @@ export const declares: PackDeclaration = {
   kind: "effects",
   package: "@suss/framework-gcs",
   dependencies: [{ ecosystem: "npm", name: "@google-cloud/storage" }],
-  reads: "Google Cloud Storage calls, emits storage-access interactions.",
+  reads:
+    "Google Cloud Storage calls. Each one becomes a storage-access interaction.",
 };
 
 export default gcsFramework;

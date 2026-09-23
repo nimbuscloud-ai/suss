@@ -212,7 +212,7 @@ export const declares: PackDeclaration = {
   kind: "framework",
   package: "@suss/framework-nextjs",
   dependencies: [{ ecosystem: "npm", name: "next" }],
-  reads: `Next.js route handlers, pages, and server actions; the route comes from where the file is on disk, and a \`"use server"\` function becomes an action unit.`,
+  reads: `Next.js route handlers, pages and server actions. The route comes from where the file is on disk, and a \`"use server"\` function becomes an action unit.`,
 };
 
 export default nextjsFramework;

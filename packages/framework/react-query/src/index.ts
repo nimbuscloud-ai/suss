@@ -211,7 +211,7 @@ export const declares: PackDeclaration = {
   package: "@suss/framework-react-query",
   dependencies: [{ ecosystem: "npm", name: "@tanstack/react-query" }],
   reads:
-    "TanStack Query hooks: ties a component to the query function its \`useQuery\` / \`useMutation\` call runs.",
+    "TanStack Query hooks. The pack links a component to the query function that its \`useQuery\` or \`useMutation\` call runs.",
 };
 
 export default reactQueryFramework;

@@ -49,24 +49,24 @@ A framework pack finds the units a framework defines: a route handler, a compone
 | Name | What it reads | Coverage |
 |---|---|---|
 | [`apollo`](../../packages/framework/apollo) | Apollo Server resolvers (code-first). | ![](../../.github/badges/coverage-apollo.svg) |
-| [`aws-lambda`](../../packages/framework/aws-lambda) | AWS Lambda HTTP handlers, paired to SAM / CloudFormation-declared routes. | ![](../../.github/badges/coverage-aws-lambda.svg) |
+| [`aws-lambda`](../../packages/framework/aws-lambda) | AWS Lambda HTTP handlers, paired with the routes a SAM or CloudFormation template declares. | ![](../../.github/badges/coverage-aws-lambda.svg) |
 | [`cloudflare-workers`](../../packages/framework/cloudflare-workers) | A Cloudflare Workers entrypoint: one unit per trigger the default export defines, and the bindings its code reads off the argument they arrive in. | ![](../../.github/badges/coverage-cloudflare-workers.svg) |
 | [`express`](../../packages/framework/express) | Express handlers. | ![](../../.github/badges/coverage-express.svg) |
-| [`fastapi`](../../packages/framework/fastapi) | FastAPI routes (Python): the verb comes from the decorator's own attribute name, `APIRouter` prefixes are composed one `include_router` hop deep, and `response_model` / `status_code` are taken as the declared contract. | ![](../../.github/badges/coverage-fastapi.svg) |
+| [`fastapi`](../../packages/framework/fastapi) | FastAPI routes (Python). The verb comes from the decorator's attribute name, `APIRouter` prefixes are composed one `include_router` hop deep, and `response_model` and `status_code` are taken as the declared contract. | ![](../../.github/badges/coverage-fastapi.svg) |
 | [`fastify`](../../packages/framework/fastify) | Fastify handlers. | ![](../../.github/badges/coverage-fastify.svg) |
 | [`flask-restx`](../../packages/framework/flask-restx) | flask-restx `Resource` routes (Python), including a project's own wrapper module that re-exports the route decorator. | ![](../../.github/badges/coverage-flask-restx.svg) |
-| [`graphql-ruby`](../../packages/framework/graphql-ruby) | graphql-ruby class-based field DSL (Ruby), including `mutation:` / `resolver:` wiring one hop out to what the referenced class itself declares, and the model a resolver reads through `dataloader` when a storage pack in the run recognizes it. | ![](../../.github/badges/coverage-graphql-ruby.svg) |
+| [`graphql-ruby`](../../packages/framework/graphql-ruby) | graphql-ruby class-based field DSL (Ruby). The pack follows `mutation:` and `resolver:` wiring one hop out to what the referenced class declares. It also records the model a resolver reads through `dataloader`, when a storage pack in the run recognizes that model. | ![](../../.github/badges/coverage-graphql-ruby.svg) |
 | [`hono`](../../packages/framework/hono) | Hono handlers, including the `c.json(body, status)` argument order. | ![](../../.github/badges/coverage-hono.svg) |
 | [`nestjs-graphql`](../../packages/framework/nestjs-graphql) | NestJS GraphQL resolvers. | ![](../../.github/badges/coverage-nestjs-graphql.svg) |
 | [`nestjs-microservices`](../../packages/framework/nestjs-microservices) | NestJS microservice handlers: `@EventPattern` and `@MessagePattern` consumers on the channel the decorator states. | ![](../../.github/badges/coverage-nestjs-microservices.svg) |
 | [`nestjs-rest`](../../packages/framework/nestjs-rest) | NestJS REST controllers. | ![](../../.github/badges/coverage-nestjs-rest.svg) |
-| [`nextjs`](../../packages/framework/nextjs) | Next.js route handlers, pages, and server actions; the route comes from where the file is on disk, and a `"use server"` function becomes an action unit. | ![](../../.github/badges/coverage-nextjs.svg) |
-| [`package-exports`](../../packages/framework/package-exports) | The boundary between packages in one workspace: public exports on the provider side, imports of them on the consumer side. Reads the workspace manifest, so it needs no per-project package list. | ![](../../.github/badges/coverage-package-exports.svg) |
-| [`rails`](../../packages/framework/rails) | Rails controller actions (Ruby), bound to the method and path `config/routes.rb` gives each one; an action the routes file does not reach is discovered with no boundary. | ![](../../.github/badges/coverage-rails.svg) |
-| [`react`](../../packages/framework/react) | React function components, event handlers, `useEffect` bodies. | ![](../../.github/badges/coverage-react.svg) |
-| [`react-query`](../../packages/framework/react-query) | TanStack Query hooks: ties a component to the query function its `useQuery` / `useMutation` call runs. | ![](../../.github/badges/coverage-react-query.svg) |
-| [`react-router`](../../packages/framework/react-router) | React Router loaders / actions / routes. | ![](../../.github/badges/coverage-react-router.svg) |
-| [`ts-rest`](../../packages/framework/ts-rest) | ts-rest providers + clients (contract-backed). | ![](../../.github/badges/coverage-ts-rest.svg) |
+| [`nextjs`](../../packages/framework/nextjs) | Next.js route handlers, pages and server actions. The route comes from where the file is on disk, and a `"use server"` function becomes an action unit. | ![](../../.github/badges/coverage-nextjs.svg) |
+| [`package-exports`](../../packages/framework/package-exports) | The boundary between packages in one workspace: public exports on the provider side, and imports of them on the consumer side. The pack reads the workspace manifest, so nobody has to list the packages for each project. | ![](../../.github/badges/coverage-package-exports.svg) |
+| [`rails`](../../packages/framework/rails) | Rails controller actions (Ruby), bound to the method and path `config/routes.rb` gives each one. An action the routes file does not reach is still discovered, with no boundary. | ![](../../.github/badges/coverage-rails.svg) |
+| [`react`](../../packages/framework/react) | React function components, event handlers and `useEffect` bodies. | ![](../../.github/badges/coverage-react.svg) |
+| [`react-query`](../../packages/framework/react-query) | TanStack Query hooks. The pack links a component to the query function that its `useQuery` or `useMutation` call runs. | ![](../../.github/badges/coverage-react-query.svg) |
+| [`react-router`](../../packages/framework/react-router) | React Router loaders, actions and routes. | ![](../../.github/badges/coverage-react-router.svg) |
+| [`ts-rest`](../../packages/framework/ts-rest) | ts-rest handlers and clients, and the contract both sides are built from. | ![](../../.github/badges/coverage-ts-rest.svg) |
 
 <!-- end framework -->
 
@@ -79,8 +79,8 @@ A client pack finds the call sites on the other side and binds each one to the m
 | Name | What it reads | Coverage |
 |---|---|---|
 | [`aiohttp`](../../packages/client/aiohttp) | aiohttp call sites (Python): the request methods on a `ClientSession`, opened with `async with` or held in an assignment. | ![](../../.github/badges/coverage-aiohttp.svg) |
-| [`apollo-client`](../../packages/client/apollo) | `@apollo/client` hooks + imperative `client.query`. | ![](../../.github/badges/coverage-apollo-client.svg) |
-| [`axios`](../../packages/client/axios) | axios call sites + `axios.create` factories. | ![](../../.github/badges/coverage-axios.svg) |
+| [`apollo-client`](../../packages/client/apollo) | `@apollo/client` hooks and imperative `client.query` calls. | ![](../../.github/badges/coverage-apollo-client.svg) |
+| [`axios`](../../packages/client/axios) | axios call sites, including calls on a client that `axios.create` made. | ![](../../.github/badges/coverage-axios.svg) |
 | [`faraday`](../../packages/client/faraday) | Faraday call sites (Ruby): a request method on the module itself or on a connection `Faraday.new` built, served under the path that connection's own URL states. | ![](../../.github/badges/coverage-faraday.svg) |
 | [`fetch`](../../packages/client/web) | Global `fetch` call sites. | ![](../../.github/badges/coverage-web.svg) |
 | [`httpx`](../../packages/client/httpx) | httpx call sites (Python): the verb functions, `httpx.request`, and a `Client` or `AsyncClient` held in an assignment or opened with `with`. | ![](../../.github/badges/coverage-httpx.svg) |
@@ -97,27 +97,27 @@ An effects pack reads the calls inside a unit another pack discovered: a query, 
 
 | Name | What it reads | Coverage |
 |---|---|---|
-| [`activerecord`](../../packages/framework/activerecord) | ActiveRecord calls (Ruby): a call matches when its method is one ActiveRecord defines as a read or a write and the class behind its receiver reaches `ActiveRecord::Base`, following what each class extends through the project. Statements the project wrote itself are read for the tables they touch, whether they went through `find_by_sql` and `count_by_sql` or through the connection. A write also runs the model's callbacks, and what they reach lands on the body that did the write. | ![](../../.github/badges/coverage-activerecord.svg) |
-| [`aws-dynamodb`](../../packages/framework/aws-dynamodb) | AWS SDK v3 DynamoDB calls, emits storage-access interactions. | ![](../../.github/badges/coverage-aws-dynamodb.svg) |
-| [`aws-eventbridge`](../../packages/framework/aws-eventbridge) | AWS EventBridge `PutEvents` producer calls, emits message-bus interactions. | ![](../../.github/badges/coverage-aws-eventbridge.svg) |
-| [`aws-s3`](../../packages/framework/aws-s3) | AWS SDK v3 S3 object calls, emits storage-access interactions. | ![](../../.github/badges/coverage-aws-s3.svg) |
-| [`aws-secrets-manager`](../../packages/framework/aws-secrets-manager) | AWS Secrets Manager calls, emits storage-access interactions against the secret. | ![](../../.github/badges/coverage-aws-secrets-manager.svg) |
-| [`aws-sns`](../../packages/framework/aws-sns) | AWS SDK v3 SNS `Publish` and `PublishBatch` calls, emits message-send interactions on the topic. | ![](../../.github/badges/coverage-aws-sns.svg) |
-| [`aws-sqs`](../../packages/framework/aws-sqs) | AWS SDK v3 SQS producer calls, emits message-send interactions. | ![](../../.github/badges/coverage-aws-sqs.svg) |
-| [`aws-ssm`](../../packages/framework/aws-ssm) | AWS SSM Parameter Store calls, emits storage-access interactions against the parameter. | ![](../../.github/badges/coverage-aws-ssm.svg) |
-| [`bigquery`](../../packages/framework/bigquery) | BigQuery queries and table calls, emits storage-access interactions with the dataset as the scope. | ![](../../.github/badges/coverage-bigquery.svg) |
-| [`bigquery-python`](../../packages/framework/bigquery-python) | BigQuery calls (Python): the statement a client or an Airflow hook is handed, read for the tables it touches, and the calls that say which table without writing SQL. | ![](../../.github/badges/coverage-bigquery-python.svg) |
+| [`activerecord`](../../packages/framework/activerecord) | ActiveRecord calls (Ruby): a call matches when its method is one ActiveRecord defines as a read or a write and the class behind its receiver reaches `ActiveRecord::Base`, following what each class extends through the project. Statements the project wrote itself are read for the tables they touch, whether they went through `find_by_sql` and `count_by_sql` or through the connection. A write also runs the model's callbacks, and what they reach is recorded on the body that did the write. | ![](../../.github/badges/coverage-activerecord.svg) |
+| [`aws-dynamodb`](../../packages/framework/aws-dynamodb) | AWS SDK v3 DynamoDB calls. Each one becomes a storage-access interaction. | ![](../../.github/badges/coverage-aws-dynamodb.svg) |
+| [`aws-eventbridge`](../../packages/framework/aws-eventbridge) | AWS EventBridge `PutEvents` producer calls. Each one becomes a message-bus interaction. | ![](../../.github/badges/coverage-aws-eventbridge.svg) |
+| [`aws-s3`](../../packages/framework/aws-s3) | AWS SDK v3 S3 object calls. Each one becomes a storage-access interaction. | ![](../../.github/badges/coverage-aws-s3.svg) |
+| [`aws-secrets-manager`](../../packages/framework/aws-secrets-manager) | AWS Secrets Manager calls. Each one becomes a storage-access interaction on the secret. | ![](../../.github/badges/coverage-aws-secrets-manager.svg) |
+| [`aws-sns`](../../packages/framework/aws-sns) | AWS SDK v3 SNS `Publish` and `PublishBatch` calls. Each one becomes a message-send interaction on the topic. | ![](../../.github/badges/coverage-aws-sns.svg) |
+| [`aws-sqs`](../../packages/framework/aws-sqs) | AWS SDK v3 SQS producer calls. Each one becomes a message-send interaction. | ![](../../.github/badges/coverage-aws-sqs.svg) |
+| [`aws-ssm`](../../packages/framework/aws-ssm) | AWS SSM Parameter Store calls. Each one becomes a storage-access interaction on the parameter. | ![](../../.github/badges/coverage-aws-ssm.svg) |
+| [`bigquery`](../../packages/framework/bigquery) | BigQuery queries and table calls. Each one becomes a storage-access interaction scoped to its dataset. | ![](../../.github/badges/coverage-bigquery.svg) |
+| [`bigquery-python`](../../packages/framework/bigquery-python) | BigQuery calls (Python). The statement a client or an Airflow hook is handed is read for the tables it touches. Calls such as `get_table` and `insert_rows` take a table name instead of SQL, and that name is read too. | ![](../../.github/badges/coverage-bigquery-python.svg) |
 | [`bigquery-ruby`](../../packages/framework/bigquery-ruby) | google-cloud-bigquery calls (Ruby): a call matches when its receiver follows back to a client the gem handed out, and the statement it was given is parsed for the tables it touches. | ![](../../.github/badges/coverage-bigquery-ruby.svg) |
-| [`drizzle`](../../packages/framework/drizzle) | Drizzle ORM query-builder and relational-query calls, emits storage-access interactions with SQL table names. | ![](../../.github/badges/coverage-drizzle.svg) |
-| [`gcs`](../../packages/framework/gcs) | Google Cloud Storage calls, emits storage-access interactions. | ![](../../.github/badges/coverage-gcs.svg) |
-| [`mongoose`](../../packages/framework/mongoose) | Mongoose model calls, emits storage-access interactions against the collection a model's `.model(...)` call declares. | ![](../../.github/badges/coverage-mongoose.svg) |
-| [`node`](../../packages/runtime/node) | Node.js runtime primitives, scheduling, the `process` surface (incl. `process.env.X` config-read interactions and the keys of a schema parsed against `process.env`), module-loading globals as metadata-read interactions, emitted as interaction effects. | ![](../../.github/badges/coverage-runtime-node.svg) |
-| [`pg`](../../packages/framework/pg) | node-postgres queries, emits storage-access interactions with the tables each statement touches. | ![](../../.github/badges/coverage-pg.svg) |
+| [`drizzle`](../../packages/framework/drizzle) | Drizzle ORM query-builder and relational-query calls. Each one becomes a storage-access interaction on the SQL table it touches. | ![](../../.github/badges/coverage-drizzle.svg) |
+| [`gcs`](../../packages/framework/gcs) | Google Cloud Storage calls. Each one becomes a storage-access interaction. | ![](../../.github/badges/coverage-gcs.svg) |
+| [`mongoose`](../../packages/framework/mongoose) | Mongoose model calls. Each one becomes a storage-access interaction on the collection that the model's `.model(...)` call declares. | ![](../../.github/badges/coverage-mongoose.svg) |
+| [`node`](../../packages/runtime/node) | Node.js runtime primitives, scheduling and the `process` surface, each recorded as an interaction effect. A `process.env.X` read, or a key of a schema parsed against `process.env`, becomes a config-read interaction. A module-loading global becomes a metadata-read interaction. | ![](../../.github/badges/coverage-runtime-node.svg) |
+| [`pg`](../../packages/framework/pg) | node-postgres queries. Each one becomes a storage-access interaction on the tables its statement touches. | ![](../../.github/badges/coverage-pg.svg) |
 | [`pg-ruby`](../../packages/framework/pg-ruby) | pg gem calls (Ruby): a call matches when its receiver follows back to a connection the gem handed out, and the statement it was given is parsed for the tables it touches. | ![](../../.github/badges/coverage-pg-ruby.svg) |
-| [`prisma`](../../packages/framework/prisma) | Prisma client calls, emits storage-access interactions per read / write. | ![](../../.github/badges/coverage-prisma.svg) |
-| [`redis`](../../packages/framework/redis) | Redis, Valkey and node-redis commands, emits storage-access interactions. | ![](../../.github/badges/coverage-redis.svg) |
-| [`sqlalchemy`](../../packages/framework/sqlalchemy) | SQLAlchemy calls (Python): says which types a query comes back as and which methods write, and the adapter matches a call chain by resolving through a project's own base class to what the method behind it says it returns. | ![](../../.github/badges/coverage-sqlalchemy.svg) |
-| [`sqlmodel`](../../packages/framework/sqlmodel) | SQLModel calls (Python): says which types a query comes back as and which methods write, under the modules SQLModel exports them from, and includes the SQLAlchemy patterns a SQLModel project also reaches. | ![](../../.github/badges/coverage-sqlmodel.svg) |
+| [`prisma`](../../packages/framework/prisma) | Prisma client calls. Each read and each write becomes a storage-access interaction. | ![](../../.github/badges/coverage-prisma.svg) |
+| [`redis`](../../packages/framework/redis) | Redis, Valkey and node-redis commands. Each one becomes a storage-access interaction. | ![](../../.github/badges/coverage-redis.svg) |
+| [`sqlalchemy`](../../packages/framework/sqlalchemy) | SQLAlchemy calls (Python). The pack declares which types a query returns and which methods write. The adapter matches a call chain by following a project's own base class to the method behind the call, and reads that method's declared return type. | ![](../../.github/badges/coverage-sqlalchemy.svg) |
+| [`sqlmodel`](../../packages/framework/sqlmodel) | SQLModel calls (Python). The pack declares which types a query returns and which methods write, under the modules SQLModel exports them from. It also includes the SQLAlchemy patterns, since a SQLModel project reaches those too. | ![](../../.github/badges/coverage-sqlmodel.svg) |
 | [`zustand`](../../packages/framework/zustand) | zustand stores: `setState` writes and `getState` reads against the store as a client-side container. | ![](../../.github/badges/coverage-zustand.svg) |
 
 <!-- end effects -->

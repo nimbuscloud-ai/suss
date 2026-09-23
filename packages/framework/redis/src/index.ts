@@ -152,7 +152,7 @@ export const declares: PackDeclaration = {
     { ecosystem: "npm", name: "redis" },
   ],
   reads:
-    "Redis, Valkey and node-redis commands, emits storage-access interactions.",
+    "Redis, Valkey and node-redis commands. Each one becomes a storage-access interaction.",
 };
 
 export default redisFramework;

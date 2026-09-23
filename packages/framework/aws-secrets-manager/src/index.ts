@@ -80,7 +80,7 @@ export const declares: PackDeclaration = {
   package: "@suss/framework-aws-secrets-manager",
   dependencies: [{ ecosystem: "npm", name: "@aws-sdk/client-secrets-manager" }],
   reads:
-    "AWS Secrets Manager calls, emits storage-access interactions against the secret.",
+    "AWS Secrets Manager calls. Each one becomes a storage-access interaction on the secret.",
 };
 
 export default secretsManagerFramework;

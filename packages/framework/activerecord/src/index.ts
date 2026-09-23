@@ -338,7 +338,7 @@ export const declares: PackDeclaration = {
     { ecosystem: "rubygems", name: "rails" },
   ],
   reads:
-    "ActiveRecord calls (Ruby): a call matches when its method is one ActiveRecord defines as a read or a write and the class behind its receiver reaches \`ActiveRecord::Base\`, following what each class extends through the project. Statements the project wrote itself are read for the tables they touch, whether they went through \`find_by_sql\` and \`count_by_sql\` or through the connection. A write also runs the model's callbacks, and what they reach lands on the body that did the write.",
+    "ActiveRecord calls (Ruby): a call matches when its method is one ActiveRecord defines as a read or a write and the class behind its receiver reaches \`ActiveRecord::Base\`, following what each class extends through the project. Statements the project wrote itself are read for the tables they touch, whether they went through \`find_by_sql\` and \`count_by_sql\` or through the connection. A write also runs the model's callbacks, and what they reach is recorded on the body that did the write.",
   configuration: {
     file: "suss.activerecord.json",
     example: { storageSystem: "postgresql" },

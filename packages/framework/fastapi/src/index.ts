@@ -147,7 +147,7 @@ export const declares: PackDeclaration = {
   kind: "framework",
   package: "@suss/framework-fastapi",
   dependencies: [{ ecosystem: "pypi", name: "fastapi" }],
-  reads: `FastAPI routes (Python): the verb comes from the decorator's own attribute name, \`APIRouter\` prefixes are composed one \`include_router\` hop deep, and \`response_model\` / \`status_code\` are taken as the declared contract.`,
+  reads: `FastAPI routes (Python). The verb comes from the decorator's attribute name, \`APIRouter\` prefixes are composed one \`include_router\` hop deep, and \`response_model\` and \`status_code\` are taken as the declared contract.`,
 };
 
 export default fastapiFramework;
