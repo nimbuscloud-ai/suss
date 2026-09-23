@@ -1279,11 +1279,21 @@ export class ResolutionStore {
     return [...candidates][0] as Node;
   }
 
+  /**
+   * A factory returning a wrapper's call gives back the wrapper's own
+   * closure and the function it unwraps. The unwrapped one wins.
+   */
   private lookupReturned(call: Node): Node | null {
     this.derive();
+    return (
+      this.singleFunctionIn("wantedGivesBackUnwrapped", call) ??
+      this.singleFunctionIn("wantedGivesBack", call)
+    );
+  }
 
+  private singleFunctionIn(relation: string, value: Node): Node | null {
     const candidates = new Set<Node>();
-    for (const target of this.answersFor("wantedGivesBack", nodeId(call))) {
+    for (const target of this.answersFor(relation, nodeId(value))) {
       const node = this.table.byId.get(target);
       if (node === undefined || !isFunctionRoot(node)) {
         continue;

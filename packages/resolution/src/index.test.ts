@@ -271,6 +271,42 @@ describe("a factory that hands back what it was given", () => {
     const ignores = wrapper.filter(([r]) => r !== "bodyCalls");
     expect(resolutionsOf(ignores, "handler")).toEqual([]);
   });
+
+  // useOrders = (c) => make(body); site = useOrders("orders").
+  const returnsWrapperCall: Array<[string, ...string[]]> = [
+    ...wrapper,
+    ["func", "useOrders"],
+    ["returnsValue", "useOrders", "wrapCall"],
+    ["call", "wrapCall", "makeRef"],
+    ["callArg", "wrapCall", "0", "body"],
+    ["binds", "useOrdersRef", "useOrders"],
+    ["call", "site", "useOrdersRef"],
+  ];
+
+  it("gives back both the wrapper's closure and its argument from a factory returning the wrapper's call", () => {
+    expect(resultsOf(returnsWrapperCall, "site")).toEqual(["body", "returned"]);
+  });
+
+  it("gives back only the argument when asked for the unwrapped reading", () => {
+    expect(
+      derive(returnsWrapperCall, "givesBackUnwrapped", "site").map((t) =>
+        String(t[1]),
+      ),
+    ).toEqual(["body"]);
+  });
+
+  it("gives back no unwrapped reading when the factory returns a plain function", () => {
+    // usePlain = () => closure; site = usePlain().
+    const plain: Array<[string, ...string[]]> = [
+      ["func", "usePlain"],
+      ["func", "closure"],
+      ["returnsValue", "usePlain", "closure"],
+      ["binds", "usePlainRef", "usePlain"],
+      ["call", "site", "usePlainRef"],
+    ];
+    expect(resultsOf(plain, "site")).toEqual(["closure"]);
+    expect(derive(plain, "givesBackUnwrapped", "site")).toEqual([]);
+  });
 });
 
 describe("an argument reaching a parameter", () => {

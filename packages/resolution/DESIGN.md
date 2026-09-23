@@ -281,6 +281,7 @@ hop first and takes forty milliseconds with the walk first.
 comesTo(x, z)               following x arrives at the value z
 resolves(x, z)              comesTo narrowed to functions
 givesBack(x, z)             following x arrives at a call that returns z
+givesBackUnwrapped(x, z)    givesBack, where the call returned unwraps z
 isWrittenAs(x, z)           x is written as the expression z
 comesFrom(x, m, n)          following x arrives at m's export n
 callsInto(f, m, n)          calling f ends up calling m's n
@@ -307,6 +308,21 @@ different questions about the same call. `const dao = makeDao()` comes
 to nothing and gives back the class `makeDao` constructed. So
 `dao.findByCustomer` finds the method that class declares, while
 `withAuth(handler)` still comes to `handler`.
+
+The two directions do meet one hop further out. `const useOrders = (c)
+=> asyncHandler(async (req) => ...)` returns a call to a wrapper, and
+once a walk has run `useOrders("orders")`, the step into
+`asyncHandler(...)` and the unwrapping step to the async arrow both
+count as result walks. So `givesBack` comes back with two functions: the closure
+`asyncHandler` builds around its argument, and the argument itself.
+`givesBackUnwrapped` is the second one alone. It asks `comesTo` of each
+call the result walk arrives at, which stops at the unwrapped argument
+and never runs the wrapper. A caller asks it first and falls back to
+`givesBack`, the same order it asks `comesTo` and `givesBack` in for
+the call itself. Stating the preference as a negation, a call result
+that fires only when the callee does not unwrap, would put `unwraps`
+under a negation inside the recursion that derives it, which the demand
+rewrite refuses.
 
 `isWrittenAs` follows the same names to the expression a value is
 written as, whatever kind of expression that is. A GraphQL document is
