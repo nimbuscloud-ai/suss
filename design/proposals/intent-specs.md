@@ -1,8 +1,8 @@
 # The intent layer: design proposal
 
-A plan for closing the loop between *what the code does* and *what the
-team meant to ship*. The first half, derived behavioural summaries from
-code, ships today. Below is a design for the second half: a structured
+This is a plan for closing the loop between *what the code does* and
+*what the team meant to ship*. The first half, behavioural summaries
+derived from code, ships today. Below is a design for the second half: a structured
 intent layer that pairs against the derived side, delivered in the order
 `v0.1` … `v0.4`.
 
@@ -22,10 +22,11 @@ the question urgent over the last two years. They all say the same
 thing: as code becomes cheaper to generate, the bottleneck moves from
 writing it to checking it. To check it you need a structured statement
 of *what was meant*, one you can **map onto** *what shipped* and,
-eventually, onto *what production does*. Mapped, not identical: intent
-and behaviour share primitives (a boundary, a status code, a body shape)
-and get compared at defined join points, but they work at different
-granularities and are different kinds of artifact. AI codegen makes this
+eventually, onto *what production does*. The two are mapped onto each
+other, and they stay separate things. Intent and behaviour share
+primitives (a boundary, a status code, a body shape) and get compared at
+defined join points, but they work at different granularities and are
+different kinds of artifact. AI codegen makes this
 urgent: when humans are no longer the bottleneck on producing code, the
 question becomes "is what we got what we meant," and ad-hoc PRDs spread
 across different tools cannot answer that at review time.
@@ -42,7 +43,7 @@ spaces, Linear / Jira ticket descriptions, and chat threads. Each tool
 is structured for its own purpose, and you cannot compare any of those
 structures against running code.
 
-Two costs of staying where we are:
+Staying where we are has a price:
 
 1. Every project ships derived summaries with no top-down ground truth
    to anchor them. suss catches drift between implementations, but not
@@ -56,11 +57,11 @@ Two costs of staying where we are:
    yet: useful right away as a vocabulary, and more useful once the tool
    catches up to it.
 
-## Two citizens, one layer
+## Two kinds of intent
 
 Intent splits into two separate artifacts that serve different purposes.
-What separates them is not who writes them (any team member can write
-either one, depending on how the team works) but what they are for:
+They differ in what they are for. Who writes them does not matter, since
+any team member can write either one, depending on how the team works:
 
 | | Outcome intent | System intent |
 |---|---|---|
@@ -89,10 +90,9 @@ the OpenAPI / Prisma readers don't already cover.
 ## Author-facing surface vs structural model
 
 The PRD is one of the two surfaces an author writes against. Anyone
-writing a PRD types purpose, audience, and scenarios. The internal
-structural vocabulary (boundary, workflow, concept) is what the reader
-walks and what findings point at, and not something the author has to
-learn.
+writing a PRD types purpose, audience, and scenarios. The reader walks
+the internal structural vocabulary (boundary, workflow, concept), and
+findings point at it. The author does not have to learn it.
 
 ```yaml
 # author-facing PRD: what a product description looks like
@@ -119,8 +119,8 @@ unlinked state (see [Scenarios](#scenarios-and-how-they-link-to-system-intent)).
 treated as a thenable by Promise resolution, a latent footgun.)
 The structural vocabulary appears in two places, both optional:
 
-- **Findings** reference the concrete endpoint or function, not
-  abstractions: `unimplementedBoundary at GET /users/:id`.
+- **Findings** reference the concrete endpoint or function:
+  `unimplementedBoundary at GET /users/:id`.
 - **Engineers** who want fine-grained precision over sync chains can
   write at the workflow level directly. Otherwise, working out the
   structural model is the reader's job.
@@ -143,13 +143,13 @@ finding.
    and the canonical scenario that demonstrates the purpose. The
    long-form mapping to Daniel Jackson's concept-design vocabulary
    lives in [`concept-design.md`](../../docs/theory/prior-art.md), and this
-   proposal points there rather than arguing it again. v0.3 ships this.
+   proposal points there without repeating the argument. v0.3 ships this.
 
 Outcome intent (PRDs) is a level above all three: a PRD's scenarios link to
 outcomes declared at any of the three kinds of system intent.
 
-A fourth axis, **outcome / SLO**, cuts across all of these rather than
-being a layer of its own. An SLO can attach to a concept, a workflow, a
+A fourth axis, **outcome / SLO**, cuts across all of these and is not a
+layer of its own. An SLO can attach to a concept, a workflow, a
 boundary, or even one specific transition. It is out of scope until the
 runtime observability adapters ship in v0.4.
 
@@ -159,8 +159,8 @@ runtime observability adapters ship in v0.4.
 Foundation, late 2024) describes multi-step API workflows in YAML:
 ordered operations with success criteria, and output forwarded from one
 step to the next. It is the closest existing standard to what v0.2
-workflow intent needs for the HTTP part, and worth borrowing mechanics
-from. Arazzo only covers HTTP-to-HTTP workflows, so the v0.2 schema
+workflow intent needs for the HTTP part, and we should borrow its
+mechanics. Arazzo only covers HTTP-to-HTTP workflows, so the v0.2 schema
 extends it to boundaries that are not HTTP (function calls, queue sends,
 storage writes) and adds the purpose / audience wrapper that puts a
 workflow inside a concept.
@@ -188,10 +188,10 @@ transition or effect in a system intent.
 **A scenario without `link` is a valid state, and a deliberate one.**
 The author describes the behaviour they want in `when` / `expect` and
 leaves the link unset. The checker reports an unlinked scenario as
-**info** ("scenario not yet linked to a system intent") rather than as a
+**info** ("scenario not yet linked to a system intent") and not as a
 coverage error, so a team can drop in scenarios and nothing fails. A
 team that wants the link to be mandatory can turn on stricter checking
-later, with a flag rather than by default.
+later with a flag. It is off by default.
 
 The author does not have to know the system intent's outcome ids.
 Somebody or something else makes the link, whatever fits the team: an
@@ -200,9 +200,8 @@ platform that shows candidate outcomes, or an engineer who wires it up
 by hand. For a new feature there may be no system intent to link to yet.
 In that case whoever is facilitating *generates* the system intent from
 the scenarios (a third way of authoring, see below) and makes the link
-as part of that generation. So the id an engineer put in `link` is not
-vocabulary the author has to learn; it is a slot that something else
-fills.
+as part of that generation. So the author never has to learn the ids
+that go in `link`. Something else fills that slot.
 
 When `link` is present, the checker resolves it. The dotted form keeps
 the link separate from the underlying API surface: renaming an endpoint
@@ -290,7 +289,7 @@ These are the integration-bug failure modes the
 [anatomy-of-an-integration-bug](https://nimbusai.dev/blog/the-anatomy-of-an-integration-bug-its-not-just-your-apis)
 demo exists to illustrate: a single-service refactor that silently
 breaks a cross-service consumer. The intent layer catches them before
-the PR ships rather than after the production incident.
+the PR ships, instead of after a production incident.
 
 ## Checking pipeline
 
@@ -323,8 +322,9 @@ on disk. The one thing that differs is provenance, which the `source`
 field below records.
 
 **Writing intent directly (greenfield).** The team writes intent
-declaratively, alongside the code or ahead of it. PRD first and then the
-implementation, or both together as the feature gets scoped. This is the
+declaratively, alongside the code or ahead of it. The PRD can come first
+and the implementation after, or both can come together as the feature
+gets scoped. This is the
 natural path on new features, and on small projects where writing intent
 for every boundary is manageable.
 
@@ -343,15 +343,14 @@ an engineer) reads those scenarios and produces the structural system
 intent plus the links back to the scenarios. This runs the opposite way
 from `suss infer`: that one goes code → system intent, and this one goes
 described intent → system intent. It is how a new feature gets its
-structural layer without the author writing it by hand, and it is what
-settles the "the author shouldn't have to know outcome ids" tension,
-because something else generates the ids rather than the author writing
-them. How the facilitation works is out of scope for v0.1 (the schema
+structural layer without the author writing it by hand. It also settles
+the worry that the author would have to know outcome ids, because
+something else generates the ids. How the facilitation works is out of scope for v0.1 (the schema
 supports unlinked scenarios so that the facilitator has something to
 read); the generator itself comes later.
 
-What does differ is **provenance**, and the design has to carry it
-through to make brownfield adoption work:
+What does differ is **provenance**, and the design has to keep it all
+the way through for brownfield adoption to work:
 
 - Each system intent and PRD has an optional `source` field with
   values like `"author"` (default; the team wrote this), `"inferred"`
@@ -360,10 +359,10 @@ through to make brownfield adoption work:
 - The checker downgrades findings against `inferred` intent that
   nobody has curated yet. That intent describes what the code did when
   the inference ran, so a finding that says "intent says X, code does Y"
-  most likely means the code changed since then, rather than that
-  somebody wrote the intent wrong. Curating a doc is what moves it from
-  `inferred` to `inferred, curated`, which says drift findings should
-  now fire at full severity.
+  most likely means the code changed since then. A mistake in the
+  intent is less likely. Curating a doc moves it from `inferred` to
+  `inferred, curated`, and from then on drift findings fire at full
+  severity.
 - Once somebody curates inferred intent, it drifts from re-inferred
   intent the same way any spec drifts from code. Refreshing it
   (re-infer, then merge against the curation) is its own piece of work,
@@ -408,8 +407,8 @@ side, a boundary intent on the other. The harder design question is what
 For v0.1.1, ship naive re-inference with a clear warning:
 "re-inferring over curated intent will overwrite your edits; use
 `--into <new-dir>` to write the re-inferred output to a separate
-directory for manual reconciliation." Merging against a baseline is
-a v0.1.2 / v0.2 follow-on.
+directory for manual reconciliation." Merging against a baseline comes
+later, in v0.1.2 or v0.2.
 
 ### Subset selection
 
@@ -472,8 +471,8 @@ body grain, where scenarios refer to effect bodies.
 
 **Settled while shipping: a malformed spec is an error at load time, not
 a finding.** The earlier draft listed `intentSpecMalformed` as a finding
-kind; the shipped reader throws instead. What the layer runs on is the
-difference between *pending* and *broken*. An unlinked scenario or an
+kind, and the shipped reader throws instead. The layer depends on
+telling *pending* apart from *broken*. An unlinked scenario or an
 unkeyable boundary is a valid pending state, reported as info or a
 warning while the run continues. A doc that fails schema validation is
 broken, and there is no sound way to check part of it, so the author has
@@ -483,11 +482,11 @@ to fix it before the run means anything.
 
 The frontend primitives that shipped in late August 2026 (render edges,
 prop reads, client stores, server actions, the query-hook schedule) all
-pair through the same `ir-core` primitives intent uses, so this section
-records how each lines up and what the next frontend build owes this
+pair through the same `ir-core` primitives intent uses. Here is how each
+lines up, and what the next frontend build has to provide for this
 layer.
 
-- **Client stores** ride storage semantics, so `boundaryKey` works
+- **Client stores** use storage semantics, so `boundaryKey` works
   today: boundary intent can say "only cart actions write
   `client-store:useCartStore`" and pair with no new machinery. A store
   is also concept state in the v0.3 sense, with its writers as the
@@ -499,31 +498,31 @@ layer.
 - **Form-to-API is workflow-shaped.** The remaining frontend join
   (form fields against the endpoint that receives them) is an ordered
   chain of hops, which is what v0.2 workflow intent declares. It gets
-  built as hops the workflow checker can also walk, never as a one-off
-  pass with its own join.
+  built as hops the workflow checker can also walk. It should not be a
+  one-off pass with its own join.
 - **Components are referenced by export identity.** Render edges join
   on file and name internally, which is fine for the checker; an
   intent artifact that references a component uses the exported name,
   because a file path in an intent doc goes stale the way it would in
   a comment.
 
-## Out of scope, deferred
+## Out of scope for now
 
 - **Backward comparison (concept-shape audit).** "Did we ship a
-  fused / smeared / phantom concept?" Needs failure-mode detection
-  from the existing backlog; ships with v0.3.
+  fused / smeared / phantom concept?" This needs failure-mode detection
+  from the existing backlog, and it ships with v0.3.
 - **Lateral comparison (intent vs intent for different audiences).**
-  Same concept's PRD for end-users vs admins disagrees. Requires
-  audience tagging; defer.
+  The same concept's PRDs for end-users and for admins disagree. This
+  needs audience tagging, so it waits.
 - **Quality specifications (latency, error budget, observability
   obligations).** Per `internal/quality.md`, full intent includes
-  quality alongside capability. Defer until capability-only intent is
-  in production use.
+  quality alongside capability. This waits until capability-only intent
+  is in production use.
 - **Diff mode** (`suss check --intent intents/ --diff main` →
-  findings introduced by the current PR). Worth holding the CLI
-  interface open to.
-- **Generated intent stubs from existing code.** Reverse mode that
-  emits a starter intent spec from a derived summary so teams can
+  findings introduced by the current PR). Keep the CLI interface open
+  for it.
+- **Generated intent stubs from existing code.** A reverse mode would
+  emit a starter intent spec from a derived summary so teams can
   adopt intent on an existing codebase. It falls out of v0.2 with
   little extra work, once that form is in production use.
 - **LLM-mediated authoring help.** An LLM can suggest outcome ids or
@@ -546,8 +545,8 @@ guess in place.
   a declaration of the input, the way OpenAPI has parameters and a
   requestBody. The two sides would then match: linking to an outcome
   grounds `expect`, and the input contract plus the branch guards would
-  ground `when`. Parked; come back to it when grounding a condition is
-  something a team actually needs rather than a v0.1 nicety.
+  ground `when`. This is parked. Come back to it when a team needs to
+  ground a condition, since for v0.1 it would only be a nicety.
 - **Condition-grounding / predicate comparison.** Even with an input
   contract, checking that "the code accepts *exactly* the valid
   requests" means comparing the PRD's condition against the code's
@@ -566,8 +565,7 @@ implemented as written. `@suss/ir-core` is extracted (with `boundaryKey`
 and `bodyShapesMatch` moved there so both checkers share the pairing
 primitives), `@suss/intent-ir` contains the intent types and the thin
 `IntentFinding`, and intent serializes to its own files. Decision 4 is
-implemented with one deviation and one gap, both of which are flagged
-below rather than quietly absorbed.
+implemented with one deviation and one gap, and both are flagged below.
 
 **Decision 4, resolved:** the CLI is the dispatch point, not
 `@suss/checker`. We wrote the decision while "separate package **or a
@@ -580,8 +578,8 @@ the orchestrator would force `@suss/checker` to depend on
 `architecture.md`. Putting the CLI in that role still does what the
 decision set out to do: one dispatch point, and independent evolution.
 If some programmatic consumer later wants a single call that checks
-everything, that is a new thin package above both checkers rather than
-another role for `@suss/checker`.
+everything, that should be a new thin package above both checkers.
+`@suss/checker` should not take on that role.
 
 **Decision 2, closed:** the pipeline operates on the shared base as
 written. The suppression pipeline (rule schema, matching semantics,
@@ -622,10 +620,10 @@ separate type, but start with the shared one.
 
 **3. Intent serializes to its own file, separate from behavioural
 summaries.** Behaviour and intent are different artifacts that get
-compared against each other, rather than mixed together in one stream. A
-`suss extract` run writes behavioural summaries, intent docs are their
-own files, and the checker loads both and compares them. No tagged union
-in one file.
+compared against each other, and they should not be mixed in one
+stream. A `suss extract` run writes behavioural summaries, intent docs
+are their own files, and the checker loads both and compares them.
+There is no tagged union in one file.
 
 **4. Checkers split into behavioural and intent, with `@suss/checker`
 as the orchestrator.** The intent-vs-code and PRD-coverage checkers move
@@ -638,7 +636,7 @@ ones.
 **What this means for sequencing:** the package split (decision 1)
 happens *before* anyone writes the PRD coverage checker, so whoever
 writes it writes it once, against `@suss/intent-ir` and the thin finding
-base, rather than retrofitting it afterwards. The boundary-intent reader
+base, and nobody has to retrofit it afterwards. The boundary-intent reader
 and `checkIntentAgreement` shipped earlier against
 `@suss/behavioral-ir`, and they move into the new packages as part of
 the split.
@@ -700,8 +698,8 @@ This lives in the intent checker module (decision 4). Given the loaded
 system intents and PRDs, for each PRD scenario:
 
 1. If `link` is unset → emit an **info** saying the scenario is not
-   linked yet. This is not a coverage error: it is info by default, and
-   strict mode is a flag you turn on.
+   linked yet. It is info by default and never a coverage error unless
+   you turn on the strict mode flag.
 2. If `link` is set, parse each ref as `<name>.<outcome-id>` and
    resolve against the loaded system intents:
    - no system intent with that `name` → dangling reference finding
@@ -714,7 +712,7 @@ system intents and PRDs, for each PRD scenario:
 ### Finding kinds
 
 The intent finding kinds live on `IntentFinding` (decision 2) in
-`@suss/intent-ir`. On naming: no `intent` prefix, because the kinds
+`@suss/intent-ir`. The kinds have no `intent` prefix, because they
 already live on the intent finding type. The kinds and severities as
 shipped (the reasoning is in the `@suss/checker-intent` header):
 
@@ -732,11 +730,11 @@ shipped (the reasoning is in the `@suss/checker-intent` header):
 
 Severities follow the "severity follows epistemic character" rule in
 `contracts.md`: a derivation that violates a specification is an error.
-`undeclaredOutcome` is info rather than error because intent docs are
-*open* specifications. They declare the floor (what must exist) rather
-than a closed list, the way an OpenAPI schema does. Code that goes
-beyond the intent probably means somebody has not written that intent
-down yet, rather than that anything is in violation.
+`undeclaredOutcome` is info and not an error, because intent docs are
+*open* specifications. They declare the floor (what must exist) and not
+a closed list, the way an OpenAPI schema does. Code that goes beyond the
+intent probably means somebody has not written that intent down yet.
+It is unlikely to be a violation.
 
 PRD coverage kinds (proposed, and they ship with the coverage checker):
 
