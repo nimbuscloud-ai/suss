@@ -40,7 +40,12 @@ const PROGRAM = deriveOnDemand(COMPLETE, ANSWER_RELATIONS);
 const ON_DEMAND = PROGRAM.rules;
 
 /** What the store takes back once it has read a query's answer. */
-const QUERY_FACTS = [...PROGRAM.demandDriven, "wanted", "wantedOrigin"];
+const QUERY_FACTS = [
+  ...PROGRAM.demandDriven,
+  "wanted",
+  "wantedOrigin",
+  "wantedType",
+];
 
 /**
  * How wide each base relation is. Every relation an adapter supplies
@@ -68,8 +73,12 @@ const ARITY: Record<string, number> = {
   calleeOrigin: 2,
   unwrapsByName: 2,
   wrapperModule: 2,
+  paramNamed: 3,
+  callKeywordArg: 3,
+  statesType: 2,
   wanted: 1,
   wantedOrigin: 1,
+  wantedType: 1,
 };
 
 // Few enough values that generated facts join with each other rather
@@ -89,6 +98,8 @@ const COLUMNS: Record<string, string[][]> = {
   holdsProperty: [VALUES, NAMES, VALUES],
   paramOf: [VALUES, POSITIONS, VALUES],
   callArg: [VALUES, POSITIONS, VALUES],
+  paramNamed: [VALUES, NAMES, VALUES],
+  callKeywordArg: [VALUES, NAMES, VALUES],
   imports: [VALUES, MODULES, NAMES],
   exportsAs: [MODULES, NAMES, VALUES],
   reExports: [MODULES, NAMES, MODULES, NAMES],

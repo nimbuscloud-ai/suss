@@ -44,6 +44,7 @@ export const ASKING_RELATIONS: readonly string[] = [
   "wantedSubject",
   "wantedAnchor",
   "wantedAncestry",
+  "wantedType",
 ];
 
 const NO_LANGUAGE_RULES: readonly Rule[] = [];

@@ -6,6 +6,7 @@ export {
   writtenSourcesOf,
 } from "./callee.js";
 export { checkFactContract, FACT_CONTRACT_CASES } from "./contract.js";
+export { declaredTypesOf } from "./declaredType.js";
 export { explainResolutionProof, renderExplanation } from "./explain.js";
 export {
   agreedMountPrefix,
@@ -170,6 +171,7 @@ export type {
 //   readsKeyed(site, o, x)      site reads the entry of o at the
 //                               value of x, not at a written key
 //   environmentObject(w)        w is the process environment
+//   statesType(x, t)            x is declared with the type written at t
 //
 // Node identity is the adapter's business. The rules only join on it.
 // Making one of a class is a call of the class, however the language
@@ -1100,6 +1102,24 @@ const STATED_RULES = [
     ],
   ),
 
+  // A type some declaration gives a value, its own or a caller's. Two
+  // callers can disagree, so the asking side decides whether it got one.
+  rule("typedAs", [v("x"), v("t")], [lit("statesType", v("x"), v("t"))]),
+  rule(
+    "typedAs",
+    [v("x"), v("t")],
+    [lit("binds", v("x"), v("y")), lit("typedAs", v("y"), v("t"))],
+  ),
+  rule(
+    "typedAs",
+    [v("o"), v("t")],
+    [
+      lit("refersToParam", v("o"), v("p")),
+      lit("passesArgument", v("r"), v("p"), v("a")),
+      lit("typedAs", v("a"), v("t")),
+    ],
+  ),
+
   // Which module's export a re-exported name forwards to, however
   // many barrels deep the forwarding runs.
   rule(
@@ -1747,6 +1767,43 @@ export const RESOLUTION_QUESTIONS = [
     "wantedRefersToParam",
     [v("o"), v("p")],
     [lit("wanted", v("o")), lit("refersToParam", v("o"), v("p"))],
+  ),
+  // The types a value is declared as, beside each argument its own
+  // callers pass, so the asking side can refuse a caller passing
+  // something no declaration types.
+  rule(
+    "wantedTypedAs",
+    [v("x"), v("t")],
+    [lit("wantedType", v("x")), lit("typedAs", v("x"), v("t"))],
+  ),
+  rule(
+    "wantedTypePassed",
+    [v("o"), v("a")],
+    [
+      lit("wantedType", v("o")),
+      lit("refersToParam", v("o"), v("p")),
+      lit("passesArgument", v("r"), v("p"), v("a")),
+    ],
+  ),
+  rule(
+    "wantedPassedTypedAs",
+    [v("o"), v("a"), v("t")],
+    [
+      lit("wantedType", v("o")),
+      lit("refersToParam", v("o"), v("p")),
+      lit("passesArgument", v("r"), v("p"), v("a")),
+      lit("typedAs", v("a"), v("t")),
+    ],
+  ),
+  rule(
+    "wantedPassedParam",
+    [v("o"), v("a")],
+    [
+      lit("wantedType", v("o")),
+      lit("refersToParam", v("o"), v("p")),
+      lit("passesArgument", v("r"), v("p"), v("a")),
+      lit("refersToParam", v("a"), v("q")),
+    ],
   ),
   rule(
     "wantedComesFrom",
