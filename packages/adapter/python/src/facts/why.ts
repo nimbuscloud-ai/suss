@@ -22,6 +22,7 @@ import { emitModuleImportFacts } from "../facts.js";
 import { parsePythonSync } from "../parser.js";
 import { findPythonFiles } from "../project.js";
 import { bindModule } from "../scope.js";
+import { pythonSourceRoots } from "../sourceRoots.js";
 import { emitValueFacts, nodeId, readKey } from "./values.js";
 
 import type { ValueLocation, WhyExplained } from "@suss/resolution";
@@ -30,6 +31,10 @@ import type { PyNode } from "../parser.js";
 export interface PythonWhySessionOptions {
   /** The project root, which paths in every answer come out relative to. */
   dir: string;
+  /** Directories an absolute import is resolved against. Read from `dir` when absent, the way `extractPythonProject` reads them. */
+  roots?: string[];
+  /** Roots the project directory cannot tell, such as a checked-out submodule. Added after the others. */
+  additionalRoots?: string[];
 }
 
 /** A found node, paired with the file it was parsed from. */
@@ -141,7 +146,10 @@ export class PythonWhySession {
 
   constructor(options: PythonWhySessionOptions) {
     this.root = path.resolve(options.dir);
-    const roots = [this.root];
+    const roots = [
+      ...(options.roots ?? pythonSourceRoots(this.root).roots),
+      ...(options.additionalRoots ?? []),
+    ];
 
     for (const file of findPythonFiles(this.root)) {
       const source = fs.readFileSync(file, "utf8");

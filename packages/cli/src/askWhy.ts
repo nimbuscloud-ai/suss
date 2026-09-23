@@ -26,6 +26,7 @@ import {
   reachTargetOfTouches,
   representativeUnit,
 } from "./callFacts.js";
+import { checkedOutSubmodules } from "./gitSubmodules.js";
 import { LANGUAGE_LABEL, languageOfFile } from "./language.js";
 import { providesKeyOf, resolveTarget } from "./target.js";
 
@@ -70,7 +71,11 @@ const SESSION_FOR: Record<
   (options: { dir: string }) => WhySessionLike
 > = {
   typescript: (options) => new TypeScriptWhySession(options),
-  python: (options) => new PythonWhySession(options),
+  python: (options) =>
+    new PythonWhySession({
+      ...options,
+      additionalRoots: checkedOutSubmodules(path.resolve(options.dir)),
+    }),
   ruby: (options) => new RubyWhySession(options),
 };
 

@@ -39,6 +39,7 @@ export {
 } from "./project.js";
 export { buildRouterIndex } from "./routers.js";
 export { bindModule, resolveName } from "./scope.js";
+export { pythonSourceRoots, readTomlFile, tableAt } from "./sourceRoots.js";
 export { pythonImportEvidence } from "./stubEvidence.js";
 export { ADAPTER_VERSION } from "./version.js";
 
@@ -91,6 +92,12 @@ export type {
   RouterIndex,
 } from "./routers.js";
 export type { Binding, ModuleBinding, Scope, ScopeKind } from "./scope.js";
+export type {
+  PythonSourceRoots,
+  TomlFileRead,
+  TomlTable,
+  UnreadManifest,
+} from "./sourceRoots.js";
 export type {
   PythonImportEvidence,
   PythonImportEvidenceOptions,

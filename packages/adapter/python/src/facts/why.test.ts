@@ -58,6 +58,30 @@ describe("PythonWhySession", () => {
     ]);
   });
 
+  it("resolves an import of a package kept under src without being told the roots", () => {
+    const pkg = path.join(dir, "src", "shop");
+    fs.mkdirSync(pkg, { recursive: true });
+    fs.writeFileSync(path.join(pkg, "__init__.py"), "");
+    fs.writeFileSync(
+      path.join(pkg, "helpers.py"),
+      "def fetch():\n    return 1\n",
+    );
+    fs.writeFileSync(
+      path.join(pkg, "app.py"),
+      "from shop.helpers import fetch\n\nx = fetch()\n",
+    );
+
+    const session = new PythonWhySession({ dir });
+    const value = session.findExpression("src/shop/app.py", 3, "fetch");
+    const explained = value === null ? null : session.explain(value);
+
+    expect(explained?.target).toEqual({
+      name: "fetch",
+      file: "src/shop/helpers.py",
+      line: 1,
+    });
+  });
+
   it("finds the callee a summary recorded, in the caller's own lines", () => {
     fs.writeFileSync(
       path.join(dir, "helpers.py"),

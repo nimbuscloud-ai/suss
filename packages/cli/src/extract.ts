@@ -46,7 +46,7 @@ import {
 } from "./stubs.js";
 import { UsageError } from "./usageError.js";
 
-import type { PythonPack } from "@suss/adapter-python";
+import type { PythonPack, UnreadManifest } from "@suss/adapter-python";
 import type { RubyPack } from "@suss/adapter-ruby";
 import type {
   BehavioralSummary,
@@ -858,20 +858,16 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
   // framework inside it do not resolve.
   const submodules = runOptions.submodules;
   const files = filesToRead(runOptions, findPythonFiles, submodules);
-  const roots = [
-    runOptions.root,
-    ...submodules
-      .filter((submodule) => submodule.checkedOut)
-      .map((submodule) => submodule.directory),
-  ];
 
   let timingReport: TimingReport | null = null;
   let extractionReport: ExtractionReport | null = null;
   let cacheDiagnostic: CacheDiagnostic | null = null;
-  const { summaries } = await extractPythonProject({
+  const { summaries, roots, unreadManifests } = await extractPythonProject({
     files,
     packs,
-    roots,
+    additionalRoots: submodules
+      .filter((submodule) => submodule.checkedOut)
+      .map((submodule) => submodule.directory),
     projectRoot: runOptions.root,
     ...(runOptions.options.gaps !== undefined
       ? { gapHandling: runOptions.options.gaps }
@@ -887,6 +883,9 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
       cacheDiagnostic = diagnostic;
     },
   });
+  process.stderr.write(
+    formatUnreadManifests(unreadManifests, runOptions.root, roots),
+  );
   return languageRun(
     summaries,
     runOptions.root,
@@ -896,6 +895,23 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
     extractionReport,
     cacheDiagnostic,
   );
+}
+
+/** Empty when every manifest was read. */
+export function formatUnreadManifests(
+  unread: readonly UnreadManifest[],
+  projectRoot: string,
+  roots: readonly string[],
+): string {
+  const searched = roots
+    .map((dir) => path.relative(projectRoot, dir) || ".")
+    .join(", ");
+  return unread
+    .map(
+      ({ where, reason }) =>
+        `[suss] Could not read ${where} to find where the Python sources are, because ${reason}.\n[suss] Absolute imports resolve against ${searched}.\n`,
+    )
+    .join("");
 }
 
 async function runRuby(runOptions: LanguageRunOptions): Promise<LanguageRun> {
