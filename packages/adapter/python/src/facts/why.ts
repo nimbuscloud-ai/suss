@@ -30,6 +30,8 @@ import type { PyNode } from "../parser.js";
 export interface PythonWhySessionOptions {
   /** The project root, which paths in every answer come out relative to. */
   dir: string;
+  /** Directories an absolute import is resolved against. Only `dir` when absent. */
+  roots?: string[];
 }
 
 /** A found node, paired with the file it was parsed from. */
@@ -141,7 +143,7 @@ export class PythonWhySession {
 
   constructor(options: PythonWhySessionOptions) {
     this.root = path.resolve(options.dir);
-    const roots = [this.root];
+    const roots = options.roots ?? [this.root];
 
     for (const file of findPythonFiles(this.root)) {
       const source = fs.readFileSync(file, "utf8");
