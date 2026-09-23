@@ -123,7 +123,7 @@ Each phase is scoped to answer particular questions about the IR and the checker
 
 ### Phase 0: Foundation docs ✅
 
-`docs/why/kinds-of-contract.md` sets out the taxonomy of contract shapes and their epistemic character. `docs/roadmap-react.md` (this doc) sets out the React plan. `docs/theory/boundary-semantics.md` sets out the layering of transport, semantics and recognition.
+`docs/why/kinds-of-contract.md` sets out the taxonomy of contract shapes and their epistemic character. `design/roadmap-react.md` (this doc) sets out the React plan. `docs/theory/boundary-semantics.md` sets out the layering of transport, semantics and recognition.
 
 ### Phase 1: Inferred summaries for React components (in progress)
 
@@ -168,11 +168,11 @@ The Storybook stub stays shipped for the coverage it gives at the component leve
 `@suss/contract-storybook` reads `.stories.ts[x]` files statically, without running them, and emits `BehavioralSummary[]` with `kind: "component"`. Each story exported by name becomes one summary:
 
 - `identity.name` = `{component}.{story}` (e.g. `Button.Primary`)
-- `identity.boundaryBinding` = `{ protocol: "in-process", framework: "react" }`
+- `identity.boundaryBinding` = a function-call binding with `transport: "in-process"`, `recognition: "react"` and the component's name as its export
 - `inputs` = one `parameter` Input per arg, with the source text of the arg's value kept on `shape.ref.name`
 - `transitions` = one default `render` transition that gives the component's name
 - `metadata.component.storybook.{story, component, args, provenance: "independent"}`
-- `confidence.source: "stub"`, `level: "medium"`
+- `confidence.source: "derived"`, `level: "medium"`
 
 It covers the CSF3 variants: `const meta = {...}; export default meta;`, a direct `export default {...}`, and `{...} satisfies Meta<typeof T>` on both the meta and the stories. It also picks up args written as shorthand properties.
 
@@ -202,7 +202,7 @@ It deliberately does **not** report a mismatch between an arg's value and the de
 
 The check runs inside `checkAll` next to `checkContractAgreement`. We picked dedicated finding kinds instead of reusing `contractDisagreement`, because a story against a component isn't quite "two contracts disagreeing". It is a scenario against an implementation, and that deserves its own finding kind.
 
-**Integration test:** `packages/cli/src/storybook-integration.test.ts` runs the whole pipeline (extract the React fixtures, stub the Storybook fixtures, run `checkAll`). It asserts that `scenarioArgUnknown` fires on the `Disabled` story in `Button.stories.tsx`, which uses a `disabled` prop that Button.tsx doesn't declare. It also asserts the positive case: the `Loaded` story in UserCard.stories.tsx covers the `user` prop properly, so no coverage gap fires there.
+**Integration test:** `packages/cli/src/storybookIntegration.test.ts` runs the whole pipeline (extract the React fixtures, stub the Storybook fixtures, run `checkAll`). It asserts that `scenarioArgUnknown` fires on the `Disabled` story in `Button.stories.tsx`, which uses a `disabled` prop that Button.tsx doesn't declare. It also asserts the positive case: the `Loaded` story in UserCard.stories.tsx covers the `user` prop properly, so no coverage gap fires there.
 
 **Left for after v0:**
 - Inferred handlers against Storybook `play` sequences. We need to parse play functions first
@@ -220,9 +220,9 @@ For React, the cross-shape findings with the most signal come from the *sequence
 
 The stubs to build when we are ready are `@suss/contract-playwright` (which parses `.spec.ts` files), `@suss/contract-cypress` (the same for Cypress), and parsing of Storybook `play` functions (added to `@suss/contract-storybook`). Each one emits observation-kind summaries, and the cross-shape checker pairs them with handler sub-units and render-tree elements. We should do this before putting more work into Storybook, because play functions and E2E specs are where most of the behavior of a non-trivial UI shows up.
 
-### Phase 4: Additional observation stubs (opportunistic)
+### Snapshot reader (opportunistic)
 
-A snapshot reader, which turns `__snapshots__/*.snap` into partial observation summaries, and a Playwright reader, which produces behavioral observations that pair with handler units, come as extra packs once Phase 3 has proven the cross-shape machinery. Neither needs new IR work, and both feed the same checker extension.
+A snapshot reader, which turns `__snapshots__/*.snap` into partial observation summaries, comes as an extra pack alongside the Phase 4 readers. Phase 3 v0 has shipped the cross-shape machinery it would feed. Neither needs new IR work, and both feed the same checker extension.
 
 ## IR and checker changes the plan implies
 

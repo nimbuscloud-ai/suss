@@ -4,7 +4,7 @@ Status: direction decided (2026-08-05), details open where marked.
 This came out of a six-angle dispatched review. We verified every bug
 cited below, most of them by running a reproduction.
 
-## The bug this fixes, shown three ways
+## The bug this fixes, shown four ways
 
 Two services live in one monorepo. Service A declares `users(id,
 name)`. Service B declares its own `users(id, email)`. Run `suss

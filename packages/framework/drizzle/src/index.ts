@@ -552,7 +552,7 @@ export const declares: PackDeclaration = {
   package: "@suss/framework-drizzle",
   dependencies: [{ ecosystem: "npm", name: "drizzle-orm" }],
   reads:
-    "Drizzle ORM query-builder and relational-query calls, emits storage-access interactions with SQL table names.",
+    "Drizzle ORM query-builder and relational-query calls. Each one becomes a storage-access interaction on the SQL table it touches.",
 };
 
 export default drizzleFramework;

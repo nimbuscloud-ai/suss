@@ -142,7 +142,7 @@ You will get outright false positives sometimes, findings about something the co
 
 ## How do I silence a finding I have accepted?
 
-Put a rule in `.sussignore.yml`. Every finding prints the rule that would silence it, so you can copy the block out of the output.
+Put a rule in `.sussignore`. Every finding prints the rule that would silence it, so you can copy the block out of the output.
 
 A rule can mark a finding (still shown, dropped from the exit code), downgrade it one severity, or hide it. [Accept a finding](/guides/accept-a-finding) has the format.
 

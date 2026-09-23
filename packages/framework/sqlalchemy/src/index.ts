@@ -207,7 +207,7 @@ export const declares: PackDeclaration = {
   kind: "effects",
   package: "@suss/framework-sqlalchemy",
   dependencies: [{ ecosystem: "pypi", name: "sqlalchemy" }],
-  reads: `SQLAlchemy calls (Python): says which types a query comes back as and which methods write, and the adapter matches a call chain by resolving through a project's own base class to what the method behind it says it returns.`,
+  reads: `SQLAlchemy calls (Python). The pack declares which types a query returns and which methods write. The adapter matches a call chain by following a project's own base class to the method behind the call, and reads that method's declared return type.`,
   configuration: {
     file: "suss.sqlalchemy.json",
     example: { storageSystem: "postgresql" },

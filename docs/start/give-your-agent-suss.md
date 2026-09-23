@@ -71,8 +71,9 @@ suss a dependency](/guides/teach-a-dependency) covers the file it writes.
 `suss_intent_outcomes` lists the outcomes your boundary intent documents
 declare. Each one comes back as `<intent-name>.<outcome-id>`, the string
 a PRD scenario puts in its `link`. An agent calls it before it writes or
-edits a `link`. Both halves of a link are written inside a document
-somebody else wrote, and a link to an outcome nothing declares comes
+edits a `link`. The intent name and the outcome id are both declared in
+a boundary intent document, so a link made up from the feature
+description is a guess. A link to an outcome nothing declares comes
 back from `suss_check` as `danglingScenarioLink`. Pass an `intentDir`
 when the documents are somewhere other than `intent/`.
 

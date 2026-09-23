@@ -103,7 +103,7 @@ So code with many nodes to ask about asks about them together, through `askWritt
 
 ## Which scope a name belongs to
 
-Ruby has no local declarations. Assigning a name anywhere in a method body makes it a local of that method, including inside an `if`, a `case`, a `begin` or a block, and the local is gone once the method returns. So a name fact is keyed on its scope instead of on its file:
+Ruby has no local declarations. Assigning a name anywhere in a method body makes it a local of that method, including inside an `if`, a `case` or a `begin`, and the local is gone once the method returns. A name first assigned inside a block is different in Ruby: it is local to the block. The adapter does not make that distinction. It keys a name a block assigns on the enclosing method, unless the block declares the name as a parameter, so a block-local name and a method local of the same name are treated as one. A name fact is keyed on its scope instead of on its file:
 
 | Where the name is written | Key |
 | --- | --- |
@@ -411,7 +411,7 @@ The facts do not record whether an association is a collection. `@account.status
 | `if ENV.fetch("X")`, or `x = ENV.fetch("X")` then `if x` | a read of `X` | no: `fetch` raises before the test runs |
 | `raise "..." unless ENV["X"]`, or `return x if x` then `raise "..."` | a read of `X` | no: a missing value ends in a raise |
 | `Settings.setting("X")`, where the method reads `ENV[key]` or `ENV.fetch(key)` | a read of `X` at the call | whatever the read inside the method says, or yes when an `\|\|` follows the call |
-| `GET.call("X")`, where `GET` is a lambda reading `ENV.fetch(key)` | nothing: the callee is a value, not a method | |
+| `GET.call("X")` or `GET.("X")`, where `GET` is a lambda reading `ENV.fetch(key)` | a read of `X` at the call | whatever the read inside the lambda says, or yes when an `\|\|` follows the call |
 | `ENV[name]`, `ENV.fetch("#{prefix}_X")`, `ENV[:X]` | nothing: the name is not a string literal, and no caller supplies one | |
 | `ENV["X"] = "1"`, `ENV.key?("X")`, `Settings::ENV["X"]` | nothing: a write, a membership test, or another constant | |
 | `other \|\| ENV["X"]` | `X` not defaulted, since it is the chain's last resort | |
@@ -440,7 +440,7 @@ Every summary has `metadata.moduleImports`: the project files this file depends 
 
 A field's resolver method calls project methods, and those call others. Each method the field reaches this way gets its own summary, of kind `library`, bound as `function-call` with `transport: "in-process"` and `recognition: "reachable"`. That summary lists the calls, environment reads and database work in the method's own body. Each invocation effect on a field or a reached method records, in `summary`, which summary the call lands on. A reader answering "what does this field reach" follows `summary` from one unit to the next and never has to match names.
 
-The walk starts at the resolver method behind every discovered field, found as described under [The method behind a field](#the-method-behind-a-field). It adds a `calls` fact for each call it can follow in a body, until the set stops growing. A method that two actions both reach gets one summary. A call the walk cannot follow is recorded once per callee, on the summary of the body it is in, as an `unfollowedCall` gap giving the reason. There is no gap when no reader could have done better: a call into a gem, a call through a parameter that some caller passes a method by name into, or a call with no declaration the adapter could find.
+The walk starts at the method behind every unit a pack discovers, and at each file's own load-time statements. For a graphql-ruby field that is the resolver method, found as described under [The method behind a field](#the-method-behind-a-field). For a Rails controller it is the action method. It adds a `calls` fact for each call it can follow in a body, until the set stops growing. A method that two actions both reach gets one summary. A call the walk cannot follow is recorded once per callee, on the summary of the body it is in, as an `unfollowedCall` gap giving the reason. There is no gap when no reader could have done better: a call into a gem, a call through a parameter that some caller passes a method by name into, or a call with no declaration the adapter could find.
 
 A call with a receiver is resolved in two steps. First, the rules in `@suss/resolution` work out what the receiver is, from the value facts that `facts/values.ts` emits. A reassigned local, a name aliased through two more, `Klass.new`, a method that returns `self`, and parentheses are all steps those facts record, and asking `objectOf` about the receiver returns the class the value is an instance of. Second, `ancestry.ts` decides which method of that class runs. That follows Ruby's own lookup: `include` and `prepend` put modules into the lookup order at load time, a subclass overrides what its base declares, and `def self.` methods are looked up in a separate place again. A receiver written as a constant refers to the class object itself, so `Klass.build` looks for `def self.build` and `Klass.new` runs the class's own `initialize`.
 
@@ -498,4 +498,4 @@ The walk stops in these cases, with this reason in the gap:
 | `handler.call` or `handler.()`, where `handler` is a parameter that no caller in the run passes a method by name into | the caller supplies it, and nothing named what it passed |
 | `service_class.new.method` where `service_class` is not a constant | the value could not be settled |
 
-The walk does not yet follow a method found only on a superclass past an unread ancestor, a callable read out of a variable, the body of a block passed to `define_method`, or `yield`.
+The walk does not yet follow a method found only on a superclass past an unread ancestor, a callable read out of a variable, the body of a block passed to `define_method`, or `yield`. A lambda assigned to a name is one of those callables: `handler.call` and `LOADER.call` get an invocation effect with no summary behind it, and no gap. The environment reads described earlier do follow a lambda, because they go through the shared rules and not through this walk.

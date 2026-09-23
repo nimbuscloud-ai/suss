@@ -230,7 +230,8 @@ export const declares: PackDeclaration = {
   kind: "client",
   package: "@suss/client-axios",
   dependencies: [{ ecosystem: "npm", name: "axios" }],
-  reads: "axios call sites + \`axios.create\` factories.",
+  reads:
+    "axios call sites, including calls on a client that \`axios.create\` made.",
 };
 
 export default axiosPack;

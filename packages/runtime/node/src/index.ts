@@ -118,7 +118,7 @@ export const declares: PackDeclaration = {
   dependencies: [],
   shippedWith: "typescript",
   reads:
-    "Node.js runtime primitives, scheduling, the \`process\` surface (incl. \`process.env.X\` config-read interactions and the keys of a schema parsed against \`process.env\`), module-loading globals as metadata-read interactions, emitted as interaction effects.",
+    "Node.js runtime primitives, scheduling and the \`process\` surface, each recorded as an interaction effect. A \`process.env.X\` read, or a key of a schema parsed against \`process.env\`, becomes a config-read interaction. A module-loading global becomes a metadata-read interaction.",
 };
 
 export default nodeRuntimePack;

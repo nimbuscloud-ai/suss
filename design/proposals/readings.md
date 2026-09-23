@@ -45,7 +45,12 @@ type Reading<T> =
   | { kind: "written"; value: T; range: SourceRange }
   | { kind: "absent" }
   | { kind: "unreadable"; reason: string; range: SourceRange }
-  | { kind: "ambiguous"; candidates: readonly T[]; reason: string };
+  | {
+      kind: "ambiguous";
+      candidates: readonly T[];
+      reason: string;
+      range: SourceRange;
+    };
 ```
 
 Every adapter and pack reader that extracts a claimable value returns a

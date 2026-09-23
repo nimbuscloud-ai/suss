@@ -233,7 +233,7 @@ export const declares: PackDeclaration = {
   kind: "client",
   package: "@suss/client-apollo",
   dependencies: [{ ecosystem: "npm", name: "@apollo/client" }],
-  reads: "\`@apollo/client\` hooks + imperative \`client.query\`.",
+  reads: "\`@apollo/client\` hooks and imperative \`client.query\` calls.",
 };
 
 export default apolloClientPack;

@@ -59,7 +59,7 @@ The `classDecorators` pack option did the same job until 0.21.0 removed it. A co
 
 ## v0 scope
 
-- **`@Args('field')`.** Every `@Args` lands as a single `args` input. Decomposing the field path and the type options is enough for the binding identity. Pairing that wants the shape of each argument needs fuller parsing of decorator arguments.
+- **`@Args('field')`.** Every `@Args` parameter becomes one input with the role `args`, whatever field name the decorator is given. The binding identity comes from the resolver's type and field name, so this does not affect pairing. Checking the shape of each argument would need fuller parsing of decorator arguments.
 - **Class inheritance and mixins.** Resolvers split across an abstract base and a concrete child are discovered separately, and pairing does not merge them.
 - **Decorator factories.** A custom decorator built with `createParamDecorator(...)` is not in the role map.
 

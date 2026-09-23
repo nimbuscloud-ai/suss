@@ -56,7 +56,7 @@ export const declares: PackDeclaration = {
   package: "@suss/framework-package-exports",
   dependencies: [],
   reads:
-    "The boundary between packages in one workspace: public exports on the provider side, imports of them on the consumer side. Reads the workspace manifest, so it needs no per-project package list.",
+    "The boundary between packages in one workspace: public exports on the provider side, and imports of them on the consumer side. The pack reads the workspace manifest, so nobody has to list the packages for each project.",
 };
 
 export default packageExportsFramework;

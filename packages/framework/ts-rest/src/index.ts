@@ -98,7 +98,8 @@ export const declares: PackDeclaration = {
   kind: "framework",
   package: "@suss/framework-ts-rest",
   dependencies: [{ ecosystem: "npm", name: "@ts-rest/core" }],
-  reads: "ts-rest providers + clients (contract-backed).",
+  reads:
+    "ts-rest handlers and clients, and the contract both sides are built from.",
 };
 
 export default tsRestFramework;

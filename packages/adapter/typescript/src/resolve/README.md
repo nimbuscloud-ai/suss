@@ -152,5 +152,5 @@ Following a helper stops after two hops. It also stops at a body that does more 
 
 - `bootstrap/sourceFileLookup.ts`: `reachableClosure` and `rethrowEnrichment` use it to find summaries by file.
 - `shapes/`: `astResolve` and `shapes` call each other recursively, and the depth cap and seen sets keep both bounded.
-- `discovery/`: `invocationEffects` runs recognizers against `DiscoveredUnit.func`. The recognizer dispatcher skips into nested function bodies, so callbacks inside arrows and IIFEs get no recognizer coverage (see `project_recognizer_scope_gap.md`).
+- `discovery/`: `invocationEffects` runs recognizers against `DiscoveredUnit.func`. The recognizer dispatcher walks the same body the invocation walk does, stopping at `isDescentStop`, so a recognizer fires inside an arrow callback or an IIFE and stops at a named nested declaration.
 - `terminals/`: both walk function bodies, but `terminals/` matches against terminal patterns a pack declares, and `invocationEffects` captures everything else.

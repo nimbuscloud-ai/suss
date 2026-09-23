@@ -10,7 +10,7 @@ what suss can and can't say about each one today.
 Scope note: this is internal and aspirational, like
 [`concept-design.md`](../../docs/theory/prior-art.md). The
 production treatment of "what is a contract" is in
-[`contracts.md`](/contracts). This doc is about a separate
+[`kinds-of-contract.md`](../../docs/why/kinds-of-contract.md). This doc is about a separate
 question, "what is quality". Links below that go to GitHub point
 at design records under `design/`. Those are proposals and working
 notes, and they are not documentation.
@@ -192,7 +192,7 @@ quality claim that doesn't say who its audience is.
 ### Epistemic
 
 Quality splits into specified, observed and derived, the same way
-[`contracts.md`](/contracts) splits capabilities.
+[`kinds-of-contract.md`](../../docs/why/kinds-of-contract.md) splits capabilities.
 
 | Epistemic kind | Shape | Artifacts |
 |---|---|---|
@@ -339,7 +339,7 @@ effort. The section mirrors the aspirational section of
   "more" on each axis), and statements about which surfaces
   overlap and which are independent. It is probably a research
   project of its own before anyone encodes it.
-- **Quality contract shapes.** [`contracts.md`](/contracts) lists
+- **Quality contract shapes.** [`kinds-of-contract.md`](../../docs/why/kinds-of-contract.md) lists
   the shapes a capability contract can take (schema, examples,
   tests, snapshots, design). Quality contracts have their own:
   SLAs, error budgets, accessibility standards, performance
@@ -361,10 +361,10 @@ Cross-references within suss:
   Jackson mapping, audience indexing and the OP test. Quality's
   L1-*whether* and the OP test are the same test asked from
   different directions.
-- [`contracts.md`](/contracts): the three epistemic kinds
+- [`kinds-of-contract.md`](../../docs/why/kinds-of-contract.md): the three epistemic kinds
   (specification, observation, derivation). This doc reuses that
   split for quality.
-- [`cross-boundary-checking.md`](/cross-boundary-checking): the
+- [`cross-boundary-checking.md`](../../docs/why/cross-boundary-checking.md): the
   part of L1-*what* that ships.
 - [The backlog design record](https://github.com/nimbuscloud-ai/suss/blob/main/design/backlog.md): items
   that would unblock parts of the quality layers: [intent specs](https://github.com/nimbuscloud-ai/suss/blob/main/design/backlog.md#intent-specs),
@@ -383,7 +383,7 @@ External sources:
   operational, is closer to Garvin's 1987 dimensions of quality
   than to ISO's flat list.
 - The specified, observed and derived split comes directly from
-  the same move in [`contracts.md`](/contracts), with no new
+  the same move in [`kinds-of-contract.md`](../../docs/why/kinds-of-contract.md), with no new
   sources.
 - Naming trade-off surfaces goes back to Parnas's work on
   information hiding and to Bass, Clements and Kazman's software

@@ -183,7 +183,7 @@ export const declares: PackDeclaration = {
   package: "@suss/framework-sqlmodel",
   dependencies: [{ ecosystem: "pypi", name: "sqlmodel" }],
   reads:
-    "SQLModel calls (Python): says which types a query comes back as and which methods write, under the modules SQLModel exports them from, and includes the SQLAlchemy patterns a SQLModel project also reaches.",
+    "SQLModel calls (Python). The pack declares which types a query returns and which methods write, under the modules SQLModel exports them from. It also includes the SQLAlchemy patterns, since a SQLModel project reaches those too.",
   configuration: {
     file: "suss.sqlmodel.json",
     example: { storageSystem: "postgresql" },

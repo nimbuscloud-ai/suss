@@ -104,7 +104,7 @@ export const declares: PackDeclaration = {
   package: "@suss/framework-bigquery",
   dependencies: [{ ecosystem: "npm", name: "@google-cloud/bigquery" }],
   reads:
-    "BigQuery queries and table calls, emits storage-access interactions with the dataset as the scope.",
+    "BigQuery queries and table calls. Each one becomes a storage-access interaction scoped to its dataset.",
 };
 
 export default bigqueryFramework;

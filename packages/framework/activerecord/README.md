@@ -109,11 +109,13 @@ The adapter turns each declaration into a fact the shared rules read, so
 `@account.statuses.find(params[:id])` is a read against `Status`. The
 class comes from `class_name:` when the call has one. Otherwise it comes
 from the association's own name, run through the inflections
-ActiveSupport ships. A project's own
-`config/initializers/inflections.rb` is not read. So a word the project
-teaches Rails to inflect differently gets the default inflection here,
-the association points at a class that nothing in the project declares,
-and nothing is recorded for it.
+ActiveSupport ships. This pack does not read the project's
+`config/initializers/inflections.rb`. The rails pack does, and when it
+is in the same run the adapter checks the project's inflections before
+the defaults. Without the rails pack, a word the project teaches Rails
+to inflect differently gets the default inflection, the association
+points at a class that nothing in the project declares, and nothing is
+recorded for it.
 
 Concerns are covered too. A `has_many` inside an `included do` belongs
 to the module, and the module is in the ancestry of every model that

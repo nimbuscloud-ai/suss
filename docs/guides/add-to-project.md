@@ -65,7 +65,7 @@ Two more steps follow: accepting a finding, and running the same two commands in
 
 ## What `init` writes
 
-`suss.json` at the repository root is the one file to commit. It lists which packs this project needs and which documents it declares:
+`init` writes `suss.json` at the repository root. It lists which packs this project needs and which documents it declares:
 
 ```json
 {
@@ -88,7 +88,7 @@ Two more steps follow: accepting a finding, and running the same two commands in
 
 Commit it. It records what the project contains, which is the same for everybody working on it. With the file committed, a later run tells you when a document stops being compared, so the document does not go unpaired without anyone noticing.
 
-`init` can also write `.sussignore.json` with one example rule ([Accept a finding](/guides/accept-a-finding) has the syntax) and `.github/workflows/suss.yml` ([Run suss in CI](/guides/ci-integration) has the whole thing). Both are off by default.
+`init` can also write a `.sussignore` with one example rule, as `.sussignore.json` ([Accept a finding](/guides/accept-a-finding) has the syntax) and `.github/workflows/suss.yml` ([Run suss in CI](/guides/ci-integration) has the whole thing). Both are off by default.
 
 ## Run it
 
