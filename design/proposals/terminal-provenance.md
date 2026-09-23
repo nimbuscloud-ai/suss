@@ -1,8 +1,8 @@
 # What a terminal came from
 
-A terminal should say which return produced it. Right now it says where
-the matcher stopped looking, and everything downstream has to guess its
-way back.
+A terminal should record which return produced it. Right now it records
+where the matcher stopped looking, and everything downstream has to
+guess its way back.
 
 ## Why
 
@@ -20,8 +20,8 @@ doing the same to every React component written as an arrow. The
 checker turns a provider gap into a contract violation at error
 severity, so the second one failed checks on correct code.
 
-Six bugs in this area have all been the same bug: information the
-matcher had, threw away, and somebody else reconstructed.
+Six bugs in this area have all been the same bug. The matcher had the
+information, threw it away, and somebody else had to reconstruct it.
 
 ## The change
 
@@ -30,14 +30,14 @@ from, or the function body for a concise arrow that returns without
 writing `return`, or nothing for a terminal that is not a return at all,
 like a throw.
 
-Each matcher sets it, because each matcher is the only thing that knows.
+Each matcher sets it, because only the matcher has that information.
 `isInReturnPosition` in `returns.ts` already computes the answer and
 throws it away by returning a boolean; it should return the return
-statement instead. The JSX matcher knows whether it matched the function
-or a return inside it. The throw matcher leaves it unset.
+statement instead. The JSX matcher can tell whether it matched the
+function or a return inside it. The throw matcher leaves it unset.
 
-Counting what went unread then stops being inference. Take the returns
-in the body, subtract the ones a terminal points to as its source, and
+Counting what went unread then needs no guessing. Take the returns in
+the body, subtract the ones a terminal points to as its source, and
 report the difference.
 
 ## What it fixes beyond the counting
@@ -49,23 +49,24 @@ search at roughly the cost of the whole assembly pass. With `source` on
 the terminal, the assembly
 pass hands its result over and the second search goes away.
 
-It also stops the next matcher from reintroducing this. A matcher that
-anchors somewhere new has to say what it consumed, so nothing
+It also stops the next matcher from bringing this back. A matcher that
+anchors somewhere new has to record what it consumed, so nothing
 downstream can be wrong about it.
 
 ## Order to do it in
 
-1. `isInReturnPosition` returns the return statement rather than a
+1. `isInReturnPosition` returns the return statement instead of a
    boolean, and `tryMatchReturnShape` puts it on the terminal.
 2. The other matchers in `returns.ts`, then `jsx.ts`, then `throws.ts`.
    Fifteen places construct a terminal, and once the first one settles
    the form the rest are mechanical.
 3. `extractRawBranches` returns the terminals it found alongside the
    branches, so `extractCodeStructure` can pass them to the counter.
-4. `countUnmatchedReturns` takes terminals rather than patterns, and
+4. `countUnmatchedReturns` takes terminals instead of patterns, and
    the ancestor walk in it goes away.
 5. Delete the second `findTerminals` call.
 
 The tests pinned in `unmatchedReturns.test.ts` cover the five cases
 that broke, and they should keep passing at every step. If one of them
-needs changing, that tells us the modelling moved rather than the bug.
+needs changing, that tells us the modelling changed and the bug did
+not.

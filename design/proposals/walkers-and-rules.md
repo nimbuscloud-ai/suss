@@ -1,23 +1,24 @@
 # What should be facts, and what should stay a walker
 
-This is the one design for the fact layer and its consumers, and the
-foundation 0.20.0 builds on. It was first written from measurements on
-the TypeScript adapter; a full audit across all three adapters
-(2026-08-28) folded in the sections on bypasses, the recognize surface,
-cross-adapter parity, and the migration constraints, and set the order.
+The fact layer and its consumers follow this one design, and 0.20.0
+builds on it. It was first written from measurements on the TypeScript
+adapter. A full audit across all three adapters (2026-08-28) added the
+sections on bypasses, the recognize surface, cross-adapter parity, and
+the migration constraints, and set the order.
 
-The policy the audit settled: when a question is "follow this value,
+The audit settled a policy. When a question is "follow this value,
 name, or module one more step", the answer is a one-hop fact plus a
-rule, never a new walk. A walk that exists only because no fact does is
-debt. What stays imperative is syntax normalization (peeling casts,
-counting application layers, reading a decorator's name), per-function
-structural analysis (the path engine, shape extraction), and any
-closure whose order the language defines (Ruby's method resolution
-order).
+rule, never a new walk. A walk that exists only because the fact is
+missing is debt. Three kinds of code stay imperative: syntax
+normalization (peeling casts, counting application layers, reading a
+decorator's name), per-function structural analysis (the path engine,
+shape extraction), and any closure whose order the language defines
+(Ruby's method resolution order).
 
-The resolution rules are one package. Discovery, terminal matching,
+The resolution rules live in one package. Discovery, terminal matching,
 assembly and the whole checker are imperative TypeScript, and that is
-where the bugs come from. Four recent ones, all traced:
+where the bugs come from. Here are four recent ones, each traced to its
+cause:
 
 - A checker pass matched a handler to a Lambda with `startsWith` on
   file paths and produced 1,894 findings, 1,307 of which pointed at the
@@ -35,9 +36,9 @@ where the bugs come from. Four recent ones, all traced:
   (#72).
 
 The claim to test is that moving a question into rules makes it both
-faster and more correct. It does not always. So what follows says where
-it has, where the evidence says it would, and where the code should stay
-where it is.
+faster and more correct. It does not always. So the rest of this says
+where it has, where the evidence says it would, and where the code
+should stay where it is.
 
 Numbers from the public dogfood targets are given in full. Runs against
 a production monorepo are described as ratios or as counts of findings,
@@ -51,17 +52,17 @@ needed, correctness and speed moved together. Stopping the expansion of
 library types made the output 84 times smaller and extraction about 20%
 faster. Composing two property rules deleted one that derived nothing
 and cut engine time 7 to 21% with identical summaries. The clearest
-case is the `unwrapsProperty` rule that was taken out: it produced
+case is the `unwrapsProperty` rule that was taken out. It produced
 several candidates for one value, which nulled sixty handlers and cost
-time, one cause and two symptoms.
+time: one cause with two symptoms.
 
 Where the fix was to ask a question nobody was asking, the two moved
 apart. Resolving what an export actually is found 2,034 units that were
 invisible and cost 3.4 times the wall clock.
 
-A candidate of the first kind pays twice and ranks above one of the
-second kind even where the second finds more. Each entry below says
-which it is and what puts it there.
+A candidate of the first kind pays off twice, so it ranks above one of
+the second kind even where the second finds more. Each entry below
+says which kind it is and why it ranks where it does.
 
 **Negation is unaffordable, and the reason is narrower than it looks.**
 `canResume` in `@suss/datalog` returns false when *any* rule in the set
@@ -70,10 +71,10 @@ and rebuilt from base facts. The resolution store evaluates after every
 wave of facts arrives, so a rule set with one negated literal anywhere
 pays for a full re-derivation per wave. A reaching-definitions design
 that used negation took one corpus from 66 seconds to not finishing in
-ten minutes. The stratifier itself is fine; the resume flag is what
-costs the time. Candidates whose natural formulation needs negation are
+ten minutes. The stratifier itself is fine; the time goes into the
+resume flag. Candidates whose natural formulation needs negation are
 marked blocked, and the section on the path engine says what fixing the
-flag would have to buy.
+flag would have to achieve.
 
 ## Inventory
 
@@ -112,64 +113,66 @@ store; "walks" means it works the same question out itself.
 
 ### The store is bypassed where it matters most
 
-The 2026-08-28 audit found the sharpest cases are not modules missing
-from the table above but places the store exists and is not asked.
+The 2026-08-28 audit found that the worst cases are places where the
+store exists and nobody asks it. They are not modules missing from the
+table above.
 
 - **`callOps.ts:461` prefers syntax over the store.** The value step
-  every declared pack rides on reads
-  `variableFor(step)?.getInitializer() ?? resolve(step)`: the local
-  initializer wins, and the store is asked only when there is none. A
-  local `const client = wrap(base)` short-circuits the `unwraps`
-  rules, `settled` caps at four hops and returns null in a way that
-  makes a deep chain and a cycle look identical, and the curried
-  creator (`create<T>()(init)`) dies in `rootIdentifier`, which
-  returns null for a callee that is itself a call. One preference
-  flip reaches every declared pack.
+  that every declared pack depends on reads
+  `variableFor(step)?.getInitializer() ?? resolve(step)`. The local
+  initializer wins, and the store is asked only when there is none. So
+  a local `const client = wrap(base)` skips the `unwraps` rules.
+  `settled` stops at four hops and returns null in a way that makes a
+  deep chain and a cycle look identical. And the curried creator
+  (`create<T>()(init)`) fails in `rootIdentifier`, which returns null
+  for a callee that is itself a call. Flipping that one preference
+  affects every declared pack.
 - **`packageImport.ts` and `factoryTracking.ts` are never handed the
-  store.** Their headers enumerate nine recognized call spellings and
-  five out-of-scope ones (reassignment, parameter passthrough,
-  namespace imports, re-exports, receiver chains); every out-of-scope
+  store.** Their header comments list nine recognized call spellings
+  and five out-of-scope ones (reassignment, parameter passthrough,
+  namespace imports, re-exports, receiver chains). Every out-of-scope
   spelling is an existing relation (`moduleExport`, `passesArgument`,
   `binds`). This walker is why #429 is open, and the injected-client
-  shape from the field report is the same missing edge.
+  pattern from the field report is the same missing edge.
 - **`moduleExports.ts` asks ts-morph instead of `moduleExport/3`.**
   The file is a stack-machine rewrite of ts-morph's recursive alias
   resolution, with three `RangeError` catches and the stderr fallback
   that drops exports (#177). The relation is already derived,
-  terminating, and stackless; deleting the walk deletes the fallback.
+  terminating, and stackless. Deleting the walk deletes the fallback.
 - **`ReceiverOrigin` has two members and needs six.** `factoryMade`,
   `imported`, `anchored`, `inherits`, and `global` (#542) are each an
   entry in every adapter's dispatch table today, and all of them are
-  `comesFrom` queries. The recognize ops that exist to compensate for
-  walk distance (`callee()`, the eight-hop receiver budget,
-  `namedCallee`) shrink with them; mongoose's three-way
+  `comesFrom` queries. The recognize ops that exist to make up for how
+  far the walk can reach (`callee()`, the eight-hop receiver budget,
+  `namedCallee`) shrink with them. Mongoose's three-way
   `modelFactoryCall(receiver) ?? callee() ?? receiver.receiver()`
-  disjunction is the pattern at its clearest.
+  disjunction shows the pattern most clearly.
 - **Mount composition is a closure in TypeScript and a one-hop
   abstention in Python.** `mountPrefix.ts` hand-rolls a memoized,
-  cycle-guarded closure with its own agreement semantics; the Python
-  `routers.ts` abstains one hop deep, which is the unresolved half of
-  #251 and 148 unpathed routes on the field corpus. As
+  cycle-guarded closure with its own agreement semantics. The Python
+  `routers.ts` gives up one hop deep, and that is the unresolved half
+  of #251 and 148 routes with no path on the field corpus. With
   `mounted(child, parent, prefix)` facts and one `mountPath` closure,
-  both adapters compute the same paths, and a router mounted twice is
-  two derivations, which is #689's boundary-per-mount falling out of
-  the same rule.
+  both adapters compute the same paths. A router mounted twice becomes
+  two derivations, so #689's boundary per mount comes from the same
+  rule.
 - **Ruby joins facts out of the `Database` by hand.** The Ruby
   adapter's `storage.ts` recursively filters `extendsNamed`,
   `extends`, and `binds` tuples in TypeScript, per call site, over
-  relations already sitting in the engine. Python's `storage.ts` is the
-  same shape one level up: the rules do one hop and imperative code
-  does the star, with hand-rolled demand management. Each becomes two
-  rules (`reachesBase`; `reachesStorage` over `bodyCallsDeep`).
+  relations already in the engine. Python's `storage.ts` has the same
+  problem one level up: the rules do one hop, and imperative code does
+  the transitive closure with hand-rolled demand management. Each
+  becomes two rules (`reachesBase`; `reachesStorage` over
+  `bodyCallsDeep`).
 - **The one-hop origin predicates.** `isImportedFrom` and
   `methodDeclaredIn` are path-substring tests with a single alias
-  hop; `comesFrom` and `callsInto` already cover both transitively.
+  hop. `comesFrom` and `callsInto` already cover both transitively.
 
-The long tail is the same shape at smaller stakes: `readName` at two
+The long tail is the same problem at smaller stakes: `readName` at two
 hops, `astResolve` at eight, three separate `.then`-chain walks, the
 GraphQL fragment splice. The structural depth caps (`unwrap`, shape
-extraction, path enumeration) are not on the list; they bound
-recursion over one expression, not a relation.
+extraction, path enumeration) are not on the list, because they bound
+recursion over one expression and not over a relation.
 
 ### The same question, answered several ways
 
@@ -197,8 +200,8 @@ matter:
   appends one unconditionally, with a comment claiming it matches the
   first. The SAM manifest reader strips it. Two of the three feed the
   same `metadata.codeScope.path` field that the two `startsWith` calls
-  read. The brief predicted three copies with different conventions;
-  there are six.
+  read. The audit brief predicted three copies with different
+  conventions, and there are six.
 
 ### Where the thirteen pinned bugs live
 
@@ -229,78 +232,79 @@ are something else entirely.
 
 **1. Ask the store where discovery still reads syntax.** First kind.
 `resolverMap.ts` works out "what object literal is this" three separate
-ways by hand and is never handed the store at all; `registrationLoop`
-and `registrationTemplate` each work it out a fourth and fifth way;
-`namedExport`'s default-export pass reads the syntax at the position
-while its two neighbouring passes ask. The evidence is that this exact
-change, in three other places, took NestJS from 7 boundaries to 434 and
-Express from 0 to 52, with nothing project-specific configured. The
-imprecision costs a lost boundary rather than time, so it is the first
-kind by the loss it causes rather than by wall clock. It deletes roughly
+ways by hand, and never gets the store at all. `registrationLoop` and
+`registrationTemplate` work it out a fourth and fifth way.
+`namedExport`'s default-export pass reads the syntax at the position,
+while its two neighbouring passes ask the store. The same change, made
+in three other places, took NestJS from 7 boundaries to 434 and Express
+from 0 to 52, with nothing project-specific configured. Here the
+imprecision loses boundaries instead of costing time, so it counts as
+the first kind because of the boundaries it loses. It deletes roughly
 250 lines across four files, retires two pins and sets up three more.
 
 **2. Emit the base facts that three pinned cases need.** First kind, and
-the cheapest thing here. `binds` for a destructuring pattern and for a
-binding with a default, and `func` for an overloaded declaration. No
-new relations, no new rules, three more kinds of tuple from
-`facts/extract.ts`. It retires three pins. The fuzzer is the measurement
-and it already runs in CI.
+the cheapest thing here. The facts are `binds` for a destructuring
+pattern and for a binding with a default, and `func` for an overloaded
+declaration. It needs no new relations or rules, only three more kinds
+of tuple from `facts/extract.ts`. It retires three pins. The fuzzer
+measures it, and the fuzzer already runs in CI.
 
 **3. One path convention, and one place that owns it.** First kind, and
 the largest measured harm on the list: 1,307 wrong findings in one run.
-Six normalisers with three trailing-slash conventions, feeding two
+Six normalisers with three trailing-slash conventions feed two
 `startsWith` calls and one `includes`. This is not a rules candidate.
-`runsIn` already states the question; what is missing is that the path
-test is a callback rather than part of the answer, so the convention
-lives at three call sites instead of one. Fixing it takes a shared
-helper and a fact on the summary, not a fixpoint.
+`runsIn` already states the question. The trouble is that the path test
+is a callback instead of part of the result, so the convention lives at
+three call sites instead of one. Fixing it takes a shared helper and a
+fact on the summary, and no fixpoint.
 
 **4. Retire the six one-hop import readers.** First kind, low risk. Every
 one of the seven copies of "what local name binds this import" asks a
-question `imports(x, m, n)` already answers, and each copy stops at a
-different place: none of them follow a re-export. The cost is one seed
-per recognizer per file, and the demand rewrite already prices that.
+question that `imports(x, m, n)` already covers, and each copy stops at
+a different place: none of them follow a re-export. The cost is one
+seed per recognizer per file, and the demand rewrite already accounts
+for that.
 
 **5. Memoise `helperResolution`, and let it resolve through the store.**
 First kind. It crosses function boundaries, scans the helper's whole
 body with `getDescendantsOfKind`, walks parents upward per return, and
 caches none of it. Ten handlers returning `json(...)` re-resolve `json`
-and re-walk its guards ten times. `store.importedNamesOf` demonstrates
-the caching pattern on the same kind of problem. The resolution half can
+and re-walk its guards ten times. `store.importedNamesOf` shows the
+caching pattern on the same kind of problem. The resolution half can
 move now. The guard half cannot: `earlyReturnGuardsBefore` is literally
 "a guard that was not true", with a three-valued unknown on top, and
 that is negation.
 
-**6. Class methods and arrow properties in `decoratedMethod`.** Walker
-gap, one pin. The class decorator goes through the store and the method
-decorators are matched by literal name, inside one file. This is not a
-rules change; the walker should look at one more member kind and ask the
-same question the class already asks.
+**6. Class methods and arrow properties in `decoratedMethod`.** This is
+a walker gap with one pin. The class decorator goes through the store,
+and the method decorators are matched by literal name inside one file.
+It needs no rules change. The walker should look at one more member
+kind and ask the same question it already asks for the class.
 
-**7. Reaching definitions over a scoped control-flow graph.** Worked out
-below. It can move without negation if it stays scoped. The unscoped
-version is the second kind and costs about 2M base tuples on the largest
-public corpus.
+**7. Reaching definitions over a scoped control-flow graph.** The
+section below works it out. It can move without negation if it stays
+scoped. The unscoped version is the second kind and costs about 2M base
+tuples on the largest public corpus.
 
-**8. The checker's pairing passes.** Blocked. Seventeen of the twenty-six
-files are built around negation, and the negations are not incidental:
-they are the findings. `envVarUnprovided` is "no declaration for X".
+**8. The checker's pairing passes.** Blocked. Seventeen of the
+twenty-six files are built around negation, and the negations are the
+findings themselves. `envVarUnprovided` is "no declaration for X".
 `messageBusConsumerOrphan` is "no producer sends to X".
 `deadConsumerBranch` is "the provider never produces status N".
 Under today's resume flag a rule set like that re-derives from base
-facts every wave. Worth recording separately: every negation site has
-its own guard against negating over an incomplete domain, and there are
-nine independent inventions of it, from `readHere.size === 0` in
+facts every wave. A separate point: every negation site has its own
+guard against negating over an incomplete domain, and that guard was
+invented nine separate times, from `readHere.size === 0` in
 `unusedFindings` to `anyDefaultShapeRead` in the relational pass to the
-`disputed` file deletion in `unitsByFile`. That is one shared
-concept with nine spellings, and it is a better first move on the
-checker than rules are.
+`disputed` file deletion in `unitsByFile`. That is one shared concept
+written nine ways, and sharing it is a better first move on the checker
+than rules are.
 
 **Not on this list: `bodyShapesMatch`.** Two type references match when
-their `name` strings are equal, with no module qualification and no
+their `name` strings are equal. There is no module qualification and no
 structural fallback. It is a four-line semantics bug in
-`ir-core/typeShapeMatch.ts`, not traversal, and it should be fixed as a
-bug rather than ranked here.
+`ir-core/typeShapeMatch.ts` with no traversal involved, and it should
+be fixed as a bug instead of ranked here.
 
 ## The first step
 
@@ -326,17 +330,17 @@ question.
 plus the magic bookkeeping the demand rewrite adds at roughly 2.8 per
 seed. On a corpus where every default export is a function written out
 at the export, the chain ends on the first fact and nothing widens. The
-cost to watch is a default export that resolves to nothing, because the
-wave walk then widens to the file's imports up to six hops and extracts
-those files. `registrationCall.couldNameAFunction` is the existing
-answer to that and the same gate belongs here.
+cost to watch is a default export that resolves to nothing. The wave
+walk then widens to the file's imports, up to six hops, and extracts
+those files. `registrationCall.couldNameAFunction` already guards
+against that, and the same gate belongs here.
 
-**Expected cost in time:** the closest prior is #70's, which moved
-Twenty's `nestjs-graphql` from 7 to 434 boundaries without a wall-clock
-regression worth reporting, and the counter-prior is the export
+**Expected cost in time:** the closest precedent is #70, which moved
+Twenty's `nestjs-graphql` from 7 to 434 boundaries with no wall-clock
+regression large enough to report. The opposite precedent is the export
 identity work, which found 2,034 units and cost 3.4 times the clock.
-Which one this resembles depends on how often the answer is null,
-because a null answer is what pays for the widening. Measure on
+Which one this resembles depends on how often the result is null,
+because a null result is what triggers the widening. Measure on
 twenty-front, where the resolution rules do run and derive 2.8% of what
 they used to after the rewrite, and on saleor-storefront, where they
 barely run at all.
@@ -344,14 +348,14 @@ barely run at all.
 **How to know it worked:** the fuzzer's `route` dimension loses
 `defaultOfName` and `throughProperty`, and both promote into the sound
 tier. Summaries stay byte identical on every corpus where discovery
-finds the same units. Engine time and derived tuples per relation from
-`--datalog-profile` on both corpora.
+finds the same units. Record engine time and derived tuples per
+relation from `--datalog-profile` on both corpora.
 
 ## The path engine, worked out
 
 `paths/pathConditions.ts` enumerates every entry-to-terminal path and
-gives each terminal the conjunction of conditions along it. It knows
-the successor structure of a function body and throws it away. The
+gives each terminal the conjunction of conditions along it. It has the
+successor structure of a function body in hand and throws it away. The
 question is whether that can be facts.
 
 **Path conditions themselves should not move.** The positive rule
@@ -361,7 +365,7 @@ anyone would write first is
     reaches(a, c)     :- reaches(a, b), succ(b, c).
     gatedBy(t, c, p)  :- guards(a, b, c, p), reaches(b, t).
 
-and it answers a weaker question than the enumeration does. It gives
+and it computes a weaker result than the enumeration does. It gives
 the conditions on *some* path to `t`, which cannot tell "under `a` and
 not `b`" from "under not `a`". Transition identity is built from the
 conjunction, so that distinction is exactly what the summaries record.
@@ -369,12 +373,12 @@ Recovering per-path conjunctions in Datalog needs either a path-valued
 term, which the engine does not have, or "no other condition
 intervenes", which is negation. The enumeration is the right form for
 what it produces, and the way it degrades is already sound: a case it
-declines gets its enclosure conditions plus one opaque conjunct rather
-than a fabricated claim.
+declines gets its enclosure conditions plus one opaque conjunct instead
+of a fabricated claim.
 
 **Reaching definitions can move, and without negation, if it stays
 scoped.** The textbook rule kills a definition with a negated literal.
-The negation is removable by materialising the complement as a base
+The negation can be removed by materialising the complement as a base
 fact: `passes(n, v)` for "statement n does not write v". Then
 
     reachesDef(d, n) :- writes(d, v), succ(d, n).
@@ -385,12 +389,13 @@ is Horn all the way down, and the store can resume between waves.
 
 The cost of that complement is `|statements| × |variables|` per
 function, which is not affordable across a program. It becomes
-affordable by restricting `v` to names written more than once, which is
-the only case where the answer differs from what `binds` already says.
-`facts/assignments.ts` computes that set today, and `endsHolding`
-(#71) is the special case the adapter added rather than run a general
-analysis. Reaching definitions over a scoped graph is what would let
-`endsHolding` stop reporting nothing when control flow decides.
+affordable when `v` is restricted to names written more than once,
+since only then can the result differ from what `binds` already
+records. `facts/assignments.ts` computes that set today, and
+`endsHolding` (#71) is the special case the adapter added instead of
+running a general analysis. Reaching definitions over a scoped graph
+would let `endsHolding` report a value when control flow decides it,
+where today it reports nothing.
 
 **The numbers.** Measured over this repo's adapter package, 99 files:
 16,814 statements, 2,170 functions, 2,353 branch statements. That is
@@ -402,80 +407,80 @@ Scoped to functions with a reassigned name, at roughly 8 statements and
 16 tuples per function. Extrapolating the per-file statement count to
 twenty-server's 5,011 files gives on the order of 110,000 functions;
 if one in twenty has a reassigned name, that is under 90,000 tuples.
-Affordable, and the reassignment count is the number to measure rather
-than assume.
+That is affordable, and the reassignment count should be measured
+instead of assumed.
 
 Unscoped, the same extrapolation gives about 850,000 statements and
 roughly 1.1M successor edges, so about 2M base tuples before a rule
 runs, on the corpus where the resolution rules do not execute at all
 today. `reaches` is a transitive closure over that, bounded per
 function but with a tail that is quadratic in the largest function.
-That is the second kind of change: it makes new findings possible, an
-error swallowed here and rethrown two frames up, or a call that stopped
-happening because its branch became unreachable, and it asks a question
-nobody asks today. Nobody should commit to it on the strength of those
-findings without measuring the closure on one large corpus first.
+That is the second kind of change. It makes new findings possible,
+such as an error swallowed here and rethrown two frames up, or a call
+that stopped happening because its branch became unreachable, and it
+asks a question nobody asks today. Nobody should commit to it because
+of those findings without first measuring the closure on one large
+corpus.
 
 **What the negation fix would have to cost.** `canResume` reads a flag
 computed over the whole rule set, so one negated literal anywhere
 disables resume for every stratum. Strata below the lowest negated one
 are monotone and could resume normally. Making resume per-stratum is a
-change inside `runRules`, on the order of thirty lines, and it is worth
-doing when a candidate that needs negation is otherwise ready. What it
-has to beat is the 66-seconds-to-never run: a negated design has to come
-back under the 16.3s the import-gate change bought on that corpus, and
-that means the retract-and-rebuild has to stop firing on every wave.
-Until something needs it, this stays unbuilt and the candidates above
-stay positive.
+change inside `runRules`, on the order of thirty lines, and it should
+be done when a candidate that needs negation is otherwise ready. It has
+to beat the run that went from 66 seconds to never finishing. A negated
+design has to come back under the 16.3s the import-gate change got on
+that corpus, which means the retract-and-rebuild has to stop firing on
+every wave. Until something needs it, this stays unbuilt and the
+candidates above stay positive.
 
 ## What should stay imperative
 
-A one-shot structural walk with no recursion, whose answer nobody else
+A one-shot structural walk with no recursion, whose result nobody else
 needs, is a walker and should stay one.
 
-- **`terminals/jsx.ts`.** Mutually recursive over a tree, but the tree
-  is the answer: the render node it builds is the output, not an
-  intermediate anybody joins against. Rules would restate the recursion
-  and gain nothing.
-- **`terminals/throws.ts`.** Already a table from a throw statement to a
-  terminal. It inspects one node and its arguments. The one thing it
-  gets wrong, matching a constructor by text prefix so an aliased
-  `HttpError` is missed, takes an `importedNamesOf` call to fix, not a
-  rewrite.
-- **`terminals/extract.ts`.** Configuration-driven mapping over an
-  extraction context. No traversal to speak of.
-- **`assembly.ts`.** Composition of four steps into branches, 271 lines,
-  no recursion, one caller.
+- **`terminals/jsx.ts`.** It is mutually recursive over a tree, but the
+  tree is the output. The render node it builds is what it returns, and
+  nothing joins against it. Rules would restate the recursion and gain
+  nothing.
+- **`terminals/throws.ts`.** It is already a table from a throw
+  statement to a terminal, and it inspects one node and its arguments.
+  It gets one thing wrong: it matches a constructor by text prefix, so
+  an aliased `HttpError` is missed. An `importedNamesOf` call fixes
+  that without a rewrite.
+- **`terminals/extract.ts`.** A configuration-driven mapping over an
+  extraction context, with almost no traversal.
+- **`assembly.ts`.** It composes four steps into branches in 271 lines,
+  with no recursion and one caller.
 - **`paths/pathConditions.ts`.** Covered above. Its output is per-path
   conjunctions, and the enumeration is what produces them.
-- **`checker/dedupe.ts` and the finding builders.** Grouping and prose.
-  Worth one note: the dedupe key includes the whitespace-normalised
-  English of the description, and every finding without a boundary
-  shares one bucket. That is a bug to fix in place, not a candidate to
-  move.
+- **`checker/dedupe.ts` and the finding builders.** These do grouping
+  and prose. One note: the dedupe key includes the
+  whitespace-normalised English of the description, and every finding
+  without a boundary shares one bucket. That is a bug to fix where it
+  is, and the module should not move.
 - **The checker's negative passes**, until resume is per-stratum.
 - **Syntax normalization.** Peeling casts and parentheses, counting
   the application layers of one expression, reading a decorator's
   name. Rules never see syntax; this is the fact emitter's own step.
 - **Ruby's method resolution order** (`ancestry.ts`). The closure is
   order-sensitive by the language's definition, so it stays imperative
-  or becomes a rule with an explicit precedence column, and not
-  before.
+  until it can become a rule with an explicit precedence column.
 
 ## The questions this has to answer
 
 **Could smaller pieces compose to this?** The first step is two call
-sites in two files, using relations that already exist. Nothing new is
-minted. The second and fourth entries in the ranking are each one kind
-of base fact.
+sites in two files, using relations that already exist. It adds no new
+relation. The second and fourth entries in the ranking are each one
+kind of base fact.
 
 **Does it reuse what exists?** `resolveCallable`, `resolveObject` and
-`resolveWrittenValue` answer every question the first four entries ask.
-The demand rewrite already prices the seeds.
+`resolveWrittenValue` cover every question the first four entries ask.
+The demand rewrite already accounts for the cost of the seeds.
 
-**Does it widen shared vocabulary?** No knob reaches pack authors. The
-path convention entry narrows vocabulary rather than widening it: six
-normalisers become one.
+**Does it widen shared vocabulary?** Pack authors get no new setting.
+The path convention entry narrows vocabulary: six normalisers become
+one.
 
 **Is it over-designed?** The first step deletes more code than it adds.
 The path-engine section recommends building nothing.
@@ -496,25 +501,25 @@ It does not touch the evaluator.
 
 - **Negation stays unaffordable** until resume is per-stratum. The
   mount agreement policy ("two resolved prefixes that disagree mean no
-  answer") is naturally negation-shaped, so the closure derives every
-  mount path and the agreement policy stays a post-processing step
-  over derived tuples, the way the flow pass ships `may*` variants
-  instead of negating.
+  answer") is a negation by nature. So the closure derives every mount
+  path, and the agreement policy stays a post-processing step over
+  derived tuples, the way the flow pass ships `may*` variants instead
+  of negating.
 - **Recognition needs its facts before it runs.** Recognizers fire
   synchronously inside the extraction walk, so derived relations must
   exist when they ask. The store's demand-driven evaluation already
-  covers this at the sites that ask today; the change is wiring, not
-  pipeline surgery: hand the store to discovery the way
-  `registrationTemplate` and `resolverMap` already take it.
+  covers this at the sites that ask today. The change is wiring, and
+  the pipeline itself stays as it is: hand the store to discovery the
+  way `registrationTemplate` and `resolverMap` already take it.
 - **Facts have no cache; summaries do.** Every run re-extracts facts
   from scratch, and the summary cache's dependency edges already come
-  from the store's walk recording, on null answers included. A
-  per-file fact cache is the enabler to measure, not assume: the
-  store's memo plus `fullyExtracted` may already bound the cost
-  within a run, and `--datalog-profile` decides whether persistence
-  pays.
+  from the store's walk recording, including null results. A per-file
+  fact cache is the thing to measure before assuming it helps. The
+  store's memo plus `fullyExtracted` may already bound the cost within
+  a run, and `--datalog-profile` decides whether persisting facts pays
+  off.
 - **The single-answer discipline survives the move.** The store
-  refuses two candidates rather than picking one; `functionTargetOf`
+  refuses two candidates instead of picking one; `functionTargetOf`
   takes the first that resolves. Migrated call sites adopt the
   store's refusal, and the differential fuzzer catches what that
   changes.
@@ -526,18 +531,18 @@ It does not touch the evaluator.
 2. Done (#697, #698). `settled` is one store ask; `packageImport`
    attribution asks `importOriginsOf`; `factoryTracking` is deleted;
    the `namespaceImport` and `throughLocalBinding` pins retired.
-   What made it fast enough is worth keeping for every later step: a
-   question with many seeds gets its own demand class, the smallest
-   relation leads each join, and candidates that cannot answer are
-   filtered before seeding. The chains themselves are closures with no
-   depth bound, since a bound in a rule is the walker's disease in a
-   new spelling; the cost of unbounded chains is an evaluation
-   concern (dropping demand facts nulls the engine's resume marks, so
-   each batch re-derives), and the optimization pass at the end of the
-   order addresses it in the engine rather than the rules. Measured
-   with bounded chains: dogfood within eight percent of the
-   pre-change wall time, 28 more consumers paired; re-measure after
-   the bound's removal.
+   Three things made it fast enough, and every later step should keep
+   them: a question with many seeds gets its own demand class, the
+   smallest relation leads each join, and candidates that cannot
+   answer are filtered before seeding. The chains themselves are
+   closures with no depth bound, since a bound in a rule repeats the
+   walker's problem in a new form. The cost of unbounded chains is a
+   matter for evaluation (dropping demand facts nulls the engine's
+   resume marks, so each batch re-derives), and the optimization pass
+   at the end of the order deals with it in the engine instead of the
+   rules. Measured with bounded chains, dogfood came within eight
+   percent of the pre-change wall time and paired 28 more consumers.
+   Re-measure after the bound is removed.
 3. Done before this order was written: the default-export pass asks
    the store at every site, and the two route pins are retired.
 4. Done (#701, #702, #703). The emitter states one file's own export
@@ -546,17 +551,18 @@ It does not touch the evaluator.
    is one line over the store, with the warming walk and its overflow
    fallback deleted. `resolveAliasedSymbol` keeps its own warming
    until step 7. The behaviour gates caught what unit tests could
-   not, and each catch is a rule the design now states: a
+   not, and each catch became a rule the design now states. A
    parameter-rooted name stays a reference for the checker, because
-   discovery filling the shared store lets one caller's argument
-   settle what used to stay symbolic by accident of extraction scope;
-   `export default x` goes through the local declaration but is left
-   unstated when the name is written again, since the default takes
-   the value where the statement runs, not the live binding a list
-   exports; and the emitter descends into `declare module` blocks and
-   asks the compiler to resolve specifiers ts-morph has not loaded,
-   because a dependency's declaration file only ever entered the
-   project as a side effect of the checker walk.
+   discovery fills the shared store, and that would let one caller's
+   argument settle a name that used to stay symbolic only because of
+   extraction scope. `export default x` goes through the local
+   declaration, but is left unstated when the name is written again,
+   since the default takes the value at the point the statement runs,
+   while a list export exports the live binding. And the emitter
+   descends into `declare module` blocks and asks the compiler to
+   resolve specifiers ts-morph has not loaded, because a dependency's
+   declaration file only ever entered the project as a side effect of
+   the checker walk.
 5. Done before this order was written (#78). `codeScopePath` and
    `fileInCodeScope` in `@suss/ir-core` own the convention, the three
    callback sites read them, and route comparison shares
@@ -565,57 +571,57 @@ It does not touch the evaluator.
    chains of any length through `mountPathsOf` and
    `agreedMountPrefix` in `@suss/resolution`, with each intermediate
    router's constructor prefix in its place. The composition is a
-   shared function over `mounted(child, parent, prefix)` edges rather
-   than a datalog rule: a rule head cannot build a new atom, and a
+   shared function over `mounted(child, parent, prefix)` edges instead
+   of a datalog rule. A rule head cannot build a new atom, and a
    path-growing closure would never terminate on a mount cycle, so a
-   cycle is an abstention instead. Two mounts landing at the one path
-   compose; two landing apart abstain, saying so. `mountPathsOf`
-   already states one path per mount, which is what #689's
-   boundary-per-mount consumer reads when it is built.
+   cycle makes it abstain. Two mounts landing at one path compose.
+   Two landing at different paths abstain and say so. `mountPathsOf`
+   already states one path per mount, and #689's boundary-per-mount
+   consumer will read that when it is built.
 7. Done for what the store can answer today (#708, #709, #710).
    resolverMap, registrationTemplate, graphqlHookCall, and the
-   client-construction scan ask one batched origin question per file;
-   a `moduleForwards` rule closes re-export chains so a project
-   barrel matches like a direct import; `isImportedFrom`,
+   client-construction scan ask one batched origin question per file.
+   A `moduleForwards` rule closes re-export chains, so a project
+   barrel matches like a direct import. `isImportedFrom`,
    `methodDeclaredIn`, and the functionCall terminal's import gate
    take an `originatesFrom` callback bound to the store, with the
-   syntactic fast paths in front. Two readers stay with their reasons
-   on record: clientCall's default-import spelling rules are
+   syntactic fast paths tried first. Two readers stay, with their
+   reasons on record: clientCall's default-import spelling rules are
    documented pack policy that needs its own pass, and jsxElementRoute
    matches JSX tags, which have no expression facts yet.
    `resolveAliasedSymbol` is down to its warming and two callers,
    which step 10 retires.
 8. First slice done (#712, #713). The `anchorChain` rules follow a
    receiver back through names, exports, a call's callee, and a
-   method's receiver; `anchorCall` on the ops hands the matching call
-   back under the single-answer policy, and mongoose's three-hop
-   receiver disjunction became one op call. The members with no pack
-   waiting on them (`imported`, `global`, `inherits`) arrive with
-   their first consumer; the ancestry rules from step 9 are what
-   `inherits` reads when it does.
+   method's receiver. `anchorCall` on the ops returns the matching
+   call under the single-answer policy, and mongoose's three-hop
+   receiver disjunction became one op call. The members no pack needs
+   yet (`imported`, `global`, `inherits`) arrive with their first
+   consumer, and `inherits` will read the ancestry rules from step 9
+   when it does.
 9. Done (#714, #715). Ruby's ancestry recursion became the shared
    `ancestryChain` and `wantedBaseName` rules, and Python's
    grew-until-stable storage loop became `defCallsName` and
    `queryStart` facts closed by two `reachesStorage` rules. Both
-   languages' pack suites passed untouched, which is the parity claim
-   this step existed to test.
+   languages' pack suites passed unchanged, and that parity was what
+   this step set out to test.
 10. Done (#716). Helper resolution is memoized per callee symbol, and
     the adapter's `resolveCallee` binding sends the callee through the
     store, which reaches a helper imported through a project barrel.
     The guard evaluation stays where it is. `resolveAliasedSymbol` is
     down to the warming machinery and extract.ts's bare-context
     fallback.
-11. Done (#717). `reassignedNamesUnstated` rides the extraction
+11. Done (#717). `reassignedNamesUnstated` is part of the extraction
     report, counted at the one abstention branch in
-    `emitBindingValues`, so every corpus run states the number. The
-    reading that decides on scoped reaching definitions comes off the
-    next large-corpus runs.
+    `emitBindingValues`, so every corpus run reports the number. The
+    next large-corpus runs give the reading that decides on scoped
+    reaching definitions.
 12. Done (#737, the cheap half). `sameConstructionAcrossWrites` in
     `assignments.ts` reads a name whose writes cannot be ordered but
     agree on one construction, so a client cached behind a guard
     resolves without any control-flow rule at all. A `null` or
     `undefined` write is set aside first, since it means the name was
-    not yet assigned rather than a value of its own; two different
+    not yet assigned and is not a value of its own. Two different
     constructions still resolve to nothing. On this repo's adapter
     package, `reassignedNamesUnstated` fell from 66 to 63. The
     control-flow half, a config object a guard decides whether to
@@ -626,17 +632,17 @@ where discovery finds the same units, the fuzzer's pinned bugs as the
 retirement list, dogfood counts, and engine time from the profile.
 
 The deferred evaluation pass was tried on 2026-08-29 and made things
-slower, so the code stays as it was. The idea was that the store
-throws away the engine's worked-out answers after every query, which
-also loses the engine's place, its record of what it has processed,
-so every query starts over. The rules use no negation, so keeping the
-answers is safe, and skipping the cleanup was a one-line change.
+slower, so the code stays as it was. The idea came from the store
+throwing away the engine's worked-out results after every query. That
+also loses the engine's place, its record of what it has processed, so
+every query starts over. The rules use no negation, so keeping the
+results is safe, and skipping the cleanup was a one-line change.
 Dogfood measured it twice each way: about 56 seconds with the cleanup,
-about 75 without it. The reason is that one query only has a small
-amount of work to redo, while keeping every past answer means each
-new query searches through a pile that grows for the whole run.
-Throwing the answers away per query is the faster design, and now a
-measured one. A future attempt would need the engine to drop one query's
-results without losing its place on everything else, which is
-its own project and only worth starting if a profile shows evaluation
-as the main cost again.
+about 75 without it. One query only has a small amount of work to
+redo, while keeping every past result means each new query searches
+through a pile that grows for the whole run. Throwing the results away
+per query is the faster design, and now we have measured it. A future
+attempt would need the engine to drop one query's results without
+losing its place on everything else. That is a project of its own, and
+it should start only if a profile shows evaluation as the main cost
+again.
