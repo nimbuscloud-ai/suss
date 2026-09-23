@@ -1,17 +1,15 @@
 /**
- * @suss/client-aiohttp: PythonPack for the calls
- * [aiohttp](https://docs.aiohttp.org/) gives a project for making an
- * HTTP request.
+ * @suss/client-aiohttp: the Python pack for HTTP requests made with
+ * [aiohttp](https://docs.aiohttp.org/).
  *
- * Every request goes through a session, which a project opens as a
- * context manager and calls a verb method on. See the README for what
- * the pack reads and where it stops.
+ * Every aiohttp request goes through a session. A project usually opens
+ * the session with `async with` and calls a verb method on it. The
+ * README lists what the pack reads and where it stops.
  */
 
 import type { PythonPack } from "@suss/adapter-python";
 import type { PackDeclaration } from "@suss/ir-core";
 
-/** The methods a session gives a project, and the method each one sends. */
 const VERB_METHODS: Record<string, string> = {
   get: "GET",
   post: "POST",
