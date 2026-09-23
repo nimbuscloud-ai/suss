@@ -1,11 +1,10 @@
 /**
  * A deployable unit's runtime configuration channel as a boundary.
  *
- * The provider side declares env vars and their values on a unit. The
- * env var names are fields on that unit's contract, so the channel
- * itself is the boundary, not any one variable. Runtime config is
- * paired by its own dedicated pass, so this protocol has no identity
- * key.
+ * The provider side declares environment variables and their values on
+ * a unit. Each variable name is a field on that unit's contract, so the
+ * boundary is the whole channel. A dedicated pass pairs runtime config,
+ * so this protocol has no identity key.
  */
 
 import { z } from "zod";
@@ -14,14 +13,14 @@ import { DeployableUnitSchema } from "../deployableUnit.js";
 import { defineBoundarySemantics } from "./definition.js";
 
 /**
- * The pairing key is `(deploymentTarget, instanceName)`, which is
- * exactly a deployable unit, so the two fields come from
- * `DeployableUnitSchema` instead of being written out a second time.
+ * The dedicated pass pairs on `(deploymentTarget, instanceName)`, which
+ * is a deployable unit, so the two fields come from
+ * `DeployableUnitSchema`.
  *
- * A provider states both. The reading side is the code, which knows it
- * reads its configuration and not which deployment will run it, so a
- * recognizer standing at a read leaves both off rather than guessing.
- * The pairing pass takes the deployment from the provider anyway.
+ * A provider sets both. The reading side is code, and code does not say
+ * which deployment will run it, so a recognizer at a read leaves both
+ * out and does not guess. The pairing pass takes the deployment from
+ * the provider.
  */
 export const RuntimeConfigSemanticsSchema = DeployableUnitSchema.partial({
   deploymentTarget: true,
@@ -37,9 +36,9 @@ export type RuntimeConfigSemantics = z.infer<
 export const runtimeConfigSemantics = defineBoundarySemantics({
   name: "runtime-config",
   schema: RuntimeConfigSemanticsSchema,
-  // service.name and cloud.resource_id name the same deployable, but
-  // instanceName is the deployment template's logical id, which is
-  // neither of those strings.
+  // service.name and cloud.resource_id identify the same deployable, but
+  // instanceName is the template's logical id, a different string from
+  // both.
   semconv: {},
   behavior: {
     /** A process reads its config at startup, and nothing replies. */

@@ -1,16 +1,15 @@
 /**
- * The contract between a manifest reader's routing edges and the
+ * The interface between a manifest reader's routing edges and the
  * reachability pass that walks them.
  *
- * A routing edge's match record keeps its conditions as data, written
- * in the condition language the reader named (`matchLanguage` on the
- * routing metadata). Which match a router hands a request to is up to
- * that language: the ordering its priorities declare and the globbing
- * its patterns use belong to the reader that owns the vocabulary, never
- * to the generic walk. So a reader that emits edges also exports a
- * `RouterMatchSelector` for its language, and the walk sends each
- * router's match records to the selector for their language through a
- * table keyed by the types here.
+ * A routing edge's match record keeps its conditions as data, in the
+ * condition language given by `matchLanguage` on the routing metadata.
+ * That language determines which match a router picks for a request.
+ * The reader defines how priorities order matches and how patterns
+ * glob, and the generic walk has no rules of its own for either. So a
+ * reader that emits edges also exports a `RouterMatchSelector` for its
+ * language, and the walk passes each router's match records to the
+ * selector for their language through a table keyed by these types.
  */
 
 import type { RoutingMetadata } from "./metadata.js";
@@ -37,16 +36,16 @@ export interface RoutingMatchRecord {
 }
 
 /**
- * `possible` lists the matches that could take the request once something
- * the declarations leave open gets decided at runtime. A match in neither
- * list refuses the request.
+ * `possible` lists the matches that could take the request, depending
+ * on something the declarations leave open until run time. A match in
+ * neither list rejects the request.
  */
 export interface RouterSelection {
   admitted: string[];
   possible: string[];
 }
 
-/** Implemented by whichever reader owns the router's condition language. */
+/** Implemented by the reader that defines the router's condition language. */
 export type RouterMatchSelector = (
   records: RoutingMatchRecord[],
   request: FlowRequest,

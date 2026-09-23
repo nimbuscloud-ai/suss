@@ -1,6 +1,5 @@
-// graphqlResolver.ts: the provider side of a GraphQL boundary.
-//
-// One resolver binds one (typeName, fieldName) pair.
+// The provider side of a GraphQL boundary. One resolver binds one
+// (typeName, fieldName) pair.
 
 import { z } from "zod";
 
@@ -26,14 +25,14 @@ export type GraphqlResolverSemantics = z.infer<
 export const graphqlResolverSemantics = defineBoundarySemantics({
   name: "graphql-resolver",
   schema: GraphqlResolverSemanticsSchema,
-  // The conventions name the operation a client sent, not the
-  // resolver the server ran for one field of it.
+  // The conventions describe the operation a client sent. They have no
+  // attribute for the resolver the server ran for one field of it.
   semconv: {},
   behavior: {
-    /** A resolver returns a field value, not a status and a body. */
+    /** A resolver returns a field value, with no status. */
     exchangesHttpResponses: false,
-    // A query somebody sent from outside runs it, even though the
-    // server calls the function in its own process.
+    // A resolver runs because a client outside the process sent a query,
+    // even though the server calls it in its own process.
     leavesTheProcess: true,
     reportsUnpairedItself: false,
     /**

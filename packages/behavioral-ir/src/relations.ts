@@ -2,9 +2,9 @@
  * What a unit does at each boundary a summary mentions.
  *
  * The verbs are `@suss/ir-core`'s `Relation`, the same ones `suss ask`
- * asks with. This module says which verb each interaction class gets,
- * so a report, a question and an intent doc that states a boundary
- * effect all read one answer.
+ * uses. This module maps each interaction class to its verbs, so a
+ * report, a question and an intent doc all use the same verbs for the
+ * same effect.
  */
 
 import type { Relation } from "@suss/ir-core";
@@ -23,7 +23,7 @@ type RelationTable = {
 
 /**
  * A request sends a body out and gets a response back, so a service
- * call both reads and writes. Scheduling crosses no boundary at all.
+ * call both reads and writes. Scheduling does not cross a boundary.
  */
 const RELATIONS: RelationTable = {
   "storage-access": (interaction) =>
@@ -51,8 +51,9 @@ export const OWN_BINDING: Record<BoundaryRole, Relation[]> = {
 };
 
 /**
- * Which container an access written under a relation reaches comes
- * from the provider's contract, so a walk over one summary cannot say.
+ * Whether a storage access goes through a relation path. The container
+ * such an access reaches comes from the provider's contract, so a walk
+ * over one summary cannot work it out.
  */
 export function goesThroughRelation(interaction: Interaction): boolean {
   return (

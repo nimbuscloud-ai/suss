@@ -1,16 +1,15 @@
 /**
- * One convention for the source directory a deployable unit is built
- * from, one test for whether a file is inside it, and one reading of
- * the handler string that says which code the platform calls.
+ * The source directory a deployable unit is built from, and the handler
+ * string that says which code the platform calls.
  *
- * A deploy template gives a directory per unit, and a summary stores it
+ * A deploy template gives each unit a directory, and a summary stores it
  * as `metadata.codeScope.path`. Producers write that path and the
- * checker reads it back as a prefix test, so the two sides have to
- * agree on whether it ends in a slash. The test also has to stop at a
- * segment boundary, or `src/foo` would cover `src/foobar` and a handler
- * would pair with the wrong function. A CloudFormation template and a
- * Terraform configuration spell a handler the same way, so they read it
- * through the same function rather than through two of them.
+ * checker reads it back as a prefix test, so both sides normalize it
+ * through `codeScopePath` and agree on the trailing slash. The test
+ * stops at a segment boundary, or `src/foo` would cover `src/foobar` and
+ * a handler would pair with the wrong function. CloudFormation and
+ * Terraform write a handler the same way, so both read it through
+ * `parseHandler`.
  */
 
 /**
@@ -27,8 +26,8 @@ export function codeScopePath(raw: string): string {
  * at a segment boundary, so `src/foo` covers `src/foo/a.ts` and never
  * `src/foobar/a.ts`. A scope that is the project root covers every file.
  *
- * Both arguments go through `codeScopePath`, so a scope stored with a
- * trailing slash and one stored without it are read the same way.
+ * Both arguments are normalized with `codeScopePath`, so a trailing
+ * slash on either one makes no difference.
  */
 export function fileInCodeScope(file: string, scope: string): boolean {
   const prefix = codeScopePath(scope);

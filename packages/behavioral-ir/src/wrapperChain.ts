@@ -1,18 +1,18 @@
 /**
- * wrapperChain.ts: the summary each wrapper on a unit's chain points at.
+ * The summary each wrapper on a unit's chain refers to.
  *
  * A unit records the wrappers registered around it as file-and-name
- * references, and what each of them does is in its own summary. Every
- * reader that wants the effects along a request, rather than the
- * unit's own outcomes alone, follows the chain to those summaries, so
- * the pairing lives here instead of once per reader.
+ * references, and each wrapper's behavior is in its own summary. Any
+ * reader that wants the effects along a request, and not only the
+ * unit's own outcomes, follows the chain to those summaries through
+ * these functions.
  */
 
 import { readWrapperMetadata } from "./metadata.js";
 
 import type { BehavioralSummary, WrapperReference } from "./index.js";
 
-/** A run's summaries by the file and name a wrapper reference spells. */
+/** A run's summaries keyed by file and name, the two fields a wrapper reference gives. */
 export type WrapperIndex = ReadonlyMap<string, BehavioralSummary[]>;
 
 function keyOf(file: string, name: string): string {
@@ -37,8 +37,8 @@ export function wrapperIndex(
 
 /**
  * The summary this reference points at, or undefined when the run has
- * none. Two functions written out at their registrations in one file go
- * by the same name, and the line is what tells them apart.
+ * none. Two inline functions registered in one file can share a name,
+ * and the line tells them apart.
  */
 export function wrapperFor(
   index: WrapperIndex,
@@ -63,8 +63,8 @@ export function wrapperChain(
 
 /**
  * The summaries of the wrappers around each unit, for a whole run. A
- * reference the run has no summary for is left out, which is what a
- * middleware imported from a package the walk never entered looks like.
+ * reference without a summary in the run is left out, as happens for
+ * middleware imported from a package the extraction never walked.
  */
 export function wrappersAround(
   summaries: readonly BehavioralSummary[],

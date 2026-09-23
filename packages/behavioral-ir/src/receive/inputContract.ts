@@ -2,15 +2,15 @@
  * What a unit reads off the value it was handed, compared against what
  * the senders to it supply.
  *
- * This is one rule for every protocol. A React child reads a prop, a
- * queue consumer reads a field of a message body, an HTTP handler
- * reads a field of a request. In all three the receiver asks for a
- * path and the sender supplies a shape, and the question is whether
- * the shape has anything at that path. The protocol decides which
- * input the sender's value arrives through, and the wording.
+ * One rule covers every protocol. A React child reads a prop, a queue
+ * consumer reads a field of a message body, and an HTTP handler reads a
+ * field of a request. In each case the receiver asks for a path and the
+ * sender supplies a shape, and the question is whether the shape has
+ * anything at that path. The protocol determines which input the
+ * sender's value arrives through, and how paths are written.
  *
  * Both sides are partial readings, so the rule declines to compare
- * rather than guess. The README lists every such case.
+ * instead of guessing. `StandDown` lists each reason it declines.
  */
 
 import { readRequestSpellingMetadata } from "../metadata.js";
@@ -31,7 +31,17 @@ import type {
 /** True when the sender's whole value arrives through this input. */
 export type CarriesPayload = (input: Input) => boolean;
 
-/** Why the rule declined to compare. */
+/**
+ * Why the rule declined to compare.
+ *
+ * - `no-reads`: the receiver was not seen reading any path.
+ * - `rest-parameter`: a rest parameter could consume anything without a recorded read.
+ * - `payload-used-whole`: the payload is used whole, so any field could be read out of sight.
+ * - `sender-opaque`: some sender's value cannot be inspected.
+ * - `different-object`: the reads share no outermost field with any sender's value.
+ * - `platform-envelope`: the handler reads the platform's envelope, not the message body.
+ * - `unmapped-protocol`: the protocol does not say which input the sender's value arrives through.
+ */
 export type StandDown =
   | "no-reads"
   | "rest-parameter"
@@ -64,12 +74,12 @@ export type ComparisonResult =
 
 /**
  * The paths a unit was seen asking for through its inputs, or the
- * reason that list could be short of what it really reads.
+ * reason the list could be missing some of what it reads.
  *
  * A read through the payload input gives the path from the payload's
  * root. A read through any other named parameter gives that
- * parameter's role as the first segment, which is where a destructure
- * rename keeps the name the sender used.
+ * parameter's role as the first segment, since a destructure rename
+ * keeps the sender's name in the role.
  */
 export function readSetOf(
   summary: BehavioralSummary,
@@ -131,8 +141,8 @@ function wordsFor(
         carriesPayload(input) ? [nameOf(input)] : [],
       ),
     ),
-    // Reads record the binding's name; the sender's word is the role,
-    // which is where a destructure rename keeps the name it was passed.
+    // Reads record the local binding name, and a destructure rename
+    // keeps the sender's name in the role.
     roleByBinding: new Map(
       summary.inputs.flatMap((input) =>
         input.type === "parameter"
@@ -144,8 +154,8 @@ function wordsFor(
 }
 
 /**
- * Which path off the unit's input a value reference points at, spelled
- * the way `readSetOf` spells a read, so a guard on a value and a read
+ * Which path off the unit's input a value reference points at, in the
+ * same form `readSetOf` gives a read, so a guard on a value and a read
  * of it can be compared. Null for a reference to anything but an input
  * this rule follows, and for the payload taken whole.
  */
@@ -193,7 +203,7 @@ export function compareSupplied(
   return { compared: true, unsupplied };
 }
 
-/** Both halves at once, for a caller that has the receiver to hand. */
+/** `readSetOf` followed by `compareSupplied`, for a caller that has the receiver's summary. */
 export function checkReceivedInput(args: {
   receiver: BehavioralSummary;
   carriesPayload: CarriesPayload;
@@ -236,8 +246,8 @@ const LAMBDA_ENVELOPE_FIELDS: Partial<
 /**
  * What a queue consumer reads off the message body. A handler that
  * reads one of the platform's own envelope fields was handed the
- * envelope, and its paths are not body fields at all, so the rule
- * reports nothing rather than compare them against what a producer sent.
+ * envelope, and its paths are not body fields, so the rule stands down
+ * instead of comparing them against what a producer sent.
  */
 export function messageBodyReadSet(
   summary: BehavioralSummary,
@@ -278,8 +288,8 @@ const PAYLOAD_INPUT: Record<Semantics["name"], CarriesPayload | null> = {
 
 /**
  * Which of a unit's inputs its caller sends the value through, so a
- * guard on that value and a read of it are spelled the same way. Null
- * for a protocol that has not said which input that is.
+ * guard on that value and a read of it come out in the same form. Null
+ * for a protocol that does not say which input that is.
  */
 export function carriesPayloadFor(
   binding: BoundaryBinding,
@@ -292,7 +302,7 @@ type RequestSection = "headers" | "query" | "params" | "body";
 
 type DeclaredSection = [RequestSection, RequestSectionSpelling];
 
-/** The sections the handler's pack said how to spell. */
+/** The request sections the handler's pack declared a path for. */
 function sectionsOf(spelling: RequestSpellingMetadata): DeclaredSection[] {
   // Spelled out one section at a time, rather than looped over the
   // names, because `check:metadata-wiring` finds a reader by reading
@@ -350,14 +360,14 @@ function startsWith(
 
 /**
  * What a route and the middleware around it read off the request, in
- * the words an author writes under `receives`. A read that falls under
- * no section is dropped, because a handler reading `request.user` is
- * reading what middleware put there rather than part of the request.
+ * the words an author writes under `receives`. A read outside every
+ * section is dropped, because a handler reading `request.user` is
+ * reading what middleware put there, which is not part of the request.
  *
- * A section nothing named a field of, that something read bare, was
- * taken whole: `schema.parse(req.body)` is the case. A destructure
- * records the bare read beside the named one, and the named one is
- * what the handler meant.
+ * A section read bare, with no field of it read by name, was taken
+ * whole, as in `schema.parse(req.body)`. A destructure records a bare
+ * read next to the named one, and the named read is the one that
+ * counts.
  */
 function requestReadSet(
   handler: BehavioralSummary,
@@ -366,7 +376,7 @@ function requestReadSet(
 ): ReadSetResult {
   const own = readSetOf(handler, EVERY_PARAMETER);
   // A rest parameter on the route hides reads from every side of this.
-  // A wrapper standing down is one witness fewer, not a reason to stop.
+  // A wrapper that stands down only removes its own reads.
   if (!own.read && own.reason !== "no-reads") {
     return own;
   }
@@ -409,7 +419,7 @@ const UNMAPPED = (): InputSpelling => ({
   pathOf: () => null,
 });
 
-/** One predicate settles both halves for a protocol whose value arrives through named inputs. */
+/** The spelling for a protocol whose value arrives through named inputs, where one predicate picks the payload input. */
 function through(
   summary: BehavioralSummary,
   carriesPayload: CarriesPayload,
@@ -422,9 +432,9 @@ function through(
 
 /**
  * A request is split across headers, query, path and body, and which
- * of a handler's reads is which part is the framework's vocabulary. The
- * pack that recognized the handler wrote that down at extract time, and
- * a summary from a pack that has not says so.
+ * part a handler's read goes to depends on the framework. The pack that
+ * recognized the handler records that at extract time. A summary from a
+ * pack that does not record it gets `unmapped-protocol`.
  */
 function restSpelling(summary: BehavioralSummary): InputSpelling {
   const spelling = readRequestSpellingMetadata(summary);
@@ -470,8 +480,8 @@ function spellingFor(
   summary: BehavioralSummary,
   binding: BoundaryBinding,
 ): InputSpelling {
-  // The one cast joins the per-protocol table, which narrows, to the
-  // runtime lookup, the same way dispatchByType does it.
+  // The table narrows per protocol and a lookup by name cannot, so the
+  // cast happens once here, as in `dispatchByType`.
   const spelling = BOUNDARY_INPUT_SPELLINGS[binding.semantics.name] as (
     summary: BehavioralSummary,
     semantics: Semantics,
@@ -509,8 +519,8 @@ export function boundaryInputPathOf(
 /**
  * Whether the receiver is walking something other than the sender's
  * value. Reads that begin at a handler parameter may be walking the
- * platform's envelope, and one shared outermost name is what tells us
- * the two sides are talking about the same object.
+ * platform's envelope, and one shared outermost name shows that the two
+ * sides are about the same object.
  */
 function readingSomethingElse(
   reads: ReadSet,
@@ -536,9 +546,9 @@ function nameOf(input: Input): string {
 }
 
 /**
- * Whether a supplied value has something at this path. A value the
- * reader cannot see into, a variable or a call or an array whose
- * elements are indexed away, returns true: it could contain anything.
+ * Whether a supplied value has something at this path. A value that
+ * cannot be inspected, such as a variable or a call, returns true,
+ * since it could contain anything.
  */
 function supplies(value: unknown, path: readonly string[]): boolean {
   let here = value;

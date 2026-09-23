@@ -1,6 +1,6 @@
-// identityKeys.ts: the minted identity-key formats, typed so a wrong
-// literal refuses to compile. The mint is the only constructor, which
-// is how a dropped prefix stops shipping again (#155, #167).
+// Builders for the identity-key strings. Each key type is branded, so
+// a hand-written literal fails to compile and a key missing its prefix
+// cannot be built (#155, #167).
 
 import type { DeployableUnit } from "./deployableUnit.js";
 import type { MessageBusSemantics } from "./semantics/messageBus.js";
@@ -31,7 +31,7 @@ export function fnIdentityKey(
   return `fn:${packageName}::${exportPath.join(".")}` as FnIdentityKey;
 }
 
-/** `bus:technology subject`, with the technology closed off the schema. */
+/** `bus:technology subject`, where the technology is one the message-bus schema allows. */
 export type BusIdentityKey =
   `bus:${MessageBusSemantics["messageBus"]} ${string}` & {
     readonly [IdentityKeyBrand]: "bus";

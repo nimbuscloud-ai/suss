@@ -1,16 +1,15 @@
 /**
- * Deciding when two message-bus channel strings mean the same thing.
+ * When two message-bus channel strings mean the same channel.
  *
- * A channel is a subject, optionally qualified by the bus that carries
- * it, written `${bus}#${subject}`. The two sides of a pairing rarely
- * know the same amount, so they pair on the subject and the buses have
- * to agree only when both sides know one. The package README works
- * through why, with examples.
+ * A channel is a subject, optionally qualified by the bus it travels
+ * on, written `${bus}#${subject}`. The two sides of a pairing rarely
+ * know the same amount, so they pair on the subject, and the buses have
+ * to match only when both sides know one. The package README explains
+ * why, with examples.
  *
- * Everything that writes or reads that string goes through
- * `formatChannel` and `parseChannel`, so the wire format has a single
- * author. A template reader that hand-writes the `#` would be a second
- * author, and the two would drift the first time either one changed.
+ * All code that writes or reads the string goes through `formatChannel`
+ * and `parseChannel`. A template reader that wrote the `#` by hand would
+ * drift from them the first time either one changed.
  */
 
 /** A channel string, written `${bus}#${subject}`, split into its two parts. */
@@ -30,10 +29,12 @@ export function parseChannel(channel: string): ParsedChannel {
 declare const ChannelBrand: unique symbol;
 
 /**
- * `bus#subject`, or the bare subject when no source said the bus. The
- * unqualified form is legal, so fields keep the type string and the
- * mint is the whole win: a channel assembled by hand cannot claim the
- * brand, and the format has one spelling (#167).
+ * `bus#subject`, or the bare subject when no source gave the bus.
+ *
+ * Fields that store a channel stay typed as `string`, since a bare
+ * subject is legal there. The brand exists so that a `Channel` value
+ * can only come from `formatChannel` and never from a string built by
+ * hand (#167).
  */
 export type Channel = string & { readonly [ChannelBrand]: "channel" };
 
@@ -44,6 +45,7 @@ export function formatChannel(bus: string | null, subject: string): Channel {
   return `${bus}#${subject}` as Channel;
 }
 
+/** A side that does not know its bus agrees with any bus. */
 export function busesAgree(a: string | null, b: string | null): boolean {
   return a === null || b === null || a === b;
 }

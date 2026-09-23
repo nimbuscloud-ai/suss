@@ -1,12 +1,13 @@
-// @suss/intent-ir findings: the result shape the intent checker emits.
-//
-// Symmetric with @suss/behavioral-ir's `Finding`, but deliberately NOT
-// the same shape. A behavioral Finding is a two-sided peer comparison
-// (provider ↔ consumer, each with a source location). An intent finding
-// is one-sided coverage: "the team declared X; does the code satisfy
-// it?" Intent has a name and an outcome id, not a file + range, so it
-// gets fields that fit, and PRD scenario / link findings extend this
-// base rather than forcing intent into the peer shape.
+/**
+ * The findings the intent checker emits.
+ *
+ * A behavioral `Finding` compares two peers, a provider and a consumer,
+ * each with a source location. An intent finding checks coverage from
+ * one side: the team declared something, and the question is whether
+ * the code does it. Intent is identified by a name and an outcome id,
+ * with no file or range, so an intent finding has its own fields, and
+ * PRD scenario findings add to them.
+ */
 
 import { z } from "zod";
 
@@ -22,11 +23,9 @@ export const IntentFindingKindSchema = z.enum([
   // the unit reads off its input.
   "unreadInputField", // intent declares a field no transition of the unit reads
   "undeclaredInputRead", // the unit reads a path the receives block does not list
-  // Outcome intent (kind: prd), scenario link coverage against system
-  // intent. These concretise the proposal's "scenario not linked /
-  // dangling / ambiguous" set (design/proposals/intent-specs.md);
-  // the proposal deferred concrete names to implementation time.
-  "unlinkedScenario", // scenario carries no structured link (info — a valid pending state)
+  // Outcome intent (kind: prd): whether each scenario's link resolves to
+  // a system-intent outcome.
+  "unlinkedScenario", // scenario has no structured link (info: a valid pending state)
   "danglingScenarioLink", // link names an intent / outcome no boundary intent declares
   "ambiguousScenarioLink", // link resolves to two or more boundary intents sharing the name
   // The same coverage question asked the other way: which declared
@@ -48,9 +47,10 @@ export const IntentRefSchema = z.object({
 export type IntentRef = z.infer<typeof IntentRefSchema>;
 
 /**
- * Suppression annotation stamped by the .sussignore pipeline. Kept
- * structurally identical to the behavioural `Finding.suppressed` shape
- * so @suss/ir-core's shared suppression pipeline operates on both.
+ * The annotation the `.sussignore` pipeline adds to a matched finding.
+ * It stays structurally identical to the behavioral
+ * `Finding.suppressed`, so @suss/ir-core's shared suppression pipeline
+ * works on both.
  */
 export const IntentFindingSuppressionSchema = z.object({
   /** The rule's human-written justification. */
@@ -79,12 +79,11 @@ export const IntentFindingSchema = z.object({
    */
   code: z.string().optional(),
   /**
-   * PRD-scenario extension: present only on outcome-intent findings
-   * (unlinkedScenario / danglingScenarioLink / ambiguousScenarioLink).
-   * Identifies the scenario (by its optional title) and the qualified
-   * outcome ref (`<intent-name>.<outcome-id>`) that failed to resolve.
-   * The peer / boundary findings leave it unset. This is the "intent
-   * finding extension" decision 2 of the proposal anticipated.
+   * Present only on outcome-intent findings (unlinkedScenario,
+   * danglingScenarioLink, ambiguousScenarioLink). It gives the scenario,
+   * by its optional title, and the qualified outcome ref
+   * (`<intent-name>.<outcome-id>`) that failed to resolve. Boundary
+   * findings leave it unset.
    */
   scenario: z
     .object({

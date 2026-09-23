@@ -1,16 +1,15 @@
 /**
- * The suppression pipeline, over the smallest finding both checkers share.
+ * Suppression rules and how they apply to findings from either checker.
  *
- * Behavioural `Finding` and intent `IntentFinding` both have `kind`,
- * `severity`, and an optional `suppressed`, which is all the pipeline
- * needs. The rule schema, first-match-wins matching, effect application,
- * and threshold counting are here so the two checkers share one
- * implementation without depending on each other. Only the matching of a
- * rule's discriminators differs, and a caller passes that in.
+ * Behavioral `Finding` and intent `IntentFinding` both have `kind`,
+ * `severity` and an optional `suppressed`, and the pipeline needs
+ * nothing else. The rule schema, first-match-wins matching, effect
+ * application and threshold counting are here so the two checkers share
+ * one implementation without depending on each other. Each checker
+ * passes in its own matcher for a rule's discriminators past `kind`.
  *
- * The module owns rules and matching, not file I/O. The CLI reads a
- * .sussignore file, checks each kind against the published enums, and
- * hands the parsed rules over.
+ * The CLI reads the `.sussignore` file, checks each kind against the
+ * published enums, and passes the parsed rules in.
  */
 
 import { z } from "zod";
@@ -32,38 +31,37 @@ const SuppressionSideSchema = z
 export const SuppressionRuleSchema = z
   .object({
     /**
-     * The finding kind to match, behavioural or intent. It is an open
-     * string here because this package is below both IRs, and the loader
-     * is what validates it against the published kind enums.
+     * The finding kind to match, behavioral or intent. The schema accepts
+     * any string because ir-core cannot import either IR's kind enum. The
+     * CLI's loader checks it against both.
      */
     kind: z.string().optional(),
     /**
-     * Boundary as a human-readable key, e.g. "GET /pet/{petId}" or
-     * "fn:@acme/api::getUser". REST keys are normalized via the same
-     * path normalizer the checkers use, so `:id` and `{id}` compare
-     * equal.
+     * The boundary's human-readable key, such as "GET /pet/{petId}" or
+     * "fn:@acme/api::getUser". A REST key goes through the same path
+     * normalizer the checkers use, so `:id` and `{id}` compare equal.
      */
     boundary: z.string().optional(),
     /**
-     * Consumer-side discriminators, the narrowest useful match. These
-     * mean something only for behavioural findings: a rule that
-     * specifies `consumer` never matches an intent finding, because an
-     * intent finding has no consumer side.
+     * Consumer-side discriminators, the narrowest useful match. They
+     * apply only to behavioral findings. A rule that sets `consumer`
+     * never matches an intent finding, because an intent finding has no
+     * consumer side.
      */
     consumer: SuppressionSideSchema,
     /**
-     * Provider-side discriminators, the mirror of `consumer`. A finding
-     * about a status the provider produces has its transition id on this
-     * side, and that id is the only handle narrow enough to pick out
-     * that one finding. As with `consumer`, a rule that specifies
-     * `provider` never matches an intent finding.
+     * Provider-side discriminators, matching the same fields as
+     * `consumer`. A finding about a status the provider produces has its
+     * transition id on this side, and that id is the only value narrow
+     * enough to pick out that one finding. As with `consumer`, a rule
+     * that sets `provider` never matches an intent finding.
      */
     provider: SuppressionSideSchema,
     /**
-     * "narrow", the default, requires kind plus one of boundary,
-     * consumer.transitionId, or provider.transitionId, which is enough
-     * to target a specific class of finding. "broad" opts in to
-     * kind-only or boundary-only matches, which also silence future
+     * "narrow", the default, requires `kind` plus one of `boundary`,
+     * `consumer.transitionId` or `provider.transitionId`, so the rule
+     * targets a specific class of finding. "broad" allows a match on
+     * kind alone or boundary alone, and such a rule also silences future
      * regressions in that category.
      */
     scope: z.enum(["narrow", "broad"]).default("narrow"),
@@ -100,11 +98,11 @@ export interface FindingSuppression {
 }
 
 /**
- * The structural base that both finding types satisfy. Behavioural
- * `Finding` and intent `IntentFinding` each declare these fields in
- * their own schemas, kept structurally identical, and the pipeline needs
- * nothing more. The `| undefined` unions match what zod infers for
- * `.optional()` fields under exactOptionalPropertyTypes.
+ * The fields both finding types share. Behavioral `Finding` and intent
+ * `IntentFinding` each declare these fields in their own schemas, and
+ * the two declarations have to stay structurally identical. The
+ * `| undefined` unions match what zod infers for `.optional()` fields
+ * under exactOptionalPropertyTypes.
  */
 export interface SuppressibleFinding {
   kind: string;
@@ -117,10 +115,11 @@ export interface SuppressibleFinding {
 // ---------------------------------------------------------------------------
 
 /**
- * Check that a narrow rule constrains something. A bare rule with only
- * a `reason` would suppress every finding in the codebase, which is
- * almost always a mistake. Broad-scope rules are allowed to match less
- * specifically, on purpose.
+ * An error message when a rule does not constrain enough, or null when
+ * it is valid. A rule with only a `reason` would suppress every finding
+ * in the codebase, which is almost always a mistake. A broad rule needs
+ * one constraint of any kind, and a narrow rule needs `kind` plus a
+ * boundary or transition id.
  */
 export function validateRule(rule: SuppressionRule): string | null {
   if (rule.scope === "broad") {
@@ -198,15 +197,14 @@ function applyRuleToFinding<T extends SuppressibleFinding>(
 }
 
 /**
- * Apply suppression rules to a list of findings. This works for either
- * finding type: `matches` decides whether a rule's discriminators past
- * `kind` (boundary, consumer, and so on) match a finding, and the kind
- * check itself is the same everywhere, so it happens here.
+ * Apply suppression rules to a list of findings of either type. This
+ * function checks `kind`, and `matches` checks the rest of a rule's
+ * discriminators (boundary, consumer, and so on) against a finding.
  *
- * Returns a new array. Findings with `effect: "hide"` are omitted from
- * the output entirely unless `keepHidden` is set. Findings with
- * `effect: "mark"` or `"downgrade"` are included with an added
- * `suppressed` field. First matching rule wins.
+ * Returns a new array. The first matching rule applies. A finding a
+ * `hide` rule matches is left out unless `keepHidden` is set. A finding
+ * a `mark` or `downgrade` rule matches is kept with a `suppressed` field
+ * added.
  */
 export function applySuppressionsToFindings<T extends SuppressibleFinding>(
   findings: T[],
@@ -233,10 +231,9 @@ export function applySuppressionsToFindings<T extends SuppressibleFinding>(
 }
 
 /**
- * `hide` and `mark` findings are left out of the exit-code threshold,
- * and a `downgrade` finding counts at the severity it was downgraded
- * to. Callers use this to decide whether a finding contributes to
- * `hasErrors`-style gating.
+ * Whether a finding counts toward the exit-code threshold. A `hide` or
+ * `mark` finding does not count, and a `downgrade` finding counts at the
+ * severity it was downgraded to.
  */
 export function countsForThreshold(finding: SuppressibleFinding): boolean {
   if (finding.suppressed === undefined) {

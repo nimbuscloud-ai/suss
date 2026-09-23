@@ -1,5 +1,5 @@
 /**
- * pathPattern.ts: whether two route paths describe a request in common.
+ * Whether two route paths describe a request in common.
  *
  * A normalized path is text with holes in it. `{id}` is exactly one
  * segment, `{tenant?}` is zero or one, `{rest+}` is one or more and
@@ -15,7 +15,7 @@
 
 import { patternHole } from "../boundaryName.js";
 
-/** How many segments a hole takes, in the words the value domain uses. */
+/** How many segments a hole takes: exactly one, zero or one, one or more, or any number. */
 export type HoleRange = "one" | "optional" | "many" | "any";
 
 const HOLE_RANGE_SUFFIX: Record<HoleRange, string> = {
@@ -25,7 +25,7 @@ const HOLE_RANGE_SUFFIX: Record<HoleRange, string> = {
   any: "*",
 };
 
-/** How a hole taking `range` segments is spelled in a path. */
+/** The path text for a hole that takes `range` segments, such as `{rest+}`. */
 export function rangedHole(name: string, range: HoleRange): string {
   return patternHole(`${name}${HOLE_RANGE_SUFFIX[range]}`);
 }
@@ -34,9 +34,9 @@ export function rangedHole(name: string, range: HoleRange): string {
 const UNSPELLABLE_OPTION = /[()|?#{}]/;
 
 /**
- * How a piece that is one of several texts is spelled in a path, or
- * null when an option would be read as something else, such as a set
- * boundary or the start of a query.
+ * The path text for a piece that matches any one of `options`, such as
+ * `(v1|v2)`. Null when an option would parse as something else, such as
+ * a set boundary or the start of a query.
  */
 export function setPiece(options: readonly string[]): string | null {
   if (options.some((option) => UNSPELLABLE_OPTION.test(option))) {
@@ -63,7 +63,10 @@ const SET_PIECE = /\(([^()]*)\)/;
 /** How many alternatives a path with several sets may expand into. */
 const ALTERNATIVE_CAP = 64;
 
-/** Every way of reading the path with each set piece settled. */
+/**
+ * Every path the set pieces expand into. Past `ALTERNATIVE_CAP`, each
+ * set is read as a plain hole instead.
+ */
 function alternativesOf(path: string): string[] {
   let alternatives = [path];
   for (;;) {

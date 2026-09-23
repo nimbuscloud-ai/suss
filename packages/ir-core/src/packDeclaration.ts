@@ -1,10 +1,11 @@
 /**
- * What a pack says about itself, for everything that has to know a pack
- * exists without reading its patterns.
+ * What a pack declares about itself, for tools that list or suggest
+ * packs without loading their patterns.
  *
- * `suss init` suggests a pack when it sees the library in a project's
- * manifest, and the packages page lists every pack with a line about
- * what it reads. Both come from here, so nobody maintains a table.
+ * `suss init` suggests a pack when a project's manifest lists the
+ * library, and the packages page lists every pack with a line about
+ * what it reads. Both read these declarations, so there is no separate
+ * table to keep in step with the packs.
  */
 
 /** The manifest a dependency is declared in. */

@@ -1,10 +1,12 @@
-// @suss/intent-ir summary: the normalised intent shape the checker
-// compares against derived behavioural summaries.
-//
-// The authoring schema (./schema.ts) is friendly to write; this is the
-// shape that's convenient to check: boundaries as @suss/ir-core
-// BoundaryBindings, body shapes as TypeShapes, and one flat outcome
-// list per boundary intent.
+/**
+ * The normalized intent form the checker compares against behavioral
+ * summaries.
+ *
+ * The authoring schema is built to be easy to write, and this form is
+ * built to be easy to check: boundaries as @suss/ir-core
+ * `BoundaryBinding`s, body shapes as `TypeShape`s, and one flat
+ * outcome list per boundary intent.
+ */
 
 import {
   type BoundaryBinding,
@@ -47,7 +49,7 @@ export type IntentOutcomeKind = "response" | "return" | "throw" | "effect";
 /** One effect an outcome has, in the verbs `suss ask` asks with. */
 export interface IntentEffect {
   does: EffectRelation;
-  /** The boundary it reaches, as the author spelled it. */
+  /** The boundary it reaches, as the author wrote it. */
   names: string;
   /** The columns it touches. Empty when the doc states none. */
   fields: string[];
@@ -56,9 +58,8 @@ export interface IntentEffect {
 }
 
 /**
- * One clause of what a branch turned on. A clause whose subject is a
- * boundary is the one the checker compares; the rest carry through for
- * a reader.
+ * One clause of what a branch turned on. The checker compares a clause
+ * whose subject is a boundary, and the rest are kept for a reader.
  */
 export interface IntentCondition {
   /** The boundary the guard read, when the clause says one. */
@@ -72,7 +73,7 @@ export interface IntentCondition {
 }
 
 export interface IntentOutcome {
-  /** Author-declared id PRD scenarios reference. */
+  /** The id the author gave the outcome, which PRD scenarios link to. */
   id: string;
   /** What the branch turned on, as one line, for a reader. */
   when: string;
@@ -226,8 +227,8 @@ const BINDINGS: {
 };
 
 export function toBoundaryBinding(boundary: Boundary): BoundaryBinding {
-  // The one cast joins the per-protocol table, which narrows, to the
-  // runtime lookup, the same way dispatchByType does it.
+  // The table narrows per protocol and a lookup by name cannot, so the
+  // cast happens once here, as in `dispatchByType`.
   const build = BINDINGS[boundary.semantics] as (
     boundary: Boundary,
   ) => BoundaryBinding;
@@ -280,8 +281,8 @@ function restReceives(
 
 /**
  * A declared body's own properties, each as a field under `body`. A
- * body the vocabulary spells as one value rather than a set of
- * properties (an array, a primitive) stays one field, `body` itself.
+ * body declared as one value, such as an array or a primitive, stays
+ * one field, `body` itself.
  */
 function bodyFields(body: BodyShape | undefined): IntentInputField[] {
   if (body === undefined) {
@@ -325,7 +326,7 @@ export function toReceives(boundary: Boundary): IntentInputField[] {
 const VERBS = EffectRelationSchema.options;
 
 function toEffect(declared: DeclaredEffect): IntentEffect {
-  // The schema gives every effect one verb, so the find always lands.
+  // The schema gives every effect one verb, so the find always succeeds.
   const [does, names] = Object.entries(declared).find(([key]) =>
     (VERBS as readonly string[]).includes(key),
   ) as [EffectRelation, string];
@@ -373,7 +374,7 @@ function saidAsOneLine(
   clause: Exclude<WhenClause, string>,
   at: IntentEffect | null,
 ): string {
-  // The schema gives every clause one subject, so one of the two lands.
+  // The schema gives every clause one subject, so one of the two is set.
   const subject =
     at !== null ? `${at.does} ${at.names}` : `input ${String(clause.input)}`;
   const check = CHECK_KEYS.map((key) =>
@@ -472,9 +473,8 @@ function recordShape(authored: Record<string, AuthoredShape>): TypeShape {
   return { type: "record", properties };
 }
 
-// The friendly primitive vocabulary mapped onto IR TypeShapes. A Record
-// (rather than a switch) makes the mapping exhaustive by construction,
-// adding a PrimitiveTypeName without a shape here is a compile error.
+// The Record type makes this mapping exhaustive, so adding a
+// PrimitiveTypeName without a shape here fails to compile.
 const PRIMITIVE_TYPE_SHAPES: Record<PrimitiveTypeName, TypeShape> = {
   string: { type: "text" },
   integer: { type: "integer" },
