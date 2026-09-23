@@ -1,35 +1,35 @@
 # @suss/contract-storybook
 
-Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and says where the two disagree.
+Part of [suss](https://github.com/nimbuscloud-ai/suss), which reads both sides of every call in a repository and reports where the two disagree.
 
-Generate suss `BehavioralSummary[]` from [Storybook](https://storybook.js.org/) CSF3 story files. A story is a specification somebody wrote by hand: this component supports this prop configuration. Reading stories as contracts lets you ask whether a component accepts the args every story supplies, and whether every branch inferred from the component has a story that reaches it.
+This package builds suss `BehavioralSummary[]` from [Storybook](https://storybook.js.org/) CSF3 story files. A story is a specification somebody wrote by hand: this component supports this set of props. Reading stories as contracts lets you check whether a component accepts the args every story passes, and whether every branch inferred from the component has a story that reaches it.
 
 ## What this package reads
 
-`@suss/contract-storybook` parses `.stories.ts` and `.stories.tsx` files with ts-morph and looks at two things in each one.
+`@suss/contract-storybook` parses `.stories.ts` and `.stories.tsx` files with ts-morph, and reads two things in each one.
 
-The default export gives the component under test. The reader walks the default-export symbol's declarations for an object literal with a `component` property, which covers `export default { component: Button }`, `const meta = { component: Button }; export default meta;`, and `export default { ... } satisfies Meta<typeof Button>`. Parentheses, `as` expressions, and an identifier pointing at a local variable are followed through to the literal. A file whose default export never resolves to such an object is skipped, and the rest of the run continues.
+The default export gives the component under test. The reader walks the declarations of the default export's symbol, looking for an object literal with a `component` property. That covers `export default { component: Button }`, `const meta = { component: Button }; export default meta;` and `export default { ... } satisfies Meta<typeof Button>`. Parentheses, `as` expressions, and an identifier that points at a local variable are followed through to the literal. A file whose default export never resolves to such an object is skipped, and the rest of the run continues.
 
-Every other named export whose initializer resolves to an object literal is a story. Its `args` object literal becomes the story's arguments, with each property's value recorded as the source text you wrote. A shorthand property (`{ disabled }`) records its own name.
+Every other named export whose initializer resolves to an object literal is a story. Its `args` object literal becomes the story's arguments, and each property's value is recorded as the source text you wrote. A shorthand property (`{ disabled }`) records its own name.
 
 ## What it produces
 
 One `component`-kind summary per named story export:
 
-- `identity.name` is `Component.Story`, with `exportPath` set to the story's export name and a function-call boundary binding: `transport: "in-process"`, `recognition: "react"`, and the component identifier as the export name.
-- One input per arg. The input's `role` is the arg name, and its shape is a `ref` whose name is the arg's source text, so a reader can see the concrete value that was written.
+- `identity.name` is `Component.Story`, with `exportPath` set to the story's export name, and a function-call boundary binding with `transport: "in-process"`, `recognition: "react"`, and the component identifier as the export name.
+- One input per arg. The input's `role` is the arg name, and its shape is a `ref` whose name is the arg's source text, so a reader can see the value that was written.
 - One default transition whose output is a render of the component. The reader does not evaluate the render, so the rendered tree is left unset.
-- `metadata.component.storybook` with the story name, the component name, the args map, and `provenance: "independent"`, which is what makes a story usable as a check against an inferred component summary rather than a restatement of it.
-- Confidence is `derived` at `medium`. Stories are written by people and are authoritative where they speak, and they do not enumerate everything a component does.
+- `metadata.component.storybook` with the story name, the component name, the args map, and `provenance: "independent"`. The provenance is what lets a story act as a check on an inferred component summary, since it was written separately from the component.
+- Confidence is `derived` at `medium`. People write stories, and a story is authoritative about what it covers, but stories do not list everything a component does.
 
 ## What it does not read
 
-- **`play` functions.** The event sequence that exercises an interactive story is not captured.
-- **`argTypes`.** Per-arg control types and option lists would inform stricter type checking and are not read today.
-- **`decorators` and `parameters`.** Storybook runtime plumbing rather than component behavior.
+- **`play` functions.** The sequence of events that drives an interactive story is not recorded.
+- **`argTypes`.** Control types and option lists per arg could support stricter type checking, but they are not read today.
+- **`decorators` and `parameters`.** These are Storybook runtime setup and do not describe the component's behavior.
 - **CSF1 and MDX stories.** CSF3 is the supported format.
 - **The component's own module.** The reader keeps the `component` identifier as written and does not follow the import to where the component is defined.
-- **Arg values as structured shapes.** An arg's value stays source text inside a `ref` shape rather than being parsed into a `TypeShape`.
+- **Arg values as structured shapes.** An arg's value stays as source text inside a `ref` shape, and is not parsed into a `TypeShape`.
 
 ## Worked example
 
@@ -53,9 +53,9 @@ suss contract --from storybook src/components -o summaries/stories.json
 suss check summaries/app.json summaries/stories.json
 ```
 
-The path may be one `.stories.ts[x]` file or a directory, which the CLI walks recursively for story files. Two summaries come out of the file above, `Button.Primary` and `Button.Disabled`, each with `variant` and `disabled` inputs.
+The path can be one `.stories.ts[x]` file or a directory, which the CLI searches recursively for story files. The file above produces two summaries, `Button.Primary` and `Button.Disabled`, each with `variant` and `disabled` inputs.
 
-Or programmatically, when you want control over the file set or the root that relative paths are computed against:
+To control the set of files, or the root that relative paths are computed from, call it from code:
 
 ```ts
 import { generateSummariesFromStories } from "@suss/contract-storybook";
@@ -68,7 +68,7 @@ const summaries = generateSummariesFromStories(
 
 ## Where it fits in suss
 
-Depends on `@suss/behavioral-ir` (for the IR types it produces) and `@suss/adapter-typescript` (for export resolution), with `ts-morph` as a peer dependency. This is the one contract reader that parses TypeScript, because CSF is TypeScript. It still reads a declared artifact rather than inferring behavior from a component's implementation.
+The package depends on `@suss/behavioral-ir` for the IR types it produces and on `@suss/adapter-typescript` for export resolution, with `ts-morph` as a peer dependency. It is the only contract reader that parses TypeScript, because CSF is TypeScript. It still reads a declared artifact, and does not infer behavior from a component's implementation.
 
 ## More
 

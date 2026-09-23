@@ -1,10 +1,10 @@
 # @suss/framework-gcs
 
-Says which Google Cloud Storage buckets and objects a TypeScript service reads and writes.
+This pack records which Google Cloud Storage buckets and objects a TypeScript service reads and writes.
 
 ## What this package is
 
-A pattern pack. It emits the same `storage-access` effects the S3 pack does, so a bucket a service reads from and a bucket a service writes to are the same kind of boundary whichever cloud they are in.
+A pattern pack. It records the same `storage-access` effects the S3 pack does, so a bucket a service reads from or writes to is the same kind of boundary whichever cloud it is in.
 
 ```ts
 import { gcsFramework } from "@suss/framework-gcs";
@@ -12,13 +12,13 @@ import { gcsFramework } from "@suss/framework-gcs";
 const pack = gcsFramework();
 ```
 
-A caller reaches an object through a chain rather than through a command object:
+A caller reaches an object through a chain of calls, with no command object:
 
 ```ts
 await storage.bucket("reports-prod").file(`reports/${id}.pdf`).download();
 ```
 
-The operation on the end says whether the call reads or writes, and the chain behind it says which bucket and which object. The pack asks where the operation is declared, so a `download` on something a project wrote is left alone and only the library's own operations count. A step written into a variable first is followed back to where it was built, which is how a repository class keeps one bucket and reaches for a file per call.
+The operation at the end tells whether the call reads or writes, and the chain before it gives the bucket and the object. The pack checks where the operation is declared, so it only counts the library's own operations and ignores a `download` on something the project wrote. When a step was stored in a variable first, the pack follows it back to where it was built. That covers a repository class that keeps one bucket and asks it for a file on each call.
 
 ## What each part contributes
 
@@ -36,14 +36,14 @@ Operations that write: `save`, `upload`, `createWriteStream`, `delete`, `copy`, 
 
 ## A signed URL
 
-`getSignedUrl` hands the caller a URL that reaches the object later, so it counts as an access now. What it does then is whatever the caller signed for:
+`getSignedUrl` gives the caller a URL that reaches the object later, so the pack counts it as an access now. Whether it reads or writes depends on the action the caller signed for:
 
 ```ts
 .getSignedUrl({ version: "v4", action: "write", expires })   // a write
 .getSignedUrl({ version: "v4", action: "read", expires })    // a read
 ```
 
-A request that says nothing reads as a read, which is what the library does with it.
+A request with no action counts as a read, since that is how the library treats it.
 
 ## A bucket the call site does not know
 
@@ -56,8 +56,8 @@ const object = {
 };
 ```
 
-Nothing there says which bucket, so the container comes out null and the access is still recorded. What the boundary is depends on the callers, and pairing a wrapper's callers against the store it reaches is open work.
+Nothing there shows which bucket, so the container comes out null and the access is still recorded. The bucket depends on the callers, and pairing a wrapper's callers with the store it reaches is still open work.
 
 ## Where it fits in suss
 
-Depends on `@suss/behavioral-ir` for the binding it builds and `@suss/adapter-typescript` for the declaration check and for reading a name. The storage pass in `@suss/checker` pairs what this emits against whatever declares the bucket.
+The pack depends on `@suss/behavioral-ir` for the binding it builds, and on `@suss/adapter-typescript` for the declaration check and for reading a name. The storage pass in `@suss/checker` pairs what this pack records with whatever declares the bucket.

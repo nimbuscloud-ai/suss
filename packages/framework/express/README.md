@@ -1,29 +1,38 @@
 # @suss/framework-express
 
-Framework pack for [Express](https://expressjs.com/) handlers. Declarative patterns for registration-based discovery and Express's response method chains.
+Framework pack for [Express](https://expressjs.com/). It finds the routes an app or a router registers, and reads the status and body each handler sends back through Express's response methods.
+
+```ts
+import express from "express";
+
+const app = express();
+const router = express.Router();
+
+router.post("/", validate, asyncHandler(login), respond);
+```
 
 ## What this package is
 
-`@suss/framework-express` returns a `PatternPack` object describing:
+`@suss/framework-express` exports a `PatternPack`, which is data the adapter reads. It covers:
 
-- **Discovery** via `express.Router().get/post/put/delete/patch()` registration calls. The router can come from either import spelling: `import { Router } from "express"` and `Router()`, or `import express from "express"` and `express.Router()`. So can the app, `express()`.
-- **Wrappers** registered around the routes: `app.use(fn)` runs for every route on the app, and the same call with a four-argument function is an error handler, which Express invokes only for a request that threw, handing it the thrown value as its first parameter. Arity is the only thing that tells the two apart. Each becomes a summary of its own, where the status it produces lives, and every route on the same app points at it. A route also lists its own: `router.post("/", validate, asyncHandler(login), respond)` runs the first two before `respond`, and each is read as a middleware of that route, inside whatever the app registers. One with no name of its own goes by its factory and the route, `asyncHandler@POST /login`.
-- **Terminals**: `res.status(N).json(body)`, `res.json(body)`, `res.sendStatus(N)`, `res.redirect()`, and `throw`
-- **Input mapping**: positional parameters `(req, res, next)` with semantic roles
-- **Request spelling**: where a handler reads each part of the request, `request.headers`, `request.query`, `request.params` and `request.body`, each read by the field it wants. A boundary intent with a `receives` block is compared against those reads.
-- **Project helpers**: a function the code hands its app to is read before extraction, and what it registers is filled in at each call site, so `registerCrud(app, "users", h)` and `registerCrud(app, "orders", h)` give both routes
+- **Discovery**: calls to `get`, `post`, `put`, `delete` and `patch` on a router from `express.Router()`. Both import spellings work: `import { Router } from "express"` with `Router()`, and `import express from "express"` with `express.Router()`. The same goes for the app, `express()`.
+- **Wrappers**: middleware registered around the routes. `app.use(fn)` runs for every route on the app. When `fn` takes four arguments it is an error handler instead, and Express calls it only for a request that threw, passing the thrown value as its first parameter. The number of parameters is the only way to tell the two apart. Each middleware gets a summary of its own, which is where the status it sends is recorded, and every route on the same app points at it. A route can also list its own. In `router.post("/", validate, asyncHandler(login), respond)`, the first two run before `respond`, and suss reads each as a middleware of that route, inside whatever the app registers. A middleware with no name of its own is named after its factory and the route, as in `asyncHandler@POST /login`.
+- **Terminals**: `res.status(N).json(body)`, `res.json(body)`, `res.sendStatus(N)`, `res.redirect()`, and `throw`.
+- **Input mapping**: the positional parameters `(req, res, next)`, each with its role.
+- **Request spelling**: the parts of the request a handler reads, `request.headers`, `request.query`, `request.params` and `request.body`, each by the field it wants. suss compares a boundary intent's `receives` block against those reads.
+- **Project helpers**: before extraction, suss reads any function the code passes its app to, and fills in what that function registers at each call site. So `registerCrud(app, "users", h)` and `registerCrud(app, "orders", h)` give both routes.
 
 ## Setup
 
-Run `suss extract -f express` against the project. The pack does not require `express` itself to be installed: it matches on the import specifier, so it reads a checkout whose dependencies were never fetched, and says so in a note at the end of the run. Installing the project's dependencies lets suss resolve types through Express's own declarations, which produces more detail on the routes it finds.
+Run `suss extract -f express` against the project. `express` itself does not have to be installed. The pack matches on the import specifier, so it can read a checkout whose dependencies were never fetched, and suss prints a note saying so at the end of the run. If you install the project's dependencies, suss resolves types through Express's own declarations and records more detail on the routes it finds.
 
 ## Options
 
-None. `registrationHelpers` used to say what a route helper of the project's own registered; the reading above replaced it. A config file that still sets it is read past with a warning, and stops the run in 0.22.0.
+None. `registrationHelpers` used to list the route helpers a project wrote for itself, and the helper reading above replaced it. A config file that still sets it gets a warning, and in 0.22.0 it stops the run.
 
 ## Where it fits in suss
 
-Depends only on `@suss/extractor` (for the `PatternPack` type). Contains no analysis logic.
+The pack depends only on `@suss/extractor`, for the `PatternPack` type. It has no analysis logic of its own.
 
 ## Coverage
 

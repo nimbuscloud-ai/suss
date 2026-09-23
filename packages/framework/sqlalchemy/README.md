@@ -1,14 +1,13 @@
 # @suss/framework-sqlalchemy
 
-Says which calls a Python body makes against the database, for a project
-using SQLAlchemy.
+This pack records which calls a Python body makes against the database,
+for a project that uses SQLAlchemy.
 
 ## What this package is
 
-A pattern pack. It states the types SQLAlchemy hands back from a query,
+A pattern pack. It declares the types SQLAlchemy returns from a query,
 the methods that change what is stored, and the constructor a model's
-field is given to reach another model, and the Python adapter does the
-matching.
+field uses to reach another model. The Python adapter does the matching.
 
 ```ts
 import { flaskRestxFramework } from "@suss/framework-flask-restx";
@@ -19,15 +18,16 @@ const pack = withSqlalchemy(flaskRestxFramework({}), {
 });
 ```
 
-A web framework and a database library are separate libraries, and a project
-picks both, so this composes onto whichever route pack a run already uses.
-`sqlalchemyFramework` is there for a run that wants the storage patterns and
+A project picks its web framework and its database library separately,
+so this pack combines with whichever route pack a run already uses.
+`sqlalchemyFramework` is for a run that wants the storage patterns and
 no routes.
 
-`storageSystem` is yours to say. SQLAlchemy talks to Postgres, MySQL and
-SQLite alike and the connection URL settles which, so the pack cannot.
+You have to set `storageSystem`. SQLAlchemy works with Postgres, MySQL
+and SQLite, and the connection URL decides which, so the pack cannot
+work it out.
 
-From the CLI, the option comes from a config file, and a bare
+From the CLI, the option comes from a config file. A bare
 `-f sqlalchemy` stops with a message asking for one:
 
 ```sh
@@ -37,11 +37,11 @@ suss extract -f flask-restx -f sqlalchemy=suss.sqlalchemy.json
 
 ## Why it matches on the return
 
-A call chain matches when the method behind it says it returns one of
-SQLAlchemy's query types. Matching on what a file imports would be simpler
-and would find almost nothing. A measured Flask service imports `sqlalchemy`
-in 50 files, and all 157 of its queries still go through a base class the
-call sites never import:
+A call chain matches when the method behind it is declared to return one
+of SQLAlchemy's query types. Matching on what a file imports would be
+simpler, and would find almost nothing. One Flask service that suss was
+measured on imports `sqlalchemy` in 50 files, yet all 157 of its queries go through
+a base class that the call sites never import:
 
 ```python
 # in the project
@@ -55,60 +55,61 @@ class Orders(Base): ...
 found = Orders.query().filter_by(id=1).first()
 ```
 
-Following `Orders.query` to the method `Base` declares, and reading what that
-method says it returns, finds all of them. On that service the run reports 74
-database effects across 129 routes, naming the model each one is against.
+Following `Orders.query` to the method `Base` declares, and reading its
+declared return type, finds all of them. On that service the run reports
+74 database effects across 129 routes, each with the model it is
+against.
 
 ## What comes out
 
-One `interaction` effect per chain, with `class: "storage-access"`. The three
-calls above are one read, not three. The method the chain ends with tells a
-read from a write, and the model it was called on becomes the table.
+One `interaction` effect per chain, with `class: "storage-access"`. The
+three calls above make one read. The method at the end of the chain
+decides whether it is a read or a write, and the model it was called on
+becomes the table.
 
 A `Session` is read the same way wherever the body gets it: a parameter
 annotated `db: Session`, a local built by `Session()` or opened by `with
 Session() as db:`, or a project function annotated `-> Session`. `db.add`,
 `db.commit`, `db.merge` and the bulk methods are writes. `db.execute(stmt)`
-records nothing of its own, since the statement it runs is its own chain, and
-neither do `begin`, `rollback` or `close`.
+records nothing itself, since the statement it runs is its own chain.
+`begin`, `rollback` and `close` record nothing either.
 
 The table is the model the call works on. `select(User)`, `select(User.id)`,
-`db.get(User, 1)` and `db.query(User)` say it in their first argument, and
-`select(func.count()).select_from(User)` says it later in the chain.
+`db.get(User, 1)` and `db.query(User)` give it in their first argument, and
+`select(func.count()).select_from(User)` gives it later in the chain.
 `db.add(user)` takes it from what the function declares `user` to be: a
 parameter annotated `user: User`, or a local assigned from `User(...)`,
 `db.get(User, 1)`, `User.model_validate(data)`, or a project function
-annotated `-> User | None`. A parameter annotated with an alias,
+annotated `-> User | None`. A parameter annotated with an alias, such as
 `current_user: CurrentUser` with `CurrentUser = Annotated[User,
 Depends(get_current_user)]` in this module or another, is read as a `User`.
-A class is told from a variable by its spelling, `User` against `user`, so a
-model written in lowercase is not read. `db.commit()` works on no table of
-its own and comes out with the container unnamed.
+The pack tells a class from a variable by its case, `User` against `user`,
+so a model written in lowercase is not read. `db.commit()` does not work on
+a table of its own, and comes out with no container name.
 
-A 2.0 statement is the operation its constructor says: `update(User).where(...).values(name="x")` is an update whose `fields` are the `values` keywords. `select(User.id)` puts the column in `fields`, and a keyword the chain picks rows by, `id` in `filter_by(id=1)`, goes in `selector`. A comparison written positionally, `where(User.id == 1)`, is not read.
+A 2.0 statement's operation comes from its constructor. `update(User).where(...).values(name="x")` is an update whose `fields` are the `values` keywords. `select(User.id)` puts the column in `fields`, and a keyword the chain selects rows by, such as `id` in `filter_by(id=1)`, goes in `selector`. A comparison written positionally, `where(User.id == 1)`, is not read.
 
-Raw SQL handed to `text("...")` is read as its own effect, with the kind and
-the table taken from the statement.
+Raw SQL passed to `text("...")` is read as its own effect, with the kind
+and the table taken from the statement.
 
-## What a relationship says
+## Relationships
 
-`relationship`, imported from `sqlalchemy.orm`, says a model's field
-reaches another model:
+`relationship`, imported from `sqlalchemy.orm`, declares that a model's
+field reaches another model:
 
 ```ts
 relationships: [{ module: "sqlalchemy.orm", name: "relationship" }]
 ```
 
-The model comes from the field's annotation when there is one, with the
-wrappers taken off (`Mapped[Item]`, `Mapped[list["Item"]]`,
-`Optional[Item]`, `Item | None`), and otherwise from the first argument
-the call was given, which is how `participants =
-relationship("Participant")` reads. The callable has to come from
-`sqlalchemy.orm`, so a project function spelled `relationship` matches
-nothing.
+The model comes from the field's annotation when it has one, with the
+wrappers removed (`Mapped[Item]`, `Mapped[list["Item"]]`,
+`Optional[Item]`, `Item | None`). Otherwise it comes from the call's
+first argument, which is how `participants = relationship("Participant")`
+is read. The callable has to come from `sqlalchemy.orm`, so a project
+function called `relationship` does not match.
 
-With that, `case.participants` is one `Participant`, and a call on it
-composes the way any settled model does.
+With that, `case.participants` resolves to `Participant`, and a call on
+it works the same way as for any model suss has resolved.
 
 ## License
 

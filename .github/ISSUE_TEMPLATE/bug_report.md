@@ -8,14 +8,14 @@ assignees: ""
 
 <!--
 Title the issue with the symptom in plain words: what a reader or a
-run sees go wrong, not the internal mechanism. "A hand-typed
-suppression rule for a message-bus boundary never matches" reads in
-a list; "fix normalizeRuleBoundary" does not.
+run sees go wrong. Leave the internal mechanism for the body. "A
+hand-typed suppression rule for a message-bus boundary never matches"
+is clear in a list of issues; "fix normalizeRuleBoundary" is not.
 -->
 
 ## What happened
 
-<!-- A concise description of the bug. -->
+<!-- A short description of the bug. -->
 
 ## What you expected
 
@@ -24,9 +24,9 @@ a list; "fix normalizeRuleBoundary" does not.
 ## Minimal reproduction
 
 <!--
-The smallest TS source + tsconfig + suss command that reproduces the issue.
-A handful of files inline is usually enough — please paste the actual code,
-not a description of it.
+The smallest TS source, tsconfig and suss command that reproduce the
+issue. A handful of files inline is usually enough. Please paste the
+code itself, since a description of it is much harder to reproduce.
 -->
 
 ```ts
@@ -54,4 +54,4 @@ suss extract -p tsconfig.json -f express
 
 ## Additional context
 
-<!-- Anything else that might help — related issues, recent changes, etc. -->
+<!-- Anything else that might help, such as related issues or recent changes. -->
