@@ -17,17 +17,19 @@ import { runtimeConfigBinding } from "@suss/behavioral-ir";
 import { SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
 
 import { enclosingFunction, field, stringLiteralValue } from "./ast.js";
+import { isDefaultedAt } from "./defaulted.js";
+import { envReadSpellingAt, isEnviron } from "./envSpellings.js";
 import {
   resolveCalls,
   resolvedFunctions,
   resolveEnvObjects,
 } from "./facts/resolve.js";
 import { callArguments, nodeId, readKey } from "./facts/values.js";
-import { resolveName } from "./scope.js";
 import { resolutionKeyOf, stringValueOf } from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
+import type { EnvReadSpelling } from "./envSpellings.js";
 import type { PyNode } from "./parser.js";
 import type { ModuleBinding, Scope } from "./scope.js";
 
@@ -121,145 +123,22 @@ function configReadEffect(read: EnvRead): Effect {
 }
 
 function envReadSyntaxAt(node: PyNode, scope: Scope): EnvReadSyntax | null {
-  if (node.type === "subscript") {
-    return subscriptRead(node, scope);
-  }
-  if (node.type === "call") {
-    return callRead(node, scope);
-  }
-  return null;
-}
-
-/** `os.environ["X"]`, which raises when the variable is unset unless an `or` supplies a fallback. */
-function subscriptRead(node: PyNode, scope: Scope): EnvReadSyntax | null {
-  const value = field(node, "value");
-  const index = field(node, "subscript");
-  if (value === null || index === null || !isEnviron(value, scope)) {
+  const spelling = envReadSpellingAt(node, scope);
+  if (spelling === null) {
     return null;
   }
-  if (isAssignedTo(node)) {
-    return null;
-  }
-  return { name: index, defaulted: isDefaultedAt(node) };
+  return {
+    name: spelling.name,
+    defaulted: hasFallback(node, spelling, scope),
+  };
 }
 
-/** `os.environ["X"] = v` and `del os.environ["X"]` change the environment rather than read it. */
-function isAssignedTo(node: PyNode): boolean {
-  const parent = node.parent;
-  if (parent === null) {
-    return false;
-  }
-  if (parent.type === "delete_statement") {
-    return true;
-  }
-  return (
-    (parent.type === "assignment" || parent.type === "augmented_assignment") &&
-    field(parent, "left")?.id === node.id
-  );
-}
-
-/** `os.environ.get("X", d)` and `os.getenv("X", d)`, defaulted when a second argument is passed. */
-function callRead(node: PyNode, scope: Scope): EnvReadSyntax | null {
-  const callee = field(node, "function");
-  if (callee === null || !isEnvGetter(callee, scope)) {
-    return null;
-  }
-  const written = callArguments(node);
-  const name = written.find(
-    (argument) => argument.kind === "positional" && argument.position === 0,
-  );
-  if (name === undefined) {
-    return null;
-  }
-  const hasDefault = written.some(
-    (argument) =>
-      (argument.kind === "positional" && argument.position === 1) ||
-      (argument.kind === "keyword" && argument.name === "default"),
-  );
-  return { name: name.node, defaulted: hasDefault || isDefaultedAt(node) };
-}
-
-/** `os.environ.get` or `os.getenv`, through whatever name the file imported them under. */
-function isEnvGetter(callee: PyNode, scope: Scope): boolean {
-  if (callee.type === "attribute") {
-    const object = field(callee, "object");
-    const attribute = field(callee, "attribute")?.text;
-    if (object === null) {
-      return false;
-    }
-    if (attribute === "get") {
-      return isEnviron(object, scope);
-    }
-    return attribute === "getenv" && isOsModule(object, scope);
-  }
-  return isImportedFromOs(callee, scope, "getenv");
-}
-
-/** `os.environ`, or `environ` after `from os import environ`. */
-function isEnviron(node: PyNode, scope: Scope): boolean {
-  if (node.type === "attribute") {
-    const object = field(node, "object");
-    return (
-      object !== null &&
-      field(node, "attribute")?.text === "environ" &&
-      isOsModule(object, scope)
-    );
-  }
-  return isImportedFromOs(node, scope, "environ");
-}
-
-function isOsModule(node: PyNode, scope: Scope): boolean {
-  if (node.type !== "identifier") {
-    return false;
-  }
-  const binding = resolveName(scope, node.text);
-  return (
-    binding?.kind === "import" &&
-    binding.module === "os" &&
-    binding.relativeLevel === 0
-  );
-}
-
-function isImportedFromOs(node: PyNode, scope: Scope, name: string): boolean {
-  if (node.type !== "identifier") {
-    return false;
-  }
-  const binding = resolveName(scope, node.text);
-  return (
-    binding?.kind === "importFrom" &&
-    binding.module === "os" &&
-    binding.relativeLevel === 0 &&
-    binding.importedName === name
-  );
-}
-
-/**
- * Whether an `or` supplies a value when this read comes back empty. The
- * climb continues through a chain, so B in `A or B or "d"` counts, and
- * stops where the read is the final operand and is itself the fallback.
- */
-function isDefaultedAt(node: PyNode): boolean {
-  let child = node;
-  let parent = node.parent;
-  while (parent !== null) {
-    if (parent.type === "parenthesized_expression") {
-      child = parent;
-      parent = parent.parent;
-      continue;
-    }
-    if (
-      parent.type !== "boolean_operator" ||
-      field(parent, "operator")?.text !== "or"
-    ) {
-      return false;
-    }
-    if (field(parent, "left")?.id === child.id) {
-      return true;
-    }
-    child = parent;
-    parent = parent.parent;
-  }
-  return false;
+function hasFallback(
+  node: PyNode,
+  spelling: EnvReadSpelling,
+  scope: Scope,
+): boolean {
+  return spelling.hasDefault || isDefaultedAt(node, { spelling, scope });
 }
 
 /**
@@ -306,14 +185,14 @@ export function envFactsIn(
       if (isEnviron(node, scope) && handsOnward(node)) {
         found.objects.push(keyOf(filePath, node));
       }
-      const syntax = envReadSyntaxAt(node, scope);
-      if (syntax === null || stringLiteralValue(syntax.name) !== null) {
+      const spelling = envReadSpellingAt(node, scope);
+      if (spelling === null || stringLiteralValue(spelling.name) !== null) {
         return;
       }
       found.sites.push({
         site: nodeId(filePath, node),
-        nameKey: keyOf(filePath, syntax.name),
-        defaulted: syntax.defaulted,
+        nameKey: keyOf(filePath, spelling.name),
+        defaulted: hasFallback(node, spelling, scope),
         functionKey: functionReadKey(filePath, node, scope),
       });
     },
