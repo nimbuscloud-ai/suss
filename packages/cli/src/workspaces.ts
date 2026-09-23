@@ -1,37 +1,39 @@
-// workspaces.ts: find the packages in a monorepo.
-//
-// Pointed at a repo root, `inspectProject` finds nothing: it stops at
-// every nested package.json, which is the right call for a single
-// service and the wrong one for a workspace of twelve. Pointed at
-// one service, it misses the other eleven.
-//
-// So look for the workspace declaration first. Four tools are in wide
-// use and each keeps the list somewhere different, but they all keep it
-// as globs over directories, which is enough to resolve without pulling
-// in a glob library: the patterns in practice are `packages/*`,
-// `apps/**`, or a literal path.
+/**
+ * Finds the packages in a monorepo.
+ *
+ * Run at a repo root, `inspectProject` finds nothing, because it stops at
+ * every nested package.json. That suits a single service, but in a
+ * workspace of twelve packages it misses all of them, and run on one
+ * service it misses the other eleven. So init looks for the workspace
+ * declaration first.
+ *
+ * Four tools are in wide use and each keeps the list in a different file.
+ * All of them write it as globs over directories, and in practice the
+ * globs are `packages/*`, `apps/**` or a literal path, so this module
+ * expands them itself without a glob library.
+ */
 
 import fs from "node:fs";
 import path from "node:path";
 
 export interface Workspace {
-  /** The package's directory, relative to the repo root. */
+  /** Relative to the repo root. */
   directory: string;
-  /** Its name from package.json, when it has one. */
+  /** The name in the package's package.json, when it has one. */
   name: string | null;
 }
 
 export interface WorkspaceLayout {
   root: string;
-  /** Which file declared the workspace, for reporting. */
+  /** The file that declared the workspace, so the report can say where the list came from. */
   declaredBy: string | null;
   packages: Workspace[];
 }
 
 /**
- * The workspace a directory belongs to, whether it is the root or one of
- * the packages. Returns no packages when this is a single project, and
- * the caller takes that to mean "treat it as one".
+ * The workspace a directory belongs to, whether the directory is the
+ * root or one of the packages. `packages` is empty for a single project,
+ * and the caller then reads the directory as one project.
  */
 export function readWorkspace(dir: string): WorkspaceLayout {
   const root = path.resolve(dir);
@@ -67,7 +69,7 @@ interface Declaration {
   patterns: string[];
 }
 
-/** Whichever of the four tools declared this workspace, if any did. */
+/** The first of the four tools' files that declares a workspace here, or null. */
 function findDeclaration(root: string): Declaration | null {
   const readers: Array<() => Declaration | null> = [
     () => fromPackageJson(root),
@@ -97,8 +99,8 @@ function fromPackageJson(root: string): Declaration | null {
   if (parsed === null) {
     return null;
   }
-  // npm and yarn accept an array, or an object with one under
-  // `packages`, which is the yarn-berry shape.
+  // npm and yarn take an array. Yarn berry also takes an object with the
+  // array under `packages`.
   const workspaces = parsed.workspaces;
   const patterns = Array.isArray(workspaces)
     ? workspaces
@@ -113,8 +115,8 @@ function fromPnpm(root: string): Declaration | null {
   if (!fs.existsSync(file)) {
     return null;
   }
-  // Only the `packages:` list is needed, and it is a flat sequence of
-  // quoted strings, so a line scan beats taking a YAML dependency here.
+  // Only the `packages:` list is needed, and it is a flat list of quoted
+  // strings, so scanning lines avoids adding a YAML dependency.
   const patterns: string[] = [];
   let inPackages = false;
   for (const line of fs.readFileSync(file, "utf8").split("\n")) {
@@ -145,9 +147,9 @@ function fromLerna(root: string): Declaration | null {
 }
 
 /**
- * turbo.json does not list packages; it defers to whatever package
- * manager is in use. Its presence still says this is a workspace, so
- * fall back to the two conventional directories.
+ * turbo.json does not list packages, because turbo uses the package
+ * manager's list. A turbo.json still means the directory is a workspace,
+ * so this falls back to the two conventional directories.
  */
 function fromTurbo(root: string): Declaration | null {
   if (!fs.existsSync(path.join(root, "turbo.json"))) {
@@ -161,12 +163,12 @@ function isString(value: unknown): value is string {
 }
 
 /**
- * Resolve one glob to directories.
+ * Expands one glob to directories.
  *
  * Three forms appear in practice: a literal path, one star per level as
  * in `packages/*` or `packages/*\/*`, and `**` for any depth. A star
- * stands for exactly one level, so `packages/*\/*` means two, which is
- * how this repo reaches packages/framework/hono.
+ * matches exactly one level, so `packages/*\/*` matches directories two
+ * levels below `packages`.
  */
 function expand(root: string, pattern: string): string[] {
   const cleaned = pattern.replace(/\/+$/, "");
@@ -179,8 +181,8 @@ function expand(root: string, pattern: string): string[] {
   const prefix = segments.slice(0, firstStar).join("/");
   const wildcards = segments.slice(firstStar);
   const deep = wildcards.some((s) => s === "**");
-  // `**` could be any depth; three levels covers every layout seen and
-  // keeps the walk bounded.
+  // `**` can mean any depth. Three levels covers every layout seen so far
+  // and keeps the walk bounded.
   const depth = deep ? 3 : wildcards.length;
 
   return directoriesAtDepth(path.join(root, prefix), depth, deep).map(
@@ -189,9 +191,9 @@ function expand(root: string, pattern: string): string[] {
 }
 
 /**
- * Directory names under `base`. With `exact`, only those sitting at
- * precisely `depth` levels down, because one star means one level.
- * Otherwise every level down to `depth`, which is what `**` means.
+ * Directory paths under `base`. Without `anyDepth`, only those exactly
+ * `depth` levels down, because each star matches one level. With it,
+ * those at every level down to `depth`, as `**` matches.
  */
 function directoriesAtDepth(
   base: string,

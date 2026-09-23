@@ -24,3 +24,13 @@ When a service keeps its shared framework in a git submodule, it imports code th
 `.gitmodules` tells the two cases apart. The enclosing repository lists each submodule by path. If a nested `.git` appears in that list, it is part of this project, and suss adds it as an extraction root. If it does not appear, it is a separate project that happens to be inside the tree, and suss drops its files from the walk. Extracting them would report another project's boundaries as if they were this one's.
 
 A submodule nobody checked out is an empty directory. Imports into it resolve to nothing, and the summaries that depended on them are silently never produced. So a run prints a warning on stderr, continues, and records the problem in the incompleteness note it writes next to the summaries.
+
+## Corroboration verdicts
+
+`suss corroborate` is experimental. It runs each handler in a vm with inputs that satisfy a transition's extracted conditions, and writes one of three verdicts on the transition:
+
+- `observed`: every run that satisfied the conditions sent the status the summary claims.
+- `refuted`: at least one such run sent a different status. The verdict includes that input as a counterexample. The cause may be a bug in extraction or behavior in the handler that nobody expected, and the user needs to hear about either one.
+- `untested`: no run reached a verdict. Either sampling never found an input the conditions accepted, or every run failed. A run that fails with a bare `ReferenceError` has reached a dependency the sandbox cannot supply, and the reason says the path is dependency-gated.
+
+The inputs come from rejection sampling, with no constraint solver. The sampler builds candidates from the input paths and string literals in the conditions, and the three-valued condition evaluator decides whether each one satisfies them.

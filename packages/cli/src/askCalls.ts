@@ -1,12 +1,12 @@
 /**
  * `what calls <unit>`: the direct callers of one function.
  *
- * The callers come off the one-hop call facts, so a call the run
- * resolved and a call recorded on the caller's binding are the same
- * answer, and the function is the same one whichever way the question
- * spells it. The one thing that can hide a caller is a call suss could
- * not follow, and the answer says when the run recorded any, so an
- * empty list reads as "nothing calls this" only when it is.
+ * The callers come from the one-hop call facts. A call the run resolved
+ * and a call recorded on the caller's binding count the same, and the
+ * question finds the same function however it spells the name. A call
+ * suss could not follow can still hide a caller, so the answer says when
+ * the run recorded any. Without that caveat an empty list would look like
+ * "nothing calls this" even when a caller was missed.
  */
 
 import { summaryIdentifier } from "@suss/behavioral-ir";
@@ -86,9 +86,8 @@ export function answerCalls(
 }
 
 /**
- * The distinction between "nothing calls this" and "no call suss
- * could follow calls this". Units the answer already listed report
- * their own gaps line by line, so they are left out here.
+ * Warns that a call suss could not follow may hide a caller. Units the
+ * answer already lists print their own gap lines, so they are left out.
  */
 function unfollowedCaveat(
   summaries: ReadonlyArray<BehavioralSummary>,

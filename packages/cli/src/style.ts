@@ -1,12 +1,14 @@
-// style.ts: terminal styling, off unless the terminal wants it.
-//
-// No dependency for this. The handful of codes below is the whole of
-// what the output needs, and a colour library is a supply-chain
-// surface for something a dozen lines can do.
-//
-// Colour is off when stdout is not a terminal, so piping to a file or
-// through `grep` gives plain text, and off when NO_COLOR is set, which
-// is the convention users expect to work.
+/**
+ * Terminal colours for the CLI's output.
+ *
+ * The CLI writes the escape codes itself. It needs five of them, and a
+ * colour library would add a dependency to the supply chain for a dozen
+ * lines of code.
+ *
+ * Colour is off when stdout is not a terminal, so output piped to a file
+ * or through `grep` stays plain text. It is also off when NO_COLOR is set,
+ * because users expect that convention to work.
+ */
 
 const enabled =
   process.env.NO_COLOR === undefined &&
@@ -23,5 +25,5 @@ export const cyan = wrap("36", "39");
 export const green = wrap("32", "39");
 export const yellow = wrap("33", "39");
 
-/** Whether styling is on, for a caller that wants to lay out differently. */
+/** Whether colour is on, for a caller that lays out its output differently when it is. */
 export const styled = enabled;

@@ -1,16 +1,15 @@
 /**
- * Work out which packs a project needs, and say so.
+ * `suss init` works out which packs a project needs and prints the
+ * commands to run them.
  *
- * Picking packs by hand means reading the pack list, matching it
- * against your dependencies, and knowing that a SAM template implies
- * two of them while a Prisma schema implies a third. That is a research
- * task before anyone has seen a single summary, and everything needed
- * to answer it is already on disk: dependencies say which frameworks and
- * clients, and files on disk name the contract sources.
+ * Picking packs by hand means reading the pack list, matching it against
+ * the project's dependencies, and knowing that a SAM template needs one
+ * contract reader while a Prisma schema needs another. Everything needed
+ * to decide is already on disk. The dependency manifests list the
+ * frameworks and clients, and spec files point to the contract sources.
  *
- * Nothing here is written or installed. The output is a list of
- * commands, which stays useful whether the reader pastes them, puts
- * them in CI, or reads them and does something else.
+ * This module writes and installs nothing. Its output is a list of
+ * commands, which a user can paste, put in CI, or adapt.
  */
 
 import fs from "node:fs";
@@ -46,11 +45,11 @@ export interface PackSuggestion {
   name: string;
   /** The npm package to install. */
   packageName: string;
-  /** What in the project pointed at it. */
+  /** The dependency or file in the project that led to this suggestion. */
   because: string;
   /**
-   * What this pack contributes. An `effects` pack recognises calls
-   * inside units another pack discovered, so alone it comes back empty.
+   * What this pack contributes. An `effects` pack recognises calls inside
+   * units that another pack found, so run on its own it finds nothing.
    */
   kind: "framework" | "client" | "contract" | "effects";
   /** For a contract source, the file to read. */
@@ -58,8 +57,8 @@ export interface PackSuggestion {
   /** Which language's code this pack reads. Contract sources have none. */
   language?: Language;
   /**
-   * True when the pack reads a library the language ships, which every
-   * project in that language can use and none of them declares.
+   * True when the pack reads a library that comes with the language.
+   * Every project in that language can use it, and none declares it.
    */
   shippedWithLanguage?: boolean;
   configuration?: PackConfiguration;
@@ -72,20 +71,19 @@ export interface InitReport {
   suggestions: PackSuggestion[];
   /** Every language suss found source for here. */
   languages?: Language[];
-  /** Where suss looked and could not read, which is different from
-   * having found no dependencies at all. */
+  /** Manifests suss could not read, so the report does not look like a project with no dependencies. */
   unread?: UnreadDependencies[];
-  /** Frameworks this project depends on that suss knows and has no pack for. */
+  /** Frameworks the project depends on that suss recognises but has no pack for. */
   recognizedWithoutPack?: string[];
 }
 
 type Ecosystem = "npm" | "pypi" | "rubygems";
 
 /**
- * Web frameworks a project can depend on that no pack reads yet. When
- * nothing matched, telling a Flask project "your dependencies say
- * nothing" is true and useless; telling it suss knows Flask and cannot
- * read it yet is the answer the person was asking for (#229).
+ * Web frameworks that no pack reads yet. When no pack matches a Flask
+ * project, the report says that suss recognises Flask and cannot read it
+ * yet. Saying only that nothing matched would leave the user guessing
+ * (#229).
  */
 const RECOGNIZED_WITHOUT_A_PACK: Array<{
   ecosystem: Ecosystem;
@@ -104,7 +102,7 @@ const BY_FILE: Array<{
   matches: (filename: string, file: string) => boolean;
   name: string;
   packageName: string;
-  /** Read the directory rather than each file under it. */
+  /** Suggest one command for the directory instead of one per file. */
   perDirectory?: boolean;
   describe: (relativePath: string) => string;
 }> = [
@@ -139,8 +137,8 @@ const BY_FILE: Array<{
     describe: (p) => `a GraphQL schema at ${p}`,
   },
   {
-    // Operations are written one file per screen, so the reader takes
-    // the directory and the suggestion names it once.
+    // Projects write one operations file per screen, so the reader takes
+    // the whole directory.
     matches: (f, file) =>
       isGraphqlFile(f) && !declaresTypes(file) && declaresOperations(file),
     name: "graphql-documents",
@@ -149,17 +147,16 @@ const BY_FILE: Array<{
     describe: (p) => `GraphQL operations under ${p}`,
   },
   {
-    // The same reader takes a Swagger 2.0 document, and a project on 2.0
-    // names the file after the spec it wrote, so a scan for openapi.json
-    // alone walked past it.
+    // The OpenAPI reader also reads Swagger 2.0, and a Swagger project
+    // usually calls its file swagger.json.
     matches: (f) => /^(openapi|swagger)\.(ya?ml|json)$/.test(f),
     name: "openapi",
     packageName: "@suss/contract-openapi",
     describe: (p) => `an OpenAPI document at ${p}`,
   },
   {
-    // Stories are written one file per component, so the reader takes
-    // the directory and the suggestion names it once.
+    // Projects write one stories file per component, so the reader takes
+    // the whole directory.
     matches: (f) => f.endsWith(".stories.tsx") || f.endsWith(".stories.ts"),
     name: "storybook",
     packageName: "@suss/contract-storybook",
@@ -172,15 +169,15 @@ const isGraphqlFile = (filename: string): boolean =>
   (filename.endsWith(".graphql") || filename.endsWith(".gql")) &&
   !filename.includes(".test.");
 
-/** A schema declares types; a document written by a project does not. */
+/** Tells a schema, which declares types, from a project's operations file, which does not. */
 function declaresTypes(file: string): boolean {
   return describesTypes(textOf(file));
 }
 
 /**
- * Whether a document has an operation to read. A file with nothing but
- * fragments in it is what codegen inlines into the documents that
- * spread them, and reading it on its own comes back with no boundary.
+ * Whether a document contains an operation. A file of fragments alone
+ * gets inlined by codegen into the operations that spread them, and
+ * reading it by itself does not turn up a boundary.
  */
 function declaresOperations(file: string): boolean {
   return describesOperations(textOf(file));
@@ -243,7 +240,7 @@ export async function inspectProject(root: string): Promise<InitReport> {
   const submodules = new Set(
     readSubmodules(resolved).map((submodule) => submodule.directory),
   );
-  /** Files matched by a reader that walks a directory, by reader. */
+  /** Matched files for each directory-level reader, keyed by reader name. */
   const walked = new Map<string, string[]>();
   for (const file of filesUnder(resolved, submodules)) {
     const relative = path.relative(resolved, file);
@@ -253,9 +250,9 @@ export async function inspectProject(root: string): Promise<InitReport> {
         continue;
       }
 
-      // A reader that walks a directory is named once for the whole
-      // set; every other one gets a command per file, since two SAM
-      // templates in one repository are two services.
+      // A directory-level reader gets one command for all its files. Any
+      // other reader gets a command per file, since two SAM templates in
+      // one repository are two services.
       if (rule.perDirectory === true) {
         walked.set(rule.name, [...(walked.get(rule.name) ?? []), file]);
         continue;
@@ -288,9 +285,9 @@ export async function inspectProject(root: string): Promise<InitReport> {
     });
   }
 
-  // Net::HTTP is Ruby's own and fetch is the browser's, so no manifest
-  // lists either and no dependency rule can reach them. Source in that
-  // language is the trigger instead.
+  // Net::HTTP comes with Ruby and fetch with the runtime, so no manifest
+  // lists them. Their packs are suggested whenever the project has
+  // source in that language.
   const languages = detectLanguages(resolved);
   for (const pack of packs) {
     const language = pack.declares.shippedWith;
@@ -344,8 +341,10 @@ interface DeclaredLibrary {
 }
 
 /**
- * A submodule nobody checked out hides the dependencies it would have
- * declared, exactly the way an unreadable manifest does.
+ * The libraries every manifest in the project declares, and the places
+ * suss could not read. A submodule that was never checked out counts as
+ * unread, because it hides its dependencies the same way an unreadable
+ * manifest does.
  */
 function declaredLibraries(root: string): {
   named: DeclaredLibrary[];
@@ -382,9 +381,9 @@ function declaredLibraries(root: string): {
 }
 
 /**
- * A dependency that resolves inside this repository is followed into
- * that package's own manifest, because a service in a monorepo usually
- * depends on its own packages and lets those bring in the SDKs.
+ * Follows a dependency that resolves inside this repository into that
+ * package's own manifest. A service in a monorepo usually depends on its
+ * sibling packages, and those declare the SDKs.
  */
 function dependenciesOf(root: string): Array<[string, string]> {
   const found: Array<[string, string]> = [];
@@ -442,7 +441,7 @@ function declaredIn(manifest: string): Array<[string, string]> {
   return found;
 }
 
-/** A workspace is linked into node_modules, so follow the link's target. */
+/** A workspace package is a symlink in node_modules, so this follows the link to find where it lives. */
 function packageInsideRepository(
   root: string,
   from: string,
@@ -475,9 +474,8 @@ function* filesUnder(
   submodules: ReadonlySet<string>,
   depth = 0,
 ): Generator<string> {
-  // A SAM template or a schema is near the top of a service, and if
-  // suss is pointed at a home directory, a deeper walk starts reporting
-  // other people's projects.
+  // A SAM template or a schema is near the top of a service. If suss is
+  // run from a home directory, a deeper walk reports other projects.
   if (depth > 3) {
     return;
   }
@@ -493,13 +491,12 @@ function* filesUnder(
     }
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      // Its own package.json makes it its own project.
+      // A directory with its own package.json is a separate project.
       if (depth > 0 && fs.existsSync(path.join(full, "package.json"))) {
         continue;
       }
-      // A nested repository that this project's .gitmodules does not
-      // list belongs to somebody else. One it does list contains code
-      // this project imports, so the walk continues into it.
+      // Skip a nested repository unless .gitmodules lists it. A listed
+      // submodule contains code this project imports.
       if (
         depth > 0 &&
         fs.existsSync(path.join(full, ".git")) &&
@@ -515,15 +512,9 @@ function* filesUnder(
 }
 
 /**
- * The packs this project itself pointed at. A pack for a library the
- * language ships fits every project written in it, so on its own it is
- * no reason to set suss up here.
- */
-/**
- * What one contract command writes to. Two files read by the same
- * reader would write to one name and the second would overwrite the
- * first, so a reader with more than one file says which file each
- * summary came from.
+ * The output name for one contract command. When one reader gets several
+ * files, each output name includes its source file, so the second
+ * command does not overwrite the first command's output.
  */
 function contractOutput(
   item: PackSuggestion,
@@ -542,6 +533,11 @@ function contractOutput(
   return `${item.name}-${slug}`;
 }
 
+/**
+ * The packs that something in this project led to. A pack for a library
+ * that comes with the language fits every project in it, so it alone is
+ * no reason to set suss up here.
+ */
 export function declaredPacks(report: InitReport): PackSuggestion[] {
   return report.suggestions.filter(
     (suggestion) => suggestion.shippedWithLanguage !== true,
@@ -575,8 +571,8 @@ export function formatInitReport(report: InitReport): string {
 
   const frameworks = suggestions.filter((s) => s.kind === "framework");
   const clients = suggestions.filter((s) => s.kind === "client");
-  // A pack for what the language itself ships fits any project written
-  // in it, so it says nothing about what serves this one.
+  // A pack for a library that comes with the language fits any project,
+  // so it does not show what this project is built on.
   const declaredCode = [...frameworks, ...clients].filter(
     (suggestion) => suggestion.shippedWithLanguage !== true,
   );
@@ -602,9 +598,8 @@ export function formatInitReport(report: InitReport): string {
     lines.push("");
   }
 
-  // The packs ship inside @suss/cli, so the only install anybody needs
-  // is the CLI itself. What they still have to know is which names to
-  // pass, and step 2 below spells those out.
+  // The packs ship inside @suss/cli, so the CLI is the only install.
+  // Step 2 gives the pack names to pass.
   lines.push(bold("1. Install suss"));
   lines.push("");
   lines.push("   npm install --save-dev @suss/cli");
@@ -615,11 +610,12 @@ export function formatInitReport(report: InitReport): string {
   const code = [...frameworks, ...clients];
   if (declaredCode.length > 0) {
     lines.push(...configurationLines([...code, ...effects]));
-    // One command per language: a pack is written against one
+    // One command per language, because each pack works with one
     // language's adapter.
     lines.push(...extractCommands([...code, ...effects]));
   } else if (effects.length > 0) {
-    // Asking for an effects pack alone gives an empty file.
+    // An effects pack run alone writes an empty file, so print a warning
+    // in place of a runnable command.
     lines.push(
       `   ${dim(`suss extract ${[...code, ...effects].map((e) => `-f ${e.name}`).join(" ")} ...`)}`,
     );
@@ -723,7 +719,7 @@ function extractCommands(items: ReadonlyArray<PackSuggestion>): string[] {
   });
 }
 
-/** A pack that cannot run without its config file throws. */
+/** For each pack that takes config, what it reads and an example config file to write. */
 function configurationLines(items: ReadonlyArray<PackSuggestion>): string[] {
   const configured = items.filter((item) => item.configuration !== undefined);
   if (configured.length === 0) {
@@ -765,15 +761,15 @@ function unreadLines(report: InitReport): string[] {
   return lines;
 }
 
-/** A language whose source is here and whose libraries suss could not place. */
+/** Languages with source in the project that no suggested pack reads. */
 export function unnamedLanguages(report: InitReport): Language[] {
   const languages = report.languages ?? [];
   const covered = new Set(report.suggestions.map(languageOf));
   return languages.filter(
     (language) =>
       !covered.has(language) &&
-      // A stray script is not a project. It takes a file that says so,
-      // or being the only language here.
+      // Ignore a stray script. A language counts when it has a project
+      // file, or when it is the only language here.
       (languages.length === 1 ||
         projectFilesOf(report.root, language).length > 0),
   );

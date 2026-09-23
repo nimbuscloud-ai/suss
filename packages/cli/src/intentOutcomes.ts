@@ -1,16 +1,16 @@
 /**
- * `suss intent outcomes`: list the outcome ids a PRD scenario can link
- * to, one line each.
+ * `suss intent outcomes` lists the outcome ids a PRD scenario can link
+ * to, one per line.
  *
  * A scenario's `link` is `<intent-name>.<outcome-id>`, and both halves
- * are written inside a boundary intent document. Without a listing the
- * only way to find them is to open every YAML file in the folder, so a
- * link written by hand or by a model is a guess, and a wrong guess
- * comes back later as `danglingScenarioLink`.
+ * come from inside a boundary intent document. Without this listing the
+ * only way to find them is to open every YAML file in the folder. A link
+ * written by hand or by a model is otherwise a guess, and a wrong guess
+ * shows up later as `danglingScenarioLink`.
  *
- * An id in an uncurated draft is listed apart from the rest. Renaming
- * the outcome ids is the first thing curation does, so a link to one of
- * those breaks as soon as somebody picks up the draft.
+ * Ids from an uncurated draft are listed separately. Curation starts by
+ * renaming the outcome ids, so a link to one of those breaks as soon as
+ * somebody curates the draft.
  */
 
 import fs from "node:fs";
@@ -33,11 +33,11 @@ export interface IntentOutcomeRow {
   link: string;
   /** The boundary document's own `name`. */
   intent: string;
-  /** The boundary it is about, spelled the way reports spell it. */
+  /** The boundary the document describes, in the form reports print it. */
   boundary: string;
   /** The outcome's `id`, the part after the dot in `link`. */
   outcomeId: string;
-  /** How the outcome ends and what it turns on, in one line. */
+  /** How the outcome ends and the condition it depends on, in one line. */
   description: string;
   /** Absolute path of the document that declares it. */
   file: string;
@@ -48,7 +48,7 @@ export interface IntentOutcomeRow {
 export interface IntentOutcomeListing {
   /** Outcomes of the curated documents, in file order. */
   outcomes: IntentOutcomeRow[];
-  /** Outcomes of inferred drafts, whose ids curation still renames. */
+  /** Outcomes of uncurated drafts. Their ids change when someone curates the draft. */
   drafts: IntentOutcomeRow[];
   /** One message per file in the folder that could not be read. */
   unreadable: string[];
@@ -65,10 +65,9 @@ export interface IntentOutcomesOptions {
 const UNCURATED = "inferred";
 
 /**
- * Every outcome the folder declares, curated ones apart from drafts.
- *
- * A PRD in the folder is skipped: it links to outcomes rather than
- * declaring any.
+ * Every outcome declared in the folder, with curated documents and drafts
+ * kept in separate lists. PRDs are skipped, because they only link to
+ * outcomes.
  */
 export function intentOutcomes(
   options: IntentOutcomesOptions,
@@ -123,9 +122,9 @@ function rowsOf(
 }
 
 /**
- * How the outcome ends, then what it turns on. The format has no
- * description field, and those are the two halves somebody needs to
- * pick one outcome out of five.
+ * How the outcome ends, then its condition. The intent format has no
+ * description field, and these two parts are enough to tell one outcome
+ * apart from the others on the same boundary.
  */
 function describe(outcome: IntentOutcome): string {
   return `${ENDINGS[outcome.kind](outcome)} when ${outcome.when}`;
@@ -154,11 +153,11 @@ function effectsOf(outcome: IntentOutcome): string {
 // Printing
 // ---------------------------------------------------------------------------
 
-/** The line above the drafts, so nobody links to an id that will move. */
+/** Printed above the drafts, so nobody links to an id that will change. */
 export const DRAFT_HEADING =
   "These ids are not settled. Curation renames the outcomes of an inferred draft, so a link to one of these can break:";
 
-/** The rows as a person reads them, grouped by the file they came from. */
+/** The rows as aligned text, grouped under the file each came from. */
 export function renderOutcomes(rows: IntentOutcomeRow[]): string {
   const linkWidth = widest(rows.map((row) => row.link));
   const boundaryWidth = widest(rows.map((row) => row.boundary));
@@ -181,7 +180,7 @@ function widest(values: string[]): number {
   return values.reduce((widest, value) => Math.max(widest, value.length), 0);
 }
 
-/** The path as somebody would type it to open the file. */
+/** The path relative to the working directory, or absolute when the file is outside it. */
 function where(file: string): string {
   const here = path.relative(process.cwd(), file);
   if (here === "" || here.startsWith("..")) {
@@ -197,13 +196,13 @@ function where(file: string): string {
 export interface IntentOutcomesCommandOptions {
   /** The folder of intent documents to read. */
   from: string;
-  /** Write the rows as JSON, for something other than a person. */
+  /** Write the rows as JSON, for a script or an agent. */
   json?: boolean;
 }
 
 /**
- * A folder with no settled id exits non-zero, because a PRD author who
- * ran this to find a link has nothing to write.
+ * Exits non-zero when the folder has no curated outcome ids, because a
+ * PRD author who ran this to find a link has nothing safe to link to.
  */
 export function intentOutcomesCommand(
   options: IntentOutcomesCommandOptions,
@@ -225,8 +224,8 @@ export function intentOutcomesCommand(
 }
 
 /**
- * JSON has the curated rows and nothing else, since an agent reads it
- * to write a link and an id curation renames is not one to write.
+ * The JSON output has only the curated rows. An agent reads it to write a
+ * link, and a draft's id would break once the draft is curated.
  */
 function writeListing(listing: IntentOutcomeListing, json: boolean): void {
   if (json) {

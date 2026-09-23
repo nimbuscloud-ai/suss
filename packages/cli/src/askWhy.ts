@@ -1,13 +1,13 @@
 /**
- * The two why questions: why a unit reaches a boundary, and why a
- * value resolves to what it does.
+ * The two why questions: why a unit reaches a boundary, and why a value
+ * resolves to what it does.
  *
- * The summaries on disk say which unit calls which and where a
- * boundary is touched. The witness proof over the resolution rules
- * says why a callee comes down to the function it does, computed when
- * the question is asked by re-reading source through whichever
- * language's adapter reads that file. When a session cannot make
- * sense of the source, the answer says so in a caveat.
+ * The summaries on disk record which unit calls which and where each
+ * boundary is touched. Why a callee resolves to a particular function
+ * comes from the witness proof over the resolution rules. That proof is
+ * computed when the question is asked, by re-reading the source through
+ * the adapter for the file's language. When the adapter cannot read the
+ * source, the answer says so in a caveat.
  */
 
 import fs from "node:fs";
@@ -49,10 +49,10 @@ import type { TargetTouch } from "./target.js";
 export type WhyShape = "whyReaches" | "whyResolves";
 
 /**
- * What a why question needs from a language's adapter: a way to find
- * the node somebody pointed at, and the proof of what it resolves to.
- * A found value is an opaque handle passed back into `explain` on the
- * same session; nothing here inspects it.
+ * What a why question needs from a language's adapter: a way to find the
+ * expression the user pointed at, and the proof of what it resolves to.
+ * The value `findExpression` or `findCallee` returns is an opaque handle
+ * that only goes back into `explain` on the same session.
  */
 interface WhySessionLike {
   findExpression(file: string, line: number, text: string): unknown | null;
@@ -65,7 +65,6 @@ interface WhySessionLike {
   explain(value: unknown, options?: { maxDepth?: number }): WhyExplained | null;
 }
 
-/** The session that reads each language's source for a why question. */
 const SESSION_FOR: Record<
   Language,
   (options: { dir: string }) => WhySessionLike
@@ -79,15 +78,15 @@ const SESSION_FOR: Record<
   ruby: (options) => new RubyWhySession(options),
 };
 
-/** Loading a language's grammar is async; opening a session on it is not. */
+/** Loading a grammar is async and opening a session is not, so grammars load ahead of time. */
 const PRELOAD: Partial<Record<Language, () => Promise<void>>> = {
   python: preloadPythonGrammar,
   ruby: preloadRubyGrammar,
 };
 
 /**
- * Warm every language's parser before a why question runs, since
- * `askWhy` itself has to stay synchronous for its other callers.
+ * Loads every language's parser before a why question runs, because
+ * `askWhy` has to stay synchronous for its other callers.
  */
 export async function preloadWhySessions(): Promise<void> {
   await Promise.all(Object.values(PRELOAD).map((preload) => preload()));
@@ -98,9 +97,9 @@ export function isWhyQuestion(question: ParsedQuestion): boolean {
 }
 
 /**
- * How the why questions are written. The resolve spelling is tried
- * first: its subject contains " at ", which the reach pattern would
- * otherwise cut at a " reach " inside the target's words.
+ * The patterns for the two why questions. The resolve pattern is tried
+ * first, because the reach pattern would otherwise split a resolve
+ * question at any " reach " inside its target.
  */
 export const WHY_SHAPES: ReadonlyArray<{
   pattern: RegExp;
@@ -225,7 +224,7 @@ function answerWhyResolves(
   };
 }
 
-/** The caveat for a thrown adapter error, with its own one-line message. */
+/** The caveat for an adapter that threw, with the first line of its message. */
 function adapterReadFailure(
   root: string,
   error: unknown,
@@ -236,7 +235,7 @@ function adapterReadFailure(
   return `The source under ${root} could not be read as a ${LANGUAGE_LABEL[language]} project: ${message}. --project says where the source is.`;
 }
 
-/** Whether the asked-for target is the resolved one, however spelled. */
+/** Whether the target in the question is the resolved one, written as a name, a file, or a file and line. */
 function spellsValue(spec: string, target: ValueLocation): boolean {
   return (
     spec === target.name ||
@@ -246,10 +245,9 @@ function spellsValue(spec: string, target: ValueLocation): boolean {
 }
 
 /**
- * The rendered chain as answer items: the arrow line, one reason per
- * hop with notes under it, the assumptions, and the depth cap when it
- * cut the walk short. Item text is what a person reads; item data is
- * the same fact for the JSON form.
+ * The resolution chain as answer items: the arrow line, one reason per
+ * hop with its notes under it, the assumptions, and a line when the depth
+ * cap cut the walk short. Each item's data has the same fact for --json.
  */
 function explanationItems(explained: WhyExplained): AnswerItem[] {
   const { explanation, chain } = explained;
@@ -373,10 +371,10 @@ function answerWhyReaches(
 }
 
 /**
- * Read the end of a why question. A function is spelled the way `what
- * calls` takes one, so a bare name that means two functions is refused
- * with both listed. Anything else is a boundary, spelled the way `what
- * reads` takes one, deployed names included.
+ * Resolves the target of a why question. A function is matched the same
+ * way as in `what calls`, so a bare name that could mean two functions is
+ * rejected with both listed. Anything else is matched as a boundary, the
+ * same way as in `what reads`, deployed names included.
  */
 function whyTargetSpelled(
   spec: string,
@@ -400,8 +398,8 @@ function whyTargetSpelled(
     };
   }
 
-  // A name resolveTarget does not read, such as a method spelled
-  // without its class, is still a function to the call facts.
+  // The call facts can still match a name resolveTarget does not, such
+  // as a method written without its class.
   const spelled = functionsSpelled(spec, summaries, facts);
   if (spelled.found) {
     return functionTarget(spelled);
@@ -428,7 +426,7 @@ function functionTarget(spelled: SpelledFunctions): WhyTargetSpelled {
   };
 }
 
-/** The label the touches share, or the spelling when they disagree. */
+/** The label the touches share, or what the user typed when they differ. */
 function boundaryLabelFor(
   spec: string,
   touches: ReadonlyArray<TargetTouch>,
@@ -459,8 +457,8 @@ const NEAREST_SHOWN = 5;
 
 /**
  * The functions that touch the target or call it directly, as a phrase.
- * Several summaries can share a name, and a busy export has dozens of
- * direct callers, so the phrase is deduplicated and capped.
+ * Several summaries can share a name and a busy export can have dozens
+ * of direct callers, so the names are deduplicated and capped.
  */
 function nearestTo(
   reaching: ReadonlyMap<FunctionKey, CallPath>,
@@ -500,12 +498,12 @@ function hopsOf(
   return hops;
 }
 
-/** Where a summary is, the way an answer prints it. */
+/** A summary's location as an answer prints it, `file:line`. */
 export function unitAt(summary: BehavioralSummary): string {
   return `${summary.location.file}:${summary.location.range.start}`;
 }
 
-/** Where a summary is, with the boundary it provides appended when it has one. */
+/** A summary's location, followed by the boundary it provides when it has one. */
 function locationClause(summary: BehavioralSummary): string {
   const provides = providesKeyOf(summary);
   return `${unitAt(summary)}${provides === undefined ? "" : `, provides ${provides}`}`;
@@ -610,9 +608,9 @@ function reachAnswer(
 
 /**
  * What the last function on the chain does at the target: its touch on
- * the boundary asked about, or the export it provides when the target
- * is a function. A function with no boundary of its own has nothing to
- * add past the hop that reached it.
+ * the boundary in the question, or the export it provides when the target
+ * is a function. Returns null for a function with no boundary of its own,
+ * since the hop that reached it already ends the chain.
  */
 function touchAtTarget(
   unit: BehavioralSummary,
@@ -626,8 +624,8 @@ function touchAtTarget(
 }
 
 const HOP_LINE: Record<CallRecord, (hop: WhyHop) => string> = {
-  // A bound hop already ends by saying what hop.to provides, so only
-  // the written line appends it to hop.to's location.
+  // The bound line already ends with the export hop.to provides, so only
+  // the written line adds it after hop.to's location.
   written: (hop) =>
     `${hop.from.identity.name} (${locationClause(hop.from)}) calls ${hop.callee}, and that call runs ${hop.to?.identity.name} (${hop.to === null ? "" : locationClause(hop.to)}):`,
   bound: (hop) =>
@@ -659,12 +657,12 @@ function hopJson(hop: WhyHop): Record<string, unknown> {
   };
 }
 
-/** Only a hop the summaries recorded from source has a proof to show. */
+/** Only a call written in the source has a resolution proof to show. */
 function provable(hop: WhyHop): boolean {
   return hop.recorded === "written";
 }
 
-/** Null when the root cannot be read as this language's project at all. */
+/** Returns null when the adapter cannot open the root as a project in this language. */
 function openSession(language: Language, root: string): WhySessionLike | null {
   try {
     return SESSION_FOR[language]({ dir: root });
@@ -674,10 +672,10 @@ function openSession(language: Language, root: string): WhySessionLike | null {
 }
 
 /**
- * The witness proof for one hop: find the call the summary recorded,
- * in the caller's own lines, and explain what its callee resolves to.
- * Null when the source and the summaries disagree, which the caller
- * says once rather than per hop.
+ * The witness proof for one hop. Finds the recorded call within the
+ * caller's lines and explains what its callee resolves to. Returns null
+ * when the source and the summaries disagree, and the caller then prints
+ * one caveat for the whole answer.
  */
 function explainHop(
   session: WhySessionLike | null,

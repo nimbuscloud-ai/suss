@@ -1,13 +1,12 @@
-// usageError.ts: the error kind the dispatch prints as a sentence.
-//
-// It lives on its own so every command can throw it. It started inside
-// extract.ts, where only extract's dispatch branch caught it, which
-// meant `suss inspect notes.json` and `suss check --dir summaries/`
-// printed eight frames of bundled `dist/bin.js` on top of a message
-// that was already a good sentence. A person reads that as "my input
-// broke the tool" rather than "I pointed it at the wrong file".
+// The error any command throws when the user's input is wrong, such as a
+// summary path that points at the wrong file. Every command imports it from
+// here so that one catch in the dispatch covers all of them.
 
-/** The dispatch prints this message alone, with no stack trace. */
+/**
+ * A mistake in the command line or in the files passed on it. The CLI
+ * prints the message on its own, without a stack trace, so the user does
+ * not mistake a wrong path for a crash in the tool.
+ */
 export class UsageError extends Error {
   constructor(message: string) {
     super(message);

@@ -1,15 +1,15 @@
 /**
- * The projects underneath the directory a run was pointed at.
+ * Finds projects underneath the directory a run was given.
  *
- * Point suss at a folder of services and it reads them as one project,
- * because it resolves imports against the directory it was given. Every
- * import an author wrote against their own project's layout then reaches
- * nothing: a TypeScript alias from `paths`, a Python package one level
- * further down. The run still writes summaries, which is what makes the
- * loss worth saying out loud.
+ * When suss is pointed at a folder of services, it reads them as one
+ * project, because it resolves imports against the directory it was
+ * given. Imports written against each project's own layout then resolve
+ * to nothing, such as a TypeScript alias from `paths` or a Python package
+ * one level further down. The run still writes summaries, so without a
+ * warning the user would not know anything is missing.
  *
- * Each language marks a project in its own way, so the marker files
- * differ, and what a reader should do about it differs with them.
+ * Each language marks a project with different files, and the advice on
+ * how to read one project at a time differs by language too.
  */
 
 import fs from "node:fs";
@@ -17,10 +17,10 @@ import path from "node:path";
 
 import type { Language } from "./language.js";
 
-/** How far below the root to look. Deeper than this is somebody's vendored tree. */
+/** A project deeper than this is usually vendored code, not one of the user's services. */
 const MAX_DEPTH = 3;
 
-/** What says "a project starts here", per language. */
+/** The files that mark the root of a project, per language. */
 const MARKERS: Record<Language, string[]> = {
   typescript: ["tsconfig.json", "jsconfig.json"],
   python: ["pyproject.toml", "setup.py", "setup.cfg", "requirements.txt"],
@@ -86,7 +86,7 @@ export function projectsBelow(root: string, language: Language): string[] {
   return found.sort();
 }
 
-/** What each language loses, and how to read one project instead. */
+/** What each language loses when projects are read as one, and how to read one at a time. */
 const CONSEQUENCE: Record<Language, (first: string) => string> = {
   typescript: (first) =>
     "  suss read the files without them, and an import written against a project's own\n" +
@@ -103,8 +103,9 @@ const CONSEQUENCE: Record<Language, (first: string) => string> = {
 };
 
 /**
- * What to say when a run read a folder of projects as one. Empty when
- * there is nothing to say, so the caller can write it unconditionally.
+ * The warning for a run that read a folder of projects as one. It is an
+ * empty string when `markers` is empty, so the caller can write it
+ * without checking first.
  */
 export function formatProjectsBelow(
   markers: readonly string[],

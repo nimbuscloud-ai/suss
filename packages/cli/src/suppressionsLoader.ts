@@ -1,9 +1,12 @@
-// suppressions-loader.ts: read .sussignore from disk for `suss check`.
-//
-// Checker owns the rule types and matching; this module is just I/O:
-// find the right file, parse YAML or JSON, and validate against
-// SuppressionFileSchema. Invalid rules fail loud: silent malformed
-// suppressions are the worst kind.
+/**
+ * Reads the .sussignore file for `suss check`.
+ *
+ * The rule types and the matching are in @suss/checker. This module finds
+ * the file, parses its YAML or JSON, and validates it against
+ * SuppressionFileSchema. An invalid rule throws, because a malformed rule
+ * that is silently skipped leaves the user thinking a finding is
+ * suppressed when it is not.
+ */
 
 import fs from "node:fs";
 import path from "node:path";
@@ -20,10 +23,10 @@ import {
 import { IntentFindingKindSchema } from "@suss/intent-ir";
 
 /**
- * Every kind a rule may target: behavioural finding kinds plus intent
- * finding kinds. The rule schema keeps `kind` open (it lives below
- * both IRs); the loader owns typo rejection so a misspelled kind fails
- * loud instead of silently never matching.
+ * Every finding kind a rule may target, from both the behavioral and the
+ * intent IR. The rule schema accepts any string for `kind`, because the
+ * checker cannot depend on the intent IR. The loader rejects unknown
+ * kinds, so a misspelled kind throws instead of never matching.
  */
 const KNOWN_FINDING_KINDS: ReadonlySet<string> = new Set([
   ...FINDING_KINDS,
@@ -31,9 +34,8 @@ const KNOWN_FINDING_KINDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Candidate filenames checked in order when no --sussignore is given.
- * The extensionless name is what the docs call the file, and it
- * parses as YAML.
+ * File names checked in order when no --sussignore is given. The docs
+ * call the file `.sussignore`, and that name is parsed as YAML.
  */
 export const DEFAULT_SUPPRESSIONS_FILENAMES = [
   ".sussignore",
@@ -43,14 +45,14 @@ export const DEFAULT_SUPPRESSIONS_FILENAMES = [
 ];
 
 /**
- * The directories a search covers, nearest first: the starting
- * directory, then each parent up to and including the project root.
+ * The directories to search, nearest first: the starting directory, then
+ * each parent up to and including the project root.
  *
  * `suss check --dir summaries/` starts at the summaries folder, and a
- * reader who keeps their `.sussignore` beside `package.json` expects it
- * to apply. Walking up finds both. The walk stops at the first
- * directory that contains a `package.json` or a `.git`, so a file in a
- * parent project or in the home directory never reaches a run.
+ * user who keeps `.sussignore` next to `package.json` expects it to
+ * apply, so the search walks up. It stops at the first directory that
+ * contains a `package.json` or a `.git`, so a file in a parent project
+ * or in the home directory never applies to a run.
  */
 export function suppressionsSearchDirs(startDir: string): string[] {
   const dirs: string[] = [];
@@ -76,9 +78,10 @@ function isProjectRoot(dir: string): boolean {
 }
 
 /**
- * Locate a .sussignore file, starting at the given directory and
- * walking up to the project root. Returns the absolute path to the
- * first matching file, or null if none found.
+ * Finds a .sussignore file, starting at `searchDir` and walking up to the
+ * project root.
+ *
+ * @returns the absolute path of the first file found, or null.
  */
 export function findSuppressionsFile(searchDir: string): string | null {
   for (const dir of suppressionsSearchDirs(searchDir)) {
@@ -93,9 +96,9 @@ export function findSuppressionsFile(searchDir: string): string | null {
 }
 
 /**
- * Leaving `version` off is the mistake people make copying a rule out
- * of the docs, and the schema error for it gives a literal rather than
- * the fix.
+ * People often leave `version` off when they copy a rule out of the docs,
+ * and the schema error for that only prints the expected literal. This
+ * check lets the loader print the fix instead.
  */
 function isMissingVersion(raw: unknown): boolean {
   return (
@@ -108,9 +111,10 @@ function isMissingVersion(raw: unknown): boolean {
 }
 
 /**
- * Load, parse, and validate a .sussignore file. Throws with a clear
- * message if the file is malformed or contains rules that don't
- * satisfy validateRule.
+ * Loads, parses and validates a .sussignore file.
+ *
+ * @throws when the file is malformed, when a rule fails validateRule, or
+ * when a rule targets an unknown finding kind.
  */
 export function loadSuppressions(filePath: string): SuppressionRule[] {
   const content = fs.readFileSync(filePath, "utf-8");
@@ -153,11 +157,10 @@ export function loadSuppressions(filePath: string): SuppressionRule[] {
 }
 
 /**
- * Warn when a rule identifies a document the way readers used to label
- * them, by file name alone. Such a rule still matches every document of
- * that reader with that name. suss now records where the document
- * lives, and writing the path pins the rule to one of them. Say nothing
- * and the rule looks pinned when it is not.
+ * Warns when a rule identifies a document by file name alone. Such a
+ * rule matches every document of that reader with that file name, while
+ * a rule written with the document's path matches only that one. Without
+ * the warning, the user would think the rule covers one document.
  */
 function reportDocumentsNamedByFileName(
   filePath: string,
@@ -186,10 +189,11 @@ function reportDocumentsNamedByFileName(
 }
 
 /**
- * Highest-level entry point used by the CLI: given an optional override
- * path and a search directory, return rules if a file was found (or
- * override was provided). Returns [] when no file exists and no
- * override was given.
+ * Loads the rules from `overridePath` when it is given, or else from the
+ * file found by searching up from `searchDir`. Returns [] when there is
+ * no override and no file.
+ *
+ * @throws when `overridePath` does not exist, or when the file is invalid.
  */
 export function loadSuppressionsOrEmpty(opts: {
   overridePath?: string | undefined;

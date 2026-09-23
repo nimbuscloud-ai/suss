@@ -1,12 +1,12 @@
 /**
- * One stderr line when a newer suss is on the registry, at the end of
- * an interactive run.
+ * Prints one line on stderr at the end of an interactive run when the
+ * registry has a newer suss.
  *
- * The check is one fetch of the registry's `latest` tag, remembered in
- * a file for a day so repeated runs cost nothing, and skipped whenever
- * nobody is there to read it: stderr not a terminal, CI set, or the
- * environment opting out with SUSS_NO_UPDATE_NOTICE. A network failure
- * says nothing, since the run it decorates already did its work.
+ * The check fetches the registry's `latest` tag once and caches the answer
+ * in a temp file for a day, so repeated runs make no request. It is skipped
+ * when nobody is there to read the line: stderr is not a terminal, CI is
+ * set, or SUSS_NO_UPDATE_NOTICE is set. A network failure prints nothing,
+ * because the command itself has already finished its work.
  */
 
 import fs from "node:fs";
@@ -48,7 +48,7 @@ function writeCache(latest: string): void {
       JSON.stringify({ checkedAt: Date.now(), latest }),
     );
   } catch {
-    // A read-only tmpdir costs a fetch per run, nothing else.
+    // With a read-only temp directory, every run fetches again. Nothing breaks.
   }
 }
 

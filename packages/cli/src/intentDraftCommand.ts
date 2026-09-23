@@ -1,16 +1,16 @@
 /**
- * `suss infer intent`: turn what suss read out of the code into
- * starting boundary intent docs for somebody to curate. One document
- * per boundary, each saying `source: "inferred"`, which is what tells
- * the checker to downgrade findings against it until a person fills in
- * the purpose and the audience and moves it to `"inferred, curated"`.
+ * `suss infer intent` drafts one boundary intent document per boundary
+ * from the summaries, for somebody to curate. Each draft has
+ * `source: "inferred"`, and the checker downgrades findings against it
+ * until a person fills in the purpose and audience and changes the source
+ * to `"inferred, curated"`.
  *
- * The mapping mostly moves fields across. What the code cannot supply
- * is left out rather than filled in with a placeholder, and a boundary
- * no document could be written for is named in the report.
+ * Most fields copy straight across. Anything the code cannot supply is
+ * left out instead of filled with a placeholder, and the report lists
+ * each boundary that could not get a document.
  *
- * The transform lives in the CLI because it reads a BehavioralSummary
- * and writes an intent doc, and neither IR package depends on the other.
+ * This code is in the CLI because it reads a BehavioralSummary and writes
+ * an intent document, and neither IR package depends on the other.
  */
 
 import fs from "node:fs";
@@ -64,14 +64,14 @@ export interface IntentDraftOptions {
   from: string;
   /** Where the documents go. Default: `intent/`. */
   out?: string;
-  /** Same destination, but it refuses to write over existing intent docs. */
+  /** Like `out`, but refuses a folder that already contains intent documents. */
   into?: string;
 }
 
 export interface DraftedIntent {
   /** File name within the destination directory. */
   file: string;
-  /** The document's `name`, which PRD scenarios link through. */
+  /** The document's `name`, the first half of a PRD scenario's link. */
   name: string;
   /** The boundary key it was drafted for. */
   boundary: string;
@@ -79,7 +79,7 @@ export interface DraftedIntent {
   yaml: string;
 }
 
-/** A boundary the summaries describe that no document could be written for. */
+/** A boundary in the summaries that could not get a document, and why. */
 export interface UndraftedBoundary {
   boundary: string;
   reason: string;
@@ -94,7 +94,7 @@ export interface IntentDraftResult {
 const DEFAULT_OUT = "intent";
 
 // ---------------------------------------------------------------------------
-// Outcomes: a code transition's terminal as a declared intent outcome
+// Outcomes: how each transition ends, as an intent outcome
 // ---------------------------------------------------------------------------
 
 interface DraftedOutcome {
@@ -120,9 +120,8 @@ function literalShape(value: string | number | boolean): AuthoredShape {
   return Number.isInteger(value) ? { type: "integer" } : { type: "number" };
 }
 
-// A shape the authoring vocabulary cannot spell becomes `unknown`, which
-// the checker reads as "the intent says nothing here" rather than as a
-// claim the code has to satisfy.
+// A shape the intent format cannot express becomes `unknown`. The checker
+// treats `unknown` as no claim at all, so the code never has to match it.
 const AUTHORED_SHAPES: DispatchTable<TypeShape, AuthoredShape> = {
   record: (shape) => ({
     type: "object",
@@ -151,7 +150,7 @@ export function toAuthoredShape(shape: TypeShape): AuthoredShape {
   return dispatchByType(AUTHORED_SHAPES, shape);
 }
 
-/** Null when the whole shape came back `unknown`, so no body is declared. */
+/** Returns null when the whole shape is `unknown`, so the draft declares no body. */
 function declaredBody(shape: TypeShape | null): AuthoredShape | null {
   if (shape === null) {
     return null;
@@ -167,15 +166,14 @@ export function statusOutcomeId(status: number): string {
 }
 
 /**
- * What this transition did at other boundaries, written the way
- * `suss ask` asks about one: `- writes: aws.dynamodb:Invoices`. A
- * boundary with no name of its own is left out rather than written as
- * a string nobody would type back.
+ * What this transition did at other boundaries, in the words `suss ask`
+ * uses: `- writes: aws.dynamodb:Invoices`. A boundary without a label of
+ * its own is left out, since nobody could type its generated key back.
  *
- * A callee or a store the source reaches through a variable is written
- * under the name the deployment gives it, and under the variable when
- * this run has no deployment that settles it. Grounding it on both
- * sides is what keeps the checker from arguing with the document.
+ * When the source reaches a callee or store through a variable, the
+ * clause uses the name the deployment gives it, or the variable when this
+ * run has no deployment that resolves it. The checker grounds the code
+ * side the same way, so the two agree.
  */
 function draftedEffects(
   transition: Transition,
@@ -211,9 +209,9 @@ function draftedEffects(
 }
 
 /**
- * The columns an access states, when it states any. A DynamoDB write
- * records none, because nothing parses an UpdateExpression, so the
- * clause comes out with the boundary alone.
+ * The columns and key fields a storage access records, if any. A
+ * DynamoDB write never records columns, because suss does not parse an
+ * UpdateExpression, so its clause has the boundary alone.
  */
 function touchedBy(interaction: Interaction): {
   fields?: string[];
@@ -222,8 +220,8 @@ function touchedBy(interaction: Interaction): {
   if (interaction.class !== "storage-access") {
     return {};
   }
-  // An access that asked for every column says the same thing as one
-  // that says nothing about columns, so the clause leaves it out.
+  // Reading every column is the same claim as listing no columns, so the
+  // clause leaves the marker out.
   const fields = interaction.fields.filter((one) => one !== EVERY_FIELD);
   const by = interaction.selector ?? [];
   return {
@@ -233,10 +231,10 @@ function touchedBy(interaction: Interaction): {
 }
 
 /**
- * The variables a document writes a name through because this run had
- * nothing that settles them. The header says so, since a reader who
- * sees `{ARCHIVE_WORKER_FUNCTION}` on a results line is owed the reason
- * rather than being left to think suss failed to read the code.
+ * The variables a document uses in place of a name, because nothing in
+ * this run resolves them. The document header lists them. Otherwise a
+ * reader who sees `{ARCHIVE_WORKER_FUNCTION}` on a results line would
+ * think suss failed to read the code.
  */
 function unsettledVariables(
   summaries: BehavioralSummary[],
@@ -264,7 +262,7 @@ function unsettledVariables(
   return [...asked].sort();
 }
 
-/** Null when the transition's terminal has no intent outcome to declare. */
+/** Returns null when the intent format has no outcome for the transition's ending and it had no effects. */
 function toDraftedOutcome(
   transition: Transition,
   summary: BehavioralSummary,
@@ -317,9 +315,9 @@ function toDraftedOutcome(
 }
 
 /**
- * A transition whose ending the schema has no words for still says what
- * it did, and that is the whole outcome for a unit whose ending nobody
- * declares anyway.
+ * An outcome made of effects alone, for a transition whose ending the
+ * intent schema cannot express. For a unit whose return value nobody
+ * declares, the effects are the whole outcome.
  */
 function effectOnlyOutcome(
   when: When,
@@ -339,7 +337,7 @@ function effectOnlyOutcome(
 
 type Semantics = BoundaryBinding["semantics"];
 
-/** Per protocol, the boundary block to write, or null for one v0.1 has no shape for. */
+/** Per protocol, the boundary block to write, or null when the intent format cannot declare that protocol. */
 type BoundaryBlocks = {
   [K in Semantics["name"]]: (
     semantics: Extract<Semantics, { name: K }>,
@@ -347,7 +345,7 @@ type BoundaryBlocks = {
   ) => AuthoredBoundary | null;
 };
 
-/** The table entry for a protocol that boundary intent cannot declare yet. */
+/** The table entry for a protocol that boundary intent cannot declare. */
 const NO_BLOCK = () => null;
 
 const BOUNDARY_BLOCKS: BoundaryBlocks = {
@@ -369,9 +367,9 @@ const BOUNDARY_BLOCKS: BoundaryBlocks = {
       ? { exportPath: semantics.exportPath }
       : {}),
   }),
-  // A field the source left unset stays out of the file. The schema
-  // defaults it, and a key with nothing after it is one more thing for
-  // the person curating the draft to read past.
+  // Fields the source left unset stay out of the file. The schema has a
+  // default for each, and an empty key is one more line for the curator
+  // to read past.
   "message-bus": (semantics) => ({
     semantics: "message-bus",
     messageBus: semantics.messageBus,
@@ -388,8 +386,8 @@ const BOUNDARY_BLOCKS: BoundaryBlocks = {
       ? { accessPath: semantics.accessPath }
       : {}),
   }),
-  // A unit whose name only the runtime settles leaves the field off,
-  // and the checker is what reports the document as unpairable.
+  // When only the runtime decides the unit's name, the field is left
+  // off and the checker reports the document as unpairable.
   "unit-invocation": (semantics) => ({
     semantics: "unit-invocation",
     deploymentTarget: semantics.deploymentTarget,
@@ -403,21 +401,21 @@ const BOUNDARY_BLOCKS: BoundaryBlocks = {
   metric: NO_BLOCK,
 };
 
-/** The protocols a document can be written for, as a doc author reads them. */
+/** The protocols boundary intent can declare. */
 const DECLARABLE = Object.entries(BOUNDARY_BLOCKS)
   .filter(([, write]) => write !== NO_BLOCK)
   .map(([name]) => name);
 
-/** Those protocols in a sentence, so the report cannot list a stale set. */
+/** The same list as a phrase for the report, built from the table so it stays current. */
 const DECLARABLE_SAID = [
   DECLARABLE.slice(0, -1).join(", "),
   DECLARABLE[DECLARABLE.length - 1],
 ].join(" and ");
 
-/** Null when boundary intent has no shape for this protocol yet. */
+/** Returns null when boundary intent cannot declare this protocol. */
 function boundaryBlock(binding: BoundaryBinding): AuthoredBoundary | null {
-  // The one cast joins the per-protocol table, which narrows, to the
-  // runtime lookup, the same way dispatchByType does it.
+  // The table's entries are typed per protocol, and a lookup by a runtime
+  // name loses that narrowing. dispatchByType uses the same cast.
   const write = BOUNDARY_BLOCKS[binding.semantics.name] as (
     semantics: Semantics,
     binding: BoundaryBinding,
@@ -436,8 +434,8 @@ function groupByBoundary(input: BehavioralSummary[]): {
   groups: BoundaryGroup[];
   undrafted: UndraftedBoundary[];
 } {
-  // A queue consumer's behaviour and the queue that reaches it arrive
-  // as two summaries. Drafting one document needs them in one group.
+  // A queue consumer's behaviour and the queue that delivers to it come
+  // in as two summaries, and one document needs both in the same group.
   const summaries = withDeclaredDelivery(input);
   const groups = new Map<string, BoundaryGroup>();
   const undrafted: UndraftedBoundary[] = [];
@@ -451,8 +449,8 @@ function groupByBoundary(input: BehavioralSummary[]): {
 
   for (const summary of summaries) {
     const binding = summary.identity.boundaryBinding;
-    // A consumer of a boundary is a caller, and intent declares what a
-    // boundary provides, so there is nothing here to say about one.
+    // Boundary intent declares what a provider does, so a consumer's
+    // summary contributes nothing to the document.
     if (binding === null || BOUNDARY_ROLE[summary.kind] !== "provider") {
       continue;
     }
@@ -496,7 +494,7 @@ export function slug(text: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-/** The first spelling nothing has taken yet, `-2` onwards after that. */
+/** The candidate if it is free, or else the candidate with the first free suffix from `-2` up. */
 function unique(candidate: string, taken: Set<string>): string {
   let chosen = candidate;
   for (let n = 2; taken.has(chosen); n += 1) {
@@ -510,7 +508,7 @@ function unique(candidate: string, taken: Set<string>): string {
 // Drafting
 // ---------------------------------------------------------------------------
 
-/** How many source files a header lists before a count takes over. */
+/** How many source files a header lists by name before it switches to a count. */
 const FILES_SHOWN = 3;
 
 function header(group: BoundaryGroup, from: string): string[] {
@@ -532,22 +530,22 @@ function header(group: BoundaryGroup, from: string): string[] {
   ];
 }
 
-/** The blanks, and the hint written beside each one. */
+/** The hint written beside each blank. */
 const BLANKS: Record<string, string> = {
   purpose: "what this boundary is for, in your words",
   audience: "who observes it: a customer, an operator, another service",
 };
 
-/** What the blanks are filled with while the rest of the doc is validated. */
+/** A stand-in for each blank while the rest of the document is validated. */
 export const FILLED_IN = "curated";
 
-/** Keys a blank line comes before, so the file reads in parts. */
+/** Keys that get a blank line before them, to split the file into sections. */
 const PARAGRAPHS = new Set(["name", "boundary", "transitions"]);
 
 /**
- * The document as YAML, with the hint for each blank written beside it
- * wherever it turns up, since a PRD leaves its blanks inside scenarios
- * rather than at the top.
+ * The document as YAML, with each blank's hint as a comment beside it.
+ * Hints go on a matching key at any depth, because a PRD's blanks are
+ * inside its scenarios.
  */
 export function render(
   doc: object,
@@ -620,9 +618,8 @@ function draftDocument(
     transitions: outcomes,
   };
 
-  // Filling the blanks first means the only thing the reader can
-  // complain about in the file this writes is the blanks. Nothing today
-  // reaches the catch; a mapping that grows a bad case would.
+  // Validate with the blanks filled, so the written file fails to load
+  // for the blanks alone. No mapping reaches the catch today.
   try {
     loadIntentDoc({ ...doc, purpose: FILLED_IN, audience: FILLED_IN });
     /* v8 ignore start */
@@ -671,7 +668,7 @@ function oneLine(error: unknown): string {
 }
 /* v8 ignore stop */
 
-/** `from` is the summaries file, written into each document's header. */
+/** `from` is the summaries file. Each document's header mentions it. */
 export function intentDraftResult(
   summaries: BehavioralSummary[],
   from: string,
@@ -679,12 +676,12 @@ export function intentDraftResult(
   const { groups, undrafted } = groupByBoundary(summaries);
   const drafted: DraftedIntent[] = [];
   const names = new Set<string>();
-  // Built from every summary read, the deployment templates among
-  // them, so a name only a template settles is settled the same way
-  // here as it is when the checker reads the document back.
+  // Includes any deployment templates among the summaries, so a name that
+  // only a template resolves comes out the same as when the checker reads
+  // the document back.
   const deployment = deploymentOf(summaries);
-  // A route's middleware reads the request too, and the checker reads
-  // the document back against both, so the draft is written from both.
+  // Route middleware reads the request too, and the checker compares the
+  // document against both, so the draft is written from both.
   const wrappersOf = wrappersAround(summaries);
 
   for (const group of groups) {
@@ -706,7 +703,7 @@ export function intentDraftResult(
 
 const INTENT_DOC = /\.(intent|prd)\.(yaml|yml|json)$/;
 
-/** The documents already in `dir` that `matching` claims. */
+/** The file names in `dir` that match `matching`. */
 export function docsIn(dir: string, matching = INTENT_DOC): string[] {
   if (!fs.existsSync(dir)) {
     return [];
@@ -736,8 +733,8 @@ export function destinationOf(options: { out?: string; into?: string }): {
 }
 
 /**
- * A folder reads the same as a file, because extracting one file per
- * pack and pointing commands at the folder is the flow the docs teach.
+ * Accepts a folder as well as a file, because the docs recommend
+ * extracting one file per pack and pointing commands at the folder.
  */
 function readSummariesFile(from: string): BehavioralSummary[] {
   const resolved = path.resolve(from);
@@ -795,7 +792,7 @@ export function intentDraft(options: IntentDraftOptions): number {
   return 0;
 }
 
-/** How many undrafted boundaries get written out before a count takes over. */
+/** How many undrafted boundaries the report lists by name before it switches to a count. */
 const UNDRAFTED_SHOWN = 10;
 
 function undraftedReport(undrafted: UndraftedBoundary[]): string {

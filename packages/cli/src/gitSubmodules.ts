@@ -1,38 +1,31 @@
 /**
- * The directories of a project that are checked out from somewhere else.
+ * Finds the git submodules of a project and the nested repositories that
+ * are not submodules.
  *
- * A service whose shared framework lives in a submodule imports code
- * that is on disk but belongs to another repository. Extraction cares
- * because the decorator a pack matches on is defined in the submodule,
- * so an import that does not resolve into it leaves every route in the
- * service unrecognized. Discovery cares because a nested repository
- * looks like somebody else's project, and walking into it looks like a
- * mistake.
- *
- * .gitmodules settles which is which. The package README explains why a
- * submodule and a vendored nested repository get opposite treatment.
+ * Extraction reads into a submodule, because a service's shared framework
+ * often lives in one and a pack matches on the decorators defined there.
+ * Discovery drops the files of any other nested repository, because that
+ * code belongs to a different project. `.gitmodules` tells the two apart.
+ * The package's DESIGN.md explains the reasoning.
  */
 
 import fs from "node:fs";
 import path from "node:path";
 
 export interface Submodule {
-  /** Absolute path to the submodule's directory. */
+  /** Absolute. */
   directory: string;
   /** The path as .gitmodules writes it, relative to the repository root. */
   declaredPath: string;
-  /**
-   * False when the directory is empty, which is what you get when
-   * nobody has run `git submodule update --init`.
-   */
+  /** False when the directory is empty, as it is until someone runs `git submodule update --init`. */
   checkedOut: boolean;
 }
 
 /**
- * The search walks up, because .gitmodules lives at the repository root
- * and suss is usually pointed at one service inside it. Submodules
- * outside that service still count, since a shared framework is
- * normally one of them.
+ * Searches upward from `from`, because .gitmodules is at the repository
+ * root and suss is usually run on one service inside it. Submodules
+ * outside that service are included, because the shared framework the
+ * service imports is usually one of them.
  */
 export function readSubmodules(from: string): Submodule[] {
   const repositoryRoot = findGitmodules(path.resolve(from));
@@ -51,11 +44,10 @@ export function readSubmodules(from: string): Submodule[] {
 }
 
 /**
- * The files of this project, minus anything that belongs to a
- * repository of its own. The filtering happens here rather than in each
- * adapter's walk, because those walks skip any directory called .git
- * but do not notice that a .git directory means there is a separate
- * repository there.
+ * The files of this project, without the ones inside a nested repository
+ * that is not a submodule. Each adapter's walk skips directories named
+ * .git, but does not treat a directory containing one as a separate
+ * repository, so the filtering has to happen here.
  */
 export function filesOutsideNestedRepositories(
   files: readonly string[],
@@ -136,7 +128,7 @@ function declaredPaths(contents: string): string[] {
   return found;
 }
 
-/** The walk stops at the first .git: anything above is another checkout. */
+/** Stops at the first .git, because any directory above it belongs to another checkout. */
 function findGitmodules(from: string): string | null {
   let current = from;
   for (;;) {

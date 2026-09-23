@@ -1,15 +1,15 @@
 /**
- * `suss ask`: one question, answered from the summaries already on
- * disk, and for a why question from the source as well.
+ * `suss ask`: one question, answered from the summaries already on disk,
+ * and for a why question from the source as well.
  *
- * Ten shapes, and no parser behind them. A question that is not one
- * of the ten gets the ten printed back rather than a guess at what
- * it meant: a wrong answer about a store is worse than no answer.
+ * A question has to match one of ten fixed patterns. Anything else gets
+ * the ten printed back instead of a guess, because a wrong answer about a
+ * store misleads more than no answer.
  *
- * An answer says what it is missing. Nothing on disk declares what most
- * stores serve until somebody reads the deploy template in, and a list
- * of fields assembled from call sites would look like the same thing
- * while meaning something weaker.
+ * Every answer says what it is missing. Most stores have no declaration
+ * on disk until somebody reads the deploy template in, and a field list
+ * gathered from call sites would look like a declaration without being
+ * one, so the answer lists it as what code here does.
  */
 
 import fs from "node:fs";
@@ -62,7 +62,7 @@ import type { WhyShape } from "./askWhy.js";
 import type { CallFacts, CallPath, FunctionKey } from "./callFacts.js";
 import type { LoadedSummaries } from "./loadedSummaries.js";
 
-/** The questions that ask who does one thing at a named boundary. */
+/** The questions that ask what does one thing at a given boundary. */
 type Direction = "reads" | "writes" | "invokes";
 
 export type QuestionShape =
@@ -80,25 +80,24 @@ export interface AskOptions {
   file?: string;
   /**
    * Summaries the caller already read, used instead of `dir` or `file`.
-   * A server that answers many questions over one directory reads it
-   * once and passes the same value each time.
+   * A server asking many questions over one directory can read it once
+   * and pass the same value each time.
    */
   loaded?: LoadedSummaries;
   json?: boolean;
-  /** Print every item, rather than the first few and a count. */
+  /** Print every item instead of the first few and a count. */
   all?: boolean;
   output?: string;
-  /** Where the source is, for a why question. Defaults to the cwd. */
+  /** The source root for a why question. Defaults to the working directory. */
   project?: string;
 }
 
-/** A parsed question: the shape, and the words it was asked with. */
 export interface ParsedQuestion {
   shape: QuestionShape;
   subject: string;
-  /** The other half of a why question: a boundary, or a target. */
+  /** The target of a why question: a boundary, a function, or a resolved value. */
   object?: string;
-  /** Where a why-resolve question points. */
+  /** The file and line a why-resolve question points at. */
   at?: { file: string; line: number };
 }
 
@@ -113,17 +112,17 @@ export interface Answer {
   /** The answer in one sentence. */
   headline: string;
   items: AnswerItem[];
-  /** What this run would need to say more. */
+  /** The inputs that would let a run answer more. */
   needs: string[];
-  /** What could make the answer wrong, said plainly. */
+  /** What could make the answer wrong. */
   caveats: string[];
   /** False when the subject is not in these summaries at all. */
   found: boolean;
-  /** Structure only the JSON form prints: chains, hops, costs. */
+  /** Structure that only --json prints, such as chains, hops and costs. */
   detail?: Record<string, unknown>;
 }
 
-/** The summary questions, and how each one is written. */
+/** The patterns for the questions answered from summaries alone. */
 const SHAPES: ReadonlyArray<{ shape: QuestionShape; pattern: RegExp }> = [
   { shape: "declares", pattern: /^what can i project from\s+(.+)$/i },
   { shape: "declares", pattern: /^what does\s+(.+?)\s+declare$/i },
@@ -158,20 +157,16 @@ export function ask(options: AskOptions): number {
 }
 
 /**
- * The same run as `ask`, with the answer handed back rather than only
- * written out.
- *
- * A caller inside the same process wants the answer as data. Reading it
- * back off stdout is the only other way, and a long-lived caller asking
- * many questions should not have to.
+ * Runs `ask` and also returns the answer as data, so a long-lived caller
+ * in the same process does not have to parse it back off stdout.
  */
 export function answerQuestion(options: AskOptions): {
   exitCode: number;
   answer: AnswerJson | null;
 } {
   const question = parseQuestion(options.question);
-  // Asking with no question is how somebody reads the list back, which
-  // the help says to do, so it is not a failed run.
+  // The help tells users to run ask with no question to see the list, so
+  // that run exits 0.
   const asked = options.question !== undefined && options.question !== "";
   if (question === null) {
     const report =
@@ -206,9 +201,9 @@ export function answerQuestion(options: AskOptions): {
 }
 
 /**
- * A why question opens a language's parser, which loads asynchronously,
- * so a caller awaits this before asking. Every other question reads
- * summaries alone, and nothing is warmed for it.
+ * Loads the parsers a why question needs, which load asynchronously, so a
+ * caller awaits this before asking. Other questions read only summaries
+ * and need nothing loaded.
  */
 export async function preloadForQuestion(raw: string): Promise<void> {
   const question = parseQuestion(raw);
@@ -218,8 +213,8 @@ export async function preloadForQuestion(raw: string): Promise<void> {
 }
 
 export function parseQuestion(raw: string): ParsedQuestion | null {
-  // Symbols first, since the shorthand ends in a `?` that the written
-  // form treats as punctuation and cuts.
+  // Expand symbols first, because the shorthand can end in a `?` that
+  // the written form strips as punctuation.
   const written = looksLikeShorthand(raw) ? expandShorthand(raw) : null;
   if (looksLikeShorthand(raw) && written === null) {
     return null;
@@ -258,7 +253,7 @@ function loadSummaries(options: AskOptions): LoadedSummaries {
 }
 
 // ---------------------------------------------------------------------------
-// The six summary answers
+// The answers read from summaries alone
 // ---------------------------------------------------------------------------
 
 const ANSWERS: Record<
@@ -276,10 +271,9 @@ const ANSWERS: Record<
 };
 
 /**
- * What to call the boundary in the answer. A subject that picked out
- * one boundary is answered in that boundary's own spelling; one that
- * picked out several is answered in the words somebody typed, and each
- * line says which boundary it is about.
+ * The boundary's label in the answer. A subject that matched one boundary
+ * gets that boundary's label. A subject that matched several keeps the
+ * user's words, and each line then says which boundary it is about.
  */
 function boundaryLabelFor(
   subject: string,
@@ -296,7 +290,7 @@ const PLURAL_VERB: Record<Direction, string> = {
   invokes: "invoke",
 };
 
-/** Who the unfollowed call could be hiding, for each question. */
+/** What an unfollowed call could be hiding, for each question. */
 const HIDDEN_ACTOR: Record<Direction, string> = {
   reads: "a reader",
   writes: "a writer",
@@ -304,15 +298,15 @@ const HIDDEN_ACTOR: Record<Direction, string> = {
 };
 
 /**
- * What to call a unit in a list, given the location prints beside it.
+ * A unit's label in a list, where its location prints beside it.
  *
- * A summary identifier is `workspace::file::symbol`, and the file is
- * already in the parentheses that follow, so printing the identifier
- * whole says the path twice. The workspace only tells two units apart
- * when the answer spans more than one, so it comes back only then.
+ * A summary identifier is `workspace::file::symbol`, and the file already
+ * appears in the parentheses after it, so the label drops the path. The
+ * workspace is kept only when the answer spans several workspaces, since
+ * only then does it tell two units apart.
  */
 function unitLabel(summary: BehavioralSummary, withWorkspace: boolean): string {
-  // The boundary settling added has its own `::`, and is not the symbol.
+  // The settling suffix contains its own `::`, so split the id without it.
   const settledWith = settlingSuffix(summary);
   const parts = (
     settledWith === ""
@@ -323,7 +317,6 @@ function unitLabel(summary: BehavioralSummary, withWorkspace: boolean): string {
   return withWorkspace && parts.length > 2 ? `${parts[0]}::${symbol}` : symbol;
 }
 
-/** Whether one answer covers units from more than one workspace. */
 function spansWorkspaces(summaries: ReadonlyArray<BehavioralSummary>): boolean {
   return new Set(summaries.map((s) => s.location.workspace)).size > 1;
 }
@@ -361,11 +354,10 @@ function notHere(
 }
 
 /**
- * The answer when a subject's spelling picks out more than one
- * boundary, the same refusal `suss check --at` gives through
- * `narrowedToOne`. A subject that also picks out a package with
- * providers here points at `what does <package> provide`, which lists
- * the boundaries by name instead of by every export token they share.
+ * The answer when a subject matches more than one boundary, the same
+ * rejection `suss check --at` gives. When the subject is also a package
+ * with providers here, the answer points at `what does <package>
+ * provide`, which lists each export once by its own label.
  */
 function ambiguousAnswer(
   shape: QuestionShape,
@@ -443,9 +435,10 @@ function answerDeclares(
 }
 
 /**
- * What code does at the boundary, rather than what any of it says. A
- * field list gathered from call sites is what somebody happened to ask
- * for, so it is offered as that and never as the declaration.
+ * What code does at the boundary, for a boundary with no declaration. A
+ * list gathered from call sites only shows what callers happened to use,
+ * so each line says "code here reads it" and never presents it as a
+ * declaration.
  */
 function touchedFields(touches: ReadonlyArray<TargetTouch>): AnswerItem[] {
   const items: AnswerItem[] = [];
@@ -466,9 +459,9 @@ function touchedFields(touches: ReadonlyArray<TargetTouch>): AnswerItem[] {
 }
 
 /**
- * Whether the subject is a function-call boundary, which is read,
- * written and invoked by one thing: calling it. That question has its
- * own answer, over the call facts, so the two spellings agree.
+ * Whether the subject is a function-call boundary. Reading, writing and
+ * invoking one all mean calling it, so those questions use the `what
+ * calls` answer over the call facts and the two agree.
  */
 function isFunctionCallBoundary(
   subject: string,
@@ -558,11 +551,10 @@ function answerDirection(
 }
 
 /**
- * The boundaries a target goes on to touch. A unit does not reach the
- * boundary it serves, it is that boundary, and being told a route
- * serves itself buries what it calls. Asked about a boundary, the
- * question is about the units serving it, so what they touch has to be
- * gathered from them rather than from what the spelling picked out.
+ * The boundaries a target goes on to touch. A unit's own boundary is left
+ * out, since listing that a route serves itself would bury what it calls.
+ * For a boundary target, the walk starts from the units that serve it and
+ * collects everything they touch.
  */
 function reachedFrom(target: ResolvedTarget, facts: CallFacts): ReachedTouch[] {
   const start =
@@ -575,16 +567,16 @@ function reachedFrom(target: ResolvedTarget, facts: CallFacts): ReachedTouch[] {
   return [...direct, ...throughCalls(start, direct, facts)];
 }
 
-/** A touch, and the calls between it and the unit somebody asked about. */
+/** A touch, and the calls from the unit in the question to the unit that makes it. */
 interface ReachedTouch extends TargetTouch {
   through?: string[];
 }
 
 /**
- * What the units a target picked out reach through the calls they
- * make. A route handler calling a service that reads a table does
- * reach that table, and an answer built from the handler's own body
- * says it reaches nothing while a why question proves it does.
+ * What the target's units reach through the calls they make. A route
+ * handler that calls a service that reads a table reaches that table.
+ * An answer built only from the handler's body would miss it, and would
+ * disagree with the why question.
  */
 function throughCalls(
   start: readonly BehavioralSummary[],
@@ -630,9 +622,9 @@ function servesItself(touch: TargetTouch): boolean {
 }
 
 /**
- * Calls these summaries record but never resolved to a unit. Any one of
- * them could have been a step into the chain, so a backward walk that
- * ignores them reports fewer boundaries than really reach the target.
+ * The number of recorded calls that never resolved to a unit. Any of them
+ * could be a step in a chain, so the backward walk may miss boundaries
+ * that reach the target, and the answer warns about it.
  */
 function unresolvedCallCount(summaries: BehavioralSummary[]): number {
   let count = 0;
@@ -655,12 +647,12 @@ function ownBoundariesOf(facts: CallFacts, fn: FunctionKey): TargetTouch[] {
 
 /**
  * Every boundary whose unit ends up calling into the target, and the
- * calls it took to get there.
+ * calls on the way.
  *
- * The mirror of `reaches`, over the same call facts. Somebody changing
- * a unit wants the boundaries that behave differently afterwards
- * rather than the list of functions in between, so a function is
- * reported only when it serves a boundary of its own.
+ * This walks the same call facts as `reaches`, in the other direction.
+ * Somebody changing a unit needs to know which boundaries behave
+ * differently afterwards, so a function is reported only when it serves a
+ * boundary of its own, and the functions in between are left out.
  */
 function answerReachedBy(subject: string, loaded: LoadedSummaries): Answer {
   const { summaries } = loaded;
@@ -806,9 +798,9 @@ function answerReaches(subject: string, loaded: LoadedSummaries): Answer {
 }
 
 /**
- * The package name on a summary's own binding, when it provides a
- * public export. Undefined for anything else, so a subject that names
- * a package never matches a summary that only calls into one.
+ * The package name on a summary's own function-call binding. Callers use
+ * it together with `providesKeyOf`, so a package subject never matches a
+ * summary that only calls into the package.
  */
 function packageOf(summary: BehavioralSummary): string | undefined {
   const binding = summary.identity.boundaryBinding;
@@ -827,9 +819,9 @@ function providersOfPackage(
   );
 }
 
-// A subject that resolved as a boundary spelling has callers here and no
-// provider, so the export side was never extracted; a unit had its
-// summaries read and they only call out.
+// A boundary subject with callers and no provider means the exporting
+// package was never extracted. A unit subject means its summaries were
+// read and they only consume boundaries.
 const PROVIDES_GAP_NEED: Record<TargetKind, (subject: string) => string> = {
   boundary: (subject) =>
     `No summary here provides ${subject}. Extract the package that exports it with -f package-exports so its package.json exports become boundaries.`,
@@ -886,8 +878,8 @@ function providesAnswer(
   };
 }
 
-// A package's exports are spread over its files, so a package name is
-// matched against every provider before the subject is tried as a unit.
+// A package's exports are spread over its files, so the subject is tried
+// as a package name against every provider before it is tried as a unit.
 function answerProvides(subject: string, loaded: LoadedSummaries): Answer {
   const { summaries } = loaded;
   const packageProviders = providersOfPackage(subject, summaries);
@@ -917,9 +909,9 @@ interface Declaration {
 }
 
 /**
- * What a provider says its boundary serves. Each reader returns nothing
- * for a summary with no declaration of its kind, so a boundary whose
- * provider declares two kinds at once reports both.
+ * What a provider declares its boundary serves. Each reader returns an
+ * empty list for a summary without its kind of declaration, so a provider
+ * that declares two kinds reports both.
  */
 const DECLARATION_READERS: ReadonlyArray<
   (summary: BehavioralSummary) => Declaration[]
@@ -955,18 +947,15 @@ const DECLARATION_READERS: ReadonlyArray<
 ];
 
 /**
- * The responses a handler produces, for a boundary suss read from code
- * rather than from a document.
+ * The responses a handler returns, for a boundary suss read from code.
  *
- * The readers above ask what a contract declares, which answers only
- * for a boundary somebody wrote a spec for. A route extracted from
- * source declares the same thing by returning it, and a caller wanting
- * to know what it can expect back should not have to care which of the
- * two the answer came from.
+ * The other readers only cover a boundary with a written spec. A route
+ * extracted from source shows the same thing through what it returns,
+ * and a caller asking what it can get back gets the same kind of answer
+ * either way.
  *
- * A status the run could not settle is reported as the expression that
- * decides it. A reader who knows the code can finish the thought, and a
- * reader who does not at least learns there is another branch.
+ * A status the run could not resolve is printed as the expression that
+ * decides it, so the reader at least learns that another branch exists.
  */
 function respondsWith(summary: BehavioralSummary): Declaration[] {
   const seen = new Map<string, Declaration>();
@@ -989,7 +978,7 @@ function respondsWith(summary: BehavioralSummary): Declaration[] {
   return [...seen.values()];
 }
 
-/** How to write a status, or null when there is nothing to write. */
+/** A status as the answer prints it, or null when there is nothing to print. */
 function statusName(status: ValueRef | null): string | null {
   if (status === null) {
     return null;
@@ -1016,10 +1005,9 @@ function declarationsOf(summary: BehavioralSummary): Declaration[] {
 }
 
 /**
- * A unit suss could not read all of could go through the boundary
- * without this run seeing it, which is worth saying whenever the answer
- * is a list of who does. Units the answer already named are left out,
- * since their gaps are printed one by one above this.
+ * Warns that a unit suss could not read completely may touch the boundary
+ * without this run seeing it. Units the answer already lists are left
+ * out, because their gaps are printed one by one above this line.
  */
 function runCaveats(
   summaries: ReadonlyArray<BehavioralSummary>,
@@ -1063,10 +1051,10 @@ export function unfollowedCalls(summaries: ReadonlyArray<BehavioralSummary>): {
 }
 
 /**
- * The one warning under an answer whose gaps sit in units the answer
- * did not list. A few stopped calls are worth spelling out, so a
- * reader can judge whether any could reach what they asked about; past
- * that the list stops working as a warning and the count has to do.
+ * The single warning for gaps in units the answer did not list. Up to
+ * three unfollowed calls are listed by name, so a reader can judge
+ * whether any could reach what they asked about. Past that the warning
+ * gives only the count, since a long list would stop reading as a warning.
  */
 export function hiddenBehindLine(
   stops: { count: number; callees: string[] },
@@ -1088,9 +1076,9 @@ export function hiddenBehindLine(
 // ---------------------------------------------------------------------------
 
 /**
- * An answer as the shape `--json` writes and a caller in the same
- * process reads. A why question adds its chain under `detail`, so the
- * type stays open past the fields every shape has.
+ * An answer as `--json` writes it and as a caller in the same process
+ * receives it. A why question adds its chain and hops as extra top-level
+ * fields, so the type allows keys beyond the ones every shape has.
  */
 export interface AnswerJson {
   question: string;
@@ -1119,11 +1107,10 @@ function asJson(question: string, answer: Answer): AnswerJson {
 }
 
 /**
- * How many items an answer prints before it stops and says the count.
- *
- * A question over a repository can pick out hundreds of units, and a
- * screen of them buries the two lines under the list that say what was
- * provided and what suss could not follow.
+ * How many items an answer prints before it prints a count instead. A
+ * question over a repository can match hundreds of units, and a screen of
+ * them would bury the lines under the list about what provides the
+ * boundary and what suss could not follow.
  */
 const ITEMS_SHOWN = 10;
 

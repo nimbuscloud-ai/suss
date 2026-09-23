@@ -1,15 +1,15 @@
 /**
  * What each boundary reaches, on both sides of a diff.
  *
- * A unit that changed somewhere down a call chain is not what a reader
- * of a pull request wants to hear about. They want to know which
- * requests now touch something they did not before: a route that
- * started writing to a table, a handler that stopped calling another
- * service. So the walk starts at every unit serving a boundary, follows
- * the calls out of it, and collects the boundaries it comes to.
+ * A reviewer of a pull request cares which requests now touch something
+ * they did not touch before, such as a route that started writing to a
+ * table or a handler that stopped calling another service. A change deep
+ * in a call chain matters only through those requests. So the walk starts
+ * at every unit serving a boundary, follows the calls out of it, and
+ * collects the boundaries it reaches.
  *
- * It walks the `calls` facts breadth-first rather than asking a reach
- * query per boundary, since a project with a thousand routes would run
+ * It walks the `calls` facts breadth-first instead of running a reach
+ * query per boundary, because a project with a thousand routes would run
  * a thousand fixpoints that way.
  */
 
@@ -22,11 +22,11 @@ import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { Relation } from "@suss/ir-core";
 import type { CallEdge, FunctionKey } from "./callFacts.js";
 
-/** One boundary a unit comes to, and the calls it takes to get there. */
+/** One boundary a unit reaches, and the chain of calls that gets there. */
 export interface ReachedEffect {
   readonly relation: Relation;
   readonly label: string;
-  /** The calls between the boundary's own unit and this one. */
+  /** The calls from the unit serving the boundary to the unit that touches this one. */
   readonly through: readonly string[];
 }
 
@@ -58,17 +58,17 @@ export interface EntrypointChange {
 }
 
 /**
- * How far one walk goes before it stops. The visited set already covers
- * cycles; this cap is for a graph wide enough that walking it from every
- * boundary costs more than the answer returns.
+ * The most functions one walk visits. The visited set already stops
+ * cycles. This cap stops a graph so wide that walking it from every
+ * boundary would cost more than the answer is worth.
  */
 const WALK_LIMIT = 5000;
 
 /**
- * A boundary and the unit serving it, which is how the two sides pair.
- * The boundary is part of it because one function often serves many:
- * a shared `respond` middleware is the handler of every route that
- * lists it last.
+ * The key that pairs a boundary across the two sides of the diff. It
+ * includes the boundary as well as the unit because one function often
+ * serves many boundaries: a shared `respond` middleware is the handler of
+ * every route that lists it last.
  */
 export function entrypointKey(
   file: string,
@@ -82,7 +82,6 @@ function effectKey(relation: Relation, label: string): string {
   return `${relation} ${label}`;
 }
 
-/** The calls out of each function, from the facts a summary set states. */
 function adjacency(edges: readonly CallEdge[]): Map<FunctionKey, CallEdge[]> {
   const out = new Map<FunctionKey, CallEdge[]>();
   for (const edge of edges) {
@@ -98,8 +97,8 @@ function adjacency(edges: readonly CallEdge[]): Map<FunctionKey, CallEdge[]> {
 
 /**
  * Every boundary reachable from one function, with the shortest chain
- * of calls to each. A unit's own boundary is left out, since serving a
- * route is not something the route reaches.
+ * of calls to each. The boundary the start function serves is left out,
+ * because a route does not reach itself.
  */
 function reachedFrom(
   start: FunctionKey,
@@ -126,7 +125,7 @@ function reachedFrom(
           ) {
             continue;
           }
-          // Two variables read through one boundary are two lines.
+          // Two variables read through one boundary get a line each.
           const label =
             touch.detail === undefined
               ? touch.label
@@ -166,9 +165,8 @@ function servedBoundary(summary: BehavioralSummary): string | null {
 }
 
 /**
- * What each unit serving a boundary reaches, on one side. The walk is
- * shared by the diff and by the plain tree, so both say the same thing
- * about a route.
+ * What each unit serving a boundary reaches, on one side. The diff and
+ * the plain tree both call this, so they agree about what a route reaches.
  */
 export function boundaryReach(
   summaries: readonly BehavioralSummary[],
@@ -194,7 +192,6 @@ export function boundaryReach(
   return reach;
 }
 
-/** What every boundary in one summary set reaches. */
 function entrypointsOf(
   summaries: readonly BehavioralSummary[],
 ): Map<string, Entrypoint> {
