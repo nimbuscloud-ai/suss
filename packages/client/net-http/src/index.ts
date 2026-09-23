@@ -1,18 +1,18 @@
 /**
- * @suss/client-net-http: RubyPack for the calls Ruby's own
- * [Net::HTTP](https://docs.ruby-lang.org/en/master/Net/HTTP.html)
- * gives a project for making an HTTP request.
+ * @suss/client-net-http: the Ruby pack for HTTP requests made with
+ * Ruby's built-in
+ * [Net::HTTP](https://docs.ruby-lang.org/en/master/Net/HTTP.html).
  *
- * A method that calls one of them is a client of the route it names,
- * whether it calls the module directly or builds a request object and
- * sends that. See the README for what the pack reads and where it
+ * A method that calls Net::HTTP becomes a client of the route in the
+ * call. It can call a module method directly, or build a request object
+ * and send that. The README lists what the pack reads and where it
  * stops.
  */
 
 import type { RubyPack } from "@suss/adapter-ruby";
 import type { PackDeclaration } from "@suss/ir-core";
 
-/** The module methods that send a request on their own, and the method each one sends. */
+/** Module methods that send a request without a request object. */
 const VERB_METHODS: Record<string, string> = {
   get: "GET",
   get_response: "GET",
@@ -25,7 +25,6 @@ const VERB_METHODS: Record<string, string> = {
   options: "OPTIONS",
 };
 
-/** The request classes, and the method each one sends. */
 const REQUEST_CLASSES: Record<string, string> = {
   "Net::HTTP::Get": "GET",
   "Net::HTTP::Post": "POST",
@@ -45,9 +44,9 @@ export function netHttpClient(): RubyPack {
       {
         constantName: "Net::HTTP",
         verbMethodNames: VERB_METHODS,
-        // Every one of these takes a URI object rather than a string.
-        // `URI(...)` and `URI.parse(...)` belong to Ruby itself, so the
-        // adapter's value tables read them and the pack says nothing.
+        // These methods take a URI object. `URI(...)` and `URI.parse(...)`
+        // are part of Ruby, so the adapter already evaluates them and the
+        // pack adds nothing for them.
         url: { position: 0 },
         receiverBuilders: ["new"],
         requestObject: {
@@ -55,9 +54,8 @@ export function netHttpClient(): RubyPack {
           constructors: REQUEST_CLASSES,
           urlPosition: 0,
         },
-        // The status comes back as a string, which is why a caller
-        // writes `response.code.to_i == 404`, read the same as any
-        // other member.
+        // `code` is a string, so callers write `response.code.to_i == 404`.
+        // That comparison is read the same way as one on any other member.
         response: {
           statusCode: ["code"],
           body: ["body"],
