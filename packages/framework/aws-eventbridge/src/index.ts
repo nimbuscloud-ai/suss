@@ -1,63 +1,13 @@
-// @suss/framework-aws-eventbridge: recognize AWS EventBridge
-// producer-side calls in TypeScript and emit one
-// `interaction(class: "message-send")` effect per PutEvents entry.
-//
-// Producer-side recognition only. Consumer-side target Lambdas gain
-// their message-bus boundaryBinding via the contract-source pass that
-// walks CFN/SAM `AWS::Events::Rule` + `Events:{Type: EventBridgeRule |
-// Schedule}` blocks (lives in @suss/contract-cloudformation, not this
-// package). There is no consumer-side body recognizer here yet: an
-// EventBridge target handler reads `event.detail`, which a follow-up
-// message-receive recognizer can extract; until then body-shape pairing
-// isn't available for EventBridge (orphan / unused / unresolvable /
-// schedule accounting still work off the CFN summaries).
-//
-// AWS SDK v3 (modular) only for v0:
-//
-//   import { EventBridgeClient, PutEventsCommand } from "@aws-sdk/client-eventbridge";
-//   const client = new EventBridgeClient({});
-//   await client.send(new PutEventsCommand({
-//     Entries: [{
-//       EventBusName: process.env.ORDER_EVENT_BUS_NAME,
-//       Source: "orders.service",
-//       DetailType: "OrderPlaced",
-//       Detail: JSON.stringify(order),
-//     }],
-//   }));
-//
-// AWS SDK v2 (`new AWS.EventBridge().putEvents(...).promise()`) is a
-// follow-up: the surface is similar but the call shape differs.
-//
-// A service that publishes through its own EventPublisher writes no
-// PutEventsCommand of its own, so the SDK declaration never fires on
-// it. Such a project says which publisher in the pack's `producers`
-// option:
-//
-//   { module: "@acme/async", receiver: "EventPublisher",
-//     method: "emit", subjectArg: 0, bodyArg: 1 }
-//
-// which reads `publisher.emit("user.deleted", data, opts)` as a send on
-// channel "user.deleted". A subject the source does not state as a
-// string yields no effect.
-//
-// CHANNEL IDENTITY SCHEME
-// -----------------------
-// One event bus multiplexes many event types, and a rule subscribes to
-// a subset of them keyed by DetailType, so the channel is both parts:
-//
-//     channel = `${bus}#${detailType}`
-//
-// The bus is nearly always deploy-named, so the code writes
-// `process.env.ORDER_EVENT_BUS_NAME` and the declaration keeps the
-// reference: `{ORDER_EVENT_BUS_NAME}#OrderPlaced`. The message-bus
-// checker resolves the reference to the CFN EventBus logical id via the
-// producer Lambda's Environment block. A bus written nowhere at all is
-// the account's default bus, which is what `whenAbsent` states. A
-// DetailType decided at run time leaves the channel null, because a
-// channel spelled by half of itself would pair across buses.
-//
-// The `Source` field scopes an event on the bus but does not key
-// pairing in v0, so it rides as the routing key for a reader.
+/**
+ * Recognizes AWS EventBridge `PutEvents` calls and records one
+ * `message-send` effect per entry, on the channel `${bus}#${detailType}`.
+ *
+ * Only the producer side and AWS SDK v3 are read here. A target Lambda
+ * gets its binding from `@suss/contract-cloudformation`, and nothing reads
+ * `event.detail` in a handler yet, so message bodies are not compared.
+ * The README explains the channel and how a project declares its own
+ * publisher in a dependency stub.
+ */
 
 import { z } from "zod";
 
@@ -80,15 +30,14 @@ const EVENTBRIDGE = "@aws-sdk/client-eventbridge";
 export type EventBridgeProducer = ConfiguredCallSpec;
 
 /**
- * What this pack's options may say. The CLI parses a
- * `-f aws-eventbridge=config.json` file against it, minus the keys a dependency
- * stub fills, which a config file may not set.
+ * A dependency stub fills `producers`, and the CLI refuses a config file
+ * that sets it.
  */
 export const optionsSchema = z
   .object({
     /**
-     * Publishers this project emits through. Each one adds a recognizer
-     * and widens the import gate to that publisher's module.
+     * Each publisher adds a recognizer, and the pack also reads files that
+     * import the publisher's module.
      */
     producers: z.array(configuredCallOption).optional(),
   })
@@ -97,15 +46,14 @@ export const optionsSchema = z
 export type EventBridgePackOptions = z.infer<typeof optionsSchema>;
 
 /**
- * One recognizer per configured publisher method. The subject the
- * call states is the channel, with no bus segment: a publisher takes
- * its bus from constructor config the call site never states, and the
- * checker treats an unstated bus as agreeing with any, so the subject
- * alone pairs against the rule that routes it.
+ * The channel is the subject the call passes, with no bus part. A
+ * publisher takes its bus from constructor config that the call site
+ * never shows, and the checker treats a missing bus as matching any bus,
+ * so the subject alone pairs with the rule that routes it.
  *
- * Stays a function recognizer because a channel that is the argument
- * itself, rather than a property of a message, is not a shape the
- * message-send ending says yet.
+ * This recognizer is written by hand because the message-send ending
+ * reads a channel only from a property of a message, and here the
+ * channel is a bare argument.
  */
 function configuredProducerRecognizer(
   spec: ConfiguredCallSpec,
@@ -191,7 +139,6 @@ export function eventBridgeFramework(
   );
 }
 
-/** What this pack reads, and what a project has to be using for it to. */
 export const declares: PackDeclaration = {
   kind: "effects",
   package: "@suss/framework-aws-eventbridge",
