@@ -1,10 +1,9 @@
 /**
- * version.ts: the version this package was published at.
+ * The version this package was published at.
  *
- * npm sets `npm_package_version` only when it runs a script. A host
- * that starts the binary sets no such variable, so every client asking
- * a server for its version used to be told `0.0.0-dev`. The manifest
- * beside the build says it, and it ships with the package.
+ * npm sets `npm_package_version` only when it runs a script, and a host
+ * that starts the binary directly sets no such variable. So the version
+ * comes from the package manifest, which ships beside the build.
  */
 
 import fs from "node:fs";
@@ -15,9 +14,9 @@ export const UNKNOWN_VERSION = "0.0.0";
 /**
  * The version the manifest at `manifestUrl` states.
  *
- * A published package always has one beside its build. A checkout that
- * somebody has taken apart may not, and a server that still starts and
- * reports an unknown version is better there than one that refuses to.
+ * A published package always has one beside its build. A partial
+ * checkout may not, and there a server that starts and reports an
+ * unknown version is more useful than one that refuses to start.
  */
 export function versionFrom(manifestUrl: URL): string {
   try {

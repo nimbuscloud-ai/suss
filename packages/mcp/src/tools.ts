@@ -1,13 +1,12 @@
 /**
- * tools.ts: what the model can call, and what each one says back.
+ * The tools a model can call, and what each one returns.
  *
- * The descriptions matter as much as the code. A model reads them at
- * the moment it decides whether to call something, so this is where the
- * question grammar and the "what does this finding mean" guidance go.
- * A document at the top of a session gets forgotten; a tool description
- * arrives with the decision.
+ * The descriptions matter as much as the code. A model reads a tool's
+ * description each time it decides whether to call the tool, so the
+ * question grammar and the guidance on reading findings go there, and
+ * not into a document the model saw once at the start of a session.
  *
- * Every tool reads. None of them change a file.
+ * Every tool only reads. None of them changes a file.
  */
 
 import fs from "node:fs";
@@ -227,10 +226,10 @@ export function statusTool(project: Project): ToolResult {
 }
 
 /**
- * Nothing is known about whether the project is configured until the
- * first build finishes, so a build in flight with no prior result says
- * only that. A rebuild in flight still has a completed prior result,
- * which stays true while it reruns, so it is shown beneath its own line.
+ * Until the first build finishes nothing is known about the project, so
+ * the status says only that it is building. During a rebuild the last
+ * finished build still describes the project, so its report is shown
+ * under the rebuilding line.
  */
 function statusText(
   project: Project,
@@ -261,10 +260,9 @@ function reportLines(root: string, report: BuildReport): string[] {
 /**
  * One answer, in both forms the protocol asks for.
  *
- * A result with structured data should carry the same thing as text,
- * so a host that reads only one of the two still gets the answer. That
- * means every byte counts twice, which is why the callers trim before
- * they get here rather than after.
+ * A result with structured data should repeat it as text, so a host that
+ * reads only one of the two still gets the answer. Every byte is sent
+ * twice, so the callers trim before they call this.
  */
 function said(payload: Record<string, unknown>): ToolResult {
   return {

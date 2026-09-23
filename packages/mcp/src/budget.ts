@@ -1,17 +1,15 @@
 /**
- * budget.ts: keep a tool's answer inside what a model can read.
+ * Keeps a tool result small enough for a model to read.
  *
  * A CLI report goes to a terminal somebody scrolls. A tool result goes
- * into a context window, and everything it spends there is unavailable
- * to the work the model was doing. A first check over a repository of
- * any size produces hundreds of findings and thousands of unpaired
- * boundaries, so handing all of it back would fill the window and leave
- * the model no room to act on any of it.
+ * into a context window, and every token it uses there is taken from the
+ * work the model was doing. A first check over a repository of any size
+ * produces hundreds of findings and thousands of unpaired boundaries,
+ * and returning all of it would fill the window.
  *
- * So an answer shows the first few, counts the rest by kind, and says
- * how to see more. The CLI does the same thing for the same reason,
- * with `--all` as the way through. Here the way through is asking again
- * about one boundary.
+ * So a result shows the first few, counts the rest by kind, and says how
+ * to see more. The CLI trims its report the same way and offers `--all`.
+ * Here the way to see more is to ask again about one boundary.
  */
 
 /** How many of a list a tool result shows before it starts counting. */
@@ -28,9 +26,8 @@ export interface Trimmed<T> {
 /**
  * The first few of a list, with the rest counted by kind.
  *
- * Counting by kind rather than in total is what makes the trimmed
- * answer worth reading: 300 findings of one kind is one problem, and
- * 300 across twelve kinds is twelve.
+ * The rest are counted per kind because 300 findings of one kind is one
+ * problem, and 300 across twelve kinds is twelve.
  */
 export function trim<T>(
   items: readonly T[],
