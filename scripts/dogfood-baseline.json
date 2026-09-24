@@ -2,33 +2,33 @@
   "totals": {
     "packages": 80,
     "packagesWithExports": 80,
-    "exports": 1060,
-    "internal": 3857,
-    "consumers": 2205,
-    "pairs": 2193,
-    "unfollowedCalls": 529,
+    "exports": 1067,
+    "internal": 3987,
+    "consumers": 2230,
+    "pairs": 2218,
+    "unfollowedCalls": 526,
     "findingErrors": 0
   },
   "packages": {
     "packages/adapter/python": {
       "name": "@suss/adapter-python",
-      "exports": 59,
-      "internal": 438,
-      "consumers": 244,
+      "exports": 62,
+      "internal": 497,
+      "consumers": 250,
       "unfollowedCalls": 64
     },
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
       "exports": 73,
-      "internal": 428,
-      "consumers": 200,
+      "internal": 467,
+      "consumers": 201,
       "unfollowedCalls": 78
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 117,
-      "internal": 885,
-      "consumers": 228,
+      "internal": 914,
+      "consumers": 235,
       "unfollowedCalls": 114
     },
     "packages/behavioral-ir": {
@@ -55,8 +55,8 @@
     "packages/cli": {
       "name": "@suss/cli",
       "exports": 37,
-      "internal": 576,
-      "consumers": 383,
+      "internal": 571,
+      "consumers": 392,
       "unfollowedCalls": 60
     },
     "packages/client/aiohttp": {
@@ -524,22 +524,22 @@
     "packages/recognize": {
       "name": "@suss/recognize",
       "exports": 29,
-      "internal": 43,
+      "internal": 49,
       "consumers": 9,
       "unfollowedCalls": 6
     },
     "packages/resolution": {
       "name": "@suss/resolution",
-      "exports": 34,
-      "internal": 39,
-      "consumers": 121,
+      "exports": 35,
+      "internal": 40,
+      "consumers": 122,
       "unfollowedCalls": 29
     },
     "packages/runtime/node": {
       "name": "@suss/runtime-node",
       "exports": 12,
-      "internal": 38,
-      "consumers": 32,
+      "internal": 37,
+      "consumers": 33,
       "unfollowedCalls": 5
     },
     "packages/sql": {
@@ -565,10 +565,10 @@
     },
     "packages/values": {
       "name": "@suss/values",
-      "exports": 45,
-      "internal": 71,
+      "exports": 48,
+      "internal": 73,
       "consumers": 3,
-      "unfollowedCalls": 30
+      "unfollowedCalls": 27
     }
   }
 }

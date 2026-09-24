@@ -19,10 +19,10 @@
       "pct": 100
     },
     "branches": {
-      "total": 336,
-      "covered": 306,
+      "total": 338,
+      "covered": 308,
       "skipped": 0,
-      "pct": 91.07
+      "pct": 91.12
     },
     "branchesTrue": {
       "total": 0,
@@ -77,10 +77,10 @@
       "pct": 98.14
     },
     "branches": {
-      "total": 123,
-      "covered": 119,
+      "total": 125,
+      "covered": 121,
       "skipped": 0,
-      "pct": 96.74
+      "pct": 96.8
     }
   },
   "src/index.ts": {
