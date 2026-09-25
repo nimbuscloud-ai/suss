@@ -136,7 +136,8 @@ export type {
 //   call(r, c)                  r is a call whose callee is c
 //   callArg(r, k, a)            r passes a at position k
 //   imports(x, m, n)            x is the name n imported from module m,
-//                               or the whole of m when n is `*`
+//                               or the whole of m when n is `*`, or a
+//                               declaration in m's own files
 //   exportsAs(m, n, v)          module m exports v under the name n
 //   reExports(m, n, m2, n2)     m's n is m2's n2
 //   reExportsAll(m, m2)         m forwards everything m2 exports
@@ -154,10 +155,8 @@ export type {
 //   givesBackOneOfArgument(base, m, k)   the same, with the class at k
 //   givesBackOneOfImport(mod, n, k)      the same, for the bare
 //                               function n that module mod exports
-//   unwrapsByName(n, k)         a pack's word: calling n gives back the
-//                               argument at k it was passed
-//   wrapperModule(n, m)         which module n comes from, for the word
-//                               above to apply to it
+//   unwrapsByName(mod, n, k)    a pack's word: calling the n that module
+//                               mod exports gives back the argument at k
 //   declaresName(c, n)          c declares a method n under a name the
 //                               source computes rather than writes out
 //   declaresAssociation(c, n, t)  class c declares an association n,
@@ -199,6 +198,10 @@ export const VALUE_STEP = constant("value");
  */
 export const NAMESPACE_IMPORT_NAME = "*";
 export const NAMESPACE_IMPORT = constant(NAMESPACE_IMPORT_NAME);
+
+/** The name a default import records itself under, `import React from "react"`. */
+export const DEFAULT_IMPORT_NAME = "default";
+const DEFAULT_IMPORT = constant(DEFAULT_IMPORT_NAME);
 
 /**
  * The label on the `comesFrom` rule for a member read off a whole-module
@@ -435,17 +438,16 @@ const STATED_RULES = [
     "factory unwrap",
   ),
 
-  // Wrapper transparency, declared: a pack says this callee wraps
-  // argument k. The callee has to come from the library the pack said,
-  // so a local object spelled the same way is not mistaken for it.
+  // Wrapper transparency, declared: a pack says module m's n hands back
+  // argument k. Keyed on where the callee comes from, so a local object
+  // spelled the same way is not mistaken for it.
   rule(
     "hop",
     [v("r"), v("a"), VALUE_STEP],
     [
-      lit("calleeName", v("r"), v("n")),
-      lit("unwrapsByName", v("n"), v("k")),
-      lit("wrapperModule", v("n"), v("m")),
-      lit("calleeOrigin", v("r"), v("m")),
+      lit("call", v("r"), v("c")),
+      lit("comesFrom", v("c"), v("m"), v("n")),
+      lit("unwrapsByName", v("m"), v("n"), v("k")),
       lit("callArg", v("r"), v("k"), v("a")),
     ],
     "declared wrapper",
@@ -1555,6 +1557,18 @@ const STATED_RULES = [
       lit("readsProperty", v("x"), v("o"), v("n")),
       lit("reaches", v("o"), v("ns"), VALUE_STEP),
       lit("imports", v("ns"), v("m"), NAMESPACE_IMPORT),
+    ],
+    NAMESPACE_MEMBER_RULE,
+  ),
+  // A CommonJS module hands its exports over as the default, so after
+  // `import React from "react"`, `React.memo` is react's `memo`.
+  rule(
+    "comesFrom",
+    [v("x"), v("m"), v("n")],
+    [
+      lit("readsProperty", v("x"), v("o"), v("n")),
+      lit("reaches", v("o"), v("d"), VALUE_STEP),
+      lit("imports", v("d"), v("m"), DEFAULT_IMPORT),
     ],
     NAMESPACE_MEMBER_RULE,
   ),

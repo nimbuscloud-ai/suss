@@ -161,10 +161,9 @@ describe("explainResolutionProof", () => {
   it("surfaces a pack-declared wrapper as an assumption", () => {
     const db = evaluated([
       ["func", "innerFn"],
-      ["calleeName", "wrapped", "withSentry"],
-      ["unwrapsByName", "withSentry", "0"],
-      ["wrapperModule", "withSentry", "@sentry/serverless"],
-      ["calleeOrigin", "wrapped", "@sentry/serverless"],
+      ["unwrapsByName", "tracing", "withTracing", "0"],
+      ["call", "wrapped", "callee"],
+      ["imports", "callee", "tracing", "withTracing"],
       ["callArg", "wrapped", "0", "innerFn"],
       ["binds", "h", "wrapped"],
     ]);
@@ -172,12 +171,15 @@ describe("explainResolutionProof", () => {
     const proof = proofOf(db, "resolves", ["h", "innerFn"]);
     const explained = explainResolutionProof(proof, { describe: say });
 
+    expect(explained?.steps[1]?.reason).toBe(
+      "wrapped calls withTracing from tracing, which passes argument 0 through, so it comes down to innerFn",
+    );
     expect(explained?.assumptions).toEqual([
-      "a pack declares that withSentry from @sentry/serverless passes argument 0 through to its result",
+      "a pack declares that withTracing from tracing passes argument 0 through to its result",
     ]);
     const lines = renderExplanation(explained!, say);
     expect(lines).toContain(
-      "  assuming a pack declares that withSentry from @sentry/serverless passes argument 0 through to its result",
+      "  assuming a pack declares that withTracing from tracing passes argument 0 through to its result",
     );
   });
 

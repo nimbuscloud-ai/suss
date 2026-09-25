@@ -51,7 +51,7 @@ Three layers do the work.
 
   <rect class="box" x="60" y="220" width="540" height="86" rx="6" />
   <text class="label" x="330" y="242" text-anchor="middle">2. One rule set joins the facts into a value graph</text>
-  <text class="note" x="330" y="260" text-anchor="middle">170 rules. 17 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
+  <text class="note" x="330" y="260" text-anchor="middle">171 rules. 17 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
   <text class="note" x="330" y="277" text-anchor="middle">reaches is the transitive closure of those hops, and it records</text>
   <text class="note" x="330" y="294" text-anchor="middle">the strongest kind of step the walk took.</text>
 
@@ -118,13 +118,12 @@ binds("global"@17, "global: CustomNodeJsGlobal"@15)
 binds("PrismaClient"@17, "PrismaClient"@1)
 binds("prisma = global.prisma || new PrismaClie"@17, "global.prisma || new PrismaClient()"@17)
 call("new PrismaClient()"@17, "PrismaClient"@17)
-calleeName("new PrismaClient()"@17, PrismaClient)
-calleeOrigin("new PrismaClient()"@17, @prisma/client)
-calleeOrigin("new PrismaClient()"@17, .prisma)
 exportsAs(src/prisma/prisma-client.ts, default, "prisma = global.prisma || new PrismaClie"@17)
 fallbackBranch("global.prisma || new PrismaClient()"@17, "global.prisma"@17)
 fallbackBranch("global.prisma || new PrismaClient()"@17, "new PrismaClient()"@17)
 imports("PrismaClient"@1, node_modules/@prisma/client/index.d.ts, PrismaClient)
+imports("PrismaClient"@1, @prisma/client, PrismaClient)
+imports("PrismaClient"@1, .prisma, PrismaClient)
 importsModule(src/prisma/prisma-client.ts, node_modules/@prisma/client/index.d.ts)
 readsProperty("global.prisma"@17, "global"@17, prisma)
 writtenValue("new PrismaClient()"@17)
@@ -145,9 +144,8 @@ supply them. The TypeScript adapter reads most of them out of source,
 and emits two more of its own on top: `bindCall`, for the JavaScript
 `.bind` rule, and `importsModule`, for walking module edges. `extends`,
 `extendsNamed` and `callKeywordArg` come from the Python and Ruby
-adapters. `unwrapsByName`, `wrapperModule` and the `givesBackOne` family
-come from a pack's declarations, so no source file contains them at
-all.
+adapters. `unwrapsByName` and the `givesBackOne` family come from a
+pack's declarations, so no source file contains them at all.
 
 Some of them take both. Python's `with httpx.Client() as client` gives
 `entersAs(client, the call)` from the adapter, which says only that the
@@ -160,13 +158,13 @@ explanation each.
 
 ## Layer 2: one rule set makes a graph
 
-`packages/resolution/src/index.ts` contains 170 rules and no code.
+`packages/resolution/src/index.ts` contains 171 rules and no code.
 17 of them derive `stepsTo(x, y, kind)`, which says the value `x` leads
 to the value `y` in one hop. Two of them, for an argument and a
 property read, are written as `stepsTo` directly. The other fifteen are
 written as `hop`, and each gets a `stepsTo` twin, since a walk under a
 receiver context reads `hop`. The TypeScript adapter adds a sixteenth
-hop, for `.bind`, with its own twin, and that pair is not among the 170.
+hop, for `.bind`, with its own twin, and that pair is not among the 171.
 
 ```ts
 rule(

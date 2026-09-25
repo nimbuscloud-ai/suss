@@ -952,7 +952,7 @@ export class ResolutionStore {
       }
       if (
         name === "default" &&
-        this.calleeNameOf(constructionId) === importName
+        this.calleeTextOf(constructionId) === importName
       ) {
         return true;
       }
@@ -960,9 +960,12 @@ export class ResolutionStore {
     return false;
   }
 
-  private calleeNameOf(callId: string): string | null {
-    const first = this.db.lookup("calleeName", 0, callId)[0];
-    return first === undefined ? null : String(first[1]);
+  /** The callee of a call, as written. */
+  private calleeTextOf(callId: string): string | null {
+    const first = this.db.lookup("call", 0, callId)[0];
+    const callee =
+      first === undefined ? undefined : this.table.byId.get(String(first[1]));
+    return callee === undefined ? null : callee.getText();
   }
 
   /**
@@ -1120,14 +1123,14 @@ export class ResolutionStore {
     }
 
     const matching = all.filter((one) => namesPackage(one.module, modules));
-    // One import is recorded under two module keys, the resolved path
-    // and the specifier, so origins collapse per export path, and the
-    // specifier spelling wins for its subpath.
+    // One import is recorded under several module keys, so origins
+    // collapse per export path, and the specifier spelling wins for its
+    // subpath.
     const byPath = new Map<string, { module: string; path: string[] }>();
     for (const one of matching) {
       const key = tupleKey(one.path);
       const kept = byPath.get(key);
-      if (kept === undefined || kept.module.startsWith("/")) {
+      if (kept === undefined || spellsMoreOf(one.module, kept.module)) {
         byPath.set(key, one);
       }
     }
@@ -1543,6 +1546,17 @@ function namesFrom(pairs: string[], packages: string[]): string[] {
 function pairHalves(pair: string): { module: string; name: string } {
   const [module = "", name = ""] = tupleKeyParts(pair);
   return { module, name };
+}
+
+/**
+ * Whether `module` says more about an import than `kept` does: a
+ * specifier over a resolved path, and `pkg/esm` over `pkg`.
+ */
+function spellsMoreOf(module: string, kept: string): boolean {
+  return (
+    kept.startsWith("/") ||
+    (!module.startsWith("/") && module.startsWith(`${kept}/`))
+  );
 }
 
 /**

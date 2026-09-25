@@ -33,7 +33,7 @@ const OPENAPI_DISCOVERY: DiscoveryPattern[] = [
 ];
 
 const WRAPPERS = [
-  { callee: "createRoute", argument: 0, module: "@hono/zod-openapi" },
+  { module: "@hono/zod-openapi", name: "createRoute", argument: 0 },
 ];
 
 const ROUTES = `

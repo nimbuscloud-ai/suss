@@ -51,6 +51,34 @@ function resolvedBody(store: ResolutionStore, value: Node): string | null {
   return resolved === null ? null : resolved.getText().replace(/\s+/g, " ");
 }
 
+/** A tracing library whose `wrapHandler` hands back the handler it was given. */
+const TRACING_WRAPPER = {
+  module: "@acme/tracing",
+  name: "wrapHandler",
+  argument: 0,
+};
+
+/** The library installed, with `declarations` as its types. */
+function tracingInstalled(declarations: string): Record<string, string> {
+  return {
+    "/node_modules/@acme/tracing/package.json": JSON.stringify({
+      name: "@acme/tracing",
+      version: "1.0.0",
+      types: "index.d.ts",
+    }),
+    "/node_modules/@acme/tracing/index.d.ts": declarations,
+  };
+}
+
+/** What `/mod.ts`'s `handler` comes down to when the tracing wrapper is declared. */
+function wrappedHandler(files: Record<string, string>): string | null {
+  const project = projectOf(files);
+  return resolvedBody(
+    new ResolutionStore([TRACING_WRAPPER]),
+    exportValue(project, "/mod.ts", "handler"),
+  );
+}
+
 describe("resolveCallable", () => {
   it("resolves a direct function to itself", () => {
     const project = projectOf({
@@ -199,207 +227,176 @@ describe("resolveCallable", () => {
   });
 
   it("unwraps a declared wrapper it cannot see into", () => {
-    const project = projectOf({
-      "/mod.ts": `
-        import * as Sentry from "@sentry/aws-serverless";
-        export const handler = Sentry.wrapHandler(async () => "sentry wrapped");
-      `,
-    });
-    const store = new ResolutionStore([
-      {
-        callee: "Sentry.wrapHandler",
-        argument: 0,
-        module: "@sentry/aws-serverless",
-      },
-    ]);
-
     expect(
-      resolvedBody(store, exportValue(project, "/mod.ts", "handler")),
-    ).toContain("sentry wrapped");
+      wrappedHandler({
+        "/mod.ts": `
+          import * as Tracing from "@acme/tracing";
+          export const handler = Tracing.wrapHandler(async () => "wrapped");
+        `,
+      }),
+    ).toContain("wrapped");
+  });
+
+  it("unwraps a declared wrapper whatever the namespace import is called", () => {
+    expect(
+      wrappedHandler({
+        "/mod.ts": `
+          import * as Monitoring from "@acme/tracing";
+          export const handler = Monitoring.wrapHandler(async () => "renamed namespace");
+        `,
+      }),
+    ).toContain("renamed namespace");
+  });
+
+  it("unwraps a declared wrapper imported under another name", () => {
+    expect(
+      wrappedHandler({
+        "/mod.ts": `
+          import { wrapHandler as withTracing } from "@acme/tracing";
+          export const handler = withTracing(async () => "renamed import");
+        `,
+      }),
+    ).toContain("renamed import");
   });
 
   it("ignores a local object spelled like a declared wrapper when nothing imported the library", () => {
-    const project = projectOf({
-      "/mod.ts": `
-        const Sentry = { wrapHandler: (fn: unknown) => "not a function" };
-        export const handler = Sentry.wrapHandler(async () => "local shape");
-      `,
-    });
-    const store = new ResolutionStore([
-      {
-        callee: "Sentry.wrapHandler",
-        argument: 0,
-        module: "@sentry/aws-serverless",
-      },
-    ]);
-
     expect(
-      store.resolveCallable(exportValue(project, "/mod.ts", "handler")),
+      wrappedHandler({
+        "/mod.ts": `
+          const Tracing = { wrapHandler: (fn: unknown) => "not a function" };
+          export const handler = Tracing.wrapHandler(async () => "local shape");
+        `,
+      }),
     ).toBeNull();
   });
 
   it("takes a declared wrapper imported by subpath", () => {
-    const project = projectOf({
-      "/mod.ts": `
-        import * as Sentry from "@sentry/aws-serverless/esm";
-        export const handler = Sentry.wrapHandler(async () => "subpath");
-      `,
-    });
-    const store = new ResolutionStore([
-      {
-        callee: "Sentry.wrapHandler",
-        argument: 0,
-        module: "@sentry/aws-serverless",
-      },
-    ]);
-
     expect(
-      resolvedBody(store, exportValue(project, "/mod.ts", "handler")),
+      wrappedHandler({
+        "/mod.ts": `
+          import * as Tracing from "@acme/tracing/esm";
+          export const handler = Tracing.wrapHandler(async () => "subpath");
+        `,
+      }),
     ).toContain("subpath");
   });
 
   it("takes a declared wrapper re-exported through a project barrel", () => {
-    const project = projectOf({
-      "/node_modules/@sentry/aws-serverless/package.json": JSON.stringify({
-        name: "@sentry/aws-serverless",
-        version: "1.0.0",
-        types: "index.d.ts",
-      }),
-      "/node_modules/@sentry/aws-serverless/index.d.ts": `
-        export function wrapHandler<T>(handler: T): T;
-      `,
-      "/sentry.ts": `export * from "@sentry/aws-serverless";`,
-      "/mod.ts": `
-        import * as Sentry from "./sentry";
-        export const handler = Sentry.wrapHandler(async () => "via barrel");
-      `,
-    });
-    const store = new ResolutionStore([
-      {
-        callee: "Sentry.wrapHandler",
-        argument: 0,
-        module: "@sentry/aws-serverless",
-      },
-    ]);
-
     expect(
-      resolvedBody(store, exportValue(project, "/mod.ts", "handler")),
+      wrappedHandler({
+        ...tracingInstalled("export function wrapHandler<T>(handler: T): T;"),
+        "/tracing.ts": `export * from "@acme/tracing";`,
+        "/mod.ts": `
+          import * as Tracing from "./tracing";
+          export const handler = Tracing.wrapHandler(async () => "via barrel");
+        `,
+      }),
     ).toContain("via barrel");
   });
 
   it("takes a declared wrapper brought in with import equals", () => {
-    const project = projectOf({
-      "/mod.ts": `
-        import Sentry = require("@sentry/aws-serverless");
-        export const handler = Sentry.wrapHandler(async () => "import equals");
-      `,
-    });
-    const store = new ResolutionStore([
-      {
-        callee: "Sentry.wrapHandler",
-        argument: 0,
-        module: "@sentry/aws-serverless",
-      },
-    ]);
-
     expect(
-      resolvedBody(store, exportValue(project, "/mod.ts", "handler")),
+      wrappedHandler({
+        ...tracingInstalled("export function wrapHandler<T>(handler: T): T;"),
+        "/mod.ts": `
+          import Tracing = require("@acme/tracing");
+          export const handler = Tracing.wrapHandler(async () => "import equals");
+        `,
+      }),
     ).toContain("import equals");
   });
 
-  it("ignores a local function a barrel re-exports beside the library", () => {
-    const project = projectOf({
-      "/node_modules/@sentry/aws-serverless/package.json": JSON.stringify({
-        name: "@sentry/aws-serverless",
-        version: "1.0.0",
-        types: "index.d.ts",
-      }),
-      "/node_modules/@sentry/aws-serverless/index.d.ts": `
-        export function somethingElse<T>(handler: T): T;
-      `,
-      "/local.ts": `
-        export const wrapHandler = (fn: unknown) => async () => "local";
-      `,
-      "/barrel.ts": `
-        export * from "@sentry/aws-serverless";
-        export * from "./local";
-      `,
-      "/mod.ts": `
-        import { wrapHandler } from "./barrel";
-        export const handler = wrapHandler(async () => "inner");
-      `,
-    });
-    const store = new ResolutionStore([
-      {
-        callee: "wrapHandler",
-        argument: 0,
-        module: "@sentry/aws-serverless",
-      },
-    ]);
-
+  it("takes a declared wrapper off a default import whose types are not installed", () => {
     expect(
-      store.resolveCallable(exportValue(project, "/mod.ts", "handler")),
+      wrappedHandler({
+        "/mod.ts": `
+          import Tracing from "@acme/tracing";
+          export const handler = Tracing.wrapHandler(async () => "untyped default");
+        `,
+      }),
+    ).toContain("untyped default");
+  });
+
+  it("takes a declared wrapper off a default import of a module written with export =", () => {
+    expect(
+      wrappedHandler({
+        ...tracingInstalled(`
+          declare namespace Tracing {
+            function wrapHandler<T>(handler: T): T;
+          }
+          export = Tracing;
+        `),
+        "/mod.ts": `
+          import Tracing from "@acme/tracing";
+          export const handler = Tracing.wrapHandler(async () => "default import");
+        `,
+      }),
+    ).toContain("default import");
+  });
+
+  it("ignores a local function a barrel re-exports beside the library", () => {
+    expect(
+      wrappedHandler({
+        ...tracingInstalled("export function somethingElse<T>(handler: T): T;"),
+        "/local.ts": `
+          export const wrapHandler = (fn: unknown) => async () => "local";
+        `,
+        "/barrel.ts": `
+          export * from "@acme/tracing";
+          export * from "./local";
+        `,
+        "/mod.ts": `
+          import { wrapHandler } from "./barrel";
+          export const handler = wrapHandler(async () => "inner");
+        `,
+      }),
     ).toBeNull();
   });
 
   it("ignores a local object annotated with the library's own type", () => {
-    const project = projectOf({
-      "/node_modules/@sentry/aws-serverless/package.json": JSON.stringify({
-        name: "@sentry/aws-serverless",
-        version: "1.0.0",
-        types: "index.d.ts",
-      }),
-      "/node_modules/@sentry/aws-serverless/index.d.ts": `
-        export interface Wrapper {
-          wrapHandler(fn: unknown): unknown;
-        }
-      `,
-      "/local.ts": `
-        import type { Wrapper } from "@sentry/aws-serverless";
-        export const Sentry: Wrapper = {
-          wrapHandler: (fn: unknown) => async () => "local",
-        };
-      `,
-      "/mod.ts": `
-        import { Sentry } from "./local";
-        export const handler = Sentry.wrapHandler(async () => "inner");
-      `,
-    });
-    const store = new ResolutionStore([
-      {
-        callee: "Sentry.wrapHandler",
-        argument: 0,
-        module: "@sentry/aws-serverless",
-      },
-    ]);
-
     expect(
-      store.resolveCallable(exportValue(project, "/mod.ts", "handler")),
+      wrappedHandler({
+        ...tracingInstalled(`
+          export interface Wrapper {
+            wrapHandler(fn: unknown): unknown;
+          }
+        `),
+        "/local.ts": `
+          import type { Wrapper } from "@acme/tracing";
+          export const Tracing: Wrapper = {
+            wrapHandler: (fn: unknown) => async () => "local",
+          };
+        `,
+        "/mod.ts": `
+          import { Tracing } from "./local";
+          export const handler = Tracing.wrapHandler(async () => "inner");
+        `,
+      }),
     ).toBeNull();
   });
 
   it("takes a wrapper whose types ship separately, through a barrel", () => {
     const project = projectOf({
-      "/node_modules/sentry-js/package.json": JSON.stringify({
-        name: "sentry-js",
+      "/node_modules/tracing-js/package.json": JSON.stringify({
+        name: "tracing-js",
         version: "1.0.0",
       }),
-      "/node_modules/@types/sentry-js/package.json": JSON.stringify({
-        name: "@types/sentry-js",
+      "/node_modules/@types/tracing-js/package.json": JSON.stringify({
+        name: "@types/tracing-js",
         version: "1.0.0",
         types: "index.d.ts",
       }),
-      "/node_modules/@types/sentry-js/index.d.ts": `
+      "/node_modules/@types/tracing-js/index.d.ts": `
         export function wrapHandler<T>(handler: T): T;
       `,
-      "/barrel.ts": `export * from "sentry-js";`,
+      "/barrel.ts": `export * from "tracing-js";`,
       "/mod.ts": `
         import { wrapHandler } from "./barrel";
         export const handler = wrapHandler(async () => "typed elsewhere");
       `,
     });
     const store = new ResolutionStore([
-      { callee: "wrapHandler", argument: 0, module: "sentry-js" },
+      { ...TRACING_WRAPPER, module: "tracing-js" },
     ]);
 
     expect(
@@ -408,33 +405,19 @@ describe("resolveCallable", () => {
   });
 
   it("takes a wrapper a package declares as a global", () => {
-    const project = projectOf({
-      "/node_modules/@sentry/aws-serverless/package.json": JSON.stringify({
-        name: "@sentry/aws-serverless",
-        version: "1.0.0",
-        types: "index.d.ts",
-      }),
-      "/node_modules/@sentry/aws-serverless/index.d.ts": `
-        declare global {
-          function wrapHandler<T>(handler: T): T;
-        }
-        export {};
-      `,
-      "/mod.ts": `
-        import "@sentry/aws-serverless";
-        export const handler = wrapHandler(async () => "global wrapper");
-      `,
-    });
-    const store = new ResolutionStore([
-      {
-        callee: "wrapHandler",
-        argument: 0,
-        module: "@sentry/aws-serverless",
-      },
-    ]);
-
     expect(
-      resolvedBody(store, exportValue(project, "/mod.ts", "handler")),
+      wrappedHandler({
+        ...tracingInstalled(`
+          declare global {
+            function wrapHandler<T>(handler: T): T;
+          }
+          export {};
+        `),
+        "/mod.ts": `
+          import "@acme/tracing";
+          export const handler = wrapHandler(async () => "global wrapper");
+        `,
+      }),
     ).toContain("global wrapper");
   });
 

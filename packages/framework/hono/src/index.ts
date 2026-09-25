@@ -81,7 +81,7 @@ export function honoFramework(_options: HonoPackOptions = {}): PatternPack {
     // object. The pack has to declare this because the function's body is
     // in the library, where suss cannot read it.
     transparentWrappers: [
-      { callee: "createRoute", argument: 0, module: "@hono/zod-openapi" },
+      { module: "@hono/zod-openapi", name: "createRoute", argument: 0 },
     ],
 
     // A route on a sub-app mounted with `app.route(prefix, sub)` gets the
