@@ -51,7 +51,7 @@ Three layers do the work.
 
   <rect class="box" x="60" y="220" width="540" height="86" rx="6" />
   <text class="label" x="330" y="242" text-anchor="middle">2. One rule set joins the facts into a value graph</text>
-  <text class="note" x="330" y="260" text-anchor="middle">180 rules. 17 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
+  <text class="note" x="330" y="260" text-anchor="middle">185 rules. 17 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
   <text class="note" x="330" y="277" text-anchor="middle">reaches is the transitive closure of those hops, and it records</text>
   <text class="note" x="330" y="294" text-anchor="middle">the strongest kind of step the walk took.</text>
 
@@ -79,7 +79,7 @@ Three layers do the work.
   <text class="note" x="535" y="450" text-anchor="middle">the same stop, for a</text>
   <text class="note" x="535" y="466" text-anchor="middle">walk that ran a call</text>
 
-  <text class="note" x="330" y="498" text-anchor="middle">and comesFrom, objectOf, paramAt, resolves: 59 question rules feeding 39 answer relations</text>
+  <text class="note" x="330" y="498" text-anchor="middle">and comesFrom, objectOf, paramAt, resolves: 70 question rules feeding 39 answer relations</text>
 </svg>
 
 ## Layer 1: the adapter writes down what a file says
@@ -163,7 +163,7 @@ out.
 
 ## Layer 2: one rule set makes a graph
 
-`RESOLUTION_RULES` in `packages/resolution/src/index.ts` is 180 rules.
+`RESOLUTION_RULES` in `packages/resolution/src/index.ts` is 185 rules.
 17 of them derive `stepsTo(x, y, kind)`, which says the value `x` leads
 to the value `y` in one hop. Two of them, for an argument and a
 property read, are written as `stepsTo` directly. The other fifteen are
@@ -297,7 +297,7 @@ a condition on where the walk ended.
 `resolves` is the one `suss ask why` proves.
 
 At the bottom of the same file, `RESOLUTION_QUESTIONS` turns each of
-those into an answer keyed by the value somebody asked about. It is 59
+those into an answer keyed by the value somebody asked about. It is 70
 question rules feeding 39 answer relations. They are written as rules
 rather than as loops in the caller
 because `deriveOnDemand` reads them to work out how far to follow each

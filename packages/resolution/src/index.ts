@@ -979,7 +979,7 @@ const STATED_RULES = [
     ],
   ),
 
-  // The expressions that refer to a parameter by binding alone. An
+  // The expressions that refer to a parameter under another name. An
   // adapter may key a read of the parameter as the parameter itself,
   // or as its own node linked by binds; both arrive here.
   rule(
@@ -992,10 +992,33 @@ const STATED_RULES = [
     [v("p"), v("p")],
     [lit("paramNamed", v("f"), v("n"), v("p"))],
   ),
+  // Every name hop but the import, since no module exports a parameter.
   rule(
     "refersToParam",
     [v("x"), v("p")],
     [lit("refersToParam", v("y"), v("p")), lit("binds", v("x"), v("y"))],
+  ),
+  rule(
+    "refersToParam",
+    [v("x"), v("p")],
+    [lit("refersToParam", v("y"), v("p")), lit("endsHolding", v("x"), v("y"))],
+  ),
+  rule(
+    "refersToParam",
+    [v("x"), v("p")],
+    [
+      lit("refersToParam", v("y"), v("p")),
+      lit("mayHold", v("x"), v("y")),
+      lit("writesAllStated", v("x")),
+    ],
+  ),
+  rule(
+    "refersToParam",
+    [v("x"), v("p")],
+    [
+      lit("refersToParam", v("b"), v("p")),
+      lit("fallbackBranch", v("x"), v("b")),
+    ],
   ),
 
   // An expression whose value is the environment object w: the way a
@@ -1252,9 +1275,9 @@ const STATED_RULES = [
     ],
   ),
 
-  // The expressions that refer to an object by binding alone: the
-  // declaration written as it, a reference or import of that, and a
-  // fallback over any of those. Asked from the object, so it visits only them.
+  // The expressions that refer to an object under another name, through
+  // every name hop a value step takes. Asked from the object, so it
+  // visits only them.
   rule("refersToObject", [v("obj"), v("obj")], [lit("objectValue", v("obj"))]),
   // The process environment is an object nothing declares, so a pack
   // saying which expression spells it is the only way in.
@@ -1263,6 +1286,23 @@ const STATED_RULES = [
     "refersToObject",
     [v("x"), v("obj")],
     [lit("refersToObject", v("y"), v("obj")), lit("binds", v("x"), v("y"))],
+  ),
+  rule(
+    "refersToObject",
+    [v("x"), v("obj")],
+    [
+      lit("refersToObject", v("y"), v("obj")),
+      lit("endsHolding", v("x"), v("y")),
+    ],
+  ),
+  rule(
+    "refersToObject",
+    [v("x"), v("obj")],
+    [
+      lit("refersToObject", v("y"), v("obj")),
+      lit("mayHold", v("x"), v("y")),
+      lit("writesAllStated", v("x")),
+    ],
   ),
   rule(
     "refersToObject",
@@ -1858,6 +1898,15 @@ export const RESOLUTION_QUESTIONS = [
     [v("x"), v("z")],
     [
       lit("callOriginChain", v("x"), v("y")),
+      lit("mayHold", v("y"), v("z")),
+      lit("writesAllStated", v("y")),
+    ],
+  ),
+  rule(
+    "callOriginChainStepped",
+    [v("x"), v("z")],
+    [
+      lit("callOriginChain", v("x"), v("y")),
       lit("fallbackBranch", v("y"), v("z")),
     ],
   ),
@@ -1919,6 +1968,23 @@ export const RESOLUTION_QUESTIONS = [
     [lit("callMadeChain", v("x"), v("y")), lit("endsHolding", v("y"), v("z"))],
   ),
   rule(
+    "callMadeChain",
+    [v("x"), v("z")],
+    [
+      lit("callMadeChain", v("x"), v("y")),
+      lit("mayHold", v("y"), v("z")),
+      lit("writesAllStated", v("y")),
+    ],
+  ),
+  rule(
+    "callMadeChain",
+    [v("x"), v("z")],
+    [
+      lit("callMadeChain", v("x"), v("y")),
+      lit("fallbackBranch", v("y"), v("z")),
+    ],
+  ),
+  rule(
     "wantedCallOriginPair",
     [v("x"), v("m"), v("n")],
     [
@@ -1951,6 +2017,23 @@ export const RESOLUTION_QUESTIONS = [
     [
       lit("callMemberChain", v("x"), v("y"), v("p")),
       lit("endsHolding", v("y"), v("z")),
+    ],
+  ),
+  rule(
+    "callMemberChain",
+    [v("x"), v("z"), v("p")],
+    [
+      lit("callMemberChain", v("x"), v("y"), v("p")),
+      lit("mayHold", v("y"), v("z")),
+      lit("writesAllStated", v("y")),
+    ],
+  ),
+  rule(
+    "callMemberChain",
+    [v("x"), v("z"), v("p")],
+    [
+      lit("callMemberChain", v("x"), v("y"), v("p")),
+      lit("fallbackBranch", v("y"), v("z")),
     ],
   ),
   rule(
@@ -2004,17 +2087,49 @@ export const RESOLUTION_QUESTIONS = [
   // The calls behind a receiver, for a pack that wants the anchor a
   // chain hangs off; the README's anchor section says which hops and
   // why the asking side applies the single-answer policy.
-  // A class's ancestry, one hop per extends through the binding that
-  // says which class the written base is; the names on the way out
-  // are what a storage pack matches its library's bases against.
+  // A class's ancestry: each base as written, then the class that name
+  // comes to through the name hops a value step takes. A storage pack
+  // matches its library's bases against the base names along the way.
   rule("ancestryChain", [v("c"), v("c")], [lit("wantedAncestry", v("c"))]),
   rule(
     "ancestryChain",
-    [v("c"), v("b2")],
+    [v("c"), v("x")],
+    [lit("ancestryChain", v("c"), v("b")), lit("extends", v("b"), v("x"))],
+  ),
+  rule(
+    "ancestryChain",
+    [v("c"), v("z")],
+    [lit("ancestryChain", v("c"), v("y")), lit("binds", v("y"), v("z"))],
+  ),
+  rule(
+    "ancestryChain",
+    [v("c"), v("z")],
+    [lit("ancestryChain", v("c"), v("y")), lit("endsHolding", v("y"), v("z"))],
+  ),
+  rule(
+    "ancestryChain",
+    [v("c"), v("z")],
     [
-      lit("ancestryChain", v("c"), v("b")),
-      lit("extends", v("b"), v("x")),
-      lit("binds", v("x"), v("b2")),
+      lit("ancestryChain", v("c"), v("y")),
+      lit("mayHold", v("y"), v("z")),
+      lit("writesAllStated", v("y")),
+    ],
+  ),
+  rule(
+    "ancestryChain",
+    [v("c"), v("z")],
+    [
+      lit("ancestryChain", v("c"), v("y")),
+      lit("fallbackBranch", v("y"), v("z")),
+    ],
+  ),
+  rule(
+    "ancestryChain",
+    [v("c"), v("z")],
+    [
+      lit("ancestryChain", v("c"), v("y")),
+      lit("imports", v("y"), v("m"), v("n")),
+      lit("moduleExport", v("m"), v("n"), v("z")),
     ],
   ),
   rule(
@@ -2065,6 +2180,15 @@ export const RESOLUTION_QUESTIONS = [
     "anchorChain",
     [v("x"), v("z")],
     [lit("anchorChain", v("x"), v("y")), lit("endsHolding", v("y"), v("z"))],
+  ),
+  rule(
+    "anchorChain",
+    [v("x"), v("z")],
+    [
+      lit("anchorChain", v("x"), v("y")),
+      lit("mayHold", v("y"), v("z")),
+      lit("writesAllStated", v("y")),
+    ],
   ),
   rule(
     "anchorChain",
