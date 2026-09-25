@@ -370,22 +370,6 @@ describe("a function that calls a request function", () => {
     expect(boundary(units)).toEqual({ method: "GET", path: "/orders" });
   });
 
-  it("reads a session call on a client the class holds as an attribute", async () => {
-    const units = await unitsIn(
-      [
-        "import httpclient",
-        "",
-        "class Orders:",
-        "    client = httpclient.Session()",
-        "",
-        "    def load(self):",
-        '        return self.client.get("/orders")',
-      ].join("\n"),
-    );
-
-    expect(boundary(units)).toEqual({ method: "GET", path: "/orders" });
-  });
-
   it("reads a session call on a client the class holds as an attribute, through a class method", async () => {
     const units = await unitsIn(
       [
@@ -401,6 +385,22 @@ describe("a function that calls a request function", () => {
     );
 
     expect(boundary(units)).toEqual({ method: "GET", path: "/orders" });
+  });
+
+  it("says nothing about a client the class body assigns when read through an instance, since a constructor the run cannot see may replace it", async () => {
+    const units = await unitsIn(
+      [
+        "import httpclient",
+        "",
+        "class Orders:",
+        "    client = httpclient.Session()",
+        "",
+        "    def load(self):",
+        '        return self.client.get("/orders")',
+      ].join("\n"),
+    );
+
+    expect(units).toEqual([]);
   });
 
   it("reads a session call on a client some other method stored", async () => {

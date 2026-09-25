@@ -72,6 +72,7 @@ const ARITY: Record<string, number> = {
   unwrapsByName: 3,
   paramNamed: 3,
   callKeywordArg: 3,
+  callPassesNothing: 1,
   statesType: 2,
   wanted: 1,
   wantedOrigin: 1,

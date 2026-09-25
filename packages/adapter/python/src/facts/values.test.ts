@@ -491,6 +491,22 @@ describe("python value facts", () => {
     expect(rows(unpacked, "callArg")).toEqual([]);
   });
 
+  it("says which calls pass nothing at all, counting a splat as something", async () => {
+    const source = [
+      "a = build()",
+      "b = build(first)",
+      "c = build(**options)",
+      "d = build(flag=True)",
+      "e = build(  # no arguments yet",
+      ")",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    expect(
+      rows(db, "callPassesNothing").map((row) => textAt(source, row[0] ?? "")),
+    ).toEqual(["build()", "build(  # no arguments yet\n)"]);
+  });
+
   it("says which type a parameter and an annotated assignment declare", async () => {
     const db = await factsFor(
       [

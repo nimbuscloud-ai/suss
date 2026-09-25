@@ -35,6 +35,7 @@ callOutsideMethod(r)        the call r is outside every method body
 containsFn(f, g)            g is declared inside f
 call(r, c)                  r is a call whose callee is c
 callArg(r, k, a)            r passes a at position k
+callPassesNothing(r)        r is written with no arguments at all
 imports(x, m, n)            x is the name n imported from module m
 exportsAs(m, n, v)          module m exports v under the name n
 reExports(m, n, m2, n2)     m's n is m2's n2
@@ -189,12 +190,54 @@ a single record settle on the same class today, in the same way that
 difference.
 
 `holdsProperty` is a fact that an adapter records and the rules only
-read. What a value contains, including what its base classes contain,
-is derived as `contains`, so a method a base declares is found on a
-subclass that never overrode it. Deriving those rows into
-`holdsProperty` would turn it into a derived relation, and the on-demand
-rewrite would then fill it only in answer to a demand that nothing
-generates.
+read. Two relations are derived from it, and both walk the base
+classes, so a method a base declares is found on a subclass that never
+overrode it. `declaredProperty` is everything the object's own body or
+literal declares. `contains` is what a read finds off the object and
+off any instance of it: its methods and the classes declared inside
+it, what a constructor or a method stores, and its associations.
+Deriving those rows into `holdsProperty` would turn it into a derived
+relation, and the on-demand rewrite would then fill it only in answer
+to a demand that nothing generates.
+
+## What an instance reads
+
+A value a class body assigns belongs to an instance only until
+something replaces it, and what replaces it is often out of sight:
+
+```python
+class Account(SQLModel):
+    is_admin: bool = False
+
+def admin(account: Account):
+    if not account.is_admin:
+        ...
+```
+
+The library generates the constructor that fills `is_admin` from an
+argument, so the run cannot tell what `account.is_admin` is. A
+property read therefore has two rules. One reads `contains` off every
+object the value refers to, instances included. The other reads
+`declaredProperty` only off `writtenObject`, the object the value is
+written as: an object literal, a class read by its own name, or either
+of those handed back by a call. A receiver, a finder's result and a
+call annotated as returning the class all reach the class by an
+instance step, so they read its methods and none of its body's values.
+
+A construction the run can see is an object of its own, and so is a
+call whose function returns one, as `get_settings()` returns
+`Settings()`. It contains the class's body values when it passes no
+arguments at all. Any argument could fill a field through a constructor
+the run cannot see, a splat included, so the adapter records
+`callPassesNothing` for a call written with empty parentheses and the
+rule stops there. A class whose own constructor stores the field gives
+that store as a second answer, and a single-answer reader takes
+neither.
+
+Only the Python adapter records `callPassesNothing`. A TypeScript field
+initializer is already a store on the class's constructor, which every
+instance reads, and a Ruby class body's constants and instance
+variables belong to the class, never to one of its instances.
 
 The adapter assigns node ids, and the rules only join on them.
 

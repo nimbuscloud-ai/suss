@@ -135,6 +135,7 @@ export type {
 //   containsFn(f, g)            g is declared inside f
 //   call(r, c)                  r is a call whose callee is c
 //   callArg(r, k, a)            r passes a at position k
+//   callPassesNothing(r)        r is written with no arguments at all
 //   imports(x, m, n)            x is the name n imported from module m,
 //                               or the whole of m when n is `*`, or a
 //                               declaration in m's own files, or a
@@ -335,6 +336,19 @@ const STATED_RULES = [
       lit("readsProperty", v("x"), v("o"), v("n")),
       lit("objectOf", v("o"), v("obj")),
       lit("contains", v("obj"), v("n"), v("held")),
+    ],
+    "property read",
+  ),
+  // What the object's own body or literal declares, read off the object the
+  // value is written as. An instance built out of sight may have been given
+  // its own value for a field the class body assigns.
+  rule(
+    "stepsTo",
+    [v("x"), v("held"), VALUE_STEP],
+    [
+      lit("readsProperty", v("x"), v("o"), v("n")),
+      lit("writtenObject", v("o"), v("obj")),
+      lit("declaredProperty", v("obj"), v("n"), v("held")),
     ],
     "property read",
   ),
@@ -680,6 +694,30 @@ const STATED_RULES = [
       lit("objectOfUnder", v("o"), v("c2"), v("obj")),
       lit("objectValue", v("obj")),
       lit("contains", v("obj"), v("n"), v("held")),
+    ],
+    "reached property read off an object",
+  ),
+  // What the object's own body or literal declares, read off a name for
+  // it, as the property read without a context does.
+  rule(
+    "reachesUnder",
+    [v("x"), v("c"), v("held"), v("c"), VALUE_STEP],
+    [
+      lit("context", v("c")),
+      lit("readsProperty", v("x"), v("o"), v("n")),
+      lit("isWrittenAsUnder", v("o"), v("c"), v("obj")),
+      lit("declaredProperty", v("obj"), v("n"), v("held")),
+    ],
+    "property read off an object",
+  ),
+  rule(
+    "reachesUnder",
+    [v("x"), v("c"), v("held"), v("c2"), v("kind")],
+    [
+      lit("reachesUnder", v("x"), v("c"), v("y"), v("c2"), v("kind")),
+      lit("readsProperty", v("y"), v("o"), v("n")),
+      lit("isWrittenAsUnder", v("o"), v("c2"), v("obj")),
+      lit("declaredProperty", v("obj"), v("n"), v("held")),
     ],
     "reached property read off an object",
   ),
@@ -1219,20 +1257,39 @@ const STATED_RULES = [
     [v("x"), v("obj")],
     [lit("givesBack", v("x"), v("obj")), lit("objectValue", v("obj"))],
   ),
-  // A construction is the object it made, and so is any name for it.
-  // The class stays an answer too, so an instance whose site is not in
+  // A construction is the object it made, and so is anything written as
+  // it. The class stays an answer too, so an instance whose site is not in
   // the run still reads what the class stores.
   rule(
     "objectOf",
-    [v("site"), v("site")],
-    [lit("allocates", v("site"), v("c"))],
+    [v("o"), v("obj")],
+    [lit("writtenObject", v("o"), v("obj"))],
+  ),
+
+  // The object a value is written as: a literal, a class read by its own
+  // name, or a construction, through a call to what its function returns.
+  // Unlike `objectOf`, nothing here arrives by an instance step.
+  rule(
+    "writtenObject",
+    [v("x"), v("obj")],
+    [lit("isWrittenAs", v("x"), v("obj")), lit("objectValue", v("obj"))],
   ),
   rule(
-    "objectOf",
-    [v("o"), v("site")],
+    "writtenObject",
+    [v("x"), v("site")],
     [
-      lit("reaches", v("o"), v("site"), VALUE_STEP),
+      lit("isWrittenAs", v("x"), v("site")),
       lit("allocates", v("site"), v("c")),
+    ],
+  ),
+  rule(
+    "writtenObject",
+    [v("x"), v("obj")],
+    [
+      lit("isWrittenAs", v("x"), v("r")),
+      lit("invokes", v("r"), v("f")),
+      lit("returnsValue", v("f"), v("ret")),
+      lit("writtenObject", v("ret"), v("obj")),
     ],
   ),
 
@@ -1341,15 +1398,18 @@ const STATED_RULES = [
     ],
   ),
 
-  // What an object contains, its base class included, so a method the base
-  // declares is found on a subclass that never overrode it. A method both
-  // declare gives two, and the caller decides. This is its own relation
-  // rather than more `holdsProperty`, which stays something an adapter
-  // states and the rules only read.
+  // What an object contains, which a read finds off the object and off any
+  // instance of it: its methods, the classes declared inside it, and what
+  // the rules below add. A method both it and its base declare gives two.
   rule(
     "contains",
-    [v("o"), v("n"), v("held")],
-    [lit("holdsProperty", v("o"), v("n"), v("held"))],
+    [v("o"), v("n"), v("f")],
+    [lit("holdsProperty", v("o"), v("n"), v("f")), lit("func", v("f"))],
+  ),
+  rule(
+    "contains",
+    [v("o"), v("n"), v("c")],
+    [lit("holdsProperty", v("o"), v("n"), v("c")), lit("objectValue", v("c"))],
   ),
   rule(
     "contains",
@@ -1361,6 +1421,26 @@ const STATED_RULES = [
     ],
     BASE_CLASS_RULE,
   ),
+
+  // Everything the object's own body or literal declares, its base class's
+  // included. This is its own relation rather than more `holdsProperty`,
+  // which stays something an adapter states and the rules only read.
+  rule(
+    "declaredProperty",
+    [v("o"), v("n"), v("held")],
+    [lit("holdsProperty", v("o"), v("n"), v("held"))],
+  ),
+  rule(
+    "declaredProperty",
+    [v("cls"), v("n"), v("held")],
+    [
+      lit("extends", v("cls"), v("base")),
+      lit("comesTo", v("base"), v("baseCls")),
+      lit("declaredProperty", v("baseCls"), v("n"), v("held")),
+    ],
+    BASE_CLASS_RULE,
+  ),
+
   // An association is read off an instance as a property, and stating
   // it as `contains` is what puts it on the ancestry rule, so a concern
   // or a base class can be the one that declares it.
@@ -1435,6 +1515,21 @@ const STATED_RULES = [
       lit("contains", v("cls"), v("n"), v("held")),
     ],
     "allocated instance",
+  ),
+  // A construction that passes nothing keeps every field as the class body
+  // assigned it. Any argument could fill a field through a constructor the
+  // run cannot see, and a finder's result was built somewhere else.
+  rule(
+    "contains",
+    [v("site"), v("n"), v("held")],
+    [
+      lit("callPassesNothing", v("site")),
+      lit("call", v("site"), v("c")),
+      lit("comesTo", v("c"), v("cls")),
+      lit("objectValue", v("cls")),
+      lit("declaredProperty", v("cls"), v("n"), v("held")),
+    ],
+    "construction with no arguments",
   ),
 
   // A call that makes one of a class. Every finder a pack declared is

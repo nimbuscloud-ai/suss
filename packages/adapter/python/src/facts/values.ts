@@ -292,6 +292,9 @@ function emitCall(emitter: Emitter, call: PyNode): void {
   if (!emitter.insideMethod) {
     add(emitter, "callOutsideMethod", callKey);
   }
+  if (passesNothing(args)) {
+    add(emitter, "callPassesNothing", callKey);
+  }
 
   for (const argument of callArguments(call)) {
     if (argument.kind === "keyword") {
@@ -359,6 +362,18 @@ export function callArguments(call: PyNode): CallArgument[] {
 
 /** Written in an argument list without taking a position of its own. */
 const NOT_AN_ARGUMENT = new Set(["dictionary_splat", "comment"]);
+
+/**
+ * Whether a call is written with nothing between its parentheses. A splat
+ * counts as an argument here, since it can fill any field of a class the
+ * call builds.
+ */
+function passesNothing(args: PyNode): boolean {
+  return (
+    args.type === "argument_list" &&
+    children(args).every((child) => child.type === "comment")
+  );
+}
 
 /**
  * The key a value joins on. A bare name joins on the name in the scope that
