@@ -34,6 +34,7 @@ import {
   alsoSteps,
   askResolutionUnder,
   type ExplainStats,
+  proofRules,
   queryFacts,
   RESOLUTION_QUESTIONS,
   resolutionProgram,
@@ -85,7 +86,7 @@ const RESOLUTION_PROGRAM: OnDemandRules = resolutionProgram(JS_RULES);
  * `deriveOnDemand` refuses algebras, so the proof pass is exhaustive
  * over the base facts the demand walk extracted.
  */
-const WITNESS_RULES = [...SHARED_RULES, ...JS_RULES];
+const WITNESS_RULES = proofRules([...SHARED_RULES, ...JS_RULES]);
 
 /** Every relation some variant of the program derives, or asks with. */
 const NOT_BASE_FACTS = new Set([

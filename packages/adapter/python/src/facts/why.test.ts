@@ -100,6 +100,40 @@ describe("PythonWhySession", () => {
     expect(explained?.target.file).toBe("helpers.py");
   });
 
+  // Each copy is one more place a class is made, and the rules that
+  // follow a value under the place it was made join every such place
+  // against every value, so the copies make that cost visible.
+  it("derives only what the proof can use when many classes are made", () => {
+    const module = (suffix: string): string =>
+      [
+        `class Report${suffix}:`,
+        "    def publish(self):",
+        "        return True",
+        "",
+        `def show${suffix}():`,
+        `    report = Report${suffix}(title="draft")`,
+        "    report.publish()",
+        "",
+      ].join("\n");
+    fs.writeFileSync(path.join(dir, "reports.py"), module(""));
+    for (let i = 0; i < 100; i++) {
+      fs.writeFileSync(path.join(dir, `reports${i}.py`), module(String(i)));
+    }
+
+    const session = new PythonWhySession({ dir });
+    const value = session.findExpression("reports.py", 7, "report.publish");
+    const explained = value === null ? null : session.explain(value);
+
+    expect(explained?.target).toEqual({
+      name: "publish",
+      file: "reports.py",
+      line: 2,
+    });
+    const stats = explained?.stats;
+    expect(stats).toBeDefined();
+    expect(stats?.derivedFacts).toBeLessThan(3 * (stats?.baseFacts ?? 0));
+  }, 20_000);
+
   it("returns null for a name with no expression on that line", () => {
     fs.writeFileSync(path.join(dir, "app.py"), "x = 1\n");
     const session = new PythonWhySession({ dir });

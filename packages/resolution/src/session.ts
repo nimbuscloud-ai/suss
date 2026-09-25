@@ -12,7 +12,13 @@
  * adapter supplies how a key is said in a sentence and nothing else.
  */
 
-import { Database, evaluate, proofOf, witnesses } from "@suss/datalog";
+import {
+  Database,
+  evaluate,
+  proofOf,
+  rulesDeriving,
+  witnesses,
+} from "@suss/datalog";
 
 import { explainResolutionProof, renderExplanation } from "./explain.js";
 
@@ -62,6 +68,16 @@ export interface ExplainResolvedKeyOptions {
 }
 
 /**
+ * The rules a proof of `resolves` can use. A proof pass runs without
+ * demand, over every fact it was given, and the rules under an
+ * allocation site join each site against every value when nothing
+ * narrows them, so they are left out.
+ */
+export function proofRules(rules: readonly Rule[]): Rule[] {
+  return rulesDeriving(rules, ["resolves"]);
+}
+
+/**
  * Why `key` resolves to what it does: the witness proof, flattened to
  * the chain and rendered. Null when the key resolves to nothing or to
  * more than one function, which the caller says in its own words.
@@ -81,7 +97,7 @@ export function explainResolvedKey(
   }
 
   const started = performance.now();
-  evaluate(proofDb, rules, witnesses);
+  evaluate(proofDb, proofRules(rules), witnesses);
   const evaluateMs = performance.now() - started;
   const derivedFacts =
     proofDb

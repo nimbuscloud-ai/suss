@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { Database } from "@suss/datalog";
 
 import { RESOLUTION_RULES } from "./index.js";
-import { explainResolvedKey } from "./session.js";
+import { explainResolvedKey, proofRules } from "./session.js";
 
 import type { ValueLocation } from "./session.js";
 
@@ -119,5 +119,19 @@ describe("explainResolvedKey", () => {
         displayPath,
       }),
     ).toBeNull();
+  });
+});
+
+describe("proofRules", () => {
+  it("keeps what resolves reads and leaves out the rules under an allocation site", () => {
+    const heads = new Set(
+      proofRules(RESOLUTION_RULES).map((r) => r.head.relation),
+    );
+
+    expect(heads.has("resolves")).toBe(true);
+    expect(heads.has("comesTo")).toBe(true);
+    expect([...heads].filter((relation) => relation.endsWith("Under"))).toEqual(
+      [],
+    );
   });
 });
