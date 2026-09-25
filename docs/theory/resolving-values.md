@@ -272,6 +272,7 @@ a condition on where the walk ended.
 |---|---|
 | `comesTo(x, z)` | at a function or an object literal, having run no call |
 | `givesBack(x, z)` | the same, for a walk that did run a call |
+| `givesBackUnwrapped(x, z)` | at what a call the result walk reached unwraps, which a caller asks before `givesBack` |
 | `isWrittenAs(x, z)` | at anything spelled out in source |
 | `objectOf(o, obj)` | at the object an expression refers to |
 | `paramAt(r, p, z)` | at what one call site put in parameter `p` |

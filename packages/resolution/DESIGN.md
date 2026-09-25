@@ -313,16 +313,25 @@ The two directions do meet one hop further out. `const useOrders = (c)
 => asyncHandler(async (req) => ...)` returns a call to a wrapper, and
 once a walk has run `useOrders("orders")`, the step into
 `asyncHandler(...)` and the unwrapping step to the async arrow both
-count as result walks. So `givesBack` comes back with two functions: the closure
-`asyncHandler` builds around its argument, and the argument itself.
-`givesBackUnwrapped` is the second one alone. It asks `comesTo` of each
-call the result walk arrives at, which stops at the unwrapped argument
-and never runs the wrapper. A caller asks it first and falls back to
-`givesBack`, the same order it asks `comesTo` and `givesBack` in for
-the call itself. Stating the preference as a negation, a call result
-that fires only when the callee does not unwrap, would put `unwraps`
-under a negation inside the recursion that derives it, which the demand
-rewrite refuses.
+count as result walks. So `givesBack` comes back with two functions:
+the closure `asyncHandler` builds around its argument, and the argument
+itself. `givesBackUnwrapped` is the second one alone. It asks `comesTo`
+of each call the result walk arrives at, which stops at the unwrapped
+argument and never runs the wrapper. A caller asks it after `comesTo`
+and before `givesBack`.
+
+Stating the preference as a negation, a call result that fires only
+when the callee does not unwrap, would put `unwraps` under a negation
+inside the recursion that derives it, which the demand rewrite refuses.
+Writing the same rule with `comesTo` as its head, so the preference
+`comesTo` already has over `givesBack` would cover it, breaks a
+factory that hands off to another factory. `createEvent(config, body)`
+returns `makeBatch(config, parse, body)`, and `makeBatch` unwraps both
+`parse` and `body`. `comesTo` of the outer call already settles on
+`body` through `flowsToParam`. Crossing the result step as well adds
+the `parse` callback, and the value then comes to two functions and
+resolves to nothing. Kept as its own relation, the new answer is asked
+only once `comesTo` has declined.
 
 `isWrittenAs` follows the same names to the expression a value is
 written as, whatever kind of expression that is. A GraphQL document is
