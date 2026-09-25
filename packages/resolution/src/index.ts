@@ -46,7 +46,7 @@ export {
   type UnderOutcome,
   underQuestionSpend,
 } from "./program.js";
-export { explainResolvedKey } from "./session.js";
+export { explainResolvedKey, proofRules } from "./session.js";
 export {
   answersByKey,
   placeholderValues,
