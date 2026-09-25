@@ -12,6 +12,8 @@ writtenValue(x)             x is an expression written out in source
 placeholderValue(x)         x is a written value a later write is
                             expected to replace, such as None or nil
 holdsProperty(o, n, x)      object o holds x under the name n
+holdsDefault(cls, n, x)     cls's body gives its field n the value x,
+                            which a constructor may replace
 readsProperty(x, o, n)      x is the expression o.n
 binds(x, y)                 the name x is declared as y
 endsHolding(x, y)           the name x is written more than once and
@@ -35,6 +37,8 @@ callOutsideMethod(r)        the call r is outside every method body
 containsFn(f, g)            g is declared inside f
 call(r, c)                  r is a call whose callee is c
 callArg(r, k, a)            r passes a at position k
+callArgCount(r, k)          r is written with k arguments, and a
+                            splat counts as one
 imports(x, m, n)            x is the name n imported from module m
 exportsAs(m, n, v)          module m exports v under the name n
 reExports(m, n, m2, n2)     m's n is m2's n2
@@ -195,6 +199,51 @@ subclass that never overrode it. Deriving those rows into
 `holdsProperty` would turn it into a derived relation, and the on-demand
 rewrite would then fill it only in answer to a demand that nothing
 generates.
+
+## What an instance reads
+
+A class body can assign two kinds of value, and they reach an instance
+differently:
+
+```python
+class Account(SQLModel):
+    TABLE = "accounts"            # shared by every instance
+    is_admin: bool = False        # where each construction starts
+
+def admin(account: Account):
+    if not account.is_admin:
+        ...
+```
+
+`TABLE` is one value, and every instance reads it however the instance
+was built, so the adapter records it as `holdsProperty` and it is part
+of `contains`. `is_admin` is a field default. The library generates a
+constructor that fills it from an argument, and that constructor is not
+in the run, so the run cannot tell what `account.is_admin` is. The
+adapter records it as `holdsDefault`, which `contains` does not read.
+
+`fieldDefault` walks the ancestry of `holdsDefault` the way `contains`
+walks `holdsProperty`. A construction contains its class's field
+defaults only when `callArgCount` says the call passes no arguments.
+Any argument could fill a field, a splat included, and telling which
+field an argument fills would need the constructor. A finder's result
+is not a construction of this kind, since the library built it
+somewhere else. `objectOf` goes from a call to such a construction when
+the call hands one back, as `get_settings()` hands back `Settings()`,
+because the class it finds for the call doesn't contain the field
+defaults.
+It starts from `callArgCount`, so a project whose adapter records no
+count pays one lookup per returned value and nothing more.
+
+`callArgCount` states how many arguments a call writes. A rule can only
+match on a fact that is present, so "passes nothing" needs a fact of its
+own, and the count is the plainest one that says it. `callArg` and
+`callKeywordArg` list what a call passes and never what it leaves out.
+
+Only the Python adapter records either fact. A TypeScript field
+initializer is already a store on the class's constructor, which every
+instance reads. A Ruby class body's constants and instance variables
+belong to the class and never to one of its instances.
 
 The adapter assigns node ids, and the rules only join on them.
 

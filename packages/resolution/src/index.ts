@@ -110,6 +110,8 @@ export type {
 //   placeholderValue(x)         x is a written value a later write is
 //                               expected to replace, such as None
 //   holdsProperty(o, n, x)      object o holds x under the name n
+//   holdsDefault(cls, n, x)     cls's body gives its field n the value x,
+//                               which a constructor may replace
 //   initializes(cls, f)         f runs when one of cls is made
 //   storesProperty(f, n, x)     f's body writes x to the receiver's n
 //   instanceOf(x, cls)          x is one of cls, and nothing says which
@@ -135,6 +137,8 @@ export type {
 //   containsFn(f, g)            g is declared inside f
 //   call(r, c)                  r is a call whose callee is c
 //   callArg(r, k, a)            r passes a at position k
+//   callArgCount(r, k)          r is written with k arguments, and a
+//                               splat counts as one
 //   imports(x, m, n)            x is the name n imported from module m,
 //                               or the whole of m when n is `*`, or a
 //                               declaration in m's own files, or a
@@ -225,6 +229,9 @@ export const BASE_CLASS_RULE = "base class";
 
 /** A step from an instance to the class it is one of. */
 export const INSTANCE_STEP = constant("instance");
+
+/** The `callArgCount` of a call written with nothing between its parentheses. */
+const NO_ARGUMENTS = constant("0");
 
 /** A step to what running the call x is handed back. */
 export const RESULT_STEP = constant("result");
@@ -1235,6 +1242,18 @@ const STATED_RULES = [
       lit("allocates", v("site"), v("c")),
     ],
   ),
+  // So is one a call hands back when it passes no arguments, as
+  // `get_settings()` hands back `Settings()`, since only the construction
+  // contains the field defaults its class declares.
+  rule(
+    "objectOf",
+    [v("o"), v("site")],
+    [
+      lit("reaches", v("o"), v("site"), RESULT_STEP),
+      lit("callArgCount", v("site"), NO_ARGUMENTS),
+      lit("allocates", v("site"), v("c")),
+    ],
+  ),
 
   // Which calls a function, found by the name the call is written as
   // rather than by resolving every callee in the project. A caller knows
@@ -1435,6 +1454,39 @@ const STATED_RULES = [
       lit("contains", v("cls"), v("n"), v("held")),
     ],
     "allocated instance",
+  ),
+  // A construction written with no arguments keeps every field default its
+  // class declares. Any argument could fill a field through a constructor
+  // the run cannot see, and a finder's result was built somewhere else.
+  rule(
+    "contains",
+    [v("site"), v("n"), v("held")],
+    [
+      lit("callArgCount", v("site"), NO_ARGUMENTS),
+      lit("call", v("site"), v("c")),
+      lit("comesTo", v("c"), v("cls")),
+      lit("objectValue", v("cls")),
+      lit("fieldDefault", v("cls"), v("n"), v("held")),
+    ],
+    "construction with no arguments",
+  ),
+
+  // A field default, its base class's included. It stays out of `contains`,
+  // which every instance reads, because a constructor may replace it.
+  rule(
+    "fieldDefault",
+    [v("cls"), v("n"), v("held")],
+    [lit("holdsDefault", v("cls"), v("n"), v("held"))],
+  ),
+  rule(
+    "fieldDefault",
+    [v("cls"), v("n"), v("held")],
+    [
+      lit("extends", v("cls"), v("base")),
+      lit("comesTo", v("base"), v("baseCls")),
+      lit("fieldDefault", v("baseCls"), v("n"), v("held")),
+    ],
+    BASE_CLASS_RULE,
   ),
 
   // A call that makes one of a class. Every finder a pack declared is

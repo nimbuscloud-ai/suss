@@ -386,6 +386,22 @@ describe("a function that calls a request function", () => {
     expect(boundary(units)).toEqual({ method: "GET", path: "/orders" });
   });
 
+  it("says nothing about a client the class declares as an annotated field, which a constructor may replace", async () => {
+    const units = await unitsIn(
+      [
+        "import httpclient",
+        "",
+        "class Orders:",
+        "    client: httpclient.Session = httpclient.Session()",
+        "",
+        "    def load(self):",
+        '        return self.client.get("/orders")',
+      ].join("\n"),
+    );
+
+    expect(units).toEqual([]);
+  });
+
   it("reads a session call on a client some other method stored", async () => {
     const units = await unitsIn(
       [

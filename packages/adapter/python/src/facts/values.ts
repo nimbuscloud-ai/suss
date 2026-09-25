@@ -292,6 +292,7 @@ function emitCall(emitter: Emitter, call: PyNode): void {
   if (!emitter.insideMethod) {
     add(emitter, "callOutsideMethod", callKey);
   }
+  add(emitter, "callArgCount", callKey, String(writtenArgumentCount(args)));
 
   for (const argument of callArguments(call)) {
     if (argument.kind === "keyword") {
@@ -359,6 +360,17 @@ export function callArguments(call: PyNode): CallArgument[] {
 
 /** Written in an argument list without taking a position of its own. */
 const NOT_AN_ARGUMENT = new Set(["dictionary_splat", "comment"]);
+
+/**
+ * How many arguments a call writes, whatever their kind. `f(x for x in y)`
+ * passes a generator with no list around it, which is one.
+ */
+function writtenArgumentCount(args: PyNode): number {
+  if (args.type !== "argument_list") {
+    return 1;
+  }
+  return children(args).filter((child) => child.type !== "comment").length;
+}
 
 /**
  * The key a value joins on. A bare name joins on the name in the scope that
@@ -1029,6 +1041,16 @@ function writtenBaseName(base: PyNode): string | null {
 const INIT_METHOD = "__init__";
 
 /**
+ * How a class-body assignment is recorded. `TABLE = "orders"` is one
+ * value every instance shares. `name: str = "x"` is a field default in
+ * a dataclass, a pydantic model or an attrs class, and the constructor
+ * those libraries generate lets each construction give its own.
+ */
+function classBodyValueRelation(assignment: PyNode): string {
+  return field(assignment, "type") === null ? "holdsProperty" : "holdsDefault";
+}
+
+/**
  * A class is recorded as an object containing its methods, the same as an
  * object literal, so a method read off an instance resolves to the one the
  * class declares.
@@ -1055,7 +1077,7 @@ function emitClassFacts(emitter: Emitter, cls: PyNode): string {
       if (left !== null && right !== null && left.type === "identifier") {
         add(
           emitter,
-          "holdsProperty",
+          classBodyValueRelation(member),
           classKey,
           left.text,
           valueKey(emitter, right),

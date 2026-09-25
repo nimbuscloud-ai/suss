@@ -249,6 +249,26 @@ describe("python value facts", () => {
     ]);
   });
 
+  it("keeps a plain class attribute apart from an annotated field's default", async () => {
+    const source = [
+      "class Job:",
+      '    table = "orders"',
+      '    region: str = "eu"',
+      "    size: int",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const [cls] = rows(db, "objectValue");
+    const named = (relation: string) =>
+      rows(db, relation).map((row) => [
+        row[0],
+        row[1],
+        textAt(source, row[2] ?? ""),
+      ]);
+    expect(named("holdsProperty")).toEqual([[cls?.[0], "table", '"orders"']]);
+    expect(named("holdsDefault")).toEqual([[cls?.[0], "region", '"eu"']]);
+  });
+
   it("keeps two classes' methods of one name apart", async () => {
     const db = await factsFor(
       [
@@ -489,6 +509,33 @@ describe("python value facts", () => {
     ]);
     const unpacked = await factsFor("build(*rest, last)\n");
     expect(rows(unpacked, "callArg")).toEqual([]);
+  });
+
+  it("counts every argument a call writes, a splat and a generator included", async () => {
+    const source = [
+      "a = build()",
+      "b = build(first, flag=True)",
+      "c = build(**options)",
+      "d = build(item for item in items)",
+      "e = build(  # no arguments yet",
+      ")",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    expect(
+      rows(db, "callArgCount").map((row) => [
+        textAt(source, row[0] ?? "")
+          .split("(")[1]
+          ?.slice(0, 5),
+        row[1],
+      ]),
+    ).toEqual([
+      [")", "0"],
+      ["first", "2"],
+      ["**opt", "1"],
+      ["item ", "1"],
+      ["  # n", "0"],
+    ]);
   });
 
   it("says which type a parameter and an annotated assignment declare", async () => {
