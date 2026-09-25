@@ -166,7 +166,7 @@ to the value `y` in one hop. Two of them, for an argument and a
 property read, are written as `stepsTo` directly. The other fifteen are
 written as `hop`, and each gets a `stepsTo` twin, since a walk under a
 receiver context reads `hop`. The TypeScript adapter adds a sixteenth
-hop, for `.bind`, with its own twin, and that pair is not among the 170.
+hop, for `.bind`, with its own twin, and that pair is not among the 171.
 
 ```ts
 rule(
