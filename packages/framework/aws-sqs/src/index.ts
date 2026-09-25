@@ -15,7 +15,7 @@ import { z } from "zod";
 import {
   climbSyntax,
   readConfiguredCall,
-  receiverTypeMatching,
+  receiverTypesOf,
 } from "@suss/adapter-typescript";
 import { messageBusBinding } from "@suss/behavioral-ir";
 import { configuredCallOption } from "@suss/extractor";
@@ -24,6 +24,7 @@ import { constructedFrom, messageSends, pack } from "@suss/recognize";
 import type {
   ConfiguredCallContext,
   ConfiguredCallSpec,
+  ReceiverType,
 } from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
 import type {
@@ -198,11 +199,13 @@ function isSqsRecordIdentifier(recordExpr: Node): boolean {
  * or to a helper that takes one.
  */
 function isTypedSqsRecord(recordExpr: Node): boolean {
+  return receiverTypesOf(recordExpr).some((type) => isLambdaSqsRecord(type));
+}
+
+function isLambdaSqsRecord(type: ReceiverType): boolean {
   return (
-    receiverTypeMatching(recordExpr, {
-      named: ["SQSRecord"],
-      declaredIn: (filePath) => filePath.includes("/aws-lambda/"),
-    }) !== null
+    type.name === "SQSRecord" &&
+    type.declaredIn.some((filePath) => filePath.includes("/aws-lambda/"))
   );
 }
 

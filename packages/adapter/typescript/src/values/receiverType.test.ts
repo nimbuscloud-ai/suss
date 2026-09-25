@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 
 import { createStrictTestProject } from "@suss/test-project";
 
-import { receiverTypeMatching } from "./receiverType.js";
+import { receiverTypesOf } from "./receiverType.js";
 
-import type { ReceiverTypeQuery } from "./receiverType.js";
+import type { ReceiverType } from "./receiverType.js";
 
 const LIBRARY = `
 export declare class Database {
@@ -16,12 +16,8 @@ export declare class Pool {}
 export declare function connect(): Database & { $client: Pool };
 `;
 
-const fromLibrary: ReceiverTypeQuery = {
-  declaredIn: (filePath) => filePath.includes("/node_modules/ledger-db/"),
-};
-
-/** What the helper says about `db` in `db.select()` in the fixture. */
-function matchOf(source: string, query: ReceiverTypeQuery): string | null {
+/** The types behind `db` in the fixture's `db.select()` call. */
+function typesOf(source: string): ReceiverType[] {
   const project = createStrictTestProject();
   project.createSourceFile(
     "/node_modules/ledger-db/package.json",
@@ -36,17 +32,28 @@ function matchOf(source: string, query: ReceiverTypeQuery): string | null {
   if (callee === undefined) {
     throw new Error("the fixture calls no `.select()`");
   }
-  return receiverTypeMatching(callee.getExpression(), query);
+  return receiverTypesOf(callee.getExpression());
 }
 
-describe("receiverTypeMatching through the checker", () => {
-  it("matches the library's class", () => {
+/** The names of the types the library declares, in the order found. */
+function libraryTypesOf(source: string): string[] {
+  return typesOf(source)
+    .filter((type) =>
+      type.declaredIn.some((filePath) =>
+        filePath.includes("/node_modules/ledger-db/"),
+      ),
+    )
+    .map((type) => type.name);
+}
+
+describe("receiverTypesOf through the checker", () => {
+  it("finds the library's class", () => {
     const source = `
       import { Database } from "ledger-db";
       declare const db: Database;
       db.select();
     `;
-    expect(matchOf(source, fromLibrary)).toBe("Database");
+    expect(libraryTypesOf(source)).toEqual(["Database"]);
   });
 
   it("looks through an intersection a factory returns", () => {
@@ -55,7 +62,7 @@ describe("receiverTypeMatching through the checker", () => {
       const db = connect();
       db.select();
     `;
-    expect(matchOf(source, fromLibrary)).toBe("Database");
+    expect(libraryTypesOf(source)).toContain("Database");
   });
 
   it("looks past undefined and null in a union", () => {
@@ -64,7 +71,7 @@ describe("receiverTypeMatching through the checker", () => {
       declare const db: Database | undefined | null;
       db!.select();
     `;
-    expect(matchOf(source, fromLibrary)).toBe("Database");
+    expect(libraryTypesOf(source)).toEqual(["Database"]);
   });
 
   it("looks through a project's alias of an optional intersection", () => {
@@ -74,17 +81,18 @@ describe("receiverTypeMatching through the checker", () => {
       declare const db: Db;
       db?.select();
     `;
-    expect(matchOf(source, fromLibrary)).toBe("Database");
+    expect(libraryTypesOf(source)).toContain("Database");
   });
 
-  it("follows a project's subclass to the library's base class", () => {
+  it("follows a project's subclass to the library's base classes", () => {
     const source = `
-      import { Database } from "ledger-db";
-      class ReportStore extends Database {}
+      import { Ledger } from "ledger-db";
+      class ReportStore extends Ledger {}
       declare const db: ReportStore;
       db.select();
     `;
-    expect(matchOf(source, fromLibrary)).toBe("Database");
+    expect(typesOf(source)[0]?.name).toBe("ReportStore");
+    expect(libraryTypesOf(source)).toEqual(["Ledger", "Database"]);
   });
 
   it("follows a type parameter to its constraint", () => {
@@ -94,44 +102,31 @@ describe("receiverTypeMatching through the checker", () => {
         db.select();
       }
     `;
-    expect(matchOf(source, fromLibrary)).toBe("Database");
+    expect(libraryTypesOf(source)).toEqual(["Database"]);
   });
 
-  it("requires both the name and the declaring file when both are given", () => {
-    const source = `
-      import { Ledger } from "ledger-db";
-      declare const db: Ledger;
-      db.select();
-    `;
-    expect(matchOf(source, { ...fromLibrary, named: ["Ledger"] })).toBe(
-      "Ledger",
-    );
-    expect(matchOf(source, { ...fromLibrary, named: ["Database"] })).toBe(
-      "Database",
-    );
-    expect(matchOf(source, { ...fromLibrary, named: ["Pool"] })).toBeNull();
-  });
-
-  it("leaves a project's own type alone", () => {
+  it("reports a project's own type as declared in the project", () => {
     const source = `
       class Database { select(): unknown { return null; } }
       declare const db: Database & { tag: string };
       db.select();
     `;
-    expect(matchOf(source, fromLibrary)).toBeNull();
+    expect(libraryTypesOf(source)).toEqual([]);
+    expect(typesOf(source)).toContainEqual({
+      name: "Database",
+      declaredIn: ["/probe.ts"],
+    });
   });
 });
 
-describe("receiverTypeMatching without the library's declarations", () => {
-  const byName: ReceiverTypeQuery = { named: ["OrderStore"] };
-
+describe("receiverTypesOf without the library's declarations", () => {
   it("reads the name written on the declaration", () => {
     const source = `
       interface Env { ORDERS: OrderStore }
       declare const env: Env;
       env.ORDERS.select();
     `;
-    expect(matchOf(source, byName)).toBe("OrderStore");
+    expect(typesOf(source)).toEqual([{ name: "OrderStore", declaredIn: [] }]);
   });
 
   it("reads through a written union, intersection and local alias", () => {
@@ -141,15 +136,17 @@ describe("receiverTypeMatching without the library's declarations", () => {
       declare const env: Env;
       env.ORDERS!.select();
     `;
-    expect(matchOf(source, byName)).toBe("OrderStore");
+    expect(typesOf(source).map((type) => type.name)).toEqual([
+      "Orders",
+      "OrderStore",
+    ]);
   });
 
-  it("gives no answer to a query that asks where the type is declared", () => {
+  it("finds nothing when no type is written", () => {
     const source = `
-      interface Env { ORDERS: OrderStore }
-      declare const env: Env;
+      declare const env: { ORDERS };
       env.ORDERS.select();
     `;
-    expect(matchOf(source, { ...byName, ...fromLibrary })).toBeNull();
+    expect(typesOf(source)).toEqual([]);
   });
 });

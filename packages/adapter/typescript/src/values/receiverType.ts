@@ -1,16 +1,16 @@
 /**
- * Whether a node's type is a library's type, for a pack that recognizes
- * a call by what its receiver is rather than by what it is called.
+ * The named types behind a node's type, for a pack that recognizes a
+ * call by what its receiver is rather than by what it is called.
  *
  * A library rarely hands back its type bare. A client factory can return
  * the library's class joined with an extra field (`Db & { $client: Pool }`),
  * and a project can declare the client as optional (`Db | undefined`), alias
  * it, subclass it, or pass it through a type parameter. A union or an
  * intersection has no symbol of its own, so this looks through each of
- * those to the named types underneath.
+ * those to the named types underneath, and the pack tests each one.
  *
- * When the library's declarations are not installed and the checker
- * cannot resolve the type, a query by name reads the written type.
+ * When the checker cannot resolve the type because the library is not
+ * installed, the names come from the written type, with no declaring file.
  */
 
 import { Node } from "ts-morph";
@@ -19,65 +19,49 @@ import { peelSyntax } from "../walk/unwrap.js";
 
 import type { Symbol as TsSymbol, Type } from "ts-morph";
 
-/** What the library's type looks like. A type must pass every test given. */
-export interface ReceiverTypeQuery {
-  /** Accepts the path of a file that declares the type. */
-  declaredIn?: (filePath: string) => boolean;
-  /** The names the type may have. */
-  named?: readonly string[];
+/** One named type a receiver is, and the files that declare it. */
+export interface ReceiverType {
+  name: string;
+  declaredIn: readonly string[];
 }
 
-/**
- * The name of the first type behind the node's type that the query
- * accepts, or null when none does.
- */
-export function receiverTypeMatching(
-  node: Node,
-  query: ReceiverTypeQuery,
-): string | null {
+/** Every named type the node's type is, nearest first. */
+export function receiverTypesOf(node: Node): ReceiverType[] {
   const type = node.getType();
   if (type.isAny()) {
-    return writtenTypeMatching(node, query);
+    return writtenTypesOf(node);
   }
-  return checkedTypeMatching(type, query, new Set());
+  const found: ReceiverType[] = [];
+  collectCheckedTypes(type, found, new Set());
+  return found;
 }
 
-function checkedTypeMatching(
+function collectCheckedTypes(
   type: Type,
-  query: ReceiverTypeQuery,
+  found: ReceiverType[],
   seen: Set<Type>,
-): string | null {
+): void {
   if (seen.has(type)) {
-    return null;
+    return;
   }
   seen.add(type);
   for (const symbol of [type.getAliasSymbol(), type.getSymbol()]) {
-    if (symbol !== undefined && symbolMatches(symbol, query)) {
-      return symbol.getName();
+    if (symbol !== undefined) {
+      found.push(receiverTypeOf(symbol));
     }
   }
   for (const inner of typesBehind(type)) {
-    const found = checkedTypeMatching(inner, query, seen);
-    if (found !== null) {
-      return found;
-    }
+    collectCheckedTypes(inner, found, seen);
   }
-  return null;
 }
 
-function symbolMatches(symbol: TsSymbol, query: ReceiverTypeQuery): boolean {
-  if (query.named !== undefined && !query.named.includes(symbol.getName())) {
-    return false;
-  }
-  const { declaredIn } = query;
-  if (declaredIn === undefined) {
-    return true;
-  }
-  return symbol
-    .getDeclarations()
-    .some((declaration) =>
-      declaredIn(declaration.getSourceFile().getFilePath()),
-    );
+function receiverTypeOf(symbol: TsSymbol): ReceiverType {
+  return {
+    name: symbol.getName(),
+    declaredIn: symbol
+      .getDeclarations()
+      .map((declaration) => declaration.getSourceFile().getFilePath()),
+  };
 }
 
 /** The types a value of this type is also one of. */
@@ -114,27 +98,10 @@ function awaitedTypes(type: Type): Type[] {
     : [];
 }
 
-/**
- * A declaration's written type can only be tested by name, so a query
- * that also asks where the type is declared gets no answer here.
- */
-function writtenTypeMatching(
-  node: Node,
-  query: ReceiverTypeQuery,
-): string | null {
-  const { named } = query;
-  if (named === undefined || query.declaredIn !== undefined) {
-    return null;
-  }
-  for (const typeNode of writtenTypeNodesOf(node)) {
-    const found = namesWritten(typeNode, new Set()).find((name) =>
-      named.includes(name),
-    );
-    if (found !== undefined) {
-      return found;
-    }
-  }
-  return null;
+function writtenTypesOf(node: Node): ReceiverType[] {
+  return writtenTypeNodesOf(node)
+    .flatMap((typeNode) => namesWritten(typeNode, new Set()))
+    .map((name) => ({ name, declaredIn: [] }));
 }
 
 function writtenTypeNodesOf(node: Node): Node[] {

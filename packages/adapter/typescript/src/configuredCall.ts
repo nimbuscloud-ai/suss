@@ -17,7 +17,7 @@
 import { type CallExpression, Node, type SourceFile } from "ts-morph";
 
 import { matchingImportDeclarations } from "./discovery/importScan.js";
-import { receiverTypeMatching } from "./values/receiverType.js";
+import { receiverTypesOf } from "./values/receiverType.js";
 
 import type { configuredCallOption, EffectArg } from "@suss/extractor";
 import type { z } from "zod";
@@ -79,8 +79,8 @@ export function readConfiguredCall(
     return null;
   }
 
-  const receiver = callee.getExpression();
-  if (receiverTypeMatching(receiver, { named: [spec.receiver] }) === null) {
+  const receiverTypes = receiverTypesOf(callee.getExpression());
+  if (!receiverTypes.some((type) => type.name === spec.receiver)) {
     return null;
   }
 

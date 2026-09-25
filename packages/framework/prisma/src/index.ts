@@ -20,7 +20,7 @@ import {
 } from "ts-morph";
 import { z } from "zod";
 
-import { receiverTypeMatching } from "@suss/adapter-typescript";
+import { receiverTypesOf } from "@suss/adapter-typescript";
 import { storageBinding } from "@suss/behavioral-ir";
 import { scopeOption, storageSystemOption } from "@suss/extractor";
 import {
@@ -30,6 +30,7 @@ import {
   sqlStatements,
 } from "@suss/recognize";
 
+import type { ReceiverType } from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
 import type {
   EffectArg,
@@ -454,9 +455,11 @@ function fieldsOfRows(read: { rows: ObjectArg[]; written: boolean }): string[] {
  * type may be declared.
  */
 function isPrismaClientReceiver(node: Node): boolean {
-  return (
-    receiverTypeMatching(node, { declaredIn: isPrismaClientPath }) !== null
-  );
+  return receiverTypesOf(node).some((type) => declaredByPrisma(type));
+}
+
+function declaredByPrisma(type: ReceiverType): boolean {
+  return type.declaredIn.some((filePath) => isPrismaClientPath(filePath));
 }
 
 // Prisma copies the schema next to the generated client, wherever the

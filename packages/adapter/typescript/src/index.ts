@@ -88,8 +88,8 @@ export { createTsSubUnitContext } from "./subUnitContext.js";
 export { workspaceRootFor } from "./summaryIdentity.js";
 export { findTerminals } from "./terminals/index.js";
 export {
-  type ReceiverTypeQuery,
-  receiverTypeMatching,
+  type ReceiverType,
+  receiverTypesOf,
 } from "./values/receiverType.js";
 export {
   ADAPTER_VERSION,

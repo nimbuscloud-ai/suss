@@ -60,7 +60,7 @@ The entry points in the TypeScript adapter are these:
 - `resolve/functionBehind.ts`, for which function a declaration or an identifier refers to
 - `walk/unwrap.ts`, for casts and parentheses
 - `discovery/importScan.ts`, for imports
-- `values/receiverType.ts` (`receiverTypeMatching`), for whether a receiver's type is a library's type. It looks through unions, intersections, aliases, subclasses and type parameters, which a pack calling `getSymbol()` on the type itself misses.
+- `values/receiverType.ts` (`receiverTypesOf`), for whether a receiver's type is a library's type. It lists the named types behind a union, an intersection, an alias, a subclass or a type parameter, each with the files that declare it, and the pack tests them. A pack calling `getSymbol()` on the type itself misses all of those.
 
 In the Python and Ruby adapters the entry points are `values/evaluator.ts` (`evaluatedValue`, `stringValueOf`), `facts/resolve.ts` (`writtenValueOf`, `originsOf`) and the literal readers in `ast.ts`. A pack uses what its adapter exports. When the helper a pack needs is not exported, export it from the adapter's index instead of copying it.
 

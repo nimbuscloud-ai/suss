@@ -19,7 +19,7 @@ import {
   propertiesOf,
   propertyNameOf,
   propertyOf,
-  receiverTypeMatching,
+  receiverTypesOf,
   stringValueOf,
   writtenNodeOf,
 } from "@suss/adapter-typescript";
@@ -33,7 +33,7 @@ import {
   sqlStatements,
 } from "@suss/recognize";
 
-import type { ResolutionStore } from "@suss/adapter-typescript";
+import type { ReceiverType, ResolutionStore } from "@suss/adapter-typescript";
 import type { InvocationRecognizer, PatternPack } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 import type { SqlStatements } from "@suss/recognize";
@@ -331,11 +331,13 @@ function collectChainCalls(
  * to be declared in a file under a `drizzle-orm` directory.
  */
 function isDrizzleReceiver(node: Node): boolean {
-  return receiverTypeMatching(node, { declaredIn: declaredByDrizzle }) !== null;
+  return receiverTypesOf(node).some((type) => declaredByDrizzle(type));
 }
 
-function declaredByDrizzle(filePath: string): boolean {
-  return filePath.includes(`/${DRIZZLE_PACKAGE}/`);
+function declaredByDrizzle(type: ReceiverType): boolean {
+  return type.declaredIn.some((filePath) =>
+    filePath.includes(`/${DRIZZLE_PACKAGE}/`),
+  );
 }
 
 /**
