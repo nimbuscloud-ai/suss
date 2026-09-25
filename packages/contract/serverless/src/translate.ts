@@ -40,15 +40,18 @@ export interface TranslatedService {
   unread: UnreadWiring[];
 }
 
-// The CloudFormation reader already uses these two names for an API
-// whose routes point at no API resource, so a route from either
-// manifest language lands on the same one.
+// The framework deploys one API of each kind per service. Each event
+// states which one, because a SAM event that states none goes to the
+// API that SAM itself would create.
 const IMPLICIT_HTTP_API = "HttpApi";
 const IMPLICIT_REST_API = "RestApi";
 
-const IMPLICIT_API_FOR_EVENT: Record<string, string> = {
-  HttpApi: IMPLICIT_HTTP_API,
-  Api: IMPLICIT_REST_API,
+const IMPLICIT_API_FOR_EVENT: Record<
+  string,
+  { apiId: string; idProperty: string }
+> = {
+  HttpApi: { apiId: IMPLICIT_HTTP_API, idProperty: "ApiId" },
+  Api: { apiId: IMPLICIT_REST_API, idProperty: "RestApiId" },
 };
 
 const IMPLICIT_API_TYPE: Record<string, string> = {
@@ -113,11 +116,20 @@ export function translateService(
           unread.push({ functionName, kind, reason: translated.reason });
           continue;
         }
-        events[`${kind}${index}`] = translated.event;
         const implicitApi = IMPLICIT_API_FOR_EVENT[translated.event.Type];
-        if (implicitApi !== undefined) {
-          implicitApis.add(implicitApi);
+        if (implicitApi === undefined) {
+          events[`${kind}${index}`] = translated.event;
+          continue;
         }
+
+        implicitApis.add(implicitApi.apiId);
+        events[`${kind}${index}`] = {
+          ...translated.event,
+          Properties: {
+            ...translated.event.Properties,
+            [implicitApi.idProperty]: { Ref: implicitApi.apiId },
+          },
+        };
       }
     }
 

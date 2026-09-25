@@ -29,6 +29,7 @@ describe("cloudFormationToSummaries — SAM handler pointer", () => {
             Confirm: {
               Type: "HttpApi",
               Properties: {
+                ApiId: { Ref: "HttpGateway" },
                 Method: "POST",
                 Path: "/tokens/{tokenId}/confirm",
               },
@@ -43,7 +44,11 @@ describe("cloudFormationToSummaries — SAM handler pointer", () => {
           Events: {
             Ping: {
               Type: "Api",
-              Properties: { Method: "GET", Path: "/ping" },
+              Properties: {
+                RestApiId: { Ref: "RestGateway" },
+                Method: "GET",
+                Path: "/ping",
+              },
             },
           },
         },
