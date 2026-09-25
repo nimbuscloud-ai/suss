@@ -30,7 +30,9 @@ paramNamed(f, n, p)         p is f's parameter called n
 extends(c, b)               class c is written as extending b
 initializes(cls, f)         f runs when one of cls is made
 storesProperty(f, n, x)     f's body writes x to the receiver's n
-instanceOf(x, cls)          x is one of cls, and nothing says which
+instanceOf(x, cls)          x is one of cls, and nothing says which:
+                            a method's receiver, or a name the source
+                            declares with the type cls
 returnsValue(f, v)          f returns v
 bodyCalls(f, c)             f's body calls c
 callOutsideMethod(r)        the call r is outside every method body
@@ -50,9 +52,6 @@ readsKeyed(site, o, x)      site reads the entry of o at the value of
                             out. A written key is a readsProperty
 environmentObject(w)        w is written as the object a pack calls
                             the process environment
-statesType(x, t)            the source declares the name x with the
-                            type written at t. No hop reads it, and
-                            "A type the callers declare" says why
 ```
 
 `declaresName` is the only fact an adapter records after asking these
@@ -544,31 +543,25 @@ def get(*, session, order_id):
 ```
 
 A recognizer that reads the annotation at the call site finds nothing
-on `get`. The adapter records `statesType(x, t)` for every annotated
+on `get`. The adapter records `instanceOf(x, t)` for every annotated
 parameter and every annotated assignment. `x` is the key of the name,
 and `t` is the key of the name or expression the annotation is written
-as. `typedAs` gives a value the type its own declaration states, and
-the type of anything the value reaches by value steps. The argument
-step is one of those, so a chain of unannotated helpers gets the type
-the outermost caller declared. A name declared as a typed one, a
-fallback with a typed branch, and a reassigned name that ends holding
-a typed value get it the same way. `typedAs` has no walk of its own.
-It is a stopping condition on `reaches`, like `comesTo` and
-`isWrittenAs`.
+as. An unannotated helper reaches that class through the argument step,
+the same way it reaches any other value its callers pass, so a method
+called on its parameter resolves to the one the class declares. "What
+an instance reads" says why a field default does not come with it.
 
-An annotation says what `instanceOf` says, but the adapter records it
-as `statesType`, because `instanceOf` is a hop. Anything that reaches a
-class by an instance step reads what the class body assigns as its own
-properties.
-That is right for a receiver calling its methods, and for a settings
-object built with no arguments, whose fields are the class-body
-defaults. It is wrong for a parameter, which a caller or a framework
-built with arguments the run cannot see. Stated as `instanceOf`, a
-parameter `current_user: User` whose model declares
-`is_superuser: bool = False` reads `current_user.is_superuser` as
-`False` in every handler that takes one. So the declaration stays a
-fact no hop reads until the rules can give a value built elsewhere the
-class's methods without its field values.
+`typedAs` gives a value the class its own declaration states, and the
+class of anything the value reaches by value steps. The argument step
+is one of those, so a chain of unannotated helpers gets the type the
+outermost caller declared. A name declared as a typed one, a fallback
+with a typed branch, and a reassigned name that ends holding a typed
+value get it the same way. `typedAs` has no walk of its own. It is a
+stopping condition on `reaches`, like `comesTo` and `isWrittenAs`. It
+stops at the declaration rather than at every class an instance step
+reaches, because a caller that constructs its argument reaches the
+class by an instance step too, and that class has no import to compare
+against a declared one.
 
 `wantedType` seeds the question, and the answers come back in four
 relations: the types (`wantedTypedAs`), every argument passed directly

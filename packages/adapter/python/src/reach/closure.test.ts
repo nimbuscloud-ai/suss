@@ -645,7 +645,7 @@ describe("the spellings a callee can have", () => {
       ["kept", summaryIdentifier(load)],
       ["named", summaryIdentifier(load)],
       ["later", summaryIdentifier(load)],
-      ["typed.on_get", undefined],
+      ["typed.on_get", summaryIdentifier(load)],
       ["again", undefined],
       ["load.cache_clear", undefined],
     ]);
