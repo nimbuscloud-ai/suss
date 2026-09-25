@@ -66,6 +66,40 @@ export const FACT_CONTRACT_CASES: readonly ContractCase[] = [
     },
   },
   {
+    name: "a function calling its parameter",
+    requires: "a function whose body calls the parameter it was passed",
+    // `bodyCalls` keys a callee the way `call` does, and a factory unwraps
+    // when the callee its closure calls is its own parameter.
+    check: (facts) => {
+      const [fn, call] = facts("makesCall")[0] ?? [];
+      if (fn === undefined || call === undefined) {
+        return "no function says which calls its body makes, so a call is never placed in the body it is written in";
+      }
+      const callees = facts("call")
+        .filter((row) => row[0] === call)
+        .map((row) => row[1]);
+      if (callees.length === 0) {
+        return "the call a body makes is keyed differently from the call itself, so nothing gives its callee";
+      }
+      const called = new Set(
+        facts("bodyCalls")
+          .filter((row) => row[0] === fn)
+          .map((row) => row[1]),
+      );
+      const shared = callees.filter((callee) => called.has(callee));
+      if (shared.length === 0) {
+        return "bodyCalls keys a callee differently from call, so what a body calls is not followed the way a call's callee is";
+      }
+      const param = facts("paramOf")[0]?.[2];
+      const refersToParam = (callee: string | undefined): boolean =>
+        callee === param ||
+        facts("binds").some((row) => row[0] === callee && row[1] === param);
+      return shared.some(refersToParam)
+        ? null
+        : "the callee is neither the parameter nor bound to it, so a factory calling its parameter never unwraps";
+    },
+  },
+  {
     name: "a name bound to a call",
     requires: "a module-level name assigned the result of a call",
     check: (facts) => {

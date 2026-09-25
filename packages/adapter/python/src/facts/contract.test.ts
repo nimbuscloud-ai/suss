@@ -28,6 +28,9 @@ const SOURCES: Record<string, CaseFiles> = {
   "a name read inside a function": {
     "f.py": ["def handler(order):", "    return order", ""].join("\n"),
   },
+  "a function calling its parameter": {
+    "f.py": ["def guard(fn):", "    fn(1)", ""].join("\n"),
+  },
   "a name bound to a call": { "f.py": "registry = build()\n" },
   "a written-out sequence": { "f.py": "items = [first, second]\n" },
   "a module exporting a name": { "f.py": "def build():\n    pass\n" },

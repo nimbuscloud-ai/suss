@@ -24,6 +24,9 @@ function conformingFacts(): Database {
   db.add("imports", ["f.py#renamed", "source.py", "value"]);
   db.add("fallbackBranch", ["or:1", "f#cached"]);
   db.add("fallbackBranch", ["or:1", "call:1"]);
+  db.add("call", ["call:2", "fn:a#loader"]);
+  db.add("makesCall", ["fn:a", "call:2"]);
+  db.add("bodyCalls", ["fn:a", "fn:a#loader"]);
   return db;
 }
 
@@ -97,7 +100,10 @@ describe("the fact contract", () => {
   it("catches a construction written down as something other than a call", async () => {
     const failures = await checkFactContract(everyCase, () => {
       const db = conformingFacts();
-      db.retract("call", [["call:1", "f#build"]]);
+      db.retract("call", [
+        ["call:1", "f#build"],
+        ["call:2", "fn:a#loader"],
+      ]);
       return db;
     });
     expect(failures.map((f) => f.problem).join(" ")).toContain(
@@ -174,6 +180,60 @@ describe("the fact contract", () => {
       const db = conformingFacts();
       db.retract("imports", [["f.py#renamed", "source.py", "value"]]);
       db.add("binds", ["f.py#Order", "source.py:0-12"]);
+      return db;
+    });
+    expect(failures).toEqual([]);
+  });
+
+  it.each([
+    {
+      broken: "a body that says nothing about the calls it makes",
+      edit: (db: Database) => db.retract("makesCall", [["fn:a", "call:2"]]),
+      problem: "never placed in the body",
+    },
+    {
+      broken: "a body call keyed apart from the call",
+      edit: (db: Database) => {
+        db.retract("makesCall", [["fn:a", "call:2"]]);
+        db.add("makesCall", ["fn:a", "f:3-8"]);
+      },
+      problem: "nothing gives its callee",
+    },
+    {
+      broken: "a body that states the call node rather than its callee",
+      edit: (db: Database) => {
+        db.retract("bodyCalls", [["fn:a", "fn:a#loader"]]);
+        db.add("bodyCalls", ["fn:a", "call:2"]);
+      },
+      problem: "bodyCalls keys a callee differently from call",
+    },
+    {
+      broken: "a callee that never reaches the parameter",
+      edit: (db: Database) => {
+        db.retract("call", [["call:2", "fn:a#loader"]]);
+        db.retract("bodyCalls", [["fn:a", "fn:a#loader"]]);
+        db.add("call", ["call:2", "f#other"]);
+        db.add("bodyCalls", ["fn:a", "f#other"]);
+      },
+      problem: "never unwraps",
+    },
+  ])("catches $broken", async ({ edit, problem }) => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      edit(db);
+      return db;
+    });
+    expect(failures.map((f) => f.problem).join(" ")).toContain(problem);
+  });
+
+  it("accepts a callee linked to its parameter by binds rather than keyed as it", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("call", [["call:2", "fn:a#loader"]]);
+      db.retract("bodyCalls", [["fn:a", "fn:a#loader"]]);
+      db.add("call", ["call:2", "read:2"]);
+      db.add("bodyCalls", ["fn:a", "read:2"]);
+      db.add("binds", ["read:2", "fn:a#loader"]);
       return db;
     });
     expect(failures).toEqual([]);

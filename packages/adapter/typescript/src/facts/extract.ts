@@ -1457,6 +1457,7 @@ function recordBodyCalls(
     // second to see which property it was.
     if (Node.isIdentifier(callee) || Node.isPropertyAccessExpression(callee)) {
       fact(db, "bodyCalls", fnId, emitValue(db, table, callee));
+      fact(db, "makesCall", fnId, nodeId(call));
     }
     emitNamedCall(db, table, call);
   }
