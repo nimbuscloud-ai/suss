@@ -291,8 +291,8 @@ function buildRestApiConfigs(
     }
   }
 
-  // A Method whose RestApiId does not resolve still gets a summary, under
-  // an API with the made-up id "RestApi".
+  // A Method or SAM event whose RestApiId does not resolve still gets a
+  // summary, under an API with the made-up id "RestApi".
   const methodsByApi = new Map<string, string[]>();
   const orphan: string[] = [];
   for (const [logicalId, resource] of Object.entries(resources)) {
@@ -309,22 +309,48 @@ function buildRestApiConfigs(
     }
   }
 
+  const samEvents = readSamRouteEvents("Api", restApis, resources, sourceFile);
   const configs: RestApiConfig[] = [];
 
   // An API whose routes all come from SAM Events has no Methods, so every
   // RestApi gets a config.
   for (const [apiId, api] of restApis) {
-    const methodIds = methodsByApi.get(apiId) ?? [];
     configs.push(
-      buildRestApiConfig(apiId, api, methodIds, resources, sourceFile),
+      buildRestApiConfig(
+        apiId,
+        api,
+        methodsByApi.get(apiId) ?? [],
+        samEvents.byApi.get(apiId) ?? [],
+        resources,
+        sourceFile,
+      ),
     );
   }
 
-  if (orphan.length > 0) {
+  const implicitApiId = samImplicitApiId("Api");
+  if (!restApis.has(implicitApiId)) {
     configs.push(
-      buildRestApiConfig("RestApi", undefined, orphan, resources, sourceFile),
+      buildRestApiConfig(
+        implicitApiId,
+        undefined,
+        [],
+        samEvents.byApi.get(implicitApiId) ?? [],
+        resources,
+        sourceFile,
+      ),
     );
   }
+
+  configs.push(
+    buildRestApiConfig(
+      "RestApi",
+      undefined,
+      orphan,
+      samEvents.unresolved,
+      resources,
+      sourceFile,
+    ),
+  );
 
   return configs.filter((c) => c.endpoints.length > 0);
 }
@@ -333,6 +359,7 @@ function buildRestApiConfig(
   apiId: string,
   api: CloudFormationResource | undefined,
   methodIds: string[],
+  samEvents: SamRouteEvent[],
   resources: Record<string, CloudFormationResource>,
   sourceFile: string,
 ): RestApiConfig {
@@ -426,7 +453,7 @@ function buildRestApiConfig(
     endpoints.push(endpoint);
   }
 
-  endpoints.push(...readSamApiEvents(apiId, resources, sourceFile));
+  endpoints.push(...samEvents.map(samRestEndpoint));
 
   const config: RestApiConfig = {
     id: apiId,
@@ -607,20 +634,46 @@ function buildHttpApiConfigs(
     }
   }
 
+  const samEvents = readSamRouteEvents("HttpApi", apis, resources, sourceFile);
   const configs: HttpApiConfig[] = [];
 
   for (const [apiId, api] of apis) {
-    const routeIds = routesByApi.get(apiId) ?? [];
     configs.push(
-      buildHttpApiConfig(apiId, api, routeIds, resources, sourceFile),
+      buildHttpApiConfig(
+        apiId,
+        api,
+        routesByApi.get(apiId) ?? [],
+        samEvents.byApi.get(apiId) ?? [],
+        resources,
+        sourceFile,
+      ),
     );
   }
 
-  if (orphan.length > 0) {
+  const implicitApiId = samImplicitApiId("HttpApi");
+  if (!apis.has(implicitApiId)) {
     configs.push(
-      buildHttpApiConfig("HttpApi", undefined, orphan, resources, sourceFile),
+      buildHttpApiConfig(
+        implicitApiId,
+        undefined,
+        [],
+        samEvents.byApi.get(implicitApiId) ?? [],
+        resources,
+        sourceFile,
+      ),
     );
   }
+
+  configs.push(
+    buildHttpApiConfig(
+      "HttpApi",
+      undefined,
+      orphan,
+      samEvents.unresolved,
+      resources,
+      sourceFile,
+    ),
+  );
 
   return configs.filter((c) => c.routes.length > 0);
 }
@@ -629,6 +682,7 @@ function buildHttpApiConfig(
   apiId: string,
   api: CloudFormationResource | undefined,
   routeIds: string[],
+  samEvents: SamRouteEvent[],
   resources: Record<string, CloudFormationResource>,
   sourceFile: string,
 ): HttpApiConfig {
@@ -672,7 +726,7 @@ function buildHttpApiConfig(
     routes.push(route);
   }
 
-  routes.push(...readSamHttpApiEvents(apiId, resources, sourceFile));
+  routes.push(...samEvents.map(samHttpRoute));
 
   const config: HttpApiConfig = {
     id: apiId,
@@ -819,12 +873,47 @@ function readHandlerPointer(
   };
 }
 
-function readSamApiEvents(
-  apiId: string,
+interface SamRouteEvent {
+  method: string;
+  path: string;
+  wiring: Pick<
+    HttpRouteConfig & RestEndpointConfig,
+    "integration" | "name" | "implementingHandler" | "configRef"
+  >;
+}
+
+interface SamRouteEventsByApi {
+  /** Keyed by a declared API's logical id, or by SAM's implicit API's. */
+  byApi: Map<string, SamRouteEvent[]>;
+  /** Events whose API id does not match any API in this template. */
+  unresolved: SamRouteEvent[];
+}
+
+type SamRouteEventType = "Api" | "HttpApi";
+
+// An event that states no API id goes to the API that SAM creates for
+// it, under a logical id SAM chooses.
+const SAM_ROUTE_EVENT_API: Record<
+  SamRouteEventType,
+  { idProperty: string; implicitApiId: string }
+> = {
+  Api: { idProperty: "RestApiId", implicitApiId: "ServerlessRestApi" },
+  HttpApi: { idProperty: "ApiId", implicitApiId: "ServerlessHttpApi" },
+};
+
+function samImplicitApiId(type: SamRouteEventType): string {
+  return SAM_ROUTE_EVENT_API[type].implicitApiId;
+}
+
+function readSamRouteEvents(
+  type: SamRouteEventType,
+  declaredApis: ReadonlyMap<string, CloudFormationResource>,
   resources: Record<string, CloudFormationResource>,
   sourceFile: string,
-): RestEndpointConfig[] {
-  const out: RestEndpointConfig[] = [];
+): SamRouteEventsByApi {
+  const { idProperty, implicitApiId } = SAM_ROUTE_EVENT_API[type];
+  const byApi = new Map<string, SamRouteEvent[]>();
+  const unresolved: SamRouteEvent[] = [];
   for (const [fnId, resource] of Object.entries(resources)) {
     if (resource.Type !== "AWS::Serverless::Function") {
       continue;
@@ -847,107 +936,69 @@ function readSamApiEvents(
         Type?: unknown;
         Properties?: Record<string, unknown>;
       };
-      if (event.Type !== "Api") {
+      if (event.Type !== type) {
         continue;
       }
       const props = event.Properties ?? {};
-      const restApiRef = refTarget(props.RestApiId);
-      if (restApiRef !== null && restApiRef !== apiId) {
-        continue;
-      }
-      // An event with no RestApiId belongs to SAM's implicit API. Every
-      // config here is "RestApi" or a declared API, so this never skips one.
-      if (restApiRef === null && apiId !== "RestApi" && !resources[apiId]) {
-        continue;
-      }
       const method = wildcardOrMethod(plainString(props.Method) ?? "");
       const path = plainString(props.Path) ?? "";
       if (method === null || path === "") {
         continue;
       }
-      const implementingHandler = readHandlerPointer(fnId, resource);
-      out.push({
+      const routeEvent: SamRouteEvent = {
         method,
         path,
-        integration: {
-          type: "lambda-proxy",
-          statusCodes: [],
-          configRef: { file: sourceFile, pointer: `Resources/${fnId}` },
-        },
-        name: `${fnId}:${eventId}`,
-        ...(implementingHandler !== undefined ? { implementingHandler } : {}),
-        configRef: {
-          file: sourceFile,
-          pointer: `Resources/${fnId}/Events/${eventId}`,
-        },
-      });
+        wiring: samEventWiring(fnId, eventId, resource, sourceFile),
+      };
+
+      const apiId =
+        props[idProperty] === undefined
+          ? implicitApiId
+          : refTarget(props[idProperty]);
+      if (
+        apiId === null ||
+        (apiId !== implicitApiId && !declaredApis.has(apiId))
+      ) {
+        unresolved.push(routeEvent);
+        continue;
+      }
+
+      const list = byApi.get(apiId) ?? [];
+      list.push(routeEvent);
+      byApi.set(apiId, list);
     }
   }
-  return out;
+  return { byApi, unresolved };
 }
 
-function readSamHttpApiEvents(
-  apiId: string,
-  resources: Record<string, CloudFormationResource>,
+function samEventWiring(
+  fnId: string,
+  eventId: string,
+  resource: CloudFormationResource,
   sourceFile: string,
-): HttpRouteConfig[] {
-  const out: HttpRouteConfig[] = [];
-  for (const [fnId, resource] of Object.entries(resources)) {
-    if (resource.Type !== "AWS::Serverless::Function") {
-      continue;
-    }
-    const events = resource.Properties?.Events;
-    if (
-      events === null ||
-      typeof events !== "object" ||
-      Array.isArray(events)
-    ) {
-      continue;
-    }
-    for (const [eventId, raw] of Object.entries(
-      events as Record<string, unknown>,
-    )) {
-      if (raw === null || typeof raw !== "object") {
-        continue;
-      }
-      const event = raw as {
-        Type?: unknown;
-        Properties?: Record<string, unknown>;
-      };
-      if (event.Type !== "HttpApi") {
-        continue;
-      }
-      const props = event.Properties ?? {};
-      const apiRef = refTarget(props.ApiId);
-      if (apiRef !== null && apiRef !== apiId) {
-        continue;
-      }
-      if (apiRef === null && apiId !== "HttpApi" && !resources[apiId]) {
-        continue;
-      }
-      const method = wildcardOrMethod(plainString(props.Method) ?? "");
-      const pathProp = plainString(props.Path) ?? "";
-      if (method === null || pathProp === "") {
-        continue;
-      }
-      const implementingHandler = readHandlerPointer(fnId, resource);
-      out.push({
-        routeKey: `${method} ${pathProp}`,
-        integration: {
-          type: "lambda-proxy",
-          statusCodes: [],
-          configRef: { file: sourceFile, pointer: `Resources/${fnId}` },
-        },
-        name: `${fnId}:${eventId}`,
-        ...(implementingHandler !== undefined ? { implementingHandler } : {}),
-        configRef: {
-          file: sourceFile,
-          pointer: `Resources/${fnId}/Events/${eventId}`,
-        },
-      });
-    }
-  }
-  return out;
+): SamRouteEvent["wiring"] {
+  const implementingHandler = readHandlerPointer(fnId, resource);
+  return {
+    integration: {
+      type: "lambda-proxy",
+      statusCodes: [],
+      configRef: { file: sourceFile, pointer: `Resources/${fnId}` },
+    },
+    name: `${fnId}:${eventId}`,
+    ...(implementingHandler !== undefined ? { implementingHandler } : {}),
+    configRef: {
+      file: sourceFile,
+      pointer: `Resources/${fnId}/Events/${eventId}`,
+    },
+  };
+}
+
+function samRestEndpoint(event: SamRouteEvent): RestEndpointConfig {
+  return { method: event.method, path: event.path, ...event.wiring };
+}
+
+function samHttpRoute(event: SamRouteEvent): HttpRouteConfig {
+  return { routeKey: `${event.method} ${event.path}`, ...event.wiring };
 }
 
 // ---------------------------------------------------------------------------

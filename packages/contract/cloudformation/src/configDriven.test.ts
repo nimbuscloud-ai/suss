@@ -449,6 +449,146 @@ describe("SAM Events block expansion", () => {
   });
 });
 
+describe("SAM Events: which API an event joins", () => {
+  function apiIdsFor(
+    summaries: ReturnType<typeof cloudFormationToSummaries>,
+    match: { method: string; path: string },
+  ): unknown[] {
+    return summaries
+      .filter((s) => {
+        const rest = restOf(s);
+        return rest?.method === match.method && rest.path === match.path;
+      })
+      .map((s) => s.metadata?.apiId)
+      .sort();
+  }
+
+  function functionWithEvent(
+    type: "Api" | "HttpApi",
+    properties: Record<string, unknown>,
+  ) {
+    return {
+      Type: "AWS::Serverless::Function",
+      Properties: {
+        Handler: "src/orders.handler",
+        Events: { ListOrders: { Type: type, Properties: properties } },
+      },
+    };
+  }
+
+  const twoRestApis = {
+    PublicApi: { Type: "AWS::Serverless::Api" },
+    AdminApi: { Type: "AWS::Serverless::Api" },
+  };
+
+  const twoHttpApis = {
+    PublicApi: { Type: "AWS::Serverless::HttpApi" },
+    AdminApi: { Type: "AWS::Serverless::HttpApi" },
+  };
+
+  it("puts an Api event with no RestApiId on the implicit ServerlessRestApi", () => {
+    const summaries = cloudFormationToSummaries({
+      Resources: {
+        ...twoRestApis,
+        OrdersFn: functionWithEvent("Api", { Method: "GET", Path: "/orders" }),
+      },
+    });
+    expect(apiIdsFor(summaries, { method: "GET", path: "/orders" })).toEqual([
+      "ServerlessRestApi",
+    ]);
+  });
+
+  it("puts an Api event with a RestApiId on that API only", () => {
+    const summaries = cloudFormationToSummaries({
+      Resources: {
+        ...twoRestApis,
+        OrdersFn: functionWithEvent("Api", {
+          RestApiId: { Ref: "AdminApi" },
+          Method: "GET",
+          Path: "/orders",
+        }),
+      },
+    });
+    expect(apiIdsFor(summaries, { method: "GET", path: "/orders" })).toEqual([
+      "AdminApi",
+    ]);
+  });
+
+  it("reads an Api event in a template that declares no API", () => {
+    const summaries = cloudFormationToSummaries({
+      Resources: {
+        OrdersFn: functionWithEvent("Api", { Method: "GET", Path: "/orders" }),
+      },
+    });
+    expect(apiIdsFor(summaries, { method: "GET", path: "/orders" })).toEqual([
+      "ServerlessRestApi",
+    ]);
+  });
+
+  it("keeps an Api event whose RestApiId names no API in the template", () => {
+    const summaries = cloudFormationToSummaries({
+      Resources: {
+        ...twoRestApis,
+        OrdersFn: functionWithEvent("Api", {
+          RestApiId: { "Fn::ImportValue": "SharedApiId" },
+          Method: "GET",
+          Path: "/orders",
+        }),
+      },
+    });
+    expect(apiIdsFor(summaries, { method: "GET", path: "/orders" })).toEqual([
+      "RestApi",
+    ]);
+  });
+
+  it("puts an HttpApi event with no ApiId on the implicit ServerlessHttpApi", () => {
+    const summaries = cloudFormationToSummaries({
+      Resources: {
+        ...twoHttpApis,
+        OrdersFn: functionWithEvent("HttpApi", {
+          Method: "GET",
+          Path: "/orders",
+        }),
+      },
+    });
+    expect(apiIdsFor(summaries, { method: "GET", path: "/orders" })).toEqual([
+      "ServerlessHttpApi",
+    ]);
+  });
+
+  it("puts an HttpApi event with an ApiId on that API only", () => {
+    const summaries = cloudFormationToSummaries({
+      Resources: {
+        ...twoHttpApis,
+        OrdersFn: functionWithEvent("HttpApi", {
+          ApiId: { Ref: "PublicApi" },
+          Method: "GET",
+          Path: "/orders",
+        }),
+      },
+    });
+    expect(apiIdsFor(summaries, { method: "GET", path: "/orders" })).toEqual([
+      "PublicApi",
+    ]);
+  });
+
+  it("keeps an HttpApi event whose ApiId names no API in the template", () => {
+    const summaries = cloudFormationToSummaries({
+      Resources: {
+        ...twoHttpApis,
+        OrdersFn: functionWithEvent("HttpApi", {
+          ApiId: { "Fn::ImportValue": "SharedApiId" },
+          Method: "GET",
+          Path: "/orders",
+        }),
+      },
+    });
+    expect(apiIdsFor(summaries, { method: "GET", path: "/orders" })).toEqual([
+      "HttpApi",
+    ]);
+  });
+});
+
 describe("SAM CorsConfiguration", () => {
   it("REST API CorsConfiguration synthesizes OPTIONS preflight per path", () => {
     const summaries = cloudFormationToSummaries({
