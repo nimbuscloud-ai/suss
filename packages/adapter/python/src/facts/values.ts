@@ -459,7 +459,7 @@ function statedTypeKey(emitter: Emitter, annotation: PyNode): string | null {
   return target === null ? null : classReferenceKey(emitter, target);
 }
 
-/** `name: T` on a parameter or an assignment, as the two keys the rules join. */
+/** `name: T` on a parameter or an assignment says the name is one of T. */
 function emitStatedType(
   emitter: Emitter,
   nameKey: string,
@@ -468,7 +468,7 @@ function emitStatedType(
   const typeKey =
     annotation === null ? null : statedTypeKey(emitter, annotation);
   if (typeKey !== null) {
-    add(emitter, "statesType", nameKey, typeKey);
+    add(emitter, "instanceOf", nameKey, typeKey);
   }
 }
 
