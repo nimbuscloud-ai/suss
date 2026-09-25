@@ -61,11 +61,44 @@ it got. `wantedDeclaredName` returns that name next to the names written
 out, so a caller asking which methods a class declares does not need to
 know which kind each one is.
 
-Two more facts come from a pack, for a wrapper whose body is not in the
-source suss reads: `unwrapsByName(name, k)` and
-`wrapperModule(name, module)`. The rules check both against `calleeName`
-and `calleeOrigin`, so a local function with the same name as the
-library's does not match.
+Another fact comes from a pack, for a wrapper whose body is not in the
+source suss reads: `unwrapsByName(module, name, k)`. The rule matches a
+call whose callee `comesFrom` that module and name, the same way every
+other pack word keys on an import. So a namespace import matches
+whatever the project calls it, and a local function with the same name
+as the library's does not match. `comesFrom` reads a member of a
+default import the way it reads a member of a namespace import, since a
+CommonJS module hands its exports over as the default: after
+`import React from "react"`, `React.memo` is react's `memo`, whether or
+not React's types are installed.
+
+The callee reaches the import through `comesFrom`, which follows the
+`imports` facts, so those have to name the package however the import
+reached it. The TypeScript adapter writes an import once under each
+spelling: the resolved file, the specifier as written, its package part
+(`pkg/esm` is `pkg`), and every package the imported declaration lives
+in, which is what a project barrel hides. A declaration a library's own
+`.d.ts` file makes at the top of a module or namespace is recorded as
+that library's name too. That covers a member of a namespace a barrel
+re-exports, a member of a default import of a module written with
+`export =`, and a global a package declares.
+
+A global the language declares has no module at all, so the adapter
+records a callee that only library declaration files declare under
+`GLOBAL_MODULE` and its dotted name: `Object.assign` comes from
+`global`'s `Object.assign`. The TypeScript store declares
+`Object.assign` as handing back argument 0 on every run, as behavior of
+the language rather than of a pack.
+
+`Object.assign({}, a, b)` copies onto the empty object and hands that
+back, and the empty literal describes none of what the call returns. So
+the rule takes the step only when the argument describes a value: a
+function, a written value, an object with something in it, an import, or
+a name that steps somewhere. A negated `objectValue` would say it more
+directly, but the demand rewrite refuses any negation, so
+`describesValue` lists the kinds that do. An object written with
+properties stays in, since a pack's wrapper can hand one back as it is:
+`createRoute({ method, path })` in `@hono/zod-openapi` is the route.
 
 Every fact a pack declares goes in through `addPackWords`, which takes
 the declarations in one format for every language. Each adapter
@@ -84,15 +117,16 @@ Account too.
 
 Matching on the base keeps out a project class on an unrelated
 hierarchy that writes its own `find`. The declared wrapper matches on
-`wrapperModule` for the same reason. A class that overrides a declared
-method gets two steps: the declared one, and the one through the method
-it wrote. When the method it wrote returns one of the class, the two
-steps agree and the caller sees one answer. When it returns something
-else, the caller sees two answers, and its single-answer policy refuses
-the pair. Letting the written method win would need a negated literal on
-`contains`. Since `contains` is derived from `comesTo`, the rule set
-would stop being stratifiable. The on-demand rewrite refuses any
-negation anyway, before the engine gets as far as stratifying.
+the module its callee comes from for the same reason. A class that
+overrides a declared method gets two steps: the declared one, and the
+one through the method it wrote. When the method it wrote returns one
+of the class, the two steps agree and the caller sees one answer. When
+it returns something else, the caller sees two answers, and its
+single-answer policy refuses the pair. Letting the written method win
+would need a negated literal on `contains`. Since `contains` is derived
+from `comesTo`, the rule set would stop being stratifiable. The
+on-demand rewrite refuses any negation anyway, before the engine gets as
+far as stratifying.
 
 SQLAlchemy and SQLModel take the class as an argument instead of as the
 receiver: `session.get(User, id)`, `session.query(User)`,

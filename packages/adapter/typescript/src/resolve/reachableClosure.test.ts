@@ -137,7 +137,7 @@ describe("a callee only the resolution store settles", () => {
           function persist(table: string) { return table; }
         `,
       },
-      [{ callee: "keep", argument: 0, module: "wrapper-lib" }],
+      [{ module: "wrapper-lib", name: "keep", argument: 0 }],
     );
 
     expect(stopsOnRun(summaries)).toEqual([]);

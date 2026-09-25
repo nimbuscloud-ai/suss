@@ -366,19 +366,30 @@ function wrapperFactory(p: Program, rnd: Random): void {
   say(p, "bodyCalls", returned, callee);
 }
 
-/** A call of something a pack declared to be a wrapper. */
+/**
+ * A call of something a pack declared to be a wrapper, imported by name
+ * or read off a namespace import. The import is usually of the module
+ * the pack said, and now and then of another one exporting the same name.
+ */
 function declaredWrapper(p: Program, rnd: Random): void {
   const name = rnd.pick(WRAPPER_NAMES);
   const module = rnd.pick(MODULES);
   const position = String(rnd.below(2));
-  say(p, "unwrapsByName", name, position);
-  say(p, "wrapperModule", name, module);
+  say(p, "unwrapsByName", module, name, position);
+
+  const origin = rnd.chance(0.85) ? module : rnd.pick(MODULES);
+  const callee = id(p, "name");
+  if (rnd.chance(0.5)) {
+    say(p, "imports", callee, origin, name);
+  } else {
+    const namespace = id(p, "ns");
+    say(p, "imports", namespace, origin, "*");
+    say(p, "readsProperty", callee, namespace, name);
+  }
 
   const r = id(p, "call");
-  say(p, "call", r, rnd.pickRecent(p.values));
+  say(p, "call", r, callee);
   say(p, "writtenValue", r);
-  say(p, "calleeName", r, name);
-  say(p, "calleeOrigin", r, rnd.chance(0.85) ? module : rnd.pick(MODULES));
   say(p, "callArg", r, position, rnd.pickRecent(p.values));
   asValue(p, r);
 }
@@ -441,7 +452,7 @@ const DRAWS: string[] = Object.entries(WEIGHTS).flatMap(([name, weight]) =>
 
 /**
  * Every relation the constructs above can state, which is every fact the
- * `@suss/resolution` header asks an adapter for plus the four a pack
+ * `@suss/resolution` header asks an adapter for plus the word a pack
  * supplies about a wrapper. A test compares this against what the bases
  * really state, so a construct that stopped firing, or a fact that
  * arrived in the vocabulary and nothing generates, fails the run.
@@ -451,8 +462,6 @@ export const STATED_RELATIONS: readonly string[] = [
   "bodyCalls",
   "call",
   "callArg",
-  "calleeName",
-  "calleeOrigin",
   "callKeywordArg",
   "containsFn",
   "endsHolding",
@@ -470,7 +479,6 @@ export const STATED_RELATIONS: readonly string[] = [
   "reExportsAll",
   "returnsValue",
   "unwrapsByName",
-  "wrapperModule",
   "writtenValue",
 ];
 

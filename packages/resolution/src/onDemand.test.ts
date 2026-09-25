@@ -69,10 +69,7 @@ const ARITY: Record<string, number> = {
   exportsAs: 3,
   reExports: 4,
   reExportsAll: 2,
-  calleeName: 2,
-  calleeOrigin: 2,
-  unwrapsByName: 2,
-  wrapperModule: 2,
+  unwrapsByName: 3,
   paramNamed: 3,
   callKeywordArg: 3,
   statesType: 2,
@@ -104,10 +101,7 @@ const COLUMNS: Record<string, string[][]> = {
   exportsAs: [MODULES, NAMES, VALUES],
   reExports: [MODULES, NAMES, MODULES, NAMES],
   reExportsAll: [MODULES, MODULES],
-  calleeName: [VALUES, NAMES],
-  calleeOrigin: [VALUES, MODULES],
-  unwrapsByName: [NAMES, POSITIONS],
-  wrapperModule: [NAMES, MODULES],
+  unwrapsByName: [MODULES, NAMES, POSITIONS],
 };
 
 const universeFor = (relation: string, column: number): string[] =>

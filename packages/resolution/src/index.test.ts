@@ -1620,36 +1620,109 @@ describe("a value reached through a property", () => {
 });
 
 describe("a wrapper the caller declared transparent", () => {
-  it("resolves through a named wrapper from the module it names", () => {
+  /** handler = wrapHandler(body), with the word on `tracing`'s wrapHandler. */
+  const WRAPPED: Array<[string, ...string[]]> = [
+    ["func", "body"],
+    ["unwrapsByName", "tracing", "wrapHandler", "0"],
+    ["call", "handler", "callee"],
+    ["callArg", "handler", "0", "body"],
+  ];
+
+  it("resolves through a wrapper imported from the module the word names", () => {
+    expect(
+      resolutionsOf(
+        [...WRAPPED, ["imports", "callee", "tracing", "wrapHandler"]],
+        "handler",
+      ),
+    ).toEqual(["body"]);
+  });
+
+  it("resolves through a member of the module, whatever the namespace is called", () => {
+    // import * as Monitoring from "tracing"; Monitoring.wrapHandler(body)
     expect(
       resolutionsOf(
         [
-          ["func", "body"],
-          ["calleeName", "handler", "Sentry.wrapHandler"],
-          ["unwrapsByName", "Sentry.wrapHandler", "0"],
-          ["wrapperModule", "Sentry.wrapHandler", "@sentry/aws-serverless"],
-          ["calleeOrigin", "handler", "@sentry/aws-serverless"],
-          ["callArg", "handler", "0", "body"],
+          ...WRAPPED,
+          ["readsProperty", "callee", "monitoringRef", "wrapHandler"],
+          ["binds", "monitoringRef", "monitoring"],
+          ["imports", "monitoring", "tracing", "*"],
         ],
         "handler",
       ),
     ).toEqual(["body"]);
   });
 
-  it("ignores a local function spelled the same way", () => {
-    // Same name, different origin. A project's own helper called
-    // `wrapHandler` is not the library's.
+  it("resolves through a member of a default import", () => {
+    // import Tracing from "tracing"; Tracing.wrapHandler(body)
     expect(
       resolutionsOf(
         [
-          ["func", "body"],
-          ["calleeName", "handler", "Sentry.wrapHandler"],
-          ["unwrapsByName", "Sentry.wrapHandler", "0"],
-          ["wrapperModule", "Sentry.wrapHandler", "@sentry/aws-serverless"],
-          ["calleeOrigin", "handler", "./lib/sentry"],
-          ["callArg", "handler", "0", "body"],
+          ...WRAPPED,
+          ["readsProperty", "callee", "tracingRef", "wrapHandler"],
+          ["binds", "tracingRef", "tracingImport"],
+          ["imports", "tracingImport", "tracing", "default"],
         ],
         "handler",
+      ),
+    ).toEqual(["body"]);
+  });
+
+  it("ignores a function spelled the same way that another module exports", () => {
+    expect(
+      resolutionsOf(
+        [...WRAPPED, ["imports", "callee", "./lib/tracing", "wrapHandler"]],
+        "handler",
+      ),
+    ).toEqual([]);
+  });
+
+  /** merged = Object.assign(target, extra), with the word on the global. */
+  const ASSIGNED: Array<[string, ...string[]]> = [
+    ["unwrapsByName", "global", "Object.assign", "0"],
+    ["call", "merged", "assign"],
+    ["imports", "assign", "global", "Object.assign"],
+  ];
+
+  it("resolves through a global the word names", () => {
+    expect(
+      objectsOf(
+        [
+          ...ASSIGNED,
+          ["objectValue", "target"],
+          ["holdsProperty", "target", "table", "tableName"],
+          ["binds", "targetRef", "target"],
+          ["callArg", "merged", "0", "targetRef"],
+        ],
+        "merged",
+      ),
+    ).toEqual(["target"]);
+  });
+
+  it("hands back an object written with properties at the argument", () => {
+    expect(
+      objectsOf(
+        [
+          ...ASSIGNED,
+          ["objectValue", "route"],
+          ["holdsProperty", "route", "path", "pathText"],
+          ["callArg", "merged", "0", "route"],
+        ],
+        "merged",
+      ),
+    ).toEqual(["route"]);
+  });
+
+  it("does not hand back an object written with nothing in it", () => {
+    // Object.assign({}, a, b) copies onto the empty object, which then
+    // describes none of what the call gives back.
+    expect(
+      everyObjectOf(
+        [
+          ...ASSIGNED,
+          ["objectValue", "fresh"],
+          ["callArg", "merged", "0", "fresh"],
+        ],
+        "merged",
       ),
     ).toEqual([]);
   });

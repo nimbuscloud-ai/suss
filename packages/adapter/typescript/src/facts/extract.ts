@@ -22,7 +22,12 @@ import {
   ts,
 } from "ts-morph";
 
-import { NAMESPACE_IMPORT_NAME, valueLeftByWrites } from "@suss/resolution";
+import {
+  DEFAULT_IMPORT_NAME,
+  GLOBAL_MODULE,
+  NAMESPACE_IMPORT_NAME,
+  valueLeftByWrites,
+} from "@suss/resolution";
 
 import {
   declarationCarryingTheBody,
@@ -66,6 +71,8 @@ export interface NodeTable {
   seenValues: Set<Node>;
   /** Classes whose facts are already emitted, per store. */
   seenClasses: Set<Node>;
+  /** Import declarations whose module keys are already emitted, per store. */
+  seenImports: Set<Node>;
   /**
    * Dotted paths the packs call the process environment. Nothing in
    * this adapter knows which object that is; a pack says so.
@@ -82,6 +89,7 @@ export function createNodeTable(
     seenBindings: new Set(),
     seenValues: new Set(),
     seenClasses: new Set(),
+    seenImports: new Set(),
     environmentObjects,
   };
 }
@@ -135,100 +143,70 @@ function compilerResolvedPathOf(
 }
 
 /**
- * Every module name a callee's package goes by, or an empty list when
- * it was not imported. `Sentry.wrapHandler` reports the package behind
- * `Sentry`.
- *
- * A pack that declares a wrapper transparent says which library it comes
- * from, and this is what checks that claim. Matching the import
- * specifier verbatim is not enough: the same package arrives as a
- * subpath (`pkg/esm`), through a barrel in the project that re-exports
- * it, or through `import x = require(...)`. So the specifier, the
- * package part of it, and the package the symbol turns out to live in
- * all count.
- */
-function importOriginsOf(callee: Node): string[] {
-  let root: Node = callee;
-  while (Node.isPropertyAccessExpression(root)) {
-    root = root.getExpression();
-  }
-  if (!Node.isIdentifier(root)) {
-    return [];
-  }
-  const symbol = root.getSymbol();
-  if (symbol === undefined) {
-    return [];
-  }
-
-  const origins = new Set<string>();
-  for (const declaration of symbol.getDeclarations()) {
-    const specifier = importSpecifierOf(declaration);
-    // A relative specifier points at a file rather than a package, so only the
-    // package the callee turns out to live in can speak for it.
-    if (specifier !== null && !specifier.startsWith(".")) {
-      origins.add(specifier);
-      origins.add(packagePartOf(specifier));
-    }
-  }
-
-  // Where the callee turns out to live, which is what a barrel or a
-  // subpath hides. For `Sentry.wrapHandler` the question is about
-  // wrapHandler, not about Sentry: a namespace import of a barrel
-  // resolves to the barrel, while the member resolves into the package
-  // that declared it. Asking about the member is what keeps everything
-  // else the barrel re-exports out of the result.
-  const named = Node.isPropertyAccessExpression(callee)
-    ? callee.getNameNode().getSymbol()
-    : undefined;
-  for (const candidate of [named ?? symbol, symbol]) {
-    const aliased = resolveAliasedSymbol(candidate) ?? candidate;
-    for (const declaration of aliased.getDeclarations()) {
-      if (!declaresAValue(declaration)) {
-        continue;
-      }
-      for (const owner of packagesDeclaring(
-        declaration.getSourceFile().getFilePath(),
-      )) {
-        origins.add(owner);
-      }
-    }
-  }
-  return [...origins];
-}
-
-/**
- * One import, recorded under every key a question can ask by: the
- * resolved file path (what `moduleExport` joins on) and, when the
- * specifier is a package rather than a relative path, the specifier as
- * written (what origin matching asks with). A workspace dependency
- * resolves through a symlink to a path with no node_modules in it, so
- * the resolved key alone cannot say which package it was.
+ * One import, recorded under every key a question can ask by. The
+ * resolved file path is what `moduleExport` joins on. A pack asks by
+ * package name, and the same package arrives as a subpath (`pkg/esm`),
+ * through a symlinked workspace path with no node_modules in it, or
+ * through a barrel in the project that re-exports it. So the specifier
+ * as written, its package part, and every package the imported
+ * declaration turns out to live in are keys too. An import declaration
+ * is referenced from many places, and its keys are written once.
  */
 function emitImportFacts(
   db: Database,
+  table: NodeTable,
   referenceId: string,
-  declarationId: string,
+  declaration: Node,
   importDecl: Node & {
     getModuleSpecifierSourceFile(): SourceFile | undefined;
     getModuleSpecifierValue(): string | undefined;
   },
   name: string,
 ): void {
+  const declarationId = nodeId(declaration);
+  if (table.seenImports.has(declaration)) {
+    fact(db, "binds", referenceId, declarationId);
+    return;
+  }
   const moduleKey = moduleKeyOf(importDecl);
   if (moduleKey === null) {
     return;
   }
+  table.seenImports.add(declaration);
   fact(db, "binds", referenceId, declarationId);
-  fact(db, "imports", declarationId, moduleKey, name);
 
   const specifier = importDecl.getModuleSpecifierValue();
-  if (
-    specifier !== undefined &&
-    specifier !== moduleKey &&
-    !specifier.startsWith(".")
-  ) {
-    fact(db, "imports", declarationId, specifier, name);
+  const packageKeys =
+    specifier === undefined || specifier.startsWith(".")
+      ? []
+      : [specifier, packagePartOf(specifier)];
+  const keys = new Set([
+    moduleKey,
+    ...packageKeys,
+    ...packagesDeclaring(moduleKey),
+    ...packagesBehind(declaration),
+  ]);
+  for (const key of keys) {
+    fact(db, "imports", declarationId, key, name);
   }
+}
+
+/**
+ * The packages an imported name is declared in, which a project barrel
+ * that re-exports the library hides from the specifier. What a namespace
+ * import brings in is the whole module, so for one of those this is the
+ * package the module's file is in.
+ */
+function packagesBehind(declaration: Node): string[] {
+  const symbol = declaration.getSymbol();
+  if (symbol === undefined) {
+    return [];
+  }
+  const aliased = resolveAliasedSymbol(symbol) ?? symbol;
+  return aliased
+    .getDeclarations()
+    .filter(declaresAValue)
+    .flatMap((one) => packagesDeclaring(one.getSourceFile().getFilePath()));
 }
 
 /** The name the source module exports this import-shaped declaration under. */
@@ -241,7 +219,7 @@ function importedNameOf(declaration: Node): string {
     return NAMESPACE_IMPORT_NAME;
   }
 
-  return "default";
+  return DEFAULT_IMPORT_NAME;
 }
 
 /** The module specifier an import-shaped declaration names. */
@@ -310,6 +288,73 @@ export function packagesDeclaring(filePath: string): string[] {
   }
   const owner = packagePartOf(rest);
   return [owner, ...packagesDescribedByTypes(owner)];
+}
+
+/** A `.d.ts` file an installed package or the language ships. */
+function isLibraryDeclarationFile(file: SourceFile): boolean {
+  return file.isDeclarationFile() && file.isInNodeModules();
+}
+
+/**
+ * A name declared at the top of a library's own declaration file, or of
+ * a namespace in one, is that library's name however the project got to
+ * it: a member of a namespace a project barrel re-exports, a member of a
+ * default import of a module written with `export =`, or a global the
+ * library declares. The reference already arrived at the declaration, so
+ * the declaration is where the library is written down, once.
+ */
+function emitLibraryDeclarationFacts(
+  db: Database,
+  declaration: Node,
+  declarationId: string,
+  name: string,
+): void {
+  const statement = Node.isVariableDeclaration(declaration)
+    ? declaration.getVariableStatement()
+    : declaration;
+  const scope = statement?.getParent();
+  if (
+    scope === undefined ||
+    !(Node.isSourceFile(scope) || Node.isModuleBlock(scope)) ||
+    !isLibraryDeclarationFile(declaration.getSourceFile())
+  ) {
+    return;
+  }
+  for (const owner of packagesDeclaring(
+    declaration.getSourceFile().getFilePath(),
+  )) {
+    fact(db, "imports", declarationId, owner, name);
+  }
+}
+
+/**
+ * The dotted name a callee goes by when only library declaration files
+ * declare it, as with `Object.assign` or `console.log`. No file imports
+ * a global, and this is what a pack word keys on in place of an import.
+ */
+function globalNameOf(callee: Node): string | null {
+  const dotted = dottedPathOf(callee);
+  if (dotted === null) {
+    return null;
+  }
+  let root = callee;
+  while (Node.isPropertyAccessExpression(root)) {
+    root = root.getExpression();
+  }
+  const member = Node.isPropertyAccessExpression(callee)
+    ? callee.getNameNode()
+    : callee;
+  return declaredOnlyByLibraries(root) && declaredOnlyByLibraries(member)
+    ? dotted
+    : null;
+}
+
+function declaredOnlyByLibraries(name: Node): boolean {
+  const declarations = name.getSymbol()?.getDeclarations() ?? [];
+  return (
+    declarations.length > 0 &&
+    declarations.every((one) => isLibraryDeclarationFile(one.getSourceFile()))
+  );
 }
 
 /**
@@ -897,8 +942,9 @@ function emitReferenceFacts(
       const importDecl = declaration.getImportDeclaration();
       emitImportFacts(
         db,
+        table,
         referenceId,
-        declarationId,
+        declaration,
         importDecl,
         declaration.getName(),
       );
@@ -911,7 +957,14 @@ function emitReferenceFacts(
         SyntaxKind.ImportDeclaration,
       );
       if (importDecl !== undefined) {
-        emitImportFacts(db, referenceId, declarationId, importDecl, "default");
+        emitImportFacts(
+          db,
+          table,
+          referenceId,
+          declaration,
+          importDecl,
+          DEFAULT_IMPORT_NAME,
+        );
       }
       continue;
     }
@@ -925,14 +978,22 @@ function emitReferenceFacts(
       if (importDecl !== undefined) {
         emitImportFacts(
           db,
+          table,
           referenceId,
-          declarationId,
+          declaration,
           importDecl,
           NAMESPACE_IMPORT_NAME,
         );
       }
       continue;
     }
+
+    emitLibraryDeclarationFacts(
+      db,
+      declaration,
+      declarationId,
+      nameNode.getText(),
+    );
 
     if (Node.isVariableDeclaration(declaration)) {
       fact(db, "binds", referenceId, declarationId);
@@ -1018,14 +1079,15 @@ function emitCallFacts(
     return;
   }
 
-  fact(db, "call", callId, emitValue(db, table, callee));
-  fact(db, "calleeName", callId, callee.getText());
+  const calleeId = emitValue(db, table, callee);
+  fact(db, "call", callId, calleeId);
   if (!insideMethodBody(call as unknown as Node)) {
     fact(db, "callOutsideMethod", callId);
   }
 
-  for (const origin of importOriginsOf(callee)) {
-    fact(db, "calleeOrigin", callId, origin);
+  const global = globalNameOf(callee);
+  if (global !== null) {
+    fact(db, "imports", calleeId, GLOBAL_MODULE, global);
   }
 
   const args = call.getArguments();

@@ -47,11 +47,7 @@ export function awsLambdaFramework(
     // pack declares that the handler is argument 0. A wrapper written in
     // the project needs no entry, because the adapter reads its body.
     transparentWrappers: [
-      {
-        callee: "Sentry.wrapHandler",
-        argument: 0,
-        module: "@sentry/aws-serverless",
-      },
+      { module: "@sentry/aws-serverless", name: "wrapHandler", argument: 0 },
     ],
     languages: ["typescript", "javascript"],
 
