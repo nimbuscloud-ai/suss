@@ -7,6 +7,8 @@ import {
   evaluate,
   lit,
   notLit,
+  profileEvaluation,
+  proofOf,
   rowBudget,
   rule,
   stratify,
@@ -14,6 +16,7 @@ import {
   tupleKey,
   tupleKeyParts,
   variable,
+  witnesses,
 } from "./index.js";
 
 const V = variable;
@@ -782,6 +785,39 @@ describe("evaluate: the order a round walks a rule body in", () => {
     // Nothing narrow is under b, so none of b's wide rows are read: the
     // three rows a costs, and the asked row for b.
     expect(budget.examined).toBe(4);
+  });
+
+  it("joins a tagged evaluation in the same order", () => {
+    const db = wideAndNarrow();
+    const { profile } = profileEvaluation(() =>
+      evaluate(db, NARROW_FIRST, witnesses),
+    );
+    expect(sorted(db.facts("out"))).toEqual(["a,n"]);
+    expect(profile.examined).toBe(3);
+  });
+
+  it("keeps a tagged derivation's body in written order when the join reorders it", () => {
+    const db = wideAndNarrow();
+    evaluate(db, NARROW_FIRST, witnesses);
+    const proof = proofOf(db, "out", ["a", "n"]);
+    expect(
+      proof.kind === "derived" && proof.premises.map((p) => p.relation),
+    ).toEqual(["asked", "wide", "narrow"]);
+  });
+
+  it("reads the new facts first in a tagged round too", () => {
+    const facts: Facts = [["wanted", ["a"]]];
+    for (let i = 0; i < 50; i++) {
+      facts.push(["binds", [`n${i}`, `n${i + 1}`]]);
+    }
+    facts.push(["binds", ["a", "n0"]]);
+    const cost = (algebra?: typeof witnesses): number => {
+      const db = new Database();
+      factsInto(db, facts);
+      return profileEvaluation(() => evaluate(db, CHAIN, algebra)).profile
+        .examined;
+    };
+    expect(cost(witnesses)).toBe(cost());
   });
 
   it("reports a negated literal whose variable nothing binds", () => {

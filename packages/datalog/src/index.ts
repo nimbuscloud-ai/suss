@@ -617,54 +617,18 @@ function evaluateRule(
       results.push(headTuple(r.head, bindings));
       return;
     }
-    let pick = -1;
-    let narrowest: readonly Tuple[] | null = null;
-    for (let index = 0; index < body.length; index++) {
-      if (taken & (1 << index)) {
-        continue;
-      }
-      const literal = body[index];
-      if (literal.negated) {
-        // A negated literal only filters, so ask it as soon as its
-        // variables are bound.
-        if (allBound(literal, bindings)) {
-          if (!db.has(literal.relation, groundNegated(literal, bindings))) {
-            step(taken | (1 << index), bindings);
-          }
-          return;
-        }
-        continue;
-      }
-      const source = narrowedSource(db, literal, bindings);
-      if (source === null) {
-        continue;
-      }
-      if (source.length === 0) {
-        return;
-      }
-      if (narrowest === null || source.length < narrowest.length) {
-        pick = index;
-        narrowest = source;
-      }
-    }
-    if (narrowest !== null) {
-      walk(pick, narrowest, taken, bindings);
+    const index = nextLiteral(db, body, taken, bindings);
+    if (index === -1) {
       return;
     }
-    // Nothing left shares a bound variable, so the first positive
-    // literal is scanned whole. Only negated literals with a variable
-    // nothing binds remain after that, and grounding one reports it.
-    for (let index = 0; index < body.length; index++) {
-      if (!(taken & (1 << index)) && !body[index].negated) {
-        walk(index, db.facts(body[index].relation), taken, bindings);
-        return;
+    const literal = body[index];
+    if (literal.negated) {
+      if (!db.has(literal.relation, groundNegated(literal, bindings))) {
+        step(taken | (1 << index), bindings);
       }
+      return;
     }
-    for (let index = 0; index < body.length; index++) {
-      if (!(taken & (1 << index))) {
-        groundNegated(body[index], bindings);
-      }
-    }
+    walk(index, nextSource, taken, bindings);
   };
 
   // The delta has no index, so it is read once, first, and never under
@@ -677,16 +641,69 @@ function evaluateRule(
   return results;
 }
 
+/** The rows `nextLiteral` chose for the positive literal it returned. */
+let nextSource: readonly Tuple[] = [];
+
 /**
- * The facts worth trying for a literal: the narrowed set when one of its
- * terms is fixed, otherwise every fact of its relation.
+ * Which body literal a join reads next, once the literals in `taken`
+ * have matched under `bindings`. A negated literal only filters, so it
+ * comes as soon as its variables are bound. Otherwise the positive
+ * literal with the fewest rows under the bindings comes next, and one
+ * that shares no bound variable is scanned whole only when nothing
+ * else is left. For a positive literal, the join reads the rows it
+ * finds in `nextSource`. Returns -1 when a literal has no rows under its bindings, which
+ * ends the branch.
  */
-const boundSource = (
+function nextLiteral(
   db: Database,
-  literal: Literal,
+  body: readonly Literal[],
+  taken: number,
   bindings: Bindings | null,
-): readonly Tuple[] =>
-  narrowedSource(db, literal, bindings) ?? db.facts(literal.relation);
+): number {
+  let pick = -1;
+  let narrowest: readonly Tuple[] | null = null;
+  for (let index = 0; index < body.length; index++) {
+    if (taken & (1 << index)) {
+      continue;
+    }
+    const literal = body[index];
+    if (literal.negated) {
+      if (allBound(literal, bindings)) {
+        return index;
+      }
+      continue;
+    }
+    const source = narrowedSource(db, literal, bindings);
+    if (source === null) {
+      continue;
+    }
+    if (source.length === 0) {
+      return -1;
+    }
+    if (narrowest === null || source.length < narrowest.length) {
+      pick = index;
+      narrowest = source;
+    }
+  }
+  if (narrowest !== null) {
+    nextSource = narrowest;
+    return pick;
+  }
+  for (let index = 0; index < body.length; index++) {
+    if (!(taken & (1 << index)) && !body[index].negated) {
+      nextSource = db.facts(body[index].relation);
+      return index;
+    }
+  }
+  // Only negated literals with a variable nothing binds are left, and
+  // grounding one reports it.
+  for (let index = 0; index < body.length; index++) {
+    if (!(taken & (1 << index))) {
+      groundNegated(body[index], bindings);
+    }
+  }
+  return -1;
+}
 
 /**
  * The facts worth trying for a literal with a term already fixed, either
@@ -731,9 +748,11 @@ interface TaggedDerivation<Tag> {
 const EMPTY_TAGS: readonly never[] = [];
 
 /**
- * `evaluateRule` with tag collection. It is a separate walk so that
- * evaluation without an algebra keeps its inner loop free of per-tuple
- * checks.
+ * `evaluateRule` with tag collection. It joins in the same order and
+ * keeps each literal's match at that literal's body position, so a
+ * derivation lists its body in the order the rule was written. It is a
+ * separate walk so that evaluation without an algebra keeps its inner
+ * loop free of per-tuple checks.
  */
 function evaluateRuleTagged<Tag>(
   db: Database,
@@ -744,51 +763,20 @@ function evaluateRuleTagged<Tag>(
   budget: RowBudget,
 ): TaggedDerivation<Tag>[] {
   const results: TaggedDerivation<Tag>[] = [];
-  const bodyTags: Tag[] = [];
-  const bodyMatches: BodyMatch[] = [];
+  const body = r.body;
+  const deltaAt = deltaLiteral(r, deltaIndex);
+  const whole = 2 ** body.length - 1;
+  const bodyTags: Tag[] = new Array(body.length);
+  const bodyMatches: BodyMatch[] = new Array(body.length);
   const readsTags = algebra.ignoresBodyTags !== true;
 
-  const step = (
-    literalIndex: number,
-    positiveIndex: number,
+  const walk = (
+    index: number,
+    source: readonly Tuple[],
+    taken: number,
     bindings: Bindings | null,
   ): void => {
-    if (literalIndex === r.body.length) {
-      results.push({
-        tuple: headTuple(r.head, bindings),
-        tag: algebra.combine(readsTags ? bodyTags.slice() : EMPTY_TAGS, {
-          rule: r,
-          body: bodyMatches.slice(),
-        }),
-      });
-      return;
-    }
-    const literal = r.body[literalIndex];
-
-    if (literal.negated) {
-      const grounded = groundNegated(literal, bindings);
-      if (!db.has(literal.relation, grounded)) {
-        if (readsTags) {
-          bodyTags.push(algebra.absent);
-        }
-        bodyMatches.push({
-          kind: "absence",
-          relation: literal.relation,
-          tuple: grounded,
-        });
-        step(literalIndex + 1, positiveIndex, bindings);
-        if (readsTags) {
-          bodyTags.pop();
-        }
-        bodyMatches.pop();
-      }
-      return;
-    }
-
-    const source =
-      positiveIndex === deltaIndex
-        ? (deltas.get(literal.relation) ?? [])
-        : boundSource(db, literal, bindings);
+    const literal = body[index];
     for (const tuple of source) {
       // Counted for the profile, never given up on: a tagged
       // evaluation is refused a budget, since it could not take an
@@ -798,25 +786,58 @@ function evaluateRuleTagged<Tag>(
       if (next !== NO_MATCH) {
         if (readsTags) {
           const stored = db.tagOf(literal.relation, tuple);
-          bodyTags.push(
-            stored === undefined ? algebra.asserted : (stored as Tag),
-          );
+          bodyTags[index] =
+            stored === undefined ? algebra.asserted : (stored as Tag);
         }
-        bodyMatches.push({
+        bodyMatches[index] = {
           kind: "fact",
           relation: literal.relation,
           tuple,
-        });
-        step(literalIndex + 1, positiveIndex + 1, next);
-        if (readsTags) {
-          bodyTags.pop();
-        }
-        bodyMatches.pop();
+        };
+        step(taken | (1 << index), next);
       }
     }
   };
 
-  step(0, 0, null);
+  const step = (taken: number, bindings: Bindings | null): void => {
+    if (taken === whole) {
+      results.push({
+        tuple: headTuple(r.head, bindings),
+        tag: algebra.combine(readsTags ? bodyTags.slice() : EMPTY_TAGS, {
+          rule: r,
+          body: bodyMatches.slice(),
+        }),
+      });
+      return;
+    }
+    const index = nextLiteral(db, body, taken, bindings);
+    if (index === -1) {
+      return;
+    }
+    const literal = body[index];
+    if (literal.negated) {
+      const grounded = groundNegated(literal, bindings);
+      if (!db.has(literal.relation, grounded)) {
+        if (readsTags) {
+          bodyTags[index] = algebra.absent;
+        }
+        bodyMatches[index] = {
+          kind: "absence",
+          relation: literal.relation,
+          tuple: grounded,
+        };
+        step(taken | (1 << index), bindings);
+      }
+      return;
+    }
+    walk(index, nextSource, taken, bindings);
+  };
+
+  if (deltaAt === -1) {
+    step(0, null);
+  } else {
+    walk(deltaAt, deltas.get(body[deltaAt].relation) ?? [], 0, null);
+  }
   return results;
 }
 
