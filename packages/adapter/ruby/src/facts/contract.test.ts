@@ -59,8 +59,6 @@ const SOURCES: Record<string, CaseFiles> = {
 const KNOWN_GAPS: Record<string, string> = {
   "a class constructed with an argument":
     "the parameters are keyed on initialize rather than on the class",
-  "a name declared as a fallback":
-    "an `||` expression is not written down as fallbackBranch facts yet",
 };
 
 describe("the Ruby adapter satisfies the fact contract", () => {

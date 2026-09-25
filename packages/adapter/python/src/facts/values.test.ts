@@ -193,6 +193,33 @@ describe("python value facts", () => {
     expect(db.size("writtenValue")).toBe(1);
   });
 
+  it("states both sides of `a or b` as the branches its value picks between", async () => {
+    const source = "client = injected or make_client()\n";
+    const db = await factsFor(source);
+    const branches = rows(db, "fallbackBranch");
+    expect(branches.map((row) => textAt(source, row[0] ?? ""))).toEqual([
+      "injected or make_client()",
+      "injected or make_client()",
+    ]);
+    expect(branches.map((row) => row[1])).toEqual([
+      "#injected",
+      rows(db, "call")[0]?.[0],
+    ]);
+    const written = rows(db, "writtenValue").map((row) =>
+      textAt(source, row[0] ?? ""),
+    );
+    expect(written).not.toContain("injected or make_client()");
+  });
+
+  it("keeps `a and b` a written value, since it is no fallback", async () => {
+    const source = "ready = loaded and checked\n";
+    const db = await factsFor(source);
+    expect(db.size("fallbackBranch")).toBe(0);
+    expect(
+      rows(db, "writtenValue").map((row) => textAt(source, row[0] ?? "")),
+    ).toEqual(["loaded and checked"]);
+  });
+
   it("binds nothing for an assignment whose left is not a plain name", async () => {
     const db = await factsFor("config[key] = value\n");
     expect(db.size("binds")).toBe(0);

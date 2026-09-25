@@ -62,8 +62,8 @@ writesUnstated(x)           a write to x states no value at all. The
                             value readers in this package read it, and
                             no rule does (Python, Ruby)
 fallbackBranch(x, b)        x is a fallback expression, a || b or
-                            a ?? b, and b is one of its branches
-                            (TypeScript)
+                            a ?? b, or a or b in Python and Ruby, and b
+                            is one of its branches
 instanceOf(x, cls)          x is one of cls, and nothing says which: a
                             method's receiver, or a name Python
                             annotates with a type. cls can be a name
@@ -437,10 +437,13 @@ A hop that only one language has is written as a step too. JavaScript's
 `.bind` and Ruby's `Const.new` are one rule each, and every question
 below uses them with no change.
 
-The value of a fallback expression (`a || b`, `a ?? b`) is one of its
-branches, so each branch is a value step. No other rule is involved.
-Only the TypeScript adapter records `fallbackBranch`. The Python adapter
-records `a or b` as a written value, which ends a chain there. When a branch is something no static reader can
+The value of a fallback expression (`a || b`, `a ?? b`, Python's and
+Ruby's `a or b`) is one of its branches, so each branch is a value step.
+No other rule is involved. An adapter records a fallback by its branches
+alone. Recorded as a written value as well, the fallback would be one
+more answer to `isWrittenAs` beside its branches. Ruby's `x ||= y` needs
+no fallback of its own, because the adapter already records it as a
+write of `y` to `x`. When a branch is something no static reader can
 settle, such as a global cache or a parameter, that branch derives
 nothing. The branch that does resolve is then the only claim the source
 makes. The usual client singleton, `global.prisma || new PrismaClient()`,
