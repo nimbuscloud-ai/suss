@@ -438,6 +438,29 @@ describe("the functions a route reaches", () => {
     ).toEqual(["helper", "run"]);
   });
 
+  it("links no method call nothing declares to a function of the same name in the file", async () => {
+    write("app/main.py", [
+      ...APP_HEADER,
+      "class ReportJob:",
+      '    table = "orders"',
+      "",
+      "def get(key):",
+      "    return key",
+      "",
+      '@app.get("/jobs")',
+      "def jobs():",
+      "    job = ReportJob()",
+      '    return job.lookup.get("region"), get("table")',
+    ]);
+
+    const summaries = await extract();
+    expect(calls(unitNamed(summaries, "jobs"))).toEqual([
+      ["ReportJob", undefined],
+      ["job.lookup.get", undefined],
+      ["get", summaryIdentifier(unitNamed(summaries, "get"))],
+    ]);
+  });
+
   it("stops when one name in a file is imported from two modules", async () => {
     write("app/first.py", ["def load():", "    return 1"]);
     write("app/other.py", ["def load():", "    return 2"]);

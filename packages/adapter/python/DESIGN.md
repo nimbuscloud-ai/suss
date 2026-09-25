@@ -489,6 +489,8 @@ Where the walk stops, and the reason the gap gives:
 
 When one callee spelling resolves to two definitions in one body, for example `load()` under a class body that imports its own `load`, the call is placed on neither.
 
+A bare name that nothing declares is left unplaced, and the link step then looks for a summary of that name in the caller's own file. A method call that nothing declares, `order.save()`, is placed at its own call instead, so it links to nothing. A module function called `save` in the same file is never what a method call runs.
+
 Not followed yet: a method inherited from a base class, a callable stored in a dict or a list, a decorator's own body, and an attribute set on `self` in `__init__` and called elsewhere. A function written in a parameter default such as `Depends(get_db)` is not a call the route makes. It runs around the route, and the next section describes how the adapter reads it.
 
 A summary's `identity.id` is the file relative to the project root plus the export path (`app/store.py::read_orders`, `app/models.py::Orders.total`), and `summary` on an effect is that id. When two summaries would share an id, their boundary tells them apart, and then their line.
