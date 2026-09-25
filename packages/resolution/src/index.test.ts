@@ -1102,6 +1102,215 @@ describe("a construction as an object of its own", () => {
   });
 });
 
+describe("a value the class body assigns", () => {
+  // class ReportJob: table = "orders"; def run(self): ...
+  const job: Array<[string, ...string[]]> = [
+    ["objectValue", "ReportJob"],
+    ["writtenValue", "orders"],
+    ["holdsProperty", "ReportJob", "table", "orders"],
+    ["func", "run"],
+    ["holdsProperty", "ReportJob", "run", "run"],
+    ["binds", "ReportJobRef", "ReportJob"],
+  ];
+  const receiver: Array<[string, ...string[]]> = [
+    ...job,
+    ["instanceOf", "run#self", "ReportJob"],
+  ];
+
+  it("is read off the class itself", () => {
+    expect(
+      writtenAsOf(
+        [...job, ["readsProperty", "read", "ReportJobRef", "table"]],
+        "read",
+      ),
+    ).toEqual(["orders"]);
+  });
+
+  it("is read off a class that extends the one assigning it", () => {
+    expect(
+      writtenAsOf(
+        [
+          ...job,
+          ["objectValue", "DailyJob"],
+          ["extends", "DailyJob", "ReportJobRef"],
+          ["binds", "DailyJobRef", "DailyJob"],
+          ["readsProperty", "read", "DailyJobRef", "table"],
+        ],
+        "read",
+      ),
+    ).toEqual(["orders"]);
+  });
+
+  it("is not read off a receiver, since the run cannot see how it was built", () => {
+    expect(
+      writtenAsOf(
+        [...receiver, ["readsProperty", "read", "run#self", "table"]],
+        "read",
+      ),
+    ).toEqual([]);
+  });
+
+  it("leaves a receiver the methods its class declares", () => {
+    expect(
+      resolutionsOf(
+        [...receiver, ["readsProperty", "read", "run#self", "run"]],
+        "read",
+      ),
+    ).toEqual(["run"]);
+  });
+
+  it("is read off a construction that passes nothing", () => {
+    // job = ReportJob(); job.table
+    expect(
+      writtenAsOf(
+        [
+          ...job,
+          ["call", "site", "ReportJobRef"],
+          ["writtenValue", "site"],
+          ["callPassesNothing", "site"],
+          ["binds", "made", "site"],
+          ["readsProperty", "read", "made", "table"],
+        ],
+        "read",
+      ),
+    ).toEqual(["orders"]);
+  });
+
+  it("is not read off a construction that passes an argument", () => {
+    // ReportJob(table="audit").table
+    expect(
+      writtenAsOf(
+        [
+          ...job,
+          ["call", "site", "ReportJobRef"],
+          ["writtenValue", "site"],
+          ["writtenValue", "audit"],
+          ["callKeywordArg", "site", "table", "audit"],
+          ["readsProperty", "read", "site", "table"],
+        ],
+        "read",
+      ),
+    ).toEqual([]);
+  });
+
+  it("is not read off what a finder gave back, which was built elsewhere", () => {
+    // ReportJob.first(), where a pack says first gives back one ReportJob.
+    expect(
+      writtenAsOf(
+        [
+          ...job,
+          ["extendsNamed", "ReportJob", "Model"],
+          ["givesBackOne", "Model", "first"],
+          ["readsProperty", "firstRead", "ReportJobRef", "first"],
+          ["call", "found", "firstRead"],
+          ["writtenValue", "found"],
+          ["callPassesNothing", "found"],
+          ["readsProperty", "read", "found", "table"],
+        ],
+        "read",
+      ),
+    ).toEqual([]);
+  });
+
+  it("is not read off what a function annotated as returning the class gives back", () => {
+    expect(
+      writtenAsOf(
+        [
+          ...job,
+          ["func", "load"],
+          ["returnsClass", "load", "ReportJobRef"],
+          ["binds", "loadRef", "load"],
+          ["call", "loaded", "loadRef"],
+          ["writtenValue", "loaded"],
+          ["callPassesNothing", "loaded"],
+          ["readsProperty", "read", "loaded", "table"],
+        ],
+        "read",
+      ),
+    ).toEqual([]);
+  });
+
+  it("is read off a construction a factory returns", () => {
+    // def make(): return ReportJob()
+    expect(
+      writtenAsOf(
+        [
+          ...job,
+          ["func", "make"],
+          ["call", "site", "ReportJobRef"],
+          ["callPassesNothing", "site"],
+          ["writtenValue", "site"],
+          ["returnsValue", "make", "site"],
+          ["binds", "makeRef", "make"],
+          ["call", "made", "makeRef"],
+          ["readsProperty", "read", "made", "table"],
+        ],
+        "read",
+      ),
+    ).toEqual(["orders"]);
+  });
+
+  it("is read off a name for the call of a factory returning a construction", () => {
+    // def make(): return ReportJob()
+    // job = make(); job.table
+    expect(
+      writtenAsOf(
+        [
+          ...job,
+          ["func", "make"],
+          ["call", "site", "ReportJobRef"],
+          ["callPassesNothing", "site"],
+          ["writtenValue", "site"],
+          ["returnsValue", "make", "site"],
+          ["binds", "makeRef", "make"],
+          ["call", "made", "makeRef"],
+          ["writtenValue", "made"],
+          ["binds", "named", "made"],
+          ["readsProperty", "read", "named", "table"],
+        ],
+        "read",
+      ),
+    ).toEqual(["orders"]);
+  });
+
+  it("is read off an object a factory returns, and off a name for that call", () => {
+    // def make(): return {"table": "orders"}
+    const made: Array<[string, ...string[]]> = [
+      ["func", "make"],
+      ["objectValue", "settings"],
+      ["writtenValue", "orders"],
+      ["holdsProperty", "settings", "table", "orders"],
+      ["returnsValue", "make", "settings"],
+      ["binds", "makeRef", "make"],
+      ["call", "made", "makeRef"],
+      ["writtenValue", "made"],
+      ["binds", "named", "made"],
+      ["readsProperty", "read", "made", "table"],
+      ["readsProperty", "namedRead", "named", "table"],
+    ];
+    expect(writtenAsOf(made, "read")).toEqual(["orders"]);
+    expect(writtenAsOf(made, "namedRead")).toEqual(["orders"]);
+  });
+
+  it("is read off the receiver under a construction that passes nothing, and not under one that passes something", () => {
+    const sites: Array<[string, ...string[]]> = [
+      ...receiver,
+      ["readsProperty", "read", "run#self", "table"],
+      ["call", "plain", "ReportJobRef"],
+      ["writtenValue", "plain"],
+      ["callPassesNothing", "plain"],
+      ["callOutsideMethod", "plain"],
+      ["call", "given", "ReportJobRef"],
+      ["writtenValue", "given"],
+      ["writtenValue", "audit"],
+      ["callKeywordArg", "given", "table", "audit"],
+      ["callOutsideMethod", "given"],
+    ];
+    expect(writtenAsUnder(sites, "read", "plain")).toEqual(["orders"]);
+    expect(writtenAsUnder(sites, "read", "given")).toEqual([]);
+  });
+});
+
 describe("a value read under the site its receiver was made at", () => {
   // class Api { constructor(base) { this.client = axios.create(base) }
   // items(path) {} refresh() { this.items("/c") } }, with two module-level

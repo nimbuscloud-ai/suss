@@ -491,7 +491,23 @@ describe("python value facts", () => {
     expect(rows(unpacked, "callArg")).toEqual([]);
   });
 
-  it("says which type a parameter and an annotated assignment declare", async () => {
+  it("says which calls pass nothing at all, counting a splat as something", async () => {
+    const source = [
+      "a = build()",
+      "b = build(first)",
+      "c = build(**options)",
+      "d = build(flag=True)",
+      "e = build(  # no arguments yet",
+      ")",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    expect(
+      rows(db, "callPassesNothing").map((row) => textAt(source, row[0] ?? "")),
+    ).toEqual(["build()", "build(  # no arguments yet\n)"]);
+  });
+
+  it("says an annotated parameter or assignment is one of the class it declares", async () => {
     const db = await factsFor(
       [
         "def handler(db: Session, other, count: int = 0):",
@@ -502,7 +518,7 @@ describe("python value facts", () => {
       ].join("\n"),
     );
     const [funcKey] = rows(db, "func")[0] ?? [];
-    expect(rows(db, "statesType")).toEqual([
+    expect(rows(db, "instanceOf")).toEqual([
       [`${funcKey}#db`, "#Session"],
       [`${funcKey}#count`, "#int"],
       [`${funcKey}#local`, "#Store"],
@@ -514,7 +530,7 @@ describe("python value facts", () => {
     const source =
       'def handler(a: Annotated[Session, Depends(x)], b: "Store", c: orm.Session):\n    pass\n';
     const db = await factsFor(source);
-    const stated = rows(db, "statesType").map((row) => row[1]);
+    const stated = rows(db, "instanceOf").map((row) => row[1]);
     expect(stated.slice(0, 2)).toEqual(["#Session", "#Store"]);
     expect(textAt(source, stated[2] ?? "")).toBe("orm.Session");
     expect(rows(db, "readsProperty")).toContainEqual([
@@ -528,7 +544,7 @@ describe("python value facts", () => {
     const db = await factsFor(
       ["class Event:", '    kind: Literal["a"] = "a"', ""].join("\n"),
     );
-    expect(rows(db, "statesType")).toEqual([]);
+    expect(rows(db, "instanceOf")).toEqual([]);
   });
 
   it("keys a name two functions both write under each of them", async () => {

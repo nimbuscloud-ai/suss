@@ -292,6 +292,9 @@ function emitCall(emitter: Emitter, call: PyNode): void {
   if (!emitter.insideMethod) {
     add(emitter, "callOutsideMethod", callKey);
   }
+  if (passesNothing(args)) {
+    add(emitter, "callPassesNothing", callKey);
+  }
 
   for (const argument of callArguments(call)) {
     if (argument.kind === "keyword") {
@@ -359,6 +362,18 @@ export function callArguments(call: PyNode): CallArgument[] {
 
 /** Written in an argument list without taking a position of its own. */
 const NOT_AN_ARGUMENT = new Set(["dictionary_splat", "comment"]);
+
+/**
+ * Whether a call is written with nothing between its parentheses. A splat
+ * counts as an argument here, since it can fill any field of a class the
+ * call builds.
+ */
+function passesNothing(args: PyNode): boolean {
+  return (
+    args.type === "argument_list" &&
+    children(args).every((child) => child.type === "comment")
+  );
+}
 
 /**
  * The key a value joins on. A bare name joins on the name in the scope that
@@ -444,7 +459,7 @@ function statedTypeKey(emitter: Emitter, annotation: PyNode): string | null {
   return target === null ? null : classReferenceKey(emitter, target);
 }
 
-/** `name: T` on a parameter or an assignment, as the two keys the rules join. */
+/** `name: T` on a parameter or an assignment says the name is one of T. */
 function emitStatedType(
   emitter: Emitter,
   nameKey: string,
@@ -453,7 +468,7 @@ function emitStatedType(
   const typeKey =
     annotation === null ? null : statedTypeKey(emitter, annotation);
   if (typeKey !== null) {
-    add(emitter, "statesType", nameKey, typeKey);
+    add(emitter, "instanceOf", nameKey, typeKey);
   }
 }
 
@@ -591,6 +606,17 @@ function emitExpressionFacts(emitter: Emitter, node: PyNode): void {
   });
 }
 
+/** Whether a def is written under `@classmethod`. */
+function isClassMethod(fn: PyNode): boolean {
+  const decorated = fn.parent;
+  return (
+    decorated?.type === "decorated_definition" &&
+    children(decorated).some(
+      (child) => child.type === "decorator" && child.text === "@classmethod",
+    )
+  );
+}
+
 /** The class a method belongs to, and what that method calls its receiver. */
 interface MethodReceiver {
   classKey: string;
@@ -632,10 +658,16 @@ function emitFunctionFacts(
         add(emitter, "paramOf", funcKey, String(position), paramKey);
       }
       // The receiver is an instance of the class, so a value one method
-      // stores on it reaches a read in another method.
+      // stores on it reaches a read in another method. A class method's
+      // receiver is the class itself, which reads what the body assigns.
       if (classKey !== undefined && position === -1) {
         receiver = { classKey, name: paramName.text };
-        add(emitter, "instanceOf", paramKey, classKey);
+        add(
+          emitter,
+          isClassMethod(fn) ? "binds" : "instanceOf",
+          paramKey,
+          classKey,
+        );
       }
       add(emitter, "paramNamed", funcKey, paramName.text, paramKey);
       // The annotation is read in the scope around the function.
