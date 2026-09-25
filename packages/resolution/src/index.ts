@@ -130,7 +130,9 @@ export type {
 //   returnsValue(f, v)          f returns v
 //   returnsClass(f, c)          f is annotated as returning c
 //   returnsNamed(f, n)          f's return annotation is written n
-//   bodyCalls(f, c)             f's body calls c
+//   bodyCalls(f, c)             f's body calls the callee c, keyed the
+//                               way `call` keys that call's callee
+//   makesCall(f, r)             the call r is written in f's own body
 //   callOutsideMethod(r)        the call r is outside every method body
 //   containsFn(f, g)            g is declared inside f
 //   call(r, c)                  r is a call whose callee is c
@@ -798,17 +800,14 @@ const STATED_RULES = [
     ],
   ),
 
-  // Which body a call is written in. One adapter states the call it
-  // found and another states the callee, so both spellings are read.
+  // Which body a call is written in, a closure's calls included. Joining
+  // `bodyCalls` on the callee would put every call of a bare name in
+  // Python or Ruby in every body that calls that name.
+  rule("callInBody", [v("f"), v("r")], [lit("makesCall", v("f"), v("r"))]),
   rule(
     "callInBody",
     [v("f"), v("r")],
-    [lit("bodyCallsDeep", v("f"), v("r")), lit("call", v("r"), v("c"))],
-  ),
-  rule(
-    "callInBody",
-    [v("f"), v("r")],
-    [lit("bodyCallsDeep", v("f"), v("c")), lit("call", v("r"), v("c"))],
+    [lit("containsFn", v("f"), v("g")), lit("callInBody", v("g"), v("r"))],
   ),
 
   // The context a call is made under: every site of the class whose
@@ -1501,23 +1500,18 @@ const STATED_RULES = [
     [
       lit("returnsFunc", v("f"), v("g")),
       lit("bodyCallsDeep", v("g"), v("c")),
-      lit("binds", v("c"), v("p")),
+      lit("refersToParam", v("c"), v("p")),
       lit("paramOf", v("f"), v("k"), v("p")),
     ],
   ),
 
-  // Argument flow: which parameter a value traces back to. Directly
-  // (an identifier bound to the parameter), or through a call to
-  // another unwrapping factory. This is what lets
-  // `createProtected(h) { return service.withAuth(h); }` unwrap:
-  // the returned call passes h through withAuth, which unwraps.
+  // Which parameter a value traces back to: the parameter under any name,
+  // or a call passing it to another factory that unwraps, which is how
+  // `createProtected(h) { return service.withAuth(h); }` unwraps.
   rule(
     "flowsToParam",
     [v("x"), v("p")],
-    [
-      lit("binds", v("x"), v("p")),
-      lit("paramOf", v("anyF"), v("anyK"), v("p")),
-    ],
+    [lit("refersToParam", v("x"), v("p"))],
   ),
   rule(
     "flowsToParam",

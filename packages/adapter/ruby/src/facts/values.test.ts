@@ -292,13 +292,23 @@ describe("ruby value facts", () => {
     );
   });
 
-  it("records the calls a method's body makes, the bare ones included", async () => {
+  it("records the callees a method's body calls, the bare ones included", async () => {
     const source = "def handler\n  log(event)\nend\n";
     const db = await factsFor(source);
     expect(rows(db, "bodyCalls").map((row) => row[1])).toEqual([
-      keyOf(source, "log(event)"),
-      keyOf(source, "event"),
+      "#log",
+      "#event",
     ]);
+  });
+
+  it("records both callees of a call that runs its receiver", async () => {
+    const source = "def guard(fn)\n  fn.call(1)\nend\n";
+    const db = await factsFor(source);
+    const callees = rows(db, "call").map((row) => row[1]);
+    expect(rows(db, "bodyCalls").map((row) => row[1])).toEqual(callees);
+    expect(callees).toContain(
+      `${keyOf(source, "def guard(fn)\n  fn.call(1)\nend")}#fn`,
+    );
   });
 
   it("reads the expressions a class body runs, which Ruby runs like any other code", async () => {

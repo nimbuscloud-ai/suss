@@ -62,6 +62,7 @@ const ARITY: Record<string, number> = {
   paramOf: 3,
   returnsValue: 2,
   bodyCalls: 2,
+  makesCall: 2,
   containsFn: 2,
   call: 2,
   callArg: 3,

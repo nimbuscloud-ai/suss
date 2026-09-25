@@ -21,6 +21,9 @@ const SOURCES: Record<string, CaseFiles> = {
   "a name read inside a function": {
     "/f.ts": "export function handler(order: unknown) { return order; }\n",
   },
+  "a function calling its parameter": {
+    "/f.ts": "export function guard(fn: (n: number) => void) { fn(1); }\n",
+  },
   "a name bound to a call": {
     "/f.ts":
       "declare function build(): unknown;\nexport const registry = build();\n",

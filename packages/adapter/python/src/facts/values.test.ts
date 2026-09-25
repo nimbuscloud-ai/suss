@@ -166,11 +166,22 @@ describe("python value facts", () => {
     expect(returned).toContain("#shallow");
     expect(db.size("containsFn")).toBe(1);
   });
-  it("records the calls a function's body makes", async () => {
+  it("records the callee each call in a function's body names", async () => {
     const db = await factsFor("def handler():\n    log(event)\n");
-    expect(db.size("bodyCalls")).toBe(1);
+    expect(rows(db, "bodyCalls").map((row) => row[1])).toEqual(["#log"]);
+    expect(rows(db, "call").map((row) => row[1])).toEqual(["#log"]);
   });
 
+  it("records the call a lambda's body is, keyed as the parameter it calls", async () => {
+    const db = await factsFor(
+      "def guard(fn):\n    return lambda *args: fn(*args)\n",
+    );
+    const [param] = rows(db, "paramOf").map((row) => row[2]);
+    expect(rows(db, "bodyCalls").map((row) => row[1])).toEqual([param]);
+    expect(rows(db, "makesCall")).toEqual([
+      [rows(db, "func")[1]?.[0], rows(db, "call")[0]?.[0]],
+    ]);
+  });
   it("skips a dictionary key that is not written as a string", async () => {
     const db = await factsFor("table = {key_name: value}\n");
     expect(db.size("holdsProperty")).toBe(0);

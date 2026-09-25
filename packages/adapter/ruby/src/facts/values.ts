@@ -253,6 +253,22 @@ export function invokedKeyOf(
   return invoked === null ? null : readKey(filePath, invoked, enclosing);
 }
 
+/**
+ * Every key `call` gives this call's callee: the value `f.call(x)` runs
+ * and the method the call sends. `bodyCalls` states the same keys, since
+ * the rules take the two for the same value.
+ */
+function calleeKeysOf(
+  filePath: string,
+  call: RbNode,
+  enclosing: RbNode | null,
+): string[] {
+  return [
+    invokedKeyOf(filePath, call, enclosing),
+    calleeKeyOf(filePath, call, enclosing),
+  ].filter((key): key is string => key !== null);
+}
+
 function emitCall(emitter: Emitter, call: RbNode): void {
   const callKey = nodeId(emitter.filePath, call);
   // A name bound to a call stops its chain at the call, and `isWrittenAs`
@@ -841,7 +857,10 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
       }
     }
     if (child.type === "call" || isBareCall(child, method)) {
-      add(inside, "bodyCalls", funcKey, nodeId(inside.filePath, child));
+      for (const callee of calleeKeysOf(inside.filePath, child, method)) {
+        add(inside, "bodyCalls", funcKey, callee);
+      }
+      add(inside, "makesCall", funcKey, nodeId(inside.filePath, child));
     }
   });
 

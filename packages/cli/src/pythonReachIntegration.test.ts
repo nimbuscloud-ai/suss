@@ -252,3 +252,47 @@ describe("what a Python route reaches through a function passed by name", () => 
     expect(text).not.toContain("unfollowedCall");
   });
 });
+
+describe("what a Python route reaches through a project's own guard", () => {
+  beforeEach(() => {
+    write("app/guards.py", [
+      "def require_admin(handler):",
+      "    def checked(*args):",
+      "        return handler(*args)",
+      "    return checked",
+    ]);
+    write("app/main.py", [
+      "from fastapi import FastAPI",
+      "from app.guards import require_admin",
+      "from app.store import read_orders",
+      "",
+      "app = FastAPI()",
+      "guarded_read = require_admin(read_orders)",
+      "",
+      '@app.get("/orders")',
+      "def list_orders():",
+      "    return guarded_read()",
+    ]);
+  });
+
+  it("reaches the database through the function the guard was given", async () => {
+    const summaries = await extracted();
+    const out = path.join(dir, "summaries");
+    fs.mkdirSync(out);
+    fs.writeFileSync(path.join(out, "code.json"), JSON.stringify(summaries));
+
+    const { exitCode } = answerQuestion({
+      question: "why does GET /orders reach postgresql:Orders",
+      dir: out,
+      project: dir,
+      output: path.join(dir, "answer.txt"),
+    });
+
+    expect(exitCode).toBe(0);
+    const text = fs.readFileSync(path.join(dir, "answer.txt"), "utf8");
+    expect(text).toContain("that call runs read_orders");
+    expect(text).toContain(
+      "calls require_admin (app/guards.py:1), a factory that passes its argument through",
+    );
+  });
+});
