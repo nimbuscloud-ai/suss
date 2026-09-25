@@ -1069,7 +1069,9 @@ function emitClassFacts(emitter: Emitter, cls: PyNode): string {
   }
 
   const body = field(cls, "body");
-  for (const statement of body === null ? [] : children(body)) {
+  const statements = body === null ? [] : children(body);
+  const accessed = accessorNames(statements);
+  for (const statement of statements) {
     const member = declaredBy(statement);
     if (member.type === "assignment") {
       const left = field(member, "left");
@@ -1089,7 +1091,14 @@ function emitClassFacts(emitter: Emitter, cls: PyNode): string {
     const memberKey = declaredMemberKey(emitter, member, classKey);
     const name = field(member, "name");
     if (memberKey !== null && name !== null) {
-      add(emitter, "holdsProperty", classKey, name.text, memberKey);
+      for (const held of readUnderName(
+        emitter,
+        statement,
+        memberKey,
+        accessed,
+      )) {
+        add(emitter, "holdsProperty", classKey, name.text, held);
+      }
       if (name.text === INIT_METHOD) {
         add(emitter, "initializes", classKey, memberKey);
       }
@@ -1097,6 +1106,74 @@ function emitClassFacts(emitter: Emitter, cls: PyNode): string {
   }
 
   return classKey;
+}
+
+/** The decorators that make a def a property, as the source spells them. */
+const PROPERTY_DECORATORS = new Set([
+  "@property",
+  "@cached_property",
+  "@functools.cached_property",
+]);
+
+/** `@name.setter` and its siblings, on the def that replaces one part of a property. */
+const ACCESSOR_PART = /^@(\w+)\.(setter|deleter|getter)$/;
+
+function decoratorsOf(statement: PyNode): string[] {
+  return statement.type === "decorated_definition"
+    ? children(statement)
+        .filter((child) => child.type === "decorator")
+        .map((child) => child.text)
+    : [];
+}
+
+/**
+ * Each name a def in the class body writes a setter, deleter or getter
+ * for. A getter under a decorator the adapter does not know, such as a
+ * library's own kind of property, is still a getter when a setter for
+ * its name follows it.
+ */
+function accessorNames(statements: readonly PyNode[]): Set<string> {
+  const names = new Set<string>();
+  for (const statement of statements) {
+    for (const decorator of decoratorsOf(statement)) {
+      const part = ACCESSOR_PART.exec(decorator);
+      if (part?.[1] !== undefined) {
+        names.add(part[1]);
+      }
+    }
+  }
+  return names;
+}
+
+/**
+ * What a read of a def's name finds on the class. For a plain method that
+ * is the function. Reading a property runs its getter, so a read finds
+ * what the getter returns, and never the setter or the deleter.
+ */
+function readUnderName(
+  emitter: Emitter,
+  statement: PyNode,
+  funcKey: string,
+  accessed: ReadonlySet<string>,
+): string[] {
+  const decorators = decoratorsOf(statement);
+  const part = decorators
+    .map((decorator) => ACCESSOR_PART.exec(decorator)?.[2])
+    .find((found) => found !== undefined);
+  if (part === "setter" || part === "deleter") {
+    return [];
+  }
+  const name = field(declaredBy(statement), "name")?.text ?? "";
+  const getter =
+    part === "getter" ||
+    accessed.has(name) ||
+    decorators.some((decorator) => PROPERTY_DECORATORS.has(decorator));
+  if (!getter) {
+    return [funcKey];
+  }
+  return emitter.db
+    .lookup("returnsValue", 0, funcKey)
+    .map((row) => String(row[1]));
 }
 
 /**

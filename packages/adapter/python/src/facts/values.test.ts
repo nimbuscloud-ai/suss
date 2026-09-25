@@ -249,6 +249,45 @@ describe("python value facts", () => {
     ]);
   });
 
+  it("holds what a property's getter returns under its name, and nothing for its setter", async () => {
+    const source = [
+      "class Job:",
+      "    @property",
+      "    def table(self):",
+      '        return "orders"',
+      "",
+      "    @table.setter",
+      "    def table(self, value):",
+      "        pass",
+      "",
+      "    @library_property",
+      "    def region(self):",
+      '        return "eu"',
+      "",
+      "    @region.deleter",
+      "    def region(self):",
+      "        pass",
+      "",
+      "    def run(self):",
+      "        pass",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const run = rows(db, "func").find((row) =>
+      textAt(source, row[0] ?? "").startsWith("def run"),
+    );
+    expect(
+      rows(db, "holdsProperty").map((row) => [
+        row[1],
+        row[1] === "run" ? row[2] : textAt(source, row[2] ?? ""),
+      ]),
+    ).toEqual([
+      ["table", '"orders"'],
+      ["region", '"eu"'],
+      ["run", run?.[0]],
+    ]);
+  });
+
   it("keeps a plain class attribute apart from an annotated field's default", async () => {
     const source = [
       "class Job:",
