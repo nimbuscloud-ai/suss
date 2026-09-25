@@ -843,6 +843,23 @@ describe("evaluate: the order a round walks a rule body in", () => {
     ).toEqual(["asked", "wide", "narrow"]);
   });
 
+  it("checks a constant against the new facts a round reads first", () => {
+    const db = new Database();
+    factsInto(db, [
+      ["raw", ["a", "on"]],
+      ["raw", ["b", "off"]],
+    ]);
+    evaluate(
+      db,
+      [
+        rule("flag", [V("x"), V("s")], [lit("raw", V("x"), V("s"))]),
+        rule("on", [V("x")], [lit("flag", V("x"), constant("on"))]),
+      ],
+      witnesses,
+    );
+    expect(sorted(db.facts("on"))).toEqual(["a"]);
+  });
+
   it("reads the new facts first in a tagged round too", () => {
     const facts: Facts = [["wanted", ["a"]]];
     for (let i = 0; i < 50; i++) {

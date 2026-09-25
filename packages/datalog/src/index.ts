@@ -681,8 +681,8 @@ let nextSource: readonly Tuple[] = [];
  * literal with the fewest rows under the bindings comes next, and one
  * that shares no bound variable is scanned whole only when nothing
  * else is left. For a positive literal, the join reads the rows it
- * finds in `nextSource`. Returns -1 when a literal has no rows under its bindings, which
- * ends the branch.
+ * finds in `nextSource`. Returns -1 when a literal has no rows under
+ * its bindings, which ends the branch.
  */
 function nextLiteral(
   db: Database,
@@ -726,13 +726,8 @@ function nextLiteral(
     }
   }
   // Only negated literals with a variable nothing binds are left, and
-  // grounding one reports it.
-  for (let index = 0; index < body.length; index++) {
-    if (!(taken & (1 << index))) {
-      groundNegated(body[index], bindings);
-    }
-  }
-  return -1;
+  // the caller grounding one reports it.
+  return body.findIndex((_, index) => !(taken & (1 << index)));
 }
 
 /**
