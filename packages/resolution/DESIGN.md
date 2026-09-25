@@ -47,7 +47,8 @@ readsKeyed(site, o, x)      site reads the entry of o at the value of
 environmentObject(w)        w is written as the object a pack calls
                             the process environment
 statesType(x, t)            the source declares the name x with the
-                            type written at t
+                            type written at t. No hop reads it, and
+                            "A type the callers declare" says why
 ```
 
 `declaresName` is the only fact an adapter records after asking these
@@ -463,11 +464,28 @@ A recognizer that reads the annotation at the call site finds nothing
 on `get`. The adapter records `statesType(x, t)` for every annotated
 parameter and every annotated assignment. `x` is the key of the name,
 and `t` is the key of the name or expression the annotation is written
-as. `typedAs` then gives a value the type its own declaration states,
-the type of the name it is declared as, and the type of every argument
-a caller passes to the parameter it refers to. The last case recurses,
-so a chain of unannotated helpers gets the type the outermost caller
-declared. It runs in the same direction as `paramNamesEnv`.
+as. `typedAs` gives a value the type its own declaration states, and
+the type of anything the value reaches by value steps. The argument
+step is one of those, so a chain of unannotated helpers gets the type
+the outermost caller declared. A name declared as a typed one, a
+fallback with a typed branch, and a reassigned name that ends holding
+a typed value get it the same way. `typedAs` has no walk of its own.
+It is a stopping condition on `reaches`, like `comesTo` and
+`isWrittenAs`.
+
+An annotation says what `instanceOf` says, but the adapter records it
+as `statesType`, because `instanceOf` is a hop. Anything that reaches a
+class by an instance step reads what the class body assigns as its own
+properties.
+That is right for a receiver calling its methods, and for a settings
+object built with no arguments, whose fields are the class-body
+defaults. It is wrong for a parameter, which a caller or a framework
+built with arguments the run cannot see. Stated as `instanceOf`, a
+parameter `current_user: User` whose model declares
+`is_superuser: bool = False` reads `current_user.is_superuser` as
+`False` in every handler that takes one. So the declaration stays a
+fact no hop reads until the rules can give a value built elsewhere the
+class's methods without its field values.
 
 `wantedType` seeds the question, and the answers come back in four
 relations: the types (`wantedTypedAs`), every argument passed directly
