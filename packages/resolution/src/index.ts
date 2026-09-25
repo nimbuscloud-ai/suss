@@ -171,7 +171,9 @@ export type {
 //   readsKeyed(site, o, x)      site reads the entry of o at the
 //                               value of x, not at a written key
 //   environmentObject(w)        w is the process environment
-//   statesType(x, t)            x is declared with the type written at t
+//   statesType(x, t)            x is declared with the type written at
+//                               t. No hop reads it, so unlike instanceOf
+//                               x never takes the class body's values
 //
 // Node identity is the adapter's business. The rules only join on it.
 // Making one of a class is a call of the class, however the language
@@ -1116,21 +1118,16 @@ const STATED_RULES = [
     ],
   ),
 
-  // A type some declaration gives a value, its own or a caller's. Two
-  // callers can disagree, so the asking side decides whether it got one.
+  // A type some declaration gives a value: its own, or that of anything
+  // the value steps to, a caller's argument included. Two callers can
+  // disagree, so the asking side decides whether it got one.
   rule("typedAs", [v("x"), v("t")], [lit("statesType", v("x"), v("t"))]),
   rule(
     "typedAs",
     [v("x"), v("t")],
-    [lit("binds", v("x"), v("y")), lit("typedAs", v("y"), v("t"))],
-  ),
-  rule(
-    "typedAs",
-    [v("o"), v("t")],
     [
-      lit("refersToParam", v("o"), v("p")),
-      lit("passesArgument", v("r"), v("p"), v("a")),
-      lit("typedAs", v("a"), v("t")),
+      lit("reaches", v("x"), v("y"), VALUE_STEP),
+      lit("statesType", v("y"), v("t")),
     ],
   ),
 
