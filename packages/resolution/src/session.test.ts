@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { Database } from "@suss/datalog";
+import { Database, profileEvaluation } from "@suss/datalog";
 
 import { RESOLUTION_RULES } from "./index.js";
 import { explainResolvedKey, proofRules } from "./session.js";
@@ -57,7 +57,34 @@ describe("explainResolvedKey", () => {
     );
     expect(explained?.stats.baseFacts).toBe(4);
     expect(explained?.stats.derivedFacts).toBeGreaterThan(0);
-    expect(db.size("resolves")).toBe(0);
+  });
+
+  it("starts a second question from the first one's proof pass", () => {
+    const db = factsOf([
+      ["func", "handlerFn"],
+      ["exportsAs", "lib", "handler", "handlerFn"],
+      ["imports", "h", "lib", "handler"],
+      ["binds", "x", "h"],
+    ]);
+    const ask = (key: string) =>
+      explainResolvedKey({
+        db,
+        rules: RESOLUTION_RULES,
+        key,
+        locate,
+        displayPath,
+      });
+
+    const first = ask("x");
+    const { result: second, profile } = profileEvaluation(() => ask("h"));
+
+    expect(first?.target).toEqual(LOCATIONS.handlerFn);
+    expect(second?.target).toEqual(LOCATIONS.handlerFn);
+    expect(second?.stats).toMatchObject({
+      baseFacts: 4,
+      derivedFacts: first?.stats.derivedFacts,
+    });
+    expect(profile.examined).toBe(0);
   });
 
   it("lets a language's own phrase say a step", () => {

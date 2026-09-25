@@ -12,17 +12,11 @@
  * adapter supplies how a key is said in a sentence and nothing else.
  */
 
-import {
-  Database,
-  evaluate,
-  proofOf,
-  rulesDeriving,
-  witnesses,
-} from "@suss/datalog";
+import { evaluate, proofOf, rulesDeriving, witnesses } from "@suss/datalog";
 
 import { explainResolutionProof, renderExplanation } from "./explain.js";
 
-import type { Rule } from "@suss/datalog";
+import type { Database, Rule } from "@suss/datalog";
 import type { ResolutionExplanation, StepPhrase } from "./explain.js";
 
 /** A value or function said the way an answer prints it. */
@@ -53,7 +47,10 @@ export interface WhyExplained {
 }
 
 export interface ExplainResolvedKeyOptions {
-  /** The facts the session extracted. Read, never written to. */
+  /**
+   * The facts the session extracted. The proof pass derives into them,
+   * so nothing else may evaluate rules over this database.
+   */
   db: Database;
   /** The resolution rules plus whatever the language adds to them. */
   rules: Rule[];
@@ -87,26 +84,14 @@ export function explainResolvedKey(
 ): WhyExplained | null {
   const { db, rules, key, locate, displayPath } = options;
 
-  const proofDb = new Database();
-  let baseFacts = 0;
-  for (const relation of db.relationNames()) {
-    for (const tuple of db.facts(relation)) {
-      proofDb.add(relation, tuple);
-      baseFacts++;
-    }
-  }
-
+  const witnessRules = proofRules(rules);
   const started = performance.now();
-  evaluate(proofDb, proofRules(rules), witnesses);
+  evaluate(db, witnessRules, witnesses);
   const evaluateMs = performance.now() - started;
-  const derivedFacts =
-    proofDb
-      .relationNames()
-      .reduce((count, relation) => count + proofDb.size(relation), 0) -
-    baseFacts;
+  const { baseFacts, derivedFacts } = factCounts(db, witnessRules);
 
   const targets = new Set(
-    proofDb.lookup("resolves", 0, key).map((tuple) => String(tuple[1])),
+    db.lookup("resolves", 0, key).map((tuple) => String(tuple[1])),
   );
   if (targets.size !== 1) {
     return null;
@@ -114,7 +99,7 @@ export function explainResolvedKey(
   const target = [...targets][0] as string;
 
   const proof = proofOf(
-    proofDb,
+    db,
     "resolves",
     [key, target],
     options.maxDepth === undefined ? {} : { maxDepth: options.maxDepth },
@@ -143,4 +128,22 @@ export function explainResolvedKey(
     target: targetLocation,
     stats: { baseFacts, derivedFacts, evaluateMs },
   };
+}
+
+/** The facts in `db` the session read, and the ones `rules` derived. */
+function factCounts(
+  db: Database,
+  rules: readonly Rule[],
+): { baseFacts: number; derivedFacts: number } {
+  const derived = new Set(rules.map((r) => r.head.relation));
+  let baseFacts = 0;
+  let derivedFacts = 0;
+  for (const relation of db.relationNames()) {
+    if (derived.has(relation)) {
+      derivedFacts += db.size(relation);
+    } else {
+      baseFacts += db.size(relation);
+    }
+  }
+  return { baseFacts, derivedFacts };
 }
