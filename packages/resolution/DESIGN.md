@@ -62,8 +62,8 @@ writesUnstated(x)           a write to x states no value at all. The
                             value readers in this package read it, and
                             no rule does (Python, Ruby)
 fallbackBranch(x, b)        x is a fallback expression, a || b or
-                            a ?? b, and b is one of its branches
-                            (TypeScript)
+                            a ?? b, or a or b in Python and Ruby, and b
+                            is one of its branches
 instanceOf(x, cls)          x is one of cls, and nothing says which: a
                             method's receiver, or a name Python
                             annotates with a type. cls can be a name
@@ -115,10 +115,11 @@ Classes:
 ```
 extends(c, b)               class c is written as extending b. Ruby
                             records a module c includes or prepends the
-                            same way (Python, Ruby)
+                            same way
 extendsNamed(c, n)          class c's base is written n, which is how a
                             pack matches a library base that no node in
-                            the run declares (Python, Ruby)
+                            the run declares. Only a base written as a
+                            name or a dotted name has one
 declaresName(c, n)          c declares a method n under a name the
                             source computes rather than writes out
                             (Ruby)
@@ -360,6 +361,13 @@ subclass that never overrode it. Deriving those rows into
 rewrite would then fill it only in answer to a demand that nothing
 generates.
 
+A method that a subclass overrides is contained twice, once from the
+subclass and once from its base, so a caller that needs one method
+refuses the read. The TypeScript adapter also links a method read to
+the declaration the type checker finds, which is the override. The rules
+follow that link as well as the two from `contains`, so the read still
+comes to two methods and is still refused.
+
 ## What an instance reads
 
 A class body can assign two kinds of value, and they reach an instance
@@ -437,10 +445,13 @@ A hop that only one language has is written as a step too. JavaScript's
 `.bind` and Ruby's `Const.new` are one rule each, and every question
 below uses them with no change.
 
-The value of a fallback expression (`a || b`, `a ?? b`) is one of its
-branches, so each branch is a value step. No other rule is involved.
-Only the TypeScript adapter records `fallbackBranch`. The Python adapter
-records `a or b` as a written value, which ends a chain there. When a branch is something no static reader can
+The value of a fallback expression (`a || b`, `a ?? b`, Python's and
+Ruby's `a or b`) is one of its branches, so each branch is a value step.
+No other rule is involved. An adapter records a fallback by its branches
+alone. Recorded as a written value as well, the fallback would be one
+more answer to `isWrittenAs` beside its branches. Ruby's `x ||= y` needs
+no fallback of its own, because the adapter already records it as a
+write of `y` to `x`. When a branch is something no static reader can
 settle, such as a global cache or a parameter, that branch derives
 nothing. The branch that does resolve is then the only claim the source
 makes. The usual client singleton, `global.prisma || new PrismaClient()`,

@@ -153,7 +153,8 @@ const WRITTEN_VALUE_TYPES = new Set([
   "bare_string",
   "bare_symbol",
   // Built from other expressions. A chain stops here, and the evaluator
-  // reads the expression in the scope it is written in.
+  // reads the expression in the scope it is written in. `a || b` is the
+  // exception, stated as the branches it picks between.
   "chained_string",
   "binary",
   "unary",
@@ -579,6 +580,31 @@ function emitKeyedFetch(emitter: Emitter, call: RbNode): void {
   }
 }
 
+/** The operators whose value is whichever side they pick. */
+const FALLBACK_OPERATORS = new Set(["||", "or"]);
+
+/**
+ * The two sides of `a || b` or `a or b`, whose value is one of them, or
+ * null for any other expression. `x ||= y` needs nothing here, since the
+ * write it makes is already recorded as a write of `y`.
+ */
+function fallbackBranchesOf(node: RbNode): RbNode[] | null {
+  if (
+    node.type !== "binary" ||
+    !FALLBACK_OPERATORS.has(field(node, "operator")?.text ?? "")
+  ) {
+    return null;
+  }
+  const left = field(node, "left");
+  const right = field(node, "right");
+  /* v8 ignore start */
+  if (left === null || right === null) {
+    return null;
+  }
+  /* v8 ignore stop */
+  return [left, right];
+}
+
 function emitExpressionFacts(emitter: Emitter, node: RbNode): void {
   // The walk below starts at the children, so a statement that is itself
   // a `define_method` call is checked here.
@@ -598,7 +624,17 @@ function emitExpressionFacts(emitter: Emitter, node: RbNode): void {
     if (child.type === "hash") {
       emitHash(emitter, child);
     }
-    if (WRITTEN_VALUE_TYPES.has(child.type)) {
+    const branches = fallbackBranchesOf(child);
+    if (branches !== null) {
+      for (const branch of branches) {
+        add(
+          emitter,
+          "fallbackBranch",
+          nodeId(emitter.filePath, child),
+          valueKey(emitter, branch),
+        );
+      }
+    } else if (WRITTEN_VALUE_TYPES.has(child.type)) {
       add(emitter, "writtenValue", nodeId(emitter.filePath, child));
     }
     if (child.type === "nil") {

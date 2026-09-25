@@ -122,6 +122,7 @@ const WRITTEN_VALUE_TYPES = new Set([
   "concatenated_string",
   // Composed from other expressions, so a chain ends here and the
   // evaluator reads the expression back in the scope it is written in.
+  // `a or b` is the exception, stated as the branches it picks between.
   "binary_operator",
   "boolean_operator",
   "comparison_operator",
@@ -570,6 +571,28 @@ function mappingGetRead(
   return first === undefined ? null : { container, key: first.node };
 }
 
+/**
+ * The two sides of `a or b`, whose value is one of them, or null for any
+ * other expression. `a and b` stays a written value, because its left
+ * side is the value only when that side is falsy.
+ */
+function fallbackBranchesOf(node: PyNode): PyNode[] | null {
+  if (
+    node.type !== "boolean_operator" ||
+    field(node, "operator")?.text !== "or"
+  ) {
+    return null;
+  }
+  const left = field(node, "left");
+  const right = field(node, "right");
+  /* v8 ignore start */
+  if (left === null || right === null) {
+    return null;
+  }
+  /* v8 ignore stop */
+  return [left, right];
+}
+
 /** What one expression says about itself, whichever walk reached it. */
 function emitExpressionFact(emitter: Emitter, child: PyNode): void {
   if (child.type === "call") {
@@ -598,7 +621,17 @@ function emitExpressionFact(emitter: Emitter, child: PyNode): void {
   if (child.type === "assignment") {
     emitAssignedType(emitter, child);
   }
-  if (WRITTEN_VALUE_TYPES.has(child.type)) {
+  const branches = fallbackBranchesOf(child);
+  if (branches !== null) {
+    for (const branch of branches) {
+      add(
+        emitter,
+        "fallbackBranch",
+        nodeId(emitter.filePath, child),
+        valueKey(emitter, branch),
+      );
+    }
+  } else if (WRITTEN_VALUE_TYPES.has(child.type)) {
     add(emitter, "writtenValue", nodeId(emitter.filePath, child));
   }
   if (child.type === "none") {
