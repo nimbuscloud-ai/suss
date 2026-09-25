@@ -80,6 +80,21 @@ describe("the types a value is declared as", () => {
     expect(declaredTypesOf(db, "lookup#db")).toEqual(["Session"]);
   });
 
+  it("takes the type through a fallback a caller passes", () => {
+    const db = project([{ name: "view", passes: "view#either" }]);
+    db.add("fallbackBranch", ["view#either", "view#session"]);
+    db.add("fallbackBranch", ["view#either", "view:built"]);
+    db.add("statesType", ["view#session", "Session"]);
+    expect(declaredTypesOf(db, "lookup#db")).toEqual(["Session"]);
+  });
+
+  it("takes the type of the value a reassigned name ends holding", () => {
+    const db = project([{ name: "view", passes: "view#current" }]);
+    db.add("endsHolding", ["view#current", "view#session"]);
+    db.add("statesType", ["view#session", "Session"]);
+    expect(declaredTypesOf(db, "lookup#db")).toEqual(["Session"]);
+  });
+
   it("gives nothing when one caller passes a value nothing types", () => {
     const db = project([
       { name: "view", states: "Session" },
