@@ -591,6 +591,17 @@ function emitExpressionFacts(emitter: Emitter, node: PyNode): void {
   });
 }
 
+/** Whether a def is written under `@classmethod`. */
+function isClassMethod(fn: PyNode): boolean {
+  const decorated = fn.parent;
+  return (
+    decorated?.type === "decorated_definition" &&
+    children(decorated).some(
+      (child) => child.type === "decorator" && child.text === "@classmethod",
+    )
+  );
+}
+
 /** The class a method belongs to, and what that method calls its receiver. */
 interface MethodReceiver {
   classKey: string;
@@ -632,10 +643,16 @@ function emitFunctionFacts(
         add(emitter, "paramOf", funcKey, String(position), paramKey);
       }
       // The receiver is an instance of the class, so a value one method
-      // stores on it reaches a read in another method.
+      // stores on it reaches a read in another method. A class method's
+      // receiver is the class itself, which reads what the body assigns.
       if (classKey !== undefined && position === -1) {
         receiver = { classKey, name: paramName.text };
-        add(emitter, "instanceOf", paramKey, classKey);
+        add(
+          emitter,
+          isClassMethod(fn) ? "binds" : "instanceOf",
+          paramKey,
+          classKey,
+        );
       }
       add(emitter, "paramNamed", funcKey, paramName.text, paramKey);
       // The annotation is read in the scope around the function.

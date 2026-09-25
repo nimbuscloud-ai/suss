@@ -271,6 +271,8 @@ sqlClients: [
 
 `receiverTypes.ts` works out the class of the value a method is called on, and the ORM chains use the same code. It takes the annotation written beside the name. Where there is none, it asks the rules which call assigned the name. So a client built in one module and called in another still matches, and so does one that a project factory returns. The class may be written as a plain name the file imported, `Client`, or as an attribute on an imported module, `bigquery.Client`, and both resolve to the same module and name.
 
+A class method's first parameter is the class itself, so the adapter binds it to the class, and `cls.TABLE` reads what the class body assigns.
+
 The adapter reads a `statements` argument through the value evaluator, so an f-string, a `+`, and a constant another module defines all read the same as a statement written out at the call. A piece the evaluator cannot settle becomes a parameter, which the statement would have had in that place anyway. `path` lists the keys to follow when the statement is inside a dictionary: `["query", "query"]` for a method taking `configuration={"query": {"query": sql}}`. `tables` covers a method that takes a table name instead of SQL, and the adapter reads that argument as a string and nothing more.
 
 `handsBack` is the one hop a pack can declare between two of its library's classes. Nothing in the project states what one of the library's methods returns, so the adapter does not infer it. A chain like `hook.get_client().query(sql)` matches because the hook's pattern declares that `get_client` returns the warehouse client.

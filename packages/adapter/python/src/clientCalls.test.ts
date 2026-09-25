@@ -386,6 +386,23 @@ describe("a function that calls a request function", () => {
     expect(boundary(units)).toEqual({ method: "GET", path: "/orders" });
   });
 
+  it("reads a session call on a client the class holds as an attribute, through a class method", async () => {
+    const units = await unitsIn(
+      [
+        "import httpclient",
+        "",
+        "class Orders:",
+        "    client = httpclient.Session()",
+        "",
+        "    @classmethod",
+        "    def load(cls):",
+        '        return cls.client.get("/orders")',
+      ].join("\n"),
+    );
+
+    expect(boundary(units)).toEqual({ method: "GET", path: "/orders" });
+  });
+
   it("reads a session call on a client some other method stored", async () => {
     const units = await unitsIn(
       [
