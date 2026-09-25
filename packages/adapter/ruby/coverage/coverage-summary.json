@@ -20,9 +20,9 @@
     },
     "branches": {
       "total": 3181,
-      "covered": 2890,
+      "covered": 2891,
       "skipped": 0,
-      "pct": 90.85
+      "pct": 90.88
     },
     "branchesTrue": {
       "total": 0,
@@ -962,9 +962,9 @@
     },
     "branches": {
       "total": 61,
-      "covered": 49,
+      "covered": 50,
       "skipped": 0,
-      "pct": 80.32
+      "pct": 81.96
     }
   },
   "src/paths/bareCalls.ts": {
