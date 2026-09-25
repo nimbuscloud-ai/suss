@@ -994,6 +994,23 @@ describe("what a pack's storage patterns put in the facts", () => {
 
     expect(db.size("givesBackOne")).toBe(0);
   });
+
+  it("keys a declared wrapper by the module it comes from and its name", () => {
+    const db = packFacts([
+      {
+        name: "tracing",
+        protocol: "http",
+        discovery: [],
+        transparentWrappers: [
+          { module: "tracing", name: "Tracing.wrap", argument: 0 },
+        ],
+      },
+    ]);
+
+    expect(db.facts("unwrapsByName").map((row) => row.map(String))).toEqual([
+      ["tracing", "Tracing.wrap", "0"],
+    ]);
+  });
 });
 
 describe("the facts for a single parsed file", () => {

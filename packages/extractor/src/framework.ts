@@ -915,15 +915,16 @@ export interface ResponsePropertyMapping {
  * say so.
  */
 export interface TransparentWrapper {
-  /** Callee text as written, e.g. "Sentry.wrapHandler". */
-  callee: string;
-  /** Which argument the wrapped function is passed as. */
-  argument: number;
   /**
-   * The module the callee has to have been imported from. Without it a
-   * local object spelled the same way would be taken for the library.
+   * The module that exports the wrapper, e.g. "@sentry/aws-serverless".
+   * A call matches whatever the project calls the import, and a local
+   * function spelled the same way does not match.
    */
   module: string;
+  /** The name the module exports the wrapper under, e.g. "wrapHandler". */
+  name: string;
+  /** Which argument the wrapped function is passed as. */
+  argument: number;
 }
 
 export interface PatternPack {
@@ -1085,8 +1086,8 @@ export interface PatternPack {
   }>;
   /**
    * Library wrappers that return the function they were handed. A call to
-   * `callee` resolves to its `argument`-th argument. See
-   * `TransparentWrapper`.
+   * the `name` that `module` exports resolves to its `argument`-th
+   * argument. See `TransparentWrapper`.
    */
   transparentWrappers?: TransparentWrapper[];
   /**

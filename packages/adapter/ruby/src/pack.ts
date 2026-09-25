@@ -8,6 +8,7 @@
  */
 
 import type { TypeShape } from "@suss/behavioral-ir";
+import type { UnwrapsByName } from "@suss/resolution";
 import type { BodyBlockKind, BodyBlocks } from "./ast.js";
 import type { ConstantPathConvention } from "./constantPath.js";
 import type { GraphqlTypeNameConvention } from "./scope.js";
@@ -73,6 +74,8 @@ export interface RubyPack {
   bodyBlocks?: RbBodyBlock[];
   /** Words and rules the project added to the library's inflector. They are tried before the adapter's defaults. */
   inflections?: RbInflections;
+  /** Methods the library offers that hand back the argument at `argument`, keyed on the module the callee comes from. */
+  transparentWrappers?: UnwrapsByName[];
 }
 
 /**

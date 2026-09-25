@@ -36,11 +36,18 @@ covers a factory that hands its argument to another factory, and a call
 made inside a closure nested in the returned function.
 
 A library wrapper's body is not in the project, so the pack declares the
-wrapper instead:
+wrapper instead, by the module that exports it and the name it exports:
 
 ```ts
-transparentWrappers: [{ callee: "Sentry.wrapHandler", argument: 0 }]
+transparentWrappers: [
+  { module: "@sentry/aws-serverless", name: "wrapHandler", argument: 0 },
+]
 ```
+
+The language's own library is in the same position. The store declares
+`Object.assign` as handing back argument 0 on every run, keyed on the
+global the extractor records for a callee only library declaration
+files declare.
 
 ## What a decorator means
 

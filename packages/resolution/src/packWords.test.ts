@@ -22,11 +22,7 @@ describe("the facts a pack states about its own library", () => {
       ],
       entersAsSelf: [{ module: "httpx", name: "Client" }],
       unwrapsByName: [
-        {
-          callee: "Sentry.wrapHandler",
-          argument: 0,
-          module: "@sentry/aws-serverless",
-        },
+        { module: "@sentry/aws-serverless", name: "wrapHandler", argument: 0 },
       ],
       associationConstructor: [
         { module: "sqlalchemy.orm", name: "relationship" },
@@ -41,9 +37,8 @@ describe("the facts a pack states about its own library", () => {
       ["sqlalchemy", "select", "0"],
     ]);
     expect(rows(db, "entersAsSelf")).toEqual([["httpx", "Client"]]);
-    expect(rows(db, "unwrapsByName")).toEqual([["Sentry.wrapHandler", "0"]]);
-    expect(rows(db, "wrapperModule")).toEqual([
-      ["Sentry.wrapHandler", "@sentry/aws-serverless"],
+    expect(rows(db, "unwrapsByName")).toEqual([
+      ["@sentry/aws-serverless", "wrapHandler", "0"],
     ]);
     expect(rows(db, "associationConstructor")).toEqual([
       ["sqlalchemy.orm", "relationship"],
@@ -59,7 +54,6 @@ describe("the facts a pack states about its own library", () => {
       "givesBackOneOfImport",
       "entersAsSelf",
       "unwrapsByName",
-      "wrapperModule",
       "associationConstructor",
     ]) {
       expect(db.size(relation)).toBe(0);

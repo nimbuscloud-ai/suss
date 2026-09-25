@@ -1,4 +1,4 @@
-import { Node } from "ts-morph";
+import { Node, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { createTestProject } from "@suss/test-project";
@@ -72,6 +72,21 @@ describe("what importedNamesOf resolves per import form", () => {
         `import { alpha } from "${PACKAGE}";\n${hops}\nexport const run = (n: number) => hop9(n);\n`,
       ),
     ).toEqual(["alpha"]);
+  });
+
+  it("subpath import, which keeps the subpath it was written with", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/consumer.ts",
+      `import { alpha } from "${PACKAGE}/esm";\nexport const run = (n: number) => alpha(n);\n`,
+    );
+    const call = file.getDescendantsOfKind(SyntaxKind.CallExpression)[0];
+    if (call === undefined) {
+      throw new Error("no call in fixture");
+    }
+    expect(
+      new ResolutionStore().importOriginsOf(call.getExpression(), [PACKAGE]),
+    ).toEqual([{ module: `${PACKAGE}/esm`, path: ["alpha"] }]);
   });
 
   it("local rebinding", () => {

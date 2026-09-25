@@ -152,13 +152,11 @@ const DEFAULT_PHRASES: Record<string, StepPhrase> = {
     };
   },
   "declared wrapper": ({ tuple, premises, describe }) => {
-    const callee = String(premises[0].tuple[1]);
-    const module = String(premises[2].tuple[1]);
-    const argument = String(premises[1].tuple[1]);
+    const [module, name, argument] = premises[2].tuple.map(String);
     return {
-      reason: `${describe(tuple[0])} calls ${callee} from ${module}, which passes argument ${argument} through, so it comes down to ${describe(tuple[1])}`,
+      reason: `${describe(tuple[0])} calls ${name} from ${module}, which passes argument ${argument} through, so it comes down to ${describe(tuple[1])}`,
       assumptions: [
-        `a pack declares that ${callee} from ${module} passes argument ${argument} through to its result`,
+        `${name} from ${module} passes argument ${argument} through to its result, as a pack or the language adapter declares`,
       ],
     };
   },

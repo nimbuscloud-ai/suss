@@ -11,6 +11,8 @@
  * describes what a library defines, and nothing a project chose.
  */
 
+import type { UnwrapsByName } from "@suss/resolution";
+
 export interface PythonPack {
   name: string;
   /**
@@ -50,6 +52,8 @@ export interface PythonPack {
   rawSql?: RawSqlPattern[];
   /** The client objects the library hands a project, and the calls on one that reach the database. */
   sqlClients?: SqlClientPattern[];
+  /** Functions the library exports that hand back the argument at `argument`, such as a decorator that returns the function it was given. */
+  transparentWrappers?: UnwrapsByName[];
 }
 
 /**

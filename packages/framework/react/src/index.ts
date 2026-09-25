@@ -97,10 +97,11 @@ export function reactFramework(): PatternPack {
     // Each hands back the function it was given, so a call through the
     // result runs that function. `useMemo` and `lazy` are left out: one
     // returns what its argument returns, the other a module's export.
-    transparentWrappers: PASS_THROUGH.flatMap((name) => [
-      { callee: name, argument: 0, module: "react" },
-      { callee: `React.${name}`, argument: 0, module: "react" },
-    ]),
+    transparentWrappers: PASS_THROUGH.map((name) => ({
+      module: "react",
+      name,
+      argument: 0,
+    })),
 
     subUnits: reactSubUnits,
     discoverUnits: (sourceFile, ctx) => [

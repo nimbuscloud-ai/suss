@@ -8,11 +8,15 @@ import { summaryIdentifier } from "@suss/behavioral-ir";
 import { Database } from "@suss/datalog";
 import { addPackWords } from "@suss/resolution";
 
+import { resolveCalls, resolvedFunctions } from "./facts/resolve.js";
+import { parsePython } from "./parser.js";
 import {
   extractPythonProject,
+  factsForFile,
   findPythonFiles,
   packWordsOf,
 } from "./project.js";
+import { bindModule } from "./scope.js";
 
 import type { ExtractionReport, TimingReport } from "@suss/extractor";
 import type { PyModelQueries, PythonPack } from "./pack.js";
@@ -1394,5 +1398,50 @@ describe("what a pack's context manager declarations put in the facts", () => {
     const db = packFacts([flaskRestxLike]);
 
     expect(db.size("entersAsSelf")).toBe(0);
+  });
+});
+
+describe("a wrapper a pack declares", () => {
+  const tracingPack: PythonPack = {
+    name: "tracing",
+    protocol: "http",
+    discovery: [],
+    transparentWrappers: [
+      { module: "tracing", name: "wrap_handler", argument: 0 },
+    ],
+  };
+
+  /** The functions `handler` in app/orders.py comes down to. */
+  async function handlerResolvesTo(importLine: string): Promise<string[]> {
+    const source = [
+      importLine,
+      "",
+      "def process_order(event):",
+      "    return event",
+      "",
+      "handler = wrap_handler(process_order)",
+      "",
+    ].join("\n");
+    const root = (await parsePython(source)).rootNode;
+    const db = factsForFile({
+      file: "app/orders.py",
+      root,
+      module: bindModule(root),
+      packs: [tracingPack],
+    });
+    resolveCalls(db, ["app/orders.py#handler"]);
+    return resolvedFunctions(db, "app/orders.py#handler");
+  }
+
+  it("follows a call of the wrapper to the function it was handed", async () => {
+    expect(await handlerResolvesTo("from tracing import wrap_handler")).toEqual(
+      ["app/orders.py:34-76"],
+    );
+  });
+
+  it("does not take a function spelled the same way from another module", async () => {
+    expect(
+      await handlerResolvesTo("from app.local import wrap_handler"),
+    ).toEqual([]);
   });
 });

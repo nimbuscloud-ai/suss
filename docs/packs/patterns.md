@@ -669,10 +669,10 @@ Three parameter positions say how the framework invokes it. `continuationParam` 
 ### `transparentWrappers`
 
 ```typescript
-transparentWrappers?: Array<{ callee: string; argument: number; module: string }>
+transparentWrappers?: Array<{ module: string; name: string; argument: number }>
 ```
 
-`transparentWrappers` declares a library wrapper that returns the function passed to it. For a factory inside the project the adapter works this out on its own by reading the body. A library's body is not there to read, so the pack has to declare it. AWS Lambda declares `Sentry.wrapHandler`-style wrappers, and Hono declares `createRoute` from `@hono/zod-openapi`.
+`transparentWrappers` declares a library wrapper that returns the argument passed to it. For a factory inside the project the adapter works this out on its own by reading the body. A library's body is not there to read, so the pack has to declare it. The declaration says which module exports the wrapper and under what name, so a call matches however the project imports it: by name, renamed, or read off a namespace import under any name. AWS Lambda declares `wrapHandler` from `@sentry/aws-serverless`, and Hono declares `createRoute` from `@hono/zod-openapi`. A Python pack takes the same field. A Ruby pack takes it too, but the Ruby adapter does not record which module a callee comes from, so a Ruby declaration matches no call yet.
 
 ### `environmentObjects` and `libraryEnvVars`
 

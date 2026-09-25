@@ -37,11 +37,11 @@ export interface EntersAsSelf {
   name: string;
 }
 
-/** Calling `callee` out of `module` gives back its argument at `argument`. */
+/** Calling the `name` that `module` exports gives back its argument at `argument`. */
 export interface UnwrapsByName {
-  callee: string;
-  argument: number;
   module: string;
+  name: string;
+  argument: number;
 }
 
 /** A field given a call of `module`'s `name` declares an association. */
@@ -83,8 +83,7 @@ export function addPackWords(db: Database, words: PackWords): void {
     db.add("entersAsSelf", [word.module, word.name]);
   }
   for (const word of words.unwrapsByName ?? []) {
-    db.add("unwrapsByName", [word.callee, String(word.argument)]);
-    db.add("wrapperModule", [word.callee, word.module]);
+    db.add("unwrapsByName", [word.module, word.name, String(word.argument)]);
   }
   for (const word of words.associationConstructor ?? []) {
     db.add("associationConstructor", [word.module, word.name]);

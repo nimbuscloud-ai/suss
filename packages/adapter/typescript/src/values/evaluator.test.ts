@@ -528,7 +528,7 @@ describe("functions", () => {
       `,
     );
     const store = new ResolutionStore([
-      { callee: "createRoute", argument: 0, module: "@hono/zod-openapi" },
+      { module: "@hono/zod-openapi", name: "createRoute", argument: 0 },
     ]);
     const value = evaluatedValue(
       file.getVariableDeclarationOrThrow("subject").getInitializerOrThrow(),
