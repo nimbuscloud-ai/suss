@@ -11,6 +11,7 @@ import {
   proofOf,
   rowBudget,
   rule,
+  rulesDeriving,
   stratify,
   type TagAlgebra,
   tupleKey,
@@ -245,6 +246,43 @@ describe("stratify", () => {
       "dead",
       "report",
     ]);
+  });
+});
+
+describe("rulesDeriving", () => {
+  const rules = [
+    rule("reach", [V("n")], [lit("edge", V("s"), V("n"))]),
+    rule("dead", [V("n")], [lit("node", V("n")), notLit("reach", V("n"))]),
+    rule("report", [V("n")], [lit("dead", V("n"))]),
+    rule("pairs", [V("a"), V("b")], [lit("node", V("a")), lit("node", V("b"))]),
+  ];
+  const heads = (relations: string[]): string[] =>
+    rulesDeriving(rules, relations).map((r) => r.head.relation);
+
+  it("keeps the rules behind a relation, through a negated literal", () => {
+    expect(heads(["report"])).toEqual(["reach", "dead", "report"]);
+  });
+
+  it("leaves out a relation nothing asked about reads", () => {
+    expect(heads(["reach"])).toEqual(["reach"]);
+  });
+
+  it("derives the same tuples as the whole rule set", () => {
+    const facts = (): Database => {
+      const db = new Database();
+      db.add("edge", ["a", "b"]);
+      db.add("node", ["a"]);
+      db.add("node", ["b"]);
+      return db;
+    };
+    const whole = facts();
+    evaluate(whole, rules);
+    const sliced = facts();
+    evaluate(sliced, rulesDeriving(rules, ["report"]));
+    expect(sorted(sliced.facts("report"))).toEqual(
+      sorted(whole.facts("report")),
+    );
+    expect(sliced.size("pairs")).toBe(0);
   });
 });
 

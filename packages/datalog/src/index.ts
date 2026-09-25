@@ -357,6 +357,36 @@ export interface Derivation {
 // ---------------------------------------------------------------------------
 
 /**
+ * The rules that can derive any of `relations`: the ones with such a
+ * head, and every rule behind a relation their bodies read, negated
+ * literals included. Evaluating only these derives the same tuples for
+ * `relations` as evaluating all of `rules`, and skips the relations
+ * nothing asked about.
+ */
+export function rulesDeriving(
+  rules: readonly Rule[],
+  relations: readonly string[],
+): Rule[] {
+  const wanted = new Set(relations);
+  const pending = [...relations];
+  while (pending.length > 0) {
+    const relation = pending.pop() as string;
+    for (const r of rules) {
+      if (r.head.relation !== relation) {
+        continue;
+      }
+      for (const literal of r.body) {
+        if (!wanted.has(literal.relation)) {
+          wanted.add(literal.relation);
+          pending.push(literal.relation);
+        }
+      }
+    }
+  }
+  return rules.filter((r) => wanted.has(r.head.relation));
+}
+
+/**
  * Assign each derived relation a stratum such that positive
  * dependencies never decrease the stratum and negative dependencies
  * strictly increase it, iterating to a fixpoint. A stratum above the
