@@ -34,7 +34,9 @@ instanceOf(x, cls)          x is one of cls, and nothing says which:
                             a method's receiver, or a name the source
                             declares with the type cls
 returnsValue(f, v)          f returns v
-bodyCalls(f, c)             f's body calls c
+bodyCalls(f, c)             f's body calls the callee c, keyed the way
+                            call keys that call's callee
+makesCall(f, r)             the call r is written in f's own body
 callOutsideMethod(r)        the call r is outside every method body
 containsFn(f, g)            g is declared inside f
 call(r, c)                  r is a call whose callee is c
@@ -324,7 +326,13 @@ or constructor, that is the class the method belongs to. For a call in
 a plain function, it is the site that function was entered under, so a
 chain of plain functions called from one method keeps the site.
 `callUnder` is recursive through `entersUnder` and positive, which the
-demand rewrite allows. `callOutsideMethod` is the fact an adapter
+demand rewrite allows. `makesCall` says which body a call is written
+in. Joining `bodyCalls` against `call` would give the same answer in
+TypeScript, which keys each callee on its own node, but Python and
+Ruby key a callee written as a bare name on that name. Every call of
+`url(...)` in a file would then count as made in every body that calls
+`url`, and a literal one function passes would show up under a site
+that never made the call. `callOutsideMethod` is the fact an adapter
 records for a call written at module level, in a plain function, in a
 class body, or in a static method. It is a fact instead of a negation
 because the rewrite refuses negation.

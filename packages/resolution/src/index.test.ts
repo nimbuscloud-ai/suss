@@ -307,6 +307,32 @@ describe("a factory that hands back what it was given", () => {
     expect(resultsOf(plain, "site")).toEqual(["closure"]);
     expect(derive(plain, "givesBackUnwrapped", "site")).toEqual([]);
   });
+
+  // Python and Ruby key a read of a parameter as the parameter itself.
+  const readAsParam: Array<[string, ...string[]]> = wrapper.filter(
+    ([r, x]) => r !== "bodyCalls" && !(r === "binds" && x === "pRef"),
+  );
+
+  it("resolves the call when the closure calls the parameter by its own key", () => {
+    expect(
+      resolutionsOf(
+        [...readAsParam, ["bodyCalls", "returned", "p"]],
+        "handler",
+      ),
+    ).toEqual(["body"]);
+  });
+
+  it("resolves the call when the factory returns the parameter itself", () => {
+    const returnsParam = readAsParam.filter(
+      ([r, f]) => !(r === "returnsValue" && f === "make"),
+    );
+    expect(
+      resolutionsOf(
+        [...returnsParam, ["returnsValue", "make", "p"]],
+        "handler",
+      ),
+    ).toEqual(["body"]);
+  });
 });
 
 describe("an argument reaching a parameter", () => {
@@ -1252,6 +1278,7 @@ describe("a value read under the site its receiver was made at", () => {
     ["writtenValue", "created"],
     ["call", "created", "axiosCreate"],
     ["bodyCalls", "Api", "axiosCreate"],
+    ["makesCall", "Api", "created"],
     ["storesProperty", "Api", "client", "created"],
     ["instanceOf", "Api#self", "Api"],
     ["func", "items"],
@@ -1312,6 +1339,7 @@ describe("a value read under the site its receiver was made at", () => {
     ["callArg", "callC", "0", "pathC"],
     ["writtenValue", "pathC"],
     ["bodyCalls", "refresh", "selfItems"],
+    ["makesCall", "refresh", "callC"],
   ];
 
   it("puts a method's parameter under the site the receiver was made at", () => {
@@ -1335,6 +1363,7 @@ describe("a value read under the site its receiver was made at", () => {
     ["call", "urlCall", "urlRef"],
     ["callArg", "urlCall", "0", "base"],
     ["bodyCalls", "Api", "urlRef"],
+    ["makesCall", "Api", "urlCall"],
   ];
 
   it("keeps the site through a plain function the constructor calls", () => {
@@ -1360,12 +1389,14 @@ describe("a value read under the site its receiver was made at", () => {
       ["call", "helperCall", "helperRef"],
       ["callArg", "helperCall", "0", "base"],
       ["bodyCalls", "Api", "helperRef"],
+      ["makesCall", "Api", "helperCall"],
       ["func", "url"],
       ["paramOf", "url", "0", "u"],
       ["binds", "innerUrlRef", "url"],
       ["call", "innerUrlCall", "innerUrlRef"],
       ["callArg", "innerUrlCall", "0", "b"],
       ["bodyCalls", "helper", "innerUrlRef"],
+      ["makesCall", "helper", "innerUrlCall"],
       ["callOutsideMethod", "innerUrlCall"],
     ];
     expect(writtenAsUnder(twoDeep, "u", "v1Site")).toEqual(["urlA"]);
@@ -1380,6 +1411,7 @@ describe("a value read under the site its receiver was made at", () => {
       ["paramOf", "Other", "0", "otherBase"],
       ["binds", "otherUrlRef", "url"],
       ["bodyCalls", "Other", "otherUrlRef"],
+      ["makesCall", "Other", "otherUrlCall"],
       ["call", "otherUrlCall", "otherUrlRef"],
       ["callArg", "otherUrlCall", "0", "otherBase"],
       ["binds", "OtherRef", "Other"],
@@ -1396,6 +1428,35 @@ describe("a value read under the site its receiver was made at", () => {
     ]);
   });
 
+  // Python and Ruby key a call written as a bare name on that name, so
+  // `url(base)` in the constructor and `url("/static")` in a plain
+  // function have one callee between them.
+  it("keeps a call out of a site when another body calls the same name", () => {
+    const sharedName: Array<[string, ...string[]]> = [
+      ...twoClients,
+      ["func", "url"],
+      ["paramOf", "url", "0", "u"],
+      ["binds", "urlName", "url"],
+      ["call", "urlCall", "urlName"],
+      ["callArg", "urlCall", "0", "base"],
+      ["bodyCalls", "Api", "urlName"],
+      ["makesCall", "Api", "urlCall"],
+      ["func", "fixed"],
+      ["call", "fixedUrlCall", "urlName"],
+      ["callArg", "fixedUrlCall", "0", "staticPath"],
+      ["writtenValue", "staticPath"],
+      ["callOutsideMethod", "fixedUrlCall"],
+      ["bodyCalls", "fixed", "urlName"],
+      ["makesCall", "fixed", "fixedUrlCall"],
+    ];
+    expect(writtenAsUnder(sharedName, "u", "v1Site")).toEqual(["urlA"]);
+    expect(writtenAsUnder(sharedName, "u", "none")).toEqual([
+      "staticPath",
+      "urlA",
+      "urlB",
+    ]);
+  });
+
   // A method called with no receiver written, which Ruby keys to the
   // receiver of the body it is in, beside the same call written `self.`.
   it("keeps the site whether or not the receiver is written out", () => {
@@ -1407,11 +1468,13 @@ describe("a value read under the site its receiver was made at", () => {
       ["callArg", "bareCall", "0", "barePath"],
       ["writtenValue", "barePath"],
       ["bodyCalls", "refresh", "bareItems"],
+      ["makesCall", "refresh", "bareCall"],
       ["readsProperty", "writtenItems", "selfNode", "items"],
       ["call", "writtenCall", "writtenItems"],
       ["callArg", "writtenCall", "0", "writtenPath"],
       ["writtenValue", "writtenPath"],
       ["bodyCalls", "refresh", "writtenItems"],
+      ["makesCall", "refresh", "writtenCall"],
     ];
     expect(writtenAsUnder(spellings, "path", "v1Site")).toEqual([
       "barePath",

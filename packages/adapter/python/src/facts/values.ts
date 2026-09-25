@@ -272,6 +272,15 @@ function scopeChainOf(
   };
 }
 
+/**
+ * The key of a call's callee. `call` and `bodyCalls` both state it, and
+ * the rules take the two for the same value, so both read it here.
+ */
+function calleeKey(emitter: Emitter, call: PyNode): string | null {
+  const callee = field(call, "function");
+  return callee === null ? null : valueKey(emitter, callee);
+}
+
 /** The callee of a call, and the arguments it passes by position. */
 function emitCall(emitter: Emitter, call: PyNode): void {
   // A call is written out in the source, so a name bound to one ends its
@@ -279,7 +288,7 @@ function emitCall(emitter: Emitter, call: PyNode): void {
   // no `comesTo` here, and `isWrittenAs` reads it back.
   add(emitter, "writtenValue", nodeId(emitter.filePath, call));
 
-  const callee = field(call, "function");
+  const callee = calleeKey(emitter, call);
   const args = field(call, "arguments");
   // The grammar writes both fields on every call.
   /* v8 ignore start */
@@ -288,7 +297,7 @@ function emitCall(emitter: Emitter, call: PyNode): void {
   }
   /* v8 ignore stop */
   const callKey = nodeId(emitter.filePath, call);
-  add(emitter, "call", callKey, valueKey(emitter, callee));
+  add(emitter, "call", callKey, callee);
   if (!emitter.insideMethod) {
     add(emitter, "callOutsideMethod", callKey);
   }
@@ -685,17 +694,11 @@ function emitFunctionFacts(
 
   emitNestedDefinitions(inside, body);
 
-  // A lambda's body is one expression rather than a block, and the walk
-  // below reaches only that expression's children.
-  if (fn.type === "lambda") {
-    emitExpressionFact(inside, body);
-  }
-
   // One walk for both, since this function's own facts and the expression
   // facts want the same nodes and the walk is the expensive part.
   let statesReturn = false;
   const stores = new Map<string, ReceiverWrite[]>();
-  walkExpressions(inside, body, (child) => {
+  const visit = (child: PyNode): void => {
     if (child.type === "return_statement") {
       const returned = child.namedChildren[0];
       if (returned != null) {
@@ -703,14 +706,22 @@ function emitFunctionFacts(
         statesReturn = true;
       }
     }
-    if (child.type === "call") {
-      add(inside, "bodyCalls", funcKey, nodeId(inside.filePath, child));
+    const callee = child.type === "call" ? calleeKey(inside, child) : null;
+    if (callee !== null) {
+      add(inside, "bodyCalls", funcKey, callee);
+      add(inside, "makesCall", funcKey, nodeId(inside.filePath, child));
     }
     if (child.type === "assignment" && receiver !== null) {
       collectReceiverProperty(inside, child, receiver, body, stores);
     }
     emitExpressionFact(inside, child);
-  });
+  };
+  // A lambda's body is one expression rather than a block, and the walk
+  // below reaches only that expression's children.
+  if (fn.type === "lambda") {
+    visit(body);
+  }
+  walkExpressions(inside, body, visit);
   emitReceiverStores(inside, funcKey, body, stores);
 
   if (!statesReturn) {
