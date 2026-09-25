@@ -14,7 +14,11 @@
 
 import { ruleLabel } from "@suss/datalog";
 
-import { BASE_CLASS_RULE, NAMESPACE_MEMBER_RULE } from "./index.js";
+import {
+  BASE_CLASS_RULE,
+  NAME_HOP_RULE,
+  NAMESPACE_MEMBER_RULE,
+} from "./index.js";
 
 import type { Atom, Proof, ProofDerived, Tuple } from "@suss/datalog";
 
@@ -285,6 +289,18 @@ function stepFrom(proof: ProofDerived, state: WalkState): ResolutionStep {
   };
 }
 
+/**
+ * The proof whose rule gives the reason for a step. A step taken through
+ * a name hop gets its reason from the name hop, which says which kind of
+ * name it was.
+ */
+function reasonedBy(proof: ProofDerived): ProofDerived {
+  const [premise] = proof.premises;
+  return ruleLabel(proof.rule) === NAME_HOP_RULE && premise?.kind === "derived"
+    ? premise
+    : proof;
+}
+
 /** The final hop of a `comesFrom` proof: the import itself. */
 function importStep(proof: Proof, state: WalkState): ResolutionStep {
   const [x, module, name] = proof.tuple;
@@ -325,7 +341,7 @@ const flattenInto = (proof: Proof, state: WalkState): void => {
 
   const relation = proof.relation;
   if (relation === "stepsTo" || relation === "hop") {
-    state.steps.push(stepFrom(proof, state));
+    state.steps.push(stepFrom(reasonedBy(proof), state));
     return;
   }
   if (relation === "reaches") {

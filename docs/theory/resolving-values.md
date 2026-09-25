@@ -51,7 +51,7 @@ Three layers do the work.
 
   <rect class="box" x="60" y="220" width="540" height="86" rx="6" />
   <text class="label" x="330" y="242" text-anchor="middle">2. One rule set joins the facts into a value graph</text>
-  <text class="note" x="330" y="260" text-anchor="middle">185 rules. 17 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
+  <text class="note" x="330" y="260" text-anchor="middle">177 rules. 14 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
   <text class="note" x="330" y="277" text-anchor="middle">reaches is the transitive closure of those hops, and it records</text>
   <text class="note" x="330" y="294" text-anchor="middle">the strongest kind of step the walk took.</text>
 
@@ -79,7 +79,7 @@ Three layers do the work.
   <text class="note" x="535" y="450" text-anchor="middle">the same stop, for a</text>
   <text class="note" x="535" y="466" text-anchor="middle">walk that ran a call</text>
 
-  <text class="note" x="330" y="498" text-anchor="middle">and comesFrom, objectOf, paramAt, resolves: 70 question rules feeding 39 answer relations</text>
+  <text class="note" x="330" y="498" text-anchor="middle">and comesFrom, objectOf, paramAt, resolves: 55 question rules feeding 39 answer relations</text>
 </svg>
 
 ## Layer 1: the adapter writes down what a file says
@@ -163,29 +163,31 @@ out.
 
 ## Layer 2: one rule set makes a graph
 
-`RESOLUTION_RULES` in `packages/resolution/src/index.ts` is 185 rules.
-17 of them derive `stepsTo(x, y, kind)`, which says the value `x` leads
+`RESOLUTION_RULES` in `packages/resolution/src/index.ts` is 177 rules.
+14 of them derive `stepsTo(x, y, kind)`, which says the value `x` leads
 to the value `y` in one hop. Two of them, for an argument and a
-property read, are written as `stepsTo` directly. The other fifteen are
+property read, are written as `stepsTo` directly. The other twelve are
 written as `hop`, and each gets a `stepsTo` twin, since a walk under a
 receiver context reads `hop`. An adapter can add hops of its own, each
-with its twin, and those are not among the 180. The TypeScript adapter
+with its twin, and those are not among the 177. The TypeScript adapter
 adds one for `.bind`, and the Ruby adapter adds three, for `Const.new`,
 `freeze` and `dup`.
 
 ```ts
-rule(
-  "hop",
-  [v("x"), v("y"), VALUE_STEP],
-  [lit("binds", v("x"), v("y"))],
-  "alias",
-),
+rule("nameHop", [v("x"), v("y")], [lit("binds", v("x"), v("y"))], "alias"),
 ```
 
-Read that as `hop(x, y, value) :- binds(x, y)`. The fourth
+Read that as `nameHop(x, y) :- binds(x, y)`. The fourth
 argument is the rule's name. Nothing in the evaluation uses that name.
 It is there so that when suss explains an answer it can say which rule
 took each hop, and this one prints as `alias`.
+
+A name hop goes from a name to a value it has without running anything:
+what it is declared as, what its last write leaves, each of several
+writes, or each branch of a fallback. One `hop` rule takes every name
+hop as a value step. Every other rule that follows a name, to a
+parameter, an object, an import, a class or a call, takes `nameHop`
+too, so a new kind of name hop reaches all of them at once.
 
 The `kind` column separates three sorts of hop. A value step goes to what
 `x` is written as. An instance step goes from an instance to the class it
@@ -297,7 +299,7 @@ a condition on where the walk ended.
 `resolves` is the one `suss ask why` proves.
 
 At the bottom of the same file, `RESOLUTION_QUESTIONS` turns each of
-those into an answer keyed by the value somebody asked about. It is 70
+those into an answer keyed by the value somebody asked about. It is 55
 question rules feeding 39 answer relations. They are written as rules
 rather than as loops in the caller
 because `deriveOnDemand` reads them to work out how far to follow each
@@ -311,7 +313,7 @@ nodes.
 
 <svg class="suss-diagram" viewBox="0 0 660 336" role="img" aria-labelledby="prisma-title prisma-desc">
   <title id="prisma-title">The value graph for a Prisma singleton</title>
-  <desc id="prisma-desc">The declaration steps to the fallback expression by the alias rule. The fallback has two branches, so it steps twice. The left branch reads a property off a name that is declared but never written out as an object, so it settles on nothing. The right branch is a construction, which is written out in source, so isWrittenAs stops there and the value has one answer.</desc>
+  <desc id="prisma-desc">The declaration steps to the fallback expression by the alias name hop. The fallback has two branches, so it steps twice. The left branch reads a property off a name that is declared but never written out as an object, so it settles on nothing. The right branch is a construction, which is written out in source, so isWrittenAs stops there and the value has one answer.</desc>
 
   <defs>
     <marker id="prisma-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
@@ -326,7 +328,7 @@ nodes.
   <text class="note" x="330" y="67" text-anchor="middle">the declaration, line 17</text>
 
   <line class="arrow" x1="330" y1="72" x2="330" y2="104" marker-end="url(#prisma-arrow)" />
-  <text class="note" x="342" y="92" text-anchor="start">one stepsTo, by the alias rule</text>
+  <text class="note" x="342" y="92" text-anchor="start">one stepsTo, by the alias name hop</text>
 
   <rect class="box" x="170" y="110" width="320" height="34" rx="6" />
   <text class="label-mono" x="330" y="131" text-anchor="middle">global.prisma || new PrismaClient()</text>
@@ -517,16 +519,16 @@ createUser at src/app/routes/auth/auth.controller.ts:16 resolves to createUser (
 ```
 
 The first line is the chain. The three lines under it are one reason per
-hop, and each reason is the `stepsTo` rule that fired there: `alias`,
-then `import`, then `alias`. `--json` adds the rule behind each hop,
-the assumptions a pack-declared wrapper contributed, and what the
+hop, and each reason is the rule that took that hop: `alias`, then
+`import`, then `alias`. `--json` adds the rule behind each hop, the
+assumptions a pack-declared wrapper contributed, and what the
 re-evaluation cost.
 
-Underneath, the proof is the whole derivation, fifteen nodes of it.
+Underneath, the proof is the whole derivation, seventeen nodes of it.
 
-<svg class="suss-diagram" viewBox="0 0 660 532" role="img" aria-labelledby="proof-title proof-desc">
+<svg class="suss-diagram" viewBox="0 0 660 592" role="img" aria-labelledby="proof-title proof-desc">
   <title id="proof-title">The proof tree behind one ask why answer</title>
-  <desc id="proof-desc">An indented tree of fifteen nodes. The root is the resolves fact, and each node says which rule derived it. Leaves marked fact are base facts the adapter emitted. The three stepsTo nodes, labelled alias, import and alias, are the three reasons the command prints.</desc>
+  <desc id="proof-desc">An indented tree of seventeen nodes. The root is the resolves fact, and each node says which rule derived it. Leaves marked fact are base facts the adapter emitted. The three highlighted nodes, labelled alias, import and alias, are the three reasons the command prints. Each alias node is a nameHop under a stepsTo node labelled name hop.</desc>
 
   <defs>
     <marker id="proof-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
@@ -546,78 +548,90 @@ Underneath, the proof is the whole derivation, fifteen nodes of it.
 
   <rect class="box" x="64" y="100" width="580" height="24" rx="4" />
   <text class="label-mono" x="72" y="116" text-anchor="start">reaches(name@16, fn@38, value)</text>
-  <text class="note" x="636" y="116" text-anchor="end">reaches :- stepsTo, reaches</text>
+  <text class="note" x="636" y="116" text-anchor="end">reaches :- reaches, stepsTo</text>
 
-  <rect class="box-data" x="88" y="130" width="556" height="24" rx="4" />
-  <text class="label-mono" x="96" y="146" text-anchor="start">stepsTo(name@16, import@3, value)</text>
-  <text class="note" x="636" y="146" text-anchor="end">alias</text>
+  <rect class="box" x="88" y="130" width="556" height="24" rx="4" />
+  <text class="label-mono" x="96" y="146" text-anchor="start">reaches(name@16, decl@38, value)</text>
+  <text class="note" x="636" y="146" text-anchor="end">reaches :- reaches, stepsTo</text>
 
   <rect class="box" x="112" y="160" width="532" height="24" rx="4" />
-  <text class="label-mono" x="120" y="176" text-anchor="start">binds(name@16, import@3)</text>
-  <text class="note" x="636" y="176" text-anchor="end">fact</text>
+  <text class="label-mono" x="120" y="176" text-anchor="start">reaches(name@16, import@3, value)</text>
+  <text class="note" x="636" y="176" text-anchor="end">reaches :- stepsTo</text>
 
-  <rect class="box" x="88" y="190" width="556" height="24" rx="4" />
-  <text class="label-mono" x="96" y="206" text-anchor="start">reaches(import@3, fn@38, value)</text>
-  <text class="note" x="636" y="206" text-anchor="end">reaches :- stepsTo, reaches</text>
+  <rect class="box" x="136" y="190" width="508" height="24" rx="4" />
+  <text class="label-mono" x="144" y="206" text-anchor="start">stepsTo(name@16, import@3, value)</text>
+  <text class="note" x="636" y="206" text-anchor="end">name hop</text>
 
-  <rect class="box-data" x="112" y="220" width="532" height="24" rx="4" />
-  <text class="label-mono" x="120" y="236" text-anchor="start">stepsTo(import@3, decl@38, value)</text>
-  <text class="note" x="636" y="236" text-anchor="end">import</text>
+  <rect class="box-data" x="160" y="220" width="484" height="24" rx="4" />
+  <text class="label-mono" x="168" y="236" text-anchor="start">nameHop(name@16, import@3)</text>
+  <text class="note" x="636" y="236" text-anchor="end">alias</text>
 
-  <rect class="box" x="136" y="250" width="508" height="24" rx="4" />
-  <text class="label-mono" x="144" y="266" text-anchor="start">imports(import@3, auth.service.ts, createUser)</text>
+  <rect class="box" x="184" y="250" width="460" height="24" rx="4" />
+  <text class="label-mono" x="192" y="266" text-anchor="start">binds(name@16, import@3)</text>
   <text class="note" x="636" y="266" text-anchor="end">fact</text>
 
-  <rect class="box" x="136" y="280" width="508" height="24" rx="4" />
-  <text class="label-mono" x="144" y="296" text-anchor="start">moduleExport(auth.service.ts, createUser, decl@38)</text>
-  <text class="note" x="636" y="296" text-anchor="end">export</text>
+  <rect class="box-data" x="112" y="280" width="532" height="24" rx="4" />
+  <text class="label-mono" x="120" y="296" text-anchor="start">stepsTo(import@3, decl@38, value)</text>
+  <text class="note" x="636" y="296" text-anchor="end">import</text>
 
-  <rect class="box" x="160" y="310" width="484" height="24" rx="4" />
-  <text class="label-mono" x="168" y="326" text-anchor="start">exportsAs(auth.service.ts, createUser, decl@38)</text>
+  <rect class="box" x="136" y="310" width="508" height="24" rx="4" />
+  <text class="label-mono" x="144" y="326" text-anchor="start">imports(import@3, auth.service.ts, createUser)</text>
   <text class="note" x="636" y="326" text-anchor="end">fact</text>
 
-  <rect class="box" x="112" y="340" width="532" height="24" rx="4" />
-  <text class="label-mono" x="120" y="356" text-anchor="start">reaches(decl@38, fn@38, value)</text>
-  <text class="note" x="636" y="356" text-anchor="end">reaches :- stepsTo</text>
+  <rect class="box" x="136" y="340" width="508" height="24" rx="4" />
+  <text class="label-mono" x="144" y="356" text-anchor="start">moduleExport(auth.service.ts, createUser, decl@38)</text>
+  <text class="note" x="636" y="356" text-anchor="end">export</text>
 
-  <rect class="box-data" x="136" y="370" width="508" height="24" rx="4" />
-  <text class="label-mono" x="144" y="386" text-anchor="start">stepsTo(decl@38, fn@38, value)</text>
-  <text class="note" x="636" y="386" text-anchor="end">alias</text>
+  <rect class="box" x="160" y="370" width="484" height="24" rx="4" />
+  <text class="label-mono" x="168" y="386" text-anchor="start">exportsAs(auth.service.ts, createUser, decl@38)</text>
+  <text class="note" x="636" y="386" text-anchor="end">fact</text>
 
-  <rect class="box" x="160" y="400" width="484" height="24" rx="4" />
-  <text class="label-mono" x="168" y="416" text-anchor="start">binds(decl@38, fn@38)</text>
-  <text class="note" x="636" y="416" text-anchor="end">fact</text>
+  <rect class="box" x="88" y="400" width="556" height="24" rx="4" />
+  <text class="label-mono" x="96" y="416" text-anchor="start">stepsTo(decl@38, fn@38, value)</text>
+  <text class="note" x="636" y="416" text-anchor="end">name hop</text>
 
-  <rect class="box" x="64" y="430" width="580" height="24" rx="4" />
-  <text class="label-mono" x="72" y="446" text-anchor="start">func(fn@38)</text>
-  <text class="note" x="636" y="446" text-anchor="end">fact</text>
+  <rect class="box-data" x="112" y="430" width="532" height="24" rx="4" />
+  <text class="label-mono" x="120" y="446" text-anchor="start">nameHop(decl@38, fn@38)</text>
+  <text class="note" x="636" y="446" text-anchor="end">alias</text>
 
-  <rect class="box" x="40" y="460" width="604" height="24" rx="4" />
-  <text class="label-mono" x="48" y="476" text-anchor="start">func(fn@38)</text>
+  <rect class="box" x="136" y="460" width="508" height="24" rx="4" />
+  <text class="label-mono" x="144" y="476" text-anchor="start">binds(decl@38, fn@38)</text>
   <text class="note" x="636" y="476" text-anchor="end">fact</text>
 
-  <path class="arrow" d="M28,64 L28,82 L40,82" marker-end="url(#proof-arrow)" />
-  <path class="arrow" d="M28,64 L28,472 L40,472" marker-end="url(#proof-arrow)" />
-  <path class="arrow" d="M52,94 L52,112 L64,112" marker-end="url(#proof-arrow)" />
-  <path class="arrow" d="M52,94 L52,442 L64,442" marker-end="url(#proof-arrow)" />
-  <path class="arrow" d="M76,124 L76,142 L88,142" marker-end="url(#proof-arrow)" />
-  <path class="arrow" d="M76,124 L76,202 L88,202" marker-end="url(#proof-arrow)" />
-  <path class="arrow" d="M100,154 L100,172 L112,172" marker-end="url(#proof-arrow)" />
-  <path class="arrow" d="M100,214 L100,232 L112,232" marker-end="url(#proof-arrow)" />
-  <path class="arrow" d="M100,214 L100,352 L112,352" marker-end="url(#proof-arrow)" />
-  <path class="arrow" d="M124,244 L124,262 L136,262" marker-end="url(#proof-arrow)" />
-  <path class="arrow" d="M124,244 L124,292 L136,292" marker-end="url(#proof-arrow)" />
-  <path class="arrow" d="M148,304 L148,322 L160,322" marker-end="url(#proof-arrow)" />
-  <path class="arrow" d="M124,364 L124,382 L136,382" marker-end="url(#proof-arrow)" />
-  <path class="arrow" d="M148,394 L148,412 L160,412" marker-end="url(#proof-arrow)" />
+  <rect class="box" x="64" y="490" width="580" height="24" rx="4" />
+  <text class="label-mono" x="72" y="506" text-anchor="start">func(fn@38)</text>
+  <text class="note" x="636" y="506" text-anchor="end">fact</text>
 
-  <text class="note" x="16" y="502" text-anchor="start">name@16 is the identifier in the controller, import@3 its import specifier,</text>
-  <text class="note" x="16" y="518" text-anchor="start">decl@38 the declaration in auth.service.ts, fn@38 the arrow function itself</text>
+  <rect class="box" x="40" y="520" width="604" height="24" rx="4" />
+  <text class="label-mono" x="48" y="536" text-anchor="start">func(fn@38)</text>
+  <text class="note" x="636" y="536" text-anchor="end">fact</text>
+
+  <path class="arrow" d="M28,64 L28,82 L40,82" marker-end="url(#proof-arrow)" />
+  <path class="arrow" d="M28,64 L28,532 L40,532" marker-end="url(#proof-arrow)" />
+  <path class="arrow" d="M52,94 L52,112 L64,112" marker-end="url(#proof-arrow)" />
+  <path class="arrow" d="M52,94 L52,502 L64,502" marker-end="url(#proof-arrow)" />
+  <path class="arrow" d="M76,124 L76,142 L88,142" marker-end="url(#proof-arrow)" />
+  <path class="arrow" d="M76,124 L76,412 L88,412" marker-end="url(#proof-arrow)" />
+  <path class="arrow" d="M100,154 L100,172 L112,172" marker-end="url(#proof-arrow)" />
+  <path class="arrow" d="M100,154 L100,292 L112,292" marker-end="url(#proof-arrow)" />
+  <path class="arrow" d="M124,184 L124,202 L136,202" marker-end="url(#proof-arrow)" />
+  <path class="arrow" d="M148,214 L148,232 L160,232" marker-end="url(#proof-arrow)" />
+  <path class="arrow" d="M172,244 L172,262 L184,262" marker-end="url(#proof-arrow)" />
+  <path class="arrow" d="M124,304 L124,322 L136,322" marker-end="url(#proof-arrow)" />
+  <path class="arrow" d="M124,304 L124,352 L136,352" marker-end="url(#proof-arrow)" />
+  <path class="arrow" d="M148,364 L148,382 L160,382" marker-end="url(#proof-arrow)" />
+  <path class="arrow" d="M100,424 L100,442 L112,442" marker-end="url(#proof-arrow)" />
+  <path class="arrow" d="M124,454 L124,472 L136,472" marker-end="url(#proof-arrow)" />
+
+  <text class="note" x="16" y="562" text-anchor="start">name@16 is the identifier in the controller, import@3 its import specifier,</text>
+  <text class="note" x="16" y="578" text-anchor="start">decl@38 the declaration in auth.service.ts, fn@38 the arrow function itself</text>
 </svg>
 
-The three highlighted rows are the `stepsTo` nodes, and they are the
-three lines the command printed. The other twelve are the joins that
-produced those hops and the facts they rest on.
+The three highlighted rows are the three lines the command printed. A
+step through a name prints the reason of the `nameHop` row under it,
+since the `stepsTo` rule above says only that a name hop was taken. The
+other fourteen rows are the joins that produced those hops and the
+facts they rest on.
 
 A proof node marked `fact` is a leaf. No rule derived it, because the
 adapter emitted it from source. That makes an answer checkable: follow
