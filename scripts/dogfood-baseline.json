@@ -2,11 +2,11 @@
   "totals": {
     "packages": 80,
     "packagesWithExports": 80,
-    "exports": 1067,
-    "internal": 3987,
-    "consumers": 2230,
-    "pairs": 2218,
-    "unfollowedCalls": 526,
+    "exports": 1069,
+    "internal": 3991,
+    "consumers": 2228,
+    "pairs": 2216,
+    "unfollowedCalls": 520,
     "findingErrors": 0
   },
   "packages": {
@@ -41,7 +41,7 @@
     "packages/checker": {
       "name": "@suss/checker",
       "exports": 43,
-      "internal": 217,
+      "internal": 218,
       "consumers": 199,
       "unfollowedCalls": 37
     },
@@ -194,8 +194,8 @@
     },
     "packages/datalog": {
       "name": "@suss/datalog",
-      "exports": 32,
-      "internal": 92,
+      "exports": 33,
+      "internal": 93,
       "consumers": 0,
       "unfollowedCalls": 15
     },
@@ -530,10 +530,10 @@
     },
     "packages/resolution": {
       "name": "@suss/resolution",
-      "exports": 35,
-      "internal": 40,
-      "consumers": 122,
-      "unfollowedCalls": 29
+      "exports": 36,
+      "internal": 42,
+      "consumers": 120,
+      "unfollowedCalls": 23
     },
     "packages/runtime/node": {
       "name": "@suss/runtime-node",
