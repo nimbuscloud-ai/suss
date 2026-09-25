@@ -1675,6 +1675,57 @@ describe("a wrapper the caller declared transparent", () => {
       ),
     ).toEqual([]);
   });
+
+  /** merged = Object.assign(target, extra), with the word on the global. */
+  const ASSIGNED: Array<[string, ...string[]]> = [
+    ["unwrapsByName", "global", "Object.assign", "0"],
+    ["call", "merged", "assign"],
+    ["imports", "assign", "global", "Object.assign"],
+  ];
+
+  it("resolves through a global the word names", () => {
+    expect(
+      objectsOf(
+        [
+          ...ASSIGNED,
+          ["objectValue", "target"],
+          ["holdsProperty", "target", "table", "tableName"],
+          ["binds", "targetRef", "target"],
+          ["callArg", "merged", "0", "targetRef"],
+        ],
+        "merged",
+      ),
+    ).toEqual(["target"]);
+  });
+
+  it("hands back an object written with properties at the argument", () => {
+    expect(
+      objectsOf(
+        [
+          ...ASSIGNED,
+          ["objectValue", "route"],
+          ["holdsProperty", "route", "path", "pathText"],
+          ["callArg", "merged", "0", "route"],
+        ],
+        "merged",
+      ),
+    ).toEqual(["route"]);
+  });
+
+  it("does not hand back an object written with nothing in it", () => {
+    // Object.assign({}, a, b) copies onto the empty object, which then
+    // describes none of what the call gives back.
+    expect(
+      everyObjectOf(
+        [
+          ...ASSIGNED,
+          ["objectValue", "fresh"],
+          ["callArg", "merged", "0", "fresh"],
+        ],
+        "merged",
+      ),
+    ).toEqual([]);
+  });
 });
 
 /**

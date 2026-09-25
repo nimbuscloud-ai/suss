@@ -24,6 +24,7 @@ import {
 
 import {
   DEFAULT_IMPORT_NAME,
+  GLOBAL_MODULE,
   NAMESPACE_IMPORT_NAME,
   valueLeftByWrites,
 } from "@suss/resolution";
@@ -324,6 +325,36 @@ function emitLibraryDeclarationFacts(
   )) {
     fact(db, "imports", declarationId, owner, name);
   }
+}
+
+/**
+ * The dotted name a callee goes by when only library declaration files
+ * declare it, as with `Object.assign` or `console.log`. No file imports
+ * a global, and this is what a pack word keys on in place of an import.
+ */
+function globalNameOf(callee: Node): string | null {
+  const dotted = dottedPathOf(callee);
+  if (dotted === null) {
+    return null;
+  }
+  let root = callee;
+  while (Node.isPropertyAccessExpression(root)) {
+    root = root.getExpression();
+  }
+  const member = Node.isPropertyAccessExpression(callee)
+    ? callee.getNameNode()
+    : callee;
+  return declaredOnlyByLibraries(root) && declaredOnlyByLibraries(member)
+    ? dotted
+    : null;
+}
+
+function declaredOnlyByLibraries(name: Node): boolean {
+  const declarations = name.getSymbol()?.getDeclarations() ?? [];
+  return (
+    declarations.length > 0 &&
+    declarations.every((one) => isLibraryDeclarationFile(one.getSourceFile()))
+  );
 }
 
 /**
@@ -1048,9 +1079,15 @@ function emitCallFacts(
     return;
   }
 
-  fact(db, "call", callId, emitValue(db, table, callee));
+  const calleeId = emitValue(db, table, callee);
+  fact(db, "call", callId, calleeId);
   if (!insideMethodBody(call as unknown as Node)) {
     fact(db, "callOutsideMethod", callId);
+  }
+
+  const global = globalNameOf(callee);
+  if (global !== null) {
+    fact(db, "imports", calleeId, GLOBAL_MODULE, global);
   }
 
   const args = call.getArguments();

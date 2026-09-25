@@ -571,6 +571,71 @@ describe("resolveCallable", () => {
   });
 });
 
+describe("what Object.assign hands back", () => {
+  /** The object literal `merged` in /use.ts comes down to, as written. */
+  function mergedObject(source: string): string | null {
+    const project = projectOf({ "/use.ts": source });
+    const resolved = new ResolutionStore().resolveObject(
+      exportValue(project, "/use.ts", "merged"),
+    );
+    return resolved === null ? null : resolved.getText().replace(/\s+/g, " ");
+  }
+
+  /** The function `ReportCard` in /use.ts comes down to, as written. */
+  function reportCard(source: string): string | null {
+    const project = projectOf({ "/use.ts": source });
+    return resolvedBody(
+      new ResolutionStore(),
+      exportValue(project, "/use.ts", "ReportCard"),
+    );
+  }
+
+  it("is the named target the sources were copied onto", () => {
+    expect(
+      mergedObject(`
+        const ACCOUNTS_TABLE = { table: "dim_account" };
+        export const merged = Object.assign(ACCOUNTS_TABLE, { schema: "core" });
+      `),
+    ).toBe('{ table: "dim_account" }');
+  });
+
+  it("is not an empty literal target, which the call copies onto a new object", () => {
+    expect(
+      mergedObject(`
+        const ACCOUNTS_TABLE = { table: "dim_account" };
+        export const merged = Object.assign({}, ACCOUNTS_TABLE, { schema: "core" });
+      `),
+    ).toBeNull();
+  });
+
+  it("is the component a name was assigned, with its parts added on", () => {
+    expect(
+      reportCard(`
+        const Root = () => { draw(); };
+        export const ReportCard = Object.assign(Root, { Title: () => null });
+      `),
+    ).toBe("() => { draw(); }");
+  });
+
+  it("is a function written straight in as the target", () => {
+    expect(
+      reportCard(`
+        export const ReportCard = Object.assign(() => { draw(); }, { title: "Accounts" });
+      `),
+    ).toBe("() => { draw(); }");
+  });
+
+  it("is not taken from a project's own Object", () => {
+    expect(
+      reportCard(`
+        const Object = { assign: (a: unknown, b: unknown) => b };
+        const Root = () => { draw(); };
+        export const ReportCard = Object.assign(Root, () => { other(); });
+      `),
+    ).toBe("() => { other(); }");
+  });
+});
+
 describe("a name a destructuring pattern binds", () => {
   it("reads the name off the container the pattern took it apart from", () => {
     const project = projectOf({

@@ -137,7 +137,8 @@ export type {
 //   callArg(r, k, a)            r passes a at position k
 //   imports(x, m, n)            x is the name n imported from module m,
 //                               or the whole of m when n is `*`, or a
-//                               declaration in m's own files
+//                               declaration in m's own files, or a
+//                               global under GLOBAL_MODULE
 //   exportsAs(m, n, v)          module m exports v under the name n
 //   reExports(m, n, m2, n2)     m's n is m2's n2
 //   reExportsAll(m, m2)         m forwards everything m2 exports
@@ -202,6 +203,13 @@ export const NAMESPACE_IMPORT = constant(NAMESPACE_IMPORT_NAME);
 /** The name a default import records itself under, `import React from "react"`. */
 export const DEFAULT_IMPORT_NAME = "default";
 const DEFAULT_IMPORT = constant(DEFAULT_IMPORT_NAME);
+
+/**
+ * The module an adapter records a global under, with the global's full
+ * dotted name: `Object.assign` in JavaScript. A pack word keys on it the
+ * way it keys on any other import.
+ */
+export const GLOBAL_MODULE = "global";
 
 /**
  * The label on the `comesFrom` rule for a member read off a whole-module
@@ -439,8 +447,7 @@ const STATED_RULES = [
   ),
 
   // Wrapper transparency, declared: a pack says module m's n hands back
-  // argument k. Keyed on where the callee comes from, so a local object
-  // spelled the same way is not mistaken for it.
+  // argument k. DESIGN.md says why the argument has to describe a value.
   rule(
     "hop",
     [v("r"), v("a"), VALUE_STEP],
@@ -449,9 +456,19 @@ const STATED_RULES = [
       lit("comesFrom", v("c"), v("m"), v("n")),
       lit("unwrapsByName", v("m"), v("n"), v("k")),
       lit("callArg", v("r"), v("k"), v("a")),
+      lit("describesValue", v("a")),
     ],
     "declared wrapper",
   ),
+  // Every value but an object written with nothing in it. The demand
+  // rewrite refuses negation, so each kind of value gets a rule.
+  ...[
+    lit("func", v("a")),
+    lit("writtenValue", v("a")),
+    lit("holdsProperty", v("a"), v("p"), v("x")),
+    lit("imports", v("a"), v("m"), v("n")),
+    lit("stepsTo", v("a"), v("y"), v("kind")),
+  ].map((kind) => rule("describesValue", [v("a")], [kind])),
 
   // The one step that runs a function forwards: a call steps to what
   // the function it invokes returns.

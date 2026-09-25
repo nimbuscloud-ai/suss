@@ -51,7 +51,7 @@ Three layers do the work.
 
   <rect class="box" x="60" y="220" width="540" height="86" rx="6" />
   <text class="label" x="330" y="242" text-anchor="middle">2. One rule set joins the facts into a value graph</text>
-  <text class="note" x="330" y="260" text-anchor="middle">171 rules. 17 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
+  <text class="note" x="330" y="260" text-anchor="middle">176 rules. 17 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
   <text class="note" x="330" y="277" text-anchor="middle">reaches is the transitive closure of those hops, and it records</text>
   <text class="note" x="330" y="294" text-anchor="middle">the strongest kind of step the walk took.</text>
 
@@ -145,7 +145,9 @@ and emits two more of its own on top: `bindCall`, for the JavaScript
 `.bind` rule, and `importsModule`, for walking module edges. `extends`,
 `extendsNamed` and `callKeywordArg` come from the Python and Ruby
 adapters. `unwrapsByName` and the `givesBackOne` family come from a
-pack's declarations, so no source file contains them at all.
+pack's declarations, so no source file contains them at all. The
+TypeScript adapter declares one of those words itself, for the
+language: `Object.assign` hands back its first argument.
 
 Some of them take both. Python's `with httpx.Client() as client` gives
 `entersAs(client, the call)` from the adapter, which says only that the
@@ -158,13 +160,13 @@ explanation each.
 
 ## Layer 2: one rule set makes a graph
 
-`packages/resolution/src/index.ts` contains 171 rules and no code.
+`packages/resolution/src/index.ts` contains 176 rules and no code.
 17 of them derive `stepsTo(x, y, kind)`, which says the value `x` leads
 to the value `y` in one hop. Two of them, for an argument and a
 property read, are written as `stepsTo` directly. The other fifteen are
 written as `hop`, and each gets a `stepsTo` twin, since a walk under a
 receiver context reads `hop`. The TypeScript adapter adds a sixteenth
-hop, for `.bind`, with its own twin, and that pair is not among the 171.
+hop, for `.bind`, with its own twin, and that pair is not among the 176.
 
 ```ts
 rule(

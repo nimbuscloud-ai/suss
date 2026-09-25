@@ -44,6 +44,11 @@ transparentWrappers: [
 ]
 ```
 
+The language's own library is in the same position. The store declares
+`Object.assign` as handing back argument 0 on every run, keyed on the
+global the extractor records for a callee only library declaration
+files declare.
+
 ## What a decorator means
 
 `unwraps` tells you what a factory hands back. The other question about

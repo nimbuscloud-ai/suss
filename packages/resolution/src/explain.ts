@@ -156,7 +156,7 @@ const DEFAULT_PHRASES: Record<string, StepPhrase> = {
     return {
       reason: `${describe(tuple[0])} calls ${name} from ${module}, which passes argument ${argument} through, so it comes down to ${describe(tuple[1])}`,
       assumptions: [
-        `a pack declares that ${name} from ${module} passes argument ${argument} through to its result`,
+        `${name} from ${module} passes argument ${argument} through to its result, as a pack or the language adapter declares`,
       ],
     };
   },

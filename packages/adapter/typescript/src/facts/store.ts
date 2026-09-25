@@ -57,6 +57,7 @@ import {
   nodeId,
   packagesDeclaring,
 } from "./extract.js";
+import { LANGUAGE_WRAPPERS } from "./languageWords.js";
 import {
   type FileSetQuery,
   ModuleGraph,
@@ -243,7 +244,9 @@ export class ResolutionStore {
     environmentObjects: readonly string[] = [],
   ) {
     this.table = createNodeTable(environmentObjects);
-    addPackWords(this.db, { unwrapsByName: wrappers });
+    addPackWords(this.db, {
+      unwrapsByName: [...LANGUAGE_WRAPPERS, ...wrappers],
+    });
   }
 
   /**

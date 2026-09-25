@@ -83,6 +83,23 @@ that library's name too. That covers a member of a namespace a barrel
 re-exports, a member of a default import of a module written with
 `export =`, and a global a package declares.
 
+A global the language declares has no module at all, so the adapter
+records a callee that only library declaration files declare under
+`GLOBAL_MODULE` and its dotted name: `Object.assign` comes from
+`global`'s `Object.assign`. The TypeScript store declares
+`Object.assign` as handing back argument 0 on every run, as behavior of
+the language rather than of a pack.
+
+`Object.assign({}, a, b)` copies onto the empty object and hands that
+back, and the empty literal describes none of what the call returns. So
+the rule takes the step only when the argument describes a value: a
+function, a written value, an object with something in it, an import, or
+a name that steps somewhere. A negated `objectValue` would say it more
+directly, but the demand rewrite refuses any negation, so
+`describesValue` lists the kinds that do. An object written with
+properties stays in, since a pack's wrapper can hand one back as it is:
+`createRoute({ method, path })` in `@hono/zod-openapi` is the route.
+
 Every fact a pack declares goes in through `addPackWords`, which takes
 the declarations in one format for every language. Each adapter
 converts its own pack type to that format. A new pack word is then
@@ -105,10 +122,11 @@ overrides a declared method gets two steps: the declared one, and the
 one through the method it wrote. When the method it wrote returns one
 of the class, the two steps agree and the caller sees one answer. When
 it returns something else, the caller sees two answers, and its
-single-answer policy refuses the pair. Letting the written method win would need a negated literal on
-`contains`. Since `contains` is derived from `comesTo`, the rule set
-would stop being stratifiable. The on-demand rewrite refuses any
-negation anyway, before the engine gets as far as stratifying.
+single-answer policy refuses the pair. Letting the written method win
+would need a negated literal on `contains`. Since `contains` is derived
+from `comesTo`, the rule set would stop being stratifiable. The
+on-demand rewrite refuses any negation anyway, before the engine gets as
+far as stratifying.
 
 SQLAlchemy and SQLModel take the class as an argument instead of as the
 receiver: `session.get(User, id)`, `session.query(User)`,

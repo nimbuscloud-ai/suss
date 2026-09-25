@@ -175,11 +175,11 @@ describe("explainResolutionProof", () => {
       "wrapped calls withTracing from tracing, which passes argument 0 through, so it comes down to innerFn",
     );
     expect(explained?.assumptions).toEqual([
-      "a pack declares that withTracing from tracing passes argument 0 through to its result",
+      "withTracing from tracing passes argument 0 through to its result, as a pack or the language adapter declares",
     ]);
     const lines = renderExplanation(explained!, say);
     expect(lines).toContain(
-      "  assuming a pack declares that withTracing from tracing passes argument 0 through to its result",
+      "  assuming withTracing from tracing passes argument 0 through to its result, as a pack or the language adapter declares",
     );
   });
 
