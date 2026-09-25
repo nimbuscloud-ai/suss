@@ -29,6 +29,8 @@ The `discoverUnits` callback runs two walks.
 
 The named-export walk takes every export other than the default whose declaration is a function with a statement that returns JSX. It applies some React conventions, which live in this pack so the extractor stays free of them. It skips `.stories.tsx`, `.test.tsx` and `.spec.tsx` files. It skips the default export, since the data-driven pattern already covers it. And it requires a PascalCase name, because a lowercase export that returns JSX is usually a render-prop helper.
 
+The pack declares `useCallback`, `memo` and `forwardRef` as transparent wrappers, since each hands back the function it was given. An export written as `memo(Card)` is then the `Card` function, and a call through a hook's `useCallback` result runs the callback.
+
 The root walk reads the calls React provides for booting an app: `createRoot` and `hydrateRoot` from `react-dom/client`, and `ReactDOM.render`. It resolves the rendered element back to its declaration and records that as a component. An `App` wired up this way is often exported by nothing. The closure then follows its JSX references, so everything the app renders is reachable from there.
 
 ### Sub-units

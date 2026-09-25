@@ -850,3 +850,53 @@ describe("root discovery", () => {
     ).toBe(false);
   });
 });
+
+describe("a function React hands back unchanged", () => {
+  /** The callees Page stopped at, and the functions the closure reached. */
+  async function walkFromPage(source: string) {
+    const summaries = await summariesOf({ "/app/page.tsx": source });
+    const page = summaries.find((one) => one.identity.name === "Page");
+    return {
+      stops: (page?.gaps ?? []).flatMap((gap) =>
+        gap.type === "unfollowedCall" ? [gap.callee] : [],
+      ),
+      reached: summaries
+        .filter(
+          (one) => one.identity.boundaryBinding?.recognition === "reachable",
+        )
+        .map((one) => one.identity.name),
+    };
+  }
+
+  it("follows a callback useCallback wrapped, through the hook that returns it", async () => {
+    const { stops, reached } = await walkFromPage(`
+      import { useCallback } from "react";
+      function useSaveOrder() {
+        return useCallback(() => persistOrder("orders"), []);
+      }
+      function persistOrder(table: string) { return table; }
+      export function Page() {
+        const saveOrder = useSaveOrder();
+        saveOrder();
+        return <div/>;
+      }
+    `);
+
+    expect(stops).toEqual([]);
+    expect(reached).toContain("persistOrder");
+  });
+
+  it("follows a component memo and forwardRef wrapped, through the namespace spelling too", async () => {
+    const { stops, reached } = await walkFromPage(`
+      import React, { forwardRef } from "react";
+      function ReportCardInner() { return <section/>; }
+      const ReportCard = React.memo(forwardRef(ReportCardInner));
+      export function Page() {
+        return <div><ReportCard/></div>;
+      }
+    `);
+
+    expect(stops).toEqual([]);
+    expect(reached).toContain("ReportCardInner");
+  });
+});

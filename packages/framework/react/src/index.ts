@@ -27,6 +27,8 @@ import { reactSubUnits } from "./subUnits.js";
 import type { PatternPack } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
+const PASS_THROUGH = ["useCallback", "memo", "forwardRef"];
+
 export function reactFramework(): PatternPack {
   return {
     name: "react",
@@ -91,6 +93,14 @@ export function reactFramework(): PatternPack {
       type: "componentProps",
       paramPosition: 0,
     },
+
+    // Each hands back the function it was given, so a call through the
+    // result runs that function. `useMemo` and `lazy` are left out: one
+    // returns what its argument returns, the other a module's export.
+    transparentWrappers: PASS_THROUGH.flatMap((name) => [
+      { callee: name, argument: 0, module: "react" },
+      { callee: `React.${name}`, argument: 0, module: "react" },
+    ]),
 
     subUnits: reactSubUnits,
     discoverUnits: (sourceFile, ctx) => [

@@ -945,6 +945,20 @@ const STATED_RULES = [
     [lit("reaches", v("x"), v("z"), RESULT_STEP), lit("objectValue", v("z"))],
   ),
 
+  // `(c) => asyncHandler(fn)` gives back the wrapper's own closure and
+  // the fn it unwraps. This is the unwrapped one, which a caller prefers
+  // for the same reason `comesTo` wins over `givesBack` on the call.
+  rule(
+    "givesBackUnwrapped",
+    [v("x"), v("z")],
+    [
+      lit("reaches", v("x"), v("r"), RESULT_STEP),
+      lit("call", v("r"), v("c")),
+      lit("comesTo", v("r"), v("z")),
+      lit("func", v("z")),
+    ],
+  ),
+
   // Following a value to the expression it is written as, whatever kind
   // that is. A GraphQL document is neither a function nor an object, so
   // `comesTo` never reaches one.
@@ -1696,6 +1710,11 @@ export const RESOLUTION_QUESTIONS = [
     "wantedGivesBack",
     [v("x"), v("z")],
     [lit("wanted", v("x")), lit("givesBack", v("x"), v("z"))],
+  ),
+  rule(
+    "wantedGivesBackUnwrapped",
+    [v("x"), v("z")],
+    [lit("wanted", v("x")), lit("givesBackUnwrapped", v("x"), v("z"))],
   ),
   // Keyed by the parameter, since that is what a caller has in hand
   // when it wants the call sites told apart.

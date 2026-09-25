@@ -2745,3 +2745,61 @@ describe("isEnvironmentValue", () => {
     ).toBe(false);
   });
 });
+
+describe("resolveCalledFunction", () => {
+  /** The function a call through the callee of the last call in /use.ts runs. */
+  function calledBody(files: Record<string, string>): string | null {
+    const project = projectOf(files);
+    const calls = project
+      .getSourceFileOrThrow("/use.ts")
+      .getDescendantsOfKind(SyntaxKind.CallExpression);
+    const last = calls[calls.length - 1];
+    if (last === undefined) {
+      throw new Error("No call in /use.ts");
+    }
+    const resolved = new ResolutionStore().resolveCalledFunction(
+      last.getExpression(),
+    );
+    return resolved === null ? null : resolved.getText().replace(/\s+/g, " ");
+  }
+
+  it("runs the function a name written as a factory call was handed back", () => {
+    expect(
+      calledBody({
+        "/nav.ts":
+          "export const useNavigator = () => (url: string) => { go(url); };",
+        "/use.ts": `
+          import { useNavigator } from "./nav";
+          export function page() { const navigate = useNavigator(); navigate("/orders"); }
+        `,
+      }),
+    ).toContain("go(url)");
+  });
+
+  it("runs the function a factory's returned wrapper call unwraps", () => {
+    expect(
+      calledBody({
+        "/wrap.ts": `
+          export const guard = (fn: (id: number) => void) => (id: number) => Promise.resolve(fn(id)).catch(() => {});
+          export const useOrders = (table: string) => guard(async (id: number) => { load(table, id); });
+        `,
+        "/use.ts": `
+          import { useOrders } from "./wrap";
+          export function route() { const handler = useOrders("orders"); handler(1); }
+        `,
+      }),
+    ).toContain("load(table, id)");
+  });
+
+  it("runs the function a name comes down to before anything a call gives back", () => {
+    expect(
+      calledBody({
+        "/use.ts": `
+          const guard = (fn: () => void) => () => fn();
+          const job = () => { run(); };
+          export function route() { const handler = guard(job); handler(); }
+        `,
+      }),
+    ).toBe("() => { run(); }");
+  });
+});
