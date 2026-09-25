@@ -188,6 +188,7 @@ export function packWordsOf(packs: readonly PythonPack[]): PackWords {
         manager.returnsSelf.map((name) => ({ module: manager.module, name })),
       ),
     ),
+    unwrapsByName: packs.flatMap((pack) => pack.transparentWrappers ?? []),
   };
 }
 

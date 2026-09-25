@@ -156,6 +156,7 @@ export function packWordsOf(packs: readonly RubyPack[]): PackWords {
         ),
       ),
     ),
+    unwrapsByName: packs.flatMap((pack) => pack.transparentWrappers ?? []),
   };
 }
 
