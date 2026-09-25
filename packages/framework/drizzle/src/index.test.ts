@@ -392,6 +392,40 @@ describe("drizzle recognizer — negatives", () => {
   });
 });
 
+describe("drizzle recognizer, however the database is typed", () => {
+  // Current drizzle-orm types `drizzle()` as the database class joined
+  // with `{ $client }`, and a project often keeps it optional or aliased.
+  const typings = [
+    ["an intersection", "DrizzleDatabase & { $client: unknown }"],
+    ["an optional", "DrizzleDatabase | undefined"],
+    ["an alias of an intersection", "Db"],
+    ["an alias of an optional", "MaybeDb"],
+    ["a project's own extension", "ReportDb"],
+  ] as const;
+
+  it.each(typings)("recognizes a database typed as %s", (_, typed) => {
+    const effects = effectsIn(`
+      import type { DrizzleDatabase } from "drizzle-orm";
+      import { users } from "./schema.js";
+      type Db = DrizzleDatabase & { $client: unknown };
+      type MaybeDb = Db | undefined;
+      interface ReportDb extends DrizzleDatabase { region: string }
+      declare const db: ${typed};
+      export async function listUsers() {
+        return db!.select().from(users);
+      }
+      export async function addUser(email: string) {
+        return db!.insert(users).values({ email });
+      }
+    `);
+    expect(effects.map(tableOf)).toEqual(["users", "users"]);
+    expect(effects.map((effect) => interactionOf(effect).kind)).toEqual([
+      "read",
+      "write",
+    ]);
+  });
+});
+
 describe("drizzle raw SQL", () => {
   it("reads the tables a statement touches, and what it picks rows by", () => {
     const effects = effectsIn(`

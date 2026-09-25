@@ -90,6 +90,14 @@ beforeAll(() => {
   );
   write(
     "src/untypedBindings.ts",
+    `export default {
+       async scheduled(controller: ScheduledController, env: { AUDIT }) {
+         await env.AUDIT.get("k");
+       },
+     };`,
+  );
+  write(
+    "src/classBindings.ts",
     `class EnvBag {
        SESSIONS: KVNamespace = undefined as unknown as KVNamespace;
      }
@@ -98,8 +106,25 @@ beforeAll(() => {
          await env.SESSIONS.get("k");
          return new Response("ok");
        },
-       async scheduled(controller: ScheduledController, env: { AUDIT }) {
-         await env.AUDIT.get("k");
+     };`,
+  );
+  write(
+    "src/typedStores.ts",
+    `type Sessions = KVNamespace & { readonly region: string };
+     type MaybeArchive = R2Bucket | undefined;
+     interface Env {
+       JOINED: KVNamespace & { readonly region: string };
+       OPTIONAL: KVNamespace | undefined;
+       ALIASED_JOIN: Sessions;
+       ALIASED_OPTIONAL: MaybeArchive;
+     }
+     export default {
+       async fetch(request: Request, env: Env): Promise<Response> {
+         await env.JOINED.get("a");
+         await env.OPTIONAL?.get("b");
+         await env.ALIASED_JOIN.get("c");
+         await env.ALIASED_OPTIONAL?.get("d");
+         return new Response("ok");
        },
      };`,
   );
@@ -158,6 +183,18 @@ function storageEffects(
     }
   }
   return [...distinct.values()];
+}
+
+/** The binding a storage access reaches, and which kind of store it is. */
+function storeOf(effect: Effect): string {
+  if (effect.type !== "interaction") {
+    throw new Error(`expected an interaction, got ${effect.type}`);
+  }
+  const { semantics } = effect.binding;
+  if (semantics.name !== "storage") {
+    throw new Error(`expected storage, got ${semantics.name}`);
+  }
+  return `${semantics.container} ${semantics.storageSystem}`;
 }
 
 describe("storeBindingRecognizer", () => {
@@ -254,6 +291,21 @@ describe("storeBindingRecognizer", () => {
     expect(storageEffects(await run(), "untypedBindings.ts")).toEqual([]);
   });
 
+  it("reads a store type written on a class field", async () => {
+    const stores = storageEffects(await run(), "classBindings.ts").map(storeOf);
+    expect(stores).toEqual(["SESSIONS cloudflare-kv"]);
+  });
+
+  it("reads a store type through an intersection, a union and an alias", async () => {
+    const stores = storageEffects(await run(), "typedStores.ts").map(storeOf);
+    expect(stores.sort()).toEqual([
+      "ALIASED_JOIN cloudflare-kv",
+      "ALIASED_OPTIONAL r2",
+      "JOINED cloudflare-kv",
+      "OPTIONAL cloudflare-kv",
+    ]);
+  });
+
   it("abstains from methods, statements and receivers it cannot settle", async () => {
     expect(storageEffects(await run(), "abstains.ts")).toEqual([]);
   });
@@ -274,6 +326,23 @@ describe("storeBindingRecognizer", () => {
     expect(effects.length).toBeGreaterThan(0);
   });
 
+  it("leaves an env argument alone outside a trigger when there is no resolver", () => {
+    const project = createFixtureProject(root, "src/*.ts");
+    const sf = project.createSourceFile(
+      path.join(root, "src/notATrigger.ts"),
+      `interface Env { SESSIONS: KVNamespace }
+       export default {
+         async warm(request: Request, env: Env): Promise<void> {
+           await env.SESSIONS.get("k");
+         },
+       };`,
+    );
+    const calls = sf.getDescendants().filter(TsNode.isCallExpression);
+    expect(calls.map((call) => storeBindingRecognizer(call, {}))).toEqual([
+      null,
+    ]);
+  });
+
   it("keeps the config-read beside the storage access", async () => {
     const reads = (await run())
       .filter((s) => s.location.file.endsWith("stores.ts"))
@@ -290,5 +359,65 @@ describe("storeBindingRecognizer", () => {
       );
     expect(reads).toContain("SESSIONS");
     expect(reads).toContain("GREETING");
+  });
+});
+
+describe("storeBindingRecognizer with the store types declared", () => {
+  const typedRoot = fs.mkdtempSync(path.join(os.tmpdir(), "suss-cf-typed-"));
+
+  beforeAll(() => {
+    const files: Record<string, string> = {
+      // What `wrangler types` generates: the store types as globals.
+      "src/workerConfiguration.d.ts": `
+        declare interface KVNamespace { get(key: string): Promise<string | null> }
+        declare interface R2Bucket { get(key: string): Promise<unknown> }`,
+      "src/worker.ts": `
+        type Sessions = KVNamespace & { readonly region: string };
+        type MaybeArchive = R2Bucket | undefined;
+        interface TaggedSessions extends KVNamespace { readonly tag: string }
+        interface Env {
+          PLAIN: KVNamespace;
+          EXTENDED: TaggedSessions;
+          JOINED: KVNamespace & { readonly region: string };
+          ALIASED_JOIN: Sessions;
+          ALIASED_OPTIONAL: MaybeArchive;
+        }
+        export default {
+          async fetch(request: Request, env: Env): Promise<Response> {
+            await env.PLAIN.get("a");
+            await env.EXTENDED.get("e");
+            await env.JOINED.get("b");
+            await env.ALIASED_JOIN.get("c");
+            await env.ALIASED_OPTIONAL?.get("d");
+            return new Response("ok");
+          },
+        };`,
+    };
+    for (const [rel, content] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(path.join(typedRoot, rel)), {
+        recursive: true,
+      });
+      fs.writeFileSync(path.join(typedRoot, rel), content);
+    }
+  });
+
+  afterAll(() => {
+    fs.rmSync(typedRoot, { recursive: true, force: true });
+  });
+
+  it("reads the store type the checker resolves, through an extension too", async () => {
+    const adapter = createTypeScriptAdapter({
+      project: createFixtureProject(typedRoot, "src/*.ts"),
+      frameworks: [cloudflareWorkersFramework()],
+    });
+    const summaries = await adapter.extractAll();
+    const stores = storageEffects(summaries, "worker.ts").map(storeOf);
+    expect(stores.sort()).toEqual([
+      "ALIASED_JOIN cloudflare-kv",
+      "ALIASED_OPTIONAL r2",
+      "EXTENDED cloudflare-kv",
+      "JOINED cloudflare-kv",
+      "PLAIN cloudflare-kv",
+    ]);
   });
 });

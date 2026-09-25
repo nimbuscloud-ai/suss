@@ -17,10 +17,10 @@ import {
   Node as N,
   type Node,
   type SourceFile,
-  type Type,
 } from "ts-morph";
 import { z } from "zod";
 
+import { receiverTypesOf } from "@suss/adapter-typescript";
 import { storageBinding } from "@suss/behavioral-ir";
 import { scopeOption, storageSystemOption } from "@suss/extractor";
 import {
@@ -30,6 +30,7 @@ import {
   sqlStatements,
 } from "@suss/recognize";
 
+import type { ReceiverType } from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
 import type {
   EffectArg,
@@ -448,33 +449,17 @@ function fieldsOfRows(read: { rows: ObjectArg[]; written: boolean }): string[] {
 }
 
 /**
- * Checks the receiver's type, so `const db = new PrismaClient()` and a
- * wrapped `ctx.prisma` both count. `isPrismaClientPath` lists the places
- * the type may be declared.
+ * Checks the receiver's type, so `const db = new PrismaClient()`, a
+ * wrapped `ctx.prisma` and a project's `class PrismaService extends
+ * PrismaClient` all count. `isPrismaClientPath` lists the places the
+ * type may be declared.
  */
 function isPrismaClientReceiver(node: Node): boolean {
-  return extendsPrismaClient(node.getType(), new Set());
+  return receiverTypesOf(node).some((type) => declaredByPrisma(type));
 }
 
-/**
- * A project's client is often a subclass declared in the project, such
- * as `class PrismaService extends PrismaClient`, so the type counts when
- * it or anything it extends comes from Prisma.
- */
-function extendsPrismaClient(type: Type, seen: Set<Type>): boolean {
-  if (seen.has(type)) {
-    return false;
-  }
-  seen.add(type);
-  const declarations = type.getSymbol()?.getDeclarations() ?? [];
-  if (
-    declarations.some((declaration) =>
-      isPrismaClientPath(declaration.getSourceFile().getFilePath()),
-    )
-  ) {
-    return true;
-  }
-  return type.getBaseTypes().some((base) => extendsPrismaClient(base, seen));
+function declaredByPrisma(type: ReceiverType): boolean {
+  return type.declaredIn.some((filePath) => isPrismaClientPath(filePath));
 }
 
 // Prisma copies the schema next to the generated client, wherever the

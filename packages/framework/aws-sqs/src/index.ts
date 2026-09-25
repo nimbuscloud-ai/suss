@@ -12,7 +12,11 @@
 import { type CallExpression, Node as N, type Node } from "ts-morph";
 import { z } from "zod";
 
-import { climbSyntax, readConfiguredCall } from "@suss/adapter-typescript";
+import {
+  climbSyntax,
+  readConfiguredCall,
+  receiverTypesOf,
+} from "@suss/adapter-typescript";
 import { messageBusBinding } from "@suss/behavioral-ir";
 import { configuredCallOption } from "@suss/extractor";
 import { constructedFrom, messageSends, pack } from "@suss/recognize";
@@ -20,6 +24,7 @@ import { constructedFrom, messageSends, pack } from "@suss/recognize";
 import type {
   ConfiguredCallContext,
   ConfiguredCallSpec,
+  ReceiverType,
 } from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
 import type {
@@ -124,7 +129,7 @@ function messageReceiveRecognizer(
     return null;
   }
 
-  if (!isSqsRecordIdentifier(recordExpr)) {
+  if (!isSqsRecordIdentifier(recordExpr) && !isTypedSqsRecord(recordExpr)) {
     return null;
   }
 
@@ -186,6 +191,22 @@ function isSqsRecordIdentifier(recordExpr: Node): boolean {
     }
   }
   return false;
+}
+
+/**
+ * Accepts a record typed with the Lambda event types, which covers a
+ * record handed to a callback, as in `event.Records.map((record) => ...)`,
+ * or to a helper that takes one.
+ */
+function isTypedSqsRecord(recordExpr: Node): boolean {
+  return receiverTypesOf(recordExpr).some((type) => isLambdaSqsRecord(type));
+}
+
+function isLambdaSqsRecord(type: ReceiverType): boolean {
+  return (
+    type.name === "SQSRecord" &&
+    type.declaredIn.some((filePath) => filePath.includes("/aws-lambda/"))
+  );
 }
 
 /**
