@@ -5,6 +5,8 @@
   "HttpApi": "SAM: API Gateway v2 event type on a Serverless::Function, and the synthetic id of the implicit HTTP API",
   "Api": "SAM: API Gateway v1 event type on a Serverless::Function",
   "RestApi": "CloudFormation: API Gateway v1 resource, used as the synthetic id of the implicit REST API",
+  "RestApiId": "SAM: Api event property naming the REST API the route is on",
+  "ApiId": "SAM: HttpApi event property naming the HTTP API the route is on",
   "SQS": "SAM: event source type on a Serverless::Function",
   "SNS": "SAM: event source type on a Serverless::Function",
   "Schedule": "SAM: event source type on a Serverless::Function",

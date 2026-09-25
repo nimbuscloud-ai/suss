@@ -226,6 +226,33 @@ describe("what the reader does not read", () => {
   });
 });
 
+describe("the API a route deploys on", () => {
+  it("puts every route of one kind on the one API the service deploys", () => {
+    const summaries = serverlessToSummaries({
+      functions: {
+        orders: {
+          handler: "src/orders.handler",
+          events: [
+            { httpApi: { method: "GET", path: "/orders" } },
+            { http: { method: "POST", path: "orders" } },
+          ],
+        },
+      },
+    });
+
+    const apiIds = summaries
+      .filter((s) => restOf(s) !== null)
+      .map((s) => [restOf(s)?.method, s.metadata?.apiId]);
+    expect(apiIds).toEqual(
+      expect.arrayContaining([
+        ["GET", "HttpApi"],
+        ["POST", "RestApi"],
+      ]),
+    );
+    expect(apiIds).toHaveLength(2);
+  });
+});
+
 describe("reporting what went unread", () => {
   it("writes a line naming the function, the event kind, and what stopped it", () => {
     const written: string[] = [];
