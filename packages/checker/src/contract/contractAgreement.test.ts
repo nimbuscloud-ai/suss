@@ -189,6 +189,53 @@ describe("checkContractAgreement", () => {
     );
   });
 
+  it("compares bodies at a status when a range-only source comes first", () => {
+    const record = (props: Record<string, TypeShape>): TypeShape => ({
+      type: "record",
+      properties: props,
+    });
+    const rangeOnly = providerWithContract("orders-spec", "a.yaml", "openapi", {
+      provenance: "derived",
+      responses: [{ statusCode: 200 }],
+      responseRanges: [
+        {
+          min: 400,
+          max: 499,
+          spec: "4XX",
+          body: record({ message: { type: "text" } }),
+        },
+      ],
+    });
+    const textCode = providerWithContract("orders-cfn", "b.yaml", "cfn", {
+      provenance: "independent",
+      responses: [
+        { statusCode: 200 },
+        { statusCode: 404, body: record({ code: { type: "text" } }) },
+      ],
+    });
+    const integerCode = providerWithContract(
+      "orders-router",
+      "c.ts",
+      "custom",
+      {
+        provenance: "independent",
+        responses: [
+          { statusCode: 200 },
+          { statusCode: 404, body: record({ code: { type: "integer" } }) },
+        ],
+      },
+    );
+
+    const findings = checkContractAgreement([rangeOnly, textCode, integerCode]);
+    const bodyFindings = findings.filter((f) =>
+      /body shape/.test(f.description),
+    );
+    expect(bodyFindings).toHaveLength(1);
+    expect(bodyFindings[0].description).toMatch(
+      /body shape for status 404.*orders-cfn and orders-router/,
+    );
+  });
+
   it("ignores body-shape 'unknown' results — Layer 1 surfaces those already", () => {
     const ref = (name: string): TypeShape => ({ type: "ref", name });
     const a = providerWithContract("a", "a.yaml", "openapi", {
