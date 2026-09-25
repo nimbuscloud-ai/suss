@@ -24,6 +24,7 @@ import type {
   BehavioralSummary,
   BoundaryBinding,
   Finding,
+  TypeShape,
 } from "@suss/behavioral-ir";
 import type { DeclaredContract } from "./declaredContract.js";
 
@@ -135,9 +136,9 @@ function compareSources(
     });
   }
 
-  // Each body at a shared status is compared with the first source's,
-  // which gives one finding per disagreeing source instead of one per
-  // pair of sources.
+  // Each body at a shared status is compared with the first literal
+  // body, which gives one finding per disagreeing source instead of one
+  // per pair of sources.
   for (const [status, declaringSources] of statusAttribution) {
     const contributors = sources.filter((s) =>
       declaringSources.has(s.summary.identity.name),
@@ -145,32 +146,17 @@ function compareSources(
     if (contributors.length < 2) {
       continue;
     }
-    const baseline = contributors.find(
-      (s) =>
-        s.contract.responses.find((r) => r.statusCode === status)?.body !==
-        null,
-    );
+    const withBody = contributors.flatMap((s) => {
+      const body = literalBodyAt(s.contract, status);
+      return body === null ? [] : [{ summary: s.summary, body }];
+    });
+    const baseline = withBody[0];
     if (baseline === undefined) {
       continue;
     }
-    const baselineBody = baseline.contract.responses.find(
-      (r) => r.statusCode === status,
-    )?.body;
-    if (baselineBody === null || baselineBody === undefined) {
-      continue;
-    }
 
-    for (const other of contributors) {
-      if (other === baseline) {
-        continue;
-      }
-      const otherBody = other.contract.responses.find(
-        (r) => r.statusCode === status,
-      )?.body;
-      if (otherBody === null || otherBody === undefined) {
-        continue; // a status with no body agrees with any body
-      }
-      const result = bodyShapesMatch(baselineBody, otherBody);
+    for (const other of withBody.slice(1)) {
+      const result = bodyShapesMatch(baseline.body, other.body);
       if (result === "match") {
         continue;
       }
@@ -193,4 +179,17 @@ function compareSources(
   }
 
   return findings;
+}
+
+/**
+ * The body a source declares for exactly this status, or null. A source
+ * that covers the status only through a range or `default` makes a
+ * weaker statement, so its body stays out of the comparison, the same
+ * way a literal entry with no body does.
+ */
+function literalBodyAt(
+  contract: DeclaredContract,
+  status: number,
+): TypeShape | null {
+  return contract.responses.find((r) => r.statusCode === status)?.body ?? null;
 }
