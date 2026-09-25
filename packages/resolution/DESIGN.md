@@ -4,62 +4,219 @@ An adapter supplies facts about the source it read. The rules in `@suss/resoluti
 
 ## The facts an adapter supplies
 
+Every relation an adapter adds to the store has a line below, and so
+does every relation a rule reads that no rule derives. Before adding a
+fact, look here for one that already says what you need. After adding
+one, give it a line in its group. `npm run check:fact-vocabulary` fails
+when a relation is missing, and when a line is left for a relation that
+nothing emits or reads any more.
+
+Every adapter keys an expression on its node: the file path and the
+node's start and end offsets. The TypeScript adapter keys a name that
+way too, and links each reference to its declaration with `binds`. The
+Python and Ruby adapters key a name on the scope that declares it plus
+the name, so every read of one name is the same key and needs no
+`binds` row. `refersToParam` accepts both spellings of a parameter
+read. A position or a count is written as a decimal string.
+
+A line that ends by naming adapters is a fact only those adapters
+emit. The rest come from all three.
+
+Values and objects:
+
 ```
 func(f)                     f is a function
-objectValue(o)              o is an object written out literally
+objectValue(o)              o is an object written out: a literal, or a
+                            class, whose properties are its methods
 writtenValue(x)             x is an expression written out in source
                             rather than a name for one
 placeholderValue(x)         x is a written value a later write is
-                            expected to replace, such as None or nil
-holdsProperty(o, n, x)      object o holds x under the name n
+                            expected to replace, such as None or nil.
+                            singleAnswers reads it, and no rule does
+                            (Python, Ruby)
+holdsProperty(o, n, x)      object o has x under the name n
 holdsDefault(cls, n, x)     cls's body gives its field n the value x,
-                            which a constructor may replace
-readsProperty(x, o, n)      x is the expression o.n
-binds(x, y)                 the name x is declared as y
-endsHolding(x, y)           the name x is written more than once and
-                            holds y once the writes have run
-mayHold(x, y)               one write to x wrote y, and nothing says
-                            which write ran last
-writesUnstated(x)           a write to x states no value at all
-writesAllStated(x)          every write to x states a value, so the
-                            mayHold rows for x are all of them
-fallbackBranch(x, b)        x is a fallback expression and b is one
-                            of its branches
-paramOf(f, k, p)            p is f's parameter at position k
-paramNamed(f, n, p)         p is f's parameter called n
-extends(c, b)               class c is written as extending b
-initializes(cls, f)         f runs when one of cls is made
-storesProperty(f, n, x)     f's body writes x to the receiver's n
-instanceOf(x, cls)          x is one of cls, and nothing says which:
-                            a method's receiver, or a name the source
-                            declares with the type cls
-returnsValue(f, v)          f returns v
-bodyCalls(f, c)             f's body calls the callee c, keyed the way
-                            call keys that call's callee
-makesCall(f, r)             the call r is written in f's own body
-callOutsideMethod(r)        the call r is outside every method body
-containsFn(f, g)            g is declared inside f
-call(r, c)                  r is a call whose callee is c
-callArg(r, k, a)            r passes a at position k
-callArgCount(r, k)          r is written with k arguments, and a
-                            splat counts as one
-imports(x, m, n)            x is the name n imported from module m
-exportsAs(m, n, v)          module m exports v under the name n
-reExports(m, n, m2, n2)     m's n is m2's n2
-reExportsAll(m, m2)         m forwards everything m2 exports
-declaresName(c, n)          c declares a method n under a name the
-                            source computes rather than writes out
+                            which a constructor may replace (Python)
+readsProperty(x, o, n)      x is the expression o.n, or o[n] with the
+                            key written out
 readsKeyed(site, o, x)      site reads the entry of o at the value of
                             x, where the source does not write the key
-                            out. A written key is a readsProperty
-environmentObject(w)        w is written as the object a pack calls
-                            the process environment
+                            out
+environmentObject(w)        w is written as the process environment
+```
+
+Names:
+
+```
+binds(x, y)                 the name x is declared as y, or x is a
+                            reference to the declaration y
+endsHolding(x, y)           the name x is written more than once and
+                            is left with y once the writes have run.
+                            valueLeftByWrites picks y
+mayHold(x, y)               one write to x wrote y, and nothing says
+                            which write ran last (Python, Ruby)
+writesAllStated(x)          every write to x states a value, so the
+                            mayHold rows for x are all of them
+                            (Python, Ruby)
+writesUnstated(x)           a write to x states no value at all. The
+                            value readers in this package read it, and
+                            no rule does (Python, Ruby)
+fallbackBranch(x, b)        x is a fallback expression, a || b or
+                            a ?? b, and b is one of its branches
+                            (TypeScript)
+instanceOf(x, cls)          x is one of cls, and nothing says which: a
+                            method's receiver, or a name Python
+                            annotates with a type. cls can be a name
+                            that leads to the class
+```
+
+Functions and parameters:
+
+```
+paramOf(f, k, p)            p is f's parameter at position k. A class
+                            lists its constructor's parameters here
+paramNamed(f, n, p)         p is f's parameter called n
+paramDefault(p, d)          p takes the value d when a caller passes no
+                            argument at all (TypeScript)
+returnsValue(f, v)          f returns v
+returnsClass(f, c)          f is annotated as returning c, and its body
+                            states no value of its own
+                            (TypeScript, Python)
+returnsNamed(f, n)          f's return annotation is written n, stated
+                            when returnsClass is. Nothing reads it yet
+                            (TypeScript, Python)
+containsFn(f, g)            g is declared inside f
+initializes(cls, f)         f runs when one of cls is made
+storesProperty(f, n, x)     f's body writes x to the receiver's n
+```
+
+Calls:
+
+```
+call(r, c)                  r is a call whose callee is c, keyed as the
+                            value the callee is written as
+callArg(r, k, a)            r passes a at position k
+callKeywordArg(r, n, a)     r passes a under the keyword n
+                            (Python, Ruby)
+callArgCount(r, k)          r is written with k arguments, keyword ones
+                            and a splat included (Python)
+callOutsideMethod(r)        the call r is outside every method body
+bodyCalls(f, c)             f's body calls the callee c, keyed the way
+                            call keys that call's callee
+makesCall(f, r)             the call r is written in f's own body. The
+                            TypeScript adapter states it only for a
+                            callee written as a name or a property read
+entersAs(y, r)              y is the name a block opens over the call
+                            r, so entering r is what wrote y (Python)
+```
+
+Classes:
+
+```
+extends(c, b)               class c is written as extending b. Ruby
+                            records a module c includes or prepends the
+                            same way (Python, Ruby)
+extendsNamed(c, n)          class c's base is written n, which is how a
+                            pack matches a library base that no node in
+                            the run declares (Python, Ruby)
+declaresName(c, n)          c declares a method n under a name the
+                            source computes rather than writes out
+                            (Ruby)
+declaresAssociation(c, n, t)  class c declares an association n, and t
+                            refers to the class it targets (Ruby)
+fieldCall(c, n, callee, t)  c's field n is given a call of callee, and
+                            t refers to the class n is about (Python)
+classCallback(c, event, n)  c's body registers its own method n to run
+                            on event (Ruby)
+```
+
+Modules:
+
+```
+imports(x, m, n)            x is the name n imported from module m. n
+                            is * for the whole module and default for
+                            its default export. A global that only
+                            library declarations declare is imported
+                            from GLOBAL_MODULE under its dotted name
+                            (TypeScript, Python)
+exportsAs(m, n, v)          the file m exports v under the name n
+reExports(m, n, m2, n2)     m's n is m2's n2 (TypeScript)
+reExportsAll(m, m2)         m forwards everything m2 exports
+                            (TypeScript)
+```
+
+A pack states what it knows about its own library as words. Each
+adapter converts its own pack type to `PackWords`, and `addPackWords`
+adds these facts:
+
+```
+givesBackOne(base, m)       m on a class whose ancestry reaches the base
+                            written base gives back one of that class
+                            (Python, Ruby)
+givesBackOneOfArgument(base, m, k)  the same, with the class passed at
+                            position k (Python)
+givesBackOneOfImport(mod, n, k)  the same, for the function n that
+                            module mod exports, called on its own
+                            (Python)
+entersAsSelf(mod, n)        entering one of module mod's n gives back
+                            that same object (Python)
+unwrapsByName(mod, n, k)    calling the n that module mod exports gives
+                            back its argument at k. The TypeScript store
+                            adds Object.assign under GLOBAL_MODULE on
+                            every run
+associationConstructor(mod, n)  a field given a call of the n that
+                            module mod exports declares an association
+                            (Python)
+```
+
+A caller asks a question by adding a row to one of the relations in
+`ASKING_RELATIONS`, such as `wanted(x)`. No rule derives those, and
+the questions in `RESOLUTION_QUESTIONS` are the rules that read them.
+
+Some relations are one adapter's own. The adapter adds them to the
+same store and reads them itself, or through a rule of its own, and no
+shared rule reads them:
+
+```
+bindCall(r, t)              r is t.bind(...), and the adapter's own hop
+                            sends r where t leads (TypeScript)
+importsModule(file, m)      file imports the module m. The store reads
+                            it only with the demand rewrite switched off
+                            (TypeScript)
+pyImport(file, m, status)   file imports m, and status says whether the
+                            import resolved, or why not (Python)
+pyImportResolved(file, m, target)  the import of m resolved to the file
+                            target. The run's file dependencies come
+                            from it (Python)
+pyImportedName(x, m, n)     x is the name n imported from m, with m as
+                            written even when it resolves (Python)
+pyOpenImport(file, m)       file writes from m import *. Nothing reads
+                            it (Python)
+rbRequires(file, target)    file loads target with require_relative.
+                            The run's file dependencies come from it
+                            (Ruby)
+rbConstantFrom(file, target)  file reads a constant that target defines.
+                            The run's file dependencies come from it
+                            (Ruby)
+rbConstantName(c, q)        the constant defined at c is called q in
+                            full, with every namespace around it (Ruby)
+definesMethodFrom(c, x)     c's body calls define_method, and x is the
+                            argument that gives the method its name. The
+                            adapter settles x and states declaresName
+                            (Ruby)
+nameTurnsOn(x, element, index, over)  the name x is written in a loop
+                            block that binds element, and index when it
+                            has one, to each item of over (Ruby)
+entry(u)                    discovery found the unit u. The reach
+                            closure keeps its own copy, and nothing
+                            reads this one (Python, Ruby)
 ```
 
 `declaresName` is the only fact an adapter records after asking these
-rules a question first. Ruby's `define_method(key)`, Python's
-`setattr(cls, name, fn)` and a computed class member in TypeScript all
-put a method on a class under a name the source never writes out. The
+rules a question first. Ruby's `define_method(key)` puts a method on a
+class under a name the source never writes out. Python's
+`setattr(cls, name, fn)` and a computed class member in TypeScript do
+the same, and neither of those adapters records one yet. The Ruby
 adapter records where the name comes from and settles it through the
 value evaluator, which reads these same facts. Then it records the name
 it got. `wantedDeclaredName` returns that name next to the names written
@@ -86,7 +243,9 @@ in, which is what a project barrel hides. A declaration a library's own
 `.d.ts` file makes at the top of a module or namespace is recorded as
 that library's name too. That covers a member of a namespace a barrel
 re-exports, a member of a default import of a module written with
-`export =`, and a global a package declares.
+`export =`, and a global a package declares. The Python adapter writes
+an import under the file when the import resolves, and under the module
+as written when it does not.
 
 A global the language declares has no module at all, so the adapter
 records a callee that only library declaration files declare under
@@ -278,9 +437,10 @@ A hop that only one language has is written as a step too. JavaScript's
 `.bind` and Ruby's `Const.new` are one rule each, and every question
 below uses them with no change.
 
-The value of a fallback expression (`a || b`, `a ?? b`, Python's
-`a or b`) is one of its branches, so each branch is a value step. No
-other rule is involved. When a branch is something no static reader can
+The value of a fallback expression (`a || b`, `a ?? b`) is one of its
+branches, so each branch is a value step. No other rule is involved.
+Only the TypeScript adapter records `fallbackBranch`. The Python adapter
+records `a or b` as a written value, which ends a chain there. When a branch is something no static reader can
 settle, such as a global cache or a parameter, that branch derives
 nothing. The branch that does resolve is then the only claim the source
 makes. The usual client singleton, `global.prisma || new PrismaClient()`,
