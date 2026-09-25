@@ -2873,3 +2873,199 @@ describe("the same steps, whichever question is asked", () => {
     ]);
   });
 });
+
+describe("a name followed by every chain that stops somewhere", () => {
+  type Facts = Array<[string, ...string[]]>;
+  type NameHop =
+    | "binds"
+    | "endsHolding"
+    | "mayHold"
+    | "fallbackBranch"
+    | "import";
+
+  /** One hop from a name to its value, written the way an adapter writes each kind. */
+  const NAME_HOPS: Record<NameHop, (from: string, to: string) => Facts> = {
+    binds: (from, to) => [["binds", from, to]],
+    endsHolding: (from, to) => [["endsHolding", from, to]],
+    mayHold: (from, to) => [
+      ["mayHold", from, "otherWrite"],
+      ["mayHold", from, to],
+      ["writesAllStated", from],
+    ],
+    fallbackBranch: (from, to) => [
+      ["fallbackBranch", from, "otherBranch"],
+      ["fallbackBranch", from, to],
+    ],
+    import: (from, to) => [
+      ["imports", from, "./shared", "shared"],
+      ["exportsAs", "./shared", "shared", to],
+    ],
+  };
+
+  /** Ask about one key the way an adapter does and read one answer relation back. */
+  function answered(
+    facts: Facts,
+    key: string,
+    asking: string,
+    answer: string,
+  ): string[] {
+    const db = new Database();
+    for (const [name, ...tuple] of facts) {
+      db.add(name, tuple);
+    }
+    askResolution(db, [key], asking, resolutionProgram());
+    return db
+      .lookup(answer, 0, key)
+      .map((row) => row.slice(1).join(":"))
+      .sort();
+  }
+
+  interface Chain {
+    /** The hops the chain takes. The call-origin chains stop at an import. */
+    hops: NameHop[];
+    /** What the chain gives back with this hop between the name and its value. */
+    ask: (hop: (from: string, to: string) => Facts) => string[];
+    expected: string[];
+  }
+
+  const EVERY_HOP: NameHop[] = [
+    "binds",
+    "endsHolding",
+    "mayHold",
+    "fallbackBranch",
+    "import",
+  ];
+  const UP_TO_AN_IMPORT: NameHop[] = EVERY_HOP.filter((h) => h !== "import");
+
+  const CHAINS: Record<string, Chain> = {
+    // function load(opts) { const settings = opts || {}; }
+    refersToParam: {
+      hops: UP_TO_AN_IMPORT,
+      ask: (hop) =>
+        derive(
+          [["paramOf", "load", "0", "opts"], ...hop("settings", "opts")],
+          "refersToParam",
+          "settings",
+        ).map((t) => String(t[1])),
+      expected: ["opts"],
+    },
+    refersToObject: {
+      hops: EVERY_HOP,
+      ask: (hop) =>
+        derive(
+          [["objectValue", "defaults"], ...hop("settings", "defaults")],
+          "refersToObject",
+          "settings",
+        ).map((t) => String(t[1])),
+      expected: ["defaults"],
+    },
+    callOriginChain: {
+      hops: UP_TO_AN_IMPORT,
+      ask: (hop) =>
+        answered(
+          [
+            ["imports", "clientImport", "@lib/client", "Client"],
+            ...hop("client", "clientImport"),
+          ],
+          "client",
+          "wantedCallOrigin",
+          "wantedCallOriginPair",
+        ),
+      expected: ["@lib/client:Client"],
+    },
+    // const client = createClient()
+    callMadeChain: {
+      hops: UP_TO_AN_IMPORT,
+      ask: (hop) =>
+        answered(
+          [
+            ["binds", "client", "made"],
+            ["call", "made", "callee"],
+            ["imports", "makerImport", "@lib/client", "createClient"],
+            ...hop("callee", "makerImport"),
+          ],
+          "client",
+          "wantedCallOrigin",
+          "wantedCallOriginPair",
+        ),
+      expected: ["@lib/client:createClient"],
+    },
+    // const { get } = createClient()
+    callMemberChain: {
+      hops: UP_TO_AN_IMPORT,
+      ask: (hop) =>
+        answered(
+          [
+            ["binds", "get", "member"],
+            ["readsProperty", "member", "made", "get"],
+            ["call", "made", "callee"],
+            ["imports", "makerImport", "@lib/client", "createClient"],
+            ...hop("callee", "makerImport"),
+          ],
+          "get",
+          "wantedCallOrigin",
+          "wantedCallOriginMember",
+        ),
+      expected: ["@lib/client:createClient:get"],
+    },
+    anchorChain: {
+      hops: EVERY_HOP,
+      ask: (hop) =>
+        answered(
+          [["call", "modelCall", "modelRef"], ...hop("orders", "modelCall")],
+          "orders",
+          "wantedAnchor",
+          "wantedAnchorCall",
+        ),
+      expected: ["modelCall"],
+    },
+    // class ReportJob < BaseJob, with BaseJob written as a name for the class
+    ancestryChain: {
+      hops: EVERY_HOP,
+      ask: (hop) =>
+        answered(
+          [
+            ["objectValue", "ReportJob"],
+            ["extends", "ReportJob", "baseRef"],
+            ["objectValue", "BaseJob"],
+            ["extendsNamed", "BaseJob", "ApplicationJob"],
+            ...hop("baseRef", "BaseJob"),
+          ],
+          "ReportJob",
+          "wantedAncestry",
+          "wantedBaseName",
+        ),
+      expected: ["ApplicationJob"],
+    },
+  };
+
+  const cases = Object.entries(CHAINS).flatMap(([name, chain]) =>
+    chain.hops.map((hop) => ({ name, hop, chain })),
+  );
+
+  it.each(cases)("$name follows $hop", ({ hop, chain }) => {
+    expect(chain.ask(NAME_HOPS[hop])).toEqual(chain.expected);
+  });
+
+  it.each(Object.entries(CHAINS))(
+    "%s stops at a name one of whose writes states no value",
+    (_, chain) => {
+      const unstated = (from: string, to: string): Facts => [
+        ["mayHold", from, to],
+        ["writesUnstated", from],
+      ];
+      expect(chain.ask(unstated)).toEqual([]);
+    },
+  );
+
+  it.each(Object.entries(CHAINS))(
+    "%s follows two hops of different kinds in a row",
+    (_, chain) => {
+      const twoHops = (from: string, to: string): Facts => [
+        ["binds", from, "between"],
+        ["endsHolding", "between", to],
+      ];
+      expect(chain.ask(twoHops)).toEqual(chain.expected);
+    },
+  );
+});
