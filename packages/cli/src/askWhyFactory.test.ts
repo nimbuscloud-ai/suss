@@ -93,6 +93,25 @@ describe("why a handler passed through a project's guard resolves to it", () => 
     expect(text).toContain(PASSES_THROUGH);
   });
 
+  it("follows a Python guard returning a lambda", () => {
+    write("app/routes.py", [
+      "def require_admin(handler):",
+      "    return lambda *args: handler(*args)",
+      "",
+      "def list_orders(user):",
+      "    return user",
+      "",
+      "guarded = require_admin(list_orders)",
+    ]);
+
+    const { exitCode, text } = askWhy(
+      "why does guarded at app/routes.py:7 resolve to list_orders",
+    );
+
+    expect(exitCode).toBe(0);
+    expect(text).toContain(PASSES_THROUGH);
+  });
+
   it("follows a Ruby guard returning a lambda", () => {
     write("app/guards.rb", [
       "module Guards",

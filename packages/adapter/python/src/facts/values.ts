@@ -682,17 +682,11 @@ function emitFunctionFacts(
 
   emitNestedDefinitions(inside, body);
 
-  // A lambda's body is one expression rather than a block, and the walk
-  // below reaches only that expression's children.
-  if (fn.type === "lambda") {
-    emitExpressionFact(inside, body);
-  }
-
   // One walk for both, since this function's own facts and the expression
   // facts want the same nodes and the walk is the expensive part.
   let statesReturn = false;
   const stores = new Map<string, ReceiverWrite[]>();
-  walkExpressions(inside, body, (child) => {
+  const visit = (child: PyNode): void => {
     if (child.type === "return_statement") {
       const returned = child.namedChildren[0];
       if (returned != null) {
@@ -709,7 +703,13 @@ function emitFunctionFacts(
       collectReceiverProperty(inside, child, receiver, body, stores);
     }
     emitExpressionFact(inside, child);
-  });
+  };
+  // A lambda's body is one expression rather than a block, and the walk
+  // below reaches only that expression's children.
+  if (fn.type === "lambda") {
+    visit(body);
+  }
+  walkExpressions(inside, body, visit);
   emitReceiverStores(inside, funcKey, body, stores);
 
   if (!statesReturn) {
