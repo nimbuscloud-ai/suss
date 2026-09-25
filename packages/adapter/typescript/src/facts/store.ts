@@ -345,6 +345,53 @@ export class ResolutionStore {
   }
 
   /**
+   * The function a call through this value runs: the one it comes down
+   * to, and failing that the one it gives back, so a name written as
+   * `useNavigator()` runs what that factory returned. Both answers come
+   * from the same derivation, so asking them together costs one query.
+   */
+  resolveCalledFunction(value: Node): Node | null {
+    return this.resolveCalledFunctions([value]).get(value) ?? null;
+  }
+
+  /**
+   * The batched form, for a caller with a body's worth of callees: one
+   * demand set and one derivation shared by all of them, where asking
+   * each alone re-derives once per value.
+   */
+  resolveCalledFunctions(values: readonly Node[]): Map<Node, Node | null> {
+    const targets = values.map((value) => ({
+      value,
+      target: factKeyOf(value),
+    }));
+    try {
+      for (const { target } of targets) {
+        this.wantValue("wanted", target);
+        this.seedValue(target);
+      }
+      this.extractDemanded([
+        ...new Set(targets.map(({ target }) => target.getSourceFile())),
+      ]);
+      const found = new Map<Node, Node | null>();
+      for (const { value, target } of targets) {
+        found.set(value, this.calledFunctionOf(target));
+      }
+      return found;
+    } finally {
+      this.forgetQuery();
+    }
+  }
+
+  private calledFunctionOf(target: Node): Node | null {
+    const sources = this.lookupSources(target);
+    const only = sources[0];
+    if (sources.length === 1 && only !== undefined) {
+      return only;
+    }
+    return this.lookupReturned(target);
+  }
+
+  /**
    * For a value that is neither a function nor an object, such as a
    * GraphQL document kept in a constant in another file.
    */
@@ -1280,11 +1327,21 @@ export class ResolutionStore {
     return [...candidates][0] as Node;
   }
 
+  /**
+   * A factory returning a wrapper's call gives back the wrapper's own
+   * closure and the function it unwraps. The unwrapped one wins.
+   */
   private lookupReturned(call: Node): Node | null {
     this.derive();
+    return (
+      this.singleFunctionIn("wantedGivesBackUnwrapped", call) ??
+      this.singleFunctionIn("wantedGivesBack", call)
+    );
+  }
 
+  private singleFunctionIn(relation: string, value: Node): Node | null {
     const candidates = new Set<Node>();
-    for (const target of this.answersFor("wantedGivesBack", nodeId(call))) {
+    for (const target of this.answersFor(relation, nodeId(value))) {
       const node = this.table.byId.get(target);
       if (node === undefined || !isFunctionRoot(node)) {
         continue;

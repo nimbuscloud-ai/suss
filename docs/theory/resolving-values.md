@@ -51,7 +51,7 @@ Three layers do the work.
 
   <rect class="box" x="60" y="220" width="540" height="86" rx="6" />
   <text class="label" x="330" y="242" text-anchor="middle">2. One rule set joins the facts into a value graph</text>
-  <text class="note" x="330" y="260" text-anchor="middle">170 rules. 17 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
+  <text class="note" x="330" y="260" text-anchor="middle">171 rules. 17 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
   <text class="note" x="330" y="277" text-anchor="middle">reaches is the transitive closure of those hops, and it records</text>
   <text class="note" x="330" y="294" text-anchor="middle">the strongest kind of step the walk took.</text>
 
@@ -160,13 +160,13 @@ explanation each.
 
 ## Layer 2: one rule set makes a graph
 
-`packages/resolution/src/index.ts` contains 170 rules and no code.
+`packages/resolution/src/index.ts` contains 171 rules and no code.
 17 of them derive `stepsTo(x, y, kind)`, which says the value `x` leads
 to the value `y` in one hop. Two of them, for an argument and a
 property read, are written as `stepsTo` directly. The other fifteen are
 written as `hop`, and each gets a `stepsTo` twin, since a walk under a
 receiver context reads `hop`. The TypeScript adapter adds a sixteenth
-hop, for `.bind`, with its own twin, and that pair is not among the 170.
+hop, for `.bind`, with its own twin, and that pair is not among the 171.
 
 ```ts
 rule(
@@ -272,6 +272,7 @@ a condition on where the walk ended.
 |---|---|
 | `comesTo(x, z)` | at a function or an object literal, having run no call |
 | `givesBack(x, z)` | the same, for a walk that did run a call |
+| `givesBackUnwrapped(x, z)` | at what a call the result walk reached unwraps, which a caller asks before `givesBack` |
 | `isWrittenAs(x, z)` | at anything spelled out in source |
 | `objectOf(o, obj)` | at the object an expression refers to |
 | `paramAt(r, p, z)` | at what one call site put in parameter `p` |

@@ -70,25 +70,41 @@ export function functionValueOf(
   value: Node,
   resolution: ResolutionStore | undefined,
 ): FunctionRoot | null {
-  const written = factKeyOf(value);
-  const here = toFunctionRoot(written);
-  if (here !== null) {
-    return here;
+  return functionValuesOf([value], resolution).get(value) ?? null;
+}
+
+/**
+ * `functionValueOf` for several values, asked of the store as one
+ * question, which costs one derivation rather than one per value.
+ */
+export function functionValuesOf(
+  values: readonly Node[],
+  resolution: ResolutionStore | undefined,
+): Map<Node, FunctionRoot | null> {
+  const found = new Map<Node, FunctionRoot | null>();
+  const asked: Node[] = [];
+  for (const value of values) {
+    const written = factKeyOf(value);
+    const here = toFunctionRoot(written);
+    if (
+      here !== null ||
+      resolution === undefined ||
+      !couldNameAValue(written)
+    ) {
+      found.set(value, here);
+      continue;
+    }
+    asked.push(value);
   }
-  if (resolution === undefined || !couldNameAValue(written)) {
-    return null;
+  if (resolution === undefined || asked.length === 0) {
+    return found;
   }
-  const resolved = resolution.resolveCallable(written);
-  if (resolved !== null) {
-    return toFunctionRoot(resolved);
+  // A pack's unwrapping answer wins; only then is a call, or a name
+  // written as one, what its factory returns.
+  for (const [value, resolved] of resolution.resolveCalledFunctions(asked)) {
+    found.set(value, resolved === null ? null : toFunctionRoot(resolved));
   }
-  if (!Node.isCallExpression(written)) {
-    return null;
-  }
-  // Asked as a name first so a pack's unwrapping answer wins; only then
-  // as a factory, `requireCaller(config)` being what requireCaller returns.
-  const returned = resolution.resolveReturnedCallable(written);
-  return returned === null ? null : toFunctionRoot(returned);
+  return found;
 }
 
 /**

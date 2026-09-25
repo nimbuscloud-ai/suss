@@ -37,7 +37,12 @@ import {
   createSourceFileLookup,
   type SourceFileLookup,
 } from "../bootstrap/sourceFileLookup.js";
-import { createDependencySink, withDependencySink } from "../depTracking.js";
+import {
+  createDependencySink,
+  recordFileDependency,
+  withDependencySink,
+} from "../depTracking.js";
+import { functionValuesOf } from "../discovery/resolveValue.js";
 import { isModuleScopeStop } from "../walk/descent.js";
 import { offsetKeyFor, offsetKeyOf } from "../walk/nodeKeys.js";
 import {
@@ -159,6 +164,8 @@ type CallOutcome =
       readonly declaration: Node | null;
       /** Set for a `callerSupplied` stop: the parameter's index in `scanning`. */
       readonly parameterIndex?: number;
+      /** The callee the resolution store is asked about before this is final. */
+      readonly askStore?: Node;
     };
 
 /** Where a call was declared, spelled the way a summary spells its unit. */
@@ -222,11 +229,113 @@ function resolveCallee(
     reason === "callerSupplied"
       ? parameterIndexOf(declarations, scan.scanning)
       : undefined;
+  return stopFor(
+    callee,
+    declarations,
+    { callee: calleeName, reason },
+    scan,
+    parameterIndex,
+  );
+}
+
+/**
+ * The stop a callee comes to, marked for the resolution store when its
+ * declaration is project code the syntax could not follow: a function
+ * destructured off a hook's result, a name written as a factory call,
+ * or a value a wrapper hands back. Only an `unsettledValue` stop is
+ * marked, since every other stop is already settled, and asking the
+ * store reads files a call into a dependency never needs.
+ */
+function stopFor(
+  callee: Node,
+  declarations: Node[],
+  stop: UnfollowedCall,
+  scan: ScanContext,
+  parameterIndex?: number,
+): CallOutcome {
+  const asks =
+    stop.reason === "unsettledValue" && scan.resolution !== undefined;
   return {
     kind: "stopped",
-    stop: { callee: calleeName, reason },
-    declaration: declarationToReport(declarations, calleeName, scan),
+    stop,
+    declaration: declarationToReport(declarations, stop.callee, scan),
     ...(parameterIndex === undefined ? {} : { parameterIndex }),
+    ...(asks ? { askStore: callee } : {}),
+  };
+}
+
+/** What the store said about one callee, and the files it read to say it. */
+interface StoreAnswer {
+  func: FunctionRoot | null;
+  files: ReadonlySet<string>;
+}
+
+/**
+ * A plain name comes to the same function wherever it is called, so its
+ * answer is kept under its declaration. Anything else is kept under the
+ * callee itself.
+ */
+function storeKeyOf(callee: Node): Node {
+  const declarations = Node.isIdentifier(callee)
+    ? declarationsBehind(callee.getSymbol())
+    : [];
+  return declarations.length === 1 ? (declarations[0] as Node) : callee;
+}
+
+/**
+ * Ask the store about every marked stop in one body at once, and give
+ * back what each outcome settles to. One question for the body costs one
+ * derivation, where a question per callee cost one each.
+ */
+function settleThroughStore(
+  outcomes: readonly CallOutcome[],
+  scan: ScanContext,
+): (outcome: CallOutcome) => CallOutcome {
+  const { resolution, storeAnswers } = scan;
+  if (resolution === undefined || storeAnswers === undefined) {
+    return (outcome) => outcome;
+  }
+  const unasked = new Map<Node, Node>();
+  for (const outcome of outcomes) {
+    const callee = outcome.kind === "stopped" ? outcome.askStore : undefined;
+    if (callee === undefined) {
+      continue;
+    }
+    const key = storeKeyOf(callee);
+    if (!storeAnswers.has(key) && !unasked.has(key)) {
+      unasked.set(key, callee);
+    }
+  }
+  if (unasked.size > 0) {
+    const sink = createDependencySink();
+    const found = withDependencySink(sink, () =>
+      functionValuesOf([...unasked.values()], resolution),
+    );
+    for (const [key, callee] of unasked) {
+      storeAnswers.set(key, {
+        func: found.get(callee) ?? null,
+        files: sink.files,
+      });
+    }
+  }
+
+  return (outcome) => {
+    const callee = outcome.kind === "stopped" ? outcome.askStore : undefined;
+    const answer =
+      callee === undefined ? undefined : storeAnswers.get(storeKeyOf(callee));
+    if (outcome.kind !== "stopped" || answer === undefined) {
+      return outcome;
+    }
+    // A body that reuses another's answer read the same files, which the
+    // per-file cache has to hear about from each of them.
+    for (const filePath of answer.files) {
+      recordFileDependency(filePath);
+    }
+    const candidate =
+      answer.func === null
+        ? null
+        : resolveDecl(answer.func, outcome.stop.callee);
+    return candidate === null ? outcome : { kind: "followed", candidate };
   };
 }
 
@@ -281,6 +390,9 @@ function declaredAtOf(outcome: CallOutcome): CallTarget | null {
  * this pass is reading, which says whose parameters a callee could be.
  */
 interface ScanContext {
+  resolution?: ResolutionStore;
+  /** What the store said about each callee declaration, for the whole walk. */
+  storeAnswers?: Map<Node, StoreAnswer>;
   resolveCallableSources?: (value: Node, alsoFrom?: SourceFile) => Node[];
   sourceDeclarationsBehind?: (declaration: Node) => Node[];
   reachedFrom?: SourceFile;
@@ -339,11 +451,12 @@ function resolveJsxReference(
   }
   return {
     tag: name,
-    outcome: {
-      kind: "stopped",
-      stop: { callee: name, reason: classifyStop(declarations) },
-      declaration: declarationToReport(declarations, name, scan),
-    },
+    outcome: stopFor(
+      tag,
+      declarations,
+      { callee: name, reason: classifyStop(declarations) },
+      scan,
+    ),
   };
 }
 
@@ -354,6 +467,14 @@ function resolveJsxReference(
  * function and class the module only defines.
  */
 type ScanRoot = FunctionRoot | SourceFile;
+
+/** A call or JSX reference a scan found, in the order the body writes them. */
+interface FoundCall {
+  node: Node;
+  /** The callee as written, for a call; a JSX reference has none. */
+  calleeText?: string;
+  outcome: CallOutcome;
+}
 
 function collectReachable(root: ScanRoot, scan: ScanContext): ScanResult {
   const atModuleScope = Node.isSourceFile(root);
@@ -413,6 +534,7 @@ function collectReachable(root: ScanRoot, scan: ScanContext): ScanResult {
     });
   };
 
+  const found: FoundCall[] = [];
   root.forEachDescendant((node, traversal) => {
     if (atModuleScope && isModuleScopeStop(node)) {
       traversal.skip();
@@ -420,7 +542,7 @@ function collectReachable(root: ScanRoot, scan: ScanContext): ScanResult {
     }
     const jsx = resolveJsxReference(node, inFunc);
     if (jsx !== null) {
-      record(jsx.outcome);
+      found.push({ node, outcome: jsx.outcome });
       return;
     }
     if (!Node.isCallExpression(node)) {
@@ -428,15 +550,28 @@ function collectReachable(root: ScanRoot, scan: ScanContext): ScanResult {
     }
     const calleeText = normalizeCalleeText(node.getExpression().getText());
     const outcome = resolveCallee(node, calleeText, inFunc);
-    if (outcome === null) {
-      return;
+    if (outcome !== null) {
+      found.push({ node, calleeText, outcome });
+    }
+  });
+
+  const settle = settleThroughStore(
+    found.map((one) => one.outcome),
+    inFunc,
+  );
+  for (const one of found) {
+    const outcome = settle(one.outcome);
+    const calleeText = one.calleeText;
+    if (calleeText === undefined) {
+      record(outcome);
+      continue;
     }
     // One record per callee, however many times the body calls it: a
     // loop calling the same unresolved method twenty times is one
     // thing a reader cannot see, not twenty.
     record(outcome);
     placements.place(calleeText, declaredAtOf(outcome));
-    recordPassedArgs(node, calleeText, outcome);
+    recordPassedArgs(one.node, calleeText, outcome);
 
     if (
       outcome.kind === "stopped" &&
@@ -450,7 +585,7 @@ function collectReachable(root: ScanRoot, scan: ScanContext): ScanResult {
         parameterIndex: outcome.parameterIndex,
       });
     }
-  });
+  }
 
   return {
     candidates,
@@ -674,6 +809,7 @@ export function expandReachableClosure(
   // The file a function was reached from, which is where whoever called
   // it built the dependencies it works through.
   const reachedFrom = new Map<string, SourceFile>();
+  const storeAnswers = new Map<Node, StoreAnswer>();
 
   for (const seed of seeds) {
     const func = lookup.functionAt(seed.location);
@@ -742,6 +878,9 @@ export function expandReachableClosure(
       }
       const cameFrom = reachedFrom.get(key);
       const scan: ScanContext = {
+        ...(recognizers.resolution === undefined
+          ? {}
+          : { resolution: recognizers.resolution, storeAnswers }),
         ...(recognizers.resolveCallableSources === undefined
           ? {}
           : { resolveCallableSources: recognizers.resolveCallableSources }),
