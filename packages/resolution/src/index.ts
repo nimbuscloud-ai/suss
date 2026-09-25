@@ -87,7 +87,7 @@ export type {
   WhyExplained,
 } from "./session.js";
 
-// @suss/resolution - following a value to the function it comes down to.
+// @suss/resolution: following a value to the function it comes down to.
 //
 // These rules are about programming languages rather than about any one
 // of them. A name binds to a value, a call puts an argument in a
@@ -96,88 +96,13 @@ export type {
 // function calling its parameter hands back the argument it was given.
 // That last one is a decorator in Python and a closure in Go.
 //
-// So an adapter's job is reading source into the facts below, not
-// deciding what they mean. Anything genuinely particular to a language,
-// like JavaScript's `.bind`, belongs with that language's adapter and
-// composes on top.
+// So an adapter reads source into facts and leaves their meaning to the
+// rules. Anything particular to one language, like JavaScript's `.bind`,
+// belongs with that language's adapter and composes on top.
 //
-// The facts a language adapter has to supply:
-//
-//   func(f)                     f is a function
-//   objectValue(o)              o is an object written out literally
-//   writtenValue(x)             x is an expression written out in
-//                               source rather than a name for one
-//   placeholderValue(x)         x is a written value a later write is
-//                               expected to replace, such as None
-//   holdsProperty(o, n, x)      object o holds x under the name n
-//   holdsDefault(cls, n, x)     cls's body gives its field n the value x,
-//                               which a constructor may replace
-//   initializes(cls, f)         f runs when one of cls is made
-//   storesProperty(f, n, x)     f's body writes x to the receiver's n
-//   instanceOf(x, cls)          x is one of cls, and nothing says which:
-//                               a receiver, or a name declared as a cls
-//   readsProperty(x, o, n)      x is the expression o.n
-//   binds(x, y)                 the name x is declared as y
-//   endsHolding(x, y)           the name x is written more than once
-//                               and holds y once the writes have run.
-//                               `valueLeftByWrites` picks y
-//   fallbackBranch(x, b)        x is a fallback expression and b is
-//                               one of its branches
-//   paramOf(f, k, p)            p is f's parameter at position k
-//   paramNamed(f, n, p)         p is f's parameter called n
-//   paramDefault(p, d)          p takes the value d when a caller
-//                               passes no argument at all
-//   extends(c, b)               class c is written as extending b
-//   extendsNamed(c, n)          class c extends the name n, where no
-//                               node in the run backs that name
-//   returnsValue(f, v)          f returns v
-//   returnsClass(f, c)          f is annotated as returning c
-//   returnsNamed(f, n)          f's return annotation is written n
-//   bodyCalls(f, c)             f's body calls the callee c, keyed the
-//                               way `call` keys that call's callee
-//   makesCall(f, r)             the call r is written in f's own body
-//   callOutsideMethod(r)        the call r is outside every method body
-//   containsFn(f, g)            g is declared inside f
-//   call(r, c)                  r is a call whose callee is c
-//   callArg(r, k, a)            r passes a at position k
-//   callArgCount(r, k)          r is written with k arguments, and a
-//                               splat counts as one
-//   imports(x, m, n)            x is the name n imported from module m,
-//                               or the whole of m when n is `*`, or a
-//                               declaration in m's own files, or a
-//                               global under GLOBAL_MODULE
-//   exportsAs(m, n, v)          module m exports v under the name n
-//   reExports(m, n, m2, n2)     m's n is m2's n2
-//   reExportsAll(m, m2)         m forwards everything m2 exports
-//   mayHold(x, y)               one write to x wrote y, and nothing
-//                               says which write ran last. x steps to
-//                               every such y at once
-//   writesUnstated(x)           a write to x states no value at all
-//   writesAllStated(x)          every write to x states a value
-//   entersAs(y, r)              y is the name a block opens over the
-//                               call r, so entering r is what wrote y
-//   givesBackOne(base, m)       a pack's word: m on a class reaching base
-//                               gives back one of that class
-//   entersAsSelf(mod, n)        a pack's word: entering one of module
-//                               mod's n gives back that same object
-//   givesBackOneOfArgument(base, m, k)   the same, with the class at k
-//   givesBackOneOfImport(mod, n, k)      the same, for the bare
-//                               function n that module mod exports
-//   unwrapsByName(mod, n, k)    a pack's word: calling the n that module
-//                               mod exports gives back the argument at k
-//   declaresName(c, n)          c declares a method n under a name the
-//                               source computes rather than writes out
-//   declaresAssociation(c, n, t)  class c declares an association n,
-//                               and t refers to the class it targets
-//   classCallback(c, event, n)  c's body registers its own method n to
-//                               run on event
-//   fieldCall(c, n, callee, t)  c's field n is given a call of callee,
-//                               and t refers to the class n is about
-//   associationConstructor(mod, n)  a pack's word: a field given the n
-//                               module mod exports is an association
-//   readsKeyed(site, o, x)      site reads the entry of o at the
-//                               value of x, not at a written key
-//   environmentObject(w)        w is the process environment
+// Every fact an adapter supplies and every word a pack declares has a line
+// in DESIGN.md, under "The facts an adapter supplies". Check there before
+// adding a fact. `npm run check:fact-vocabulary` fails until it has a line.
 //
 // Node identity is the adapter's business. The rules only join on it.
 // Making one of a class is a call of the class, however the language

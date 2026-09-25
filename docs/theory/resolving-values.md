@@ -39,7 +39,7 @@ Three layers do the work.
 
   <rect class="box" x="60" y="66" width="540" height="68" rx="6" />
   <text class="label" x="330" y="88" text-anchor="middle">1. The adapter reads each file into facts</text>
-  <text class="note" x="330" y="106" text-anchor="middle">25 relations for TypeScript: binds, call, callArg, paramOf, imports, exportsAs and the rest</text>
+  <text class="note" x="330" y="106" text-anchor="middle">relations such as binds, call, callArg, paramOf, imports and exportsAs</text>
   <text class="note" x="330" y="124" text-anchor="middle">nothing is resolved at this layer, only written down</text>
 
   <line class="arrow" x1="330" y1="134" x2="330" y2="156" marker-end="url(#layers-arrow)" />
@@ -79,7 +79,7 @@ Three layers do the work.
   <text class="note" x="535" y="450" text-anchor="middle">the same stop, for a</text>
   <text class="note" x="535" y="466" text-anchor="middle">walk that ran a call</text>
 
-  <text class="note" x="330" y="498" text-anchor="middle">and comesFrom, objectOf, paramAt, resolves: eight question rules feeding seven answer relations</text>
+  <text class="note" x="330" y="498" text-anchor="middle">and comesFrom, objectOf, paramAt, resolves: 59 question rules feeding 39 answer relations</text>
 </svg>
 
 ## Layer 1: the adapter writes down what a file says
@@ -155,18 +155,23 @@ block opened over that call. What `__enter__` returns depends on the
 library, so the pack declares `entersAsSelf(httpx, Client)`. A
 rule joins the two and `client` resolves to the client.
 
-`packages/resolution/README.md` lists the vocabulary with a line of
-explanation each.
+`packages/resolution/DESIGN.md`, under "The facts an adapter supplies",
+lists the whole vocabulary with a line of explanation each and the
+adapters that emit each fact. `npm run check:fact-vocabulary` fails when
+an adapter emits a relation, or a rule reads one, that the list leaves
+out.
 
 ## Layer 2: one rule set makes a graph
 
-`packages/resolution/src/index.ts` contains 180 rules and no code.
+`RESOLUTION_RULES` in `packages/resolution/src/index.ts` is 180 rules.
 17 of them derive `stepsTo(x, y, kind)`, which says the value `x` leads
 to the value `y` in one hop. Two of them, for an argument and a
 property read, are written as `stepsTo` directly. The other fifteen are
 written as `hop`, and each gets a `stepsTo` twin, since a walk under a
-receiver context reads `hop`. The TypeScript adapter adds a sixteenth
-hop, for `.bind`, with its own twin, and that pair is not among the 180.
+receiver context reads `hop`. An adapter can add hops of its own, each
+with its twin, and those are not among the 180. The TypeScript adapter
+adds one for `.bind`, and the Ruby adapter adds three, for `Const.new`,
+`freeze` and `dup`.
 
 ```ts
 rule(
@@ -291,9 +296,10 @@ a condition on where the walk ended.
 
 `resolves` is the one `suss ask why` proves.
 
-Eight further rules at the bottom of the same file, `RESOLUTION_QUESTIONS`,
-turn each of those into an answer relation keyed by the value somebody
-asked about. They are written as rules rather than as loops in the caller
+At the bottom of the same file, `RESOLUTION_QUESTIONS` turns each of
+those into an answer keyed by the value somebody asked about. It is 59
+question rules feeding 39 answer relations. They are written as rules
+rather than as loops in the caller
 because `deriveOnDemand` reads them to work out how far to follow each
 chain.
 
@@ -620,7 +626,7 @@ is wrong the tree says which fact to doubt.
 
 ## Where to look next
 
-- `packages/resolution/README.md` for the fact vocabulary, one line
+- `packages/resolution/DESIGN.md` for the fact vocabulary, one line
   each, and the cases the rules leave unresolved on purpose.
 - `packages/datalog/README.md` for the evaluator: semi-naive fixpoint,
   stratified negation, rules as plain data.
