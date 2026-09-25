@@ -1132,6 +1132,7 @@ function emitClassFacts(
   // puts the constructor's parameters on it.
   fact(db, "initializes", id, id);
 
+  emitBaseClassFacts(db, table, declaration, id);
   emitConstructorFacts(db, table, declaration, id);
 
   for (const method of declaration.getMethods()) {
@@ -1158,6 +1159,30 @@ function emitClassFacts(
 
   for (const parameter of parameterProperties(declaration)) {
     emitFieldStores(db, table, id, parameter.getName(), parameter);
+  }
+}
+
+/**
+ * The class a class extends. `extends` is keyed on the base as written, so
+ * the rules follow it like any other name to the class it declares.
+ * `extendsNamed` is the name as written, which is how a pack matches a
+ * library base that no node in the run declares.
+ */
+function emitBaseClassFacts(
+  db: Database,
+  table: NodeTable,
+  declaration: ClassDeclaration,
+  classId: string,
+): void {
+  const heritage = declaration.getExtends();
+  if (heritage === undefined) {
+    return;
+  }
+  const base = heritage.getExpression();
+  fact(db, "extends", classId, emitValue(db, table, base));
+  const written = dottedPathOf(base);
+  if (written !== null) {
+    fact(db, "extendsNamed", classId, written);
   }
 }
 

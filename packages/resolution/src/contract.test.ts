@@ -27,6 +27,10 @@ function conformingFacts(): Database {
   db.add("call", ["call:2", "fn:a#loader"]);
   db.add("makesCall", ["fn:a", "call:2"]);
   db.add("bodyCalls", ["fn:a", "fn:a#loader"]);
+  db.add("objectValue", ["class:2"]);
+  db.add("extends", ["class:2", "f#Loader"]);
+  db.add("binds", ["f#Loader", "class:1"]);
+  db.add("extendsNamed", ["class:2", "Loader"]);
   return db;
 }
 
@@ -56,7 +60,7 @@ describe("the fact contract", () => {
   it("catches a class that is not an object value", async () => {
     const failures = await checkFactContract(everyCase, () => {
       const db = conformingFacts();
-      db.retract("objectValue", [["class:1"], ["list:1"]]);
+      db.retract("objectValue", [["class:1"], ["class:2"], ["list:1"]]);
       return db;
     });
     expect(failures.map((f) => f.problem).join(" ")).toContain(
@@ -271,6 +275,39 @@ describe("the fact contract", () => {
     });
     expect(failures.map((f) => f.problem).join(" ")).toContain(
       "keyed under different expressions",
+    );
+  });
+
+  it("catches a class that extends nothing", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("extends", [["class:2", "f#Loader"]]);
+      return db;
+    });
+    expect(failures.map((f) => f.problem).join(" ")).toContain(
+      "no class is written down as extending anything",
+    );
+  });
+
+  it("catches a base that leads to no class", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("binds", [["f#Loader", "class:1"]]);
+      return db;
+    });
+    expect(failures.map((f) => f.problem).join(" ")).toContain(
+      "nothing leads from it to the class it names",
+    );
+  });
+
+  it("catches a base whose written name is not recorded", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("extendsNamed", [["class:2", "Loader"]]);
+      return db;
+    });
+    expect(failures.map((f) => f.problem).join(" ")).toContain(
+      "a pack cannot match a library base",
     );
   });
 

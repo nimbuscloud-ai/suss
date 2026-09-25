@@ -52,6 +52,17 @@ const SOURCES: Record<string, CaseFiles> = {
   "a name declared as a fallback": {
     "f.py": "client = cached or build()\n",
   },
+  "a class extending another": {
+    "f.py": [
+      "class User:",
+      "    def save(self):",
+      "        pass",
+      "",
+      "class Admin(User):",
+      "    pass",
+      "",
+    ].join("\n"),
+  },
   "a value another file declares": {
     "source.py": "value = 1\n",
     "f.py": "from source import value as renamed\n",
