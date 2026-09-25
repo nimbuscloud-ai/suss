@@ -17,6 +17,7 @@
 import { type CallExpression, Node, type SourceFile } from "ts-morph";
 
 import { matchingImportDeclarations } from "./discovery/importScan.js";
+import { receiverTypeMatching } from "./values/receiverType.js";
 
 import type { configuredCallOption, EffectArg } from "@suss/extractor";
 import type { z } from "zod";
@@ -78,7 +79,8 @@ export function readConfiguredCall(
     return null;
   }
 
-  if (receiverTypeName(callee.getExpression()) !== spec.receiver) {
+  const receiver = callee.getExpression();
+  if (receiverTypeMatching(receiver, { named: [spec.receiver] }) === null) {
     return null;
   }
 
@@ -91,16 +93,6 @@ export function readConfiguredCall(
   const body = spec.bodyArg === undefined ? null : (args[spec.bodyArg] ?? null);
 
   return { subject, body, callee: callee.getText() };
-}
-
-/**
- * The name of the receiver's type, or null when the checker has no name
- * for it. A JavaScript file, or a receiver the checker widens to `any`,
- * gives null and the call is left alone.
- */
-function receiverTypeName(receiver: Node): string | null {
-  const symbol = receiver.getType().getSymbol();
-  return symbol === undefined ? null : symbol.getName();
 }
 
 /** The value of a string-literal argument, or null for anything else. */
