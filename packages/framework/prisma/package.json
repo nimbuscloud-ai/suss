@@ -48,13 +48,13 @@
     "ts-morph": "^23.0.0"
   },
   "dependencies": {
+    "@suss/adapter-typescript": "0.33.1",
     "@suss/behavioral-ir": "0.33.1",
     "@suss/extractor": "0.33.1",
     "@suss/recognize": "0.33.1",
     "zod": "^4.0.0"
   },
   "devDependencies": {
-    "@suss/adapter-typescript": "*",
     "@suss/ir-core": "*",
     "@suss/test-project": "*",
     "ts-morph": "*",

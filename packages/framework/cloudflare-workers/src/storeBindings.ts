@@ -12,7 +12,11 @@
 
 import { Node as N } from "ts-morph";
 
-import { readName, stringValueOf } from "@suss/adapter-typescript";
+import {
+  readName,
+  receiverTypesOf,
+  stringValueOf,
+} from "@suss/adapter-typescript";
 import { storageBinding } from "@suss/behavioral-ir";
 import { readSqlAccess } from "@suss/sql";
 
@@ -20,7 +24,7 @@ import { isTriggerEnvArgument } from "./envBindings.js";
 
 import type { ResolutionStore } from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
-import type { CallExpression, Node, PropertyAccessExpression } from "ts-morph";
+import type { CallExpression, Node } from "ts-morph";
 
 const RECOGNITION = "@suss/framework-cloudflare-workers";
 
@@ -122,12 +126,16 @@ const d1Access: OperationReader = (method, call, reading) => {
  * Keyed by the type a project writes on its `Env` declaration.
  * Cloudflare defines these type names.
  */
-const STORES: Record<string, { storageSystem: string; read: OperationReader }> =
-  {
-    KVNamespace: { storageSystem: "cloudflare-kv", read: objectStoreAccess },
-    R2Bucket: { storageSystem: "r2", read: objectStoreAccess },
-    D1Database: { storageSystem: "d1", read: d1Access },
-  };
+const STORES: Record<string, Store> = {
+  KVNamespace: { storageSystem: "cloudflare-kv", read: objectStoreAccess },
+  R2Bucket: { storageSystem: "r2", read: objectStoreAccess },
+  D1Database: { storageSystem: "d1", read: d1Access },
+};
+
+interface Store {
+  storageSystem: string;
+  read: OperationReader;
+}
 
 interface RecognizerContext {
   resolveWrittenValue?: (value: Node) => Node | null;
@@ -153,10 +161,7 @@ export function storeBindingRecognizer(
   if (binding === null) {
     return null;
   }
-  const store = STORES[binding.typeName];
-  if (store === undefined) {
-    return null;
-  }
+  const { store } = binding;
   const method = callee.getName();
   const access = store.read(method, callNode, reading);
   if (access === null) {
@@ -192,8 +197,8 @@ export function storeBindingRecognizer(
 interface BoundReceiver {
   /** The binding's name, which is the property read off env. */
   name: string;
-  /** The type written for it on the Env declaration. */
-  typeName: string;
+  /** The store its type on the Env declaration says it is. */
+  store: Store;
 }
 
 /**
@@ -218,11 +223,18 @@ function boundReceiver(subject: Node, reading: Reading): BoundReceiver | null {
   if (!N.isIdentifier(env) || !isTriggerEnvArgument(env, reading.resolution)) {
     return null;
   }
-  const typeName = declaredTypeName(receiver);
-  if (typeName === null) {
-    return null;
+  const store = storeTypedOn(receiver);
+  return store === null ? null : { name: receiver.getName(), store };
+}
+
+/** Which store the receiver is, by the first Cloudflare store type it has. */
+function storeTypedOn(receiver: Node): Store | null {
+  for (const type of receiverTypesOf(receiver)) {
+    if (Object.hasOwn(STORES, type.name)) {
+      return STORES[type.name];
+    }
   }
-  return { name: receiver.getName(), typeName };
+  return null;
 }
 
 /** A local variable's initializer, for a binding assigned to one first. */
@@ -230,25 +242,6 @@ function declaredInitializer(identifier: Node): Node | null {
   for (const declaration of identifier.getSymbol()?.getDeclarations() ?? []) {
     if (N.isVariableDeclaration(declaration)) {
       return declaration.getInitializer() ?? null;
-    }
-  }
-  return null;
-}
-
-/**
- * The type is read as source text, so it works whether or not
- * `@cloudflare/workers-types` is installed.
- */
-function declaredTypeName(receiver: PropertyAccessExpression): string | null {
-  const declarations =
-    receiver.getNameNode().getSymbol()?.getDeclarations() ?? [];
-  for (const declaration of declarations) {
-    if (!N.isPropertySignature(declaration)) {
-      continue;
-    }
-    const typeNode = declaration.getTypeNode();
-    if (typeNode !== undefined) {
-      return typeNode.getText();
     }
   }
   return null;

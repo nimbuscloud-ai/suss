@@ -175,10 +175,6 @@ const EXEMPT = new Map([
     "receiverIsPromiseTyped asks whether a type is Promise, which is type identity",
   ],
   [
-    "packages/framework/prisma/src/index.ts",
-    "extendsPrismaClient asks whether a type descends from PrismaClient, which is type identity",
-  ],
-  [
     "packages/runtime/node/src/processSurface.ts",
     "recognizeElementAccess reads the numeric index of a process.argv access, not a value",
   ],
@@ -192,7 +188,6 @@ const EXEMPT = new Map([
     "packages/adapter/typescript/src/bootstrap/preFilter.ts",
     "computePackApplicability",
   ],
-  ["packages/adapter/typescript/src/configuredCall.ts", "receiverTypeName"],
   [
     "packages/adapter/typescript/src/discovery/clientCall.ts",
     "discoverClientCalls, clientReceiverCheckFor",
@@ -363,9 +358,9 @@ const EXEMPT = new Map([
   ],
   [
     "packages/framework/cloudflare-workers/src/storeBindings.ts",
-    "declaredInitializer, declaredTypeName",
+    "declaredInitializer",
   ],
-  ["packages/framework/drizzle/src/index.ts", "isDrizzleReceiver, valuesKeys"],
+  ["packages/framework/drizzle/src/index.ts", "valuesKeys"],
   [
     "packages/framework/nextjs/src/serverActions.ts",
     "leadingDirectives, nextjsServerActions",

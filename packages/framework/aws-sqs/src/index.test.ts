@@ -466,6 +466,49 @@ describe("sqs message-receive recognizer", () => {
     expect(Object.keys(body.fields)).toEqual(["total"]);
   });
 
+  it("reads a record handed to a callback over event.Records", () => {
+    const source = `
+      import type { SQSEvent } from "aws-lambda";
+      export async function handler(event: SQSEvent): Promise<void> {
+        event.Records.map((record) => {
+          const { id } = JSON.parse(record.body);
+          return id;
+        });
+      }
+    `;
+    expect(messageReceiveEffectsOf(recognizeAll(source))).toHaveLength(1);
+  });
+
+  it.each([
+    ["the Lambda record type", "SQSRecord"],
+    ["an intersection", "SQSRecord & { attempt: number }"],
+    ["an optional", "SQSRecord | undefined"],
+    ["an alias of an intersection", "QueuedOrder"],
+    ["an alias of an optional", "MaybeQueuedOrder"],
+  ])("reads a record typed as %s in a helper", (_, typed) => {
+    const source = `
+      import type { SQSRecord } from "aws-lambda";
+      type QueuedOrder = SQSRecord & { attempt: number };
+      type MaybeQueuedOrder = QueuedOrder | undefined;
+      export function readOrder(record: ${typed}): string {
+        const { id } = JSON.parse(record.body);
+        return id;
+      }
+    `;
+    expect(messageReceiveEffectsOf(recognizeAll(source))).toHaveLength(1);
+  });
+
+  it("ignores a record type the project declares itself", () => {
+    const source = `
+      interface SQSRecord { body: string }
+      export function readOrder(record: SQSRecord): string {
+        const { id } = JSON.parse(record.body);
+        return id;
+      }
+    `;
+    expect(messageReceiveEffectsOf(recognizeAll(source))).toEqual([]);
+  });
+
   it("ignores JSON.parse calls outside event.Records loops", () => {
     const source = `
       export async function handler(input: string): Promise<unknown> {
@@ -632,5 +675,28 @@ describe("sqs configured producer", () => {
     `;
 
     expect(messageSendEffectsOf(recognizeAll(source))).toEqual([]);
+  });
+
+  it.each([
+    ["an intersection", "CommandDispatcher & { region: string }"],
+    ["an optional", "CommandDispatcher | undefined"],
+    ["an alias of an intersection", "Dispatcher"],
+    ["an alias of an optional", "MaybeDispatcher"],
+  ])("reads a send on a dispatcher typed as %s", (_, typed) => {
+    const source = `
+      import { CommandDispatcher } from "@acme/async";
+      type Dispatcher = CommandDispatcher & { region: string };
+      type MaybeDispatcher = Dispatcher | undefined;
+      export async function place(dispatcher: ${typed}) {
+        await dispatcher.dispatchBatch("order.placed", []);
+      }
+    `;
+
+    const sends = messageSendEffectsOf(
+      recognizeAll(source, DISPATCHER_OPTIONS),
+    );
+    expect(sends.map((send) => send.binding.semantics)).toEqual([
+      { name: "message-bus", messageBus: "aws_sqs", channel: "order.placed" },
+    ]);
   });
 });

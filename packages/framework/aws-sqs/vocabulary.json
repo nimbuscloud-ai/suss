@@ -4,6 +4,7 @@
   "MessageBody": "AWS SDK v3: SendMessageCommand input field",
   "QueueUrl": "AWS SDK v3: SendMessageCommand input field",
   "Records": "AWS Lambda: SQSEvent field holding the delivered messages",
+  "SQSRecord": "AWS Lambda: the type of one delivered SQS message",
   "SendMessageBatchCommand": "@aws-sdk/client-sqs: the batch-send operation's command class",
   "SendMessageCommand": "@aws-sdk/client-sqs: the single-send operation's command class",
   "body": "AWS Lambda: SQSRecord field holding the message payload",
