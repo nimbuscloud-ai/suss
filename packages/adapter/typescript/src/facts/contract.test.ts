@@ -54,6 +54,15 @@ const SOURCES: Record<string, CaseFiles> = {
       "",
     ].join("\n"),
   },
+  "a class extending another": {
+    "/f.ts": [
+      "class User {",
+      "  save() {}",
+      "}",
+      "export class Admin extends User {}",
+      "",
+    ].join("\n"),
+  },
   "a value another file declares": {
     "/source.ts": "export const value = 1;\n",
     "/f.ts":

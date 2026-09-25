@@ -6,6 +6,7 @@ import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
+import { addPackWords, askResolution } from "@suss/resolution";
 
 import {
   createNodeTable,
@@ -32,6 +33,16 @@ function factsFor(
     extractFileFacts(db, table, sourceFile);
   }
   return { db, table };
+}
+
+/** The key the facts give the expression written as `text`. */
+function keyOfText(table: NodeTable, text: string): string {
+  for (const [key, node] of table.byId) {
+    if (node.getText() === text) {
+      return key;
+    }
+  }
+  throw new Error(`no fact is keyed on ${text}`);
 }
 
 /** One relation's tuples, with each node id swapped for the source text it points at. */
@@ -282,6 +293,81 @@ describe("what a class's bodies store on the receiver", () => {
     expect(rows(db, table, "storesProperty").map((row) => row[2])).toEqual([
       "second()",
     ]);
+  });
+});
+
+describe("the class a class extends", () => {
+  it("states the base as written and the name it is written as", () => {
+    const { db, table } = factsFor({
+      "/mod.ts": [
+        "declare namespace events { class EventEmitter {} }",
+        "declare function withLogging<T>(base: T): T;",
+        "class User { save() {} }",
+        "export class Admin extends User {}",
+        "export class AuditLog extends events.EventEmitter {}",
+        "export class Tracked extends withLogging(User) {}",
+        "",
+      ].join("\n"),
+    });
+
+    expect(
+      rows(db, table, "extends").map((row) => [
+        row[0]?.split(" extends")[0],
+        row[1],
+      ]),
+    ).toEqual([
+      ["export class Admin", "User"],
+      ["export class AuditLog", "events.EventEmitter"],
+      ["export class Tracked", "withLogging(User)"],
+    ]);
+    expect(rows(db, table, "extendsNamed").map((row) => row[1])).toEqual([
+      "User",
+      "events.EventEmitter",
+    ]);
+  });
+
+  it("leads a method read off a subclass to the one its base declares", () => {
+    const { db, table } = factsFor({
+      "/mod.ts": [
+        "class User { save() { return 'saved'; } }",
+        "class Admin extends User {}",
+        "// biome-ignore lint: the receiver is untyped on purpose",
+        "function persist(account) { return account.save(); }",
+        "export function promote() { return persist(new Admin()); }",
+        "",
+      ].join("\n"),
+    });
+
+    const read = keyOfText(table, "account.save");
+    askResolution(db, [read]);
+    expect(
+      db
+        .lookup("wantedResolves", 0, read)
+        .map((row) => table.byId.get(String(row[1]))?.getText()),
+    ).toEqual(["save() { return 'saved'; }"]);
+  });
+
+  it("matches a library base a pack names, so the finder it declares gives back the class", () => {
+    const { db, table } = factsFor({
+      "/mod.ts": [
+        'import { Model } from "orm-lib";',
+        "class Account extends Model { close() { return 'closed'; } }",
+        "export function closeFirst() {",
+        "  const found = Account.findOne();",
+        "  return found.close();",
+        "}",
+        "",
+      ].join("\n"),
+    });
+    addPackWords(db, { givesBackOne: [{ base: "Model", method: "findOne" }] });
+
+    const read = keyOfText(table, "found.close");
+    askResolution(db, [read]);
+    expect(
+      db
+        .lookup("wantedResolves", 0, read)
+        .map((row) => table.byId.get(String(row[1]))?.getText()),
+    ).toEqual(["close() { return 'closed'; }"]);
   });
 });
 

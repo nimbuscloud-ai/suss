@@ -115,10 +115,11 @@ Classes:
 ```
 extends(c, b)               class c is written as extending b. Ruby
                             records a module c includes or prepends the
-                            same way (Python, Ruby)
+                            same way
 extendsNamed(c, n)          class c's base is written n, which is how a
                             pack matches a library base that no node in
-                            the run declares (Python, Ruby)
+                            the run declares. Only a base written as a
+                            name or a dotted name has one
 declaresName(c, n)          c declares a method n under a name the
                             source computes rather than writes out
                             (Ruby)
@@ -359,6 +360,13 @@ subclass that never overrode it. Deriving those rows into
 `holdsProperty` would turn it into a derived relation, and the on-demand
 rewrite would then fill it only in answer to a demand that nothing
 generates.
+
+A method that a subclass overrides is contained twice, once from the
+subclass and once from its base, so a caller that needs one method
+refuses the read. The TypeScript adapter also links a method read to
+the declaration the type checker finds, which is the override. The rules
+follow that link as well as the two from `contains`, so the read still
+comes to two methods and is still refused.
 
 ## What an instance reads
 
