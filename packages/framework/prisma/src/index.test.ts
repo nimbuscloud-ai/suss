@@ -739,6 +739,27 @@ describe("prisma recognizer: happy path", () => {
     expect(access.interaction.operation).toBe("findMany");
   });
 
+  it.each([
+    ["an intersection", "PrismaClient & { tenant: string }"],
+    ["an optional", "PrismaClient | undefined"],
+    ["an alias of an intersection", "Db"],
+    ["an alias of an optional", "MaybeDb"],
+  ])("recognizes a client typed as %s", (_, typed) => {
+    const file = makeProject(`
+      import { PrismaClient } from "@prisma/client";
+      type Db = PrismaClient & { tenant: string };
+      type MaybeDb = Db | undefined;
+      declare const db: ${typed};
+      async function go() {
+        return await db!.user.findMany({});
+      }
+    `);
+    const access =
+      storageEffectsOf(recognizeAll(file))[0] ?? raise("no access");
+    expect(access.binding.semantics).toMatchObject({ container: "User" });
+    expect(access.interaction.operation).toBe("findMany");
+  });
+
   it("threads scope and storageSystem options into emitted effects", () => {
     const file = makeProject(`
       import { PrismaClient } from "@prisma/client";

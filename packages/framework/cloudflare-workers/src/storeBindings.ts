@@ -12,7 +12,11 @@
 
 import { Node as N } from "ts-morph";
 
-import { readName, stringValueOf } from "@suss/adapter-typescript";
+import {
+  readName,
+  receiverTypeMatching,
+  stringValueOf,
+} from "@suss/adapter-typescript";
 import { storageBinding } from "@suss/behavioral-ir";
 import { readSqlAccess } from "@suss/sql";
 
@@ -20,7 +24,7 @@ import { isTriggerEnvArgument } from "./envBindings.js";
 
 import type { ResolutionStore } from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
-import type { CallExpression, Node, PropertyAccessExpression } from "ts-morph";
+import type { CallExpression, Node } from "ts-morph";
 
 const RECOGNITION = "@suss/framework-cloudflare-workers";
 
@@ -129,6 +133,8 @@ const STORES: Record<string, { storageSystem: string; read: OperationReader }> =
     D1Database: { storageSystem: "d1", read: d1Access },
   };
 
+const STORE_TYPES = Object.keys(STORES);
+
 interface RecognizerContext {
   resolveWrittenValue?: (value: Node) => Node | null;
   resolution?: ResolutionStore;
@@ -218,7 +224,7 @@ function boundReceiver(subject: Node, reading: Reading): BoundReceiver | null {
   if (!N.isIdentifier(env) || !isTriggerEnvArgument(env, reading.resolution)) {
     return null;
   }
-  const typeName = declaredTypeName(receiver);
+  const typeName = receiverTypeMatching(receiver, { named: STORE_TYPES });
   if (typeName === null) {
     return null;
   }
@@ -230,25 +236,6 @@ function declaredInitializer(identifier: Node): Node | null {
   for (const declaration of identifier.getSymbol()?.getDeclarations() ?? []) {
     if (N.isVariableDeclaration(declaration)) {
       return declaration.getInitializer() ?? null;
-    }
-  }
-  return null;
-}
-
-/**
- * The type is read as source text, so it works whether or not
- * `@cloudflare/workers-types` is installed.
- */
-function declaredTypeName(receiver: PropertyAccessExpression): string | null {
-  const declarations =
-    receiver.getNameNode().getSymbol()?.getDeclarations() ?? [];
-  for (const declaration of declarations) {
-    if (!N.isPropertySignature(declaration)) {
-      continue;
-    }
-    const typeNode = declaration.getTypeNode();
-    if (typeNode !== undefined) {
-      return typeNode.getText();
     }
   }
   return null;

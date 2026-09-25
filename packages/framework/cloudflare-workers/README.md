@@ -69,7 +69,7 @@ async fetch(request: Request, env: Env) {
 }
 ```
 
-The container is the binding name, which is also the identity `wrangler.toml` declares for the same store, so the storage check pairs the two sides by name. The pack tells which store a binding is from the type on its `Env` declaration: `KVNamespace`, `R2Bucket` or `D1Database`. Cloudflare defines those type names and a project writes them on its own `Env` interface, so the pack can read the type reference whether or not `@cloudflare/workers-types` is installed. A `get` call alone does not show which store it reaches. So a Worker with no such type on the binding, including any JavaScript Worker, gets config reads and no storage accesses.
+The container is the binding name, which is also the identity `wrangler.toml` declares for the same store, so the storage check pairs the two sides by name. The pack tells which store a binding is from the type on its `Env` declaration: `KVNamespace`, `R2Bucket` or `D1Database`. Cloudflare defines those type names and a project writes them on its own `Env` interface, so the pack can read the type reference whether or not `@cloudflare/workers-types` is installed. It also reads one through an alias, an intersection, or a union such as `KVNamespace | undefined`. A `get` call alone does not show which store it reaches. So a Worker with no such type on the binding, including any JavaScript Worker, gets config reads and no storage accesses.
 
 For KV and R2, the key an operation addresses is recorded as the selector. A D1 call is classified by its SQL: `SELECT` is a read and anything else is a write. If the SQL reader cannot parse the statement, the pack records nothing instead of guessing a kind.
 

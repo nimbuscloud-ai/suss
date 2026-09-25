@@ -19,6 +19,7 @@ import {
   propertiesOf,
   propertyNameOf,
   propertyOf,
+  receiverTypeMatching,
   stringValueOf,
   writtenNodeOf,
 } from "@suss/adapter-typescript";
@@ -330,17 +331,11 @@ function collectChainCalls(
  * to be declared in a file under a `drizzle-orm` directory.
  */
 function isDrizzleReceiver(node: Node): boolean {
-  const type = node.getType();
-  const symbol = type.getSymbol() ?? type.getAliasSymbol();
-  if (symbol === undefined) {
-    return false;
-  }
-  for (const decl of symbol.getDeclarations()) {
-    if (decl.getSourceFile().getFilePath().includes("/drizzle-orm/")) {
-      return true;
-    }
-  }
-  return false;
+  return receiverTypeMatching(node, { declaredIn: declaredByDrizzle }) !== null;
+}
+
+function declaredByDrizzle(filePath: string): boolean {
+  return filePath.includes(`/${DRIZZLE_PACKAGE}/`);
 }
 
 /**
