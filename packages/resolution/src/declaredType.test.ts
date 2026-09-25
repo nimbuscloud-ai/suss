@@ -27,7 +27,7 @@ function project(
     db.add("paramOf", [caller.name, "0", param]);
     db.add("paramNamed", [caller.name, "db", param]);
     if (caller.states !== undefined) {
-      db.add("statesType", [param, caller.states]);
+      db.add("instanceOf", [param, caller.states]);
     }
     const call = `${caller.name}:call`;
     const callee = `${caller.name}:callee`;
@@ -66,7 +66,7 @@ describe("the types a value is declared as", () => {
   it("follows a caller that passes on a parameter its own caller types", () => {
     const db = project([{ name: "middle" }]);
     db.add("func", ["view"]);
-    db.add("statesType", ["view#session", "Session"]);
+    db.add("instanceOf", ["view#session", "Session"]);
     db.add("call", ["view:call", "view:callee"]);
     db.add("binds", ["view:callee", "middle"]);
     db.add("callKeywordArg", ["view:call", "db", "view#session"]);
@@ -76,7 +76,7 @@ describe("the types a value is declared as", () => {
   it("takes the type of a name declared as a typed one", () => {
     const db = project([{ name: "view", passes: "view#alias" }]);
     db.add("binds", ["view#alias", "view#session"]);
-    db.add("statesType", ["view#session", "Session"]);
+    db.add("instanceOf", ["view#session", "Session"]);
     expect(declaredTypesOf(db, "lookup#db")).toEqual(["Session"]);
   });
 
@@ -84,14 +84,14 @@ describe("the types a value is declared as", () => {
     const db = project([{ name: "view", passes: "view#either" }]);
     db.add("fallbackBranch", ["view#either", "view#session"]);
     db.add("fallbackBranch", ["view#either", "view:built"]);
-    db.add("statesType", ["view#session", "Session"]);
+    db.add("instanceOf", ["view#session", "Session"]);
     expect(declaredTypesOf(db, "lookup#db")).toEqual(["Session"]);
   });
 
   it("takes the type of the value a reassigned name ends holding", () => {
     const db = project([{ name: "view", passes: "view#current" }]);
     db.add("endsHolding", ["view#current", "view#session"]);
-    db.add("statesType", ["view#session", "Session"]);
+    db.add("instanceOf", ["view#session", "Session"]);
     expect(declaredTypesOf(db, "lookup#db")).toEqual(["Session"]);
   });
 
@@ -110,7 +110,7 @@ describe("the types a value is declared as", () => {
 
   it("gives a parameter its own stated type", () => {
     const db = project([]);
-    db.add("statesType", ["lookup#db", "Session"]);
+    db.add("instanceOf", ["lookup#db", "Session"]);
     expect(declaredTypesOf(db, "lookup#db")).toEqual(["Session"]);
   });
 });

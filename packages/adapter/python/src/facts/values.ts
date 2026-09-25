@@ -292,6 +292,7 @@ function emitCall(emitter: Emitter, call: PyNode): void {
   if (!emitter.insideMethod) {
     add(emitter, "callOutsideMethod", callKey);
   }
+  add(emitter, "callArgCount", callKey, String(writtenArgumentCount(args)));
 
   for (const argument of callArguments(call)) {
     if (argument.kind === "keyword") {
@@ -359,6 +360,17 @@ export function callArguments(call: PyNode): CallArgument[] {
 
 /** Written in an argument list without taking a position of its own. */
 const NOT_AN_ARGUMENT = new Set(["dictionary_splat", "comment"]);
+
+/**
+ * How many arguments a call writes, whatever their kind. `f(x for x in y)`
+ * passes a generator with no list around it, which is one.
+ */
+function writtenArgumentCount(args: PyNode): number {
+  if (args.type !== "argument_list") {
+    return 1;
+  }
+  return children(args).filter((child) => child.type !== "comment").length;
+}
 
 /**
  * The key a value joins on. A bare name joins on the name in the scope that
@@ -444,7 +456,7 @@ function statedTypeKey(emitter: Emitter, annotation: PyNode): string | null {
   return target === null ? null : classReferenceKey(emitter, target);
 }
 
-/** `name: T` on a parameter or an assignment, as the two keys the rules join. */
+/** `name: T` on a parameter or an assignment says the name is one of T. */
 function emitStatedType(
   emitter: Emitter,
   nameKey: string,
@@ -453,7 +465,7 @@ function emitStatedType(
   const typeKey =
     annotation === null ? null : statedTypeKey(emitter, annotation);
   if (typeKey !== null) {
-    add(emitter, "statesType", nameKey, typeKey);
+    add(emitter, "instanceOf", nameKey, typeKey);
   }
 }
 
@@ -1029,6 +1041,16 @@ function writtenBaseName(base: PyNode): string | null {
 const INIT_METHOD = "__init__";
 
 /**
+ * How a class-body assignment is recorded. `TABLE = "orders"` is one
+ * value every instance shares. `name: str = "x"` is a field default in
+ * a dataclass, a pydantic model or an attrs class, and the constructor
+ * those libraries generate lets each construction give its own.
+ */
+function classBodyValueRelation(assignment: PyNode): string {
+  return field(assignment, "type") === null ? "holdsProperty" : "holdsDefault";
+}
+
+/**
  * A class is recorded as an object containing its methods, the same as an
  * object literal, so a method read off an instance resolves to the one the
  * class declares.
@@ -1047,7 +1069,9 @@ function emitClassFacts(emitter: Emitter, cls: PyNode): string {
   }
 
   const body = field(cls, "body");
-  for (const statement of body === null ? [] : children(body)) {
+  const statements = body === null ? [] : children(body);
+  const accessed = accessorNames(statements);
+  for (const statement of statements) {
     const member = declaredBy(statement);
     if (member.type === "assignment") {
       const left = field(member, "left");
@@ -1055,7 +1079,7 @@ function emitClassFacts(emitter: Emitter, cls: PyNode): string {
       if (left !== null && right !== null && left.type === "identifier") {
         add(
           emitter,
-          "holdsProperty",
+          classBodyValueRelation(member),
           classKey,
           left.text,
           valueKey(emitter, right),
@@ -1067,7 +1091,14 @@ function emitClassFacts(emitter: Emitter, cls: PyNode): string {
     const memberKey = declaredMemberKey(emitter, member, classKey);
     const name = field(member, "name");
     if (memberKey !== null && name !== null) {
-      add(emitter, "holdsProperty", classKey, name.text, memberKey);
+      for (const held of readUnderName(
+        emitter,
+        statement,
+        memberKey,
+        accessed,
+      )) {
+        add(emitter, "holdsProperty", classKey, name.text, held);
+      }
       if (name.text === INIT_METHOD) {
         add(emitter, "initializes", classKey, memberKey);
       }
@@ -1075,6 +1106,74 @@ function emitClassFacts(emitter: Emitter, cls: PyNode): string {
   }
 
   return classKey;
+}
+
+/** The decorators that make a def a property, as the source spells them. */
+const PROPERTY_DECORATORS = new Set([
+  "@property",
+  "@cached_property",
+  "@functools.cached_property",
+]);
+
+/** `@name.setter` and its siblings, on the def that replaces one part of a property. */
+const ACCESSOR_PART = /^@(\w+)\.(setter|deleter|getter)$/;
+
+function decoratorsOf(statement: PyNode): string[] {
+  return statement.type === "decorated_definition"
+    ? children(statement)
+        .filter((child) => child.type === "decorator")
+        .map((child) => child.text)
+    : [];
+}
+
+/**
+ * Each name a def in the class body writes a setter, deleter or getter
+ * for. A getter under a decorator the adapter does not know, such as a
+ * library's own kind of property, is still a getter when a setter for
+ * its name follows it.
+ */
+function accessorNames(statements: readonly PyNode[]): Set<string> {
+  const names = new Set<string>();
+  for (const statement of statements) {
+    for (const decorator of decoratorsOf(statement)) {
+      const part = ACCESSOR_PART.exec(decorator);
+      if (part?.[1] !== undefined) {
+        names.add(part[1]);
+      }
+    }
+  }
+  return names;
+}
+
+/**
+ * What a read of a def's name finds on the class. For a plain method that
+ * is the function. Reading a property runs its getter, so a read finds
+ * what the getter returns, and never the setter or the deleter.
+ */
+function readUnderName(
+  emitter: Emitter,
+  statement: PyNode,
+  funcKey: string,
+  accessed: ReadonlySet<string>,
+): string[] {
+  const decorators = decoratorsOf(statement);
+  const part = decorators
+    .map((decorator) => ACCESSOR_PART.exec(decorator)?.[2])
+    .find((found) => found !== undefined);
+  if (part === "setter" || part === "deleter") {
+    return [];
+  }
+  const name = field(declaredBy(statement), "name")?.text ?? "";
+  const getter =
+    part === "getter" ||
+    accessed.has(name) ||
+    decorators.some((decorator) => PROPERTY_DECORATORS.has(decorator));
+  if (!getter) {
+    return [funcKey];
+  }
+  return emitter.db
+    .lookup("returnsValue", 0, funcKey)
+    .map((row) => String(row[1]));
 }
 
 /**
