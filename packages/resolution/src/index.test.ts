@@ -1102,6 +1102,144 @@ describe("a construction as an object of its own", () => {
   });
 });
 
+describe("a value the class body assigns", () => {
+  // class ReportJob: table = "orders"; region: str = "eu"; def run(self): ...
+  const job: Array<[string, ...string[]]> = [
+    ["objectValue", "ReportJob"],
+    ["writtenValue", "orders"],
+    ["holdsProperty", "ReportJob", "table", "orders"],
+    ["writtenValue", "eu"],
+    ["holdsDefault", "ReportJob", "region", "eu"],
+    ["func", "run"],
+    ["holdsProperty", "ReportJob", "run", "run"],
+    ["binds", "ReportJobRef", "ReportJob"],
+    ["instanceOf", "run#self", "ReportJob"],
+  ];
+  const construction = (
+    ...args: Array<[string, ...string[]]>
+  ): Array<[string, ...string[]]> => [
+    ...job,
+    ["call", "site", "ReportJobRef"],
+    ["writtenValue", "site"],
+    ["binds", "made", "site"],
+    ["readsProperty", "read", "made", "region"],
+    ...args,
+  ];
+
+  it("is shared by every instance when it is a plain attribute", () => {
+    expect(
+      writtenAsOf(
+        [...job, ["readsProperty", "read", "run#self", "table"]],
+        "read",
+      ),
+    ).toEqual(["orders"]);
+  });
+
+  it("is not read off a receiver when it is a field default a constructor may replace", () => {
+    expect(
+      writtenAsOf(
+        [...job, ["readsProperty", "read", "run#self", "region"]],
+        "read",
+      ),
+    ).toEqual([]);
+  });
+
+  it("is a field default on a construction that passes nothing", () => {
+    expect(
+      writtenAsOf(construction(["callArgCount", "site", "0"]), "read"),
+    ).toEqual(["eu"]);
+  });
+
+  it("is no field default on a construction that passes an argument", () => {
+    // ReportJob(region="us").region
+    expect(
+      writtenAsOf(
+        construction(
+          ["callArgCount", "site", "1"],
+          ["writtenValue", "us"],
+          ["callKeywordArg", "site", "region", "us"],
+        ),
+        "read",
+      ),
+    ).toEqual([]);
+  });
+
+  it("is a field default a base class declares, on a construction of a subclass", () => {
+    expect(
+      writtenAsOf(
+        [
+          ...job,
+          ["objectValue", "DailyJob"],
+          ["extends", "DailyJob", "ReportJobRef"],
+          ["binds", "DailyJobRef", "DailyJob"],
+          ["call", "site", "DailyJobRef"],
+          ["callArgCount", "site", "0"],
+          ["readsProperty", "read", "site", "region"],
+        ],
+        "read",
+      ),
+    ).toEqual(["eu"]);
+  });
+
+  it("is no field default on what a finder gave back, which was built elsewhere", () => {
+    // ReportJob.first(), where a pack says first gives back one ReportJob.
+    expect(
+      writtenAsOf(
+        [
+          ...job,
+          ["extendsNamed", "ReportJob", "Model"],
+          ["givesBackOne", "Model", "first"],
+          ["readsProperty", "firstRead", "ReportJobRef", "first"],
+          ["call", "found", "firstRead"],
+          ["callArgCount", "found", "0"],
+          ["readsProperty", "read", "found", "region"],
+        ],
+        "read",
+      ),
+    ).toEqual([]);
+  });
+
+  it("is a field default on a construction that passes nothing, handed back by a call", () => {
+    // def make(): return ReportJob()
+    // made = make(); made.region
+    expect(
+      writtenAsOf(
+        [
+          ...job,
+          ["func", "make"],
+          ["call", "site", "ReportJobRef"],
+          ["callArgCount", "site", "0"],
+          ["writtenValue", "site"],
+          ["returnsValue", "make", "site"],
+          ["binds", "makeRef", "make"],
+          ["call", "made", "makeRef"],
+          ["writtenValue", "made"],
+          ["binds", "named", "made"],
+          ["readsProperty", "read", "named", "region"],
+        ],
+        "read",
+      ),
+    ).toEqual(["eu"]);
+  });
+
+  it("is read off the receiver under a construction that passes nothing, and not under one that passes something", () => {
+    const sites: Array<[string, ...string[]]> = [
+      ...job,
+      ["readsProperty", "read", "run#self", "region"],
+      ["call", "plain", "ReportJobRef"],
+      ["callArgCount", "plain", "0"],
+      ["callOutsideMethod", "plain"],
+      ["call", "given", "ReportJobRef"],
+      ["callArgCount", "given", "1"],
+      ["writtenValue", "us"],
+      ["callKeywordArg", "given", "region", "us"],
+      ["callOutsideMethod", "given"],
+    ];
+    expect(writtenAsUnder(sites, "read", "plain")).toEqual(["eu"]);
+    expect(writtenAsUnder(sites, "read", "given")).toEqual([]);
+  });
+});
+
 describe("a value read under the site its receiver was made at", () => {
   // class Api { constructor(base) { this.client = axios.create(base) }
   // items(path) {} refresh() { this.items("/c") } }, with two module-level

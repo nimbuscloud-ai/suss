@@ -51,7 +51,7 @@ Three layers do the work.
 
   <rect class="box" x="60" y="220" width="540" height="86" rx="6" />
   <text class="label" x="330" y="242" text-anchor="middle">2. One rule set joins the facts into a value graph</text>
-  <text class="note" x="330" y="260" text-anchor="middle">176 rules. 17 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
+  <text class="note" x="330" y="260" text-anchor="middle">180 rules. 17 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
   <text class="note" x="330" y="277" text-anchor="middle">reaches is the transitive closure of those hops, and it records</text>
   <text class="note" x="330" y="294" text-anchor="middle">the strongest kind of step the walk took.</text>
 
@@ -160,13 +160,13 @@ explanation each.
 
 ## Layer 2: one rule set makes a graph
 
-`packages/resolution/src/index.ts` contains 176 rules and no code.
+`packages/resolution/src/index.ts` contains 180 rules and no code.
 17 of them derive `stepsTo(x, y, kind)`, which says the value `x` leads
 to the value `y` in one hop. Two of them, for an argument and a
 property read, are written as `stepsTo` directly. The other fifteen are
 written as `hop`, and each gets a `stepsTo` twin, since a walk under a
 receiver context reads `hop`. The TypeScript adapter adds a sixteenth
-hop, for `.bind`, with its own twin, and that pair is not among the 176.
+hop, for `.bind`, with its own twin, and that pair is not among the 180.
 
 ```ts
 rule(
@@ -199,6 +199,15 @@ on the receiver, and the facts say which function did the storing
 (`storesProperty`) rather than putting a value on the class under a
 field name. The class contains the same things, so a class nothing in
 the run makes one of still resolves a read through the receiver.
+
+A field default is different. In Python, `is_admin: bool = False` on a
+dataclass or a pydantic model is only the value an instance starts with
+when its constructor is not given one, and the library that generates
+the constructor is not in the run. The adapter records it as
+`holdsDefault` rather than `holdsProperty`, so it is not something every
+instance contains. A construction written with no arguments contains it.
+A receiver or a parameter, whose construction the run cannot see, finds
+the class's methods and plain attributes and none of its field defaults.
 
 ### Asking under one allocation site
 

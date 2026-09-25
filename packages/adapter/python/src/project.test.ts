@@ -115,6 +115,83 @@ const fastapiLike: PythonPack = {
   ],
 };
 
+describe("a parameter annotated as a model class", () => {
+  const files = {
+    "app/models.py": [
+      "class Account:",
+      "    is_admin: bool = False",
+      "",
+      "    def plan(self):",
+      '        return "free"',
+      "",
+    ].join("\n"),
+    "app/routes.py": [
+      "from fastapi import FastAPI, HTTPException",
+      "from app.models import Account",
+      "",
+      "app = FastAPI()",
+      "",
+      "",
+      '@app.get("/admin")',
+      "def admin(account: Account):",
+      "    if not account.is_admin:",
+      "        raise HTTPException(status_code=403)",
+      "    return account.plan()",
+      "",
+    ].join("\n"),
+  };
+
+  async function adminRoute() {
+    const paths = Object.entries(files).map(([rel, content]) =>
+      write(rel, content),
+    );
+    const { summaries } = await extractPythonProject({
+      files: paths,
+      roots: [tmpDir],
+      packs: [fastapiLike],
+      workspaceRoot: tmpDir,
+    });
+    return summaries.find((summary) => summary.identity.name === "admin");
+  }
+
+  it("leaves a field the class body gives a default as the parameter's own", async () => {
+    const route = await adminRoute();
+    const raised = route?.transitions
+      .flatMap((transition) => transition.effects)
+      .find(
+        (effect) =>
+          effect.type === "invocation" && effect.callee === "HTTPException",
+      );
+    const guard =
+      raised?.type === "invocation" ? raised.preconditions?.[0] : undefined;
+    expect(guard).toEqual({
+      type: "negation",
+      operand: {
+        type: "truthinessCheck",
+        subject: {
+          type: "dependency",
+          name: "account",
+          accessChain: ["is_admin"],
+        },
+        negated: false,
+      },
+    });
+  });
+
+  it("follows a method called on it to the one the class declares", async () => {
+    const route = await adminRoute();
+    const plan = route?.transitions
+      .flatMap((transition) => transition.effects)
+      .find(
+        (effect) =>
+          effect.type === "invocation" && effect.callee === "account.plan",
+      );
+    expect(plan?.type === "invocation" ? plan.summary : null).toBe(
+      "app/models.py::Account.plan",
+    );
+  });
+});
+
 describe("a parameter annotated with a name from another file", () => {
   async function rolesOf(
     files: Record<string, string>,

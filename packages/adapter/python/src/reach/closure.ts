@@ -72,6 +72,7 @@ import type { BoundPythonFile } from "../routers.js";
 import type { Scope } from "../scope.js";
 import type { StorageLookup } from "../storage.js";
 import type {
+  CalleeResolution,
   CalleeSpellings,
   CallSite,
   ReachedFunction,
@@ -273,6 +274,35 @@ function keyOf(target: ReachedFunction): string {
 }
 
 /**
+ * Where the link step looks for a call's summary. A stop is placed at its
+ * own call, where no summary can be, so nothing links it. A bare name
+ * nothing declares is left unplaced, and the link step then matches it
+ * by name in its own file. A method nothing declares is placed at its
+ * call too, since a function of the same name in the caller's file is
+ * never what `receiver.method()` runs.
+ */
+function placementOf(
+  outcome: CalleeResolution,
+  call: PyNode,
+  file: BoundPythonFile,
+): DeclaredAt | null {
+  if (outcome.kind === "followed") {
+    return {
+      file: outcome.target.file.displayPath,
+      span: spanOf(outcome.target.node),
+    };
+  }
+  if (outcome.reason === "noDeclaration" && !isMethodCall(call)) {
+    return null;
+  }
+  return { file: file.displayPath, span: spanOf(call) };
+}
+
+function isMethodCall(call: PyNode): boolean {
+  return field(call, "function")?.type === "attribute";
+}
+
+/**
  * What one pass over a body found: functions to walk into, stops,
  * where each callee was placed, where an identifier argument that is
  * itself a project function was placed (by callee text and position),
@@ -443,18 +473,7 @@ function scanBody(
   const record = (call: PyNode, site: CallSite): void => {
     const callee = calleeText(call);
     const outcome = resolveCallee(call, site, ctx, spellings);
-    // A stop is placed at its own call, where no summary can be, so the
-    // link step neither links it nor guesses by name.
-    const placed =
-      outcome.kind === "followed"
-        ? {
-            file: outcome.target.file.displayPath,
-            span: spanOf(outcome.target.node),
-          }
-        : outcome.reason === "noDeclaration"
-          ? null
-          : { file: file.displayPath, span: spanOf(call) };
-    placements.place(callee, placed);
+    placements.place(callee, placementOf(outcome, call, file));
     recordPassedArgs(
       call,
       callee,

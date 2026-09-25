@@ -271,6 +271,12 @@ sqlClients: [
 
 `receiverTypes.ts` works out the class of the value a method is called on, and the ORM chains use the same code. It takes the annotation written beside the name. Where there is none, it asks the rules which call assigned the name. So a client built in one module and called in another still matches, and so does one that a project factory returns. The class may be written as a plain name the file imported, `Client`, or as an attribute on an imported module, `bigquery.Client`, and both resolve to the same module and name.
 
+An annotation says the name is one of the class, and the adapter records it that way, as `instanceOf(name, annotation)`, for a parameter and for an annotated assignment. A method called on the name then resolves to the one the class declares, and an unannotated helper that its callers pass the name to gets the same class.
+
+A class-body assignment is recorded one of two ways. `TABLE = "orders"` is a plain attribute that every instance shares, so it is `holdsProperty` and a read through `self` or through any instance finds it. `is_admin: bool = False` is a field default in a dataclass, a pydantic model or an attrs class, whose generated constructor lets each construction give its own value, so it is `holdsDefault`. A field default is read only off a construction written with no arguments, which is what `callArgCount` records for every call. `settings = Settings()` reads its defaults, and a handler taking `account: Account` reads none. An annotated attribute on a class that is none of those is recorded as a field default too, since the adapter cannot see whether a library generates the constructor.
+
+Reading a property runs its getter, so the adapter records what the getter returns under the property's name, one `holdsProperty` row per `return`, and a read finds that value rather than the getter function. The setter and the deleter are not recorded under the name at all. A def is a getter when it is written under `@property` or `@functools.cached_property`, or when the class body writes a `@name.setter` or `@name.deleter` for its name, which covers a library's own kind of property without the adapter knowing the library.
+
 The adapter reads a `statements` argument through the value evaluator, so an f-string, a `+`, and a constant another module defines all read the same as a statement written out at the call. A piece the evaluator cannot settle becomes a parameter, which the statement would have had in that place anyway. `path` lists the keys to follow when the statement is inside a dictionary: `["query", "query"]` for a method taking `configuration={"query": {"query": sql}}`. `tables` covers a method that takes a table name instead of SQL, and the adapter reads that argument as a string and nothing more.
 
 `handsBack` is the one hop a pack can declare between two of its library's classes. Nothing in the project states what one of the library's methods returns, so the adapter does not infer it. A chain like `hook.get_client().query(sql)` matches because the hook's pattern declares that `get_client` returns the warehouse client.
@@ -484,6 +490,8 @@ Where the walk stops, and the reason the gap gives:
 | a value's attribute, `order.save()`, or a call on a call's result | no declaration to follow (no gap) |
 
 When one callee spelling resolves to two definitions in one body, for example `load()` under a class body that imports its own `load`, the call is placed on neither.
+
+A bare name that nothing declares is left unplaced, and the link step then looks for a summary of that name in the caller's own file. A method call that nothing declares, `order.save()`, is placed at its own call instead, so it links to nothing. A module function called `save` in the same file is never what a method call runs.
 
 Not followed yet: a method inherited from a base class, a callable stored in a dict or a list, a decorator's own body, and an attribute set on `self` in `__init__` and called elsewhere. A function written in a parameter default such as `Depends(get_db)` is not a call the route makes. It runs around the route, and the next section describes how the adapter reads it.
 

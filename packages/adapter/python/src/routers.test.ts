@@ -106,6 +106,30 @@ function pathOf(units: Awaited<ReturnType<typeof unitsOf>>, name: string) {
   return semantics?.name === "rest" ? semantics.path : undefined;
 }
 
+/** A router mounted under a prefix the settings class body assigns, with `settings` built by `construction`. */
+function settingsMount(construction: string, helpers: string[] = []): string {
+  return [
+    "from fastapi import FastAPI, APIRouter",
+    "",
+    "class Settings:",
+    '    API_PREFIX: str = "/api/v1"',
+    "",
+    ...helpers,
+    `settings = ${construction}`,
+    "app = FastAPI()",
+    'router = APIRouter(prefix="/items")',
+    "",
+    "",
+    '@router.get("/ping")',
+    "def ping():",
+    "    pass",
+    "",
+    "",
+    "app.include_router(router, prefix=settings.API_PREFIX)",
+    "",
+  ].join("\n");
+}
+
 describe("router prefix composition, one mount hop", () => {
   it("composes the mount prefix, the router's own prefix, and the route path", async () => {
     const units = await unitsOf(
@@ -293,6 +317,30 @@ describe("router prefix composition: abstentions", () => {
       ].join("\n"),
     );
     expect(pathOf(units, "ping")).toBe("/api/v1/items/ping");
+  });
+
+  it("follows a mount prefix a settings class assigns, read off a construction that passes nothing", async () => {
+    const units = await unitsOf(settingsMount("Settings()"));
+    expect(pathOf(units, "ping")).toBe("/api/v1/items/ping");
+  });
+
+  it("follows that prefix through a function that returns the construction", async () => {
+    const units = await unitsOf(
+      settingsMount("get_settings()", [
+        "def get_settings():",
+        "    return Settings()",
+        "",
+      ]),
+    );
+    expect(pathOf(units, "ping")).toBe("/api/v1/items/ping");
+  });
+
+  it("abstains on that prefix when the construction passes an argument that could replace it", async () => {
+    const reason = await abstained(
+      settingsMount('Settings(_env_file=".env.local")'),
+      "ping",
+    );
+    expect(reason).not.toBe("");
   });
 
   it("abstains on a prefix nothing here can read", async () => {

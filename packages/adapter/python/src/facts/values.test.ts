@@ -249,6 +249,65 @@ describe("python value facts", () => {
     ]);
   });
 
+  it("holds what a property's getter returns under its name, and nothing for its setter", async () => {
+    const source = [
+      "class Job:",
+      "    @property",
+      "    def table(self):",
+      '        return "orders"',
+      "",
+      "    @table.setter",
+      "    def table(self, value):",
+      "        pass",
+      "",
+      "    @library_property",
+      "    def region(self):",
+      '        return "eu"',
+      "",
+      "    @region.deleter",
+      "    def region(self):",
+      "        pass",
+      "",
+      "    def run(self):",
+      "        pass",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const run = rows(db, "func").find((row) =>
+      textAt(source, row[0] ?? "").startsWith("def run"),
+    );
+    expect(
+      rows(db, "holdsProperty").map((row) => [
+        row[1],
+        row[1] === "run" ? row[2] : textAt(source, row[2] ?? ""),
+      ]),
+    ).toEqual([
+      ["table", '"orders"'],
+      ["region", '"eu"'],
+      ["run", run?.[0]],
+    ]);
+  });
+
+  it("keeps a plain class attribute apart from an annotated field's default", async () => {
+    const source = [
+      "class Job:",
+      '    table = "orders"',
+      '    region: str = "eu"',
+      "    size: int",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const [cls] = rows(db, "objectValue");
+    const named = (relation: string) =>
+      rows(db, relation).map((row) => [
+        row[0],
+        row[1],
+        textAt(source, row[2] ?? ""),
+      ]);
+    expect(named("holdsProperty")).toEqual([[cls?.[0], "table", '"orders"']]);
+    expect(named("holdsDefault")).toEqual([[cls?.[0], "region", '"eu"']]);
+  });
+
   it("keeps two classes' methods of one name apart", async () => {
     const db = await factsFor(
       [
@@ -491,7 +550,34 @@ describe("python value facts", () => {
     expect(rows(unpacked, "callArg")).toEqual([]);
   });
 
-  it("says which type a parameter and an annotated assignment declare", async () => {
+  it("counts every argument a call writes, a splat and a generator included", async () => {
+    const source = [
+      "a = build()",
+      "b = build(first, flag=True)",
+      "c = build(**options)",
+      "d = build(item for item in items)",
+      "e = build(  # no arguments yet",
+      ")",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    expect(
+      rows(db, "callArgCount").map((row) => [
+        textAt(source, row[0] ?? "")
+          .split("(")[1]
+          ?.slice(0, 5),
+        row[1],
+      ]),
+    ).toEqual([
+      [")", "0"],
+      ["first", "2"],
+      ["**opt", "1"],
+      ["item ", "1"],
+      ["  # n", "0"],
+    ]);
+  });
+
+  it("says an annotated parameter or assignment is one of the class it declares", async () => {
     const db = await factsFor(
       [
         "def handler(db: Session, other, count: int = 0):",
@@ -502,7 +588,7 @@ describe("python value facts", () => {
       ].join("\n"),
     );
     const [funcKey] = rows(db, "func")[0] ?? [];
-    expect(rows(db, "statesType")).toEqual([
+    expect(rows(db, "instanceOf")).toEqual([
       [`${funcKey}#db`, "#Session"],
       [`${funcKey}#count`, "#int"],
       [`${funcKey}#local`, "#Store"],
@@ -514,7 +600,7 @@ describe("python value facts", () => {
     const source =
       'def handler(a: Annotated[Session, Depends(x)], b: "Store", c: orm.Session):\n    pass\n';
     const db = await factsFor(source);
-    const stated = rows(db, "statesType").map((row) => row[1]);
+    const stated = rows(db, "instanceOf").map((row) => row[1]);
     expect(stated.slice(0, 2)).toEqual(["#Session", "#Store"]);
     expect(textAt(source, stated[2] ?? "")).toBe("orm.Session");
     expect(rows(db, "readsProperty")).toContainEqual([
@@ -528,7 +614,7 @@ describe("python value facts", () => {
     const db = await factsFor(
       ["class Event:", '    kind: Literal["a"] = "a"', ""].join("\n"),
     );
-    expect(rows(db, "statesType")).toEqual([]);
+    expect(rows(db, "instanceOf")).toEqual([]);
   });
 
   it("keys a name two functions both write under each of them", async () => {
