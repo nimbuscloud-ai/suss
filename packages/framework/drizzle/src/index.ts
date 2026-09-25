@@ -240,9 +240,11 @@ function recognizeMutation(
 }
 
 /**
- * In `db.query.users.findMany({...})` the `users` property is the schema
- * export, so its table name comes from the same `pgTable(...)` call the
- * builder path reads.
+ * In `db.query.users.findMany({...})` Drizzle types `users` as a key of
+ * the schema the database was made with, so the property resolves to
+ * that schema export. Its table name then comes from the same
+ * `pgTable(...)` call the builder path reads. The key is the export's
+ * name, which need not be the SQL name, so it is never used in its place.
  */
 function recognizeQueryApi(
   call: CallExpression,
@@ -264,7 +266,7 @@ function recognizeQueryApi(
     return null;
   }
 
-  const table = resolveTableName(receiver, resolution) ?? receiver.getName();
+  const table = resolveTableName(receiver, resolution);
 
   // `columns` narrows the fields read and `with` adds relations, so the
   // keys of both count as fields. A call with neither reads the whole row.

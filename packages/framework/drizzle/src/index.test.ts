@@ -32,17 +32,20 @@ const DRIZZLE_TYPES = `
         findMany(args?: unknown): Promise<unknown[]>;
         findFirst(args?: unknown): Promise<unknown>;
       }
-      export interface DrizzleDatabase {
+      export interface DrizzleDatabase<TSchema = Record<string, never>> {
         select(fields?: Record<string, unknown>): SelectChain;
         selectDistinct(fields?: Record<string, unknown>): SelectChain;
         insert(table: unknown): InsertChain;
         update(table: unknown): UpdateChain;
         delete(table: unknown): DeleteChain;
-        transaction<T>(fn: (tx: DrizzleDatabase) => Promise<T>): Promise<T>;
-        query: Record<string, QueryTable>;
+        transaction<T>(fn: (tx: DrizzleDatabase<TSchema>) => Promise<T>): Promise<T>;
+        query: { [K in keyof TSchema]: QueryTable };
         execute(statement: unknown): Promise<unknown>;
       }
-      export declare function drizzle(client: unknown, config?: unknown): DrizzleDatabase;
+      export declare function drizzle<TSchema extends Record<string, unknown> = Record<string, never>>(
+        client: unknown,
+        config?: { schema?: TSchema },
+      ): DrizzleDatabase<TSchema>;
       export declare function eq(a: unknown, b: unknown): unknown;
       export declare function and(...conditions: unknown[]): unknown;
       export declare function sql(strings: TemplateStringsArray, ...values: unknown[]): unknown;
@@ -276,15 +279,84 @@ describe("drizzle recognizer — relational query API", () => {
   it("findFirst without options reads the whole row", () => {
     const effects = effectsIn(`
       import { drizzle } from "drizzle-orm";
+      import * as schema from "./schema.js";
+      const db = drizzle({}, { schema });
+      export async function first() {
+        return db.query.orders.findFirst();
+      }
+    `);
+    expect(effects).toHaveLength(1);
+    expect(tableOf(effects[0])).toBe("orders");
+    const interaction = interactionOf(effects[0]);
+    expect(interaction.operation).toBe("findFirst");
+    expect(interaction.fields).toEqual(["*"]);
+  });
+
+  it("follows a database made in another file, over a schema spread from modules", () => {
+    const effects = drizzle.effectsAcross(
+      {
+        "/accounts.ts": `
+          import { pgTable, serial } from "drizzle-orm/pg-core";
+          export const accountDim = pgTable("dim_account", { id: serial("id") });
+        `,
+        "/db.ts": `
+          import { drizzle } from "drizzle-orm";
+          import * as accounts from "./accounts.js";
+          import * as core from "./schema.js";
+          export const db = drizzle({}, { schema: { ...core, ...accounts } });
+        `,
+        [ENTRY]: `
+          import { db } from "./db.js";
+          export async function accountsFor() {
+            return db.query.accountDim.findMany();
+          }
+        `,
+        "/schema.ts": SCHEMA,
+      },
+      ENTRY,
+    );
+    expect(effects).toHaveLength(1);
+    expect(tableOf(effects[0])).toBe("dim_account");
+  });
+
+  it("does not take the query key as the table when the database has no schema", () => {
+    // `orders` is a table in the schema module, so a guess from the key
+    // would pair this read with it.
+    const effects = effectsIn(`
+      import { drizzle } from "drizzle-orm";
       const db = drizzle({});
       export async function first() {
         return db.query.orders.findFirst();
       }
     `);
     expect(effects).toHaveLength(1);
-    const interaction = interactionOf(effects[0]);
-    expect(interaction.operation).toBe("findFirst");
-    expect(interaction.fields).toEqual(["*"]);
+    expect(tableOf(effects[0])).toBeNull();
+  });
+
+  it("does not take the query key as the table when the schema lacks it", () => {
+    const effects = effectsIn(`
+      import { drizzle } from "drizzle-orm";
+      import * as schema from "./schema.js";
+      const db = drizzle({}, { schema });
+      export async function list() {
+        return db.query.dim_account.findMany();
+      }
+    `);
+    expect(effects).toHaveLength(1);
+    expect(tableOf(effects[0])).toBeNull();
+  });
+
+  it("does not take a key from a schema written as an object literal", () => {
+    const effects = effectsIn(`
+      import { drizzle } from "drizzle-orm";
+      import { orders } from "./schema.js";
+      const db = drizzle({}, { schema: { ledger: orders } });
+      export async function ledger() {
+        return db.query.ledger.findMany();
+      }
+    `);
+    expect(effects).toHaveLength(1);
+    expect(tableOf(effects[0])).toBeNull();
   });
 });
 
