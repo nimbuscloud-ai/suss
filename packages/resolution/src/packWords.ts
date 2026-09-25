@@ -8,7 +8,7 @@
  * each new word had to be written three times. `addPackWords` is the one
  * loop; an adapter maps its own pack type onto `PackWords` and calls it.
  *
- * The field names match the fact vocabulary at the top of `index.ts`.
+ * Each field has the name of the relation it adds, as DESIGN.md lists it.
  */
 
 import type { Database } from "@suss/datalog";

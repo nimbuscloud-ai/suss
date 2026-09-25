@@ -59,6 +59,7 @@
     "check:findings": "node scripts/checkFindingsCatalog.mjs",
     "check:dogfood": "node scripts/checkDogfoodBaseline.mjs",
     "check:examples": "node scripts/checkExamples.mjs",
+    "check:fact-vocabulary": "node scripts/checkFactVocabulary.mjs",
     "check:fuzz": "npm run -w @suss/differential check:fuzz",
     "check:fuzz-python": "npm run -w @suss/differential fuzz:python",
     "check:metadata-wiring": "node scripts/checkMetadataWiring.mjs",
