@@ -72,7 +72,10 @@ literal only filters, so the join checks it as soon as its variables
 are bound. A literal that shares no bound variable is scanned only when
 nothing else is left. The join produces the same rows in any order, so
 the ordering changes what a round costs and leaves what it derives
-alone.
+alone. An evaluation with a tag algebra joins in the same order, and a
+witness still lists the body in the order the rule was written. When it
+read bodies in written order instead, a witness pass over one Rails
+project read 8.4 billion rows where the untagged pass read 3 million.
 
 `evaluate` resumes from where it stopped. Call it again with the same
 rules after adding facts, and it starts from the facts you added instead
