@@ -21,6 +21,8 @@ The pack checks the receiver by its type. The type's symbol has to be declared u
 
 The table name comes from the schema declaration. The recognizer follows the table identifier back to its `pgTable("users", {...})` declaration (or `mysqlTable` / `sqliteTable`) and takes the first string argument, so the summary records the SQL table name. When the declaration cannot be resolved, the table comes out null and does not pair with anything.
 
+A relational query picks its table by a key, as in `db.query.users`. Drizzle types that key as a member of the schema passed to `drizzle(client, { schema })`, so the recognizer follows it to the schema export and on to the same table factory call. The key itself is never used as the table name, since a schema can export `accountDim = pgTable("dim_account", ...)`. When the key cannot be followed, for example because the database was made without a schema, the table comes out null.
+
 Fields and selectors come from the chain. A select's object argument gives the columns it returns. `.values(...)` and `.set(...)` give the columns a write touches. `.where(...)` gives the selector, by collecting property accesses on the table expression.
 
 A statement passed to `db.execute` as a tagged template is parsed as SQL instead, so a join comes out as one effect per table. An interpolated schema object resolves through the same table factory call.
@@ -43,6 +45,7 @@ Both options make the effects this pack records pair with the provider side. Pas
 
 - `alias(users, "u")` self-join aliases.
 - Join clauses (`.leftJoin(orders, ...)`). The joined table does not get a second effect.
+- A relational query on a schema written as an object literal, `drizzle(client, { schema: { users, orders } })`. The table comes out null. A whole-module import (`import * as schema`), or a spread of several, is followed.
 
 ## Where it fits in suss
 
