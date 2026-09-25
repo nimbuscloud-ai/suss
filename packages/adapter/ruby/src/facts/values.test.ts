@@ -201,6 +201,39 @@ describe("ruby value facts", () => {
     ]);
   });
 
+  it("states both sides of `a || b` and `a or b` as the branches their value picks between", async () => {
+    const source =
+      "def build(injected)\n  client = injected || Faraday.new\n  other = (injected or Faraday.new)\nend\n";
+    const db = await factsFor(source);
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    const pick = keyOf(source, "injected || Faraday.new");
+    expect(rows(db, "fallbackBranch")).toContainEqual([
+      pick,
+      `${funcKey}#injected`,
+    ]);
+    expect(rows(db, "fallbackBranch")).toContainEqual([
+      pick,
+      keyOf(source, "Faraday.new"),
+    ]);
+    expect(rows(db, "writtenValue")).not.toContainEqual([pick]);
+    expect(rows(db, "binds")).toContainEqual([
+      `${funcKey}#other`,
+      keyOf(source, "injected or Faraday.new"),
+    ]);
+    expect(
+      rows(db, "fallbackBranch").map((row) => textAt(source, row[0] ?? "")),
+    ).toContain("injected or Faraday.new");
+  });
+
+  it("keeps `a && b` a written value, since it is no fallback", async () => {
+    const source = "ready = loaded && checked\n";
+    const db = await factsFor(source);
+    expect(db.size("fallbackBranch")).toBe(0);
+    expect(rows(db, "writtenValue")).toContainEqual([
+      keyOf(source, "loaded && checked"),
+    ]);
+  });
+
   it("keeps a memoised instance variable under the method that writes it", async () => {
     const source =
       "class C\n  def conn\n    @conn ||= Faraday.new\n  end\nend\n";
