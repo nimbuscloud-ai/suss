@@ -326,6 +326,23 @@ describe("storeBindingRecognizer", () => {
     expect(effects.length).toBeGreaterThan(0);
   });
 
+  it("leaves an env argument alone outside a trigger when there is no resolver", () => {
+    const project = createFixtureProject(root, "src/*.ts");
+    const sf = project.createSourceFile(
+      path.join(root, "src/notATrigger.ts"),
+      `interface Env { SESSIONS: KVNamespace }
+       export default {
+         async warm(request: Request, env: Env): Promise<void> {
+           await env.SESSIONS.get("k");
+         },
+       };`,
+    );
+    const calls = sf.getDescendants().filter(TsNode.isCallExpression);
+    expect(calls.map((call) => storeBindingRecognizer(call, {}))).toEqual([
+      null,
+    ]);
+  });
+
   it("keeps the config-read beside the storage access", async () => {
     const reads = (await run())
       .filter((s) => s.location.file.endsWith("stores.ts"))
