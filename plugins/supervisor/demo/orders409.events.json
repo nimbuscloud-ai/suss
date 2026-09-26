@@ -1,0 +1,81 @@
+[
+  {
+    "hook": "session-start",
+    "input": {
+      "session_id": "demo-orders-409",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "hook_event_name": "SessionStart",
+      "source": "startup"
+    }
+  },
+  {
+    "hook": "prompt",
+    "input": {
+      "session_id": "demo-orders-409",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "UserPromptSubmit",
+      "prompt": "Reject a new order when an open order for the same sku already exists."
+    }
+  },
+  {
+    "hook": "after-edit",
+    "input": {
+      "session_id": "demo-orders-409",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Edit",
+      "tool_input": {
+        "file_path": "<project>/src/orders/create.ts",
+        "old_string": "  const created = await orders.insert({ sku, quantity });",
+        "new_string": "  const open = await orders.findOpen(sku);\n  if (open) {\n    res.status(409).json({ error: \"an open order for this sku exists\" });\n    return;\n  }\n  const created = await orders.insert({ sku, quantity });"
+      },
+      "tool_response": { "filePath": "<project>/src/orders/create.ts" },
+      "tool_use_id": "toolu_demo_provider"
+    }
+  },
+  {
+    "hook": "after-edit",
+    "input": {
+      "session_id": "demo-orders-409",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Edit",
+      "tool_input": {
+        "file_path": "<project>/web/orders/submitOrder.ts",
+        "old_string": "  if (res.status === 400) {",
+        "new_string": "  if (res.status === 409) {\n    throw new Error(\"an open order for this sku already exists\");\n  }\n  if (res.status === 400) {"
+      },
+      "tool_response": { "filePath": "<project>/web/orders/submitOrder.ts" },
+      "tool_use_id": "toolu_demo_client"
+    }
+  },
+  {
+    "hook": "stop",
+    "input": {
+      "session_id": "demo-orders-409",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "Stop",
+      "stop_hook_active": false,
+      "last_assistant_message": "POST /orders now returns 409 for a duplicate open order, and submitOrder handles it."
+    }
+  },
+  {
+    "hook": "session-end",
+    "input": {
+      "session_id": "demo-orders-409",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "hook_event_name": "SessionEnd",
+      "reason": "prompt_input_exit"
+    }
+  }
+]

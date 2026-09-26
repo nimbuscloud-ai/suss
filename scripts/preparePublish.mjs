@@ -264,6 +264,30 @@ if (!agentsSynced) {
   }
 }
 
+// The Claude Code plugin falls back to the suss release with its own
+// version, so that version has to move with every release.
+const pluginManifest = path.join(
+  ROOT,
+  "plugins",
+  "supervisor",
+  ".claude-plugin",
+  "plugin.json",
+);
+const plugin = JSON.parse(fs.readFileSync(pluginManifest, "utf8"));
+if (plugin.version !== VERSION) {
+  const rel = path.relative(ROOT, pluginManifest);
+  if (check) {
+    problems += 1;
+    process.stdout.write(
+      `  ${rel}: version ${plugin.version}, not ${VERSION}\n`,
+    );
+  } else {
+    plugin.version = VERSION;
+    fs.writeFileSync(pluginManifest, `${JSON.stringify(plugin, null, 2)}\n`);
+    process.stdout.write(`fixed ${rel}: version ${VERSION}\n`);
+  }
+}
+
 for (const manifest of manifests) {
   const licenseFile = path.join(path.dirname(manifest), "LICENSE");
   const licensed =

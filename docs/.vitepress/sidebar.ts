@@ -40,6 +40,10 @@ export const sidebar: SidebarItem[] = [
       { text: "Run suss in CI", link: "/guides/ci-integration" },
       { text: "Ask about a codebase", link: "/guides/ask" },
       {
+        text: "Check an agent's edits",
+        link: "/guides/supervise-an-agent",
+      },
+      {
         text: "Check against OpenAPI",
         link: "/guides/check-against-openapi",
       },

@@ -9,9 +9,13 @@ import {
 import {
   applySuppressions,
   boundaryKey,
+  boundaryKeyOf,
+  changesSince,
   checkAll,
   checkPair,
   countsForThreshold,
+  findingIdentity,
+  normalizedDescription,
   readDeclaredContract,
   readGraphqlDeclaredContract,
   summaryWithDefinitionsInlined,
@@ -36,7 +40,9 @@ import type {
   RunFinding,
 } from "@suss/behavioral-ir";
 import type {
+  ChangesSince,
   CheckAllResult,
+  CheckedRun,
   ComparedPair,
   SuppressionRule,
 } from "@suss/checker";
@@ -117,6 +123,13 @@ export interface CheckDirOptions {
    * in `dir`, and the result gains an `intent` section.
    */
   intent?: string;
+  /**
+   * A directory of summaries from an earlier run. When set, the report
+   * narrows to what changed since then: the findings that are new, the
+   * ones that went away, and the boundaries the code changed at. The
+   * run fails only on new findings.
+   */
+  since?: string;
 }
 
 export interface CheckResult {
@@ -271,6 +284,12 @@ export function checkDirectory(options: {
 export function checkDir(
   options: CheckDirOptions,
 ): CheckResult & { result: CheckAllResult } {
+  if (options.since !== undefined && options.intent !== undefined) {
+    throw new UsageError(
+      "--since reports what changed between two runs and --intent scores the code against your intent docs, so they cannot run together. Run them one at a time.",
+    );
+  }
+
   const {
     summaries: allSummaries,
     sourceFile,
@@ -279,6 +298,17 @@ export function checkDir(
     suppressions,
     confidence,
   } = checkDirectory(options);
+
+  const since =
+    options.since === undefined
+      ? null
+      : compareWithEarlierRun(options.since, options, {
+          summaries: allSummaries,
+          findings: result.findings,
+        });
+  // With --since, the report is about the new findings only, and so is
+  // the exit code.
+  const reported = since === null ? result.findings : since.added;
 
   // Intent findings have their own type, so they get their own section
   // of the report. The same .sussignore rules apply to both lists.
@@ -301,9 +331,19 @@ export function checkDir(
     ...unpairedFindings(options.failOnUnpaired, result),
   ];
 
+  const rest = {
+    run,
+    intent,
+    pairs: result.pairs,
+    unmatched: result.unmatched,
+    skipped,
+    runtimeNamedCrossings,
+    summariesWithGaps,
+    collisions,
+  };
   const rendered = options.json
-    ? `${JSON.stringify({ findings: result.findings, run, intent, pairs: result.pairs, unmatched: result.unmatched, skipped, runtimeNamedCrossings, summariesWithGaps, collisions }, null, 2)}\n`
-    : renderDirHuman(result, confidence, scopeOf(options)) +
+    ? `${JSON.stringify(since === null ? { findings: result.findings, ...rest } : { ...sinceJson(since), ...rest }, null, 2)}\n`
+    : renderDirHuman(result, confidence, scopeOf(options), since) +
       renderRuntimeNamedCrossings(runtimeNamedCrossings) +
       renderGapCoverage(summariesWithGaps, allSummaries.length) +
       renderCollisions(collisions) +
@@ -315,15 +355,98 @@ export function checkDir(
 
   const failOn = options.failOn ?? "error";
   return {
-    findings: result.findings,
+    findings: reported,
     ...(run.length > 0 ? { run } : {}),
     ...(intent !== undefined ? { intent } : {}),
     hasErrors:
-      meetsThreshold(result.findings, failOn) ||
+      meetsThreshold(reported, failOn) ||
       intentMeetsThreshold(intent?.findings ?? [], failOn) ||
       run.length > 0,
     result,
   };
+}
+
+/** What moved since an earlier run, for `check --since`. */
+interface SinceReport extends ChangesSince {
+  /** The earlier run's directory, resolved. */
+  dir: string;
+}
+
+/**
+ * Checks the earlier directory the same way as the later one, with the
+ * same `.sussignore`, so a finding a rule accepts counts the same on both
+ * sides.
+ */
+function compareWithEarlierRun(
+  dir: string,
+  options: CheckDirOptions,
+  later: CheckedRun,
+): SinceReport {
+  const earlier = checkDirectory({ ...options, dir });
+  return {
+    dir: path.resolve(dir),
+    ...changesSince(
+      { summaries: earlier.summaries, findings: earlier.result.findings },
+      later,
+    ),
+  };
+}
+
+/**
+ * The `--since` part of the JSON report. Each finding also gets its
+ * identity, its boundary key, whether that boundary is one the code
+ * changed at, and the `.sussignore` rule that would accept it, so a
+ * program acting on the report does not have to work those out.
+ */
+function sinceJson(since: SinceReport): Record<string, unknown> {
+  const changedKeys = new Set(since.changedBoundaries.map((b) => b.key));
+  const described = (findings: readonly Finding[]) =>
+    findings.map((finding) => {
+      const rule = acceptingRule(finding);
+      const key = boundaryKeyOf(finding.boundary);
+      return {
+        ...finding,
+        identity: findingIdentity(finding),
+        boundaryKey: key,
+        atChangedBoundary: changedKeys.has(key),
+        ...(rule !== null ? { rule } : {}),
+      };
+    });
+  return {
+    since: since.dir,
+    findings: described(since.added),
+    resolved: described(since.resolved),
+    changedBoundaries: since.changedBoundaries,
+  };
+}
+
+/** The `--since` part of the printed report, which takes the place of the full findings list. */
+function renderSince(
+  since: SinceReport,
+  confidence: ConfidenceLookup,
+  scope: ReportScope,
+): string[] {
+  const changed = since.changedBoundaries;
+  const lines = [
+    `Since ${since.dir}:`,
+    changed.length === 0
+      ? "  No boundary changed."
+      : `  ${changed.length} boundar${changed.length === 1 ? "y" : "ies"} changed: ${changed.map((b) => b.key).join(", ")}`,
+    `  ${since.added.length} new finding${since.added.length === 1 ? "" : "s"}, ${since.resolved.length} resolved.`,
+  ];
+  if (since.added.length > 0) {
+    lines.push("", renderFindings(since.added, confidence, scope).trimEnd());
+  }
+
+  if (since.resolved.length > 0) {
+    lines.push("", "Resolved:");
+    for (const finding of since.resolved) {
+      lines.push(
+        `  ${finding.kind} at ${boundaryKeyOf(finding.boundary)}: ${normalizedDescription(finding)}`,
+      );
+    }
+  }
+  return lines;
 }
 
 /**
@@ -852,23 +975,53 @@ function formatSide(
  * kind on the boundary. A finding a rule already covers gets none either.
  */
 function formatSuppressionRule(f: Finding): string[] {
-  const side = findingTransitionSide(f);
-  if (side === null || f.suppressed !== undefined) {
+  const rule = acceptingRule(f);
+  if (rule === null || f.suppressed !== undefined) {
     return [];
   }
-  const key = boundaryKey(f.boundary);
   const lines = [
     "  to silence this one, add to the rules in .sussignore.yml:",
-    `    - kind: ${f.kind}`,
+    `    - kind: ${rule.kind}`,
   ];
-  if (key !== null) {
-    lines.push(`      boundary: ${JSON.stringify(key)}`);
+  if (rule.boundary !== undefined) {
+    lines.push(`      boundary: ${JSON.stringify(rule.boundary)}`);
   }
-  lines.push(
-    `      ${side.name}: { transitionId: ${JSON.stringify(side.transitionId)} }`,
-    "      reason: TODO say why you accept this",
-  );
+
+  for (const side of ["provider", "consumer"] as const) {
+    const transitionId = rule[side]?.transitionId;
+    if (transitionId !== undefined) {
+      lines.push(
+        `      ${side}: { transitionId: ${JSON.stringify(transitionId)} }`,
+      );
+    }
+  }
+  lines.push("      reason: TODO say why you accept this");
   return lines;
+}
+
+/** A `.sussignore` rule without its reason, which the person accepting it writes. */
+export interface AcceptingRule {
+  kind: Finding["kind"];
+  boundary?: string;
+  provider?: { transitionId: string };
+  consumer?: { transitionId: string };
+}
+
+/**
+ * The `.sussignore` rule that matches this finding and nothing else, or
+ * null when no rule can be that narrow.
+ */
+export function acceptingRule(f: Finding): AcceptingRule | null {
+  const side = findingTransitionSide(f);
+  if (side === null) {
+    return null;
+  }
+  const key = boundaryKey(f.boundary);
+  return {
+    kind: f.kind,
+    ...(key !== null ? { boundary: key } : {}),
+    [side.name]: { transitionId: side.transitionId },
+  };
 }
 
 function findingTransitionSide(
@@ -999,6 +1152,7 @@ function renderDirHuman(
   result: CheckAllResult,
   confidence: ConfidenceLookup,
   scope: ReportScope,
+  since: SinceReport | null,
 ): string {
   const all = scope.all === true;
   const lines: string[] = [];
@@ -1125,16 +1279,27 @@ function renderDirHuman(
     );
   }
 
-  if (result.findings.length > 0) {
-    lines.push(
-      "",
-      renderFindings(result.findings, confidence, scope).trimEnd(),
-    );
-  } else if (result.pairs.length > 0) {
-    lines.push("", "No findings. Every compared boundary agreed.");
-  }
-
+  lines.push(...findingLines(result, confidence, scope, since));
   return `${lines.join("\n")}\n`;
+}
+
+/** The end of the report: what changed since an earlier run, or every finding. */
+function findingLines(
+  result: CheckAllResult,
+  confidence: ConfidenceLookup,
+  scope: ReportScope,
+  since: SinceReport | null,
+): string[] {
+  if (since !== null) {
+    return ["", ...renderSince(since, confidence, scope)];
+  }
+  if (result.findings.length > 0) {
+    return ["", renderFindings(result.findings, confidence, scope).trimEnd()];
+  }
+  if (result.pairs.length > 0) {
+    return ["", "No findings. Every compared boundary agreed."];
+  }
+  return [];
 }
 
 /**

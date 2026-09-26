@@ -78,6 +78,7 @@ export { loadStubs, type StubFile, stubOverlayOf } from "./stubs.js";
 
 export type { Answer, AnswerJson, QuestionShape } from "./ask.js";
 export type {
+  AcceptingRule,
   CheckDirOptions,
   CheckOptions,
   CheckResult,
