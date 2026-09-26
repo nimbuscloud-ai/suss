@@ -38,7 +38,7 @@ import {
   NO_BARRIERS,
 } from "../walk/descent.js";
 import { climbSyntax, peelSyntax } from "../walk/unwrap.js";
-import { callOpsFor } from "./callOps.js";
+import { callOpsFor, type WalkArguments, walkArguments } from "./callOps.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type {
@@ -193,6 +193,7 @@ export function invocationContextFor(
   resolution?: ResolutionStore,
   originatesFrom?: OriginatesFrom,
   anchorCallsOf?: AnchorCallsOf,
+  walk?: WalkArguments,
 ): TsInvocationRecognizerContext {
   const resolveWrittenValue = writtenValueResolver(resolution);
   // Built on the first read rather than up front: most calls reach no
@@ -212,6 +213,7 @@ export function invocationContextFor(
         resolution,
         originatesFrom,
         anchorCallsOf,
+        walk,
       });
       return ops;
     },
@@ -473,19 +475,25 @@ export function runInvocationRecognizers(
   const out: RecognizedEffectLocation[] = [];
   const sourceFile = func.getSourceFile();
 
+  const calls: CallExpression[] = [];
   func.forEachDescendant((node, traversal) => {
     if (isDescentStop(node, func, barriers)) {
       traversal.skip();
       return;
     }
-    if (!Node.isCallExpression(node)) {
-      return;
+    if (Node.isCallExpression(node)) {
+      calls.push(node);
     }
+  });
+  const walk = walkArguments(calls, resolution);
+
+  for (const node of calls) {
     const ctx = invocationContextFor(
       node,
       resolution,
       originatesFrom,
       anchorCallsOf,
+      walk,
     );
     const line = enclosingStatementLine(node);
     const preconditions = collectPreconditions(node, func);
@@ -519,7 +527,7 @@ export function runInvocationRecognizers(
         });
       }
     }
-  });
+  }
 
   return out;
 }
@@ -596,6 +604,7 @@ export function accessContextFor(
   resolution?: ResolutionStore,
   originatesFrom?: OriginatesFrom,
   anchorCallsOf?: AnchorCallsOf,
+  walk?: WalkArguments,
 ): TsAccessRecognizerContext {
   const resolveWrittenValue = writtenValueResolver(resolution);
   const given = {
@@ -616,6 +625,7 @@ export function accessContextFor(
         resolution,
         originatesFrom,
         anchorCallsOf,
+        walk,
       });
       return ops;
     },
@@ -639,29 +649,39 @@ function dispatchAccessRecognizers(
   // effect at the same line; stating it twice adds nothing.
   const seenEffects = new Set<string>();
 
+  const visited: Accessed[] = [];
   root.forEachDescendant((node, traversal) => {
     if (isStop(node)) {
       traversal.skip();
       return;
     }
-    // Calls too: `requireEnv("X")` contains no property access, and the
-    // env recognizer resolves it through the callee's body (#326). A
-    // tagged template as well, since a library can take its whole
-    // argument as one: `prisma.$queryRaw` and `gql` both do.
-    // Every recognizer guards its shapes and returns null on the rest.
+    // Calls and tagged templates too: `requireEnv("X")` has no property
+    // access (#326), and a library can take its whole argument as one
+    // template, as `prisma.$queryRaw` and `gql` do.
     if (
-      !Node.isPropertyAccessExpression(node) &&
-      !Node.isCallExpression(node) &&
-      !Node.isTaggedTemplateExpression(node)
+      Node.isPropertyAccessExpression(node) ||
+      Node.isCallExpression(node) ||
+      Node.isTaggedTemplateExpression(node)
     ) {
-      return;
+      visited.push(node);
     }
+  });
+  const walk = walkArguments(
+    visited.filter(
+      (node): node is CallExpression | TaggedTemplateExpression =>
+        !Node.isPropertyAccessExpression(node),
+    ),
+    resolution,
+  );
+
+  for (const node of visited) {
     const ctx = accessContextFor(
       node,
       sourceFile,
       resolution,
       originatesFrom,
       anchorCallsOf,
+      walk,
     );
     const line = enclosingStatementLine(node);
     const preconditions = collectPreconditions(node, root);
@@ -691,7 +711,7 @@ function dispatchAccessRecognizers(
         out.push({ effect, line, preconditions, alwaysRuns });
       }
     }
-  });
+  }
 
   return out;
 }

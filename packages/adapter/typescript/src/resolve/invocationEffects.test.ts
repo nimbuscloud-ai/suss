@@ -5,18 +5,24 @@
  * that decides which branch an effect belongs to has nothing to go on.
  */
 
-import { Node, Project } from "ts-morph";
+import { Node, Project, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { storageBinding } from "@suss/behavioral-ir";
+import { profileEvaluation } from "@suss/datalog";
 
+import { ResolutionStore } from "../facts/store.js";
 import {
   runAccessRecognizers,
   runAccessRecognizersAtModuleScope,
   runInvocationRecognizers,
 } from "./invocationEffects.js";
 
-import type { AccessRecognizer, InvocationRecognizer } from "@suss/extractor";
+import type {
+  AccessRecognizer,
+  InvocationRecognizer,
+  OpsCarrier,
+} from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
 
 const binding = storageBinding({
@@ -157,5 +163,76 @@ describe("preconditions on a recognized effect", () => {
       [rowsAccessRecognizer],
     );
     expect(recognized.preconditions.map((c) => c.sourceText)).toEqual(["flag"]);
+  });
+});
+
+describe("a pack that reads every argument of every call", () => {
+  /** Says it will read every argument, then records the call each one is. */
+  function readingEveryArgument(seen: string[]): InvocationRecognizer {
+    return (_call, ctx) => {
+      const { ops } = ctx as OpsCarrier;
+      if (ops === undefined) {
+        return null;
+      }
+      ops.readingArguments?.(0);
+      for (let index = 0; index < ops.argumentCount(); index += 1) {
+        seen.push(ops.argument(index)?.calleeText() ?? "none");
+      }
+      return null;
+    };
+  }
+
+  const BODY = `
+    function save(input: string) {
+      const first = new Command({ id: 1 });
+      const second = new Command({ id: 2 });
+      send(first);
+      send(second);
+      send(input);
+    }
+    declare function send(command: unknown): void;
+    declare class Command { constructor(input: unknown); }
+  `;
+
+  /** What asking the store about every argument in one question costs. */
+  function oneQuestionFor(fn: FunctionRoot): number {
+    const identifiers = fn
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .flatMap((call) => call.getArguments());
+    return profileEvaluation(() =>
+      new ResolutionStore().resolveWrittenValues(identifiers),
+    ).profile.evaluations;
+  }
+
+  it("reads the calls behind the arguments with one question for the body", () => {
+    const fn = functionOf(BODY);
+    const seen: string[] = [];
+    const { profile } = profileEvaluation(() =>
+      runInvocationRecognizers(
+        fn,
+        [readingEveryArgument(seen)],
+        undefined,
+        new ResolutionStore(),
+      ),
+    );
+
+    expect(seen).toEqual(["Command", "Command", "none"]);
+    expect(profile.evaluations).toBe(oneQuestionFor(fn));
+  });
+
+  it("does the same on the walk that visits property reads", () => {
+    const fn = functionOf(BODY);
+    const seen: string[] = [];
+    const { profile } = profileEvaluation(() =>
+      runAccessRecognizers(
+        fn,
+        [readingEveryArgument(seen)],
+        undefined,
+        new ResolutionStore(),
+      ),
+    );
+
+    expect(seen).toEqual(["Command", "Command", "none"]);
+    expect(profile.evaluations).toBe(oneQuestionFor(fn));
   });
 });

@@ -546,6 +546,43 @@ describe("a chain about the command a call was handed", () => {
     expect(sending({ 0: ours })).toBeNull();
   });
 
+  /** The ops for a `send` that record what the chain said and read, in order. */
+  function listening(): { ops: CallOps; heard: string[] } {
+    const heard: string[] = [];
+    const ops = callOps({ method: "send", args: [null, null] });
+    Object.assign(ops, {
+      readingArguments: (first: number, last?: number) => {
+        heard.push(`reading ${first} to ${last ?? "the end"}`);
+      },
+      argument: (index: number) => {
+        heard.push(`argument ${index}`);
+        return index === 0 ? command : null;
+      },
+    });
+    return { ops, heard };
+  }
+
+  it("says which arguments it will read before it reads the first", () => {
+    const { ops, heard } = listening();
+    run(commandCalls, ops);
+    expect(heard.slice(0, 2)).toEqual(["reading 0 to the end", "argument 0"]);
+  });
+
+  it("says one position for a step that reads one", () => {
+    const second = storageCalls({ system: "cassette" })
+      .about({ to: "argument", at: 1 })
+      .methods({ PlaySideCommand: { kind: "read" } });
+    const { ops, heard } = listening();
+    run(second, ops);
+    expect(heard[0]).toBe("reading 1 to 1");
+  });
+
+  it("says nothing for a chain about the call in hand", () => {
+    const { ops, heard } = listening();
+    run(store(), ops);
+    expect(heard).toEqual([]);
+  });
+
   it("gates on the module a step says the command came from", () => {
     const guarded = storageCalls({ system: "cassette" })
       .about({

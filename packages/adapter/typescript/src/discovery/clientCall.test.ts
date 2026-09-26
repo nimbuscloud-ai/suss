@@ -1,6 +1,7 @@
 import { Node } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
+import { profileEvaluation } from "@suss/datalog";
 import { createTestProject } from "@suss/test-project";
 
 import { ResolutionStore } from "../facts/store.js";
@@ -243,5 +244,68 @@ describe("a path a constructor argument states", () => {
     expect(units).toHaveLength(1);
     expect(units[0]?.callSite?.under).toBeUndefined();
     expect(asked).toBe(0);
+  });
+});
+
+describe("a file's receivers, asked about together", () => {
+  const match = {
+    type: "clientCall",
+    importModule: "tapedeck",
+    importName: "Deck",
+    methodFilter: ["play"],
+  } as Extract<DiscoveryPattern["match"], { type: "clientCall" }>;
+
+  /** A consumer beside a module that builds the client two ways. */
+  function consumerOf(source: string) {
+    const project = projectWithDeck();
+    project.createSourceFile(
+      "/deck.ts",
+      `import Deck from "tapedeck";
+      export const deck = new Deck();
+      export const makeDeck = () => new Deck();
+      `,
+    );
+    return project.createSourceFile("/consumer.ts", source);
+  }
+
+  it("matches the import, an instance built elsewhere, and one a project function returns", () => {
+    const file = consumerOf(`
+      import Deck from "tapedeck";
+      import { deck, makeDeck } from "./deck";
+      const other = { play: (track: string) => track };
+      export function onImport() { return Deck.play("a"); }
+      export function onInstance() { return deck.play("b"); }
+      export function onReturned() { return makeDeck().play("c"); }
+      export function onOther() { return other.play("d"); }
+      export function notPlayed() { return deck.side("a"); }
+    `);
+    const names = discoverClientCalls(
+      file,
+      match,
+      "client",
+      new ResolutionStore(),
+    ).map((unit) => unit.name);
+
+    expect(names.sort()).toEqual(["onImport", "onInstance", "onReturned"]);
+  });
+
+  it("asks no more questions of a file with ten other receivers than of one with two", () => {
+    const costWith = (receivers: number) => {
+      const others = Array.from(
+        { length: receivers },
+        (_, i) => `const other${i} = { play: (track: string) => track };
+        export function play${i}() { return other${i}.play("x"); }`,
+      );
+      const file = consumerOf(`
+        import { deck } from "./deck";
+        ${others.join("\n")}
+        export function played() { return deck.play("y"); }
+      `);
+      return profileEvaluation(() =>
+        discoverClientCalls(file, match, "client", new ResolutionStore()),
+      ).profile.evaluations;
+    };
+
+    expect(costWith(10)).toBe(costWith(2));
   });
 });

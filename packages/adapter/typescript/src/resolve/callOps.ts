@@ -188,6 +188,12 @@ export interface CallReading {
   readonly anchorCallsOf?: AnchorCallsOf | undefined;
   /** The run's store, which the value evaluator follows names through. */
   readonly resolution?: ResolutionStore | undefined;
+  /**
+   * The arguments of the walk this call was visited by. A value is read
+   * through it in place of `resolve`, and it asks the store about any
+   * value it has no answer for.
+   */
+  readonly walk?: WalkArguments | undefined;
 }
 
 /** What the values inside a call, and the calls inside those, are read through. */
@@ -196,13 +202,79 @@ interface ValueReading {
   readonly resolution: ResolutionStore | undefined;
 }
 
+/**
+ * The arguments of every call one walk visits. A chain that steps to
+ * every argument would otherwise ask the store about each one at each
+ * call, and each question runs and clears the rules once.
+ */
+export interface WalkArguments {
+  /** Ask about these positions of every call in the walk, in one question. */
+  settle(first: number, last?: number): void;
+  /**
+   * What a value was written as: the walk's own answer for an argument
+   * a `settle` covered, and the store's for anything else.
+   */
+  writtenValueOf(value: Node): Node | null;
+}
+
+/**
+ * The arguments of these calls, asked about only once a chain says it
+ * will read them. Every call the walk visits says so again, so a range
+ * already asked about is not gone over twice.
+ */
+export function walkArguments(
+  calls: readonly Called[],
+  resolution: ResolutionStore | undefined,
+): WalkArguments {
+  const written = new Map<Node, Node | null>();
+  const asked = new Set<string>();
+  return {
+    settle: (first, last) => {
+      const range = `${first}:${last ?? ""}`;
+      if (resolution === undefined || asked.has(range)) {
+        return;
+      }
+      asked.add(range);
+      const passed = calls.flatMap((call) =>
+        argumentsIn(call).slice(
+          first,
+          last === undefined ? undefined : last + 1,
+        ),
+      );
+      const identifiers = passed
+        .map((argument) => unwrapped(argument))
+        .filter(
+          (step): step is Node =>
+            step !== null && Node.isIdentifier(step) && !written.has(step),
+        );
+      if (identifiers.length === 0) {
+        return;
+      }
+      for (const [identifier, value] of resolution.resolveWrittenValues(
+        identifiers,
+      )) {
+        written.set(identifier, value);
+      }
+    },
+    writtenValueOf: (value) => {
+      const known = written.get(value);
+      if (known !== undefined) {
+        return known;
+      }
+      return resolution === undefined
+        ? null
+        : resolution.resolveWrittenValue(value);
+    },
+  };
+}
+
 /** What a declared pack can ask about one TypeScript call. */
 export function callOpsFor(
   call: Called,
   reading: CallReading = {},
 ): AstCapableOps {
-  const { originatesFrom } = reading;
-  const resolve = reading.resolve ?? (() => null);
+  const { originatesFrom, walk } = reading;
+  const resolve = walk?.writtenValueOf ?? reading.resolve ?? (() => null);
   const values: ValueReading = { resolve, resolution: reading.resolution };
   const expression = calleeOf(call);
   const callee = Node.isPropertyAccessExpression(expression)
@@ -241,6 +313,7 @@ export function callOpsFor(
     receiver: () =>
       callee === null ? null : opsOverCall(callee.getExpression(), values),
     argument: (index) => opsOverCall(argumentsOf()[index], values),
+    readingArguments: (first, last) => walk?.settle(first, last),
     callee: () => opsOverCall(expression, values),
     propertyAt: (index, property, unsettled) =>
       propertyAt(argumentsOf()[index], property, unsettled, resolve),

@@ -198,6 +198,15 @@ export interface CallOps {
    */
   argument(index: number): CallOps | null;
   /**
+   * Said by a chain that steps to the arguments of every call it sees,
+   * before it reads the first one: at every call the walk visits, it
+   * will read the arguments from `first` through `last`, or to the end
+   * when `last` is left out. An adapter that asks a separate question
+   * for each read can ask about all of them at once. Leaving it out
+   * changes how fast a run is and nothing else.
+   */
+  readingArguments?(first: number, last?: number): void;
+  /**
    * The call the callee itself was written as, or null when nothing
    * wrote it as one. A class a factory made is the case: `new
    * User({...})` says nothing about what `User` is, and the
