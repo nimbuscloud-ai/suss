@@ -407,7 +407,25 @@ describe("a function that calls a request function", () => {
     expect(boundary(units)).toEqual({ method: "GET", path: "/orders" });
   });
 
-  it("says nothing about a client the class declares as an annotated field, which a constructor may replace", async () => {
+  it("says nothing about a client a dataclass declares as a field, which its constructor may replace", async () => {
+    const units = await unitsIn(
+      [
+        "import httpclient",
+        "from dataclasses import dataclass",
+        "",
+        "@dataclass",
+        "class Orders:",
+        "    client: httpclient.Session = httpclient.Session()",
+        "",
+        "    def load(self):",
+        '        return self.client.get("/orders")',
+      ].join("\n"),
+    );
+
+    expect(units).toEqual([]);
+  });
+
+  it("reads a session call on a client a plain class declares as an annotated attribute", async () => {
     const units = await unitsIn(
       [
         "import httpclient",
@@ -420,7 +438,7 @@ describe("a function that calls a request function", () => {
       ].join("\n"),
     );
 
-    expect(units).toEqual([]);
+    expect(boundary(units)).toEqual({ method: "GET", path: "/orders" });
   });
 
   it("reads a session call on a client some other method stored", async () => {
@@ -532,5 +550,120 @@ describe("a URL the constructor was given", () => {
     const units = await unitsIn(RESOURCE.join("\n"));
 
     expect(units).toEqual([]);
+  });
+});
+
+describe("a URL an annotated class attribute states", () => {
+  const FETCH = [
+    "    def fetch(self):",
+    '        return httpclient.get(self.base_path + "/orders")',
+    "",
+  ];
+  /** The path when `self.base_path` settles on nothing and stays a parameter. */
+  const UNREAD = "{base_path}/orders";
+
+  async function pathIn(lines: string[]): Promise<string | null> {
+    const units = await unitsIn(["import httpclient", "", ...lines].join("\n"));
+    return boundary(units).path;
+  }
+
+  it("is read off the receiver of a plain class, which every instance shares", async () => {
+    expect(
+      await pathIn([
+        "class Client:",
+        '    base_path: str = "/api"',
+        "",
+        ...FETCH,
+      ]),
+    ).toBe("/api/orders");
+  });
+
+  it("is read off the receiver of a subclass of a plain class, its own and its base's", async () => {
+    expect(
+      await pathIn([
+        "class Base:",
+        '    base_path: str = "/api"',
+        "",
+        "class Client(Base):",
+        '    resource: str = "/orders"',
+        "",
+        "    def fetch(self):",
+        "        return httpclient.get(self.base_path + self.resource)",
+        "",
+      ]),
+    ).toBe("/api/orders");
+  });
+
+  it("is read off a plain class the project constructs with arguments", async () => {
+    expect(
+      await pathIn([
+        "class Client:",
+        '    base_path: str = "/api"',
+        "",
+        "    def __init__(self, token):",
+        "        self.token = token",
+        "",
+        ...FETCH,
+        'client = Client("secret")',
+      ]),
+    ).toBe("/api/orders");
+  });
+
+  it("is not read off the receiver of a dataclass, whose constructor may replace it", async () => {
+    expect(
+      await pathIn([
+        "from dataclasses import dataclass",
+        "",
+        "@dataclass",
+        "class Client:",
+        '    base_path: str = "/api"',
+        "",
+        ...FETCH,
+      ]),
+    ).toBe(UNREAD);
+  });
+
+  it("is not read off a dataclass constructed with an argument", async () => {
+    expect(
+      await pathIn([
+        "from dataclasses import dataclass",
+        "",
+        "@dataclass(frozen=True)",
+        "class Client:",
+        '    base_path: str = "/api"',
+        "",
+        ...FETCH,
+        'client = Client(base_path="/v2")',
+      ]),
+    ).toBe(UNREAD);
+  });
+
+  it("is not read off the receiver of a pydantic model, whose constructor may replace it", async () => {
+    expect(
+      await pathIn([
+        "from pydantic import BaseModel",
+        "",
+        "class Client(BaseModel):",
+        '    base_path: str = "/api"',
+        "",
+        ...FETCH,
+      ]),
+    ).toBe(UNREAD);
+  });
+
+  it("is not read off a plain subclass of a pydantic model", async () => {
+    expect(
+      await pathIn([
+        "from pydantic import BaseModel",
+        "",
+        "class Base(BaseModel):",
+        "    pass",
+        "",
+        "class Client(Base):",
+        '    base_path: str = "/api"',
+        "",
+        ...FETCH,
+      ]),
+    ).toBe(UNREAD);
   });
 });

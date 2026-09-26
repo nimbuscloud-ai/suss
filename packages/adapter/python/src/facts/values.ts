@@ -1098,10 +1098,50 @@ const INIT_METHOD = "__init__";
  * How a class-body assignment is recorded. `TABLE = "orders"` is one
  * value every instance shares. `name: str = "x"` is a field default in
  * a dataclass, a pydantic model or an attrs class, and the constructor
- * those libraries generate lets each construction give its own.
+ * those libraries generate lets each construction give its own. On a
+ * plain class it is shared like `TABLE`, and the rules read it that way
+ * once `plainClass` and `extendsOnly` show the class is plain.
  */
 function classBodyValueRelation(assignment: PyNode): string {
   return field(assignment, "type") === null ? "holdsProperty" : "holdsDefault";
+}
+
+/** The base Python gives a class written without one. */
+const IMPLICIT_BASE = "object";
+
+/**
+ * Records a class that nothing can generate a constructor for, when its
+ * own statement shows that. Any decorator could be `@dataclass` under
+ * another name, and a keyword such as `metaclass=` or a second base
+ * could come from a library that builds one, so each of those leaves the
+ * class unrecorded. A single base is left to the rules, which can tell
+ * whether it is a plain class of the project's own.
+ */
+function emitPlainness(emitter: Emitter, cls: PyNode, classKey: string): void {
+  if (cls.parent?.type === "decorated_definition") {
+    return;
+  }
+
+  const bases = field(cls, "superclasses");
+  const written = (bases === null ? [] : children(bases)).filter(
+    (base) => base.type !== "comment",
+  );
+  const [only] = written;
+  if (only === undefined) {
+    add(emitter, "plainClass", classKey);
+    return;
+  }
+
+  if (written.length > 1 || writtenBaseName(only) === null) {
+    return;
+  }
+
+  if (only.type === "identifier" && only.text === IMPLICIT_BASE) {
+    add(emitter, "plainClass", classKey);
+    return;
+  }
+
+  add(emitter, "extendsOnly", classKey, valueKey(emitter, only));
 }
 
 /**
@@ -1121,6 +1161,7 @@ function emitClassFacts(emitter: Emitter, cls: PyNode): string {
       add(emitter, "extendsNamed", classKey, written);
     }
   }
+  emitPlainness(emitter, cls, classKey);
 
   const body = field(cls, "body");
   const statements = body === null ? [] : children(body);
