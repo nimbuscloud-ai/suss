@@ -9,6 +9,7 @@ import {
   notLit,
   profileEvaluation,
   proofOf,
+  type Rule,
   rowBudget,
   rule,
   rulesDeriving,
@@ -1006,5 +1007,140 @@ describe("evaluate: a row budget", () => {
     expect(() =>
       evaluate(chainOf(3), CLOSURE, shortest, rowBudget(1_000)),
     ).toThrow("tag algebra and a row budget");
+  });
+});
+
+describe("evaluate: the rules a round runs", () => {
+  type Facts = Array<[string, readonly string[]]>;
+
+  // `cut` negates `reach` and `report` negates `cutEdge`, so this is
+  // three strata. `idle` reads `quiet`, which the first wave leaves empty.
+  const LAYERED = [
+    rule("reach", [V("x")], [lit("start", V("x"))]),
+    rule(
+      "reach",
+      [V("y")],
+      [lit("reach", V("x")), lit("edge", V("x"), V("y"))],
+    ),
+    rule("node", [V("x")], [lit("edge", V("x"), V("y"))]),
+    rule("node", [V("y")], [lit("edge", V("x"), V("y"))]),
+    rule("idle", [V("x")], [lit("quiet", V("x")), lit("node", V("x"))]),
+    rule("cut", [V("x")], [lit("node", V("x")), notLit("reach", V("x"))]),
+    rule(
+      "cutEdge",
+      [V("x"), V("y")],
+      [lit("cut", V("x")), lit("edge", V("x"), V("y"))],
+    ),
+    rule(
+      "cutEdge",
+      [V("x"), V("z")],
+      [lit("cutEdge", V("x"), V("y")), lit("cutEdge", V("y"), V("z"))],
+    ),
+    rule("loose", [V("x")], [lit("cut", V("x")), notLit("mark", V("x"))]),
+    rule(
+      "report",
+      [V("x")],
+      [lit("loose", V("x")), notLit("cutEdge", V("x"), V("x"))],
+    ),
+  ];
+
+  const POSITIVE = [
+    rule("reach", [V("x")], [lit("start", V("x"))]),
+    rule(
+      "reach",
+      [V("y")],
+      [lit("reach", V("x")), lit("edge", V("x"), V("y"))],
+    ),
+    rule("node", [V("y")], [lit("edge", V("x"), V("y"))]),
+    rule("idle", [V("x")], [lit("quiet", V("x")), lit("node", V("x"))]),
+    rule(
+      "pair",
+      [V("x"), V("y")],
+      [lit("reach", V("x")), lit("reach", V("y")), lit("edge", V("x"), V("y"))],
+    ),
+  ];
+
+  const inWaves = (rules: Rule[], waves: Facts[]) => {
+    const db = new Database();
+    const { profile } = profileEvaluation(() => {
+      for (const wave of waves) {
+        for (const [relation, tuple] of wave) {
+          db.add(relation, tuple);
+        }
+        evaluate(db, rules);
+      }
+    });
+    const cost = profile.rules
+      .map(
+        (r) =>
+          `${r.head} <- ${r.body.join(", ")}: ${r.attempts} attempts, ${r.examined} rows, ${r.derived} derived`,
+      )
+      .sort();
+    return { db, cost, rounds: profile.rounds };
+  };
+
+  // These are the counts a round gets when it checks every rule of the
+  // stratum. Skipping the rules with nothing new must leave them alone.
+  it("reads the same rows through negation and three strata", () => {
+    const { db, cost, rounds } = inWaves(LAYERED, [
+      [
+        ["edge", ["a", "b"]],
+        ["edge", ["b", "c"]],
+        ["edge", ["x", "y"]],
+        ["edge", ["y", "x"]],
+        ["edge", ["y", "z"]],
+        ["start", ["a"]],
+        ["mark", ["z"]],
+      ],
+      [
+        ["edge", ["q", "r"]],
+        ["edge", ["r", "q"]],
+        ["edge", ["c", "d"]],
+        ["edge", ["m", "n"]],
+        ["mark", ["q"]],
+        ["quiet", ["c"]],
+      ],
+    ]);
+
+    expect(cost).toEqual([
+      "cut <- node, !reach: 2 attempts, 17 rows, 10 derived",
+      "cutEdge <- cut, edge: 4 attempts, 38 rows, 9 derived",
+      "cutEdge <- cutEdge, cutEdge: 6 attempts, 115 rows, 8 derived",
+      "idle <- quiet, node: 2 attempts, 14 rows, 1 derived",
+      "loose <- cut, !mark: 4 attempts, 20 rows, 7 derived",
+      "node <- edge: 4 attempts, 28 rows, 17 derived",
+      "reach <- reach, edge: 7 attempts, 16 rows, 5 derived",
+      "reach <- start: 2 attempts, 2 rows, 2 derived",
+      "report <- loose, !cutEdge: 2 attempts, 7 rows, 2 derived",
+    ]);
+    expect(rounds).toBe(14);
+    expect(sorted(db.facts("report"))).toEqual(["m", "n"]);
+    expect(sorted(db.facts("idle"))).toEqual(["c"]);
+  });
+
+  it("reads the same rows when a positive rule set resumes from new facts", () => {
+    const { db, cost, rounds } = inWaves(POSITIVE, [
+      [
+        ["edge", ["a", "b"]],
+        ["edge", ["b", "c"]],
+        ["start", ["a"]],
+      ],
+      [
+        ["edge", ["c", "d"]],
+        ["edge", ["d", "a"]],
+        ["quiet", ["b"]],
+      ],
+      [["start", ["x"]]],
+    ]);
+
+    expect(cost).toEqual([
+      "idle <- quiet, node: 2 attempts, 4 rows, 1 derived",
+      "node <- edge: 2 attempts, 4 rows, 4 derived",
+      "pair <- reach, reach, edge: 10 attempts, 33 rows, 4 derived",
+      "reach <- reach, edge: 6 attempts, 13 rows, 3 derived",
+      "reach <- start: 2 attempts, 2 rows, 2 derived",
+    ]);
+    expect(rounds).toBe(7);
+    expect(sorted(db.facts("pair"))).toEqual(["a,b", "b,c", "c,d", "d,a"]);
   });
 });

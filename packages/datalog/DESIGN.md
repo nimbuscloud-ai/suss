@@ -19,6 +19,17 @@ The engine uses semi-naïve iteration. Each round costs in proportion to
 the facts derived in the round before it, and the engine does not go
 back over everything it already knows.
 
+A round also runs only the rules that can use those facts. Each
+stratum lists, per relation, the rules that read it in a positive
+literal. A round runs the rules listed under the relations that gained
+facts, in the order they were written, and skips the rest. A rule
+with nothing new under any of its positive literals would not read a
+row or derive anything. suss's resolution rules number in the hundreds,
+and most rounds add facts to a few relations, so looking the rules up
+costs less than checking each one. The join order and the rules that
+fire are the ones a round over every rule gives, so the rows read and
+the facts derived stay the same.
+
 A join uses an index whenever it can. Once a literal has any term fixed,
 either written as a constant or bound by an earlier literal, the join
 looks the value up in a per-column index instead of walking the whole

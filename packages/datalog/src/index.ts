@@ -23,6 +23,7 @@ import {
   isProfiling,
 } from "./profile.js";
 import { addToBucket, bucketIn, type Relation } from "./relation.js";
+import { planStratum, rulesReading, type Stratum } from "./stratum.js";
 
 export {
   type ConfidenceLevel,
@@ -523,14 +524,10 @@ function headTuple(head: Rule["head"], bindings: Bindings | null): Tuple {
   });
 }
 
-/** The body positions of a rule's positive literals, in written order. */
 const positiveLiterals = new WeakMap<Rule, readonly number[]>();
 
-/**
- * Which body literal the `deltaIndex`-th positive literal is, or -1
- * when the rule has fewer positive literals than that.
- */
-function deltaLiteral(r: Rule, deltaIndex: number): number {
+/** The body positions of a rule's positive literals, in written order. */
+function positivesOf(r: Rule): readonly number[] {
   let positives = positiveLiterals.get(r);
   if (positives === undefined) {
     positives = r.body
@@ -538,7 +535,15 @@ function deltaLiteral(r: Rule, deltaIndex: number): number {
       .filter((index) => index !== -1);
     positiveLiterals.set(r, positives);
   }
-  return positives[deltaIndex] ?? -1;
+  return positives;
+}
+
+/**
+ * Which body literal the `deltaIndex`-th positive literal is, or -1
+ * when the rule has fewer positive literals than that.
+ */
+function deltaLiteral(r: Rule, deltaIndex: number): number {
+  return positivesOf(r)[deltaIndex] ?? -1;
 }
 
 const allBound = (literal: Literal, bindings: Bindings | null): boolean =>
@@ -1075,7 +1080,7 @@ interface RuleSetShape {
   signature: string;
   name: string;
   derivedRelations: string[];
-  strata: Rule[][];
+  strata: Stratum[];
 }
 
 const signatureOf = (rules: Rule[]): string => shapeOf(rules).signature;
@@ -1094,7 +1099,7 @@ function shapeOf(rules: Rule[]): RuleSetShape {
     signature: JSON.stringify(rules),
     name: [...derivedRelations].sort().join(", "),
     derivedRelations,
-    strata: stratify(rules),
+    strata: stratify(rules).map(planStratum),
   };
   shapes.set(rules, shape);
   return shape;
@@ -1186,9 +1191,8 @@ function runRules<Tag>(
   // what the strata below it just derived.
   const marks = canResume(rules, state) ? state.marks : undefined;
 
-  const runStratum = (stratum: Rule[]): void => {
+  const runStratum = (stratum: Stratum): void => {
     let delta = new Map<string, Tuple[]>();
-    const derivedHere = new Set(stratum.map((r) => r.head.relation));
 
     const record = (relation: string, tuple: Tuple): void => {
       if (db.add(relation, tuple) === "added") {
@@ -1262,21 +1266,24 @@ function runRules<Tag>(
       );
     };
 
+    // A rule `rulesReading` leaves out has no positive literal with new
+    // facts, so the loop below would never run it.
     const applyDelta = (
       seed: Map<string, readonly Tuple[]>,
       derivedOnly: boolean,
     ): void => {
-      for (const r of stratum) {
+      for (const at of rulesReading(stratum, seed, derivedOnly)) {
+        const r = stratum.rules[at];
         if (!couldProduce(db, r)) {
           continue;
         }
-        const positives = r.body.filter((l) => !l.negated);
+        const positives = positivesOf(r);
         for (let i = 0; i < positives.length; i++) {
-          const literal = positives[i];
+          const literal = r.body[positives[i]];
           // Within one evaluation the base facts do not change, so only
           // this stratum's own relations can have a new delta. A resumed
           // run's seed delta is the exception: those are new base facts.
-          if (derivedOnly && !derivedHere.has(literal.relation)) {
+          if (derivedOnly && !stratum.derived.has(literal.relation)) {
             continue;
           }
           if ((seed.get(literal.relation) ?? []).length === 0) {
@@ -1290,7 +1297,7 @@ function runRules<Tag>(
     if (marks === undefined || marks === null) {
       // Seed round: naive evaluation with every positive literal drawn
       // from the full database.
-      for (const r of stratum) {
+      for (const r of stratum.rules) {
         if (!couldProduce(db, r)) {
           continue;
         }
