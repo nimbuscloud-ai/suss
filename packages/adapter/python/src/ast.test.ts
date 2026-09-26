@@ -6,6 +6,8 @@ import {
   field,
   fields,
   isType,
+  parameterIdentifier,
+  parameterNameAndType,
   rangeOf,
   stringLiteralValue,
   stripDecorators,
@@ -143,5 +145,60 @@ describe("field / fields / isType / rangeOf / bodyStatements", () => {
   it("lists a body's top-level statements", async () => {
     const root = await moduleOf("x = 1\ny = 2\n");
     expect(bodyStatements(root)).toHaveLength(2);
+  });
+});
+
+describe("parameterIdentifier / parameterNameAndType", () => {
+  async function parametersOf(signature: string) {
+    const root = await moduleOf(`def f(${signature}):\n    pass\n`);
+    const parameters = field(root.namedChild(0) as never, "parameters");
+    return parameters === null ? [] : bodyStatements(parameters);
+  }
+
+  it("reads each parameter's name, and the annotation on a plain one", async () => {
+    const params = await parametersOf(
+      "a, b: int, c=1, d: str = 'x', *rest, e, **opts",
+    );
+    expect(params.map((param) => parameterIdentifier(param)?.text)).toEqual([
+      "a",
+      "b",
+      "c",
+      "d",
+      "rest",
+      "e",
+      "opts",
+    ]);
+    expect(
+      params.map((param) => {
+        const read = parameterNameAndType(param);
+        return read === null ? null : [read.name, read.typeNode?.text ?? null];
+      }),
+    ).toEqual([
+      ["a", null],
+      ["b", "int"],
+      ["c", null],
+      ["d", "str"],
+      null,
+      ["e", null],
+      null,
+    ]);
+  });
+
+  it("reads no name off a bare `/` or `*`", async () => {
+    const params = await parametersOf("a, /, b, *, c");
+    expect(params.map((param) => parameterIdentifier(param)?.text)).toEqual([
+      "a",
+      undefined,
+      "b",
+      undefined,
+      "c",
+    ]);
+    expect(params.map((param) => parameterNameAndType(param)?.name)).toEqual([
+      "a",
+      undefined,
+      "b",
+      undefined,
+      "c",
+    ]);
   });
 });
