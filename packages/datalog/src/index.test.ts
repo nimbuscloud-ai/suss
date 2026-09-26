@@ -9,6 +9,7 @@ import {
   notLit,
   profileEvaluation,
   proofOf,
+  type Rule,
   rowBudget,
   rule,
   rulesDeriving,
@@ -552,6 +553,98 @@ describe("Database.retract", () => {
   });
 });
 
+describe("Database.retractAll", () => {
+  const CLOSURE = [
+    rule("path", [V("x"), V("y")], [lit("edge", V("x"), V("y"))]),
+    rule(
+      "path",
+      [V("x"), V("z")],
+      [lit("path", V("x"), V("y")), lit("edge", V("y"), V("z"))],
+    ),
+  ];
+  const BLOCKABLE = [
+    rule("q", [V("x")], [lit("p", V("x")), notLit("blocked", V("x"))]),
+  ];
+
+  // Two rule sets over one database, so each keeps a ledger and marks.
+  const evaluatedTwice = (): Database => {
+    const db = new Database();
+    db.add("gone", ["x"]);
+    db.retract("gone", [["x"]]);
+    db.add("edge", ["a", "b"]);
+    db.add("edge", ["b", "c"]);
+    db.add("p", ["1"]);
+    db.add("p", ["2"]);
+    evaluate(db, CLOSURE);
+    evaluate(db, BLOCKABLE);
+    return db;
+  };
+
+  const rowsToSettle = (db: Database, rules: Rule[]): number => {
+    const budget = rowBudget(Number.POSITIVE_INFINITY);
+    evaluate(db, rules, undefined, budget);
+    return budget.examined;
+  };
+
+  it("empties a relation and reports how many facts it had", () => {
+    const db = evaluatedTwice();
+    expect(sorted(db.lookup("path", 0, "a"))).toEqual(["a,b", "a,c"]);
+
+    expect(db.retractAll("path")).toBe(3);
+
+    expect(db.size("path")).toBe(0);
+    expect(db.has("path", ["a", "b"])).toBe(false);
+    expect(db.lookup("path", 0, "a")).toEqual([]);
+    expect(db.retractAll("path")).toBe(0);
+    expect(db.retractAll("absent")).toBe(0);
+  });
+
+  it("empties a relation in a database nothing has evaluated", () => {
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+
+    expect(db.retractAll("edge")).toBe(1);
+
+    expect(db.add("edge", ["a", "b"])).toBe("added");
+  });
+
+  it("leaves the database as retracting every fact does", () => {
+    const byEach = evaluatedTwice();
+    const whole = evaluatedTwice();
+    for (const db of [byEach, whole]) {
+      db.lookup("q", 0, "1");
+    }
+
+    expect(whole.retractAll("q")).toBe(
+      byEach.retract("q", [...byEach.facts("q")]),
+    );
+
+    for (const db of [byEach, whole]) {
+      expect(db.add("q", ["2"])).toBe("added");
+      db.add("blocked", ["2"]);
+      db.add("edge", ["c", "d"]);
+    }
+    expect(whole.lookup("q", 0, "2")).toEqual([["2"]]);
+    expect(whole.lookup("q", 0, "1")).toEqual([]);
+    // Both start over from the base facts rather than resuming.
+    expect(rowsToSettle(whole, CLOSURE)).toBe(rowsToSettle(byEach, CLOSURE));
+    expect(sorted(whole.facts("path"))).toEqual(sorted(byEach.facts("path")));
+    // q(2) is the caller's now, so taking back old conclusions leaves it.
+    evaluate(byEach, BLOCKABLE);
+    evaluate(whole, BLOCKABLE);
+    expect(sorted(whole.facts("q"))).toEqual(["1", "2"]);
+    expect(sorted(byEach.facts("q"))).toEqual(["1", "2"]);
+  });
+
+  it("lets the next evaluation resume after emptying a relation that had nothing", () => {
+    const db = evaluatedTwice();
+
+    expect(db.retractAll("gone")).toBe(0);
+
+    expect(rowsToSettle(db, CLOSURE)).toBe(0);
+  });
+});
+
 describe("evaluate: taking conclusions back", () => {
   const BLOCKABLE = [
     rule("q", [V("x")], [lit("p", V("x")), notLit("blocked", V("x"))]),
@@ -1006,5 +1099,140 @@ describe("evaluate: a row budget", () => {
     expect(() =>
       evaluate(chainOf(3), CLOSURE, shortest, rowBudget(1_000)),
     ).toThrow("tag algebra and a row budget");
+  });
+});
+
+describe("evaluate: the rules a round runs", () => {
+  type Facts = Array<[string, readonly string[]]>;
+
+  // `cut` negates `reach` and `report` negates `cutEdge`, so this is
+  // three strata. `idle` reads `quiet`, which the first wave leaves empty.
+  const LAYERED = [
+    rule("reach", [V("x")], [lit("start", V("x"))]),
+    rule(
+      "reach",
+      [V("y")],
+      [lit("reach", V("x")), lit("edge", V("x"), V("y"))],
+    ),
+    rule("node", [V("x")], [lit("edge", V("x"), V("y"))]),
+    rule("node", [V("y")], [lit("edge", V("x"), V("y"))]),
+    rule("idle", [V("x")], [lit("quiet", V("x")), lit("node", V("x"))]),
+    rule("cut", [V("x")], [lit("node", V("x")), notLit("reach", V("x"))]),
+    rule(
+      "cutEdge",
+      [V("x"), V("y")],
+      [lit("cut", V("x")), lit("edge", V("x"), V("y"))],
+    ),
+    rule(
+      "cutEdge",
+      [V("x"), V("z")],
+      [lit("cutEdge", V("x"), V("y")), lit("cutEdge", V("y"), V("z"))],
+    ),
+    rule("loose", [V("x")], [lit("cut", V("x")), notLit("mark", V("x"))]),
+    rule(
+      "report",
+      [V("x")],
+      [lit("loose", V("x")), notLit("cutEdge", V("x"), V("x"))],
+    ),
+  ];
+
+  const POSITIVE = [
+    rule("reach", [V("x")], [lit("start", V("x"))]),
+    rule(
+      "reach",
+      [V("y")],
+      [lit("reach", V("x")), lit("edge", V("x"), V("y"))],
+    ),
+    rule("node", [V("y")], [lit("edge", V("x"), V("y"))]),
+    rule("idle", [V("x")], [lit("quiet", V("x")), lit("node", V("x"))]),
+    rule(
+      "pair",
+      [V("x"), V("y")],
+      [lit("reach", V("x")), lit("reach", V("y")), lit("edge", V("x"), V("y"))],
+    ),
+  ];
+
+  const inWaves = (rules: Rule[], waves: Facts[]) => {
+    const db = new Database();
+    const { profile } = profileEvaluation(() => {
+      for (const wave of waves) {
+        for (const [relation, tuple] of wave) {
+          db.add(relation, tuple);
+        }
+        evaluate(db, rules);
+      }
+    });
+    const cost = profile.rules
+      .map(
+        (r) =>
+          `${r.head} <- ${r.body.join(", ")}: ${r.attempts} attempts, ${r.examined} rows, ${r.derived} derived`,
+      )
+      .sort();
+    return { db, cost, rounds: profile.rounds };
+  };
+
+  // These are the counts a round gets when it checks every rule of the
+  // stratum. Skipping the rules with nothing new must leave them alone.
+  it("reads the same rows through negation and three strata", () => {
+    const { db, cost, rounds } = inWaves(LAYERED, [
+      [
+        ["edge", ["a", "b"]],
+        ["edge", ["b", "c"]],
+        ["edge", ["x", "y"]],
+        ["edge", ["y", "x"]],
+        ["edge", ["y", "z"]],
+        ["start", ["a"]],
+        ["mark", ["z"]],
+      ],
+      [
+        ["edge", ["q", "r"]],
+        ["edge", ["r", "q"]],
+        ["edge", ["c", "d"]],
+        ["edge", ["m", "n"]],
+        ["mark", ["q"]],
+        ["quiet", ["c"]],
+      ],
+    ]);
+
+    expect(cost).toEqual([
+      "cut <- node, !reach: 2 attempts, 17 rows, 10 derived",
+      "cutEdge <- cut, edge: 4 attempts, 38 rows, 9 derived",
+      "cutEdge <- cutEdge, cutEdge: 6 attempts, 115 rows, 8 derived",
+      "idle <- quiet, node: 2 attempts, 14 rows, 1 derived",
+      "loose <- cut, !mark: 4 attempts, 20 rows, 7 derived",
+      "node <- edge: 4 attempts, 28 rows, 17 derived",
+      "reach <- reach, edge: 7 attempts, 16 rows, 5 derived",
+      "reach <- start: 2 attempts, 2 rows, 2 derived",
+      "report <- loose, !cutEdge: 2 attempts, 7 rows, 2 derived",
+    ]);
+    expect(rounds).toBe(14);
+    expect(sorted(db.facts("report"))).toEqual(["m", "n"]);
+    expect(sorted(db.facts("idle"))).toEqual(["c"]);
+  });
+
+  it("reads the same rows when a positive rule set resumes from new facts", () => {
+    const { db, cost, rounds } = inWaves(POSITIVE, [
+      [
+        ["edge", ["a", "b"]],
+        ["edge", ["b", "c"]],
+        ["start", ["a"]],
+      ],
+      [
+        ["edge", ["c", "d"]],
+        ["edge", ["d", "a"]],
+        ["quiet", ["b"]],
+      ],
+      [["start", ["x"]]],
+    ]);
+
+    expect(cost).toEqual([
+      "idle <- quiet, node: 2 attempts, 4 rows, 1 derived",
+      "node <- edge: 2 attempts, 4 rows, 4 derived",
+      "pair <- reach, reach, edge: 10 attempts, 33 rows, 4 derived",
+      "reach <- reach, edge: 6 attempts, 13 rows, 3 derived",
+      "reach <- start: 2 attempts, 2 rows, 2 derived",
+    ]);
+    expect(rounds).toBe(7);
+    expect(sorted(db.facts("pair"))).toEqual(["a,b", "b,c", "c,d", "d,a"]);
   });
 });
