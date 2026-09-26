@@ -30,6 +30,24 @@ export {
   readSummariesFromDir,
 } from "./inspect.js";
 export {
+  type ChangedLine,
+  type ChangeVerdict,
+  type CheckedChange,
+  checkIntent,
+  type ExplainedLines,
+  type IntentCheckResult,
+  quotedIn,
+  type ReadingPair,
+  type UnaskedChange,
+  type WrapperLine,
+} from "./intentCheck.js";
+export {
+  type IntentCheckCommandOptions,
+  intentCheckCommand,
+  readPrompts,
+  renderIntentCheck,
+} from "./intentCheckCommand.js";
+export {
   type DraftedIntent,
   type IntentDraftOptions,
   type IntentDraftResult,
@@ -37,6 +55,15 @@ export {
   intentDraftResult,
   type UndraftedBoundary,
 } from "./intentDraftCommand.js";
+export {
+  changeTransitions,
+  type IntentKeepOptions,
+  intentKeep,
+  type KeepResult,
+  type KeptDocument,
+  type KeptTransition,
+  keptDocuments,
+} from "./intentKeep.js";
 export {
   type IntentOutcomeListing,
   type IntentOutcomeRow,
