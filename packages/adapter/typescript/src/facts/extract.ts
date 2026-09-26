@@ -1071,14 +1071,6 @@ function emitCallFacts(
   table.byId.set(callId, call as unknown as Node);
 
   const callee = unwrapExpression(call.getExpression());
-
-  // f.bind(receiver): the call resolves to whatever f resolves to.
-  if (Node.isPropertyAccessExpression(callee) && callee.getName() === "bind") {
-    const target = unwrapExpression(callee.getExpression());
-    fact(db, "bindCall", callId, emitValue(db, table, target));
-    return;
-  }
-
   const calleeId = emitValue(db, table, callee);
   fact(db, "call", callId, calleeId);
   if (!insideMethodBody(call as unknown as Node)) {

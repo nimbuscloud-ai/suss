@@ -27,6 +27,7 @@ describe("the facts a pack states about its own library", () => {
       associationConstructor: [
         { module: "sqlalchemy.orm", name: "relationship" },
       ],
+      returnsReceiver: ["freeze", "dup"],
     });
 
     expect(rows(db, "givesBackOne")).toEqual([["ActiveRecord::Base", "find"]]);
@@ -43,6 +44,7 @@ describe("the facts a pack states about its own library", () => {
     expect(rows(db, "associationConstructor")).toEqual([
       ["sqlalchemy.orm", "relationship"],
     ]);
+    expect(rows(db, "returnsReceiver")).toEqual([["freeze"], ["dup"]]);
   });
 
   it("adds nothing for a run whose packs declared nothing", () => {
@@ -55,6 +57,7 @@ describe("the facts a pack states about its own library", () => {
       "entersAsSelf",
       "unwrapsByName",
       "associationConstructor",
+      "returnsReceiver",
     ]) {
       expect(db.size(relation)).toBe(0);
     }

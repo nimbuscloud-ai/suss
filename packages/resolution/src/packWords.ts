@@ -58,6 +58,8 @@ export interface PackWords {
   entersAsSelf?: ReadonlyArray<EntersAsSelf>;
   unwrapsByName?: ReadonlyArray<UnwrapsByName>;
   associationConstructor?: ReadonlyArray<AssociationConstructor>;
+  /** Methods that hand back the object they are called on, by name. */
+  returnsReceiver?: ReadonlyArray<string>;
 }
 
 /** Put a run's pack declarations in the store, so the shared rules can read them. */
@@ -87,5 +89,8 @@ export function addPackWords(db: Database, words: PackWords): void {
   }
   for (const word of words.associationConstructor ?? []) {
     db.add("associationConstructor", [word.module, word.name]);
+  }
+  for (const method of words.returnsReceiver ?? []) {
+    db.add("returnsReceiver", [method]);
   }
 }

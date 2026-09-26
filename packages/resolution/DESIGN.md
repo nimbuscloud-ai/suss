@@ -169,6 +169,10 @@ unwrapsByName(mod, n, k)    calling the n that module mod exports gives
 associationConstructor(mod, n)  a field given a call of the n that
                             module mod exports declares an association
                             (Python)
+returnsReceiver(m)          calling a method named m hands back the
+                            object it was called on. Each adapter adds
+                            its language's own: bind in TypeScript,
+                            freeze and dup in Ruby (TypeScript, Ruby)
 ```
 
 A caller asks a question by adding a row to one of the relations in
@@ -180,8 +184,6 @@ same store and reads them itself, or through a rule of its own, and no
 shared rule reads them:
 
 ```
-bindCall(r, t)              r is t.bind(...), and the adapter's own hop
-                            sends r where t leads (TypeScript)
 importsModule(file, m)      file imports the module m. The store reads
                             it only with the demand rewrite switched off
                             (TypeScript)

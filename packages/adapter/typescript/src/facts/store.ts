@@ -18,20 +18,16 @@ import {
   clearRelations,
   Database,
   evaluate,
-  lit,
   type OnDemandRules,
   proofOf,
-  rule,
   tupleKey,
   tupleKeyParts,
-  variable as v,
   witnesses,
 } from "@suss/datalog";
 import {
   ASKING_RELATIONS,
   addPackWords,
   allocationSitesOf,
-  alsoSteps,
   askResolutionUnder,
   type ExplainStats,
   fallbackWrittenAs,
@@ -41,7 +37,6 @@ import {
   resolutionProgram,
   resolutionUnderProgram,
   RESOLUTION_RULES as SHARED_RULES,
-  VALUE_STEP,
   withoutOverridden,
   writtenValueUnder,
 } from "@suss/resolution";
@@ -59,7 +54,10 @@ import {
   nodeId,
   packagesDeclaring,
 } from "./extract.js";
-import { LANGUAGE_WRAPPERS } from "./languageWords.js";
+import {
+  LANGUAGE_RECEIVER_RETURNS,
+  LANGUAGE_WRAPPERS,
+} from "./languageWords.js";
 import {
   type FileSetQuery,
   ModuleGraph,
@@ -70,18 +68,7 @@ import type { Atom, Proof } from "@suss/datalog";
 import type { TransparentWrapper } from "@suss/extractor";
 import type { Project, SourceFile } from "ts-morph";
 
-const JS_RULES = alsoSteps([
-  // f.bind(...) leads wherever f leads. Stated as a hop, so the
-  // questions other than `comesTo` follow it too.
-  rule(
-    "hop",
-    [v("r"), v("t"), VALUE_STEP],
-    [lit("bindCall", v("r"), v("t"))],
-    "bind",
-  ),
-]);
-
-const RESOLUTION_PROGRAM: OnDemandRules = resolutionProgram(JS_RULES);
+const RESOLUTION_PROGRAM: OnDemandRules = resolutionProgram();
 
 /**
  * What a why-question re-evaluates: the rules as written, with no
@@ -89,13 +76,11 @@ const RESOLUTION_PROGRAM: OnDemandRules = resolutionProgram(JS_RULES);
  * `deriveOnDemand` refuses algebras, so the proof pass is exhaustive
  * over the base facts the demand walk extracted.
  */
-const WITNESS_RULES = proofRules([...SHARED_RULES, ...JS_RULES]);
+const WITNESS_RULES = proofRules(SHARED_RULES);
 
 /** Every relation some variant of the program derives, or asks with. */
 const NOT_BASE_FACTS = new Set([
-  ...[...SHARED_RULES, ...JS_RULES, ...RESOLUTION_QUESTIONS].map(
-    (r) => r.head.relation,
-  ),
+  ...[...SHARED_RULES, ...RESOLUTION_QUESTIONS].map((r) => r.head.relation),
   ...RESOLUTION_PROGRAM.rules.map((r) => r.head.relation),
   ...ASKING_RELATIONS,
 ]);
@@ -248,6 +233,7 @@ export class ResolutionStore {
     this.table = createNodeTable(environmentObjects);
     addPackWords(this.db, {
       unwrapsByName: [...LANGUAGE_WRAPPERS, ...wrappers],
+      returnsReceiver: LANGUAGE_RECEIVER_RETURNS,
     });
   }
 
@@ -452,7 +438,7 @@ export class ResolutionStore {
     const outcome = askResolutionUnder(
       this.db,
       [[key, site]],
-      resolutionUnderProgram(JS_RULES),
+      resolutionUnderProgram(),
     );
     // The under program cleared what the context-free one had derived.
     this.stale = true;
@@ -464,7 +450,7 @@ export class ResolutionStore {
     }
 
     const answer = writtenValueUnder(this.db, key, site, (pairs) => {
-      askResolutionUnder(this.db, pairs, resolutionUnderProgram(JS_RULES));
+      askResolutionUnder(this.db, pairs, resolutionUnderProgram());
     });
     const node = answer === null ? null : (this.table.byId.get(answer) ?? null);
     const written =

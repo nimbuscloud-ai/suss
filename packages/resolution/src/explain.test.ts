@@ -183,6 +183,30 @@ describe("explainResolutionProof", () => {
     );
   });
 
+  it("says a call hands back its receiver, as the language declares", () => {
+    const db = evaluated([
+      ["func", "handle"],
+      ["returnsReceiver", "bind"],
+      ["readsProperty", "bindCallee", "handle", "bind"],
+      ["call", "bound", "bindCallee"],
+      ["binds", "h", "bound"],
+    ]);
+
+    const proof = proofOf(db, "resolves", ["h", "handle"]);
+    const explained = explainResolutionProof(proof, { describe: say });
+
+    expect(explained?.steps.map((step) => step.rule)).toEqual([
+      "alias",
+      "returns its receiver",
+    ]);
+    expect(explained?.steps[1]?.reason).toBe(
+      "bound calls bind on handle, which hands back what it was called on",
+    );
+    expect(explained?.assumptions).toEqual([
+      "bind hands back the object it is called on, as the language adapter declares",
+    ]);
+  });
+
   it("surfaces a pack-declared finder as an assumption", () => {
     const db = evaluated([
       ["objectValue", "Account"],

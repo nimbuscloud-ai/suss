@@ -51,7 +51,7 @@ Three layers do the work.
 
   <rect class="box" x="60" y="220" width="540" height="86" rx="6" />
   <text class="label" x="330" y="242" text-anchor="middle">2. One rule set joins the facts into a value graph</text>
-  <text class="note" x="330" y="260" text-anchor="middle">189 rules. 14 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
+  <text class="note" x="330" y="260" text-anchor="middle">191 rules. 15 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
   <text class="note" x="330" y="277" text-anchor="middle">reaches is the transitive closure of those hops, and it records</text>
   <text class="note" x="330" y="294" text-anchor="middle">the strongest kind of step the walk took.</text>
 
@@ -141,14 +141,15 @@ returns is never contradicted by its annotation.
 
 The rules read relations that no rule derives, so something has to
 supply them. The TypeScript adapter reads most of them out of source,
-and emits two more of its own on top: `bindCall`, for the JavaScript
-`.bind` rule, and `importsModule`, for walking module edges. All three
-adapters write `extends` and `extendsNamed`, the Ruby adapter writes
-`prepends`, and `callKeywordArg` comes from the Python and Ruby
-adapters. `unwrapsByName` and the `givesBackOne` family come from a
-pack's declarations, so no source file contains them at all. The
-TypeScript adapter declares one of those words itself, for the language:
-`Object.assign` hands back its first argument.
+and emits one more of its own on top: `importsModule`, for walking
+module edges. All three adapters write `extends` and `extendsNamed`,
+the Ruby adapter writes `prepends`, and `callKeywordArg` comes from the
+Python and Ruby adapters. `unwrapsByName` and the `givesBackOne` family
+come from a pack's declarations, so no source file contains them at
+all. An adapter declares some of those words itself, for its language.
+In TypeScript, `Object.assign` hands back its first argument and `.bind`
+hands back the function it was called on. In Ruby, `freeze` and `dup`
+hand back their receiver. Those last three are `returnsReceiver` words.
 
 Some of them take both. Python's `with httpx.Client() as client` gives
 `entersAs(client, the call)` from the adapter, which says only that the
@@ -164,15 +165,14 @@ out.
 
 ## Layer 2: one rule set makes a graph
 
-`RESOLUTION_RULES` in `packages/resolution/src/index.ts` is 189 rules.
-14 of them derive `stepsTo(x, y, kind)`, which says the value `x` leads
+`RESOLUTION_RULES` in `packages/resolution/src/index.ts` is 191 rules.
+15 of them derive `stepsTo(x, y, kind)`, which says the value `x` leads
 to the value `y` in one hop. Two of them, for an argument and a
-property read, are written as `stepsTo` directly. The other twelve are
-written as `hop`, and each gets a `stepsTo` twin, since a walk under a
-receiver context reads `hop`. An adapter can add hops of its own, each
-with its twin, and those are not among the 189. The TypeScript adapter
-adds one for `.bind`, and the Ruby adapter adds three, for `Const.new`,
-`freeze` and `dup`.
+property read, are written as `stepsTo` directly. The other thirteen
+are written as `hop`, and each gets a `stepsTo` twin, since a walk
+under a receiver context reads `hop`. An adapter can add hops of its
+own, each with its twin, and those are not among the 191. The Ruby
+adapter adds one, for `Const.new`.
 
 ```ts
 rule("nameHop", [v("x"), v("y")], [lit("binds", v("x"), v("y"))], "alias"),

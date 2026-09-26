@@ -102,7 +102,7 @@ export type {
 // That last one is a decorator in Python and a closure in Go.
 //
 // So an adapter reads source into facts and leaves their meaning to the
-// rules. Anything particular to one language, like JavaScript's `.bind`,
+// rules. Anything particular to one language, like Ruby's `Const.new`,
 // belongs with that language's adapter and composes on top.
 //
 // Every fact an adapter supplies and every word a pack declares has a line
@@ -243,7 +243,7 @@ const STATED_RULES = [
   ),
 
   // Every name hop is a value step. A language with a hop of its own, like
-  // JavaScript's `.bind`, states it as a step too, or every question but
+  // Ruby's `Const.new`, states it as a step too, or every question but
   // `comesTo` misses it.
   rule(
     "hop",
@@ -379,6 +379,20 @@ const STATED_RULES = [
       lit("entersAsSelf", v("mod"), v("n")),
     ],
     "context manager returns self",
+  ),
+
+  // A method the language says hands back the object it was called on,
+  // such as JavaScript's `.bind` or Ruby's `freeze`. Each adapter lists
+  // its language's own in `returnsReceiver`, keyed on the method's name.
+  rule(
+    "hop",
+    [v("r"), v("o"), VALUE_STEP],
+    [
+      lit("call", v("r"), v("c")),
+      lit("readsProperty", v("c"), v("o"), v("m")),
+      lit("returnsReceiver", v("m")),
+    ],
+    "returns its receiver",
   ),
 
   // Wrapper transparency, derived: calling a factory that returns a

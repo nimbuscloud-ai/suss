@@ -28,6 +28,8 @@ import {
   type Value,
 } from "@suss/values";
 
+import { RECEIVER_RETURNS } from "../facts/languageWords.js";
+
 function orRow(operator: string): Row {
   return {
     kind: "operator",
@@ -126,18 +128,14 @@ const stringRows: Row[] = [
     on: "any",
     apply: ({ receiver }) => ({ result: concat([operand(receiver)]) }),
   },
-  {
-    kind: "method",
-    method: "freeze",
-    on: "any",
-    apply: () => ({ result: "receiver" }),
-  },
-  {
-    kind: "method",
-    method: "dup",
-    on: "any",
-    apply: () => ({ result: "receiver" }),
-  },
+  ...RECEIVER_RETURNS.map(
+    (method): Row => ({
+      kind: "method",
+      method,
+      on: "any",
+      apply: () => ({ result: "receiver" }),
+    }),
+  ),
   ...caseRows("downcase", "upcase"),
   ...["concat", "<<"].map(
     (method): Row => ({
