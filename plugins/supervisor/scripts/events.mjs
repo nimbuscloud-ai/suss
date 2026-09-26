@@ -8,23 +8,30 @@
  * then stays in the session record for the next hook to deliver.
  */
 
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  blocksOnIntent,
   blocksStop,
   mergeResults,
   saysAnything,
   stillCounts,
 } from "./policy.mjs";
 import { parseSinceReport, startWorker, stopWorker } from "./queue.mjs";
-import { renderEditReport, renderStopReport } from "./report.mjs";
+import {
+  renderEditReport,
+  renderIntentReminder,
+  renderStopReport,
+} from "./report.mjs";
 import { Session } from "./session.mjs";
 import { findSuss, runSuss, whyItFailed } from "./suss.mjs";
 
 /** @typedef {import("./types.js").HookContext} HookContext */
 /** @typedef {import("./types.js").EditResult} EditResult */
 /** @typedef {import("./types.js").SinceReport} SinceReport */
+/** @typedef {import("./types.js").IntentVerdicts} IntentVerdicts */
 /** @typedef {Record<string, unknown>} HookInput */
 /** @typedef {Record<string, unknown> | null} HookOutput */
 
@@ -114,7 +121,9 @@ async function sessionStarted(input, context) {
 
 /**
  * Keeps the prompt for the record and delivers anything the worker
- * finished since the last hook. It never blocks and never waits.
+ * finished since the last hook. When the request has no change list
+ * yet, it tells the agent where to write one. It never blocks and never
+ * waits.
  *
  * @param {HookInput} input
  * @param {HookContext} context
@@ -125,7 +134,25 @@ async function promptSubmitted(input, context) {
   if (!session.hasSnapshot("baseline")) {
     startWorker(session, context);
   }
-  return disabledNotice(session) ?? lateResults(session, "UserPromptSubmit");
+  const disabled = disabledNotice(session);
+  if (disabled !== null || session.disabledReason() !== null) {
+    return disabled;
+  }
+  const late = lateResults(session, "UserPromptSubmit");
+  if (session.hasIntent()) {
+    return late;
+  }
+  const said = /** @type {{ additionalContext?: string } | undefined} */ (
+    late?.hookSpecificOutput
+  )?.additionalContext;
+  return {
+    hookSpecificOutput: {
+      hookEventName: "UserPromptSubmit",
+      additionalContext: [renderIntentReminder(session.intentFile()), said]
+        .filter((part) => part !== undefined)
+        .join("\n\n"),
+    },
+  };
 }
 
 /**
@@ -147,6 +174,10 @@ async function fileEdited(input, context) {
     input.tool_input ?? {}
   );
   const file = toolInput.file_path ?? toolInput.notebook_path;
+  // Writing the change list changes no code, so there is nothing to read.
+  if (typeof file === "string" && session.contains(file)) {
+    return null;
+  }
   const place = session.appendEdit({
     tool: typeof input.tool_name === "string" ? input.tool_name : "unknown",
     ...(typeof file === "string" ? { file } : {}),
@@ -169,8 +200,10 @@ async function fileEdited(input, context) {
 
 /**
  * Waits for the worker to read the last edits, then reports what changed
- * since the baseline. It blocks once on each new error; otherwise the
- * developer gets the report and the baseline moves up to now.
+ * since the baseline. It blocks once on each new error, each entry of the
+ * change list that is not done, and each change nobody asked for.
+ * Otherwise the developer gets the report, the baseline moves up to now,
+ * and the change list is put away.
  *
  * @param {HookInput} input
  * @param {HookContext} context
@@ -251,12 +284,21 @@ async function stopReport(session, context) {
   const added = since.findings.filter(stillCounts);
   const blocking = blocksStop(added, new Set(record.blocked));
   const newRun = since.run.filter((f) => !record.runReported.includes(f.kind));
+  const intent = session.hasIntent()
+    ? await intentVerdicts(session, run)
+    : null;
+  const intentBlocking = blocksOnIntent(intent, new Set(record.intentBlocked));
   const report = {
     since:
       session.snapshotMeta("baseline")?.from === "stop"
         ? "the agent last stopped"
         : "the session started",
-    diffs: await behaviorDiffs(session, run),
+    // The change list's verdicts cover every line of the diff, so the
+    // report shows those instead of the diff itself.
+    diffs: intent === null ? await behaviorDiffs(session, run) : [],
+    intent,
+    intentBlocking: intentBlocking.length > 0,
+    changeList: session.intentFile(),
     added,
     resolved: since.resolved.filter(stillCounts),
     blocking,
@@ -265,10 +307,11 @@ async function stopReport(session, context) {
   };
   const text = renderStopReport(report);
 
-  if (blocking.length > 0) {
+  if (blocking.length + intentBlocking.length > 0) {
     session.setStopRecord({
       ...record,
       blocked: [...record.blocked, ...blocking.map((f) => f.identity)],
+      intentBlocked: [...record.intentBlocked, ...intentBlocking],
     });
     session.appendReport({ blocked: true, text });
     return { decision: "block", reason: text };
@@ -277,19 +320,68 @@ async function stopReport(session, context) {
   session.setStopRecord({
     ...record,
     runReported: [...record.runReported, ...newRun.map((f) => f.kind)],
+    intentBlocked: [],
   });
   moveBaselineToNow(session);
+  session.archiveIntent();
   const quiet =
+    intent === null &&
     report.diffs.length +
       report.added.length +
       report.resolved.length +
       report.run.length ===
-    0;
+      0;
   if (quiet) {
     return null;
   }
   session.appendReport({ blocked: false, text });
   return { systemMessage: text };
+}
+
+/**
+ * `suss intent check` over the change list, the baseline and the
+ * current summaries, with the developer's messages for the quotes.
+ *
+ * @param {Session} session
+ * @param {(args: string[]) => Promise<import("./types.js").SussRun>} run
+ * @returns {Promise<IntentVerdicts>}
+ */
+async function intentVerdicts(session, run) {
+  const prompts = session.file("prompts.jsonl");
+  const checked = await run([
+    "intent",
+    "check",
+    session.intentFile(),
+    "--before",
+    session.snapshotDir("baseline"),
+    "--after",
+    session.snapshotDir("current"),
+    ...(fs.existsSync(prompts) ? ["--prompts", prompts] : []),
+    "--json",
+  ]);
+  const parsed = parseIntentCheck(checked.stdout);
+  if (parsed !== null) {
+    return { kind: "checked", check: parsed };
+  }
+  return { kind: "unreadable", why: whyItFailed(checked) };
+}
+
+/**
+ * The verdicts, or null when the output is not a report. A change list
+ * that does not fit its schema comes back as `{ error }` instead.
+ *
+ * @param {string} stdout
+ * @returns {import("./types.js").IntentCheck | null}
+ */
+function parseIntentCheck(stdout) {
+  try {
+    const parsed = JSON.parse(stdout);
+    return Array.isArray(parsed?.entries) && Array.isArray(parsed?.notAsked)
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

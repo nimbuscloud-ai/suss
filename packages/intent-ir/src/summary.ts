@@ -325,7 +325,8 @@ export function toReceives(boundary: Boundary): IntentInputField[] {
 
 const VERBS = EffectRelationSchema.options;
 
-function toEffect(declared: DeclaredEffect): IntentEffect {
+/** One `results` line, or a change list's effect, in the form the checker compares. */
+export function toIntentEffect(declared: DeclaredEffect): IntentEffect {
   // The schema gives every effect one verb, so the find always succeeds.
   const [does, names] = Object.entries(declared).find(([key]) =>
     (VERBS as readonly string[]).includes(key),
@@ -399,7 +400,7 @@ function whenAsOneLine(when: When): string {
 }
 
 function toOutcome(t: BoundaryIntent["transitions"][number]): IntentOutcome {
-  const effects = (t.results ?? []).map(toEffect);
+  const effects = (t.results ?? []).map(toIntentEffect);
   const base = {
     id: t.id,
     when: whenAsOneLine(t.when),

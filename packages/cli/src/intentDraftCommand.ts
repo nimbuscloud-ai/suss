@@ -413,7 +413,9 @@ const DECLARABLE_SAID = [
 ].join(" and ");
 
 /** Returns null when boundary intent cannot declare this protocol. */
-function boundaryBlock(binding: BoundaryBinding): AuthoredBoundary | null {
+export function boundaryBlock(
+  binding: BoundaryBinding,
+): AuthoredBoundary | null {
   // The table's entries are typed per protocol, and a lookup by a runtime
   // name loses that narrowing. dispatchByType uses the same cast.
   const write = BOUNDARY_BLOCKS[binding.semantics.name] as (
@@ -495,7 +497,7 @@ export function slug(text: string): string {
 }
 
 /** The candidate if it is free, or else the candidate with the first free suffix from `-2` up. */
-function unique(candidate: string, taken: Set<string>): string {
+export function unique(candidate: string, taken: Set<string>): string {
   let chosen = candidate;
   for (let n = 2; taken.has(chosen); n += 1) {
     chosen = `${candidate}-${n}`;
@@ -540,7 +542,7 @@ const BLANKS: Record<string, string> = {
 export const FILLED_IN = "curated";
 
 /** Keys that get a blank line before them, to split the file into sections. */
-const PARAGRAPHS = new Set(["name", "boundary", "transitions"]);
+export const PARAGRAPHS = new Set(["name", "boundary", "transitions"]);
 
 /**
  * The document as YAML, with each blank's hint as a comment beside it.
@@ -736,7 +738,7 @@ export function destinationOf(options: { out?: string; into?: string }): {
  * Accepts a folder as well as a file, because the docs recommend
  * extracting one file per pack and pointing commands at the folder.
  */
-function readSummariesFile(from: string): BehavioralSummary[] {
+export function readSummariesFile(from: string): BehavioralSummary[] {
   const resolved = path.resolve(from);
   if (!fs.existsSync(resolved)) {
     throw new UsageError(`No file or folder at ${resolved}.`);

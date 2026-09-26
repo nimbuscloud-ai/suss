@@ -13,7 +13,7 @@ import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
 const CONFIDENT = { source: "inferred_static", level: "high" } as const;
 
 /** A read of one table, as a pack records it. */
-function readsOrders(): Effect {
+function readsOrders(fields = ["orderId"]): Effect {
   return {
     type: "interaction",
     binding: storageBinding({
@@ -26,7 +26,7 @@ function readsOrders(): Effect {
     interaction: {
       class: "storage-access",
       kind: "read",
-      fields: ["orderId"],
+      fields,
       selector: ["orderId"],
       operation: "query",
     },
@@ -109,15 +109,31 @@ describe("what a boundary reaches, between two runs", () => {
     const [change] = reachChanges(before, after);
 
     expect(change?.boundary).toBe("GET /orders/{id}");
-    expect(change?.gained).toEqual([
+    expect(change?.gained).toMatchObject([
       {
         relation: "reads",
         label: "aws.dynamodb:orders",
         boundary: "aws.dynamodb:orders",
         through: ["loadOrder"],
+        accesses: [{ fields: ["orderId"], by: ["orderId"] }],
       },
     ]);
     expect(change?.lost).toEqual([]);
+  });
+
+  it("keeps the columns of every access to a table the route reaches more than once", () => {
+    const after = [
+      route([CALLS_STORE, readsOrders(["total"])]),
+      unit("loadOrder", "src/store.ts", [readsOrders()]),
+    ];
+
+    const [change] = reachChanges([], after);
+
+    expect(change?.gained[0]?.through).toEqual([]);
+    expect(change?.gained[0]?.accesses.map((access) => access.fields)).toEqual([
+      ["total"],
+      ["orderId"],
+    ]);
   });
 
   it("reports a table a route stopped reading", () => {
@@ -233,7 +249,7 @@ describe("what a boundary reaches, between two runs", () => {
 
     const [change] = reachChanges([], [wrapped, wrapper]);
 
-    expect(change?.gained).toEqual([
+    expect(change?.gained).toMatchObject([
       {
         relation: "reads",
         label: "aws.dynamodb:orders",
@@ -241,5 +257,6 @@ describe("what a boundary reaches, between two runs", () => {
         through: ["requireCaller"],
       },
     ]);
+    expect(change?.gained).toHaveLength(1);
   });
 });

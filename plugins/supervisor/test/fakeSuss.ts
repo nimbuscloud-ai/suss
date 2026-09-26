@@ -8,7 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import type { SinceReport } from "../scripts/types.js";
+import type { IntentCheck, SinceReport } from "../scripts/types.js";
 
 export interface FakeScript {
   /** How long each extract takes. */
@@ -17,6 +17,10 @@ export interface FakeScript {
   extractFails?: boolean;
   /** What `check --since --json` prints. */
   check?: SinceReport;
+  /** What `intent check --json` prints. */
+  intent?: IntentCheck;
+  /** `intent check` refuses the change list with this sentence. */
+  intentRefuses?: string;
 }
 
 const BIN = `import fs from "node:fs";
@@ -25,6 +29,7 @@ import path from "node:path";
 const args = process.argv.slice(2);
 const script = JSON.parse(fs.readFileSync(path.join(process.cwd(), ".fake-suss.json"), "utf8"));
 const empty = { since: "", findings: [], resolved: [], changedBoundaries: [], run: [] };
+fs.appendFileSync(path.join(process.cwd(), ".fake-suss-calls.jsonl"), JSON.stringify(args) + "\\n");
 
 const commands = {
   extract: async () => {
@@ -46,6 +51,15 @@ const commands = {
     process.stdout.write(args.includes("--json") ? JSON.stringify({ version: 1, changed: 0, summaries: [] }) : "No behavioral changes.\\n");
     return 0;
   },
+  intent: async () => {
+    if (script.intentRefuses !== undefined) {
+      process.stdout.write(JSON.stringify({ error: script.intentRefuses }));
+      process.stderr.write(script.intentRefuses + "\\n");
+      return 1;
+    }
+    process.stdout.write(JSON.stringify(script.intent));
+    return 0;
+  },
 };
 
 process.exitCode = await commands[args[0]]();
@@ -65,6 +79,19 @@ export function installFakeSuss(project: string, script: FakeScript): void {
   );
   fs.writeFileSync(path.join(pkg, "bin.mjs"), BIN);
   scriptFakeSuss(project, script);
+}
+
+/** Every command line the stand-in ran, oldest first. */
+export function fakeSussCalls(project: string): string[][] {
+  const file = path.join(project, ".fake-suss-calls.jsonl");
+  if (!fs.existsSync(file)) {
+    return [];
+  }
+  return fs
+    .readFileSync(file, "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as string[]);
 }
 
 export function scriptFakeSuss(project: string, script: FakeScript): void {

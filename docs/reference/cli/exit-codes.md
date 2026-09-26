@@ -21,6 +21,8 @@ Every code is `0` or `1`. There is no third code to branch on.
 | [`infer stub`](/reference/cli/infer#suss-infer-stub) | A draft was written, or printed with `-o -`. | Nothing in the project refers to the package through a call, an import, a require or a superclass. Also when the target file already exists, or `-o` points at one path for a Python package that drafts several. |
 | [`infer intent`](/reference/cli/infer#suss-infer-intent) | At least one doc was written. | No boundary in the summaries could be drafted as intent, or `--into` points at a folder that already has intent docs. |
 | [`infer prd`](/reference/cli/infer#suss-infer-prd) | At least one PRD was written. | Every boundary intent already has a scenario pointing at it, a document in the folder is still an uncurated draft, or `--into` points at a folder that already has PRDs. |
+| [`intent check`](/reference/cli/intent#suss-intent-check) | Every entry of the change list is done or unchecked, and every change is one an entry asked for or an `explained` line keeps. | An entry is not done; a boundary changed where nobody asked; the change list does not fit its schema; or `--before` and `--after` are missing, are one folder and one file, or have no summaries file in common. |
+| [`intent keep`](/reference/cli/intent#suss-intent-keep) | At least one document was written. | Nothing was written, because no entry compiled to a document or every document was already there; or `--dir` or `--audience` is missing. |
 
 When `--json` is among the arguments, the reason for a usage failure arrives on stdout as `{"error": "..."}` as well as on stderr, so a caller parsing stdout still gets the reason.
 

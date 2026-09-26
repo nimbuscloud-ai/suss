@@ -194,9 +194,47 @@ export class Session {
     return claimed;
   }
 
+  /** Where the agent writes the change list for the current request. */
+  intentFile() {
+    return this.file("intent.yaml");
+  }
+
+  hasIntent() {
+    return fs.existsSync(this.intentFile());
+  }
+
+  /**
+   * Whether a path is inside this record, such as the change list. An
+   * edit there changes no code, so there is nothing to read again.
+   *
+   * @param {string} file
+   */
+  contains(file) {
+    const relative = path.relative(this.dir, path.resolve(file));
+    return !relative.startsWith("..") && !path.isAbsolute(relative);
+  }
+
+  /**
+   * Moves the change list into `intents/` once a stop passes, so the next
+   * request starts with none.
+   */
+  archiveIntent() {
+    if (!this.hasIntent()) {
+      return;
+    }
+    fs.mkdirSync(this.file("intents"), { recursive: true });
+    const name = `${new Date().toISOString().replace(/[:.]/g, "-")}.yaml`;
+    fs.renameSync(this.intentFile(), path.join(this.file("intents"), name));
+  }
+
   /** @returns {StopRecord} */
   stopRecord() {
-    return readJson(this.file("stops.json"), { blocked: [], runReported: [] });
+    return {
+      blocked: [],
+      runReported: [],
+      intentBlocked: [],
+      ...readJson(this.file("stops.json"), {}),
+    };
   }
 
   /** @param {StopRecord} record */
