@@ -584,11 +584,16 @@ function emitKeyedFetch(emitter: Emitter, call: RbNode): void {
 const FALLBACK_OPERATORS = new Set(["||", "or"]);
 
 /**
- * The two sides of `a || b` or `a or b`, whose value is one of them, or
- * null for any other expression. `x ||= y` needs nothing here, since the
- * write it makes is already recorded as a write of `y`.
+ * The sides of `a || b` or `a or b` whose value can be the expression's,
+ * or null for any other expression. A side that raises hands back no
+ * value, so `find(id) || raise(NotFound)` has one branch. `x ||= y` needs
+ * nothing here, since the write it makes is already recorded as a write
+ * of `y`.
  */
-function fallbackBranchesOf(node: RbNode): RbNode[] | null {
+function fallbackBranchesOf(
+  node: RbNode,
+  enclosing: RbNode | null,
+): RbNode[] | null {
   if (
     node.type !== "binary" ||
     !FALLBACK_OPERATORS.has(field(node, "operator")?.text ?? "")
@@ -602,7 +607,26 @@ function fallbackBranchesOf(node: RbNode): RbNode[] | null {
     return null;
   }
   /* v8 ignore stop */
-  return [left, right];
+  return [left, right].filter((side) => !raises(side, enclosing));
+}
+
+/** Kernel's methods that raise, and so never hand back a value. */
+const RAISING_METHODS = new Set(["raise", "fail"]);
+
+/** Whether an expression is a call of `raise` or `fail`, bare or off `Kernel`. */
+function raises(written: RbNode, enclosing: RbNode | null): boolean {
+  const node = readThrough(written);
+  if (node.type === "identifier") {
+    return RAISING_METHODS.has(node.text) && isBareCall(node, enclosing);
+  }
+  if (node.type !== "call") {
+    return false;
+  }
+  const receiver = field(node, "receiver");
+  return (
+    RAISING_METHODS.has(field(node, "method")?.text ?? "") &&
+    (receiver === null || receiver.text === "Kernel")
+  );
 }
 
 function emitExpressionFacts(emitter: Emitter, node: RbNode): void {
@@ -624,7 +648,7 @@ function emitExpressionFacts(emitter: Emitter, node: RbNode): void {
     if (child.type === "hash") {
       emitHash(emitter, child);
     }
-    const branches = fallbackBranchesOf(child);
+    const branches = fallbackBranchesOf(child, emitter.enclosing);
     if (branches !== null) {
       for (const branch of branches) {
         add(

@@ -225,6 +225,32 @@ describe("ruby value facts", () => {
     ).toContain("injected or Faraday.new");
   });
 
+  it("leaves a side that raises out of the branches, since it hands back no value", async () => {
+    const source = [
+      "def load(id)",
+      "  account = find(id) || raise(NotFound)",
+      "  other = (find(id) or fail 'missing')",
+      "  third = find(id) || raise",
+      "  fourth = find(id) || Kernel.raise(NotFound)",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const branches = rows(db, "fallbackBranch").map((row) =>
+      textAt(source, row[1] ?? ""),
+    );
+    expect(branches).toEqual(["find(id)", "find(id)", "find(id)", "find(id)"]);
+    expect(rows(db, "fallbackBranch")).toHaveLength(4);
+  });
+
+  it("keeps a method named raise on some other receiver as a branch", async () => {
+    const source = "value = cached || alarm.raise(level)\n";
+    const db = await factsFor(source);
+    expect(
+      rows(db, "fallbackBranch").map((row) => textAt(source, row[1] ?? "")),
+    ).toEqual(["cached", "alarm.raise(level)"]);
+  });
+
   it("keeps `a && b` a written value, since it is no fallback", async () => {
     const source = "ready = loaded && checked\n";
     const db = await factsFor(source);

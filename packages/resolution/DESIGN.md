@@ -492,7 +492,8 @@ No other rule is involved. An adapter records a fallback by its branches
 alone. Recorded as a written value as well, the fallback would be one
 more answer to `isWrittenAs` beside its branches. Ruby's `x ||= y` needs
 no fallback of its own, because the adapter already records it as a
-write of `y` to `x`. When a branch is something no static reader can
+write of `y` to `x`. A Ruby side that calls `raise` or `fail` hands back
+no value, so `find(id) || raise(NotFound)` has one branch. When a branch is something no static reader can
 settle, such as a global cache or a parameter, that branch derives
 nothing. The branch that does resolve is then the only claim the source
 makes. The usual client singleton, `global.prisma || new PrismaClient()`,
