@@ -10,7 +10,7 @@
  * the file through the engine's own scope walk.
  */
 
-import { nodeOfKey } from "@suss/resolution";
+import { nodeOfKey, withoutOverridden } from "@suss/resolution";
 import { Evaluator, force, literalOf } from "@suss/values";
 
 import { enclosingFunction, field } from "../ast.js";
@@ -328,9 +328,12 @@ function projectOver(db: Database, nodes: ProjectNodes): BoundProject {
         return null;
       }
       resolveCalls(db, [key]);
-      const resolved = db.lookup("wantedResolves", 0, key);
-      const settled =
-        resolved.length === 1 ? String(resolved[0]?.[1]) : undefined;
+      const resolved = withoutOverridden(
+        db,
+        key,
+        db.lookup("wantedResolves", 0, key).map((row) => String(row[1])),
+      );
+      const settled = resolved.length === 1 ? resolved[0] : undefined;
       return settled === undefined
         ? null
         : (nodes.definitions.get(settled) ?? null);

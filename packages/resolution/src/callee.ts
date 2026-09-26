@@ -13,6 +13,7 @@
  */
 
 import { askResolution, resolutionProgram } from "./program.js";
+import { withoutOverridden } from "./singleAnswer.js";
 
 import type { Database, OnDemandRules } from "@suss/datalog";
 
@@ -144,8 +145,10 @@ export function writtenSourcesOf(db: Database, key: string): string[] {
 /** The functions and objects the rules settled a key on, without repeats. */
 function answersFor(db: Database, key: string): CalleeOutcome[] {
   const found = new Map<string, CalleeOutcome>();
-  for (const row of db.lookup("wantedComesTo", 0, key)) {
-    const answer = String(row[1]);
+  const answers = db
+    .lookup("wantedComesTo", 0, key)
+    .map((row) => String(row[1]));
+  for (const answer of withoutOverridden(db, key, answers)) {
     if (db.has("func", [answer])) {
       found.set(answer, { kind: "function", key: answer });
       continue;

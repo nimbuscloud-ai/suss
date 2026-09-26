@@ -42,6 +42,7 @@ import {
   resolutionUnderProgram,
   RESOLUTION_RULES as SHARED_RULES,
   VALUE_STEP,
+  withoutOverridden,
   writtenValueUnder,
 } from "@suss/resolution";
 
@@ -1516,7 +1517,11 @@ export class ResolutionStore {
   }
 
   private answersFor(relation: string, value: string): string[] {
-    return this.db.lookup(relation, 0, value).map((tuple) => String(tuple[1]));
+    return withoutOverridden(
+      this.db,
+      value,
+      this.db.lookup(relation, 0, value).map((tuple) => String(tuple[1])),
+    );
   }
 
   /**

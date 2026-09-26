@@ -362,11 +362,40 @@ rewrite would then fill it only in answer to a demand that nothing
 generates.
 
 A method that a subclass overrides is contained twice, once from the
-subclass and once from its base, so a caller that needs one method
-refuses the read. The TypeScript adapter also links a method read to
-the declaration the type checker finds, which is the override. The rules
-follow that link as well as the two from `contains`, so the read still
-comes to two methods and is still refused.
+subclass and once from its base. Preferring the subclass's own would
+need a negated `contains`, which the demand rewrite refuses. So the rules
+record the override beside `contains`, and the caller picking one answer
+applies it:
+
+```
+overrides(m, n, h)          a class declares m under the name n itself,
+                            and one of its bases contains h under n
+readsOverridden(x, obj, h)  the read x finds h on obj, and obj contains
+                            a member that overrides h
+readsFrom(x, obj, n)        the read x reads n off obj
+readsMemberOn(x, obj, h)    the read x finds h on obj, listed for a read
+                            that readsOverridden has a row for
+```
+
+`withoutOverridden` sets h aside when every object the read finds it on
+also contains an override, and only when another answer is left. The
+objects come from `readsFrom` before `contains` is asked, so it is asked
+with the object and the name bound, as the property read step asks it.
+Asked with h bound first, it listed every subclass and allocation site
+that contains h, and the full mastodon run ran out of memory. The
+object matters. A parameter that one caller passes an `Accounts` and
+another a plain `Repository` finds `Repository.save` on the plain one
+with nothing overriding it, so the read keeps both methods and a caller
+that needs one refuses it. `answersFor`, the callee outcomes, each
+adapter's reads of `wantedResolves`, and the proof pass behind
+`suss ask why` all apply it, so they give the same answer.
+
+Two cases keep both methods. A class with two bases that each write the
+method, where Python's method order would pick the first, and a Ruby
+class whose included modules both write it. Ruby records a prepended
+module the way it records an included one, so a class's own method is
+preferred over a prepended module's, although Ruby runs the prepended
+one first.
 
 ## What an instance reads
 

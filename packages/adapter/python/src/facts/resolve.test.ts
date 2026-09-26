@@ -15,6 +15,7 @@ import {
   containedValues,
   objectReturnedBy,
   resolveCalls,
+  resolvedFunctions,
   subjectConstructions,
   writtenValueUnder,
 } from "./resolve.js";
@@ -141,6 +142,70 @@ describe("resolving a value across files", () => {
         .filter((row) => String(row[0]) === String(read?.[0]))
         .map((row) => String(row[1])),
     ).toEqual([String(method)]);
+  });
+
+  it("settles a method a subclass overrides on the subclass's own", async () => {
+    const { facts } = await factsFor({
+      "users.py": [
+        "class Repository:",
+        "    def save(self):",
+        '        return "base"',
+        "",
+        "class Accounts(Repository):",
+        "    def save(self):",
+        '        return "accounts"',
+        "",
+        "def load():",
+        "    accounts = Accounts()",
+        "    return accounts.save()",
+        "",
+      ].join("\n"),
+    });
+
+    const read = String(
+      facts
+        .facts("readsProperty")
+        .find((row) => String(row[2]) === "save")?.[0],
+    );
+    const startOf = (key: string): number =>
+      Number(key.slice(key.lastIndexOf(":") + 1).split("-")[0]);
+    const [baseSave, ownSave] = facts
+      .facts("holdsProperty")
+      .filter((row) => String(row[1]) === "save")
+      .map((row) => String(row[2]))
+      .sort((left, right) => startOf(left) - startOf(right));
+    resolveCalls(facts, [read]);
+    expect(resolvedFunctions(facts, read)).toEqual([ownSave]);
+    expect(baseSave).not.toBe(ownSave);
+  });
+
+  it("keeps both methods for a receiver that can be the base or the subclass", async () => {
+    const { facts } = await factsFor({
+      "users.py": [
+        "class Repository:",
+        "    def save(self):",
+        '        return "base"',
+        "",
+        "class Accounts(Repository):",
+        "    def save(self):",
+        '        return "accounts"',
+        "",
+        "def persist(repository):",
+        "    return repository.save()",
+        "",
+        "persist(Accounts())",
+        "persist(Repository())",
+        "",
+      ].join("\n"),
+    });
+
+    const read = String(
+      facts
+        .facts("readsProperty")
+        .find((row) => String(row[2]) === "save")?.[0],
+    );
+    resolveCalls(facts, [read]);
+    expect(resolvedFunctions(facts, read)).toHaveLength(2);
   });
 
   it("claims nothing for a call whose callee it never reached", async () => {

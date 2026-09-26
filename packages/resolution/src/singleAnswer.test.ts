@@ -7,6 +7,7 @@ import {
   answersFor,
   placeholderValues,
   singleAnswers,
+  withoutOverridden,
 } from "./singleAnswer.js";
 
 describe("the single-answer policy over a [key, answer] relation", () => {
@@ -142,5 +143,53 @@ describe("the answers of one key, read through the index", () => {
     expect(answersFor(db, "written", "q")).toEqual([]);
     db.add("written", ["q", "r"]);
     expect(answersFor(db, "written", "q")).toEqual(["r"]);
+  });
+});
+
+describe("a member a nearer class overrides", () => {
+  /** `sub.save`, where Sub overrides the `save` Base declares. */
+  const overriddenOnSub = (): Database => {
+    const db = new Database();
+    db.add("wantedReadsOverridden", ["x", "Sub", "baseSave"]);
+    db.add("wantedReadsMemberOn", ["x", "Sub", "baseSave"]);
+    return db;
+  };
+
+  it("is set aside when every object the read finds it on overrides it", () => {
+    expect(
+      withoutOverridden(overriddenOnSub(), "x", ["baseSave", "subSave"]),
+    ).toEqual(["subSave"]);
+  });
+
+  it("stays when the read also finds it on an object that does not override it", () => {
+    const db = overriddenOnSub();
+    db.add("wantedReadsMemberOn", ["x", "Base", "baseSave"]);
+    expect(withoutOverridden(db, "x", ["baseSave", "subSave"])).toEqual([
+      "baseSave",
+      "subSave",
+    ]);
+  });
+
+  it("stays when it is the only answer", () => {
+    expect(withoutOverridden(overriddenOnSub(), "x", ["baseSave"])).toEqual([
+      "baseSave",
+    ]);
+  });
+
+  it("keeps every answer when setting them aside would leave none", () => {
+    const db = overriddenOnSub();
+    db.add("wantedReadsOverridden", ["x", "Sub", "subSave"]);
+    db.add("wantedReadsMemberOn", ["x", "Sub", "subSave"]);
+    expect(withoutOverridden(db, "x", ["baseSave", "subSave"])).toEqual([
+      "baseSave",
+      "subSave",
+    ]);
+  });
+
+  it("is set aside by answersFor too", () => {
+    const db = overriddenOnSub();
+    db.add("wantedIsWrittenAs", ["x", "baseSave"]);
+    db.add("wantedIsWrittenAs", ["x", "subSave"]);
+    expect(answersFor(db, "wantedIsWrittenAs", "x")).toEqual(["subSave"]);
   });
 });

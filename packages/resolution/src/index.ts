@@ -49,8 +49,11 @@ export {
 export { explainResolvedKey, proofRules } from "./session.js";
 export {
   answersByKey,
+  type OverrideRelations,
   placeholderValues,
   singleAnswers,
+  WANTED_OVERRIDES,
+  withoutOverridden,
 } from "./singleAnswer.js";
 export {
   allocationSitesOf,
@@ -1389,6 +1392,51 @@ const STATED_RULES = [
     ],
     "named receiver store",
   ),
+
+  // A member a class declares itself under a name one of its bases also
+  // contains. `contains` keeps both, and a caller that needs one answer
+  // prefers the member declared nearer the object the read went through.
+  rule(
+    "overrides",
+    [v("m"), v("n"), v("h")],
+    [
+      lit("holdsProperty", v("c"), v("n"), v("m")),
+      lit("extends", v("c"), v("b")),
+      lit("comesTo", v("b"), v("base")),
+      lit("contains", v("base"), v("n"), v("h")),
+    ],
+  ),
+  // The objects a read reads a name off, and on each one the members the
+  // read finds that another member there overrides.
+  rule(
+    "readsFrom",
+    [v("x"), v("obj"), v("n")],
+    [
+      lit("readsProperty", v("x"), v("o"), v("n")),
+      lit("objectOf", v("o"), v("obj")),
+    ],
+  ),
+  rule(
+    "readsOverridden",
+    [v("x"), v("obj"), v("h")],
+    [
+      lit("readsFrom", v("x"), v("obj"), v("n")),
+      lit("contains", v("obj"), v("n"), v("m")),
+      lit("overrides", v("m"), v("n"), v("h")),
+    ],
+  ),
+  // Every member, for a read with an override, so `contains` is asked with
+  // the object and name bound, the way the property read already asks it.
+  rule(
+    "readsMemberOn",
+    [v("x"), v("obj"), v("h")],
+    [
+      lit("readsOverridden", v("x"), v("shadowing"), v("overridden")),
+      lit("readsFrom", v("x"), v("obj"), v("n")),
+      lit("contains", v("obj"), v("n"), v("h")),
+    ],
+  ),
+
   // A call written with a class's own name, which is how most languages
   // spell a construction. A language that spells one some other way
   // states its own rule for this, the way Ruby does for `Const.new`.
@@ -1685,6 +1733,16 @@ export const RESOLUTION_QUESTIONS = [
     "wantedFallbackBehind",
     [v("x"), v("f")],
     [lit("wanted", v("x")), lit("fallbackBehind", v("x"), v("f"))],
+  ),
+  rule(
+    "wantedReadsOverridden",
+    [v("x"), v("obj"), v("h")],
+    [lit("wanted", v("x")), lit("readsOverridden", v("x"), v("obj"), v("h"))],
+  ),
+  rule(
+    "wantedReadsMemberOn",
+    [v("x"), v("obj"), v("h")],
+    [lit("wanted", v("x")), lit("readsMemberOn", v("x"), v("obj"), v("h"))],
   ),
   // A call is given no `comesTo`, so this is the only way to ask what
   // object one arrives at, and a demand-driven run derives `objectOf`
