@@ -23,6 +23,7 @@ import {
 } from "ts-morph";
 
 import {
+  classMemberName,
   DEFAULT_IMPORT_NAME,
   GLOBAL_MODULE,
   NAMED_STORE_NAME,
@@ -54,7 +55,9 @@ import type {
   BinaryExpression,
   ClassDeclaration,
   ElementAccessExpression,
+  MethodDeclaration,
   ParameterDeclaration,
+  PropertyAccessExpression,
   PropertyDeclaration,
   TypeNode,
   TypeReferenceNode,
@@ -564,7 +567,7 @@ export function emitValue(
       "readsProperty",
       id,
       emitValue(db, table, expression.getExpression()),
-      expression.getName(),
+      memberReadName(expression),
     );
     if (isEnvironmentObject(table, expression)) {
       fact(db, "environmentObject", id);
@@ -698,7 +701,7 @@ export function emitValue(
  * one is not the class around it. An arrow and a function expression
  * both keep the enclosing `this`, which is why the walk goes through
  * them. Whichever method read it makes no difference to any rule, so
- * one node per class is enough.
+ * one node per class is enough. In a static member `this` is the class.
  *
  * The class's own facts go in here as well, since a read off the
  * receiver goes through what the class contains and a lazy extraction
@@ -715,12 +718,91 @@ function receiverKeyOf(
     }
     if (Node.isClassDeclaration(at)) {
       emitClassFacts(db, table, at);
+      if (thisIsTheClass(expression)) {
+        return nodeId(at);
+      }
       const receiver = `${nodeId(at)}#this`;
       fact(db, "instanceOf", receiver, nodeId(at));
       return receiver;
     }
   }
   return null;
+}
+
+/**
+ * The name a class records a member under. A static is read off the class
+ * itself, so its name is spelled as a class member's.
+ */
+function recordedMemberName(
+  owner: ClassDeclaration,
+  member: MethodDeclaration | PropertyDeclaration,
+): string {
+  return member.isStatic() && spellsClassMembers(owner)
+    ? classMemberName(member.getName())
+    : member.getName();
+}
+
+/**
+ * Whether a class's statics are spelled as class members. A library's
+ * class keeps plain names, so a pack that matches one of its statics by
+ * the name the library exports still finds it.
+ */
+function spellsClassMembers(declaration: ClassDeclaration): boolean {
+  const file = declaration.getSourceFile();
+  return !file.isDeclarationFile() && !file.isInNodeModules();
+}
+
+/**
+ * Whether `this` here is the class itself, as it is in a static member.
+ * The nearest member decides, since an arrow function keeps the `this`
+ * of the member around it.
+ */
+function thisIsTheClass(expression: Node): boolean {
+  const member = expression.getFirstAncestor(
+    (at) =>
+      Node.isClassStaticBlockDeclaration(at) ||
+      Node.isConstructorDeclaration(at) ||
+      Node.isMethodDeclaration(at) ||
+      Node.isPropertyDeclaration(at) ||
+      Node.isGetAccessorDeclaration(at) ||
+      Node.isSetAccessorDeclaration(at),
+  );
+  if (member === undefined || Node.isConstructorDeclaration(member)) {
+    return false;
+  }
+  return Node.isClassStaticBlockDeclaration(member) || member.isStatic();
+}
+
+/**
+ * The name a property read looks its member up by. A read off the class
+ * itself, `Orders.list` or `this.list` in a static method, finds a
+ * static, and a read off anything else finds what an instance has.
+ */
+function memberReadName(read: PropertyAccessExpression): string {
+  return readsOffClassItself(read.getExpression())
+    ? classMemberName(read.getName())
+    : read.getName();
+}
+
+function readsOffClassItself(receiver: Expression): boolean {
+  const written = unwrapExpression(receiver);
+  if (written.getKind() === SyntaxKind.ThisKeyword) {
+    return thisIsTheClass(written);
+  }
+  if (Node.isPropertyAccessExpression(written)) {
+    return refersToAClass(written.getNameNode());
+  }
+  return Node.isIdentifier(written) && refersToAClass(written);
+}
+
+/** Whether a name is a class whose statics are spelled as class members, through an import or not. */
+function refersToAClass(nameNode: Node): boolean {
+  const symbol = referencedSymbol(nameNode);
+  const target = symbol?.isAlias() ? resolveAliasedSymbol(symbol) : symbol;
+  return (target?.getDeclarations() ?? []).some(
+    (declaration) =>
+      Node.isClassDeclaration(declaration) && spellsClassMembers(declaration),
+  );
 }
 
 /**
@@ -1137,20 +1219,21 @@ function emitClassFacts(
     table.byId.set(methodId, method);
     fact(db, "func", methodId);
     emitFunctionFacts(db, table, method);
-    fact(db, "holdsProperty", id, method.getName(), methodId);
+    fact(
+      db,
+      "holdsProperty",
+      id,
+      recordedMemberName(declaration, method),
+      methodId,
+    );
   }
 
   for (const property of declaration.getProperties()) {
-    emitFieldStores(db, table, id, property.getName(), property);
+    const name = recordedMemberName(declaration, property);
+    emitFieldStores(db, table, id, name, property);
     const initializer = property.getInitializer();
     if (initializer !== undefined && settlesOnItsInitializer(property)) {
-      fact(
-        db,
-        "holdsProperty",
-        id,
-        property.getName(),
-        emitValue(db, table, initializer),
-      );
+      fact(db, "holdsProperty", id, name, emitValue(db, table, initializer));
     }
   }
 

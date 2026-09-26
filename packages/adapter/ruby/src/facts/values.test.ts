@@ -433,7 +433,7 @@ describe("ruby value facts", () => {
     );
     expect(rows(db, "readsProperty")[0]?.slice(1)).toEqual([
       "#Settings",
-      "filters",
+      ".filters",
     ]);
   });
 
@@ -512,7 +512,7 @@ describe("ruby value facts", () => {
     const [mod] = rows(db, "objectValue");
     const [method] = rows(db, "func");
     expect(rows(db, "holdsProperty")).toEqual([
-      [mod?.[0], "fetch", method?.[0]],
+      [mod?.[0], ".fetch", method?.[0]],
     ]);
   });
 
@@ -524,11 +524,11 @@ describe("ruby value facts", () => {
     expect(objects).toHaveLength(2);
     const [method] = rows(db, "func");
     expect(rows(db, "holdsProperty")).toEqual([
-      [objects[1], "fetch", method?.[0]],
+      [objects[1], ".fetch", method?.[0]],
     ]);
   });
 
-  it("resolves a module_function method the same way as one written with self.", async () => {
+  it("records a module_function method for a read off the module and off an instance", async () => {
     const db = await factsFor(
       "module Helpers\n  module_function\n\n  def fetch\n  end\nend\n",
     );
@@ -536,6 +536,19 @@ describe("ruby value facts", () => {
     const [method] = rows(db, "func");
     expect(rows(db, "holdsProperty")).toEqual([
       [mod?.[0], "fetch", method?.[0]],
+      [mod?.[0], ".fetch", method?.[0]],
+    ]);
+  });
+
+  it("records every method `extend self` offers on the module under both names", async () => {
+    const db = await factsFor(
+      "module Helpers\n  extend self\n\n  def fetch\n  end\nend\n",
+    );
+    const [mod] = rows(db, "objectValue");
+    const [method] = rows(db, "func");
+    expect(rows(db, "holdsProperty")).toEqual([
+      [mod?.[0], "fetch", method?.[0]],
+      [mod?.[0], ".fetch", method?.[0]],
     ]);
   });
 
@@ -1046,7 +1059,7 @@ describe("ruby value facts", () => {
     expect(rows(db, "func")).toEqual([[filter]]);
     expect(rows(db, "holdsProperty")).toContainEqual([
       classKey,
-      "filter",
+      ".filter",
       filter,
     ]);
     expect(rows(db, "binds")).toContainEqual([self, classKey]);
@@ -1084,7 +1097,7 @@ describe("ruby value facts", () => {
     const build = keyOf(source, "def self.build\n    self\n  end");
     expect(rows(db, "holdsProperty")).toContainEqual([
       classKey,
-      "build",
+      ".build",
       build,
     ]);
     expect(rows(db, "binds")).toContainEqual([
@@ -1092,6 +1105,59 @@ describe("ruby value facts", () => {
       classKey,
     ]);
     expect(rows(db, "instanceOf")).toEqual([]);
+  });
+
+  it("records a class method and an instance method of one name under two names", async () => {
+    const source = [
+      "class Request",
+      '  def self.http_client = "class"',
+      '  def http_client = "instance"',
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const classKey = rows(db, "objectValue")[0]?.[0];
+    expect(rows(db, "holdsProperty")).toEqual([
+      [
+        classKey,
+        ".http_client",
+        keyOf(source, 'def self.http_client = "class"'),
+      ],
+      [classKey, "http_client", keyOf(source, 'def http_client = "instance"')],
+    ]);
+  });
+
+  it("spells a call by whether it runs on the class or on an instance", async () => {
+    const source = [
+      "class Request",
+      "  def self.shared",
+      "    fetch",
+      "  end",
+      "",
+      "  def perform",
+      "    store",
+      "  end",
+      "",
+      "  validate do",
+      "    check",
+      "  end",
+      "end",
+      "",
+      "Request.shared",
+      "Request.new.perform",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const spelledAs = (name: string): string[] =>
+      rows(db, "readsProperty")
+        .map((row) => row[2] ?? "")
+        .filter((spelled) => spelled.replace(/^\./, "") === name);
+    expect(spelledAs("fetch")).toEqual([".fetch"]);
+    expect(spelledAs("store")).toEqual(["store"]);
+    expect(spelledAs("check")).toEqual(["check", ".check"]);
+    expect(spelledAs("shared")).toEqual([".shared"]);
+    expect(spelledAs("perform")).toEqual(["perform"]);
+    expect(spelledAs("new")).toEqual(["new"]);
   });
 
   it("reads an instance variable as a property of the method's receiver", async () => {

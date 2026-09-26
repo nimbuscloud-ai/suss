@@ -14,6 +14,7 @@
 
 import { ruleLabel } from "@suss/datalog";
 
+import { classMemberOf } from "./classMember.js";
 import {
   BASE_CLASS_RULE,
   NAME_HOP_RULE,
@@ -107,6 +108,12 @@ function argumentReason(proof: Proof, describe: DescribeAtom): string {
   return `${describe(p)} is a parameter of ${describe(f)}, and a call passes it ${describe(a)}`;
 }
 
+/** A property's name as a person says it, with a class member called one. */
+function memberSaid(name: string): string {
+  const member = classMemberOf(name);
+  return member === null ? name : `the class member ${member}`;
+}
+
 const DEFAULT_PHRASES: Record<string, StepPhrase> = {
   alias: ({ tuple, describe }) => ({
     reason: `${describe(tuple[0])} is declared as ${describe(tuple[1])}`,
@@ -135,13 +142,14 @@ const DEFAULT_PHRASES: Record<string, StepPhrase> = {
   }),
   "property read": ({ tuple, premises, describe }) => {
     const [, object, name] = premises[0].tuple;
+    const member = memberSaid(String(name));
     const contains = premises[2];
     const inherited =
       contains.kind === "derived" &&
       ruleLabel(contains.rule) === BASE_CLASS_RULE;
     return {
-      reason: `${describe(tuple[0])} reads ${String(name)} off ${describe(object)}, which contains ${describe(tuple[1])}`,
-      notes: inherited ? [`${String(name)} comes from a base class`] : [],
+      reason: `${describe(tuple[0])} reads ${member} off ${describe(object)}, which contains ${describe(tuple[1])}`,
+      notes: inherited ? [`${member} comes from a base class`] : [],
     };
   },
   "class instance": ({ tuple, premises, describe, inline }) => ({

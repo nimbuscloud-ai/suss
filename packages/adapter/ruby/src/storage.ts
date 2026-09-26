@@ -13,7 +13,7 @@
  */
 
 import { storageBinding } from "@suss/ir-core";
-import { askResolution } from "@suss/resolution";
+import { askResolution, classMemberName } from "@suss/resolution";
 
 import {
   field,
@@ -324,8 +324,9 @@ function declaredName(facts: Database, classKey: string): string | undefined {
 
 /**
  * Whether the project defines this method somewhere in the class's
- * ancestry. The reach walk steps into that body and reports its database
- * work, so recording the call here too would count the work twice.
+ * ancestry, as a class method or an instance method. The reach walk steps
+ * into that body and reports its database work, so recording the call
+ * here too would count the work twice.
  * `reachesBase` has already asked `wantedAncestry` about the class, which
  * derives the facts this reads.
  */
@@ -334,9 +335,10 @@ function projectDeclares(
   classKey: string,
   method: string,
 ): boolean {
+  const spellings = new Set([method, classMemberName(method)]);
   return facts
     .lookup("wantedDeclaredName", 0, classKey)
-    .some((row) => String(row[1]) === method);
+    .some((row) => spellings.has(String(row[1])));
 }
 
 /** The class a call was made on, and the container name to report the work under. */

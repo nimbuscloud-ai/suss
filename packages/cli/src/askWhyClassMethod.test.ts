@@ -87,6 +87,46 @@ describe("why a Ruby call resolves to a method", () => {
     },
   );
 
+  describe("a class method and an instance method of one name", () => {
+    beforeEach(() => {
+      write("app/request.rb", [
+        "class Request",
+        "  def self.http_client",
+        "    :shared_client",
+        "  end",
+        "",
+        "  def http_client",
+        "    :own_client",
+        "  end",
+        "end",
+        "",
+        "class Delivery",
+        "  def call",
+        "    Request.http_client",
+        "    request = Request.new",
+        "    request.http_client",
+        "  end",
+        "end",
+      ]);
+    });
+
+    it("follows a call on the class to the class method", () => {
+      const { exitCode, text } = askWhy(
+        "why does http_client at app/request.rb:13 resolve to http_client",
+      );
+      expect(exitCode).toBe(0);
+      expect(text).toContain("resolves to http_client (app/request.rb:2)");
+    });
+
+    it("follows a call on an instance to the instance method", () => {
+      const { exitCode, text } = askWhy(
+        "why does http_client at app/request.rb:15 resolve to http_client",
+      );
+      expect(exitCode).toBe(0);
+      expect(text).toContain("resolves to http_client (app/request.rb:6)");
+    });
+  });
+
   it("follows a call on a module to a method written as `module_function def`", () => {
     write("app/formats.rb", [
       "module Formats",

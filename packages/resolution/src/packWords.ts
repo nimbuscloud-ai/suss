@@ -11,6 +11,8 @@
  * Each field has the name of the relation it adds, as DESIGN.md lists it.
  */
 
+import { classMemberName } from "./classMember.js";
+
 import type { Database } from "@suss/datalog";
 
 /** A method on a class reaching `base` gives back one of that class. */
@@ -62,10 +64,21 @@ export interface PackWords {
   returnsReceiver?: ReadonlyArray<string>;
 }
 
+/**
+ * A method named in a pack word, spelled both ways a read can spell it. A
+ * finder runs on the class itself, `Account.where(x)`, and on what another
+ * finder handed back, `where(x).first`, and `freeze` runs on anything.
+ */
+function readOffAnything(method: string): string[] {
+  return [method, classMemberName(method)];
+}
+
 /** Put a run's pack declarations in the store, so the shared rules can read them. */
 export function addPackWords(db: Database, words: PackWords): void {
   for (const word of words.givesBackOne ?? []) {
-    db.add("givesBackOne", [word.base, word.method]);
+    for (const method of readOffAnything(word.method)) {
+      db.add("givesBackOne", [word.base, method]);
+    }
   }
   for (const word of words.givesBackOneOfArgument ?? []) {
     db.add("givesBackOneOfArgument", [
@@ -90,7 +103,7 @@ export function addPackWords(db: Database, words: PackWords): void {
   for (const word of words.associationConstructor ?? []) {
     db.add("associationConstructor", [word.module, word.name]);
   }
-  for (const method of words.returnsReceiver ?? []) {
+  for (const method of (words.returnsReceiver ?? []).flatMap(readOffAnything)) {
     db.add("returnsReceiver", [method]);
   }
 }
