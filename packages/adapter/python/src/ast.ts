@@ -1,4 +1,4 @@
-import { IdMap, IdSet } from "@suss/extractor";
+import { EnclosingNodes, IdMap, IdSet } from "@suss/extractor";
 
 /**
  * Small helpers for reading a tree-sitter-python parse tree.
@@ -42,8 +42,13 @@ export function isType(node: PyNode, ...types: string[]): boolean {
 }
 
 /** A `def` or a `lambda`: the nodes the facts treat as a function of their own. */
+const FUNCTION_TYPES: ReadonlySet<string> = new Set([
+  "function_definition",
+  "lambda",
+]);
+
 export function isFunction(node: PyNode): boolean {
-  return node.type === "function_definition" || node.type === "lambda";
+  return FUNCTION_TYPES.has(node.type);
 }
 
 /**
@@ -70,16 +75,11 @@ export function runsAtModuleLoad(node: PyNode): boolean {
   return !LATER_BODY_TYPES.has(node.type) && node.type !== "decorator";
 }
 
+const functionsAround = new EnclosingNodes<PyNode>(FUNCTION_TYPES);
+
 /** The nearest function a node is written inside, or null at module level. */
 export function enclosingFunction(node: PyNode): PyNode | null {
-  let current = node.parent;
-  while (current !== null) {
-    if (isFunction(current)) {
-      return current;
-    }
-    current = current.parent;
-  }
-  return null;
+  return functionsAround.of(node);
 }
 
 /**

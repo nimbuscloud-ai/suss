@@ -4,7 +4,13 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { resolveConstantFile, underscoreConstantPath } from "./constantPath.js";
+import {
+  createConstantFileCache,
+  resolveConstantFile,
+  underscoreConstantPath,
+} from "./constantPath.js";
+
+import type { ConstantFileCache } from "./constantPath.js";
 
 describe("underscoreConstantPath", () => {
   it("converts a namespaced constant to a nested snake_case path", () => {
@@ -139,5 +145,18 @@ describe("resolveConstantFile", () => {
     expect(resolveConstantFile(tmpDir, "Archivable", "railsUnderscore")).toBe(
       direct,
     );
+  });
+
+  it("reads the disk once per run, and a later run sees a file added since", () => {
+    const file = path.join(tmpDir, "models", "concerns", "archivable.rb");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const firstRun = createConstantFileCache();
+    const lookUp = (cache: ConstantFileCache) =>
+      resolveConstantFile(tmpDir, "Archivable", "railsUnderscore", [], cache);
+
+    expect(lookUp(firstRun)).toBeNull();
+    fs.writeFileSync(file, "module Archivable\nend\n");
+    expect(lookUp(firstRun)).toBeNull();
+    expect(lookUp(createConstantFileCache())).toBe(file);
   });
 });

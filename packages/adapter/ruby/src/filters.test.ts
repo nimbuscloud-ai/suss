@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { controllerActionsPattern } from "./__fixtures__/railsControllerPattern.js";
 import { ancestryOf } from "./ancestry.js";
+import { createConstantFileCache } from "./constantPath.js";
 import {
   controllerFilters,
   filterCoversAction,
@@ -49,6 +50,7 @@ async function ancestryOfSource(source: string): Promise<Ancestry> {
     root: "/app/controllers",
     pathConvention: "railsUnderscore",
     ancestryRootClassNames: ["ActionController::Base"],
+    constantFiles: createConstantFileCache(),
     parsedFile: async () => null,
     localDefinition: (name) =>
       blocks.filter((block) => block.info.qualifiedName === name),

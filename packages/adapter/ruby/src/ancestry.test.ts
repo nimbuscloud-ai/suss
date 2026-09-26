@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Database } from "@suss/datalog";
 
 import { ancestryOf, methodInAncestry } from "./ancestry.js";
+import { createConstantFileCache } from "./constantPath.js";
 import { readDynamicNames } from "./defineMethod.js";
 import {
   collectFileConstants,
@@ -86,6 +87,7 @@ async function lookupInRun(
       root: "/app",
       pathConvention: "railsUnderscore",
       ancestryRootClassNames: ["ActiveRecord::Base"],
+      constantFiles: createConstantFileCache(),
       parsedFile: async () => null,
       localDefinition: (qualifiedName) => {
         const found = blocks.filter(

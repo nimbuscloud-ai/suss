@@ -36,6 +36,7 @@ import {
   symbolValue,
 } from "./ast.js";
 import { askClientCallReads, clientCallUnits } from "./clientCalls.js";
+import { createConstantFileCache } from "./constantPath.js";
 import { envReadEffects } from "./envReads.js";
 import {
   controllerFilters,
@@ -78,6 +79,7 @@ import type {
 } from "./ancestry.js";
 import type { BlockConfigures, BodyBlocks, CallArgs, Range } from "./ast.js";
 import type { ClientCallOptions } from "./clientCalls.js";
+import type { ConstantFileCache } from "./constantPath.js";
 import type { DynamicNames } from "./defineMethod.js";
 import type {
   ControllerActions,
@@ -90,9 +92,14 @@ import type { InheritedMethods } from "./paths/effects.js";
 import type { ClassInfo } from "./scope.js";
 import type { TypeReadContext } from "./typeShape.js";
 
-/** Parsed files by absolute path, so a class that several fields refer to is only parsed once. */
+/**
+ * What one run has read from the disk: parsed files by absolute path, so
+ * a class that several fields refer to is only parsed once, and what its
+ * constant lookups have found.
+ */
 export interface FileCache {
   get(absPath: string): Promise<RbNode | null>;
+  readonly constantFiles: ConstantFileCache;
 }
 
 export function createFileCache(
@@ -101,6 +108,7 @@ export function createFileCache(
 ): FileCache {
   const trees = new Map<string, RbNode | null>();
   return {
+    constantFiles: createConstantFileCache(),
     async get(absPath: string): Promise<RbNode | null> {
       const cached = trees.get(absPath);
       if (cached !== undefined) {
@@ -191,6 +199,7 @@ function fieldReadContext(
       pathConvention: pattern.pathConvention,
       acronyms: pattern.acronyms ?? [],
       ancestryRootClassNames: pattern.ancestryRootClassNames,
+      constantFiles: cache.constantFiles,
       parsedFile: (absPath) => cache.get(absPath),
       localDefinition: (name) => sameFileBlocks(name, fileBlocks),
     },
@@ -395,6 +404,7 @@ async function controllerActionUnits(
     pathConvention: pattern.pathConvention,
     acronyms: pattern.acronyms ?? [],
     ancestryRootClassNames: pattern.ancestryRootClassNames,
+    constantFiles: options.cache.constantFiles,
     parsedFile: (absPath) => options.cache.get(absPath),
     localDefinition: (name) => sameFileBlocks(name, fileBlocks),
   };
