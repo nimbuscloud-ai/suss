@@ -158,3 +158,38 @@ describe("a callee only the resolution store settles", () => {
     expect(stopsOnRun(summaries)).toEqual(["handler"]);
   });
 });
+
+/** Each call the entry `run` makes, with the summary it is linked to. */
+function linksOnRun(
+  summaries: BehavioralSummary[],
+): Array<[string, string | undefined]> {
+  const run = summaries.find((one) => one.identity.name === "run");
+  return (run?.transitions ?? []).flatMap((transition) =>
+    transition.effects.flatMap((effect) =>
+      effect.type === "invocation"
+        ? [[effect.callee, effect.summary] as [string, string | undefined]]
+        : [],
+    ),
+  );
+}
+
+describe("a call nothing declares", () => {
+  it("links no method called on an untyped value to a function of the same name in the file", async () => {
+    const summaries = await extract({
+      "/entry.ts": `
+        export function remove(key: string) { return key; }
+        export function run(rows: any) {
+          rows.remove("region");
+          rows.remove("zone");
+          return remove("orders");
+        }
+      `,
+    });
+
+    expect(linksOnRun(summaries)).toEqual([
+      ["rows.remove", undefined],
+      ["rows.remove", undefined],
+      ["remove", "/entry.ts::remove"],
+    ]);
+  });
+});

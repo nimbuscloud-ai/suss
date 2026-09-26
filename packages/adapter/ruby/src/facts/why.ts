@@ -4,10 +4,10 @@
  * points at, and renders the witness proof of what that expression
  * resolved to through `@suss/resolution`'s phrases.
  *
- * It emits the same value and constant facts an extraction does, and
- * keeps a location for every fact key so each atom of a proof can point
- * back at source. A handle pairs a tree-sitter node with its file, since
- * a node alone does not say which file it came from.
+ * It emits its facts through the same `RunFacts` an extraction over the
+ * same packs uses, and keeps a location for every fact key so each atom
+ * of a proof can point back at source. A handle pairs a tree-sitter node
+ * with its file, since a node alone does not say which file it came from.
  */
 
 import fs from "node:fs";
@@ -18,20 +18,21 @@ import { explainResolvedKey, RESOLUTION_RULES } from "@suss/resolution";
 
 import { enclosingDefinition, field } from "../ast.js";
 import { parseRubySync } from "../parser.js";
-import { findRubyFiles } from "../project.js";
-import { collectFileConstants, emitConstantBindings } from "./constants.js";
+import { findRubyFiles, RunFacts } from "../project.js";
 import { RUBY_RULES } from "./resolve.js";
-import { calleeKeyOf, emitValueFacts, nodeId, readKey } from "./values.js";
+import { calleeKeyOf, nodeId, readKey } from "./values.js";
 
 import type { ValueLocation, WhyExplained } from "@suss/resolution";
+import type { RubyPack } from "../pack.js";
 import type { RbNode } from "../parser.js";
-import type { FileConstants } from "./constants.js";
 
 const WITNESS_RULES = [...RESOLUTION_RULES, ...RUBY_RULES];
 
 export interface RubyWhySessionOptions {
   /** The project root. Paths in every answer are relative to it. */
   dir: string;
+  /** The packs the extraction ran with. A hop only a pack declares, such as `Account.find` giving back an Account, is explained only when that pack is here. */
+  packs?: readonly RubyPack[];
 }
 
 /** A found node, paired with the file it was parsed from. */
@@ -120,17 +121,16 @@ export class RubyWhySession {
 
   constructor(options: RubyWhySessionOptions) {
     this.root = path.resolve(options.dir);
-    const constants: FileConstants[] = [];
+    const facts = new RunFacts(this.db, options.packs ?? []);
 
     for (const file of findRubyFiles(this.root)) {
       const source = fs.readFileSync(file, "utf8");
       const root = parseRubySync(source).rootNode;
       this.trees.set(file, root);
-      emitValueFacts(this.db, file, root);
-      constants.push(collectFileConstants(file, root));
+      facts.addFile(file, root);
       indexFile(file, root, this.locations);
     }
-    emitConstantBindings(this.db, constants);
+    facts.finish();
   }
 
   /**

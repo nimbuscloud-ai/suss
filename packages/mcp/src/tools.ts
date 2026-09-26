@@ -86,11 +86,12 @@ export async function askTool(
   args: { question: string; limit?: number | undefined },
 ): Promise<ToolResult> {
   await project.settled();
-  await preloadForQuestion(args.question);
+  const whyPacks = await preloadForQuestion(args.question, project.root);
   const { answer } = answerQuestion({
     question: args.question,
     loaded: project.summaries(),
     project: project.root,
+    ...(whyPacks !== undefined ? { whyPacks } : {}),
     json: true,
     output: NOWHERE,
   });

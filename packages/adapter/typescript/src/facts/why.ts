@@ -22,12 +22,15 @@ import {
 } from "../bootstrap/noTsconfigProject.js";
 import { ResolutionStore } from "./store.js";
 
+import type { PatternPack } from "@suss/extractor";
 import type { ValueLocation, WhyExplained } from "@suss/resolution";
 import type { SourceFile } from "ts-morph";
 
 export interface WhySessionOptions {
   /** The project root, which paths in every answer come out relative to. */
   dir: string;
+  /** The packs the extraction ran with, for the wrappers and environment objects they declare. */
+  packs?: readonly PatternPack[];
 }
 
 export class TypeScriptWhySession {
@@ -42,7 +45,7 @@ export class TypeScriptWhySession {
       tsconfig === null
         ? createProjectWithoutTsconfig(this.root).project
         : new Project({ tsConfigFilePath: tsconfig });
-    this.store = new ResolutionStore();
+    this.store = ResolutionStore.forPacks(options.packs ?? []);
   }
 
   /**

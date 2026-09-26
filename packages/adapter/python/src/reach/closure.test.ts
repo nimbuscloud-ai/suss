@@ -461,6 +461,27 @@ describe("the functions a route reaches", () => {
     ]);
   });
 
+  it("links neither of two method calls written the same way to a function of the same name in the file", async () => {
+    write("app/main.py", [
+      ...APP_HEADER,
+      "def get(key):",
+      "    return key",
+      "",
+      '@app.get("/jobs")',
+      "def jobs(lookup):",
+      '    lookup.get("region")',
+      '    lookup.get("zone")',
+      '    return get("table")',
+    ]);
+
+    const summaries = await extract();
+    expect(calls(unitNamed(summaries, "jobs"))).toEqual([
+      ["lookup.get", undefined],
+      ["lookup.get", undefined],
+      ["get", summaryIdentifier(unitNamed(summaries, "get"))],
+    ]);
+  });
+
   it("stops when one name in a file is imported from two modules", async () => {
     write("app/first.py", ["def load():", "    return 1"]);
     write("app/other.py", ["def load():", "    return 2"]);

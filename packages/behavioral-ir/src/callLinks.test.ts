@@ -323,6 +323,22 @@ describe("TargetPlacements", () => {
     expect(placements.targets).toEqual(new Map([["helper", at(10)]]));
   });
 
+  it("keeps a callee text stopped at two calls placed at the first, so the link step matches neither by name", () => {
+    const placements = new TargetPlacements();
+    placements.placeStop("rows.delete", at(10));
+    placements.placeStop("rows.delete", at(40));
+
+    expect(placements.targets).toEqual(new Map([["rows.delete", at(10)]]));
+  });
+
+  it("places a callee text at its stop when another call written the same way was followed", () => {
+    const placements = new TargetPlacements();
+    placements.place("helper", at(10));
+    placements.placeStop("helper", at(40));
+
+    expect(placements.targets).toEqual(new Map([["helper", at(40)]]));
+  });
+
   it("drops a null placement rather than unsettling what is already known", () => {
     const placements = new TargetPlacements();
     placements.place("helper", at(10));

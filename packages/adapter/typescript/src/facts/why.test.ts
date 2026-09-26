@@ -10,6 +10,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { TypeScriptWhySession } from "./why.js";
 
+import type { PatternPack } from "@suss/extractor";
+
 describe("TypeScriptWhySession", () => {
   let dir: string;
 
@@ -84,5 +86,50 @@ describe("TypeScriptWhySession", () => {
     const session = new TypeScriptWhySession({ dir });
     expect(session.findExpression("src/app.ts", 10, "ghost")).toBeNull();
     expect(session.findExpression("src/missing.ts", 1, "handler")).toBeNull();
+  });
+
+  describe("a function handed through a wrapper a pack declares", () => {
+    const wrapperPack: PatternPack = {
+      name: "wrapper-lib",
+      protocol: "in-process",
+      languages: ["typescript"],
+      discovery: [],
+      terminals: [],
+      inputMapping: { type: "positionalParams", params: [] },
+      transparentWrappers: [
+        { module: "wrapper-lib", name: "keep", argument: 0 },
+      ],
+    };
+
+    const explainSave = (packs: readonly PatternPack[]) => {
+      fs.writeFileSync(
+        path.join(dir, "src", "jobs.ts"),
+        [
+          'import { keep } from "wrapper-lib";',
+          "",
+          "function persist(): string {",
+          '  return "orders";',
+          "}",
+          "",
+          "export const save = keep(persist);",
+          "",
+          "export function run(): string {",
+          "  return save();",
+          "}",
+          "",
+        ].join("\n"),
+      );
+      const session = new TypeScriptWhySession({ dir, packs });
+      const value = session.findExpression("src/jobs.ts", 10, "save");
+      return value === null ? null : session.explain(value);
+    };
+
+    it("follows it to the function passed in when the session has the pack", () => {
+      expect(explainSave([wrapperPack])?.target.name).toBe("persist");
+    });
+
+    it("cannot follow it without the pack, which is the only thing that says the wrapper hands its argument back", () => {
+      expect(explainSave([])).toBeNull();
+    });
   });
 });

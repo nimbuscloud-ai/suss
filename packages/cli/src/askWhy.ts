@@ -29,6 +29,7 @@ import {
 import { checkedOutSubmodules } from "./gitSubmodules.js";
 import { LANGUAGE_LABEL, languageOfFile } from "./language.js";
 import { providesKeyOf, resolveTarget } from "./target.js";
+import { NO_WHY_PACKS, unloadedPackCaveats, whyPacksFor } from "./whyPacks.js";
 
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
 import type { ValueLocation, WhyExplained } from "@suss/resolution";
@@ -45,6 +46,7 @@ import type {
 import type { Language } from "./language.js";
 import type { LoadedSummaries } from "./loadedSummaries.js";
 import type { TargetTouch } from "./target.js";
+import type { WhyPacks } from "./whyPacks.js";
 
 export type WhyShape = "whyReaches" | "whyResolves";
 
@@ -67,15 +69,18 @@ interface WhySessionLike {
 
 const SESSION_FOR: Record<
   Language,
-  (options: { dir: string }) => WhySessionLike
+  (options: { dir: string; whyPacks: WhyPacks }) => WhySessionLike
 > = {
-  typescript: (options) => new TypeScriptWhySession(options),
-  python: (options) =>
+  typescript: ({ dir, whyPacks }) =>
+    new TypeScriptWhySession({ dir, packs: whyPacks.packs.typescript }),
+  python: ({ dir, whyPacks }) =>
     new PythonWhySession({
-      ...options,
-      additionalRoots: checkedOutSubmodules(path.resolve(options.dir)),
+      dir,
+      additionalRoots: checkedOutSubmodules(path.resolve(dir)),
+      packs: whyPacks.packs.python,
     }),
-  ruby: (options) => new RubyWhySession(options),
+  ruby: ({ dir, whyPacks }) =>
+    new RubyWhySession({ dir, packs: whyPacks.packs.ruby }),
 };
 
 /** Loading a grammar is async and opening a session is not, so grammars load ahead of time. */
@@ -90,6 +95,12 @@ const PRELOAD: Partial<Record<Language, () => Promise<void>>> = {
  */
 export async function preloadWhySessions(): Promise<void> {
   await Promise.all(Object.values(PRELOAD).map((preload) => preload()));
+}
+
+/** Loads the parsers and the packs a why question about the source under `root` needs. */
+export async function preloadWhyQuestion(root: string): Promise<WhyPacks> {
+  await preloadWhySessions();
+  return await whyPacksFor(root);
 }
 
 export function isWhyQuestion(question: ParsedQuestion): boolean {
@@ -172,11 +183,13 @@ function answerWhyResolves(
   }
 
   const language = languageOfFile(at.file) ?? "typescript";
+  const whyPacks = options.whyPacks ?? NO_WHY_PACKS;
+  const packCaveats = unloadedPackCaveats(whyPacks, new Set([language]));
 
   let value: unknown | null;
   let explained: WhyExplained | null;
   try {
-    const session = SESSION_FOR[language]({ dir: root });
+    const session = SESSION_FOR[language]({ dir: root, whyPacks });
     value = session.findExpression(at.file, at.line, question.subject);
     explained = value === null ? null : session.explain(value);
   } catch (error) {
@@ -205,6 +218,7 @@ function answerWhyResolves(
       [
         "The chain either leaves the source suss can read, or more than one value can end it.",
       ],
+      packCaveats,
     );
   }
 
@@ -218,7 +232,7 @@ function answerWhyResolves(
       : `${asked} resolves to ${resolvedTo}, not ${question.object}.`,
     items: explanationItems(explained),
     needs: [],
-    caveats: [],
+    caveats: packCaveats,
     found: matched,
     detail: { resolution: resolutionJson(explained) },
   };
@@ -529,13 +543,14 @@ function reachAnswer(
 
   const items: AnswerItem[] = [{ text: chain.join(" -> "), data: { chain } }];
   const caveats: string[] = [];
+  const whyPacks = options.whyPacks ?? NO_WHY_PACKS;
   const sessions = new Map<Language, WhySessionLike | null>();
   const sessionFor = (language: Language): WhySessionLike | null => {
     const cached = sessions.get(language);
     if (cached !== undefined) {
       return cached;
     }
-    const opened = openSession(language, root);
+    const opened = openSession(language, root, whyPacks);
     sessions.set(language, opened);
     return opened;
   };
@@ -585,6 +600,7 @@ function reachAnswer(
       `The source under ${root} does not line up with these summaries, so some hops show without their resolution steps. --project says where the source is.`,
     );
   }
+  caveats.push(...unloadedPackCaveats(whyPacks, new Set(sessions.keys())));
   const along = [start, ...hops.map((hop) => hop.to)].filter(
     (unit): unit is BehavioralSummary => unit !== null,
   );
@@ -663,9 +679,13 @@ function provable(hop: WhyHop): boolean {
 }
 
 /** Returns null when the adapter cannot open the root as a project in this language. */
-function openSession(language: Language, root: string): WhySessionLike | null {
+function openSession(
+  language: Language,
+  root: string,
+  whyPacks: WhyPacks,
+): WhySessionLike | null {
   try {
-    return SESSION_FOR[language]({ dir: root });
+    return SESSION_FOR[language]({ dir: root, whyPacks });
   } catch {
     return null;
   }
