@@ -9,7 +9,7 @@ import { IdMap, IdSet, SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
  * upgrade that renames a field is fixed in one place.
  */
 
-import type { RbNode } from "./parser.js";
+import type { RbNode, RbTree } from "./parser.js";
 
 export interface Range {
   start: number;
@@ -313,6 +313,33 @@ export function symbolValue(node: RbNode): string | null {
   return node.type === "simple_symbol" ? node.text.slice(1) : null;
 }
 
+/** The method tables already read off one parse with one set of body blocks, by class body. */
+interface MethodTables {
+  readonly instance: NodeMap<ReadonlyMap<string, RbNode>>;
+  readonly singleton: NodeMap<ReadonlyMap<string, RbNode>>;
+}
+
+/**
+ * The ancestry walk asks for a class body's table once for every name it
+ * looks up, and reading the body again each time was most of what a
+ * lookup cost. So each table is read once per parse and set of blocks.
+ */
+const tablesByTree = new WeakMap<RbTree, WeakMap<BodyBlocks, MethodTables>>();
+
+function methodTablesFor(body: RbNode, blocks: BodyBlocks): MethodTables {
+  let byBlocks = tablesByTree.get(body.tree);
+  if (byBlocks === undefined) {
+    byBlocks = new WeakMap();
+    tablesByTree.set(body.tree, byBlocks);
+  }
+  let tables = byBlocks.get(blocks);
+  if (tables === undefined) {
+    tables = { instance: new NodeMap(), singleton: new NodeMap() };
+    byBlocks.set(blocks, tables);
+  }
+  return tables;
+}
+
 /**
  * Every instance method a class body defines, keyed by name. A name
  * defined twice keeps the later definition, as Ruby does.
@@ -323,6 +350,20 @@ export function symbolValue(node: RbNode): string | null {
 export function instanceMethodsByName(
   body: RbNode,
   blocks: BodyBlocks = NO_BODY_BLOCKS,
+): ReadonlyMap<string, RbNode> {
+  const read = methodTablesFor(body, blocks).instance;
+  const known = read.get(body);
+  if (known !== undefined) {
+    return known;
+  }
+  const methods = readInstanceMethods(body, blocks);
+  read.set(body, methods);
+  return methods;
+}
+
+function readInstanceMethods(
+  body: RbNode,
+  blocks: BodyBlocks,
 ): Map<string, RbNode> {
   const methods = new Map<string, RbNode>();
   for (const method of methodsDefinedIn(body)) {
@@ -475,8 +516,22 @@ export function instanceMethodVisibility(
 export function singletonMethodsByName(
   body: RbNode,
   blocks: BodyBlocks = NO_BODY_BLOCKS,
+): ReadonlyMap<string, RbNode> {
+  const read = methodTablesFor(body, blocks).singleton;
+  const known = read.get(body);
+  if (known !== undefined) {
+    return known;
+  }
+  const methods = readSingletonMethods(body, blocks);
+  read.set(body, methods);
+  return methods;
+}
+
+function readSingletonMethods(
+  body: RbNode,
+  blocks: BodyBlocks,
 ): Map<string, RbNode> {
-  const methods = moduleFunctionsOf(body, blocks);
+  const methods = new Map(moduleFunctionsOf(body, blocks));
   for (const method of methodsDefinedIn(body)) {
     if (!definesClassMethod(method, blocks)) {
       continue;
@@ -501,7 +556,7 @@ const MODULE_FUNCTION = "module_function";
 function moduleFunctionsOf(
   body: RbNode,
   blocks: BodyBlocks,
-): Map<string, RbNode> {
+): ReadonlyMap<string, RbNode> {
   const instance = instanceMethodsByName(body, blocks);
   const offered = new Map<string, RbNode>();
   let everyLaterDef = false;
