@@ -2237,6 +2237,13 @@ export function createTypeScriptAdapter(
     ),
   )}|${extractionConfigStamp(config)}|ws:${workspaceExpansionStamp(config.frameworks)}`;
 
+  // The cache stores summaries before their wrappers are composed, so every
+  // path composes on the way out, a cache hit included.
+  const withWrappersComposed = (
+    summaries: readonly BehavioralSummary[],
+  ): BehavioralSummary[] =>
+    composeWrappers(summaries, config.extractorOptions ?? {});
+
   return {
     tsProject: project,
 
@@ -2303,7 +2310,7 @@ export function createTypeScriptAdapter(
       // A route's own middleware is read from the same file, so it
       // composes here as it does in a full run.
       return named(
-        composeWrappers(withClosure, config.extractorOptions ?? {}),
+        withWrappersComposed(withClosure),
         config.workspace,
         runRoot,
       );
@@ -2365,7 +2372,11 @@ export function createTypeScriptAdapter(
         if (config.onTiming !== undefined) {
           config.onTiming(timer.report());
         }
-        return named(lookup.summaries, config.workspace, runRoot);
+        return named(
+          withWrappersComposed(lookup.summaries),
+          config.workspace,
+          runRoot,
+        );
       }
 
       // A files-changed miss can still reuse per file, when the entry
@@ -2392,7 +2403,11 @@ export function createTypeScriptAdapter(
         if (config.onTiming !== undefined) {
           config.onTiming(timer.report());
         }
-        return named(plan.allSummaries(), config.workspace, runRoot);
+        return named(
+          withWrappersComposed(plan.allSummaries()),
+          config.workspace,
+          runRoot,
+        );
       }
 
       let candidatePaths: string[] | null = null;
@@ -2730,7 +2745,7 @@ export function createTypeScriptAdapter(
       // function of the whole run and a stored summary of the route
       // alone stays reusable.
       const composed = timer.time("composeWrappers", () =>
-        composeWrappers(enriched, config.extractorOptions ?? {}),
+        withWrappersComposed(enriched),
       );
 
       if (config.onTiming !== undefined) {
