@@ -12,6 +12,7 @@ import {
   createNodeTable,
   environmentObjectsIn,
   extractFileFacts,
+  importedModuleKeys,
 } from "./extract.js";
 
 import type { NodeTable } from "./extract.js";
@@ -57,8 +58,33 @@ function rows(db: Database, table: NodeTable, relation: string): string[][] {
   );
 }
 
+describe("the modules a file imports", () => {
+  it("keys each import and re-export by its file, and a package nothing installs by its specifier", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile("/orders.ts", "export const orders = 1;\n");
+    project.createSourceFile("/accounts.ts", "export const accounts = 1;\n");
+    const mod = project.createSourceFile(
+      "/mod.ts",
+      [
+        'import { orders } from "./orders";',
+        'import { report } from "@acme/reports";',
+        'export { accounts } from "./accounts";',
+        "export const local = orders;",
+        "export { local as renamed };",
+        "",
+      ].join("\n"),
+    );
+
+    expect(importedModuleKeys(mod)).toEqual([
+      "/orders.ts",
+      "@acme/reports",
+      "/accounts.ts",
+    ]);
+  });
+});
+
 describe("a function's declared return type", () => {
-  it("records the class the annotation names, and the name as written", () => {
+  it("records the class the annotation refers to", () => {
     const { db, table } = factsFor({
       "/mod.ts": [
         "export class Router { handle() {} }",
@@ -72,9 +98,6 @@ describe("a function's declared return type", () => {
         "export function makeRouter(): Router { throw new Error('nothing'); }",
         "export class Router { handle() {} }",
       ],
-    ]);
-    expect(rows(db, table, "returnsNamed").map((row) => row[1])).toEqual([
-      "Router",
     ]);
   });
 
@@ -102,9 +125,6 @@ describe("a function's declared return type", () => {
     });
 
     expect(db.size("returnsClass")).toBe(0);
-    expect(db.facts("returnsNamed").map((row) => String(row[1]))).toEqual([
-      "Array",
-    ]);
   });
 
   it("leaves the annotation alone when the body states what it returns", () => {
@@ -119,10 +139,9 @@ describe("a function's declared return type", () => {
 
     expect(db.size("returnsValue")).toBe(1);
     expect(db.size("returnsClass")).toBe(0);
-    expect(db.size("returnsNamed")).toBe(0);
   });
 
-  it("keeps only the name for a type no class in the run declares", () => {
+  it("records no class for a type no class in the run declares", () => {
     const { db } = factsFor({
       "/mod.ts": [
         "interface Client { send(): void }",
@@ -132,9 +151,6 @@ describe("a function's declared return type", () => {
     });
 
     expect(db.size("returnsClass")).toBe(0);
-    expect(db.facts("returnsNamed").map((row) => String(row[1]))).toEqual([
-      "Client",
-    ]);
   });
 });
 

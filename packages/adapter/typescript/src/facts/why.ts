@@ -22,15 +22,8 @@ import {
 } from "../bootstrap/noTsconfigProject.js";
 import { ResolutionStore } from "./store.js";
 
-import type { StepPhrase, ValueLocation, WhyExplained } from "@suss/resolution";
+import type { ValueLocation, WhyExplained } from "@suss/resolution";
 import type { SourceFile } from "ts-morph";
-
-/** The phrase for the one step rule this adapter adds to the shared ones. */
-const JS_PHRASES: Record<string, StepPhrase> = {
-  bind: ({ tuple, describe }) => ({
-    reason: `${describe(tuple[0])} is a .bind of ${describe(tuple[1])}, which runs the same function`,
-  }),
-};
 
 export interface WhySessionOptions {
   /** The project root, which paths in every answer come out relative to. */
@@ -127,10 +120,7 @@ export class TypeScriptWhySession {
       const at = this.locate(node);
       return `${at.name} (${at.file}:${at.line})`;
     };
-    const explanation = explainResolutionProof(explained.proof, {
-      describe,
-      phrases: JS_PHRASES,
-    });
+    const explanation = explainResolutionProof(explained.proof, { describe });
     if (explanation === null) {
       return null;
     }

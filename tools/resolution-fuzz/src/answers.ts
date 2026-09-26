@@ -22,7 +22,7 @@ export const QUESTIONS = [
   "comesFrom",
   "objectOf",
   "resolves",
-  "paramAt",
+  "passesArgument",
   "callsInto",
 ] as const;
 

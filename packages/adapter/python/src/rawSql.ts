@@ -129,16 +129,15 @@ function importedFunctionMatch(
   if (callee === null || callee.type !== "identifier") {
     return null;
   }
-  const from = options.facts
-    .facts("pyImportedName")
-    .find((row) => String(row[0]) === `${options.filePath}#${callee.text}`);
-  if (from === undefined) {
-    return null;
-  }
-  const module = String(from[1]);
+  const modules = new Set(
+    options.facts
+      .lookup("imports", 0, `${options.filePath}#${callee.text}`)
+      .map((row) => String(row[1])),
+  );
   const pattern = options.patterns.find(
     (candidate) =>
-      candidate.module === module && candidate.functions.includes(callee.text),
+      modules.has(candidate.module) &&
+      candidate.functions.includes(callee.text),
   );
   if (pattern === undefined) {
     return null;

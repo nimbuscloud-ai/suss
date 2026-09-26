@@ -174,9 +174,9 @@ export function collectFileConstants(
  * looking outwards from the nesting it was read inside, the way Ruby
  * does.
  *
- * `binds(refKey, defKey)` records the binding. `rbConstantFrom(from, to)`
- * records the same link between the two files, and it is the nearest
- * thing Ruby has to an import graph.
+ * `binds(refKey, defKey)` records the binding. `importsFile(from, to)`
+ * records the same link between the two files, since reading a constant
+ * another file defines is the nearest thing Ruby has to an import.
  *
  * `declaresAssociation` is emitted here too, because an association's
  * target is one of these references and the shared rules join the two.
@@ -235,7 +235,7 @@ export function emitConstantBindings(
           db.add("binds", [reference.key, key]);
           const definedIn = fileOfDefinition.get(key);
           if (definedIn !== undefined && definedIn !== file.filePath) {
-            db.add("rbConstantFrom", [file.filePath, definedIn]);
+            db.add("importsFile", [file.filePath, definedIn]);
           }
           break;
         }

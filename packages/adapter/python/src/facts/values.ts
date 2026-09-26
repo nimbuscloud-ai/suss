@@ -17,7 +17,7 @@ import {
   writesRunInOrder,
 } from "@suss/resolution";
 
-import { annotationTarget } from "../annotations.js";
+import { annotationTarget, typeNameOf } from "../annotations.js";
 import {
   children,
   enclosingFunction,
@@ -760,6 +760,7 @@ function emitFunctionFacts(
   if (!statesReturn) {
     emitReturnAnnotation(emitter, fn, funcKey);
   }
+  emitReturnName(emitter, fn, funcKey);
 
   return funcKey;
 }
@@ -782,7 +783,16 @@ function emitReturnAnnotation(
   if (classKey !== null) {
     add(emitter, "returnsClass", funcKey, classKey);
   }
-  const written = writtenBaseName(annotated) ?? stringLiteralValue(annotated);
+}
+
+/**
+ * The name a function's return annotation is written under, whatever its
+ * body returns. A method that says it returns `Query` and builds one
+ * itself is how a pack finds a query that starts in the project.
+ */
+function emitReturnName(emitter: Emitter, fn: PyNode, funcKey: string): void {
+  const annotation = field(fn, "return_type");
+  const written = annotation === null ? null : typeNameOf(annotation);
   if (written !== null) {
     add(emitter, "returnsNamed", funcKey, written);
   }

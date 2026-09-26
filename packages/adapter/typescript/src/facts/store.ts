@@ -18,20 +18,16 @@ import {
   clearRelations,
   Database,
   evaluate,
-  lit,
   type OnDemandRules,
   proofOf,
-  rule,
   tupleKey,
   tupleKeyParts,
-  variable as v,
   witnesses,
 } from "@suss/datalog";
 import {
   ASKING_RELATIONS,
   addPackWords,
   allocationSitesOf,
-  alsoSteps,
   askResolutionUnder,
   type ExplainStats,
   fallbackWrittenAs,
@@ -41,7 +37,6 @@ import {
   resolutionProgram,
   resolutionUnderProgram,
   RESOLUTION_RULES as SHARED_RULES,
-  VALUE_STEP,
   withoutOverridden,
   writtenValueUnder,
 } from "@suss/resolution";
@@ -55,11 +50,15 @@ import {
   environmentObjectsIn,
   extractFileFacts,
   factKeyOf,
+  importedModuleKeys,
   type NodeTable,
   nodeId,
   packagesDeclaring,
 } from "./extract.js";
-import { LANGUAGE_WRAPPERS } from "./languageWords.js";
+import {
+  LANGUAGE_RECEIVER_RETURNS,
+  LANGUAGE_WRAPPERS,
+} from "./languageWords.js";
 import {
   type FileSetQuery,
   ModuleGraph,
@@ -70,18 +69,7 @@ import type { Atom, Proof } from "@suss/datalog";
 import type { TransparentWrapper } from "@suss/extractor";
 import type { Project, SourceFile } from "ts-morph";
 
-const JS_RULES = alsoSteps([
-  // f.bind(...) leads wherever f leads. Stated as a hop, so the
-  // questions other than `comesTo` follow it too.
-  rule(
-    "hop",
-    [v("r"), v("t"), VALUE_STEP],
-    [lit("bindCall", v("r"), v("t"))],
-    "bind",
-  ),
-]);
-
-const RESOLUTION_PROGRAM: OnDemandRules = resolutionProgram(JS_RULES);
+const RESOLUTION_PROGRAM: OnDemandRules = resolutionProgram();
 
 /**
  * What a why-question re-evaluates: the rules as written, with no
@@ -89,13 +77,11 @@ const RESOLUTION_PROGRAM: OnDemandRules = resolutionProgram(JS_RULES);
  * `deriveOnDemand` refuses algebras, so the proof pass is exhaustive
  * over the base facts the demand walk extracted.
  */
-const WITNESS_RULES = proofRules([...SHARED_RULES, ...JS_RULES]);
+const WITNESS_RULES = proofRules(SHARED_RULES);
 
 /** Every relation some variant of the program derives, or asks with. */
 const NOT_BASE_FACTS = new Set([
-  ...[...SHARED_RULES, ...JS_RULES, ...RESOLUTION_QUESTIONS].map(
-    (r) => r.head.relation,
-  ),
+  ...[...SHARED_RULES, ...RESOLUTION_QUESTIONS].map((r) => r.head.relation),
   ...RESOLUTION_PROGRAM.rules.map((r) => r.head.relation),
   ...ASKING_RELATIONS,
 ]);
@@ -248,6 +234,7 @@ export class ResolutionStore {
     this.table = createNodeTable(environmentObjects);
     addPackWords(this.db, {
       unwrapsByName: [...LANGUAGE_WRAPPERS, ...wrappers],
+      returnsReceiver: LANGUAGE_RECEIVER_RETURNS,
     });
   }
 
@@ -452,7 +439,7 @@ export class ResolutionStore {
     const outcome = askResolutionUnder(
       this.db,
       [[key, site]],
-      resolutionUnderProgram(JS_RULES),
+      resolutionUnderProgram(),
     );
     // The under program cleared what the context-free one had derived.
     this.stale = true;
@@ -464,7 +451,7 @@ export class ResolutionStore {
     }
 
     const answer = writtenValueUnder(this.db, key, site, (pairs) => {
-      askResolutionUnder(this.db, pairs, resolutionUnderProgram(JS_RULES));
+      askResolutionUnder(this.db, pairs, resolutionUnderProgram());
     });
     const node = answer === null ? null : (this.table.byId.get(answer) ?? null);
     const written =
@@ -1205,14 +1192,14 @@ export class ResolutionStore {
     this.lastQueryWalked = [];
     let pending: SourceFile[] = [...seeds];
     while (pending.length > 0) {
-      const readThisRound: string[] = [];
+      const readThisRound: SourceFile[] = [];
       for (const sourceFile of pending) {
         const filePath = sourceFile.getFilePath();
         if (read.has(filePath)) {
           continue;
         }
         read.add(filePath);
-        readThisRound.push(filePath);
+        readThisRound.push(sourceFile);
         this.lastQueryWalked.push(filePath);
         // Even an empty answer read these files: their content decided
         // there was nothing to find, so a change to any of them can
@@ -1242,13 +1229,9 @@ export class ResolutionStore {
    * alone; the unrestricted program has none, and follows the imports
    * of the files read this round instead.
    */
-  private demandedModules(readThisRound: readonly string[]): string[] {
+  private demandedModules(readThisRound: readonly SourceFile[]): string[] {
     if (RESOLUTION_PROGRAM.demands.length === 0) {
-      return readThisRound.flatMap((filePath) =>
-        this.db
-          .lookup("importsModule", 0, filePath)
-          .map((tuple) => String(tuple[1])),
-      );
+      return readThisRound.flatMap(importedModuleKeys);
     }
     return MODULE_DEMANDS.flatMap((relation) =>
       this.db.facts(relation).map((tuple) => String(tuple[0])),

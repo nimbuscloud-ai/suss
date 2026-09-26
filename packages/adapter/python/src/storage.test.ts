@@ -116,7 +116,6 @@ async function effectsFor(handler: string, base = BASE, inFunction?: string) {
     facts: db,
     filePath: handlerPath,
     patterns: SQLALCHEMY,
-    definitionAt: (key) => definitions.get(key),
     couldMatch: new Set(["query", "open_session"]),
   });
 }
@@ -213,7 +212,6 @@ describe("the database work a Python body does", () => {
         facts: db,
         filePath: "f.py",
         patterns: [],
-        definitionAt: () => undefined,
         couldMatch: new Set(["query"]),
       }),
     ).toEqual([]);

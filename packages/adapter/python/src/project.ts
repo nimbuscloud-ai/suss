@@ -34,7 +34,11 @@ import {
   runDigest,
   stampModuleImports,
 } from "@suss/extractor";
-import { addPackWords, type PackWords } from "@suss/resolution";
+import {
+  addPackWords,
+  importedFilesByFile,
+  type PackWords,
+} from "@suss/resolution";
 
 import { field, isFunction, rangeOf } from "./ast.js";
 import {
@@ -45,7 +49,7 @@ import {
 import { discoverUnits } from "./discovery.js";
 import { bindEnvFacts, envFactsIn, envReadEffects } from "./envReads.js";
 import { emitValueFacts, nodeId } from "./facts/values.js";
-import { emitEntryFact, emitModuleImportFacts } from "./facts.js";
+import { emitModuleImportFacts } from "./facts.js";
 import { importedDefinitionLookup } from "./importedDefinitions.js";
 import { parsePython } from "./parser.js";
 import { moduleLoadInvocationEffects } from "./paths/effects.js";
@@ -146,7 +150,9 @@ function reportUnresolvedProjectModules(
   roots: readonly string[],
   db: Database,
 ): void {
-  const imported = new Set(db.facts("pyImport").map((row) => String(row[1])));
+  const imported = new Set(
+    db.facts("importsModule").map((row) => String(row[1])),
+  );
   for (const pack of packs) {
     for (const module of pack.projectModules ?? []) {
       if (imported.has(module)) {
@@ -380,7 +386,6 @@ export async function extractPythonProject(
           facts: db,
           factsPath: file.file,
           patterns: storagePatterns,
-          definitionAt: (key: string) => definitions.get(key),
           couldMatch,
           rawSql: rawSqlPatterns,
           sqlClients,
@@ -440,7 +445,6 @@ export async function extractPythonProject(
       // `assembleSummary` computed.
       summary.confidence = { source: "inferred_static", level: "low" };
       summaries.push(summary);
-      emitEntryFact(db, file, raw.identity.range, raw.identity.name);
       tallyUnit(tallies, raw.boundaryBinding?.recognition);
 
       // Two routes on one function, such as one per method, share a seed.
@@ -539,7 +543,7 @@ export async function extractPythonProject(
 
   summaries.push(...reached.summaries);
 
-  const resolvedImports = resolvedImportsOf(db, displayPathOf);
+  const resolvedImports = importedFilesByFile(db, displayPathOf);
   stampModuleImports(summaries, (file) => resolvedImports.get(file) ?? []);
 
   // A summary's id is measured from the project root, because the CLI
@@ -599,24 +603,6 @@ export async function extractPythonProject(
   };
 }
 
-/** The files each file's imports resolved to, with paths written the same way as a summary's location.file. */
-function resolvedImportsOf(
-  db: Database,
-  displayPathOf: (file: string) => string,
-): Map<string, string[]> {
-  const importsByFile = new Map<string, string[]>();
-  for (const [from, , to] of db.facts("pyImportResolved")) {
-    if (typeof from !== "string" || typeof to !== "string") {
-      continue;
-    }
-    const key = displayPathOf(from);
-    const seen = importsByFile.get(key) ?? [];
-    seen.push(displayPathOf(to));
-    importsByFile.set(key, seen);
-  }
-  return importsByFile;
-}
-
 const SKIPPED_DIRECTORIES = new Set([
   "__pycache__",
   ".venv",
@@ -670,7 +656,7 @@ function methodsDeclaredNear(
   const modules = new Set(patterns.map((pattern) => pattern.module));
   const importing = new Set(
     db
-      .facts("pyImport")
+      .facts("importsModule")
       .filter((row) => modules.has(String(row[1])))
       .map((row) => String(row[0])),
   );
