@@ -855,6 +855,119 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
     expect(calls(unitNamed(summaries, "refresh"))).toEqual([["tags", tags]]);
   });
 
+  it("follows a bare call in a class method to the class method it runs, which nothing else calls", async () => {
+    writeQueryType("orders", ["Trends.register(current_user)"]);
+    write("app/models/trends.rb", [
+      "module Trends",
+      "  def self.links(user)",
+      "    user",
+      "  end",
+      "",
+      "  def self.register(user)",
+      "    links(user)",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const links = summaryIdentifier(unitNamed(summaries, "links"));
+    expect(calls(unitNamed(summaries, "register"))).toEqual([["links", links]]);
+  });
+
+  it("reaches a class method written inside `class << self`, and the class method it calls", async () => {
+    writeQueryType("orders", ["ReportFormatter.shorten(current_user)"]);
+    write("app/lib/report_formatter.rb", [
+      "class ReportFormatter",
+      "  class << self",
+      "    def shorten(user)",
+      "      trim(user)",
+      "    end",
+      "",
+      "    private",
+      "",
+      "    def trim(user)",
+      "      user",
+      "    end",
+      "  end",
+      "",
+      "  def shorten(entity)",
+      "    entity",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const inLine = (name: string, line: number) =>
+      summaries.find(
+        (summary) =>
+          summary.identity.name === name &&
+          summary.location.range.start === line,
+      ) as BehavioralSummary;
+    const shorten = inLine("shorten", 3);
+    expect(shorten.identity.exportPath).toEqual(["ReportFormatter", "shorten"]);
+    expect(calls(unitNamed(summaries, "Query.orders"))).toEqual([
+      ["ReportFormatter.shorten", summaryIdentifier(shorten)],
+    ]);
+    expect(calls(shorten)).toEqual([
+      ["trim", summaryIdentifier(inLine("trim", 9))],
+    ]);
+  });
+
+  it("links no bare call to a method of the same name that Ruby would not look up from there", async () => {
+    writeQueryType("orders", [
+      "DomainRule.suspended?(current_user)",
+      "DomainRule.new.policies(current_user)",
+      "DomainRule.new.stricter?(current_user)",
+    ]);
+    write("app/models/domain_rule.rb", [
+      "class DomainRule",
+      "  class << self",
+      "    def suspended?(domain)",
+      "      stricter?",
+      "    end",
+      "  end",
+      "",
+      "  def policies(user)",
+      "    suspended?",
+      "  end",
+      "",
+      "  def stricter?(user)",
+      "    user",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    expect(calls(unitNamed(summaries, "suspended?"))).toEqual([
+      ["stricter?", undefined],
+    ]);
+    expect(calls(unitNamed(summaries, "policies"))).toEqual([
+      ["suspended?", undefined],
+    ]);
+  });
+
+  it("follows a bare call in a class method of a module that extends itself to its instance method", async () => {
+    writeQueryType("orders", ["Formats.render(current_user)"]);
+    write("app/lib/formats.rb", [
+      "module Formats",
+      "  extend self",
+      "",
+      "  def self.render(user)",
+      "    wrap(user)",
+      "  end",
+      "",
+      "  def wrap(user)",
+      "    user",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    expect(calls(unitNamed(summaries, "render"))).toEqual([
+      ["wrap", summaryIdentifier(unitNamed(summaries, "wrap"))],
+    ]);
+  });
+
   it("follows a call on an instance variable another method of the class writes", async () => {
     write("app/graphql/types/query_type.rb", [
       "class Types::QueryType < Types::BaseObject",
