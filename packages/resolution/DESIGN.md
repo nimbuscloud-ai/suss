@@ -468,6 +468,17 @@ derive, and the caller's single-answer policy refuses the pair. Every
 other chain with two candidates gets the same refusal, since the value
 could be either one.
 
+A value is read the same way. `os.environ.get("API_PREFIX") or "/api"`
+is written as two expressions, the call and the literal, and a reader
+that wants one expression gets none. `fallbackBehind(x, f)` lists the
+fallbacks a value passes on the way, including through a call to a
+function that returns one. When every expression a value is written as
+came through one fallback, `writtenValueOf` returns the fallback, and
+the value evaluator reads it with its own `or`. A branch the evaluator
+cannot read makes no claim, so the example reads as `/api`, and two
+branches it can read are joined. A caller that wants each expression
+asks `writtenValuesOf`, which still lists both branches.
+
 Every question is this one closure with its own stopping condition.
 Adding a construct means adding one step, and every question picks it
 up. Adding a question means writing a stopping condition, with no new
@@ -552,6 +563,8 @@ resolves(x, z)              comesTo narrowed to functions
 givesBack(x, z)             following x arrives at a call that returns z
 givesBackUnwrapped(x, z)    givesBack, where the call returned unwraps z
 isWrittenAs(x, z)           x is written as the expression z
+fallbackBehind(x, f)        following x to what it is written as passes
+                            the fallback f
 comesFrom(x, m, n)          following x arrives at m's export n
 callsInto(f, m, n)          calling f ends up calling m's n
 paramAt(r, p, z)            the call r puts z in the parameter p

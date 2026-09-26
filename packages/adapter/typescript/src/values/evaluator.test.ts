@@ -479,6 +479,51 @@ describe("functions", () => {
     ).toBe("/v3/x");
   });
 
+  it("reads the branch of a fallback from another file that can be read", () => {
+    expect(
+      literal(
+        `
+          import { API_PREFIX } from "./settings";
+          export const subject = API_PREFIX + "/orders";
+        `,
+        {
+          files: {
+            "/settings.ts": [
+              "declare function configuredPrefix(): string;",
+              'export const API_PREFIX = configuredPrefix() || "/api";',
+            ].join("\n"),
+          },
+        },
+      ),
+    ).toBe("/api/orders");
+  });
+
+  it("keeps both branches of a fallback when the first can be read but may be empty", () => {
+    expect(
+      literalsOf(
+        subjectOf(
+          `
+            import { API_PREFIX } from "./settings";
+            export const subject = API_PREFIX;
+          `,
+          {
+            files: {
+              "/settings.ts": [
+                "declare const flags: { legacy: boolean };",
+                "const LEGACY = flags.legacy ? '/v1' : '';",
+                "function current(): string { return LEGACY; }",
+                'export const API_PREFIX = current() || "/api";',
+              ].join("\n"),
+            },
+          },
+        ),
+        10,
+      )
+        ?.slice()
+        .sort(),
+    ).toEqual(["", "/api", "/v1"]);
+  });
+
   it("reads a function from another file", () => {
     expect(
       literal(

@@ -61,6 +61,7 @@ export {
 } from "./underContext.js";
 export { type NameWrite, valueLeftByWrites } from "./writes.js";
 export {
+  fallbackWrittenAs,
   writtenValueOf,
   writtenValuesByKey,
   writtenValuesOf,
@@ -950,6 +951,32 @@ const STATED_RULES = [
     ],
   ),
 
+  // The fallbacks, `a || b`, a value passes on the way to what it is
+  // written as. A reader of values takes one whole when every answer came
+  // through it, so the reader's own `||` decides which branches count.
+  rule(
+    "fallbackBehind",
+    [v("x"), v("x")],
+    [lit("fallbackBranch", v("x"), v("b"))],
+  ),
+  rule(
+    "fallbackBehind",
+    [v("x"), v("f")],
+    [
+      lit("reaches", v("x"), v("f"), VALUE_STEP),
+      lit("fallbackBranch", v("f"), v("b")),
+    ],
+  ),
+  rule(
+    "fallbackBehind",
+    [v("x"), v("f")],
+    [
+      lit("invokes", v("x"), v("g")),
+      lit("returnsValue", v("g"), v("ret")),
+      lit("fallbackBehind", v("ret"), v("f")),
+    ],
+  ),
+
   // Which expression running f hands back, whether f returns it, writes
   // it into a name first, or ends on it as a shorthand body.
   rule(
@@ -1653,6 +1680,11 @@ export const RESOLUTION_QUESTIONS = [
     "wantedIsWrittenAs",
     [v("x"), v("z")],
     [lit("wanted", v("x")), lit("isWrittenAs", v("x"), v("z"))],
+  ),
+  rule(
+    "wantedFallbackBehind",
+    [v("x"), v("f")],
+    [lit("wanted", v("x")), lit("fallbackBehind", v("x"), v("f"))],
   ),
   // A call is given no `comesTo`, so this is the only way to ask what
   // object one arrives at, and a demand-driven run derives `objectOf`

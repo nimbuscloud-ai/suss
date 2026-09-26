@@ -52,6 +52,60 @@ describe("the expression a key was written as", () => {
   });
 });
 
+describe("a value written as a fallback", () => {
+  /** `name = a or b`, with the fallback at 7-19 and its branches at 7-12 and 16-19. */
+  function fallbackFacts(): Database {
+    const db = new Database();
+    db.add("wantedIsWrittenAs", ["f.py:1-5", "f.py:7-12"]);
+    db.add("wantedIsWrittenAs", ["f.py:1-5", "f.py:16-19"]);
+    db.add("wantedFallbackBehind", ["f.py:1-5", "f.py:7-19"]);
+    return db;
+  }
+
+  function askAboutFallback(db: Database): (keys: readonly string[]) => void {
+    return (keys) => {
+      if (keys.includes("f.py:7-19")) {
+        db.add("wantedIsWrittenAs", ["f.py:7-19", "f.py:7-12"]);
+        db.add("wantedIsWrittenAs", ["f.py:7-19", "f.py:16-19"]);
+      }
+    };
+  }
+
+  it("is read as the fallback when every expression came through it", () => {
+    const db = fallbackFacts();
+    expect(writtenValueOf(db, "f.py:1-5", askAboutFallback(db))).toBe(
+      "f.py:7-19",
+    );
+  });
+
+  it("still lists both branches for a caller that wants every expression", () => {
+    const db = fallbackFacts();
+    expect(writtenValuesOf(db, "f.py:1-5", askAboutFallback(db))).toEqual([
+      "f.py:7-12",
+      "f.py:16-19",
+    ]);
+  });
+
+  it("is not read as the fallback when another write adds an expression", () => {
+    const db = fallbackFacts();
+    db.add("wantedIsWrittenAs", ["f.py:1-5", "f.py:30-34"]);
+    expect(writtenValueOf(db, "f.py:1-5", askAboutFallback(db))).toBeNull();
+  });
+
+  it("is read as the outer of two fallbacks, one inside the other", () => {
+    const db = fallbackFacts();
+    db.add("wantedFallbackBehind", ["f.py:1-5", "f.py:0-30"]);
+    const ask = askAboutFallback(db);
+    const answer = writtenValueOf(db, "f.py:1-5", (keys) => {
+      ask(keys);
+      db.add("wantedIsWrittenAs", ["f.py:0-30", "f.py:7-12"]);
+      db.add("wantedIsWrittenAs", ["f.py:0-30", "f.py:16-19"]);
+      db.add("wantedFallbackBehind", ["f.py:0-30", "f.py:7-19"]);
+    });
+    expect(answer).toBe("f.py:0-30");
+  });
+});
+
 describe("every expression a key was written as", () => {
   it("lists both expressions a key written two ways settles on", () => {
     const db = new Database();

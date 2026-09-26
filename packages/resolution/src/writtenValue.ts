@@ -24,7 +24,57 @@ export function writtenValueOf(
   relation: string = WRITTEN_AS,
 ): string | null {
   const answers = settledByKey(db, [key], ask, relation).get(key) ?? [];
-  return answers.length === 1 ? (answers[0] as string) : null;
+  if (answers.length === 1) {
+    return answers[0] as string;
+  }
+  return relation === WRITTEN_AS ? fallbackWrittenAs(db, key, ask) : null;
+}
+
+/** Where a plain `wanted` question puts the fallbacks a value passes. */
+const FALLBACK_BEHIND = "wantedFallbackBehind";
+
+/**
+ * The fallback, `a or b`, that a value was written as, when the rules
+ * found several expressions and every one of them came through that
+ * fallback. A value reader then reads the fallback whole, and its own
+ * `or` decides: a branch it cannot read makes no claim, and two branches
+ * it can read both count. `writtenValuesOf` still lists the branches, for
+ * a caller that wants each one.
+ *
+ * When one fallback is inside another, the outer one is returned. Null
+ * when no fallback covers all of them, as for a name that two plain
+ * writes leave with two values.
+ */
+export function fallbackWrittenAs(
+  db: Database,
+  key: string,
+  ask: Ask,
+): string | null {
+  const answers = new Set(answersFor(db, WRITTEN_AS, key));
+  const fallbacks = answersFor(db, FALLBACK_BEHIND, key);
+  if (answers.size < 2 || fallbacks.length === 0) {
+    return null;
+  }
+  ask(fallbacks);
+  const covering = fallbacks.filter((fallback) =>
+    sameAnswers(answersFor(db, WRITTEN_AS, fallback), answers),
+  );
+  const outermost = covering.filter((fallback) => {
+    const inside = new Set(answersFor(db, FALLBACK_BEHIND, fallback));
+    return covering.every((other) => other === fallback || inside.has(other));
+  });
+  return outermost.length === 1 ? (outermost[0] as string) : null;
+}
+
+function sameAnswers(
+  answers: readonly string[],
+  expected: ReadonlySet<string>,
+): boolean {
+  const found = new Set(answers);
+  return (
+    found.size === expected.size &&
+    [...found].every((answer) => expected.has(answer))
+  );
 }
 
 /**

@@ -472,6 +472,16 @@ describe("functions", () => {
     expect(literalOf(subject("app.py"))).toBe("/api/x");
   });
 
+  it("follows an imported name written as a fallback to the branch it can read", async () => {
+    const { subject } = await projectValues({
+      "settings.py":
+        'import os\n\nAPI_PREFIX = os.environ.get("API_PREFIX") or "/api"\n',
+      "app.py":
+        'from settings import API_PREFIX\n\nsubject = API_PREFIX + "/orders"\n',
+    });
+    expect(literalOf(subject("app.py"))).toBe("/api/orders");
+  });
+
   it("inlines a lambda", async () => {
     const { subject } = await projectValues({
       "app.py": 'prefixed = lambda p: "/v1" + p\n\nsubject = prefixed("/x")\n',

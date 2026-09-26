@@ -34,6 +34,7 @@ import {
   alsoSteps,
   askResolutionUnder,
   type ExplainStats,
+  fallbackWrittenAs,
   proofRules,
   queryFacts,
   RESOLUTION_QUESTIONS,
@@ -1381,10 +1382,16 @@ export class ResolutionStore {
       candidates.add(node);
     }
 
-    if (candidates.size !== 1) {
-      return null;
+    if (candidates.size === 1) {
+      return [...candidates][0] as Node;
     }
-    return [...candidates][0] as Node;
+    const fallback = fallbackWrittenAs(this.db, nodeId(value), (keys) => {
+      for (const key of keys) {
+        this.wantKey("wanted", key);
+      }
+      this.derive();
+    });
+    return fallback === null ? null : (this.table.byId.get(fallback) ?? null);
   }
 
   /**
