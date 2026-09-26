@@ -1012,6 +1012,7 @@ export {
   computeContentHash,
   computeDistHashFrom,
   createAdapterStamp,
+  extractionConfigStamp,
   projectFileStamp,
   runDigest,
 } from "./adapterStamp.js";
@@ -1031,7 +1032,11 @@ export {
 } from "./packHealth.js";
 export { createTimer, noopTimer } from "./timing.js";
 
-export type { AdapterCodeStamp, AdapterStamp } from "./adapterStamp.js";
+export type {
+  AdapterCodeStamp,
+  AdapterStamp,
+  ExtractionConfig,
+} from "./adapterStamp.js";
 export type {
   CacheAttribution,
   CacheDiagnostic,

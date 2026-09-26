@@ -164,6 +164,54 @@ describe("extractRubyProject's on-disk cache", () => {
     expect(diagnostics[1]).toEqual({ kind: "miss", missReason: "key-changed" });
   });
 
+  it("misses with key-changed once the gap setting changes", async () => {
+    const files = schemaProject();
+    const packs = testPacks();
+    const diagnostics: CacheDiagnostic[] = [];
+    const onCacheDiagnostic = (d: CacheDiagnostic) => diagnostics.push(d);
+
+    await extractRubyProject({
+      files,
+      packs,
+      projectRoot: tmpDir,
+      onCacheDiagnostic,
+    });
+    await extractRubyProject({
+      files,
+      packs,
+      projectRoot: tmpDir,
+      gapHandling: "silent",
+      onCacheDiagnostic,
+    });
+
+    expect(diagnostics[1]).toEqual({ kind: "miss", missReason: "key-changed" });
+  });
+
+  it("misses with key-changed once the directory ids are measured from changes", async () => {
+    const files = schemaProject();
+    const packs = testPacks();
+    const cacheDir = path.join(tmpDir, ".suss", "cache");
+    const diagnostics: CacheDiagnostic[] = [];
+    const onCacheDiagnostic = (d: CacheDiagnostic) => diagnostics.push(d);
+
+    await extractRubyProject({
+      files,
+      packs,
+      projectRoot: tmpDir,
+      cacheDir,
+      onCacheDiagnostic,
+    });
+    await extractRubyProject({
+      files,
+      packs,
+      projectRoot: path.join(tmpDir, "app"),
+      cacheDir,
+      onCacheDiagnostic,
+    });
+
+    expect(diagnostics[1]).toEqual({ kind: "miss", missReason: "key-changed" });
+  });
+
   it("never writes an entry when cacheDir is null", async () => {
     const files = schemaProject();
     const packs = testPacks();

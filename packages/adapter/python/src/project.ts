@@ -29,6 +29,7 @@ import {
   createCacheLayer,
   createTimer,
   effectToIR,
+  extractionConfigStamp,
   moduleInitStructure,
   noopTimer,
   runDigest,
@@ -252,20 +253,25 @@ export async function extractPythonProject(
             : null)),
   );
   const cache: CacheLayer = createCacheLayer(cacheDir);
-  const packsDigest = adapterStamp.packsDigest(
+  const packsDigest = `${adapterStamp.packsDigest(
     options.packs.map((pack) =>
       pack.version !== undefined
         ? { name: pack.name, version: pack.version }
         : { name: pack.name },
     ),
-  );
+  )}|${extractionConfigStamp({
+    gapHandling: options.gapHandling,
+    workspaceRoot: options.workspaceRoot,
+    projectRoot: options.projectRoot,
+    // The same files read against other roots resolve other imports.
+    importRoots: roots,
+  })}`;
   const cacheInput: CacheInput = {
     files: cacheDir === null ? [] : options.files,
-    // The same files read against other roots resolve other imports.
     adapterPacksDigest:
       cacheDir === null
         ? packsDigest
-        : `${runDigest(packsDigest, options.packs, options.files)}|roots:${roots.join(path.delimiter)}`,
+        : runDigest(packsDigest, options.packs, options.files),
   };
   const lookup = await timer.timeAsync("cache.lookup", () =>
     cache.lookup(cacheInput),
