@@ -217,6 +217,38 @@ describe("resolving a value across files", () => {
     expect(resolvedFunctions(facts, read)).toHaveLength(2);
   });
 
+  it("finds a class method off the class and off an instance alike, since a class has one namespace", async () => {
+    const { facts } = await factsFor({
+      "reports.py": [
+        "class Report:",
+        "    @classmethod",
+        "    def build(cls):",
+        '        return "built"',
+        "",
+        "def by_class():",
+        "    return Report.build()",
+        "",
+        "def by_instance():",
+        "    return Report().build()",
+        "",
+      ].join("\n"),
+    });
+
+    const reads = facts
+      .facts("readsProperty")
+      .filter((row) => String(row[2]) === "build")
+      .map((row) => String(row[0]));
+    const build = facts
+      .facts("func")
+      .map((row) => String(row[0]))
+      .find((key) => !key.includes("by_"));
+    resolveCalls(facts, reads);
+    expect(reads).toHaveLength(2);
+    for (const read of reads) {
+      expect(resolvedFunctions(facts, read)).toEqual([build]);
+    }
+  });
+
   it("claims nothing for a call whose callee it never reached", async () => {
     const { facts } = await factsFor({ "app.py": "registry = missing()\n" });
     const call = facts.facts("call")[0];
