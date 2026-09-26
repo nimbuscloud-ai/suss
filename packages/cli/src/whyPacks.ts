@@ -13,6 +13,7 @@
  */
 
 import {
+  packSpecFrom,
   resolveFramework,
   resolvePythonPack,
   resolveRubyPack,
@@ -73,7 +74,9 @@ export async function whyPacksFor(root: string): Promise<WhyPacks> {
     const loaded: PackOf[L][] = [];
     for (const spec of extractEntryFor(reads, language)?.packs ?? []) {
       try {
-        loaded.push(await RESOLVE_PACK[language](spec, overlay, root));
+        loaded.push(
+          await RESOLVE_PACK[language](packSpecFrom(root, spec), overlay, root),
+        );
       } catch (error) {
         unloaded.push({ language, spec, reason: firstLineOf(error) });
       }
