@@ -35,7 +35,7 @@ The hooks run the project's own suss, the one `node_modules/.bin/suss` runs, whe
 | `Stop` | the agent finishes its turn | Reads the project once more, to catch a write made from Bash, and reports what changed since the baseline, checked against the change list when there is one. | 60s |
 | `SessionEnd` | the session closes | Stops any suss still running for the session and removes the summaries it kept. | 5s |
 
-After an edit, the agent hears about a finding the edit introduced when the finding is an error, or a warning at a boundary the edit changed. The hook blocks on those, which puts the finding in front of the agent with the `.sussignore` rule that would accept it. When there is nothing to act on, the agent gets one line saying what the edit changed, and nothing at all when the edit changed no boundary.
+After an edit, the agent hears about a finding the edit introduced when the finding is an error, or a warning at a boundary the edit changed. The hook blocks on those, which puts the finding in front of the agent with the `.sussignore` rule that would accept it. When there is nothing to act on, the agent gets one line saying what the edit changed, and nothing at all when the edit changed no boundary. The line says each boundary the way a report prints it, with any variable that came or went: `suss: this edit changed runtime-config ACCOUNTS_REGION through getAccountService.` A function in the project comes up only with something that moved in it, since the agent already knows which functions it edited.
 
 The agent never hears about a finding that was there before the edit. It did not cause it, and asking it to pay down the project's older findings pulls it away from the task.
 

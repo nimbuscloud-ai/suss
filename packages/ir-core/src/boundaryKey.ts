@@ -143,6 +143,20 @@ export function displayLabel(binding: BoundaryBinding): string {
 }
 
 /**
+ * The boundary and the name a read took across it, as a report prints
+ * them: `runtime-config ACCOUNTS_REGION`. A boundary with no label of its
+ * own prints as its protocol, because the name already says what was
+ * read, and the recognizer the fallback label adds is a package name
+ * nobody reading the report can act on.
+ */
+export function labelWithDetail(
+  binding: BoundaryBinding,
+  detail: string,
+): string {
+  return `${boundaryLabel(binding) ?? binding.semantics.name} ${detail}`;
+}
+
+/**
  * A suppression rule's boundary string, normalized by the protocol that
  * recognizes it. A string no protocol recognizes keeps its case,
  * because message-bus keys are case-sensitive and uppercasing one would

@@ -14,6 +14,7 @@
  */
 
 import { BOUNDARY_ROLE, leavesTheProcess } from "@suss/behavioral-ir";
+import { labelWithDetail } from "@suss/ir-core";
 
 import {
   boundariesTouchedBy,
@@ -144,7 +145,7 @@ function reachedFrom(
           const label =
             touch.detail === undefined
               ? touch.label
-              : `${touch.label} ${touch.detail}`;
+              : labelWithDetail(touch.binding, touch.detail);
           const key = effectKey(touch.relation, label);
           const access = touch.access ?? NO_ACCESS;
           const already = reached.get(key);

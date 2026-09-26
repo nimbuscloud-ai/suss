@@ -1017,12 +1017,8 @@ describe("inspect --diff, human output", () => {
     const after = chain(1, [readsEnv("BUCKET"), readsEnv("REGION")]);
     withFiles(chain(1, []), after, (paths) => {
       const { output } = captureStdout(() => inspectDiff(paths));
-      expect(output).toContain(
-        "+ reads runtime-config:python-env BUCKET  through hop0",
-      );
-      expect(output).toContain(
-        "+ reads runtime-config:python-env REGION  through hop0",
-      );
+      expect(output).toContain("+ reads runtime-config BUCKET  through hop0");
+      expect(output).toContain("+ reads runtime-config REGION  through hop0");
     });
   });
 
@@ -1037,7 +1033,7 @@ describe("inspect --diff, human output", () => {
     };
     withFiles([before], [after], (paths) => {
       const { output } = captureStdout(() => inspectDiff(paths));
-      const line = "+ reads runtime-config:python-env BUCKET";
+      const line = "+ reads runtime-config BUCKET";
       expect(output).toContain(line);
       expect(output.indexOf(line)).toBe(output.lastIndexOf(line));
     });
@@ -1575,6 +1571,6 @@ describe("a config read in a body", () => {
     fs.writeFileSync(file, JSON.stringify([readsBucket]));
     const { output } = captureStdout(() => inspect({ file }));
 
-    expect(output).toContain("+ reads runtime-config:python-env BUCKET");
+    expect(output).toContain("+ reads runtime-config BUCKET");
   });
 });

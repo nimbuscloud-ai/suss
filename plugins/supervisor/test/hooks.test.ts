@@ -81,7 +81,30 @@ function sinceReport(findings: SinceFinding[]): SinceReport {
     findings,
     resolved: [],
     changedBoundaries: [
-      { key: "POST /orders", units: ["src/orders/create.ts::post"] },
+      {
+        key: "POST /orders",
+        label: "POST /orders",
+        units: ["src/orders/create.ts::post"],
+      },
+    ],
+    run: [],
+  };
+}
+
+/** What `check --since` says after an edit that makes a helper read a new variable. */
+function helperReadsVariable(): SinceReport {
+  const helper = "src/composition.ts::getAccountService";
+  return {
+    since: "/before",
+    findings: [],
+    resolved: [],
+    changedBoundaries: [
+      { key: "function-call:reachable", label: null, units: [helper] },
+      {
+        key: "runtime-config:@suss/runtime-node",
+        label: "runtime-config ACCOUNTS_REGION",
+        units: [helper],
+      },
     ],
     run: [],
   };
@@ -246,6 +269,39 @@ describe("with a stand-in suss the project installs", () => {
         additionalContext: "suss: this edit changed POST /orders.",
       },
     });
+  });
+
+  it("names the variable an edit started reading and the helper it reads it in", () => {
+    installFakeSuss(project, {});
+    runHook(event("session-start"), project, {});
+    scriptFakeSuss(project, { check: helperReadsVariable() });
+
+    const edit = runHook(edited("src/composition.ts"), project, {});
+
+    expect(edit.output).toEqual({
+      hookSpecificOutput: {
+        hookEventName: "PostToolUse",
+        additionalContext:
+          "suss: this edit changed runtime-config ACCOUNTS_REGION through getAccountService.",
+      },
+    });
+  });
+
+  it("says nothing after an edit that changed only functions inside the project", () => {
+    installFakeSuss(project, {});
+    runHook(event("session-start"), project, {});
+    const report = helperReadsVariable();
+    scriptFakeSuss(project, {
+      check: {
+        ...report,
+        changedBoundaries: report.changedBoundaries.slice(0, 1),
+      },
+    });
+
+    const edit = runHook(edited("src/accountService.ts"), project, {});
+
+    expect(edit.status).toBe(0);
+    expect(edit.stdout).toBe("");
   });
 
   it("delivers a result that missed its edit's budget with the next prompt, as context", async () => {

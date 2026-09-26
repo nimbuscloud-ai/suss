@@ -327,6 +327,25 @@ export function readRuntimeContractMetadata(
 }
 
 /**
+ * The variables a runtime's template sets, each with the logical id of
+ * the parameter or resource its value comes from, when the template
+ * wires it to one. The ones the platform sets are left out, since no
+ * edit to the template changes them.
+ */
+export function declaredEnvVars(
+  summary: BehavioralSummary,
+): Map<string, string | undefined> {
+  const contract = readRuntimeContractMetadata(summary);
+  const sources = contract?.envVarSources ?? {};
+  const targets = contract?.envVarTargets ?? {};
+  return new Map(
+    (contract?.envVars ?? [])
+      .filter((name) => sources[name] !== "platform")
+      .map((name) => [name, targets[name]?.logicalId]),
+  );
+}
+
+/**
  * One condition a listener rule's (or a listener's own default action's)
  * match tests: a CFN condition `Field` (`path-pattern`, `host-header`,
  * `http-request-method`, `http-header`, `query-string`, `source-ip`, or

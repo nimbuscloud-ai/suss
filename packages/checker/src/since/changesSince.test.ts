@@ -134,7 +134,11 @@ describe("changedBoundaries", () => {
     const after = [route("post", "/orders", [created, rejected, duplicate])];
 
     expect(changedBoundaries(before, after)).toEqual([
-      { key: "POST /orders", units: ["src/handlers/post.ts::post"] },
+      {
+        key: "POST /orders",
+        label: "POST /orders",
+        units: ["src/handlers/post.ts::post"],
+      },
     ]);
   });
 
@@ -190,5 +194,132 @@ describe("changedBoundaries", () => {
       "POST /orders",
       "POST /purchases",
     ]);
+  });
+});
+
+describe("what a changed boundary is called", () => {
+  const helperReturn = transition("getAccountService:return:none:da39a3e", {
+    output: { type: "return", value: null },
+  });
+
+  function reads(...names: string[]): Effect[] {
+    return names.map((name) => ({
+      type: "interaction",
+      binding: {
+        transport: "os",
+        recognition: "@suss/runtime-node",
+        semantics: { name: "runtime-config" },
+      },
+      interaction: { class: "config-read", name, defaulted: false },
+    }));
+  }
+
+  function helper(effects: Effect[]): BehavioralSummary {
+    const summary = provider("getAccountService", [
+      { ...helperReturn, effects },
+    ]);
+    return {
+      ...summary,
+      kind: "library",
+      location: { ...summary.location, file: "src/composition.ts" },
+      identity: {
+        ...summary.identity,
+        boundaryBinding: {
+          transport: "in-process",
+          recognition: "reachable",
+          semantics: { name: "function-call" },
+        },
+      },
+    };
+  }
+
+  function environment(declared: string[]): BehavioralSummary {
+    const summary = provider("GetAccountFunction", []);
+    return {
+      ...summary,
+      kind: "library",
+      location: { ...summary.location, file: "cloudformation:template.yaml" },
+      identity: {
+        ...summary.identity,
+        boundaryBinding: {
+          transport: "os",
+          recognition: "cloudformation",
+          semantics: {
+            name: "runtime-config",
+            deploymentTarget: "lambda",
+            instanceName: "GetAccountFunction",
+          },
+        },
+      },
+      metadata: {
+        runtimeContract: {
+          envVars: [...declared, "AWS_REGION"],
+          envVarSources: {
+            ...Object.fromEntries(declared.map((name) => [name, "template"])),
+            AWS_REGION: "platform",
+          },
+        },
+      },
+    };
+  }
+
+  it("calls the environment by the variables whose reads moved, with no package name", () => {
+    const before = [helper(reads("ACCOUNTS_TABLE"))];
+    const after = [helper(reads("ACCOUNTS_TABLE", "ACCOUNTS_REGION"))];
+
+    expect(changedBoundaries(before, after)).toEqual([
+      {
+        key: "function-call:reachable",
+        label: null,
+        units: ["src/composition.ts::getAccountService"],
+      },
+      {
+        key: "runtime-config:@suss/runtime-node",
+        label: "runtime-config ACCOUNTS_REGION",
+        units: ["src/composition.ts::getAccountService"],
+      },
+    ]);
+  });
+
+  it("gives no name to the environment when a function that reads it changed and no variable came or went", () => {
+    const before = [helper(reads("ACCOUNTS_TABLE"))];
+    const changedOutput = helper(reads("ACCOUNTS_TABLE"));
+    const after = [
+      {
+        ...changedOutput,
+        transitions: changedOutput.transitions.map((t) => ({
+          ...t,
+          output: {
+            type: "return" as const,
+            value: { type: "literal" as const, value: 1 },
+          },
+        })),
+      },
+    ];
+
+    expect(changedBoundaries(before, after).map((b) => b.label)).toEqual([
+      null,
+      null,
+    ]);
+  });
+
+  it("labels a deployable whose template declares a new variable with that variable", () => {
+    const before = [environment(["ACCOUNTS_TABLE"])];
+    const after = [environment(["ACCOUNTS_TABLE", "ACCOUNTS_REGION"])];
+
+    expect(changedBoundaries(before, after)).toEqual([
+      {
+        key: "runtime-config:GetAccountFunction",
+        label: "runtime-config:GetAccountFunction ACCOUNTS_REGION",
+        units: ["cloudformation:template.yaml::GetAccountFunction"],
+      },
+    ]);
+  });
+
+  it("reports nothing when a template declares the same variables", () => {
+    const before = [environment(["ACCOUNTS_TABLE"])];
+    const after = [environment(["ACCOUNTS_TABLE"])];
+
+    expect(changedBoundaries(before, after)).toEqual([]);
   });
 });

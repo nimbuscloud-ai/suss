@@ -35,7 +35,7 @@ Drafted 1 boundary intent doc in intent, each with purpose and audience left bla
 
 No document for 3 boundaries:
   - function-call:reachable: it has no key the checker could pair intent against: a function-call boundary needs package + exportPath
-  - runtime-config:cloudformation: boundary intent declares rest, function-call, message-bus, storage and unit-invocation boundaries, and this one is runtime-config
+  - runtime-config:GetOrderFunction: boundary intent declares rest, function-call, message-bus, storage and unit-invocation boundaries, and this one is runtime-config
   - aws.dynamodb:OrdersTable: it has no key the checker could pair intent against: a store has no key at all: write it as `- writes: <store>` on an outcome of the boundary that touches it instead
 ```
 

@@ -40,6 +40,7 @@ import {
   readDeclaredContract,
   summaryWithDefinitionsInlined,
 } from "@suss/checker";
+import { labelWithDetail } from "@suss/ir-core";
 
 import { interactionDetail } from "./boundaryReach.js";
 import { boundaryReach, entrypointKey, reachChanges } from "./diffReach.js";
@@ -2039,7 +2040,8 @@ function atBoundary(
   detail: string | undefined,
 ): EffectWords {
   const boundary = displayLabel(binding);
-  const label = detail === undefined ? boundary : `${boundary} ${detail}`;
+  const label =
+    detail === undefined ? boundary : labelWithDetail(binding, detail);
   return {
     effect: `${relation} ${label}`,
     relation,

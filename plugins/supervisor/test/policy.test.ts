@@ -4,6 +4,7 @@ import {
   blocksStop,
   editResult,
   mergeResults,
+  saysAnything,
   WAIT_FOR_STOP,
 } from "../scripts/policy.mjs";
 
@@ -53,7 +54,11 @@ function report(
     findings,
     resolved,
     changedBoundaries: [
-      { key: "POST /orders", units: ["src/orders/create.ts::post"] },
+      {
+        key: "POST /orders",
+        label: "POST /orders",
+        units: ["src/orders/create.ts::post"],
+      },
     ],
     run: [],
   };
@@ -128,6 +133,39 @@ describe("results delivered together", () => {
     expect(merged.resolved).toEqual([]);
     expect(merged.covers).toBe(2);
     expect(merged.changed.map((b) => b.key)).toEqual(["POST /orders"]);
+  });
+});
+
+describe("whether an edit's result says anything", () => {
+  it("has nothing to say when only a function inside the project changed", () => {
+    const result = editResult(
+      {
+        ...report([]),
+        changedBoundaries: [
+          {
+            key: "function-call:reachable",
+            label: null,
+            units: ["src/composition.ts::getAccountService"],
+          },
+        ],
+      },
+      1,
+    );
+
+    expect(saysAnything(result)).toBe(false);
+  });
+
+  it("counts a boundary from a suss that gives no label", () => {
+    const unlabelled = {
+      key: "POST /orders",
+      units: ["src/orders/create.ts::post"],
+    } as unknown as SinceReport["changedBoundaries"][number];
+    const result = editResult(
+      { ...report([]), changedBoundaries: [unlabelled] },
+      1,
+    );
+
+    expect(saysAnything(result)).toBe(true);
   });
 });
 

@@ -127,6 +127,7 @@ export {
   exchangesHttpResponses,
   groundBinding,
   groundedPairingKey,
+  labelWithDetail,
   leavesTheProcess,
   nameReference,
   pairingKey,

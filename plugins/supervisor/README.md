@@ -44,7 +44,7 @@ A hook has a few seconds, and reading a large project takes longer. So a hook qu
 
 One worker runs per session. It takes a lock file with its process id, works until the queue is empty, and exits. The `SessionEnd` hook sends SIGTERM to the worker's process group, which stops the suss it is running as well.
 
-The rules about what to pass on live here, in `policy.mjs`. What a finding is and what changed between two readings live in suss: `findingIdentity`, `findingsSince` and `changedBoundaries` in `@suss/checker`, which `check --since` prints.
+The rules about what to pass on live here, in `policy.mjs`. What a finding is and what changed between two readings live in suss: `findingIdentity`, `findingsSince` and `changedBoundaries` in `@suss/checker`, which `check --since` prints. Each changed boundary comes with the `label` the edit's line prints. A boundary whose label is null, such as a call from one function in the project to another, is left out of the line, and its functions are named only after a boundary that moved in them.
 
 ## The change list
 
