@@ -15,7 +15,7 @@ npm install --save-dev @suss/cli
 suss init [<directory>] [--plain]
 suss extract [-p <tsconfig> | --dir <directory>] [--lang typescript|python|ruby] [-f <pack>[=<config.json>] ...] [-o <output.json>] [--files <f1> <f2> ...] [--gaps strict|permissive|silent]
 suss inspect [<summaries.json> | --dir <directory>]
-suss inspect --diff <before.json> <after.json>
+suss inspect --diff <before.json | directory> <after.json | directory>
 suss inspect --flow "<METHOD> <url>" [<summaries.json> | --dir <directory>] [--entry <name>] [--scope <document>] [--json]
 suss check [--dir <directory>] [--intent <intent-dir>] [--all] [--json] [-o <output>]
 suss check <provider.json> <consumer.json> [--all] [--json] [-o <output>]

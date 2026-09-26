@@ -17,8 +17,8 @@ suss inspect <summaries.json> [--types]
 # How the summaries in a folder pair up
 suss inspect --dir <directory> [--types]
 
-# What moved between two summary files
-suss inspect --diff <before.json> <after.json> [--json] [--changed-files <path>]
+# What moved between two summary files, or two folders of them
+suss inspect --diff <before> <after> [--json] [--changed-files <path>]
              [--budget <n>] [--chain <n|full>]
 
 # Who serves one request, hop by hop
@@ -31,7 +31,7 @@ Given nothing, `inspect` reads the project it is run in: every entry in `suss.js
 | Flag | Default | What it does |
 |---|---|---|
 | `--dir <path>` | none | Report how the summaries in a folder pair up, boundary by boundary, and which ones found nothing to pair with. It does not render the summaries themselves. |
-| `--diff <before> <after>` | none | Compare two summary files and report what moved. See [below](#reading-a-diff). |
+| `--diff <before> <after>` | none | Compare two summary files and report what moved. Given two folders, such as two that `suss extract --out-dir` wrote, it pairs their files by name and compares all of them together. See [below](#reading-a-diff). |
 | `--types` | off | Spell out the named types a summary references instead of printing their names. Applies to one file and to `--dir`; a `--diff` run ignores it. |
 | `--json` | off | With `--diff` or `--flow`, write the answer as JSON. Every other form refuses it, because the file it reads is already JSON. |
 | `--changed-files <path>` | none | With `--diff`, a file listing the paths a change touched, one per line, the format `git diff --name-only` writes. Those files come last in the report and are marked, since the reader has their diff already. |
@@ -100,6 +100,17 @@ The first line counts what moved. Then comes a block per boundary, with up to tw
 A path whose body moved under the same status and the same test prints as one line with a marker on each field: `{ id, ~total: string -> number, +currency: string, -email }`. Anything else prints as a `~ was` line and a `now` line. `otherwise` marks the path taken when none of the tests above it matched.
 
 When several boundaries got the same outcome from one wrapper, the report prints it once under a `From <wrapper>` heading, with how many of the boundaries that wrapper runs on have that outcome and which ones are missing it. The files whose units moved come last.
+
+A deployable's environment gets a block of its own when its template and its code are compared together, as they are across two folders. It lists each variable the template started or stopped declaring, and each variable the code the deployable runs started or stopped reading. That includes code that runs once at startup, which no request reaches through a call:
+
+```
+~ serves runtime-config:GetAccountFunction  cloudformation:template.yaml::GetAccountFunction  (2 effects)
+  effects
+    + declares ACCOUNTS_REGION from AccountsRegion
+    + reads runtime-config:GetAccountFunction ACCOUNTS_REGION  through getAccountService
+```
+
+`from` gives the template parameter or resource the value comes from, when the template sets it with a reference. A read in code states no deployable, so under a route or a file it prints as `reads runtime-config ACCOUNTS_REGION`.
 
 `--diff --json` writes `{ version, changed, summaries, boundaries, causes }`. `summaries` has an entry for each summary that moved, marked `added`, `removed` or `changed`, and a changed one has its added, removed and changed transitions written out in full.
 

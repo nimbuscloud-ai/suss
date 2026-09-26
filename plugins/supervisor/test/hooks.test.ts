@@ -436,6 +436,16 @@ const NOT_DONE = {
   requested: true,
 };
 
+const UNCHECKED = {
+  said: "~ AccountService takes an optional region",
+  verdict: "unchecked" as const,
+  reason:
+    "suss has no boundary spelled AccountService, so it cannot check this entry.",
+  units: [],
+  asked: null,
+  requested: null,
+};
+
 const UNASKED_409 = {
   identity: "POST /orders\nserves src/orders/create.ts::post + responds 409",
   boundary: "POST /orders",
@@ -511,6 +521,49 @@ describe("with a change list", () => {
       sessionFile("prompts.jsonl"),
       "--json",
     ]);
+  });
+
+  it("shows what changed when no entry of the change list can be checked", () => {
+    installFakeSuss(project, {
+      intent: verdicts({
+        entries: [UNCHECKED],
+        text: "1 unchecked.\n\nunchecked   ~ AccountService takes an optional region",
+      }),
+      diff: "1 unit inside the project changed.\n\nsrc/accountService.ts\n  ~ AccountService\n",
+    });
+    runHook(event("session-start"), project, {});
+    writeChangeList();
+
+    const stop = runHook(event("stop"), project, {});
+
+    const report = String(stop.output?.systemMessage);
+    expect(report).toContain("1 unchecked.");
+    expect(report).toContain("src/accountService.ts\n  ~ AccountService");
+    expect(
+      fakeSussCalls(project).filter((args) => args[0] === "inspect"),
+    ).toContainEqual([
+      "inspect",
+      "--diff",
+      sessionFile(path.join("state", "baseline")),
+      sessionFile(path.join("state", "current")),
+      "--json",
+    ]);
+  });
+
+  it("leaves the diff out when the verdicts account for what changed", () => {
+    installFakeSuss(project, {
+      intent: verdicts({
+        entries: [{ ...NOT_DONE, verdict: "done", reason: null }],
+        text: "1 done.",
+      }),
+      diff: "the diff",
+    });
+    runHook(event("session-start"), project, {});
+    writeChangeList();
+
+    const stop = runHook(event("stop"), project, {});
+
+    expect(String(stop.output?.systemMessage)).not.toContain("the diff");
   });
 
   it("blocks a stop once on an entry not done, then passes and puts the list away", () => {

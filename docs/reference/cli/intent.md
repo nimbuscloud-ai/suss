@@ -124,7 +124,7 @@ suss intent check <change-list> --before <dir | file> --after <dir | file> [--pr
 
 | Flag | Default | What it does |
 |---|---|---|
-| `--before <path>` | required | The summaries from before the change: a folder, whose files pair with the other side's by name, or one file. |
+| `--before <path>` | required | The summaries from before the change: a folder, whose files pair with the other side's by name and are compared together, or one file. |
 | `--after <path>` | required | The summaries from after it, the same kind of path. |
 | `--prompts <file>` | none | The developer's messages, to check each entry's quote against. A `.jsonl` file has one JSON object per line with the message under `prompt`, which is what the suss plugin records. Any other file is one message. |
 | `--json` | off | Write the verdicts as JSON. |

@@ -25,6 +25,8 @@ export interface FakeScript {
   intentMs?: number;
   /** `intent check` crashes, or is missing as in a release without it. */
   intentFails?: "crash" | "missing";
+  /** What `inspect --diff` prints, when something moved. */
+  diff?: string;
 }
 
 const BIN = `import fs from "node:fs";
@@ -52,7 +54,8 @@ const commands = {
     return 0;
   },
   inspect: async () => {
-    process.stdout.write(args.includes("--json") ? JSON.stringify({ version: 1, changed: 0, summaries: [] }) : "No behavioral changes.\\n");
+    const moved = script.diff === undefined ? [] : [{ boundary: "POST /orders" }];
+    process.stdout.write(args.includes("--json") ? JSON.stringify({ version: 1, changed: 0, summaries: [], boundaries: moved }) : (script.diff ?? "No behavioral changes.\\n"));
     return 0;
   },
   intent: async () => {

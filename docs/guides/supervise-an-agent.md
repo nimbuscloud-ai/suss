@@ -134,7 +134,7 @@ explained   ~ POST /orders responds 409
               + responds 409 { error }  when  !(!req.body.sku || !req.body.quantity) && orders.findOpen()
 ```
 
-A stop blocks once on each entry that is not done and once on each boundary that changed where nobody asked, the same way it blocks once on a new error. An unchecked entry is one suss has no spelling for, such as a new value of a type, and it never blocks. An entry whose quote is in none of your messages is listed as unrequested, so you can see what the agent added on its own. Once a stop passes, the list is filed away, and the next request starts with none. A session with no list gets the report from [What it looks like](#what-it-looks-like).
+A stop blocks once on each entry that is not done and once on each boundary that changed where nobody asked, the same way it blocks once on a new error. An unchecked entry is one suss has no spelling for, such as a new value of a type, and it never blocks. When no entry in the list is done and nothing is listed as not asked, the report shows the diff as well, so you still see what changed. An entry whose quote is in none of your messages is listed as unrequested, so you can see what the agent added on its own. Once a stop passes, the list is filed away, and the next request starts with none. A session with no list gets the report from [What it looks like](#what-it-looks-like).
 
 A list the agent wrote wrong, one that does not parse or uses a field the format does not have, blocks the stop once so the agent can fix it. When suss itself cannot run the check, because it ran out of time, crashed, or is a release without `suss intent check`, nothing blocks. You get the report of what changed, with one line saying why the list was not checked.
 

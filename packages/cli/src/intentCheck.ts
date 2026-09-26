@@ -23,6 +23,7 @@ import {
   effectText,
   outcomeTexts,
 } from "./inspect.js";
+import { wholeReadings } from "./readingPairs.js";
 
 import type {
   BehavioralSummary,
@@ -40,6 +41,9 @@ import type {
 } from "@suss/intent-ir";
 import type { ReachedEffect, ServedBoundaryReach } from "./diffReach.js";
 import type { BoundaryBlock, EffectLine, OutcomeLine } from "./inspect.js";
+import type { ReadingPair } from "./readingPairs.js";
+
+export type { ReadingPair } from "./readingPairs.js";
 
 export type ChangeVerdict = "done" | "notDone" | "unchecked";
 
@@ -100,15 +104,9 @@ export interface IntentCheckResult {
   fromWrappers: WrapperLine[];
 }
 
-/** One summaries file, read before and after the change. */
-export interface ReadingPair {
-  before: readonly BehavioralSummary[];
-  after: readonly BehavioralSummary[];
-}
-
 /** Both readings, and the diff between them, across every summaries file. */
 interface Readings {
-  blocks: BoundaryBlock[];
+  blocks: readonly BoundaryBlock[];
   wrapperLines: WrapperLine[];
   before: Side;
   after: Side;
@@ -187,17 +185,17 @@ function lineIdentity(line: ChangedLine): string {
   return `${line.does} ${line.file}::${line.unit} ${line.text.join(" ")}`;
 }
 
+/**
+ * Every file on each side is diffed as one reading, because a
+ * deployable's environment is declared in the template's file and read
+ * in the code's, and only the two together say what it gained.
+ */
 function readingsOf(pairs: readonly ReadingPair[]): Readings {
-  const readings: Readings = {
-    blocks: [],
-    wrapperLines: [],
-    before: { units: [], reach: [] },
-    after: { units: [], reach: [] },
-  };
-  for (const pair of pairs) {
-    const diff = behaviorDiff(pair.before, pair.after);
-    readings.blocks.push(...diff.blocks);
-    readings.wrapperLines.push(
+  const { before, after } = wholeReadings(pairs);
+  const diff = behaviorDiff(before, after);
+  return {
+    blocks: diff.blocks,
+    wrapperLines: [
       ...diff.causes.map((cause) => ({
         from: cause.wrapper,
         change: cause.change,
@@ -205,13 +203,10 @@ function readingsOf(pairs: readonly ReadingPair[]): Readings {
         at: [...cause.boundaries],
       })),
       ...diff.blocks.flatMap(wrapperLinesOf),
-    );
-    readings.before.units.push(...pair.before);
-    readings.before.reach.push(...boundaryReach(pair.before));
-    readings.after.units.push(...pair.after);
-    readings.after.reach.push(...boundaryReach(pair.after));
-  }
-  return readings;
+    ],
+    before: { units: [...before], reach: boundaryReach(before) },
+    after: { units: [...after], reach: boundaryReach(after) },
+  };
 }
 
 // ---------------------------------------------------------------------------

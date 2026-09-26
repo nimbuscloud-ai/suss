@@ -13,7 +13,12 @@
  * a thousand fixpoints that way.
  */
 
-import { BOUNDARY_ROLE, leavesTheProcess } from "@suss/behavioral-ir";
+import {
+  BOUNDARY_ROLE,
+  isRuntimeConfigProvider,
+  leavesTheProcess,
+} from "@suss/behavioral-ir";
+import { runtimeReads } from "@suss/checker";
 import { labelWithDetail } from "@suss/ir-core";
 
 import {
@@ -24,6 +29,7 @@ import {
 import { functionOf, readCallFacts } from "./callFacts.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { EnvVarRead } from "@suss/checker";
 import type { BoundaryBinding, Relation } from "@suss/ir-core";
 import type { Access } from "./boundaryReach.js";
 import type { CallEdge, FunctionKey } from "./callFacts.js";
@@ -203,6 +209,7 @@ export function boundaryReach(
 ): ServedBoundaryReach[] {
   const facts = readCallFacts(summaries);
   const out = adjacency(facts.edges());
+  const environments = environmentReads(summaries);
   const reach: ServedBoundaryReach[] = [];
 
   for (const summary of summaries) {
@@ -217,10 +224,63 @@ export function boundaryReach(
       out,
       facts.units,
     );
+    for (const effect of environments.get(summary) ?? []) {
+      reached.set(effectKey(effect.relation, effect.label), effect);
+    }
     reach.push({ summary, boundary, binding, effects: [...reached.values()] });
   }
 
   return reach;
+}
+
+/**
+ * The reads of each deployable's environment, by the code that runs in
+ * it. That code includes what runs once when the process starts, such
+ * as a service built at module scope, which no request reaches through
+ * a call. The checker places code in a deployable, so a function that
+ * starts reading a variable is reported for the same deployables the
+ * pairing would call it missing from.
+ */
+function environmentReads(
+  summaries: readonly BehavioralSummary[],
+): Map<BehavioralSummary, ReachedEffect[]> {
+  const byRuntime = new Map<BehavioralSummary, ReachedEffect[]>();
+  if (!summaries.some(isRuntimeConfigProvider)) {
+    return byRuntime;
+  }
+  for (const { runtime, binding, reads } of runtimeReads([...summaries])) {
+    const byName = new Map<string, ReachedEffect>();
+    for (const read of [...reads].sort(byReader)) {
+      const already = byName.get(read.name);
+      const access = { fields: [read.name], by: [] };
+      if (already !== undefined) {
+        byName.set(read.name, {
+          ...already,
+          accesses: [...already.accesses, access],
+        });
+        continue;
+      }
+      byName.set(read.name, {
+        relation: "reads",
+        label: labelWithDetail(binding, read.name),
+        boundary: boundarySpelling(binding),
+        binding,
+        detail: read.name,
+        through: [read.summary.identity.name],
+        accesses: [access],
+      });
+    }
+    byRuntime.set(runtime, [...byName.values()]);
+  }
+  return byRuntime;
+}
+
+/** Reads in file and unit order, so a report shows the same reader every run. */
+function byReader(a: EnvVarRead, b: EnvVarRead): number {
+  return (
+    a.summary.location.file.localeCompare(b.summary.location.file) ||
+    a.summary.identity.name.localeCompare(b.summary.identity.name)
+  );
 }
 
 function entrypointsOf(

@@ -13,8 +13,8 @@ import path from "node:path";
 
 import { ChangeListRejected, loadChangeListFile } from "@suss/contract-intent";
 
-import { parseSummaryFile } from "./inspect.js";
 import { checkIntent } from "./intentCheck.js";
+import { readingPairs } from "./readingPairs.js";
 import { UsageError } from "./usageError.js";
 
 import type { ChangeListSummary } from "@suss/intent-ir";
@@ -22,7 +22,6 @@ import type {
   ChangedLine,
   CheckedChange,
   IntentCheckResult,
-  ReadingPair,
 } from "./intentCheck.js";
 
 export interface IntentCheckCommandOptions {
@@ -105,54 +104,6 @@ export function readChangeList(file: string): ChangeListSummary {
       error instanceof Error ? error.message : String(error),
     );
   }
-}
-
-/**
- * Two folders pair their files by name, the way `extract --out-dir`
- * writes one file per read. A file on one side only is left out, since
- * every unit in it would look added or removed.
- */
-function readingPairs(before: string, after: string): ReadingPair[] {
-  const kinds = [before, after].map(kindOfPath);
-  if (kinds[0] !== kinds[1]) {
-    throw new UsageError(
-      "--before and --after are two folders of summaries or two files, not one of each.",
-    );
-  }
-  if (kinds[0] === "file") {
-    return [{ before: readSummaries(before), after: readSummaries(after) }];
-  }
-  const later = new Set(jsonFilesIn(after));
-  const pairs = jsonFilesIn(before)
-    .filter((name) => later.has(name))
-    .map((name) => ({
-      before: readSummaries(path.join(before, name)),
-      after: readSummaries(path.join(after, name)),
-    }));
-  if (pairs.length === 0) {
-    throw new UsageError(
-      `${before} and ${after} have no summaries file in common. Pass the folders \`suss extract --out-dir\` wrote before and after the change.`,
-    );
-  }
-  return pairs;
-}
-
-function kindOfPath(where: string): "folder" | "file" {
-  if (!fs.existsSync(where)) {
-    throw new UsageError(`Nothing at ${path.resolve(where)}.`);
-  }
-  return fs.statSync(where).isDirectory() ? "folder" : "file";
-}
-
-function jsonFilesIn(dir: string): string[] {
-  return fs
-    .readdirSync(dir)
-    .filter((name) => name.endsWith(".json"))
-    .sort();
-}
-
-function readSummaries(file: string) {
-  return parseSummaryFile(file, fs.readFileSync(file, "utf-8"));
 }
 
 /**

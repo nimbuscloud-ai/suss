@@ -264,7 +264,7 @@ describe("suss intent check", () => {
 
     expect(run.exit).toBe(1);
     expect(run.stderr).toContain(
-      "--before and --after are two folders of summaries or two files",
+      "are two folders of summaries or two files, not one of each",
     );
   });
 

@@ -31,7 +31,6 @@ import {
   readStorageContractMetadata,
   readWrapperMetadata,
   relationsOf,
-  safeParseSummaries,
 } from "@suss/behavioral-ir";
 import {
   contractDeclaresStatus,
@@ -43,9 +42,14 @@ import {
 import { labelWithDetail } from "@suss/ir-core";
 
 import { interactionDetail } from "./boundaryReach.js";
+import { declarationChanges } from "./declaredEnvironment.js";
 import { boundaryReach, entrypointKey, reachChanges } from "./diffReach.js";
+import { readingPairs, wholeReadings } from "./readingPairs.js";
 import { scopeLines, sharedCauses } from "./sharedCause.js";
+import { firstLineOf, parseSummaryFile } from "./summaryFile.js";
 import { UsageError } from "./usageError.js";
+
+export { parseSummaryFile } from "./summaryFile.js";
 
 import type {
   BehavioralSummary,
@@ -64,6 +68,7 @@ import type {
 } from "@suss/behavioral-ir";
 import type { InvokesInRun } from "@suss/checker";
 import type { Relation } from "@suss/ir-core";
+import type { Declaration, DeclarationChange } from "./declaredEnvironment.js";
 import type { EntrypointChange, ReachedEffect } from "./diffReach.js";
 import type { CausedLine, SharedCause } from "./sharedCause.js";
 
@@ -2338,6 +2343,24 @@ function reachLine(
   };
 }
 
+/** A variable a template started or stopped declaring, as a line of the deployable's block. */
+function declarationLine(
+  declaration: Declaration,
+  at: DeclarationChange,
+): EffectLine {
+  const from =
+    declaration.from === undefined ? "" : ` from ${declaration.from}`;
+  return {
+    change: declaration.change,
+    effect: `declares ${declaration.name}${from}`,
+    relation: "provides",
+    boundary: at.boundary,
+    binding: at.binding,
+    detail: declaration.name,
+    through: [],
+  };
+}
+
 /**
  * What a unit that came or went whole responds with. Its heading already
  * says which, so the lines get no marker, and a long list is cut short.
@@ -2407,6 +2430,7 @@ function blockLines(block: BoundaryBlock, hops: number | "full"): string[] {
 function boundaryBlocks(
   moved: readonly MovedUnit[],
   reach: readonly EntrypointChange[],
+  declared: readonly DeclarationChange[],
 ): BoundaryBlock[] {
   const blocks = new Map<string, BoundaryBlock>();
 
@@ -2457,6 +2481,28 @@ function boundaryBlocks(
       continue;
     }
     already.effects.push(...effects);
+  }
+
+  for (const change of declared) {
+    const lines = change.declarations.map((one) =>
+      declarationLine(one, change),
+    );
+    const already = blocks.get(change.key);
+    if (already !== undefined) {
+      already.effects.unshift(...lines);
+      continue;
+    }
+    blocks.set(change.key, {
+      change: change.change,
+      does: "serves",
+      boundary: change.boundary,
+      binding: change.binding,
+      unit: change.unit,
+      file: change.file,
+      outcomes: [],
+      effects: lines,
+      outcomeChanges: 0,
+    });
   }
 
   return [...blocks.values()]
@@ -2806,7 +2852,11 @@ function diffReport(
   after: readonly BehavioralSummary[],
 ): DiffReport {
   const moved = unitsThatMoved(pairing);
-  const blocks = boundaryBlocks(moved, reachChanges(before, after));
+  const blocks = boundaryBlocks(
+    moved,
+    reachChanges(before, after),
+    declarationChanges(before, after),
+  );
   const causes = liftSharedCauses(
     blocks,
     wrappersApplied(after),
@@ -3010,30 +3060,10 @@ function writeDiffJson(report: DiffReport): void {
 }
 
 export function inspectDiff(options: DiffOptions): void {
-  const beforePath = path.resolve(options.before);
-  const afterPath = path.resolve(options.after);
-
-  if (!fs.existsSync(beforePath)) {
-    throw new Error(`File not found: ${beforePath}`);
-  }
-  if (!fs.existsSync(afterPath)) {
-    throw new Error(`File not found: ${afterPath}`);
-  }
-
-  const beforeSummaries = parseSummaryFile(
-    beforePath,
-    fs.readFileSync(beforePath, "utf-8"),
+  const { before, after } = wholeReadings(
+    readingPairs(options.before, options.after),
   );
-  const afterSummaries = parseSummaryFile(
-    afterPath,
-    fs.readFileSync(afterPath, "utf-8"),
-  );
-
-  const report = diffReport(
-    pairForDiff(beforeSummaries, afterSummaries),
-    beforeSummaries,
-    afterSummaries,
-  );
+  const report = diffReport(pairForDiff(before, after), before, after);
 
   if (options.json === true) {
     writeDiffJson(report);
@@ -3084,7 +3114,7 @@ export function readSummariesFromDir(dir: string): BehavioralSummary[] {
       // A folder of summaries can pick up other JSON, most often a report
       // written back into it. The file is listed as skipped and the rest
       // are still read.
-      skipped.push(`${file}: ${messageOf(error)}`);
+      skipped.push(`${file}: ${firstLineOf(error)}`);
     }
   }
 
@@ -3100,33 +3130,6 @@ export function readSummariesFromDir(dir: string): BehavioralSummary[] {
     );
   }
   return all;
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message.split("\n")[0] : String(error);
-}
-
-export function parseSummaryFile(
-  filePath: string,
-  content: string,
-): BehavioralSummary[] {
-  let json: unknown;
-  try {
-    json = JSON.parse(content) as unknown;
-  } catch (error) {
-    throw new UsageError(
-      `${filePath} is not JSON suss can read: ${messageOf(error)}`,
-    );
-  }
-  const result = safeParseSummaries(json);
-  if (!result.success) {
-    const issues = result.error.issues
-      .slice(0, 10)
-      .map((i) => `  - ${i.path.join(".") || "<root>"}: ${i.message}`)
-      .join("\n");
-    throw new UsageError(`Invalid summary file ${filePath}:\n${issues}`);
-  }
-  return result.data;
 }
 
 export function inspectDir(options: DirOptions): void {

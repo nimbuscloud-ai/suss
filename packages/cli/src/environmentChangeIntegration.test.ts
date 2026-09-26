@@ -20,6 +20,9 @@ const FIXTURE = path.resolve(
   "../../../fixtures/supervisor-accounts",
 );
 
+const PROMPT =
+  "Make the accounts table's region configurable through a new environment variable, ACCOUNTS_REGION. Keep today's behavior when it is unset.";
+
 let work: string;
 let project: string;
 const snapshots = { before: "", read: "", declared: "" };
@@ -49,6 +52,10 @@ beforeAll(async () => {
     );
   }
   snapshots.declared = await snapshot("declared");
+  fs.writeFileSync(
+    path.join(work, "prompts.jsonl"),
+    `${JSON.stringify({ prompt: PROMPT })}\n`,
+  );
 });
 
 afterAll(() => {
@@ -95,6 +102,23 @@ async function snapshot(name: string): Promise<string> {
   return dir;
 }
 
+async function changeList(yaml: string) {
+  const file = path.join(work, "changes.yaml");
+  fs.writeFileSync(file, yaml);
+  const run = await quietly([
+    "intent",
+    "check",
+    file,
+    "--before",
+    snapshots.before,
+    "--after",
+    snapshots.declared,
+    "--prompts",
+    path.join(work, "prompts.jsonl"),
+  ]);
+  return run.stdout;
+}
+
 describe("check --since after a helper starts reading a variable", () => {
   it("labels the environment by the variable, with no package name, and leaves the helper unlabelled", async () => {
     const run = await quietly([
@@ -138,5 +162,48 @@ describe("check --since after a helper starts reading a variable", () => {
       "runtime-config:GetAccountFunction ACCOUNTS_REGION",
       "runtime-config:UpdateAccountFunction ACCOUNTS_REGION",
     ]);
+  });
+});
+
+describe("inspect --diff over the two folders", () => {
+  it("lists each function's new declaration and its code's new read", async () => {
+    const run = await quietly([
+      "inspect",
+      "--diff",
+      snapshots.before,
+      snapshots.declared,
+    ]);
+
+    for (const fn of ["GetAccountFunction", "UpdateAccountFunction"]) {
+      expect(run.stdout).toContain(
+        [
+          `~ serves runtime-config:${fn}  cloudformation:template.yaml::${fn}  (2 effects)`,
+          "  effects",
+          "    + declares ACCOUNTS_REGION from AccountsRegion",
+          `    + reads runtime-config:${fn} ACCOUNTS_REGION  through getAccountService`,
+        ].join("\n"),
+      );
+    }
+  });
+});
+
+describe("intent check against a change to the environment", () => {
+  it("lists the changed environments when no entry can be checked", async () => {
+    const said = await changeList(
+      [
+        `asked: "${PROMPT}"`,
+        "changes:",
+        "  - changes: AccountService",
+        "    note: takes an optional region",
+      ].join("\n"),
+    );
+
+    expect(said).toContain(
+      "1 unchecked and 2 boundaries changed where nobody asked.",
+    );
+    expect(said).toContain(
+      "serves runtime-config:GetAccountFunction  cloudformation:template.yaml::GetAccountFunction",
+    );
+    expect(said).toContain("+ declares ACCOUNTS_REGION from AccountsRegion");
   });
 });
