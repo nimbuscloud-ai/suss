@@ -14,6 +14,7 @@
  */
 
 import { boundaryKey } from "./pairing/pairing.js";
+import { normalizedDescription } from "./since/findingIdentity.js";
 
 import type { Finding, FindingSeverity } from "@suss/behavioral-ir";
 
@@ -30,7 +31,7 @@ function moreSevere(a: FindingSeverity, b: FindingSeverity): FindingSeverity {
 function keyFor(f: Finding): string {
   const key = boundaryKey(f.boundary);
   // Descriptions that differ only in whitespace still collapse.
-  const desc = f.description.replace(/\s+/g, " ").trim();
+  const desc = normalizedDescription(f);
   const consumerTxn = f.consumer.transitionId ?? "";
   // Without a boundary key nothing shows that two providers describe one
   // boundary, so the provider stays in the key and each keeps its own
