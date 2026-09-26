@@ -12,6 +12,7 @@
 /** @typedef {import("./types.js").SinceFinding} SinceFinding */
 /** @typedef {import("./types.js").SinceReport} SinceReport */
 /** @typedef {import("./types.js").EditResult} EditResult */
+/** @typedef {import("./types.js").IntentVerdicts} IntentVerdicts */
 
 /**
  * Kinds whose other half is usually the agent's next edit: a field
@@ -111,6 +112,34 @@ export function mergeResults(results) {
     resolved: resolved.filter((finding) => !cameAndWent.has(finding.identity)),
     notes: results.flatMap((result) => result.notes),
   };
+}
+
+/**
+ * What the change list stops the agent on: each entry not done, and
+ * each boundary changed where nobody asked and no `explained` line
+ * keeps the change. Each blocks once, like a finding. A list suss could
+ * not read blocks once as well, so the agent can fix it.
+ *
+ * @param {IntentVerdicts | null} intent
+ * @param {Set<string>} alreadyBlocked
+ * @returns {string[]} what the stop blocks on, as keys for the record
+ */
+export function blocksOnIntent(intent, alreadyBlocked) {
+  if (intent === null) {
+    return [];
+  }
+  const keys =
+    intent.kind === "unreadable"
+      ? [`unreadable: ${intent.why}`]
+      : [
+          ...intent.check.entries
+            .filter((entry) => entry.verdict === "notDone")
+            .map((entry) => `not done: ${entry.said}`),
+          ...intent.check.notAsked.map(
+            (change) => `not asked: ${change.identity}`,
+          ),
+        ];
+  return keys.filter((key) => !alreadyBlocked.has(key));
 }
 
 /**

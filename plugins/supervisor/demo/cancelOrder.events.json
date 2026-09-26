@@ -1,0 +1,149 @@
+[
+  {
+    "hook": "session-start",
+    "input": {
+      "session_id": "demo-cancel-order",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "hook_event_name": "SessionStart",
+      "source": "startup"
+    }
+  },
+  {
+    "hook": "prompt",
+    "input": {
+      "session_id": "demo-cancel-order",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "UserPromptSubmit",
+      "prompt": "Add POST /orders/:id/cancel. Cancelling sets cancelled_at and puts the order in the cancelled status. Return 404 when the order does not exist."
+    }
+  },
+  {
+    "hook": "after-edit",
+    "input": {
+      "session_id": "demo-cancel-order",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Write",
+      "tool_input": {
+        "file_path": "<project>/.suss/session/demo-cancel-order/intent.yaml",
+        "content": "asked: \"Add POST /orders/:id/cancel. Cancelling sets cancelled_at ... 404 when the order does not exist.\"\nchanges:\n  - adds: POST /orders/:id/cancel\n    outcomes: [200, 404]\n  - adds: { writes: postgresql:orders, fields: [cancelled_at] }\n    at: POST /orders/:id/cancel\n  - changes: Order.status\n    note: gains the value \"cancelled\"\n"
+      },
+      "tool_response": {
+        "filePath": "<project>/.suss/session/demo-cancel-order/intent.yaml"
+      },
+      "tool_use_id": "toolu_demo_intent"
+    }
+  },
+  {
+    "hook": "after-edit",
+    "input": {
+      "session_id": "demo-cancel-order",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Write",
+      "tool_input": {
+        "file_path": "<project>/src/orders/cancel.ts",
+        "content": "import { Router } from \"express\";\n\nimport { pool } from \"../db\";\n\nexport const cancelRouter = Router();\n\ncancelRouter.post(\"/orders/:id/cancel\", async (req, res) => {\n  const found = await pool.query(\"SELECT id FROM orders WHERE id = $1\", [\n    req.params.id,\n  ]);\n  if (found.rowCount === 0) {\n    res.status(404).json({ error: \"no such order\" });\n    return;\n  }\n  await pool.query(\n    \"UPDATE orders SET cancelled_at = now(), status = 'cancelled' WHERE id = $1\",\n    [req.params.id],\n  );\n  res.status(200).json({ id: req.params.id, status: \"cancelled\" });\n});\n"
+      },
+      "tool_response": { "filePath": "<project>/src/orders/cancel.ts" },
+      "tool_use_id": "toolu_demo_cancel"
+    }
+  },
+  {
+    "hook": "after-edit",
+    "input": {
+      "session_id": "demo-cancel-order",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Edit",
+      "tool_input": {
+        "file_path": "<project>/src/orders/create.ts",
+        "old_string": "  const created = await orders.insert({ sku, quantity });",
+        "new_string": "  const open = await orders.findOpen(sku);\n  if (open) {\n    res.status(409).json({ error: \"an open order for this sku exists\" });\n    return;\n  }\n  const created = await orders.insert({ sku, quantity });"
+      },
+      "tool_response": { "filePath": "<project>/src/orders/create.ts" },
+      "tool_use_id": "toolu_demo_provider"
+    }
+  },
+  {
+    "hook": "after-edit",
+    "input": {
+      "session_id": "demo-cancel-order",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Edit",
+      "tool_input": {
+        "file_path": "<project>/web/orders/submitOrder.ts",
+        "old_string": "  if (res.status === 400) {",
+        "new_string": "  if (res.status === 409) {\n    throw new Error(\"an open order for this sku already exists\");\n  }\n  if (res.status === 400) {"
+      },
+      "tool_response": { "filePath": "<project>/web/orders/submitOrder.ts" },
+      "tool_use_id": "toolu_demo_client"
+    }
+  },
+  {
+    "hook": "stop",
+    "input": {
+      "session_id": "demo-cancel-order",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "Stop",
+      "stop_hook_active": false,
+      "last_assistant_message": "POST /orders/:id/cancel is in, and POST /orders now refuses a duplicate open order with a 409."
+    }
+  },
+  {
+    "hook": "after-edit",
+    "input": {
+      "session_id": "demo-cancel-order",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Edit",
+      "tool_input": {
+        "file_path": "<project>/.suss/session/demo-cancel-order/intent.yaml",
+        "old_string": "    note: gains the value \"cancelled\"\n",
+        "new_string": "    note: gains the value \"cancelled\"\nexplained:\n  - changes: POST /orders\n    outcomes: [409]\n    why: a second open order for the same sku was charged twice, so POST /orders refuses it\n"
+      },
+      "tool_response": {
+        "filePath": "<project>/.suss/session/demo-cancel-order/intent.yaml"
+      },
+      "tool_use_id": "toolu_demo_explained"
+    }
+  },
+  {
+    "hook": "stop",
+    "input": {
+      "session_id": "demo-cancel-order",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "Stop",
+      "stop_hook_active": true,
+      "last_assistant_message": "The 409 stays, and the change list says why."
+    }
+  },
+  {
+    "hook": "session-end",
+    "input": {
+      "session_id": "demo-cancel-order",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "hook_event_name": "SessionEnd",
+      "reason": "prompt_input_exit"
+    }
+  }
+]

@@ -5,7 +5,7 @@
       "kind": "extract",
       "language": "typescript",
       "project": "tsconfig.json",
-      "packs": ["express", "fetch"]
+      "packs": ["express", "fetch", "pg"]
     }
   ]
 }

@@ -11,10 +11,14 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { runHook } from "../demo/orders409.mjs";
-import { installFakeSuss, scriptFakeSuss } from "./fakeSuss.js";
+import { runHook } from "../demo/play.mjs";
+import { fakeSussCalls, installFakeSuss, scriptFakeSuss } from "./fakeSuss.js";
 
-import type { SinceFinding, SinceReport } from "../scripts/types.js";
+import type {
+  IntentCheck,
+  SinceFinding,
+  SinceReport,
+} from "../scripts/types.js";
 
 const FIXTURE = path.resolve(__dirname, "../../../fixtures/supervisor-orders");
 const SESSION = "hook-test";
@@ -184,7 +188,7 @@ describe("with a stand-in suss the project installs", () => {
     ).toBe("*\n");
   });
 
-  it("keeps each prompt in the session record and prints nothing", () => {
+  it("keeps each prompt in the session record and says where the change list goes", () => {
     installFakeSuss(project, {});
     runHook(event("session-start"), project, {});
 
@@ -195,7 +199,12 @@ describe("with a stand-in suss the project installs", () => {
     );
 
     expect(prompt.status).toBe(0);
-    expect(prompt.stdout).toBe("");
+    expect(prompt.output).toEqual({
+      hookSpecificOutput: {
+        hookEventName: "UserPromptSubmit",
+        additionalContext: `suss: if this request will change code, write the change list for it to ${sessionFile("intent.yaml")} before your first edit, the way the suss:intent skill describes, and print it for the developer. Skip this for a request that changes no code.`,
+      },
+    });
     const lines = fs
       .readFileSync(sessionFile("prompts.jsonl"), "utf8")
       .trim()
@@ -343,6 +352,203 @@ describe("with a stand-in suss the project installs", () => {
     expect(unknown.status).toBe(0);
     expect(unknown.stdout).toBe("");
     expect(unknown.stderr).toContain('there is no "pre-edit" hook');
+  });
+});
+
+function verdicts(parts: Partial<IntentCheck> = {}): IntentCheck {
+  return {
+    version: 1,
+    entries: [],
+    notAsked: [],
+    explained: [],
+    fromWrappers: [],
+    text: "the verdicts",
+    ...parts,
+  };
+}
+
+const NOT_DONE = {
+  said: "+ POST /orders/{id}/cancel responds 200, 404",
+  verdict: "notDone" as const,
+  reason: "the diff does not show POST /orders/{id}/cancel added or changed.",
+  units: [],
+  asked: "Add a cancel endpoint.",
+  requested: true,
+};
+
+const UNASKED_409 = {
+  identity: "POST /orders\nserves src/orders/create.ts::post + responds 409",
+  boundary: "POST /orders",
+  lines: [
+    {
+      does: "serves" as const,
+      boundary: "POST /orders",
+      unit: "post",
+      file: "src/orders/create.ts",
+      change: "added" as const,
+      text: ["+ responds 409 { error }"],
+      conditionMoved: false,
+    },
+  ],
+};
+
+function writeChangeList(): void {
+  fs.writeFileSync(
+    sessionFile("intent.yaml"),
+    "changes:\n  - adds: POST /orders/:id/cancel\n",
+  );
+}
+
+describe("with a change list", () => {
+  it("says nothing more about the change list once the session has one", () => {
+    installFakeSuss(project, {});
+    runHook(event("session-start"), project, {});
+    writeChangeList();
+
+    const prompt = runHook(
+      event("prompt", { prompt: "Also return 410 for an archived order." }),
+      project,
+      {},
+    );
+
+    expect(prompt.status).toBe(0);
+    expect(prompt.stdout).toBe("");
+  });
+
+  it("reads nothing again after an edit to the change list", () => {
+    installFakeSuss(project, {});
+    runHook(event("session-start"), project, {});
+
+    const edit = runHook(
+      edited(path.join(".suss", "session", SESSION, "intent.yaml")),
+      project,
+      {},
+    );
+
+    expect(edit.status).toBe(0);
+    expect(edit.stdout).toBe("");
+    expect(fs.existsSync(sessionFile("edits.jsonl"))).toBe(false);
+  });
+
+  it("gives intent check both readings and the developer's messages", () => {
+    installFakeSuss(project, { intent: verdicts() });
+    runHook(event("session-start"), project, {});
+    runHook(event("prompt", { prompt: "Add a cancel endpoint." }), project, {});
+    writeChangeList();
+
+    runHook(event("stop"), project, {});
+
+    const call = fakeSussCalls(project).find((args) => args[0] === "intent");
+    expect(call).toEqual([
+      "intent",
+      "check",
+      sessionFile("intent.yaml"),
+      "--before",
+      sessionFile(path.join("state", "baseline")),
+      "--after",
+      sessionFile(path.join("state", "current")),
+      "--prompts",
+      sessionFile("prompts.jsonl"),
+      "--json",
+    ]);
+  });
+
+  it("blocks a stop once on an entry not done, then passes and puts the list away", () => {
+    installFakeSuss(project, {
+      intent: verdicts({ entries: [NOT_DONE], text: "not done  + POST ..." }),
+    });
+    runHook(event("session-start"), project, {});
+    writeChangeList();
+
+    const first = runHook(event("stop"), project, {});
+    const second = runHook(
+      event("stop", { stop_hook_active: true }),
+      project,
+      {},
+    );
+
+    expect(first.output?.decision).toBe("block");
+    expect(String(first.output?.reason)).toContain(
+      "suss: the code and the change list do not agree yet.\nFinish each entry marked not done.",
+    );
+    expect(String(first.output?.reason)).toContain("not done  + POST ...");
+    expect(second.output?.decision).toBeUndefined();
+    expect(String(second.output?.systemMessage)).toContain(
+      "suss: what changed since the session started, against the change list.",
+    );
+    expect(fs.existsSync(sessionFile("intent.yaml"))).toBe(false);
+    expect(fs.readdirSync(sessionFile("intents"))).toHaveLength(1);
+  });
+
+  it("blocks once on a change nobody asked for, and passes with the explanation", () => {
+    installFakeSuss(project, { intent: verdicts({ notAsked: [UNASKED_409] }) });
+    runHook(event("session-start"), project, {});
+    writeChangeList();
+
+    const first = runHook(event("stop"), project, {});
+    scriptFakeSuss(project, {
+      intent: verdicts({
+        explained: [
+          {
+            said: "~ POST /orders responds 409",
+            why: "duplicates were charged twice",
+            lines: UNASKED_409.lines,
+          },
+        ],
+        text: "explained  ~ POST /orders responds 409",
+      }),
+    });
+    const second = runHook(
+      event("stop", { stop_hook_active: true }),
+      project,
+      {},
+    );
+
+    expect(first.output?.decision).toBe("block");
+    expect(String(first.output?.reason)).toContain(
+      "For each boundary marked not asked, revert the change, or add an entry under explained:",
+    );
+    expect(second.output?.decision).toBeUndefined();
+    expect(String(second.output?.systemMessage)).toContain(
+      "explained  ~ POST /orders responds 409",
+    );
+  });
+
+  it("blocks once when the change list does not fit its schema", () => {
+    installFakeSuss(project, {
+      intentRefuses:
+        "The change list does not fit its schema:\n  - changes.0: an entry has exactly one of adds, removes or changes",
+    });
+    runHook(event("session-start"), project, {});
+    writeChangeList();
+
+    const first = runHook(event("stop"), project, {});
+    const second = runHook(
+      event("stop", { stop_hook_active: true }),
+      project,
+      {},
+    );
+
+    expect(first.output?.decision).toBe("block");
+    expect(String(first.output?.reason)).toContain(
+      `suss: could not read the change list at ${sessionFile("intent.yaml")}.`,
+    );
+    expect(String(first.output?.reason)).toContain(
+      "an entry has exactly one of adds, removes or changes",
+    );
+    expect(second.output?.decision).toBeUndefined();
+  });
+
+  it("reports as it did before when the session has no change list", () => {
+    installFakeSuss(project, { intent: verdicts({ entries: [NOT_DONE] }) });
+    runHook(event("session-start"), project, {});
+
+    const stop = runHook(event("stop"), project, {});
+
+    expect(stop.stdout).toBe("");
+    expect(fakeSussCalls(project).some((args) => args[0] === "intent")).toBe(
+      false,
+    );
   });
 });
 
