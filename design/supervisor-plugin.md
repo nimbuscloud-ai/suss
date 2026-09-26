@@ -146,7 +146,7 @@ Two rules keep the not-asked list readable. An outcome a wrapper contributes (`w
 
 When the developer approves more work mid-task ("also write an audit row"), the agent appends an entry whose `asked` quotes that message. The Stop check confirms every `asked` quote appears in the recorded prompts, ignoring case, spacing and the kind of quote mark, with `...` matching any stretch. An entry the agent added on its own is flagged as declared without a request rather than counted as done. The developer reads that one line, not the whole list.
 
-`/suss:keep-intent` runs `suss intent keep` once the task passes. It writes one `kind: boundary` document per boundary the `adds` and `changes` entries mention, into `intent/` as `source: author`, with the request as `purpose`, the audience the developer gives, and each `when` taken from the code as it is now, the way `suss infer intent` writes one.
+`/suss:keep-intent` runs `suss intent keep` once the task passes. It writes one `kind: boundary` document per boundary the `adds` and `changes` entries mention, into `intent/` as `source: author`, with the request as `purpose`, the audience the developer gives, and each `when` taken from the code as it is now, the way `suss infer intent` writes one. The Claude Code docs promise `${CLAUDE_SESSION_ID}` in a skill and not in a command, so the hooks keep `.suss/session/current.json` pointing at the session the developer last typed in, and the command falls back to it.
 
 ## Noise
 

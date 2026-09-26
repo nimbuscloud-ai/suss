@@ -5,11 +5,13 @@
  * needs; the last block runs the suss this repository builds.
  */
 
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import YAML from "yaml";
 
 import { runHook } from "../demo/play.mjs";
 import { fakeSussCalls, installFakeSuss, scriptFakeSuss } from "./fakeSuss.js";
@@ -22,6 +24,7 @@ import type {
 import type { FakeScript } from "./fakeSuss.js";
 
 const FIXTURE = path.resolve(__dirname, "../../../fixtures/supervisor-orders");
+const KEEP_INTENT = path.resolve(__dirname, "../scripts/keepIntent.mjs");
 const SESSION = "hook-test";
 
 let project: string;
@@ -623,6 +626,129 @@ describe("with a change list", () => {
   });
 });
 
+/**
+ * Runs /suss:keep-intent's script the way the Bash tool would, in the
+ * project directory, with none of the variables Claude Code may set.
+ */
+function keepIntent(args: string[]) {
+  const {
+    CLAUDE_SESSION_ID: _session,
+    CLAUDE_PROJECT_DIR: _project,
+    CLAUDE_PLUGIN_ROOT: _plugin,
+    ...env
+  } = process.env;
+  return spawnSync(process.execPath, [KEEP_INTENT, ...args], {
+    cwd: project,
+    env,
+    encoding: "utf8",
+  });
+}
+
+/** A path in the session record, as the script sees it from the project directory. */
+function seenFromProject(name: string): string {
+  return path.join(fs.realpathSync(project), ".suss", "session", SESSION, name);
+}
+
+function keepCall(): string[] | undefined {
+  return fakeSussCalls(project).find(
+    (args) => args[0] === "intent" && args[1] === "keep",
+  );
+}
+
+describe("/suss:keep-intent with no session id", () => {
+  it("keeps the change list of the session a hook marked as current", () => {
+    installFakeSuss(project, {});
+    runHook(event("session-start"), project, {});
+    runHook(event("prompt", { prompt: "Add a cancel endpoint." }), project, {});
+    writeChangeList();
+
+    const kept = keepIntent(["--audience", "the web client"]);
+
+    expect(kept.status).toBe(0);
+    expect(kept.stdout).toContain("Kept 1 intent document.");
+    expect(keepCall()).toEqual([
+      "intent",
+      "keep",
+      seenFromProject("intent.yaml"),
+      "--dir",
+      seenFromProject(path.join("state", "current")),
+      "--audience",
+      "the web client",
+      "--into",
+      path.join(fs.realpathSync(project), "intent"),
+    ]);
+  });
+
+  it("ignores a session id that was never filled in", () => {
+    installFakeSuss(project, {});
+    runHook(event("session-start"), project, {});
+    writeChangeList();
+
+    const literal = keepIntent([
+      "--session",
+      "${CLAUDE_SESSION_ID}",
+      "--audience",
+      "the web client",
+    ]);
+    const empty = keepIntent(["--session", "", "--audience", "the web client"]);
+
+    expect([literal.status, empty.status]).toEqual([0, 0]);
+    expect(keepCall()?.[2]).toBe(seenFromProject("intent.yaml"));
+  });
+
+  it("keeps the list the last passing stop filed away", () => {
+    installFakeSuss(project, { intent: verdicts() });
+    runHook(event("session-start"), project, {});
+    writeChangeList();
+    runHook(event("stop"), project, {});
+
+    const kept = keepIntent(["--audience", "the web client"]);
+
+    expect(kept.status).toBe(0);
+    expect(keepCall()?.[2]).toMatch(
+      new RegExp(`${seenFromProject("intents")}/[^/]+\\.yaml$`),
+    );
+  });
+
+  it("follows the session the developer last typed in, and an ending session leaves another's mark", () => {
+    installFakeSuss(project, {});
+    runHook(event("session-start"), project, {});
+    runHook(event("session-start", { session_id: "other" }), project, {});
+    const current = path.join(project, ".suss", "session", "current.json");
+    const afterOtherStarted = JSON.parse(fs.readFileSync(current, "utf8"));
+
+    runHook(event("prompt", { prompt: "Carry on." }), project, {});
+    const afterPrompt = JSON.parse(fs.readFileSync(current, "utf8"));
+    runHook(event("session-end", { session_id: "other" }), project, {});
+
+    expect(afterOtherStarted.session).toBe("other");
+    expect(afterPrompt.session).toBe(SESSION);
+    expect(JSON.parse(fs.readFileSync(current, "utf8")).session).toBe(SESSION);
+  });
+
+  it("says so when no session is running, and when the session has no list", () => {
+    installFakeSuss(project, {});
+    runHook(event("session-start"), project, {});
+
+    const noList = keepIntent(["--audience", "the web client"]);
+    runHook(event("session-end"), project, {});
+    const noSession = keepIntent(["--audience", "the web client"]);
+    const noAudience = keepIntent([]);
+
+    expect(noList.status).toBe(1);
+    expect(noList.stderr).toContain(
+      `Session ${SESSION} has no change list yet.`,
+    );
+    expect(noSession.status).toBe(1);
+    expect(noSession.stderr).toContain(
+      "No session of the suss plugin is running in this project",
+    );
+    expect(noAudience.status).toBe(1);
+    expect(noAudience.stderr).toContain("keep-intent needs --audience");
+    expect(keepCall()).toBeUndefined();
+  });
+});
+
 describe("with the suss this repository builds", () => {
   beforeEach(() => {
     fs.cpSync(FIXTURE, project, {
@@ -665,4 +791,58 @@ describe("with the suss this repository builds", () => {
     expect(helperAbove.status).toBe(0);
     expect(helperAbove.stdout).toBe("");
   });
+
+  it("writes the change list as a boundary document through /suss:keep-intent's script", () => {
+    runHook(event("session-start"), project, {});
+    runHook(
+      event("prompt", {
+        prompt:
+          "Add POST /orders/:id/cancel. Return 404 when the order does not exist.",
+      }),
+      project,
+      {},
+    );
+    fs.writeFileSync(
+      sessionFile("intent.yaml"),
+      'asked: "Add POST /orders/:id/cancel."\nchanges:\n  - adds: POST /orders/:id/cancel\n    outcomes: [200, 404]\n',
+    );
+    fs.writeFileSync(path.join(project, "src/orders/cancel.ts"), CANCEL_ROUTE);
+    runHook(edited("src/orders/cancel.ts"), project, {});
+
+    const kept = keepIntent(["--audience", "the web client"]);
+
+    expect(kept.status).toBe(0);
+    const doc = YAML.parse(
+      fs.readFileSync(
+        path.join(project, "intent", "post-orders-id-cancel.intent.yaml"),
+        "utf8",
+      ),
+    );
+    expect(doc).toMatchObject({
+      kind: "boundary",
+      purpose: "Add POST /orders/:id/cancel.",
+      audience: "the web client",
+      source: "author",
+    });
+    expect(doc.transitions.map((t: { id: string }) => t.id)).toEqual([
+      "200-ok",
+      "404-not-found",
+    ]);
+  });
 });
+
+const CANCEL_ROUTE = `import { Router } from "express";
+
+import { pool } from "../db";
+
+export const cancelRouter = Router();
+
+cancelRouter.post("/orders/:id/cancel", async (req, res) => {
+  const found = await pool.query("SELECT id FROM orders WHERE id = $1", [req.params.id]);
+  if (found.rowCount === 0) {
+    res.status(404).json({ error: "no such order" });
+    return;
+  }
+  res.status(200).json({ id: req.params.id });
+});
+`;

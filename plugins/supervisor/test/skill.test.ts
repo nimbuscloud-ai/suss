@@ -60,7 +60,7 @@ describe("the keep-intent command", () => {
 
     expect(frontmatter(command).description).toEqual(expect.any(String));
     expect(command).toContain(
-      'node "${CLAUDE_PLUGIN_ROOT}/scripts/cli.mjs" intent keep',
+      'node "${CLAUDE_PLUGIN_ROOT}/scripts/keepIntent.mjs" --session "${CLAUDE_SESSION_ID}" --audience',
     );
   });
 });

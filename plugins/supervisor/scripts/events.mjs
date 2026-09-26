@@ -107,6 +107,7 @@ function budget(name, fallback) {
 async function sessionStarted(input, context) {
   const session = sessionFor(input, context);
   session.reopen();
+  session.markCurrent();
   if (!session.hasSnapshot("baseline")) {
     startWorker(session, context);
     await waitUntil(
@@ -129,6 +130,9 @@ async function sessionStarted(input, context) {
  */
 async function promptSubmitted(input, context) {
   const session = sessionFor(input, context);
+  // With two sessions open in one project, the one the developer is
+  // typing in is the one a slash command is about.
+  session.markCurrent();
   session.appendPrompt(typeof input.prompt === "string" ? input.prompt : "");
   if (!session.hasSnapshot("baseline")) {
     startWorker(session, context);
@@ -234,8 +238,9 @@ async function agentStopping(input, context) {
 }
 
 /**
- * Stops the worker and drops the snapshots. The prompts and the reports
- * stay in the session record.
+ * Stops the worker, drops the snapshots, and takes away the mark that
+ * makes this the current session. The prompts, the change lists and the
+ * reports stay in the session record.
  *
  * @param {HookInput} input
  * @param {HookContext} context
@@ -245,6 +250,7 @@ async function sessionEnded(input, context) {
   if (session.exists()) {
     stopWorker(session);
     session.end();
+    session.clearCurrent();
   }
   return null;
 }

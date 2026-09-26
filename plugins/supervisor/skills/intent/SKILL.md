@@ -9,7 +9,7 @@ Before your first edit for a request that will change code, write down the behav
 
 ## Where it goes
 
-`.suss/session/${CLAUDE_SESSION_ID}/intent.yaml` under the project directory. The suss hook gives the full path along with the request. Write it with the Write tool. suss does not read the project again after an edit to this file.
+`.suss/session/${CLAUDE_SESSION_ID}/intent.yaml` under the project directory. The suss hook gives the full path along with the request. When you do not have the session id, `.suss/session/current.json` says which session the suss hooks last saw. Write it with the Write tool. suss does not read the project again after an edit to this file.
 
 ## What goes in it
 

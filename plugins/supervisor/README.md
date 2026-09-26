@@ -28,7 +28,7 @@ scripts/policy.mjs           which findings reach the agent after an edit, and w
 scripts/report.mjs           the text the agent and the developer read
 scripts/session.mjs          the session record on disk
 scripts/suss.mjs             which suss to run, and running it
-scripts/cli.mjs              runs that suss for a slash command
+scripts/keepIntent.mjs       what /suss:keep-intent runs: finds the session and its list, then suss intent keep
 demo/play.mjs                plays a recorded session through the hooks, with no Claude Code
 demo/orders409.mjs           the 409 story: a finding after an edit, and the stop report
 demo/cancelOrder.mjs         the change list story: a stop that blocks on a 409 nobody asked for
@@ -72,6 +72,8 @@ The hook reads what `intent check --json` printed three ways, in `verdictsFrom`.
 | `disabled.json` | why the session is not being checked, when suss could not read the project |
 
 `SessionEnd` removes `state/`, which is most of the record's size, and leaves the rest.
+
+Beside the session folders, `.suss/session/current.json` says which session a slash command acts on. `SessionStart` and each prompt write it, so with two sessions open in one project it points at the one the developer last typed in, and `SessionEnd` removes it when it still points at that session. `/suss:keep-intent` reads it when the command is not given the session id. The Claude Code docs say `${CLAUDE_SESSION_ID}` is filled in for a skill, and do not say so for a command.
 
 ## Which suss the hooks run
 
