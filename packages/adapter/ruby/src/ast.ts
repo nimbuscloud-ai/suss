@@ -318,25 +318,45 @@ export function symbolValue(node: RbNode): string | null {
  * defined twice keeps the later definition, as Ruby does.
  *
  * Class methods are left out, since a field resolves through an instance
- * method. That covers `def self.name`, which parses as a
- * `singleton_method`, and a `def` inside a body block the pack declares
- * as defining class methods.
+ * method. `definesClassMethod` says which those are.
  */
 export function instanceMethodsByName(
   body: RbNode,
   blocks: BodyBlocks = NO_BODY_BLOCKS,
 ): Map<string, RbNode> {
   const methods = new Map<string, RbNode>();
-  for (const stmt of runStatements(body)) {
-    if (stmt.type !== "method" || definedAtClassLevel(stmt, body, blocks)) {
+  for (const method of methodsDefinedIn(body)) {
+    if (method.type !== "method" || definesClassMethod(method, blocks)) {
       continue;
     }
-    const name = field(stmt, "name")?.text;
+    const name = field(method, "name")?.text;
     if (name !== undefined) {
-      methods.set(name, stmt);
+      methods.set(name, method);
     }
   }
   return methods;
+}
+
+/**
+ * The methods one statement of a class body defines: a `def`, or each
+ * `def` inside `class << self`. `definesClassMethod` says which of them
+ * are class methods. The reach walk and the value facts both read a
+ * class body through this, so they agree on what it defines.
+ */
+export function methodsDefinedAt(stmt: RbNode): RbNode[] {
+  if (METHOD_TYPES.has(stmt.type)) {
+    return [stmt];
+  }
+  const inner = selfSingletonBody(stmt);
+  if (inner === null) {
+    return [];
+  }
+  return runStatements(inner).filter((node) => node.type === "method");
+}
+
+/** Every method a class or module body defines, in source order. */
+export function methodsDefinedIn(body: RbNode): RbNode[] {
+  return runStatements(body).flatMap(methodsDefinedAt);
 }
 
 export type MethodVisibility = "public" | "private" | "protected";
@@ -437,12 +457,13 @@ export function singletonMethodsByName(
   blocks: BodyBlocks = NO_BODY_BLOCKS,
 ): Map<string, RbNode> {
   const methods = moduleFunctionsOf(body, blocks);
-  for (const stmt of runStatements(body)) {
-    for (const method of classMethodsWrittenAt(stmt, body, blocks)) {
-      const name = field(method, "name")?.text;
-      if (name !== undefined) {
-        methods.set(name, method);
-      }
+  for (const method of methodsDefinedIn(body)) {
+    if (!definesClassMethod(method, blocks)) {
+      continue;
+    }
+    const name = field(method, "name")?.text;
+    if (name !== undefined) {
+      methods.set(name, method);
     }
   }
   return methods;
@@ -510,25 +531,6 @@ function moduleFunctionCallNames(stmt: RbNode): string[] {
     return [];
   }
   return calledOutNames(stmt);
-}
-
-/** The class methods one statement of a class body defines, in source order. */
-function classMethodsWrittenAt(
-  stmt: RbNode,
-  body: RbNode,
-  blocks: BodyBlocks,
-): RbNode[] {
-  if (stmt.type === "singleton_method") {
-    return [stmt];
-  }
-  if (stmt.type === "method") {
-    return definedAtClassLevel(stmt, body, blocks) ? [stmt] : [];
-  }
-  const inner = selfSingletonBody(stmt);
-  if (inner === null) {
-    return [];
-  }
-  return runStatements(inner).filter((node) => node.type === "method");
 }
 
 /**

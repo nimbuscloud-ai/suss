@@ -913,6 +913,33 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
     ]);
   });
 
+  it("follows a call on a local that a method inside `class << self` assigns", async () => {
+    writeQueryType("orders", ["ReportFormatter.shorten(current_user)"]);
+    write("app/lib/report_formatter.rb", [
+      "class ReportFormatter",
+      "  class << self",
+      "    def shorten(user)",
+      "      service = OrderService.new",
+      "      service.list_orders(user)",
+      "    end",
+      "  end",
+      "end",
+    ]);
+    write("app/services/order_service.rb", [
+      "class OrderService",
+      "  def list_orders(user)",
+      "    user",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    expect(calls(unitNamed(summaries, "shorten"))).toContainEqual([
+      "service.list_orders",
+      summaryIdentifier(unitNamed(summaries, "list_orders")),
+    ]);
+  });
+
   it("links no bare call to a method of the same name that Ruby would not look up from there", async () => {
     writeQueryType("orders", [
       "DomainRule.suspended?(current_user)",

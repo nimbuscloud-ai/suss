@@ -1028,6 +1028,37 @@ describe("ruby value facts", () => {
     expect(rows(db, "instanceOf")).toEqual([]);
   });
 
+  it("gives a def inside `class << self` its facts, with the class as its receiver", async () => {
+    const source = [
+      "class Entity",
+      "  class << self",
+      "    def filter",
+      "      @cache ||= self",
+      "    end",
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const classKey = rows(db, "objectValue")[0]?.[0];
+    const filter = keyOf(source, "def filter\n      @cache ||= self\n    end");
+    const self = lastKeyOf(source, "self");
+    expect(rows(db, "func")).toEqual([[filter]]);
+    expect(rows(db, "holdsProperty")).toContainEqual([
+      classKey,
+      "filter",
+      filter,
+    ]);
+    expect(rows(db, "binds")).toContainEqual([self, classKey]);
+    expect(rows(db, "storesProperty")).toContainEqual([
+      filter,
+      "@cache",
+      self,
+      "receiver",
+    ]);
+    expect(rows(db, "instanceOf")).toEqual([]);
+  });
+
   it("reads an instance variable as a property of the method's receiver", async () => {
     const source = "class C\n  def go\n    @thing\n  end\nend\n";
     const db = await factsFor(source);

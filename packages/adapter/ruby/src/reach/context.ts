@@ -14,9 +14,9 @@ import { ancestryOf } from "../ancestry.js";
 import {
   bodyStatements,
   field,
+  methodsDefinedIn,
   NO_BODY_BLOCKS,
   OWN_BODY_TYPES,
-  selfSingletonBody,
 } from "../ast.js";
 import { nodeId } from "../facts/values.js";
 import { walkDefinitions } from "../scope.js";
@@ -29,8 +29,6 @@ import type { DynamicNames } from "../defineMethod.js";
 import type { RbLoaderPattern } from "../pack.js";
 import type { RbNode } from "../parser.js";
 import type { ReachContext, ReachedFunction } from "./resolveCallee.js";
-
-const METHOD_TYPES = new Set(["method", "singleton_method"]);
 
 /** Reads every file once up front, so resolving a call never re-reads a file. */
 export async function buildReachContext(
@@ -50,7 +48,8 @@ export async function buildReachContext(
     walkDefinitions(root, (info) => {
       classes.push({ file, info });
       classNames.set(nodeId(file, info.node), info.qualifiedName);
-      for (const method of methodsWrittenIn(info.bodyNode)) {
+      const body = info.bodyNode;
+      for (const method of body === null ? [] : methodsDefinedIn(body)) {
         classOfMethod.set(nodeId(file, method), info.qualifiedName);
       }
     });
@@ -123,26 +122,6 @@ export async function buildReachContext(
     dynamicNames,
     loaders,
   };
-}
-
-/** tree-sitter types a named child as nullable, and a class with no body has no children at all. */
-function namedChildren(node: RbNode | null): RbNode[] {
-  if (node === null) {
-    return [];
-  }
-  return node.namedChildren.filter((child): child is RbNode => child !== null);
-}
-
-/** The methods a class body defines directly, a `def` inside its `class << self` included. */
-function methodsWrittenIn(body: RbNode | null): RbNode[] {
-  return namedChildren(body).flatMap((statement) => {
-    if (METHOD_TYPES.has(statement.type)) {
-      return [statement];
-    }
-    return namedChildren(selfSingletonBody(statement)).filter((inner) =>
-      METHOD_TYPES.has(inner.type),
-    );
-  });
 }
 
 /** Every `def` written outside any class, module or other method. Ruby makes each one a private method of every object. */

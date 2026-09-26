@@ -17,10 +17,12 @@ import {
 import {
   bareCallArgumentGroups,
   bodyStatementsRun,
+  definesClassMethod,
   field,
   INCLUDE_CALL,
   LAMBDA_TYPE,
   METHOD_TYPES,
+  methodsDefinedAt,
   NESTING_TYPES,
   NO_BODY_BLOCKS,
   OWN_BODY_TYPES,
@@ -1212,17 +1214,17 @@ const INITIALIZE_METHOD = "initialize";
 /**
  * The key `self` has inside a method. In an instance method `self` is an
  * instance of the class, with a key of its own so that a walk from one
- * construction reads that construction's fields. In `def self.x`, `self`
+ * construction reads that construction's fields. In a class method `self`
  * is the class itself.
  */
 function receiverKeyOf(
-  filePath: string,
+  emitter: Emitter,
   method: RbNode,
   classKey: string,
 ): string {
-  return method.type === "singleton_method"
+  return definesClassMethod(method, emitter.bodyBlocks)
     ? classKey
-    : `${nodeId(filePath, method)}#self`;
+    : `${nodeId(emitter.filePath, method)}#self`;
 }
 
 /** A mixin argument written any other way has no name a rule can join on. */
@@ -1262,6 +1264,43 @@ function emitMixinFacts(
 ): void {
   for (const mixin of mixedInConstants(body, callName)) {
     add(emitter, relation, classKey, valueKey(emitter, mixin));
+  }
+}
+
+/**
+ * Emits a method a class body defines and records it on the class under
+ * its name, a class method and an instance method alike.
+ */
+function emitMethodOfClass(
+  within: Emitter,
+  classKey: string,
+  method: RbNode,
+): void {
+  const stored = new Map<string, InstanceWrite[]>();
+  const receiverKey = receiverKeyOf(within, method, classKey);
+  const onInstance = receiverKey !== classKey;
+  if (onInstance) {
+    add(within, "instanceOf", receiverKey, classKey);
+  }
+  const funcKey = emitMethodFacts(
+    {
+      ...within,
+      selfKey: receiverKey,
+      insideMethod: onInstance,
+      instanceWrites: stored,
+    },
+    method,
+  );
+  const name = field(method, "name");
+  if (name !== null) {
+    add(within, "holdsProperty", classKey, name.text, funcKey);
+    if (onInstance && name.text === INITIALIZE_METHOD) {
+      add(within, "initializes", classKey, funcKey);
+    }
+  }
+  const methodBody = field(method, "body");
+  if (methodBody !== null) {
+    emitInstanceStores(within, funcKey, methodBody, stored);
   }
 }
 
@@ -1332,32 +1371,9 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
       // Ruby runs a class body, so a statement there such as
       // `Settings.filters.each do ... end` gets the same facts as in a method.
       emitExpressionFacts(within, statement);
-      continue;
     }
-    const stored = new Map<string, InstanceWrite[]>();
-    const receiverKey = receiverKeyOf(emitter.filePath, statement, classKey);
-    if (receiverKey !== classKey) {
-      add(emitter, "instanceOf", receiverKey, classKey);
-    }
-    const funcKey = emitMethodFacts(
-      {
-        ...within,
-        selfKey: receiverKey,
-        insideMethod: receiverKey !== classKey,
-        instanceWrites: stored,
-      },
-      statement,
-    );
-    const name = field(statement, "name");
-    if (name !== null) {
-      add(emitter, "holdsProperty", classKey, name.text, funcKey);
-      if (name.text === INITIALIZE_METHOD) {
-        add(emitter, "initializes", classKey, funcKey);
-      }
-    }
-    const methodBody = field(statement, "body");
-    if (methodBody !== null) {
-      emitInstanceStores(within, funcKey, methodBody, stored);
+    for (const method of methodsDefinedAt(statement)) {
+      emitMethodOfClass(within, classKey, method);
     }
   }
   emitInstanceWrites(within, classKey, collected);
