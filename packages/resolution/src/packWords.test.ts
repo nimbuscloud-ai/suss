@@ -30,7 +30,10 @@ describe("the facts a pack states about its own library", () => {
       returnsReceiver: ["freeze", "dup"],
     });
 
-    expect(rows(db, "givesBackOne")).toEqual([["ActiveRecord::Base", "find"]]);
+    expect(rows(db, "givesBackOne")).toEqual([
+      ["ActiveRecord::Base", "find"],
+      ["ActiveRecord::Base", ".find"],
+    ]);
     expect(rows(db, "givesBackOneOfArgument")).toEqual([
       ["DeclarativeBase", "get", "0"],
     ]);
@@ -44,7 +47,12 @@ describe("the facts a pack states about its own library", () => {
     expect(rows(db, "associationConstructor")).toEqual([
       ["sqlalchemy.orm", "relationship"],
     ]);
-    expect(rows(db, "returnsReceiver")).toEqual([["freeze"], ["dup"]]);
+    expect(rows(db, "returnsReceiver")).toEqual([
+      ["freeze"],
+      [".freeze"],
+      ["dup"],
+      [".dup"],
+    ]);
   });
 
   it("adds nothing for a run whose packs declared nothing", () => {
@@ -71,6 +79,9 @@ describe("the facts a pack states about its own library", () => {
         { base: "ActiveRecord::Base", method: "find" },
       ],
     });
-    expect(rows(db, "givesBackOne")).toEqual([["ActiveRecord::Base", "find"]]);
+    expect(rows(db, "givesBackOne")).toEqual([
+      ["ActiveRecord::Base", "find"],
+      ["ActiveRecord::Base", ".find"],
+    ]);
   });
 });

@@ -5,6 +5,7 @@ export {
   couldBeSettled,
   writtenSourcesOf,
 } from "./callee.js";
+export { classMemberName, classMemberOf } from "./classMember.js";
 export { checkFactContract, FACT_CONTRACT_CASES } from "./contract.js";
 export { declaredTypesOf } from "./declaredType.js";
 export { explainResolutionProof, renderExplanation } from "./explain.js";

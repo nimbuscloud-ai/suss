@@ -982,9 +982,13 @@ describe("what a pack's storage patterns put in the facts", () => {
 
     expect(db.facts("givesBackOne").map((row) => row.map(String))).toEqual([
       ["ActiveRecord::Base", "find"],
+      ["ActiveRecord::Base", ".find"],
       ["ActiveRecord::Base", "where"],
+      ["ActiveRecord::Base", ".where"],
       ["Legacy::Model", "find"],
+      ["Legacy::Model", ".find"],
       ["Legacy::Model", "where"],
+      ["Legacy::Model", ".where"],
     ]);
   });
 
@@ -1045,6 +1049,7 @@ describe("the facts for a single parsed file", () => {
 
     expect(db.facts("givesBackOne").map((row) => row.map(String))).toEqual([
       ["ActiveRecord::Base", "find"],
+      ["ActiveRecord::Base", ".find"],
     ]);
     expect(db.size("objectValue")).toBeGreaterThan(0);
   });
