@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { Database } from "@suss/datalog";
+import { Database, profileEvaluation } from "@suss/datalog";
 
 import { emitModuleImportFacts } from "../facts.js";
 import { findPythonFiles } from "../index.js";
@@ -13,6 +13,7 @@ import { bindModule } from "../scope.js";
 import {
   constructionSites,
   containedValues,
+  evaluatingUnderSite,
   objectReturnedBy,
   resolveCalls,
   resolvedFunctions,
@@ -561,4 +562,48 @@ describe("reading a value under one construction", () => {
 
     expect(constructionSites(facts, classKeyOf(facts))).toEqual([]);
   });
+
+  it("gives a question asked during a site evaluation the answer it gets outside one, and keeps the site program's progress", async () => {
+    const source = [
+      ...RESOURCE,
+      'users = Resource("/users")',
+      'orders = Resource("/orders")',
+      "listed = users.list()",
+    ].join("\n");
+    const sitesThenQuestion = async (during: boolean) => {
+      const { facts, dir } = await factsFor({ "app.py": source });
+      const read = readInList(facts);
+      const callee = attributeRead(facts, "list");
+      const [first, second] = constructionSites(facts, classKeyOf(facts));
+      const askAll = () => [
+        writtenValueUnder(facts, read, first as string),
+        resolvedAfterAsking(facts, callee),
+        writtenValueUnder(facts, read, second as string),
+      ];
+      const { result, profile } = profileEvaluation(() =>
+        during ? evaluatingUnderSite(facts, askAll) : askAll(),
+      );
+      const inProject = JSON.stringify(result).replaceAll(dir, "");
+      return { result: inProject, rows: profile.examined };
+    };
+
+    const outside = await sitesThenQuestion(false);
+    const during = await sitesThenQuestion(true);
+    expect(outside.result).toContain("app.py");
+    expect(during.result).toEqual(outside.result);
+    expect(during.rows).toBeLessThan(outside.rows);
+  });
 });
+
+function attributeRead(db: Database, name: string): string {
+  const row = db.facts("readsProperty").find((one) => String(one[2]) === name);
+  if (row === undefined) {
+    throw new Error(`no read of ${name} was emitted`);
+  }
+  return String(row[0]);
+}
+
+function resolvedAfterAsking(db: Database, key: string): string[] {
+  resolveCalls(db, [key]);
+  return resolvedFunctions(db, key);
+}

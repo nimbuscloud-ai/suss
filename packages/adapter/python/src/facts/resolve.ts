@@ -9,6 +9,8 @@ import {
   askResolution,
   askResolutionUnder,
   declaredTypesOf,
+  resolutionProgram,
+  resolutionUnderProgram,
   writtenValueOf as sharedWrittenValueOf,
   writtenValuesOf as sharedWrittenValuesOf,
   writtenValueUnder as sharedWrittenValueUnder,
@@ -16,11 +18,38 @@ import {
   writtenValuesByKey,
 } from "@suss/resolution";
 
-import type { Database } from "@suss/datalog";
+import type { Database, OnDemandRules } from "@suss/datalog";
+
+/** How many evaluations under an allocation site are running over each database. */
+const evaluationsUnderSite = new WeakMap<Database, number>();
+
+/**
+ * Runs `read`, an evaluation under an allocation site. Settling a callee
+ * on the way asks context-free questions, and asking them through the
+ * context-free program would reset the site program between one site
+ * question and the next, so each would start from nothing. The site
+ * program is the same rules plus the site questions, so it gives the
+ * same answers to a context-free question.
+ */
+export function evaluatingUnderSite<T>(db: Database, read: () => T): T {
+  evaluationsUnderSite.set(db, (evaluationsUnderSite.get(db) ?? 0) + 1);
+  try {
+    return read();
+  } finally {
+    evaluationsUnderSite.set(db, (evaluationsUnderSite.get(db) ?? 1) - 1);
+  }
+}
+
+/** The program a context-free question goes through right now. */
+function programFor(db: Database): OnDemandRules {
+  return (evaluationsUnderSite.get(db) ?? 0) > 0
+    ? resolutionUnderProgram()
+    : resolutionProgram();
+}
 
 /** Asks the rules to resolve these keys, and derives what follows. */
 export function resolveCalls(db: Database, callKeys: readonly string[]): void {
-  askResolution(db, callKeys);
+  askResolution(db, callKeys, "wanted", programFor(db));
 }
 
 /**
@@ -33,7 +62,7 @@ export function resolveEnvObjects(
   db: Database,
   objectKeys: readonly string[],
 ): void {
-  askResolution(db, objectKeys, "wantedEnvObject");
+  askResolution(db, objectKeys, "wantedEnvObject", programFor(db));
 }
 
 /**
@@ -73,7 +102,7 @@ export function writtenValueUnder(
 
 /** Every construction of a class the run can see, as the keys to ask under. */
 export function constructionSites(db: Database, classKey: string): string[] {
-  askResolution(db, [classKey], "wantedSites");
+  askResolution(db, [classKey], "wantedSites", programFor(db));
   return allocationSitesOf(db, classKey);
 }
 
@@ -118,7 +147,7 @@ export interface SubjectOrigin {
  * imports what the name refers to.
  */
 export function originsOf(db: Database, nameKey: string): SubjectOrigin[] {
-  askResolution(db, [nameKey], "wantedOrigin");
+  askResolution(db, [nameKey], "wantedOrigin", programFor(db));
   return db
     .facts("wantedComesFrom")
     .filter((row) => String(row[0]) === nameKey)
@@ -136,7 +165,7 @@ export function declaredTypeOrigins(
   key: string,
 ): SubjectOrigin[] {
   let shared: SubjectOrigin[] | null = null;
-  for (const typeKey of declaredTypesOf(db, key)) {
+  for (const typeKey of declaredTypesOf(db, key, programFor(db))) {
     const origins = originsOf(db, typeKey);
     shared =
       shared === null
@@ -181,7 +210,7 @@ export function subjectConstructions(
   }
 
   const askSubjects = (keys: readonly string[]): void => {
-    askResolution(db, keys, "wantedSubject");
+    askResolution(db, keys, "wantedSubject", programFor(db));
   };
   askSubjects(valueKeys);
   const written = writtenValuesByKey(
