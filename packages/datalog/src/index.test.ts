@@ -553,6 +553,98 @@ describe("Database.retract", () => {
   });
 });
 
+describe("Database.retractAll", () => {
+  const CLOSURE = [
+    rule("path", [V("x"), V("y")], [lit("edge", V("x"), V("y"))]),
+    rule(
+      "path",
+      [V("x"), V("z")],
+      [lit("path", V("x"), V("y")), lit("edge", V("y"), V("z"))],
+    ),
+  ];
+  const BLOCKABLE = [
+    rule("q", [V("x")], [lit("p", V("x")), notLit("blocked", V("x"))]),
+  ];
+
+  // Two rule sets over one database, so each keeps a ledger and marks.
+  const evaluatedTwice = (): Database => {
+    const db = new Database();
+    db.add("gone", ["x"]);
+    db.retract("gone", [["x"]]);
+    db.add("edge", ["a", "b"]);
+    db.add("edge", ["b", "c"]);
+    db.add("p", ["1"]);
+    db.add("p", ["2"]);
+    evaluate(db, CLOSURE);
+    evaluate(db, BLOCKABLE);
+    return db;
+  };
+
+  const rowsToSettle = (db: Database, rules: Rule[]): number => {
+    const budget = rowBudget(Number.POSITIVE_INFINITY);
+    evaluate(db, rules, undefined, budget);
+    return budget.examined;
+  };
+
+  it("empties a relation and reports how many facts it had", () => {
+    const db = evaluatedTwice();
+    expect(sorted(db.lookup("path", 0, "a"))).toEqual(["a,b", "a,c"]);
+
+    expect(db.retractAll("path")).toBe(3);
+
+    expect(db.size("path")).toBe(0);
+    expect(db.has("path", ["a", "b"])).toBe(false);
+    expect(db.lookup("path", 0, "a")).toEqual([]);
+    expect(db.retractAll("path")).toBe(0);
+    expect(db.retractAll("absent")).toBe(0);
+  });
+
+  it("empties a relation in a database nothing has evaluated", () => {
+    const db = new Database();
+    db.add("edge", ["a", "b"]);
+
+    expect(db.retractAll("edge")).toBe(1);
+
+    expect(db.add("edge", ["a", "b"])).toBe("added");
+  });
+
+  it("leaves the database as retracting every fact does", () => {
+    const byEach = evaluatedTwice();
+    const whole = evaluatedTwice();
+    for (const db of [byEach, whole]) {
+      db.lookup("q", 0, "1");
+    }
+
+    expect(whole.retractAll("q")).toBe(
+      byEach.retract("q", [...byEach.facts("q")]),
+    );
+
+    for (const db of [byEach, whole]) {
+      expect(db.add("q", ["2"])).toBe("added");
+      db.add("blocked", ["2"]);
+      db.add("edge", ["c", "d"]);
+    }
+    expect(whole.lookup("q", 0, "2")).toEqual([["2"]]);
+    expect(whole.lookup("q", 0, "1")).toEqual([]);
+    // Both start over from the base facts rather than resuming.
+    expect(rowsToSettle(whole, CLOSURE)).toBe(rowsToSettle(byEach, CLOSURE));
+    expect(sorted(whole.facts("path"))).toEqual(sorted(byEach.facts("path")));
+    // q(2) is the caller's now, so taking back old conclusions leaves it.
+    evaluate(byEach, BLOCKABLE);
+    evaluate(whole, BLOCKABLE);
+    expect(sorted(whole.facts("q"))).toEqual(["1", "2"]);
+    expect(sorted(byEach.facts("q"))).toEqual(["1", "2"]);
+  });
+
+  it("lets the next evaluation resume after emptying a relation that had nothing", () => {
+    const db = evaluatedTwice();
+
+    expect(db.retractAll("gone")).toBe(0);
+
+    expect(rowsToSettle(db, CLOSURE)).toBe(0);
+  });
+});
+
 describe("evaluate: taking conclusions back", () => {
   const BLOCKABLE = [
     rule("q", [V("x")], [lit("p", V("x")), notLit("blocked", V("x"))]),
