@@ -289,6 +289,24 @@ export class Database {
     return going.size;
   }
 
+  /**
+   * Remove every fact in a relation, and return how many there were. The
+   * database ends up as `retract` leaves it when handed every tuple, but
+   * nothing looks a tuple up to remove it.
+   */
+  retractAll(relationName: string): number {
+    const relation = this.store.get(relationName);
+    if (relation === undefined || relation.tuples.length === 0) {
+      return 0;
+    }
+    const removed = relation.tuples.length;
+    relation.tuples = [];
+    relation.index.clear();
+    relation.columns.length = 0;
+    forgetRelation(this, relationName);
+    return removed;
+  }
+
   size(relationName: string): number {
     return this.store.get(relationName)?.tuples.length ?? 0;
   }
@@ -957,6 +975,21 @@ function forgetFacts(db: Database, relation: string, keys: Set<FactKey>): void {
   }
 }
 
+/**
+ * `forgetFacts` for a relation that lost every fact. A ledger lists only
+ * facts still in the database, so emptying it forgets the same keys.
+ */
+function forgetRelation(db: Database, relation: string): void {
+  const states = evaluated.get(db);
+  if (states === undefined) {
+    return;
+  }
+  for (const state of states.values()) {
+    state.marks = null;
+    state.derived.get(relation)?.clear();
+  }
+}
+
 const usesNegation = (rules: Rule[]): boolean =>
   rules.some((r) => r.body.some((l) => l.negated));
 
@@ -1062,7 +1095,7 @@ export function clearRelations(
   relations: readonly string[],
 ): void {
   for (const relation of relations) {
-    db.retract(relation, [...db.facts(relation)]);
+    db.retractAll(relation);
   }
   const state = statesFor(db).get(signatureOf(rules));
   if (state !== undefined) {

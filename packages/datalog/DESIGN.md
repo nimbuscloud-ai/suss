@@ -326,7 +326,11 @@ db.facts("answer"); // a's answers, which nothing took away, plus m's
 
 With `retract`, the next run would start again from the base facts,
 because a fact leaving the database can remove a conclusion drawn
-anywhere. With `clearRelations` the next run resumes. By passing these
+anywhere. With `clearRelations` the next run resumes. It empties each
+relation in one step, dropping the facts, the trie and the column
+indexes together, and leaves the database as retracting every fact
+one at a time would. A caller that asks one question at a time clears
+after each one, so every question starts from empty demand relations. By passing these
 relations, the caller promises that nothing outside them was derived
 from them. That is true of the relations `deriveOnDemand` restricts. Every one of them is derived under a demand fact, and only
 the relations you listed as complete read from them. The complete
