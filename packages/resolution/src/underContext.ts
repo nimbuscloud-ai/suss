@@ -10,10 +10,10 @@
  * question, the same way the context-free readers need `askResolution`.
  */
 
-import { answersByKey, placeholderValues } from "./singleAnswer.js";
-import { coveringFallback } from "./writtenValue.js";
+import { answersAt, coveringFallback } from "./writtenValue.js";
 
 import type { Database } from "@suss/datalog";
+import type { FallbackRelations } from "./writtenValue.js";
 
 function answersUnder(
   db: Database,
@@ -72,25 +72,20 @@ export function writtenValueUnder(
   site: string,
   ask: AskUnder,
 ): string | null {
-  const answers = writtenAsUnder(db, key, site);
+  const answers = answersAt(db, UNDER_SITE.writtenAs, key, site);
   if (answers.length === 1) {
     return answers[0] as string;
   }
-  return coveringFallback(key, {
-    writtenAs: (value) => writtenAsUnder(db, value, site),
-    fallbacks: (value) =>
-      answersUnder(db, "wantedFallbackBehindUnder", value, site).filter(
-        (fallback) => fallback !== value,
-      ),
-    ask: (keys) => ask(keys.map((value) => [value, site] as const)),
-  });
+  const askAtSite = (keys: readonly string[]): void => {
+    ask(keys.map((value) => [value, site] as const));
+  };
+  return coveringFallback(db, key, UNDER_SITE, site, askAtSite);
 }
 
-/** Every expression the value was written as under this site, placeholders set aside. */
-function writtenAsUnder(db: Database, key: string, site: string): string[] {
-  const rows = isWrittenAsUnder(db, key, site).map((answer) => [key, answer]);
-  return answersByKey(rows, placeholderValues(db)).get(key) ?? [];
-}
+const UNDER_SITE: FallbackRelations = {
+  writtenAs: "wantedIsWrittenAsUnder",
+  fallbacks: "wantedFallbackBehindUnder",
+};
 
 /**
  * Every site a class was made at, once `askResolution` has asked
