@@ -15,11 +15,16 @@
 
 import { BOUNDARY_ROLE, leavesTheProcess } from "@suss/behavioral-ir";
 
-import { boundariesTouchedBy, boundarySpelling } from "./boundaryReach.js";
+import {
+  boundariesTouchedBy,
+  boundarySpelling,
+  NO_ACCESS,
+} from "./boundaryReach.js";
 import { functionOf, readCallFacts } from "./callFacts.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
-import type { Relation } from "@suss/ir-core";
+import type { BoundaryBinding, Relation } from "@suss/ir-core";
+import type { Access } from "./boundaryReach.js";
 import type { CallEdge, FunctionKey } from "./callFacts.js";
 
 /** One boundary a unit reaches, and the chain of calls that gets there. */
@@ -28,22 +33,27 @@ export interface ReachedEffect {
   /** The boundary and the detail together, which is how a report prints them. */
   readonly label: string;
   readonly boundary: string;
+  readonly binding: BoundaryBinding;
   /** The variable a config read takes, which the boundary label leaves out. */
   readonly detail?: string;
   /** The calls from the unit serving the boundary to the unit that touches this one. */
   readonly through: readonly string[];
+  /** What each access along any chain states about the columns it touches. */
+  readonly accesses: readonly Access[];
 }
 
 /** A unit serving a boundary, and what a request through it reaches. */
 export interface ServedBoundaryReach {
   readonly summary: BehavioralSummary;
   readonly boundary: string;
+  readonly binding: BoundaryBinding;
   readonly effects: readonly ReachedEffect[];
 }
 
 /** What one boundary reaches, on one side of the diff. */
 interface Entrypoint {
   readonly boundary: string;
+  readonly binding: BoundaryBinding;
   readonly unit: string;
   readonly file: string;
   readonly reached: Map<string, ReachedEffect>;
@@ -53,6 +63,7 @@ interface Entrypoint {
 export interface EntrypointChange {
   readonly key: string;
   readonly boundary: string;
+  readonly binding: BoundaryBinding;
   readonly unit: string;
   readonly file: string;
   /** Whether the whole boundary is new, gone, or was there before. */
@@ -135,15 +146,23 @@ function reachedFrom(
               ? touch.label
               : `${touch.label} ${touch.detail}`;
           const key = effectKey(touch.relation, label);
-          if (reached.has(key)) {
+          const access = touch.access ?? NO_ACCESS;
+          const already = reached.get(key);
+          if (already !== undefined) {
+            reached.set(key, {
+              ...already,
+              accesses: [...already.accesses, access],
+            });
             continue;
           }
           reached.set(key, {
             relation: touch.relation,
             label,
             boundary: touch.label,
+            binding: touch.binding,
             ...(touch.detail === undefined ? {} : { detail: touch.detail }),
             through,
+            accesses: [access],
           });
         }
       }
@@ -162,7 +181,7 @@ function reachedFrom(
 }
 
 /** The boundary a unit serves from outside the process, if it serves one. */
-function servedBoundary(summary: BehavioralSummary): string | null {
+function servedBinding(summary: BehavioralSummary): BoundaryBinding | null {
   const binding = summary.identity.boundaryBinding;
   if (
     binding === null ||
@@ -171,7 +190,7 @@ function servedBoundary(summary: BehavioralSummary): string | null {
   ) {
     return null;
   }
-  return boundarySpelling(binding);
+  return binding;
 }
 
 /**
@@ -186,17 +205,18 @@ export function boundaryReach(
   const reach: ServedBoundaryReach[] = [];
 
   for (const summary of summaries) {
-    const boundary = servedBoundary(summary);
-    if (boundary === null) {
+    const binding = servedBinding(summary);
+    if (binding === null) {
       continue;
     }
+    const boundary = boundarySpelling(binding);
     const reached = reachedFrom(
       functionOf(summary),
       boundary,
       out,
       facts.units,
     );
-    reach.push({ summary, boundary, effects: [...reached.values()] });
+    reach.push({ summary, boundary, binding, effects: [...reached.values()] });
   }
 
   return reach;
@@ -207,7 +227,9 @@ function entrypointsOf(
 ): Map<string, Entrypoint> {
   const entrypoints = new Map<string, Entrypoint>();
 
-  for (const { summary, boundary, effects } of boundaryReach(summaries)) {
+  for (const { summary, boundary, binding, effects } of boundaryReach(
+    summaries,
+  )) {
     const key = entrypointKey(
       summary.location.file,
       summary.identity.name,
@@ -218,6 +240,7 @@ function entrypointsOf(
     }
     entrypoints.set(key, {
       boundary,
+      binding,
       unit: summary.identity.name,
       file: summary.location.file,
       reached: new Map(
@@ -282,6 +305,7 @@ function changeOf(
   return {
     key: entrypointKey(side.file, side.unit, side.boundary),
     boundary: side.boundary,
+    binding: side.binding,
     unit: side.unit,
     file: side.file,
     change: whichWay(before, after),

@@ -1807,7 +1807,7 @@ function defaultGuardMoved(before: Transition, after: Transition): boolean {
 // ---------------------------------------------------------------------------
 
 /** One unit that moved, with what the report needs to say about it. */
-interface MovedUnit {
+export interface MovedUnit {
   /** What the unit pairs by across the two runs. */
   readonly key: string;
   readonly change: "added" | "removed" | "changed";
@@ -1816,6 +1816,7 @@ interface MovedUnit {
   readonly kind: BehavioralSummary["kind"];
   readonly recognition: string | null;
   readonly boundary: string | null;
+  readonly binding: BoundaryBinding | null;
   /** Whether crossing the boundary it is on leaves the process. */
   readonly leavesTheProcess: boolean;
   /**
@@ -1830,8 +1831,12 @@ interface MovedUnit {
 }
 
 /** One outcome that moved, in the words the report uses. */
-interface OutcomeLine {
+export interface OutcomeLine {
   readonly change: MovedUnit["change"];
+  /** The transition the line is about: the later one, for an outcome that changed. */
+  readonly transition: Transition;
+  /** The earlier transition, for an outcome that changed. */
+  readonly previous?: Transition;
   /** The outcome and the test that leads to it. A changed one reads as it does now. */
   readonly outcome: string;
   /** How a changed outcome read before, when the report prints both. */
@@ -1843,13 +1848,14 @@ interface OutcomeLine {
 }
 
 /** Something a boundary started or stopped doing, in the words the report uses. */
-interface EffectLine {
+export interface EffectLine {
   readonly change: "added" | "removed";
   /** `writes postgresql:audit_log`, as the report prints it. */
   readonly effect: string;
   /** The relation and the boundary, for an effect at a boundary. */
   readonly relation?: Relation;
   readonly boundary?: string;
+  readonly binding?: BoundaryBinding;
   /** The variable a config read takes, which the boundary label leaves out. */
   readonly detail?: string;
   /** The calls from the unit to the one that does it, empty for its own effect. */
@@ -1950,6 +1956,7 @@ function movedUnit(
     kind: summary.kind,
     recognition: binding === null ? null : binding.recognition,
     boundary: bindingLabel(summary),
+    binding,
     leavesTheProcess: binding !== null && leavesTheProcess(binding),
     outcomes:
       diff === null
@@ -1970,6 +1977,7 @@ function wholeUnitOutcomes(
   const alone = summary.transitions.length === 1;
   return summary.transitions.map((transition) => ({
     change,
+    transition,
     outcome: renderTransitionShort(transition, false, alone),
     wrapper: undefined,
   }));
@@ -2027,14 +2035,16 @@ function transitionWord(count: number): string {
  */
 function atBoundary(
   relation: Relation,
-  boundary: string,
+  binding: BoundaryBinding,
   detail: string | undefined,
 ): EffectWords {
+  const boundary = displayLabel(binding);
   const label = detail === undefined ? boundary : `${boundary} ${detail}`;
   return {
     effect: `${relation} ${label}`,
     relation,
     boundary,
+    binding,
     ...(detail === undefined ? {} : { detail }),
   };
 }
@@ -2050,7 +2060,7 @@ const EFFECT_WORDS: DispatchTable<Effect, EffectWords | null> = {
     }
     return atBoundary(
       relation,
-      displayLabel(effect.binding),
+      effect.binding,
       interactionDetail(effect.interaction),
     );
   },
@@ -2194,6 +2204,7 @@ function transitionLines(diff: SummaryDiff, alone: boolean): OutcomeLine[] {
   for (const t of diff.addedTransitions) {
     lines.push({
       change: "added",
+      transition: t,
       outcome: renderTransitionShort(t, false, alone),
       wrapper: wrapperOf(t),
     });
@@ -2202,6 +2213,7 @@ function transitionLines(diff: SummaryDiff, alone: boolean): OutcomeLine[] {
   for (const t of diff.removedTransitions) {
     lines.push({
       change: "removed",
+      transition: t,
       outcome: renderTransitionShort(t, false, alone),
       wrapper: wrapperOf(t),
     });
@@ -2221,7 +2233,13 @@ function transitionLines(diff: SummaryDiff, alone: boolean): OutcomeLine[] {
       renderGuard(b) === renderGuard(a)
     ) {
       const outcome = withGuard(a, `${status} ${marked}`, spellDefault, alone);
-      lines.push({ change: "changed", outcome, wrapper: undefined });
+      lines.push({
+        change: "changed",
+        transition: a,
+        previous: b,
+        outcome,
+        wrapper: undefined,
+      });
       continue;
     }
     // A pair with the same line and no other field changed differs only
@@ -2232,6 +2250,8 @@ function transitionLines(diff: SummaryDiff, alone: boolean): OutcomeLine[] {
     }
     lines.push({
       change: "changed",
+      transition: a,
+      previous: b,
       outcome: afterLine,
       was: beforeLine,
       ...(fields.length === 0 ? {} : { fields }),
@@ -2246,7 +2266,7 @@ function transitionLines(diff: SummaryDiff, alone: boolean): OutcomeLine[] {
  * The printed lines of one outcome. A changed outcome that needs its old
  * line prints both together, since neither makes sense without the other.
  */
-function outcomeTexts(line: OutcomeLine): string[] {
+export function outcomeTexts(line: OutcomeLine): string[] {
   if (line.was === undefined) {
     return [`${NAME_MARKERS[line.change]} ${line.outcome}`];
   }
@@ -2261,10 +2281,11 @@ function outcomeTexts(line: OutcomeLine): string[] {
  * What one boundary now does: the responses that moved, and what the
  * request reaches on its way through the project.
  */
-interface BoundaryBlock {
+export interface BoundaryBlock {
   readonly change: MovedUnit["change"];
   readonly does: "serves" | "calls";
   readonly boundary: string;
+  readonly binding: BoundaryBinding | null;
   readonly unit: string;
   readonly file: string;
   /** What it returns, and under what test. */
@@ -2276,7 +2297,7 @@ interface BoundaryBlock {
 }
 
 /** How many calls a chain prints before the middle of it collapses. */
-const CHAIN_HOPS = 3;
+export const CHAIN_HOPS = 3;
 
 /**
  * The calls between a boundary and something it reaches. The reader
@@ -2299,7 +2320,7 @@ function reachText(effect: ReachedEffect, hops: number | "full"): string {
   return `${effect.relation} ${effect.label}${chainLine(effect.through, hops)}`;
 }
 
-function effectText(line: EffectLine, hops: number | "full"): string {
+export function effectText(line: EffectLine, hops: number | "full"): string {
   return `${NAME_MARKERS[line.change]} ${line.effect}${chainLine(line.through, hops)}`;
 }
 
@@ -2310,7 +2331,7 @@ function reachLine(
 ): EffectLine {
   return {
     change,
-    ...atBoundary(effect.relation, effect.boundary, effect.detail),
+    ...atBoundary(effect.relation, effect.binding, effect.detail),
     through: effect.through,
   };
 }
@@ -2396,6 +2417,7 @@ function boundaryBlocks(
       change: unit.change,
       does: boundaryVerb(unit),
       boundary,
+      binding: unit.binding,
       unit: unit.name,
       file: unit.file,
       outcomes: [...unit.outcomes],
@@ -2423,6 +2445,7 @@ function boundaryBlocks(
         change: change.change,
         does: "serves",
         boundary: change.boundary,
+        binding: change.binding,
         unit: change.unit,
         file: change.file,
         outcomes: [],
@@ -2755,11 +2778,24 @@ const NOTHING_AT_A_BOUNDARY =
  * the JSON both render this, so they list the same boundaries and lift
  * the same lines under a wrapper.
  */
-interface DiffReport {
+export interface DiffReport {
   readonly moved: readonly MovedUnit[];
   /** Every boundary that moved, including one whose lines all went to a cause. */
   readonly blocks: readonly BoundaryBlock[];
   readonly causes: readonly SharedCause[];
+}
+
+/**
+ * What moved between two readings, as data: the same boundaries, lines
+ * and wrapper causes `inspect --diff` prints. A program that judges a
+ * change, such as `suss intent check`, reads this and so agrees with the
+ * report a person reads.
+ */
+export function behaviorDiff(
+  before: readonly BehavioralSummary[],
+  after: readonly BehavioralSummary[],
+): DiffReport {
+  return diffReport(pairForDiff(before, after), before, after);
 }
 
 function diffReport(
@@ -2868,7 +2904,10 @@ interface DiffedSummary {
 }
 
 /** An outcome at a boundary, as `inspect --diff --json` writes it. */
-type DiffedOutcome = Omit<OutcomeLine, "wrapper"> & {
+type DiffedOutcome = Omit<
+  OutcomeLine,
+  "wrapper" | "transition" | "previous"
+> & {
   readonly from?: WrapperReference;
 };
 
@@ -2880,7 +2919,7 @@ interface DiffedBoundary {
   readonly unit: string;
   readonly file: string;
   readonly outcomes: readonly DiffedOutcome[];
-  readonly effects: readonly EffectLine[];
+  readonly effects: readonly Omit<EffectLine, "binding">[];
 }
 
 /** An outcome one wrapper produced at several boundaries, as the JSON writes it. */
@@ -2911,8 +2950,22 @@ function diffedSummary(unit: MovedUnit): DiffedSummary {
   };
 }
 
-function diffedOutcome({ wrapper, ...line }: OutcomeLine): DiffedOutcome {
+// The transition and the binding are for a program in this process. The
+// JSON already writes the transitions out under `summaries`.
+function diffedOutcome({
+  wrapper,
+  transition: _transition,
+  previous: _previous,
+  ...line
+}: OutcomeLine): DiffedOutcome {
   return wrapper === undefined ? line : { ...line, from: wrapper };
+}
+
+function diffedEffect({
+  binding: _binding,
+  ...line
+}: EffectLine): Omit<EffectLine, "binding"> {
+  return line;
 }
 
 function diffedBoundary(block: BoundaryBlock): DiffedBoundary {
@@ -2923,7 +2976,7 @@ function diffedBoundary(block: BoundaryBlock): DiffedBoundary {
     unit: block.unit,
     file: block.file,
     outcomes: block.outcomes.map(diffedOutcome),
-    effects: block.effects,
+    effects: block.effects.map(diffedEffect),
   };
 }
 
