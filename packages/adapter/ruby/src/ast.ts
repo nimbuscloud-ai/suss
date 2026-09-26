@@ -99,6 +99,9 @@ function statementsRunBy(branch: RbNode): RbNode[] {
   return [branch];
 }
 
+/** `class << self`, whose body defines methods on the class itself. */
+const SINGLETON_CLASS_TYPE = "singleton_class";
+
 /**
  * The body of one of these belongs to the definition, so its statements
  * do not run when the enclosing body runs.
@@ -109,7 +112,7 @@ export const OWN_BODY_TYPES = new Set([
   "lambda",
   "class",
   "module",
-  "singleton_class",
+  SINGLETON_CLASS_TYPE,
 ]);
 
 /** The parse tree's root. Its own statements run when the file loads. */
@@ -367,17 +370,22 @@ function markCalledOutMethods(
   keyword: MethodVisibility,
   visibility: Map<string, MethodVisibility>,
 ): void {
+  for (const name of calledOutNames(call)) {
+    setVisibility(visibility, name, keyword);
+  }
+}
+
+/** The methods a call like `private :a, :b` or `private def name; end` passes by name. */
+function calledOutNames(call: RbNode): string[] {
   const argumentList = field(call, "arguments");
   if (argumentList === null) {
-    return;
+    return [];
   }
-  for (const arg of bodyStatements(argumentList)) {
+  return bodyStatements(argumentList).flatMap((arg) => {
     const name =
       arg.type === "method" ? field(arg, "name")?.text : symbolValue(arg);
-    if (name !== undefined && name !== null) {
-      setVisibility(visibility, name, keyword);
-    }
-  }
+    return name === undefined || name === null ? [] : [name];
+  });
 }
 
 /**
@@ -418,27 +426,163 @@ export function instanceMethodVisibility(
 
 /**
  * Every class method a class body defines, keyed by name: each
- * `def self.name`, and each `def` inside a body block the pack declares
- * as defining class methods. A call on the constant itself, such as
- * `OrderService.call`, is looked up here, since it runs on the class.
+ * `def self.name`, each `def` inside `class << self`, each `def` inside
+ * a body block the pack declares as defining class methods, and each
+ * instance method a module also defines on itself. A call on the
+ * constant itself, such as `OrderService.call`, is looked up here, since
+ * it runs on the class. A name defined twice keeps the later definition.
  */
 export function singletonMethodsByName(
   body: RbNode,
   blocks: BodyBlocks = NO_BODY_BLOCKS,
 ): Map<string, RbNode> {
-  const methods = new Map<string, RbNode>();
+  const methods = moduleFunctionsOf(body, blocks);
   for (const stmt of runStatements(body)) {
-    const classLevel =
-      stmt.type === "method" && definedAtClassLevel(stmt, body, blocks);
-    if (stmt.type !== "singleton_method" && !classLevel) {
-      continue;
-    }
-    const name = field(stmt, "name")?.text;
-    if (name !== undefined) {
-      methods.set(name, stmt);
+    for (const method of classMethodsWrittenAt(stmt, body, blocks)) {
+      const name = field(method, "name")?.text;
+      if (name !== undefined) {
+        methods.set(name, method);
+      }
     }
   }
   return methods;
+}
+
+const MODULE_FUNCTION = "module_function";
+
+/**
+ * The instance methods a module also defines on itself, so that a call
+ * on the module, or a bare call in one of its class methods, runs them.
+ * `extend self` does that for every instance method, `module_function`
+ * with no arguments for each `def` after it, and `module_function :a`
+ * for `a`.
+ */
+function moduleFunctionsOf(
+  body: RbNode,
+  blocks: BodyBlocks,
+): Map<string, RbNode> {
+  const instance = instanceMethodsByName(body, blocks);
+  const offered = new Map<string, RbNode>();
+  let everyLaterDef = false;
+  for (const stmt of bodyStatements(body)) {
+    if (extendsItself(stmt)) {
+      return instance;
+    }
+    if (stmt.type === "identifier" && stmt.text === MODULE_FUNCTION) {
+      everyLaterDef = true;
+      continue;
+    }
+    const name = stmt.type === "method" ? field(stmt, "name")?.text : null;
+    if (everyLaterDef && name !== undefined && name !== null) {
+      offered.set(name, stmt);
+    }
+    for (const named of moduleFunctionCallNames(stmt)) {
+      const method = instance.get(named);
+      if (method !== undefined) {
+        offered.set(named, method);
+      }
+    }
+  }
+  return offered;
+}
+
+/** Whether a statement is `extend self`. */
+function extendsItself(stmt: RbNode): boolean {
+  if (
+    stmt.type !== "call" ||
+    field(stmt, "receiver") !== null ||
+    field(stmt, "method")?.text !== "extend"
+  ) {
+    return false;
+  }
+  const args = field(stmt, "arguments");
+  const passed = args === null ? [] : bodyStatements(args);
+  return passed.length === 1 && passed[0]?.type === "self";
+}
+
+/** The methods a `module_function :a` or `module_function def a` call passes, or none for any other statement. */
+function moduleFunctionCallNames(stmt: RbNode): string[] {
+  if (
+    stmt.type !== "call" ||
+    field(stmt, "receiver") !== null ||
+    field(stmt, "method")?.text !== MODULE_FUNCTION
+  ) {
+    return [];
+  }
+  return calledOutNames(stmt);
+}
+
+/** The class methods one statement of a class body defines, in source order. */
+function classMethodsWrittenAt(
+  stmt: RbNode,
+  body: RbNode,
+  blocks: BodyBlocks,
+): RbNode[] {
+  if (stmt.type === "singleton_method") {
+    return [stmt];
+  }
+  if (stmt.type === "method") {
+    return definedAtClassLevel(stmt, body, blocks) ? [stmt] : [];
+  }
+  const inner = selfSingletonBody(stmt);
+  if (inner === null) {
+    return [];
+  }
+  return runStatements(inner).filter((node) => node.type === "method");
+}
+
+/**
+ * The body of a `class << self` statement, whose `def`s define methods
+ * on the class itself. Null for any other statement, `class << obj`
+ * included, since that one defines methods on `obj`.
+ */
+export function selfSingletonBody(stmt: RbNode): RbNode | null {
+  if (
+    stmt.type !== SINGLETON_CLASS_TYPE ||
+    field(stmt, "value")?.type !== "self"
+  ) {
+    return null;
+  }
+  return field(stmt, "body");
+}
+
+/**
+ * Whether a method definition puts the method on the class itself, so
+ * `self` in its body is the class and a bare call in it runs a class
+ * method: `def self.x`, a `def` inside `class << self`, or a `def`
+ * inside a body block the pack declares as defining class methods.
+ */
+export function definesClassMethod(
+  method: RbNode,
+  blocks: BodyBlocks = NO_BODY_BLOCKS,
+): boolean {
+  if (method.type === "singleton_method") {
+    return true;
+  }
+  const scope = enclosingClassScope(method);
+  if (scope === null) {
+    return false;
+  }
+  if (scope.type === SINGLETON_CLASS_TYPE) {
+    return selfSingletonBody(scope) !== null;
+  }
+  const body = field(scope, "body");
+  return body !== null && definedAtClassLevel(method, body, blocks);
+}
+
+/** The nearest class, module or `class << x` a node is written in, or null. */
+function enclosingClassScope(node: RbNode): RbNode | null {
+  let current = node.parent;
+  while (current !== null) {
+    if (
+      NESTING_TYPES.has(current.type) ||
+      current.type === SINGLETON_CLASS_TYPE
+    ) {
+      return current;
+    }
+    current = current.parent;
+  }
+  return null;
 }
 
 /** Each receiverless call to `name` the body runs, in source order. */

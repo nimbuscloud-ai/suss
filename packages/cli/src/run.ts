@@ -37,6 +37,7 @@ import {
   extractEntryFor,
   extractLanguagesOf,
   packFlags,
+  packSpecsOf,
   readProjectInto,
   whereReadsCameFrom,
 } from "./projectRead.js";
@@ -443,7 +444,7 @@ async function packsFromProject(source: {
   process.stderr.write(
     `${whereReadsCameFrom(source.root, declared)}\n  ${commandFor(running)}\n`,
   );
-  return { frameworks: entry.packs, tsconfig };
+  return { frameworks: packSpecsOf(entry, source.root), tsconfig };
 }
 
 function noPacksMessage(

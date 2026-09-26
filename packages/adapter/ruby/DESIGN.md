@@ -452,7 +452,9 @@ A call with no arguments does not replace the call it is written on, the way a c
 
 An instance variable belongs to the object and not to any one method, so the adapter treats it as a property of the class. An assignment to `@scope` anywhere in the class body records its value on the class under `@scope`, and every read of `@scope` is a property read off that class. A Rails controller sets one in a `before_action` and reads it in the action. Those are two different bodies, so a key local to one method would never join them. `contains` already walks `extends`, so a write in a base controller reaches a read in a subclass with no extra step, and a module the class `include`s is on that path too. Nothing orders two methods against each other, so several writes that disagree leave several values, and a reader that needs one answer sees more than one source. A write that narrows the value, such as `@scope = @scope.where(a: 1)`, is set aside the same way it is for a local.
 
-A call with no receiver, or with `self` as the receiver, does not go to the rules. Ruby looks that name up in the enclosing class's ancestry, then among the methods the project defines outside any class, which Ruby mixes into every object as private methods. The adapter follows the same order.
+A call with no receiver, or with `self` as the receiver, does not go to the rules. Ruby looks that name up on whatever `self` is. In an instance method that is an instance, so the lookup goes through the enclosing class's ancestry. In a class method, one written as `def self.x`, inside `class << self`, or inside a block a pack declares as defining class methods, `self` is the class, so the lookup goes through the class methods the class body writes. A module that calls `extend self`, or `module_function`, makes its instance methods class methods too. After the class, Ruby looks among the methods the project defines outside any class, which it mixes into every object as private methods. The adapter follows the same order.
+
+When none of those declares the name, the call is left for the link step, which matches it by name among the summaries in the caller's file. The one exception is a name the enclosing class declares for the other kind of `self`: a class method, when the call is in an instance method, or an instance method, when the call is in a class method. Ruby never runs that method from there, so the call is placed at itself and the name match does not link it.
 
 A bare name with no receiver, no arguments and no parentheses is one of these calls. `visible_items` on its own parses as an identifier, the same node a local variable read produces, so `bareCalls.ts` tells the two apart the way Ruby does. A name the method binds is a local variable, and every other identifier read is a call on self. A parameter, an assignment, a block or lambda parameter, a `for` variable, or a `rescue => err` clause binds a name. Binding is over-approximated on purpose: a name assigned anywhere in the method counts as a local, even when the assignment comes after the read. When the adapter is wrong, it misses a call instead of inventing one. An identifier that spells a name instead of reading a value, like a method's own name or the left side of an assignment, is left alone. So is an identifier used as another call's receiver, since in `orders.first` there is no way to resolve what `first` runs on.
 
@@ -462,8 +464,9 @@ A pack can also list the receiverless calls its library defines, in `inheritedMe
 
 | Written as | Followed to |
 | --- | --- |
-| `helper`, `helper(x)` or `self.helper(x)`, called in a method | that method in the enclosing class's own ancestry |
-| `helper`, when nothing in the enclosing ancestry defines it | `def helper` written outside any class, project-wide |
+| `helper`, `helper(x)` or `self.helper(x)`, called in an instance method | that method in the enclosing class's own ancestry |
+| `helper`, `helper(x)` or `self.helper(x)`, called in a class method | the class method of that name written in the enclosing class's own body |
+| `helper`, when nothing in the enclosing class defines it | `def helper` written outside any class, project-wide |
 | `Service.new.method` | `method` in `Service`'s own ancestry |
 | `s = Service.new` then `s.method`, however many names apart | `method` in `Service`'s own ancestry |
 | `s = Service.new` then `s = s.only(1)`, where `only` returns `self` | `only`, then `method` on the next call in the chain |
@@ -471,7 +474,7 @@ A pack can also list the receiverless calls its library defines, in `inheritedMe
 | `Service.new`, where `Service` declares `initialize` | that `initialize` |
 | `@scope = Service.new` in one method, `@scope.method` in another | `method` in `Service`'s own ancestry |
 | `@scope = Service.new` in a base class, `@scope.method` in a subclass | `method` in `Service`'s own ancestry |
-| `Service.method` | `def self.method` written in `Service`'s own body |
+| `Service.method` | the class method `method` written in `Service`'s own body, as `def self.method` or inside `class << self` |
 | `Service.new(x)` | `initialize` in `Service`'s own ancestry |
 | `register(method(:build_index))`, where `register(handler)` calls `handler.call` or `handler.()` | `build_index`, followed from wherever a caller in the run named it, through the parameter `register`'s own body calls |
 

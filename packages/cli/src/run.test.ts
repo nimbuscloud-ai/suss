@@ -379,6 +379,33 @@ describe("runCli extract", () => {
     expect(summaryNamesIn(outFile)).toContain("getHealth");
   });
 
+  it("reads a pack config path in suss.json against the project root when run from a subdirectory", async () => {
+    const outFile = fetchProjectIn(tmpDir);
+    fs.writeFileSync(path.join(tmpDir, "suss.fetch.json"), "{}");
+    fs.writeFileSync(
+      path.join(tmpDir, "suss.json"),
+      JSON.stringify({
+        version: 1,
+        read: [
+          {
+            kind: "extract",
+            language: "typescript",
+            packs: ["fetch=suss.fetch.json"],
+          },
+        ],
+      }),
+    );
+    const subdirectory = path.join(tmpDir, "src");
+    fs.mkdirSync(subdirectory);
+
+    const { exit, io } = await inDirectory(subdirectory, () =>
+      capture(() => runCli(["extract", "--dir", tmpDir, "-o", outFile])),
+    );
+    expect(io.stderr).not.toContain("No pack config");
+    expect(exit).toBe(0);
+    expect(summaryNamesIn(outFile)).toContain("getHealth");
+  });
+
   it("says when suss.json has only contracts and no packs to read code with", async () => {
     const outFile = fetchProjectIn(tmpDir);
     fs.writeFileSync(

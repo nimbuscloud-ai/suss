@@ -104,6 +104,23 @@ export function stringContentValue(content: PyNode): string {
   return text + content.text.slice(cursor);
 }
 
+/**
+ * The identifier a parameter declares. `loader: ApplicationLoader` is a
+ * `typed_parameter`, which the grammar gives no name field, so the name is
+ * the identifier it starts with. `*args` and `**kwargs` give the name after
+ * the stars.
+ */
+export function parameterIdentifier(param: PyNode): PyNode | null {
+  if (param.type === "identifier") {
+    return param;
+  }
+  const named = field(param, "name");
+  if (named !== null) {
+    return named;
+  }
+  return children(param).find((child) => child.type === "identifier") ?? null;
+}
+
 /** A parameter's name and the annotation written on it, across the four spellings the grammar gives a parameter. `*args` and `**kwargs` return null. */
 export function parameterNameAndType(
   param: PyNode,

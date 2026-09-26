@@ -118,6 +118,37 @@ describe("Project", () => {
     fs.rmSync(root, { recursive: true, force: true });
   }, 60_000);
 
+  it("reads a pack config path in suss.json against the project root", async () => {
+    // The server's working directory is wherever it was started, which
+    // here is the package directory, not the project.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-proj-config-"));
+    projectWithOneRoute(root, "/orders");
+    fs.writeFileSync(path.join(root, "suss.express.json"), "{}");
+    fs.writeFileSync(
+      path.join(root, "suss.json"),
+      JSON.stringify({
+        version: 1,
+        read: [
+          {
+            kind: "extract",
+            language: "typescript",
+            project: "tsconfig.json",
+            packs: ["express=suss.express.json"],
+          },
+        ],
+      }),
+    );
+
+    const project = new Project({ root, watch: false });
+    const report = await project.start();
+
+    expect(report.failed).toEqual([]);
+    expect(boundariesIn(report.summaryDir)).toEqual(["/orders"]);
+
+    project.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }, 60_000);
+
   it("picks up an edit, so an answer describes the tree as it is", async () => {
     // The reason the server watches at all: a model asking a question
     // in the round right after it wrote the code gets an answer about

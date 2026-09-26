@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   bodyStatements,
   booleanLiteralValue,
+  definesClassMethod,
   field,
   hashKeySymbolName,
   instanceMethodsByName,
@@ -302,6 +303,121 @@ describe("singletonMethodsByName", () => {
     expect([...singletonMethodsByName(body, CONCERN_BLOCKS).keys()]).toEqual([
       "build",
     ]);
+  });
+
+  it("keys each def inside `class << self` alongside each `def self.`", async () => {
+    const body = await classBody(
+      [
+        "class Report",
+        "  def self.build",
+        "  end",
+        "",
+        "  class << self",
+        "    def render",
+        "    end",
+        "  end",
+        "",
+        "  def total",
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+    expect([...singletonMethodsByName(body).keys()]).toEqual([
+      "build",
+      "render",
+    ]);
+    expect([...instanceMethodsByName(body).keys()]).toEqual(["total"]);
+  });
+
+  it("leaves out a def inside `class << obj`, which defines it on that object", async () => {
+    const body = await classBody(
+      "class Report\n  class << OTHER\n    def render\n    end\n  end\nend\n",
+    );
+    expect([...singletonMethodsByName(body).keys()]).toEqual([]);
+  });
+
+  it("keys every instance method of a module that extends itself", async () => {
+    const body = await moduleBody(
+      "module Formats\n  extend self\n\n  def wrap\n  end\nend\n",
+    );
+    expect([...singletonMethodsByName(body).keys()]).toEqual(["wrap"]);
+  });
+
+  it("keys the methods `module_function` covers, and only those", async () => {
+    const body = await moduleBody(
+      [
+        "module Formats",
+        "  def plain",
+        "  end",
+        "",
+        "  def named",
+        "  end",
+        "  module_function :named",
+        "",
+        "  module_function",
+        "",
+        "  def wrap",
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+    expect([...singletonMethodsByName(body).keys()]).toEqual(["named", "wrap"]);
+  });
+});
+
+describe("definesClassMethod", () => {
+  const methodsIn = async (source: string): Promise<RbNode[]> => {
+    const tree = await parseRuby(source);
+    const found: RbNode[] = [];
+    const visit = (node: RbNode): void => {
+      if (node.type === "method" || node.type === "singleton_method") {
+        found.push(node);
+      }
+      for (const child of bodyStatements(node)) {
+        visit(child);
+      }
+    };
+    visit(tree.rootNode);
+    return found;
+  };
+
+  it("says which defs put a method on the class itself", async () => {
+    const methods = await methodsIn(
+      [
+        "class Report",
+        "  def self.build",
+        "  end",
+        "",
+        "  class << self",
+        "    def render",
+        "    end",
+        "  end",
+        "",
+        "  def total",
+        "  end",
+        "end",
+        "",
+        "def helper",
+        "end",
+      ].join("\n"),
+    );
+    expect(
+      methods.map((method) => [
+        field(method, "name")?.text,
+        definesClassMethod(method),
+      ]),
+    ).toEqual([
+      ["build", true],
+      ["render", true],
+      ["total", false],
+      ["helper", false],
+    ]);
+  });
+
+  it("counts a def inside a declared class-method block", async () => {
+    const [build, pay] = await methodsIn(CLASS_METHODS_CONCERN);
+    expect(definesClassMethod(must(build), CONCERN_BLOCKS)).toBe(true);
+    expect(definesClassMethod(must(pay), CONCERN_BLOCKS)).toBe(false);
   });
 });
 

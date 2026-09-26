@@ -19,6 +19,7 @@ import { explainResolvedKey, RESOLUTION_RULES } from "@suss/resolution";
 import { enclosingDefinition, field } from "../ast.js";
 import { parseRubySync } from "../parser.js";
 import { findRubyFiles, RunFacts } from "../project.js";
+import { parametersOf, paramNameOf } from "./locals.js";
 import { RUBY_RULES } from "./resolve.js";
 import { calleeKeyOf, nodeId, readKey } from "./values.js";
 
@@ -50,16 +51,35 @@ function namedChildrenOf(node: RbNode): RbNode[] {
   return node.namedChildren.filter((child): child is RbNode => child !== null);
 }
 
+/** The statements that write a local, `x = ...` and `x ||= ...`. */
+const ASSIGNMENT_TYPES = new Set(["assignment", "operator_assignment"]);
+
+/** The definitions and blocks whose parameters are locals of the body they open. */
+const PARAMETER_OWNER_TYPES = new Set([
+  "method",
+  "singleton_method",
+  "lambda",
+  "block",
+  "do_block",
+]);
+
 /**
- * Indexes every node in a file by its key. A constant and an assigned
- * local are also indexed by their name key, so a proof atom that is a
- * bare name still points at source.
+ * Indexes every node in a file by its key. A constant, an assigned local
+ * and a parameter are also indexed by their name key, so a proof atom
+ * that is a bare name still points at source. A local is keyed on the
+ * method or block it belongs to, the same way the facts key it.
  */
 function indexFile(
   file: string,
   root: RbNode,
   locations: Map<string, Located>,
 ): void {
+  const writesName = (name: RbNode): void => {
+    locations.set(readKey(file, name, enclosingDefinition(name)), {
+      file,
+      node: name,
+    });
+  };
   const walk = (node: RbNode): void => {
     locations.set(nodeId(file, node), { file, node });
 
@@ -68,10 +88,18 @@ function indexFile(
     if (node.type === "constant") {
       locations.set(`${file}#${node.text}`, { file, node });
     }
-    if (node.type === "assignment") {
+    if (ASSIGNMENT_TYPES.has(node.type)) {
       const left = field(node, "left");
       if (left !== null && left.type === "identifier") {
-        locations.set(`${file}#${left.text}`, { file, node: left });
+        writesName(left);
+      }
+    }
+    if (PARAMETER_OWNER_TYPES.has(node.type)) {
+      for (const parameter of parametersOf(node)) {
+        const name = paramNameOf(parameter);
+        if (name !== null) {
+          writesName(name);
+        }
       }
     }
 
