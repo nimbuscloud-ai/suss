@@ -27,6 +27,7 @@ import {
   fields,
   isFunction,
   LATER_BODY_TYPES,
+  parameterIdentifier,
   parameterNameAndType,
   stringLiteralValue,
 } from "../ast.js";
@@ -152,22 +153,6 @@ const PARAMETER_DIVIDERS = new Set([
   "positional_separator",
 ]);
 
-/**
- * What a parameter is called. `loader: ApplicationLoader` is a
- * `typed_parameter`, which the grammar gives no name field, so the name is the
- * identifier it starts with.
- */
-function parameterName(param: PyNode): PyNode | null {
-  if (param.type === "identifier") {
-    return param;
-  }
-  const named = field(param, "name");
-  if (named !== null) {
-    return named;
-  }
-  return children(param).find((child) => child.type === "identifier") ?? null;
-}
-
 /** What a function calls its parameters, in order. `*args` and `**kwargs` are left out. */
 export function parameterList(fn: PyNode): string[] {
   return parameterShapes(fn).map((parameter) => parameter.name);
@@ -188,7 +173,7 @@ export function parameterShapes(fn: PyNode, skip = 0): Parameter<PyNode>[] {
     if (SPLAT_TYPES.has(param.type) || PARAMETER_DIVIDERS.has(param.type)) {
       continue;
     }
-    const name = parameterName(param);
+    const name = parameterIdentifier(param);
     if (name !== null && position >= skip) {
       declared.push({
         name: name.text,
@@ -206,7 +191,7 @@ function boundParameterNames(fn: PyNode): string[] {
   const params = field(fn, "parameters");
   const names: string[] = [];
   for (const param of params === null ? [] : children(params)) {
-    const name = parameterName(param);
+    const name = parameterIdentifier(param);
     if (name !== null) {
       names.push(name.text);
     }
@@ -698,7 +683,7 @@ function emitFunctionFacts(
     if (param.type === "positional_separator") {
       continue;
     }
-    const paramName = parameterName(param);
+    const paramName = parameterIdentifier(param);
     if (paramName !== null) {
       const paramKey = `${funcKey}#${paramName.text}`;
       if (byPosition && position >= 0) {
