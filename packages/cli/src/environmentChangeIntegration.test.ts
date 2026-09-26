@@ -241,3 +241,37 @@ describe("intent check against a change to the environment", () => {
     expect(said).toContain("2 boundaries changed where nobody asked");
   });
 });
+
+describe("check over what extract --out-dir wrote", () => {
+  it("knows the template was read, and does not call the template and its own code two services", async () => {
+    const run = await quietly(["check", "--dir", snapshots.declared], project);
+
+    expect(run.stdout).not.toContain("was not read");
+    expect(run.stdout).not.toContain("claimed by more than one file");
+  });
+
+  it("knows a template read into a file of its own with suss contract", async () => {
+    const dir = path.join(work, "by-hand");
+    fs.mkdirSync(dir);
+    fs.copyFileSync(
+      path.join(snapshots.declared, "0-extract.json"),
+      path.join(dir, "code.json"),
+    );
+    await quietly(
+      [
+        "contract",
+        "--from",
+        "cloudformation",
+        "template.yaml",
+        "-o",
+        path.join(dir, "cloudformation.json"),
+      ],
+      project,
+    );
+
+    const run = await quietly(["check", "--dir", dir], project);
+
+    expect(run.stdout).not.toContain("was not read");
+    expect(run.stdout).not.toContain("claimed by more than one file");
+  });
+});

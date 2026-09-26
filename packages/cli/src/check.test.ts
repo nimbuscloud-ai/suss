@@ -992,6 +992,75 @@ describe("checkDir", () => {
     expect(output).toContain("svc-a.json and svc-b.json");
   });
 
+  describe("a route a deployment template declares for a handler", () => {
+    function handler(): BehavioralSummary {
+      const code = providerWithRoute(
+        "GetUserFunction.handler",
+        "GET",
+        "/users",
+        [transition("t-200", { statusCode: 200, isDefault: true })],
+      );
+      return {
+        ...code,
+        identity: {
+          ...code.identity,
+          deployableUnit: {
+            deploymentTarget: "lambda",
+            instanceName: "GetUserFunction",
+          },
+        },
+      };
+    }
+
+    function gateway(functionLogicalId: string): BehavioralSummary {
+      const declared = providerWithRoute(
+        "GetUserFunction:Get",
+        "GET",
+        "/users",
+        [transition("t-502", { statusCode: 502 })],
+      );
+      return {
+        ...declared,
+        metadata: {
+          http: {
+            implementingHandler: {
+              handler: "src/getUser.handler",
+              modulePath: "src/getUser",
+              exportName: "handler",
+              functionLogicalId,
+            },
+          },
+        },
+      };
+    }
+
+    function claimed(declared: BehavioralSummary): string {
+      fs.writeFileSync(
+        path.join(tmpDir, "0-extract.json"),
+        JSON.stringify([handler()]),
+      );
+      fs.writeFileSync(
+        path.join(tmpDir, "1-contract.json"),
+        JSON.stringify([declared]),
+      );
+      return captureStdout(() => {
+        checkDir({ dir: tmpDir });
+      });
+    }
+
+    it("is one claim with the handler it points at, since both describe one service", () => {
+      expect(claimed(gateway("GetUserFunction"))).not.toContain(
+        "claimed by more than one file",
+      );
+    });
+
+    it("is a second claim when it points at a handler neither file has", () => {
+      expect(claimed(gateway("ListUsersFunction"))).toContain(
+        "GET /users  in 0-extract.json and 1-contract.json",
+      );
+    });
+  });
+
   it("stays quiet when each boundary comes from one file", () => {
     fs.writeFileSync(
       path.join(tmpDir, "provider.json"),

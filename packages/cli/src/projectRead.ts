@@ -18,6 +18,8 @@ import { inspectProject } from "./init.js";
 import {
   PROJECT_FILE,
   projectFileFor,
+  readEntryIndex,
+  readOutputName,
   readProjectFile,
 } from "./projectFile.js";
 
@@ -132,13 +134,6 @@ export async function readProjectInto(
   return { summaryDir, ran, failed, declared: reads.declared };
 }
 
-/** The file one entry's summaries go to, numbered by its place in the list. */
-function readOutputName(index: number, entry: ReadEntry): string {
-  return `${index}-${entry.kind}.json`;
-}
-
-const READ_OUTPUT_NAME = /^\d+-(extract|contract)\.json$/;
-
 /**
  * Removes the files an earlier `readProjectInto` wrote into `dir`, so an
  * entry that fails this time leaves no summaries from last time behind.
@@ -148,7 +143,7 @@ export function clearEarlierReads(dir: string): void {
     return;
   }
   for (const name of fs.readdirSync(dir)) {
-    if (READ_OUTPUT_NAME.test(name)) {
+    if (readEntryIndex(name) !== null) {
       fs.rmSync(path.join(dir, name), { force: true });
     }
   }
