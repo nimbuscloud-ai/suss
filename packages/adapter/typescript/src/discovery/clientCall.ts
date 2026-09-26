@@ -26,7 +26,7 @@ import { hasNameHole } from "@suss/behavioral-ir";
 import { pathFromArgument, pathFromProperty } from "../resolve/routePath.js";
 import { resolvedModuleFile } from "./importScan.js";
 import { resolveImportedLocalName } from "./resolveImport.js";
-import { stringPropertyOf, writtenNodeOf } from "./resolveValue.js";
+import { stringPropertyOf, writtenNodesOf } from "./resolveValue.js";
 import { type DiscoveredUnit, findEnclosingFunction } from "./shared.js";
 
 import type { BindingExtraction, DiscoveryPattern } from "@suss/extractor";
@@ -50,102 +50,164 @@ export function discoverClientCalls(
   binding?: BindingExtraction,
 ): DiscoveredUnit[] {
   const results: DiscoveredUnit[] = [];
-  const isGlobal = match.importModule === "global";
-
-  // Step 1: variables set to the result of calling the imported
-  // function (`const client = initClient(...)`) or one of its declared
-  // factory methods (`const api = axios.create(...)`), built right
-  // here in this file. The creation call's callee goes through the
-  // fact layer, so an aliased import and one reached through a
-  // project barrel build a client the same way a direct import does.
-  const clientVarNames = new Set<string>();
-
-  if (!isGlobal) {
-    for (const varDecl of sourceFile.getVariableDeclarations()) {
-      const init = varDecl.getInitializer();
-      if (
-        init !== undefined &&
-        (Node.isCallExpression(init) || Node.isNewExpression(init)) &&
-        isCreationCall(init, match, resolution)
-      ) {
-        clientVarNames.add(varDecl.getName());
-      }
-    }
-  }
-
-  // Step 3: Walk all call expressions looking for matching client calls
-  const methodFilter =
-    match.methodFilter !== undefined ? new Set(match.methodFilter) : null;
-
+  const calls: CallExpression[] = [];
   sourceFile.forEachDescendant((node) => {
-    if (!Node.isCallExpression(node)) {
-      return;
+    if (Node.isCallExpression(node)) {
+      calls.push(node);
     }
+  });
 
-    const callee = node.getExpression();
-    let methodName: string | null = null;
-    let matched = false;
-
-    if (isGlobal && Node.isIdentifier(callee)) {
-      // Bare call: fetch(...)
-      if (callee.getText() === match.importName) {
-        matched = true;
-      }
-    } else if (isGlobal && Node.isPropertyAccessExpression(callee)) {
-      // The same global through its object: globalThis.fetch(...)
-      if (
-        callee.getName() === match.importName &&
-        GLOBAL_OBJECTS.has(callee.getExpression().getText())
-      ) {
-        matched = true;
-      }
-    } else if (
-      match.callable === true &&
-      isClientItself(callee, match, clientVarNames, resolution)
-    ) {
-      // The client called as a function: axios(config), api(config)
-      matched = true;
-    } else if (Node.isPropertyAccessExpression(callee)) {
-      /**
-       * Method call, matched four ways: `client.getUser()` on an
-       * instance built here, `axios.get()` on the import itself,
-       * `api.get()` on an instance the fact layer finds elsewhere, and
-       * `client().get()` on what a project function returns.
-       */
-      const subject = callee.getExpression();
-      if (isClientItself(subject, match, clientVarNames, resolution)) {
-        methodName = callee.getName();
-        if (methodFilter === null || methodFilter.has(methodName)) {
-          matched = true;
-        }
-      }
+  const matched =
+    match.importModule === "global"
+      ? globalCallsAmong(calls, match)
+      : clientCallsAmong(calls, match, sourceFile, resolution);
+  for (const call of calls) {
+    const methodName = matched.get(call);
+    if (methodName === undefined) {
+      continue;
     }
-
-    if (!matched) {
-      return;
-    }
-
-    // Step 4: Walk up to the enclosing function
-    const enclosingFunc = findEnclosingFunction(node);
+    const enclosingFunc = findEnclosingFunction(call);
     if (enclosingFunc === null) {
-      return;
+      continue;
     }
 
-    for (const under of sitesToReadUnder(node, binding, resolution)) {
+    for (const under of sitesToReadUnder(call, binding, resolution)) {
       results.push({
         func: enclosingFunc,
         kind,
         name: clientUnitName(enclosingFunc, methodName),
         callSite: {
-          callExpression: node,
+          callExpression: call,
           methodName,
           ...(under === undefined ? {} : { under }),
         },
       });
     }
-  });
+  }
 
   return results;
+}
+
+/**
+ * The calls of a global client, `fetch(...)` or `globalThis.fetch(...)`,
+ * each with no method name. A global has no import or construction for
+ * the store to follow, so the callee's spelling decides.
+ */
+function globalCallsAmong(
+  calls: readonly CallExpression[],
+  match: ClientCallMatch,
+): Map<CallExpression, string | null> {
+  const found = new Map<CallExpression, string | null>();
+  for (const call of calls) {
+    if (isGlobalCall(call.getExpression(), match)) {
+      found.set(call, null);
+    }
+  }
+  return found;
+}
+
+function isGlobalCall(callee: Node, match: ClientCallMatch): boolean {
+  if (Node.isIdentifier(callee)) {
+    return callee.getText() === match.importName;
+  }
+  return (
+    Node.isPropertyAccessExpression(callee) &&
+    callee.getName() === match.importName &&
+    GLOBAL_OBJECTS.has(callee.getExpression().getText())
+  );
+}
+
+/**
+ * The calls on an imported client, with the method each one calls, or
+ * null for the client called as a function: `axios(config)`. A method
+ * call matches four ways: `client.getUser()` on an instance built here,
+ * `axios.get()` on the import itself, `api.get()` on an instance the
+ * fact layer finds elsewhere, and `client().get()` on what a project
+ * function returns.
+ *
+ * The receivers are asked about together, because a question per call
+ * would run the rules several times for every call in the file. The
+ * method filter comes first, so only a receiver it keeps is asked about.
+ */
+function clientCallsAmong(
+  calls: readonly CallExpression[],
+  match: ClientCallMatch,
+  sourceFile: SourceFile,
+  resolution: ResolutionStore | undefined,
+): Map<CallExpression, string | null> {
+  const builtHere = clientsBuiltAtTopLevel(sourceFile, match, resolution);
+  const found = new Map<CallExpression, string | null>();
+  if (match.callable === true) {
+    const clients = clientSubjectsAmong(
+      calls.map((call) => call.getExpression()),
+      match,
+      builtHere,
+      resolution,
+    );
+    for (const call of calls) {
+      if (clients.has(call.getExpression())) {
+        found.set(call, null);
+      }
+    }
+  }
+
+  const methodFilter =
+    match.methodFilter !== undefined ? new Set(match.methodFilter) : null;
+  const methodCalls = new Map<Node, { call: CallExpression; method: string }>();
+  for (const call of calls) {
+    const callee = call.getExpression();
+    if (
+      !found.has(call) &&
+      Node.isPropertyAccessExpression(callee) &&
+      (methodFilter === null || methodFilter.has(callee.getName()))
+    ) {
+      methodCalls.set(callee.getExpression(), {
+        call,
+        method: callee.getName(),
+      });
+    }
+  }
+  const receivers = clientSubjectsAmong(
+    [...methodCalls.keys()],
+    match,
+    builtHere,
+    resolution,
+  );
+  for (const [receiver, { call, method }] of methodCalls) {
+    if (receivers.has(receiver)) {
+      found.set(call, method);
+    }
+  }
+  return found;
+}
+
+/**
+ * Variables set to the result of calling the imported function (`const
+ * client = initClient(...)`) or one of its declared factory methods
+ * (`const api = axios.create(...)`), built right here in this file. The
+ * creation call's callee goes through the fact layer, so an aliased
+ * import and one reached through a project barrel build a client the
+ * same way a direct import does.
+ */
+function clientsBuiltAtTopLevel(
+  sourceFile: SourceFile,
+  match: ClientCallMatch,
+  resolution: ResolutionStore | undefined,
+): Set<string> {
+  const byName = new Map<CallExpression | NewExpression, string>();
+  for (const varDecl of sourceFile.getVariableDeclarations()) {
+    const init = varDecl.getInitializer();
+    if (
+      init !== undefined &&
+      (Node.isCallExpression(init) || Node.isNewExpression(init))
+    ) {
+      byName.set(init, varDecl.getName());
+    }
+  }
+  const creating = creationCallsAmong([...byName.keys()], match, resolution);
+  return new Set(
+    [...byName].filter(([init]) => creating.has(init)).map(([, name]) => name),
+  );
 }
 
 /**
@@ -268,44 +330,49 @@ function methodStated(
 }
 
 /**
- * Whether this expression is the client: the import under its
+ * Which of these subjects are the client: the import under its
  * conventional name, an instance this file built from it, or one the
- * fact layer finds built elsewhere.
+ * fact layer finds built elsewhere. The subjects are asked about
+ * together, so a file's receivers cost a few store questions rather
+ * than several each.
  */
-function isClientItself(
-  subject: Node,
+function clientSubjectsAmong(
+  subjects: readonly Node[],
   match: ClientCallMatch,
-  clientVarNames: Set<string>,
+  builtHere: ReadonlySet<string>,
   resolution: ResolutionStore | undefined,
-): boolean {
-  return (
-    (Node.isIdentifier(subject) &&
-      (isClientImport(subject, match, resolution, true) ||
-        clientVarNames.has(subject.getText()))) ||
-    resolvesToKnownInstance(subject, match, resolution)
+): Set<Node> {
+  const imported = clientImportsAmong(
+    subjects.filter((subject) => Node.isIdentifier(subject)),
+    match,
+    resolution,
+    true,
   );
+  const found = new Set<Node>();
+  const elsewhere: Node[] = [];
+  for (const subject of subjects) {
+    if (
+      imported.has(subject) ||
+      (Node.isIdentifier(subject) && builtHere.has(subject.getText()))
+    ) {
+      found.add(subject);
+      continue;
+    }
+    elsewhere.push(subject);
+  }
+  const builtElsewhere = clientConstructionsOf(elsewhere, match, resolution);
+  for (const subject of builtElsewhere.keys()) {
+    found.add(subject);
+  }
+  return found;
 }
 
-/**
- * Whether `subject`, unresolved in this file, refers to a client instance
- * this pack built somewhere else. `writtenNodeOf` follows the name
- * back to wherever it was written: an import, an alias, a re-export
- * barrel. What it lands on still has to look like this pattern's own
- * instance-creating call, checked against ITS OWN file, since the file
- * that built the instance may import the client under a different
- * local name than any file calling it does.
- *
- * Lenient on the default-import spelling there: `match.importName`
- * identifies which module's default export builds instances, not the
- * local name the creating file happened to give it, so `import ax
- * from "axios"` counts the same as the conventional spelling. A named
- * import still has to match the name it was exported under.
- *
- * A subject the chain doesn't resolve, or one that resolves to
- * something this pattern doesn't recognize as building an instance,
- * composes nothing, the same convention an unresolved path argument
- * already follows.
- */
+/** How a pack spells its client: the import, and the factories that build one. */
+type ClientSpelling = Pick<
+  ClientCallMatch,
+  "importModule" | "importName" | "factoryMethods"
+>;
+
 /**
  * A check for whether an expression is this pack's client.
  *
@@ -317,11 +384,7 @@ function isClientItself(
  */
 export function clientReceiverCheckFor(
   sourceFile: SourceFile,
-  match: {
-    importModule: string;
-    importName: string;
-    factoryMethods?: string[];
-  },
+  match: ClientSpelling,
   resolution: ResolutionStore | undefined,
 ): (subject: Node) => boolean {
   const localName = resolveImportedLocalName(
@@ -330,19 +393,20 @@ export function clientReceiverCheckFor(
     match.importName,
   );
   const constructedHere = new Set<string>();
-  // One walk, at any depth. A client built inside a hook body, one
-  // handed in through a parameter, and one that exists only by its
-  // type annotation are all this pack's client, and a top-level-only
-  // scan missed everything a function wraps.
+  const initializedBy = new Map<CallExpression | NewExpression, string>();
+  // One walk at any depth: a client built inside a hook body, handed in
+  // through a parameter, or known only by its type annotation is still
+  // this pack's client, and a scan of the top level misses all three.
   sourceFile.forEachDescendant((node) => {
     if (Node.isVariableDeclaration(node)) {
       const init = node.getInitializer();
       if (
-        (init !== undefined &&
-          (Node.isCallExpression(init) || Node.isNewExpression(init)) &&
-          isCreationCall(init, match, resolution)) ||
-        (localName !== null && typedAsClient(node.getTypeNode(), localName))
+        init !== undefined &&
+        (Node.isCallExpression(init) || Node.isNewExpression(init))
       ) {
+        initializedBy.set(init, node.getName());
+      }
+      if (localName !== null && typedAsClient(node.getTypeNode(), localName)) {
         constructedHere.add(node.getName());
       }
       return;
@@ -358,18 +422,20 @@ export function clientReceiverCheckFor(
       }
     }
   });
-  const full: ClientCallMatch = {
-    type: "clientCall",
-    importModule: match.importModule,
-    importName: match.importName,
-    ...(match.factoryMethods === undefined
-      ? {}
-      : { factoryMethods: match.factoryMethods }),
-  } as ClientCallMatch;
+  const creating = creationCallsAmong(
+    [...initializedBy.keys()],
+    match,
+    resolution,
+  );
+  for (const [init, name] of initializedBy) {
+    if (creating.has(init)) {
+      constructedHere.add(name);
+    }
+  }
   return (subject) =>
     isClientImport(subject, match, resolution, true) ||
     (Node.isIdentifier(subject) && constructedHere.has(subject.getText())) ||
-    resolvesToKnownInstance(subject, full, resolution);
+    clientConstructionCall(subject, match, resolution) !== null;
 }
 
 /** Whether a type annotation ties this value to the imported class. */
@@ -380,14 +446,6 @@ function typedAsClient(typeNode: Node | undefined, localName: string): boolean {
   return typeNode.getTypeName().getText() === localName;
 }
 
-function resolvesToKnownInstance(
-  subject: Node,
-  match: ClientCallMatch,
-  resolution: ResolutionStore | undefined,
-): boolean {
-  return clientConstructionCall(subject, match, resolution) !== null;
-}
-
 /**
  * The call that built the client `subject` refers to, wherever it was
  * written, or null when nothing ties the subject to one. A caller that
@@ -396,91 +454,165 @@ function resolvesToKnownInstance(
  */
 export function clientConstructionCall(
   subject: Node,
-  match: {
-    importModule: string;
-    importName: string;
-    factoryMethods?: string[];
-  },
+  match: ClientSpelling,
   resolution: ResolutionStore | undefined,
 ): CallExpression | NewExpression | null {
-  if (resolution === undefined || match.importModule === "global") {
-    return null;
-  }
-  const written = writtenNodeOf(subject, resolution);
-  if (
-    written === null ||
-    (!Node.isCallExpression(written) && !Node.isNewExpression(written))
-  ) {
-    // Null means not-my-call, and a subject the store never ties to a
-    // construction is exactly that.
-    return null;
-  }
-
-  return isCreationCall(written, match, resolution) ? written : null;
-}
-
-/**
- * Whether `call` builds this pack's client: the imported function
- * itself (`initClient(...)`, `new Deck(...)`) or one of its declared
- * factory methods (`axios.create(...)`). Lenient on the default
- * import's spelling, since `call` can be in the file that built the
- * instance rather than the one asking, and that file names the import
- * however it likes.
- */
-function isCreationCall(
-  call: CallExpression | NewExpression,
-  match: {
-    importModule: string;
-    importName: string;
-    factoryMethods?: string[];
-  },
-  resolution: ResolutionStore | undefined,
-): boolean {
-  const callee = call.getExpression();
-  if (Node.isIdentifier(callee)) {
-    return isClientImport(callee, match, resolution, false);
-  }
-
-  if (!Node.isPropertyAccessExpression(callee)) {
-    return false;
-  }
-  const base = callee.getExpression();
   return (
-    Node.isIdentifier(base) &&
-    (match.factoryMethods?.includes(callee.getName()) ?? false) &&
-    isClientImport(base, match, resolution, false)
+    clientConstructionsOf([subject], match, resolution).get(subject) ?? null
   );
 }
 
 /**
- * Whether this identifier is the pack's client import, followed
- * through aliases and project barrels by the fact layer. The strict
- * flag keeps the documented same-file rule: a bare `axios.get(...)`
- * matches only the conventional spelling, `import axios from
- * "axios"`, while a named import matches under any alias.
+ * The constructions behind the subjects that refer to a client this
+ * pack built, possibly in another file. `writtenNodesOf` follows each
+ * name back to wherever it was written: an import, an alias, a
+ * re-export barrel. What it lands on still has to look like this
+ * pattern's own instance-creating call, checked against its own file,
+ * since the file that built the instance may import the client under a
+ * different local name than any file calling it does.
+ *
+ * A subject the chain doesn't resolve, or one that resolves to
+ * something this pattern doesn't recognize as building an instance, is
+ * left out, the same convention an unresolved path argument follows.
  */
+function clientConstructionsOf(
+  subjects: readonly Node[],
+  match: ClientSpelling,
+  resolution: ResolutionStore | undefined,
+): Map<Node, CallExpression | NewExpression> {
+  const found = new Map<Node, CallExpression | NewExpression>();
+  if (
+    resolution === undefined ||
+    match.importModule === "global" ||
+    subjects.length === 0
+  ) {
+    return found;
+  }
+  const built = new Map<Node, CallExpression | NewExpression>();
+  for (const [subject, written] of writtenNodesOf(subjects, resolution)) {
+    if (
+      written !== null &&
+      (Node.isCallExpression(written) || Node.isNewExpression(written))
+    ) {
+      built.set(subject, written);
+    }
+  }
+  const creating = creationCallsAmong(
+    [...new Set(built.values())],
+    match,
+    resolution,
+  );
+  for (const [subject, construction] of built) {
+    if (creating.has(construction)) {
+      found.set(subject, construction);
+    }
+  }
+  return found;
+}
+
+/**
+ * The calls among these that build this pack's client: the imported
+ * function itself (`initClient(...)`, `new Deck(...)`) or one of its
+ * declared factory methods (`axios.create(...)`). Lenient on the
+ * default import's spelling, since a call can be in the file that
+ * built the instance rather than the one asking, and that file can
+ * call the import whatever it likes.
+ */
+function creationCallsAmong(
+  calls: readonly (CallExpression | NewExpression)[],
+  match: ClientSpelling,
+  resolution: ResolutionStore | undefined,
+): Set<CallExpression | NewExpression> {
+  const deciding = new Map<CallExpression | NewExpression, Node>();
+  for (const call of calls) {
+    const imported = creationImportOf(call, match);
+    if (imported !== null) {
+      deciding.set(call, imported);
+    }
+  }
+  const imports = clientImportsAmong(
+    [...new Set(deciding.values())],
+    match,
+    resolution,
+    false,
+  );
+  return new Set(
+    [...deciding]
+      .filter(([, imported]) => imports.has(imported))
+      .map(([call]) => call),
+  );
+}
+
+/**
+ * The identifier whose import decides whether a call builds the client:
+ * the callee itself, or the object a declared factory method is called
+ * on. Null for a call written any other way.
+ */
+function creationImportOf(
+  call: CallExpression | NewExpression,
+  match: ClientSpelling,
+): Node | null {
+  const callee = call.getExpression();
+  if (Node.isIdentifier(callee)) {
+    return callee;
+  }
+  if (!Node.isPropertyAccessExpression(callee)) {
+    return null;
+  }
+  const base = callee.getExpression();
+  return Node.isIdentifier(base) &&
+    (match.factoryMethods?.includes(callee.getName()) ?? false)
+    ? base
+    : null;
+}
+
 function isPathShaped(specifier: string): boolean {
   return specifier.startsWith(".") || specifier.startsWith("/");
 }
 
 function isClientImport(
   subject: Node,
-  match: { importModule: string; importName: string },
+  match: ClientSpelling,
   resolution: ResolutionStore | undefined,
   strictDefaultName: boolean,
 ): boolean {
-  if (!Node.isIdentifier(subject)) {
-    return false;
-  }
+  return (
+    Node.isIdentifier(subject) &&
+    clientImportsAmong([subject], match, resolution, strictDefaultName).has(
+      subject,
+    )
+  );
+}
 
+/**
+ * The identifiers among these that are the pack's client import,
+ * followed through aliases and project barrels by the fact layer. The
+ * strict flag keeps the documented same-file rule: a bare
+ * `axios.get(...)` matches only the conventional spelling, `import
+ * axios from "axios"`, while a named import matches under any alias.
+ */
+function clientImportsAmong(
+  identifiers: readonly Node[],
+  match: ClientSpelling,
+  resolution: ResolutionStore | undefined,
+  strictDefaultName: boolean,
+): Set<Node> {
+  const first = identifiers[0];
+  if (first === undefined) {
+    return new Set();
+  }
   if (resolution === undefined) {
-    const local = resolveImportedLocalName(
-      subject.getSourceFile(),
-      match.importModule,
-      match.importName,
-      strictDefaultName ? {} : { anyRootSpelling: true },
+    return new Set(
+      identifiers.filter((subject) => {
+        const local = resolveImportedLocalName(
+          subject.getSourceFile(),
+          match.importModule,
+          match.importName,
+          strictDefaultName ? {} : { anyRootSpelling: true },
+        );
+        return local !== null && subject.getText() === local;
+      }),
     );
-    return local !== null && subject.getText() === local;
   }
 
   // A path-shaped module says where in the project, so the key the
@@ -488,12 +620,30 @@ function isClientImport(
   // spelled specifier.
   const moduleKey = isPathShaped(match.importModule)
     ? (resolvedModuleFile(
-        subject.getProject(),
+        first.getProject(),
         match.importModule,
         resolution,
       )?.getFilePath() ?? match.importModule)
     : match.importModule;
-  const origins = resolution.importOriginsOf(subject, [moduleKey]);
+  const origins = resolution.importOriginsOfMany(identifiers, [moduleKey]);
+  return new Set(
+    identifiers.filter((subject) =>
+      importedAsClient(
+        subject,
+        origins.get(subject) ?? [],
+        match,
+        strictDefaultName,
+      ),
+    ),
+  );
+}
+
+function importedAsClient(
+  subject: Node,
+  origins: ReadonlyArray<{ module: string; path: string[] }>,
+  match: ClientSpelling,
+  strictDefaultName: boolean,
+): boolean {
   if (
     origins.some(
       (one) => one.path.length === 1 && one.path[0] === match.importName,
@@ -501,7 +651,6 @@ function isClientImport(
   ) {
     return true;
   }
-
   const viaDefault = origins.some(
     (one) => one.path.length === 1 && one.path[0] === "default",
   );

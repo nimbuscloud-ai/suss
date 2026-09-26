@@ -254,9 +254,7 @@ export class ResolutionStore {
    * the walk never reaches on its own.
    */
   resolveCallable(value: Node, alsoFrom?: SourceFile): Node | null {
-    const sources = this.resolveCallableSources(value, alsoFrom);
-    const only = sources[0];
-    return sources.length === 1 && only !== undefined ? only : null;
+    return onlySource(this.resolveCallableSources(value, alsoFrom));
   }
 
   /**
@@ -273,6 +271,25 @@ export class ResolutionStore {
       () => this.lookupSources(target),
       alsoFrom,
     );
+  }
+
+  /**
+   * `resolveCallable` for several values, asked as one question. A file
+   * with a receiver at every call would otherwise derive and clear the
+   * rules once per receiver.
+   */
+  resolveCallables(values: readonly Node[]): Map<Node, Node | null> {
+    const found = new Map<Node, Node | null>();
+    if (values.length === 0) {
+      return found;
+    }
+    const targets = values.map((value) => factKeyOf(value));
+    return this.askAboutAll(targets, "wanted", () => {
+      values.forEach((value, i) => {
+        found.set(value, onlySource(this.lookupSources(targets[i] ?? value)));
+      });
+      return found;
+    });
   }
 
   /**
@@ -364,31 +381,23 @@ export class ResolutionStore {
       value,
       target: factKeyOf(value),
     }));
-    try {
-      for (const { target } of targets) {
-        this.wantValue("wanted", target);
-        this.seedValue(target);
-      }
-      this.extractDemanded([
-        ...new Set(targets.map(({ target }) => target.getSourceFile())),
-      ]);
-      const found = new Map<Node, Node | null>();
-      for (const { value, target } of targets) {
-        found.set(value, this.calledFunctionOf(target));
-      }
-      return found;
-    } finally {
-      this.forgetQuery();
-    }
+    return this.askAboutAll(
+      targets.map(({ target }) => target),
+      "wanted",
+      () => {
+        const found = new Map<Node, Node | null>();
+        for (const { value, target } of targets) {
+          found.set(value, this.calledFunctionOf(target));
+        }
+        return found;
+      },
+    );
   }
 
   private calledFunctionOf(target: Node): Node | null {
-    const sources = this.lookupSources(target);
-    const only = sources[0];
-    if (sources.length === 1 && only !== undefined) {
-      return only;
-    }
-    return this.lookupReturned(target);
+    return (
+      onlySource(this.lookupSources(target)) ?? this.lookupReturned(target)
+    );
   }
 
   /**
@@ -396,34 +405,60 @@ export class ResolutionStore {
    * GraphQL document kept in a constant in another file.
    */
   resolveWrittenValue(value: Node): Node | null {
-    const target = factKeyOf(value);
-    const key = nodeId(this.sharedDeclarationFor(target));
-    const cached = this.writtenValues.get(key);
-    // A cached answer stays true as facts accumulate; a cached miss
-    // was true of a smaller fact set, so it is recomputed once the
-    // store has extracted more files than it had then.
-    if (
-      cached !== undefined &&
-      (cached.written !== null ||
-        cached.extractedAt === this.fullyExtracted.size)
-    ) {
-      // A memo hit walks nothing, but whoever is collecting file
-      // dependencies still read those files through it.
-      for (const walkedPath of cached.walked) {
-        recordFileDependency(walkedPath);
+    return this.resolveWrittenValues([value]).get(value) ?? null;
+  }
+
+  /**
+   * `resolveWrittenValue` for several values, asked as one question.
+   * Values that share a declaration share one answer, as they do when
+   * asked one at a time.
+   */
+  resolveWrittenValues(values: readonly Node[]): Map<Node, Node | null> {
+    const found = new Map<Node, Node | null>();
+    const asked = new Map<string, Node>();
+    const keyOf = new Map<Node, string>();
+    for (const value of values) {
+      const target = factKeyOf(value);
+      const key = nodeId(this.sharedDeclarationFor(target));
+      const cached = this.writtenValues.get(key);
+      // A cached answer stays true as facts accumulate; a cached miss
+      // was true of a smaller fact set, so it is recomputed once the
+      // store has extracted more files than it had then.
+      if (
+        cached !== undefined &&
+        (cached.written !== null ||
+          cached.extractedAt === this.fullyExtracted.size)
+      ) {
+        // A memo hit walks nothing, but whoever is collecting file
+        // dependencies still read those files through it.
+        for (const walkedPath of cached.walked) {
+          recordFileDependency(walkedPath);
+        }
+        found.set(value, cached.written);
+        continue;
       }
-      return cached.written;
+      if (!asked.has(key)) {
+        asked.set(key, target);
+      }
+      keyOf.set(value, key);
+    }
+    if (asked.size === 0) {
+      return found;
     }
 
-    const written = this.askAbout(target, "wanted", () =>
-      this.lookupWritten(target),
-    );
-    this.writtenValues.set(key, {
-      written,
-      walked: [...this.lastQueryWalked],
-      extractedAt: this.fullyExtracted.size,
+    this.askAboutAll([...asked.values()], "wanted", () => {
+      for (const [key, target] of asked) {
+        this.writtenValues.set(key, {
+          written: this.lookupWritten(target),
+          walked: [...this.lastQueryWalked],
+          extractedAt: this.fullyExtracted.size,
+        });
+      }
     });
-    return written;
+    for (const [value, key] of keyOf) {
+      found.set(value, this.writtenValues.get(key)?.written ?? null);
+    }
+    return found;
   }
 
   /**
@@ -1056,26 +1091,22 @@ export class ResolutionStore {
       return results;
     }
 
-    try {
-      for (const one of pending) {
-        this.wantValue("wantedCallOrigin", one.target);
-        this.seedValue(one.target);
-      }
-      this.extractDemanded(pending.map((one) => one.target.getSourceFile()));
-
-      for (const one of pending) {
-        const origins = this.lookupImportOrigins(one.target, modules);
-        results.set(one.value, origins);
-        this.importOrigins.set(one.key, {
-          origins,
-          walked: [...this.lastQueryWalked],
-          extractedAt: this.fullyExtracted.size,
-        });
-      }
-      return results;
-    } finally {
-      this.forgetQuery();
-    }
+    return this.askAboutAll(
+      pending.map((one) => one.target),
+      "wantedCallOrigin",
+      () => {
+        for (const one of pending) {
+          const origins = this.lookupImportOrigins(one.target, modules);
+          results.set(one.value, origins);
+          this.importOrigins.set(one.key, {
+            origins,
+            walked: [...this.lastQueryWalked],
+            extractedAt: this.fullyExtracted.size,
+          });
+        }
+        return results;
+      },
+    );
   }
 
   /**
@@ -1168,13 +1199,28 @@ export class ResolutionStore {
     read: () => T,
     alsoFrom?: SourceFile,
   ): T {
+    return this.askAboutAll([value], question, read, alsoFrom);
+  }
+
+  /**
+   * One question about several values: one demand set, one round of
+   * extraction and one derivation shared by all of them. Asking each
+   * alone pays the rounds, the clear and the allocation once per value.
+   */
+  private askAboutAll<T>(
+    values: readonly Node[],
+    question: Question,
+    read: () => T,
+    alsoFrom?: SourceFile,
+  ): T {
     try {
-      this.wantValue(question, value);
-      this.seedValue(value);
+      for (const value of values) {
+        this.wantValue(question, value);
+        this.seedValue(value);
+      }
+      const files = values.map((value) => value.getSourceFile());
       this.extractDemanded(
-        alsoFrom === undefined
-          ? [value.getSourceFile()]
-          : [value.getSourceFile(), alsoFrom],
+        alsoFrom === undefined ? files : [...files, alsoFrom],
       );
       return read();
     } finally {
@@ -1538,6 +1584,12 @@ export class ResolutionStore {
     this.stale = true;
     extractFileFacts(this.db, this.table, sourceFile);
   }
+}
+
+/** The single-answer policy: two sources are nothing, like no source. */
+function onlySource(sources: readonly Node[]): Node | null {
+  const only = sources[0];
+  return sources.length === 1 && only !== undefined ? only : null;
 }
 
 function namesFrom(pairs: string[], packages: string[]): string[] {

@@ -1,10 +1,16 @@
 import { Node, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
+import { profileEvaluation } from "@suss/datalog";
 import { createTestProject } from "@suss/test-project";
 
 import { ResolutionStore } from "../facts/store.js";
-import { callOpsFor } from "./callOps.js";
+import {
+  type CallReading,
+  callOpsFor,
+  type WalkArguments,
+  walkArguments,
+} from "./callOps.js";
 
 import type { CallOps, ReceiverOrigin } from "@suss/recognize";
 import type {
@@ -808,5 +814,83 @@ describe("anchorCall", () => {
       export const play = () => deck.play("a");
     `);
     expect(ops.anchorCall?.(madeDeck)).toBeNull();
+  });
+});
+
+describe("the arguments of every call one walk visits", () => {
+  const BODY = `
+    import Deck, { PlayCommand } from "tapedeck";
+    declare const deck: Deck;
+    declare function log(...values: unknown[]): void;
+    export async function play(track: string) {
+      const first = new PlayCommand({ Track: "1" });
+      const second = new PlayCommand({ Track: track });
+      const note = "not a command";
+      await deck.send(first);
+      await deck.send(second);
+      log(note, track);
+    }
+  `;
+
+  /** A fresh store, and the reading a walk's ops are built with. */
+  function readingOf(
+    store: ResolutionStore,
+    walk?: WalkArguments,
+  ): CallReading {
+    return {
+      resolve: (value: TsNode) => store.resolveWrittenValue(value),
+      resolution: store,
+      ...(walk === undefined ? {} : { walk }),
+    };
+  }
+
+  /** The calls in the fixture, and how a subject walk reads their arguments. */
+  function fixture() {
+    const calls = withLibrary()
+      .createSourceFile("/repo.ts", BODY)
+      .getDescendantsOfKind(SyntaxKind.CallExpression);
+    const argumentsRead = (reading: CallReading): (string | null)[] =>
+      calls.flatMap((call) => {
+        const ops = callOpsFor(call, reading);
+        ops.readingArguments?.(0);
+        return Array.from(
+          { length: ops.argumentCount() },
+          (_, index) => ops.argument(index)?.calleeText() ?? null,
+        );
+      });
+    const walkedWith = (store: ResolutionStore) =>
+      readingOf(store, walkArguments(calls, store));
+    return { calls, argumentsRead, walkedWith };
+  }
+
+  it("reads each argument the way it reads one asked about alone", () => {
+    const { argumentsRead, walkedWith } = fixture();
+    const together = argumentsRead(walkedWith(new ResolutionStore()));
+
+    expect(together).toEqual(argumentsRead(readingOf(new ResolutionStore())));
+    expect(together.filter((callee) => callee === "PlayCommand")).toHaveLength(
+      2,
+    );
+  });
+
+  it("asks one question for the whole walk however often a call says it will read", () => {
+    const { calls, argumentsRead, walkedWith } = fixture();
+    const evaluationsOf = (read: () => unknown) =>
+      profileEvaluation(read).profile.evaluations;
+    const identifiers = calls
+      .flatMap((call) => call.getArguments())
+      .filter((argument) => Node.isIdentifier(argument));
+
+    const together = evaluationsOf(() =>
+      argumentsRead(walkedWith(new ResolutionStore())),
+    );
+    expect(together).toBe(
+      evaluationsOf(() =>
+        new ResolutionStore().resolveWrittenValues(identifiers),
+      ),
+    );
+    expect(together).toBeLessThan(
+      evaluationsOf(() => argumentsRead(readingOf(new ResolutionStore()))),
+    );
   });
 });

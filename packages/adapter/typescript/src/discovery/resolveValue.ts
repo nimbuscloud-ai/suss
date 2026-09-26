@@ -236,42 +236,90 @@ export function writtenNodeOf(
   value: Node,
   resolution: ResolutionStore | undefined,
 ): Node | null {
-  const written = factKeyOf(value);
-  if (Node.isNewExpression(written)) {
-    return written;
-  }
-  if (Node.isCallExpression(written)) {
-    return writtenThroughCall(written, resolution);
-  }
-  if (resolution === undefined || !couldNameAValue(written)) {
-    return null;
-  }
-  const resolved = resolution.resolveWrittenValue(written);
-  return resolved !== null && Node.isCallExpression(resolved)
-    ? writtenThroughCall(resolved, resolution)
-    : resolved;
+  return writtenNodesOf([value], resolution).get(value) ?? null;
 }
 
 /**
- * A call's own construction, or what its callee's return value is
+ * `writtenNodeOf` for several values, asked of the store in at most
+ * three questions however many values there are: what each name is
+ * written as, which callees resolve, and what those calls return.
+ */
+export function writtenNodesOf(
+  values: readonly Node[],
+  resolution: ResolutionStore | undefined,
+): Map<Node, Node | null> {
+  const found = new Map<Node, Node | null>();
+  const names = new Map<Node, Node>();
+  const calls = new Map<Node, CallExpression>();
+  for (const value of values) {
+    const written = factKeyOf(value);
+    if (Node.isNewExpression(written)) {
+      found.set(value, written);
+      continue;
+    }
+    if (Node.isCallExpression(written)) {
+      calls.set(value, written);
+      continue;
+    }
+    if (resolution === undefined || !couldNameAValue(written)) {
+      found.set(value, null);
+      continue;
+    }
+    names.set(value, written);
+  }
+
+  if (resolution !== undefined && names.size > 0) {
+    const resolved = resolution.resolveWrittenValues([...names.values()]);
+    for (const [value, name] of names) {
+      const one = resolved.get(name) ?? null;
+      if (one !== null && Node.isCallExpression(one)) {
+        calls.set(value, one);
+      } else {
+        found.set(value, one);
+      }
+    }
+  }
+
+  const throughCalls = writtenThroughCalls([...calls.values()], resolution);
+  for (const [value, call] of calls) {
+    found.set(value, throughCalls.get(call) ?? call);
+  }
+  return found;
+}
+
+/**
+ * Each call's own construction, or what its callee's return value is
  * written as when the callee is a project function. A name bound to
  * `client()` and `client()` itself both land here, so a wrapper called
  * through a variable resolves the same way as one called directly.
  */
-function writtenThroughCall(
-  call: CallExpression,
+function writtenThroughCalls(
+  calls: readonly CallExpression[],
   resolution: ResolutionStore | undefined,
-): Node {
-  if (
-    resolution !== undefined &&
-    resolution.resolveCallable(call.getExpression()) !== null
-  ) {
-    const resolved = resolution.resolveWrittenValue(call);
+): Map<CallExpression, Node> {
+  const found = new Map<CallExpression, Node>(
+    calls.map((call) => [call, call]),
+  );
+  if (resolution === undefined || calls.length === 0) {
+    return found;
+  }
+  const callees = resolution.resolveCallables(
+    calls.map((call) => call.getExpression()),
+  );
+  const intoProject = calls.filter(
+    (call) => callees.get(call.getExpression()) !== null,
+  );
+  if (intoProject.length === 0) {
+    return found;
+  }
+  const returned = resolution.resolveWrittenValues(intoProject);
+  for (const call of intoProject) {
+    const resolved = returned.get(call) ?? null;
     if (resolved !== null) {
-      return resolved;
+      found.set(call, resolved);
     }
   }
-  return call;
+  return found;
 }
 
 /**

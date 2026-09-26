@@ -136,6 +136,17 @@ store drops that table and derives it once more from the demand alone.
 The order then follows the file's own statements, whatever was read
 before.
 
+Several values can go into one question. `resolveWrittenValues`,
+`resolveCallables`, `resolveCalledFunctions` and `importOriginsOfMany`
+ask about every value at once, read the files any of them demands,
+derive once, and then read each answer. Most of what a question costs
+is the engine's rounds and the clear afterwards, which is about the same
+for one value as for a few hundred. So a caller that has a file's
+receivers or a body's arguments in hand asks about them together. The
+answer for each value is then read over every file the question read,
+which can be more files than that value alone would have led to. The
+single-value methods ask the same question with one value in it.
+
 `SUSS_RESOLUTION_ON_DEMAND=0` runs the rules without the rewrite. With
 no demand facts to read, the store follows every import of every file
 it extracts. That reads the whole import closure of the value's file,
