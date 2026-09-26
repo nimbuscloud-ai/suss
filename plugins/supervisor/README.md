@@ -34,6 +34,7 @@ scripts/keepIntent.mjs       what /suss:keep-intent runs: finds the session and 
 demo/play.mjs                plays a recorded session through the hooks, with no Claude Code
 demo/orders409.mjs           the 409 story: a finding after an edit, and the stop report
 demo/cancelOrder.mjs         the change list story: a stop that blocks on a 409 nobody asked for
+demo/accountsRegion.mjs      a Lambda service with a SAM template starts reading a new environment variable
 ```
 
 The scripts are plain JavaScript modules with JSDoc types, so an installed plugin runs them with `node` and nothing to build. `tsc` checks them the same as the TypeScript in the rest of the repository (`checkJs` in `tsconfig.json`).
@@ -89,6 +90,7 @@ The plugin's version in `plugin.json` moves with every suss release, because `sc
 npx turbo test --filter=@suss/supervisor-plugin
 node plugins/supervisor/demo/orders409.mjs
 node plugins/supervisor/demo/cancelOrder.mjs
+node plugins/supervisor/demo/accountsRegion.mjs
 ```
 
-`test/hooks.test.ts` feeds each hook the JSON Claude Code sends and checks what it prints and its exit code. Most of those tests install a stand-in suss in the test project (`test/fakeSuss.ts`), so a test can make suss report an error the fixtures never produce. `test/demo.test.ts` plays both stories over `fixtures/supervisor-orders` with the suss this repository builds. `test/skill.test.ts` checks that the skill's example change list is one suss accepts.
+`test/hooks.test.ts` feeds each hook the JSON Claude Code sends and checks what it prints and its exit code. Most of those tests install a stand-in suss in the test project (`test/fakeSuss.ts`), so a test can make suss report an error the fixtures never produce. `test/demo.test.ts` plays the stories with the suss this repository builds: the first two over `fixtures/supervisor-orders`, and the environment variable story over `fixtures/supervisor-accounts`. `test/skill.test.ts` checks that the skill's example change lists are ones suss accepts.
