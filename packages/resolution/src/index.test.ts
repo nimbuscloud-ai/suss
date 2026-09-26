@@ -21,7 +21,7 @@ import {
 /**
  * Feed facts in, run the rules, and read one relation back, keeping the
  * tuples with `subject` in column `at`. Every relation here is keyed by
- * the value asked about except `paramAt`, which is keyed by the call.
+ * the value asked about except `passesArgument`, which is keyed by the call.
  */
 function derive(
   facts: Array<[string, ...string[]]>,
@@ -80,12 +80,12 @@ function kindsReached(
     .sort();
 }
 
-/** What each call site put in a parameter, as `call:value`. */
+/** What each call site put in a parameter, as `call:argument`. */
 function perCallSite(
   facts: Array<[string, ...string[]]>,
   param: string,
 ): string[] {
-  return derive(facts, "paramAt", param, 1)
+  return derive(facts, "passesArgument", param, 1)
     .map((t) => `${t[0]}:${t[2]}`)
     .sort();
 }

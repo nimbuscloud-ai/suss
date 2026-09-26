@@ -12,13 +12,12 @@
  * the library's own module and name.
  */
 
-import { annotationTarget } from "./annotations.js";
+import { annotationTarget, typeNameOf } from "./annotations.js";
 import {
   children,
   enclosingFunction,
   field,
   parameterNameAndType,
-  stringLiteralValue,
 } from "./ast.js";
 import {
   declaredTypeOrigins,
@@ -40,17 +39,6 @@ export interface ReceiverTypeOptions {
 
 /** `originOf` puts a name nothing in the file declares under this module, which says nothing about where the class came from. */
 const UNDECLARED_MODULE = "builtins";
-
-/** The class an annotation refers to, by the name it is written under, read through a forward reference's quotes. */
-export function typeNameOf(annotation: PyNode): string | null {
-  const target = annotationTarget(annotation);
-  if (target === null) {
-    return null;
-  }
-  return target.type === "identifier"
-    ? target.text
-    : stringLiteralValue(target);
-}
 
 /** The first non-null result of `read` over a body's statements. Nested functions are skipped because they bind names of their own. */
 export function firstInBody<T>(

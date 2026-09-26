@@ -6,40 +6,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
 
-import { emitEntryFact, emitModuleImportFacts, unitKey } from "./facts.js";
+import { emitModuleImportFacts } from "./facts.js";
 import { parsePython } from "./parser.js";
 import { bindModule } from "./scope.js";
-
-describe("unitKey", () => {
-  it("joins the file path, the lines, and the name", () => {
-    expect(
-      unitKey("myapp/routes/todos.py", { start: 10, end: 42 }, "list_todos"),
-    ).toBe("myapp/routes/todos.py:10-42#list_todos");
-  });
-
-  it("tells two units on one line apart", () => {
-    const range = { start: 4, end: 4 };
-    expect(unitKey("routes.py", range, "get")).not.toBe(
-      unitKey("routes.py", range, "post"),
-    );
-  });
-});
-
-describe("emitEntryFact", () => {
-  it("adds one entry tuple keyed by file, lines, and name", () => {
-    const db = new Database();
-    emitEntryFact(db, "myapp/routes/todos.py", { start: 1, end: 10 }, "todos");
-    expect(db.facts("entry")).toEqual([["myapp/routes/todos.py:1-10#todos"]]);
-  });
-
-  it("keeps both units when two share a line", () => {
-    const db = new Database();
-    const range = { start: 4, end: 4 };
-    emitEntryFact(db, "routes.py", range, "get");
-    emitEntryFact(db, "routes.py", range, "post");
-    expect(db.facts("entry")).toHaveLength(2);
-  });
-});
 
 describe("emitModuleImportFacts", () => {
   let tmpDir: string;

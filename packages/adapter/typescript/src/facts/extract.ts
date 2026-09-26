@@ -1356,7 +1356,6 @@ function emitReturnAnnotation(
     return;
   }
 
-  fact(db, "returnsNamed", fnId, reference.getTypeName().getText());
   const cls = classBehindTypeName(reference);
   if (cls === null) {
     return;

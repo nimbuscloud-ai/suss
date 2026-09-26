@@ -82,9 +82,11 @@ returnsValue(f, v)          f returns v
 returnsClass(f, c)          f is annotated as returning c, and its body
                             states no value of its own
                             (TypeScript, Python)
-returnsNamed(f, n)          f's return annotation is written n, stated
-                            when returnsClass is. Nothing reads it yet
-                            (TypeScript, Python)
+returnsNamed(f, n)          f's return annotation is written n, read
+                            through Optional and a forward reference's
+                            quotes, whatever f's body returns. No rule
+                            reads it. The storage reader matches it
+                            against a pack's query types (Python)
 containsFn(f, g)            g is declared inside f
 initializes(cls, f)         f runs when one of cls is made
 storesProperty(f, n, x)     f's body writes x to the receiver's n
@@ -203,9 +205,6 @@ definesMethodFrom(c, x)     c's body calls define_method, and x is the
 nameTurnsOn(x, element, index, over)  the name x is written in a loop
                             block that binds element, and index when it
                             has one, to each item of over (Ruby)
-entry(u)                    discovery found the unit u. The reach
-                            closure keeps its own copy, and nothing
-                            reads this one (Python, Ruby)
 ```
 
 `declaresName` is the only fact an adapter records after asking these
@@ -599,7 +598,6 @@ fallbackBehind(x, f)        following x to what it is written as passes
                             the fallback f
 comesFrom(x, m, n)          following x arrives at m's export n
 callsInto(f, m, n)          calling f ends up calling m's n
-paramAt(r, p, z)            the call r puts z in the parameter p
 passesArgument(r, p, a)     the call r writes a at the parameter p
 returnsCall(f, c)           running f hands back the expression c
 ```
@@ -657,19 +655,16 @@ a library's own function has nowhere to end, because the library's body
 is not in that source. `comesFrom` walks the same steps but stops at the
 import, and returns the module and the name that module exports.
 
-`paramAt` is the only question that keeps track of the call it went
-through. `comesTo` merges call sites: a function called from two places
-has two values for its parameter, and a caller that wants one value
-gets nothing. `paramAt` returns which call put which value there.
+`passesArgument` is the only question that keeps track of the call it
+went through. `comesTo` merges call sites: a function called from two
+places has two values for its parameter, and a caller that wants one
+value gets nothing. `passesArgument` returns which call wrote which
+argument there, as the calling code wrote it, and leaves reading it to
+the code asking, which knows what kind of value to expect. A parameter
+given a GraphQL document still gets an answer that way, where settling
+the argument through `comesTo` would get none.
 
-`passesArgument` is the hop underneath `paramAt`, and a caller can ask
-for it directly. `paramAt` settles the value through `comesTo`, so a
-parameter given a GraphQL document gets no answer at all.
-`passesArgument` returns the argument as the calling code wrote it, and
-leaves reading it to the code asking, which knows what kind of value to
-expect.
-
-Both go through `callsFunction`, which starts from the function and
+It goes through `callsFunction`, which starts from the function and
 finds the calls that reach it. A function written as
 `const f = (x) => ...` comes in two pieces: the name is the
 declaration, and the parameters belong to the arrow function the

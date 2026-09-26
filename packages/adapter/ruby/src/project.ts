@@ -56,7 +56,7 @@ import {
   type FileConstants,
 } from "./facts/constants.js";
 import { emitValueFacts, nodeId } from "./facts/values.js";
-import { emitEntryFact, emitRequireFacts } from "./facts.js";
+import { emitRequireFacts } from "./facts.js";
 import { bodyBlocksIn, inflectionsIn } from "./pack.js";
 import { parseRuby } from "./parser.js";
 import {
@@ -413,7 +413,6 @@ export async function extractRubyProject(
       if (alreadyDiscovered(discovered, raw)) {
         continue;
       }
-      emitEntryFact(db, file, raw.identity.range, raw.identity.name);
       tallyUnit(tallies, raw.boundaryBinding?.recognition);
 
       const seed = seedByRaw.get(raw);

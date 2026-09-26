@@ -1,8 +1,5 @@
 /**
- * The facts the binder and the module resolver add to the shared store.
- *
- * A discovered route goes into `entry`, the same relation a TypeScript
- * entry point goes into, so a rule joining on entries sees both.
+ * The facts the module resolver adds to the shared store.
  *
  * `importsModule` records each module a file imports, as written, and
  * `importsFile` the file an import resolved to. An import the resolver
@@ -16,27 +13,6 @@ import { resolveModule } from "./moduleResolver.js";
 import type { Database } from "@suss/datalog";
 import type { ModuleResolverOptions } from "./moduleResolver.js";
 import type { ModuleBinding } from "./scope.js";
-
-/**
- * The range is in lines and two units can start on the same line. `entry`
- * is a set, so a key without the name would drop one of the two.
- */
-export function unitKey(
-  filePath: string,
-  range: { start: number; end: number },
-  name: string,
-): string {
-  return `${filePath}:${range.start}-${range.end}#${name}`;
-}
-
-export function emitEntryFact(
-  db: Database,
-  filePath: string,
-  range: { start: number; end: number },
-  name: string,
-): void {
-  db.add("entry", [unitKey(filePath, range, name)]);
-}
 
 /** The dotted path with its leading dots put back, the way the import is written in the source. */
 function importedModuleText(module: string, relativeLevel: number): string {

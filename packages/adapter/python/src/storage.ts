@@ -15,7 +15,6 @@ import {
   firstInBody,
   receiverTypeOrigins,
   statedTypeName,
-  typeNameOf,
 } from "./receiverTypes.js";
 
 import type { Effect } from "@suss/behavioral-ir";
@@ -189,9 +188,7 @@ function resolvedReturnType(
   callee: PyNode,
 ): string | null {
   const settled = settledCallee(options, callee);
-  return settled === undefined
-    ? null
-    : returnTypeName(options.definitionAt(settled));
+  return settled === undefined ? null : returnTypeName(options, settled);
 }
 
 /** The one definition a callee resolves to, asking the rules. Undefined when it resolves to none or to more than one. */
@@ -493,18 +490,16 @@ function fileOf(key: string): string {
   return at === -1 ? key : key.slice(0, at);
 }
 
-/** What a function says it gives back, as the name written in the annotation. */
-function returnTypeName(node: PyNode | undefined): string | null {
-  const annotation = node === undefined ? null : field(node, "return_type");
-  return annotation === null ? null : typeNameOf(annotation);
+/** What the function at a resolved key says it gives back, as the name written in its annotation. */
+function returnTypeName(options: StorageOptions, key: string): string | null {
+  const [row] = options.facts.lookup("returnsNamed", 0, key);
+  return row === undefined ? null : String(row[1]);
 }
 
 export interface StorageOptions {
   readonly facts: Database;
   readonly filePath: string;
   readonly patterns: readonly StoragePattern[];
-  /** The function a resolved key was written as, for reading its annotation. */
-  readonly definitionAt: (key: string) => PyNode | undefined;
   /** Method names a file importing the library declares, the only ones that can match. */
   readonly couldMatch: ReadonlySet<string>;
 }
@@ -517,7 +512,6 @@ export interface StorageLookup {
   readonly facts: Database;
   readonly factsPath: string;
   readonly patterns: readonly StoragePattern[];
-  readonly definitionAt: (key: string) => PyNode | undefined;
   readonly couldMatch: ReadonlySet<string>;
   /** What a pack says about statements a project writes as SQL itself. */
   readonly rawSql?: readonly RawSqlPattern[];
@@ -550,7 +544,7 @@ function resolvedMethodPattern(
   if (settled === undefined) {
     return undefined;
   }
-  const typeName = returnTypeName(options.definitionAt(settled));
+  const typeName = returnTypeName(options, settled);
   if (typeName === null) {
     return undefined;
   }

@@ -267,7 +267,7 @@ const STATED_RULES = [
 
   // A parameter steps to what a call passes it. A function called from
   // several places leaves its parameter with more than one value, and a
-  // caller that needs those apart asks `paramAt`.
+  // caller that needs those apart asks `passesArgument`, which keeps the call.
   rule(
     "stepsTo",
     [v("p"), v("a"), VALUE_STEP],
@@ -1019,20 +1019,9 @@ const STATED_RULES = [
     [lit("returnsValue", v("f"), v("v")), lit("isWrittenAs", v("v"), v("c"))],
   ),
 
-  // What one call site put in a parameter, told apart from what the
-  // other callers passed.
-  rule(
-    "paramAt",
-    [v("r"), v("p"), v("z")],
-    [
-      lit("passesArgument", v("r"), v("p"), v("a")),
-      lit("comesTo", v("a"), v("z")),
-    ],
-  ),
-
   // An argument arriving at the parameter it is passed to, by position
   // or by the name the caller wrote, keeping the call it went through
-  // so `paramAt` can tell two call sites apart.
+  // so a caller can tell two call sites apart.
   rule(
     "passesArgument",
     [v("r"), v("p"), v("a")],
@@ -1884,16 +1873,9 @@ export const RESOLUTION_QUESTIONS = [
     [v("x"), v("z")],
     [lit("wanted", v("x")), lit("givesBackUnwrapped", v("x"), v("z"))],
   ),
-  // Keyed by the parameter, since that is what a caller has in hand
-  // when it wants the call sites told apart.
-  rule(
-    "wantedParamAt",
-    [v("p"), v("r"), v("z")],
-    [lit("wanted", v("p")), lit("paramAt", v("r"), v("p"), v("z"))],
-  ),
-  // The argument as the caller wrote it. A parameter given a GraphQL
-  // document has no `paramAt` answer, since that settles through
-  // `comesTo`, which stops at a function or an object.
+  // The argument as the caller wrote it, keyed by the parameter, since
+  // that is what a caller has in hand when it wants the call sites told
+  // apart. The caller settles the argument however its kind of value needs.
   rule(
     "wantedPassesArgument",
     [v("p"), v("r"), v("a")],

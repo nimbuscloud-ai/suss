@@ -71,7 +71,7 @@ the same one, and they join.
 
 A line looks like this:
 
-    0007 facts=52 comesTo=15 givesBack=0 isWrittenAs=13 comesFrom=4 objectOf=4 resolves=11 paramAt=4 callsInto=1 digest=05fd851aaf7b
+    0007 facts=54 comesTo=15 givesBack=0 isWrittenAs=12 comesFrom=4 objectOf=3 resolves=12 passesArgument=6 callsInto=1 digest=9437427b2728
 
 The digest is there because the counts alone would miss one answer
 being swapped for another. The counts are there because a digest alone

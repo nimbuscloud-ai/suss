@@ -8,7 +8,7 @@
 
 import { createHash } from "node:crypto";
 
-import { field, fields } from "./ast.js";
+import { field, fields, stringLiteralValue } from "./ast.js";
 import { resolveName } from "./scope.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";
@@ -264,6 +264,17 @@ export function annotationTarget(annotation: PyNode): PyNode | null {
     return outer ?? null;
   }
   return annotation;
+}
+
+/** The class an annotation refers to, by the name it is written under, read through a forward reference's quotes. */
+export function typeNameOf(annotation: PyNode): string | null {
+  const target = annotationTarget(annotation);
+  if (target === null) {
+    return null;
+  }
+  return target.type === "identifier"
+    ? target.text
+    : stringLiteralValue(target);
 }
 
 /** The `type` nodes inside the brackets of `Outer[A, B]`. */

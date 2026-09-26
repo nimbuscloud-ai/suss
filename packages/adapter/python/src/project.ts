@@ -49,7 +49,7 @@ import {
 import { discoverUnits } from "./discovery.js";
 import { bindEnvFacts, envFactsIn, envReadEffects } from "./envReads.js";
 import { emitValueFacts, nodeId } from "./facts/values.js";
-import { emitEntryFact, emitModuleImportFacts } from "./facts.js";
+import { emitModuleImportFacts } from "./facts.js";
 import { importedDefinitionLookup } from "./importedDefinitions.js";
 import { parsePython } from "./parser.js";
 import { moduleLoadInvocationEffects } from "./paths/effects.js";
@@ -386,7 +386,6 @@ export async function extractPythonProject(
           facts: db,
           factsPath: file.file,
           patterns: storagePatterns,
-          definitionAt: (key: string) => definitions.get(key),
           couldMatch,
           rawSql: rawSqlPatterns,
           sqlClients,
@@ -446,7 +445,6 @@ export async function extractPythonProject(
       // `assembleSummary` computed.
       summary.confidence = { source: "inferred_static", level: "low" };
       summaries.push(summary);
-      emitEntryFact(db, file, raw.identity.range, raw.identity.name);
       tallyUnit(tallies, raw.boundaryBinding?.recognition);
 
       // Two routes on one function, such as one per method, share a seed.

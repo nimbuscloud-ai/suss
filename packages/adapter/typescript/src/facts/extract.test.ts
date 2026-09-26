@@ -58,7 +58,7 @@ function rows(db: Database, table: NodeTable, relation: string): string[][] {
 }
 
 describe("a function's declared return type", () => {
-  it("records the class the annotation names, and the name as written", () => {
+  it("records the class the annotation refers to", () => {
     const { db, table } = factsFor({
       "/mod.ts": [
         "export class Router { handle() {} }",
@@ -72,9 +72,6 @@ describe("a function's declared return type", () => {
         "export function makeRouter(): Router { throw new Error('nothing'); }",
         "export class Router { handle() {} }",
       ],
-    ]);
-    expect(rows(db, table, "returnsNamed").map((row) => row[1])).toEqual([
-      "Router",
     ]);
   });
 
@@ -102,9 +99,6 @@ describe("a function's declared return type", () => {
     });
 
     expect(db.size("returnsClass")).toBe(0);
-    expect(db.facts("returnsNamed").map((row) => String(row[1]))).toEqual([
-      "Array",
-    ]);
   });
 
   it("leaves the annotation alone when the body states what it returns", () => {
@@ -119,10 +113,9 @@ describe("a function's declared return type", () => {
 
     expect(db.size("returnsValue")).toBe(1);
     expect(db.size("returnsClass")).toBe(0);
-    expect(db.size("returnsNamed")).toBe(0);
   });
 
-  it("keeps only the name for a type no class in the run declares", () => {
+  it("records no class for a type no class in the run declares", () => {
     const { db } = factsFor({
       "/mod.ts": [
         "interface Client { send(): void }",
@@ -132,9 +125,6 @@ describe("a function's declared return type", () => {
     });
 
     expect(db.size("returnsClass")).toBe(0);
-    expect(db.facts("returnsNamed").map((row) => String(row[1]))).toEqual([
-      "Client",
-    ]);
   });
 });
 

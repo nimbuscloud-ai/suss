@@ -51,7 +51,7 @@ Three layers do the work.
 
   <rect class="box" x="60" y="220" width="540" height="86" rx="6" />
   <text class="label" x="330" y="242" text-anchor="middle">2. One rule set joins the facts into a value graph</text>
-  <text class="note" x="330" y="260" text-anchor="middle">191 rules. 15 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
+  <text class="note" x="330" y="260" text-anchor="middle">190 rules. 15 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
   <text class="note" x="330" y="277" text-anchor="middle">reaches is the transitive closure of those hops, and it records</text>
   <text class="note" x="330" y="294" text-anchor="middle">the strongest kind of step the walk took.</text>
 
@@ -79,7 +79,7 @@ Three layers do the work.
   <text class="note" x="535" y="450" text-anchor="middle">the same stop, for a</text>
   <text class="note" x="535" y="466" text-anchor="middle">walk that ran a call</text>
 
-  <text class="note" x="330" y="498" text-anchor="middle">and comesFrom, objectOf, paramAt, resolves: 60 question rules feeding 43 answer relations</text>
+  <text class="note" x="330" y="498" text-anchor="middle">and comesFrom, objectOf, resolves: 59 question rules feeding 42 answer relations</text>
 </svg>
 
 ## Layer 1: the adapter writes down what a file says
@@ -163,13 +163,13 @@ out.
 
 ## Layer 2: one rule set makes a graph
 
-`RESOLUTION_RULES` in `packages/resolution/src/index.ts` is 191 rules.
+`RESOLUTION_RULES` in `packages/resolution/src/index.ts` is 190 rules.
 15 of them derive `stepsTo(x, y, kind)`, which says the value `x` leads
 to the value `y` in one hop. Two of them, for an argument and a
 property read, are written as `stepsTo` directly. The other thirteen
 are written as `hop`, and each gets a `stepsTo` twin, since a walk
 under a receiver context reads `hop`. An adapter can add hops of its
-own, each with its twin, and those are not among the 191. The Ruby
+own, each with its twin, and those are not among the 190. The Ruby
 adapter adds one, for `Const.new`.
 
 ```ts
@@ -290,7 +290,6 @@ a condition on where the walk ended.
 | `givesBackUnwrapped(x, z)` | at what a call the result walk reached unwraps, which a caller asks before `givesBack` |
 | `isWrittenAs(x, z)` | at anything spelled out in source |
 | `objectOf(o, obj)` | at the object an expression refers to |
-| `paramAt(r, p, z)` | at what one call site put in parameter `p` |
 | `comesFrom(x, m, n)` | at an import, giving the module and the name, including a member read off a module imported whole |
 | `callsInto(f, m, n)` | at a library name that calling `f` ends up calling |
 | `resolves(x, z)` | `comesTo` narrowed to functions |
@@ -298,8 +297,8 @@ a condition on where the walk ended.
 `resolves` is the one `suss ask why` proves.
 
 At the bottom of the same file, `RESOLUTION_QUESTIONS` turns each of
-those into an answer keyed by the value somebody asked about. It is 60
-question rules feeding 43 answer relations. They are written as rules
+those into an answer keyed by the value somebody asked about. It is 59
+question rules feeding 42 answer relations. They are written as rules
 rather than as loops in the caller
 because `deriveOnDemand` reads them to work out how far to follow each
 chain.
@@ -432,7 +431,8 @@ callsFunction(r, f) :- returnsValue(g, f), callsFunction(r0, g), callsNamed(r, r
 That is also where multiple answers come from. bcryptjs declares `hash`
 twice, so the join fires against both declarations and `password`
 reaches two different parameter nodes. A caller that needs the call
-sites told apart asks `paramAt`, which keeps the call in the tuple.
+sites told apart asks `passesArgument`, which keeps the call in the
+tuple.
 
 ## Deriving only what a question needs
 
