@@ -1418,15 +1418,16 @@ const STATED_RULES = [
       lit("contains", v("base"), v("n"), v("h")),
     ],
   ),
-  // A prepended module's member comes before the class's own, and before
-  // everything the class inherits.
+  // A prepended module's member comes before the class's own and what the
+  // class inherits. The module is found by a name hop, since `comesTo`
+  // asked backwards from the module walks to it from every value.
   rule(
     "overrides",
     [v("m"), v("n"), v("h")],
     [
-      lit("prepends", v("c"), v("mod")),
-      lit("comesTo", v("mod"), v("modObj")),
       lit("holdsProperty", v("modObj"), v("n"), v("m")),
+      lit("nameHop", v("mod"), v("modObj")),
+      lit("prepends", v("c"), v("mod")),
       lit("holdsProperty", v("c"), v("n"), v("h")),
     ],
   ),
@@ -1434,9 +1435,9 @@ const STATED_RULES = [
     "overrides",
     [v("m"), v("n"), v("h")],
     [
-      lit("prepends", v("c"), v("mod")),
-      lit("comesTo", v("mod"), v("modObj")),
       lit("holdsProperty", v("modObj"), v("n"), v("m")),
+      lit("nameHop", v("mod"), v("modObj")),
+      lit("prepends", v("c"), v("mod")),
       lit("extends", v("c"), v("b")),
       lit("comesTo", v("b"), v("base")),
       lit("contains", v("base"), v("n"), v("h")),
