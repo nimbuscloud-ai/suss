@@ -58,6 +58,24 @@ const PATH_CONVENTIONS: Record<
 };
 
 /**
+ * What constant lookups have read from the disk during one run. A run
+ * looks the same names up many times, and files do not change while it
+ * reads them, so each directory list and each answer is read once. Each
+ * run makes its own, so the MCP server and watch mode see a file added
+ * since the last run.
+ */
+export interface ConstantFileCache {
+  /** The directories a constant is looked for in under each root, in the order they are tried. */
+  readonly autoloadDirectories: Map<string, readonly string[]>;
+  /** The file each root and relative path resolved to, or null. */
+  readonly resolved: Map<string, string | null>;
+}
+
+export function createConstantFileCache(): ConstantFileCache {
+  return { autoloadDirectories: new Map(), resolved: new Map() };
+}
+
+/**
  * The file that defines a constant under `root`, or null when there is
  * none. Rails autoloads from every directory directly under `app`, and
  * from each `concerns` directory under those, so `ApplicationController`
@@ -71,15 +89,44 @@ export function resolveConstantFile(
   qualifiedName: string,
   convention: ConstantPathConvention,
   acronyms: readonly string[] = [],
+  cache: ConstantFileCache = createConstantFileCache(),
 ): string | null {
   const relative = `${PATH_CONVENTIONS[convention](qualifiedName, acronyms)}.rb`;
-  for (const candidate of [root, ...autoloadDirectories(root)]) {
+  const key = `${root}\0${relative}`;
+  const known = cache.resolved.get(key);
+  if (known !== undefined) {
+    return known;
+  }
+  const found = firstExisting(root, relative, cache);
+  cache.resolved.set(key, found);
+  return found;
+}
+
+function firstExisting(
+  root: string,
+  relative: string,
+  cache: ConstantFileCache,
+): string | null {
+  for (const candidate of [root, ...autoloadDirectoriesOf(root, cache)]) {
     const file = path.join(candidate, relative);
     if (fs.existsSync(file)) {
       return file;
     }
   }
   return null;
+}
+
+function autoloadDirectoriesOf(
+  root: string,
+  cache: ConstantFileCache,
+): readonly string[] {
+  const known = cache.autoloadDirectories.get(root);
+  if (known !== undefined) {
+    return known;
+  }
+  const directories = autoloadDirectories(root);
+  cache.autoloadDirectories.set(root, directories);
+  return directories;
 }
 
 function autoloadDirectories(root: string): string[] {

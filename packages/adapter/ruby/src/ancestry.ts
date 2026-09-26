@@ -19,7 +19,10 @@ import { constantRefCandidates, walkDefinitions } from "./scope.js";
 
 import type { Database } from "@suss/datalog";
 import type { BlockConfigures, BodyBlocks } from "./ast.js";
-import type { ConstantPathConvention } from "./constantPath.js";
+import type {
+  ConstantFileCache,
+  ConstantPathConvention,
+} from "./constantPath.js";
 import type { DynamicNames } from "./defineMethod.js";
 import type { RbNode } from "./parser.js";
 import type { ClassInfo } from "./scope.js";
@@ -67,6 +70,8 @@ export interface AncestorLookup {
    * ends a walk with nothing left unfollowed.
    */
   ancestryRootClassNames: readonly string[];
+  /** What this run's constant lookups have already read from the disk. */
+  constantFiles: ConstantFileCache;
   parsedFile(absPath: string): Promise<RbNode | null>;
   /**
    * The blocks the file being read defines under a name, consulted
@@ -90,6 +95,7 @@ export async function reachDefinition(
     qualifiedName,
     lookup.pathConvention,
     lookup.acronyms,
+    lookup.constantFiles,
   );
   if (filePath === null) {
     return null;

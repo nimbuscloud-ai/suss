@@ -28,7 +28,12 @@ export {
   stringLiteralValue,
   symbolValue,
 } from "./ast.js";
-export { resolveConstantFile, underscoreConstantPath } from "./constantPath.js";
+export {
+  type ConstantFileCache,
+  createConstantFileCache,
+  resolveConstantFile,
+  underscoreConstantPath,
+} from "./constantPath.js";
 export {
   createFileCache,
   type DiscoveryOptions,

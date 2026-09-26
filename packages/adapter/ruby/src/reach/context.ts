@@ -18,6 +18,7 @@ import {
   NO_BODY_BLOCKS,
   OWN_BODY_TYPES,
 } from "../ast.js";
+import { createConstantFileCache } from "../constantPath.js";
 import { nodeId } from "../facts/values.js";
 import { walkDefinitions } from "../scope.js";
 import { methodDefinitionsIn } from "../values/evaluator.js";
@@ -96,6 +97,7 @@ export async function buildReachContext(
     root: "",
     pathConvention: "railsUnderscore",
     ancestryRootClassNames: [],
+    constantFiles: createConstantFileCache(),
     // Every class the run defines is already in `blocksByQualifiedName`.
     // A name missing from it is outside the run, so there is no file to read.
     parsedFile: async () => null,
