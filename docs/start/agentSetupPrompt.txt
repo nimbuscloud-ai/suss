@@ -1,0 +1,82 @@
+<!--
+The setup prompt an agent follows, in parts. The page that shows the prompt
+puts the parts together once for each agent, and check:examples runs every
+`npx @suss/cli` command in them and looks up every flag in `suss --help`.
+-->
+
+<!-- #region setup -->
+Set up suss in this repository. suss reads the code and reports where the two sides of a boundary disagree, such as a route and the client that calls it. Run the commands below as written. For a flag that is not here, look in `npx @suss/cli --help` instead of guessing, and for anything else read https://github.com/nimbuscloud-ai/suss/blob/main/AGENTS.md.
+
+1. Install the CLI as a dev dependency with the project's package manager, for npm `npm install --save-dev @suss/cli`. Skip this when the repository has no package.json, since `npx @suss/cli` fetches it.
+
+2. Run `npx @suss/cli init --plain`. It prints the packs suss found here and writes nothing. If there is no `suss.json` at the root, tell me that running `npx @suss/cli init` in my own terminal and accepting its offer writes one. The next step reads what init found even without it.
+
+3. Run `npx @suss/cli check --json` at the repository root. If `pairs` in its output is empty, stop here and tell me that nothing paired, quoting any entry under `run` and what suss printed about the files it read. A report with no findings looks the same whether both sides agreed or nothing was compared, so never report an empty one as a pass.
+<!-- #endregion setup -->
+
+<!-- #region claude-code -->
+4. Install the suss plugin for Claude Code, which adds the suss MCP server, hooks that check each edit you make, and the intent skill. The plugin needs a suss release that has `suss check --since` and `suss extract --out-dir`, so look for both in `npx @suss/cli --help` first. If either is missing, skip the plugin and tell me it needs a newer suss than the one on npm. Otherwise run `claude plugin marketplace add nimbuscloud-ai/suss --sparse .claude-plugin plugins && claude plugin install suss@suss`, and tell me to run `/reload-plugins` so the plugin loads.
+<!-- #endregion claude-code -->
+
+<!-- #region cursor -->
+4. Add the suss MCP server to `.cursor/mcp.json` at the repository root, keeping any servers already in the file:
+
+~~~json
+{
+  "mcpServers": {
+    "suss": {
+      "command": "npx",
+      "args": ["-y", "@suss/mcp", "${workspaceFolder}"]
+    }
+  }
+}
+~~~
+
+Then write `.cursor/rules/suss.mdc` with the content below, and tell me to check that the suss server is turned on in Cursor's MCP settings.
+
+~~~md
+---
+alwaysApply: true
+---
+
+<!--@include: ./agentSetupPrompt.txt#instructions-->
+~~~
+<!-- #endregion cursor -->
+
+<!-- #region codex -->
+4. Add the suss MCP server to `.codex/config.toml` at the repository root:
+
+~~~toml
+[mcp_servers.suss]
+command = "npx"
+args = ["-y", "@suss/mcp"]
+~~~
+
+Given no path, the server reads the directory Codex starts in, so tell me to start Codex at the repository root. Codex reads a project's `.codex/config.toml` only once the project is trusted. Then add the section below to `AGENTS.md` at the repository root, creating the file if there is none, and tell me to restart Codex so it starts the server.
+
+~~~md
+<!--@include: ./agentSetupPrompt.txt#instructions-->
+~~~
+<!-- #endregion codex -->
+
+<!-- #region other -->
+4. Add the suss MCP server to the MCP configuration your host reads, as a stdio server whose command is `npx` with the arguments `-y`, `@suss/mcp` and the absolute path of this repository. Then add the section below to the instructions file your host reads, such as `AGENTS.md` at the repository root. If you do not know where your host keeps either one, ask me instead of guessing. Tell me to restart the host so it starts the server.
+
+~~~md
+<!--@include: ./agentSetupPrompt.txt#instructions-->
+~~~
+<!-- #endregion other -->
+
+<!-- #region instructions -->
+## suss
+
+suss checks both sides of each boundary in this repository, such as a route and the code that calls it, or a table and the code that reads and writes it.
+
+- Before changing a route, a table, a queue or a function signature, ask the suss MCP server what reads, writes or calls it with `suss_ask`.
+- After an edit that crosses a boundary, run `suss_check`. Fix what it reports, or tell the developer why a finding should stay.
+- A `suss_check` with no findings means the two sides agreed only when `suss_boundaries` lists a boundary with both sides present.
+<!-- #endregion instructions -->
+
+<!-- #region report -->
+5. Finish with a short report: the packs suss found, which boundaries paired (`pairs`), which had only one side (`unmatched`), each entry under `findings` and `run`, what you changed to set suss up, and what I still have to do.
+<!-- #endregion report -->

@@ -10,6 +10,8 @@ The repository root is a plugin marketplace (`.claude-plugin/marketplace.json`),
 claude plugin marketplace add nimbuscloud-ai/suss --sparse .claude-plugin plugins && claude plugin install suss@suss
 ```
 
+The Claude Code prompt on [Give your agent suss](https://suss.sh/start/give-your-agent-suss) runs the same command after it sets up the CLI, and first checks that the suss release on npm has the commands the hooks run.
+
 To try a checkout without installing it, start Claude Code with `claude --plugin-dir plugins/supervisor`. The hooks then run the suss this repository builds, so run `npm run build` first.
 
 ## What is here
