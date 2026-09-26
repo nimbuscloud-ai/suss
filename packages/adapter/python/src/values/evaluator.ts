@@ -16,6 +16,7 @@ import { Evaluator, force, literalOf } from "@suss/values";
 import { enclosingFunction, field } from "../ast.js";
 import {
   constructionSites,
+  evaluatingUnderSite,
   resolveCalls,
   settleWrittenValues,
   writtenValueOf,
@@ -206,11 +207,12 @@ export function evaluatedValue(
   site?: string,
 ): Value {
   const evaluator = evaluatorFor(node, db);
-  return force(
-    site === undefined
-      ? evaluator.evaluate(node)
-      : evaluator.evaluate(node, { site }),
-  );
+  if (site === undefined) {
+    return force(evaluator.evaluate(node));
+  }
+
+  const underSite = (): Value => force(evaluator.evaluate(node, { site }));
+  return db === undefined ? underSite() : evaluatingUnderSite(db, underSite);
 }
 
 /** The one string `node` evaluates to, or null when it does not settle on one. */

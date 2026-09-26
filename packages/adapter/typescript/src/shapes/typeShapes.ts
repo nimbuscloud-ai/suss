@@ -171,7 +171,7 @@ function typeToShape(type: Type, ctx: ConvertContext): TypeShape | null {
   // a ref instead of recursing. objectToShape already records itself; doing
   // the same for unions and intersections lets recursive aliases short-circuit
   // before depth runs out.
-  const compoundKey = typeKey(type, ctx.enclosing);
+  const compoundKey = typeKey(type);
   if ((type.isUnion() || type.isIntersection()) && ctx.seen.has(compoundKey)) {
     return refFromType(type, ctx);
   }
@@ -318,7 +318,7 @@ function intersectionToShape(
 }
 
 function objectToShape(type: Type, ctx: ConvertContext): TypeShape | null {
-  const key = typeKey(type, ctx.enclosing);
+  const key = typeKey(type);
 
   // Cycle: we're already expanding this type on the current path. Collapse
   // to a ref rather than recursing forever.
@@ -655,7 +655,11 @@ function withSeen(ctx: ConvertContext, key: string): ConvertContext {
   return { ...ctx, seen };
 }
 
-function typeKey(type: Type, enclosing: Node): string {
+/**
+ * The key a type is remembered under while it is being expanded, so a
+ * type met again further down the same path collapses to a ref.
+ */
+function typeKey(type: Type): string {
   const symbol = type.getAliasSymbol() ?? type.getSymbol();
   if (symbol) {
     const name = symbol.getName();
@@ -666,5 +670,22 @@ function typeKey(type: Type, enclosing: Node): string {
     }
     return `sym:${name}`;
   }
-  return type.getText(enclosing);
+  return `id:${identityOf(type.compilerType)}`;
+}
+
+/**
+ * The checker makes one object per type, so the object tells two types
+ * apart without running the checker's type printer, which is slow.
+ */
+const typeIdentities = new WeakMap<object, number>();
+let typesIdentified = 0;
+
+function identityOf(compilerType: object): number {
+  const known = typeIdentities.get(compilerType);
+  if (known !== undefined) {
+    return known;
+  }
+  typesIdentified += 1;
+  typeIdentities.set(compilerType, typesIdentified);
+  return typesIdentified;
 }
