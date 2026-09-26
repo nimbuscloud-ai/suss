@@ -121,34 +121,24 @@ export function parameterIdentifier(param: PyNode): PyNode | null {
   return children(param).find((child) => child.type === "identifier") ?? null;
 }
 
-/** A parameter's name and the annotation written on it, across the four spellings the grammar gives a parameter. `*args` and `**kwargs` return null. */
+/** The four spellings the grammar gives a parameter that binds one plain name, which leaves out `*args` and `**kwargs`. */
+const NAMED_PARAMETER_TYPES: ReadonlySet<string> = new Set([
+  "identifier",
+  "typed_parameter",
+  "default_parameter",
+  "typed_default_parameter",
+]);
+
+/** A parameter's name and the annotation written on it. `*args` and `**kwargs` return null. */
 export function parameterNameAndType(
   param: PyNode,
 ): { name: string; typeNode: PyNode | null } | null {
-  if (param.type === "identifier") {
-    return { name: param.text, typeNode: null };
-  }
-  if (param.type === "typed_parameter") {
-    const inner = param.namedChildren.find(
-      (child) => child !== null && child.type === "identifier",
-    );
-    return inner !== undefined
-      ? { name: inner.text, typeNode: field(param, "type") }
-      : null;
-  }
-  if (param.type === "default_parameter") {
-    const nameNode = field(param, "name");
-    return nameNode?.type === "identifier"
-      ? { name: nameNode.text, typeNode: null }
-      : null;
-  }
-  if (param.type === "typed_default_parameter") {
-    const nameNode = field(param, "name");
-    return nameNode !== null
-      ? { name: nameNode.text, typeNode: field(param, "type") }
-      : null;
-  }
-  return null;
+  const name = NAMED_PARAMETER_TYPES.has(param.type)
+    ? parameterIdentifier(param)
+    : null;
+  return name?.type === "identifier"
+    ? { name: name.text, typeNode: field(param, "type") }
+    : null;
 }
 
 /** The text inside a plain string node, with the quotes removed. An f-string with an interpolation returns null. */

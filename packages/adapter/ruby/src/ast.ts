@@ -9,7 +9,7 @@ import { IdMap, IdSet, SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
  * upgrade that renames a field is fixed in one place.
  */
 
-import type { RbNode } from "./parser.js";
+import type { RbNode, RbTree } from "./parser.js";
 
 export interface Range {
   start: number;
@@ -313,30 +313,107 @@ export function symbolValue(node: RbNode): string | null {
   return node.type === "simple_symbol" ? node.text.slice(1) : null;
 }
 
+/** The method tables already read off one parse with one set of body blocks, by class body. */
+interface MethodTables {
+  readonly instance: NodeMap<ReadonlyMap<string, RbNode>>;
+  readonly singleton: NodeMap<ReadonlyMap<string, RbNode>>;
+}
+
+/**
+ * The ancestry walk asks for a class body's table once for every name it
+ * looks up, and reading the body again each time was most of what a
+ * lookup cost. So each table is read once per parse and set of blocks.
+ */
+const tablesByTree = new WeakMap<RbTree, WeakMap<BodyBlocks, MethodTables>>();
+
+function methodTablesFor(body: RbNode, blocks: BodyBlocks): MethodTables {
+  let byBlocks = tablesByTree.get(body.tree);
+  if (byBlocks === undefined) {
+    byBlocks = new WeakMap();
+    tablesByTree.set(body.tree, byBlocks);
+  }
+  let tables = byBlocks.get(blocks);
+  if (tables === undefined) {
+    tables = { instance: new NodeMap(), singleton: new NodeMap() };
+    byBlocks.set(blocks, tables);
+  }
+  return tables;
+}
+
 /**
  * Every instance method a class body defines, keyed by name. A name
  * defined twice keeps the later definition, as Ruby does.
  *
  * Class methods are left out, since a field resolves through an instance
- * method. That covers `def self.name`, which parses as a
- * `singleton_method`, and a `def` inside a body block the pack declares
- * as defining class methods.
+ * method. `definesClassMethod` says which those are.
  */
 export function instanceMethodsByName(
   body: RbNode,
   blocks: BodyBlocks = NO_BODY_BLOCKS,
+): ReadonlyMap<string, RbNode> {
+  const read = methodTablesFor(body, blocks).instance;
+  const known = read.get(body);
+  if (known !== undefined) {
+    return known;
+  }
+  const methods = readInstanceMethods(body, blocks);
+  read.set(body, methods);
+  return methods;
+}
+
+function readInstanceMethods(
+  body: RbNode,
+  blocks: BodyBlocks,
 ): Map<string, RbNode> {
   const methods = new Map<string, RbNode>();
-  for (const stmt of runStatements(body)) {
-    if (stmt.type !== "method" || definedAtClassLevel(stmt, body, blocks)) {
+  for (const method of methodsDefinedIn(body)) {
+    if (method.type !== "method" || definesClassMethod(method, blocks)) {
       continue;
     }
-    const name = field(stmt, "name")?.text;
+    const name = field(method, "name")?.text;
     if (name !== undefined) {
-      methods.set(name, stmt);
+      methods.set(name, method);
     }
   }
   return methods;
+}
+
+/**
+ * The methods one statement of a class body defines: what
+ * `definitionsWrittenAt` finds, and each `def` inside `class << self`.
+ * `definesClassMethod` says which of them are class methods. The reach
+ * walk and the value facts both read a class body through this, so they
+ * agree on what it defines.
+ */
+export function methodsDefinedAt(stmt: RbNode): RbNode[] {
+  const inner = selfSingletonBody(stmt);
+  if (inner === null) {
+    return definitionsWrittenAt(stmt);
+  }
+  return runStatements(inner)
+    .flatMap(definitionsWrittenAt)
+    .filter((node) => node.type === "method");
+}
+
+/**
+ * The `def`s a statement writes: the statement itself, or each `def` it
+ * passes to a call, as in `private def name` or `private memoize def
+ * name`. Ruby evaluates an argument before it runs the call, so the
+ * `def` defines its method all the same and the call receives its name.
+ */
+export function definitionsWrittenAt(stmt: RbNode): RbNode[] {
+  if (METHOD_TYPES.has(stmt.type)) {
+    return [stmt];
+  }
+  const args = stmt.type === "call" ? field(stmt, "arguments") : null;
+  return args === null
+    ? []
+    : bodyStatements(args).flatMap(definitionsWrittenAt);
+}
+
+/** Every method a class or module body defines, in source order. */
+export function methodsDefinedIn(body: RbNode): RbNode[] {
+  return runStatements(body).flatMap(methodsDefinedAt);
 }
 
 export type MethodVisibility = "public" | "private" | "protected";
@@ -382,9 +459,17 @@ function calledOutNames(call: RbNode): string[] {
     return [];
   }
   return bodyStatements(argumentList).flatMap((arg) => {
+    const symbol = symbolValue(arg);
+    return symbol === null ? instanceMethodNamesAt(arg) : [symbol];
+  });
+}
+
+/** The names of the instance methods a statement defines through `definitionsWrittenAt`. */
+function instanceMethodNamesAt(stmt: RbNode): string[] {
+  return definitionsWrittenAt(stmt).flatMap((method) => {
     const name =
-      arg.type === "method" ? field(arg, "name")?.text : symbolValue(arg);
-    return name === undefined || name === null ? [] : [name];
+      method.type === "method" ? field(method, "name")?.text : undefined;
+    return name === undefined ? [] : [name];
   });
 }
 
@@ -402,12 +487,8 @@ export function instanceMethodVisibility(
   const visibility = new Map<string, MethodVisibility>();
   let mode: MethodVisibility = "public";
   for (const stmt of bodyStatements(body)) {
-    if (stmt.type === "method") {
-      const name = field(stmt, "name")?.text;
-      if (name !== undefined) {
-        setVisibility(visibility, name, mode);
-      }
-      continue;
+    for (const name of instanceMethodNamesAt(stmt)) {
+      setVisibility(visibility, name, mode);
     }
     if (stmt.type === "identifier") {
       mode = visibilityKeyword(stmt.text) ?? mode;
@@ -435,14 +516,29 @@ export function instanceMethodVisibility(
 export function singletonMethodsByName(
   body: RbNode,
   blocks: BodyBlocks = NO_BODY_BLOCKS,
+): ReadonlyMap<string, RbNode> {
+  const read = methodTablesFor(body, blocks).singleton;
+  const known = read.get(body);
+  if (known !== undefined) {
+    return known;
+  }
+  const methods = readSingletonMethods(body, blocks);
+  read.set(body, methods);
+  return methods;
+}
+
+function readSingletonMethods(
+  body: RbNode,
+  blocks: BodyBlocks,
 ): Map<string, RbNode> {
-  const methods = moduleFunctionsOf(body, blocks);
-  for (const stmt of runStatements(body)) {
-    for (const method of classMethodsWrittenAt(stmt, body, blocks)) {
-      const name = field(method, "name")?.text;
-      if (name !== undefined) {
-        methods.set(name, method);
-      }
+  const methods = new Map(moduleFunctionsOf(body, blocks));
+  for (const method of methodsDefinedIn(body)) {
+    if (!definesClassMethod(method, blocks)) {
+      continue;
+    }
+    const name = field(method, "name")?.text;
+    if (name !== undefined) {
+      methods.set(name, method);
     }
   }
   return methods;
@@ -460,7 +556,7 @@ const MODULE_FUNCTION = "module_function";
 function moduleFunctionsOf(
   body: RbNode,
   blocks: BodyBlocks,
-): Map<string, RbNode> {
+): ReadonlyMap<string, RbNode> {
   const instance = instanceMethodsByName(body, blocks);
   const offered = new Map<string, RbNode>();
   let everyLaterDef = false;
@@ -472,9 +568,12 @@ function moduleFunctionsOf(
       everyLaterDef = true;
       continue;
     }
-    const name = stmt.type === "method" ? field(stmt, "name")?.text : null;
-    if (everyLaterDef && name !== undefined && name !== null) {
-      offered.set(name, stmt);
+    const written = everyLaterDef ? definitionsWrittenAt(stmt) : [];
+    for (const method of written) {
+      const name = field(method, "name")?.text;
+      if (method.type === "method" && name !== undefined) {
+        offered.set(name, method);
+      }
     }
     for (const named of moduleFunctionCallNames(stmt)) {
       const method = instance.get(named);
@@ -510,25 +609,6 @@ function moduleFunctionCallNames(stmt: RbNode): string[] {
     return [];
   }
   return calledOutNames(stmt);
-}
-
-/** The class methods one statement of a class body defines, in source order. */
-function classMethodsWrittenAt(
-  stmt: RbNode,
-  body: RbNode,
-  blocks: BodyBlocks,
-): RbNode[] {
-  if (stmt.type === "singleton_method") {
-    return [stmt];
-  }
-  if (stmt.type === "method") {
-    return definedAtClassLevel(stmt, body, blocks) ? [stmt] : [];
-  }
-  const inner = selfSingletonBody(stmt);
-  if (inner === null) {
-    return [];
-  }
-  return runStatements(inner).filter((node) => node.type === "method");
 }
 
 /**
