@@ -118,7 +118,9 @@ const fastapiLike: PythonPack = {
 describe("a parameter annotated as a model class", () => {
   const files = {
     "app/models.py": [
-      "class Account:",
+      "from pydantic import BaseModel",
+      "",
+      "class Account(BaseModel):",
       "    is_admin: bool = False",
       "",
       "    def plan(self):",

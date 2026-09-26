@@ -1438,6 +1438,17 @@ const STATED_RULES = [
       lit("contains", v("base"), v("n"), v("h")),
     ],
   ),
+  // The same for a field default, which a plain subclass contains too.
+  rule(
+    "overrides",
+    [v("m"), v("n"), v("h")],
+    [
+      lit("holdsDefault", v("c"), v("n"), v("m")),
+      lit("extends", v("c"), v("b")),
+      lit("comesTo", v("b"), v("base")),
+      lit("contains", v("base"), v("n"), v("h")),
+    ],
+  ),
   // A prepended module's member comes before the class's own and what the
   // class inherits. The module is found by a name hop, since `comesTo`
   // asked backwards from the module walks to it from every value.
@@ -1528,6 +1539,31 @@ const STATED_RULES = [
       lit("fieldDefault", v("cls"), v("n"), v("held")),
     ],
     "construction with no arguments",
+  ),
+  // On a plain class nothing generates a constructor that could replace
+  // an annotated attribute, so every instance shares it.
+  rule(
+    "contains",
+    [v("cls"), v("n"), v("held")],
+    [
+      lit("holdsDefault", v("cls"), v("n"), v("held")),
+      lit("plainAncestry", v("cls")),
+    ],
+    "plain class attribute",
+  ),
+
+  // A class nothing generates a constructor for. The adapter states it
+  // only where the source shows it, since a rule cannot say "unless", and
+  // a class written over one base is plain when that base is.
+  rule("plainAncestry", [v("c")], [lit("plainClass", v("c"))]),
+  rule(
+    "plainAncestry",
+    [v("c")],
+    [
+      lit("extendsOnly", v("c"), v("base")),
+      lit("comesTo", v("base"), v("baseCls")),
+      lit("plainAncestry", v("baseCls")),
+    ],
   ),
 
   // A field default, its base class's included. It stays out of `contains`,

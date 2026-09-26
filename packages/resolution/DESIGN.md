@@ -123,6 +123,13 @@ extendsNamed(c, n)          class c's base is written n, which is how a
                             pack matches a library base that no node in
                             the run declares. Only a base written as a
                             name or a dotted name has one
+plainClass(c)               class c is written with no decorator, no
+                            keyword such as metaclass=, and no base but
+                            object, so nothing generates a constructor
+                            from its fields (Python)
+extendsOnly(c, b)           class c is written the same way but with b
+                            as its only base, so c is plain when b is
+                            (Python)
 declaresName(c, n)          c declares a method n under a name the
                             source computes rather than writes out
                             (Ruby)
@@ -429,6 +436,38 @@ because the class it finds for the call doesn't contain the field
 defaults.
 It starts from `callArgCount`, so a project whose adapter records no
 count pays one lookup per returned value and nothing more.
+
+Nothing generates a constructor for a plain class, so every instance
+shares an annotated attribute on one, the same way it shares `TABLE`:
+
+```python
+class Client:
+    base_url: str = "https://api.example.com"
+
+    def fetch(self):
+        return httpx.get(self.base_url + "/orders")
+```
+
+`contains` reads a `holdsDefault` row when `plainAncestry` says the
+class is plain. The adapter says so with `plainClass` for a class
+written with no decorator, no keyword and no base but `object`, and
+with `extendsOnly` for one written the same way over a single base.
+`plainAncestry` follows that base through `comesTo`, so a subclass of
+a plain project class is plain too.
+
+A rule cannot say "plain, unless a decorator or a library base
+generates the constructor", since the demand rewrite refuses a negated
+literal. So the adapter states plainness only where the class
+statement shows it, and every other class keeps its annotated
+attributes out of `contains`. A dataclass, a pydantic model, a
+`NamedTuple` and an attrs class all stay out that way without any pack
+declaring them. A class over a library base that generates nothing,
+such as `threading.local`, stays out too, so its annotated attributes
+go unread.
+
+A field default on a subclass overrides what its base contains under
+the same name, as a method does, so `withoutOverridden` sets the base's
+value aside when a plain subclass writes its own.
 
 `callArgCount` states how many arguments a call writes. A rule can only
 match on a fact that is present, so "passes nothing" needs a fact of its
