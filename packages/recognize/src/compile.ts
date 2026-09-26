@@ -202,7 +202,29 @@ function listed(
  */
 function subjectsOf(chain: Chain<MethodMeaning>, ops: CallOps): CallOps[] {
   const link: SubjectLink | null = linkIn(chain, "subject");
-  return link === null ? [ops] : walk([ops], link.of);
+  if (link === null) {
+    return [ops];
+  }
+  announceArgumentReads(link.of, ops);
+  return walk([ops], link.of);
+}
+
+/**
+ * A subject walk that starts at the arguments reads them at every call
+ * the walk visits, since this hook runs on each of those calls. Saying
+ * so before the first read lets the adapter ask about them together.
+ */
+function announceArgumentReads(steps: readonly CallStep[], ops: CallOps): void {
+  const first = steps[0];
+  if (first === undefined || first.to !== "argument") {
+    return;
+  }
+  const at = first.at;
+  if (typeof at === "number") {
+    ops.readingArguments?.(at, at);
+    return;
+  }
+  ops.readingArguments?.(at.from);
 }
 
 /** One way of stepping from a call to the calls it reaches. */

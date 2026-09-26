@@ -185,6 +185,14 @@ bucket at different distances. The search stops after eight receivers.
 A receiver chain can loop back to itself through a variable, and a pack
 that asks for more than eight hops has made a mistake in the step.
 
+A chain whose first step goes to the arguments reads them at every
+call the walk visits, since its hook runs on each call. Before the
+first read it calls `readingArguments` on the ops with the positions the
+step covers. The TypeScript adapter asks one store question about those
+arguments for the whole walk, where it would otherwise ask one per
+argument per call. An adapter that leaves the member out reads each
+argument as before.
+
 A step to an argument can also require where that argument came from.
 The step asks `isFrom` of each candidate in turn. `send(command)` takes
 one argument and a presigner takes two. The argument that matters is
