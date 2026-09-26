@@ -153,7 +153,8 @@ const WRITTEN_VALUE_TYPES = new Set([
   "bare_string",
   "bare_symbol",
   // Built from other expressions. A chain stops here, and the evaluator
-  // reads the expression in the scope it is written in.
+  // reads the expression in the scope it is written in. `a || b` is the
+  // exception, stated as the branches it picks between.
   "chained_string",
   "binary",
   "unary",
@@ -579,6 +580,55 @@ function emitKeyedFetch(emitter: Emitter, call: RbNode): void {
   }
 }
 
+/** The operators whose value is whichever side they pick. */
+const FALLBACK_OPERATORS = new Set(["||", "or"]);
+
+/**
+ * The sides of `a || b` or `a or b` whose value can be the expression's,
+ * or null for any other expression. A side that raises hands back no
+ * value, so `find(id) || raise(NotFound)` has one branch. `x ||= y` needs
+ * nothing here, since the write it makes is already recorded as a write
+ * of `y`.
+ */
+function fallbackBranchesOf(
+  node: RbNode,
+  enclosing: RbNode | null,
+): RbNode[] | null {
+  if (
+    node.type !== "binary" ||
+    !FALLBACK_OPERATORS.has(field(node, "operator")?.text ?? "")
+  ) {
+    return null;
+  }
+  const left = field(node, "left");
+  const right = field(node, "right");
+  /* v8 ignore start */
+  if (left === null || right === null) {
+    return null;
+  }
+  /* v8 ignore stop */
+  return [left, right].filter((side) => !raises(side, enclosing));
+}
+
+/** Kernel's methods that raise, and so never hand back a value. */
+const RAISING_METHODS = new Set(["raise", "fail"]);
+
+/** Whether an expression is a call of `raise` or `fail`, bare or off `Kernel`. */
+function raises(written: RbNode, enclosing: RbNode | null): boolean {
+  const node = readThrough(written);
+  if (node.type === "identifier") {
+    return RAISING_METHODS.has(node.text) && isBareCall(node, enclosing);
+  }
+  if (node.type !== "call") {
+    return false;
+  }
+  const receiver = field(node, "receiver");
+  return (
+    RAISING_METHODS.has(field(node, "method")?.text ?? "") &&
+    (receiver === null || receiver.text === "Kernel")
+  );
+}
+
 function emitExpressionFacts(emitter: Emitter, node: RbNode): void {
   // The walk below starts at the children, so a statement that is itself
   // a `define_method` call is checked here.
@@ -598,7 +648,17 @@ function emitExpressionFacts(emitter: Emitter, node: RbNode): void {
     if (child.type === "hash") {
       emitHash(emitter, child);
     }
-    if (WRITTEN_VALUE_TYPES.has(child.type)) {
+    const branches = fallbackBranchesOf(child, emitter.enclosing);
+    if (branches !== null) {
+      for (const branch of branches) {
+        add(
+          emitter,
+          "fallbackBranch",
+          nodeId(emitter.filePath, child),
+          valueKey(emitter, branch),
+        );
+      }
+    } else if (WRITTEN_VALUE_TYPES.has(child.type)) {
       add(emitter, "writtenValue", nodeId(emitter.filePath, child));
     }
     if (child.type === "nil") {
@@ -1049,10 +1109,12 @@ function mixedInConstants(body: RbNode, callName: string): RbNode[] {
 
 /**
  * A module mixed in with `include` or `prepend` is an ancestor in Ruby's
- * method lookup, so it is recorded as `extends`. Every rule that walks an
- * ancestry then reaches what the module declares.
+ * method lookup. An included module comes after the class, so it is
+ * recorded as `extends`, like a superclass. A prepended module comes
+ * before the class, so its methods win over the class's own, and it is
+ * recorded as `prepends` so the rules can tell the two apart.
  *
- * It is not recorded in `extendsNamed`, which gives the library base a
+ * Neither is recorded in `extendsNamed`, which gives the library base a
  * class ends up at. A module is never that base, and listing one there
  * would give a pack a second base to match.
  */
@@ -1061,9 +1123,10 @@ function emitMixinFacts(
   classKey: string,
   body: RbNode,
   callName: string,
+  relation: "extends" | "prepends",
 ): void {
   for (const mixin of mixedInConstants(body, callName)) {
-    add(emitter, "extends", classKey, valueKey(emitter, mixin));
+    add(emitter, relation, classKey, valueKey(emitter, mixin));
   }
 }
 
@@ -1081,8 +1144,8 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
   // Ruby looks a method up in prepended modules, then the class itself,
   // then included modules, then the superclass chain.
   if (body !== null) {
-    emitMixinFacts(emitter, classKey, body, PREPEND_CALL);
-    emitMixinFacts(emitter, classKey, body, INCLUDE_CALL);
+    emitMixinFacts(emitter, classKey, body, PREPEND_CALL, "prepends");
+    emitMixinFacts(emitter, classKey, body, INCLUDE_CALL, "extends");
   }
 
   const superclass = field(cls, "superclass");

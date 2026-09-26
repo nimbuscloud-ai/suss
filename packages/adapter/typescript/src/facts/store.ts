@@ -34,6 +34,7 @@ import {
   alsoSteps,
   askResolutionUnder,
   type ExplainStats,
+  fallbackWrittenAs,
   proofRules,
   queryFacts,
   RESOLUTION_QUESTIONS,
@@ -41,6 +42,7 @@ import {
   resolutionUnderProgram,
   RESOLUTION_RULES as SHARED_RULES,
   VALUE_STEP,
+  withoutOverridden,
   writtenValueUnder,
 } from "@suss/resolution";
 
@@ -461,7 +463,9 @@ export class ResolutionStore {
       return null;
     }
 
-    const answer = writtenValueUnder(this.db, key, site);
+    const answer = writtenValueUnder(this.db, key, site, (pairs) => {
+      askResolutionUnder(this.db, pairs, resolutionUnderProgram(JS_RULES));
+    });
     const node = answer === null ? null : (this.table.byId.get(answer) ?? null);
     const written =
       node === null || node === target || !Node.isExpression(node)
@@ -1381,10 +1385,16 @@ export class ResolutionStore {
       candidates.add(node);
     }
 
-    if (candidates.size !== 1) {
-      return null;
+    if (candidates.size === 1) {
+      return [...candidates][0] as Node;
     }
-    return [...candidates][0] as Node;
+    const fallback = fallbackWrittenAs(this.db, nodeId(value), (keys) => {
+      for (const key of keys) {
+        this.wantKey("wanted", key);
+      }
+      this.derive();
+    });
+    return fallback === null ? null : (this.table.byId.get(fallback) ?? null);
   }
 
   /**
@@ -1509,7 +1519,11 @@ export class ResolutionStore {
   }
 
   private answersFor(relation: string, value: string): string[] {
-    return this.db.lookup(relation, 0, value).map((tuple) => String(tuple[1]));
+    return withoutOverridden(
+      this.db,
+      value,
+      this.db.lookup(relation, 0, value).map((tuple) => String(tuple[1])),
+    );
   }
 
   /**

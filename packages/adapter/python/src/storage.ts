@@ -6,6 +6,7 @@
  */
 
 import { storageBinding } from "@suss/ir-core";
+import { withoutOverridden } from "@suss/resolution";
 
 import { children, enclosingFunction, field } from "./ast.js";
 import { originsOf, resolveCalls } from "./facts/resolve.js";
@@ -200,10 +201,11 @@ function settledCallee(
 ): string | undefined {
   const key = readKey(options.filePath, callee, enclosingFunction(callee));
   resolveCalls(options.facts, [key]);
-  const resolved = options.facts
-    .facts("wantedResolves")
-    .filter((row) => String(row[0]) === key)
-    .map((row) => String(row[1]));
+  const resolved = withoutOverridden(
+    options.facts,
+    key,
+    options.facts.lookup("wantedResolves", 0, key).map((row) => String(row[1])),
+  );
   return resolved.length === 1 ? resolved[0] : undefined;
 }
 

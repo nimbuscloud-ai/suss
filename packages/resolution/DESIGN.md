@@ -62,8 +62,8 @@ writesUnstated(x)           a write to x states no value at all. The
                             value readers in this package read it, and
                             no rule does (Python, Ruby)
 fallbackBranch(x, b)        x is a fallback expression, a || b or
-                            a ?? b, and b is one of its branches
-                            (TypeScript)
+                            a ?? b, or a or b in Python and Ruby, and b
+                            is one of its branches
 instanceOf(x, cls)          x is one of cls, and nothing says which: a
                             method's receiver, or a name Python
                             annotates with a type. cls can be a name
@@ -114,11 +114,13 @@ Classes:
 
 ```
 extends(c, b)               class c is written as extending b. Ruby
-                            records a module c includes or prepends the
-                            same way (Python, Ruby)
+                            records a module c includes the same way
+prepends(c, m)              the Ruby class c prepends the module m, whose
+                            methods Ruby looks up before c's own (Ruby)
 extendsNamed(c, n)          class c's base is written n, which is how a
                             pack matches a library base that no node in
-                            the run declares (Python, Ruby)
+                            the run declares. Only a base written as a
+                            name or a dotted name has one
 declaresName(c, n)          c declares a method n under a name the
                             source computes rather than writes out
                             (Ruby)
@@ -360,6 +362,46 @@ subclass that never overrode it. Deriving those rows into
 rewrite would then fill it only in answer to a demand that nothing
 generates.
 
+A method that a subclass overrides is contained twice, once from the
+subclass and once from its base. Preferring the subclass's own would
+need a negated `contains`, which the demand rewrite refuses. So the rules
+record the override beside `contains`, and the caller picking one answer
+applies it:
+
+```
+overrides(m, n, h)          a class declares m under the name n itself,
+                            and one of its bases contains h under n
+readsOverridden(x, obj, h)  the read x finds h on obj, and obj contains
+                            a member that overrides h
+readsFrom(x, obj, n)        the read x reads n off obj
+readsMemberOn(x, obj, h)    the read x finds h on obj, listed for a read
+                            that readsOverridden has a row for
+```
+
+`withoutOverridden` sets h aside when every object the read finds it on
+also contains an override, and only when another answer is left. The
+objects come from `readsFrom` before `contains` is asked, so it is asked
+with the object and the name bound, as the property read step asks it.
+Asked with h bound first, it listed every subclass and allocation site
+that contains h, and the full mastodon run ran out of memory. The
+object matters. A parameter that one caller passes an `Accounts` and
+another a plain `Repository` finds `Repository.save` on the plain one
+with nothing overriding it, so the read keeps both methods and a caller
+that needs one refuses it. `answersFor`, the callee outcomes, each
+adapter's reads of `wantedResolves`, and the proof pass behind
+`suss ask why` all apply it, so they give the same answer.
+
+Ruby looks a method up in the modules a class prepends before the class
+itself. So a prepended module is recorded as `prepends` rather than as
+`extends`, which would make the class's own method override it. The
+module's members reach the class through a `contains` rule of their own,
+the ancestry chain follows the prepend, and a prepended module's member
+overrides both the class's own member and whatever the class inherits.
+
+Two cases keep both methods. A class with two bases that each write the
+method, where Python's method order would pick the first, and a Ruby
+class whose included modules both write it.
+
 ## What an instance reads
 
 A class body can assign two kinds of value, and they reach an instance
@@ -412,6 +454,9 @@ The adapter assigns node ids, and the rules only join on them.
 Every construct's hops go into one relation:
 
 ```
+nameHop(x, y)               the name x has the value y without running
+                            anything: its declaration, its last write,
+                            one of several writes, or a fallback branch
 hop(x, y, kind)             following x leads to y in one hop
 stepsTo(x, y, kind)         every hop, stated again, plus the two a
                             receiver context replaces
@@ -421,8 +466,12 @@ reachesUnder(x, c, z, c2, kind)   the same closure under one site
 
 Each hop is written twice, once as a `hop` and once as a `stepsTo`,
 instead of one being derived from the other. A demand for `stepsTo` is
-one of the largest relations a run derives, and deriving it through
-`hop` would copy every row.
+one of the largest relations a run derives, and deriving all of it
+through `hop` would copy every row. The name steps are the exception.
+Every chain that follows a name reads `nameHop`, and so do the `hop`
+and `stepsTo` rules for a value step. Rows read went down on all four
+projects measured when the name steps moved to `nameHop`, because the
+chains stopped listing the hops one by one.
 
 A value step goes to the value x is written as: a name to its
 declaration, an import to what the module exports, a parameter to what a
@@ -437,10 +486,14 @@ A hop that only one language has is written as a step too. JavaScript's
 `.bind` and Ruby's `Const.new` are one rule each, and every question
 below uses them with no change.
 
-The value of a fallback expression (`a || b`, `a ?? b`) is one of its
-branches, so each branch is a value step. No other rule is involved.
-Only the TypeScript adapter records `fallbackBranch`. The Python adapter
-records `a or b` as a written value, which ends a chain there. When a branch is something no static reader can
+The value of a fallback expression (`a || b`, `a ?? b`, Python's and
+Ruby's `a or b`) is one of its branches, so each branch is a value step.
+No other rule is involved. An adapter records a fallback by its branches
+alone. Recorded as a written value as well, the fallback would be one
+more answer to `isWrittenAs` beside its branches. Ruby's `x ||= y` needs
+no fallback of its own, because the adapter already records it as a
+write of `y` to `x`. A Ruby side that calls `raise` or `fail` hands back
+no value, so `find(id) || raise(NotFound)` has one branch. When a branch is something no static reader can
 settle, such as a global cache or a parameter, that branch derives
 nothing. The branch that does resolve is then the only claim the source
 makes. The usual client singleton, `global.prisma || new PrismaClient()`,
@@ -449,6 +502,20 @@ the answer. When both branches resolve to different things, both
 derive, and the caller's single-answer policy refuses the pair. Every
 other chain with two candidates gets the same refusal, since the value
 could be either one.
+
+A value is read the same way. `os.environ.get("API_PREFIX") or "/api"`
+is written as two expressions, the call and the literal, and a reader
+that wants one expression gets none. `fallbackBehind(x, f)` lists the
+fallbacks a value passes on the way, including through a call to a
+function that returns one. When every expression a value is written as
+came through one fallback, `writtenValueOf` returns the fallback, and
+the value evaluator reads it with its own `or`. A branch the evaluator
+cannot read makes no claim, so the example reads as `/api`, and two
+branches it can read are joined. A caller that wants each expression
+asks `writtenValuesOf`, which still lists both branches.
+`writtenValueUnder` reads a value under one allocation site the same
+way, through `fallbackBehindUnder`, so `self.base = base or "/api"`
+means the same thing whether the read has a site or not.
 
 Every question is this one closure with its own stopping condition.
 Adding a construct means adding one step, and every question picks it
@@ -534,6 +601,8 @@ resolves(x, z)              comesTo narrowed to functions
 givesBack(x, z)             following x arrives at a call that returns z
 givesBackUnwrapped(x, z)    givesBack, where the call returned unwraps z
 isWrittenAs(x, z)           x is written as the expression z
+fallbackBehind(x, f)        following x to what it is written as passes
+                            the fallback f
 comesFrom(x, m, n)          following x arrives at m's export n
 callsInto(f, m, n)          calling f ends up calling m's n
 paramAt(r, p, z)            the call r puts z in the parameter p
@@ -766,9 +835,9 @@ returned (`await User.findById(id)`). Each is a different number of
 hops from the anchor.
 
 `anchorChain` is the reachability relation that covers all three.
-Starting from the value asked about (`wantedAnchor`), it follows names
-(`binds`, `endsHolding`, `fallbackBranch`), imports through the export
-table, a call to its callee, and a method's callee to its receiver.
+Starting from the value asked about (`wantedAnchor`), it follows the
+name hops (`nameHop`), imports through the export table, a call to its
+callee, and a method's callee to its receiver.
 Every call the chain passes goes into `wantedAnchorCall`, keyed by the
 value asked about.
 

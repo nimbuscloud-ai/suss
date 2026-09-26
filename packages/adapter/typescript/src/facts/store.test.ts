@@ -2636,6 +2636,71 @@ describe("a method read off what a declared return type names", () => {
   });
 });
 
+describe("a method a subclass overrides", () => {
+  const CLASSES = `
+    class Repository {
+      save() { return "base"; }
+    }
+    class Accounts extends Repository {
+      save() { return "accounts"; }
+    }
+  `;
+
+  /** The callee of the one `save()` call written in `/mod.ts`. */
+  function saveCallee(project: Project): Node {
+    const callee = project
+      .getSourceFileOrThrow("/mod.ts")
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .map((call) => call.getExpression())
+      .find((expression) => expression.getText().endsWith(".save"));
+    if (callee === undefined) {
+      throw new Error("the save call was not found");
+    }
+    return callee;
+  }
+
+  it("resolves to the subclass's own method for a receiver with no type", () => {
+    const project = projectOf({
+      "/mod.ts": `${CLASSES}
+        // biome-ignore lint: the receiver is untyped on purpose
+        function persist(repository) { return repository.save(); }
+        export const run = () => persist(new Accounts());
+      `,
+    });
+
+    expect(resolvedBody(new ResolutionStore(), saveCallee(project))).toBe(
+      'save() { return "accounts"; }',
+    );
+  });
+
+  it("resolves an inherited override to the class between, not to the base", () => {
+    const project = projectOf({
+      "/mod.ts": `${CLASSES}
+        class AuditedAccounts extends Accounts {}
+        // biome-ignore lint: the receiver is untyped on purpose
+        function persist(repository) { return repository.save(); }
+        export const run = () => persist(new AuditedAccounts());
+      `,
+    });
+
+    expect(resolvedBody(new ResolutionStore(), saveCallee(project))).toBe(
+      'save() { return "accounts"; }',
+    );
+  });
+
+  it("resolves to nothing for a receiver that can be the base or the subclass", () => {
+    const project = projectOf({
+      "/mod.ts": `${CLASSES}
+        // biome-ignore lint: the receiver is untyped on purpose
+        function persist(repository) { return repository.save(); }
+        export const run = () => [persist(new Accounts()), persist(new Repository())];
+      `,
+    });
+
+    expect(resolvedBody(new ResolutionStore(), saveCallee(project))).toBeNull();
+  });
+});
+
 describe("reading a value under one construction", () => {
   const RESOURCE = `
     export class Resource {

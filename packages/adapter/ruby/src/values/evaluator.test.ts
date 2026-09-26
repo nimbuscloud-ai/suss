@@ -549,6 +549,15 @@ describe("functions", () => {
     expect(literalOf(subject("routes.rb"))).toBe("/api/x");
   });
 
+  it("follows a constant written as a fallback to the branch it can read", async () => {
+    const { subject } = await projectValues({
+      "config.rb":
+        'module Config\n  API_PREFIX = ENV.fetch("API_PREFIX", nil) || "/api"\nend',
+      "routes.rb": 'require "config"\nsubject = Config::API_PREFIX + "/orders"',
+    });
+    expect(literalOf(subject("routes.rb"))).toBe("/api/orders");
+  });
+
   it("follows a constant computed from another constant across files", async () => {
     const { subject } = await projectValues({
       "config.rb":
