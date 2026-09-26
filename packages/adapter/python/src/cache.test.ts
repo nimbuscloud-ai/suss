@@ -159,6 +159,58 @@ describe("extractPythonProject's on-disk cache", () => {
     expect(diagnostics[1]).toEqual({ kind: "miss", missReason: "key-changed" });
   });
 
+  it("misses with key-changed once the gap setting changes", async () => {
+    const files = routeProject();
+    const packs = testPacks();
+    const diagnostics: CacheDiagnostic[] = [];
+    const onCacheDiagnostic = (d: CacheDiagnostic) => diagnostics.push(d);
+
+    await extractPythonProject({
+      files,
+      roots: [tmpDir],
+      packs,
+      projectRoot: tmpDir,
+      onCacheDiagnostic,
+    });
+    await extractPythonProject({
+      files,
+      roots: [tmpDir],
+      packs,
+      projectRoot: tmpDir,
+      gapHandling: "silent",
+      onCacheDiagnostic,
+    });
+
+    expect(diagnostics[1]).toEqual({ kind: "miss", missReason: "key-changed" });
+  });
+
+  it("misses with key-changed once the directory ids are measured from changes", async () => {
+    const files = routeProject();
+    const packs = testPacks();
+    const cacheDir = path.join(tmpDir, ".suss", "cache");
+    const diagnostics: CacheDiagnostic[] = [];
+    const onCacheDiagnostic = (d: CacheDiagnostic) => diagnostics.push(d);
+
+    await extractPythonProject({
+      files,
+      roots: [tmpDir],
+      packs,
+      projectRoot: tmpDir,
+      cacheDir,
+      onCacheDiagnostic,
+    });
+    await extractPythonProject({
+      files,
+      roots: [tmpDir],
+      packs,
+      projectRoot: path.join(tmpDir, "myapp"),
+      cacheDir,
+      onCacheDiagnostic,
+    });
+
+    expect(diagnostics[1]).toEqual({ kind: "miss", missReason: "key-changed" });
+  });
+
   it("never writes an entry when cacheDir is null", async () => {
     const files = routeProject();
     const packs = testPacks();

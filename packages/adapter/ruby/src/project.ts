@@ -29,6 +29,7 @@ import {
   composeWrappers,
   createCacheLayer,
   createTimer,
+  extractionConfigStamp,
   moduleInitStructure,
   noopTimer,
   runDigest,
@@ -317,13 +318,17 @@ export async function extractRubyProject(
             : null)),
   );
   const extractionCache: CacheLayer = createCacheLayer(cacheDir);
-  const packsDigest = adapterStamp.packsDigest(
+  const packsDigest = `${adapterStamp.packsDigest(
     options.packs.map((pack) =>
       pack.version !== undefined
         ? { name: pack.name, version: pack.version }
         : { name: pack.name },
     ),
-  );
+  )}|${extractionConfigStamp({
+    gapHandling: options.gapHandling,
+    workspaceRoot: options.workspaceRoot,
+    projectRoot: options.projectRoot,
+  })}`;
   const cacheInput: CacheInput = {
     files: cacheDir === null ? [] : options.files,
     adapterPacksDigest:

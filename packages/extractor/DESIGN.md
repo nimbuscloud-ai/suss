@@ -61,7 +61,7 @@ Guards are compared by the condition's polarity and the text it was written as, 
 
 A second run over an unchanged repository returns the first run's summaries from disk, and a run after an edit re-extracts only the files the edit can affect. The TypeScript adapter keeps the cache in `.suss/cache/` beside the tsconfig, and turns it off for a project the caller supplied. `--no-cache` skips it for one run. The rest of this section describes the design.
 
-The Python and Ruby adapters keep the same on-disk cache, rooted at `.suss/cache/` beside the project root. Neither has a config file of its own to guard an entry the way the TypeScript adapter's tsconfig does, so their key depends only on the walked file list and the packs digest. Both write an entry with no per-file attribution, so a hit today is whole-run only. Any changed file re-extracts the whole project. Per-file reuse for these two adapters is planned as a later change.
+The Python and Ruby adapters keep the same on-disk cache, rooted at `.suss/cache/` beside the project root. Neither has a config file of its own to guard an entry the way the TypeScript adapter's tsconfig does, so their key depends on the walked file list, the packs digest and the run options. Both write an entry with no per-file attribution, so a hit today is whole-run only. Any changed file re-extracts the whole project. Per-file reuse for these two adapters is planned as a later change.
 
 ### The key
 
@@ -71,8 +71,10 @@ A run can only read an entry if it agrees with the run that wrote it on everythi
 - the adapter version, plus a content hash of the loaded adapter and analysis bundles
 - each pack's name, declared version, code hash and config digest
 - the project files the packs read off disk
-- the extraction config (`includeReachable`, `gapHandling`)
+- the run options that change output, stamped by `extractionConfigStamp` for all three adapters: `gapHandling` everywhere, `includeReachable` for TypeScript, and for Python and Ruby the directories their stored ids and paths are measured from, plus Python's import roots
 - the config path the adapter supplies (the TypeScript adapter's tsconfig)
+
+The TypeScript adapter measures ids and paths after the cache, on the way out, so its project root and workspace name stay out of the key.
 
 A pack can read project files that no walk ever sees. aws-lambda reads the SAM template that lists which handlers exist. A `packageExports` pattern reads the `package.json` whose `exports` map decides which files are on a package's boundary. Editing one of those changes what the run produces while every source file hashes the same. So a pack lists those files under `discoveryInputs`, and the key includes their paths and their content. Which files they are depends on the files the run walks, so this part of the key is computed per run, after the file list is read and before the lookup. Inside the entry, a stamp for the config path and a stamp for each project file guard the rest. A run built from source, without a bundle, has no code hash and does not use the cache at all.
 
