@@ -8,28 +8,33 @@
  * then stays in the session record for the next hook to deliver.
  */
 
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  blocksOnIntent,
   blocksStop,
   mergeResults,
   saysAnything,
   stillCounts,
 } from "./policy.mjs";
 import { parseSinceReport, startWorker, stopWorker } from "./queue.mjs";
-import { renderEditReport, renderStopReport } from "./report.mjs";
+import {
+  renderEditReport,
+  renderIntentFailure,
+  renderIntentReminder,
+  renderStopReport,
+} from "./report.mjs";
 import { Session } from "./session.mjs";
 import { findSuss, runSuss, whyItFailed } from "./suss.mjs";
 
 /** @typedef {import("./types.js").HookContext} HookContext */
 /** @typedef {import("./types.js").EditResult} EditResult */
 /** @typedef {import("./types.js").SinceReport} SinceReport */
+/** @typedef {import("./types.js").IntentVerdicts} IntentVerdicts */
 /** @typedef {Record<string, unknown>} HookInput */
 /** @typedef {Record<string, unknown> | null} HookOutput */
-
-/** How long a comparison run at a stop may take. */
-const COMPARE_LIMIT_MS = 60 * 1000;
 
 /** How many characters of the behavioral diff one stop report shows. */
 const DIFF_BUDGET = 5000;
@@ -78,6 +83,7 @@ export function contextFor(input) {
       startMs: budget("SUSS_SUPERVISOR_START_MS", 85_000),
       editMs: budget("SUSS_SUPERVISOR_EDIT_MS", 5_000),
       stopMs: budget("SUSS_SUPERVISOR_STOP_MS", 45_000),
+      compareMs: budget("SUSS_SUPERVISOR_COMPARE_MS", 60_000),
     },
   };
 }
@@ -101,6 +107,7 @@ function budget(name, fallback) {
 async function sessionStarted(input, context) {
   const session = sessionFor(input, context);
   session.reopen();
+  session.markCurrent();
   if (!session.hasSnapshot("baseline")) {
     startWorker(session, context);
     await waitUntil(
@@ -114,18 +121,41 @@ async function sessionStarted(input, context) {
 
 /**
  * Keeps the prompt for the record and delivers anything the worker
- * finished since the last hook. It never blocks and never waits.
+ * finished since the last hook. When the request has no change list
+ * yet, it tells the agent where to write one. It never blocks and never
+ * waits.
  *
  * @param {HookInput} input
  * @param {HookContext} context
  */
 async function promptSubmitted(input, context) {
   const session = sessionFor(input, context);
+  // With two sessions open in one project, the one the developer is
+  // typing in is the one a slash command is about.
+  session.markCurrent();
   session.appendPrompt(typeof input.prompt === "string" ? input.prompt : "");
   if (!session.hasSnapshot("baseline")) {
     startWorker(session, context);
   }
-  return disabledNotice(session) ?? lateResults(session, "UserPromptSubmit");
+  const disabled = disabledNotice(session);
+  if (disabled !== null || session.disabledReason() !== null) {
+    return disabled;
+  }
+  const late = lateResults(session, "UserPromptSubmit");
+  if (session.hasIntent()) {
+    return late;
+  }
+  const said = /** @type {{ additionalContext?: string } | undefined} */ (
+    late?.hookSpecificOutput
+  )?.additionalContext;
+  return {
+    hookSpecificOutput: {
+      hookEventName: "UserPromptSubmit",
+      additionalContext: [renderIntentReminder(session.intentFile()), said]
+        .filter((part) => part !== undefined)
+        .join("\n\n"),
+    },
+  };
 }
 
 /**
@@ -147,6 +177,10 @@ async function fileEdited(input, context) {
     input.tool_input ?? {}
   );
   const file = toolInput.file_path ?? toolInput.notebook_path;
+  // Writing the change list changes no code, so there is nothing to read.
+  if (typeof file === "string" && session.contains(file)) {
+    return null;
+  }
   const place = session.appendEdit({
     tool: typeof input.tool_name === "string" ? input.tool_name : "unknown",
     ...(typeof file === "string" ? { file } : {}),
@@ -169,8 +203,10 @@ async function fileEdited(input, context) {
 
 /**
  * Waits for the worker to read the last edits, then reports what changed
- * since the baseline. It blocks once on each new error; otherwise the
- * developer gets the report and the baseline moves up to now.
+ * since the baseline. It blocks once on each new error, each entry of the
+ * change list that is not done, and each change nobody asked for.
+ * Otherwise the developer gets the report, the baseline moves up to now,
+ * and the change list is put away.
  *
  * @param {HookInput} input
  * @param {HookContext} context
@@ -202,8 +238,9 @@ async function agentStopping(input, context) {
 }
 
 /**
- * Stops the worker and drops the snapshots. The prompts and the reports
- * stay in the session record.
+ * Stops the worker, drops the snapshots, and takes away the mark that
+ * makes this the current session. The prompts, the change lists and the
+ * reports stay in the session record.
  *
  * @param {HookInput} input
  * @param {HookContext} context
@@ -213,6 +250,7 @@ async function sessionEnded(input, context) {
   if (session.exists()) {
     stopWorker(session);
     session.end();
+    session.clearCurrent();
   }
   return null;
 }
@@ -227,7 +265,7 @@ async function stopReport(session, context) {
   const run = (/** @type {string[]} */ args) =>
     runSuss(suss, args, {
       cwd: context.projectDir,
-      timeoutMs: COMPARE_LIMIT_MS,
+      timeoutMs: context.budgets.compareMs,
     });
 
   const baseline = session.snapshotDir("baseline");
@@ -251,24 +289,43 @@ async function stopReport(session, context) {
   const added = since.findings.filter(stillCounts);
   const blocking = blocksStop(added, new Set(record.blocked));
   const newRun = since.run.filter((f) => !record.runReported.includes(f.kind));
+  const intent = session.hasIntent()
+    ? await intentVerdicts(session, run)
+    : null;
+  const intentBlocking = blocksOnIntent(intent, new Set(record.intentBlocked));
+  const blocks = blocking.length + intentBlocking.length > 0;
+  const againstTheList = intent !== null && intent.kind !== "failed";
   const report = {
     since:
       session.snapshotMeta("baseline")?.from === "stop"
         ? "the agent last stopped"
         : "the session started",
-    diffs: await behaviorDiffs(session, run),
+    // The change list's verdicts cover every line of the diff, so the
+    // report shows those instead of the diff itself.
+    diffs: againstTheList ? [] : await behaviorDiffs(session, run),
+    intent,
+    intentBlocking: intentBlocking.length > 0,
+    changeList: session.intentFile(),
     added,
     resolved: since.resolved.filter(stillCounts),
     blocking,
     run: newRun,
-    caveats: baselineCaveats(session),
+    // A check suss could not run is for the developer to know about and
+    // not for the agent to fix, so only a report that passes says so.
+    caveats: [
+      ...baselineCaveats(session),
+      ...(blocks || intent?.kind !== "failed"
+        ? []
+        : [renderIntentFailure(intent.why)]),
+    ],
   };
   const text = renderStopReport(report);
 
-  if (blocking.length > 0) {
+  if (blocks) {
     session.setStopRecord({
       ...record,
       blocked: [...record.blocked, ...blocking.map((f) => f.identity)],
+      intentBlocked: [...record.intentBlocked, ...intentBlocking],
     });
     session.appendReport({ blocked: true, text });
     return { decision: "block", reason: text };
@@ -277,19 +334,90 @@ async function stopReport(session, context) {
   session.setStopRecord({
     ...record,
     runReported: [...record.runReported, ...newRun.map((f) => f.kind)],
+    intentBlocked: [],
   });
   moveBaselineToNow(session);
+  session.archiveIntent();
   const quiet =
+    intent === null &&
     report.diffs.length +
       report.added.length +
       report.resolved.length +
       report.run.length ===
-    0;
+      0;
   if (quiet) {
     return null;
   }
   session.appendReport({ blocked: false, text });
   return { systemMessage: text };
+}
+
+/**
+ * `suss intent check` over the change list, the baseline and the
+ * current summaries, with the developer's messages for the quotes.
+ *
+ * @param {Session} session
+ * @param {(args: string[]) => Promise<import("./types.js").SussRun>} run
+ * @returns {Promise<IntentVerdicts>}
+ */
+async function intentVerdicts(session, run) {
+  const prompts = session.file("prompts.jsonl");
+  const checked = await run([
+    "intent",
+    "check",
+    session.intentFile(),
+    "--before",
+    session.snapshotDir("baseline"),
+    "--after",
+    session.snapshotDir("current"),
+    ...(fs.existsSync(prompts) ? ["--prompts", prompts] : []),
+    "--json",
+  ]);
+  return verdictsFrom(checked);
+}
+
+/**
+ * What `intent check` printed, read three ways: the verdicts; a refusal
+ * under `rejected`, when the list itself is wrong and the agent can fix
+ * it; or anything else, when suss ran out of time, crashed, or is a
+ * release without the command.
+ *
+ * @param {import("./types.js").SussRun} checked
+ * @returns {IntentVerdicts}
+ */
+function verdictsFrom(checked) {
+  const printed = checked.failure === undefined ? jsonOf(checked.stdout) : null;
+  if (Array.isArray(printed?.entries) && Array.isArray(printed?.notAsked)) {
+    return {
+      kind: "checked",
+      check: /** @type {import("./types.js").IntentCheck} */ (
+        /** @type {unknown} */ (printed)
+      ),
+    };
+  }
+  if (typeof printed?.rejected === "object" && printed.rejected !== null) {
+    return {
+      kind: "unreadable",
+      why:
+        typeof printed.error === "string"
+          ? printed.error
+          : whyItFailed(checked),
+    };
+  }
+  return { kind: "failed", why: whyItFailed(checked) };
+}
+
+/**
+ * @param {string} stdout
+ * @returns {Record<string, unknown> | null}
+ */
+function jsonOf(stdout) {
+  try {
+    const parsed = JSON.parse(stdout);
+    return typeof parsed === "object" && parsed !== null ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

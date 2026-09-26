@@ -288,6 +288,45 @@ link:
 
 A scenario can have no `link`. Its words then describe the feature without pointing at any outcome. The checker reports that as `unlinkedScenario` at info. A link to an outcome nothing declares is `danglingScenarioLink` at warning. A link to a name that two boundary documents share is `ambiguousScenarioLink`, also at warning.
 
+## The change list
+
+A change list is written before a change, and says which behavior changes it will make. It uses the boundary document's words and adds a verb to each entry. It has no `when`, `purpose` or `audience`, because whoever writes it has not written the code yet. [`suss intent check`](/reference/cli/intent#suss-intent-check) compares it with the summaries from before and after the change, and [`suss intent keep`](/reference/cli/intent#suss-intent-keep) turns it into boundary documents once the work is done. The suss plugin for Claude Code has the agent write one for each request.
+
+```yaml
+asked: "Add POST /orders/:id/cancel. Cancelling sets cancelled_at ... 404 when the order does not exist."
+changes:
+  - adds: POST /orders/:id/cancel
+    outcomes: [200, 404]
+  - adds: { writes: postgresql:orders, fields: [cancelled_at] }
+    at: POST /orders/:id/cancel
+  - changes: Order.status
+    note: gains the value "cancelled"
+explained:
+  - changes: POST /orders
+    outcomes: [409]
+    why: a second open order for the same sku was charged twice, so POST /orders refuses it
+```
+
+| Field | Required | What it means |
+|---|---|---|
+| `asked` | no | The developer's request, quoted. `...` in the quote matches any stretch of the message. |
+| `changes` | no | One entry per behavior change. An empty list says no behavior should change. |
+| `explained` | no | Changes nobody asked for that stay, each with the reason. |
+
+Each entry of `changes` takes:
+
+| Field | Required | What it means |
+|---|---|---|
+| `adds`, `removes`, `changes` | one of the three | The verb, and the subject it applies to: a boundary written the way `suss ask` writes one, such as `POST /orders/:id/cancel`, or an effect written like a `results` line, such as `{ writes: postgresql:orders, fields: [cancelled_at] }`. |
+| `outcomes` | no | For a boundary, the outcomes it should have: statuses such as `404`, or `returns`, `throws` and `{ throws: NotFoundError }`. |
+| `at` | no | For an effect, the boundary it happens at. With no `at`, the effect counts at any boundary. |
+| `asked` | no | The message this entry comes from, when it is not the list's. |
+| `note` | no | What the change is, in words, for a subject suss has no spelling for. |
+
+An entry of `explained` takes the same verb, subject, `outcomes` and `at`, and a `why`, which is required.
+
+Each `adds` or `changes` entry compiles to transitions of a `kind: boundary` document: one per outcome a boundary entry lists, and one for an effect entry, whose `results` line is the effect. A `removes` entry has no counterpart, since a boundary document states what a boundary does and not what it stopped doing.
+
 ## Where a document came from
 
 `source` takes one of three values, and both document kinds have the field.

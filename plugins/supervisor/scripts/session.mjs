@@ -194,9 +194,89 @@ export class Session {
     return claimed;
   }
 
+  /** Where the agent writes the change list for the current request. */
+  intentFile() {
+    return this.file("intent.yaml");
+  }
+
+  hasIntent() {
+    return fs.existsSync(this.intentFile());
+  }
+
+  /**
+   * Whether a path is inside this record, such as the change list. An
+   * edit there changes no code, so there is nothing to read again.
+   *
+   * @param {string} file
+   */
+  contains(file) {
+    const relative = path.relative(this.dir, path.resolve(file));
+    return !relative.startsWith("..") && !path.isAbsolute(relative);
+  }
+
+  /**
+   * Moves the change list into `intents/` once a stop passes, so the next
+   * request starts with none.
+   */
+  archiveIntent() {
+    if (!this.hasIntent()) {
+      return;
+    }
+    fs.mkdirSync(this.file("intents"), { recursive: true });
+    const name = `${new Date().toISOString().replace(/[:.]/g, "-")}.yaml`;
+    fs.renameSync(this.intentFile(), path.join(this.file("intents"), name));
+  }
+
+  /**
+   * The change list for the current request, or else the one the last
+   * passing stop filed away. Null when the session has neither.
+   *
+   * @returns {string | null}
+   */
+  latestIntentFile() {
+    if (this.hasIntent()) {
+      return this.intentFile();
+    }
+    const filed = this.file("intents");
+    if (!fs.existsSync(filed)) {
+      return null;
+    }
+    // The file names are timestamps, so the last in order is the newest.
+    const newest = fs
+      .readdirSync(filed)
+      .filter((name) => name.endsWith(".yaml"))
+      .sort()
+      .at(-1);
+    return newest === undefined ? null : path.join(filed, newest);
+  }
+
+  /**
+   * Marks this session as the one a slash command acts on. A command is
+   * not always told the session id, so it reads this instead.
+   */
+  markCurrent() {
+    writeJson(currentFile(this.projectDir), {
+      session: this.id,
+      at: new Date().toISOString(),
+    });
+  }
+
+  /** Takes the mark away, unless another session has taken it since. */
+  clearCurrent() {
+    const file = currentFile(this.projectDir);
+    if (readJson(file, { session: null }).session === this.id) {
+      fs.rmSync(file, { force: true });
+    }
+  }
+
   /** @returns {StopRecord} */
   stopRecord() {
-    return readJson(this.file("stops.json"), { blocked: [], runReported: [] });
+    return {
+      blocked: [],
+      runReported: [],
+      intentBlocked: [],
+      ...readJson(this.file("stops.json"), {}),
+    };
   }
 
   /** @param {StopRecord} record */
@@ -263,6 +343,31 @@ export class Session {
   metaFile(name) {
     return path.join(this.dir, "state", `${name}.json`);
   }
+}
+
+/** @param {string} projectDir */
+function currentFile(projectDir) {
+  return path.join(projectDir, ".suss", "session", "current.json");
+}
+
+/**
+ * The session a slash command acts on: the id it passed, when that
+ * session has a record, or else the one a hook last marked as current.
+ * An id still reading `${...}` was never filled in, and is ignored.
+ *
+ * @param {string} projectDir
+ * @param {string | undefined} named
+ * @returns {Session | null}
+ */
+export function currentSession(projectDir, named) {
+  if (named !== undefined && named !== "" && !named.includes("${")) {
+    const session = new Session(projectDir, named);
+    if (session.exists()) {
+      return session;
+    }
+  }
+  const marked = readJson(currentFile(projectDir), { session: null }).session;
+  return typeof marked === "string" ? new Session(projectDir, marked) : null;
 }
 
 /**
