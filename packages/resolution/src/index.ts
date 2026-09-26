@@ -8,6 +8,7 @@ export {
 export { checkFactContract, FACT_CONTRACT_CASES } from "./contract.js";
 export { declaredTypesOf } from "./declaredType.js";
 export { explainResolutionProof, renderExplanation } from "./explain.js";
+export { importedFilesByFile } from "./fileImports.js";
 export {
   agreedMountPrefix,
   joinMountedPath,

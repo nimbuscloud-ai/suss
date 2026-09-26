@@ -34,7 +34,11 @@ import {
   runDigest,
   stampModuleImports,
 } from "@suss/extractor";
-import { addPackWords, type PackWords } from "@suss/resolution";
+import {
+  addPackWords,
+  importedFilesByFile,
+  type PackWords,
+} from "@suss/resolution";
 
 import { rangeOf } from "./ast.js";
 import { readDynamicNames } from "./defineMethod.js";
@@ -541,7 +545,9 @@ export async function extractRubyProject(
   );
   summaries.push(...reached.summaries);
 
-  const dependencies = fileDependenciesOf(db, displayPathOf);
+  // Ruby has no import statement, so a file's dependencies are the
+  // `require_relative` lines and the constants other files in the run define.
+  const dependencies = importedFilesByFile(db, displayPathOf);
   stampModuleImports(summaries, (file) => dependencies.get(file) ?? []);
 
   // Ids use paths relative to the project root, because the CLI later
@@ -595,31 +601,6 @@ export async function extractRubyProject(
   options.onTiming?.(timer.report());
 
   return { summaries: composed, facts: db };
-}
-
-/**
- * The files each file depends on, as display paths. Ruby has no import
- * statement, so this comes from `require_relative` lines that resolve to a
- * file in the run, and from constants a file reads that another file in
- * the run defines.
- */
-function fileDependenciesOf(
-  db: Database,
-  displayPathOf: (file: string) => string,
-): Map<string, string[]> {
-  const byFile = new Map<string, string[]>();
-  for (const relation of ["rbRequires", "rbConstantFrom"]) {
-    for (const [from, to] of db.facts(relation)) {
-      if (typeof from !== "string" || typeof to !== "string") {
-        continue;
-      }
-      const key = displayPathOf(from);
-      const seen = byFile.get(key) ?? [];
-      seen.push(displayPathOf(to));
-      byFile.set(key, seen);
-    }
-  }
-  return byFile;
 }
 
 const SKIPPED_DIRECTORIES = new Set(["vendor", "node_modules", "tmp", ".git"]);

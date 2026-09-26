@@ -145,6 +145,16 @@ exportsAs(m, n, v)          the file m exports v under the name n
 reExports(m, n, m2, n2)     m's n is m2's n2 (TypeScript)
 reExportsAll(m, m2)         m forwards everything m2 exports
                             (TypeScript)
+importsModule(f, m)         the file f imports the module m, as written.
+                            A pack reader asks whether a file imports
+                            its library with it, and no rule reads it
+                            (Python)
+importsFile(f, g)           the file f depends on the file g in the run:
+                            an import that resolved to g in Python, and
+                            in Ruby a require_relative of g or a
+                            constant g defines. No rule reads it, and
+                            the run lists each file's dependencies from
+                            it with importedFilesByFile (Python, Ruby)
 ```
 
 A pack states what it knows about its own library as words. Each
@@ -184,24 +194,6 @@ same store and reads them itself, or through a rule of its own, and no
 shared rule reads them:
 
 ```
-importsModule(file, m)      file imports the module m. The store reads
-                            it only with the demand rewrite switched off
-                            (TypeScript)
-pyImport(file, m, status)   file imports m, and status says whether the
-                            import resolved, or why not (Python)
-pyImportResolved(file, m, target)  the import of m resolved to the file
-                            target. The run's file dependencies come
-                            from it (Python)
-pyImportedName(x, m, n)     x is the name n imported from m, with m as
-                            written even when it resolves (Python)
-pyOpenImport(file, m)       file writes from m import *. Nothing reads
-                            it (Python)
-rbRequires(file, target)    file loads target with require_relative.
-                            The run's file dependencies come from it
-                            (Ruby)
-rbConstantFrom(file, target)  file reads a constant that target defines.
-                            The run's file dependencies come from it
-                            (Ruby)
 rbConstantName(c, q)        the constant defined at c is called q in
                             full, with every namespace around it (Ruby)
 definesMethodFrom(c, x)     c's body calls define_method, and x is the
@@ -248,8 +240,8 @@ in, which is what a project barrel hides. A declaration a library's own
 that library's name too. That covers a member of a namespace a barrel
 re-exports, a member of a default import of a module written with
 `export =`, and a global a package declares. The Python adapter writes
-an import under the file when the import resolves, and under the module
-as written when it does not.
+every import under the module as written, and under the file as well
+when the import resolves to one.
 
 A global the language declares has no module at all, so the adapter
 records a callee that only library declaration files declare under

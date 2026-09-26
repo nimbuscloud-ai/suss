@@ -50,6 +50,7 @@ import {
   environmentObjectsIn,
   extractFileFacts,
   factKeyOf,
+  importedModuleKeys,
   type NodeTable,
   nodeId,
   packagesDeclaring,
@@ -1191,14 +1192,14 @@ export class ResolutionStore {
     this.lastQueryWalked = [];
     let pending: SourceFile[] = [...seeds];
     while (pending.length > 0) {
-      const readThisRound: string[] = [];
+      const readThisRound: SourceFile[] = [];
       for (const sourceFile of pending) {
         const filePath = sourceFile.getFilePath();
         if (read.has(filePath)) {
           continue;
         }
         read.add(filePath);
-        readThisRound.push(filePath);
+        readThisRound.push(sourceFile);
         this.lastQueryWalked.push(filePath);
         // Even an empty answer read these files: their content decided
         // there was nothing to find, so a change to any of them can
@@ -1228,13 +1229,9 @@ export class ResolutionStore {
    * alone; the unrestricted program has none, and follows the imports
    * of the files read this round instead.
    */
-  private demandedModules(readThisRound: readonly string[]): string[] {
+  private demandedModules(readThisRound: readonly SourceFile[]): string[] {
     if (RESOLUTION_PROGRAM.demands.length === 0) {
-      return readThisRound.flatMap((filePath) =>
-        this.db
-          .lookup("importsModule", 0, filePath)
-          .map((tuple) => String(tuple[1])),
-      );
+      return readThisRound.flatMap(importedModuleKeys);
     }
     return MODULE_DEMANDS.flatMap((relation) =>
       this.db.facts(relation).map((tuple) => String(tuple[0])),

@@ -73,15 +73,16 @@ describe("emitModuleImportFacts", () => {
       roots: [path.join(tmpDir, "root")],
     });
 
-    expect(db.facts("pyImport")).toEqual([
-      [importingFile, "myapp.wrappers.restx", "resolved"],
+    const resolvedFile = path.join(tmpDir, "root/myapp/wrappers/restx.py");
+    expect(db.facts("importsModule")).toEqual([
+      [importingFile, "myapp.wrappers.restx"],
     ]);
-    expect(db.facts("pyImportResolved")).toEqual([
-      [
-        importingFile,
-        "myapp.wrappers.restx",
-        path.join(tmpDir, "root/myapp/wrappers/restx.py"),
-      ],
+    expect(db.facts("importsFile")).toEqual([[importingFile, resolvedFile]]);
+    // Under the file, so the shared rules follow the name into it, and
+    // under the module as written, so a pack's module matches it too.
+    expect(db.facts("imports")).toEqual([
+      [`${importingFile}#route`, resolvedFile, "route"],
+      [`${importingFile}#route`, "myapp.wrappers.restx", "route"],
     ]);
   });
 
@@ -105,24 +106,7 @@ describe("emitModuleImportFacts", () => {
         path.join(tmpDir, "root/myapp/wrappers/restx.py"),
         "route",
       ],
-    ]);
-  });
-
-  it("says which module a plain import brought a name in from", async () => {
-    const importingFile = write(
-      "root/myapp/routes/todos.py",
-      "import sqlalchemy\n",
-    );
-    const tree = await parsePython(fs.readFileSync(importingFile, "utf8"));
-    const module = bindModule(tree.rootNode);
-
-    const db = new Database();
-    emitModuleImportFacts(db, importingFile, module, {
-      roots: [path.join(tmpDir, "root")],
-    });
-
-    expect(db.facts("pyImportedName")).toEqual([
-      [`${importingFile}#sqlalchemy`, "sqlalchemy", "sqlalchemy"],
+      [`${importingFile}#route`, "myapp.wrappers.restx", "route"],
     ]);
   });
 
@@ -161,13 +145,14 @@ describe("emitModuleImportFacts", () => {
       roots: [path.join(tmpDir, "root")],
     });
 
-    expect(db.facts("pyImport")).toEqual([
-      [importingFile, "flask_restx", "external"],
+    expect(db.facts("importsModule")).toEqual([[importingFile, "flask_restx"]]);
+    expect(db.facts("importsFile")).toEqual([]);
+    expect(db.facts("imports")).toEqual([
+      [`${importingFile}#Namespace`, "flask_restx", "Namespace"],
     ]);
-    expect(db.facts("pyImportResolved")).toEqual([]);
   });
 
-  it("records an ambiguous import when more than one root names it", async () => {
+  it("records no file for an import that more than one root could mean", async () => {
     write("src/myapp/models.py");
     write("vendor/myapp/models.py");
     const importingFile = write(
@@ -182,9 +167,10 @@ describe("emitModuleImportFacts", () => {
       roots: [path.join(tmpDir, "src"), path.join(tmpDir, "vendor")],
     });
 
-    expect(db.facts("pyImport")).toEqual([
-      [importingFile, "myapp.models", "ambiguous"],
+    expect(db.facts("importsModule")).toEqual([
+      [importingFile, "myapp.models"],
     ]);
+    expect(db.facts("importsFile")).toEqual([]);
   });
 
   it("records a relative import with its dots preserved in the fact", async () => {
@@ -199,12 +185,13 @@ describe("emitModuleImportFacts", () => {
     const db = new Database();
     emitModuleImportFacts(db, importingFile, module, { roots: [tmpDir] });
 
-    expect(db.facts("pyImport")).toEqual([
-      [importingFile, ".wrapper", "resolved"],
+    expect(db.facts("importsModule")).toEqual([[importingFile, ".wrapper"]]);
+    expect(db.facts("importsFile")).toEqual([
+      [importingFile, path.join(tmpDir, "myapp/routes/wrapper.py")],
     ]);
   });
 
-  it("records even a one-dot relative import as outsideRoots when no configured root covers the importing file", async () => {
+  it("records no file for a relative import when no configured root covers the importing file", async () => {
     write("myapp/routes/wrapper.py");
     const importingFile = write(
       "myapp/routes/todos.py",
@@ -218,20 +205,7 @@ describe("emitModuleImportFacts", () => {
       roots: [path.join(tmpDir, "unrelated")],
     });
 
-    expect(db.facts("pyImport")).toEqual([
-      [importingFile, ".wrapper", "outsideRoots"],
-    ]);
-    expect(db.facts("pyImportResolved")).toEqual([]);
-  });
-
-  it("records an open import from a wildcard from-import", async () => {
-    const importingFile = write("app/main.py", "from myapp.legacy import *\n");
-    const tree = await parsePython(fs.readFileSync(importingFile, "utf8"));
-    const module = bindModule(tree.rootNode);
-
-    const db = new Database();
-    emitModuleImportFacts(db, importingFile, module, { roots: [] });
-
-    expect(db.facts("pyOpenImport")).toEqual([[importingFile, "myapp.legacy"]]);
+    expect(db.facts("importsModule")).toEqual([[importingFile, ".wrapper"]]);
+    expect(db.facts("importsFile")).toEqual([]);
   });
 });

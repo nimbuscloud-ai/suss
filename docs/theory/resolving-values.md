@@ -124,7 +124,6 @@ fallbackBranch("global.prisma || new PrismaClient()"@17, "new PrismaClient()"@17
 imports("PrismaClient"@1, node_modules/@prisma/client/index.d.ts, PrismaClient)
 imports("PrismaClient"@1, @prisma/client, PrismaClient)
 imports("PrismaClient"@1, .prisma, PrismaClient)
-importsModule(src/prisma/prisma-client.ts, node_modules/@prisma/client/index.d.ts)
 readsProperty("global.prisma"@17, "global"@17, prisma)
 writtenValue("new PrismaClient()"@17)
 ```
@@ -140,11 +139,10 @@ function's body states no value of its own, so a body that says what it
 returns is never contradicted by its annotation.
 
 The rules read relations that no rule derives, so something has to
-supply them. The TypeScript adapter reads most of them out of source,
-and emits one more of its own on top: `importsModule`, for walking
-module edges. All three adapters write `extends` and `extendsNamed`,
-the Ruby adapter writes `prepends`, and `callKeywordArg` comes from the
-Python and Ruby adapters. `unwrapsByName` and the `givesBackOne` family
+supply them. Each adapter reads them out of source. All three adapters
+write `extends` and `extendsNamed`, the Ruby adapter writes `prepends`,
+and `callKeywordArg` comes from the Python and Ruby adapters.
+`unwrapsByName` and the `givesBackOne` family
 come from a pack's declarations, so no source file contains them at
 all. An adapter declares some of those words itself, for its language.
 In TypeScript, `Object.assign` hands back its first argument and `.bind`

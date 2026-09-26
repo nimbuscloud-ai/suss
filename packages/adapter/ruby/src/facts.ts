@@ -6,7 +6,7 @@
  * discovered, so a Ruby field is an entry the same way a Python route or
  * a TypeScript handler is.
  *
- * `rbRequires(from, to)` records a `require_relative` whose target is a
+ * `importsFile(from, to)` records a `require_relative` whose target is a
  * file in the run. A plain `require` goes through the load path, which
  * the adapter does not know, so it records nothing.
  */
@@ -60,7 +60,7 @@ export function emitRequireFacts(
         target.endsWith(".rb") ? target : `${target}.rb`,
       );
       if (known.has(resolved)) {
-        db.add("rbRequires", [filePath, resolved]);
+        db.add("importsFile", [filePath, resolved]);
       }
     },
     into: (node) => (node.type === "argument_list" ? SKIP_CHILDREN : null),

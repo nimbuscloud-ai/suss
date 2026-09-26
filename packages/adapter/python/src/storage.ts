@@ -557,13 +557,7 @@ function resolvedMethodPattern(
   return options.patterns.find(
     (candidate) =>
       candidate.queryTypes.includes(typeName) &&
-      options.facts
-        .facts("pyImport")
-        .some(
-          (row) =>
-            String(row[0]) === fileOf(settled) &&
-            String(row[1]) === candidate.module,
-        ),
+      options.facts.has("importsModule", [fileOf(settled), candidate.module]),
   );
 }
 
