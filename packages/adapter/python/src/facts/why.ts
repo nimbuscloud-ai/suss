@@ -21,7 +21,14 @@ import {
   RESOLUTION_RULES,
 } from "@suss/resolution";
 
-import { enclosingFunction, field, fields, isFunction } from "../ast.js";
+import {
+  children,
+  enclosingFunction,
+  field,
+  fields,
+  isFunction,
+  parameterIdentifier,
+} from "../ast.js";
 import { emitModuleImportFacts } from "../facts.js";
 import { parsePythonSync } from "../parser.js";
 import { findPythonFiles, packWordsOf } from "../project.js";
@@ -88,17 +95,27 @@ function indexImportNames(
   }
 }
 
+/** The statements that write a local, `x = ...` and `x += ...`. */
+const ASSIGNMENT_TYPES = new Set(["assignment", "augmented_assignment"]);
+
 /**
  * Every declaration site in a file, indexed under the key `emitValueFacts`
  * gave it. A function or class is indexed by its node, and a name it
  * declares by that name's identifier, so a proof step that is a bare name
- * can still be located.
+ * can still be located. An assigned name and a parameter are keyed on the
+ * function they belong to, the same way the facts key them.
  */
 function indexFile(
   file: string,
   root: PyNode,
   locations: Map<string, Located>,
 ): void {
+  const writesName = (name: PyNode): void => {
+    locations.set(readKey(file, name, enclosingFunction(name)), {
+      file,
+      node: name,
+    });
+  };
   const walk = (node: PyNode): void => {
     locations.set(nodeId(file, node), { file, node });
 
@@ -111,10 +128,19 @@ function indexFile(
         locations.set(`${file}#${name.text}`, { file, node: name });
       }
     }
-    if (node.type === "assignment") {
+    if (ASSIGNMENT_TYPES.has(node.type)) {
       const left = field(node, "left");
       if (left !== null && left.type === "identifier") {
-        locations.set(`${file}#${left.text}`, { file, node: left });
+        writesName(left);
+      }
+    }
+    if (isFunction(node)) {
+      const parameters = field(node, "parameters");
+      for (const parameter of parameters === null ? [] : children(parameters)) {
+        const name = parameterIdentifier(parameter);
+        if (name !== null) {
+          writesName(name);
+        }
       }
     }
 
