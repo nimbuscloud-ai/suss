@@ -407,7 +407,7 @@ const EFFECT_BY_VERB = EffectRelationSchema.options.map((verb) =>
   ...Array<z.ZodType<DeclaredEffect>>,
 ];
 
-const EffectOutcomeSchema = z.union(EFFECT_BY_VERB);
+export const EffectOutcomeSchema = z.union(EFFECT_BY_VERB);
 
 // ---------------------------------------------------------------------------
 // when: what the branch turned on, in the same verbs `results` takes.
