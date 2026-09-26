@@ -113,6 +113,7 @@ describe("what a boundary reaches, between two runs", () => {
       {
         relation: "reads",
         label: "aws.dynamodb:orders",
+        boundary: "aws.dynamodb:orders",
         through: ["loadOrder"],
       },
     ]);
@@ -236,6 +237,7 @@ describe("what a boundary reaches, between two runs", () => {
       {
         relation: "reads",
         label: "aws.dynamodb:orders",
+        boundary: "aws.dynamodb:orders",
         through: ["requireCaller"],
       },
     ]);
