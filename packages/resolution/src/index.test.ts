@@ -1266,6 +1266,105 @@ describe("a value the class body assigns", () => {
   });
 });
 
+describe("an annotated attribute on a plain class", () => {
+  // class ReportJob: region: str = "eu"; def run(self): ...
+  const job: Array<[string, ...string[]]> = [
+    ["objectValue", "ReportJob"],
+    ["plainClass", "ReportJob"],
+    ["writtenValue", "eu"],
+    ["holdsDefault", "ReportJob", "region", "eu"],
+    ["func", "run"],
+    ["holdsProperty", "ReportJob", "run", "run"],
+    ["binds", "ReportJobRef", "ReportJob"],
+    ["instanceOf", "run#self", "ReportJob"],
+  ];
+  // class DailyJob(ReportJob): kind: str = "daily"; def load(self): ...
+  const daily: Array<[string, ...string[]]> = [
+    ["objectValue", "DailyJob"],
+    ["extends", "DailyJob", "ReportJobRef"],
+    ["writtenValue", "daily"],
+    ["holdsDefault", "DailyJob", "kind", "daily"],
+    ["func", "load"],
+    ["holdsProperty", "DailyJob", "load", "load"],
+    ["instanceOf", "load#self", "DailyJob"],
+  ];
+
+  it("is shared by every instance, a receiver included", () => {
+    expect(
+      writtenAsOf(
+        [...job, ["readsProperty", "read", "run#self", "region"]],
+        "read",
+      ),
+    ).toEqual(["eu"]);
+  });
+
+  it("is read off a construction that passes an argument", () => {
+    // ReportJob("x").region, where the class writes its own constructor
+    expect(
+      writtenAsOf(
+        [
+          ...job,
+          ["call", "site", "ReportJobRef"],
+          ["callArgCount", "site", "1"],
+          ["writtenValue", "site"],
+          ["binds", "made", "site"],
+          ["readsProperty", "read", "made", "region"],
+        ],
+        "read",
+      ),
+    ).toEqual(["eu"]);
+  });
+
+  it("is shared on a subclass written over one plain base, its own and the base's", () => {
+    const facts: Array<[string, ...string[]]> = [
+      ...job,
+      ...daily,
+      ["extendsOnly", "DailyJob", "ReportJobRef"],
+      ["readsProperty", "ownRead", "load#self", "kind"],
+      ["readsProperty", "baseRead", "load#self", "region"],
+    ];
+    expect(writtenAsOf(facts, "ownRead")).toEqual(["daily"]);
+    expect(writtenAsOf(facts, "baseRead")).toEqual(["eu"]);
+  });
+
+  it("is not shared on a subclass whose statement the adapter could not show is plain", () => {
+    // @dataclass class DailyJob(ReportJob), or one over a second base
+    expect(
+      writtenAsOf(
+        [...job, ...daily, ["readsProperty", "read", "load#self", "kind"]],
+        "read",
+      ),
+    ).toEqual([]);
+  });
+
+  it("is not shared on a plain subclass of a class the adapter could not show is plain", () => {
+    // class ReportJob(Model), class DailyJob(ReportJob)
+    const facts: Array<[string, ...string[]]> = [
+      ...job.filter(([relation]) => relation !== "plainClass"),
+      ...daily,
+      ["extendsOnly", "DailyJob", "ReportJobRef"],
+      ["readsProperty", "read", "load#self", "kind"],
+    ];
+    expect(writtenAsOf(facts, "read")).toEqual([]);
+  });
+
+  it("overrides the base's attribute when a subclass writes its own under the same name", () => {
+    // class DailyJob(ReportJob): region: str = "us"
+    const facts: Array<[string, ...string[]]> = [
+      ...job,
+      ...daily,
+      ["extendsOnly", "DailyJob", "ReportJobRef"],
+      ["writtenValue", "us"],
+      ["holdsDefault", "DailyJob", "region", "us"],
+      ["readsProperty", "x", "load#self", "region"],
+    ];
+    expect(derive(facts, "overrides", "us").map((t) => t[2])).toEqual(["eu"]);
+    expect(
+      derive(facts, "readsOverridden", "x").map((t) => `${t[1]}:${t[2]}`),
+    ).toEqual(["DailyJob:eu"]);
+  });
+});
+
 describe("a value read under the site its receiver was made at", () => {
   // class Api { constructor(base) { this.client = axios.create(base) }
   // items(path) {} refresh() { this.items("/c") } }, with two module-level
