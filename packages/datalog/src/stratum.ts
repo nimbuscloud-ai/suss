@@ -1,10 +1,10 @@
 /**
- * Which rules of a stratum a semi-naive round runs. A round joins each
- * rule once per positive literal that has facts new since the last round,
- * so a rule none of whose positive literals has any reads nothing and
- * derives nothing. A rule set can have hundreds of rules while a round's
- * new facts sit in a few relations, so each stratum lists, per relation,
- * the rules that read it, and a round looks its rules up there instead of
+ * Which rules of a stratum a semi-naive round runs. A round joins a rule
+ * once for each positive literal with facts new since the last round, so
+ * a rule with nothing new under any of its positive literals has nothing
+ * to join. A rule set can have hundreds of rules while a round's new facts
+ * are in a few relations. Each stratum therefore lists, per relation, the
+ * rules that read it, and a round looks its rules up there instead of
  * checking every rule in the stratum.
  *
  * The rules come back in the order they were written, which is the order
@@ -32,6 +32,7 @@ export interface Stratum {
   marked: Uint8Array;
 }
 
+/** A stratum's lookups, worked out once for every round that runs it. */
 export function planStratum(rules: readonly Rule[]): Stratum {
   const derived = new Set<string>();
   const readers = new Map<string, number[]>();
@@ -59,8 +60,8 @@ const NONE: readonly number[] = [];
 
 /**
  * The positions of the rules that read a relation with facts in `seed`,
- * ascending. With `derivedOnly`, a relation this stratum does not derive
- * does not count: within one evaluation the facts below it stay put.
+ * ascending. With `derivedOnly`, only the relations this stratum derives
+ * count, as in the round loop after a stratum's first round.
  */
 export function rulesReading(
   stratum: Stratum,
