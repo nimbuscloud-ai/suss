@@ -3117,6 +3117,31 @@ describe("a method a subclass overrides", () => {
     ]);
   });
 
+  it("says a prepended module's method overrides the class's own and what it inherits", () => {
+    // module Audit { save }; class Sub < Base { prepend Audit; save }
+    const facts: Array<[string, ...string[]]> = [
+      ...classes,
+      ["func", "auditSave"],
+      ["objectValue", "Audit"],
+      ["holdsProperty", "Audit", "save", "auditSave"],
+      ["binds", "AuditRef", "Audit"],
+      ["prepends", "Sub", "AuditRef"],
+    ];
+    expect(
+      derive(facts, "overrides", "auditSave")
+        .map((t) => `${t[1]}:${t[2]}`)
+        .sort(),
+    ).toEqual(["save:baseSave", "save:subSave"]);
+    expect(derive(facts, "overrides", "subSave").map((t) => t[2])).toEqual([
+      "baseSave",
+    ]);
+    expect(containedIn(facts, "Sub")).toEqual([
+      "save:auditSave",
+      "save:baseSave",
+      "save:subSave",
+    ]);
+  });
+
   it("lists the base itself as an object the read finds the base's method on", () => {
     const facts: Array<[string, ...string[]]> = [
       ...classes,

@@ -154,6 +154,49 @@ describe("resolving a value across a Ruby file", () => {
     ]);
   });
 
+  it("settles a method a prepended module writes on the module's, which Ruby runs first", async () => {
+    const source = [
+      "module Auditing",
+      "  def persist",
+      '    "audited"',
+      "  end",
+      "end",
+      "",
+      "class Repository",
+      "  def persist",
+      '    "base"',
+      "  end",
+      "end",
+      "",
+      "class Accounts < Repository",
+      "  prepend Auditing",
+      "",
+      "  def persist",
+      '    "accounts"',
+      "  end",
+      "end",
+      "",
+      "accounts = Accounts.new",
+      "accounts.persist",
+    ].join("\n");
+    const db = await factsFor(source);
+
+    const read = String(
+      db
+        .facts("readsProperty")
+        .find(
+          (row) =>
+            String(row[2]) === "persist" && !String(row[1]).endsWith("#self"),
+        )?.[0],
+    );
+    const audited = 'def persist\n    "audited"\n  end';
+    const start = source.indexOf(audited);
+    resolveValues(db, [read]);
+    expect(resolvedFunctions(db, read)).toEqual([
+      `f.rb:${start}-${start + audited.length}`,
+    ]);
+  });
+
   it("keeps both methods for a receiver that can be the base or the subclass", async () => {
     const db = await factsFor(
       [

@@ -114,8 +114,9 @@ Classes:
 
 ```
 extends(c, b)               class c is written as extending b. Ruby
-                            records a module c includes or prepends the
-                            same way
+                            records a module c includes the same way
+prepends(c, m)              the Ruby class c prepends the module m, whose
+                            methods Ruby looks up before c's own (Ruby)
 extendsNamed(c, n)          class c's base is written n, which is how a
                             pack matches a library base that no node in
                             the run declares. Only a base written as a
@@ -390,12 +391,16 @@ that needs one refuses it. `answersFor`, the callee outcomes, each
 adapter's reads of `wantedResolves`, and the proof pass behind
 `suss ask why` all apply it, so they give the same answer.
 
+Ruby looks a method up in the modules a class prepends before the class
+itself. So a prepended module is recorded as `prepends` rather than as
+`extends`, which would make the class's own method override it. The
+module's members reach the class through a `contains` rule of their own,
+the ancestry chain follows the prepend, and a prepended module's member
+overrides both the class's own member and whatever the class inherits.
+
 Two cases keep both methods. A class with two bases that each write the
 method, where Python's method order would pick the first, and a Ruby
-class whose included modules both write it. Ruby records a prepended
-module the way it records an included one, so a class's own method is
-preferred over a prepended module's, although Ruby runs the prepended
-one first.
+class whose included modules both write it.
 
 ## What an instance reads
 

@@ -1085,10 +1085,12 @@ function mixedInConstants(body: RbNode, callName: string): RbNode[] {
 
 /**
  * A module mixed in with `include` or `prepend` is an ancestor in Ruby's
- * method lookup, so it is recorded as `extends`. Every rule that walks an
- * ancestry then reaches what the module declares.
+ * method lookup. An included module comes after the class, so it is
+ * recorded as `extends`, like a superclass. A prepended module comes
+ * before the class, so its methods win over the class's own, and it is
+ * recorded as `prepends` so the rules can tell the two apart.
  *
- * It is not recorded in `extendsNamed`, which gives the library base a
+ * Neither is recorded in `extendsNamed`, which gives the library base a
  * class ends up at. A module is never that base, and listing one there
  * would give a pack a second base to match.
  */
@@ -1097,9 +1099,10 @@ function emitMixinFacts(
   classKey: string,
   body: RbNode,
   callName: string,
+  relation: "extends" | "prepends",
 ): void {
   for (const mixin of mixedInConstants(body, callName)) {
-    add(emitter, "extends", classKey, valueKey(emitter, mixin));
+    add(emitter, relation, classKey, valueKey(emitter, mixin));
   }
 }
 
@@ -1117,8 +1120,8 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
   // Ruby looks a method up in prepended modules, then the class itself,
   // then included modules, then the superclass chain.
   if (body !== null) {
-    emitMixinFacts(emitter, classKey, body, PREPEND_CALL);
-    emitMixinFacts(emitter, classKey, body, INCLUDE_CALL);
+    emitMixinFacts(emitter, classKey, body, PREPEND_CALL, "prepends");
+    emitMixinFacts(emitter, classKey, body, INCLUDE_CALL, "extends");
   }
 
   const superclass = field(cls, "superclass");

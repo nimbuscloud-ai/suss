@@ -1337,6 +1337,18 @@ const STATED_RULES = [
     ],
     BASE_CLASS_RULE,
   ),
+  // A module a Ruby class prepends is an ancestor too. It comes before the
+  // class in lookup, which `overrides` says, so it has a relation of its own.
+  rule(
+    "contains",
+    [v("cls"), v("n"), v("held")],
+    [
+      lit("prepends", v("cls"), v("mod")),
+      lit("comesTo", v("mod"), v("modObj")),
+      lit("contains", v("modObj"), v("n"), v("held")),
+    ],
+    "prepended module",
+  ),
   // An association is read off an instance as a property, and stating
   // it as `contains` is what puts it on the ancestry rule, so a concern
   // or a base class can be the one that declares it.
@@ -1401,6 +1413,30 @@ const STATED_RULES = [
     [v("m"), v("n"), v("h")],
     [
       lit("holdsProperty", v("c"), v("n"), v("m")),
+      lit("extends", v("c"), v("b")),
+      lit("comesTo", v("b"), v("base")),
+      lit("contains", v("base"), v("n"), v("h")),
+    ],
+  ),
+  // A prepended module's member comes before the class's own, and before
+  // everything the class inherits.
+  rule(
+    "overrides",
+    [v("m"), v("n"), v("h")],
+    [
+      lit("prepends", v("c"), v("mod")),
+      lit("comesTo", v("mod"), v("modObj")),
+      lit("holdsProperty", v("modObj"), v("n"), v("m")),
+      lit("holdsProperty", v("c"), v("n"), v("h")),
+    ],
+  ),
+  rule(
+    "overrides",
+    [v("m"), v("n"), v("h")],
+    [
+      lit("prepends", v("c"), v("mod")),
+      lit("comesTo", v("mod"), v("modObj")),
+      lit("holdsProperty", v("modObj"), v("n"), v("m")),
       lit("extends", v("c"), v("b")),
       lit("comesTo", v("b"), v("base")),
       lit("contains", v("base"), v("n"), v("h")),
@@ -2075,6 +2111,11 @@ export const RESOLUTION_QUESTIONS = [
     "ancestryChain",
     [v("c"), v("x")],
     [lit("ancestryChain", v("c"), v("b")), lit("extends", v("b"), v("x"))],
+  ),
+  rule(
+    "ancestryChain",
+    [v("c"), v("x")],
+    [lit("ancestryChain", v("c"), v("b")), lit("prepends", v("b"), v("x"))],
   ),
   rule(
     "ancestryChain",

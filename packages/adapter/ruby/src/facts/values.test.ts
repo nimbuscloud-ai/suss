@@ -543,10 +543,11 @@ describe("ruby value facts", () => {
     expect(rows(db, "extends")).toEqual([[cls?.[0], "#Payable"]]);
   });
 
-  it("puts a module the class prepends in the extends ancestry", async () => {
+  it("records a module the class prepends apart from one it includes", async () => {
     const db = await factsFor("class Order\n  prepend Auditing\nend\n");
     const [cls] = rows(db, "objectValue");
-    expect(rows(db, "extends")).toEqual([[cls?.[0], "#Auditing"]]);
+    expect(rows(db, "prepends")).toEqual([[cls?.[0], "#Auditing"]]);
+    expect(db.size("extends")).toBe(0);
   });
 
   it("leaves a mixin out of extendsNamed, which is for a library base alone", async () => {
@@ -567,7 +568,7 @@ describe("ruby value facts", () => {
     ]);
   });
 
-  it("orders prepends before includes, and include A, B in front of B", async () => {
+  it("orders include A, B in front of B, with the superclass last", async () => {
     const db = await factsFor(
       [
         "class Order < ApplicationRecord",
@@ -579,12 +580,12 @@ describe("ruby value facts", () => {
       ].join("\n"),
     );
     expect(rows(db, "extends").map((row) => row[1])).toEqual([
-      "#Auditing",
       "#C",
       "#A",
       "#B",
       "#ApplicationRecord",
     ]);
+    expect(rows(db, "prepends").map((row) => row[1])).toEqual(["#Auditing"]);
   });
 
   it("reads a method an included do block declares as the module's own", async () => {
