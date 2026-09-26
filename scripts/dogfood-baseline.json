@@ -3,32 +3,32 @@
     "packages": 80,
     "packagesWithExports": 80,
     "exports": 1073,
-    "internal": 4022,
-    "consumers": 2234,
-    "pairs": 2222,
-    "unfollowedCalls": 453,
+    "internal": 4045,
+    "consumers": 2256,
+    "pairs": 2244,
+    "unfollowedCalls": 452,
     "findingErrors": 0
   },
   "packages": {
     "packages/adapter/python": {
       "name": "@suss/adapter-python",
       "exports": 60,
-      "internal": 498,
-      "consumers": 250,
-      "unfollowedCalls": 51
+      "internal": 505,
+      "consumers": 253,
+      "unfollowedCalls": 50
     },
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
       "exports": 71,
-      "internal": 469,
+      "internal": 470,
       "consumers": 201,
       "unfollowedCalls": 71
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 122,
-      "internal": 930,
-      "consumers": 235,
+      "internal": 938,
+      "consumers": 243,
       "unfollowedCalls": 110
     },
     "packages/behavioral-ir": {
@@ -530,10 +530,10 @@
     },
     "packages/resolution": {
       "name": "@suss/resolution",
-      "exports": 36,
-      "internal": 44,
-      "consumers": 120,
-      "unfollowedCalls": 17
+      "exports": 39,
+      "internal": 51,
+      "consumers": 131,
+      "unfollowedCalls": 16
     },
     "packages/runtime/node": {
       "name": "@suss/runtime-node",
