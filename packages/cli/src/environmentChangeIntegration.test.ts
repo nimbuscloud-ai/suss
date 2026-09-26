@@ -206,4 +206,38 @@ describe("intent check against a change to the environment", () => {
     );
     expect(said).toContain("+ declares ACCOUNTS_REGION from AccountsRegion");
   });
+
+  it("counts a read written as an effect on runtime-config done, for every function whose code reads it", async () => {
+    const said = await changeList(
+      [
+        `asked: "${PROMPT}"`,
+        "changes:",
+        "  - adds: { reads: runtime-config, fields: [ACCOUNTS_REGION] }",
+      ].join("\n"),
+    );
+
+    expect(said).toBe(
+      [
+        "1 done.",
+        "",
+        "done        + reads runtime-config [ACCOUNTS_REGION]  cloudformation:template.yaml::GetAccountFunction, cloudformation:template.yaml::UpdateAccountFunction",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("does not count a read of another variable", async () => {
+    const said = await changeList(
+      [
+        `asked: "${PROMPT}"`,
+        "changes:",
+        "  - adds: { reads: runtime-config, fields: [ACCOUNTS_TABLE] }",
+      ].join("\n"),
+    );
+
+    expect(said).toContain(
+      "not done    + reads runtime-config [ACCOUNTS_TABLE]",
+    );
+    expect(said).toContain("2 boundaries changed where nobody asked");
+  });
 });

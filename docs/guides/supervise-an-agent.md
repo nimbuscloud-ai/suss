@@ -136,6 +136,22 @@ explained   ~ POST /orders responds 409
 
 A stop blocks once on each entry that is not done and once on each boundary that changed where nobody asked, the same way it blocks once on a new error. An unchecked entry is one suss has no spelling for, such as a new value of a type, and it never blocks. When no entry in the list is done and nothing is listed as not asked, the report shows the diff as well, so you still see what changed. An entry whose quote is in none of your messages is listed as unrequested, so you can see what the agent added on its own. Once a stop passes, the list is filed away, and the next request starts with none. A session with no list gets the report from [What it looks like](#what-it-looks-like).
 
+A new environment variable is an entry too. The agent writes the read as an effect on `runtime-config`, the name suss gives a deployable's environment in every language, with the variable under `fields`:
+
+```yaml
+asked: "Make the accounts table's region configurable through a new environment variable, ACCOUNTS_REGION."
+changes:
+  - adds: { reads: runtime-config, fields: [ACCOUNTS_REGION] }
+```
+
+On a Lambda service with a SAM template, that entry is done once the code each function runs reads the variable, even when the read happens once at startup, outside the handler. It also covers the template declaring the variable, so the stop does not ask about the new parameter or the environment entries separately:
+
+```
+done        + reads runtime-config [ACCOUNTS_REGION]  cloudformation:template.yaml::GetAccountFunction, cloudformation:template.yaml::UpdateAccountFunction
+```
+
+Without that entry, the stop lists each function's changed environment as not asked, with the variable the template now declares and the helper that reads it.
+
 A list the agent wrote wrong, one that does not parse or uses a field the format does not have, blocks the stop once so the agent can fix it. When suss itself cannot run the check, because it ran out of time, crashed, or is a release without `suss intent check`, nothing blocks. You get the report of what changed, with one line saying why the list was not checked.
 
 Two slash commands go with it. `/suss:intent` prints the current list. `/suss:keep-intent` writes the list as boundary intent documents in `intent/`, with your request as each one's purpose, so that [`suss check --intent`](/guides/check-against-intent) checks the code against them from then on.

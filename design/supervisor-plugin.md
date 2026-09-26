@@ -135,8 +135,11 @@ The end check is `suss intent check`, and `checkIntent` in `@suss/cli` for a pro
 | `changes: <boundary>` | the diff lists the boundary as changed, and each listed outcome is the ending of a transition that is new or changed |
 | `removes: <boundary>` | with no outcomes, the diff lists the boundary as removed; with outcomes, each was an ending of the boundary before and is not now |
 | `adds: {writes: S, fields: F}` at `B` | B now reaches a write of S that states every field in F, and did not before |
+| `adds: {reads: runtime-config, fields: [V]}` | the code a deployable runs, at startup or per request, now reads V, and did not before |
 | `removes: <effect>` at `B` | B reached the effect before and does not now |
 | `changes: <effect>` at `B` | the diff lists B as changed, and B reaches the effect now |
+
+A deployable's environment is a served boundary, `runtime-config:<logical id>`, and what reaches it is every read of it by the code the runtime-config pairing places in the deployable. The diff lists the variables its template started or stopped declaring beside those reads, and an entry about reading a variable covers its declaration. `intent check` and the Stop hook's `inspect --diff` read every summaries file on a side together, since the template's file declares what the code's file reads.
 
 A boundary resolves through `namesBoundaryExactly` and an effect through the intent checker's `effectMatches`, the matchers `suss ask` and `check --intent` go through, and "reaches" follows the calls a request makes. Done is a matched entry. Not done is an unmatched one. Unchecked is an entry whose subject is no boundary on either side and is not spelled like one (a route, or `system:name`). The third line of the example is one: neither the intent vocabulary nor the Prisma reader spells enum members yet. An unchecked entry is reported and never counted as not done, so the agent does not chase it.
 

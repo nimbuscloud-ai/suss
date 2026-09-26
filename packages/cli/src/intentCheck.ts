@@ -31,7 +31,7 @@ import type {
   Transition,
   WrapperReference,
 } from "@suss/behavioral-ir";
-import type { CodeEnding } from "@suss/checker-intent";
+import type { CodeEffect, CodeEnding } from "@suss/checker-intent";
 import type {
   ChangeListSummary,
   ChangeOutcome,
@@ -673,18 +673,39 @@ function coversEffect(
   if (mentions(entry, block)) {
     return true;
   }
+  if (
+    entry.subject.kind !== "effect" ||
+    entry.at !== null ||
+    line.relation === undefined ||
+    line.binding === undefined
+  ) {
+    return false;
+  }
+  const made: CodeEffect = {
+    does: line.relation,
+    binding: line.binding,
+    label: line.boundary ?? "",
+    fields: line.detail === undefined ? [] : [line.detail],
+    by: [],
+  };
   return (
-    entry.subject.kind === "effect" &&
-    entry.at === null &&
-    line.relation !== undefined &&
-    line.binding !== undefined &&
-    effectMatches(entry.subject.effect, {
-      does: line.relation,
-      binding: line.binding,
-      label: line.boundary ?? "",
-      fields: [],
-      by: [],
-    })
+    effectMatches(entry.subject.effect, made) ||
+    declaresWhatItTouches(entry.subject.effect, made)
+  );
+}
+
+/**
+ * A template that starts declaring a variable, and code that starts
+ * reading it, are the two sides of one change to a deployable's
+ * environment. So an entry about the read covers the declaration too.
+ */
+function declaresWhatItTouches(
+  effect: IntentEffect,
+  made: CodeEffect,
+): boolean {
+  return (
+    made.does === "provides" &&
+    effectMatches(effect, { ...made, does: effect.does })
   );
 }
 

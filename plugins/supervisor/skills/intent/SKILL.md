@@ -31,11 +31,22 @@ changes:
 - `at` says which boundary an effect happens at. Leave it out when the effect should happen wherever the code runs it, as with a helper many routes call.
 - `note` says in words what the change is, for a subject suss has no spelling for, such as a new member of a type. suss reports that entry as unchecked, and it never blocks a stop.
 
+A read of an environment variable is a `reads` effect on `runtime-config`, with the variable under `fields`. suss spells the environment that way in every language:
+
+```yaml
+asked: "Make the accounts table's region configurable through a new environment variable, ACCOUNTS_REGION."
+changes:
+  - adds: { reads: runtime-config, fields: [ACCOUNTS_REGION] }
+```
+
+That entry is done once the code each function runs reads the variable, including code that runs once at startup, such as a service built outside the handler. It also covers the deployment template declaring the variable for those functions, so a new template parameter and the environment entries that pass it on need no entry of their own.
+
 Follow these when you write it:
 
 - One change per entry.
 - Do not predict conditions. Say what the boundary should do, not which branch leads there. There is no `when`.
 - When you are not sure how suss spells a boundary, ask. The `suss_boundaries` tool lists them, and `suss ask "what does <file> reach"` lists what a file touches. A spelling suss does not use makes the entry not done, or unchecked.
+- When a change has no suss spelling, such as a new constructor option on a class, write the entry anyway with a `note` that says what changes. Expect it to come back unchecked. The developer still reads it in the report.
 - Print the list for the developer once it is written, so they can correct it before you edit. When they correct it ("409 on a duplicate, not 400"), rewrite that entry.
 - When the developer asks for more in the middle of the task, add an entry with its own `asked:` that quotes that message.
 
