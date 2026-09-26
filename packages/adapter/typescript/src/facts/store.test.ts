@@ -7,6 +7,7 @@ import {
 } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
+import { profileEvaluation } from "@suss/datalog";
 import { createTestProject } from "@suss/test-project";
 
 import { ResolutionStore } from "./store.js";
@@ -1123,6 +1124,86 @@ describe("resolveWrittenValue", () => {
       usageOf(project, "/mod.ts", "command"),
     );
     expect(written?.getKindName()).toBe("NewExpression");
+  });
+});
+
+describe("several values in one question", () => {
+  const FILES = {
+    "/documents.ts": `
+      declare function gql(source: string): unknown;
+      export const ORDERS = gql(\`query Orders { orders { id } }\`);
+    `,
+    "/handlers.ts": `
+      export const list = () => "list";
+      export const show = () => "show";
+    `,
+    "/mod.ts": `
+      import { ORDERS } from "./documents.js";
+      import { list, show } from "./handlers.js";
+      declare function run(...values: unknown[]): void;
+      declare const legacy: boolean;
+      const TABLE = "dim_account";
+      const settings = { table: TABLE };
+      const either = legacy ? list : show;
+      const alias = list;
+      export function go(input: string) {
+        run(ORDERS, TABLE, settings, input, either, alias, list, ORDERS);
+      }
+    `,
+  };
+
+  /** Every argument `run` is handed in `/mod.ts`, in order. */
+  function argumentsOfRun(project: Project): Node[] {
+    const call = project
+      .getSourceFileOrThrow("/mod.ts")
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .find((one) => one.getExpression().getText() === "run");
+    if (call === undefined) {
+      throw new Error("no call of run in the fixture");
+    }
+    return call.getArguments();
+  }
+
+  const textOf = (node: Node | null | undefined) => node?.getText() ?? null;
+
+  it("gives each value the written value it gets when asked alone", () => {
+    const project = projectOf(FILES);
+    const values = argumentsOfRun(project);
+    const together = new ResolutionStore().resolveWrittenValues(values);
+    const alone = new ResolutionStore();
+
+    expect(values.map((value) => textOf(together.get(value)))).toEqual(
+      values.map((value) => textOf(alone.resolveWrittenValue(value))),
+    );
+  });
+
+  it("gives each value the function it gets when asked alone", () => {
+    const project = projectOf(FILES);
+    const values = argumentsOfRun(project);
+    const together = new ResolutionStore().resolveCallables(values);
+    const alone = new ResolutionStore();
+
+    expect(values.map((value) => textOf(together.get(value)))).toEqual(
+      values.map((value) => textOf(alone.resolveCallable(value))),
+    );
+    expect(textOf(together.get(values[5] as Node))).toBe('() => "list"');
+    expect(together.get(values[4] as Node)).toBeNull();
+  });
+
+  it("costs as many evaluations for every argument as for the two that reach other files", () => {
+    const project = projectOf(FILES);
+    const values = argumentsOfRun(project);
+    const together = profileEvaluation(() =>
+      new ResolutionStore().resolveWrittenValues(values),
+    ).profile.evaluations;
+    const crossingOne = profileEvaluation(() =>
+      new ResolutionStore().resolveWrittenValues([
+        values[0] as Node,
+        values[4] as Node,
+      ]),
+    ).profile.evaluations;
+
+    expect(together).toBe(crossingOne);
   });
 });
 
