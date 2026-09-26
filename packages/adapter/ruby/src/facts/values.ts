@@ -8,6 +8,7 @@
 
 import {
   addPackWords,
+  classMemberName,
   NAMED_STORE_NAME,
   RECEIVER_STORE_NAME,
   startsAtName,
@@ -25,12 +26,14 @@ import {
   methodsDefinedAt,
   NESTING_TYPES,
   NO_BODY_BLOCKS,
+  NodeSet,
   OWN_BODY_TYPES,
   PREPEND_CALL,
   readCallArgs,
+  singletonMethodsByName,
 } from "../ast.js";
 import { spellsAName } from "../paths/bareCalls.js";
-import { RECEIVER_RETURNS } from "./languageWords.js";
+import { CONSTRUCTOR, RECEIVER_RETURNS } from "./languageWords.js";
 import {
   collectWrites,
   instanceWritesRunInOrder,
@@ -194,6 +197,8 @@ interface Emitter {
   selfKey: string | null;
   /** Whether the body being walked runs with a receiver, so a call in it has one too. */
   insideMethod: boolean;
+  /** Which of the class's methods a call on `self` here can run. */
+  selfRuns: SelfRuns;
   /**
    * Every value the body being walked assigns to each instance variable.
    * Each method gets its own map, so the facts say which method stored
@@ -205,6 +210,14 @@ interface Emitter {
   /** The calls whose block the run's packs declare runs as part of the surrounding body. */
   bodyBlocks: BodyBlocks;
 }
+
+/**
+ * An instance method's body runs on an instance, and a class method's on
+ * the class. A class body's own code runs on the class, but a block in it
+ * often runs on an instance, as a `before_save do` block does, so a call
+ * there could run either kind.
+ */
+type SelfRuns = "instanceMethods" | "classMethods" | "either";
 
 /**
  * The setter calls one body makes on a local, `job.retries = 3`, grouped
@@ -335,20 +348,49 @@ function emitMessageSent(
   }
 
   const receiver = field(call, "receiver");
-  if (receiver !== null) {
-    add(
-      emitter,
-      "readsProperty",
-      calleeKey,
-      valueKey(emitter, receiver),
-      method.text,
-    );
-  } else if (emitter.selfKey !== null) {
-    // Ruby looks up a call with no receiver on `self`, so inside a class
-    // it finds a method that class declares.
-    add(emitter, "readsProperty", calleeKey, emitter.selfKey, method.text);
+  // Ruby looks up a call with no receiver on `self`, so inside a class it
+  // finds a method that class declares.
+  const objectKey =
+    receiver === null ? emitter.selfKey : valueKey(emitter, receiver);
+  if (objectKey === null) {
+    return true;
+  }
+  for (const name of namesReadAs(emitter, receiver, method.text)) {
+    add(emitter, "readsProperty", calleeKey, objectKey, name);
   }
   return true;
+}
+
+/**
+ * The names a call reads its method under. A call on a constant runs a
+ * class method, a call on `self` runs whichever kind `self` runs here, and
+ * a call on anything else runs an instance method. The reach resolver
+ * decides the same way, so a call it follows and the facts agree.
+ */
+function namesReadAs(
+  emitter: Emitter,
+  receiver: RbNode | null,
+  name: string,
+): string[] {
+  const written = receiver === null ? null : readThrough(receiver);
+  if (written !== null && CONSTANT_REF_TYPES.has(written.type)) {
+    return [classSpelling(name)];
+  }
+  if (written !== null && written.type !== "self") {
+    return [name];
+  }
+  return SELF_READS[emitter.selfRuns](name);
+}
+
+const SELF_READS: Record<SelfRuns, (name: string) => string[]> = {
+  instanceMethods: (name) => [name],
+  classMethods: (name) => [classSpelling(name)],
+  either: (name) => [...new Set([name, classSpelling(name)])],
+};
+
+/** How a class's own method is spelled, which for `new` is its plain name. */
+function classSpelling(name: string): string {
+  return name === CONSTRUCTOR ? name : classMemberName(name);
 }
 
 /** The method that runs a proc, `f.call(x)`. */
@@ -1268,13 +1310,16 @@ function emitMixinFacts(
 }
 
 /**
- * Emits a method a class body defines and records it on the class under
- * its name, a class method and an instance method alike.
+ * Emits a method a class body defines and records it on the class: an
+ * instance method under its name, and a class method under the name a
+ * read off the class uses. `offeredOnClass` lists the instance methods a
+ * module also offers on itself.
  */
 function emitMethodOfClass(
   within: Emitter,
   classKey: string,
   method: RbNode,
+  offeredOnClass: NodeSet,
 ): void {
   const stored = new Map<string, InstanceWrite[]>();
   const receiverKey = receiverKeyOf(within, method, classKey);
@@ -1287,13 +1332,21 @@ function emitMethodOfClass(
       ...within,
       selfKey: receiverKey,
       insideMethod: onInstance,
+      selfRuns: onInstance ? "instanceMethods" : "classMethods",
       instanceWrites: stored,
     },
     method,
   );
   const name = field(method, "name");
   if (name !== null) {
-    add(within, "holdsProperty", classKey, name.text, funcKey);
+    if (onInstance) {
+      add(within, "holdsProperty", classKey, name.text, funcKey);
+    }
+    // `module_function` and `extend self` offer a module's instance method
+    // on the module as well, so it is read off either.
+    if (!onInstance || offeredOnClass.has(method)) {
+      add(within, "holdsProperty", classKey, classSpelling(name.text), funcKey);
+    }
     if (onInstance && name.text === INITIALIZE_METHOD) {
       add(within, "initializes", classKey, funcKey);
     }
@@ -1336,6 +1389,7 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
     ...emitter,
     selfKey: classKey,
     insideMethod: false,
+    selfRuns: "either",
     instanceWrites: collected,
     namedWrites: null,
   };
@@ -1343,6 +1397,11 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
     body === null
       ? []
       : bodyStatementsRun(body, cls.type === "module", emitter.bodyBlocks);
+  const offeredOnClass = new NodeSet(
+    body === null
+      ? []
+      : singletonMethodsByName(body, emitter.bodyBlocks).values(),
+  );
   for (const statement of statements) {
     if (statement.type === "assignment") {
       const left = field(statement, "left");
@@ -1373,7 +1432,7 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
       emitExpressionFacts(within, statement);
     }
     for (const method of methodsDefinedAt(statement)) {
-      emitMethodOfClass(within, classKey, method);
+      emitMethodOfClass(within, classKey, method, offeredOnClass);
     }
   }
   emitInstanceWrites(within, classKey, collected);
@@ -1401,6 +1460,7 @@ export function emitValueFacts(
     enclosing: null,
     selfKey: null,
     insideMethod: false,
+    selfRuns: "instanceMethods",
     instanceWrites: null,
     namedWrites: { body: root, parameters: new Set(), byProperty: new Map() },
     bodyBlocks,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
-import { askResolution } from "@suss/resolution";
+import { addPackWords, askResolution } from "@suss/resolution";
 
 import { bodyBlocksIn } from "../pack.js";
 import { parseRuby } from "../parser.js";
@@ -351,10 +351,20 @@ function classBehind(db: Database, constantKey: string): string {
   return String(bound?.[1]);
 }
 
+/** What an ActiveRecord pack says each of these finders gives back. */
+function addFinders(db: Database, ...methods: string[]): void {
+  addPackWords(db, {
+    givesBackOne: methods.map((method) => ({
+      base: "ActiveRecord::Base",
+      method,
+    })),
+  });
+}
+
 describe("a finder Ruby writes with no arguments", () => {
   it("steps a bare read of one to the class its ancestry reaches the base from", async () => {
     const db = await runFactsFor(`${MODEL_SOURCE}account = Account.first\n`);
-    db.add("givesBackOne", ["ActiveRecord::Base", "first"]);
+    addFinders(db, "first");
 
     expect(objectsBehind(db, "f.rb#account")).toEqual([
       classBehind(db, "f.rb#Account"),
@@ -363,7 +373,7 @@ describe("a finder Ruby writes with no arguments", () => {
 
   it("says nothing when the pack declares no method of that name", async () => {
     const db = await runFactsFor(`${MODEL_SOURCE}account = Account.sample\n`);
-    db.add("givesBackOne", ["ActiveRecord::Base", "first"]);
+    addFinders(db, "first");
 
     expect(objectsBehind(db, "f.rb#account")).toEqual([]);
   });
@@ -441,9 +451,7 @@ async function modelFactsFor(source: string) {
       },
     ]),
   ]);
-  for (const method of ["find", "where", "first"]) {
-    db.add("givesBackOne", ["ActiveRecord::Base", method]);
-  }
+  addFinders(db, "find", "where", "first");
   return db;
 }
 
@@ -523,8 +531,8 @@ const CONCERN_SOURCE = [
 ].join("\n");
 
 describe("a method a concern declares", () => {
-  it("is reached by a read off the class that includes the concern", async () => {
-    const db = await runFactsFor(`${CONCERN_SOURCE}Account.pay\n`);
+  it("is reached by a read off an instance of the class that includes the concern", async () => {
+    const db = await runFactsFor(`${CONCERN_SOURCE}Account.new.pay\n`);
     const [pay] = db.facts("func").map((row) => String(row[0]));
     const read = String(
       db.facts("readsProperty").find((row) => String(row[2]) === "pay")?.[0],
@@ -547,6 +555,164 @@ describe("a method a concern declares", () => {
     expect(
       db.lookup("wantedDeclaredName", 0, account).map((row) => String(row[1])),
     ).toContain("pay");
+  });
+});
+
+/** The key the facts give the text in the source, found where it first starts. */
+function keyOfText(source: string, text: string): string {
+  const start = source.indexOf(text);
+  return `f.rb:${start}-${start + text.length}`;
+}
+
+/**
+ * The key of the method name in the call `call` spells, which is the key
+ * the facts give that call's callee. `call` is the whole written call,
+ * `Request.http_client`, found where it first starts.
+ */
+function calleeIn(source: string, call: string): string {
+  const name = call.slice(call.lastIndexOf(".") + 1);
+  const start = source.indexOf(call) + call.length - name.length;
+  return `f.rb:${start}-${start + name.length}`;
+}
+
+/** The functions the callee keyed `callee` resolves to. */
+function resolvedRead(db: Database, callee: string): string[] {
+  resolveValues(db, [callee]);
+  return resolvedFunctions(db, callee);
+}
+
+describe("a class method and an instance method of one name", () => {
+  const REQUEST = [
+    "class Request",
+    '  def self.http_client = "class"',
+    '  def http_client = "instance"',
+  ];
+  const CLASS_METHOD = 'def self.http_client = "class"';
+  const INSTANCE_METHOD = 'def http_client = "instance"';
+
+  it("finds the class method for a read off the class", async () => {
+    const source = [...REQUEST, "end", "", "Request.http_client", ""].join(
+      "\n",
+    );
+    const db = await runFactsFor(source);
+    expect(resolvedRead(db, calleeIn(source, "Request.http_client"))).toEqual([
+      keyOfText(source, CLASS_METHOD),
+    ]);
+  });
+
+  it("finds the instance method for a read off an instance", async () => {
+    const source = [...REQUEST, "end", "", "Request.new.http_client", ""].join(
+      "\n",
+    );
+    const db = await runFactsFor(source);
+    expect(
+      resolvedRead(db, calleeIn(source, "Request.new.http_client")),
+    ).toEqual([keyOfText(source, INSTANCE_METHOD)]);
+  });
+
+  // A call written as a bare name is keyed on the file and the name, so
+  // each of these two cases has only the one call.
+  it("finds the class method for a call on `self` in a class method", async () => {
+    const source = [
+      ...REQUEST,
+      "",
+      "  def self.shared",
+      "    http_client",
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+    const db = await runFactsFor(source);
+    expect(resolvedRead(db, "f.rb#http_client")).toEqual([
+      keyOfText(source, CLASS_METHOD),
+    ]);
+  });
+
+  it("finds the instance method for a call on `self` in an instance method", async () => {
+    const source = [
+      ...REQUEST,
+      "",
+      "  def perform",
+      "    http_client",
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+    const db = await runFactsFor(source);
+    expect(resolvedRead(db, "f.rb#http_client")).toEqual([
+      keyOfText(source, INSTANCE_METHOD),
+    ]);
+  });
+
+  it("finds each one on a subclass that inherits both", async () => {
+    const source = [
+      "class Base",
+      '  def self.build = "class"',
+      '  def build = "instance"',
+      "end",
+      "",
+      "class Report < Base",
+      "end",
+      "",
+      "Report.build",
+      "Report.new.build",
+      "",
+    ].join("\n");
+    const db = await runFactsFor(source);
+    expect(resolvedRead(db, calleeIn(source, "Report.build"))).toEqual([
+      keyOfText(source, 'def self.build = "class"'),
+    ]);
+    expect(resolvedRead(db, calleeIn(source, "Report.new.build"))).toEqual([
+      keyOfText(source, 'def build = "instance"'),
+    ]);
+  });
+
+  it("gives an instance the methods an included module writes, and the class none of them", async () => {
+    const source = [
+      "module Building",
+      '  def build = "module"',
+      "end",
+      "",
+      "class Report",
+      "  include Building",
+      '  def self.build = "class"',
+      "end",
+      "",
+      "Report.build",
+      "Report.new.build",
+      "",
+    ].join("\n");
+    const db = await runFactsFor(source);
+    expect(resolvedRead(db, calleeIn(source, "Report.build"))).toEqual([
+      keyOfText(source, 'def self.build = "class"'),
+    ]);
+    expect(resolvedRead(db, calleeIn(source, "Report.new.build"))).toEqual([
+      keyOfText(source, 'def build = "module"'),
+    ]);
+  });
+
+  it("finds a method `module_function` offers off the module and off an instance", async () => {
+    const source = [
+      "module Formats",
+      "  module_function",
+      "",
+      '  def wrap = "wrapped"',
+      "end",
+      "",
+      "class Report",
+      "  include Formats",
+      "end",
+      "",
+      "Formats.wrap",
+      "Report.new.wrap",
+      "",
+    ].join("\n");
+    const db = await runFactsFor(source);
+    const wrap = keyOfText(source, 'def wrap = "wrapped"');
+    expect(resolvedRead(db, calleeIn(source, "Formats.wrap"))).toEqual([wrap]);
+    expect(resolvedRead(db, calleeIn(source, "Report.new.wrap"))).toEqual([
+      wrap,
+    ]);
   });
 });
 

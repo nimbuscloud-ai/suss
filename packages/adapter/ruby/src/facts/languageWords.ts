@@ -9,3 +9,10 @@
  */
 
 export const RECEIVER_RETURNS: readonly string[] = ["freeze", "dup"];
+
+/**
+ * The method every Ruby class runs to make one of itself. An instance
+ * has no `new`, so a read of it keeps its plain name wherever it is
+ * written, and the one rule for a construction matches that name.
+ */
+export const CONSTRUCTOR = "new";

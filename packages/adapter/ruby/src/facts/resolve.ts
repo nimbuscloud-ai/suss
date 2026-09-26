@@ -18,6 +18,8 @@ import {
   withoutOverridden,
 } from "@suss/resolution";
 
+import { CONSTRUCTOR } from "./languageWords.js";
+
 import type { Database } from "@suss/datalog";
 
 /** The steps Ruby needs beyond the shared rules. */
@@ -29,7 +31,7 @@ export const RUBY_RULES = alsoSteps([
     "hop",
     [v("x"), v("cls"), INSTANCE_STEP],
     [
-      lit("readsProperty", v("x"), v("o"), constant("new")),
+      lit("readsProperty", v("x"), v("o"), constant(CONSTRUCTOR)),
       lit("comesTo", v("o"), v("cls")),
       lit("objectValue", v("cls")),
     ],
@@ -43,7 +45,7 @@ export const RUBY_RULES = alsoSteps([
     [v("r"), v("cls")],
     [
       lit("binds", v("o"), v("cls")),
-      lit("readsProperty", v("c"), v("o"), constant("new")),
+      lit("readsProperty", v("c"), v("o"), constant(CONSTRUCTOR)),
       lit("call", v("r"), v("c")),
     ],
   ),
