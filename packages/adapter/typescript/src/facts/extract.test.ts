@@ -12,6 +12,7 @@ import {
   createNodeTable,
   environmentObjectsIn,
   extractFileFacts,
+  importedModuleKeys,
 } from "./extract.js";
 
 import type { NodeTable } from "./extract.js";
@@ -56,6 +57,31 @@ function rows(db: Database, table: NodeTable, relation: string): string[][] {
     }),
   );
 }
+
+describe("the modules a file imports", () => {
+  it("keys each import and re-export by its file, and a package nothing installs by its specifier", () => {
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile("/orders.ts", "export const orders = 1;\n");
+    project.createSourceFile("/accounts.ts", "export const accounts = 1;\n");
+    const mod = project.createSourceFile(
+      "/mod.ts",
+      [
+        'import { orders } from "./orders";',
+        'import { report } from "@acme/reports";',
+        'export { accounts } from "./accounts";',
+        "export const local = orders;",
+        "export { local as renamed };",
+        "",
+      ].join("\n"),
+    );
+
+    expect(importedModuleKeys(mod)).toEqual([
+      "/orders.ts",
+      "@acme/reports",
+      "/accounts.ts",
+    ]);
+  });
+});
 
 describe("a function's declared return type", () => {
   it("records the class the annotation refers to", () => {
