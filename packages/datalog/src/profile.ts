@@ -75,11 +75,21 @@ export interface RuleSetCost {
   rules: RuleCost[];
 }
 
+/**
+ * The engine entry points a profile times whole. `evaluate` includes the
+ * rules, so what it has past `datalogMs` is the engine's own work: the
+ * round loop and the bookkeeping around it. `clear` is `clearRelations`
+ * emptying relations between questions.
+ */
+export type EnginePart = "evaluate" | "clear";
+
 export interface EvaluationProfile {
   /** Wall time for everything the profiled scope did, datalog or not. */
   wallMs: number;
-  /** Wall time inside rule evaluation, which is the engine's own cost. */
+  /** Wall time inside rule evaluation, summed over the rules. */
   datalogMs: number;
+  /** Wall time inside each of the engine's entry points. */
+  engineMs: Record<EnginePart, number>;
   /** Semi-naive rounds, summed over strata. The seed round counts as one. */
   rounds: number;
   /**
@@ -120,6 +130,7 @@ interface Collector {
   startedAt: number;
   rounds: number;
   evaluations: number;
+  engineMs: Record<EnginePart, number>;
   rules: Map<string, RuleCost>;
   relations: Map<string, number>;
   derivedRelations: Set<string>;
@@ -229,6 +240,13 @@ export function chargeEvaluationRows(examined: number): void {
   }
 }
 
+/** Charge `ms` of wall time to one of the engine's entry points. */
+export function chargeEngine(part: EnginePart, ms: number): void {
+  for (const collector of open) {
+    collector.engineMs[part] += ms;
+  }
+}
+
 /** Note that another semi-naive round ran. */
 export function chargeRound(ruleSet: string): void {
   for (const collector of open) {
@@ -320,6 +338,7 @@ function openScope(): Collector {
     startedAt: performance.now(),
     rounds: 0,
     evaluations: 0,
+    engineMs: { evaluate: 0, clear: 0 },
     rules: new Map(),
     relations: new Map(),
     derivedRelations: new Set(),
@@ -361,6 +380,7 @@ function summarise(mine: Collector): EvaluationProfile {
   return {
     wallMs: performance.now() - mine.startedAt,
     datalogMs: totalMs(mine.rules.values()),
+    engineMs: { ...mine.engineMs },
     rounds: mine.rounds,
     evaluations: mine.evaluations,
     examined: totalExamined(mine.rules.values()),
@@ -404,6 +424,9 @@ export function formatProfile(profile: EvaluationProfile): string {
   const lines: string[] = [];
   lines.push(
     `datalog: ${profile.datalogMs.toFixed(0)}ms (${share(profile.datalogMs, profile.wallMs).trim()} of ${profile.wallMs.toFixed(0)}ms wall), ${profile.evaluations} evaluations, ${profile.rounds} rounds, ${profile.examined} rows read (${profile.largestEvaluation} in the biggest evaluation)`,
+  );
+  lines.push(
+    `  engine: ${profile.engineMs.evaluate.toFixed(0)}ms inside evaluate (${profile.datalogMs.toFixed(0)}ms of it in rules), ${profile.engineMs.clear.toFixed(0)}ms clearing relations between questions`,
   );
 
   const { asked, abandoned, skipped } = profile.questions;

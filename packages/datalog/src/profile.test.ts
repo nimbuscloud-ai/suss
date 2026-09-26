@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   chargeAbandoned,
   chargeQuestion,
+  clearRelations,
   Database,
   evaluate,
   formatProfile,
@@ -147,6 +148,30 @@ describe("evaluation profiling", () => {
     });
 
     expect(profile.wallMs).toBeGreaterThan(profile.datalogMs);
+  });
+
+  it("times evaluate whole, the rules inside it included", () => {
+    const db = chain(6);
+    const { profile } = profileEvaluation(() => evaluate(db, REACHES));
+
+    expect(profile.engineMs.evaluate).toBeGreaterThanOrEqual(profile.datalogMs);
+    expect(profile.engineMs.clear).toBe(0);
+    expect(formatProfile(profile)).toContain(" inside evaluate (");
+  });
+
+  it("times the relations cleared between questions apart from evaluation", () => {
+    const db = chain(200);
+    evaluate(db, REACHES);
+    const { profile } = profileEvaluation(() =>
+      clearRelations(db, REACHES, ["reaches"]),
+    );
+
+    expect(db.size("reaches")).toBe(0);
+    expect(profile.engineMs.evaluate).toBe(0);
+    expect(profile.engineMs.clear).toBeGreaterThan(0);
+    expect(formatProfile(profile)).toContain(
+      "ms clearing relations between questions",
+    );
   });
 
   it("folds a nested profiled scope into the outer one", () => {

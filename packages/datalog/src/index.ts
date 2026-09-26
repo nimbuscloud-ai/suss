@@ -15,6 +15,7 @@
 import { FactIndex, type FactKey } from "./factIndex.js";
 import { isDemandRewritten } from "./onDemand.js";
 import {
+  chargeEngine,
   chargeEvaluation,
   chargeEvaluationRows,
   chargeRelationSizes,
@@ -1063,6 +1064,8 @@ export function evaluate<Tag = never>(
     throw new Error("cannot evaluate with both a tag algebra and a row budget");
   }
   deriving.set(db, (deriving.get(db) ?? 0) + 1);
+  const profiling = isProfiling();
+  const startedAt = profiling ? performance.now() : 0;
   try {
     return runRules(db, rules, algebra, budget);
   } finally {
@@ -1071,6 +1074,9 @@ export function evaluate<Tag = never>(
       deriving.delete(db);
     } else {
       deriving.set(db, depth);
+    }
+    if (profiling) {
+      chargeEngine("evaluate", performance.now() - startedAt);
     }
   }
 }
@@ -1094,12 +1100,17 @@ export function clearRelations(
   rules: Rule[],
   relations: readonly string[],
 ): void {
+  const profiling = isProfiling();
+  const startedAt = profiling ? performance.now() : 0;
   for (const relation of relations) {
     db.retractAll(relation);
   }
   const state = statesFor(db).get(signatureOf(rules));
   if (state !== undefined) {
     state.marks = currentMarks(db);
+  }
+  if (profiling) {
+    chargeEngine("clear", performance.now() - startedAt);
   }
 }
 
