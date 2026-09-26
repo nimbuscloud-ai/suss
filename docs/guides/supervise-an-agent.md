@@ -15,7 +15,7 @@ The suss repository is a Claude Code plugin marketplace. From a terminal:
 claude plugin marketplace add nimbuscloud-ai/suss --sparse .claude-plugin plugins && claude plugin install suss@suss
 ```
 
-Or inside a session, `/plugin marketplace add nimbuscloud-ai/suss` and then `/plugin install suss@suss`. `--sparse` keeps Claude Code from cloning the rest of the repository.
+Or inside a session, `/plugin marketplace add nimbuscloud-ai/suss` and then `/plugin install suss@suss`. `--sparse` keeps Claude Code from cloning the rest of the repository. The Claude Code prompt on [Give your agent suss](/start/give-your-agent-suss) has the agent do this for you, after it installs the CLI and runs a first check.
 
 The project needs a `suss.json`, which `npx @suss/cli init` writes. Without one the plugin reads what `init` would pick, and when nothing in the project matches a pack it says so once at session start and stays out of the way for the rest of the session.
 

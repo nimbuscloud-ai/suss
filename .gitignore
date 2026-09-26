@@ -15,9 +15,6 @@ dist/
 # VitePress
 docs/.vitepress/dist/
 docs/.vitepress/cache/
-# Written by scripts/generateLlmsTxt.ts before every docs build
-docs/public/llms.txt
-docs/public/llms-full.txt
 # Written by scripts/generateDocRedirects.ts before every docs build
 docs/public/*.html
 docs/public/guides/

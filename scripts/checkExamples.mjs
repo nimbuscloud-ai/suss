@@ -8,6 +8,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { expandIncludes } from "./docsIncludes.mjs";
+
 const ROOT = path.resolve(import.meta.dirname, "..");
 const DOCS = path.join(ROOT, "docs");
 const FIXTURES = path.join(ROOT, "fixtures");
@@ -39,10 +41,24 @@ function* markdownFiles(dir) {
   }
 }
 
+/** A page's lines with its includes expanded, and for each one the line of
+ * the page it came from, so a failure points at the page. */
+function pageLines(file) {
+  const lines = [];
+  const origins = [];
+  const source = fs.readFileSync(file, "utf8").split("\n");
+  for (let i = 0; i < source.length; i++) {
+    for (const line of expandIncludes(source[i], file, DOCS).split("\n")) {
+      lines.push(line);
+      origins.push(i + 1);
+    }
+  }
+  return { lines, origins };
+}
+
 /** A page as fences, suss annotations and paragraphs, in the order they
  * appear. Everything else is dropped. */
-function itemsOf(source) {
-  const lines = source.split("\n");
+function itemsOf({ lines, origins }) {
   const items = [];
   let paragraph = null;
 
@@ -54,7 +70,8 @@ function itemsOf(source) {
   };
 
   for (let i = 0; i < lines.length; i++) {
-    const fence = lines[i].match(/^```(\S*)\s*$/);
+    // A code group's tab title comes after the language: ```md [Cursor]
+    const fence = lines[i].match(/^```([^\s[{`]*)[^`]*$/);
     if (fence !== null) {
       endParagraph();
       const start = i;
@@ -66,7 +83,7 @@ function itemsOf(source) {
         type: "fence",
         lang: fence[1],
         body: lines.slice(start + 1, i),
-        line: start + 1,
+        line: origins[start],
       });
       continue;
     }
@@ -74,7 +91,12 @@ function itemsOf(source) {
     const note = lines[i].match(/^<!--\s*suss:(\w+)\s*([\s\S]*?)\s*-->\s*$/);
     if (note !== null) {
       endParagraph();
-      items.push({ type: "note", name: note[1], rest: note[2], line: i + 1 });
+      items.push({
+        type: "note",
+        name: note[1],
+        rest: note[2],
+        line: origins[i],
+      });
       continue;
     }
 
@@ -84,7 +106,7 @@ function itemsOf(source) {
     }
 
     if (paragraph === null) {
-      paragraph = { type: "paragraph", lines: [], line: i + 1 };
+      paragraph = { type: "paragraph", lines: [], line: origins[i] };
     }
     paragraph.lines.push(lines[i]);
   }
@@ -266,8 +288,9 @@ function alignExcerpt(page, run) {
   return { offset, whole: matched === page.length };
 }
 
-/** An empty directory of its own, with any fixture the page asks for copied
- * in at the same path it has in this repository. */
+/** A directory of its own. `fixture=` copies one fixture in as the whole
+ * project, and `fixtures=` copies each one in at the path it has in this
+ * repository. */
 function openProject(options) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-examples-"));
   const project = {
@@ -279,14 +302,23 @@ function openProject(options) {
     keep: false,
   };
 
+  const root = options.get("fixture");
   const named = options.get("fixtures");
-  for (const name of named === undefined ? [] : named.split(",")) {
+  const copies = [
+    ...(root === undefined ? [] : [{ name: root, to: dir }]),
+    ...(named === undefined ? [] : named.split(",")).map((name) => ({
+      name,
+      to: path.join(dir, "fixtures", name),
+    })),
+  ];
+
+  for (const { name, to } of copies) {
     const source = path.join(FIXTURES, name);
     if (!fs.existsSync(source)) {
       fs.rmSync(dir, { recursive: true, force: true });
       return { skip: `there is no fixture named ${name} to run it against` };
     }
-    fs.cpSync(source, path.join(dir, "fixtures", name), { recursive: true });
+    fs.cpSync(source, to, { recursive: true });
   }
 
   return { project };
@@ -376,12 +408,152 @@ function compare(file, fence, run, excerpt, project) {
   });
 }
 
+const FLAG = /(?<![\w-])(--?[a-z][\w-]*)/g;
+
+const USAGE_LINE = /^\s+suss (\w[\w-]*)(.*)$/;
+
+const OPTIONS_HEADER = /^Options \((\w+)/;
+
+/** Flags the CLI takes with any command, or with none. */
+const GLOBAL_FLAGS = new Set(["--help", "-h", "--version", "-v"]);
+
+/** For each command, the flags `suss --help` lists in its usage lines and
+ * under its options. */
+function flagsByCommand() {
+  const byCommand = new Map();
+  const add = (command, text) => {
+    const flags = byCommand.get(command) ?? new Set();
+    for (const match of text.matchAll(FLAG)) {
+      flags.add(match[1]);
+    }
+    byCommand.set(command, flags);
+  };
+
+  let section = null;
+  for (const line of runSuss(["--help"], ROOT).output.split("\n")) {
+    const usage = line.match(USAGE_LINE);
+    if (usage !== null) {
+      add(usage[1], usage[2]);
+      continue;
+    }
+
+    const header = line.match(OPTIONS_HEADER);
+    if (header !== null || /^\S/.test(line)) {
+      section = header?.[1] ?? null;
+      continue;
+    }
+
+    if (section !== null) {
+      add(section, line);
+    }
+  }
+  return byCommand;
+}
+
+let helpFlags = null;
+
+function knownFlags() {
+  helpFlags ??= flagsByCommand();
+  return helpFlags;
+}
+
+/** Why the CLI would not take these arguments, or null when `suss --help`
+ * lists the command and every flag on it. */
+function flagProblem(args) {
+  const flagsFor = knownFlags();
+  const first = args[0];
+  const command = first !== undefined && !first.startsWith("-") ? first : null;
+  if (command !== null && !flagsFor.has(command)) {
+    return `suss --help lists no ${command} command`;
+  }
+
+  const known = command === null ? new Set() : flagsFor.get(command);
+  const unknown = args
+    .filter((arg) => /^--?[a-z]/i.test(arg))
+    .map((arg) => arg.split("=")[0])
+    .filter((flag) => !GLOBAL_FLAGS.has(flag) && !known.has(flag));
+  if (unknown.length === 0) {
+    return null;
+  }
+
+  const where = command === null ? "suss itself" : `suss ${command}`;
+  return `suss --help lists no ${unknown.join(", ")} for ${where}`;
+}
+
+/** Each distinct suss command in the inline code of some prompts. One
+ * spelled with npx is one the agent runs; a bare `suss ...` is a mention. */
+function promptCommands(fences) {
+  const commands = new Map();
+  for (const line of fences.flatMap((fence) => fence.body)) {
+    for (const span of line.matchAll(/`([^`]+)`/g)) {
+      for (const text of span[1]
+        .split(/&&|\|\||;/)
+        .map((part) => part.trim())) {
+        const args = sussCommand(text);
+        if (args !== null && !commands.has(text)) {
+          commands.set(text, { text, args, runs: text.startsWith("npx ") });
+        }
+      }
+    }
+  }
+  return [...commands.values()];
+}
+
+const prompts = [];
+
+const promptFailures = [];
+
+function recordPromptFailure(file, line, detail) {
+  promptFailures.push({
+    file: path.relative(ROOT, file),
+    line,
+    state: "failed",
+    detail,
+  });
+}
+
+/**
+ * Check the suss commands a group of prompts gives an agent. Every flag has
+ * to be one `suss --help` lists for its command, and every command the agent
+ * runs has to exit 0 in the fixture the page gives the prompts.
+ */
+function checkPrompts(file, group) {
+  const commands = promptCommands(group.fences);
+  for (const command of commands) {
+    const problem = flagProblem(command.args);
+    if (problem !== null) {
+      recordPromptFailure(file, group.line, {
+        command: command.text,
+        summary: problem,
+      });
+      continue;
+    }
+
+    if (!command.runs) {
+      continue;
+    }
+
+    const run = runSuss(command.args, group.project.dir);
+    if (run.status !== 0) {
+      group.project.keep = true;
+      recordPromptFailure(file, group.line, {
+        command: command.text,
+        summary: `it exited ${run.status}: ${run.output.trim().split("\n")[0]}`,
+        kept: group.project.dir,
+      });
+    }
+  }
+
+  prompts.push({ fences: group.fences.length, commands: commands.length });
+  closeProject(group.project);
+}
+
 /**
  * Walk one page top to bottom: write the files it states, run the suss
  * commands it shows, and compare each output fence against the run above it.
  */
 function checkPage(file) {
-  const items = itemsOf(fs.readFileSync(file, "utf8"));
+  const items = itemsOf(pageLines(file));
   const pairs = pairingsIn(items);
   const runs = new Map();
 
@@ -390,12 +562,28 @@ function checkPage(file) {
   let pendingPath = null;
   let pendingExcerpt = false;
   let previous = null;
+  let prompt = null;
+
+  const finishPrompt = () => {
+    if (prompt !== null) {
+      checkPrompts(file, prompt);
+      prompt = null;
+    }
+  };
 
   const notes = {
     example: (note) => {
       const opened = openProject(parseOptions(note.rest));
       project = opened.project ?? null;
       stopped = opened.skip ?? null;
+    },
+    prompt: (note) => {
+      const opened = openProject(parseOptions(note.rest));
+      if (opened.skip !== undefined) {
+        recordPromptFailure(file, note.line, { summary: opened.skip });
+        return;
+      }
+      prompt = { line: note.line, project: opened.project, fences: [] };
     },
     file: (note) => {
       pendingPath = note.rest;
@@ -421,6 +609,7 @@ function checkPage(file) {
     const item = items[index];
 
     if (item.type === "note") {
+      finishPrompt();
       const handler = notes[item.name];
       if (handler === undefined) {
         record(file, item.line, "failed", {
@@ -433,7 +622,15 @@ function checkPage(file) {
     }
 
     if (item.type === "paragraph") {
+      if (item.lines[0].startsWith("#")) {
+        finishPrompt();
+      }
       previous = item;
+      continue;
+    }
+
+    if (prompt !== null) {
+      prompt.fences.push(item);
       continue;
     }
 
@@ -478,6 +675,7 @@ function checkPage(file) {
     compare(file, item, run, excerpt, project);
   }
 
+  finishPrompt();
   closeProject(project);
 }
 
@@ -492,7 +690,8 @@ for (const file of [...markdownFiles(DOCS)].sort()) {
   checkPage(file);
 }
 
-const failed = results.filter((result) => result.state === "failed");
+const failedBlocks = results.filter((result) => result.state === "failed");
+const failed = [...failedBlocks, ...promptFailures];
 const checked = results.filter((result) => result.state === "checked");
 const skipped = results.filter((result) => result.state === "skipped");
 
@@ -519,6 +718,16 @@ stream.write(
   `Ran ${checked.length} of the ${results.length} output blocks in docs/ and compared what came back.\n`,
 );
 
+const promptCount = prompts.reduce((sum, group) => sum + group.fences, 0);
+const promptCommandCount = prompts.reduce(
+  (sum, group) => sum + group.commands,
+  0,
+);
+
+stream.write(
+  `Looked up the ${promptCommandCount} suss commands in ${promptCount} agent prompts in suss --help, and ran each one an agent runs.\n`,
+);
+
 if (skipped.length > 0) {
   stream.write("\nNot checked:\n");
   for (const result of skipped) {
@@ -529,9 +738,18 @@ if (skipped.length > 0) {
   );
 }
 
-if (failed.length > 0) {
+if (failedBlocks.length > 0) {
   stream.write(
-    `\n${failed.length} ${failed.length === 1 ? "block does" : "blocks do"} not match what the command printed.\n`,
+    `\n${failedBlocks.length} ${failedBlocks.length === 1 ? "block does" : "blocks do"} not match what the command printed.\n`,
   );
+}
+
+if (promptFailures.length > 0) {
+  stream.write(
+    `\n${promptFailures.length} ${promptFailures.length === 1 ? "command" : "commands"} in the agent prompts would fail for an agent that copied them.\n`,
+  );
+}
+
+if (failed.length > 0) {
   process.exit(1);
 }

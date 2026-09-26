@@ -98,11 +98,16 @@ A command needs a project to run in, and not every page builds one, so a page op
                                             inside it
 <!-- suss:unchecked <reason> -->            everything below this goes
                                             unchecked, and here is why
+<!-- suss:prompt fixture=aws-lambda -->    the fences from here to the next
+                                            heading are prompts an agent follows
+                                            in a copy of fixtures/aws-lambda
 ```
 
 Inside a run, a code fence introduced by a paragraph that starts with a backticked path and ends with a colon is written to that path. Both tutorials already write their fences that way. Use `suss:file` when the prose around a fence doesn't spell out where it goes.
 
 Only suss commands run. `npm install express` and `mkdir` are left where they are, because extraction reads import specifiers rather than resolved packages and these projects need no `node_modules`. Where a bash fence has several commands in it, the output below it is compared against the last one, and timings and absolute paths are normalised out first.
+
+A prompt has its commands in inline code. Every flag on a suss command in it has to be one `suss --help` lists for that command, and every command spelled `npx @suss/cli ...` has to exit 0 in the fixture, since that is the spelling an agent runs. A bare `suss check --since` is a mention, so it is looked up and not run. The check reads a page with its `<!--@include: -->` lines expanded, so a prompt kept in its own file is checked where the page shows it.
 
 At the end, the check lists every output block it did not run, with the reason. Add a page to that list whenever you need to. An unchecked page on that list is better than a number that nothing verifies.
 

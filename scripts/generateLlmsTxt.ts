@@ -1,15 +1,14 @@
 #!/usr/bin/env node
 /**
- * generateLlmsTxt.ts: write docs/public/llms.txt, the index of the site an
- * agent reads before it fetches any page, and docs/public/llms-full.txt, the
- * whole site as one file so an agent can skip the fetching.
+ * generateLlmsTxt.ts: after VitePress builds the site, write the files an
+ * agent reads in place of the HTML. Each page gets a markdown copy at the
+ * path of its source file, with its includes expanded, and the "Copy page
+ * as Markdown" button copies it. llms.txt is the index of those copies,
+ * and llms-full.txt is the whole site in one file, in sidebar order. A page
+ * with no frontmatter description is listed with its first sentence.
  *
- * The index lists every markdown file under docs/, since each one is a
- * published page. A page with no frontmatter description falls back to the
- * first sentence of its opening paragraph. The full file follows the sidebar
- * instead, so the pages arrive in the order a reader meets them.
- *
- * `npm run docs:build` runs this through `predocs:build`. On its own:
+ * `npm run docs:build` runs this through `postdocs:build`. On its own,
+ * after a build:
  *
  *   node --experimental-strip-types scripts/generateLlmsTxt.ts
  */
@@ -18,11 +17,13 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { type SidebarItem, sidebar } from "../docs/.vitepress/sidebar.ts";
+import { expandIncludes } from "./docsIncludes.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const DOCS_DIR = path.join(ROOT, "docs");
-const OUTPUT = path.join(DOCS_DIR, "public", "llms.txt");
-const FULL_OUTPUT = path.join(DOCS_DIR, "public", "llms-full.txt");
+const SITE_DIR = path.join(DOCS_DIR, ".vitepress", "dist");
+const OUTPUT = path.join(SITE_DIR, "llms.txt");
+const FULL_OUTPUT = path.join(SITE_DIR, "llms-full.txt");
 
 const SITE_ORIGIN = "https://suss.sh/";
 
@@ -35,6 +36,7 @@ const SKIPPED_DIRECTORIES = new Set([".vitepress", "public", "node_modules"]);
 
 interface Page {
   url: string;
+  markdownUrl: string;
   title: string;
   description: string;
 }
@@ -117,12 +119,48 @@ function readPage(file: string): Page {
 
   return {
     url: `${SITE_ORIGIN}${slug}`,
+    markdownUrl: `${SITE_ORIGIN}${relative}`,
     title: stripInlineMarkdown(title),
     description: stripInlineMarkdown(description) || firstSentence(content),
   };
 }
 
-const pages = markdownFiles(DOCS_DIR)
+function withoutFrontmatter(content: string): string {
+  return content.replace(/^---\n[\s\S]*?\n---\n/, "").trim();
+}
+
+/** The `<!-- suss:example -->` lines that tell check:examples how to run a
+ * page, which the site does not show either. */
+const CHECK_ANNOTATION = /^<!--\s*suss:.*-->\s*\n/gm;
+
+/** The page's markdown as the site shows it: includes expanded, and no
+ * frontmatter or check annotations. */
+function pageMarkdown(file: string): string {
+  const source = fs.readFileSync(file, "utf8");
+  const expanded = expandIncludes(source, file, DOCS_DIR);
+  return withoutFrontmatter(expanded.replace(CHECK_ANNOTATION, ""));
+}
+
+if (!fs.existsSync(SITE_DIR)) {
+  console.error(
+    `There is no built site at ${path.relative(ROOT, SITE_DIR)}. Run npm run docs:build, which runs this afterwards.`,
+  );
+  process.exit(1);
+}
+
+const files = markdownFiles(DOCS_DIR);
+
+for (const file of files) {
+  const copy = path.join(SITE_DIR, path.relative(DOCS_DIR, file));
+  fs.mkdirSync(path.dirname(copy), { recursive: true });
+  fs.writeFileSync(copy, `${pageMarkdown(file)}\n`, "utf8");
+}
+
+console.log(
+  `markdown copies: ${files.length} pages -> ${path.relative(ROOT, SITE_DIR)}`,
+);
+
+const pages = files
   .map(readPage)
   .sort((left, right) => left.url.localeCompare(right.url));
 
@@ -135,13 +173,12 @@ const lines = [
   "",
   ...pages.map((page) =>
     page.description
-      ? `- [${page.title}](${page.url}): ${page.description}`
-      : `- [${page.title}](${page.url})`,
+      ? `- [${page.title}](${page.markdownUrl}): ${page.description}`
+      : `- [${page.title}](${page.markdownUrl})`,
   ),
   "",
 ];
 
-fs.mkdirSync(path.dirname(OUTPUT), { recursive: true });
 fs.writeFileSync(OUTPUT, lines.join("\n"), "utf8");
 
 console.log(
@@ -170,10 +207,6 @@ function fileForLink(link: string): string {
     : candidate;
 }
 
-function withoutFrontmatter(content: string): string {
-  return content.replace(/^---\n[\s\S]*?\n---\n/, "").trim();
-}
-
 const sidebarOrder = ["/", ...sidebarLinks(sidebar)];
 const seen = new Set<string>();
 const fullSections: string[] = [];
@@ -192,8 +225,7 @@ for (const link of sidebarOrder) {
   }
 
   const page = readPage(file);
-  const body = withoutFrontmatter(fs.readFileSync(file, "utf8"));
-  fullSections.push(`# ${page.url}\n\n${body}`);
+  fullSections.push(`# ${page.url}\n\n${pageMarkdown(file)}`);
 }
 
 fs.writeFileSync(

@@ -1,0 +1,27 @@
+/*
+ * A prompt for a coding agent, shown as a code block to copy. It is prose,
+ * so its lines wrap instead of scrolling sideways, and its copy button
+ * stays in view instead of waiting for a hover, above the text.
+ */
+
+.agent-prompt div[class*="language-"] pre,
+.agent-prompt div[class*="language-"] code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agent-prompt div[class*="language-"] pre {
+  padding-top: 60px;
+}
+
+.agent-prompt div[class*="language-"] code {
+  width: auto;
+}
+
+.agent-prompt div[class*="language-"] > button.copy {
+  opacity: 1;
+}
+
+.agent-prompt div[class*="language-"] > span.lang {
+  display: none;
+}

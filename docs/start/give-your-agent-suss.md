@@ -1,9 +1,85 @@
 ---
 title: Give your agent suss
-description: A coding agent asks what a route returns, what writes a table and what calls a function, from the working tree as it is now.
+description: Paste one prompt into Claude Code, Cursor, Codex or another coding agent, and it sets suss up, runs a first check and tells you what paired. Then the agent asks what a route returns, what writes a table and what calls a function, from the working tree as it is now.
 ---
 
 # Give your agent suss
+
+Paste this prompt into your coding agent and it sets suss up in the
+repository. It installs the CLI, runs one check, connects suss to the
+agent, and tells you which boundaries paired and which did not. Pick the
+tab for the agent you use. Only the step that connects suss to the agent
+changes from one tab to the next.
+
+<!-- suss:prompt fixture=supervisor-orders -->
+
+<div class="agent-prompt">
+
+::: code-group
+
+```md [Claude Code]
+<!--@include: ./agentSetupPrompt.txt#setup-->
+
+<!--@include: ./agentSetupPrompt.txt#claude-code-->
+
+<!--@include: ./agentSetupPrompt.txt#report-->
+```
+
+```md [Cursor]
+<!--@include: ./agentSetupPrompt.txt#setup-->
+
+<!--@include: ./agentSetupPrompt.txt#cursor-->
+
+<!--@include: ./agentSetupPrompt.txt#report-->
+```
+
+```md [Codex]
+<!--@include: ./agentSetupPrompt.txt#setup-->
+
+<!--@include: ./agentSetupPrompt.txt#codex-->
+
+<!--@include: ./agentSetupPrompt.txt#report-->
+```
+
+```md [Other agent]
+<!--@include: ./agentSetupPrompt.txt#setup-->
+
+<!--@include: ./agentSetupPrompt.txt#other-->
+
+<!--@include: ./agentSetupPrompt.txt#report-->
+```
+
+:::
+
+</div>
+
+In Claude Code the prompt installs [the suss plugin](/guides/supervise-an-agent),
+which starts the MCP server described below and checks each edit the
+agent makes. The plugin needs a suss release that has `suss check --since`
+and `suss extract --out-dir`, so the agent looks for both in
+`suss --help` first, and tells you when the release on npm does not
+have them yet.
+
+In Cursor and Codex the prompt adds the MCP server to the project's
+config ([Cursor](https://cursor.com/docs/context/mcp),
+[Codex](https://learn.chatgpt.com/docs/extend/mcp)) and a short suss
+section to the instructions the agent reads
+([Cursor rules](https://cursor.com/docs/context/rules),
+[Codex `AGENTS.md`](https://learn.chatgpt.com/docs/agent-configuration/agents-md)).
+The last tab is for any other agent that can start an MCP server.
+
+`suss init` asks before it writes `suss.json`, and an agent has no way
+to answer, so the prompt runs `suss init --plain`, which prints what it
+found and writes nothing. Run `npx @suss/cli init` in your own terminal
+to write the file. Until you do, `suss check` and the MCP server read
+what `init` finds each time they start.
+
+When nothing pairs, the agent stops and says so. A report with no
+findings looks the same when both sides agreed and when nothing was
+compared, and [Fix an empty run](/guides/fix-an-empty-run) goes through
+the causes.
+
+## Set it up by hand
 
 Add this to the host's MCP config and point it at the project:
 
@@ -132,12 +208,12 @@ file only costs one file's worth of work.
 
 ## Telling the agent to use it
 
-You have to tell the agent to use it. One line in your project's agent
-instructions (`CLAUDE.md`, `.cursorrules` or the equivalent) is enough:
+You have to tell the agent to use it. The prompt adds this section to
+the instructions the agent reads (`AGENTS.md`, a Cursor rule or the
+equivalent), and when you set suss up by hand you add it yourself:
 
-```
-Before changing a table, a route or a function's signature, ask the suss MCP
-server what reads, writes or calls it, and check the result before editing.
+```md
+<!--@include: ./agentSetupPrompt.txt#instructions-->
 ```
 
 The [MCP package README](https://github.com/nimbuscloud-ai/suss/tree/main/packages/mcp)
