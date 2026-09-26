@@ -312,6 +312,85 @@ describe("what a class's bodies store on the receiver", () => {
   });
 });
 
+describe("a property written through a name", () => {
+  const job = [
+    "declare function first(): number;",
+    "declare function second(): number;",
+    "declare const slow: boolean;",
+    "export class ReportJob {",
+    "  retries = 0;",
+    "}",
+    "export const job = new ReportJob();",
+  ];
+
+  /** The stores written through a name, as source text. */
+  function namedStores(source: string[]): string[][] {
+    const { db, table } = factsFor({ "/mod.ts": source.join("\n") });
+    return rows(db, table, "storesProperty").filter((row) => row[3] === "name");
+  }
+
+  it("is keyed on a module-level name", () => {
+    expect(namedStores([...job, "job.retries = first();"])).toEqual([
+      ["job", "retries", "first()", "name"],
+    ]);
+  });
+
+  it("is keyed on a function's own local", () => {
+    expect(
+      namedStores([
+        ...job,
+        "export function run() {",
+        "  const local = new ReportJob();",
+        "  local.retries = second();",
+        "  return local;",
+        "}",
+      ]),
+    ).toEqual([["local", "retries", "second()", "name"]]);
+  });
+
+  it("settles two writes in order on the last one", () => {
+    expect(
+      namedStores([
+        ...job,
+        "job.retries = first();",
+        "job.retries = second();",
+      ]),
+    ).toEqual([["job", "retries", "second()", "name"]]);
+  });
+
+  it("is left out for a parameter, a name another body declares, and `this`", () => {
+    expect(
+      namedStores([
+        ...job,
+        "export function setup(other: ReportJob) {",
+        "  other.retries = first();",
+        "  job.retries = second();",
+        "}",
+        "export class Api {",
+        "  retries = 0;",
+        "  prime() { this.retries = first(); }",
+        "}",
+      ]),
+    ).toEqual([]);
+  });
+
+  it("is left out when the body reads the property before writing it", () => {
+    expect(
+      namedStores([...job, "console.log(job.retries);", "job.retries = 3;"]),
+    ).toEqual([]);
+  });
+
+  it("is left out when a branch decides which write runs", () => {
+    expect(
+      namedStores([
+        ...job,
+        "job.retries = first();",
+        "if (slow) { job.retries = second(); }",
+      ]),
+    ).toEqual([]);
+  });
+});
+
 describe("the class a class extends", () => {
   it("states the base as written and the name it is written as", () => {
     const { db, table } = factsFor({

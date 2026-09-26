@@ -424,12 +424,36 @@ export function instanceWritesRunInOrder(
   return writesRunInOrder(
     body,
     name,
-    targets.map((target) => ({
-      at: target,
-      direct: target.parent?.parent?.id === body.id,
-    })),
+    targets.map((target) => targetWrite(body, target)),
     nameReads(new Set(targets.map((target) => target.id))),
   );
+}
+
+/**
+ * The same for one body's writes to a property through a name,
+ * `job.retries = 3`, whose reads are calls written the same way.
+ */
+export function propertyWritesRunInOrder(
+  body: RbNode,
+  spelling: string,
+  targets: readonly RbNode[],
+): boolean {
+  return writesRunInOrder(
+    body,
+    spelling,
+    targets.map((target) => targetWrite(body, target)),
+    {
+      ...nameReads(new Set(targets.map((target) => target.id))),
+      nameTypes: CALL_TYPES,
+    },
+  );
+}
+
+const CALL_TYPES: ReadonlySet<string> = new Set(["call"]);
+
+/** A write is a statement of the body's own list when its assignment is. */
+function targetWrite(body: RbNode, target: RbNode): OrderedWrite<RbNode> {
+  return { at: target, direct: target.parent?.parent?.id === body.id };
 }
 
 /**

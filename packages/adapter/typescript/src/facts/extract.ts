@@ -25,7 +25,9 @@ import {
 import {
   DEFAULT_IMPORT_NAME,
   GLOBAL_MODULE,
+  NAMED_STORE_NAME,
   NAMESPACE_IMPORT_NAME,
+  RECEIVER_STORE_NAME,
   valueLeftByWrites,
 } from "@suss/resolution";
 
@@ -36,9 +38,12 @@ import {
 import { resolveAliasedSymbol } from "../moduleExports.js";
 import { climbSyntax } from "../walk/unwrap.js";
 import {
+  type BodyPropertyWrites,
   describeWrites,
   type FieldDeclaration,
   isWrittenAgain,
+  namedStoresOf,
+  notePropertyWrite,
   storesToField,
   writesToBinding,
   writesToField,
@@ -1215,8 +1220,38 @@ function emitFieldStores(
       continue;
     }
     const owner = store.method === null ? classId : nodeId(store.method);
-    fact(db, "storesProperty", owner, name, storedKey(db, table, settled));
+    fact(
+      db,
+      "storesProperty",
+      owner,
+      name,
+      storedKey(db, table, settled),
+      RECEIVER_STORE_NAME,
+    );
   }
+}
+
+/** What a body leaves in each property it writes through a name it declares. */
+function emitNamedStores(
+  db: Database,
+  table: NodeTable,
+  writes: BodyPropertyWrites,
+): void {
+  for (const store of namedStoresOf(writes)) {
+    fact(
+      db,
+      "storesProperty",
+      emitValue(db, table, store.receiver),
+      store.property,
+      emitValue(db, table, store.value),
+      NAMED_STORE_NAME,
+    );
+  }
+}
+
+/** A collector for the property writes of the body `statements` belongs to. */
+function propertyWritesOf(owner: Node, statements: Node): BodyPropertyWrites {
+  return { owner, statements, found: [] };
 }
 
 /**
@@ -1256,11 +1291,13 @@ function emitConstructorFacts(
   if (body === undefined) {
     return;
   }
+  const writes = propertyWritesOf(implementation, body);
   body.forEachDescendant((descendant, traversal) => {
-    if (recordBodyCalls(db, table, classId, descendant)) {
+    if (recordBodyCalls(db, table, classId, descendant, writes)) {
       traversal.skip();
     }
   });
+  emitNamedStores(db, table, writes);
 }
 
 /** paramOf and paramNamed for everything a call fills in. */
@@ -1311,6 +1348,7 @@ function emitFunctionFacts(db: Database, table: NodeTable, fn: Node): void {
     const returns: ReturnState = { stated: false };
     const body = fn.getBody?.();
     if (body !== undefined) {
+      const writes = propertyWritesOf(fn, body);
       // An arrow written without braces returns its body, and the body
       // is a node the descendant walk never visits, so drive the same
       // handling from it first. Writing that case out separately is
@@ -1320,13 +1358,14 @@ function emitFunctionFacts(db: Database, table: NodeTable, fn: Node): void {
       if (Node.isExpression(body)) {
         fact(db, "returnsValue", fnId, emitValue(db, table, body));
         returns.stated = true;
-        recordBodyNode(db, table, fnId, body, returns);
+        recordBodyNode(db, table, fnId, body, returns, writes);
       }
       body.forEachDescendant((descendant, traversal) => {
-        if (recordBodyNode(db, table, fnId, descendant, returns)) {
+        if (recordBodyNode(db, table, fnId, descendant, returns, writes)) {
           traversal.skip();
         }
       });
+      emitNamedStores(db, table, writes);
     }
 
     if (!returns.stated) {
@@ -1420,6 +1459,7 @@ function recordBodyNode(
   fnId: string,
   node: Node,
   returns: ReturnState,
+  writes: BodyPropertyWrites,
 ): boolean {
   if (isFunctionRoot(node) && descendantIsReturned(node)) {
     fact(db, "returnsValue", fnId, emitValue(db, table, node as Expression));
@@ -1437,7 +1477,7 @@ function recordBodyNode(
     return false;
   }
 
-  return recordBodyCalls(db, table, fnId, node);
+  return recordBodyCalls(db, table, fnId, node, writes);
 }
 
 /**
@@ -1450,6 +1490,7 @@ function recordBodyCalls(
   table: NodeTable,
   fnId: string,
   node: Node,
+  writes: BodyPropertyWrites,
 ): boolean {
   if (isFunctionRoot(node)) {
     emitValue(db, table, node as Expression);
@@ -1460,11 +1501,12 @@ function recordBodyCalls(
   if (!Node.isExpression(node)) {
     return false;
   }
-  // The body walk records calls and nothing else, so a keyed read has
-  // to be picked out here or its fact is never stated.
+  // The body walk records calls and nothing else, so a keyed read and a
+  // property write have to be picked out here or their facts are never stated.
   if (isKeyedRead(node)) {
     emitValue(db, table, node);
   }
+  notePropertyWrite(writes, node);
   const call = unwrapExpression(node);
   if (Node.isCallExpression(call)) {
     const callee = unwrapExpression(call.getExpression());
@@ -1500,19 +1542,50 @@ function emitNamedCall(db: Database, table: NodeTable, call: Node): void {
 
 /**
  * The calls a module's own body runs, which is where a service that
- * builds its app at the top level hands it to another file.
+ * builds its app at the top level hands it to another file, and the
+ * properties it writes through the names it declares.
  */
-function emitTopLevelCalls(
+function emitTopLevelStatements(
   db: Database,
   table: NodeTable,
   sourceFile: SourceFile,
 ): void {
+  const writes = propertyWritesOf(sourceFile, sourceFile);
   for (const statement of sourceFile.getStatements()) {
     if (Node.isExpressionStatement(statement)) {
-      emitNamedCall(db, table, unwrapExpression(statement.getExpression()));
+      const expression = unwrapExpression(statement.getExpression());
+      emitNamedCall(db, table, expression);
+      notePropertyWrite(writes, expression);
+      continue;
+    }
+    // A write under a branch or a loop settles nothing on its own, but
+    // it still decides whether the other writes to that property do.
+    if (TOP_LEVEL_BLOCKS.has(statement.getKind())) {
+      statement.forEachDescendant((node, traversal) => {
+        if (isFunctionRoot(node) || Node.isClassDeclaration(node)) {
+          traversal.skip();
+          return;
+        }
+        notePropertyWrite(writes, node);
+      });
     }
   }
+  emitNamedStores(db, table, writes);
 }
+
+/** The statements at the top of a file that run code under them in place. */
+const TOP_LEVEL_BLOCKS: ReadonlySet<SyntaxKind> = new Set([
+  SyntaxKind.Block,
+  SyntaxKind.IfStatement,
+  SyntaxKind.TryStatement,
+  SyntaxKind.SwitchStatement,
+  SyntaxKind.LabeledStatement,
+  SyntaxKind.ForStatement,
+  SyntaxKind.ForOfStatement,
+  SyntaxKind.ForInStatement,
+  SyntaxKind.WhileStatement,
+  SyntaxKind.DoStatement,
+]);
 
 /** Whether a nested function expression is directly under a return. */
 function descendantIsReturned(fn: Node): boolean {
@@ -1580,7 +1653,7 @@ export function extractFileFacts(
   }
 
   emitLocalExportLists(db, table, sourceFile, filePath);
-  emitTopLevelCalls(db, table, sourceFile);
+  emitTopLevelStatements(db, table, sourceFile);
 }
 
 /**

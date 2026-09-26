@@ -1014,7 +1014,7 @@ describe("a construction as an object of its own", () => {
     ["func", "ctor"],
     ["initializes", "Api", "ctor"],
     ["writtenValue", "created"],
-    ["storesProperty", "ctor", "client", "created"],
+    ["storesProperty", "ctor", "client", "created", "receiver"],
     ["func", "items"],
     ["holdsProperty", "Api", "items", "items"],
     ["binds", "ApiRef", "Api"],
@@ -1062,7 +1062,7 @@ describe("a construction as an object of its own", () => {
           ["func", "prime"],
           ["holdsProperty", "Api", "prime", "prime"],
           ["writtenValue", "cached"],
-          ["storesProperty", "prime", "cache", "cached"],
+          ["storesProperty", "prime", "cache", "cached", "receiver"],
         ],
         "v1Site",
       ),
@@ -1077,7 +1077,7 @@ describe("a construction as an object of its own", () => {
           ["func", "baseCtor"],
           ["initializes", "Base", "baseCtor"],
           ["writtenValue", "created"],
-          ["storesProperty", "baseCtor", "client", "created"],
+          ["storesProperty", "baseCtor", "client", "created", "receiver"],
           ["objectValue", "Sub"],
           ["binds", "BaseRef", "Base"],
           ["extends", "Sub", "BaseRef"],
@@ -1099,7 +1099,7 @@ describe("a construction as an object of its own", () => {
           ["func", "userCtor"],
           ["initializes", "User", "userCtor"],
           ["writtenValue", "tableName"],
-          ["storesProperty", "userCtor", "table", "tableName"],
+          ["storesProperty", "userCtor", "table", "tableName", "receiver"],
           ["extendsNamed", "User", "ActiveRecord::Base"],
           ["givesBackOne", "ActiveRecord::Base", "find"],
           ["binds", "UserRef", "User"],
@@ -1111,20 +1111,106 @@ describe("a construction as an object of its own", () => {
     ).toEqual(["table:tableName"]);
   });
 
-  it("puts a store through a name on whatever that name refers to", () => {
-    // No adapter states a store keyed by a receiver value yet; the rule
-    // is here for the one that does.
+  describe("a store through a name", () => {
+    // client = Client(); client.timeout = 5; then client.timeout
     const written: Array<[string, ...string[]]> = [
       ["objectValue", "Client"],
       ["binds", "ClientRef", "Client"],
       ["call", "clientSite", "ClientRef"],
       ["binds", "client", "clientSite"],
       ["writtenValue", "five"],
-      ["storesProperty", "client", "timeout", "five"],
+      ["storesProperty", "client", "timeout", "five", "name"],
       ["readsProperty", "read", "client", "timeout"],
     ];
-    expect(containedIn(written, "clientSite")).toEqual(["timeout:five"]);
-    expect(writtenAsOf(written, "read")).toEqual(["five"]);
+
+    it("lands on the construction the name refers to", () => {
+      expect(containedIn(written, "clientSite")).toEqual(["timeout:five"]);
+      expect(writtenAsOf(written, "read")).toEqual(["five"]);
+    });
+
+    it("checks each store forward from its name instead of walking back from the object", () => {
+      // Asking objectOf about every name that writes the property, or
+      // walking back from the object to every name for it, ran a large
+      // Ruby project out of memory.
+      const seeds = [
+        ...resolutionProgram().rules,
+        ...resolutionUnderProgram().rules,
+      ].filter(
+        (r) =>
+          r.head.relation.startsWith("wanted:") &&
+          r.body.some((l) => l.relation.startsWith("wanted:contains")) &&
+          r.body.some((l) => l.relation === "storesProperty"),
+      );
+      expect(new Set(seeds.map((r) => r.head.relation))).toEqual(
+        new Set(["wanted:refersToObject:bb", "wanted:refersToObject:bf"]),
+      );
+    });
+
+    it("gives the same answer when only the read is asked about", () => {
+      const db = new Database();
+      for (const [name, ...tuple] of written) {
+        db.add(name, tuple);
+      }
+      askResolution(db, ["read"], "wanted", resolutionProgram());
+      expect(db.facts("wantedIsWrittenAs")).toEqual([["read", "five"]]);
+    });
+
+    it("reaches a method's read of its receiver under the construction", () => {
+      // class Client: def fetch(self): return self.timeout
+      const method: Array<[string, ...string[]]> = [
+        ...written,
+        ["func", "fetch"],
+        ["holdsProperty", "Client", "fetch", "fetch"],
+        ["instanceOf", "fetch#self", "Client"],
+        ["readsProperty", "selfRead", "fetch#self", "timeout"],
+      ];
+      expect(writtenAsUnder(method, "selfRead", "clientSite")).toEqual([
+        "five",
+      ]);
+    });
+
+    it("leaves the class alone, so another construction does not see it", () => {
+      const other: Array<[string, ...string[]]> = [
+        ...written,
+        ["call", "otherSite", "ClientRef"],
+        ["binds", "other", "otherSite"],
+        ["readsProperty", "otherRead", "other", "timeout"],
+      ];
+      expect(containedIn(other, "Client")).toEqual([]);
+      expect(writtenAsOf(other, "otherRead")).toEqual([]);
+    });
+
+    it("follows an alias and an import to the construction", () => {
+      const aliased: Array<[string, ...string[]]> = [
+        ...written.filter((row) => row[0] !== "storesProperty"),
+        ["exportsAs", "a.py", "client", "client"],
+        ["imports", "imported", "a.py", "client"],
+        ["binds", "alias", "imported"],
+        ["storesProperty", "alias", "timeout", "five", "name"],
+      ];
+      expect(writtenAsOf(aliased, "read")).toEqual(["five"]);
+    });
+
+    it("does not reach an object through a parameter's declared class", () => {
+      // def configure(c: Client): c.timeout = 5
+      const typed: Array<[string, ...string[]]> = [
+        ...written.filter((row) => row[0] !== "storesProperty"),
+        ["instanceOf", "c", "ClientRef"],
+        ["storesProperty", "c", "timeout", "five", "name"],
+      ];
+      expect(containedIn(typed, "Client")).toEqual([]);
+      expect(writtenAsOf(typed, "read")).toEqual([]);
+    });
+
+    it("is not a store by a method that a class keeps under the same key", () => {
+      // class Holder: kept = client, where client is also what the write goes through
+      const kept: Array<[string, ...string[]]> = [
+        ...written,
+        ["objectValue", "Holder"],
+        ["holdsProperty", "Holder", "kept", "client"],
+      ];
+      expect(containedIn(kept, "Holder")).toEqual(["kept:client"]);
+    });
   });
 });
 
@@ -1378,7 +1464,7 @@ describe("a value read under the site its receiver was made at", () => {
     ["call", "created", "axiosCreate"],
     ["bodyCalls", "Api", "axiosCreate"],
     ["makesCall", "Api", "created"],
-    ["storesProperty", "Api", "client", "created"],
+    ["storesProperty", "Api", "client", "created", "receiver"],
     ["instanceOf", "Api#self", "Api"],
     ["func", "items"],
     ["paramOf", "items", "0", "path"],
@@ -1587,7 +1673,7 @@ describe("a value read under the site its receiver was made at", () => {
       ["func", "prime"],
       ["holdsProperty", "Api", "prime", "prime"],
       ["writtenValue", "primed"],
-      ["storesProperty", "prime", "client", "primed"],
+      ["storesProperty", "prime", "client", "primed", "receiver"],
     ];
     expect(writtenAsUnder(twoStores, "v1Client", "v1Site")).toEqual([
       "created",
@@ -1600,7 +1686,7 @@ describe("a value read under the site its receiver was made at", () => {
       ["objectValue", "Api"],
       ["initializes", "Api", "Api"],
       ["writtenValue", "created"],
-      ["storesProperty", "Api", "client", "created"],
+      ["storesProperty", "Api", "client", "created", "receiver"],
       ["instanceOf", "Api#self", "Api"],
       ["readsProperty", "selfClient", "Api#self", "client"],
     ];
@@ -1613,7 +1699,7 @@ describe("a value read under the site its receiver was made at", () => {
       ["initializes", "Base", "Base"],
       ["paramOf", "Base", "0", "baseParam"],
       ["writtenValue", "baseCreated"],
-      ["storesProperty", "Base", "client", "baseCreated"],
+      ["storesProperty", "Base", "client", "baseCreated", "receiver"],
       ["objectValue", "Sub"],
       ["initializes", "Sub", "Sub"],
       ["binds", "BaseRef", "Base"],

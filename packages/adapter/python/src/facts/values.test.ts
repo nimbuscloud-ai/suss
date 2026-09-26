@@ -596,6 +596,72 @@ describe("python value facts", () => {
     expect(rows(db, "storesProperty").map((row) => row[1])).toEqual(["app"]);
   });
 
+  describe("a property written through a name", () => {
+    it("is keyed on a module-level name", async () => {
+      const db = await factsFor(
+        "job = ReportJob()\njob.on_failure = page_oncall\n",
+      );
+      expect(rows(db, "storesProperty")).toEqual([
+        ["#job", "on_failure", "#page_oncall", "name"],
+      ]);
+    });
+
+    it("is keyed on a local of the function that writes it", async () => {
+      const source = [
+        "def run():",
+        "    job = ReportJob()",
+        "    job.retries = limit",
+        "",
+      ].join("\n");
+      const db = await factsFor(source);
+      const [funcKey] = rows(db, "func")[0] ?? [];
+      expect(rows(db, "storesProperty")).toEqual([
+        [`${funcKey}#job`, "retries", "#limit", "name"],
+      ]);
+    });
+
+    it("is left out when the function writes a name another scope declares", async () => {
+      const db = await factsFor(
+        [
+          "job = ReportJob()",
+          "def setup():",
+          "    job.on_failure = page_oncall",
+          "",
+        ].join("\n"),
+      );
+      expect(rows(db, "storesProperty")).toEqual([]);
+    });
+
+    it("is left out when the body reads the property before writing it", async () => {
+      const db = await factsFor(
+        "job = ReportJob()\nprint(job.retries)\njob.retries = limit\n",
+      );
+      expect(rows(db, "storesProperty")).toEqual([]);
+    });
+
+    it("settles two writes in order on the last one", async () => {
+      const db = await factsFor(
+        "job = ReportJob()\njob.retries = first\njob.retries = second\n",
+      );
+      expect(rows(db, "storesProperty")).toEqual([
+        ["#job", "retries", "#second", "name"],
+      ]);
+    });
+
+    it("is left out when a branch decides which write runs", async () => {
+      const db = await factsFor(
+        [
+          "job = ReportJob()",
+          "job.retries = first",
+          "if slow:",
+          "    job.retries = second",
+          "",
+        ].join("\n"),
+      );
+      expect(rows(db, "storesProperty")).toEqual([]);
+    });
+  });
+
   it("says nothing about a subscript assignment", async () => {
     const db = await factsFor("registry['app'] = build()\n");
     expect(rows(db, "binds")).toEqual([]);
