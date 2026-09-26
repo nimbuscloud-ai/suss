@@ -11,7 +11,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { loadChangeListFile } from "@suss/contract-intent";
+import { ChangeListRejected, loadChangeListFile } from "@suss/contract-intent";
 
 import { parseSummaryFile } from "./inspect.js";
 import { checkIntent } from "./intentCheck.js";
@@ -38,7 +38,10 @@ export interface IntentCheckCommandOptions {
 }
 
 export function intentCheckCommand(options: IntentCheckCommandOptions): number {
-  const list = readChangeList(options.changes);
+  const list = changeListOrRejection(options.changes);
+  if (list instanceof ChangeListRejected) {
+    return refuse(list, options.json === true);
+  }
   const prompts =
     options.prompts === undefined ? null : readPrompts(options.prompts);
   const result = checkIntent(
@@ -60,6 +63,37 @@ function fails(result: IntentCheckResult): boolean {
     result.notAsked.length > 0 ||
     result.entries.some((entry) => entry.verdict === "notDone")
   );
+}
+
+function changeListOrRejection(
+  file: string,
+): ChangeListSummary | ChangeListRejected {
+  try {
+    return loadChangeListFile(file);
+  } catch (error) {
+    if (error instanceof ChangeListRejected) {
+      return error;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Refuses a list somebody has to fix. With `--json` the refusal comes
+ * under `rejected`, so a caller such as the plugin's Stop hook can tell
+ * it apart from a run that failed for another reason.
+ */
+function refuse(rejected: ChangeListRejected, json: boolean): number {
+  if (json) {
+    const refusal = {
+      version: 1,
+      error: rejected.message,
+      rejected: { file: rejected.file, problems: rejected.problems },
+    };
+    process.stdout.write(`${JSON.stringify(refusal, null, 2)}\n`);
+  }
+  process.stderr.write(`${rejected.message}\n`);
+  return 1;
 }
 
 /** The change list, or a usage error that says what in it does not fit. */

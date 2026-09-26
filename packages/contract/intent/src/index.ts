@@ -106,19 +106,46 @@ export function loadIntentFile(filepath: string): IntentSummary {
 }
 
 /**
+ * A change list that is missing, does not parse, or does not fit the
+ * schema. A caller catches this to tell a list somebody has to fix apart
+ * from any other failure.
+ */
+export class ChangeListRejected extends Error {
+  constructor(
+    readonly file: string,
+    readonly problems: ReadonlyArray<{ path: string; message: string }>,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/**
  * Reads a change list, the behavior changes an agent says it will make
  * for one request, and converts it. A list that does not fit the schema
- * throws with every problem listed, so the agent can fix them in one go.
+ * throws `ChangeListRejected` with every problem listed, so the agent can
+ * fix them in one go.
  */
 export function loadChangeListFile(filepath: string): ChangeListSummary {
   const resolved = path.resolve(filepath);
-  const parsed = parseChangeList(parseDocumentFile(resolved, "Change list"));
+  const parsed = parseChangeList(readChangeListDocument(resolved));
   if (parsed.ok) {
     return parsed.list;
   }
-  throw new Error(
+  throw new ChangeListRejected(
+    resolved,
+    parsed.problems,
     `The change list ${resolved} does not fit its schema:\n${issueLines(parsed.problems)}`,
   );
+}
+
+function readChangeListDocument(file: string): unknown {
+  try {
+    return parseDocumentFile(file, "Change list");
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new ChangeListRejected(file, [{ path: "", message }], message);
+  }
 }
 
 function issueLines(

@@ -81,16 +81,22 @@ export interface StopReport {
 /** What `suss intent check --json` writes. */
 export type IntentCheck = IntentCheckResult & { version: number; text: string };
 
-/** What the Stop hook knows about the change list: its verdicts, or why it could not be read. */
+/**
+ * What the Stop hook knows about the change list: its verdicts, why the
+ * list itself could not be read, or why suss could not check it.
+ */
 export type IntentVerdicts =
   | { kind: "checked"; check: IntentCheck }
-  | { kind: "unreadable"; why: string };
+  | { kind: "unreadable"; why: string }
+  | { kind: "failed"; why: string };
 
 /** How long each hook waits before it leaves the work to a later hook. */
 export interface Budgets {
   startMs: number;
   editMs: number;
   stopMs: number;
+  /** How long each comparison a stop runs may take. */
+  compareMs: number;
 }
 
 export interface HookContext {

@@ -193,6 +193,8 @@ With `--prompts`, the quote an entry gives, its own `asked` or else the list's, 
 
 `--json` writes `{ version, entries, notAsked, explained, fromWrappers, text }`. Each entry has `said`, `verdict` (`done`, `notDone` or `unchecked`), `reason`, `units`, `asked` and `requested`. Each `notAsked` item is one boundary with its `lines`, and an `identity` that stays the same for as long as those lines do, so a caller can act on each change once. `text` is the report the command prints without `--json`. From Node, the same comparison is `checkIntent` in `@suss/cli`.
 
+When the change list itself is missing, does not parse or does not fit its schema, `--json` writes `{ version, error, rejected }` instead, where `rejected` is `{ file, problems }` and each problem is `{ path, message }`. Any other failure writes `{ error }` alone, or nothing when suss did not get as far as writing. So a caller can tell a list somebody has to fix from a run that failed.
+
 The [suss plugin for Claude Code](/guides/supervise-an-agent#the-change-list) runs this at every stop, against the change list the agent wrote before its first edit.
 
 ### Exit codes

@@ -21,6 +21,10 @@ export interface FakeScript {
   intent?: IntentCheck;
   /** `intent check` refuses the change list with this sentence. */
   intentRefuses?: string;
+  /** How long `intent check` takes. */
+  intentMs?: number;
+  /** `intent check` crashes, or is missing as in a release without it. */
+  intentFails?: "crash" | "missing";
 }
 
 const BIN = `import fs from "node:fs";
@@ -52,8 +56,22 @@ const commands = {
     return 0;
   },
   intent: async () => {
+    if (args[1] === "keep") {
+      process.stdout.write("Kept 1 intent document.\\n");
+      return 0;
+    }
+    await new Promise((resolve) => setTimeout(resolve, script.intentMs ?? 0));
+    if (script.intentFails === "missing") {
+      process.stderr.write('There is no "intent check". intent has outcomes.\\n');
+      return 1;
+    }
+    if (script.intentFails === "crash") {
+      process.stderr.write("TypeError: Cannot read properties of undefined (reading 'transitions')\\n    at checkIntent (intentCheck.js:1:1)\\n");
+      return 1;
+    }
     if (script.intentRefuses !== undefined) {
-      process.stdout.write(JSON.stringify({ error: script.intentRefuses }));
+      const file = args[2];
+      process.stdout.write(JSON.stringify({ version: 1, error: script.intentRefuses, rejected: { file, problems: [{ path: "changes.0", message: script.intentRefuses }] } }));
       process.stderr.write(script.intentRefuses + "\\n");
       return 1;
     }

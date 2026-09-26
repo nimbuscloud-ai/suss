@@ -136,6 +136,8 @@ explained   ~ POST /orders responds 409
 
 A stop blocks once on each entry that is not done and once on each boundary that changed where nobody asked, the same way it blocks once on a new error. An unchecked entry is one suss has no spelling for, such as a new value of a type, and it never blocks. An entry whose quote is in none of your messages is listed as unrequested, so you can see what the agent added on its own. Once a stop passes, the list is filed away, and the next request starts with none. A session with no list gets the report from [What it looks like](#what-it-looks-like).
 
+A list the agent wrote wrong, one that does not parse or uses a field the format does not have, blocks the stop once so the agent can fix it. When suss itself cannot run the check, because it ran out of time, crashed, or is a release without `suss intent check`, nothing blocks. You get the report of what changed, with one line saying why the list was not checked.
+
 Two slash commands go with it. `/suss:intent` prints the current list. `/suss:keep-intent` writes the list as boundary intent documents in `intent/`, with your request as each one's purpose, so that [`suss check --intent`](/guides/check-against-intent) checks the code against them from then on.
 
 ## When a project is large
@@ -149,6 +151,7 @@ To give the hooks more time, set these in the environment Claude Code runs in, i
 | `SUSS_SUPERVISOR_START_MS` | 85000 | How long session start waits for the first reading. |
 | `SUSS_SUPERVISOR_EDIT_MS` | 5000 | How long an edit's hook waits for its result. |
 | `SUSS_SUPERVISOR_STOP_MS` | 45000 | How long a stop waits for the last edits to be read, before it compares. |
+| `SUSS_SUPERVISOR_COMPARE_MS` | 60000 | How long each comparison a stop runs may take, the change list check among them. |
 
 ## The session record
 

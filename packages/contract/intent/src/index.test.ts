@@ -7,6 +7,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  ChangeListRejected,
   loadChangeListFile,
   loadIntentDirectory,
   loadIntentDoc,
@@ -103,6 +104,33 @@ describe("loadChangeListFile", () => {
       /^Change list not found: /,
     );
   });
+
+  it("throws ChangeListRejected for every way the list itself is wrong", () => {
+    const broken = path.join(tmpDir, "broken.yaml");
+    fs.writeFileSync(broken, "changes: [\n");
+    const misfit = path.join(tmpDir, "misfit.yaml");
+    fs.writeFileSync(misfit, "changes:\n  - adds: POST /a\n    at: POST /b\n");
+
+    for (const file of [broken, misfit, path.join(tmpDir, "none.yaml")]) {
+      expect(() => loadChangeListFile(file)).toThrow(ChangeListRejected);
+    }
+    expect(rejectionOf(misfit)).toMatchObject({
+      file: misfit,
+      problems: [{ path: "changes.0", message: expect.any(String) }],
+    });
+    expect(rejectionOf(broken)?.problems).toEqual([
+      { path: "", message: expect.stringContaining("failed to parse") },
+    ]);
+  });
+
+  function rejectionOf(file: string): ChangeListRejected | null {
+    try {
+      loadChangeListFile(file);
+      return null;
+    } catch (error) {
+      return error instanceof ChangeListRejected ? error : null;
+    }
+  }
 });
 
 describe("loadIntentDoc", () => {

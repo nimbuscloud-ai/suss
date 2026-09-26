@@ -218,7 +218,35 @@ describe("suss intent check", () => {
     expect(run.stderr).toContain(
       "changes.0: an entry has exactly one of adds, removes or changes",
     );
-    expect(JSON.parse(run.stdout).error).toContain("does not fit its schema");
+    const json = JSON.parse(run.stdout);
+    expect(json.error).toContain("does not fit its schema");
+    expect(json.rejected).toEqual({
+      file: path.join(dir, "changes.yaml"),
+      problems: [
+        {
+          path: "changes.0",
+          message: "an entry has exactly one of adds, removes or changes",
+        },
+      ],
+    });
+  });
+
+  it("marks a list that does not parse as rejected, and a usage mistake as not", async () => {
+    const dir = project([], [], "changes: [\n");
+
+    const broken = await capture(checkArgs(dir, "--json"));
+    fs.writeFileSync(path.join(dir, "changes.yaml"), CANCEL_LIST);
+    fs.rmSync(path.join(dir, "after"), { recursive: true });
+    const missingSide = await capture(checkArgs(dir, "--json"));
+
+    expect(broken.exit).toBe(1);
+    expect(JSON.parse(broken.stdout).rejected.problems[0].message).toContain(
+      "failed to parse",
+    );
+    expect(missingSide.exit).toBe(1);
+    expect(JSON.parse(missingSide.stdout)).toEqual({
+      error: expect.stringContaining("Nothing at"),
+    });
   });
 
   it("refuses a folder on one side and a file on the other", async () => {

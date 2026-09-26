@@ -22,6 +22,7 @@ import {
 import { parseSinceReport, startWorker, stopWorker } from "./queue.mjs";
 import {
   renderEditReport,
+  renderIntentFailure,
   renderIntentReminder,
   renderStopReport,
 } from "./report.mjs";
@@ -34,9 +35,6 @@ import { findSuss, runSuss, whyItFailed } from "./suss.mjs";
 /** @typedef {import("./types.js").IntentVerdicts} IntentVerdicts */
 /** @typedef {Record<string, unknown>} HookInput */
 /** @typedef {Record<string, unknown> | null} HookOutput */
-
-/** How long a comparison run at a stop may take. */
-const COMPARE_LIMIT_MS = 60 * 1000;
 
 /** How many characters of the behavioral diff one stop report shows. */
 const DIFF_BUDGET = 5000;
@@ -85,6 +83,7 @@ export function contextFor(input) {
       startMs: budget("SUSS_SUPERVISOR_START_MS", 85_000),
       editMs: budget("SUSS_SUPERVISOR_EDIT_MS", 5_000),
       stopMs: budget("SUSS_SUPERVISOR_STOP_MS", 45_000),
+      compareMs: budget("SUSS_SUPERVISOR_COMPARE_MS", 60_000),
     },
   };
 }
@@ -260,7 +259,7 @@ async function stopReport(session, context) {
   const run = (/** @type {string[]} */ args) =>
     runSuss(suss, args, {
       cwd: context.projectDir,
-      timeoutMs: COMPARE_LIMIT_MS,
+      timeoutMs: context.budgets.compareMs,
     });
 
   const baseline = session.snapshotDir("baseline");
@@ -288,6 +287,8 @@ async function stopReport(session, context) {
     ? await intentVerdicts(session, run)
     : null;
   const intentBlocking = blocksOnIntent(intent, new Set(record.intentBlocked));
+  const blocks = blocking.length + intentBlocking.length > 0;
+  const againstTheList = intent !== null && intent.kind !== "failed";
   const report = {
     since:
       session.snapshotMeta("baseline")?.from === "stop"
@@ -295,7 +296,7 @@ async function stopReport(session, context) {
         : "the session started",
     // The change list's verdicts cover every line of the diff, so the
     // report shows those instead of the diff itself.
-    diffs: intent === null ? await behaviorDiffs(session, run) : [],
+    diffs: againstTheList ? [] : await behaviorDiffs(session, run),
     intent,
     intentBlocking: intentBlocking.length > 0,
     changeList: session.intentFile(),
@@ -303,11 +304,18 @@ async function stopReport(session, context) {
     resolved: since.resolved.filter(stillCounts),
     blocking,
     run: newRun,
-    caveats: baselineCaveats(session),
+    // A check suss could not run is for the developer to know about and
+    // not for the agent to fix, so only a report that passes says so.
+    caveats: [
+      ...baselineCaveats(session),
+      ...(blocks || intent?.kind !== "failed"
+        ? []
+        : [renderIntentFailure(intent.why)]),
+    ],
   };
   const text = renderStopReport(report);
 
-  if (blocking.length + intentBlocking.length > 0) {
+  if (blocks) {
     session.setStopRecord({
       ...record,
       blocked: [...record.blocked, ...blocking.map((f) => f.identity)],
@@ -359,26 +367,48 @@ async function intentVerdicts(session, run) {
     ...(fs.existsSync(prompts) ? ["--prompts", prompts] : []),
     "--json",
   ]);
-  const parsed = parseIntentCheck(checked.stdout);
-  if (parsed !== null) {
-    return { kind: "checked", check: parsed };
-  }
-  return { kind: "unreadable", why: whyItFailed(checked) };
+  return verdictsFrom(checked);
 }
 
 /**
- * The verdicts, or null when the output is not a report. A change list
- * that does not fit its schema comes back as `{ error }` instead.
+ * What `intent check` printed, read three ways: the verdicts; a refusal
+ * under `rejected`, when the list itself is wrong and the agent can fix
+ * it; or anything else, when suss ran out of time, crashed, or is a
+ * release without the command.
  *
- * @param {string} stdout
- * @returns {import("./types.js").IntentCheck | null}
+ * @param {import("./types.js").SussRun} checked
+ * @returns {IntentVerdicts}
  */
-function parseIntentCheck(stdout) {
+function verdictsFrom(checked) {
+  const printed = checked.failure === undefined ? jsonOf(checked.stdout) : null;
+  if (Array.isArray(printed?.entries) && Array.isArray(printed?.notAsked)) {
+    return {
+      kind: "checked",
+      check: /** @type {import("./types.js").IntentCheck} */ (
+        /** @type {unknown} */ (printed)
+      ),
+    };
+  }
+  if (typeof printed?.rejected === "object" && printed.rejected !== null) {
+    return {
+      kind: "unreadable",
+      why:
+        typeof printed.error === "string"
+          ? printed.error
+          : whyItFailed(checked),
+    };
+  }
+  return { kind: "failed", why: whyItFailed(checked) };
+}
+
+/**
+ * @param {string} stdout
+ * @returns {Record<string, unknown> | null}
+ */
+function jsonOf(stdout) {
   try {
     const parsed = JSON.parse(stdout);
-    return Array.isArray(parsed?.entries) && Array.isArray(parsed?.notAsked)
-      ? parsed
-      : null;
+    return typeof parsed === "object" && parsed !== null ? parsed : null;
   } catch {
     return null;
   }

@@ -19,6 +19,7 @@ import type {
   SinceFinding,
   SinceReport,
 } from "../scripts/types.js";
+import type { FakeScript } from "./fakeSuss.js";
 
 const FIXTURE = path.resolve(__dirname, "../../../fixtures/supervisor-orders");
 const SESSION = "hook-test";
@@ -537,6 +538,76 @@ describe("with a change list", () => {
       "an entry has exactly one of adds, removes or changes",
     );
     expect(second.output?.decision).toBeUndefined();
+  });
+
+  const SUSS_FAILURES: Array<{
+    name: string;
+    script: FakeScript;
+    env: Record<string, string>;
+    says: string;
+  }> = [
+    {
+      name: "runs past its time",
+      script: { intentMs: 10_000 },
+      env: { SUSS_SUPERVISOR_COMPARE_MS: "500" },
+      says: "suss did not finish within 1s",
+    },
+    {
+      name: "is a release without the command",
+      script: { intentFails: "missing" },
+      env: {},
+      says: 'There is no "intent check". intent has outcomes.',
+    },
+    {
+      name: "crashes",
+      script: { intentFails: "crash" },
+      env: {},
+      says: "TypeError: Cannot read properties of undefined (reading 'transitions')",
+    },
+  ];
+
+  for (const failure of SUSS_FAILURES) {
+    it(`tells the developer once, and blocks nothing, when intent check ${failure.name}`, () => {
+      installFakeSuss(project, failure.script);
+      runHook(event("session-start"), project, {});
+      writeChangeList();
+
+      const stop = runHook(event("stop"), project, failure.env);
+      const next = runHook(event("stop"), project, failure.env);
+
+      expect(stop.status).toBe(0);
+      expect(stop.output?.decision).toBeUndefined();
+      const notice = String(stop.output?.systemMessage);
+      expect(notice).toContain("suss: what changed since the session started.");
+      expect(notice).not.toContain("could not read the change list");
+      expect(notice).toContain(
+        `suss could not check this turn's work against the change list, so this report shows what changed instead. ${failure.says}`,
+      );
+      expect(fs.existsSync(sessionFile("intent.yaml"))).toBe(false);
+      expect(next.stdout).toBe("");
+    });
+  }
+
+  it("keeps a suss failure out of a stop that blocks on something else", () => {
+    installFakeSuss(project, { intentFails: "crash" });
+    runHook(event("session-start"), project, {});
+    writeChangeList();
+    scriptFakeSuss(project, {
+      intentFails: "crash",
+      check: sinceReport([storeError()]),
+    });
+
+    const blocked = runHook(event("stop"), project, {});
+    const passed = runHook(event("stop"), project, {});
+
+    expect(blocked.output?.decision).toBe("block");
+    expect(String(blocked.output?.reason)).not.toContain(
+      "could not check this turn's work",
+    );
+    expect(passed.output?.decision).toBeUndefined();
+    expect(String(passed.output?.systemMessage)).toContain(
+      "suss could not check this turn's work against the change list",
+    );
   });
 
   it("reports as it did before when the session has no change list", () => {

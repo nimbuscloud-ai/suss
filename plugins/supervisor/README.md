@@ -48,6 +48,8 @@ The rules about what to pass on live here, in `policy.mjs`. What a finding is an
 
 The `UserPromptSubmit` hook tells the agent where to write the change list when the session has none, and the `suss:intent` skill says how. At a stop, the hook runs `suss intent check` over the list, the baseline, the current summaries and the recorded prompts. Whether an entry is done, and which changes nobody asked for, is decided in suss, so CI or another agent's integration gets the same answer from the same command. The plugin decides only what blocks: each entry not done and each boundary changed where nobody asked, once each, the way a new error blocks once. A stop that passes files the list away in `intents/`, so the next request starts with none. With no list, the stop report is the diff, as before.
 
+The hook reads what `intent check --json` printed three ways, in `verdictsFrom`. A report with `entries` is the verdicts. A refusal under `rejected` means the list itself is wrong, and the stop blocks once so the agent can fix it. Anything else means suss did not get as far as checking: it ran out of time, crashed, or is a release without the command. That never blocks, since the agent cannot fix it. The next report that reaches the developer shows the diff instead of the verdicts, with one line saying why.
+
 ## The session record
 
 `.suss/session/<session id>/` under the project:

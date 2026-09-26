@@ -115,10 +115,27 @@ export function mergeResults(results) {
 }
 
 /**
- * What the change list stops the agent on: each entry not done, and
- * each boundary changed where nobody asked and no `explained` line
- * keeps the change. Each blocks once, like a finding. A list suss could
- * not read blocks once as well, so the agent can fix it.
+ * What the change list stops the agent on, as keys for the stop record.
+ * A list the agent wrote wrong blocks, since the agent can fix it. A
+ * check suss itself could not run never blocks, since the agent cannot.
+ *
+ * @type {{ [K in IntentVerdicts["kind"]]: (intent: Extract<IntentVerdicts, { kind: K }>) => string[] }}
+ */
+const BLOCKED_ON = {
+  checked: (intent) => [
+    ...intent.check.entries
+      .filter((entry) => entry.verdict === "notDone")
+      .map((entry) => `not done: ${entry.said}`),
+    ...intent.check.notAsked.map((change) => `not asked: ${change.identity}`),
+  ],
+  unreadable: (intent) => [`unreadable: ${intent.why}`],
+  failed: () => [],
+};
+
+/**
+ * Each entry not done, each boundary changed where nobody asked and no
+ * `explained` line keeps the change, and a list suss could not read.
+ * Each blocks once, like a finding.
  *
  * @param {IntentVerdicts | null} intent
  * @param {Set<string>} alreadyBlocked
@@ -128,18 +145,12 @@ export function blocksOnIntent(intent, alreadyBlocked) {
   if (intent === null) {
     return [];
   }
-  const keys =
-    intent.kind === "unreadable"
-      ? [`unreadable: ${intent.why}`]
-      : [
-          ...intent.check.entries
-            .filter((entry) => entry.verdict === "notDone")
-            .map((entry) => `not done: ${entry.said}`),
-          ...intent.check.notAsked.map(
-            (change) => `not asked: ${change.identity}`,
-          ),
-        ];
-  return keys.filter((key) => !alreadyBlocked.has(key));
+  // The table is typed per kind, and a lookup by a runtime kind loses
+  // that narrowing, so the cast happens once here.
+  const keysOf = /** @type {(intent: IntentVerdicts) => string[]} */ (
+    BLOCKED_ON[intent.kind]
+  );
+  return keysOf(intent).filter((key) => !alreadyBlocked.has(key));
 }
 
 /**
