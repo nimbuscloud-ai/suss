@@ -221,6 +221,9 @@
       "path": "packages/values/tsconfig.typecheck.json"
     },
     {
+      "path": "plugins/supervisor/tsconfig.typecheck.json"
+    },
+    {
       "path": "tools/acceptance/tsconfig.typecheck.json"
     },
     {

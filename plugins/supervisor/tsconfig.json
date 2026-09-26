@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": true,
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"]
+  },
+  "include": ["scripts", "demo", "test"]
+}
