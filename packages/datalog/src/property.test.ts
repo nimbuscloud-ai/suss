@@ -17,6 +17,7 @@ import {
   lit,
   notLit,
   type Rule,
+  rowBudget,
   rule,
   type Tuple,
   variable as v,
@@ -233,6 +234,40 @@ describe("evaluate holds up under random rule sets", () => {
           evaluate(reference, second);
 
           expect(model(carriedOver)).toEqual(model(reference));
+        },
+      ),
+      { numRuns: 200, seed: PROPERTY_SEED },
+    );
+  });
+
+  it("empties a relation in one step the way retracting each fact does", () => {
+    fc.assert(
+      fc.property(
+        arbRules,
+        arbFacts,
+        arbFacts,
+        fc.constantFrom(...BASE, ...DERIVED),
+        (rules, before, after, emptied) => {
+          const byEach = evaluatedInOneGo(before, rules);
+          const whole = evaluatedInOneGo(before, rules);
+
+          expect(whole.retractAll(emptied)).toBe(
+            byEach.retract(emptied, [...byEach.facts(emptied)]),
+          );
+
+          const settle = (db: Database): number => {
+            for (const [relation, tuple] of after) {
+              db.add(relation, tuple);
+            }
+            const budget = rowBudget(Number.POSITIVE_INFINITY);
+            evaluate(db, rules, undefined, budget);
+            return budget.examined;
+          };
+          expect(settle(whole)).toBe(settle(byEach));
+          expect(model(whole)).toEqual(model(byEach));
+          expect(whole.lookup(emptied, 0, "a")).toEqual(
+            byEach.lookup(emptied, 0, "a"),
+          );
         },
       ),
       { numRuns: 200, seed: PROPERTY_SEED },
