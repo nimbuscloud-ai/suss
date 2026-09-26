@@ -281,4 +281,37 @@ describe("RubyWhySession", () => {
     const explained = value === null ? null : session.explain(value);
     expect(explained?.target.file).toBe("helpers.rb");
   });
+
+  it("describes a local written inside a method by name and line", () => {
+    fs.writeFileSync(
+      path.join(dir, "app.rb"),
+      [
+        "class Closer",
+        "  def close",
+        "    1",
+        "  end",
+        "end",
+        "",
+        "class OrderCloser",
+        "  def call(retries = 1)",
+        "    closer = Closer.new",
+        "    closer ||= Closer.new",
+        "    closer.close",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+
+    const session = new RubyWhySession({ dir });
+    const value = session.findCallee("app.rb", 11, 11, "close");
+    const explained = value === null ? null : session.explain(value);
+    expect(explained?.target).toEqual({
+      name: "close",
+      file: "app.rb",
+      line: 2,
+    });
+    expect(explained?.lines.join("\n")).toContain("closer (app.rb:");
+    expect(explained?.lines.join("\n")).not.toMatch(/:\d+-\d+#closer/);
+  });
 });
