@@ -13,6 +13,7 @@
  */
 
 import fs from "node:fs";
+import path from "node:path";
 
 import {
   bindingIs,
@@ -31,7 +32,7 @@ import { expandShorthand, looksLikeShorthand } from "./askShorthand.js";
 import {
   askWhy,
   isWhyQuestion,
-  preloadWhySessions,
+  preloadWhyQuestion,
   unitAt,
   WHY_SHAPES,
 } from "./askWhy.js";
@@ -61,6 +62,7 @@ import type { GroundingNote } from "./askGrounding.js";
 import type { WhyShape } from "./askWhy.js";
 import type { CallFacts, CallPath, FunctionKey } from "./callFacts.js";
 import type { LoadedSummaries } from "./loadedSummaries.js";
+import type { WhyPacks } from "./whyPacks.js";
 
 /** The questions that ask what does one thing at a given boundary. */
 type Direction = "reads" | "writes" | "invokes";
@@ -90,6 +92,8 @@ export interface AskOptions {
   output?: string;
   /** The source root for a why question. Defaults to the working directory. */
   project?: string;
+  /** The packs a why question's sessions load, as `preloadForQuestion` gave them back. Without them a step only a pack declares is not explained. */
+  whyPacks?: WhyPacks;
 }
 
 export interface ParsedQuestion {
@@ -201,15 +205,21 @@ export function answerQuestion(options: AskOptions): {
 }
 
 /**
- * Loads the parsers a why question needs, which load asynchronously, so a
- * caller awaits this before asking. Other questions read only summaries
- * and need nothing loaded.
+ * Loads what a why question needs, which loads asynchronously, so a
+ * caller awaits this before asking and passes the result on as
+ * `whyPacks`. That is the parsers, and the packs an extraction of the
+ * project loads. Other questions read only summaries, need nothing
+ * loaded, and get undefined.
  */
-export async function preloadForQuestion(raw: string): Promise<void> {
+export async function preloadForQuestion(
+  raw: string,
+  project?: string,
+): Promise<WhyPacks | undefined> {
   const question = parseQuestion(raw);
-  if (question !== null && isWhyQuestion(question)) {
-    await preloadWhySessions();
+  if (question === null || !isWhyQuestion(question)) {
+    return undefined;
   }
+  return await preloadWhyQuestion(path.resolve(project ?? process.cwd()));
 }
 
 export function parseQuestion(raw: string): ParsedQuestion | null {

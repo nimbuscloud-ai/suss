@@ -7,6 +7,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { preloadRubyGrammar } from "../parser.js";
 import { RubyWhySession } from "./why.js";
 
+import type { RubyPack } from "../pack.js";
+
 describe("RubyWhySession", () => {
   let dir: string;
 
@@ -208,6 +210,49 @@ describe("RubyWhySession", () => {
       // would derive far more than the facts the project has.
       expect(stats?.derivedFacts).toBeLessThan(3 * (stats?.baseFacts ?? 0));
     }, 20_000);
+  });
+
+  describe("a method called on what a pack's finder gave back", () => {
+    const activeRecordLike: RubyPack = {
+      name: "activerecord",
+      protocol: "postgresql",
+      discovery: [],
+      storage: [
+        {
+          baseClasses: ["ActiveRecord::Base"],
+          writes: [],
+          reads: [],
+          givesBack: ["find"],
+          storageSystem: "postgresql",
+        },
+      ],
+    };
+
+    const explainClose = (packs: readonly RubyPack[]) => {
+      fs.writeFileSync(
+        path.join(dir, "account.rb"),
+        "class Account < ActiveRecord::Base\n  def close\n    true\n  end\nend\n",
+      );
+      fs.writeFileSync(
+        path.join(dir, "closer.rb"),
+        "account = Account.find(1)\naccount.close\n",
+      );
+      const session = new RubyWhySession({ dir, packs });
+      const value = session.findExpression("closer.rb", 2, "close");
+      return value === null ? null : session.explain(value);
+    };
+
+    it("follows it to the model's method when the session has the pack", () => {
+      expect(explainClose([activeRecordLike])?.target).toEqual({
+        name: "close",
+        file: "account.rb",
+        line: 2,
+      });
+    });
+
+    it("cannot follow it without the pack, which is the only thing that says what find gives back", () => {
+      expect(explainClose([])).toBeNull();
+    });
   });
 
   it("returns null for a name with no expression on that line", () => {

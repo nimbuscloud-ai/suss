@@ -968,13 +968,14 @@ async function runAsk(args: string[]): Promise<number> {
     });
   }
 
-  await preloadForQuestion(question);
+  const whyPacks = await preloadForQuestion(question, values.project);
 
   const file = positionals[1];
   return ask({
     question,
     ...(values.dir !== undefined ? { dir: values.dir } : {}),
     ...(values.project !== undefined ? { project: values.project } : {}),
+    ...(whyPacks !== undefined ? { whyPacks } : {}),
     ...(file !== undefined ? { file } : {}),
     ...(values.json === true ? { json: true } : {}),
     ...(values.all === true ? { all: true } : {}),
