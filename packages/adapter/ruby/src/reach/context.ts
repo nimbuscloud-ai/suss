@@ -16,6 +16,7 @@ import {
   field,
   NO_BODY_BLOCKS,
   OWN_BODY_TYPES,
+  selfSingletonBody,
 } from "../ast.js";
 import { nodeId } from "../facts/values.js";
 import { walkDefinitions } from "../scope.js";
@@ -49,10 +50,8 @@ export async function buildReachContext(
     walkDefinitions(root, (info) => {
       classes.push({ file, info });
       classNames.set(nodeId(file, info.node), info.qualifiedName);
-      for (const statement of namedChildren(info.bodyNode)) {
-        if (METHOD_TYPES.has(statement.type)) {
-          classOfMethod.set(nodeId(file, statement), info.qualifiedName);
-        }
+      for (const method of methodsWrittenIn(info.bodyNode)) {
+        classOfMethod.set(nodeId(file, method), info.qualifiedName);
       }
     });
   }
@@ -132,6 +131,18 @@ function namedChildren(node: RbNode | null): RbNode[] {
     return [];
   }
   return node.namedChildren.filter((child): child is RbNode => child !== null);
+}
+
+/** The methods a class body defines directly, a `def` inside its `class << self` included. */
+function methodsWrittenIn(body: RbNode | null): RbNode[] {
+  return namedChildren(body).flatMap((statement) => {
+    if (METHOD_TYPES.has(statement.type)) {
+      return [statement];
+    }
+    return namedChildren(selfSingletonBody(statement)).filter((inner) =>
+      METHOD_TYPES.has(inner.type),
+    );
+  });
 }
 
 /** Every `def` written outside any class, module or other method. Ruby makes each one a private method of every object. */

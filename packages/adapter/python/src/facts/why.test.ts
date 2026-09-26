@@ -207,4 +207,41 @@ describe("PythonWhySession", () => {
     const explained = value === null ? null : session.explain(value);
     expect(explained?.target.file).toBe("helpers.py");
   });
+
+  it("describes a local and a parameter written inside a function by name and line", () => {
+    fs.writeFileSync(
+      path.join(dir, "app.py"),
+      [
+        "class Closer:",
+        "    def close(self):",
+        "        return 1",
+        "",
+        "",
+        "def close_with(closer: Closer, retries=1, *rest, **options):",
+        "    again = closer",
+        "    again.close()",
+        "    return closer.close()",
+        "",
+        "",
+        "close_with(Closer())",
+        "",
+      ].join("\n"),
+    );
+
+    const session = new PythonWhySession({ dir });
+    const explain = (line: number, text: string) => {
+      const value = session.findExpression("app.py", line, text);
+      return value === null ? null : session.explain(value);
+    };
+    expect(explain(8, "again.close")?.chain).toEqual([
+      "again.close (app.py:8)",
+      "close (app.py:2)",
+    ]);
+    expect(explain(8, "again.close")?.lines.join("\n")).toContain(
+      "again (app.py:7)",
+    );
+    expect(explain(9, "closer.close")?.lines.join("\n")).toContain(
+      "closer (app.py:6)",
+    );
+  });
 });

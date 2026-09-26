@@ -20,7 +20,7 @@ import {
 } from "@suss/resolution";
 
 import { methodInAncestry } from "../ancestry.js";
-import { field, singletonMethodsByName } from "../ast.js";
+import { definesClassMethod, field, singletonMethodsByName } from "../ast.js";
 import { classBehind } from "../baseClass.js";
 import { RUBY_PROGRAM } from "../facts/resolve.js";
 import { readKey } from "../facts/values.js";
@@ -50,7 +50,12 @@ export interface ReachedFunction {
 
 export type CalleeResolution =
   | { readonly kind: "followed"; readonly target: ReachedFunction }
-  | { readonly kind: "stopped"; readonly reason: UnfollowedReason };
+  | {
+      readonly kind: "stopped";
+      readonly reason: UnfollowedReason;
+      /** Set on a call on `self` the resolver could not settle, which the link step may still match by name in the caller's file. */
+      readonly matchByName?: true;
+    };
 
 export interface ReachContext {
   readonly lookup: AncestorLookup;
@@ -101,6 +106,16 @@ const stop = (reason: UnfollowedReason): CalleeResolution => ({
 });
 
 const NO_DECLARATION = stop("noDeclaration");
+
+/**
+ * A call on `self` that nothing in the run declares. The method may be
+ * one the library adds, or one the name match in the caller's file finds.
+ */
+const UNSETTLED_ON_SELF: CalleeResolution = {
+  kind: "stopped",
+  reason: "noDeclaration",
+  matchByName: true,
+};
 
 function followed(target: ReachedFunction): CalleeResolution {
   return { kind: "followed", target };
@@ -386,9 +401,9 @@ function leavesRoomForATopLevelMethod(reason: UnfollowedReason): boolean {
 }
 
 /**
- * A call with no receiver or with `self`. Looks in the enclosing class's
- * ancestry first, then among methods the project defines outside any
- * class, which Ruby makes private methods of `Object`.
+ * A call with no receiver or with `self`. Looks on the enclosing class
+ * first, then among methods the project defines outside any class, which
+ * Ruby makes private methods of `Object`.
  */
 function resolveImplicitSelf(
   methodName: string,
@@ -396,7 +411,8 @@ function resolveImplicitSelf(
   ctx: ReachContext,
 ): CalleeResolution {
   if (site.enclosingQualifiedName !== null) {
-    const onClass = methodOnAncestryOf(
+    const onClass = methodOnSelf(
+      site,
       site.enclosingQualifiedName,
       methodName,
       ctx,
@@ -408,7 +424,57 @@ function resolveImplicitSelf(
       return onClass;
     }
   }
-  return resolveTopLevelName(methodName, ctx);
+  const topLevel = resolveTopLevelName(methodName, ctx);
+  if (topLevel.kind === "followed" || topLevel.reason !== "noDeclaration") {
+    return topLevel;
+  }
+  return declaredForTheOtherSelf(site, methodName, ctx)
+    ? NO_DECLARATION
+    : UNSETTLED_ON_SELF;
+}
+
+/**
+ * Whether the enclosing class declares the name for the other kind of
+ * `self`: as an instance method when the call is in a class method, or as
+ * a class method when it is in an instance method. Ruby never runs that
+ * one from here, so a match by name would link the wrong method.
+ */
+function declaredForTheOtherSelf(
+  site: CallSite,
+  methodName: string,
+  ctx: ReachContext,
+): boolean {
+  const qualifiedName = site.enclosingQualifiedName;
+  if (qualifiedName === null) {
+    return false;
+  }
+  const other = inClassMethod(site, ctx)
+    ? methodOnAncestryOf(qualifiedName, methodName, ctx)
+    : singletonMethodOn(qualifiedName, methodName, ctx);
+  return other.kind === "followed";
+}
+
+function inClassMethod(site: CallSite, ctx: ReachContext): boolean {
+  return (
+    site.method !== null && definesClassMethod(site.method, ctx.bodyBlocks)
+  );
+}
+
+/**
+ * The method a call on `self` runs in the enclosing class. Inside a class
+ * method `self` is the class, so the call runs another class method.
+ * Anywhere else `self` is an instance, and the ancestry decides.
+ */
+function methodOnSelf(
+  site: CallSite,
+  qualifiedName: string,
+  methodName: string,
+  ctx: ReachContext,
+): CalleeResolution {
+  if (inClassMethod(site, ctx)) {
+    return singletonMethodOn(qualifiedName, methodName, ctx);
+  }
+  return methodOnAncestryOf(qualifiedName, methodName, ctx);
 }
 
 function resolveTopLevelName(
@@ -467,10 +533,11 @@ function reachedMethod(
 }
 
 /**
- * `Const.method`, a class method called on the constant, which runs a
- * `def self.method` in the class's own body. This does not walk the
- * ancestry, because a superclass's `def self.` methods are inherited
- * through a different mechanism from the one `include` and `prepend` use.
+ * A class method called on the class, as `Const.method` or as a bare call
+ * inside another class method, which runs a class method written in the
+ * class's own body. This does not walk the ancestry, because a
+ * superclass's class methods are inherited through a different mechanism
+ * from the one `include` and `prepend` use.
  */
 function singletonMethodOn(
   qualifiedName: string,

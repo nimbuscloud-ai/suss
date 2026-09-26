@@ -85,6 +85,23 @@ describe("why a method called on what a finder gave back resolves to the model's
     expect(text).toContain("resolves to cancel (app/models/order.rb:2)");
   });
 
+  it("reads a relative config path in suss.json against the project root when asked from a subdirectory", async () => {
+    write("suss.activerecord.json", ['{ "storageSystem": "postgresql" }']);
+    listPacks(["activerecord=suss.activerecord.json"]);
+
+    const before = process.cwd();
+    process.chdir(path.join(dir, "app"));
+    try {
+      const { exitCode, text } = await askWhy();
+
+      expect(text).not.toContain("did not load");
+      expect(exitCode).toBe(0);
+      expect(text).toContain("resolves to cancel (app/models/order.rb:2)");
+    } finally {
+      process.chdir(before);
+    }
+  });
+
   it("says the pack did not load when it cannot follow the call", async () => {
     listPacks(["activerecord"]);
 

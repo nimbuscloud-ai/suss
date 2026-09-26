@@ -273,19 +273,44 @@ export function languageOfPack(name: string): Language {
   return PACK_LANGUAGE[name] ?? "typescript";
 }
 
+/** A `-f` spec split at its `=` into the pack name and the config path. */
+function splitSpec(spec: string): { name: string; configPath?: string } {
+  const separator = spec.indexOf("=");
+  if (separator === -1) {
+    return { name: spec };
+  }
+  return {
+    name: spec.slice(0, separator),
+    configPath: spec.slice(separator + 1),
+  };
+}
+
+/**
+ * The spec with a relative config path resolved against `base`.
+ * parseFrameworkSpec reads a relative path against the working directory,
+ * which is what a user typing `-f` expects. A spec written in `suss.json`
+ * is relative to the project root, and a run can start anywhere, so it
+ * goes through here before it is loaded.
+ */
+export function packSpecFrom(base: string, spec: string): string {
+  const { name, configPath } = splitSpec(spec);
+  if (configPath === undefined) {
+    return spec;
+  }
+  return `${name}=${path.resolve(base, configPath)}`;
+}
+
 export function parseFrameworkSpec(spec: string): {
   name: string;
   options?: unknown;
   /** Absolute path of the file the options came from, when they came from one. */
   configFile?: string;
 } {
-  const separator = spec.indexOf("=");
-  if (separator === -1) {
-    return { name: spec };
+  const { name, configPath } = splitSpec(spec);
+  if (configPath === undefined) {
+    return { name };
   }
 
-  const name = spec.slice(0, separator);
-  const configPath = spec.slice(separator + 1);
   const resolved = path.resolve(configPath);
   if (!fs.existsSync(resolved)) {
     throw new Error(
@@ -1009,8 +1034,7 @@ export function languageOfRun(options: ExtractOptions): Language {
 }
 
 function specLanguage(spec: string): Language {
-  const separator = spec.indexOf("=");
-  return languageOfPack(separator === -1 ? spec : spec.slice(0, separator));
+  return languageOfPack(splitSpec(spec).name);
 }
 
 export async function extract(

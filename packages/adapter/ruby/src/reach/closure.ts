@@ -549,12 +549,11 @@ function scanBody(
 
 /**
  * Where the link step looks for a call's summary. A stop is placed at its
- * own call, where no summary can be, so nothing links it. A name called
- * on `self` that nothing declares is left unplaced, and the link step
- * then matches it by name in its own file. A method called on anything
- * else that nothing declares is placed at its call too, since a method
- * of the same name elsewhere in the caller's file is never what
- * `rows.delete(x)` runs.
+ * own call, where no summary can be, so nothing links it. A call on
+ * `self` the resolver could not settle is left unplaced, and the link
+ * step then matches it by name in its own file. Any other call that
+ * nothing declares is placed at its call too, since a method of the same
+ * name elsewhere in the caller's file is never what `rows.delete(x)` runs.
  */
 function placeCallee(
   placements: TargetPlacements,
@@ -571,7 +570,7 @@ function placeCallee(
     return;
   }
 
-  if (outcome.reason === "noDeclaration" && isCallOnSelf(call)) {
+  if (outcome.matchByName === true) {
     return;
   }
 
@@ -579,12 +578,6 @@ function placeCallee(
     file: where.displayPathOf(where.callerFile),
     span: spanOf(call),
   });
-}
-
-/** A call written with no receiver, or with `self` as the receiver. */
-function isCallOnSelf(call: RbNode): boolean {
-  const receiver = field(call, "receiver");
-  return receiver === null || receiver.type === "self";
 }
 
 /**

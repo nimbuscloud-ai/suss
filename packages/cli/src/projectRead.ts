@@ -13,7 +13,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { contract } from "./contract.js";
-import { extract } from "./extract.js";
+import { extract, packSpecFrom } from "./extract.js";
 import { inspectProject } from "./init.js";
 import {
   PROJECT_FILE,
@@ -65,6 +65,14 @@ export function extractEntryFor(
     (entry): entry is ExtractEntry =>
       entry.kind === "extract" && entry.language === language,
   );
+}
+
+/**
+ * The entry's packs as `extract` takes them. `suss.json` gives a config
+ * path relative to the project root, where the file is.
+ */
+export function packSpecsOf(entry: ExtractEntry, root: string): string[] {
+  return entry.packs.map((spec) => packSpecFrom(root, spec));
 }
 
 export function extractLanguagesOf(reads: readonly ReadEntry[]): string[] {
@@ -139,7 +147,7 @@ async function runEntry(
   }
   await extract({
     dir: root,
-    frameworks: entry.packs,
+    frameworks: packSpecsOf(entry, root),
     output: out,
     lang: entry.language as Language,
     ...(entry.project !== undefined

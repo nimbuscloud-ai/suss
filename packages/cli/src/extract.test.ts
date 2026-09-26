@@ -17,6 +17,7 @@ import {
   incompletenessPathFor,
   languageOfPack,
   languageOfRun,
+  packSpecFrom,
   parseFrameworkSpec,
   relativizeRenderTargets,
   relativizeSummaryPaths,
@@ -912,6 +913,22 @@ describe("parseFrameworkSpec", () => {
   it("says so when the config is not JSON", () => {
     const file = writeConfig("producers: []");
     expect(() => parseFrameworkSpec(`aws-sqs=${file}`)).toThrow(/is not JSON/);
+  });
+});
+
+describe("packSpecFrom", () => {
+  it("resolves a relative config path against the directory it is given", () => {
+    expect(packSpecFrom("/project", "aws-sqs=suss/sqs.json")).toBe(
+      `aws-sqs=${path.resolve("/project", "suss/sqs.json")}`,
+    );
+  });
+
+  it("leaves an absolute config path and a bare pack name as they are", () => {
+    const absolute = path.resolve("/elsewhere/sqs.json");
+    expect(packSpecFrom("/project", `aws-sqs=${absolute}`)).toBe(
+      `aws-sqs=${absolute}`,
+    );
+    expect(packSpecFrom("/project", "aws-sqs")).toBe("aws-sqs");
   });
 });
 
