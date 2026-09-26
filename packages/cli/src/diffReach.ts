@@ -25,7 +25,11 @@ import type { CallEdge, FunctionKey } from "./callFacts.js";
 /** One boundary a unit reaches, and the chain of calls that gets there. */
 export interface ReachedEffect {
   readonly relation: Relation;
+  /** The boundary and the detail together, which is how a report prints them. */
   readonly label: string;
+  readonly boundary: string;
+  /** The variable a config read takes, which the boundary label leaves out. */
+  readonly detail?: string;
   /** The calls from the unit serving the boundary to the unit that touches this one. */
   readonly through: readonly string[];
 }
@@ -134,7 +138,13 @@ function reachedFrom(
           if (reached.has(key)) {
             continue;
           }
-          reached.set(key, { relation: touch.relation, label, through });
+          reached.set(key, {
+            relation: touch.relation,
+            label,
+            boundary: touch.label,
+            ...(touch.detail === undefined ? {} : { detail: touch.detail }),
+            through,
+          });
         }
       }
       for (const edge of out.get(fn) ?? []) {

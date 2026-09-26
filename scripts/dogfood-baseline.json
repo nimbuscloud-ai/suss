@@ -56,7 +56,7 @@
       "name": "@suss/cli",
       "exports": 37,
       "internal": 574,
-      "consumers": 392,
+      "consumers": 391,
       "unfollowedCalls": 43
     },
     "packages/client/aiohttp": {

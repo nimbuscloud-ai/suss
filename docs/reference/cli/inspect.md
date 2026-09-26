@@ -101,7 +101,37 @@ A path whose body moved under the same status and the same test prints as one li
 
 When several boundaries got the same outcome from one wrapper, the report prints it once under a `From <wrapper>` heading, with how many of the boundaries that wrapper runs on have that outcome and which ones are missing it. The files whose units moved come last.
 
-`--diff --json` writes `{ version, changed, summaries }`, with each entry marked `added`, `removed` or `changed`, and the added and removed transitions written out in full.
+`--diff --json` writes `{ version, changed, summaries, boundaries, causes }`. `summaries` has an entry for each summary that moved, marked `added`, `removed` or `changed`, and a changed one has its added, removed and changed transitions written out in full.
+
+`boundaries` and `causes` contain what the printed report lists. The text and the JSON come from the same comparison of the two files, so they list the same boundaries and put the same lines under a wrapper. `boundaries` has one entry for each boundary block, `{ change, does, boundary, unit, file, outcomes, effects }`:
+
+```json
+{
+  "change": "changed",
+  "does": "serves",
+  "boundary": "GET /orders/{id}",
+  "unit": "show",
+  "file": "src/routes.ts",
+  "outcomes": [{ "change": "added", "outcome": "responds 404  when  !order" }],
+  "effects": [
+    {
+      "change": "added",
+      "effect": "writes postgresql:audit_log",
+      "relation": "writes",
+      "boundary": "postgresql:audit_log",
+      "through": ["recordAudit"]
+    }
+  ]
+}
+```
+
+Each outcome is `{ change, outcome }`. When the text prints a changed outcome as a `was` line and a `now` line, the entry also has `was`. When those two lines read the same because only a field the line leaves out moved, it has `fields` too, each with its old and new value. An outcome that came from a wrapper also has `from`, the wrapper's `{ file, name }`.
+
+Each effect is `{ change, effect, through }`. An effect at a boundary also has `relation` and `boundary`, and `detail` for the variable a config read takes. `through` lists every call between the boundary's unit and the unit that has the effect, and it is empty when the boundary's unit has the effect itself. The `outcome` and `effect` strings are the words the text prints, so a program should match on `relation` and `boundary` rather than parse them.
+
+`causes` has one entry per line printed under a `From <wrapper>` heading: `{ from, change, outcome, at, notAt, covered }`. `at` lists the boundaries that got the line, `notAt` the ones the wrapper runs on that did not, and `covered` how many it runs on. The line is left out of the `outcomes` of each boundary in `at`, and a boundary with nothing else left is left out of `boundaries`, as it is from the text.
+
+The JSON ignores `--budget` and `--chain`, and it lists every outcome of a boundary that came or went, where the text lists the first few. A field added to this output keeps `version` at 1. Renaming or removing one would change it.
 
 ## `suss inspect --flow`
 

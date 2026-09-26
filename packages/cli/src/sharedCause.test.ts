@@ -8,16 +8,17 @@ const FILTER = {
 };
 const OTHER = { file: "app/middleware/rate_limit.rb", name: "rate_limit" };
 
-/** One route's line, as the report has it before anything is lifted out. */
+/** One route's added outcome, as the report has it before anything is lifted out. */
 function line(
   boundary: string,
-  text: string,
+  outcome: string,
   wrapper: CausedLine["wrapper"] = FILTER,
 ): CausedLine {
   return {
     key: `app/controllers/orders.rb::${boundary}`,
     boundary,
-    text,
+    change: "added",
+    outcome,
     wrapper,
   };
 }
@@ -34,8 +35,8 @@ describe("a change that reached many boundaries from one place", () => {
   it("lifts the line every route got from the same filter", () => {
     const causes = causesOf(
       [
-        line("GET /orders", "+ 401  when  session[:user_id].nil?"),
-        line("POST /orders", "+ 401  when  session[:user_id].nil?"),
+        line("GET /orders", "401  when  session[:user_id].nil?"),
+        line("POST /orders", "401  when  session[:user_id].nil?"),
       ],
       RUNS_ON(["GET /orders", "POST /orders"]),
     );
@@ -47,7 +48,7 @@ describe("a change that reached many boundaries from one place", () => {
 
   it("leaves a line only one boundary got where it is", () => {
     const causes = causesOf(
-      [line("GET /orders", "+ 401  when  session[:user_id].nil?")],
+      [line("GET /orders", "401  when  session[:user_id].nil?")],
       RUNS_ON(["GET /orders"]),
     );
 
@@ -58,11 +59,11 @@ describe("a change that reached many boundaries from one place", () => {
     const causes = causesOf(
       [
         {
-          ...line("GET /orders", "+ 404  when  order.nil?"),
+          ...line("GET /orders", "404  when  order.nil?"),
           wrapper: undefined,
         },
         {
-          ...line("POST /orders", "+ 404  when  order.nil?"),
+          ...line("POST /orders", "404  when  order.nil?"),
           wrapper: undefined,
         },
       ],
@@ -75,10 +76,10 @@ describe("a change that reached many boundaries from one place", () => {
   it("keeps two wrappers that produced the same line apart", () => {
     const causes = causesOf(
       [
-        line("GET /orders", "+ 429  when  over_limit?"),
-        line("POST /orders", "+ 429  when  over_limit?"),
-        line("GET /health", "+ 429  when  over_limit?", OTHER),
-        line("POST /health", "+ 429  when  over_limit?", OTHER),
+        line("GET /orders", "429  when  over_limit?"),
+        line("POST /orders", "429  when  over_limit?"),
+        line("GET /health", "429  when  over_limit?", OTHER),
+        line("POST /health", "429  when  over_limit?", OTHER),
       ],
       RUNS_ON([]),
     );
@@ -92,8 +93,8 @@ describe("a change that reached many boundaries from one place", () => {
   it("names the routes the wrapper runs on that did not get it", () => {
     const [cause] = causesOf(
       [
-        line("GET /orders", "+ 401  when  session[:user_id].nil?"),
-        line("POST /orders", "+ 401  when  session[:user_id].nil?"),
+        line("GET /orders", "401  when  session[:user_id].nil?"),
+        line("POST /orders", "401  when  session[:user_id].nil?"),
       ],
       RUNS_ON(["GET /orders", "POST /orders", "GET /health"]),
     );
@@ -107,7 +108,7 @@ describe("a change that reached many boundaries from one place", () => {
 
   it("counts the exceptions once there are too many to name", () => {
     const [cause] = causesOf(
-      [line("GET /orders", "+ 401"), line("POST /orders", "+ 401")],
+      [line("GET /orders", "401"), line("POST /orders", "401")],
       RUNS_ON([
         "GET /orders",
         "POST /orders",
@@ -126,7 +127,7 @@ describe("a change that reached many boundaries from one place", () => {
 
   it("leaves the second line off when nothing the wrapper runs on missed it", () => {
     const [cause] = causesOf(
-      [line("GET /orders", "+ 401"), line("POST /orders", "+ 401")],
+      [line("GET /orders", "401"), line("POST /orders", "401")],
       RUNS_ON(["GET /orders", "POST /orders"]),
     );
 
@@ -140,8 +141,8 @@ describe("a change that reached many boundaries from one place", () => {
     // there and a reviewer sent to look would find nothing.
     const [cause] = sharedCauses(
       [
-        line("GET /orders", "+ 401  when  session[:user_id].nil?"),
-        line("POST /orders", "+ 401  when  session[:user_id].nil?"),
+        line("GET /orders", "401  when  session[:user_id].nil?"),
+        line("POST /orders", "401  when  session[:user_id].nil?"),
       ],
       RUNS_ON(["GET /orders", "POST /orders", "GET /health"]),
       (boundary, outcome) =>
@@ -152,10 +153,40 @@ describe("a change that reached many boundaries from one place", () => {
     expect(cause?.exceptions).toEqual([]);
   });
 
+  /** A route's outcome that the filter stopped producing. */
+  const removed = (boundary: string): CausedLine => ({
+    ...line(boundary, "401"),
+    change: "removed",
+  });
+
+  it("keeps an outcome a filter added apart from the same one it removed", () => {
+    const causes = causesOf(
+      [
+        line("GET /orders", "401"),
+        line("POST /orders", "401"),
+        removed("GET /a"),
+        removed("GET /b"),
+      ],
+      RUNS_ON([]),
+    );
+
+    expect(causes.map((cause) => cause.change)).toEqual(["removed", "added"]);
+  });
+
+  it("names a route that still has the outcome the filter removed elsewhere", () => {
+    const [cause] = sharedCauses(
+      [removed("GET /orders"), removed("POST /orders")],
+      RUNS_ON(["GET /orders", "POST /orders", "GET /health", "GET /status"]),
+      (boundary) => boundary === "GET /health",
+    );
+
+    expect(cause?.exceptions).toEqual(["GET /health"]);
+  });
+
   it("counts the boundaries once there are too many to name", () => {
     const many = ["GET /a", "GET /b", "GET /c", "GET /d"];
     const [cause] = causesOf(
-      many.map((boundary) => line(boundary, "+ 401")),
+      many.map((boundary) => line(boundary, "401")),
       RUNS_ON(many),
     );
 
@@ -166,7 +197,7 @@ describe("a change that reached many boundaries from one place", () => {
 
   it("falls back on the boundaries it saw when nothing says what the wrapper covers", () => {
     const [cause] = causesOf(
-      [line("GET /orders", "+ 401"), line("POST /orders", "+ 401")],
+      [line("GET /orders", "401"), line("POST /orders", "401")],
       RUNS_ON([]),
     );
 

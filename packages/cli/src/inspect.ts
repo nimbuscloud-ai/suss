@@ -62,6 +62,7 @@ import type {
   WrapperReference,
 } from "@suss/behavioral-ir";
 import type { InvokesInRun } from "@suss/checker";
+import type { Relation } from "@suss/ir-core";
 import type { EntrypointChange, ReachedEffect } from "./diffReach.js";
 import type { CausedLine, SharedCause } from "./sharedCause.js";
 
@@ -1807,6 +1808,8 @@ function defaultGuardMoved(before: Transition, after: Transition): boolean {
 
 /** One unit that moved, with what the report needs to say about it. */
 interface MovedUnit {
+  /** What the unit pairs by across the two runs. */
+  readonly key: string;
   readonly change: "added" | "removed" | "changed";
   readonly file: string;
   readonly name: string;
@@ -1815,14 +1818,46 @@ interface MovedUnit {
   readonly boundary: string | null;
   /** Whether crossing the boundary it is on leaves the process. */
   readonly leavesTheProcess: boolean;
-  readonly transitions: number;
-  /** What the unit responds with, for one that came or went whole. */
-  readonly outputs: readonly string[];
+  /**
+   * The outcomes that moved, or every outcome of a unit that came or went
+   * whole. The printed report lists only the first few of those.
+   */
+  readonly outcomes: readonly OutcomeLine[];
   /** What it started or stopped doing at a boundary of its own. */
-  readonly effectLines: readonly string[];
+  readonly effects: readonly EffectLine[];
   readonly counts: ChangeCounts;
   readonly diff: SummaryDiff | null;
 }
+
+/** One outcome that moved, in the words the report uses. */
+interface OutcomeLine {
+  readonly change: MovedUnit["change"];
+  /** The outcome and the test that leads to it. A changed one reads as it does now. */
+  readonly outcome: string;
+  /** How a changed outcome read before, when the report prints both. */
+  readonly was?: string;
+  /** Fields the outcome leaves out, each with its old and new value. */
+  readonly fields?: readonly string[];
+  /** The wrapper whose body produced this outcome, if one did. */
+  readonly wrapper: WrapperReference | undefined;
+}
+
+/** Something a boundary started or stopped doing, in the words the report uses. */
+interface EffectLine {
+  readonly change: "added" | "removed";
+  /** `writes postgresql:audit_log`, as the report prints it. */
+  readonly effect: string;
+  /** The relation and the boundary, for an effect at a boundary. */
+  readonly relation?: Relation;
+  readonly boundary?: string;
+  /** The variable a config read takes, which the boundary label leaves out. */
+  readonly detail?: string;
+  /** The calls from the unit to the one that does it, empty for its own effect. */
+  readonly through: readonly string[];
+}
+
+/** An effect before the report says whether it came or went. */
+type EffectWords = Omit<EffectLine, "change" | "through">;
 
 /**
  * How many outcomes and how many effects moved. A reader wants to know
@@ -1900,12 +1935,15 @@ function countLine(counts: ChangeCounts): string {
 }
 
 function movedUnit(
+  key: string,
   change: MovedUnit["change"],
   summary: BehavioralSummary,
   diff: SummaryDiff | null,
 ): MovedUnit {
   const binding = summary.identity.boundaryBinding;
+  const alone = summary.transitions.length === 1;
   return {
+    key,
     change,
     file: summary.location.file,
     name: summary.identity.name,
@@ -1913,25 +1951,39 @@ function movedUnit(
     recognition: binding === null ? null : binding.recognition,
     boundary: bindingLabel(summary),
     leavesTheProcess: binding !== null && leavesTheProcess(binding),
-    transitions: summary.transitions.length,
-    outputs: summary.transitions
-      .slice(0, OUTPUTS_LISTED)
-      .map((transition) =>
-        renderTransitionShort(
-          transition,
-          false,
-          summary.transitions.length === 1,
-        ),
-      ),
-    effectLines:
+    outcomes:
       diff === null
-        ? [...effectLabels(summary.transitions)]
-            .sort()
-            .map((label) => `${change === "added" ? "+" : "-"} ${label}`)
-        : effectChangeLines(diff),
+        ? wholeUnitOutcomes(change, summary)
+        : transitionLines(diff, alone),
+    effects:
+      diff === null ? wholeUnitEffects(change, summary) : effectChanges(diff),
     counts: diff === null ? countsOfWholeUnit(summary) : countsOf(diff),
     diff,
   };
+}
+
+/** Every outcome of a unit that came or went whole. */
+function wholeUnitOutcomes(
+  change: MovedUnit["change"],
+  summary: BehavioralSummary,
+): OutcomeLine[] {
+  const alone = summary.transitions.length === 1;
+  return summary.transitions.map((transition) => ({
+    change,
+    outcome: renderTransitionShort(transition, false, alone),
+    wrapper: undefined,
+  }));
+}
+
+/** Everything a unit that came or went whole does at a boundary. */
+function wholeUnitEffects(
+  change: MovedUnit["change"],
+  summary: BehavioralSummary,
+): EffectLine[] {
+  const came = change === "added" ? "added" : "removed";
+  return [...effectWords(summary.transitions).values()]
+    .sort(byEffect)
+    .map((words) => ({ change: came, ...words, through: [] }));
 }
 
 function changeCount(diff: SummaryDiff): number {
@@ -1946,20 +1998,20 @@ function changeCount(diff: SummaryDiff): number {
 function unitsThatMoved(pairing: DiffPairing): MovedUnit[] {
   const moved: MovedUnit[] = [];
 
-  for (const { summary } of pairing.added) {
-    moved.push(movedUnit("added", summary, null));
+  for (const { key, summary } of pairing.added) {
+    moved.push(movedUnit(key, "added", summary, null));
   }
 
-  for (const { summary } of pairing.removed) {
-    moved.push(movedUnit("removed", summary, null));
+  for (const { key, summary } of pairing.removed) {
+    moved.push(movedUnit(key, "removed", summary, null));
   }
 
-  for (const { before, after } of pairing.paired) {
+  for (const { key, before, after } of pairing.paired) {
     const diff = diffSummaries(before, after);
     if (changeCount(diff) === 0) {
       continue;
     }
-    moved.push(movedUnit("changed", after, diff));
+    moved.push(movedUnit(key, "changed", after, diff));
   }
 
   return moved;
@@ -1969,8 +2021,26 @@ function transitionWord(count: number): string {
   return `${count} transition${count === 1 ? "" : "s"}`;
 }
 
+/**
+ * An effect at a boundary. The detail goes after the boundary label
+ * because the label of a config read says only which recognizer read it.
+ */
+function atBoundary(
+  relation: Relation,
+  boundary: string,
+  detail: string | undefined,
+): EffectWords {
+  const label = detail === undefined ? boundary : `${boundary} ${detail}`;
+  return {
+    effect: `${relation} ${label}`,
+    relation,
+    boundary,
+    ...(detail === undefined ? {} : { detail }),
+  };
+}
+
 /** One effect as the diff report words it, or null to leave it out. */
-const EFFECT_LABELS: DispatchTable<Effect, string | null> = {
+const EFFECT_WORDS: DispatchTable<Effect, EffectWords | null> = {
   interaction: (effect) => {
     const [relation] = goesThroughRelation(effect.interaction)
       ? []
@@ -1978,50 +2048,75 @@ const EFFECT_LABELS: DispatchTable<Effect, string | null> = {
     if (relation === undefined) {
       return null;
     }
-    const label = `${relation} ${displayLabel(effect.binding)}`;
-    const detail = interactionDetail(effect.interaction);
-    return detail === undefined ? label : `${label} ${detail}`;
+    return atBoundary(
+      relation,
+      displayLabel(effect.binding),
+      interactionDetail(effect.interaction),
+    );
   },
-  mutation: (effect) => `${effect.operation}s ${effect.target}`,
-  emission: (effect) => `emits ${effect.event}`,
-  stateChange: (effect) => `sets ${effect.variable}`,
+  mutation: (effect) => ({ effect: `${effect.operation}s ${effect.target}` }),
+  emission: (effect) => ({ effect: `emits ${effect.event}` }),
+  stateChange: (effect) => ({ effect: `sets ${effect.variable}` }),
   // The source diff already shows a call to another function in the
   // project, and what that function does is reported under its own name.
   invocation: () => null,
 };
 
 function effectLabel(effect: Effect): string | null {
-  return dispatchByType(EFFECT_LABELS, effect);
+  return dispatchByType(EFFECT_WORDS, effect)?.effect ?? null;
 }
 
-function effectLabels(transitions: readonly Transition[]): Set<string> {
-  const labels = new Set<string>();
+/** The effects of these transitions, once each, by the words they print as. */
+function effectWords(
+  transitions: readonly Transition[],
+): Map<string, EffectWords> {
+  const words = new Map<string, EffectWords>();
   for (const transition of transitions) {
     for (const effect of transition.effects) {
-      const label = effectLabel(effect);
-      if (label !== null) {
-        labels.add(label);
+      const said = dispatchByType(EFFECT_WORDS, effect);
+      if (said !== null) {
+        words.set(said.effect, said);
       }
     }
   }
-  return labels;
+  return words;
+}
+
+/** The order the effects under one heading print in, by code unit. */
+function byEffect(a: EffectWords, b: EffectWords): number {
+  if (a.effect === b.effect) {
+    return 0;
+  }
+  return a.effect < b.effect ? -1 : 1;
+}
+
+/** The effects in `from` that `against` does not have. */
+function effectsOnlyIn(
+  from: ReadonlyMap<string, EffectWords>,
+  against: ReadonlyMap<string, EffectWords>,
+  change: EffectLine["change"],
+): EffectLine[] {
+  return [...from.values()]
+    .filter((words) => !against.has(words.effect))
+    .sort(byEffect)
+    .map((words) => ({ change, ...words, through: [] }));
 }
 
 /** What the unit itself started or stopped doing, once per effect. */
-function effectChangeLines(diff: SummaryDiff): string[] {
-  const before = effectLabels([
+function effectChanges(diff: SummaryDiff): EffectLine[] {
+  const before = effectWords([
     ...diff.removedTransitions,
     ...diff.changedTransitions.map((pair) => pair.before),
   ]);
-  const after = effectLabels([
+  const after = effectWords([
     ...diff.addedTransitions,
     ...diff.changedTransitions.map((pair) => pair.after),
   ]);
 
   return [
-    ...[...after].filter((label) => !before.has(label)).map((l) => `+ ${l}`),
-    ...[...before].filter((label) => !after.has(label)).map((l) => `- ${l}`),
-  ].sort();
+    ...effectsOnlyIn(after, before, "added"),
+    ...effectsOnlyIn(before, after, "removed"),
+  ];
 }
 
 /** The fields of a body, for one written out as a record. */
@@ -2088,30 +2183,26 @@ function trimmed(fields: readonly string[]): string[] {
 /** How many unchanged fields print beside the ones that moved. */
 const FIELDS_LISTED = 4;
 
-/** A line of a block, and the wrapper whose body produced it. */
-interface Line {
-  readonly text: string;
-  readonly wrapper: WrapperReference | undefined;
-}
-
 /** The wrapper whose body produced this outcome, if a wrapper did. */
 function wrapperOf(transition: Transition): WrapperReference | undefined {
   return readWrapperMetadata(transition)?.from;
 }
 
-function transitionLines(diff: SummaryDiff, alone: boolean): Line[] {
-  const lines: Line[] = [];
+function transitionLines(diff: SummaryDiff, alone: boolean): OutcomeLine[] {
+  const lines: OutcomeLine[] = [];
 
   for (const t of diff.addedTransitions) {
     lines.push({
-      text: `+ ${renderTransitionShort(t, false, alone)}`,
+      change: "added",
+      outcome: renderTransitionShort(t, false, alone),
       wrapper: wrapperOf(t),
     });
   }
 
   for (const t of diff.removedTransitions) {
     lines.push({
-      text: `- ${renderTransitionShort(t, false, alone)}`,
+      change: "removed",
+      outcome: renderTransitionShort(t, false, alone),
       wrapper: wrapperOf(t),
     });
   }
@@ -2129,8 +2220,8 @@ function transitionLines(diff: SummaryDiff, alone: boolean): Line[] {
       status !== null &&
       renderGuard(b) === renderGuard(a)
     ) {
-      const text = withGuard(a, `${status} ${marked}`, spellDefault, alone);
-      lines.push({ text: `~ ${text}`, wrapper: undefined });
+      const outcome = withGuard(a, `${status} ${marked}`, spellDefault, alone);
+      lines.push({ change: "changed", outcome, wrapper: undefined });
       continue;
     }
     // A pair with the same line and no other field changed differs only
@@ -2139,16 +2230,31 @@ function transitionLines(diff: SummaryDiff, alone: boolean): Line[] {
     if (beforeLine === afterLine && fields.length === 0) {
       continue;
     }
-    // Neither line makes sense without the other, so the pair stays in
-    // its block together.
-    lines.push({ text: `~ was  ${beforeLine}`, wrapper: undefined });
-    lines.push({ text: `  now  ${afterLine}`, wrapper: undefined });
-    for (const field of fields) {
-      lines.push({ text: `  ${field}`, wrapper: undefined });
-    }
+    lines.push({
+      change: "changed",
+      outcome: afterLine,
+      was: beforeLine,
+      ...(fields.length === 0 ? {} : { fields }),
+      wrapper: undefined,
+    });
   }
 
   return lines;
+}
+
+/**
+ * The printed lines of one outcome. A changed outcome that needs its old
+ * line prints both together, since neither makes sense without the other.
+ */
+function outcomeTexts(line: OutcomeLine): string[] {
+  if (line.was === undefined) {
+    return [`${NAME_MARKERS[line.change]} ${line.outcome}`];
+  }
+  return [
+    `~ was  ${line.was}`,
+    `  now  ${line.outcome}`,
+    ...(line.fields ?? []).map((field) => `  ${field}`),
+  ];
 }
 
 /**
@@ -2162,9 +2268,9 @@ interface BoundaryBlock {
   readonly unit: string;
   readonly file: string;
   /** What it returns, and under what test. */
-  outcomes: Line[];
+  outcomes: OutcomeLine[];
   /** What a request touches on its way through, and where. */
-  readonly effects: string[];
+  readonly effects: EffectLine[];
   /** How many outcomes moved, which is fewer than the lines printed. */
   outcomeChanges: number;
 }
@@ -2193,28 +2299,40 @@ function reachText(effect: ReachedEffect, hops: number | "full"): string {
   return `${effect.relation} ${effect.label}${chainLine(effect.through, hops)}`;
 }
 
+function effectText(line: EffectLine, hops: number | "full"): string {
+  return `${NAME_MARKERS[line.change]} ${line.effect}${chainLine(line.through, hops)}`;
+}
+
+/** Something a boundary reaches through a call, as a line of its block. */
 function reachLine(
   effect: ReachedEffect,
-  marker: string,
-  hops: number | "full",
-): string {
-  return `${marker} ${reachText(effect, hops)}`;
+  change: EffectLine["change"],
+): EffectLine {
+  return {
+    change,
+    ...atBoundary(effect.relation, effect.boundary, effect.detail),
+    through: effect.through,
+  };
 }
 
-/** What a unit that came or went whole responds with. */
-function wholeUnitLines(unit: MovedUnit): Line[] {
-  const rest = unit.transitions - unit.outputs.length;
-  const lines = unit.outputs.map((text) => ({ text, wrapper: undefined }));
-  if (rest > 0) {
-    lines.push({ text: `${transitionWord(rest)} more`, wrapper: undefined });
-  }
-  return lines;
+/**
+ * What a unit that came or went whole responds with. Its heading already
+ * says which, so the lines get no marker, and a long list is cut short.
+ */
+function wholeUnitTexts(outcomes: readonly OutcomeLine[]): string[] {
+  const listed = outcomes.slice(0, OUTPUTS_LISTED).map((line) => line.outcome);
+  const rest = outcomes.length - listed.length;
+  return rest > 0 ? [...listed, `${transitionWord(rest)} more`] : listed;
 }
 
-function responseLines(unit: MovedUnit): Line[] {
-  return unit.diff === null
-    ? wholeUnitLines(unit)
-    : transitionLines(unit.diff, unit.transitions === 1);
+/** The outcome lines of a unit or a block, as the report prints them. */
+function responseTexts(
+  change: MovedUnit["change"],
+  outcomes: readonly OutcomeLine[],
+): string[] {
+  return change === "changed"
+    ? outcomes.flatMap(outcomeTexts)
+    : wholeUnitTexts(outcomes);
 }
 
 /**
@@ -2242,21 +2360,17 @@ function blockHeading(block: BoundaryBlock): string {
 }
 
 /** The block's outcomes and effects, each group under its own heading. */
-function blockLines(block: BoundaryBlock): string[] {
+function blockLines(block: BoundaryBlock, hops: number | "full"): string[] {
   const lines: string[] = [];
   for (const [group, under] of [
-    ["outcomes", block.outcomes],
-    ["effects", block.effects],
+    ["outcomes", responseTexts(block.change, block.outcomes)],
+    ["effects", block.effects.map((effect) => effectText(effect, hops))],
   ] as const) {
     if (under.length === 0) {
       continue;
     }
     lines.push(`  ${group}`);
-    lines.push(
-      ...under.map((line) =>
-        typeof line === "string" ? `    ${line}` : `    ${line.text}`,
-      ),
-    );
+    lines.push(...under.map((line) => `    ${line}`));
   }
   return lines;
 }
@@ -2270,7 +2384,6 @@ function blockLines(block: BoundaryBlock): string[] {
 function boundaryBlocks(
   moved: readonly MovedUnit[],
   reach: readonly EntrypointChange[],
-  hops: number | "full",
 ): BoundaryBlock[] {
   const blocks = new Map<string, BoundaryBlock>();
 
@@ -2285,8 +2398,8 @@ function boundaryBlocks(
       boundary,
       unit: unit.name,
       file: unit.file,
-      outcomes: responseLines(unit),
-      effects: [...unit.effectLines],
+      outcomes: [...unit.outcomes],
+      effects: [...unit.effects],
       outcomeChanges: unit.counts.outcomes,
     });
   }
@@ -2300,10 +2413,10 @@ function boundaryBlocks(
     const effects = [
       ...change.gained
         .filter(wanted)
-        .map((effect) => reachLine(effect, "+", hops)),
+        .map((effect) => reachLine(effect, "added")),
       ...change.lost
         .filter(wanted)
-        .map((effect) => reachLine(effect, "-", hops)),
+        .map((effect) => reachLine(effect, "removed")),
     ];
     if (already === undefined) {
       blocks.set(change.key, {
@@ -2390,12 +2503,7 @@ function liftSharedCauses(
   outcomes: ReadonlyMap<string, Set<string>>,
 ): SharedCause[] {
   const candidates: CausedLine[] = blocks.flatMap((block) =>
-    block.outcomes.map((line) => ({
-      key: `${block.file}::${block.unit}`,
-      boundary: block.boundary,
-      text: line.text,
-      wrapper: line.wrapper,
-    })),
+    block.outcomes.flatMap((line) => causedLine(block, line)),
   );
 
   const causes = sharedCauses(
@@ -2410,12 +2518,37 @@ function liftSharedCauses(
         continue;
       }
       block.outcomes = block.outcomes.filter(
-        (line) => line.text !== cause.text,
+        (line) =>
+          line.change !== cause.change || line.outcome !== cause.outcome,
       );
     }
   }
 
   return causes;
+}
+
+/**
+ * An outcome that came or went, as a line a wrapper may have produced at
+ * other boundaries too. A changed outcome never records its wrapper, so
+ * it is never lifted.
+ */
+function causedLine(block: BoundaryBlock, line: OutcomeLine): CausedLine[] {
+  if (line.change === "changed") {
+    return [];
+  }
+  return [
+    {
+      key: `${block.file}::${block.unit}`,
+      boundary: block.boundary,
+      change: line.change,
+      outcome: line.outcome,
+      wrapper: line.wrapper,
+    },
+  ];
+}
+
+function causeText(cause: SharedCause): string {
+  return `${NAME_MARKERS[cause.change]} ${cause.outcome}`;
 }
 
 /** One heading per wrapper, with every line it brought under it. */
@@ -2429,7 +2562,7 @@ function causeBlocks(causes: readonly SharedCause[]): string[][] {
   return [...byWrapper.entries()].map(([wrapper, under]) => [
     `From ${wrapper}`,
     ...under.flatMap((cause) => [
-      `  ${cause.text}`,
+      `  ${causeText(cause)}`,
       ...scopeLines(cause).map((line) => `    ${line}`),
     ]),
     "",
@@ -2546,7 +2679,7 @@ function liftedByUnit(causes: readonly SharedCause[]): LiftedLines {
         texts: new Set<string>(),
         wrappers: new Set<string>(),
       };
-      already.texts.add(cause.text);
+      already.texts.add(causeText(cause));
       already.wrappers.add(cause.wrapper.name);
       lifted.set(key, already);
     }
@@ -2564,6 +2697,7 @@ function fileBlock(
   section: FileSection,
   lifted: LiftedLines,
   inABlock: ReadonlySet<string>,
+  hops: number | "full",
 ): string[] {
   const lines = section.units.flatMap((unit) => {
     const key = `${unit.file}::${unit.name}`;
@@ -2573,8 +2707,8 @@ function fileBlock(
     }
     const said = lifted.get(key);
     const moved = [
-      ...responseLines(unit).map((line) => line.text),
-      ...unit.effectLines,
+      ...responseTexts(unit.change, unit.outcomes),
+      ...unit.effects.map((effect) => effectText(effect, hops)),
     ].filter((line) => said?.texts.has(line) !== true);
 
     if (moved.length === 0 && said !== undefined) {
@@ -2617,30 +2751,56 @@ const NOTHING_AT_A_BOUNDARY =
   "Nothing a client of this project can see changed.";
 
 /**
+ * What moved between two runs, worked out once. The printed report and
+ * the JSON both render this, so they list the same boundaries and lift
+ * the same lines under a wrapper.
+ */
+interface DiffReport {
+  readonly moved: readonly MovedUnit[];
+  /** Every boundary that moved, including one whose lines all went to a cause. */
+  readonly blocks: readonly BoundaryBlock[];
+  readonly causes: readonly SharedCause[];
+}
+
+function diffReport(
+  pairing: DiffPairing,
+  before: readonly BehavioralSummary[],
+  after: readonly BehavioralSummary[],
+): DiffReport {
+  const moved = unitsThatMoved(pairing);
+  const blocks = boundaryBlocks(moved, reachChanges(before, after));
+  const causes = liftSharedCauses(
+    blocks,
+    wrappersApplied(after),
+    outcomesAt(after),
+  );
+  return { moved, blocks, causes };
+}
+
+/**
+ * The blocks with something left to list. A block whose lines all moved
+ * under a shared cause is left out, since the cause lists its boundary.
+ */
+function blocksWithLines(blocks: readonly BoundaryBlock[]): BoundaryBlock[] {
+  return blocks.filter(
+    (block) =>
+      block.change !== "changed" ||
+      block.outcomes.length + block.effects.length > 0,
+  );
+}
+
+/**
  * The report: what moved at each boundary, then each file with the units
  * in it that moved. `budget` caps its length in characters, and whatever
  * does not fit is counted at the end.
  */
 function renderReport(
-  moved: readonly MovedUnit[],
-  reach: readonly EntrypointChange[],
+  report: DiffReport,
   changedFiles: ReadonlySet<string>,
-  options: {
-    budget: number | null;
-    hops: number | "full";
-    runsOn: ReadonlyMap<string, string[]>;
-    outcomes: ReadonlyMap<string, Set<string>>;
-  },
+  options: { budget: number | null; hops: number | "full" },
 ): string {
-  const blocks = boundaryBlocks(moved, reach, options.hops);
-  const causes = liftSharedCauses(blocks, options.runsOn, options.outcomes);
-  // A block whose lines all moved under a shared cause is left out. The
-  // cause already lists its boundary.
-  const printed = blocks.filter(
-    (block) =>
-      block.change !== "changed" ||
-      block.outcomes.length + block.effects.length > 0,
-  );
+  const { moved, blocks, causes } = report;
+  const printed = blocksWithLines(blocks);
   const sections = sectionsByFile(moved, changedFiles);
   const lifted = liftedByUnit(causes);
   // A unit with its own block above appears in the file list by name
@@ -2670,7 +2830,7 @@ function renderReport(
   }
 
   for (const block of printed) {
-    if (!fits([blockHeading(block), ...blockLines(block), ""])) {
+    if (!fits([blockHeading(block), ...blockLines(block, options.hops), ""])) {
       left.boundaries += 1;
     }
   }
@@ -2679,9 +2839,8 @@ function renderReport(
   // short never ends on a heading with nothing under it.
   let headed = false;
   for (const section of sections) {
-    const block = headed
-      ? fileBlock(section, lifted, inABlock)
-      : ["Changes by file", "", ...fileBlock(section, lifted, inABlock)];
+    const units = fileBlock(section, lifted, inABlock, options.hops);
+    const block = headed ? units : ["Changes by file", "", ...units];
     if (!fits(block)) {
       left.files += 1;
       left.units += section.units.length;
@@ -2708,57 +2867,91 @@ interface DiffedSummary {
   readonly changedTransitions?: unknown[];
 }
 
+/** An outcome at a boundary, as `inspect --diff --json` writes it. */
+type DiffedOutcome = Omit<OutcomeLine, "wrapper"> & {
+  readonly from?: WrapperReference;
+};
+
+/** One boundary that moved, as `inspect --diff --json` writes it. */
+interface DiffedBoundary {
+  readonly change: MovedUnit["change"];
+  readonly does: BoundaryBlock["does"];
+  readonly boundary: string;
+  readonly unit: string;
+  readonly file: string;
+  readonly outcomes: readonly DiffedOutcome[];
+  readonly effects: readonly EffectLine[];
+}
+
+/** An outcome one wrapper produced at several boundaries, as the JSON writes it. */
+interface DiffedCause {
+  readonly from: WrapperReference;
+  readonly change: SharedCause["change"];
+  readonly outcome: string;
+  readonly at: readonly string[];
+  readonly notAt: readonly string[];
+  readonly covered: number;
+}
+
+function diffedSummary(unit: MovedUnit): DiffedSummary {
+  const entry = {
+    key: unit.key,
+    change: unit.change,
+    kind: unit.kind,
+    file: unit.file,
+  };
+  if (unit.diff === null) {
+    return entry;
+  }
+  return {
+    ...entry,
+    addedTransitions: unit.diff.addedTransitions,
+    removedTransitions: unit.diff.removedTransitions,
+    changedTransitions: unit.diff.changedTransitions,
+  };
+}
+
+function diffedOutcome({ wrapper, ...line }: OutcomeLine): DiffedOutcome {
+  return wrapper === undefined ? line : { ...line, from: wrapper };
+}
+
+function diffedBoundary(block: BoundaryBlock): DiffedBoundary {
+  return {
+    change: block.change,
+    does: block.does,
+    boundary: block.boundary,
+    unit: block.unit,
+    file: block.file,
+    outcomes: block.outcomes.map(diffedOutcome),
+    effects: block.effects,
+  };
+}
+
+function diffedCause(cause: SharedCause): DiffedCause {
+  return {
+    from: cause.wrapper,
+    change: cause.change,
+    outcome: cause.outcome,
+    at: cause.boundaries,
+    notAt: cause.exceptions,
+    covered: cause.covered,
+  };
+}
+
 /**
- * The diff as JSON, from the same pairing the printed report uses. A
+ * The diff as JSON, from the same report the printed form renders. A
  * summary that did not change is left out, because listing every
  * unchanged boundary would bury the ones that did.
  */
-function writeDiffJson(pairing: DiffPairing): void {
-  const moved: DiffedSummary[] = [];
-
-  for (const { key, summary } of pairing.added) {
-    moved.push({
-      key,
-      change: "added",
-      kind: summary.kind,
-      file: summary.location.file,
-    });
-  }
-  for (const { key, summary } of pairing.removed) {
-    moved.push({
-      key,
-      change: "removed",
-      kind: summary.kind,
-      file: summary.location.file,
-    });
-  }
-  for (const {
-    key,
-    before: beforeSummary,
-    after: afterSummary,
-  } of pairing.paired) {
-    const diff = diffSummaries(beforeSummary, afterSummary);
-    if (
-      diff.addedTransitions.length === 0 &&
-      diff.removedTransitions.length === 0 &&
-      diff.changedTransitions.length === 0
-    ) {
-      continue;
-    }
-    moved.push({
-      key,
-      change: "changed",
-      kind: afterSummary.kind,
-      file: afterSummary.location.file,
-      addedTransitions: diff.addedTransitions,
-      removedTransitions: diff.removedTransitions,
-      changedTransitions: diff.changedTransitions,
-    });
-  }
-
-  process.stdout.write(
-    `${JSON.stringify({ version: 1, changed: moved.length, summaries: moved }, null, 2)}\n`,
-  );
+function writeDiffJson(report: DiffReport): void {
+  const json = {
+    version: 1,
+    changed: report.moved.length,
+    summaries: report.moved.map(diffedSummary),
+    boundaries: blocksWithLines(report.blocks).map(diffedBoundary),
+    causes: report.causes.map(diffedCause),
+  };
+  process.stdout.write(`${JSON.stringify(json, null, 2)}\n`);
 }
 
 export function inspectDiff(options: DiffOptions): void {
@@ -2781,27 +2974,27 @@ export function inspectDiff(options: DiffOptions): void {
     fs.readFileSync(afterPath, "utf-8"),
   );
 
-  const pairing = pairForDiff(beforeSummaries, afterSummaries);
+  const report = diffReport(
+    pairForDiff(beforeSummaries, afterSummaries),
+    beforeSummaries,
+    afterSummaries,
+  );
 
   if (options.json === true) {
-    writeDiffJson(pairing);
+    writeDiffJson(report);
     return;
   }
 
-  const moved = unitsThatMoved(pairing);
-  const reach = reachChanges(beforeSummaries, afterSummaries);
-  if (moved.length === 0 && reach.length === 0) {
+  if (report.moved.length === 0 && report.blocks.length === 0) {
     process.stdout.write("No behavioral changes.\n");
     return;
   }
 
   const changedFiles = new Set(options.changedFiles ?? []);
   process.stdout.write(
-    `${renderReport(moved, reach, changedFiles, {
+    `${renderReport(report, changedFiles, {
       budget: options.budget ?? null,
       hops: options.chain ?? CHAIN_HOPS,
-      runsOn: wrappersApplied(afterSummaries),
-      outcomes: outcomesAt(afterSummaries),
     })}\n`,
   );
 }

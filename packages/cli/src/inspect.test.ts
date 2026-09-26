@@ -64,24 +64,156 @@ function captureStdout<T>(run: () => T): { output: string; result: T } {
   }
 }
 
-describe("inspect --diff --json", () => {
-  const withFiles = (
-    before: BehavioralSummary[],
-    after: BehavioralSummary[],
-    run: (paths: { before: string; after: string }) => void,
-  ) => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-diffjson-"));
-    const beforePath = path.join(dir, "before.json");
-    const afterPath = path.join(dir, "after.json");
-    fs.writeFileSync(beforePath, JSON.stringify(before));
-    fs.writeFileSync(afterPath, JSON.stringify(after));
-    try {
-      run({ before: beforePath, after: afterPath });
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
-  };
+/** Two runs written to files, for a diff to read. */
+function withFiles(
+  before: BehavioralSummary[],
+  after: BehavioralSummary[],
+  run: (paths: { before: string; after: string }) => void,
+): void {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-diff-"));
+  const beforePath = path.join(dir, "before.json");
+  const afterPath = path.join(dir, "after.json");
+  fs.writeFileSync(beforePath, JSON.stringify(before));
+  fs.writeFileSync(afterPath, JSON.stringify(after));
+  try {
+    run({ before: beforePath, after: afterPath });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
 
+/** A route with one outcome, a 200 unless the caller says otherwise. */
+function respondsWith(
+  name: string,
+  routePath: string,
+  transition: Partial<Transition>,
+): BehavioralSummary {
+  return {
+    ...routeSummary(name, routePath),
+    transitions: [
+      {
+        id: "t1",
+        conditions: [],
+        output: {
+          type: "response",
+          statusCode: { type: "literal", value: 200 },
+          body: null,
+          headers: {},
+        },
+        effects: [],
+        location: { start: 1, end: 5 },
+        isDefault: true,
+        ...transition,
+      },
+    ],
+  };
+}
+
+/** A call from one function in the project to `callee`. */
+function callTo(callee: string): Effect {
+  return {
+    type: "invocation",
+    callee,
+    args: [],
+    async: true,
+    summary: `test::src/${callee}.ts::${callee}`,
+  };
+}
+
+/** A function in the middle of the project, calling the next one along. */
+function link(
+  name: string,
+  calls: string | null,
+  effects: Effect[] = [],
+): BehavioralSummary {
+  return {
+    kind: "library",
+    location: {
+      file: `src/${name}.ts`,
+      range: { start: 1, end: 10 },
+      exportName: name,
+    },
+    identity: {
+      name,
+      exportPath: [name],
+      boundaryBinding: null,
+      id: `test::src/${name}.ts::${name}`,
+    },
+    inputs: [],
+    transitions: [
+      {
+        id: `${name}:1`,
+        conditions: [],
+        output: { type: "return", value: null },
+        effects: [...(calls === null ? [] : [callTo(calls)]), ...effects],
+        location: { start: 2, end: 8 },
+        isDefault: true,
+      },
+    ],
+    gaps: [],
+    confidence: { source: "inferred_static", level: "high" },
+  };
+}
+
+const READS_ORDERS: Effect = {
+  type: "interaction",
+  binding: storageBinding({
+    recognition: "aws-dynamodb-query",
+    storageSystem: "aws.dynamodb",
+    scope: "default",
+    container: "orders",
+  }),
+  callee: "docClient.query",
+  interaction: {
+    class: "storage-access",
+    kind: "read",
+    fields: ["orderId"],
+    selector: ["orderId"],
+    operation: "query",
+  },
+};
+
+const LOGIN_FILTER = {
+  file: "app/controllers/application_controller.rb",
+  name: "require_login",
+};
+
+/** A route the filter runs on, with or without the 401 it produces. */
+function behindFilter(
+  name: string,
+  routePath: string,
+  guarded: boolean,
+): BehavioralSummary {
+  const route = respondsWith(name, routePath, {});
+  return {
+    ...route,
+    location: { ...route.location, file: "app/controllers/orders.rb" },
+    metadata: withWrapperMetadata(undefined, { applied: [LOGIN_FILTER] }),
+    transitions: [
+      ...(guarded
+        ? [
+            {
+              id: `${name}:401`,
+              conditions: [],
+              output: {
+                type: "response" as const,
+                statusCode: { type: "literal" as const, value: 401 },
+                body: null,
+                headers: {},
+              },
+              effects: [],
+              location: { start: 1, end: 2 },
+              isDefault: false,
+              metadata: withWrapperMetadata(undefined, { from: LOGIN_FILTER }),
+            },
+          ]
+        : []),
+      ...route.transitions,
+    ],
+  };
+}
+
+describe("inspect --diff --json", () => {
   it("says which summaries were removed", () => {
     // The summaries a diff reads are already JSON, and the diff itself
     // is worked out from two of them, so a machine has nowhere else to
@@ -277,6 +409,223 @@ describe("inspect --diff --json", () => {
   });
 });
 
+describe("inspect --diff --json, what moved at each boundary", () => {
+  interface DiffJson {
+    boundaries: Array<{
+      boundary: string;
+      unit: string;
+      file: string;
+      outcomes: Array<{ change: string; outcome: string; was?: string }>;
+      effects: Array<{ change: string; effect: string; through: string[] }>;
+    }>;
+    causes: Array<{
+      from: { file: string; name: string };
+      change: string;
+      outcome: string;
+      at: string[];
+    }>;
+  }
+
+  const diffJson = (paths: { before: string; after: string }): DiffJson =>
+    JSON.parse(
+      captureStdout(() => inspectDiff({ ...paths, json: true })).output,
+    ) as DiffJson;
+
+  /** The same unit on lines of its own, so no two units share a location. */
+  const atLine = (s: BehavioralSummary, line: number): BehavioralSummary => ({
+    ...s,
+    location: { ...s.location, range: { start: line, end: line + 10 } },
+  });
+
+  it("lists what each route now reaches through a helper they share", () => {
+    // Neither route's own summary moved. Only the helper did, so without
+    // the reach a program could not tell that both routes read the table.
+    const route = (name: string, routePath: string): BehavioralSummary =>
+      respondsWith(name, routePath, { effects: [callTo("loadOrder")] });
+    const routes = [route("show", "/orders/:id"), route("list", "/orders")];
+
+    withFiles(
+      [...routes, link("loadOrder", null)],
+      [...routes, link("loadOrder", null, [READS_ORDERS])],
+      (paths) => {
+        const parsed = diffJson(paths);
+        expect(parsed.boundaries.map((block) => block.boundary)).toEqual([
+          "GET /orders",
+          "GET /orders/{id}",
+        ]);
+        for (const block of parsed.boundaries) {
+          expect(block.effects).toEqual([
+            {
+              change: "added",
+              effect: "reads aws.dynamodb:orders",
+              relation: "reads",
+              boundary: "aws.dynamodb:orders",
+              through: ["loadOrder"],
+            },
+          ]);
+        }
+      },
+    );
+  });
+
+  it("lists every outcome of a route that is new, where the text cuts the list short", () => {
+    const wide: BehavioralSummary = {
+      ...respondsWith("report", "/reports", {}),
+      transitions: Array.from({ length: 8 }, (_, i) => ({
+        id: `t${i}`,
+        conditions: [],
+        output: {
+          type: "response" as const,
+          statusCode: { type: "literal" as const, value: 200 + i },
+          body: null,
+          headers: {},
+        },
+        effects: [],
+        location: { start: i, end: i + 1 },
+        isDefault: false,
+      })),
+    };
+
+    withFiles([], [wide], (paths) => {
+      const [block] = diffJson(paths).boundaries;
+      expect(block?.outcomes).toHaveLength(8);
+      expect(block?.outcomes[7]).toEqual({
+        change: "added",
+        outcome: "responds 207",
+      });
+    });
+  });
+
+  it("names the wrapper behind an outcome only one route got", () => {
+    withFiles(
+      [behindFilter("show", "/orders/:id", false)],
+      [behindFilter("show", "/orders/:id", true)],
+      (paths) => {
+        const parsed = diffJson(paths);
+        expect(parsed.causes).toEqual([]);
+        expect(parsed.boundaries[0]?.outcomes).toEqual([
+          { change: "added", outcome: "responds 401", from: LOGIN_FILTER },
+        ]);
+      },
+    );
+  });
+
+  it("leaves out a boundary whose only change went under the filter, as the text does", () => {
+    const routes = (guarded: boolean): BehavioralSummary[] => [
+      atLine(behindFilter("show", "/orders/:id", guarded), 100),
+      atLine(behindFilter("create", "/orders", guarded), 200),
+    ];
+
+    withFiles(routes(false), routes(true), (paths) => {
+      const parsed = diffJson(paths);
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(parsed.boundaries).toEqual([]);
+      expect(parsed.causes.map((cause) => cause.at)).toEqual([
+        ["GET /orders", "GET /orders/{id}"],
+      ]);
+      expect(output).not.toMatch(/^[+~-] serves /m);
+      expect(output).toContain("From require_login");
+    });
+  });
+
+  it("agrees with the printed report on a filter's outcomes and what it reaches", () => {
+    // The filter adds a 401 at two of the three routes it runs on and
+    // starts reading a table at all three. One route also adds a 404 of
+    // its own, which stays under that route in both forms.
+    const filter = (effects: Effect[]): BehavioralSummary => {
+      const unit = link("require_login", null, effects);
+      return {
+        ...unit,
+        location: { ...unit.location, file: LOGIN_FILTER.file },
+      };
+    };
+    const ownNotFound: Transition = {
+      id: "show:404",
+      conditions: [],
+      output: {
+        type: "response",
+        statusCode: { type: "literal", value: 404 },
+        body: null,
+        headers: {},
+      },
+      effects: [],
+      location: { start: 3, end: 4 },
+      isDefault: false,
+    };
+    const routes = (guarded: boolean): BehavioralSummary[] => {
+      const show = atLine(behindFilter("show", "/orders/:id", guarded), 100);
+      return [
+        guarded
+          ? { ...show, transitions: [...show.transitions, ownNotFound] }
+          : show,
+        atLine(behindFilter("create", "/orders", guarded), 200),
+        atLine(behindFilter("health", "/health", false), 300),
+      ];
+    };
+
+    withFiles(
+      [...routes(false), filter([])],
+      [...routes(true), filter([READS_ORDERS])],
+      (paths) => {
+        const parsed = diffJson(paths);
+        const { output } = captureStdout(() => inspectDiff(paths));
+
+        expect(parsed.causes).toEqual([
+          {
+            from: LOGIN_FILTER,
+            change: "added",
+            outcome: "responds 401",
+            at: ["GET /orders", "GET /orders/{id}"],
+            notAt: ["GET /health"],
+            covered: 3,
+          },
+        ]);
+        expect(output).toContain(
+          [
+            `From ${LOGIN_FILTER.name}  ${LOGIN_FILTER.file}`,
+            "  + responds 401",
+            "    at GET /orders and GET /orders/{id}",
+            "    not at GET /health, which it also runs on",
+          ].join("\n"),
+        );
+
+        // Each block the text prints is a boundary in the JSON, and each
+        // line under it is an outcome or an effect of that boundary.
+        const printed = output
+          .split("\n\n")
+          .filter((block) => /^[+~-] serves /.test(block));
+        expect(printed).toHaveLength(parsed.boundaries.length);
+        for (const block of parsed.boundaries) {
+          const text = printed.find((lines) =>
+            lines.startsWith(
+              `~ serves ${block.boundary}  ${block.file}::${block.unit}`,
+            ),
+          );
+          const expected = [
+            ...block.outcomes.map(
+              (line) =>
+                `    ${line.change === "added" ? "+" : "-"} ${line.outcome}`,
+            ),
+            ...block.effects.map(
+              (line) =>
+                `    ${line.change === "added" ? "+" : "-"} ${line.effect}  through ${line.through.join(" -> ")}`,
+            ),
+          ];
+          for (const line of expected) {
+            expect(text).toContain(line);
+          }
+        }
+        expect(parsed.boundaries.flatMap((block) => block.outcomes)).toEqual([
+          { change: "added", outcome: "responds 404" },
+        ]);
+        expect(parsed.boundaries.map((block) => block.effects.length)).toEqual([
+          1, 1, 1,
+        ]);
+      },
+    );
+  });
+});
+
 describe("inspect, a route the wrappers cover", () => {
   const withSummaries = (
     summaries: BehavioralSummary[],
@@ -401,47 +750,6 @@ describe("which inspect forms take --json", () => {
 });
 
 describe("inspect --diff, human output", () => {
-  const withFiles = (
-    before: BehavioralSummary[],
-    after: BehavioralSummary[],
-    run: (paths: { before: string; after: string }) => void,
-  ) => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-diffhuman-"));
-    const beforePath = path.join(dir, "before.json");
-    const afterPath = path.join(dir, "after.json");
-    fs.writeFileSync(beforePath, JSON.stringify(before));
-    fs.writeFileSync(afterPath, JSON.stringify(after));
-    try {
-      run({ before: beforePath, after: afterPath });
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
-  };
-
-  const respondsWith = (
-    name: string,
-    routePath: string,
-    transition: Partial<Transition>,
-  ): BehavioralSummary => ({
-    ...routeSummary(name, routePath),
-    transitions: [
-      {
-        id: "t1",
-        conditions: [],
-        output: {
-          type: "response",
-          statusCode: { type: "literal", value: 200 },
-          body: null,
-          headers: {},
-        },
-        effects: [],
-        location: { start: 1, end: 5 },
-        isDefault: true,
-        ...transition,
-      },
-    ],
-  });
-
   /** The same unit, moved to a file of its own. */
   const inFile = (s: BehavioralSummary, file: string): BehavioralSummary => ({
     ...s,
@@ -610,76 +918,12 @@ describe("inspect --diff, human output", () => {
     });
   });
 
-  /** A function in the middle of the project, calling the next one along. */
-  const link = (
-    name: string,
-    calls: string | null,
-    effects: Effect[] = [],
-  ): BehavioralSummary => ({
-    kind: "library",
-    location: {
-      file: `src/${name}.ts`,
-      range: { start: 1, end: 10 },
-      exportName: name,
-    },
-    identity: {
-      name,
-      exportPath: [name],
-      boundaryBinding: null,
-      id: `test::src/${name}.ts::${name}`,
-    },
-    inputs: [],
-    transitions: [
-      {
-        id: `${name}:1`,
-        conditions: [],
-        output: { type: "return", value: null },
-        effects: [
-          ...(calls === null
-            ? []
-            : [
-                {
-                  type: "invocation" as const,
-                  callee: calls,
-                  args: [],
-                  async: true,
-                  summary: `test::src/${calls}.ts::${calls}`,
-                },
-              ]),
-          ...effects,
-        ],
-        location: { start: 2, end: 8 },
-        isDefault: true,
-      },
-    ],
-    gaps: [],
-    confidence: { source: "inferred_static", level: "high" },
-  });
-
   const EMITS: Effect = { type: "emission", event: "order.placed" };
 
   const MUTATES: Effect = {
     type: "mutation",
     target: "cart.items",
     operation: "update",
-  };
-
-  const READS_ORDERS: Effect = {
-    type: "interaction",
-    binding: storageBinding({
-      recognition: "aws-dynamodb-query",
-      storageSystem: "aws.dynamodb",
-      scope: "default",
-      container: "orders",
-    }),
-    callee: "docClient.query",
-    interaction: {
-      class: "storage-access",
-      kind: "read",
-      fields: ["orderId"],
-      selector: ["orderId"],
-      operation: "query",
-    },
   };
 
   /** A route that calls `first`, and a chain of that many functions after it. */
@@ -798,45 +1042,6 @@ describe("inspect --diff, human output", () => {
       expect(output.indexOf(line)).toBe(output.lastIndexOf(line));
     });
   });
-
-  /** A route the filter runs on, with or without the 401 it produces. */
-  const behindFilter = (
-    name: string,
-    routePath: string,
-    guarded: boolean,
-  ): BehavioralSummary => {
-    const filter = {
-      file: "app/controllers/application_controller.rb",
-      name: "require_login",
-    };
-    const route = respondsWith(name, routePath, {});
-    return {
-      ...route,
-      location: { ...route.location, file: "app/controllers/orders.rb" },
-      metadata: withWrapperMetadata(undefined, { applied: [filter] }),
-      transitions: [
-        ...(guarded
-          ? [
-              {
-                id: `${name}:401`,
-                conditions: [],
-                output: {
-                  type: "response" as const,
-                  statusCode: { type: "literal" as const, value: 401 },
-                  body: null,
-                  headers: {},
-                },
-                effects: [],
-                location: { start: 1, end: 2 },
-                isDefault: false,
-                metadata: withWrapperMetadata(undefined, { from: filter }),
-              },
-            ]
-          : []),
-        ...route.transitions,
-      ],
-    };
-  };
 
   it("says a filter's outcome once, with how far it reaches", () => {
     // Fourteen routes gaining a 401 is one filter. Said route by route,
