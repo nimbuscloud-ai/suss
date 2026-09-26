@@ -940,6 +940,67 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
     ]);
   });
 
+  it.each(["private", "protected", "public"])(
+    "follows a bare call to a method written as `%s def`",
+    async (modifier) => {
+      writeQueryType("orders", ["OrderService.new.list_orders(current_user)"]);
+      write("app/services/order_service.rb", [
+        "class OrderService",
+        "  def list_orders(user)",
+        "    totaled(user)",
+        "  end",
+        "",
+        `  ${modifier} def totaled(user)`,
+        "    user",
+        "  end",
+        "end",
+      ]);
+
+      const summaries = await extract();
+      const totaled = unitNamed(summaries, "totaled");
+      expect(totaled.identity.exportPath).toEqual(["OrderService", "totaled"]);
+      expect(calls(unitNamed(summaries, "list_orders"))).toEqual([
+        ["totaled", summaryIdentifier(totaled)],
+      ]);
+    },
+  );
+
+  it("follows a call on a module to a method written as `module_function def`", async () => {
+    writeQueryType("orders", ["Formats.wrap(current_user)"]);
+    write("app/lib/formats.rb", [
+      "module Formats",
+      "  module_function def wrap(user)",
+      "    user",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    expect(calls(unitNamed(summaries, "Query.orders"))).toEqual([
+      ["Formats.wrap", summaryIdentifier(unitNamed(summaries, "wrap"))],
+    ]);
+  });
+
+  it("follows a bare call in a class method to one written as `private_class_method def self.`", async () => {
+    writeQueryType("orders", ["Formats.render(current_user)"]);
+    write("app/lib/formats.rb", [
+      "class Formats",
+      "  def self.render(user)",
+      "    wrap(user)",
+      "  end",
+      "",
+      "  private_class_method def self.wrap(user)",
+      "    user",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    expect(calls(unitNamed(summaries, "render"))).toEqual([
+      ["wrap", summaryIdentifier(unitNamed(summaries, "wrap"))],
+    ]);
+  });
+
   it("links no bare call to a method of the same name that Ruby would not look up from there", async () => {
     writeQueryType("orders", [
       "DomainRule.suspended?(current_user)",

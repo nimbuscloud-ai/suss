@@ -63,4 +63,49 @@ describe("why a Ruby call resolves to a method", () => {
     expect(exitCode).toBe(0);
     expect(text).toContain("resolves to shorten (app/report_formatter.rb:3)");
   });
+
+  it.each(["private", "protected", "public"])(
+    "follows a bare call to a method written as `%s def`",
+    (modifier) => {
+      write("app/order_report.rb", [
+        "class OrderReport",
+        "  def call(order)",
+        "    totaled(order)",
+        "  end",
+        "",
+        `  ${modifier} def totaled(order)`,
+        "    order",
+        "  end",
+        "end",
+      ]);
+
+      const { exitCode, text } = askWhy(
+        "why does totaled at app/order_report.rb:3 resolve to totaled",
+      );
+      expect(exitCode).toBe(0);
+      expect(text).toContain("resolves to totaled (app/order_report.rb:6)");
+    },
+  );
+
+  it("follows a call on a module to a method written as `module_function def`", () => {
+    write("app/formats.rb", [
+      "module Formats",
+      "  module_function def wrap(entity)",
+      "    entity",
+      "  end",
+      "end",
+      "",
+      "class OrderReport",
+      "  def call(order)",
+      "    Formats.wrap(order)",
+      "  end",
+      "end",
+    ]);
+
+    const { exitCode, text } = askWhy(
+      "why does wrap at app/formats.rb:9 resolve to wrap",
+    );
+    expect(exitCode).toBe(0);
+    expect(text).toContain("resolves to wrap (app/formats.rb:2)");
+  });
 });

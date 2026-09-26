@@ -295,6 +295,35 @@ describe("instanceMethodsByName", () => {
     const body = await moduleBody(CLASS_METHODS_CONCERN);
     expect([...instanceMethodsByName(body).keys()]).toEqual(["build", "pay"]);
   });
+
+  it("keys a def passed to a modifier, as `private def name` writes it", async () => {
+    const body = await classBody(
+      [
+        "class Report",
+        "  private def hidden",
+        "  end",
+        "",
+        "  protected def shared",
+        "  end",
+        "",
+        "  public def open",
+        "  end",
+        "",
+        "  private memoize def cached",
+        "  end",
+        "",
+        "  private_class_method def self.build",
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+    expect([...instanceMethodsByName(body).keys()]).toEqual([
+      "hidden",
+      "shared",
+      "open",
+      "cached",
+    ]);
+  });
 });
 
 describe("singletonMethodsByName", () => {
@@ -362,6 +391,47 @@ describe("singletonMethodsByName", () => {
       ].join("\n"),
     );
     expect([...singletonMethodsByName(body).keys()]).toEqual(["named", "wrap"]);
+  });
+
+  it("keys a def passed to `module_function`, and one after a bare `module_function` passed to `private`", async () => {
+    const body = await moduleBody(
+      [
+        "module Formats",
+        "  module_function def wrap",
+        "  end",
+        "",
+        "  def plain",
+        "  end",
+        "",
+        "  module_function",
+        "",
+        "  private def trim",
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+    expect([...singletonMethodsByName(body).keys()]).toEqual(["wrap", "trim"]);
+  });
+
+  it("keys a class method passed to a modifier, in the class body and inside `class << self`", async () => {
+    const body = await classBody(
+      [
+        "class Report",
+        "  private_class_method def self.build",
+        "  end",
+        "",
+        "  class << self",
+        "    private def render",
+        "    end",
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+    expect([...singletonMethodsByName(body).keys()]).toEqual([
+      "build",
+      "render",
+    ]);
+    expect([...instanceMethodsByName(body).keys()]).toEqual([]);
   });
 });
 
@@ -478,6 +548,20 @@ describe("instanceMethodVisibility", () => {
     const visibility = instanceMethodVisibility(body);
     expect(visibility.get("a")).toBe("private");
     expect(visibility.get("b")).toBeUndefined();
+  });
+
+  it("reads a def passed through another call, the way it reads one passed directly", async () => {
+    const body = await classBody(
+      "class C\n" +
+        "  private memoize def a\n  end\n\n" +
+        "  private\n\n" +
+        "  memoize def b\n  end\n\n" +
+        "  public def c\n  end\nend\n",
+    );
+    const visibility = instanceMethodVisibility(body);
+    expect(visibility.get("a")).toBe("private");
+    expect(visibility.get("b")).toBe("private");
+    expect(visibility.get("c")).toBeUndefined();
   });
 });
 

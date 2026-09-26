@@ -1059,6 +1059,41 @@ describe("ruby value facts", () => {
     expect(rows(db, "instanceOf")).toEqual([]);
   });
 
+  it.each(["private", "protected", "public", "module_function"])(
+    "gives a def passed to `%s` its facts and records it on the module",
+    async (modifier) => {
+      const source = `module Loader\n  ${modifier} def load\n    1\n  end\nend\n`;
+      const db = await factsFor(source);
+      const moduleKey = rows(db, "objectValue")[0]?.[0];
+      const load = keyOf(source, "def load\n    1\n  end");
+      expect(rows(db, "func")).toEqual([[load]]);
+      expect(rows(db, "holdsProperty")).toContainEqual([
+        moduleKey,
+        "load",
+        load,
+      ]);
+      expect(rows(db, "returnsValue")).toEqual([[load, keyOf(source, "1")]]);
+    },
+  );
+
+  it("gives a class method passed to `private_class_method` the class as its receiver", async () => {
+    const source =
+      "class Entity\n  private_class_method def self.build\n    self\n  end\nend\n";
+    const db = await factsFor(source);
+    const classKey = rows(db, "objectValue")[0]?.[0];
+    const build = keyOf(source, "def self.build\n    self\n  end");
+    expect(rows(db, "holdsProperty")).toContainEqual([
+      classKey,
+      "build",
+      build,
+    ]);
+    expect(rows(db, "binds")).toContainEqual([
+      lastKeyOf(source, "self"),
+      classKey,
+    ]);
+    expect(rows(db, "instanceOf")).toEqual([]);
+  });
+
   it("reads an instance variable as a property of the method's receiver", async () => {
     const source = "class C\n  def go\n    @thing\n  end\nend\n";
     const db = await factsFor(source);

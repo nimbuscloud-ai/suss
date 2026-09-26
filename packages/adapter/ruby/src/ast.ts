@@ -338,20 +338,36 @@ export function instanceMethodsByName(
 }
 
 /**
- * The methods one statement of a class body defines: a `def`, or each
- * `def` inside `class << self`. `definesClassMethod` says which of them
- * are class methods. The reach walk and the value facts both read a
- * class body through this, so they agree on what it defines.
+ * The methods one statement of a class body defines: what
+ * `definitionsWrittenAt` finds, and each `def` inside `class << self`.
+ * `definesClassMethod` says which of them are class methods. The reach
+ * walk and the value facts both read a class body through this, so they
+ * agree on what it defines.
  */
 export function methodsDefinedAt(stmt: RbNode): RbNode[] {
+  const inner = selfSingletonBody(stmt);
+  if (inner === null) {
+    return definitionsWrittenAt(stmt);
+  }
+  return runStatements(inner)
+    .flatMap(definitionsWrittenAt)
+    .filter((node) => node.type === "method");
+}
+
+/**
+ * The `def`s a statement writes: the statement itself, or each `def` it
+ * passes to a call, as in `private def name` or `private memoize def
+ * name`. Ruby evaluates an argument before it runs the call, so the
+ * `def` defines its method all the same and the call receives its name.
+ */
+export function definitionsWrittenAt(stmt: RbNode): RbNode[] {
   if (METHOD_TYPES.has(stmt.type)) {
     return [stmt];
   }
-  const inner = selfSingletonBody(stmt);
-  if (inner === null) {
-    return [];
-  }
-  return runStatements(inner).filter((node) => node.type === "method");
+  const args = stmt.type === "call" ? field(stmt, "arguments") : null;
+  return args === null
+    ? []
+    : bodyStatements(args).flatMap(definitionsWrittenAt);
 }
 
 /** Every method a class or module body defines, in source order. */
@@ -402,9 +418,17 @@ function calledOutNames(call: RbNode): string[] {
     return [];
   }
   return bodyStatements(argumentList).flatMap((arg) => {
+    const symbol = symbolValue(arg);
+    return symbol === null ? instanceMethodNamesAt(arg) : [symbol];
+  });
+}
+
+/** The names of the instance methods a statement defines through `definitionsWrittenAt`. */
+function instanceMethodNamesAt(stmt: RbNode): string[] {
+  return definitionsWrittenAt(stmt).flatMap((method) => {
     const name =
-      arg.type === "method" ? field(arg, "name")?.text : symbolValue(arg);
-    return name === undefined || name === null ? [] : [name];
+      method.type === "method" ? field(method, "name")?.text : undefined;
+    return name === undefined ? [] : [name];
   });
 }
 
@@ -422,12 +446,8 @@ export function instanceMethodVisibility(
   const visibility = new Map<string, MethodVisibility>();
   let mode: MethodVisibility = "public";
   for (const stmt of bodyStatements(body)) {
-    if (stmt.type === "method") {
-      const name = field(stmt, "name")?.text;
-      if (name !== undefined) {
-        setVisibility(visibility, name, mode);
-      }
-      continue;
+    for (const name of instanceMethodNamesAt(stmt)) {
+      setVisibility(visibility, name, mode);
     }
     if (stmt.type === "identifier") {
       mode = visibilityKeyword(stmt.text) ?? mode;
@@ -493,9 +513,12 @@ function moduleFunctionsOf(
       everyLaterDef = true;
       continue;
     }
-    const name = stmt.type === "method" ? field(stmt, "name")?.text : null;
-    if (everyLaterDef && name !== undefined && name !== null) {
-      offered.set(name, stmt);
+    const written = everyLaterDef ? definitionsWrittenAt(stmt) : [];
+    for (const method of written) {
+      const name = field(method, "name")?.text;
+      if (method.type === "method" && name !== undefined) {
+        offered.set(name, method);
+      }
     }
     for (const named of moduleFunctionCallNames(stmt)) {
       const method = instance.get(named);
