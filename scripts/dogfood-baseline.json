@@ -48,7 +48,7 @@
     "packages/checker-intent": {
       "name": "@suss/checker-intent",
       "exports": 3,
-      "internal": 47,
+      "internal": 45,
       "consumers": 41,
       "unfollowedCalls": 7
     },

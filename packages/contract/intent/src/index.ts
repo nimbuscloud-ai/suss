@@ -20,12 +20,14 @@ import {
   fillBlanks,
   IntentDocSchema,
   intentDocToSummary,
+  parseChangeList,
 } from "@suss/intent-ir";
 
-import type { IntentSummary } from "@suss/intent-ir";
+import type { ChangeListSummary, IntentSummary } from "@suss/intent-ir";
 
 export type {
   BoundaryIntentSummary,
+  ChangeListSummary,
   IntentOutcome,
   IntentSummary,
   PrdScenarioSummary,
@@ -81,13 +83,14 @@ function validated(raw: unknown, where: string) {
     throw new IntentDocRejected(blanks, waitingOnBlanks(where, blanks));
   }
 
-  const listed = issues
-    .slice(0, 10)
-    .map((issue) => `  - ${issue.path.join(".") || "<root>"}: ${issue.message}`)
-    .join("\n");
   throw new IntentDocRejected(
     [],
-    `${where} does not fit the intent schema:\n${listed}`,
+    `${where} does not fit the intent schema:\n${issueLines(
+      issues.map((issue) => ({
+        path: issue.path.join("."),
+        message: issue.message,
+      })),
+    )}`,
   );
 }
 
@@ -102,11 +105,67 @@ export function loadIntentFile(filepath: string): IntentSummary {
   return intentDocToSummary(validated(parseIntentFile(resolved), resolved));
 }
 
-/** The parsed file, before schema validation. */
+/**
+ * A change list that is missing, does not parse, or does not fit the
+ * schema. A caller catches this to tell a list somebody has to fix apart
+ * from any other failure.
+ */
+export class ChangeListRejected extends Error {
+  constructor(
+    readonly file: string,
+    readonly problems: ReadonlyArray<{ path: string; message: string }>,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * Reads a change list, the behavior changes an agent says it will make
+ * for one request, and converts it. A list that does not fit the schema
+ * throws `ChangeListRejected` with every problem listed, so the agent can
+ * fix them in one go.
+ */
+export function loadChangeListFile(filepath: string): ChangeListSummary {
+  const resolved = path.resolve(filepath);
+  const parsed = parseChangeList(readChangeListDocument(resolved));
+  if (parsed.ok) {
+    return parsed.list;
+  }
+  throw new ChangeListRejected(
+    resolved,
+    parsed.problems,
+    `The change list ${resolved} does not fit its schema:\n${issueLines(parsed.problems)}`,
+  );
+}
+
+function readChangeListDocument(file: string): unknown {
+  try {
+    return parseDocumentFile(file, "Change list");
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new ChangeListRejected(file, [{ path: "", message }], message);
+  }
+}
+
+function issueLines(
+  issues: ReadonlyArray<{ path: string; message: string }>,
+): string {
+  return issues
+    .slice(0, 10)
+    .map((issue) => `  - ${issue.path || "<root>"}: ${issue.message}`)
+    .join("\n");
+}
+
 function parseIntentFile(filepath: string): unknown {
+  return parseDocumentFile(filepath, "Intent spec");
+}
+
+/** The parsed file, before schema validation. `what` starts each error. */
+function parseDocumentFile(filepath: string, what: string): unknown {
   const resolved = path.resolve(filepath);
   if (!fs.existsSync(resolved)) {
-    throw new Error(`Intent spec not found: ${resolved}`);
+    throw new Error(`${what} not found: ${resolved}`);
   }
   const raw = fs.readFileSync(resolved, "utf-8");
   const ext = path.extname(resolved).toLowerCase();
@@ -115,10 +174,10 @@ function parseIntentFile(filepath: string): unknown {
     parsed = ext === ".json" ? JSON.parse(raw) : YAML.parse(raw);
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    throw new Error(`Intent spec ${resolved} failed to parse: ${reason}`);
+    throw new Error(`${what} ${resolved} failed to parse: ${reason}`);
   }
   if (parsed === null || typeof parsed !== "object") {
-    throw new Error(`Intent spec ${resolved} is not an object`);
+    throw new Error(`${what} ${resolved} is not an object`);
   }
   return parsed;
 }

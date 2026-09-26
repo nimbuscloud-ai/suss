@@ -12,6 +12,7 @@
 /** @typedef {import("./types.js").SinceFinding} SinceFinding */
 /** @typedef {import("./types.js").SinceReport} SinceReport */
 /** @typedef {import("./types.js").EditResult} EditResult */
+/** @typedef {import("./types.js").IntentVerdicts} IntentVerdicts */
 
 /**
  * Kinds whose other half is usually the agent's next edit: a field
@@ -111,6 +112,45 @@ export function mergeResults(results) {
     resolved: resolved.filter((finding) => !cameAndWent.has(finding.identity)),
     notes: results.flatMap((result) => result.notes),
   };
+}
+
+/**
+ * What the change list stops the agent on, as keys for the stop record.
+ * A list the agent wrote wrong blocks, since the agent can fix it. A
+ * check suss itself could not run never blocks, since the agent cannot.
+ *
+ * @type {{ [K in IntentVerdicts["kind"]]: (intent: Extract<IntentVerdicts, { kind: K }>) => string[] }}
+ */
+const BLOCKED_ON = {
+  checked: (intent) => [
+    ...intent.check.entries
+      .filter((entry) => entry.verdict === "notDone")
+      .map((entry) => `not done: ${entry.said}`),
+    ...intent.check.notAsked.map((change) => `not asked: ${change.identity}`),
+  ],
+  unreadable: (intent) => [`unreadable: ${intent.why}`],
+  failed: () => [],
+};
+
+/**
+ * Each entry not done, each boundary changed where nobody asked and no
+ * `explained` line keeps the change, and a list suss could not read.
+ * Each blocks once, like a finding.
+ *
+ * @param {IntentVerdicts | null} intent
+ * @param {Set<string>} alreadyBlocked
+ * @returns {string[]} what the stop blocks on, as keys for the record
+ */
+export function blocksOnIntent(intent, alreadyBlocked) {
+  if (intent === null) {
+    return [];
+  }
+  // The table is typed per kind, and a lookup by a runtime kind loses
+  // that narrowing, so the cast happens once here.
+  const keysOf = /** @type {(intent: IntentVerdicts) => string[]} */ (
+    BLOCKED_ON[intent.kind]
+  );
+  return keysOf(intent).filter((key) => !alreadyBlocked.has(key));
 }
 
 /**

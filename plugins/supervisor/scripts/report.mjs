@@ -10,6 +10,8 @@
 /** @typedef {import("./types.js").EditResult} EditResult */
 /** @typedef {import("./types.js").ChangedBoundary} ChangedBoundary */
 /** @typedef {import("./types.js").RunFinding} RunFinding */
+/** @typedef {import("./types.js").IntentVerdicts} IntentVerdicts */
+/** @typedef {import("./types.js").StopReport} StopReport */
 
 const FINDINGS_LISTED = 12;
 const BOUNDARIES_LISTED = 6;
@@ -118,20 +120,16 @@ export function renderRule(rule) {
 
 /**
  * What the developer reads when the agent stops, or the agent reads when
- * a new error keeps it from stopping.
+ * a new error or the change list keeps it from stopping.
  *
- * @param {{
- *   since: string,
- *   diffs: string[],
- *   added: SinceFinding[],
- *   resolved: SinceFinding[],
- *   blocking: SinceFinding[],
- *   run: RunFinding[],
- *   caveats: string[],
- * }} report
+ * @param {StopReport} report
  */
 export function renderStopReport(report) {
-  const lines = [...stopHeadline(report.blocking, report.since)];
+  const lines = stopHeadline(report);
+  const verdicts = intentSection(report.intent ?? null);
+  if (verdicts !== null) {
+    lines.push("", verdicts);
+  }
   for (const diff of report.diffs) {
     lines.push("", diff.trimEnd());
   }
@@ -154,12 +152,39 @@ export function renderStopReport(report) {
 }
 
 /**
- * @param {SinceFinding[]} blocking
- * @param {string} since
+ * What keeps the agent from stopping, if anything, then the heading of
+ * what changed.
+ *
+ * @param {StopReport} report
  */
-function stopHeadline(blocking, since) {
+function stopHeadline(report) {
+  const intent = report.intent ?? null;
+  const against =
+    intent === null || intent.kind === "failed"
+      ? ""
+      : ", against the change list";
+  const reasons = [
+    report.intentBlocking === true
+      ? intentInstruction(intent, report.changeList ?? "the change list")
+      : [],
+    errorsHeadline(report.blocking),
+  ].filter((lines) => lines.length > 0);
+  if (reasons.length === 0) {
+    return [`suss: what changed since ${report.since}${against}.`];
+  }
+  return [
+    ...reasons.flatMap((lines, index) =>
+      index === 0 ? lines : ["", ...lines],
+    ),
+    "",
+    `What changed since ${report.since}${against}:`,
+  ];
+}
+
+/** @param {SinceFinding[]} blocking */
+function errorsHeadline(blocking) {
   if (blocking.length === 0) {
-    return [`suss: what changed since ${since}.`];
+    return [];
   }
   const one = blocking.length === 1;
   const lines = [
@@ -168,8 +193,76 @@ function stopHeadline(blocking, since) {
   for (const finding of blocking) {
     lines.push("", ...renderFinding(finding));
   }
-  lines.push("", `What changed since ${since}:`);
   return lines;
+}
+
+/**
+ * What the agent is told when the change list keeps it from stopping.
+ *
+ * @param {IntentVerdicts | null} intent
+ * @param {string} changeList
+ */
+function intentInstruction(intent, changeList) {
+  if (intent?.kind === "unreadable") {
+    return [
+      `suss: could not read the change list at ${changeList}. Fix it the way the suss:intent skill describes, then finish.`,
+    ];
+  }
+  return [
+    "suss: the code and the change list do not agree yet.",
+    "Finish each entry marked not done.",
+    `For each boundary marked not asked, revert the change, or add an entry under explained: in ${changeList} that says why it stays.`,
+  ];
+}
+
+/**
+ * The verdicts as `suss intent check` prints them, or why the change
+ * list could not be read. A check suss could not run has no section; its
+ * notice goes with the caveats.
+ *
+ * @type {{ [K in IntentVerdicts["kind"]]: (intent: Extract<IntentVerdicts, { kind: K }>) => string | null }}
+ */
+const INTENT_SECTIONS = {
+  checked: (intent) => intent.check.text.trimEnd(),
+  unreadable: (intent) => `The change list could not be read: ${intent.why}`,
+  failed: () => null,
+};
+
+/**
+ * @param {IntentVerdicts | null} intent
+ * @returns {string | null}
+ */
+function intentSection(intent) {
+  if (intent === null) {
+    return null;
+  }
+  // The same cast as in `blocksOnIntent`, for the same reason.
+  const section = /** @type {(intent: IntentVerdicts) => string | null} */ (
+    INTENT_SECTIONS[intent.kind]
+  );
+  return section(intent);
+}
+
+/**
+ * What the developer reads when suss could not check the work against
+ * the change list. The report shows the diff instead.
+ *
+ * @param {string} why
+ */
+export function renderIntentFailure(why) {
+  return `suss could not check this turn's work against the change list, so this report shows what changed instead. ${why}`;
+}
+
+/**
+ * What the agent reads with a request when there is no change list yet.
+ *
+ * @param {string} changeList
+ */
+export function renderIntentReminder(changeList) {
+  return [
+    `suss: if this request will change code, write the change list for it to ${changeList} before your first edit, the way the suss:intent skill describes, and print it for the developer.`,
+    "Skip this for a request that changes no code.",
+  ].join(" ");
 }
 
 /**

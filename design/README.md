@@ -26,8 +26,8 @@ When a file here and the code disagree, trust the code.
   stated goals, and one critiques the documentation.
 - The rest are notes on a single subject each: where a cold extract
   spends its time, where protocol knowledge lives, running the intent
-  layer against suss's own surface, and the checks that tell you a pack
-  has stopped working.
+  layer against suss's own surface, the checks that tell you a pack
+  has stopped working, and the plugin that supervises a coding agent.
 
 ## Adding one
 

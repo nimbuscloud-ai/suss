@@ -16,8 +16,10 @@
     "@suss/behavioral-ir": "*",
     "@suss/checker": "*",
     "@suss/cli": "*",
+    "@suss/intent-ir": "*",
     "@suss/mcp": "*",
     "typescript": "*",
-    "vitest": "*"
+    "vitest": "*",
+    "yaml": "^2.4.0"
   }
 }

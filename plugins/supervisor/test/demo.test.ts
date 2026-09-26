@@ -1,28 +1,39 @@
 /**
- * The 409 story from the design, played through every hook with the
- * suss this repository builds: an edit adds a 409 to POST /orders, the
- * edit's hook blocks on the client that does not handle it, the client
- * is fixed, and the stop report lists the change on both sides.
+ * The two stories from the design, played through every hook with the
+ * suss this repository builds.
+ *
+ * In the 409 story an edit adds a 409 to POST /orders, the edit's hook
+ * blocks on the client that does not handle it, the client is fixed,
+ * and the stop report lists the change on both sides. In the cancel
+ * story the agent writes a change list first, and the stop checks the
+ * work against it.
  */
 
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { playCancelOrder } from "../demo/cancelOrder.mjs";
 import { playOrders409 } from "../demo/orders409.mjs";
 
 type Played = ReturnType<typeof playOrders409>;
 
 let played: Played;
+let cancel: Played;
 
 beforeAll(() => {
   played = playOrders409();
+  cancel = playCancelOrder();
 });
 
-function step(index: number) {
-  const found = played.steps[index];
+function stepOf(demo: Played, index: number) {
+  const found = demo.steps[index];
   if (found === undefined) {
     throw new Error(`the demo has no step ${index}`);
   }
   return found;
+}
+
+function step(index: number) {
+  return stepOf(played, index);
 }
 
 describe("the 409 story", () => {
@@ -38,9 +49,14 @@ describe("the 409 story", () => {
     expect(played.steps.every((s) => s.status === 0)).toBe(true);
   });
 
-  it("says nothing at session start or with the prompt", () => {
+  it("says nothing at session start, and tells the agent where a change list goes", () => {
     expect(step(0).stdout).toBe("");
-    expect(step(1).stdout).toBe("");
+    const context = step(1).output?.hookSpecificOutput as
+      | { additionalContext?: string }
+      | undefined;
+    expect(context?.additionalContext).toMatch(
+      /^suss: if this request will change code, write the change list for it to .*intent\.yaml before your first edit/,
+    );
   });
 
   it("blocks the edit that adds the 409 with the client that falls through", () => {
@@ -94,5 +110,67 @@ describe("the 409 story", () => {
 
   it("says nothing when the session ends", () => {
     expect(step(5).stdout).toBe("");
+  });
+});
+
+describe("the cancel story, with a change list", () => {
+  const DONE = [
+    "done        + POST /orders/{id}/cancel responds 200, 404  src/orders/cancel.ts::post",
+    "            + POST /orders/{id}/cancel writes postgresql:orders [cancelled_at]  src/orders/cancel.ts::post",
+    'unchecked   ~ Order.status gains the value "cancelled"',
+    "              suss has no boundary spelled Order.status, so it cannot check this entry.",
+  ].join("\n");
+
+  it("runs every hook and exits 0 each time", () => {
+    expect(cancel.steps.map((s) => s.hook)).toEqual([
+      "session-start",
+      "prompt",
+      "after-edit",
+      "after-edit",
+      "after-edit",
+      "after-edit",
+      "stop",
+      "after-edit",
+      "stop",
+      "session-end",
+    ]);
+    expect(cancel.steps.every((s) => s.status === 0)).toBe(true);
+  });
+
+  it("reads nothing again when the agent writes the change list", () => {
+    expect(stepOf(cancel, 2).stdout).toBe("");
+    expect(stepOf(cancel, 7).stdout).toBe("");
+  });
+
+  it("blocks the first stop on the 409 nobody asked for", () => {
+    const output = stepOf(cancel, 6).output;
+
+    expect(output?.decision).toBe("block");
+    const reason = String(output?.reason);
+    expect(reason).toContain(
+      "suss: the code and the change list do not agree yet.",
+    );
+    expect(reason).toContain(
+      "2 done, 1 unchecked and 1 boundary changed where nobody asked.",
+    );
+    expect(reason).toContain(DONE);
+    expect(reason).toContain(
+      "not asked   serves POST /orders  src/orders/create.ts::post\n              + responds 409 { error }",
+    );
+  });
+
+  it("passes the next stop once an explained line keeps the 409", () => {
+    const output = stepOf(cancel, 8).output;
+
+    expect(output?.decision).toBeUndefined();
+    const report = String(output?.systemMessage);
+    expect(report).toContain(
+      "suss: what changed since the session started, against the change list.\n\n2 done and 1 unchecked.",
+    );
+    expect(report).toContain(DONE);
+    expect(report).toContain(
+      "explained   ~ POST /orders responds 409\n              why: a second open order for the same sku was charged twice, so POST /orders refuses it",
+    );
+    expect(report).not.toContain("not asked");
   });
 });

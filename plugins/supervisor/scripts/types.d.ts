@@ -3,7 +3,7 @@
 
 import type { Finding, RunFinding } from "@suss/behavioral-ir";
 import type { ChangedBoundary } from "@suss/checker";
-import type { AcceptingRule } from "@suss/cli";
+import type { AcceptingRule, IntentCheckResult } from "@suss/cli";
 
 export type { ChangedBoundary, RunFinding };
 
@@ -58,13 +58,45 @@ export interface StopRecord {
   blocked: string[];
   /** Kinds of run findings a Stop report has already mentioned. */
   runReported: string[];
+  /** The change list's entries and unasked changes a stop has blocked on, until the list is archived. */
+  intentBlocked: string[];
 }
+
+/** What a stop report says, before it is put into words. */
+export interface StopReport {
+  since: string;
+  diffs: string[];
+  intent?: IntentVerdicts | null;
+  /** Whether the change list is why the stop is blocked. */
+  intentBlocking?: boolean;
+  /** Where the change list is, for the agent to edit. */
+  changeList?: string;
+  added: SinceFinding[];
+  resolved: SinceFinding[];
+  blocking: SinceFinding[];
+  run: RunFinding[];
+  caveats: string[];
+}
+
+/** What `suss intent check --json` writes. */
+export type IntentCheck = IntentCheckResult & { version: number; text: string };
+
+/**
+ * What the Stop hook knows about the change list: its verdicts, why the
+ * list itself could not be read, or why suss could not check it.
+ */
+export type IntentVerdicts =
+  | { kind: "checked"; check: IntentCheck }
+  | { kind: "unreadable"; why: string }
+  | { kind: "failed"; why: string };
 
 /** How long each hook waits before it leaves the work to a later hook. */
 export interface Budgets {
   startMs: number;
   editMs: number;
   stopMs: number;
+  /** How long each comparison a stop runs may take. */
+  compareMs: number;
 }
 
 export interface HookContext {

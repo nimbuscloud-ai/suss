@@ -26,6 +26,9 @@ suss corroborate --experimental [-p <tsconfig> | --dir <directory>] [-f <pack> .
 suss infer stub <package> [-p <tsconfig> | --dir <directory>] [-o <file | ->]
 suss infer intent --from <summaries.json | directory> [-o <directory> | --into <directory>]
 suss infer prd --from <intent-directory> [-o <directory> | --into <directory>]
+suss intent outcomes --from <intent-directory> [--json]
+suss intent check <change-list> --before <dir | file> --after <dir | file> [--prompts <file>] [--json]
+suss intent keep <change-list> --dir <dir | file> --audience <text> [--into <directory>]
 suss --version
 ```
 
@@ -43,6 +46,7 @@ In a synopsis, `<...>` marks a required value and `[...]` an optional one.
 | [`ask`](/reference/cli/ask) | Summary files, and the source for a why question | One answer, as text or JSON |
 | [`corroborate`](/reference/cli/corroborate) | Source, through the express or fastify packs | Summaries annotated with what running the code showed |
 | [`infer`](/reference/cli/infer) | Observed calls, summaries, or curated intent docs | A YAML draft for you to finish |
+| [`intent`](/reference/cli/intent) | Intent docs, or a change list and the summaries from before and after a change | Outcome ids, verdicts on each change, or intent docs kept from a change list |
 
 `extract`, `inspect` and `check` run with no arguments at all. Each one reads `suss.json`, or picks the packs `init` would pick when there is no file, and prints the commands it ran to stderr.
 

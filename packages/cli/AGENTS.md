@@ -158,8 +158,11 @@ something other code depends on. Use `--json` and act on the findings
 in it. A failed check with nothing parseable behind it gives whoever
 has to fix it nothing to go on.
 
-In Claude Code, the suss plugin does this after every edit and reports
-what changed when the agent stops. Installing it and what each hook does:
+In Claude Code, the suss plugin does this after every edit. Before the
+first edit for a request, it has the agent write a change list, the
+behavior changes it intends, and when the agent stops it checks the
+work against that list with `suss intent check`. Installing it and
+what each hook does:
 [docs/guides/supervise-an-agent.md](https://github.com/nimbuscloud-ai/suss/blob/main/docs/guides/supervise-an-agent.md).
 
 ## What is safe to parse

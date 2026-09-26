@@ -26,7 +26,9 @@ import { extract, languageOfRun } from "./extract.js";
 import { inspectFlow } from "./flow.js";
 import { initInteractive } from "./initInteractive.js";
 import { inspect, inspectDiff, inspectDir } from "./inspect.js";
+import { intentCheckCommand } from "./intentCheckCommand.js";
 import { intentDraft } from "./intentDraftCommand.js";
+import { intentKeep } from "./intentKeep.js";
 import { intentOutcomesCommand } from "./intentOutcomes.js";
 import { LANGUAGES, parseLanguage } from "./language.js";
 import { prdDraft } from "./prdDraftCommand.js";
@@ -70,6 +72,8 @@ Usage:
   suss infer intent --from <summaries.json | directory> [-o <directory> | --into <directory>]
   suss infer prd --from <intent-directory> [-o <directory> | --into <directory>]
   suss intent outcomes --from <intent-directory> [--json]
+  suss intent check <change-list> --before <dir | file> --after <dir | file> [--prompts <file>] [--json]
+  suss intent keep <change-list> --dir <dir | file> --audience <text> [--into <directory>]
   suss --version
 
 Commands:
@@ -102,9 +106,14 @@ Commands:
             meant. "infer prd" reads those once they are curated and
             writes a PRD per boundary, one scenario per outcome, for you
             to say why each is there.
-  intent    Read the intent documents a folder holds. "intent outcomes"
+  intent    Read the intent documents in a folder. "intent outcomes"
             lists every outcome a boundary document declares, as the
             <intent-name>.<outcome-id> a PRD scenario links to.
+            "intent check" compares a change list, the changes an
+            agent said it would make, with the summaries from before
+            and after, and says which entries are done and which
+            changes nobody asked for. "intent keep" writes a change
+            list's entries as boundary intent documents.
 
 Options (extract):
   -p, --project    Path to the tsconfig covering the code to read. Without it,
@@ -283,6 +292,22 @@ Options (intent outcomes):
                    outcome an inferred draft declares is left out, and
                    a line on stderr says how many.
 
+Options (intent check):
+  --before         The summaries from before the change: a folder, whose
+                   files pair with --after's by name, or one file.
+  --after          The summaries from after it.
+  --prompts        The developer's messages, to check each entry's quote
+                   against: one JSON object with a prompt per line, or
+                   plain text.
+  --json           Write the verdicts as JSON.
+
+Options (intent keep):
+  --dir            The summaries of the code as it is now, a folder or
+                   one file. Each transition's when comes from there.
+  --audience       Who calls these boundaries. Required.
+  --into           Folder the docs go in. Default: intent/. A doc that
+                   is already there is left alone.
+
 Exit codes:
   check exits non-zero when it finds anything at error severity.
   corroborate exits non-zero when a claim is refuted by execution.
@@ -291,6 +316,9 @@ Exit codes:
   infer intent exits non-zero when no boundary could be drafted.
   intent outcomes exits non-zero when the folder declares no outcome a
   PRD can link to yet.
+  intent check exits non-zero when an entry is not done, or when a
+  change no entry asked for has no explained line.
+  intent keep exits non-zero when it writes no document.
 
 An interactive run ends with one line on stderr when a newer suss is on
 the registry. Piped output and CI never see it, and setting
@@ -1299,7 +1327,7 @@ function runIntent(args: string[]): number {
     process.stderr.write(
       sub === undefined
         ? "intent needs what to read. Try: suss intent outcomes --from intent/\n"
-        : `There is no "intent ${sub}". intent has outcomes.\n`,
+        : `There is no "intent ${sub}". intent has outcomes, check and keep.\n`,
     );
     return 1;
   }
@@ -1309,7 +1337,69 @@ function runIntent(args: string[]): number {
 
 const INTENT_READS: Record<string, (args: string[]) => number> = {
   outcomes: runIntentOutcomes,
+  check: runIntentCheck,
+  keep: runIntentKeep,
 };
+
+function runIntentCheck(args: string[]): number {
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: {
+      before: { type: "string" },
+      after: { type: "string" },
+      prompts: { type: "string" },
+      json: { type: "boolean" },
+    },
+  });
+  const [changes] = positionals;
+  if (
+    changes === undefined ||
+    values.before === undefined ||
+    values.after === undefined
+  ) {
+    throw new UsageError(
+      "intent check needs the change list and the summaries on both sides. Try: suss intent check changes.yaml --before .suss/before --after .suss/after",
+    );
+  }
+
+  return intentCheckCommand({
+    changes,
+    before: values.before,
+    after: values.after,
+    ...(values.prompts !== undefined ? { prompts: values.prompts } : {}),
+    ...(values.json === true ? { json: true } : {}),
+  });
+}
+
+function runIntentKeep(args: string[]): number {
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: {
+      dir: { type: "string" },
+      audience: { type: "string" },
+      into: { type: "string" },
+    },
+  });
+  const [changes] = positionals;
+  if (
+    changes === undefined ||
+    values.dir === undefined ||
+    values.audience === undefined
+  ) {
+    throw new UsageError(
+      'intent keep needs the change list, the summaries of the code now, and who calls the boundaries. Try: suss intent keep changes.yaml --dir .suss/now --audience "the web client"',
+    );
+  }
+
+  return intentKeep({
+    changes,
+    dir: values.dir,
+    audience: values.audience,
+    ...(values.into !== undefined ? { into: values.into } : {}),
+  });
+}
 
 function runIntentOutcomes(args: string[]): number {
   const { values } = parseArgs({

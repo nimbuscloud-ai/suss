@@ -7,6 +7,8 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  ChangeListRejected,
+  loadChangeListFile,
   loadIntentDirectory,
   loadIntentDoc,
   loadIntentFile,
@@ -62,6 +64,74 @@ const prdSpec = {
     { when: "the id is unknown", expect: "the caller is told it wasn't found" },
   ],
 };
+
+describe("loadChangeListFile", () => {
+  let tmpDir: string;
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-changes-"));
+  });
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it("reads a change list written as YAML", () => {
+    const file = path.join(tmpDir, "intent.yaml");
+    fs.writeFileSync(
+      file,
+      'asked: "Add a cancel endpoint."\nchanges:\n  - adds: POST /orders/:id/cancel\n    outcomes: [200]\n',
+    );
+
+    const list = loadChangeListFile(file);
+
+    expect(list.changes).toHaveLength(1);
+    expect(list.changes[0]?.asked).toBe("Add a cancel endpoint.");
+  });
+
+  it("lists every problem in a list that does not fit its schema", () => {
+    const file = path.join(tmpDir, "intent.yaml");
+    fs.writeFileSync(
+      file,
+      "changes:\n  - adds: POST /a\n    removes: POST /b\n  - adds: POST /c\n    at: POST /d\n",
+    );
+
+    expect(() => loadChangeListFile(file)).toThrow(
+      /does not fit its schema:\n {2}- changes\.0: an entry has exactly one of adds, removes or changes\n {2}- changes\.1: at says which boundary/,
+    );
+  });
+
+  it("names a missing file as a change list", () => {
+    expect(() => loadChangeListFile(path.join(tmpDir, "none.yaml"))).toThrow(
+      /^Change list not found: /,
+    );
+  });
+
+  it("throws ChangeListRejected for every way the list itself is wrong", () => {
+    const broken = path.join(tmpDir, "broken.yaml");
+    fs.writeFileSync(broken, "changes: [\n");
+    const misfit = path.join(tmpDir, "misfit.yaml");
+    fs.writeFileSync(misfit, "changes:\n  - adds: POST /a\n    at: POST /b\n");
+
+    for (const file of [broken, misfit, path.join(tmpDir, "none.yaml")]) {
+      expect(() => loadChangeListFile(file)).toThrow(ChangeListRejected);
+    }
+    expect(rejectionOf(misfit)).toMatchObject({
+      file: misfit,
+      problems: [{ path: "changes.0", message: expect.any(String) }],
+    });
+    expect(rejectionOf(broken)?.problems).toEqual([
+      { path: "", message: expect.stringContaining("failed to parse") },
+    ]);
+  });
+
+  function rejectionOf(file: string): ChangeListRejected | null {
+    try {
+      loadChangeListFile(file);
+      return null;
+    } catch (error) {
+      return error instanceof ChangeListRejected ? error : null;
+    }
+  }
+});
 
 describe("loadIntentDoc", () => {
   it("normalises a boundary spec into a BoundaryIntentSummary", () => {

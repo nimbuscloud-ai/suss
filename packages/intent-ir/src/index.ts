@@ -10,9 +10,15 @@
  * `IntentDoc` is what an author writes, and `IntentSummary` is the
  * normalized form the checker reads. Readers such as
  * @suss/contract-intent parse files into an `IntentDoc` and call
- * `intentDocToSummary`.
+ * `intentDocToSummary`. The change list, what an agent says it will
+ * change before it edits, uses the same vocabulary.
  */
 
+export {
+  ChangeListSchema,
+  changeListToSummary,
+  parseChangeList,
+} from "./changeList.js";
 export {
   IntentFindingKindSchema,
   IntentFindingSchema,
@@ -25,6 +31,7 @@ export {
   BodyShapeSchema,
   BoundarySchema,
   blanksLeftEmpty,
+  EffectOutcomeSchema,
   fillBlanks,
   IntentDocSchema,
   IntentSourceSchema,
@@ -32,9 +39,22 @@ export {
 export {
   intentDocToSummary,
   toBoundaryBinding,
+  toIntentEffect,
   toReceives,
 } from "./summary.js";
 
+export type {
+  ChangeEntry,
+  ChangeList,
+  ChangeListSummary,
+  ChangeOutcome,
+  ChangeSubject,
+  ChangeVerb,
+  ExplainedChange,
+  ExplainedEntry,
+  IntentChange,
+  ParsedChangeList,
+} from "./changeList.js";
 export type {
   IntentFinding,
   IntentFindingKind,
@@ -52,6 +72,7 @@ export type {
   Boundary,
   BoundaryIntent,
   BoundaryTransition,
+  DeclaredEffect,
   EffectOutcome,
   IntentDoc,
   IntentSource,

@@ -12,6 +12,7 @@ import {
   OWN_BINDING,
   relationsOf,
 } from "@suss/behavioral-ir";
+import { accessDetail } from "@suss/checker-intent";
 import { displayLabel } from "@suss/ir-core";
 
 import type {
@@ -54,6 +55,14 @@ export function interactionDetail(
   return undefined;
 }
 
+/** What one access states about the columns it touches, empty when it states none. */
+export interface Access {
+  readonly fields: readonly string[];
+  readonly by: readonly string[];
+}
+
+export const NO_ACCESS: Access = { fields: [], by: [] };
+
 export interface TouchedBoundary {
   label: string;
   binding: BoundaryBinding;
@@ -63,6 +72,8 @@ export interface TouchedBoundary {
   /** Detail the label leaves out; see `interactionDetail`. */
   detail: string | undefined;
   transitionId: string | undefined;
+  /** The columns a storage access states. Left out where nobody reads them. */
+  access?: Access;
 }
 
 /**
@@ -88,6 +99,7 @@ export function boundariesTouchedBy(
         callee: undefined,
         detail: undefined,
         transitionId: undefined,
+        access: NO_ACCESS,
       });
     }
   }
@@ -113,6 +125,7 @@ export function boundariesTouchedBy(
           callee: effect.callee,
           detail: interactionDetail(effect.interaction),
           transitionId: transition.id,
+          access: accessDetail(effect.interaction),
         });
       }
     }
