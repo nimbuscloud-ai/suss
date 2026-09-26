@@ -1069,7 +1069,10 @@ function unsettledNote(
  * what somebody types at `suss ask`, so a document and a question that
  * spell a store the same way pick out the same one.
  */
-function effectMatches(declared: IntentEffect, made: CodeEffect): boolean {
+export function effectMatches(
+  declared: IntentEffect,
+  made: CodeEffect,
+): boolean {
   return (
     declared.does === made.does &&
     namesBoundary(declared.names, made.binding) &&
@@ -1122,12 +1125,33 @@ function toCodeOutcome(
   calls: Map<string, BoundaryCall>,
   deployment: Deployment,
 ): CodeOutcome | null {
+  const ending = endingOf(t);
+  if (ending === null) {
+    return null;
+  }
+  return {
+    ...ending,
+    effects: codeEffectsOf(t, deployment),
+    turnsOn: boundaryGuardsOf(t, calls).map((guard) => ({
+      ...guard,
+      binding: groundBinding(guard.binding, deployment),
+    })),
+  };
+}
+
+/** How a transition ends, in the terms intent states an ending in. */
+export type CodeEnding = Pick<
+  CodeOutcome,
+  "kind" | "status" | "body" | "errorType"
+>;
+
+/**
+ * How a transition ends, or null for an ending intent has no word for,
+ * such as a render. A status the code computes has no literal, so it
+ * comes back null and matches no declared status.
+ */
+export function endingOf(t: Transition): CodeEnding | null {
   const output = t.output;
-  const effects = codeEffectsOf(t, deployment);
-  const turnsOn = boundaryGuardsOf(t, calls).map((guard) => ({
-    ...guard,
-    binding: groundBinding(guard.binding, deployment),
-  }));
   if (output.type === "response") {
     const status =
       output.statusCode !== null && output.statusCode.type === "literal"
@@ -1138,8 +1162,6 @@ function toCodeOutcome(
       status: status !== null && Number.isFinite(status) ? status : null,
       body: output.body ?? null,
       errorType: null,
-      effects,
-      turnsOn,
     };
   }
   if (output.type === "return") {
@@ -1148,8 +1170,6 @@ function toCodeOutcome(
       status: null,
       body: output.value,
       errorType: null,
-      effects,
-      turnsOn,
     };
   }
   if (output.type === "throw") {
@@ -1158,15 +1178,13 @@ function toCodeOutcome(
       status: null,
       body: null,
       errorType: output.exceptionType,
-      effects,
-      turnsOn,
     };
   }
   return null;
 }
 
 /** One verb and one boundary this transition reaches. */
-interface CodeEffect {
+export interface CodeEffect {
   does: Relation;
   binding: BoundaryBinding;
   /** How a report writes that boundary, for a message about it. */
@@ -1177,7 +1195,11 @@ interface CodeEffect {
   by: string[];
 }
 
-function codeEffectsOf(t: Transition, deployment: Deployment): CodeEffect[] {
+/** Every verb and boundary the transition reaches, grounded against the deployment. */
+export function codeEffectsOf(
+  t: Transition,
+  deployment: Deployment,
+): CodeEffect[] {
   const reached: CodeEffect[] = [];
   for (const effect of t.effects) {
     if (effect.type !== "interaction") {
@@ -1202,7 +1224,7 @@ function codeEffectsOf(t: Transition, deployment: Deployment): CodeEffect[] {
 }
 
 /** What a storage access states about the columns; nothing for any other class. */
-function accessDetail(interaction: Interaction): {
+export function accessDetail(interaction: Interaction): {
   fields: string[];
   by: string[];
 } {
@@ -1215,7 +1237,11 @@ function accessDetail(interaction: Interaction): {
   };
 }
 
-function outcomeMatches(intent: IntentOutcome, code: CodeOutcome): boolean {
+/** Whether the code ends the way the intent says. The body is compared elsewhere. */
+export function outcomeMatches(
+  intent: Pick<IntentOutcome, "kind" | "status" | "errorType">,
+  code: CodeEnding,
+): boolean {
   if (intent.kind !== code.kind) {
     return false;
   }
