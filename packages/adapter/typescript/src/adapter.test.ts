@@ -13,11 +13,7 @@ import {
 import { assembleSummary } from "@suss/extractor";
 import { createTestProject, testCompilerOptions } from "@suss/test-project";
 
-import {
-  createTypeScriptAdapter,
-  extractCodeStructure,
-  extractionConfigStamp,
-} from "./adapter.js";
+import { createTypeScriptAdapter, extractCodeStructure } from "./adapter.js";
 import { readContract } from "./contract.js";
 import { discoverUnits } from "./discovery/index.js";
 import { ResolutionStore } from "./facts/store.js";
@@ -6356,24 +6352,5 @@ describe("discoverUnits callback with routeInfo + metadata", () => {
       expect(JSON.stringify(ok.output.body)).toContain("id");
       expect(JSON.stringify(ok.output.body)).not.toContain("JSON.stringify");
     }
-  });
-});
-
-describe("extractionConfigStamp", () => {
-  it("separates runs that differ only in extraction config", () => {
-    const on = extractionConfigStamp({});
-    const off = extractionConfigStamp({ includeReachable: false });
-    expect(on).not.toBe(off);
-
-    const strict = extractionConfigStamp({
-      extractorOptions: { gapHandling: "strict" },
-    });
-    expect(strict).not.toBe(on);
-  });
-
-  it("is stable for the default config", () => {
-    expect(extractionConfigStamp({})).toBe(
-      extractionConfigStamp({ includeReachable: true }),
-    );
   });
 });

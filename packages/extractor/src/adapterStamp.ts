@@ -187,6 +187,46 @@ export function projectFileStamp(paths: readonly string[]): string {
 }
 
 /**
+ * The run options that change what an extraction writes. An adapter passes
+ * every one it takes, and leaves out the ones it does not have.
+ */
+export interface ExtractionConfig {
+  gapHandling?: "strict" | "permissive" | "silent" | undefined;
+  /** Whether a summary is written for each function a unit reaches. */
+  includeReachable?: boolean | undefined;
+  /** The directory a stored summary's `location.file` is relative to. */
+  workspaceRoot?: string | undefined;
+  /** The directory a stored summary's id measures its file from. */
+  projectRoot?: string | undefined;
+  /** The directories an absolute import was resolved against. */
+  importRoots?: readonly string[] | undefined;
+}
+
+/**
+ * The run options as one part of the cache key, so a run never reads an
+ * entry that a run with other options wrote. Every adapter builds this part
+ * here, which keeps the three keys from drifting apart.
+ */
+export function extractionConfigStamp(config: ExtractionConfig): string {
+  const parts: Array<[string, string | undefined]> = [
+    ["gapHandling", config.gapHandling ?? "permissive"],
+    ["includeReachable", optionalText(config.includeReachable)],
+    ["workspaceRoot", config.workspaceRoot],
+    ["projectRoot", config.projectRoot],
+    ["importRoots", config.importRoots?.join(path.delimiter)],
+  ];
+  return parts
+    .flatMap(([name, value]) =>
+      value === undefined ? [] : [`${name}=${value}`],
+    )
+    .join(",");
+}
+
+function optionalText(value: boolean | undefined): string | undefined {
+  return value === undefined ? undefined : String(value);
+}
+
+/**
  * The digest a run looks its cache entry up under. A pack may read
  * project files that are not among the ones a run walks, a SAM template
  * that decides which handlers exist for instance, so those belong in

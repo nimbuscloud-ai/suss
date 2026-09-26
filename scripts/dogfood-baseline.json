@@ -6,7 +6,7 @@
     "internal": 4045,
     "consumers": 2256,
     "pairs": 2244,
-    "unfollowedCalls": 452,
+    "unfollowedCalls": 463,
     "findingErrors": 0
   },
   "packages": {
@@ -15,21 +15,21 @@
       "exports": 60,
       "internal": 505,
       "consumers": 253,
-      "unfollowedCalls": 50
+      "unfollowedCalls": 52
     },
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
       "exports": 71,
       "internal": 470,
       "consumers": 201,
-      "unfollowedCalls": 71
+      "unfollowedCalls": 74
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
       "exports": 122,
       "internal": 938,
       "consumers": 242,
-      "unfollowedCalls": 110
+      "unfollowedCalls": 116
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",

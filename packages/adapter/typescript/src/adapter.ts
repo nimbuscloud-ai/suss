@@ -53,6 +53,7 @@ import {
   type DiscoveredSubUnitParent,
   type DiscoveryPattern,
   type ExtractorOptions,
+  extractionConfigStamp,
   type InputMappingPattern,
   type InvocationRecognizer,
   type LanguageAdapter,
@@ -2121,17 +2122,6 @@ export interface TypeScriptAdapter extends LanguageAdapter {
   extractAll(): Promise<BehavioralSummary[]>;
 }
 
-/** Anything that changes what an extraction produces belongs in the key. */
-export function extractionConfigStamp(config: {
-  includeReachable?: boolean;
-  extractorOptions?: { gapHandling?: string };
-}): string {
-  return [
-    `includeReachable=${config.includeReachable !== false}`,
-    `gapHandling=${config.extractorOptions?.gapHandling ?? "default"}`,
-  ].join(",");
-}
-
 /**
  * Fix the walked-file list, then load the import graph under it. On a
  * gated run the candidates are not in the project yet, and the load
@@ -2235,7 +2225,17 @@ export function createTypeScriptAdapter(
         ? { name: p.name, version: p.version }
         : { name: p.name },
     ),
-  )}|${extractionConfigStamp(config)}|ws:${workspaceExpansionStamp(config.frameworks)}`;
+  )}|${extractionConfigStamp({
+    gapHandling: config.extractorOptions?.gapHandling,
+    includeReachable: config.includeReachable !== false,
+  })}|ws:${workspaceExpansionStamp(config.frameworks)}`;
+
+  // The cache stores summaries before their wrappers are composed, so every
+  // path composes on the way out, a cache hit included.
+  const withWrappersComposed = (
+    summaries: readonly BehavioralSummary[],
+  ): BehavioralSummary[] =>
+    composeWrappers(summaries, config.extractorOptions ?? {});
 
   return {
     tsProject: project,
@@ -2303,7 +2303,7 @@ export function createTypeScriptAdapter(
       // A route's own middleware is read from the same file, so it
       // composes here as it does in a full run.
       return named(
-        composeWrappers(withClosure, config.extractorOptions ?? {}),
+        withWrappersComposed(withClosure),
         config.workspace,
         runRoot,
       );
@@ -2365,7 +2365,11 @@ export function createTypeScriptAdapter(
         if (config.onTiming !== undefined) {
           config.onTiming(timer.report());
         }
-        return named(lookup.summaries, config.workspace, runRoot);
+        return named(
+          withWrappersComposed(lookup.summaries),
+          config.workspace,
+          runRoot,
+        );
       }
 
       // A files-changed miss can still reuse per file, when the entry
@@ -2392,7 +2396,11 @@ export function createTypeScriptAdapter(
         if (config.onTiming !== undefined) {
           config.onTiming(timer.report());
         }
-        return named(plan.allSummaries(), config.workspace, runRoot);
+        return named(
+          withWrappersComposed(plan.allSummaries()),
+          config.workspace,
+          runRoot,
+        );
       }
 
       let candidatePaths: string[] | null = null;
@@ -2730,7 +2738,7 @@ export function createTypeScriptAdapter(
       // function of the whole run and a stored summary of the route
       // alone stays reusable.
       const composed = timer.time("composeWrappers", () =>
-        composeWrappers(enriched, config.extractorOptions ?? {}),
+        withWrappersComposed(enriched),
       );
 
       if (config.onTiming !== undefined) {

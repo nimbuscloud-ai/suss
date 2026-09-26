@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   computeContentHash,
   createAdapterStamp,
+  extractionConfigStamp,
   projectFileStamp,
   runDigest,
 } from "./adapterStamp.js";
@@ -186,6 +187,43 @@ describe("projectFileStamp", () => {
 
   it("says none when no pack reads anything", () => {
     expect(projectFileStamp([])).toBe("none");
+  });
+});
+
+describe("extractionConfigStamp", () => {
+  it("separates runs that differ only in the gap setting", () => {
+    expect(extractionConfigStamp({ gapHandling: "silent" })).not.toBe(
+      extractionConfigStamp({ gapHandling: "permissive" }),
+    );
+    expect(extractionConfigStamp({ gapHandling: "strict" })).not.toBe(
+      extractionConfigStamp({ gapHandling: "permissive" }),
+    );
+  });
+
+  it("stamps an unset gap setting as the permissive default every adapter uses", () => {
+    expect(extractionConfigStamp({})).toBe(
+      extractionConfigStamp({ gapHandling: "permissive" }),
+    );
+  });
+
+  it("separates runs that differ in whether reached functions are summarized", () => {
+    expect(extractionConfigStamp({ includeReachable: true })).not.toBe(
+      extractionConfigStamp({ includeReachable: false }),
+    );
+  });
+
+  it("separates runs that measure ids or paths from other directories", () => {
+    const base = extractionConfigStamp({ projectRoot: "/repo" });
+    expect(extractionConfigStamp({ projectRoot: "/repo/app" })).not.toBe(base);
+    expect(
+      extractionConfigStamp({ projectRoot: "/repo", workspaceRoot: "/repo" }),
+    ).not.toBe(base);
+  });
+
+  it("separates runs that resolve imports against other directories", () => {
+    expect(
+      extractionConfigStamp({ importRoots: ["/repo", "/repo/src"] }),
+    ).not.toBe(extractionConfigStamp({ importRoots: ["/repo"] }));
   });
 });
 
