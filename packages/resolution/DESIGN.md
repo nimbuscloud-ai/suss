@@ -89,7 +89,12 @@ returnsNamed(f, n)          f's return annotation is written n, read
                             against a pack's query types (Python)
 containsFn(f, g)            g is declared inside f
 initializes(cls, f)         f runs when one of cls is made
-storesProperty(f, n, x)     f's body writes x to the receiver's n
+storesProperty(r, n, x, k)  x is written to the property n of r. k is
+                            receiver when r is a method writing its own
+                            receiver's n, or the class for a TypeScript
+                            field initializer. k is name when r is a
+                            name that the body writing through it
+                            declares, as in client.timeout = 5
 ```
 
 Calls:
@@ -480,6 +485,99 @@ instance reads. A Ruby class body's constants and instance variables
 belong to the class and never to one of its instances.
 
 The adapter assigns node ids, and the rules only join on them.
+
+### A property written through a name
+
+```python
+job = ReportJob()
+job.on_failure = page_oncall
+
+def retry():
+    return job.on_failure("retry")
+```
+
+The adapter records the write as `storesProperty(job, on_failure,
+page_oncall, name)`, keyed on the name the write goes through, and a
+rule puts it on the object that name refers to:
+
+```
+contains(obj, n, held) :- storesProperty(x, n, held, name),
+                          refersToObject(x, obj)
+```
+
+`contains` is asked with the object and the property bound. The stores
+of that property come off an index, and `refersToObject` is then asked
+with both ends bound, which walks forward from each name through its
+name hops and imports until it reaches the object or runs out. The two
+recursive `refersToObject` rules are written with the hop first so that
+a check with both ends bound goes that way. With one end bound, the
+bound literal goes first whichever way a body is written, so the other
+callers of `refersToObject` walk as they did. An allocation site counts
+as an object for `refersToObject`, since a construction is what a name
+like `job` usually refers to.
+
+The rule this replaced joined through `objectOf(r, obj)`. The demand
+rewrite then asked `objectOf` about every key that stored a property of
+the name being read, a method's own stores included. That was three
+quarters of what a large Rails app's run read before any adapter stated
+a store through a name, and once one did, the run ran out of a 12 GB
+heap. Rows read with `--no-cache --datalog-profile`, before and after
+the forward check:
+
+| Project | Old rule | Forward check |
+|---|---|---|
+| A large Rails app | 125,496,948 | 30,509,932 |
+| A Python service | 42,960,419 | 42,862,990 |
+| A small FastAPI app | 467,963 | 469,155 |
+| A NestJS server | 1,756,160 | 1,617,052 |
+| A React dashboard | 6,700,754 | 6,557,570 |
+
+`refersToObject` follows name hops and imports, and not `instanceOf`. A
+parameter annotated as `ReportJob`, or one that callers pass a
+`ReportJob`, refers to no one construction, so a write through it stays
+off the class, where every instance would read it. The adapters leave a
+parameter out in any case.
+
+The last column keeps two keyings apart. A method's store to its own
+receiver is keyed on the method, and the method store rule finds it
+through the members the class declares. A Python or Ruby name is keyed
+on its scope and its text, which is also the key a class body gives a
+value it keeps, as in `kept = job`. Without the column, the method store
+rule would put everything written through `job` on that class.
+
+A rule cannot tell a read before a write from one after it, so the
+adapter decides which writes to state, and it states few. A write is
+recorded only when the body that declares the name makes it: a
+module-level name written at the top of its module, or a function's own
+local written in that function. A write through a name another body
+declares is left out, since nothing orders it against a read somewhere
+else. That covers a module-level name written inside a function, a
+closure's outer variable, and a Ruby block's parameter. Within one body,
+the writes to one property settle the way writes to a reassigned name
+do, through `writesRunInOrder` and `valueLeftByWrites`. They have to be
+statements of the body's own list, and nothing in the body may read the
+property through the same name before the last of them. When they do
+not settle, nothing is recorded, so `print(job.retries)` followed by
+`job.retries = 3` leaves the property unwritten.
+
+Some reads still see a write they should not:
+
+- A write lands on the object for every reader, so a read in another
+  body that runs first still sees it. `job.run()` followed by
+  `job.on_failure = handler` gives `run` the handler.
+- A read through a second name, `alias = job` then `alias.retries`, is
+  not a read of the property as far as the adapter can tell.
+- A function that copies a module-level object into a local, `local =
+  job` then `local.retries = 3`, puts the write on the module-level
+  object for every reader.
+- In TypeScript, a write through a name imported from another file is
+  seen once that file has been read, as a parameter's callers are.
+
+A write through a parameter or through a property read,
+`self.client.timeout = 5`, is not followed at all. Neither is a write
+to a library's object, `client = httpx.Client()` then
+`client.base_url = ...`, since a class no node in the run declares
+makes no allocation site.
 
 ## One relation of steps
 

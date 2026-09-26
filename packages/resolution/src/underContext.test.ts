@@ -27,7 +27,7 @@ const TWO_CLIENTS: Array<[string, ...string[]]> = [
   ["initializes", "Api", "Api"],
   ["paramOf", "Api", "0", "base"],
   ["writtenValue", "created"],
-  ["storesProperty", "Api", "client", "created"],
+  ["storesProperty", "Api", "client", "created", "receiver"],
   ["binds", "ApiRef", "Api"],
   ["call", "v1Site", "ApiRef"],
   ["writtenValue", "v1Site"],
@@ -103,7 +103,7 @@ describe("reading an answer under one allocation site", () => {
       ["writtenValue", "slash"],
       ["fallbackBranch", "either", "base"],
       ["fallbackBranch", "either", "slash"],
-      ["storesProperty", "Api", "base", "either"],
+      ["storesProperty", "Api", "base", "either", "receiver"],
       ["readsProperty", "v1Base", "v1", "base"],
     ] as Array<[string, ...string[]]>) {
       db.add(relation, tuple);

@@ -54,6 +54,16 @@ const SOURCES: Record<string, CaseFiles> = {
       "",
     ].join("\n"),
   },
+  "a property written through a name": {
+    "/f.ts": [
+      "export class ReportJob {",
+      "  retries = 0;",
+      "}",
+      "export const job = new ReportJob();",
+      "job.retries = 3;",
+      "",
+    ].join("\n"),
+  },
   "a class extending another": {
     "/f.ts": [
       "class User {",

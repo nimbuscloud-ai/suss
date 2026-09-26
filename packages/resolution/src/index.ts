@@ -117,7 +117,8 @@ export type {
 // parameters as `paramOf` of the class. The hop from that call to the
 // class is an instance step. The receiver inside a method is one of
 // the class, and `instanceOf` says so. A property its body writes is
-// `storesProperty` about that method.
+// `storesProperty` about that method, and one written through a name is
+// `storesProperty` about the name.
 
 import { constant, lit, rule, variable as v } from "@suss/datalog";
 
@@ -166,6 +167,16 @@ export const NAME_HOP_RULE = "name hop";
 
 /** A step from an instance to the class it is one of. */
 export const INSTANCE_STEP = constant("instance");
+
+/**
+ * The last column of `storesProperty`: whether the write went through the
+ * receiver, keyed on the method that wrote it, or through a name, keyed on
+ * the name. DESIGN.md says why the two cannot share a key.
+ */
+export const RECEIVER_STORE_NAME = "receiver";
+const RECEIVER_STORE = constant(RECEIVER_STORE_NAME);
+export const NAMED_STORE_NAME = "name";
+const NAMED_STORE = constant(NAMED_STORE_NAME);
 
 /** The `callArgCount` of a call written with nothing between its parentheses. */
 const NO_ARGUMENTS = constant("0");
@@ -1319,21 +1330,30 @@ const STATED_RULES = [
   // a name hop or an import. Asked from the object, so it visits only
   // them.
   rule("refersToObject", [v("obj"), v("obj")], [lit("objectValue", v("obj"))]),
+  // A construction is an object too, and the one a name for it refers to.
+  rule(
+    "refersToObject",
+    [v("site"), v("site")],
+    [lit("allocates", v("site"), v("c"))],
+  ),
   // The process environment is an object nothing declares, so a pack
   // saying which expression spells it is the only way in.
   rule("refersToObject", [v("w"), v("w")], [lit("environmentObject", v("w"))]),
+  // The hop comes first so a check with both ends bound walks forward from
+  // the name, which the named store needs. With one end bound, the bound
+  // literal goes first whatever order the body is written in.
   rule(
     "refersToObject",
     [v("x"), v("obj")],
-    [lit("refersToObject", v("y"), v("obj")), lit("nameHop", v("x"), v("y"))],
+    [lit("nameHop", v("x"), v("y")), lit("refersToObject", v("y"), v("obj"))],
   ),
   rule(
     "refersToObject",
     [v("x"), v("obj")],
     [
-      lit("refersToObject", v("y"), v("obj")),
-      lit("moduleExport", v("m"), v("n"), v("y")),
       lit("imports", v("x"), v("m"), v("n")),
+      lit("moduleExport", v("m"), v("n"), v("y")),
+      lit("refersToObject", v("y"), v("obj")),
     ],
   ),
 
@@ -1398,7 +1418,7 @@ const STATED_RULES = [
     [v("cls"), v("n"), v("held")],
     [
       lit("initializes", v("cls"), v("f")),
-      lit("storesProperty", v("f"), v("n"), v("held")),
+      lit("storesProperty", v("f"), v("n"), v("held"), RECEIVER_STORE),
     ],
     "constructor store",
   ),
@@ -1409,20 +1429,21 @@ const STATED_RULES = [
     [v("cls"), v("n"), v("held")],
     [
       lit("holdsProperty", v("cls"), v("m"), v("f")),
-      lit("storesProperty", v("f"), v("n"), v("held")),
+      lit("storesProperty", v("f"), v("n"), v("held"), RECEIVER_STORE),
     ],
     "method store",
   ),
-  // A write through a name rather than through the receiver,
-  // `client.timeout = 5`, which lands on whatever that name refers to.
+  // A write through a name, `client.timeout = 5`, lands on the object the
+  // name refers to. The writes to the property asked about come off an
+  // index, and each name is checked forward against the one object.
   rule(
     "contains",
     [v("obj"), v("n"), v("held")],
     [
-      lit("storesProperty", v("r"), v("n"), v("held")),
-      lit("objectOf", v("r"), v("obj")),
+      lit("storesProperty", v("x"), v("n"), v("held"), NAMED_STORE),
+      lit("refersToObject", v("x"), v("obj")),
     ],
-    "named receiver store",
+    "named store",
   ),
 
   // A member a class declares itself under a name one of its bases also

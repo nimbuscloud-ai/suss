@@ -8,6 +8,8 @@
 
 import {
   addPackWords,
+  NAMED_STORE_NAME,
+  RECEIVER_STORE_NAME,
   startsAtName,
   valueLeftByWrites,
 } from "@suss/resolution";
@@ -34,6 +36,7 @@ import {
   ownerOfName,
   parametersOf,
   paramNameOf,
+  propertyWritesRunInOrder,
   RUBY_NAME_TYPES,
   WHOLE_VALUE_OPERATORS,
 } from "./locals.js";
@@ -195,8 +198,24 @@ interface Emitter {
    * which value, and a class body's own statements get one more.
    */
   instanceWrites: Map<string, InstanceWrite[]> | null;
+  /** Where the walk puts each write to a property of a local the body declares. */
+  namedWrites: NamedWrites | null;
   /** The calls whose block the run's packs declare runs as part of the surrounding body. */
   bodyBlocks: BodyBlocks;
+}
+
+/**
+ * The setter calls one body makes on a local, `job.retries = 3`, grouped
+ * by the local's key and the property.
+ */
+interface NamedWrites {
+  body: RbNode;
+  /** The method's parameters, which lead to no object the rules can find. */
+  parameters: ReadonlySet<string>;
+  byProperty: Map<
+    string,
+    { receiverKey: string; property: string; writes: InstanceWrite[] }
+  >;
 }
 
 function add(emitter: Emitter, relation: string, ...tuple: string[]): void {
@@ -679,6 +698,7 @@ function emitExpressionFacts(emitter: Emitter, node: RbNode): void {
     }
     if (ASSIGNMENT_TYPES.has(child.type)) {
       collectInstanceWrite(emitter, child);
+      collectNamedWrite(emitter, child);
     }
   });
 }
@@ -713,7 +733,7 @@ function emitInstanceRead(emitter: Emitter, node: RbNode): void {
   );
 }
 
-/** One write to `@name`, with the target node used to order it against the others. */
+/** One write to `@name` or through a local's setter, with the target node used to order it against the others. */
 interface InstanceWrite {
   write: NameWrite;
   target: RbNode;
@@ -748,6 +768,100 @@ function collectInstanceWrite(emitter: Emitter, node: RbNode): void {
     target: left,
   });
   collector.set(left.text, written);
+}
+
+/**
+ * `job.retries = 3`, which Ruby runs as the setter `retries=`, on a local
+ * the body declares. A local of another scope, such as a block's
+ * parameter, is written at a time this body cannot order against its
+ * reads, and `self.x =` and `Const.x =` call a method of a class.
+ */
+function collectNamedWrite(emitter: Emitter, node: RbNode): void {
+  const collected = emitter.namedWrites;
+  const left = field(node, "left");
+  const right = field(node, "right");
+  if (collected === null || left?.type !== "call" || right === null) {
+    return;
+  }
+  const receiver = field(left, "receiver");
+  const method = field(left, "method");
+  if (
+    receiver?.type !== "identifier" ||
+    method === null ||
+    !declaresLocal(emitter, collected, receiver)
+  ) {
+    return;
+  }
+  const operator = field(node, "operator")?.text;
+  const value =
+    node.type === "assignment" || WHOLE_VALUE_OPERATORS.has(operator ?? "")
+      ? right
+      : null;
+  const receiverKey = valueKey(emitter, receiver);
+  const key = `${receiverKey} ${method.text}`;
+  const group = collected.byProperty.get(key) ?? {
+    receiverKey,
+    property: method.text,
+    writes: [],
+  };
+  group.writes.push({
+    write: describeWrite(emitter, {
+      name: method.text,
+      target: left,
+      value,
+      at: node,
+      fromParameter: false,
+    }),
+    target: left,
+  });
+  collected.byProperty.set(key, group);
+}
+
+/** Whether a name is a local of the body being walked, and not one of its parameters. */
+function declaresLocal(
+  emitter: Emitter,
+  collected: NamedWrites,
+  name: RbNode,
+): boolean {
+  const owner = ownerOfName(name, name.text, emitter.enclosing);
+  return (
+    isLocalName(name, name.text, emitter.enclosing) &&
+    owner?.id === emitter.enclosing?.id &&
+    !collected.parameters.has(name.text)
+  );
+}
+
+/**
+ * What each property a body writes through a local ends up with. It is
+ * stated only when the writes settle the way a reassigned local's do,
+ * since a rule cannot tell a read before the write from one after it.
+ */
+function emitNamedStores(emitter: Emitter): void {
+  const collected = emitter.namedWrites;
+  if (collected === null) {
+    return;
+  }
+  for (const group of collected.byProperty.values()) {
+    const targets = group.writes.map((written) => written.target);
+    const settled = valueLeftByWrites(
+      group.writes.map((written) => written.write),
+      propertyWritesRunInOrder(
+        collected.body,
+        targets[0]?.text ?? group.property,
+        targets,
+      ),
+    );
+    if (settled !== null) {
+      add(
+        emitter,
+        "storesProperty",
+        group.receiverKey,
+        group.property,
+        settled,
+        NAMED_STORE_NAME,
+      );
+    }
+  }
 }
 
 /**
@@ -810,7 +924,7 @@ function emitInstanceStores(
       deciding.map((written) => written.target),
     );
     for (const value of settledWrites(deciding, ordered)) {
-      add(emitter, "storesProperty", funcKey, name, value);
+      add(emitter, "storesProperty", funcKey, name, value, RECEIVER_STORE_NAME);
     }
   }
 }
@@ -893,9 +1007,24 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
     position += 1;
   }
 
-  const inside: Emitter = { ...emitter, enclosing: method };
-
   const body = definitionBody(method);
+  const inside: Emitter = {
+    ...emitter,
+    enclosing: method,
+    namedWrites:
+      body === null
+        ? null
+        : {
+            body,
+            parameters: new Set(
+              parametersOf(method).flatMap(
+                (param) => paramNameOf(param)?.text ?? [],
+              ),
+            ),
+            byProperty: new Map(),
+          },
+  };
+
   if (body === null) {
     return funcKey;
   }
@@ -935,6 +1064,7 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
   }
 
   emitExpressionFacts(inside, body);
+  emitNamedStores(inside);
   emitScopeWrites(inside, method, body);
   emitLambdasIn(inside, body);
 
@@ -1168,6 +1298,7 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
     selfKey: classKey,
     insideMethod: false,
     instanceWrites: collected,
+    namedWrites: null,
   };
   const statements =
     body === null
@@ -1255,6 +1386,7 @@ export function emitValueFacts(
     selfKey: null,
     insideMethod: false,
     instanceWrites: null,
+    namedWrites: { body: root, parameters: new Set(), byProperty: new Map() },
     bodyBlocks,
   };
 
@@ -1285,6 +1417,7 @@ export function emitValueFacts(
 
   walk(root);
   emitExpressionFacts(emitter, root);
+  emitNamedStores(emitter);
   emitScopeWrites(emitter, null, root);
   emitLambdasIn(emitter, root);
   // Every store holding Ruby values needs the language's words, a single

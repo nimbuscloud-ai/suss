@@ -46,6 +46,9 @@ const SOURCES: Record<string, CaseFiles> = {
   "a name declared as a fallback": {
     "f.rb": "client = cached || build()\n",
   },
+  "a property written through a name": {
+    "f.rb": "class ReportJob\nend\n\njob = ReportJob.new\njob.retries = 3\n",
+  },
   "a class extending another": {
     "f.rb": "class User\n  def save\n  end\nend\n\nclass Admin < User\nend\n",
   },

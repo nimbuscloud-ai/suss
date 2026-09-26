@@ -12,6 +12,8 @@
  */
 
 import {
+  NAMED_STORE_NAME,
+  RECEIVER_STORE_NAME,
   startsAtName,
   valueLeftByWrites,
   writesRunInOrder,
@@ -229,6 +231,22 @@ interface Emitter {
   enclosing: FunctionScope | null;
   /** Whether the body being walked runs with a receiver, so a call in it has one too. */
   insideMethod: boolean;
+  /** Where the walk puts each write to a property of a name the body declares. */
+  namedWrites: NamedWrites | null;
+}
+
+/**
+ * The writes one body makes to a property of a name, `job.retries = 3`,
+ * grouped by the name's key and the property.
+ */
+interface NamedWrites {
+  body: PyNode;
+  /** Whether the body declares the name, which is the only case its writes are settled here. */
+  declares: (name: string) => boolean;
+  byProperty: Map<
+    string,
+    { receiverKey: string; property: string; writes: ReceiverWrite[] }
+  >;
 }
 
 function add(emitter: Emitter, relation: string, ...tuple: string[]): void {
@@ -620,6 +638,7 @@ function emitExpressionFact(emitter: Emitter, child: PyNode): void {
   }
   if (child.type === "assignment") {
     emitAssignedType(emitter, child);
+    collectNamedWrite(emitter, child);
   }
   const branches = fallbackBranchesOf(child);
   if (branches !== null) {
@@ -703,6 +722,8 @@ function emitFunctionFacts(
   }
 
   const reading = scopeReadingOf(fn);
+  const body = field(fn, "body");
+  const parameters = new Set(boundParameterNames(fn));
   const inside: Emitter = {
     ...emitter,
     // A def written in a class takes a receiver or it does not, and a
@@ -715,10 +736,20 @@ function emitFunctionFacts(
       globals: reading.globals,
       parent: emitter.enclosing,
     },
+    // A parameter leads to no object the rules can find, so a write
+    // through one is left out along with a write through an outer name.
+    namedWrites:
+      body === null
+        ? null
+        : {
+            body,
+            declares: (name) =>
+              reading.locals.has(name) && !parameters.has(name),
+            byProperty: new Map(),
+          },
   };
   emitScopeWrites(inside, reading, false);
 
-  const body = field(fn, "body");
   /* v8 ignore start */
   if (body === null) {
     return funcKey;
@@ -756,6 +787,7 @@ function emitFunctionFacts(
   }
   walkExpressions(inside, body, visit);
   emitReceiverStores(inside, funcKey, body, stores);
+  emitNamedStores(inside);
 
   if (!statesReturn) {
     emitReturnAnnotation(emitter, fn, funcKey);
@@ -798,7 +830,7 @@ function emitReturnName(emitter: Emitter, fn: PyNode, funcKey: string): void {
   }
 }
 
-/** One `self.name = value`, with what orders it against the others in the body. */
+/** One `self.name = value` or `job.name = value`, with what orders it against the others in the body. */
 interface ReceiverWrite {
   write: NameWrite;
   /** The property as the source writes it, `self.name`, so reads of it can be matched against it. */
@@ -864,16 +896,99 @@ function emitReceiverStores(
     const spelling = writes[0]?.spelling ?? name;
     const settled = valueLeftByWrites(
       writes.map((written) => written.write),
-      writesRunInOrder(body, spelling, writes, RECEIVER_READS),
+      writesRunInOrder(body, spelling, writes, ATTRIBUTE_READS),
     );
     if (settled !== null) {
-      add(emitter, "storesProperty", funcKey, name, settled);
+      add(
+        emitter,
+        "storesProperty",
+        funcKey,
+        name,
+        settled,
+        RECEIVER_STORE_NAME,
+      );
       continue;
     }
     for (const { write } of writes) {
       if (write.value !== null && !write.narrowsName) {
-        add(emitter, "storesProperty", funcKey, name, write.value);
+        add(
+          emitter,
+          "storesProperty",
+          funcKey,
+          name,
+          write.value,
+          RECEIVER_STORE_NAME,
+        );
       }
+    }
+  }
+}
+
+/**
+ * `job.retries = 3`, in a body that declares `job`, noted for
+ * `emitNamedStores`. A write through `self` is the method's own store.
+ */
+function collectNamedWrite(emitter: Emitter, assignment: PyNode): void {
+  const collected = emitter.namedWrites;
+  const left = field(assignment, "left");
+  const right = field(assignment, "right");
+  if (collected === null || left?.type !== "attribute" || right === null) {
+    return;
+  }
+  const object = field(left, "object");
+  const property = field(left, "attribute");
+  if (
+    object?.type !== "identifier" ||
+    property === null ||
+    !collected.declares(object.text)
+  ) {
+    return;
+  }
+  const receiverKey = valueKey(emitter, object);
+  const key = `${receiverKey} ${property.text}`;
+  const group = collected.byProperty.get(key) ?? {
+    receiverKey,
+    property: property.text,
+    writes: [],
+  };
+  group.writes.push({
+    write: describeWrite(
+      emitter,
+      { value: right, given: null, at: assignment, direct: false },
+      property.text,
+    ),
+    spelling: left.text,
+    at: left,
+    direct: isDirectStatement(assignment, collected.body),
+  });
+  collected.byProperty.set(key, group);
+}
+
+/**
+ * What each property a body writes through a name ends up with. It is
+ * stated only when the writes settle the way a reassigned name's do,
+ * since a rule cannot tell a read before the write from one after it.
+ */
+function emitNamedStores(emitter: Emitter): void {
+  const collected = emitter.namedWrites;
+  if (collected === null) {
+    return;
+  }
+  for (const group of collected.byProperty.values()) {
+    const spelling = group.writes[0]?.spelling ?? group.property;
+    const settled = valueLeftByWrites(
+      group.writes.map((written) => written.write),
+      writesRunInOrder(collected.body, spelling, group.writes, ATTRIBUTE_READS),
+    );
+    if (settled !== null) {
+      add(
+        emitter,
+        "storesProperty",
+        group.receiverKey,
+        group.property,
+        settled,
+        NAMED_STORE_NAME,
+      );
     }
   }
 }
@@ -1656,8 +1771,8 @@ const NAME_READS: NameReads<PyNode> & ChainReads<PyNode> = {
   readFirst,
 };
 
-/** The same walk over `self.name`, which is an attribute rather than a name. */
-const RECEIVER_READS: NameReads<PyNode> = {
+/** The same walk over `self.name` or `job.name`, which is an attribute rather than a name. */
+const ATTRIBUTE_READS: NameReads<PyNode> = {
   ...NAME_READS,
   nameTypes: new Set(["attribute"]),
 };
@@ -1804,8 +1919,11 @@ export function emitValueFacts(
     filePath,
     enclosing: null,
     insideMethod: false,
+    // Every name read at the top of a module belongs to the module.
+    namedWrites: { body: root, declares: () => true, byProperty: new Map() },
   };
   emitNestedDefinitions(emitter, root);
   emitScopeWrites(emitter, readScope(root, []), true);
   emitExpressionFacts(emitter, root);
+  emitNamedStores(emitter);
 }

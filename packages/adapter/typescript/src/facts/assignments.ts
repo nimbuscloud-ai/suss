@@ -19,13 +19,17 @@
 
 import { Node, SyntaxKind, VariableDeclarationKind } from "ts-morph";
 
+import { valueLeftByWrites } from "@suss/resolution";
+
 import { createPerFileCache } from "../perFileCache.js";
 
 import type { NameWrite } from "@suss/resolution";
 import type {
+  BinaryExpression,
   Expression,
   MethodDeclaration,
   ParameterDeclaration,
+  PropertyAccessExpression,
   PropertyDeclaration,
   SourceFile,
   Statement,
@@ -619,4 +623,181 @@ function isWriteTarget(name: Node): boolean {
       Node.isPostfixUnaryExpression(parent)) &&
     parent.getOperand() === name
   );
+}
+
+/**
+ * The writes one body makes to a property of a plain name,
+ * `client.timeout = 5`, noted by the walk that already visits the body.
+ * `owner` is the function or file the body belongs to, and `statements`
+ * is the list its own statements are written in.
+ */
+export interface BodyPropertyWrites {
+  owner: Node;
+  statements: Node;
+  found: BinaryExpression[];
+}
+
+/** Notes the node when it writes a property of a plain name. */
+export function notePropertyWrite(
+  writes: BodyPropertyWrites,
+  node: Node,
+): void {
+  if (
+    !Node.isBinaryExpression(node) ||
+    !isAssignmentOperator(node.getOperatorToken().getKind())
+  ) {
+    return;
+  }
+  const target = node.getLeft();
+  if (
+    Node.isPropertyAccessExpression(target) &&
+    Node.isIdentifier(target.getExpression())
+  ) {
+    writes.found.push(node);
+  }
+}
+
+/** A property a body leaves with one value, written through a name. */
+export interface NamedStore {
+  receiver: Expression;
+  property: string;
+  value: Expression;
+}
+
+/**
+ * The value each property written through a name ends up with, for a
+ * name the same body declares. A name declared anywhere else is written
+ * at a time this body cannot order against its reads, and a parameter
+ * leads to no object, so neither is written down. The writes to one
+ * property settle the way a reassigned binding's do: they run once each
+ * in order with no read of the property before the last, or they build
+ * the same value, or they state nothing.
+ */
+export function namedStoresOf(writes: BodyPropertyWrites): NamedStore[] {
+  const byDeclaration = new Map<Node, Map<string, BinaryExpression[]>>();
+  for (const write of writes.found) {
+    const target = write.getLeft() as PropertyAccessExpression;
+    const declaration = declarationHere(target.getExpression(), writes.owner);
+    if (declaration === null) {
+      continue;
+    }
+    const byProperty = byDeclaration.get(declaration) ?? new Map();
+    byDeclaration.set(declaration, byProperty);
+    const property = target.getName();
+    byProperty.set(property, [...(byProperty.get(property) ?? []), write]);
+  }
+
+  const stores: NamedStore[] = [];
+  for (const byProperty of byDeclaration.values()) {
+    for (const group of byProperty.values()) {
+      const store = settledStore(writes.statements, group);
+      if (store !== null) {
+        stores.push(store);
+      }
+    }
+  }
+  return stores;
+}
+
+/** The value one property's writes settle on, or null. */
+function settledStore(
+  statements: Node,
+  group: readonly BinaryExpression[],
+): NamedStore | null {
+  const last = group[group.length - 1];
+  const values: Expression[] = [];
+  for (const write of group) {
+    if (!writesItsWholeValue(write.getOperatorToken().getKind())) {
+      return null;
+    }
+    values.push(write.getRight());
+  }
+  // Every write in a group has a property access on its left.
+  /* v8 ignore start */
+  if (last === undefined) {
+    return null;
+  }
+  /* v8 ignore stop */
+  const target = last.getLeft() as PropertyAccessExpression;
+  const receiver = target.getExpression();
+  const inOrder =
+    group.every((write) => statementOf(write)?.getParent() === statements) &&
+    !isPropertyReadBefore(
+      statements,
+      receiver.getText(),
+      target.getName(),
+      last.getStart(),
+    );
+  const settled = valueLeftByWrites(describeWrites(values), inOrder);
+  const value = settled === null ? undefined : values[Number(settled)];
+  return value === undefined
+    ? null
+    : { receiver, property: target.getName(), value };
+}
+
+/** The variable or import a name refers to, when `owner` declares it. */
+function declarationHere(name: Node, owner: Node): Node | null {
+  const declarations = name.getSymbol()?.getDeclarations() ?? [];
+  for (const declaration of declarations) {
+    const declaresAValue =
+      Node.isVariableDeclaration(declaration) ||
+      Node.isImportSpecifier(declaration) ||
+      Node.isImportClause(declaration) ||
+      Node.isNamespaceImport(declaration);
+    if (declaresAValue && bodyOwning(declaration) === owner) {
+      return declaration;
+    }
+  }
+  return null;
+}
+
+/** The function or file whose body a node is written in. */
+function bodyOwning(node: Node): Node {
+  for (let at = node.getParent(); at !== undefined; at = at.getParent()) {
+    if (Node.isSourceFile(at) || runsAsItsOwnBody(at)) {
+      return at;
+    }
+  }
+  return node.getSourceFile();
+}
+
+function runsAsItsOwnBody(node: Node): boolean {
+  return (
+    Node.isFunctionDeclaration(node) ||
+    Node.isFunctionExpression(node) ||
+    Node.isArrowFunction(node) ||
+    Node.isMethodDeclaration(node) ||
+    Node.isConstructorDeclaration(node) ||
+    Node.isGetAccessorDeclaration(node) ||
+    Node.isSetAccessorDeclaration(node)
+  );
+}
+
+/** Whether the body reads `name.property` anywhere before `position`. */
+function isPropertyReadBefore(
+  statements: Node,
+  name: string,
+  property: string,
+  position: number,
+): boolean {
+  let read = false;
+  statements.forEachDescendant((node, traversal) => {
+    if (read) {
+      traversal.stop();
+      return;
+    }
+    if (node.getStart() >= position || startsItsOwnBody(node)) {
+      traversal.skip();
+      return;
+    }
+    if (
+      Node.isPropertyAccessExpression(node) &&
+      node.getName() === property &&
+      node.getExpression().getText() === name &&
+      !isWriteTarget(node)
+    ) {
+      read = true;
+    }
+  });
+  return read;
 }

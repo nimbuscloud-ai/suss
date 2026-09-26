@@ -31,6 +31,8 @@ function conformingFacts(): Database {
   db.add("extends", ["class:2", "f#Loader"]);
   db.add("binds", ["f#Loader", "class:1"]);
   db.add("extendsNamed", ["class:2", "Loader"]);
+  db.add("binds", ["f#job", "call:1"]);
+  db.add("storesProperty", ["f#job", "retries", "lit:3", "name"]);
   return db;
 }
 
@@ -309,6 +311,51 @@ describe("the fact contract", () => {
     expect(failures.map((f) => f.problem).join(" ")).toContain(
       "a pack cannot match a library base",
     );
+  });
+
+  it("catches a write through a name that nothing records", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("storesProperty", [["f#job", "retries", "lit:3", "name"]]);
+      return db;
+    });
+    expect(failures.map((f) => f.problem).join(" ")).toContain(
+      "a write through a name is not written down as one",
+    );
+  });
+
+  it("catches a write through a name recorded as a store to the receiver", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("storesProperty", [["f#job", "retries", "lit:3", "name"]]);
+      db.add("storesProperty", ["f#job", "retries", "lit:3", "receiver"]);
+      return db;
+    });
+    expect(failures.map((f) => f.case)).toContain(
+      "a property written through a name",
+    );
+  });
+
+  it("catches a write through a name keyed so it leads to no construction", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("binds", [["f#job", "call:1"]]);
+      return db;
+    });
+    expect(failures.map((f) => f.problem).join(" ")).toContain(
+      "nothing leads from it to the construction",
+    );
+  });
+
+  it("accepts a write keyed on a reference that binds to the declaration", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("storesProperty", [["f#job", "retries", "lit:3", "name"]]);
+      db.add("binds", ["ref:1", "f#job"]);
+      db.add("storesProperty", ["ref:1", "retries", "lit:3", "name"]);
+      return db;
+    });
+    expect(failures).toEqual([]);
   });
 
   it("says which case has no source rather than passing it", async () => {
