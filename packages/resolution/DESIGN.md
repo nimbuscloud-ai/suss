@@ -486,6 +486,60 @@ belong to the class and never to one of its instances.
 
 The adapter assigns node ids, and the rules only join on them.
 
+### A class's own members
+
+```ruby
+class Request
+  def self.http_client   # Request.http_client runs this
+  end
+
+  def http_client        # Request.new.http_client runs this
+  end
+end
+```
+
+Ruby and TypeScript let a class and its instances each have a member of
+the same name. Both are recorded on the class, which is one object whose
+properties are its members, so the name has to tell them apart. An
+adapter records the class's own member, a Ruby class method or a
+TypeScript static, under `classMemberName(n)`, which is `.http_client`
+here. A read the adapter knows is off the class itself spells the name
+the same way: a Ruby call on a constant or on `self` in a class method,
+and a TypeScript read off a class's own name or off `this` in a static
+member. Every other read keeps the plain name, so a read off an instance
+finds the instance method and never the class method. The rules join on
+the name as they always did, and none of them changed. The Ruby reach
+resolver tells the two kinds of call apart the same way, so the walk and
+the facts agree.
+
+The ancestry needs nothing new either. A subclass contains its base's
+`.http_client` the way it contains the base's `http_client`, and a member
+overrides only the member spelled like it. A module that `module_function`
+or `extend self` offers on itself records the method under both names.
+A Ruby class body's own code runs on the class, but a block in it often
+runs on an instance, as a `before_save do` block does, so a call there is
+read under both. Ruby's `new` keeps its plain name everywhere, since no
+instance has one.
+
+A pack word gives a method name a read can spell either way. A finder runs
+on the class, `Account.where(x)`, and on what another finder handed back,
+`where(x).first`, so `addPackWords` states `givesBackOne` and
+`returnsReceiver` under both spellings. A TypeScript class a library
+declares keeps plain names, so a pack that matches one of its statics by
+the name the library exports still finds it.
+
+How a read is written decides its spelling, so a read through another
+name for the class is spelled as an instance read. `klass.build` after
+`klass = Report` doesn't find the class method `build`, and finds an
+instance method `build` if the class has one. A rule could look the class
+member up for a plain read whose value comes to the class by value steps
+alone, since one of the class never does. On four projects a rule like
+that read 4% to 6% more rows and changed no output, so the rules leave it
+out.
+
+Python needs none of this. A class there has one namespace, so a read off
+the class and a read off an instance find the same members.
+
 ### A property written through a name
 
 ```python

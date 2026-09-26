@@ -1400,7 +1400,9 @@ describe("what a pack's model declarations put in the facts", () => {
 
     expect(db.facts("givesBackOne").map((row) => row.map(String))).toEqual([
       ["DeclarativeBase", "first"],
+      ["DeclarativeBase", ".first"],
       ["SQLModel", "first"],
+      ["SQLModel", ".first"],
     ]);
     expect(
       db.facts("givesBackOneOfArgument").map((row) => row.map(String)),
