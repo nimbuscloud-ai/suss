@@ -28,7 +28,7 @@
       "name": "@suss/adapter-typescript",
       "exports": 122,
       "internal": 938,
-      "consumers": 243,
+      "consumers": 242,
       "unfollowedCalls": 110
     },
     "packages/behavioral-ir": {
