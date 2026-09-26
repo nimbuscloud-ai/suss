@@ -18,14 +18,16 @@ export interface CausedLine {
   readonly key: string;
   /** The boundary's label in the report, which the exception list uses. */
   readonly boundary: string;
-  readonly text: string;
+  readonly change: "added" | "removed";
+  readonly outcome: string;
   readonly wrapper: WrapperReference | undefined;
 }
 
 /** The same line at several boundaries, and where it came from. */
 export interface SharedCause {
   readonly wrapper: WrapperReference;
-  readonly text: string;
+  readonly change: "added" | "removed";
+  readonly outcome: string;
   /** The blocks this line came from, so the report can drop it from each one. */
   readonly keys: ReadonlySet<string>;
   /** The labels of the boundaries that got this line. */
@@ -39,6 +41,12 @@ export interface SharedCause {
 /** Above this many boundaries, the statement prints a count instead of the labels. */
 const NAMED = 3;
 
+/** Under one wrapper, what it stopped producing lists before what it started. */
+const CHANGE_ORDER: Record<CausedLine["change"], number> = {
+  removed: 0,
+  added: 1,
+};
+
 function wrapperKey(wrapper: WrapperReference): string {
   return `${wrapper.file}::${wrapper.name}`;
 }
@@ -50,14 +58,13 @@ function wrapperKey(wrapper: WrapperReference): string {
  * exception would send a reviewer looking for a problem that is not there.
  */
 function alreadySo(
-  text: string,
+  line: CausedLine,
   boundary: string,
   produces: (boundary: string, outcome: string) => boolean,
 ): boolean {
-  const outcome = text.slice(2);
-  return text.startsWith("+ ")
-    ? produces(boundary, outcome)
-    : !produces(boundary, outcome);
+  return line.change === "added"
+    ? produces(boundary, line.outcome)
+    : !produces(boundary, line.outcome);
 }
 
 /**
@@ -75,7 +82,7 @@ export function sharedCauses(
     if (line.wrapper === undefined) {
       continue;
     }
-    const key = `${wrapperKey(line.wrapper)} ${line.text}`;
+    const key = `${wrapperKey(line.wrapper)} ${line.change} ${line.outcome}`;
     groups.set(key, [...(groups.get(key) ?? []), line]);
   }
 
@@ -89,12 +96,13 @@ export function sharedCauses(
     const covered = runsOn(first.wrapper);
     causes.push({
       wrapper: first.wrapper,
-      text: first.text,
+      change: first.change,
+      outcome: first.outcome,
       keys: new Set(group.map((line) => line.key)),
       boundaries: got,
       exceptions: covered.filter(
         (boundary) =>
-          !got.includes(boundary) && !alreadySo(first.text, boundary, produces),
+          !got.includes(boundary) && !alreadySo(first, boundary, produces),
       ),
       covered: Math.max(covered.length, got.length),
     });
@@ -103,7 +111,8 @@ export function sharedCauses(
   return causes.sort(
     (a, b) =>
       wrapperKey(a.wrapper).localeCompare(wrapperKey(b.wrapper)) ||
-      a.text.localeCompare(b.text),
+      CHANGE_ORDER[a.change] - CHANGE_ORDER[b.change] ||
+      a.outcome.localeCompare(b.outcome),
   );
 }
 
