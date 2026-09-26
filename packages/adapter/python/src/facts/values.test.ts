@@ -353,6 +353,49 @@ describe("python value facts", () => {
     expect(named("holdsDefault")).toEqual([[cls?.[0], "region", '"eu"']]);
   });
 
+  it("says a class is plain only where its statement shows nothing could generate a constructor", async () => {
+    const source = [
+      "class Bare:",
+      "    pass",
+      "class Rooted(object):",
+      "    pass",
+      "class Child(Bare):",
+      "    pass",
+      "class Dotted(models.Bare):",
+      "    pass",
+      "@dataclass",
+      "class Decorated:",
+      "    pass",
+      "@dataclass",
+      "class DecoratedChild(Bare):",
+      "    pass",
+      "class Mixed(Bare, Other):",
+      "    pass",
+      "class Meta(Bare, metaclass=Registry):",
+      "    pass",
+      "class OnlyMeta(metaclass=Registry):",
+      "    pass",
+      "class Generic(Base[T]):",
+      "    pass",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const className = (key: string) =>
+      textAt(source, key).split(/[(:]/)[0]?.replace("class ", "");
+    expect(
+      rows(db, "plainClass").map((row) => className(row[0] ?? "")),
+    ).toEqual(["Bare", "Rooted"]);
+    expect(
+      rows(db, "extendsOnly").map((row) => [
+        className(row[0] ?? ""),
+        row[1]?.startsWith("#") ? row[1] : textAt(source, row[1] ?? ""),
+      ]),
+    ).toEqual([
+      ["Child", "#Bare"],
+      ["Dotted", "models.Bare"],
+    ]);
+  });
+
   it("keeps two classes' methods of one name apart", async () => {
     const db = await factsFor(
       [

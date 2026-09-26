@@ -51,7 +51,7 @@ Three layers do the work.
 
   <rect class="box" x="60" y="220" width="540" height="86" rx="6" />
   <text class="label" x="330" y="242" text-anchor="middle">2. One rule set joins the facts into a value graph</text>
-  <text class="note" x="330" y="260" text-anchor="middle">190 rules. 15 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
+  <text class="note" x="330" y="260" text-anchor="middle">194 rules. 15 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
   <text class="note" x="330" y="277" text-anchor="middle">reaches is the transitive closure of those hops, and it records</text>
   <text class="note" x="330" y="294" text-anchor="middle">the strongest kind of step the walk took.</text>
 
@@ -163,13 +163,13 @@ out.
 
 ## Layer 2: one rule set makes a graph
 
-`RESOLUTION_RULES` in `packages/resolution/src/index.ts` is 190 rules.
+`RESOLUTION_RULES` in `packages/resolution/src/index.ts` is 194 rules.
 15 of them derive `stepsTo(x, y, kind)`, which says the value `x` leads
 to the value `y` in one hop. Two of them, for an argument and a
 property read, are written as `stepsTo` directly. The other thirteen
 are written as `hop`, and each gets a `stepsTo` twin, since a walk
 under a receiver context reads `hop`. An adapter can add hops of its
-own, each with its twin, and those are not among the 190. The Ruby
+own, each with its twin, and those are not among the 194. The Ruby
 adapter adds one, for `Const.new`.
 
 ```ts
@@ -214,6 +214,10 @@ the constructor is not in the run. The adapter records it as
 instance contains. A construction written with no arguments contains it.
 A receiver or a parameter, whose construction the run cannot see, finds
 the class's methods and plain attributes and none of its field defaults.
+A plain class is different again. When a class is written with no
+decorator and no base except `object` or another plain class, nothing
+generates its constructor, so every instance shares the annotated
+value and the rules read it as they read `holdsProperty`.
 
 ### Asking under one allocation site
 

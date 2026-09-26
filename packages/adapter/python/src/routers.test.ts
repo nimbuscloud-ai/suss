@@ -110,8 +110,9 @@ function pathOf(units: Awaited<ReturnType<typeof unitsOf>>, name: string) {
 function settingsMount(construction: string, helpers: string[] = []): string {
   return [
     "from fastapi import FastAPI, APIRouter",
+    "from pydantic_settings import BaseSettings",
     "",
-    "class Settings:",
+    "class Settings(BaseSettings):",
     '    API_PREFIX: str = "/api/v1"',
     "",
     ...helpers,
