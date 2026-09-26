@@ -15,6 +15,7 @@
 import { FactIndex, type FactKey } from "./factIndex.js";
 import { isDemandRewritten } from "./onDemand.js";
 import {
+  chargeEngine,
   chargeEvaluation,
   chargeEvaluationRows,
   chargeRelationSizes,
@@ -23,6 +24,7 @@ import {
   isProfiling,
 } from "./profile.js";
 import { addToBucket, bucketIn, type Relation } from "./relation.js";
+import { planStratum, rulesReading, type Stratum } from "./stratum.js";
 
 export {
   type ConfidenceLevel,
@@ -288,6 +290,24 @@ export class Database {
     return going.size;
   }
 
+  /**
+   * Remove every fact in a relation, and return how many there were. The
+   * database ends up as `retract` leaves it when handed every tuple, but
+   * nothing looks a tuple up to remove it.
+   */
+  retractAll(relationName: string): number {
+    const relation = this.store.get(relationName);
+    if (relation === undefined || relation.tuples.length === 0) {
+      return 0;
+    }
+    const removed = relation.tuples.length;
+    relation.tuples = [];
+    relation.index.clear();
+    relation.columns.length = 0;
+    forgetRelation(this, relationName);
+    return removed;
+  }
+
   size(relationName: string): number {
     return this.store.get(relationName)?.tuples.length ?? 0;
   }
@@ -523,14 +543,10 @@ function headTuple(head: Rule["head"], bindings: Bindings | null): Tuple {
   });
 }
 
-/** The body positions of a rule's positive literals, in written order. */
 const positiveLiterals = new WeakMap<Rule, readonly number[]>();
 
-/**
- * Which body literal the `deltaIndex`-th positive literal is, or -1
- * when the rule has fewer positive literals than that.
- */
-function deltaLiteral(r: Rule, deltaIndex: number): number {
+/** The body positions of a rule's positive literals, in written order. */
+function positivesOf(r: Rule): readonly number[] {
   let positives = positiveLiterals.get(r);
   if (positives === undefined) {
     positives = r.body
@@ -538,7 +554,15 @@ function deltaLiteral(r: Rule, deltaIndex: number): number {
       .filter((index) => index !== -1);
     positiveLiterals.set(r, positives);
   }
-  return positives[deltaIndex] ?? -1;
+  return positives;
+}
+
+/**
+ * Which body literal the `deltaIndex`-th positive literal is, or -1
+ * when the rule has fewer positive literals than that.
+ */
+function deltaLiteral(r: Rule, deltaIndex: number): number {
+  return positivesOf(r)[deltaIndex] ?? -1;
 }
 
 const allBound = (literal: Literal, bindings: Bindings | null): boolean =>
@@ -952,6 +976,21 @@ function forgetFacts(db: Database, relation: string, keys: Set<FactKey>): void {
   }
 }
 
+/**
+ * `forgetFacts` for a relation that lost every fact. A ledger lists only
+ * facts still in the database, so emptying it forgets the same keys.
+ */
+function forgetRelation(db: Database, relation: string): void {
+  const states = evaluated.get(db);
+  if (states === undefined) {
+    return;
+  }
+  for (const state of states.values()) {
+    state.marks = null;
+    state.derived.get(relation)?.clear();
+  }
+}
+
 const usesNegation = (rules: Rule[]): boolean =>
   rules.some((r) => r.body.some((l) => l.negated));
 
@@ -1025,6 +1064,8 @@ export function evaluate<Tag = never>(
     throw new Error("cannot evaluate with both a tag algebra and a row budget");
   }
   deriving.set(db, (deriving.get(db) ?? 0) + 1);
+  const profiling = isProfiling();
+  const startedAt = profiling ? performance.now() : 0;
   try {
     return runRules(db, rules, algebra, budget);
   } finally {
@@ -1033,6 +1074,9 @@ export function evaluate<Tag = never>(
       deriving.delete(db);
     } else {
       deriving.set(db, depth);
+    }
+    if (profiling) {
+      chargeEngine("evaluate", performance.now() - startedAt);
     }
   }
 }
@@ -1056,12 +1100,17 @@ export function clearRelations(
   rules: Rule[],
   relations: readonly string[],
 ): void {
+  const profiling = isProfiling();
+  const startedAt = profiling ? performance.now() : 0;
   for (const relation of relations) {
-    db.retract(relation, [...db.facts(relation)]);
+    db.retractAll(relation);
   }
   const state = statesFor(db).get(signatureOf(rules));
   if (state !== undefined) {
     state.marks = currentMarks(db);
+  }
+  if (profiling) {
+    chargeEngine("clear", performance.now() - startedAt);
   }
 }
 
@@ -1075,7 +1124,7 @@ interface RuleSetShape {
   signature: string;
   name: string;
   derivedRelations: string[];
-  strata: Rule[][];
+  strata: Stratum[];
 }
 
 const signatureOf = (rules: Rule[]): string => shapeOf(rules).signature;
@@ -1094,7 +1143,7 @@ function shapeOf(rules: Rule[]): RuleSetShape {
     signature: JSON.stringify(rules),
     name: [...derivedRelations].sort().join(", "),
     derivedRelations,
-    strata: stratify(rules),
+    strata: stratify(rules).map(planStratum),
   };
   shapes.set(rules, shape);
   return shape;
@@ -1186,9 +1235,8 @@ function runRules<Tag>(
   // what the strata below it just derived.
   const marks = canResume(rules, state) ? state.marks : undefined;
 
-  const runStratum = (stratum: Rule[]): void => {
+  const runStratum = (stratum: Stratum): void => {
     let delta = new Map<string, Tuple[]>();
-    const derivedHere = new Set(stratum.map((r) => r.head.relation));
 
     const record = (relation: string, tuple: Tuple): void => {
       if (db.add(relation, tuple) === "added") {
@@ -1262,21 +1310,24 @@ function runRules<Tag>(
       );
     };
 
+    // A rule `rulesReading` leaves out has no positive literal with new
+    // facts, so the loop below would never run it.
     const applyDelta = (
       seed: Map<string, readonly Tuple[]>,
       derivedOnly: boolean,
     ): void => {
-      for (const r of stratum) {
+      for (const at of rulesReading(stratum, seed, derivedOnly)) {
+        const r = stratum.rules[at];
         if (!couldProduce(db, r)) {
           continue;
         }
-        const positives = r.body.filter((l) => !l.negated);
+        const positives = positivesOf(r);
         for (let i = 0; i < positives.length; i++) {
-          const literal = positives[i];
+          const literal = r.body[positives[i]];
           // Within one evaluation the base facts do not change, so only
           // this stratum's own relations can have a new delta. A resumed
           // run's seed delta is the exception: those are new base facts.
-          if (derivedOnly && !derivedHere.has(literal.relation)) {
+          if (derivedOnly && !stratum.derived.has(literal.relation)) {
             continue;
           }
           if ((seed.get(literal.relation) ?? []).length === 0) {
@@ -1290,7 +1341,7 @@ function runRules<Tag>(
     if (marks === undefined || marks === null) {
       // Seed round: naive evaluation with every positive literal drawn
       // from the full database.
-      for (const r of stratum) {
+      for (const r of stratum.rules) {
         if (!couldProduce(db, r)) {
           continue;
         }
