@@ -12,6 +12,7 @@ import {
   writtenValueOf as sharedWrittenValueOf,
   writtenValuesOf as sharedWrittenValuesOf,
   writtenValueUnder as sharedWrittenValueUnder,
+  withoutOverridden,
   writtenValuesByKey,
 } from "@suss/resolution";
 
@@ -42,10 +43,11 @@ export function resolveEnvObjects(
  * scanning the whole relation.
  */
 export function resolvedFunctions(db: Database, key: string): string[] {
-  return [
+  const found = [
     ...db.lookup("wantedResolves", 0, key),
     ...db.lookup("wantedGivesBack", 0, key),
   ].map((row) => String(row[1]));
+  return withoutOverridden(db, key, found);
 }
 
 /**
@@ -64,7 +66,9 @@ export function writtenValueUnder(
   if (askResolutionUnder(db, [[key, site]]) === "abandoned") {
     return null;
   }
-  return sharedWrittenValueUnder(db, key, site);
+  return sharedWrittenValueUnder(db, key, site, (pairs) => {
+    askResolutionUnder(db, pairs);
+  });
 }
 
 /** Every construction of a class the run can see, as the keys to ask under. */

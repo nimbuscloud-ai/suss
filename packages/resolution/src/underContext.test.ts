@@ -10,12 +10,15 @@ import {
   underQuestionSpend,
 } from "./program.js";
 import {
+  type AskUnder,
   allocationSitesOf,
   comesToUnder,
   isWrittenAsUnder,
   objectOfUnder,
   writtenValueUnder,
 } from "./underContext.js";
+
+const askNothing: AskUnder = () => {};
 
 // class Api { constructor(base) { this.client = axios.create(base) } }, with
 // two module-level constructions, new Api(urlA) and new Api(urlB).
@@ -87,9 +90,34 @@ describe("reading an answer under one allocation site", () => {
     ]);
     db.add("wantedIsWrittenAsUnder", ["base", "v2Site", "urlC"]);
 
-    expect(writtenValueUnder(db, "base", "v1Site")).toBe("urlA");
-    expect(writtenValueUnder(db, "base", "v2Site")).toBe(null);
-    expect(writtenValueUnder(db, "base", "noSite")).toBe(null);
+    expect(writtenValueUnder(db, "base", "v1Site", askNothing)).toBe("urlA");
+    expect(writtenValueUnder(db, "base", "v2Site", askNothing)).toBe(null);
+    expect(writtenValueUnder(db, "base", "noSite", askNothing)).toBe(null);
+  });
+
+  it("reads a value written as a fallback as the fallback, as the context-free reader does", () => {
+    // constructor(base) { this.base = base || "/api" }
+    const db = new Database();
+    for (const [relation, ...tuple] of [
+      ...TWO_CLIENTS,
+      ["writtenValue", "slash"],
+      ["fallbackBranch", "either", "base"],
+      ["fallbackBranch", "either", "slash"],
+      ["storesProperty", "Api", "base", "either"],
+      ["readsProperty", "v1Base", "v1", "base"],
+    ] as Array<[string, ...string[]]>) {
+      db.add(relation, tuple);
+    }
+    const ask: AskUnder = (pairs) => {
+      askResolutionUnder(db, pairs, resolutionUnderProgram());
+    };
+    ask([["v1Base", "v1Site"]]);
+
+    expect(isWrittenAsUnder(db, "v1Base", "v1Site").sort()).toEqual([
+      "slash",
+      "urlA",
+    ]);
+    expect(writtenValueUnder(db, "v1Base", "v1Site", ask)).toBe("either");
   });
 
   it("costs nothing to ask the same pair twice", () => {
@@ -128,7 +156,7 @@ describe("a question that runs past its budget", () => {
     askWithin(db, 1);
 
     expect(isWrittenAsUnder(db, "base", "v1Site")).toEqual([]);
-    expect(writtenValueUnder(db, "base", "v1Site")).toBe(null);
+    expect(writtenValueUnder(db, "base", "v1Site", askNothing)).toBe(null);
     expect(db.size("wantedUnder")).toBe(0);
   });
 

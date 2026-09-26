@@ -49,10 +49,14 @@ export {
 export { explainResolvedKey, proofRules } from "./session.js";
 export {
   answersByKey,
+  type OverrideRelations,
   placeholderValues,
   singleAnswers,
+  WANTED_OVERRIDES,
+  withoutOverridden,
 } from "./singleAnswer.js";
 export {
+  type AskUnder,
   allocationSitesOf,
   comesToUnder,
   isWrittenAsUnder,
@@ -61,6 +65,7 @@ export {
 } from "./underContext.js";
 export { type NameWrite, valueLeftByWrites } from "./writes.js";
 export {
+  fallbackWrittenAs,
   writtenValueOf,
   writtenValuesByKey,
   writtenValuesOf,
@@ -822,6 +827,21 @@ const STATED_RULES = [
       lit("objectValue", v("z")),
     ],
   ),
+  // The fallbacks a value passes under a context, so a value reader treats
+  // `a or b` the same way whichever path asked about it.
+  rule(
+    "fallbackBehindUnder",
+    [v("x"), v("c"), v("x")],
+    [lit("context", v("c")), lit("fallbackBranch", v("x"), v("b"))],
+  ),
+  rule(
+    "fallbackBehindUnder",
+    [v("x"), v("c"), v("f")],
+    [
+      lit("reachesUnder", v("x"), v("c"), v("f"), v("c2"), VALUE_STEP),
+      lit("fallbackBranch", v("f"), v("b")),
+    ],
+  ),
   rule(
     "comesToUnder",
     [v("x"), v("c"), v("x")],
@@ -947,6 +967,32 @@ const STATED_RULES = [
       lit("invokes", v("x"), v("f")),
       lit("returnsValue", v("f"), v("ret")),
       lit("isWrittenAs", v("ret"), v("z")),
+    ],
+  ),
+
+  // The fallbacks, `a || b`, a value passes on the way to what it is
+  // written as. A reader of values takes one whole when every answer came
+  // through it, so the reader's own `||` decides which branches count.
+  rule(
+    "fallbackBehind",
+    [v("x"), v("x")],
+    [lit("fallbackBranch", v("x"), v("b"))],
+  ),
+  rule(
+    "fallbackBehind",
+    [v("x"), v("f")],
+    [
+      lit("reaches", v("x"), v("f"), VALUE_STEP),
+      lit("fallbackBranch", v("f"), v("b")),
+    ],
+  ),
+  rule(
+    "fallbackBehind",
+    [v("x"), v("f")],
+    [
+      lit("invokes", v("x"), v("g")),
+      lit("returnsValue", v("g"), v("ret")),
+      lit("fallbackBehind", v("ret"), v("f")),
     ],
   ),
 
@@ -1307,6 +1353,18 @@ const STATED_RULES = [
     ],
     BASE_CLASS_RULE,
   ),
+  // A module a Ruby class prepends is an ancestor too. It comes before the
+  // class in lookup, which `overrides` says, so it has a relation of its own.
+  rule(
+    "contains",
+    [v("cls"), v("n"), v("held")],
+    [
+      lit("prepends", v("cls"), v("mod")),
+      lit("comesTo", v("mod"), v("modObj")),
+      lit("contains", v("modObj"), v("n"), v("held")),
+    ],
+    "prepended module",
+  ),
   // An association is read off an instance as a property, and stating
   // it as `contains` is what puts it on the ancestry rule, so a concern
   // or a base class can be the one that declares it.
@@ -1362,6 +1420,76 @@ const STATED_RULES = [
     ],
     "named receiver store",
   ),
+
+  // A member a class declares itself under a name one of its bases also
+  // contains. `contains` keeps both, and a caller that needs one answer
+  // prefers the member declared nearer the object the read went through.
+  rule(
+    "overrides",
+    [v("m"), v("n"), v("h")],
+    [
+      lit("holdsProperty", v("c"), v("n"), v("m")),
+      lit("extends", v("c"), v("b")),
+      lit("comesTo", v("b"), v("base")),
+      lit("contains", v("base"), v("n"), v("h")),
+    ],
+  ),
+  // A prepended module's member comes before the class's own and what the
+  // class inherits. The module is found by a name hop, since `comesTo`
+  // asked backwards from the module walks to it from every value.
+  rule(
+    "overrides",
+    [v("m"), v("n"), v("h")],
+    [
+      lit("holdsProperty", v("modObj"), v("n"), v("m")),
+      lit("nameHop", v("mod"), v("modObj")),
+      lit("prepends", v("c"), v("mod")),
+      lit("holdsProperty", v("c"), v("n"), v("h")),
+    ],
+  ),
+  rule(
+    "overrides",
+    [v("m"), v("n"), v("h")],
+    [
+      lit("holdsProperty", v("modObj"), v("n"), v("m")),
+      lit("nameHop", v("mod"), v("modObj")),
+      lit("prepends", v("c"), v("mod")),
+      lit("extends", v("c"), v("b")),
+      lit("comesTo", v("b"), v("base")),
+      lit("contains", v("base"), v("n"), v("h")),
+    ],
+  ),
+  // The objects a read reads a name off, and on each one the members the
+  // read finds that another member there overrides.
+  rule(
+    "readsFrom",
+    [v("x"), v("obj"), v("n")],
+    [
+      lit("readsProperty", v("x"), v("o"), v("n")),
+      lit("objectOf", v("o"), v("obj")),
+    ],
+  ),
+  rule(
+    "readsOverridden",
+    [v("x"), v("obj"), v("h")],
+    [
+      lit("readsFrom", v("x"), v("obj"), v("n")),
+      lit("contains", v("obj"), v("n"), v("m")),
+      lit("overrides", v("m"), v("n"), v("h")),
+    ],
+  ),
+  // Every member, for a read with an override, so `contains` is asked with
+  // the object and name bound, the way the property read already asks it.
+  rule(
+    "readsMemberOn",
+    [v("x"), v("obj"), v("h")],
+    [
+      lit("readsOverridden", v("x"), v("shadowing"), v("overridden")),
+      lit("readsFrom", v("x"), v("obj"), v("n")),
+      lit("contains", v("obj"), v("n"), v("h")),
+    ],
+  ),
+
   // A call written with a class's own name, which is how most languages
   // spell a construction. A language that spells one some other way
   // states its own rule for this, the way Ruby does for `Const.new`.
@@ -1654,6 +1782,21 @@ export const RESOLUTION_QUESTIONS = [
     [v("x"), v("z")],
     [lit("wanted", v("x")), lit("isWrittenAs", v("x"), v("z"))],
   ),
+  rule(
+    "wantedFallbackBehind",
+    [v("x"), v("f")],
+    [lit("wanted", v("x")), lit("fallbackBehind", v("x"), v("f"))],
+  ),
+  rule(
+    "wantedReadsOverridden",
+    [v("x"), v("obj"), v("h")],
+    [lit("wanted", v("x")), lit("readsOverridden", v("x"), v("obj"), v("h"))],
+  ),
+  rule(
+    "wantedReadsMemberOn",
+    [v("x"), v("obj"), v("h")],
+    [lit("wanted", v("x")), lit("readsMemberOn", v("x"), v("obj"), v("h"))],
+  ),
   // A call is given no `comesTo`, so this is the only way to ask what
   // object one arrives at, and a demand-driven run derives `objectOf`
   // nowhere without it. An allocation site is not one of the answers.
@@ -1703,6 +1846,14 @@ export const RESOLUTION_QUESTIONS = [
     [
       lit("wantedUnder", v("x"), v("c")),
       lit("objectOfUnder", v("x"), v("c"), v("z")),
+    ],
+  ),
+  rule(
+    "wantedFallbackBehindUnder",
+    [v("x"), v("c"), v("f")],
+    [
+      lit("wantedUnder", v("x"), v("c")),
+      lit("fallbackBehindUnder", v("x"), v("c"), v("f")),
     ],
   ),
   // The same for the function a call returns: `app.use(requireCaller(config))`
@@ -1988,6 +2139,11 @@ export const RESOLUTION_QUESTIONS = [
   ),
   rule(
     "ancestryChain",
+    [v("c"), v("x")],
+    [lit("ancestryChain", v("c"), v("b")), lit("prepends", v("b"), v("x"))],
+  ),
+  rule(
+    "ancestryChain",
     [v("c"), v("z")],
     [lit("ancestryChain", v("c"), v("y")), lit("nameHop", v("y"), v("z"))],
   ),
@@ -2082,7 +2238,7 @@ export const ANSWER_RELATIONS = [
 ];
 
 /**
- * The three of those a caller asks under one allocation site.
+ * The ones of those a caller asks under one allocation site.
  *
  * They are listed apart because leaving them out of what a program has
  * to answer drops the whole second closure from it. A run that never
@@ -2093,4 +2249,5 @@ export const UNDER_ANSWER_RELATIONS = [
   "wantedIsWrittenAsUnder",
   "wantedComesToUnder",
   "wantedObjectOfUnder",
+  "wantedFallbackBehindUnder",
 ];

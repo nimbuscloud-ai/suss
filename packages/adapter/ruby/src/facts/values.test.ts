@@ -201,6 +201,65 @@ describe("ruby value facts", () => {
     ]);
   });
 
+  it("states both sides of `a || b` and `a or b` as the branches their value picks between", async () => {
+    const source =
+      "def build(injected)\n  client = injected || Faraday.new\n  other = (injected or Faraday.new)\nend\n";
+    const db = await factsFor(source);
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    const pick = keyOf(source, "injected || Faraday.new");
+    expect(rows(db, "fallbackBranch")).toContainEqual([
+      pick,
+      `${funcKey}#injected`,
+    ]);
+    expect(rows(db, "fallbackBranch")).toContainEqual([
+      pick,
+      keyOf(source, "Faraday.new"),
+    ]);
+    expect(rows(db, "writtenValue")).not.toContainEqual([pick]);
+    expect(rows(db, "binds")).toContainEqual([
+      `${funcKey}#other`,
+      keyOf(source, "injected or Faraday.new"),
+    ]);
+    expect(
+      rows(db, "fallbackBranch").map((row) => textAt(source, row[0] ?? "")),
+    ).toContain("injected or Faraday.new");
+  });
+
+  it("leaves a side that raises out of the branches, since it hands back no value", async () => {
+    const source = [
+      "def load(id)",
+      "  account = find(id) || raise(NotFound)",
+      "  other = (find(id) or fail 'missing')",
+      "  third = find(id) || raise",
+      "  fourth = find(id) || Kernel.raise(NotFound)",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const branches = rows(db, "fallbackBranch").map((row) =>
+      textAt(source, row[1] ?? ""),
+    );
+    expect(branches).toEqual(["find(id)", "find(id)", "find(id)", "find(id)"]);
+    expect(rows(db, "fallbackBranch")).toHaveLength(4);
+  });
+
+  it("keeps a method named raise on some other receiver as a branch", async () => {
+    const source = "value = cached || alarm.raise(level)\n";
+    const db = await factsFor(source);
+    expect(
+      rows(db, "fallbackBranch").map((row) => textAt(source, row[1] ?? "")),
+    ).toEqual(["cached", "alarm.raise(level)"]);
+  });
+
+  it("keeps `a && b` a written value, since it is no fallback", async () => {
+    const source = "ready = loaded && checked\n";
+    const db = await factsFor(source);
+    expect(db.size("fallbackBranch")).toBe(0);
+    expect(rows(db, "writtenValue")).toContainEqual([
+      keyOf(source, "loaded && checked"),
+    ]);
+  });
+
   it("keeps a memoised instance variable under the method that writes it", async () => {
     const source =
       "class C\n  def conn\n    @conn ||= Faraday.new\n  end\nend\n";
@@ -510,10 +569,11 @@ describe("ruby value facts", () => {
     expect(rows(db, "extends")).toEqual([[cls?.[0], "#Payable"]]);
   });
 
-  it("puts a module the class prepends in the extends ancestry", async () => {
+  it("records a module the class prepends apart from one it includes", async () => {
     const db = await factsFor("class Order\n  prepend Auditing\nend\n");
     const [cls] = rows(db, "objectValue");
-    expect(rows(db, "extends")).toEqual([[cls?.[0], "#Auditing"]]);
+    expect(rows(db, "prepends")).toEqual([[cls?.[0], "#Auditing"]]);
+    expect(db.size("extends")).toBe(0);
   });
 
   it("leaves a mixin out of extendsNamed, which is for a library base alone", async () => {
@@ -534,7 +594,7 @@ describe("ruby value facts", () => {
     ]);
   });
 
-  it("orders prepends before includes, and include A, B in front of B", async () => {
+  it("orders include A, B in front of B, with the superclass last", async () => {
     const db = await factsFor(
       [
         "class Order < ApplicationRecord",
@@ -546,12 +606,12 @@ describe("ruby value facts", () => {
       ].join("\n"),
     );
     expect(rows(db, "extends").map((row) => row[1])).toEqual([
-      "#Auditing",
       "#C",
       "#A",
       "#B",
       "#ApplicationRecord",
     ]);
+    expect(rows(db, "prepends").map((row) => row[1])).toEqual(["#Auditing"]);
   });
 
   it("reads a method an included do block declares as the module's own", async () => {

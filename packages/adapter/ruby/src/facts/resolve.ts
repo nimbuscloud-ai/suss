@@ -16,6 +16,7 @@ import {
   writtenValueOf as sharedWrittenValueOf,
   writtenValueUnder as sharedWrittenValueUnder,
   VALUE_STEP,
+  withoutOverridden,
 } from "@suss/resolution";
 
 import type { Database } from "@suss/datalog";
@@ -95,10 +96,11 @@ export function resolveEnvObjects(
  * up the index instead of scanning every answer the run has derived.
  */
 export function resolvedFunctions(db: Database, key: string): string[] {
-  return [
+  const found = [
     ...db.lookup("wantedResolves", 0, key),
     ...db.lookup("wantedGivesBack", 0, key),
   ].map((row) => String(row[1]));
+  return withoutOverridden(db, key, found);
 }
 
 /**
@@ -124,15 +126,13 @@ export function writtenValueUnder(
   key: string,
   site: string,
 ): string | null {
-  const outcome = askResolutionUnder(
-    db,
-    [[key, site]],
-    resolutionUnderProgram(RUBY_RULES),
-  );
-  if (outcome === "abandoned") {
+  const program = resolutionUnderProgram(RUBY_RULES);
+  if (askResolutionUnder(db, [[key, site]], program) === "abandoned") {
     return null;
   }
-  return sharedWrittenValueUnder(db, key, site);
+  return sharedWrittenValueUnder(db, key, site, (pairs) => {
+    askResolutionUnder(db, pairs, program);
+  });
 }
 
 /** Every construction of a class the run can see, as the keys to ask under. */

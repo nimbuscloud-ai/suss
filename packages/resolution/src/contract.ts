@@ -215,6 +215,33 @@ export const FACT_CONTRACT_CASES: readonly ContractCase[] = [
     },
   },
   {
+    name: "a class extending another",
+    requires:
+      "two module-level classes in one file, the second written as extending the first",
+    // `extends` has to lead to the base's own node, directly or through the
+    // name it is written as, or no rule walking an ancestry finds the base.
+    // `extendsNamed` is what a pack matches a library base by.
+    check: (facts) => {
+      const objects = new Set(facts("objectValue").map((row) => row[0]));
+      const bases = facts("extends").filter((row) => objects.has(row[0]));
+      if (bases.length === 0) {
+        return "no class is written down as extending anything, so a method its base declares is never found on it";
+      }
+      const leadsToClass = (key: string): boolean =>
+        objects.has(key) ||
+        facts("binds").some((row) => row[0] === key && objects.has(row[1]));
+      if (!bases.some((row) => leadsToClass(row[1] ?? ""))) {
+        return "the base is keyed so that nothing leads from it to the class it names";
+      }
+      const named = facts("extendsNamed").filter((row) =>
+        bases.some((base) => base[0] === row[0]),
+      );
+      return named.length > 0
+        ? null
+        : "the base's written name is not recorded, so a pack cannot match a library base";
+    },
+  },
+  {
     name: "a value another file declares",
     requires:
       "two files, one declaring a value and the other reading it by name",

@@ -1,4 +1,4 @@
-import { answersFor } from "./singleAnswer.js";
+import { answersByKey, answersFor, placeholderValues } from "./singleAnswer.js";
 
 import type { Database } from "@suss/datalog";
 
@@ -24,7 +24,104 @@ export function writtenValueOf(
   relation: string = WRITTEN_AS,
 ): string | null {
   const answers = settledByKey(db, [key], ask, relation).get(key) ?? [];
-  return answers.length === 1 ? (answers[0] as string) : null;
+  if (answers.length === 1) {
+    return answers[0] as string;
+  }
+  return relation === WRITTEN_AS ? fallbackWrittenAs(db, key, ask) : null;
+}
+
+/** Where a plain `wanted` question puts the fallbacks a value passes. */
+const FALLBACK_BEHIND = "wantedFallbackBehind";
+
+/**
+ * The fallback, `a or b`, that a value was written as, when the rules
+ * found several expressions and every one of them came through that
+ * fallback. A value reader then reads the fallback whole, and its own
+ * `or` decides: a branch it cannot read makes no claim, and two branches
+ * it can read both count. `writtenValuesOf` still lists the branches, for
+ * a caller that wants each one.
+ *
+ * When one fallback is inside another, the outer one is returned. Null
+ * when no fallback covers all of them, as for a name that two plain
+ * writes leave with two values.
+ */
+export function fallbackWrittenAs(
+  db: Database,
+  key: string,
+  ask: Ask,
+): string | null {
+  return coveringFallback(db, key, CONTEXT_FREE, null, ask);
+}
+
+/** Where one reader's question puts a value's expressions and the fallbacks it passes. */
+export interface FallbackRelations {
+  writtenAs: string;
+  fallbacks: string;
+}
+
+const CONTEXT_FREE: FallbackRelations = {
+  writtenAs: WRITTEN_AS,
+  fallbacks: FALLBACK_BEHIND,
+};
+
+/**
+ * `fallbackWrittenAs`, for the relations one reader asks through, with
+ * `site` null for a context-free reader and the allocation site for one
+ * that reads under it.
+ */
+export function coveringFallback(
+  db: Database,
+  key: string,
+  relations: FallbackRelations,
+  site: string | null,
+  ask: Ask,
+): string | null {
+  const answers = new Set(answersAt(db, relations.writtenAs, key, site));
+  const fallbacks = answersAt(db, relations.fallbacks, key, site);
+  if (answers.size < 2 || fallbacks.length === 0) {
+    return null;
+  }
+  ask(fallbacks);
+  const covering = fallbacks.filter((fallback) =>
+    sameAnswers(answersAt(db, relations.writtenAs, fallback, site), answers),
+  );
+  const outermost = covering.filter((fallback) => {
+    const inside = new Set(answersAt(db, relations.fallbacks, fallback, site));
+    return covering.every((other) => other === fallback || inside.has(other));
+  });
+  return outermost.length === 1 ? (outermost[0] as string) : null;
+}
+
+/**
+ * A key's answers in a `[key, answer]` relation, or in a `[key, site,
+ * answer]` one under the site given, with a key's match against itself
+ * and a placeholder set aside the same way either way.
+ */
+export function answersAt(
+  db: Database,
+  relation: string,
+  key: string,
+  site: string | null,
+): string[] {
+  if (site === null) {
+    return answersFor(db, relation, key);
+  }
+  const rows = db
+    .lookup(relation, 0, key)
+    .filter((row) => String(row[1]) === site)
+    .map((row) => [key, String(row[2])]);
+  return answersByKey(rows, placeholderValues(db)).get(key) ?? [];
+}
+
+function sameAnswers(
+  answers: readonly string[],
+  expected: ReadonlySet<string>,
+): boolean {
+  const found = new Set(answers);
+  return (
+    found.size === expected.size &&
+    [...found].every((answer) => expected.has(answer))
+  );
 }
 
 /**

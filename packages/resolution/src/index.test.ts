@@ -3069,3 +3069,100 @@ describe("a name followed by every chain that stops somewhere", () => {
     },
   );
 });
+
+describe("a method a subclass overrides", () => {
+  // class Base { save() }; class Sub extends Base { save() }; sub.save
+  const classes: Array<[string, ...string[]]> = [
+    ["func", "baseSave"],
+    ["func", "subSave"],
+    ["objectValue", "Base"],
+    ["objectValue", "Sub"],
+    ["holdsProperty", "Base", "save", "baseSave"],
+    ["holdsProperty", "Sub", "save", "subSave"],
+    ["binds", "BaseRef", "Base"],
+    ["binds", "SubRef", "Sub"],
+    ["extends", "Sub", "BaseRef"],
+  ];
+
+  /** `[object, member]` rows a relation lists for the read `x`. */
+  function membersOn(facts: Array<[string, ...string[]]>, relation: string) {
+    return derive(facts, relation, "x")
+      .map((t) => `${t[1]}:${t[2]}`)
+      .sort();
+  }
+
+  it("says the subclass's own method overrides the one its base declares", () => {
+    expect(
+      derive(classes, "overrides", "subSave").map((t) => `${t[1]}:${t[2]}`),
+    ).toEqual(["save:baseSave"]);
+  });
+
+  it("lists the base's method as overridden on the subclass a read goes through", () => {
+    const facts: Array<[string, ...string[]]> = [
+      ...classes,
+      ["call", "made", "SubRef"],
+      ["binds", "sub", "made"],
+      ["readsProperty", "x", "sub", "save"],
+    ];
+    expect(resolutionsOf(facts, "x")).toEqual(["baseSave", "subSave"]);
+    expect(membersOn(facts, "readsOverridden")).toEqual([
+      "Sub:baseSave",
+      "made:baseSave",
+    ]);
+    expect(membersOn(facts, "readsMemberOn")).toEqual([
+      "Sub:baseSave",
+      "Sub:subSave",
+      "made:baseSave",
+      "made:subSave",
+    ]);
+  });
+
+  it("says a prepended module's method overrides the class's own and what it inherits", () => {
+    // module Audit { save }; class Sub < Base { prepend Audit; save }
+    const facts: Array<[string, ...string[]]> = [
+      ...classes,
+      ["func", "auditSave"],
+      ["objectValue", "Audit"],
+      ["holdsProperty", "Audit", "save", "auditSave"],
+      ["binds", "AuditRef", "Audit"],
+      ["prepends", "Sub", "AuditRef"],
+    ];
+    expect(
+      derive(facts, "overrides", "auditSave")
+        .map((t) => `${t[1]}:${t[2]}`)
+        .sort(),
+    ).toEqual(["save:baseSave", "save:subSave"]);
+    expect(derive(facts, "overrides", "subSave").map((t) => t[2])).toEqual([
+      "baseSave",
+    ]);
+    expect(containedIn(facts, "Sub")).toEqual([
+      "save:auditSave",
+      "save:baseSave",
+      "save:subSave",
+    ]);
+  });
+
+  it("lists the base itself as an object the read finds the base's method on", () => {
+    const facts: Array<[string, ...string[]]> = [
+      ...classes,
+      ["call", "madeSub", "SubRef"],
+      ["call", "madeBase", "BaseRef"],
+      ["mayHold", "either", "madeSub"],
+      ["mayHold", "either", "madeBase"],
+      ["writesAllStated", "either"],
+      ["readsProperty", "x", "either", "save"],
+    ];
+    expect(membersOn(facts, "readsOverridden")).toEqual([
+      "Sub:baseSave",
+      "madeSub:baseSave",
+    ]);
+    expect(membersOn(facts, "readsMemberOn")).toEqual([
+      "Base:baseSave",
+      "Sub:baseSave",
+      "Sub:subSave",
+      "madeBase:baseSave",
+      "madeSub:baseSave",
+      "madeSub:subSave",
+    ]);
+  });
+});

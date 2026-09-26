@@ -15,9 +15,11 @@
 import { evaluate, proofOf, rulesDeriving, witnesses } from "@suss/datalog";
 
 import { explainResolutionProof, renderExplanation } from "./explain.js";
+import { withoutOverridden } from "./singleAnswer.js";
 
 import type { Database, Rule } from "@suss/datalog";
 import type { ResolutionExplanation, StepPhrase } from "./explain.js";
+import type { OverrideRelations } from "./singleAnswer.js";
 
 /** A value or function said the way an answer prints it. */
 export interface ValueLocation {
@@ -64,6 +66,12 @@ export interface ExplainResolvedKeyOptions {
   phrases?: Record<string, StepPhrase>;
 }
 
+/** Where a proof pass, which asks no question, lists the members a subclass overrides. */
+const PROOF_OVERRIDES: OverrideRelations = {
+  overridden: "readsOverridden",
+  found: "readsMemberOn",
+};
+
 /**
  * The rules a proof of `resolves` can use. A proof pass runs without
  * demand, over every fact it was given, and the rules under an
@@ -71,7 +79,11 @@ export interface ExplainResolvedKeyOptions {
  * narrows them, so they are left out.
  */
 export function proofRules(rules: readonly Rule[]): Rule[] {
-  return rulesDeriving(rules, ["resolves"]);
+  return rulesDeriving(rules, [
+    "resolves",
+    PROOF_OVERRIDES.overridden,
+    PROOF_OVERRIDES.found,
+  ]);
 }
 
 /**
@@ -91,7 +103,12 @@ export function explainResolvedKey(
   const { baseFacts, derivedFacts } = factCounts(db, witnessRules);
 
   const targets = new Set(
-    db.lookup("resolves", 0, key).map((tuple) => String(tuple[1])),
+    withoutOverridden(
+      db,
+      key,
+      db.lookup("resolves", 0, key).map((tuple) => String(tuple[1])),
+      PROOF_OVERRIDES,
+    ),
   );
   if (targets.size !== 1) {
     return null;

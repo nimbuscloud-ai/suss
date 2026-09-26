@@ -9,6 +9,7 @@ import { collectFileConstants, emitConstantBindings } from "./constants.js";
 import {
   constructionSites,
   RUBY_PROGRAM,
+  resolvedFunctions,
   resolveValues,
   writtenValueOf,
   writtenValueUnder,
@@ -116,6 +117,120 @@ describe("resolving a value across a Ruby file", () => {
     expect(writtenValueOf(db, String(wrapperCall?.[0]))).toBe(
       String(construction?.[0]),
     );
+  });
+
+  it("settles a method a subclass overrides on the subclass's own", async () => {
+    const source = [
+      "class Repository",
+      "  def persist",
+      '    "base"',
+      "  end",
+      "end",
+      "",
+      "class Accounts < Repository",
+      "  def persist",
+      '    "accounts"',
+      "  end",
+      "end",
+      "",
+      "accounts = Accounts.new",
+      "accounts.persist",
+    ].join("\n");
+    const db = await factsFor(source);
+
+    const read = String(
+      db
+        .facts("readsProperty")
+        .find(
+          (row) =>
+            String(row[2]) === "persist" && !String(row[1]).endsWith("#self"),
+        )?.[0],
+    );
+    const own = 'def persist\n    "accounts"\n  end';
+    const start = source.indexOf(own);
+    resolveValues(db, [read]);
+    expect(resolvedFunctions(db, read)).toEqual([
+      `f.rb:${start}-${start + own.length}`,
+    ]);
+  });
+
+  it("settles a method a prepended module writes on the module's, which Ruby runs first", async () => {
+    const source = [
+      "module Auditing",
+      "  def persist",
+      '    "audited"',
+      "  end",
+      "end",
+      "",
+      "class Repository",
+      "  def persist",
+      '    "base"',
+      "  end",
+      "end",
+      "",
+      "class Accounts < Repository",
+      "  prepend Auditing",
+      "",
+      "  def persist",
+      '    "accounts"',
+      "  end",
+      "end",
+      "",
+      "accounts = Accounts.new",
+      "accounts.persist",
+    ].join("\n");
+    const db = await factsFor(source);
+
+    const read = String(
+      db
+        .facts("readsProperty")
+        .find(
+          (row) =>
+            String(row[2]) === "persist" && !String(row[1]).endsWith("#self"),
+        )?.[0],
+    );
+    const audited = 'def persist\n    "audited"\n  end';
+    const start = source.indexOf(audited);
+    resolveValues(db, [read]);
+    expect(resolvedFunctions(db, read)).toEqual([
+      `f.rb:${start}-${start + audited.length}`,
+    ]);
+  });
+
+  it("keeps both methods for a receiver that can be the base or the subclass", async () => {
+    const db = await factsFor(
+      [
+        "class Repository",
+        "  def persist",
+        '    "base"',
+        "  end",
+        "end",
+        "",
+        "class Accounts < Repository",
+        "  def persist",
+        '    "accounts"',
+        "  end",
+        "end",
+        "",
+        "def store(repository)",
+        "  repository.persist",
+        "end",
+        "",
+        "store(Accounts.new)",
+        "store(Repository.new)",
+      ].join("\n"),
+    );
+
+    const read = String(
+      db
+        .facts("readsProperty")
+        .find(
+          (row) =>
+            String(row[2]) === "persist" && !String(row[1]).endsWith("#self"),
+        )?.[0],
+    );
+    resolveValues(db, [read]);
+    expect(resolvedFunctions(db, read)).toHaveLength(2);
   });
 
   it("asks about a key on its own", async () => {
