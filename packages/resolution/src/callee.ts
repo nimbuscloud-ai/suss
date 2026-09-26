@@ -128,7 +128,7 @@ function sourcesOf(db: Database, key: string): string[] {
 /**
  * The values written to a name. What a call put in a parameter is left
  * out on purpose: one caller's argument is not what every caller passes,
- * and a caller wanting them apart asks `paramAt`.
+ * and a caller wanting them apart asks `passesArgument`.
  */
 const WRITE_RELATIONS = ["binds", "endsHolding", "mayHold"];
 
@@ -298,8 +298,8 @@ function isParameter(db: Database, key: string): boolean {
 
 /**
  * A parameter whose value every caller decides. Following the arguments
- * one caller wrote would answer for all of them, which is the question
- * `paramAt` exists for. A parameter an adapter states a value for, a
+ * one caller wrote would answer for all of them, and `passesArgument`
+ * keeps the callers apart. A parameter an adapter states a value for, a
  * method's receiver say, is not one of these.
  */
 function decidedByCallers(db: Database, key: string): boolean {

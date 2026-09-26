@@ -165,12 +165,12 @@ packs register nothing reads nothing extra.
 
 `argumentsPassedTo(parameter)` needs this most. It returns every call of
 the function the parameter belongs to, with the argument that call wrote
-at it, exactly as the caller wrote it and before any settling. `paramAt`
-settles the value through `comesTo`, which stops at a function or an
-object, so a parameter given a GraphQL document has no `paramAt` answer
-at all. The caller reads the argument itself, since it knows what kind
-of value it is looking for. With this, one project hook in front of
-`useQuery` turns into one operation per component.
+at it, exactly as the caller wrote it and before any settling. Settling
+it through `comesTo` would stop at a function or an object, so a
+parameter given a GraphQL document would get no answer at all. The
+caller reads the argument itself, since it knows what kind of value it
+is looking for. With this, one project hook in front of `useQuery`
+turns into one operation per component.
 
 `callsPassing(parameter)` asks the reverse, and it uses facts already in
 the store, with no need to read the caller's file first. It returns

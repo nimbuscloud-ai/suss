@@ -15,7 +15,6 @@ import {
   resolutionUnderProgram,
   writtenValueOf as sharedWrittenValueOf,
   writtenValueUnder as sharedWrittenValueUnder,
-  VALUE_STEP,
   withoutOverridden,
 } from "@suss/resolution";
 
@@ -47,20 +46,6 @@ export const RUBY_RULES = alsoSteps([
       lit("readsProperty", v("c"), v("o"), constant("new")),
       lit("call", v("r"), v("c")),
     ],
-  ),
-
-  // `%i[a b].freeze` evaluates to the list it was called on. The
-  // evaluator's row table has the same step for a value inside one file.
-  ...["freeze", "dup"].map((method) =>
-    rule(
-      "hop",
-      [v("r"), v("o"), VALUE_STEP],
-      [
-        lit("call", v("r"), v("c")),
-        lit("readsProperty", v("c"), v("o"), constant(method)),
-      ],
-      "hands back the receiver",
-    ),
   ),
 ]);
 

@@ -82,9 +82,11 @@ returnsValue(f, v)          f returns v
 returnsClass(f, c)          f is annotated as returning c, and its body
                             states no value of its own
                             (TypeScript, Python)
-returnsNamed(f, n)          f's return annotation is written n, stated
-                            when returnsClass is. Nothing reads it yet
-                            (TypeScript, Python)
+returnsNamed(f, n)          f's return annotation is written n, read
+                            through Optional and a forward reference's
+                            quotes, whatever f's body returns. No rule
+                            reads it. The storage reader matches it
+                            against a pack's query types (Python)
 containsFn(f, g)            g is declared inside f
 initializes(cls, f)         f runs when one of cls is made
 storesProperty(f, n, x)     f's body writes x to the receiver's n
@@ -145,6 +147,16 @@ exportsAs(m, n, v)          the file m exports v under the name n
 reExports(m, n, m2, n2)     m's n is m2's n2 (TypeScript)
 reExportsAll(m, m2)         m forwards everything m2 exports
                             (TypeScript)
+importsModule(f, m)         the file f imports the module m, as written.
+                            A pack reader asks whether a file imports
+                            its library with it, and no rule reads it
+                            (Python)
+importsFile(f, g)           the file f depends on the file g in the run:
+                            an import that resolved to g in Python, and
+                            in Ruby a require_relative of g or a
+                            constant g defines. No rule reads it, and
+                            the run lists each file's dependencies from
+                            it with importedFilesByFile (Python, Ruby)
 ```
 
 A pack states what it knows about its own library as words. Each
@@ -169,6 +181,10 @@ unwrapsByName(mod, n, k)    calling the n that module mod exports gives
 associationConstructor(mod, n)  a field given a call of the n that
                             module mod exports declares an association
                             (Python)
+returnsReceiver(m)          calling a method named m hands back the
+                            object it was called on. Each adapter adds
+                            its language's own: bind in TypeScript,
+                            freeze and dup in Ruby (TypeScript, Ruby)
 ```
 
 A caller asks a question by adding a row to one of the relations in
@@ -180,26 +196,6 @@ same store and reads them itself, or through a rule of its own, and no
 shared rule reads them:
 
 ```
-bindCall(r, t)              r is t.bind(...), and the adapter's own hop
-                            sends r where t leads (TypeScript)
-importsModule(file, m)      file imports the module m. The store reads
-                            it only with the demand rewrite switched off
-                            (TypeScript)
-pyImport(file, m, status)   file imports m, and status says whether the
-                            import resolved, or why not (Python)
-pyImportResolved(file, m, target)  the import of m resolved to the file
-                            target. The run's file dependencies come
-                            from it (Python)
-pyImportedName(x, m, n)     x is the name n imported from m, with m as
-                            written even when it resolves (Python)
-pyOpenImport(file, m)       file writes from m import *. Nothing reads
-                            it (Python)
-rbRequires(file, target)    file loads target with require_relative.
-                            The run's file dependencies come from it
-                            (Ruby)
-rbConstantFrom(file, target)  file reads a constant that target defines.
-                            The run's file dependencies come from it
-                            (Ruby)
 rbConstantName(c, q)        the constant defined at c is called q in
                             full, with every namespace around it (Ruby)
 definesMethodFrom(c, x)     c's body calls define_method, and x is the
@@ -209,9 +205,6 @@ definesMethodFrom(c, x)     c's body calls define_method, and x is the
 nameTurnsOn(x, element, index, over)  the name x is written in a loop
                             block that binds element, and index when it
                             has one, to each item of over (Ruby)
-entry(u)                    discovery found the unit u. The reach
-                            closure keeps its own copy, and nothing
-                            reads this one (Python, Ruby)
 ```
 
 `declaresName` is the only fact an adapter records after asking these
@@ -246,8 +239,8 @@ in, which is what a project barrel hides. A declaration a library's own
 that library's name too. That covers a member of a namespace a barrel
 re-exports, a member of a default import of a module written with
 `export =`, and a global a package declares. The Python adapter writes
-an import under the file when the import resolves, and under the module
-as written when it does not.
+every import under the module as written, and under the file as well
+when the import resolves to one.
 
 A global the language declares has no module at all, so the adapter
 records a callee that only library declaration files declare under
@@ -605,7 +598,6 @@ fallbackBehind(x, f)        following x to what it is written as passes
                             the fallback f
 comesFrom(x, m, n)          following x arrives at m's export n
 callsInto(f, m, n)          calling f ends up calling m's n
-paramAt(r, p, z)            the call r puts z in the parameter p
 passesArgument(r, p, a)     the call r writes a at the parameter p
 returnsCall(f, c)           running f hands back the expression c
 ```
@@ -663,19 +655,16 @@ a library's own function has nowhere to end, because the library's body
 is not in that source. `comesFrom` walks the same steps but stops at the
 import, and returns the module and the name that module exports.
 
-`paramAt` is the only question that keeps track of the call it went
-through. `comesTo` merges call sites: a function called from two places
-has two values for its parameter, and a caller that wants one value
-gets nothing. `paramAt` returns which call put which value there.
+`passesArgument` is the only question that keeps track of the call it
+went through. `comesTo` merges call sites: a function called from two
+places has two values for its parameter, and a caller that wants one
+value gets nothing. `passesArgument` returns which call wrote which
+argument there, as the calling code wrote it, and leaves reading it to
+the code asking, which knows what kind of value to expect. A parameter
+given a GraphQL document still gets an answer that way, where settling
+the argument through `comesTo` would get none.
 
-`passesArgument` is the hop underneath `paramAt`, and a caller can ask
-for it directly. `paramAt` settles the value through `comesTo`, so a
-parameter given a GraphQL document gets no answer at all.
-`passesArgument` returns the argument as the calling code wrote it, and
-leaves reading it to the code asking, which knows what kind of value to
-expect.
-
-Both go through `callsFunction`, which starts from the function and
+It goes through `callsFunction`, which starts from the function and
 finds the calls that reach it. A function written as
 `const f = (x) => ...` comes in two pieces: the name is the
 declaration, and the parameters belong to the arrow function the

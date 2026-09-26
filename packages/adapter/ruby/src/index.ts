@@ -41,7 +41,6 @@ export {
 } from "./facts/constants.js";
 export { emitValueFacts, nodeId, readKey } from "./facts/values.js";
 export { RubyWhySession } from "./facts/why.js";
-export { emitEntryFact, unitKey } from "./facts.js";
 export {
   parseRuby,
   parseRubySync,

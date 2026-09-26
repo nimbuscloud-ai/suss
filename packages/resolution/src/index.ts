@@ -8,6 +8,7 @@ export {
 export { checkFactContract, FACT_CONTRACT_CASES } from "./contract.js";
 export { declaredTypesOf } from "./declaredType.js";
 export { explainResolutionProof, renderExplanation } from "./explain.js";
+export { importedFilesByFile } from "./fileImports.js";
 export {
   agreedMountPrefix,
   joinMountedPath,
@@ -102,7 +103,7 @@ export type {
 // That last one is a decorator in Python and a closure in Go.
 //
 // So an adapter reads source into facts and leaves their meaning to the
-// rules. Anything particular to one language, like JavaScript's `.bind`,
+// rules. Anything particular to one language, like Ruby's `Const.new`,
 // belongs with that language's adapter and composes on top.
 //
 // Every fact an adapter supplies and every word a pack declares has a line
@@ -243,7 +244,7 @@ const STATED_RULES = [
   ),
 
   // Every name hop is a value step. A language with a hop of its own, like
-  // JavaScript's `.bind`, states it as a step too, or every question but
+  // Ruby's `Const.new`, states it as a step too, or every question but
   // `comesTo` misses it.
   rule(
     "hop",
@@ -266,7 +267,7 @@ const STATED_RULES = [
 
   // A parameter steps to what a call passes it. A function called from
   // several places leaves its parameter with more than one value, and a
-  // caller that needs those apart asks `paramAt`.
+  // caller that needs those apart asks `passesArgument`, which keeps the call.
   rule(
     "stepsTo",
     [v("p"), v("a"), VALUE_STEP],
@@ -379,6 +380,20 @@ const STATED_RULES = [
       lit("entersAsSelf", v("mod"), v("n")),
     ],
     "context manager returns self",
+  ),
+
+  // A method the language says hands back the object it was called on,
+  // such as JavaScript's `.bind` or Ruby's `freeze`. Each adapter lists
+  // its language's own in `returnsReceiver`, keyed on the method's name.
+  rule(
+    "hop",
+    [v("r"), v("o"), VALUE_STEP],
+    [
+      lit("call", v("r"), v("c")),
+      lit("readsProperty", v("c"), v("o"), v("m")),
+      lit("returnsReceiver", v("m")),
+    ],
+    "returns its receiver",
   ),
 
   // Wrapper transparency, derived: calling a factory that returns a
@@ -1004,20 +1019,9 @@ const STATED_RULES = [
     [lit("returnsValue", v("f"), v("v")), lit("isWrittenAs", v("v"), v("c"))],
   ),
 
-  // What one call site put in a parameter, told apart from what the
-  // other callers passed.
-  rule(
-    "paramAt",
-    [v("r"), v("p"), v("z")],
-    [
-      lit("passesArgument", v("r"), v("p"), v("a")),
-      lit("comesTo", v("a"), v("z")),
-    ],
-  ),
-
   // An argument arriving at the parameter it is passed to, by position
   // or by the name the caller wrote, keeping the call it went through
-  // so `paramAt` can tell two call sites apart.
+  // so a caller can tell two call sites apart.
   rule(
     "passesArgument",
     [v("r"), v("p"), v("a")],
@@ -1869,16 +1873,9 @@ export const RESOLUTION_QUESTIONS = [
     [v("x"), v("z")],
     [lit("wanted", v("x")), lit("givesBackUnwrapped", v("x"), v("z"))],
   ),
-  // Keyed by the parameter, since that is what a caller has in hand
-  // when it wants the call sites told apart.
-  rule(
-    "wantedParamAt",
-    [v("p"), v("r"), v("z")],
-    [lit("wanted", v("p")), lit("paramAt", v("r"), v("p"), v("z"))],
-  ),
-  // The argument as the caller wrote it. A parameter given a GraphQL
-  // document has no `paramAt` answer, since that settles through
-  // `comesTo`, which stops at a function or an object.
+  // The argument as the caller wrote it, keyed by the parameter, since
+  // that is what a caller has in hand when it wants the call sites told
+  // apart. The caller settles the argument however its kind of value needs.
   rule(
     "wantedPassesArgument",
     [v("p"), v("r"), v("a")],

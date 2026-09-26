@@ -1,14 +1,9 @@
 /**
- * The facts the binder and the module resolver add to the shared store.
+ * The facts the module resolver adds to the shared store.
  *
- * A discovered route goes into `entry`, the same relation a TypeScript
- * entry point goes into, so a rule joining on entries sees both.
- *
- * The `py` relations are specific to Python. `pyImport` and
- * `pyImportResolved` record how each import resolved, and an import the
- * resolver abstains on gets its reason as the status instead of a guessed
- * file. `pyOpenImport` records each `from module import *` as written,
- * and nothing expands it here.
+ * `importsModule` records each module a file imports, as written, and
+ * `importsFile` the file an import resolved to. An import the resolver
+ * abstains on gets no file rather than a guessed one.
  */
 
 import { NAMESPACE_IMPORT_NAME } from "@suss/resolution";
@@ -18,27 +13,6 @@ import { resolveModule } from "./moduleResolver.js";
 import type { Database } from "@suss/datalog";
 import type { ModuleResolverOptions } from "./moduleResolver.js";
 import type { ModuleBinding } from "./scope.js";
-
-/**
- * The range is in lines and two units can start on the same line. `entry`
- * is a set, so a key without the name would drop one of the two.
- */
-export function unitKey(
-  filePath: string,
-  range: { start: number; end: number },
-  name: string,
-): string {
-  return `${filePath}:${range.start}-${range.end}#${name}`;
-}
-
-export function emitEntryFact(
-  db: Database,
-  filePath: string,
-  range: { start: number; end: number },
-  name: string,
-): void {
-  db.add("entry", [unitKey(filePath, range, name)]);
-}
 
 /** The dotted path with its leading dots put back, the way the import is written in the source. */
 function importedModuleText(module: string, relativeLevel: number): string {
@@ -71,16 +45,7 @@ export function emitModuleImportFacts(
         { module: binding.module, relativeLevel: binding.relativeLevel },
         resolverOptions,
       );
-      db.add("pyImport", [
-        filePath,
-        moduleText,
-        resolution.status === "resolved" ? "resolved" : resolution.reason,
-      ]);
-      const importedName =
-        binding.kind === "import" ? binding.localName : binding.importedName;
-      // Recorded for every import so a name from a library outside the run
-      // still says which module it came from.
-      db.add("pyImportedName", [nameKey, moduleText, importedName]);
+      db.add("importsModule", [filePath, moduleText]);
       // A module-scope name is one another file can import back out.
       if (scope.kind === "module") {
         db.add("exportsAs", [filePath, localName, nameKey]);
@@ -88,25 +53,21 @@ export function emitModuleImportFacts(
       // `import fastapi` brings in the whole module. The shared rules spell
       // that `*`, and it lets them resolve `fastapi.APIRouter` to fastapi's
       // own `APIRouter`.
+      const importedName =
+        binding.kind === "import" ? binding.localName : binding.importedName;
       const exportedName =
         binding.kind === "import" && binding.bindsWholeModule
           ? NAMESPACE_IMPORT_NAME
           : importedName;
+      // The shared rules follow a name across files through `imports` and
+      // `exportsAs`, which key a module by its file.
       if (resolution.status === "resolved") {
-        db.add("pyImportResolved", [filePath, moduleText, resolution.file]);
-        // The shared rules follow a name across files through `imports` and
-        // `exportsAs`, so a resolved module is keyed by its file.
+        db.add("importsFile", [filePath, resolution.file]);
         db.add("imports", [nameKey, resolution.file, exportedName]);
-        continue;
       }
-      // A third-party package resolves to no file. Keying the import on the
-      // module text still tells `FastAPI()` apart from a constructor of the
-      // same name that the project wrote itself.
+      // Keyed on the module text for every import, so a pack matching its
+      // library tells `FastAPI()` apart from a project class of that name.
       db.add("imports", [nameKey, moduleText, exportedName]);
     }
-  }
-
-  for (const openModule of module.openImports) {
-    db.add("pyOpenImport", [filePath, openModule]);
   }
 }

@@ -2,42 +2,38 @@ import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
 
-import { emitEntryFact, unitKey } from "./facts.js";
+import { emitRequireFacts } from "./facts.js";
+import { parseRuby } from "./parser.js";
 
-describe("unitKey", () => {
-  it("joins the file path, the lines, and the name", () => {
+import type { RbNode } from "./parser.js";
+
+async function requiresOf(
+  source: string,
+  known: readonly string[],
+): Promise<string[][]> {
+  const tree = await parseRuby(source);
+  const db = new Database();
+  emitRequireFacts(
+    db,
+    "/app/jobs/report_job.rb",
+    tree.rootNode as unknown as RbNode,
+    new Set(known),
+  );
+  return db.facts("importsFile").map((row) => row.map(String));
+}
+
+describe("emitRequireFacts", () => {
+  it("records a require_relative of a file in the run as a file the requiring file imports", async () => {
     expect(
-      unitKey("types/campaign_type.rb", { start: 10, end: 40 }, "Campaign.id"),
-    ).toBe("types/campaign_type.rb:10-40#Campaign.id");
+      await requiresOf('require_relative "../models/orders"\n', [
+        "/app/models/orders.rb",
+      ]),
+    ).toEqual([["/app/jobs/report_job.rb", "/app/models/orders.rb"]]);
   });
 
-  it("tells apart two fields written on one line", () => {
-    const range = { start: 2, end: 2 };
-    expect(unitKey("types/campaign_type.rb", range, "Campaign.id")).not.toBe(
-      unitKey("types/campaign_type.rb", range, "Campaign.name"),
-    );
-  });
-});
-
-describe("emitEntryFact", () => {
-  it("records one entry fact keyed by file, lines, and name", () => {
-    const db = new Database();
-    emitEntryFact(
-      db,
-      "types/campaign_type.rb",
-      { start: 10, end: 40 },
-      "Campaign.id",
-    );
-    expect(db.facts("entry")).toEqual([
-      ["types/campaign_type.rb:10-40#Campaign.id"],
-    ]);
-  });
-
-  it("keeps both units when two fields share a line", () => {
-    const db = new Database();
-    const range = { start: 2, end: 2 };
-    emitEntryFact(db, "types/campaign_type.rb", range, "Campaign.id");
-    emitEntryFact(db, "types/campaign_type.rb", range, "Campaign.name");
-    expect(db.facts("entry")).toHaveLength(2);
+  it("records nothing for a file outside the run or a plain require", async () => {
+    expect(
+      await requiresOf('require_relative "vendored"\nrequire "json"\n', []),
+    ).toEqual([]);
   });
 });

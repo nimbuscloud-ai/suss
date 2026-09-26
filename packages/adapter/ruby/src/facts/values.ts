@@ -6,7 +6,11 @@
  * mixins recorded as `extends`, and instance variables as class properties.
  */
 
-import { startsAtName, valueLeftByWrites } from "@suss/resolution";
+import {
+  addPackWords,
+  startsAtName,
+  valueLeftByWrites,
+} from "@suss/resolution";
 
 import {
   bareCallArgumentGroups,
@@ -22,6 +26,7 @@ import {
   readCallArgs,
 } from "../ast.js";
 import { spellsAName } from "../paths/bareCalls.js";
+import { RECEIVER_RETURNS } from "./languageWords.js";
 import {
   collectWrites,
   instanceWritesRunInOrder,
@@ -1282,4 +1287,7 @@ export function emitValueFacts(
   emitExpressionFacts(emitter, root);
   emitScopeWrites(emitter, null, root);
   emitLambdasIn(emitter, root);
+  // Every store holding Ruby values needs the language's words, a single
+  // file's and a why session's included, and a second file adds nothing.
+  addPackWords(db, { returnsReceiver: RECEIVER_RETURNS });
 }

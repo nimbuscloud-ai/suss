@@ -21,7 +21,7 @@ export {
 } from "./facts/resolve.js";
 export { emitValueFacts, nameKeyIn, nodeId, readKey } from "./facts/values.js";
 export { PythonWhySession } from "./facts/why.js";
-export { emitEntryFact, emitModuleImportFacts, unitKey } from "./facts.js";
+export { emitModuleImportFacts } from "./facts.js";
 export {
   resolveAbsoluteModule,
   resolveModule,

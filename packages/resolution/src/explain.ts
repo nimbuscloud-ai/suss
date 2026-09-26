@@ -164,6 +164,15 @@ const DEFAULT_PHRASES: Record<string, StepPhrase> = {
       ],
     };
   },
+  "returns its receiver": ({ tuple, premises, describe }) => {
+    const method = String(premises[1].tuple[2]);
+    return {
+      reason: `${describe(tuple[0])} calls ${method} on ${describe(tuple[1])}, which hands back what it was called on`,
+      assumptions: [
+        `${method} hands back the object it is called on, as the language adapter declares`,
+      ],
+    };
+  },
   "declared finder": ({ tuple, premises, describe }) => {
     const method = String(premises[1].tuple[2]);
     const base = String(premises[4].tuple[0]);

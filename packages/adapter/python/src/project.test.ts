@@ -558,8 +558,9 @@ describe("extractPythonProject", () => {
       ["myapp/routes/orders.py", "myapp/routes/todos.py"].sort(),
     );
 
-    expect(facts.facts("entry")).toHaveLength(2);
-    const importedModules = facts.facts("pyImport").map((tuple) => tuple[1]);
+    const importedModules = facts
+      .facts("importsModule")
+      .map((tuple) => tuple[1]);
     expect(importedModules).toContain("myapp.wrappers.restx");
   });
 

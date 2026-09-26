@@ -1071,14 +1071,6 @@ function emitCallFacts(
   table.byId.set(callId, call as unknown as Node);
 
   const callee = unwrapExpression(call.getExpression());
-
-  // f.bind(receiver): the call resolves to whatever f resolves to.
-  if (Node.isPropertyAccessExpression(callee) && callee.getName() === "bind") {
-    const target = unwrapExpression(callee.getExpression());
-    fact(db, "bindCall", callId, emitValue(db, table, target));
-    return;
-  }
-
   const calleeId = emitValue(db, table, callee);
   fact(db, "call", callId, calleeId);
   if (!insideMethodBody(call as unknown as Node)) {
@@ -1364,7 +1356,6 @@ function emitReturnAnnotation(
     return;
   }
 
-  fact(db, "returnsNamed", fnId, reference.getTypeName().getText());
   const cls = classBehindTypeName(reference);
   if (cls === null) {
     return;
@@ -1530,20 +1521,28 @@ function descendantIsReturned(fn: Node): boolean {
 }
 
 /**
- * Import and export facts for a file: what it imports, what it
- * exports under which name, and what it re-exports from elsewhere.
- * This is the light tier; the gate query needs nothing else.
+ * The module each import and export declaration in a file refers to,
+ * keyed the way the facts key it. Without the demand rewrite the rules
+ * say nothing about which module a question needs next, so the store
+ * follows all of these instead.
  */
-export function extractModuleFacts(db: Database, sourceFile: SourceFile): void {
-  const filePath = sourceFile.getFilePath();
-
-  for (const importDecl of sourceFile.getImportDeclarations()) {
-    const moduleKey = moduleKeyOf(importDecl);
-    if (moduleKey === null) {
-      continue;
+export function importedModuleKeys(sourceFile: SourceFile): string[] {
+  const keys: string[] = [];
+  for (const declaration of [
+    ...sourceFile.getImportDeclarations(),
+    ...sourceFile.getExportDeclarations(),
+  ]) {
+    const moduleKey = moduleKeyOf(declaration);
+    if (moduleKey !== null) {
+      keys.push(moduleKey);
     }
-    fact(db, "importsModule", filePath, moduleKey);
   }
+  return keys;
+}
+
+/** What a file re-exports from another module, under which names. */
+function extractReExportFacts(db: Database, sourceFile: SourceFile): void {
+  const filePath = sourceFile.getFilePath();
 
   for (const exportDecl of sourceFile.getExportDeclarations()) {
     const moduleKey = moduleKeyOf(exportDecl);
@@ -1552,7 +1551,6 @@ export function extractModuleFacts(db: Database, sourceFile: SourceFile): void {
       // tier through exported declarations.
       continue;
     }
-    fact(db, "importsModule", filePath, moduleKey);
 
     if (exportDecl.isNamespaceExport()) {
       fact(db, "reExportsAll", filePath, moduleKey);
@@ -1566,7 +1564,7 @@ export function extractModuleFacts(db: Database, sourceFile: SourceFile): void {
 }
 
 /**
- * Full facts for a file: module facts plus every exported value,
+ * Full facts for a file: its re-exports plus every exported value,
  * so resolution can start from any export.
  */
 export function extractFileFacts(
@@ -1574,7 +1572,7 @@ export function extractFileFacts(
   table: NodeTable,
   sourceFile: SourceFile,
 ): void {
-  extractModuleFacts(db, sourceFile);
+  extractReExportFacts(db, sourceFile);
   const filePath = sourceFile.getFilePath();
 
   for (const [name, spelling] of directExportsOf(sourceFile)) {

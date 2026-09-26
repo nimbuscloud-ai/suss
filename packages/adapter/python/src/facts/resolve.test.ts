@@ -49,6 +49,14 @@ async function factsFor(files: Record<string, string>) {
   return { facts: db, dir };
 }
 
+/** `connect` from the project's `lib.py`, under the file and under the module as written. */
+function connectFromLib(dir: string) {
+  return [
+    { module: path.join(dir, "lib.py"), name: "connect" },
+    { module: "lib", name: "connect" },
+  ];
+}
+
 describe("resolving a value across files", () => {
   it("follows a call into the list the function in another file returns", async () => {
     const { facts, dir } = await factsFor({
@@ -93,6 +101,7 @@ describe("resolving a value across files", () => {
         path.join(dir, "source.py"),
         "value",
       ],
+      [`${path.join(dir, "app.py")}#renamed`, "source", "value"],
     ]);
   });
 
@@ -311,7 +320,7 @@ describe("resolving a value across files", () => {
     const settled = subjectConstructions(facts, [nameKey]);
     expect(settled.get(nameKey)).toEqual({
       constructionKey: String(construction?.[0]),
-      origins: [{ module: path.join(dir, "lib.py"), name: "connect" }],
+      origins: connectFromLib(dir),
     });
   });
 
@@ -363,7 +372,7 @@ describe("resolving a value across files", () => {
     const settled = subjectConstructions(facts, [String(wrapperCall?.[0])]);
     expect(settled.get(String(wrapperCall?.[0]))).toEqual({
       constructionKey: String(construction?.[0]),
-      origins: [{ module: path.join(dir, "lib.py"), name: "connect" }],
+      origins: connectFromLib(dir),
     });
   });
 
@@ -393,7 +402,7 @@ describe("resolving a value across files", () => {
     const settled = subjectConstructions(facts, [nameKey]);
     expect(settled.get(nameKey)).toEqual({
       constructionKey: String(construction?.[0]),
-      origins: [{ module: path.join(dir, "lib.py"), name: "connect" }],
+      origins: connectFromLib(dir),
     });
   });
 

@@ -51,7 +51,7 @@ Three layers do the work.
 
   <rect class="box" x="60" y="220" width="540" height="86" rx="6" />
   <text class="label" x="330" y="242" text-anchor="middle">2. One rule set joins the facts into a value graph</text>
-  <text class="note" x="330" y="260" text-anchor="middle">189 rules. 14 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
+  <text class="note" x="330" y="260" text-anchor="middle">190 rules. 15 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
   <text class="note" x="330" y="277" text-anchor="middle">reaches is the transitive closure of those hops, and it records</text>
   <text class="note" x="330" y="294" text-anchor="middle">the strongest kind of step the walk took.</text>
 
@@ -79,7 +79,7 @@ Three layers do the work.
   <text class="note" x="535" y="450" text-anchor="middle">the same stop, for a</text>
   <text class="note" x="535" y="466" text-anchor="middle">walk that ran a call</text>
 
-  <text class="note" x="330" y="498" text-anchor="middle">and comesFrom, objectOf, paramAt, resolves: 60 question rules feeding 43 answer relations</text>
+  <text class="note" x="330" y="498" text-anchor="middle">and comesFrom, objectOf, resolves: 59 question rules feeding 42 answer relations</text>
 </svg>
 
 ## Layer 1: the adapter writes down what a file says
@@ -124,7 +124,6 @@ fallbackBranch("global.prisma || new PrismaClient()"@17, "new PrismaClient()"@17
 imports("PrismaClient"@1, node_modules/@prisma/client/index.d.ts, PrismaClient)
 imports("PrismaClient"@1, @prisma/client, PrismaClient)
 imports("PrismaClient"@1, .prisma, PrismaClient)
-importsModule(src/prisma/prisma-client.ts, node_modules/@prisma/client/index.d.ts)
 readsProperty("global.prisma"@17, "global"@17, prisma)
 writtenValue("new PrismaClient()"@17)
 ```
@@ -140,15 +139,15 @@ function's body states no value of its own, so a body that says what it
 returns is never contradicted by its annotation.
 
 The rules read relations that no rule derives, so something has to
-supply them. The TypeScript adapter reads most of them out of source,
-and emits two more of its own on top: `bindCall`, for the JavaScript
-`.bind` rule, and `importsModule`, for walking module edges. All three
-adapters write `extends` and `extendsNamed`, the Ruby adapter writes
-`prepends`, and `callKeywordArg` comes from the Python and Ruby
-adapters. `unwrapsByName` and the `givesBackOne` family come from a
-pack's declarations, so no source file contains them at all. The
-TypeScript adapter declares one of those words itself, for the language:
-`Object.assign` hands back its first argument.
+supply them. Each adapter reads them out of source. All three adapters
+write `extends` and `extendsNamed`, the Ruby adapter writes `prepends`,
+and `callKeywordArg` comes from the Python and Ruby adapters.
+`unwrapsByName` and the `givesBackOne` family
+come from a pack's declarations, so no source file contains them at
+all. An adapter declares some of those words itself, for its language.
+In TypeScript, `Object.assign` hands back its first argument and `.bind`
+hands back the function it was called on. In Ruby, `freeze` and `dup`
+hand back their receiver. Those last three are `returnsReceiver` words.
 
 Some of them take both. Python's `with httpx.Client() as client` gives
 `entersAs(client, the call)` from the adapter, which says only that the
@@ -164,15 +163,14 @@ out.
 
 ## Layer 2: one rule set makes a graph
 
-`RESOLUTION_RULES` in `packages/resolution/src/index.ts` is 189 rules.
-14 of them derive `stepsTo(x, y, kind)`, which says the value `x` leads
+`RESOLUTION_RULES` in `packages/resolution/src/index.ts` is 190 rules.
+15 of them derive `stepsTo(x, y, kind)`, which says the value `x` leads
 to the value `y` in one hop. Two of them, for an argument and a
-property read, are written as `stepsTo` directly. The other twelve are
-written as `hop`, and each gets a `stepsTo` twin, since a walk under a
-receiver context reads `hop`. An adapter can add hops of its own, each
-with its twin, and those are not among the 189. The TypeScript adapter
-adds one for `.bind`, and the Ruby adapter adds three, for `Const.new`,
-`freeze` and `dup`.
+property read, are written as `stepsTo` directly. The other thirteen
+are written as `hop`, and each gets a `stepsTo` twin, since a walk
+under a receiver context reads `hop`. An adapter can add hops of its
+own, each with its twin, and those are not among the 190. The Ruby
+adapter adds one, for `Const.new`.
 
 ```ts
 rule("nameHop", [v("x"), v("y")], [lit("binds", v("x"), v("y"))], "alias"),
@@ -292,7 +290,6 @@ a condition on where the walk ended.
 | `givesBackUnwrapped(x, z)` | at what a call the result walk reached unwraps, which a caller asks before `givesBack` |
 | `isWrittenAs(x, z)` | at anything spelled out in source |
 | `objectOf(o, obj)` | at the object an expression refers to |
-| `paramAt(r, p, z)` | at what one call site put in parameter `p` |
 | `comesFrom(x, m, n)` | at an import, giving the module and the name, including a member read off a module imported whole |
 | `callsInto(f, m, n)` | at a library name that calling `f` ends up calling |
 | `resolves(x, z)` | `comesTo` narrowed to functions |
@@ -300,8 +297,8 @@ a condition on where the walk ended.
 `resolves` is the one `suss ask why` proves.
 
 At the bottom of the same file, `RESOLUTION_QUESTIONS` turns each of
-those into an answer keyed by the value somebody asked about. It is 60
-question rules feeding 43 answer relations. They are written as rules
+those into an answer keyed by the value somebody asked about. It is 59
+question rules feeding 42 answer relations. They are written as rules
 rather than as loops in the caller
 because `deriveOnDemand` reads them to work out how far to follow each
 chain.
@@ -434,7 +431,8 @@ callsFunction(r, f) :- returnsValue(g, f), callsFunction(r0, g), callsNamed(r, r
 That is also where multiple answers come from. bcryptjs declares `hash`
 twice, so the join fires against both declarations and `password`
 reaches two different parameter nodes. A caller that needs the call
-sites told apart asks `paramAt`, which keeps the call in the tuple.
+sites told apart asks `passesArgument`, which keeps the call in the
+tuple.
 
 ## Deriving only what a question needs
 

@@ -87,19 +87,26 @@ describe("python value facts", () => {
     ]);
   });
 
-  it("says nothing about a generic that hands back a container", async () => {
+  it("names no class for a generic that hands back a container, only the container", async () => {
     const db = await factsFor("def all_users() -> list[User]: ...\n");
     expect(db.size("returnsClass")).toBe(0);
-    expect(db.size("returnsNamed")).toBe(0);
+    expect(rows(db, "returnsNamed").map((row) => row[1])).toEqual(["list"]);
   });
 
-  it("leaves the annotation alone when the body states what it returns", async () => {
+  it("keeps the annotated name but not the class when the body states what it returns", async () => {
     const db = await factsFor(
       "def current_user() -> User:\n    return cached\n",
     );
     expect(rows(db, "returnsValue").map((row) => row[1])).toEqual(["#cached"]);
     expect(db.size("returnsClass")).toBe(0);
-    expect(db.size("returnsNamed")).toBe(0);
+    expect(rows(db, "returnsNamed").map((row) => row[1])).toEqual(["User"]);
+  });
+
+  it("reads a quoted return annotation by the name inside the quotes", async () => {
+    const db = await factsFor(
+      "def base_query(cls) -> 'Query':\n    return session()\n",
+    );
+    expect(rows(db, "returnsNamed").map((row) => row[1])).toEqual(["Query"]);
   });
 
   it("keeps a list's elements under their positions, the way an array does", async () => {

@@ -73,7 +73,7 @@ describe("extractRubyProject", () => {
       "class Queries::CampaignQuery < Queries::BaseQuery\n  type Types::CampaignType, null: true\nend\n",
     );
 
-    const { summaries, facts } = await extractRubyProject({
+    const { summaries } = await extractRubyProject({
       files: [campaignType, queryType],
       packs: [graphqlRubyPack(graphqlRoot)],
       workspaceRoot: tmpDir,
@@ -97,7 +97,6 @@ describe("extractRubyProject", () => {
         "app/graphql/types/query_type.rb",
       ].sort(),
     );
-    expect(facts.facts("entry")).toHaveLength(2);
   });
 
   it("produces no units for a file whose classes match no configured base class", async () => {
