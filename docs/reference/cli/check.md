@@ -21,8 +21,11 @@ suss check <provider.json> <consumer.json> [--all] [--json] [-o <output>]
 # One thing out of that folder
 suss check --dir <directory> --at <file[:line] | boundary | summary-id> [--json] [-o <output>]
 
+# What changed since an earlier folder of summaries
+suss check --dir <directory> --since <earlier-directory> [--json] [-o <output>]
+
 # The project in the working directory, read first
-suss check [--at <target>] [--intent <intent-dir>] ...
+suss check [--at <target>] [--since <earlier-directory>] [--intent <intent-dir>] ...
 ```
 
 `--dir` reads every summary file in a folder and pairs them by boundary key, so a provider and its consumer meet whichever file each arrived in. Two positional files skip the pairing and compare every provider in the first against every consumer in the second. Nothing goes unpaired in that form, so a two-file run doesn't report an unpaired count.
@@ -34,6 +37,7 @@ Given no files and no `--dir`, `check` reads the project it is run in: every ent
 | `--dir <path>` | none | The folder of summary files, paired by boundary. Every `.json` in it is read, except a `.incomplete.json` note. Does not combine with positional files. |
 | `--at <target>` | none | Report on one thing instead of the whole folder. See [Reporting on one thing](#reporting-on-one-thing). Takes `--dir` or no files at all, and does not run with `--intent`. |
 | `--intent <path>` | none | A folder of intent docs (`*.intent.yaml`, `.yml`, `.json`, and the same three for `*.prd`), each paired against the summaries in `--dir`. Takes `--dir` or no files at all. |
+| `--since <path>` | none | A folder of summaries from an earlier run. The report narrows to what changed since then, and the run fails only on new findings. See [Comparing with an earlier run](#comparing-with-an-earlier-run). Takes `--dir` or no files at all, and does not run with `--at` or `--intent`. |
 | `--all` | off | Write out every finding and every list. See [What a run prints](#what-a-run-prints). |
 | `--json` | off | Write findings as JSON instead of text. |
 | `-o`, `--output <path>` | stdout | Write the report to a file. |
@@ -106,6 +110,32 @@ When suss could not fully read the unit a target covers, the report ends with a 
 
 A target that matches nothing prints what it could not find and exits `1`, so you don't mistake it for a target where both sides agreed.
 
+## Comparing with an earlier run
+
+`--since` checks the earlier folder the same way as `--dir`, with the same `.sussignore`, and reports three things:
+
+- the findings that are new since then,
+- the findings the earlier run had that are gone,
+- the boundaries the code changed at.
+
+A boundary changed when a unit on it was added, removed, or now behaves differently, or when a changed path of any unit reads, writes or calls across it. A unit whose lines moved and whose behavior did not is not a change, so a comment added above a handler changes nothing.
+
+A finding is the same finding in both runs when its kind, its boundary, the summary and transition on each side, and its description match, with whitespace in the description collapsed. Line numbers are left out, and a transition id is built from the function name, the terminal, the status and the guards, so an edit elsewhere in the file leaves a finding alone.
+
+```
+$ suss extract --out-dir .suss/before
+$ # ... edit the code ...
+$ suss extract --out-dir .suss/after
+$ suss check --dir .suss/after --since .suss/before
+Compared 1 boundary.
+
+Since /home/dana/shop/.suss/before:
+  1 boundary changed: POST /orders
+  1 new finding, 0 resolved.
+```
+
+The exit code counts only the new findings, so a CI job can pass `--since` with the base branch's summaries and fail a pull request on what it introduced, while the findings already on the base branch wait.
+
 ## JSON output
 
 `--dir --json` writes one object:
@@ -117,5 +147,16 @@ A target that matches nothing prints what it could not find and exits `1`, so yo
 with `intent` added when `--intent` was passed. Two positional files write the bare `findings` array instead.
 
 `--at --json` writes `{ at, matched, target, touches, findings, pairs, unmatched, gaps }`, where `touches` is one entry per unit and boundary (`{ boundary, relations, unit, via }`). A target that matched nothing writes `{ at, matched: false, message }`.
+
+`--since --json` writes the `--dir` object with `findings` narrowed to the new ones, and three keys added: `since`, the earlier folder; `resolved`, the findings that went away; and `changedBoundaries`, one `{ key, units }` per boundary the code changed at. Each finding in `findings` and `resolved` also has:
+
+| Key | What it is |
+|---|---|
+| `identity` | A string that is equal for the same finding in both runs. |
+| `boundaryKey` | The boundary's key, the one `.sussignore` rules and `changedBoundaries` use. |
+| `atChangedBoundary` | Whether that boundary is in `changedBoundaries`. |
+| `rule` | The `.sussignore` rule that accepts this finding and no other, without its `reason`. Absent when the finding points at no transition, since a rule without one would accept more. |
+
+`findingIdentity`, `findingsSince` and `changedBoundaries` in `@suss/checker` compute the same things from a program.
 
 [Exit codes](/reference/cli/exit-codes) lists what `check` returns to the shell, and how a suppression changes the count.

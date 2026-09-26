@@ -120,7 +120,7 @@ export async function readProjectInto(
   const failed: string[] = [];
 
   for (const [index, entry] of reads.reads.entries()) {
-    const out = path.join(summaryDir, `${index}-${entry.kind}.json`);
+    const out = path.join(summaryDir, readOutputName(index, entry));
     try {
       await runEntry(entry, root, out);
       ran.push(commandFor(entry));
@@ -130,6 +130,28 @@ export async function readProjectInto(
   }
 
   return { summaryDir, ran, failed, declared: reads.declared };
+}
+
+/** The file one entry's summaries go to, numbered by its place in the list. */
+function readOutputName(index: number, entry: ReadEntry): string {
+  return `${index}-${entry.kind}.json`;
+}
+
+const READ_OUTPUT_NAME = /^\d+-(extract|contract)\.json$/;
+
+/**
+ * Removes the files an earlier `readProjectInto` wrote into `dir`, so an
+ * entry that fails this time leaves no summaries from last time behind.
+ */
+export function clearEarlierReads(dir: string): void {
+  if (!fs.existsSync(dir)) {
+    return;
+  }
+  for (const name of fs.readdirSync(dir)) {
+    if (READ_OUTPUT_NAME.test(name)) {
+      fs.rmSync(path.join(dir, name), { force: true });
+    }
+  }
 }
 
 async function runEntry(

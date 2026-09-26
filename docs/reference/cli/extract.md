@@ -13,6 +13,8 @@ suss extract [-p <tsconfig> | --dir <directory>] [--lang typescript|python|ruby]
              [--files <f1> <f2> ...] [--gaps strict|permissive|silent]
              [--explain] [--timing] [--datalog-profile] [--no-cache]
              [--allow-empty] [--fail-on-pack-error]
+
+suss extract --out-dir <directory> [--dir <project>]
 ```
 
 | Flag | Default | What it does |
@@ -22,6 +24,7 @@ suss extract [-p <tsconfig> | --dir <directory>] [--lang typescript|python|ruby]
 | `--dir <path>` | the working directory | Read this directory, for a project with no tsconfig. |
 | `--lang <name>` | worked out from what the directory contains, the packs you asked for, and the nearest tsconfig | `typescript`, `python` or `ruby`. When suss cannot work the language out for itself, it stops and asks you to pass this flag. |
 | `-o`, `--output <path>` | stdout | Write the summary JSON to a file. Parent directories are created. |
+| `--out-dir <path>` | none | Run every read `suss.json` lists, contracts included, and write each one to its own file in this folder. See [The whole project into a folder](#the-whole-project-into-a-folder). Takes no `-f`, `-o`, `-p`, `--lang` or files. |
 | `--files <f1> <f2> ...` | every file the tsconfig or directory covers | Read only these files, resolved against the working directory. Bare arguments with no flag in front of them mean the same thing when `--files` is absent. |
 | `--gaps <mode>` | `permissive` | `permissive` records in the summary the returns and declared statuses a pack could not account for. `strict` records the same and then exits non-zero. `silent` skips gap detection. |
 | `--explain` | off | Print where the summaries came from, file by file and pack by pack. A run that found nothing prints it either way. |
@@ -45,6 +48,19 @@ With `-o`, a run that could not read part of the project also writes a note besi
 $ suss extract --dir fixtures/express -f express -o summaries/api.json
 Wrote 4 summaries to /home/dana/shop/summaries/api.json in 0.61s
 ```
+
+## The whole project into a folder
+
+`--out-dir` reads the project the way a bare `suss check` does: every entry in `suss.json`, or what `init` would pick when there is no file. Each entry's summaries go to their own numbered file, `0-extract.json`, `1-contract.json` and so on, in the order `suss.json` lists them. `suss check --dir` over the folder then compares everything the project declares.
+
+```bash
+$ suss extract --out-dir .suss/now
+Reading what suss.json says.
+  suss extract --lang typescript -p tsconfig.json -f express -f fetch
+Wrote 2 summaries to /home/dana/shop/.suss/now/0-extract.json in 0.74s
+```
+
+Files an earlier `--out-dir` run wrote in the folder are removed first, so an entry that fails this time leaves nothing stale behind. The run exits non-zero when any entry failed, because the folder then describes only part of the project.
 
 ## Pack names
 
