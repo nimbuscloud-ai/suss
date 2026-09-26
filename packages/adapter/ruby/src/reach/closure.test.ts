@@ -757,6 +757,104 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
     );
   });
 
+  it("links no method called on a value to a method of the same name in the file, however often it is called", async () => {
+    write("app/graphql/types/query_type.rb", [
+      "class Types::QueryType < Types::BaseObject",
+      "  field :orders, String, null: false",
+      "",
+      "  def orders(current_user)",
+      "    rows = []",
+      "    rows.delete(current_user)",
+      "    rows.delete(nil)",
+      "    delete(current_user)",
+      "    self.delete(current_user)",
+      "  end",
+      "",
+      "  def delete(user)",
+      "    user",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const own = summaryIdentifier(unitNamed(summaries, "delete"));
+    expect(calls(unitNamed(summaries, "Query.orders"))).toEqual([
+      ["rows.delete", undefined],
+      ["rows.delete", undefined],
+      ["delete", own],
+      ["self.delete", own],
+    ]);
+  });
+
+  it("links a bare name two classes in one file call to each class's own method", async () => {
+    writeQueryType("orders", [
+      "OrderReport.new.render(current_user)",
+      "AccountReport.new.render(current_user)",
+    ]);
+    write("app/services/reports.rb", [
+      "class OrderReport",
+      "  def render(user)",
+      "    helper(user)",
+      "  end",
+      "",
+      "  def helper(user)",
+      "    user",
+      "  end",
+      "end",
+      "",
+      "class AccountReport",
+      "  def render(user)",
+      "    helper(user)",
+      "  end",
+      "",
+      "  def helper(user)",
+      "    user",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const inClass = (name: string, className: string) =>
+      summaries.find(
+        (summary) =>
+          summary.identity.name === name &&
+          summary.identity.exportPath?.[0] === className,
+      ) as BehavioralSummary;
+    for (const className of ["OrderReport", "AccountReport"]) {
+      expect(calls(inClass("render", className))).toEqual([
+        ["helper", summaryIdentifier(inClass("helper", className))],
+      ]);
+    }
+  });
+
+  it("links a bare name two class methods call to the class method of that name in the file", async () => {
+    writeQueryType("orders", [
+      "Trends.register(current_user)",
+      "Trends.refresh(current_user)",
+      "Trends.tags(current_user)",
+    ]);
+    write("app/models/trends.rb", [
+      "module Trends",
+      "  def self.tags(user)",
+      "    user",
+      "  end",
+      "",
+      "  def self.register(user)",
+      "    tags(user)",
+      "  end",
+      "",
+      "  def self.refresh(user)",
+      "    tags(user)",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const tags = summaryIdentifier(unitNamed(summaries, "tags"));
+    expect(calls(unitNamed(summaries, "register"))).toEqual([["tags", tags]]);
+    expect(calls(unitNamed(summaries, "refresh"))).toEqual([["tags", tags]]);
+  });
+
   it("follows a call on an instance variable another method of the class writes", async () => {
     write("app/graphql/types/query_type.rb", [
       "class Types::QueryType < Types::BaseObject",
