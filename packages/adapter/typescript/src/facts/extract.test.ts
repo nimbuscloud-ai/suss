@@ -369,6 +369,33 @@ describe("the class a class extends", () => {
         .map((row) => table.byId.get(String(row[1]))?.getText()),
     ).toEqual(["close() { return 'closed'; }"]);
   });
+
+  it("walks an ancestry through a base another file declares", () => {
+    const { db, table } = factsFor({
+      "/record.ts": [
+        'import { Model } from "orm-lib";',
+        "export class AppRecord extends Model {}",
+        "",
+      ].join("\n"),
+      "/account.ts": [
+        'import { AppRecord } from "./record";',
+        "export class Account extends AppRecord {}",
+        "",
+      ].join("\n"),
+    });
+
+    const account = keyOfText(
+      table,
+      "export class Account extends AppRecord {}",
+    );
+    askResolution(db, [account], "wantedAncestry");
+    expect(
+      db
+        .lookup("wantedBaseName", 0, account)
+        .map((row) => String(row[1]))
+        .sort(),
+    ).toEqual(["AppRecord", "Model"]);
+  });
 });
 
 describe("a read whose key the source computes", () => {

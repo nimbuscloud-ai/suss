@@ -142,12 +142,12 @@ returns is never contradicted by its annotation.
 The rules read relations that no rule derives, so something has to
 supply them. The TypeScript adapter reads most of them out of source,
 and emits two more of its own on top: `bindCall`, for the JavaScript
-`.bind` rule, and `importsModule`, for walking module edges. `extends`,
-`extendsNamed` and `callKeywordArg` come from the Python and Ruby
-adapters. `unwrapsByName` and the `givesBackOne` family come from a
-pack's declarations, so no source file contains them at all. The
-TypeScript adapter declares one of those words itself, for the
-language: `Object.assign` hands back its first argument.
+`.bind` rule, and `importsModule`, for walking module edges. All three
+adapters write `extends` and `extendsNamed`, and `callKeywordArg` comes
+from the Python and Ruby adapters. `unwrapsByName` and the
+`givesBackOne` family come from a pack's declarations, so no source file
+contains them at all. The TypeScript adapter declares one of those words
+itself, for the language: `Object.assign` hands back its first argument.
 
 Some of them take both. Python's `with httpx.Client() as client` gives
 `entersAs(client, the call)` from the adapter, which says only that the

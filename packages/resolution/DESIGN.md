@@ -420,6 +420,9 @@ The adapter assigns node ids, and the rules only join on them.
 Every construct's hops go into one relation:
 
 ```
+nameHop(x, y)               the name x has the value y without running
+                            anything: its declaration, its last write,
+                            one of several writes, or a fallback branch
 hop(x, y, kind)             following x leads to y in one hop
 stepsTo(x, y, kind)         every hop, stated again, plus the two a
                             receiver context replaces
@@ -429,8 +432,12 @@ reachesUnder(x, c, z, c2, kind)   the same closure under one site
 
 Each hop is written twice, once as a `hop` and once as a `stepsTo`,
 instead of one being derived from the other. A demand for `stepsTo` is
-one of the largest relations a run derives, and deriving it through
-`hop` would copy every row.
+one of the largest relations a run derives, and deriving all of it
+through `hop` would copy every row. The name steps are the exception.
+Every chain that follows a name reads `nameHop`, and so do the `hop`
+and `stepsTo` rules for a value step. Rows read went down on all four
+projects measured when the name steps moved to `nameHop`, because the
+chains stopped listing the hops one by one.
 
 A value step goes to the value x is written as: a name to its
 declaration, an import to what the module exports, a parameter to what a
@@ -777,9 +784,9 @@ returned (`await User.findById(id)`). Each is a different number of
 hops from the anchor.
 
 `anchorChain` is the reachability relation that covers all three.
-Starting from the value asked about (`wantedAnchor`), it follows names
-(`binds`, `endsHolding`, `fallbackBranch`), imports through the export
-table, a call to its callee, and a method's callee to its receiver.
+Starting from the value asked about (`wantedAnchor`), it follows the
+name hops (`nameHop`), imports through the export table, a call to its
+callee, and a method's callee to its receiver.
 Every call the chain passes goes into `wantedAnchorCall`, keyed by the
 value asked about.
 
