@@ -1,4 +1,10 @@
-import { IdMap, IdSet, SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
+import {
+  EnclosingNodes,
+  IdMap,
+  IdSet,
+  SKIP_CHILDREN,
+  walkDescendants,
+} from "@suss/extractor";
 
 /**
  * Small helpers for reading a tree-sitter-ruby parse tree.
@@ -145,15 +151,12 @@ export const LAMBDA_TYPE = "lambda";
  * fact emitter stops.
  */
 export function enclosingDefinition(node: RbNode): RbNode | null {
-  let current = node.parent;
-  while (current !== null) {
-    if (METHOD_TYPES.has(current.type) || current.type === LAMBDA_TYPE) {
-      return current;
-    }
-    current = current.parent;
-  }
-  return null;
+  return definitionsAround.of(node);
 }
+
+const definitionsAround = new EnclosingNodes<RbNode>(
+  new Set([...METHOD_TYPES, LAMBDA_TYPE]),
+);
 
 /**
  * The calls that mix a module into a class's instance methods. `extend`
