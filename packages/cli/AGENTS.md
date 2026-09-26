@@ -158,6 +158,10 @@ something other code depends on. Use `--json` and act on the findings
 in it. A failed check with nothing parseable behind it gives whoever
 has to fix it nothing to go on.
 
+In Claude Code, the suss plugin does this after every edit and reports
+what changed when the agent stops. Installing it and what each hook does:
+[docs/guides/supervise-an-agent.md](https://github.com/nimbuscloud-ai/suss/blob/main/docs/guides/supervise-an-agent.md).
+
 ## What is safe to parse
 
 The summary format is versioned. Pin to `v0` and check the schema

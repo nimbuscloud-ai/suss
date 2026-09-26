@@ -1,0 +1,16 @@
+{
+  "name": "suss",
+  "owner": {
+    "name": "Nimbus Cloud AI LLC",
+    "url": "https://suss.sh"
+  },
+  "description": "Claude Code plugins that put suss in an agent's loop.",
+  "plugins": [
+    {
+      "name": "suss",
+      "source": "./plugins/supervisor",
+      "description": "Checks each edit an agent makes against both sides of every boundary it touches, and reports what changed when the agent stops.",
+      "category": "code-review"
+    }
+  ]
+}

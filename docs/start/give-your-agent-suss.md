@@ -23,6 +23,9 @@ Claude Code reads `.mcp.json` at the repository root and Cursor reads
 path argument, the server reads whichever directory the host started it
 in.
 
+In Claude Code, [the suss plugin](/guides/supervise-an-agent) starts this
+server for you, and also checks each edit the agent makes.
+
 The server reads `suss.json`, which `npx @suss/cli init` writes. The file
 lists which packs to read the code with and where your contracts are. If
 you do not have one, the server picks the packs `init` would have picked

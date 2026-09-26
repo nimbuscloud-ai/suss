@@ -133,6 +133,20 @@ export {
 export { checkSemanticBridging } from "./pairing/semanticBridging.js";
 export { checkRenderProps } from "./render/renderProps.js";
 export { checkRuntimeConfig } from "./runtime-config/runtimeConfigPairing.js";
+export {
+  type ChangedBoundary,
+  type ChangesSince,
+  type CheckedRun,
+  changedBoundaries,
+  changesSince,
+  type FindingsSince,
+  findingsSince,
+} from "./since/changesSince.js";
+export {
+  boundaryKeyOf,
+  findingIdentity,
+  normalizedDescription,
+} from "./since/findingIdentity.js";
 
 export type { ComparedPair } from "./pairing/comparedPair.js";
 

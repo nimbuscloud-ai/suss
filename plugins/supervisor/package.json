@@ -1,0 +1,23 @@
+{
+  "name": "@suss/supervisor-plugin",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "The suss plugin for Claude Code, which checks an agent's edits as it makes them. It reaches users through this repository's plugin marketplace and is never published to npm; its version is in .claude-plugin/plugin.json.",
+  "license": "Apache-2.0",
+  "author": "Nimbus Cloud AI LLC",
+  "scripts": {
+    "test": "vitest run",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@suss/behavioral-ir": "*",
+    "@suss/checker": "*",
+    "@suss/cli": "*",
+    "@suss/mcp": "*",
+    "typescript": "*",
+    "vitest": "*"
+  }
+}

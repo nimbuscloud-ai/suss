@@ -32,6 +32,7 @@ import { LANGUAGES, parseLanguage } from "./language.js";
 import { prdDraft } from "./prdDraftCommand.js";
 import { PROJECT_FILE } from "./projectFile.js";
 import {
+  clearEarlierReads,
   commandFor,
   declaredReads,
   extractEntryFor,
@@ -48,18 +49,20 @@ import { UsageError } from "./usageError.js";
 import type { ContractSource } from "./contract.js";
 import type { ExtractOptions } from "./extract.js";
 import type { Language } from "./language.js";
-import type { ReadEntry } from "./projectRead.js";
+import type { ProjectReadReport, ReadEntry } from "./projectRead.js";
 
 export const USAGE = `
 Usage:
   suss init [directory] [--plain]
   suss extract [-p <tsconfig> | --dir <directory>] [--lang typescript|python|ruby] [-f <framework>[=<config.json>] ...] [-o <output.json>] [--files <f1> <f2> ...] [--gaps strict|permissive|silent]
+  suss extract --out-dir <directory> [--dir <project>]
   suss inspect [<summaries.json> | --dir <directory>]
   suss inspect --diff <before.json> <after.json>
   suss inspect --flow "<METHOD> <url>" [<summaries.json> | --dir <directory>] [--entry <name>] [--scope <document>] [--json]
   suss check [--dir <directory>] [--intent <intent-dir>] [--all] [--json] [-o <output>]
   suss check <provider.json> <consumer.json> [--all] [--json] [-o <output>]
   suss check [--dir <directory>] --at <file[:line] | boundary | summary-id> [--json]
+  suss check [--dir <directory>] --since <earlier-directory> [--json]
   suss ask "<question>" [--dir <directory> | <summaries.json>] [--all] [--json]
   suss contract --from <source> <spec> [-o <output.json>]
   suss corroborate --experimental [-p <tsconfig> | --dir <directory>] [-f <framework> ...] [-o <output.json>]
@@ -122,6 +125,10 @@ Options (extract):
                    example to name the dispatcher your project sends
                    messages through. Each pack documents its own options.
   -o, --output     Write JSON to a file instead of stdout
+  --out-dir        Run every read suss.json lists, contracts included, and
+                   write each one's summaries to its own file in this
+                   directory. Files an earlier --out-dir run wrote there
+                   are replaced. Exits non-zero when any read failed.
   --files          Read only these source files
   --gaps           What to do with gaps: permissive (default) records them
                    in the summary, strict does the same and then fails the
@@ -179,6 +186,10 @@ Options (check):
                    would read as agreement.
   --intent         Folder of intent docs (*.intent / *.prd) to check the code
                    against. Needs --dir.
+  --since          Folder of summaries from an earlier run. The report
+                   narrows to what changed since then: new findings,
+                   findings that went away, and the boundaries the code
+                   changed at. The run fails only on new findings.
   --all            Write out every finding and every list. Without it a run
                    prints the errors in full and counts the rest, because a
                    first run over a repository reports far more at warning
@@ -483,13 +494,33 @@ const EXAMPLE_PACK_FLAGS: Record<Language, string> = {
  * directory to the command.
  */
 async function withProjectRead(run: (dir: string) => number): Promise<number> {
-  const root = process.cwd();
+  const dir = mkdtempSync(path.join(os.tmpdir(), "suss-read-"));
+  try {
+    const report = await readProjectSaying(process.cwd(), dir);
+    if (report === null || report.ran.length === 0) {
+      return 1;
+    }
+    process.stderr.write("\n");
+    return run(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Reads the project at `root` into `dir`, saying on stderr which reads
+ * run and which fail. Null when no pack matched, after saying so.
+ */
+async function readProjectSaying(
+  root: string,
+  dir: string,
+): Promise<ProjectReadReport | null> {
   const reads = await declaredReads(root);
   if (reads.reads.length === 0) {
     process.stderr.write(
       `Nothing in ${root} matched a pack, so there is nothing to read. Run \`suss init\` to see what suss looked for, or pass a summaries file.\n`,
     );
-    return 1;
+    return null;
   }
   process.stderr.write(
     [
@@ -499,20 +530,34 @@ async function withProjectRead(run: (dir: string) => number): Promise<number> {
     ].join("\n"),
   );
 
-  const dir = mkdtempSync(path.join(os.tmpdir(), "suss-read-"));
-  try {
-    const report = await readProjectInto(root, dir, reads);
-    for (const line of report.failed) {
-      process.stderr.write(`  failed: ${line}\n`);
-    }
-    if (report.ran.length === 0) {
-      return 1;
-    }
-    process.stderr.write("\n");
-    return run(dir);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
+  const report = await readProjectInto(root, dir, reads);
+  for (const line of report.failed) {
+    process.stderr.write(`  failed: ${line}\n`);
   }
+  return report;
+}
+
+/**
+ * `suss extract --out-dir`: every read the project declares, each into
+ * its own file in the directory, the same files a bare `suss check`
+ * reads from a temporary one. Files an earlier run wrote there are
+ * replaced. Exits non-zero when any read failed, since a directory with
+ * one entry missing describes only part of the project.
+ */
+async function extractProjectInto(
+  outDir: string,
+  root: string | undefined,
+): Promise<number> {
+  const resolved = path.resolve(outDir);
+  clearEarlierReads(resolved);
+  const report = await readProjectSaying(
+    path.resolve(root ?? process.cwd()),
+    resolved,
+  );
+  if (report === null) {
+    return 1;
+  }
+  return report.failed.length > 0 ? 1 : 0;
 }
 
 async function runExtract(args: string[]): Promise<number> {
@@ -533,12 +578,30 @@ async function runExtract(args: string[]): Promise<number> {
       "allow-empty": { type: "boolean" },
       "fail-on-empty": { type: "boolean" },
       "fail-on-pack-error": { type: "boolean" },
+      "out-dir": { type: "string" },
     },
     allowPositionals: true,
   });
 
   if (values["fail-on-empty"] === true) {
     refuseFailOnEmpty();
+  }
+
+  if (values["out-dir"] !== undefined) {
+    const oneRead = [
+      values.framework,
+      values.output,
+      values.project,
+      values.lang,
+      values.files,
+    ].some((value) => value !== undefined);
+    if (oneRead || positionals.length > 0) {
+      process.stderr.write(
+        "--out-dir runs every read suss.json lists, so it takes no -f, -o, -p, --lang or files. Drop them, or drop --out-dir to extract with one set of packs.\n",
+      );
+      return 1;
+    }
+    return await extractProjectInto(values["out-dir"], values.dir);
   }
 
   const lang =
@@ -821,6 +884,7 @@ async function runCheck(args: string[]): Promise<number> {
       dir: { type: "string" },
       at: { type: "string" },
       intent: { type: "string" },
+      since: { type: "string" },
       all: { type: "boolean" },
       "fail-on": { type: "string" },
       "allow-empty": { type: "boolean" },
@@ -884,6 +948,13 @@ async function runCheck(args: string[]): Promise<number> {
     return 1;
   }
 
+  if (values.at !== undefined && values.since !== undefined) {
+    process.stderr.write(
+      "--at reports on one thing and --since reports what changed across the whole folder, so they cannot run together. Run them one at a time.\n",
+    );
+    return 1;
+  }
+
   const checkFolder = (dir: string): number => {
     if (values.at !== undefined) {
       const scoped = checkAt({ dir, at: values.at, ...shared });
@@ -894,6 +965,7 @@ async function runCheck(args: string[]): Promise<number> {
       ...shared,
       ...all,
       ...(values.intent !== undefined ? { intent: values.intent } : {}),
+      ...(values.since !== undefined ? { since: values.since } : {}),
     });
     return result.hasErrors ? 1 : 0;
   };
@@ -917,6 +989,13 @@ async function runCheck(args: string[]): Promise<number> {
   if (values.intent !== undefined) {
     process.stderr.write(
       "--intent checks your intent docs against code summaries, so it takes --dir or no files at all. Try: suss check --intent intent/\n",
+    );
+    return 1;
+  }
+
+  if (values.since !== undefined) {
+    process.stderr.write(
+      "--since compares a folder of summaries with an earlier one, so it takes --dir or no files at all. Try: suss check --dir .suss/after --since .suss/before\n",
     );
     return 1;
   }
