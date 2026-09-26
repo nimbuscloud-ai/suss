@@ -11,6 +11,7 @@
  */
 
 import { answersByKey, placeholderValues } from "./singleAnswer.js";
+import { coveringFallback } from "./writtenValue.js";
 
 import type { Database } from "@suss/datalog";
 
@@ -53,19 +54,42 @@ export function objectOfUnder(
   return answersUnder(db, "wantedObjectOfUnder", key, site);
 }
 
+/** Puts each `[key, site]` pair to the rules, the way `askResolutionUnder` does. */
+export type AskUnder = (
+  pairs: ReadonlyArray<readonly [string, string]>,
+) => void;
+
 /**
  * The single expression the value was written as under this site, under
  * the policy the context-free reader applies: two answers are ambiguity,
- * and ambiguity is nothing.
+ * and ambiguity is nothing. A value written as a fallback reads as the
+ * fallback, as `writtenValueOf` reads it, so `a or b` means the same
+ * thing whichever path asked. `ask` puts the fallback's own question.
  */
 export function writtenValueUnder(
   db: Database,
   key: string,
   site: string,
+  ask: AskUnder,
 ): string | null {
+  const answers = writtenAsUnder(db, key, site);
+  if (answers.length === 1) {
+    return answers[0] as string;
+  }
+  return coveringFallback(key, {
+    writtenAs: (value) => writtenAsUnder(db, value, site),
+    fallbacks: (value) =>
+      answersUnder(db, "wantedFallbackBehindUnder", value, site).filter(
+        (fallback) => fallback !== value,
+      ),
+    ask: (keys) => ask(keys.map((value) => [value, site] as const)),
+  });
+}
+
+/** Every expression the value was written as under this site, placeholders set aside. */
+function writtenAsUnder(db: Database, key: string, site: string): string[] {
   const rows = isWrittenAsUnder(db, key, site).map((answer) => [key, answer]);
-  const answers = answersByKey(rows, placeholderValues(db)).get(key) ?? [];
-  return answers.length === 1 ? (answers[0] as string) : null;
+  return answersByKey(rows, placeholderValues(db)).get(key) ?? [];
 }
 
 /**

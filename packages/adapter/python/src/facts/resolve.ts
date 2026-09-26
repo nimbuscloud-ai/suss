@@ -66,7 +66,9 @@ export function writtenValueUnder(
   if (askResolutionUnder(db, [[key, site]]) === "abandoned") {
     return null;
   }
-  return sharedWrittenValueUnder(db, key, site);
+  return sharedWrittenValueUnder(db, key, site, (pairs) => {
+    askResolutionUnder(db, pairs);
+  });
 }
 
 /** Every construction of a class the run can see, as the keys to ask under. */

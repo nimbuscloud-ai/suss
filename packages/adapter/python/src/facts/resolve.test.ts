@@ -492,6 +492,29 @@ describe("reading a value under one construction", () => {
     expect(writtenValueUnder(facts, read, sites[0] as string)).toBe(null);
   });
 
+  it("reads an attribute written as a fallback as the fallback, as a read with no site does", async () => {
+    const source = [
+      "import os",
+      "",
+      "class Resource:",
+      "    def __init__(self, base):",
+      '        self.base = base or "/api"',
+      "",
+      "    def list(self):",
+      "        return self.base",
+      "",
+      'users = Resource(os.environ.get("USERS_BASE"))',
+    ].join("\n");
+    const { facts, dir } = await factsFor({ "app.py": source });
+    const read = readInList(facts);
+    const start = source.indexOf('base or "/api"');
+    const fallback = `${path.join(dir, "app.py")}:${start}-${start + 'base or "/api"'.length}`;
+
+    const sites = constructionSites(facts, classKeyOf(facts));
+    expect(sites).toHaveLength(1);
+    expect(writtenValueUnder(facts, read, sites[0] as string)).toBe(fallback);
+  });
+
   it("does not find a construction for a class nothing builds", async () => {
     const { facts } = await factsFor({ "app.py": RESOURCE.join("\n") });
 

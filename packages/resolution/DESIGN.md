@@ -513,6 +513,9 @@ the value evaluator reads it with its own `or`. A branch the evaluator
 cannot read makes no claim, so the example reads as `/api`, and two
 branches it can read are joined. A caller that wants each expression
 asks `writtenValuesOf`, which still lists both branches.
+`writtenValueUnder` reads a value under one allocation site the same
+way, through `fallbackBehindUnder`, so `self.base = base or "/api"`
+means the same thing whether the read has a site or not.
 
 Every question is this one closure with its own stopping condition.
 Adding a construct means adding one step, and every question picks it

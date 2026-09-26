@@ -126,15 +126,13 @@ export function writtenValueUnder(
   key: string,
   site: string,
 ): string | null {
-  const outcome = askResolutionUnder(
-    db,
-    [[key, site]],
-    resolutionUnderProgram(RUBY_RULES),
-  );
-  if (outcome === "abandoned") {
+  const program = resolutionUnderProgram(RUBY_RULES);
+  if (askResolutionUnder(db, [[key, site]], program) === "abandoned") {
     return null;
   }
-  return sharedWrittenValueUnder(db, key, site);
+  return sharedWrittenValueUnder(db, key, site, (pairs) => {
+    askResolutionUnder(db, pairs, program);
+  });
 }
 
 /** Every construction of a class the run can see, as the keys to ask under. */

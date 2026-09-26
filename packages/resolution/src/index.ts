@@ -56,6 +56,7 @@ export {
   withoutOverridden,
 } from "./singleAnswer.js";
 export {
+  type AskUnder,
   allocationSitesOf,
   comesToUnder,
   isWrittenAsUnder,
@@ -824,6 +825,21 @@ const STATED_RULES = [
     [
       lit("reachesUnder", v("x"), v("c"), v("z"), v("c2"), VALUE_STEP),
       lit("objectValue", v("z")),
+    ],
+  ),
+  // The fallbacks a value passes under a context, so a value reader treats
+  // `a or b` the same way whichever path asked about it.
+  rule(
+    "fallbackBehindUnder",
+    [v("x"), v("c"), v("x")],
+    [lit("context", v("c")), lit("fallbackBranch", v("x"), v("b"))],
+  ),
+  rule(
+    "fallbackBehindUnder",
+    [v("x"), v("c"), v("f")],
+    [
+      lit("reachesUnder", v("x"), v("c"), v("f"), v("c2"), VALUE_STEP),
+      lit("fallbackBranch", v("f"), v("b")),
     ],
   ),
   rule(
@@ -1832,6 +1848,14 @@ export const RESOLUTION_QUESTIONS = [
       lit("objectOfUnder", v("x"), v("c"), v("z")),
     ],
   ),
+  rule(
+    "wantedFallbackBehindUnder",
+    [v("x"), v("c"), v("f")],
+    [
+      lit("wantedUnder", v("x"), v("c")),
+      lit("fallbackBehindUnder", v("x"), v("c"), v("f")),
+    ],
+  ),
   // The same for the function a call returns: `app.use(requireCaller(config))`
   // registers what the factory gives back, and `resolves` on the call
   // says nothing unless the factory unwraps an argument.
@@ -2214,7 +2238,7 @@ export const ANSWER_RELATIONS = [
 ];
 
 /**
- * The three of those a caller asks under one allocation site.
+ * The ones of those a caller asks under one allocation site.
  *
  * They are listed apart because leaving them out of what a program has
  * to answer drops the whole second closure from it. A run that never
@@ -2225,4 +2249,5 @@ export const UNDER_ANSWER_RELATIONS = [
   "wantedIsWrittenAsUnder",
   "wantedComesToUnder",
   "wantedObjectOfUnder",
+  "wantedFallbackBehindUnder",
 ];

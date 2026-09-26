@@ -463,7 +463,9 @@ export class ResolutionStore {
       return null;
     }
 
-    const answer = writtenValueUnder(this.db, key, site);
+    const answer = writtenValueUnder(this.db, key, site, (pairs) => {
+      askResolutionUnder(this.db, pairs, resolutionUnderProgram(JS_RULES));
+    });
     const node = answer === null ? null : (this.table.byId.get(answer) ?? null);
     const written =
       node === null || node === target || !Node.isExpression(node)

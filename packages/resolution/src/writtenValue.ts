@@ -50,17 +50,36 @@ export function fallbackWrittenAs(
   key: string,
   ask: Ask,
 ): string | null {
-  const answers = new Set(answersFor(db, WRITTEN_AS, key));
-  const fallbacks = answersFor(db, FALLBACK_BEHIND, key);
+  return coveringFallback(key, {
+    writtenAs: (value) => answersFor(db, WRITTEN_AS, value),
+    fallbacks: (value) => answersFor(db, FALLBACK_BEHIND, value),
+    ask,
+  });
+}
+
+/** How one reader asks the rules about a value, context free or under a site. */
+export interface FallbackReading {
+  writtenAs: (key: string) => string[];
+  fallbacks: (key: string) => string[];
+  ask: Ask;
+}
+
+/** `fallbackWrittenAs`, over whichever reading the caller asks through. */
+export function coveringFallback(
+  key: string,
+  reading: FallbackReading,
+): string | null {
+  const answers = new Set(reading.writtenAs(key));
+  const fallbacks = reading.fallbacks(key);
   if (answers.size < 2 || fallbacks.length === 0) {
     return null;
   }
-  ask(fallbacks);
+  reading.ask(fallbacks);
   const covering = fallbacks.filter((fallback) =>
-    sameAnswers(answersFor(db, WRITTEN_AS, fallback), answers),
+    sameAnswers(reading.writtenAs(fallback), answers),
   );
   const outermost = covering.filter((fallback) => {
-    const inside = new Set(answersFor(db, FALLBACK_BEHIND, fallback));
+    const inside = new Set(reading.fallbacks(fallback));
     return covering.every((other) => other === fallback || inside.has(other));
   });
   return outermost.length === 1 ? (outermost[0] as string) : null;
