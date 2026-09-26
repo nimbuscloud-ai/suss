@@ -1,0 +1,21 @@
+.copy-page-markdown {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.copy-page-markdown button {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  padding: 2px 10px;
+  font-size: 13px;
+  color: var(--vp-c-text-2);
+  transition:
+    color 0.25s,
+    border-color 0.25s;
+}
+
+.copy-page-markdown button:hover {
+  border-color: var(--vp-c-brand-1);
+  color: var(--vp-c-text-1);
+}
