@@ -66,7 +66,7 @@ import {
 } from "./moduleGraph.js";
 
 import type { Atom, Proof } from "@suss/datalog";
-import type { TransparentWrapper } from "@suss/extractor";
+import type { PatternPack, TransparentWrapper } from "@suss/extractor";
 import type { Project, SourceFile } from "ts-morph";
 
 const RESOLUTION_PROGRAM: OnDemandRules = resolutionProgram();
@@ -236,6 +236,14 @@ export class ResolutionStore {
       unwrapsByName: [...LANGUAGE_WRAPPERS, ...wrappers],
       returnsReceiver: LANGUAGE_RECEIVER_RETURNS,
     });
+  }
+
+  /** A store with the wrappers and environment objects these packs declare, as an extraction over them starts from. */
+  static forPacks(packs: readonly PatternPack[]): ResolutionStore {
+    return new ResolutionStore(
+      packs.flatMap((pack) => pack.transparentWrappers ?? []),
+      packs.flatMap((pack) => pack.environmentObjects ?? []),
+    );
   }
 
   /**

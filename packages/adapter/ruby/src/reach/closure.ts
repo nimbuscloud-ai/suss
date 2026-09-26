@@ -61,6 +61,7 @@ import type { BodyReadOptions } from "../discovery.js";
 import type { RbNode } from "../parser.js";
 import type { ReadableBody } from "../paths/effects.js";
 import type {
+  CalleeResolution,
   CalleeSpellings,
   CallSite,
   ReachContext,
@@ -490,18 +491,10 @@ function scanBody(
         followCallback(callback.name, callback.key);
       }
     }
-    // A stop is placed at the call itself, where no summary is, so the link
-    // step does not link it or fall back to matching by name.
-    const placed =
-      outcome.kind === "followed"
-        ? {
-            file: displayPathOf(outcome.target.file),
-            span: spanOf(outcome.target.node),
-          }
-        : outcome.reason === "noDeclaration"
-          ? null
-          : { file: displayPathOf(source.file), span: spanOf(call) };
-    placements.place(callee, placed);
+    placeCallee(placements, outcome, call, {
+      callerFile: source.file,
+      displayPathOf,
+    });
     recordPassedArgs(
       call,
       callee,
@@ -552,6 +545,46 @@ function scanBody(
     passedPositions,
     propertyReads: propertyReadsAmong(read.argless, calls, followedArgless),
   };
+}
+
+/**
+ * Where the link step looks for a call's summary. A stop is placed at its
+ * own call, where no summary can be, so nothing links it. A name called
+ * on `self` that nothing declares is left unplaced, and the link step
+ * then matches it by name in its own file. A method called on anything
+ * else that nothing declares is placed at its call too, since a method
+ * of the same name elsewhere in the caller's file is never what
+ * `rows.delete(x)` runs.
+ */
+function placeCallee(
+  placements: TargetPlacements,
+  outcome: CalleeResolution,
+  call: RbNode,
+  where: { callerFile: string; displayPathOf: (file: string) => string },
+): void {
+  const callee = calleeText(call);
+  if (outcome.kind === "followed") {
+    placements.place(callee, {
+      file: where.displayPathOf(outcome.target.file),
+      span: spanOf(outcome.target.node),
+    });
+    return;
+  }
+
+  if (outcome.reason === "noDeclaration" && isCallOnSelf(call)) {
+    return;
+  }
+
+  placements.placeStop(callee, {
+    file: where.displayPathOf(where.callerFile),
+    span: spanOf(call),
+  });
+}
+
+/** A call written with no receiver, or with `self` as the receiver. */
+function isCallOnSelf(call: RbNode): boolean {
+  const receiver = field(call, "receiver");
+  return receiver === null || receiver.type === "self";
 }
 
 /**

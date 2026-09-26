@@ -371,6 +371,46 @@ function declaredAtOf(outcome: CallOutcome): CallTarget | null {
   return outcome.declaration === null ? null : targetOf(outcome.declaration);
 }
 
+/**
+ * Where the link step looks for a call's summary: where its callee is
+ * declared. A bare name or a `this.` call with no declaration is left
+ * unplaced, and the link step then matches it by name in its own file.
+ * A method called on any other value with no declaration, as on an
+ * untyped value, is placed at its own call, where no summary can be,
+ * since a function of the same name in the caller's file is never what
+ * `rows.remove()` runs.
+ */
+function placeCallee(
+  placements: TargetPlacements,
+  calleeText: string,
+  call: Node,
+  outcome: CallOutcome,
+): void {
+  const declared = declaredAtOf(outcome);
+  if (declared !== null) {
+    placements.place(calleeText, declared);
+    return;
+  }
+
+  if (isCallOnOtherValue(call)) {
+    placements.placeStop(calleeText, targetOf(call));
+  }
+}
+
+function isCallOnOtherValue(call: Node): boolean {
+  if (!Node.isCallExpression(call)) {
+    return false;
+  }
+  const callee = call.getExpression();
+  if (
+    !Node.isPropertyAccessExpression(callee) &&
+    !Node.isElementAccessExpression(callee)
+  ) {
+    return false;
+  }
+  return !Node.isThisExpression(callee.getExpression());
+}
+
 // ---------------------------------------------------------------------------
 // Walk all CallExpressions in a function body (including nested callbacks)
 // ---------------------------------------------------------------------------
@@ -570,7 +610,7 @@ function collectReachable(root: ScanRoot, scan: ScanContext): ScanResult {
     // loop calling the same unresolved method twenty times is one
     // thing a reader cannot see, not twenty.
     record(outcome);
-    placements.place(calleeText, declaredAtOf(outcome));
+    placeCallee(placements, calleeText, one.node, outcome);
     recordPassedArgs(one.node, calleeText, outcome);
 
     if (

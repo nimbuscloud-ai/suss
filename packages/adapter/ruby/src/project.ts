@@ -80,11 +80,12 @@ import type {
   RawEffect,
   TimingReport,
 } from "@suss/extractor";
-import type { Range } from "./ast.js";
+import type { BodyBlocks, Range } from "./ast.js";
 import type { ReachSeed } from "./discovery.js";
-import type { RbAssociationCalls, RubyPack } from "./pack.js";
+import type { RbAssociationCalls, RbInflections, RubyPack } from "./pack.js";
 import type { RbNode } from "./parser.js";
 import type { Seed } from "./reach/closure.js";
+import type { EvaluatedFile } from "./values/evaluator.js";
 
 export interface ExtractRubyOptions {
   /** Absolute paths of the files to parse and extract. */
@@ -164,6 +165,66 @@ export function packWordsOf(packs: readonly RubyPack[]): PackWords {
   };
 }
 
+/**
+ * The facts a run emits over its files under its packs. Each file's own
+ * facts go in as the file is parsed, and `finish` adds the facts that
+ * join files once every file is in. The extract run, `factsForFile` and
+ * the why session all emit through this, so a summary and a why answer
+ * about the same code are read from the same facts.
+ */
+export class RunFacts {
+  readonly db: Database;
+  readonly parsed: EvaluatedFile[] = [];
+  readonly bodyBlocks: BodyBlocks;
+  private readonly packs: readonly RubyPack[];
+  private readonly associationCalls: RbAssociationCalls[];
+  private readonly inflections: RbInflections;
+  private readonly definitions = new Map<string, RbNode>();
+  private readonly constants: FileConstants[] = [];
+
+  constructor(db: Database, packs: readonly RubyPack[]) {
+    this.db = db;
+    this.packs = packs;
+    this.bodyBlocks = bodyBlocksIn(packs);
+    this.associationCalls = associationCallsIn(packs);
+    this.inflections = inflectionsIn(packs);
+  }
+
+  addFile(file: string, root: RbNode): void {
+    this.parsed.push({ file, root });
+    emitValueFacts(this.db, file, root, this.bodyBlocks);
+    emitEnvFacts(this.db, file, root);
+    for (const [key, method] of methodDefinitionsIn(file, root)) {
+      this.definitions.set(key, method);
+    }
+    this.constants.push(
+      collectFileConstants(file, root, this.associationCalls, this.inflections),
+    );
+  }
+
+  /** Which file defines a constant is only known once every file is in, so references are bound here. */
+  finish(): void {
+    emitConstantBindings(this.db, this.constants);
+    const known = new Set(this.parsed.map(({ file }) => file));
+    for (const { file, root } of this.parsed) {
+      emitRequireFacts(this.db, file, root, known);
+    }
+    bindEvaluator(this.db, {
+      files: this.parsed,
+      definitions: this.definitions,
+    });
+    addPackWords(this.db, packWordsOf(this.packs));
+    const callbacks = callbacksIn(
+      this.packs.flatMap((pack) => pack.storage ?? []),
+    );
+    for (const { file, root } of this.parsed) {
+      walkDefinitions(root, (info) =>
+        emitClassCallbacks(this.db, file, info.node, callbacks),
+      );
+    }
+  }
+}
+
 /** One parsed file and the packs a run over it would load. */
 export interface FileFactsOptions {
   file: string;
@@ -179,25 +240,10 @@ export interface FileFactsOptions {
  * file resolves there but not here.
  */
 export function factsForFile(options: FileFactsOptions): Database {
-  const db = new Database();
-  const bodyBlocks = bodyBlocksIn(options.packs);
-  emitValueFacts(db, options.file, options.root, bodyBlocks);
-  emitEnvFacts(db, options.file, options.root);
-  emitConstantBindings(db, [
-    collectFileConstants(
-      options.file,
-      options.root,
-      associationCallsIn(options.packs),
-      inflectionsIn(options.packs),
-    ),
-  ]);
-  emitRequireFacts(db, options.file, options.root, new Set([options.file]));
-  bindEvaluator(db, {
-    files: [{ file: options.file, root: options.root }],
-    definitions: new Map(methodDefinitionsIn(options.file, options.root)),
-  });
-  addPackWords(db, packWordsOf(options.packs));
-  return db;
+  const facts = new RunFacts(new Database(), options.packs);
+  facts.addFile(options.file, options.root);
+  facts.finish();
+  return facts.db;
 }
 
 /**
@@ -297,9 +343,6 @@ export async function extractRubyProject(
   const db = new Database();
   const summaries: BehavioralSummary[] = [];
   const tallies = createPackTallies(options.packs);
-  // Which file defines a constant is only known once every file has been
-  // walked, so references are bound after the walk.
-  const constants: FileConstants[] = [];
   // One cache for the run, so a class that is both an input file and the
   // target of a wiring keyword is parsed once.
   const cache = createFileCache(
@@ -310,44 +353,18 @@ export async function extractRubyProject(
 
   // Facts are emitted for every file before discovery starts, because the
   // storage recognizer asks during discovery which file defines a constant.
-  const parsed: { file: string; root: RbNode }[] = [];
-  const definitions = new Map<string, RbNode>();
-  const associationCalls = associationCallsIn(options.packs);
-  const bodyBlocks = bodyBlocksIn(options.packs);
-  const inflections = inflectionsIn(options.packs);
+  const facts = new RunFacts(db, options.packs);
+  const { parsed, bodyBlocks } = facts;
   for (const file of options.files) {
     await timer.timeAsync("parse", async () => {
       const root = await cache.get(file);
-      if (root === null) {
-        return;
+      if (root !== null) {
+        facts.addFile(file, root);
       }
-      parsed.push({ file, root });
-      emitValueFacts(db, file, root, bodyBlocks);
-      emitEnvFacts(db, file, root);
-      for (const [key, method] of methodDefinitionsIn(file, root)) {
-        definitions.set(key, method);
-      }
-      constants.push(
-        collectFileConstants(file, root, associationCalls, inflections),
-      );
     });
   }
   const dynamicNames = timer.time("discover", () => {
-    emitConstantBindings(db, constants);
-    const known = new Set(parsed.map(({ file }) => file));
-    for (const { file, root } of parsed) {
-      emitRequireFacts(db, file, root, known);
-    }
-    bindEvaluator(db, { files: parsed, definitions });
-    addPackWords(db, packWordsOf(options.packs));
-    const callbacks = callbacksIn(
-      options.packs.flatMap((pack) => pack.storage ?? []),
-    );
-    for (const { file, root } of parsed) {
-      walkDefinitions(root, (info) =>
-        emitClassCallbacks(db, file, info.node, callbacks),
-      );
-    }
+    facts.finish();
     return readDynamicNames(
       db,
       new Map(parsed.map(({ file, root }) => [file, root])),

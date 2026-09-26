@@ -62,14 +62,18 @@ export function placeCalls(
 
 /**
  * Where a scanned body's calls, and the arguments passed by name into
- * them, are declared. A walk fills it with `place` and `placeArg` as it
- * visits each call, and reads it back through `targets` and
- * `argTargets` when it finishes, in the form `placeCalls` and
+ * them, are declared. A walk fills it with `place`, `placeStop` and
+ * `placeArg` as it visits each call, and reads it back through `targets`
+ * and `argTargets` when it finishes, in the form `placeCalls` and
  * `placeArgTargets` take. Every adapter's reachable-closure walk uses
  * it, so the rule for a shadowed name is defined once.
+ *
+ * `placeCalls` matches effects by callee text, so every call written the
+ * same way in one body gets the same place.
  */
 export class TargetPlacements {
   private readonly byCallee = new Map<string, DeclaredAt | null>();
+  private readonly stops = new Map<string, DeclaredAt>();
   private readonly byCalleeAndPosition = new Map<
     string,
     Map<number, DeclaredAt | null>
@@ -86,6 +90,19 @@ export class TargetPlacements {
     settle(this.byCallee, normalizeCalleeText(calleeText), placed);
   }
 
+  /**
+   * Record a call the walk stopped at, placed at the call itself, where
+   * no summary is. Every call written the same way in the body is then
+   * left unlinked, even one placed at a declaration, because the link
+   * step cannot tell which effect came from which call.
+   */
+  placeStop(calleeText: string, call: DeclaredAt): void {
+    const key = normalizeCalleeText(calleeText);
+    if (!this.stops.has(key)) {
+      this.stops.set(key, call);
+    }
+  }
+
   // Same shadow handling as `place`, one level down: the argument at
   // this position in calls written as `calleeText`.
   placeArg(calleeText: string, position: number, placed: DeclaredAt): void {
@@ -95,9 +112,13 @@ export class TargetPlacements {
     settle(byPosition, position, placed);
   }
 
-  /** Every callee text placed at exactly one declaration, as `placeCalls` takes it. */
+  /** Every callee text placed at exactly one declaration or at a stop, as `placeCalls` takes it. */
   get targets(): ReadonlyMap<string, DeclaredAt> {
-    return onlySettled(this.byCallee);
+    const targets = new Map(onlySettled(this.byCallee));
+    for (const [calleeText, call] of this.stops) {
+      targets.set(calleeText, call);
+    }
+    return targets;
   }
 
   /** Every callee text's argument positions placed at exactly one declaration, as `placeArgTargets` takes them. */

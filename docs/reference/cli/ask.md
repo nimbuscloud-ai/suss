@@ -17,7 +17,7 @@ suss ask "<question>" [--dir <directory> | <summaries.json>] [--project <directo
 | `"<question>"` | none | One of the ten forms below. Run `suss ask` with no question to print the list and exit `0`. |
 | `--dir <path>` | none | The folder of summary files to read. |
 | `<summaries.json>` | none | One summary file, as a second positional argument after the question. |
-| `--project <path>` | the working directory | Where the source is, for a why question. A why question reads source as well as summaries, and reports it when the two do not line up. |
+| `--project <path>` | the working directory | Where the source is, for a why question. A why question reads source as well as summaries, and reports it when the two do not line up. It loads the packs a bare `suss extract` of that directory would load, the ones `suss.json` lists or the ones `suss init` would pick, so a step only a pack declares, such as a finder giving back its model, is explained too. |
 | `--all` | off | List every unit the answer picked out. Without it a long answer stops after ten and reports how many are left. |
 | `--json` | off | Write the answer as JSON instead of text. Unaffected by `--all`: it always lists every item. |
 | `-o`, `--output <path>` | stdout | Write the answer to a file. |

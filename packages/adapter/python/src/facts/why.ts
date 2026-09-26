@@ -5,27 +5,32 @@
  * in `@suss/resolution`.
  *
  * It parses every file under the root and records the same value facts
- * `extractPythonProject` does, along with a location for every fact key,
- * so each step of a proof can point back at the source. A handle pairs a
- * tree-sitter node with its file, because a node alone does not say which
- * file it was parsed from.
+ * and pack words `extractPythonProject` does, along with a location for
+ * every fact key, so each step of a proof can point back at the source. A
+ * handle pairs a tree-sitter node with its file, because a node alone
+ * does not say which file it was parsed from.
  */
 
 import fs from "node:fs";
 import path from "node:path";
 
 import { Database } from "@suss/datalog";
-import { explainResolvedKey, RESOLUTION_RULES } from "@suss/resolution";
+import {
+  addPackWords,
+  explainResolvedKey,
+  RESOLUTION_RULES,
+} from "@suss/resolution";
 
 import { enclosingFunction, field, fields, isFunction } from "../ast.js";
 import { emitModuleImportFacts } from "../facts.js";
 import { parsePythonSync } from "../parser.js";
-import { findPythonFiles } from "../project.js";
+import { findPythonFiles, packWordsOf } from "../project.js";
 import { bindModule } from "../scope.js";
 import { pythonSourceRoots } from "../sourceRoots.js";
 import { emitValueFacts, nodeId, readKey } from "./values.js";
 
 import type { ValueLocation, WhyExplained } from "@suss/resolution";
+import type { PythonPack } from "../pack.js";
 import type { PyNode } from "../parser.js";
 
 export interface PythonWhySessionOptions {
@@ -35,6 +40,8 @@ export interface PythonWhySessionOptions {
   roots?: string[];
   /** Roots the project directory does not show, such as a checked-out submodule. Added after the others. */
   additionalRoots?: string[];
+  /** The packs the extraction ran with. A hop only a pack declares, such as `session.get(User, id)` giving back a User, is explained only when that pack is here. */
+  packs?: readonly PythonPack[];
 }
 
 /** A found node, paired with the file it was parsed from. */
@@ -159,6 +166,7 @@ export class PythonWhySession {
       emitValueFacts(this.db, file, root);
       indexFile(file, root, this.locations);
     }
+    addPackWords(this.db, packWordsOf(options.packs ?? []));
   }
 
   /**

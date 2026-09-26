@@ -281,21 +281,26 @@ function keyOf(target: ReachedFunction): string {
  * call too, since a function of the same name in the caller's file is
  * never what `receiver.method()` runs.
  */
-function placementOf(
+function placeCallee(
+  placements: TargetPlacements,
+  callee: string,
   outcome: CalleeResolution,
   call: PyNode,
   file: BoundPythonFile,
-): DeclaredAt | null {
+): void {
   if (outcome.kind === "followed") {
-    return {
+    placements.place(callee, {
       file: outcome.target.file.displayPath,
       span: spanOf(outcome.target.node),
-    };
+    });
+    return;
   }
+
   if (outcome.reason === "noDeclaration" && !isMethodCall(call)) {
-    return null;
+    return;
   }
-  return { file: file.displayPath, span: spanOf(call) };
+
+  placements.placeStop(callee, { file: file.displayPath, span: spanOf(call) });
 }
 
 function isMethodCall(call: PyNode): boolean {
@@ -473,7 +478,7 @@ function scanBody(
   const record = (call: PyNode, site: CallSite): void => {
     const callee = calleeText(call);
     const outcome = resolveCallee(call, site, ctx, spellings);
-    placements.place(callee, placementOf(outcome, call, file));
+    placeCallee(placements, callee, outcome, call, file);
     recordPassedArgs(
       call,
       callee,

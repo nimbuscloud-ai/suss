@@ -7,6 +7,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { preloadPythonGrammar } from "../parser.js";
 import { PythonWhySession } from "./why.js";
 
+import type { PythonPack } from "../pack.js";
+
 describe("PythonWhySession", () => {
   let dir: string;
 
@@ -133,6 +135,48 @@ describe("PythonWhySession", () => {
     expect(stats).toBeDefined();
     expect(stats?.derivedFacts).toBeLessThan(3 * (stats?.baseFacts ?? 0));
   }, 20_000);
+
+  describe("a method called on what a pack's model method gave back", () => {
+    const sqlModelLike: PythonPack = {
+      name: "sqlmodel",
+      protocol: "postgresql",
+      discovery: [],
+      models: [
+        {
+          baseNames: ["SQLModel"],
+          givesBack: [],
+          entryMethods: [{ method: "get", argument: 0 }],
+          entryFunctions: [],
+        },
+      ],
+    };
+
+    const explainClose = (packs: readonly PythonPack[]) => {
+      fs.writeFileSync(
+        path.join(dir, "models.py"),
+        "from sqlmodel import SQLModel\n\nclass Account(SQLModel):\n    def close(self):\n        return True\n",
+      );
+      fs.writeFileSync(
+        path.join(dir, "app.py"),
+        "from models import Account\n\ndef run(session):\n    account = session.get(Account, 1)\n    return account.close()\n",
+      );
+      const session = new PythonWhySession({ dir, packs });
+      const value = session.findExpression("app.py", 5, "account.close");
+      return value === null ? null : session.explain(value);
+    };
+
+    it("follows it to the model's method when the session has the pack", () => {
+      expect(explainClose([sqlModelLike])?.target).toEqual({
+        name: "close",
+        file: "models.py",
+        line: 4,
+      });
+    });
+
+    it("cannot follow it without the pack, which is the only thing that says what get gives back", () => {
+      expect(explainClose([])).toBeNull();
+    });
+  });
 
   it("returns null for a name with no expression on that line", () => {
     fs.writeFileSync(path.join(dir, "app.py"), "x = 1\n");
