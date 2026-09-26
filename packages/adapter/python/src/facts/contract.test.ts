@@ -52,6 +52,16 @@ const SOURCES: Record<string, CaseFiles> = {
   "a name declared as a fallback": {
     "f.py": "client = cached or build()\n",
   },
+  "a property written through a name": {
+    "f.py": [
+      "class ReportJob:",
+      "    pass",
+      "",
+      "job = ReportJob()",
+      "job.retries = 3",
+      "",
+    ].join("\n"),
+  },
   "a class extending another": {
     "f.py": [
       "class User:",

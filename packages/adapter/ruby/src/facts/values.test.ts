@@ -260,6 +260,55 @@ describe("ruby value facts", () => {
     ]);
   });
 
+  describe("a setter called through a local", () => {
+    it("is keyed on the local, with the property the setter writes", async () => {
+      const source = "job = ReportJob.new\njob.on_failure = handler\n";
+      const db = await factsFor(source);
+      expect(rows(db, "storesProperty")).toEqual([
+        ["#job", "on_failure", keyOf(source, "handler"), "name"],
+      ]);
+    });
+
+    it("is keyed on a method's own local", async () => {
+      const source =
+        "def run\n  job = ReportJob.new\n  job.retries = limit\nend\n";
+      const db = await factsFor(source);
+      const [funcKey] = rows(db, "func")[0] ?? [];
+      expect(rows(db, "storesProperty").map((row) => row[0])).toEqual([
+        `${funcKey}#job`,
+      ]);
+    });
+
+    it("is left out for `self`, a parameter and a block's parameter", async () => {
+      const source = [
+        "class ReportJob",
+        "  def reset(other)",
+        "    self.retries = 0",
+        "    other.retries = 0",
+        "    jobs.each { |job| job.retries = 0 }",
+        "  end",
+        "end",
+        "",
+      ].join("\n");
+      const db = await factsFor(source);
+      expect(rows(db, "storesProperty")).toEqual([]);
+    });
+
+    it("is left out when the body reads the property before the setter runs", async () => {
+      const source =
+        "job = ReportJob.new\nputs job.retries\njob.retries = limit\n";
+      const db = await factsFor(source);
+      expect(rows(db, "storesProperty")).toEqual([]);
+    });
+
+    it("is left out when a later write states no value of its own", async () => {
+      const source =
+        "job = ReportJob.new\njob.retries = limit\njob.retries += 1\n";
+      const db = await factsFor(source);
+      expect(rows(db, "storesProperty")).toEqual([]);
+    });
+  });
+
   it("keeps a memoised instance variable under the method that writes it", async () => {
     const source =
       "class C\n  def conn\n    @conn ||= Faraday.new\n  end\nend\n";
@@ -269,6 +318,7 @@ describe("ruby value facts", () => {
       funcKey,
       "@conn",
       keyOf(source, "Faraday.new"),
+      "receiver",
     ]);
   });
 
@@ -548,7 +598,12 @@ describe("ruby value facts", () => {
     );
     expect(rows(db, "returnsValue")).toEqual([[conn, built]]);
     expect(rows(db, "holdsProperty")).toContainEqual([cls, "conn", conn]);
-    expect(rows(db, "storesProperty")).toContainEqual([conn, "@conn", built]);
+    expect(rows(db, "storesProperty")).toContainEqual([
+      conn,
+      "@conn",
+      built,
+      "receiver",
+    ]);
   });
 
   it("says which class a class is written as extending", async () => {
@@ -991,7 +1046,7 @@ describe("ruby value facts", () => {
     const db = await factsFor(source);
     const funcKey = rows(db, "func")[0]?.[0];
     expect(rows(db, "storesProperty")).toEqual([
-      [funcKey, "@thing", keyOf(source, "Entity.all")],
+      [funcKey, "@thing", keyOf(source, "Entity.all"), "receiver"],
     ]);
   });
 

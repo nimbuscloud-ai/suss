@@ -51,7 +51,7 @@ Three layers do the work.
 
   <rect class="box" x="60" y="220" width="540" height="86" rx="6" />
   <text class="label" x="330" y="242" text-anchor="middle">2. One rule set joins the facts into a value graph</text>
-  <text class="note" x="330" y="260" text-anchor="middle">194 rules. 15 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
+  <text class="note" x="330" y="260" text-anchor="middle">195 rules. 15 of them derive stepsTo(x, y, kind): one hop from a value to a value.</text>
   <text class="note" x="330" y="277" text-anchor="middle">reaches is the transitive closure of those hops, and it records</text>
   <text class="note" x="330" y="294" text-anchor="middle">the strongest kind of step the walk took.</text>
 
@@ -163,13 +163,13 @@ out.
 
 ## Layer 2: one rule set makes a graph
 
-`RESOLUTION_RULES` in `packages/resolution/src/index.ts` is 194 rules.
+`RESOLUTION_RULES` in `packages/resolution/src/index.ts` is 195 rules.
 15 of them derive `stepsTo(x, y, kind)`, which says the value `x` leads
 to the value `y` in one hop. Two of them, for an argument and a
 property read, are written as `stepsTo` directly. The other thirteen
 are written as `hop`, and each gets a `stepsTo` twin, since a walk
 under a receiver context reads `hop`. An adapter can add hops of its
-own, each with its twin, and those are not among the 194. The Ruby
+own, each with its twin, and those are not among the 195. The Ruby
 adapter adds one, for `Const.new`.
 
 ```ts
@@ -204,7 +204,10 @@ It contains whatever the class's constructor and its other methods put
 on the receiver, and the facts say which function did the storing
 (`storesProperty`) rather than putting a value on the class under a
 field name. The class contains the same things, so a class nothing in
-the run makes one of still resolves a read through the receiver.
+the run makes one of still resolves a read through the receiver. A
+write through a name for the construction, `client.timeout = 5`, goes
+on the construction alone, and the class and its other constructions
+never see it.
 
 A field default is different. In Python, `is_admin: bool = False` on a
 dataclass or a pydantic model is only the value an instance starts with

@@ -3,6 +3,8 @@
 // is what an adapter author otherwise reads out of another adapter's source.
 // design/proposals/adapter-fact-contract.md says why this exists.
 
+import { NAMED_STORE_NAME } from "./index.js";
+
 import type { Database } from "@suss/datalog";
 
 /** The tuples of one relation, as strings, which is all a case compares. */
@@ -22,6 +24,27 @@ export interface ContractCase {
 }
 
 const distinct = (values: string[]): number => new Set(values).size;
+
+/** Whether following `binds` from a key arrives at one of the targets. */
+function leadsToOneOf(
+  facts: FactsOf,
+  key: string,
+  targets: ReadonlySet<string>,
+): boolean {
+  // A set visits what is added to it while it is walked, once each.
+  const reached = new Set([key]);
+  for (const at of reached) {
+    if (targets.has(at)) {
+      return true;
+    }
+    for (const row of facts("binds")) {
+      if (row[0] === at && row[1] !== undefined) {
+        reached.add(row[1]);
+      }
+    }
+  }
+  return false;
+}
 
 /** The relations an adapter can use to say a value came from another file. */
 const RELATIONS_THAT_CAN_CROSS = ["imports", "binds", "reExports"];
@@ -239,6 +262,26 @@ export const FACT_CONTRACT_CASES: readonly ContractCase[] = [
       return named.length > 0
         ? null
         : "the base's written name is not recorded, so a pack cannot match a library base";
+    },
+  },
+  {
+    name: "a property written through a name",
+    requires:
+      "a module-level name assigned a construction of a class the file declares, and a statement writing a value to a property of that name, `job.retries = 3` say",
+    // The rules follow the key a write is stored under to the object it
+    // lands on, through `binds`, so the store has to be keyed on the name
+    // the way `binds` keys it. Keyed on anything else, it reaches no object.
+    check: (facts) => {
+      const stores = facts("storesProperty").filter(
+        (row) => row[3] === NAMED_STORE_NAME,
+      );
+      if (stores.length === 0) {
+        return "a write through a name is not written down as one, so a later read of that property finds nothing";
+      }
+      const sites = new Set(facts("call").map((row) => row[0] ?? ""));
+      return stores.some((row) => leadsToOneOf(facts, row[0] ?? "", sites))
+        ? null
+        : "the write is keyed so that nothing leads from it to the construction, so the rules cannot find the object it lands on";
     },
   },
   {
