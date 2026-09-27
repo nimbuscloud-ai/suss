@@ -1,0 +1,41 @@
+kind: prd
+
+title: Ask one question, and get an answer or what would let suss answer
+purpose: >-
+  An agent in the middle of a task, or a developer before a change, asks
+  one question about the summaries already on disk. They get an answer,
+  or they are told what input is missing, so an empty answer never has
+  to be guessed at.
+audience: agents asking over MCP, and developers running suss ask
+source: author
+
+scenarios:
+  - title: a question suss takes
+    when: someone asks one of the ten questions about a boundary in the summaries
+    expect: they get an answer that says whether suss found it, with a one line headline and the items behind it
+    link: cli-answer-question.answered
+
+  # No link: which items come back, and what needs says, depend on the
+  # summaries asked about, which no outcome can state. Covered by the
+  # @suss/cli test "says which functions do reach the target when the
+  # subject does not".
+  - title: suss cannot answer from what it has
+    when: the question is one suss takes, but nothing in the summaries answers it
+    expect: found is false, and needs says what input would let suss answer
+
+  - title: a question suss does not take
+    when: someone asks something that is not one of the ten questions
+    expect: no answer comes back, and suss points at the forms it does take
+    link: cli-answer-question.not-a-question
+
+  - title: no question at all
+    when: someone runs suss ask with no question
+    expect: suss prints the ten questions and exits zero
+    link: cli-answer-question.not-a-question
+
+  # No link: suss_ask is an MCP tool, and suss has no boundary for a
+  # tool's input and result. The tool calls the same function suss ask
+  # does, so the outcomes above describe what it returns.
+  - title: an agent asks over MCP
+    when: an agent calls the suss_ask tool with one of the ten questions
+    expect: it gets the same answer suss ask --json prints

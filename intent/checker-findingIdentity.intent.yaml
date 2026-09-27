@@ -1,0 +1,25 @@
+kind: boundary
+
+name: checker-finding-identity
+purpose: >-
+  Give a finding a string that stays the same across runs for as long
+  as the finding does. suss check --since compares runs by it, so an
+  agent supervisor can tell a finding that was already there from one
+  the agent's edit introduced.
+audience: tools that compare findings across runs, including the suss agent supervisor
+source: author
+
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "@suss/checker"
+  exportPath: ["findingIdentity"]
+  receives:
+    finding: { type: object, required: true }
+
+transitions:
+  - id: identity
+    when: called with a finding
+    returns:
+      body:
+        type: string

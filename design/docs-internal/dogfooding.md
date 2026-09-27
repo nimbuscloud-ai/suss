@@ -145,7 +145,7 @@ The refreshed baseline shows up in the pull request diff as a per-package change
 
 ### Its relationship to `check:self`
 
-`scripts/checkSelf.mjs` is the other place suss runs on itself, and the two check different things. `check:self` extracts the public exports of the two checker packages and runs the CLI's `check` against the intent specs under `intent/`, to see whether those exports still behave the way the specs say. It reports and never fails. The dogfood run measures how much of its own source suss can see at all, across every package in this repo, and it does fail. You need both. `check:self` goes deep on two packages against intent someone wrote by hand, and the dogfood run covers the whole workspace in breadth.
+`scripts/checkSelf.mjs` is the other place suss runs on itself, and the two check different things. The dogfood run measures how much of its own source suss can see at all, across every package in this repo. `check:self` reads the summaries the dogfood run wrote and runs the CLI's `check --intent` against the documents under `intent/`, to see whether the exports those documents describe still do what they say. Both fail the build. `check:self` goes deep on the exports someone wrote intent for, and the dogfood run covers the whole workspace in breadth. Because `check:self` reads the dogfood output, it runs after the dogfood run, in the same CI job.
 
 ## What's still out of scope
 

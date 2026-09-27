@@ -1,0 +1,35 @@
+kind: boundary
+
+name: checker-changed-boundaries
+purpose: >-
+  List the boundaries the code changed at between two runs, each with
+  its key, a label a person can read and the units that moved. suss
+  check --since reports the list, and the agent supervisor reads it
+  after every edit to say what the edit changed.
+audience: tools that compare two runs of suss, including the suss agent supervisor
+source: author
+
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "@suss/checker"
+  exportPath: ["changedBoundaries"]
+  receives:
+    before: { type: array, required: true }
+    after: { type: array, required: true }
+
+transitions:
+  - id: listed
+    when: called with the summaries of an earlier run and a later run
+    returns:
+      body:
+        type: array
+        items:
+          type: object
+          properties:
+            key: { type: string }
+            label: { type: unknown }
+            units:
+              type: array
+              items: { type: string }
+          required: [key, label, units]

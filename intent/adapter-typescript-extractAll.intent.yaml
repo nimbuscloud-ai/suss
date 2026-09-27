@@ -1,0 +1,28 @@
+kind: boundary
+
+name: adapter-typescript-extract-all
+purpose: >-
+  Read every file in the adapter's project and return one summary for
+  each unit the packs recognize. A pack's end to end test asserts on the
+  summaries it gets back.
+audience: pack authors writing tests
+source: author
+
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "@suss/adapter-typescript"
+  exportPath: ["createTypeScriptAdapter", "extractAll"]
+
+transitions:
+  - id: summaries
+    when: called on an adapter whose project has the files to read
+    returns:
+      body:
+        type: array
+        items:
+          type: object
+          properties:
+            kind: { type: string }
+            identity: { type: object }
+            transitions: { type: array }

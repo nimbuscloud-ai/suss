@@ -1,0 +1,42 @@
+kind: boundary
+
+name: extractor-http-route-discovery
+purpose: >-
+  Write out the discovery entries for an HTTP framework that registers
+  handlers as app.get(path, handler), so a pack author passes the
+  module, the names it exports and the verbs instead of writing the
+  patterns by hand. The Write a pack guide builds its example on it, and
+  packs written outside this repository call it the same way.
+audience: pack authors
+source: author
+
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "@suss/extractor"
+  exportPath: ["httpRouteDiscovery"]
+  receives:
+    opts.importModule: { type: string, required: true }
+    opts.importNames: { type: array, required: true }
+    opts.methods: { type: array, required: true }
+    opts.kind: { type: string }
+    opts.mount: { type: object }
+
+transitions:
+  - id: no-routable
+    when: importNames is empty, so no import makes a value that routes can be registered on
+    returns:
+      body:
+        type: array
+
+  - id: patterns
+    when: importNames lists at least one name the module exports
+    returns:
+      body:
+        type: array
+        items:
+          type: object
+          properties:
+            kind: { type: string }
+            match: { type: object }
+          required: [kind, match]

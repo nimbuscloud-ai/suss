@@ -1,0 +1,46 @@
+kind: prd
+
+title: Review a change as behavior, not lines
+purpose: >-
+  A reviewer looking at a change wants to know what it does differently
+  at each boundary: a route that gained a status, a table a handler now
+  writes. suss lists those changes, and leaves out edits that moved code
+  without changing what it does.
+audience: code reviewers, and review tools built on suss
+source: author
+
+scenarios:
+  - title: one unit, two readings
+    when: a review tool compares one unit's summary from before a change with its summary from after
+    expect: it gets the transitions that were added, removed and changed, as three lists
+    link: behavioral-ir-diff-summaries.compared
+
+  - title: which boundaries changed
+    when: a review tool compares every summary from before a change with every summary from after
+    expect: it gets each boundary the change touched, with its key, a label a person can read and the units that moved
+    link: checker-changed-boundaries.listed
+
+  # No link: the promise is that a move is not a change, which is about
+  # the values that come back and no outcome can state. Covered by the
+  # @suss/behavioral-ir test "ignores a transition that only moved in the file".
+  - title: a comment moves the code down
+    when: someone adds a comment above a handler and changes nothing else
+    expect: the review shows no change
+
+  # No link, for the same reason. Covered by the @suss/behavioral-ir test
+  # "reports a transition whose guard changed as changed, not as removed and added".
+  - title: a guard changes
+    when: someone adds a condition in front of a branch that returns the same thing as before
+    expect: the review shows one changed branch, not a branch removed and another added
+
+  # No link, for the same reason. Covered by the @suss/checker test
+  # "names a store the changed path now writes, beside the route".
+  - title: a handler starts writing a table
+    when: a change makes a handler write to a table it did not write before
+    expect: the table is listed as a changed boundary, next to the handler's route
+
+  # No link: inspect --diff is a CLI command, and suss has no boundary
+  # for a command's arguments and output.
+  - title: the reviewer reads the diff
+    when: a reviewer runs suss inspect --diff over the summaries from before and after a change
+    expect: the diff is grouped by boundary, and says for each one what was added, removed or changed

@@ -1,0 +1,37 @@
+kind: boundary
+
+name: packs-graphql-ruby
+purpose: >-
+  Build the graphql-ruby pack from the config a project gives it, or
+  refuse when the config does not say which directory a field's class
+  is looked up under. That directory is the project's own layout and no
+  default fits every project, so suss extract turns the refusal into a
+  message that says which setting to write and how to pass it.
+audience: developers running suss extract -f graphql-ruby, after suss init suggested the pack
+source: author
+
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "@suss/packs"
+  exportPath: ["graphql-ruby", "default"]
+  receives:
+    options.root: { type: string, required: true }
+    options.baseClassNames: { type: array }
+    options.camelize: { type: boolean }
+
+transitions:
+  - id: needs-root
+    when: the config gives no root, or gives an empty one, as with a bare -f graphql-ruby
+    throws:
+      errorType: Error
+
+  - id: reads-the-project
+    when: the config says which directory to look fields up under
+    returns:
+      body:
+        type: object
+        properties:
+          name: { type: string }
+          protocol: { type: string }
+        required: [name, protocol]

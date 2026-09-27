@@ -1,0 +1,36 @@
+kind: boundary
+
+name: packs-sqlalchemy
+purpose: >-
+  Build the SQLAlchemy pack from the config a project gives it, or
+  refuse when the config does not say which database is behind the
+  engine. SQLAlchemy talks to several databases and the connection URL
+  settles which, so suss extract turns the refusal into a message that
+  says which setting to write and how to pass it, instead of reading the
+  project with a guess.
+audience: developers running suss extract -f sqlalchemy, after suss init suggested the pack
+source: author
+
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "@suss/packs"
+  exportPath: ["sqlalchemy", "default"]
+  receives:
+    options.storageSystem: { type: string, required: true }
+
+transitions:
+  - id: needs-storage-system
+    when: the config gives no storageSystem, as with a bare -f sqlalchemy
+    throws:
+      errorType: Error
+
+  - id: reads-the-project
+    when: the config says which database is behind the engine
+    returns:
+      body:
+        type: object
+        properties:
+          name: { type: string }
+          protocol: { type: string }
+        required: [name, protocol]
