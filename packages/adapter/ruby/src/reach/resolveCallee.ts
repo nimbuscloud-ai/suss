@@ -278,12 +278,15 @@ function spellingFor(call: RbNode, site: CallSite): CalleeSpelling {
   if (receiver === null || receiver.type === "self") {
     return { kind: "implicitSelf", name: methodName };
   }
+  const key = readKey(site.file, receiver, site.method);
   return {
     kind: "receiver",
-    key: readKey(site.file, receiver, site.method),
+    key,
     method: methodName,
-    onClassItself: readsOffClassItself(receiver, (local) =>
-      classLocalsFor(call, site).has(readKey(site.file, local, site.method)),
+    onClassItself: readsOffClassItself(
+      receiver,
+      key,
+      classLocalsFor(call, site),
     ),
   };
 }

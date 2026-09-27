@@ -357,7 +357,7 @@ function emitMessageSent(
   if (objectKey === null) {
     return true;
   }
-  for (const name of namesReadAs(emitter, receiver, method.text)) {
+  for (const name of namesReadAs(emitter, receiver, objectKey, method.text)) {
     add(emitter, "readsProperty", calleeKey, objectKey, name);
   }
   return true;
@@ -371,15 +371,15 @@ function emitMessageSent(
 function namesReadAs(
   emitter: Emitter,
   receiver: RbNode | null,
+  receiverKey: string,
   name: string,
 ): string[] {
   if (receiver === null || readThrough(receiver).type === "self") {
     return SELF_READS[emitter.selfRuns](name);
   }
-  const onClass = readsOffClassItself(receiver, (local) =>
-    emitter.classLocals.has(valueKey(emitter, local)),
-  );
-  return onClass ? [classSpelling(name)] : [name];
+  return readsOffClassItself(receiver, receiverKey, emitter.classLocals)
+    ? [classSpelling(name)]
+    : [name];
 }
 
 /**
@@ -390,13 +390,14 @@ function namesReadAs(
  */
 export function readsOffClassItself(
   receiver: RbNode,
-  isClassLocal: (local: RbNode) => boolean,
+  receiverKey: string,
+  classLocals: ReadonlySet<string>,
 ): boolean {
   const written = readThrough(receiver);
   if (CONSTANT_REF_TYPES.has(written.type)) {
     return true;
   }
-  return written.type === "identifier" && isClassLocal(written);
+  return written.type === "identifier" && classLocals.has(receiverKey);
 }
 
 /**
