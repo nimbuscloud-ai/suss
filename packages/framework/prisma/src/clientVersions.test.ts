@@ -9,7 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 
@@ -328,6 +328,23 @@ describe("generatedClientDirs", () => {
       "prisma/schema.prisma": "generator client { provider",
     });
     expect(generatedClientDirs(broken)).toEqual([]);
+  });
+
+  it("walks up to the project once per directory", () => {
+    const root = projectOf({
+      "package.json": "{}",
+      "prisma/schema.prisma": GENERATOR("../gen"),
+      "src/a/b/c/file.ts": "",
+    });
+    const deep = path.join(root, "src/a/b/c");
+    expect(generatedClientDirs(deep)).toEqual([path.join(root, "gen")]);
+    const existsSync = vi.spyOn(fs, "existsSync");
+    try {
+      expect(generatedClientDirs(deep)).toEqual([path.join(root, "gen")]);
+      expect(existsSync).not.toHaveBeenCalled();
+    } finally {
+      existsSync.mockRestore();
+    }
   });
 
   it("reads the schema again once it changes", () => {
