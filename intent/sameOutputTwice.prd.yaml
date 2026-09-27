@@ -9,24 +9,24 @@ purpose: >-
 audience: developers and CI jobs that keep a cache directory between runs
 source: author
 
+# The cache is part of extract, and the promise is that two outputs are
+# equal, which no outcome can state. The tests run the built binary in a
+# child process, which self.sussignore.yml explains.
 scenarios:
-  # No link: the cache is part of extract, and the promise is that two
-  # outputs are equal, which no outcome can state. Covered by the
-  # @suss/cli test "writes the cold run's output on a warm run over
-  # unchanged files".
   - title: nothing changed
     when: extract runs a second time over files that have not changed
     expect: it writes the same bytes the first run wrote
+    coveredBy: packages/cli/src/extractCacheIntegration.test.ts > the extraction cache through the built binary > writes the cold run's output on a warm run over unchanged files
+    about: fn:@suss/cli::extract
 
-  # No link, for the same reason. Covered by the @suss/cli test "writes
-  # the cold run's output after a touch that changed no content".
   - title: a file was touched but not changed
     when: a file's timestamp moved and its content did not, and extract runs again
     expect: it writes the same bytes the first run wrote
+    coveredBy: packages/cli/src/extractCacheIntegration.test.ts > the extraction cache through the built binary > writes the cold run's output after a touch that changed no content
+    about: fn:@suss/cli::extract
 
-  # No link, for the same reason. The tests above compare a warm run
-  # with the cold run that filled the cache, and none compares a warm
-  # run with --no-cache yet.
+  # The tests above compare a warm run with the cold run that filled the
+  # cache, and none compares a warm run with --no-cache yet.
   - title: the cache against no cache
     when: extract runs once from a warm cache and once with --no-cache over the same files
     expect: the two outputs are byte for byte the same

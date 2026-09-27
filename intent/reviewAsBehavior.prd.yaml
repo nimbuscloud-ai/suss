@@ -20,27 +20,29 @@ scenarios:
     expect: it gets each boundary the change touched, with its key, a label a person can read and the units that moved
     link: checker-changed-boundaries.listed
 
-  # No link: the promise is that a move is not a change, which is about
-  # the values that come back and no outcome can state. Covered by the
-  # @suss/behavioral-ir test "ignores a transition that only moved in the file".
+  # That a move is not a change is about the values that come back,
+  # which no outcome can state.
   - title: a comment moves the code down
     when: someone adds a comment above a handler and changes nothing else
     expect: the review shows no change
+    coveredBy: packages/behavioral-ir/src/index.test.ts > diffSummaries > ignores a transition that only moved in the file
+    about: fn:@suss/behavioral-ir::diffSummaries
 
-  # No link, for the same reason. Covered by the @suss/behavioral-ir test
-  # "reports a transition whose guard changed as changed, not as removed and added".
   - title: a guard changes
     when: someone adds a condition in front of a branch that returns the same thing as before
     expect: the review shows one changed branch, not a branch removed and another added
+    coveredBy: packages/behavioral-ir/src/index.test.ts > diffSummaries > reports a transition whose guard changed as changed, not as removed and added
+    about: fn:@suss/behavioral-ir::diffSummaries
 
-  # No link, for the same reason. Covered by the @suss/checker test
-  # "names a store the changed path now writes, beside the route".
   - title: a handler starts writing a table
     when: a change makes a handler write to a table it did not write before
     expect: the table is listed as a changed boundary, next to the handler's route
+    coveredBy: packages/checker/src/since/changesSince.test.ts > changedBoundaries > names a store the changed path now writes, beside the route
+    about: fn:@suss/checker::changedBoundaries
 
-  # No link: inspect --diff is a CLI command, and suss has no boundary
-  # for a command's arguments and output.
+  # Covered by a CLI test until suss reads a command's output, and then
+  # this moves to an outcome link.
   - title: the reviewer reads the diff
     when: a reviewer runs suss inspect --diff over the summaries from before and after a change
     expect: the diff is grouped by boundary, and says for each one what was added, removed or changed
+    coveredBy: packages/cli/src/inspect.test.ts > inspect --diff --json, what moved at each boundary > lists what each route now reaches through a helper they share

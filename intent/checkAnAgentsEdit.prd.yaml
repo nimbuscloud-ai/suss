@@ -15,18 +15,19 @@ scenarios:
     expect: it gets the findings the edit added and the findings it resolved, as two lists
     link: checker-findings-since.compared
 
-  # No link: the promise is about which findings land in which list,
-  # which no outcome can state. Covered by the @suss/checker test
-  # "splits the findings into new and gone, by identity".
+  # Which findings land in which list is about values, which no outcome
+  # can state.
   - title: a finding that was already there
     when: a finding was in the code before the agent's edit and is still there after it
     expect: it is not reported as new, and it does not fail the agent's check
+    coveredBy: packages/checker/src/since/changesSince.test.ts > findingsSince > splits the findings into new and gone, by identity
+    about: fn:@suss/checker::findingsSince
 
-  # No link, for the same reason. Covered by the @suss/checker test
-  # "sees a finding whose unit moved down the file as the one it was".
   - title: the agent moved code
     when: the agent's edit moved a handler with an old finding further down its file
     expect: the old finding is still recognized as the same one, not reported as new
+    coveredBy: packages/checker/src/since/changesSince.test.ts > findingsSince > sees a finding whose unit moved down the file as the one it was
+    about: fn:@suss/checker::findingsSince
 
   - title: the agent's change list does not fit
     when: the change list the agent wrote before its first edit does not fit the schema
@@ -40,8 +41,9 @@ scenarios:
       - contract-intent-load-change-list.loaded
       - cli-check-intent.checked
 
-  # No link: which changes count as asked for is about values. Covered
-  # by the @suss/cli test "lists a change at a boundary no entry is about".
+  # Which changes count as asked for is about values.
   - title: a change nobody asked for
     when: the agent changed a boundary that no entry in its change list is about
     expect: the change is listed as not asked, and the agent has to revert it or say why it stays
+    coveredBy: packages/cli/src/intentCheck.test.ts > not asked > lists a change at a boundary no entry is about
+    about: fn:@suss/cli::checkIntent

@@ -37,6 +37,7 @@ import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
 import { checkAll, pairSummaries } from "../packages/checker/dist/index.js";
+import { testFilesListedIn } from "../packages/cli/dist/index.js";
 import { evaluatePackHealth } from "../packages/extractor/dist/index.js";
 import {
   declaredExports,
@@ -134,10 +135,16 @@ const allSummaries = [];
 
 const workerScript = path.join(__dirname, "dogfood-worker.mjs");
 const sussImportTargetsList = [...sussImportTargets];
+// The tests intent/ lists under coveredBy, so check:self can check them.
+// Only those files are read as tests, which keeps the run's cost flat.
+const coveringTestFiles = testFilesListedIn(path.join(repoRoot, "intent"));
 
 function spawnWorker() {
   return new Worker(workerScript, {
-    workerData: { sussImportTargets: sussImportTargetsList },
+    workerData: {
+      sussImportTargets: sussImportTargetsList,
+      coveringTestFiles,
+    },
   });
 }
 

@@ -25,18 +25,21 @@ scenarios:
     expect: it stops and names each file it could not read as summaries
     link: cli-check-directory.nothing-readable
 
-  # No link: the exit code and the JSON report are what the CLI prints,
-  # and suss has no boundary for a command's exit code and output.
+  # Covered by a CLI test until suss reads a command's exit code and
+  # output, and then this moves to an outcome link.
   - title: nothing pairs
     when: suss check reads summaries where no provider and consumer share a boundary
     expect: it exits non-zero, and the JSON report has a nothingPaired entry under run that says how many summaries were read and what to do next
+    coveredBy: packages/cli/src/check.test.ts > failing when the run compares nothing > says what went wrong in the report, not only in the exit code
 
-  # No link, for the same reason.
+  # Covered by a CLI test until suss reads a command's exit code.
   - title: an empty run is expected
     when: the same check runs with --allow-empty
     expect: it exits zero
+    coveredBy: packages/cli/src/check.test.ts > failing when the run compares nothing > exits non-zero by default, and --allow-empty opts back out
 
-  # No link, for the same reason.
+  # Covered by a CLI test until suss reads a command's exit code.
   - title: compared against intent only
     when: the summaries pair with nothing but are checked against intent documents
     expect: the run counts as a comparison, and does not fail as an empty run
+    coveredBy: packages/cli/src/check.test.ts > checkDir > checks intent specs against code summaries via --intent
