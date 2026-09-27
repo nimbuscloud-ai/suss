@@ -6,6 +6,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { askLiveServer } from "../scripts/live.mjs";
+import { Session } from "../scripts/session.mjs";
 import { runSuss } from "../scripts/suss.mjs";
 
 let project: string;
@@ -88,6 +89,22 @@ describe("asking the MCP server to run a command", () => {
     await listening();
 
     expect(await askLiveServer(project, ["inspect"], 5000)).toBeNull();
+  });
+
+  it("tells the server when the edit it wants read was queued", async () => {
+    const server = serve({ code: 0, stdout: "", stderr: "" });
+    await listening();
+    const session = new Session(project, "one");
+    session.create();
+    session.appendEdit({ tool: "Edit", file: "src/app.ts" });
+    const queuedAt = session.editQueuedAt(1);
+
+    await askLiveServer(project, ["extract"], 5000, queuedAt);
+
+    expect(queuedAt).toBeGreaterThan(0);
+    expect(server.asked).toEqual([
+      { kind: "suss", args: ["extract"], cwd: project, notBefore: queuedAt },
+    ]);
   });
 
   it("is what runSuss hands back when the server serves the command", async () => {

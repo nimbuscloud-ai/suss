@@ -78,6 +78,24 @@ export class Session {
     return readLines(this.file("edits.jsonl")).length;
   }
 
+  /**
+   * When the edit at this place in the queue was queued, in milliseconds.
+   * The hook queues an edit after the tool wrote the file, so a read that
+   * starts later sees the write. Undefined when the line has no time.
+   *
+   * @param {number} position
+   * @returns {number | undefined}
+   */
+  editQueuedAt(position) {
+    const line = readLines(this.file("edits.jsonl"))[position - 1];
+    try {
+      const at = Date.parse(JSON.parse(line ?? "null")?.at);
+      return Number.isNaN(at) ? undefined : at;
+    } catch {
+      return undefined;
+    }
+  }
+
   processed() {
     return readJson(this.file("progress.json"), { processed: 0 }).processed;
   }
