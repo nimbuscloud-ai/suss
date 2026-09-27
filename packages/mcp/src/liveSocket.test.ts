@@ -195,13 +195,15 @@ describe("LiveSocket", () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 100));
 
+    // A folder the check already knows is read once, to hash it, and
+    // not a second time to parse it.
     const reads = vi.spyOn(fs, "readFileSync");
     try {
       checkDirectory({ dir: out });
       const summaryReads = reads.mock.calls.filter(([file]) =>
         String(file).startsWith(out),
       );
-      expect(summaryReads).toEqual([]);
+      expect(summaryReads).toHaveLength(1);
     } finally {
       reads.mockRestore();
     }
