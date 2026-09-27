@@ -32,11 +32,11 @@ import type { RbNode } from "./parser.js";
 import type { EndingCall } from "./responseStatus.js";
 
 /** The code each Kernel method exits with when it is handed none. */
-const EXIT_METHODS: Readonly<Record<string, number>> = {
-  exit: 0,
-  "exit!": 1,
-  abort: 1,
-};
+const EXIT_METHODS: ReadonlyMap<string, number> = new Map([
+  ["exit", 0],
+  ["exit!", 1],
+  ["abort", 1],
+]);
 
 /** A method or a block ends the process when it runs, so its body waits for its own unit. */
 const DEFERRED_BODY_TYPES = new Set(["method", "singleton_method", "lambda"]);
@@ -67,7 +67,7 @@ function exitSiteAt(call: RbNode): ExitSite | null {
   const method = field(call, "method")?.text ?? "";
   const receiver = field(call, "receiver");
   if (
-    EXIT_METHODS[method] === undefined ||
+    !EXIT_METHODS.has(method) ||
     (receiver !== null && receiver.text !== "Kernel")
   ) {
     return null;
@@ -103,7 +103,7 @@ function exitCodeOf(
 ): RawTerminal["statusCode"] {
   const { code } = site;
   if (code === null) {
-    return { type: "literal", value: EXIT_METHODS[site.method] ?? 0 };
+    return { type: "literal", value: EXIT_METHODS.get(site.method) ?? 0 };
   }
   const written = BOOLEAN_CODES[code.type];
   if (written !== undefined) {

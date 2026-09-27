@@ -154,4 +154,13 @@ describe("writes to the process's streams", () => {
     `);
     expect(writes).toEqual([]);
   });
+
+  it("reads a method every object has as no write, even on console", () => {
+    const writes = writesIn(`
+      export function show() {
+        return console.toString() + String(console.hasOwnProperty("log"));
+      }
+    `);
+    expect(writes).toEqual([]);
+  });
 });

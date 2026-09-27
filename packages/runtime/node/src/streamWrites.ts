@@ -83,7 +83,10 @@ function targetOf(
   method: string,
   resolution: ResolutionStore | undefined,
 ): string | null | undefined {
-  const consoleStream = CONSOLE_STREAMS[method];
+  // Own keys only, so `x.toString()` never reads Object's method as a stream.
+  const consoleStream = Object.hasOwn(CONSOLE_STREAMS, method)
+    ? CONSOLE_STREAMS[method]
+    : undefined;
   if (consoleStream !== undefined) {
     if (Node.isIdentifier(receiver) && receiver.getText() === "console") {
       return consoleStream;
@@ -94,11 +97,9 @@ function targetOf(
   if (method !== "write") {
     return undefined;
   }
-  const spelled = PROCESS_STREAMS.find(
-    (stream) => stream === receiver.getText(),
-  );
-  if (spelled !== undefined) {
-    return streamName(spelled);
+  if (Node.isPropertyAccessExpression(receiver)) {
+    const spelled = receiver.getText();
+    return PROCESS_STREAMS.includes(spelled) ? streamName(spelled) : undefined;
   }
   const path = viaParameter(receiver, STREAM_TYPES, resolution);
   return path === null || path === undefined ? path : streamName(path);

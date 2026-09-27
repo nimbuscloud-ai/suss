@@ -25,20 +25,20 @@ import type { RbNode } from "./parser.js";
 export const RUBY_STREAM_RECOGNITION = "ruby-stdlib";
 
 /** The Kernel methods that print, and the stream each one prints to. */
-const KERNEL_WRITES: Readonly<Record<string, string>> = {
-  puts: "stdout",
-  print: "stdout",
-  warn: "stderr",
-  abort: "stderr",
-};
+const KERNEL_WRITES: ReadonlyMap<string, string> = new Map([
+  ["puts", "stdout"],
+  ["print", "stdout"],
+  ["warn", "stderr"],
+  ["abort", "stderr"],
+]);
 
 /** The ways Ruby spells each stream as a receiver. */
-const STREAM_RECEIVERS: Readonly<Record<string, string>> = {
-  $stdout: "stdout",
-  STDOUT: "stdout",
-  $stderr: "stderr",
-  STDERR: "stderr",
-};
+const STREAM_RECEIVERS: ReadonlyMap<string, string> = new Map([
+  ["$stdout", "stdout"],
+  ["STDOUT", "stdout"],
+  ["$stderr", "stderr"],
+  ["STDERR", "stderr"],
+]);
 
 const STREAM_METHODS = new Set(["puts", "print", "write", "<<"]);
 
@@ -65,12 +65,12 @@ export function streamWrittenBy(call: RbNode): string | null {
   const method = field(call, "method")?.text ?? "";
   const receiver = field(call, "receiver");
   if (receiver === null) {
-    return KERNEL_WRITES[method] ?? null;
+    return KERNEL_WRITES.get(method) ?? null;
   }
   if (!STREAM_METHODS.has(method)) {
     return null;
   }
-  return STREAM_RECEIVERS[receiver.text] ?? null;
+  return STREAM_RECEIVERS.get(receiver.text) ?? null;
 }
 
 function streamWriteAt(call: RbNode): Effect | null {
