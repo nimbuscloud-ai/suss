@@ -1150,7 +1150,43 @@ describe("runCli check", () => {
       runCli(["check", "--fail-on", "bogus", "p.json", "c.json"]),
     );
     expect(exit).toBe(1);
-    expect(io.stderr).toContain("--fail-on must be");
+    expect(io.stderr).toContain('--fail-on takes "error"');
+  });
+
+  it("refuses a folder and files together, since the folder would win and the files go unread", async () => {
+    writeJson("provider.json", [minimalSummary]);
+    writeJson("consumer.json", [matchingConsumer]);
+    const { exit, io } = await capture(() =>
+      runCli(["check", "--dir", tmpDir, "orders.json", "--json"]),
+    );
+    expect(exit).toBe(1);
+    expect(io.stderr).toContain("--dir");
+    expect(JSON.parse(io.stdout)).toEqual({ error: expect.any(String) });
+  });
+
+  it("puts the reason on stdout as JSON for every usage failure of a command that takes --json", async () => {
+    const forms = [
+      ["inspect", "--diff", "before.json"],
+      ["inspect", "--diff", "a.json", "b.json", "--budget", "lots"],
+      ["inspect", "--diff", "a.json", "b.json", "--changed-files", "gone.txt"],
+      ["inspect", "--diff", "a.json", "b.json", "--chain", "lots"],
+      ["inspect", "--flow", ""],
+      ["intent", "outcomes"],
+      ["check", "--fail-on", "bogus", "p.json", "c.json"],
+      ["check", "--at", "src/a.ts:1", "--intent", "intent/"],
+      ["check", "--at", "src/a.ts:1", "--since", "before/"],
+      ["check", "--at", "src/a.ts:1", "p.json", "c.json"],
+      ["check", "--intent", "intent/", "p.json", "c.json"],
+      ["check", "--since", "before/", "p.json", "c.json"],
+      ["check", "p.json"],
+    ];
+    for (const argv of forms) {
+      const { exit, io } = await capture(() => runCli([...argv, "--json"]));
+      expect(exit, argv.join(" ")).toBe(1);
+      expect(JSON.parse(io.stdout), argv.join(" ")).toEqual({
+        error: expect.any(String),
+      });
+    }
   });
 
   it("refuses --fail-on-empty, since failing on nothing is the default now", async () => {
