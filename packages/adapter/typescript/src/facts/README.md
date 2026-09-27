@@ -289,6 +289,30 @@ Three do not:
   that already knows the file set can read it first; see "Reading a
   caller's file" above.
 
+## Where a local goes
+
+The question above runs from a use back to a value. Mount and route
+discovery also ask the other way: whether a local a function builds,
+`const testApp = express()`, leaves that function. Lazy extraction
+states facts only for expressions some question reached, so
+`localUses.ts` walks the declaring function for every reference to
+the local and states what the expression around it does with the
+value. A call, an object or array literal, a return and a parameter
+default are emitted the way any question would emit them. A method
+called on the value is followed to wherever its result goes. A write
+through a property or a class field initializer is an unplaced
+`storesProperty`. A write under a key, a spread and a JSX prop or
+child are `holdsUnderKey`, another name taking it is `mayHold`,
+`yield` is `yieldsValue`, and a branch of `c ? a : b` or of `c && a`
+is `conditionalBranch`. No rule steps through those rows, so asking
+the question changes no other answer.
+
+The store then asks `wantedUses` about each reference, since each
+TypeScript reference has a key of its own, and keeps the answer per
+declaration. A spelling left out of that walk looks like no use at
+all, and the mount or route is dropped when it may serve, so a new
+spelling needs a case there and a test in `droppedApp.test.ts`.
+
 ## What it over-approximates
 
 `unwraps` asks whether the returned function calls a parameter. It does

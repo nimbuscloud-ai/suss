@@ -23,9 +23,9 @@ import {
   stripDecorators,
 } from "./ast.js";
 import { readCallArguments } from "./decorators.js";
+import { localStaysPut } from "./droppedApps.js";
 import {
   containedValues,
-  isPassedOn,
   objectReturnedBy,
   resolveCalls,
   subjectConstructions,
@@ -172,6 +172,8 @@ type ConstructionsByName = Map<ModuleBinding, Map<string, Construction>>;
 
 interface PatternIndex {
   composition: RouterComposition;
+  /** The pattern the index was built for, which says the methods it registers with. */
+  pattern: PythonDiscoveryPattern;
   /** Every construction by the value key of the call that built it, so a resolved value finds one whatever module wrote it. */
   byValueKey: Map<string, Construction>;
   /** The project's facts, when the caller built them, so a loop over a call can be settled. */
@@ -216,7 +218,7 @@ export function buildRouterIndex(
           pattern,
           buildPatternIndex(
             files,
-            pattern.importModule,
+            pattern,
             pattern.routerComposition,
             resolverOptions,
           ),
@@ -557,12 +559,14 @@ function composedOwnPrefix(
 
 function buildPatternIndex(
   files: BoundPythonFile[],
-  importModule: string[],
+  pattern: PythonDiscoveryPattern,
   composition: RouterComposition,
   resolverOptions: RouterIndexOptions,
 ): PatternIndex {
+  const importModule = pattern.importModule;
   const index: PatternIndex = {
     composition,
+    pattern,
     byValueKey: new Map(),
     ...(resolverOptions.facts !== undefined
       ? { facts: resolverOptions.facts }
@@ -1497,8 +1501,8 @@ function importedModuleSpec(
 
 /**
  * Whether the mount is called on an app that its own function builds once
- * and then drops, with no fact recording a read that passes the app on, so
- * nobody can request a path the mount adds. DESIGN.md has the cases.
+ * and then drops, so nobody can request a path the mount adds. The shared
+ * rules say where the app goes. DESIGN.md has the cases.
  */
 function appNeverLeavesItsFunction(
   objectName: string,
@@ -1521,7 +1525,7 @@ function appNeverLeavesItsFunction(
   return (
     writes.length === 1 &&
     writes[0]?.[1] === nodeId(scan.bound.file, includerCall) &&
-    !isPassedOn(facts, nameKey)
+    localStaysPut(facts, nameKey, scan.index.pattern)
   );
 }
 

@@ -35,9 +35,11 @@ import {
   proofRules,
   queryFacts,
   RESOLUTION_QUESTIONS,
+  readUses,
   resolutionProgram,
   resolutionUnderProgram,
   RESOLUTION_RULES as SHARED_RULES,
+  type ValueUses,
   writtenAnswersFor,
   writtenValueUnder,
 } from "@suss/resolution";
@@ -64,6 +66,7 @@ import {
   LANGUAGE_RECEIVER_RETURNS,
   LANGUAGE_WRAPPERS,
 } from "./languageWords.js";
+import { emitLocalUses, localBuiltOnce } from "./localUses.js";
 import {
   type FileSetQuery,
   ModuleGraph,
@@ -76,7 +79,7 @@ import type {
   PatternPack,
   TransparentWrapper,
 } from "@suss/extractor";
-import type { Project, SourceFile } from "ts-morph";
+import type { Project, SourceFile, VariableDeclaration } from "ts-morph";
 
 const RESOLUTION_PROGRAM: OnDemandRules = resolutionProgram();
 
@@ -105,7 +108,8 @@ type Question =
   | "wantedEnvObject"
   | "wantedStreamObject"
   | "wantedExitSink"
-  | "wantedSubject";
+  | "wantedSubject"
+  | "wantedUses";
 
 /**
  * Dropped once a query's result has been read, so the next query does
@@ -252,6 +256,8 @@ export class ResolutionStore {
   /** Keyed by value and site both, since one value differs per site. */
   private readonly writtenUnderSite = new Map<string, Node | null>();
   private readonly constructionSites = new Map<string, string[]>();
+  /** What each local's reads do with it, by its declaration. A local's function is walked whole, so an answer stays true. */
+  private readonly localUses = new Map<string, ValueUses>();
   /** Files the most recent query read, for the memo to keep. */
   private lastQueryWalked: string[] = [];
   /** See `environmentSiteFiles`; null until the first env question. */
@@ -1022,6 +1028,44 @@ export class ResolutionStore {
         handedBack,
       );
     });
+  }
+
+  /**
+   * What the reads of a local do with it, when `receiver` is a local a
+   * function declares once as `construction`. Null for anything else,
+   * such as a module-level value, which some other file may serve.
+   */
+  usesOfLocal(receiver: Node, construction: Node): ValueUses | null {
+    const declaration = localBuiltOnce(receiver, construction);
+    if (declaration === null) {
+      return null;
+    }
+    const id = nodeId(declaration);
+    const known = this.localUses.get(id);
+    if (known !== undefined) {
+      return known;
+    }
+    const uses = this.askLocalUses(declaration);
+    this.localUses.set(id, uses);
+    return uses;
+  }
+
+  private askLocalUses(declaration: VariableDeclaration): ValueUses {
+    const keys = emitLocalUses(this.db, this.table, declaration);
+    this.stale = true;
+    try {
+      for (const key of keys) {
+        this.wantKey("wantedUses", key);
+      }
+      this.derive();
+      const uses = keys.map((key) => readUses(this.db, key));
+      return {
+        passedOn: uses.some((one) => one.passedOn),
+        methodsCalled: [...new Set(uses.flatMap((one) => one.methodsCalled))],
+      };
+    } finally {
+      this.forgetQuery();
+    }
   }
 
   /**

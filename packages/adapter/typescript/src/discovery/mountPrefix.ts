@@ -27,6 +27,7 @@ import {
   discoverMountEdges,
   type MountEdgeCandidate,
   type MountPrefixIndex,
+  methodsRegisteredOn,
   registrationSubjectIdsOf,
 } from "./registrationCall.js";
 
@@ -82,11 +83,15 @@ export function buildMountPrefixIndex(
   // checking against a pooled registry would accept it as one.
   const subjectIdsByPack = new Map<string, Set<string>>();
   const mountWorkByPack = new Map<string, PackMountWork[]>();
+  const ownMethodsByPack = new Map<string, Set<string>>();
 
   for (const [sourceFile, packs] of packsByFile) {
     for (const pack of packs) {
       const registrationMatches: RegistrationMatch[] = [];
       const mountPatterns: MountPattern[] = [];
+      if (!ownMethodsByPack.has(pack.name)) {
+        ownMethodsByPack.set(pack.name, methodsRegisteredOn(pack.discovery));
+      }
       for (const pattern of pack.discovery) {
         if (pattern.match.type !== "registrationCall") {
           continue;
@@ -134,6 +139,7 @@ export function buildMountPrefixIndex(
         mount,
         knownSubjectIds,
         resolution,
+        ownMethodsByPack.get(packName),
       )) {
         recordEdge(edgesByChild, candidate);
       }
