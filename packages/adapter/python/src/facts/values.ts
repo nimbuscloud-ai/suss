@@ -126,7 +126,7 @@ const WRITTEN_VALUE_TYPES = new Set([
   "concatenated_string",
   // Composed from other expressions, so a chain ends here and the
   // evaluator reads the expression back in the scope it is written in.
-  // `a or b` is the exception, stated as the branches it picks between.
+  // `a or b`, `a if c else b` and `(a)` are stated as their branches instead.
   "binary_operator",
   "boolean_operator",
   "comparison_operator",
@@ -581,12 +581,12 @@ function mappingGetRead(
 }
 
 /**
- * The two sides of `a or b`, whose value is one of them, or null for any
- * other expression. `a and b` stays a written value, because its left
- * side is the value only when that side is falsy.
+ * The two sides of `a or b`, whose value is one of them. `a and b` stays a
+ * written value, because its left side is the value only when that side is
+ * falsy.
  */
-function fallbackBranchesOf(node: PyNode, type: string): PyNode[] | null {
-  if (type !== "boolean_operator" || field(node, "operator")?.text !== "or") {
+function orBranches(node: PyNode): PyNode[] | null {
+  if (field(node, "operator")?.text !== "or") {
     return null;
   }
   const left = field(node, "left");
@@ -597,6 +597,38 @@ function fallbackBranchesOf(node: PyNode, type: string): PyNode[] | null {
   }
   /* v8 ignore stop */
   return [left, right];
+}
+
+/** `a if test else b`, whose value is `a` or `b` and never the test. */
+function conditionalBranches(node: PyNode): PyNode[] | null {
+  const [chosen, , otherwise] = children(node).filter(
+    (child) => child.type !== "comment",
+  );
+  return chosen === undefined || otherwise === undefined
+    ? null
+    : [chosen, otherwise];
+}
+
+/** `(a)`, whose value is `a` itself. */
+function parenthesizedBranch(node: PyNode): PyNode[] | null {
+  const inner = children(node).filter((child) => child.type !== "comment");
+  return inner.length === 1 ? inner : null;
+}
+
+/**
+ * The expressions whose value an expression takes, one of them at run
+ * time, or null for an expression that computes a value of its own.
+ */
+const FALLBACK_BRANCH_READERS: Partial<
+  Record<string, (node: PyNode) => PyNode[] | null>
+> = {
+  boolean_operator: orBranches,
+  conditional_expression: conditionalBranches,
+  parenthesized_expression: parenthesizedBranch,
+};
+
+function fallbackBranchesOf(node: PyNode, type: string): PyNode[] | null {
+  return FALLBACK_BRANCH_READERS[type]?.(node) ?? null;
 }
 
 /** What one expression says about itself, whichever walk reached it. */
@@ -654,6 +686,18 @@ function emitExpressionFacts(emitter: Emitter, node: PyNode): void {
   walkExpressions(emitter, node, (child, type) => {
     emitExpressionFact(emitter, child, type);
   });
+}
+
+/**
+ * The value `yield x` hands out. `yield from xs` hands out each item of
+ * `xs`, and no expression in the source is one of those items, so it
+ * gives null.
+ */
+function yieldedValue(node: PyNode): PyNode | null {
+  if (node.children.some((child) => child?.type === "from")) {
+    return null;
+  }
+  return node.namedChildren.find((child) => child?.type !== "comment") ?? null;
 }
 
 /** The class a method belongs to, and what that method calls its receiver. */
@@ -762,6 +806,10 @@ function emitFunctionFacts(
         statesReturn = true;
       }
     }
+    const yielded = type === "yield" ? yieldedValue(child) : null;
+    if (yielded !== null) {
+      add(inside, "yieldsValue", funcKey, valueKey(inside, yielded));
+    }
     const callee = type === "call" ? calleeKey(inside, child) : null;
     if (callee !== null) {
       add(inside, "bodyCalls", funcKey, callee);
@@ -773,8 +821,11 @@ function emitFunctionFacts(
     emitExpressionFact(inside, child, type);
   };
   // A lambda's body is one expression rather than a block, and the walk
-  // below reaches only that expression's children.
+  // below reaches only that expression's children. That expression is
+  // what the lambda returns.
   if (fn.type === "lambda") {
+    add(inside, "returnsValue", funcKey, valueKey(inside, body));
+    statesReturn = true;
     visit(body, body.type);
   }
   walkExpressions(inside, body, visit);
