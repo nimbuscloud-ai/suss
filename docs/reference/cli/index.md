@@ -1,6 +1,6 @@
 ---
 title: suss CLI reference
-description: Every suss command, the top-level flags, the environment variables it reads, and where each command writes.
+description: Every suss command, the top-level flags, the environment variables it reads, the memory it asks for, and where each command writes.
 ---
 
 # CLI reference
@@ -69,6 +69,21 @@ An interactive run ends with one line on stderr when a newer suss is on the regi
 | `TERM=dumb` | The same. Colour is also off whenever stdout is not a TTY, so a piped or redirected run is plain without you asking. |
 | `CI` | Set it to anything and the update notice is off. `suss init` detects CI separately and prints its commands rather than prompting, the same as `--plain`. |
 | `SUSS_NO_UPDATE_NOTICE` | Set it to anything and the update notice is off. |
+| `NODE_OPTIONS` | A heap size set here with `--max-old-space-size` is the one suss runs with. Without one, suss picks its own, as [Memory](#memory) describes. |
+
+## Memory
+
+suss runs with a V8 heap limit of 8 GB. Node picks a smaller limit from the machine's memory, about 4 GB on a 16 GB machine, and extracting a large TypeScript service with every pack `suss init` suggests can use more than that. Under Node's limit such a run stops partway with "JavaScript heap out of memory".
+
+The limit is a ceiling on growth, so a small project uses no more memory than it would under Node's default. A large one can use more, because V8 collects garbage less often when it has room to grow. On a machine or container with less than about 11 GB, suss keeps the limit to three quarters of the memory there. A run that outgrows it then stops with V8's heap error, and the operating system does not have to kill it.
+
+To choose the size yourself, put it in `NODE_OPTIONS`. suss leaves a size set there alone, whether it is larger or smaller than its own:
+
+```bash
+NODE_OPTIONS=--max-old-space-size=12288 suss extract
+```
+
+suss raises the limit by starting itself again with `--max-old-space-size`, before it loads anything else. On Node 22.15 and later the new process replaces the first one and keeps its process id. On older versions of Node, and on Windows, the first process stays as a parent: it passes on `SIGINT`, `SIGTERM` and `SIGHUP`, and exits with the child's exit code. The MCP server, `suss-mcp`, does the same.
 
 ## Where output goes
 

@@ -29,7 +29,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
 const repoRoot = path.resolve(
@@ -298,10 +298,25 @@ const DATALOG_LINE = /^datalog: (\d+)ms \(\s*([\d.]+)% of (\d+)ms wall\)/m;
 // No single run has come near this. One that does has hung.
 const EXTRACT_TIMEOUT_MS = 15 * 60 * 1000;
 
-function extractOnce(build, target, targetsDir) {
+// Every build gets the heap size this build's CLI picks for itself, so an
+// older build that never raised its own heap is not timed against a smaller
+// one. A size set in NODE_OPTIONS reaches every build and wins instead.
+async function heapFlags() {
+  const heap = await import(
+    pathToFileURL(path.join(repoRoot, "packages", "cli", "dist", "heapSize.js"))
+      .href
+  );
+  if (heap.heapSizeWasChosen(process.env.NODE_OPTIONS, [])) {
+    return [];
+  }
+  return [`--max-old-space-size=${heap.heapSizeFor(heap.availableMemoryMb())}`];
+}
+
+function extractOnce(build, target, targetsDir, nodeFlags) {
   const tsconfig = path.join(targetsDir, target.tsconfig);
   const output = path.join(os.tmpdir(), `suss-benchmark-${process.pid}.json`);
   const args = [
+    ...nodeFlags,
     binFor(build.dir),
     "extract",
     "-p",
@@ -434,6 +449,11 @@ const startLoad = refuseIfLoaded();
 const builds = comparing
   ? [thisBuild(), buildAt(values.against)]
   : [thisBuild()];
+const nodeFlags = await heapFlags();
+const heapNote =
+  nodeFlags.length > 0
+    ? nodeFlags.join(" ")
+    : `the heap size in NODE_OPTIONS (${process.env.NODE_OPTIONS})`;
 
 const dirtyBuilds = builds.filter((b) => b.dirty);
 if (dirtyBuilds.length > 0) {
@@ -468,7 +488,7 @@ for (let repeat = 1; repeat <= requestedPairs; repeat++) {
       settle();
       refuseIfLoaded();
       calibrations.push(bestCalibration(1));
-      const run = extractOnce(build, target, targetsDir);
+      const run = extractOnce(build, target, targetsDir, nodeFlags);
       results.get(`${target.name} ${build.sha}`).push(run);
       process.stderr.write(
         `  ${String(repeat).padStart(2)}  ${target.name.padEnd(18)} ${build.sha.padEnd(10)} ` +
@@ -511,7 +531,7 @@ lines.push(
 );
 lines.push(
   `Builds: ${builds.map((b) => `${b.label} = ${b.sha}${b.dirty ? " (dirty)" : ""}`).join(", ")}. ` +
-    `${requestedPairs} repeats, --no-cache throughout, medians below.`,
+    `${requestedPairs} repeats, --no-cache throughout, ${heapNote}, medians below.`,
 );
 lines.push("");
 
@@ -574,6 +594,7 @@ if (values.json !== undefined) {
     },
     builds,
     repeats: requestedPairs,
+    nodeFlags,
     targets: targets.map((target) => ({
       name: target.name,
       packs: target.packs,
