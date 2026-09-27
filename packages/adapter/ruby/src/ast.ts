@@ -43,8 +43,13 @@ export function isType(node: RbNode, ...types: string[]): boolean {
   return types.includes(node.type);
 }
 
+/** tree-sitter types a named child as nullable. Dropping the nulls here saves every walk a check. */
+export function children(node: RbNode): RbNode[] {
+  return node.namedChildren.filter((child): child is RbNode => child !== null);
+}
+
 export function bodyStatements(body: RbNode): RbNode[] {
-  return body.namedChildren.filter((child): child is RbNode => child !== null);
+  return children(body);
 }
 
 /** The fields of a branching statement that run when the branch is taken; the condition is left out. */
@@ -668,9 +673,17 @@ function enclosingClassScope(node: RbNode): RbNode | null {
   return null;
 }
 
-/** Each receiverless call to `name` the body runs, in source order. */
-export function bareCalls(body: RbNode, name: string): RbNode[] {
-  return runStatements(body).filter(
+/**
+ * Each receiverless call to `name` the body runs, in source order. A
+ * caller asking about several names passes the body's `runStatements`,
+ * so the body is walked once.
+ */
+export function bareCalls(
+  body: RbNode,
+  name: string,
+  statements: readonly RbNode[] = runStatements(body),
+): RbNode[] {
+  return statements.filter(
     (stmt) =>
       stmt.type === "call" &&
       field(stmt, "receiver") === null &&
@@ -684,8 +697,12 @@ export function bareCalls(body: RbNode, name: string): RbNode[] {
  * `include A, B` orders its modules differently from `include A`
  * followed by `include B`.
  */
-export function bareCallArgumentGroups(body: RbNode, name: string): RbNode[][] {
-  return bareCalls(body, name).map((call) => {
+export function bareCallArgumentGroups(
+  body: RbNode,
+  name: string,
+  statements: readonly RbNode[] = runStatements(body),
+): RbNode[][] {
+  return bareCalls(body, name, statements).map((call) => {
     const args = field(call, "arguments");
     return args === null ? [] : bodyStatements(args);
   });

@@ -134,9 +134,15 @@ export function localNamesIn(
   return names;
 }
 
-/** Whether this identifier spells a name rather than reading a value. */
-export function spellsAName(node: RbNode): boolean {
-  const parent = node.parent;
+/**
+ * Whether this identifier spells a name rather than reading a value. A
+ * caller that already has the parent passes it, since reading it off the
+ * tree costs a walk down from the root.
+ */
+export function spellsAName(
+  node: RbNode,
+  parent: RbNode | null = node.parent,
+): boolean {
   if (parent === null) {
     return true;
   }

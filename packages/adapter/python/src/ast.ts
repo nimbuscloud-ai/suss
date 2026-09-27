@@ -42,7 +42,7 @@ export function isType(node: PyNode, ...types: string[]): boolean {
 }
 
 /** A `def` or a `lambda`: the nodes the facts treat as a function of their own. */
-const FUNCTION_TYPES: ReadonlySet<string> = new Set([
+export const FUNCTION_TYPES: ReadonlySet<string> = new Set([
   "function_definition",
   "lambda",
 ]);

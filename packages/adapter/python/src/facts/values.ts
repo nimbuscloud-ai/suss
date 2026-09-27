@@ -23,6 +23,7 @@ import { annotationTarget, typeNameOf } from "../annotations.js";
 import {
   children,
   enclosingFunction,
+  FUNCTION_TYPES,
   field,
   fields,
   isFunction,
@@ -462,7 +463,7 @@ function emitAttribute(emitter: Emitter, attribute: PyNode): void {
 function statedTypeKey(emitter: Emitter, annotation: PyNode): string | null {
   const target = annotationTarget(annotation);
   if (target?.type === "attribute") {
-    emitExpressionFact(emitter, target);
+    emitExpressionFact(emitter, target, "attribute");
     emitExpressionFacts(emitter, target);
     return nodeId(emitter.filePath, target);
   }
@@ -509,17 +510,22 @@ function emitAssignedType(emitter: Emitter, assignment: PyNode): void {
   emitStatedType(emitter, valueKey(emitter, left), annotation);
 }
 
-/** Every expression under a node, without crossing into a nested function. */
+/**
+ * Every expression under a node, without crossing into a nested function.
+ * Each read of `type` off a tree-sitter node is a call into WASM, so the
+ * walk reads it once and hands it to the visitor.
+ */
 function walkExpressions(
   emitter: Emitter,
   node: PyNode,
-  visit: (child: PyNode) => void,
+  visit: (child: PyNode, type: string) => void,
 ): void {
   for (const child of children(node)) {
-    if (isFunction(child)) {
+    const type = child.type;
+    if (FUNCTION_TYPES.has(type)) {
       continue;
     }
-    visit(child);
+    visit(child, type);
     walkExpressions(emitter, child, visit);
   }
 }
@@ -579,11 +585,8 @@ function mappingGetRead(
  * other expression. `a and b` stays a written value, because its left
  * side is the value only when that side is falsy.
  */
-function fallbackBranchesOf(node: PyNode): PyNode[] | null {
-  if (
-    node.type !== "boolean_operator" ||
-    field(node, "operator")?.text !== "or"
-  ) {
+function fallbackBranchesOf(node: PyNode, type: string): PyNode[] | null {
+  if (type !== "boolean_operator" || field(node, "operator")?.text !== "or") {
     return null;
   }
   const left = field(node, "left");
@@ -597,35 +600,39 @@ function fallbackBranchesOf(node: PyNode): PyNode[] | null {
 }
 
 /** What one expression says about itself, whichever walk reached it. */
-function emitExpressionFact(emitter: Emitter, child: PyNode): void {
-  if (child.type === "call") {
+function emitExpressionFact(
+  emitter: Emitter,
+  child: PyNode,
+  type: string,
+): void {
+  if (type === "call") {
     emitCall(emitter, child);
     const mapping = mappingGetRead(child);
     if (mapping !== null) {
       emitKeyedRead(emitter, child, mapping.container, mapping.key);
     }
   }
-  if (child.type === "subscript") {
+  if (type === "subscript") {
     const index = singleSubscript(child);
     const container = field(child, "value");
     if (index !== null && container !== null) {
       emitKeyedRead(emitter, child, container, index);
     }
   }
-  if (child.type === "dictionary") {
+  if (type === "dictionary") {
     emitDictionary(emitter, child);
   }
-  if (SEQUENCE_TYPES.has(child.type)) {
+  if (SEQUENCE_TYPES.has(type)) {
     emitSequence(emitter, child);
   }
-  if (child.type === "attribute") {
+  if (type === "attribute") {
     emitAttribute(emitter, child);
   }
-  if (child.type === "assignment") {
+  if (type === "assignment") {
     emitAssignedType(emitter, child);
     collectNamedWrite(emitter, child);
   }
-  const branches = fallbackBranchesOf(child);
+  const branches = fallbackBranchesOf(child, type);
   if (branches !== null) {
     for (const branch of branches) {
       add(
@@ -635,17 +642,17 @@ function emitExpressionFact(emitter: Emitter, child: PyNode): void {
         valueKey(emitter, branch),
       );
     }
-  } else if (WRITTEN_VALUE_TYPES.has(child.type)) {
+  } else if (WRITTEN_VALUE_TYPES.has(type)) {
     add(emitter, "writtenValue", nodeId(emitter.filePath, child));
   }
-  if (child.type === "none") {
+  if (type === "none") {
     add(emitter, "placeholderValue", nodeId(emitter.filePath, child));
   }
 }
 
 function emitExpressionFacts(emitter: Emitter, node: PyNode): void {
-  walkExpressions(emitter, node, (child) => {
-    emitExpressionFact(emitter, child);
+  walkExpressions(emitter, node, (child, type) => {
+    emitExpressionFact(emitter, child, type);
   });
 }
 
@@ -706,8 +713,8 @@ function emitFunctionFacts(
     position += 1;
   }
 
-  const reading = scopeReadingOf(fn);
   const body = field(fn, "body");
+  const reading = scopeReadingOf(fn, body);
   const parameters = new Set(boundParameterNames(fn));
   const inside: Emitter = {
     ...emitter,
@@ -747,28 +754,28 @@ function emitFunctionFacts(
   // facts want the same nodes and the walk is the expensive part.
   let statesReturn = false;
   const stores = new Map<string, ReceiverWrite[]>();
-  const visit = (child: PyNode): void => {
-    if (child.type === "return_statement") {
+  const visit = (child: PyNode, type: string): void => {
+    if (type === "return_statement") {
       const returned = child.namedChildren[0];
       if (returned != null) {
         add(inside, "returnsValue", funcKey, valueKey(inside, returned));
         statesReturn = true;
       }
     }
-    const callee = child.type === "call" ? calleeKey(inside, child) : null;
+    const callee = type === "call" ? calleeKey(inside, child) : null;
     if (callee !== null) {
       add(inside, "bodyCalls", funcKey, callee);
       add(inside, "makesCall", funcKey, nodeId(inside.filePath, child));
     }
-    if (child.type === "assignment" && receiver !== null) {
+    if (type === "assignment" && receiver !== null) {
       collectReceiverProperty(inside, child, receiver, body, stores);
     }
-    emitExpressionFact(inside, child);
+    emitExpressionFact(inside, child, type);
   };
   // A lambda's body is one expression rather than a block, and the walk
   // below reaches only that expression's children.
   if (fn.type === "lambda") {
-    visit(body);
+    visit(body, body.type);
   }
   walkExpressions(inside, body, visit);
   emitReceiverStores(inside, funcKey, body, stores);
@@ -1380,7 +1387,8 @@ function readUnderName(
  */
 function emitNestedDefinitions(emitter: Emitter, node: PyNode): void {
   for (const child of children(node)) {
-    if (isFunction(child)) {
+    const type = child.type;
+    if (FUNCTION_TYPES.has(type)) {
       emitFunctionFacts(emitter, child);
       if (emitter.enclosing !== null) {
         add(
@@ -1392,7 +1400,7 @@ function emitNestedDefinitions(emitter: Emitter, node: PyNode): void {
       }
       continue;
     }
-    if (child.type === "class_definition") {
+    if (type === "class_definition") {
       emitClassFacts(emitter, child);
       continue;
     }
@@ -1429,7 +1437,11 @@ interface ScopeReading {
 /** Reading a function costs a walk of its body, and every caller asking for a key inside it wants the same answer. */
 const readingsByTree = new WeakMap<object, Map<number, ScopeReading>>();
 
-function scopeReadingOf(fn: PyNode): ScopeReading {
+/**
+ * `body` is the function's body when the caller has already read it. The
+ * caller's walks then reuse the children this reading fetched off the tree.
+ */
+function scopeReadingOf(fn: PyNode, given?: PyNode | null): ScopeReading {
   const tree: object = fn.tree;
   let byNode = readingsByTree.get(tree);
   if (byNode === undefined) {
@@ -1440,7 +1452,7 @@ function scopeReadingOf(fn: PyNode): ScopeReading {
   if (remembered !== undefined) {
     return remembered;
   }
-  const body = field(fn, "body");
+  const body = given === undefined ? field(fn, "body") : given;
   const reading = readScope(
     body !== null && body.type === "block" ? body : null,
     boundParameterNames(fn),
@@ -1627,7 +1639,8 @@ function readScope(
   const sink: WriteSink = { bodyOwner, globals, nonlocals, record };
 
   const visit = (node: PyNode): void => {
-    if (isFunction(node) || node.type === "class_definition") {
+    const type = node.type;
+    if (FUNCTION_TYPES.has(type) || type === "class_definition") {
       const name = field(node, "name");
       if (name !== null) {
         record(name.text, {
@@ -1639,7 +1652,7 @@ function readScope(
       }
       return;
     }
-    WRITE_READERS[node.type]?.(node, sink);
+    WRITE_READERS[type]?.(node, sink);
     for (const child of children(node)) {
       visit(child);
     }
