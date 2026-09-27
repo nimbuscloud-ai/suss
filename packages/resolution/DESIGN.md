@@ -42,6 +42,11 @@ readsProperty(x, o, n)      x is the expression o.n, or o[n] with the
 readsKeyed(site, o, x)      site reads the entry of o at the value of
                             x, where the source does not write the key
                             out
+holdsUnderKey(o, x)         o is given x under a key the source computes,
+                            as in o[k] = x, a dictionary entry whose key
+                            is not a string, the element of a
+                            comprehension, or Ruby's apps << x. Only
+                            passedOn reads it
 environmentObject(w)        w is written as the process environment
 streamObject(w)             w is written as one of the process's output
                             streams, such as process.stdout
@@ -57,7 +62,10 @@ endsHolding(x, y)           the name x is written more than once and
                             is left with y once the writes have run.
                             valueLeftByWrites picks y
 mayHold(x, y)               one write to x wrote y, and nothing says
-                            which write ran last (Python, Ruby)
+                            which write ran last. TypeScript states it
+                            only for a local a router reader asks about,
+                            and never states writesAllStated, so no
+                            rule steps through those rows
 writesAllStated(x)          every write to x states a value, so the
                             mayHold rows for x are all of them
                             (Python, Ruby)
@@ -68,6 +76,12 @@ fallbackBranch(x, b)        x is a fallback expression, a || b or
                             a ?? b, or a or b in Python and Ruby, and b
                             is one of its branches. Python also states
                             a if c else b and (a) this way
+conditionalBranch(x, b)     x is a conditional expression and b is one
+                            of its branches, as in c ? a : b, c && b, or
+                            a Ruby if used as a value. The value rules
+                            keep such an expression a written value in
+                            these languages, so only passedOn reads it
+                            (TypeScript, Ruby)
 instanceOf(x, cls)          x is one of cls, and nothing says which: a
                             method's receiver, or a name Python
                             annotates with a type. cls can be a name
@@ -84,7 +98,11 @@ paramDefault(p, d)          p takes the value d when a caller passes no
                             argument at all (TypeScript, Python)
 decoratedWith(p, d)         the constructor parameter p is written with
                             the decorator call d (TypeScript)
-returnsValue(f, v)          f returns v
+returnsValue(f, v)          f returns v. A Ruby block returns its last
+                            expression to whatever runs it
+yieldsValue(f, v)           f's body yields v. A Python generator's
+                            caller gets the generator, so no rule treats
+                            it as a return, and only passedOn reads it
 returnsClass(f, c)          f is annotated as returning c, and its body
                             states no value of its own
                             (TypeScript, Python)
@@ -100,7 +118,14 @@ storesProperty(r, n, x, k)  x is written to the property n of r. k is
                             receiver's n, or the class for a TypeScript
                             field initializer. k is name when r is a
                             name that the body writing through it
-                            declares, as in client.timeout = 5
+                            declares, as in client.timeout = 5. k is
+                            unplaced for any other write, such as one
+                            through a parameter or one of several
+                            writes that never settle. No rule places
+                            an unplaced write on an object, and only
+                            passedOn reads one. Python and Ruby state
+                            one for every such write, and TypeScript
+                            only for a local a router reader asks about
 ```
 
 Calls:
@@ -119,6 +144,8 @@ bodyCalls(f, c)             f's body calls the callee c, keyed the way
 makesCall(f, r)             the call r is written in f's own body
 entersAs(y, r)              y is the name a block opens over the call
                             r, so entering r is what wrote y (Python)
+entersValue(x)              a with statement enters x, which calls its
+                            __enter__. Only passedOn reads it (Python)
 exitCall(r)                 r ends the process, as a pack's exit
                             terminal says, and its first argument is
                             the exit code. The store seeds the exit code
@@ -243,23 +270,6 @@ definesMethodFrom(c, x)     c's body calls define_method, and x is the
 nameTurnsOn(x, element, index, over)  the name x is written in a loop
                             block that binds element, and index when it
                             has one, to each item of over (Ruby)
-yieldsValue(f, v)           f's body yields v. Calling f gives back a
-                            generator, so no rule treats it as a return.
-                            The router index reads it to tell whether an
-                            app leaves the function that built it
-                            (Python)
-writesProperty(r, n, x)     an assignment writes x to the property n of
-                            r, whatever r is. It covers a parameter and
-                            writes that never settle, which
-                            storesProperty leaves out on purpose. The
-                            router index reads it (Python)
-holdsUnderKey(o, x)         o is given x under a key, as in o[k] = x, a
-                            dictionary entry whose key is not a string,
-                            or the element of a comprehension. The
-                            router index reads it (Python)
-entersValue(x)              a with statement enters x, which calls its
-                            __enter__. The router index reads it
-                            (Python)
 ```
 
 `declaresName` is the only fact an adapter records after asking these
@@ -968,6 +978,75 @@ so that a callee that is itself a call, as in `daoBuilder()()`, needs
 one rule instead of a copy of every other rule. It differs from
 `callsFunction`, which starts from the function, because a caller
 asking for call sites already has the function.
+
+## Where a value goes
+
+```ts
+function buildTestApp() {
+  const testApp = express();
+  testApp.use("/t", ordersRouter);   // testApp is never handed anywhere
+}
+```
+
+Once `buildTestApp` returns, nothing refers to `testApp`, so no request
+can reach `/t`. A router reader asks whether an app its own function
+builds leaves that function before it records a mount on it. The rules
+work that out from the facts about each read of the value:
+
+```
+passedOn(x)                 a read hands x on: it is returned, yielded,
+                            passed to a call by position or keyword,
+                            given to another name (binds, endsHolding,
+                            mayHold), held by an object or stored on one
+                            (holdsProperty, storesProperty of any kind),
+                            stored under a key (holdsUnderKey), used as
+                            a key (readsKeyed), entered (entersValue,
+                            entersAs), made a parameter's default, or
+                            made a branch of a fallback or a
+                            conditional. A property or an entry read off
+                            x that is itself passed on counts as well
+wantedPassedOn(x)           passedOn for a key asked about with
+                            wantedUses, or a call of x itself
+wantedCalledMethod(x, n)    the method n is called on x, as in x.n()
+```
+
+A caller asks with `wantedUses(x)` and reads what the rules derived
+with `readUses`. The rules cannot say that no read passes x on, since the
+demand rewrite refuses negation, so the caller treats a missing row as
+the value staying put. A read with no fact behind it looks the same as
+no read at all. Each spelling that hands a value on needs a fact
+before this question can see it, which is why the list above is long.
+
+A method call gets a relation of its own because the rules cannot tell
+what one does. `testApp.use("/t", router)` is the mount
+the reader is deciding about, while `app.listen(3000)` serves the app
+from inside the function that built it. The pack knows which methods
+only register routes and mounts, so `staysInItsFunction` takes those
+from the caller and treats any other method as one that may serve.
+Calling the value itself counts as passing it on, since an app can be
+a function that a handler calls with the request.
+
+A property read off the value is passed on only when that property is:
+`serve({ fetch: app.fetch })` passes the app on, and `app.use(...)`,
+which calls the property at once, does not.
+
+The Python router index and TypeScript mount discovery ask this
+question. Ruby states the same facts, but no Ruby reader records a
+mount on a local: a Rails `mount` is drawn on a constant's route set,
+which no function can drop.
+
+Python and Ruby key every read of a name on the name, so a caller asks
+about that one key. TypeScript keys each reference apart and joins it
+to its declaration with `binds`, and the declaration is the second
+column of every such row. Asked about the declaration, `binds` would
+say the value is always handed to another name, so the TypeScript
+adapter asks about each reference instead.
+
+No existing relation says this. The value walk steps from a read back
+to what the read is written as, and `stepsTo` has no step for a call
+to a library function, a write through a parameter, a `yield` or a
+`with`, so reading the steps backwards misses exactly the spellings
+that matter here.
 
 ## A read of the environment
 

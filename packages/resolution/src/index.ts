@@ -62,6 +62,12 @@ export {
   type UnwrapsByName,
 } from "./packWords.js";
 export {
+  readUses,
+  staysInItsFunction,
+  USES_QUESTION,
+  type ValueUses,
+} from "./passedOn.js";
+export {
   ASKING_RELATIONS,
   askResolution,
   askResolutionUnder,
@@ -150,6 +156,8 @@ export type {
 
 import { constant, lit, rule, variable as v } from "@suss/datalog";
 
+import { PASSED_ON_RULES, USES_QUESTIONS } from "./passedOn.js";
+
 import type { Rule } from "@suss/datalog";
 
 /** A step to the value x is written as. */
@@ -205,6 +213,14 @@ export const RECEIVER_STORE_NAME = "receiver";
 const RECEIVER_STORE = constant(RECEIVER_STORE_NAME);
 export const NAMED_STORE_NAME = "name";
 const NAMED_STORE = constant(NAMED_STORE_NAME);
+
+/**
+ * The last column for a write the adapter does not place on an object:
+ * one through a parameter or a property read, or one of several writes
+ * that never settle. The rules that put a store on an object match the
+ * other two kinds, so these rows only say where a value went.
+ */
+export const UNPLACED_STORE_NAME = "unplaced";
 
 /** The `callArgCount` of a call written with nothing between its parentheses. */
 const NO_ARGUMENTS = constant("0");
@@ -1853,6 +1869,8 @@ const STATED_RULES = [
     [v("x"), v("z")],
     [lit("comesTo", v("x"), v("z")), lit("func", v("z"))],
   ),
+
+  ...PASSED_ON_RULES,
 ];
 
 /**
@@ -2406,6 +2424,8 @@ export const RESOLUTION_QUESTIONS = [
     [v("x"), v("r")],
     [lit("anchorChain", v("x"), v("r")), lit("call", v("r"), v("c"))],
   ),
+
+  ...USES_QUESTIONS,
 ];
 
 /** The relations `RESOLUTION_QUESTIONS` answers into. */

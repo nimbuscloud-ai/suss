@@ -27,6 +27,7 @@ import {
   discoverMountEdges,
   type MountEdgeCandidate,
   type MountPrefixIndex,
+  registrationMethodsOf,
   registrationSubjectIdsOf,
 } from "./registrationCall.js";
 
@@ -82,14 +83,20 @@ export function buildMountPrefixIndex(
   // checking against a pooled registry would accept it as one.
   const subjectIdsByPack = new Map<string, Set<string>>();
   const mountWorkByPack = new Map<string, PackMountWork[]>();
+  const ownMethodsByPack = new Map<string, Set<string>>();
 
   for (const [sourceFile, packs] of packsByFile) {
     for (const pack of packs) {
       const registrationMatches: RegistrationMatch[] = [];
       const mountPatterns: MountPattern[] = [];
+      const ownMethods = ownMethodsByPack.get(pack.name) ?? new Set<string>();
+      ownMethodsByPack.set(pack.name, ownMethods);
       for (const pattern of pack.discovery) {
         if (pattern.match.type !== "registrationCall") {
           continue;
+        }
+        for (const method of methodsRegisteredBy(pattern, pattern.match)) {
+          ownMethods.add(method);
         }
         registrationMatches.push(pattern.match);
         if (pattern.mount !== undefined) {
@@ -134,6 +141,7 @@ export function buildMountPrefixIndex(
         mount,
         knownSubjectIds,
         resolution,
+        ownMethodsByPack.get(packName),
       )) {
         recordEdge(edgesByChild, candidate);
       }
@@ -156,6 +164,22 @@ export function buildMountPrefixIndex(
     },
     prefixForId: byId,
   };
+}
+
+/**
+ * The methods one pattern registers something on an app with: its route
+ * methods, its mount method and a wrapper's method, such as `use`.
+ */
+function methodsRegisteredBy(
+  pattern: DiscoveryPattern,
+  match: RegistrationMatch,
+): string[] {
+  const wraps = pattern.wraps;
+  return [
+    ...registrationMethodsOf(match),
+    ...(pattern.mount === undefined ? [] : [pattern.mount.method]),
+    ...(wraps !== undefined && "method" in wraps ? [wraps.method] : []),
+  ];
 }
 
 function recordEdge(

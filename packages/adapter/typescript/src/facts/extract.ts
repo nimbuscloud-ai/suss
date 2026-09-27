@@ -1135,7 +1135,7 @@ function containerOfBindingPattern(
  * following that arrives back where it started, so for a shorthand ask
  * for the local instead.
  */
-function referencedSymbol(nameNode: Node): TsSymbol | undefined {
+export function referencedSymbol(nameNode: Node): TsSymbol | undefined {
   const parent = nameNode.getParent();
   if (
     parent !== undefined &&

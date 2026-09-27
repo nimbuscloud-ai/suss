@@ -12,7 +12,12 @@
  * path, so it pairs with nothing instead of with a guessed path.
  */
 
-import { type MountEdge, mountPathsOf } from "@suss/resolution";
+import { type DispatchTable, dispatchByType } from "@suss/ir-core";
+import {
+  type MountEdge,
+  mountPathsOf,
+  staysInItsFunction,
+} from "@suss/resolution";
 
 import {
   bodyStatements,
@@ -25,10 +30,10 @@ import {
 import { readCallArguments } from "./decorators.js";
 import {
   containedValues,
-  isPassedOn,
   objectReturnedBy,
   resolveCalls,
   subjectConstructions,
+  usesOf,
   writtenValueOf,
 } from "./facts/resolve.js";
 import { nameKeyIn, nodeAt, nodeId } from "./facts/values.js";
@@ -172,6 +177,8 @@ type ConstructionsByName = Map<ModuleBinding, Map<string, Construction>>;
 
 interface PatternIndex {
   composition: RouterComposition;
+  /** The methods the pack registers routes, mounts and wrappers with, `get` and `include_router` for FastAPI. */
+  ownMethods: ReadonlySet<string>;
   /** Every construction by the value key of the call that built it, so a resolved value finds one whatever module wrote it. */
   byValueKey: Map<string, Construction>;
   /** The project's facts, when the caller built them, so a loop over a call can be settled. */
@@ -218,6 +225,7 @@ export function buildRouterIndex(
             files,
             pattern.importModule,
             pattern.routerComposition,
+            ownMethodsOf(pattern, pattern.routerComposition),
             resolverOptions,
           ),
         );
@@ -555,14 +563,42 @@ function composedOwnPrefix(
   return readings[prefix.kind](prefix);
 }
 
+/** The route methods, `@app.get`, whichever way the pattern spells them. */
+const ROUTE_METHODS: DispatchTable<PythonDiscoveryPattern, readonly string[]> =
+  {
+    decoratedFunctionRoute: (pattern) =>
+      Object.keys(pattern.verbAttributeNames),
+    decoratedClassRoute: (pattern) => [pattern.decoratorName],
+  };
+
+/**
+ * Every method a pattern registers something on an app with. Calling any
+ * other method on an app, `run` say, may serve it.
+ */
+function ownMethodsOf(
+  pattern: PythonDiscoveryPattern,
+  composition: RouterComposition,
+): Set<string> {
+  const wrappers = (pattern.wrappers ?? []).flatMap((form) =>
+    form.type === "decoratedWrapper" ? [form.attribute] : [],
+  );
+  return new Set([
+    ...dispatchByType(ROUTE_METHODS, pattern),
+    composition.includeMethodName,
+    ...wrappers,
+  ]);
+}
+
 function buildPatternIndex(
   files: BoundPythonFile[],
   importModule: string[],
   composition: RouterComposition,
+  ownMethods: ReadonlySet<string>,
   resolverOptions: RouterIndexOptions,
 ): PatternIndex {
   const index: PatternIndex = {
     composition,
+    ownMethods,
     byValueKey: new Map(),
     ...(resolverOptions.facts !== undefined
       ? { facts: resolverOptions.facts }
@@ -1497,8 +1533,8 @@ function importedModuleSpec(
 
 /**
  * Whether the mount is called on an app that its own function builds once
- * and then drops, with no fact recording a read that passes the app on, so
- * nobody can request a path the mount adds. DESIGN.md has the cases.
+ * and then drops, so nobody can request a path the mount adds. The shared
+ * rules say where the app goes. DESIGN.md has the cases.
  */
 function appNeverLeavesItsFunction(
   objectName: string,
@@ -1521,7 +1557,7 @@ function appNeverLeavesItsFunction(
   return (
     writes.length === 1 &&
     writes[0]?.[1] === nodeId(scan.bound.file, includerCall) &&
-    !isPassedOn(facts, nameKey)
+    staysInItsFunction(usesOf(facts, nameKey), scan.index.ownMethods)
   );
 }
 

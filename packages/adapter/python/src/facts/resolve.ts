@@ -9,11 +9,14 @@ import {
   askResolution,
   askResolutionUnder,
   declaredTypesOf,
+  readUses,
   resolutionProgram,
   resolutionUnderProgram,
   writtenValueOf as sharedWrittenValueOf,
   writtenValuesOf as sharedWrittenValuesOf,
   writtenValueUnder as sharedWrittenValueUnder,
+  USES_QUESTION,
+  type ValueUses,
   writtenValuesByKey,
 } from "@suss/resolution";
 
@@ -260,49 +263,12 @@ export function containedValues(db: Database, objectKey: string): string[] {
 }
 
 /**
- * The facts that record a read passing a value on, by relation and the
- * column the value's key is in: a return or a yield, an argument, another
- * name or object taking it, or an expression whose value it may become.
+ * What the reads of the value at `key` do with it. Every read of a name
+ * shares the name's key, so one question covers them all.
  */
-const PASSED_ON_IN: readonly (readonly [string, number])[] = [
-  ["returnsValue", 1],
-  ["yieldsValue", 1],
-  ["callArg", 2],
-  ["callKeywordArg", 2],
-  ["binds", 1],
-  ["endsHolding", 1],
-  ["mayHold", 1],
-  ["holdsProperty", 2],
-  ["storesProperty", 2],
-  ["writesProperty", 2],
-  ["holdsUnderKey", 1],
-  ["entersValue", 0],
-  ["paramDefault", 1],
-  ["fallbackBranch", 1],
-  ["readsKeyed", 1],
-  ["readsKeyed", 2],
-  ["entersAs", 1],
-];
-
-/**
- * Whether any read of the value at `key` passes it on, as the facts record
- * it. Reading a property off it counts too, since `app.router` hands out a
- * part of it, unless the property is called at once as a method.
- */
-export function isPassedOn(db: Database, key: string): boolean {
-  if (
-    PASSED_ON_IN.some(
-      ([relation, column]) => db.lookup(relation, column, key).length > 0,
-    )
-  ) {
-    return true;
-  }
-  return db
-    .lookup("readsProperty", 1, key)
-    .some(
-      (row) =>
-        row[0] === undefined || db.lookup("call", 1, row[0]).length === 0,
-    );
+export function usesOf(db: Database, key: string): ValueUses {
+  askResolution(db, [key], USES_QUESTION, programFor(db));
+  return readUses(db, key);
 }
 
 /** The object a call returns, when the rules settled it on one. */
