@@ -198,7 +198,13 @@ describe("router prefix composition, one mount hop", () => {
     expect(pathOf(units, "read_item")).toBe("/items/{item_id}");
     const readItem = units.find((u) => u.identity.name === "read_item");
     expect(readItem?.parameters).toEqual([
-      { name: "item_id", position: 0, role: "pathParams", typeText: "int" },
+      {
+        name: "item_id",
+        position: 0,
+        role: "pathParams",
+        field: "item_id",
+        typeText: "int",
+      },
     ]);
   });
 
@@ -956,7 +962,13 @@ describe("prefix composition for a class-decorator route", () => {
     );
     const list = units.find((u) => u.identity.name === "BehaviorList.get");
     expect(list?.parameters).toEqual([
-      { name: "school_id", position: 1, role: "pathParams", typeText: null },
+      {
+        name: "school_id",
+        position: 1,
+        role: "pathParams",
+        field: "school_id",
+        typeText: null,
+      },
     ]);
   });
 

@@ -58,6 +58,17 @@ export function resolveCalls(db: Database, callKeys: readonly string[]): void {
   askResolution(db, callKeys, "wanted", programFor(db));
 }
 
+/** Asks where these values came from, for a reader that will look up the answers later. */
+export function askSourceQuestions(
+  db: Database,
+  keys: readonly string[],
+  question: SourceQuestion,
+): void {
+  if (keys.length > 0) {
+    askResolution(db, keys, question, programFor(db));
+  }
+}
+
 /** Where each of these values came from, asked as one question. */
 export function sourcesOf(
   db: Database,

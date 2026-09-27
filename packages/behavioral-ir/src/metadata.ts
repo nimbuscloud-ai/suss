@@ -857,7 +857,10 @@ export function readHttpMetadata(
 }
 
 const RequestSectionSpellingSchema = z.object({
-  /** Where the section is read, the handler parameter's role first. */
+  /**
+   * Where the section is read: the handler parameter's role first, or
+   * the word a handler reads the request by when it is handed none.
+   */
   path: z.array(z.string()),
   /**
    * False when a read under that path never says which field it

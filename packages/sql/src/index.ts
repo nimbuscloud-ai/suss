@@ -70,14 +70,28 @@ interface ParserModule {
 /** The grammars, keyed by the store name a pack declares. */
 const DIALECTS: Record<string, Grammar> = {
   postgresql: { module: postgresql as ParserModule, database: "postgresql" },
-  mysql: { module: mysql as ParserModule, database: "mysql" },
-  sqlite: { module: sqlite as ParserModule, database: "sqlite" },
+  mysql: {
+    module: mysql as ParserModule,
+    database: "mysql",
+    bindsByPosition: true,
+  },
+  sqlite: {
+    module: sqlite as ParserModule,
+    database: "sqlite",
+    bindsByPosition: true,
+  },
   bigquery: { module: bigquery as ParserModule, database: "bigquery" },
 };
 
 interface Grammar {
   module: ParserModule;
   database: string;
+  /**
+   * Whether the dialect writes a bind as a bare `?`, counted by where it
+   * appears. The tree does not keep that order, so each `?` is numbered
+   * as `$1`, `$2` before parsing, which these grammars also read.
+   */
+  bindsByPosition?: boolean;
 }
 
 /** Every table a statement touches. Empty when the dialect is unknown or the statement cannot be parsed. */
@@ -89,12 +103,28 @@ export function readSqlAccess(
   if (grammar === undefined) {
     return [];
   }
-  return accessesInSql(sql, grammar)
+  const numbered = grammar.bindsByPosition === true ? numberedBinds(sql) : sql;
+  return accessesInSql(numbered, grammar)
     .map(qualified)
     .filter((access): access is SqlAccess => access !== null)
     .map((access) =>
       options.placeholders === true ? access : withoutPlaceholders(access),
     );
+}
+
+/** Each bare `?` outside a quoted string or a comment, numbered in the order the statement writes them. */
+function numberedBinds(sql: string): string {
+  let count = 0;
+  return sql.replace(
+    /'(?:[^']|'')*'|"(?:[^"]|"")*"|`[^`]*`|-{2}[^\n]*|\/\*[\s\S]*?\*\/|\?/g,
+    (token) => {
+      if (token !== "?") {
+        return token;
+      }
+      count += 1;
+      return `$${count}`;
+    },
+  );
 }
 
 function withoutPlaceholders(access: SqlAccess): SqlAccess {

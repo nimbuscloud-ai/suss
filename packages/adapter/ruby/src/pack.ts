@@ -7,7 +7,7 @@
  * data. This package hardcodes none of it.
  */
 
-import type { TypeShape } from "@suss/behavioral-ir";
+import type { RequestSpellingMetadata, TypeShape } from "@suss/behavioral-ir";
 import type { UnwrapsByName } from "@suss/resolution";
 import type { BodyBlockKind, BodyBlocks } from "./ast.js";
 import type { ConstantPathConvention } from "./constantPath.js";
@@ -75,6 +75,8 @@ export interface RubyPack {
    * not known to come from the request.
    */
   requestAccessors?: string[];
+  /** Where an action reads each part of the request, recorded on every action the pack finds. */
+  requestSpelling?: RequestSpellingMetadata;
   /** Calls that read a model through a batching loader, where the model is an argument instead of the receiver. */
   loaders?: RbLoaderPattern[];
   /** Calls in a class or module body whose block runs as part of that body. */

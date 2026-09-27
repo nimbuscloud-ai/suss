@@ -404,6 +404,12 @@ export const InputSchema = z.discriminatedUnion("type", [
      * the summary then includes a gap explaining why.
      */
     role: z.string().nullable(),
+    /**
+     * Which field of the role's value the parameter is, when the library
+     * hands a handler one field rather than the whole value: FastAPI's
+     * `x_tenant_id: str = Header()` is the `x-tenant-id` header.
+     */
+    field: z.string().optional(),
     shape: TypeShapeSchema.nullable(),
   }),
   z.object({

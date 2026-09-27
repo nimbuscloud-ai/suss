@@ -153,6 +153,202 @@ describe("where a FastAPI route's query values came from", () => {
     });
     expect(unit.inputReads).toEqual([{ input: "x_tenant_id", path: [] }]);
   });
+
+  it("writes a value a builtin converted as converted from the input", async () => {
+    const route = write("app/routes.py", [
+      "from fastapi import Depends, FastAPI",
+      "from sqlalchemy.orm import Session",
+      "from app.models import Order",
+      "",
+      "app = FastAPI()",
+      "",
+      '@app.get("/orders/{order_id}")',
+      "def read_order(order_id: str, session: Session = Depends(get_session)):",
+      "    return session.query(Order).filter_by(id=int(order_id)).first()",
+      "",
+      "def get_session():",
+      "    return Session()",
+      "",
+    ]);
+    const models = write("app/models.py", [MODELS]);
+
+    const unit = await unitNamed("read_order", [route, models], [fastapiLike]);
+
+    expect(sourcesIn(unit)).toEqual({
+      "selector id": [
+        {
+          type: "derived",
+          derivation: { type: "methodCall", method: "int", args: [] },
+          from: { type: "input", inputRef: "order_id", path: [] },
+        },
+      ],
+    });
+  });
+
+  it("maps a text() statement's placeholders to the values bound to them", async () => {
+    const route = write("app/routes.py", [
+      "from fastapi import Depends, FastAPI, Header",
+      "from sqlalchemy import text",
+      "from sqlalchemy.orm import Session",
+      "",
+      "app = FastAPI()",
+      "",
+      '@app.get("/orders")',
+      "def list_orders(x_tenant_id: str = Header(), session: Session = Depends(get_session)):",
+      "    session.execute(",
+      '        text("SELECT id FROM orders WHERE tenant_id = :tenant AND status = :status"),',
+      '        {"tenant": x_tenant_id, "status": "open"},',
+      "    )",
+      '    session.execute(text("UPDATE notes SET body = :body WHERE id = :id").bindparams(body="x", id=x_tenant_id))',
+      "    return []",
+      "",
+      "def get_session():",
+      "    return Session()",
+      "",
+    ]);
+    const withText: PythonPack = {
+      ...fastapiLike,
+      rawSql: [
+        {
+          module: "sqlalchemy",
+          functions: ["text"],
+          storageSystem: "postgresql",
+        },
+      ],
+    };
+
+    const unit = await unitNamed("list_orders", [route], [withText]);
+
+    const tenant = { type: "input", inputRef: "x_tenant_id", path: [] };
+    expect(sourcesIn(unit)).toEqual({
+      "selector tenant_id": [tenant],
+      "selector status": [{ type: "literal", value: "open" }],
+      "field body": [{ type: "literal", value: "x" }],
+      "selector id": [tenant],
+    });
+  });
+
+  it("maps a ? placeholder to its place in the values handed over", async () => {
+    const route = write("app/routes.py", [
+      "from fastapi import Depends, FastAPI, Header",
+      "from sqlalchemy import text",
+      "from sqlalchemy.orm import Session",
+      "",
+      "app = FastAPI()",
+      "",
+      '@app.get("/orders")',
+      "def list_orders(x_tenant_id: str = Header(), session: Session = Depends(get_session)):",
+      '    session.execute(text("SELECT id FROM orders WHERE status = ? AND tenant_id = ?"), ("open", x_tenant_id))',
+      "    return []",
+      "",
+      "def get_session():",
+      "    return Session()",
+      "",
+    ]);
+    const withText: PythonPack = {
+      ...fastapiLike,
+      rawSql: [
+        { module: "sqlalchemy", functions: ["text"], storageSystem: "sqlite" },
+      ],
+    };
+
+    const unit = await unitNamed("list_orders", [route], [withText]);
+
+    expect(sourcesIn(unit)).toEqual({
+      "selector status": [{ type: "literal", value: "open" }],
+      "selector tenant_id": [
+        { type: "input", inputRef: "x_tenant_id", path: [] },
+      ],
+    });
+  });
+
+  it("leaves a conversion alone when the module rebinds the builtin", async () => {
+    const route = write("app/routes.py", [
+      "from fastapi import Depends, FastAPI",
+      "from sqlalchemy.orm import Session",
+      "from app.models import Order",
+      "from app.ids import int",
+      "",
+      "app = FastAPI()",
+      "",
+      '@app.get("/orders/{order_id}")',
+      "def read_order(order_id: str, session: Session = Depends(get_session)):",
+      "    return session.query(Order).filter_by(id=int(order_id)).first()",
+      "",
+      "def get_session():",
+      "    return Session()",
+      "",
+    ]);
+    const models = write("app/models.py", [MODELS]);
+
+    const unit = await unitNamed("read_order", [route, models], [fastapiLike]);
+
+    expect(sourcesIn(unit)["selector id"]).toEqual([
+      { type: "unresolved", sourceText: "int(order_id)" },
+    ]);
+  });
+});
+
+describe("which part of the request a FastAPI parameter is", () => {
+  it("reads the part from the call a parameter is declared with, and the field from its name", async () => {
+    const route = write("app/routes.py", [
+      "from typing import Annotated",
+      "from fastapi import Body, Cookie, FastAPI, Header, Query",
+      "from app.models import Order",
+      "",
+      "app = FastAPI()",
+      "",
+      '@app.post("/orders/{order_id}")',
+      "def update_order(",
+      "    order_id: int,",
+      "    order: Order,",
+      '    limit: int = Query(alias="max"),',
+      "    x_request_id: Annotated[str, Header()] = None,",
+      "    note: str = Body(),",
+      "    session_id: str = Cookie(),",
+      "    page: int = 1,",
+      "):",
+      "    return []",
+      "",
+    ]);
+    const models = write("app/models.py", [MODELS]);
+    const withSources: PythonPack = {
+      ...fastapiLike,
+      discovery: fastapiLike.discovery.map((pattern) => ({
+        ...pattern,
+        annotatedClassIsRequestBody: true,
+        parameterSources: {
+          Header: { role: "headers", underscoresAs: "-" },
+          Query: { role: "queryParams" },
+          Body: { role: "requestBody" },
+          Cookie: { role: "cookies" },
+        },
+        parameterAliasKeyword: "alias",
+      })),
+    };
+
+    const unit = await unitNamed(
+      "update_order",
+      [route, models],
+      [withSources],
+    );
+
+    expect(
+      unit.inputs.map((input) =>
+        input.type === "parameter"
+          ? [input.name, input.role, input.field ?? null]
+          : null,
+      ),
+    ).toEqual([
+      ["order_id", "pathParams", "order_id"],
+      ["order", "requestBody", null],
+      ["limit", "queryParams", "max"],
+      ["x_request_id", "headers", "x-request-id"],
+      ["note", "requestBody", "note"],
+      ["session_id", "cookies", "session_id"],
+      ["page", "queryParams", "page"],
+    ]);
+  });
 });
 
 describe("where a Flask resource's values came from", () => {

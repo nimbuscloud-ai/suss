@@ -114,9 +114,9 @@ export function readSetOf(
       rootedAtPayload = false;
       continue;
     }
-    const role = words.roleByBinding.get(read.input);
-    if (role !== undefined) {
-      paths.push([role, ...read.path]);
+    const spelled = words.spellingByBinding.get(read.input);
+    if (spelled !== undefined) {
+      paths.push([...spelled, ...read.path]);
     }
   }
   if (paths.length === 0) {
@@ -125,10 +125,13 @@ export function readSetOf(
   return { read: true, reads: { paths, rootedAtPayload } };
 }
 
-/** Which inputs the sender's value arrives through, and the sender's word for each of the rest. */
+/**
+ * Which inputs the sender's value arrives through, and the sender's
+ * words for each of the rest: its role, then the field it is when it is one.
+ */
 interface InputWords {
   payloadInputs: Set<string>;
-  roleByBinding: Map<string, string>;
+  spellingByBinding: Map<string, string[]>;
 }
 
 function wordsFor(
@@ -143,11 +146,20 @@ function wordsFor(
     ),
     // Reads record the local binding name, and a destructure rename
     // keeps the sender's name in the role.
-    roleByBinding: new Map(
-      summary.inputs.flatMap((input) =>
-        input.type === "parameter"
-          ? [[input.name, input.role ?? input.name]]
-          : [],
+    spellingByBinding: new Map(
+      summary.inputs.flatMap(
+        (input): Array<[string, string[]]> =>
+          input.type === "parameter"
+            ? [
+                [
+                  input.name,
+                  [
+                    input.role ?? input.name,
+                    ...(input.field === undefined ? [] : [input.field]),
+                  ],
+                ],
+              ]
+            : [],
       ),
     ),
   };
@@ -171,11 +183,8 @@ export function readPathOf(
   if (words.payloadInputs.has(ref.inputRef)) {
     return ref.path.length === 0 ? null : [...ref.path];
   }
-  const role = words.roleByBinding.get(ref.inputRef);
-  if (role === undefined) {
-    return null;
-  }
-  return [role, ...ref.path];
+  const spelled = words.spellingByBinding.get(ref.inputRef);
+  return spelled === undefined ? null : [...spelled, ...ref.path];
 }
 
 /**
@@ -446,11 +455,29 @@ function restSpelling(summary: BehavioralSummary): InputSpelling {
   return {
     reads: (alsoRead) => requestReadSet(summary, sections, alsoRead),
     pathOf: (ref) => {
-      const path = readPathOf(summary, ref, EVERY_PARAMETER);
+      const path = requestPathOf(summary, ref, sections);
       const read = path === null ? null : underSection(path, sections);
       return read === null ? null : spell(read);
     },
   };
+}
+
+/**
+ * A reference as a path in the sections' words: from the role of the
+ * parameter it reads, or as written for a Rails `params` or a Flask
+ * `request`, which a handler reads without being handed.
+ */
+function requestPathOf(
+  summary: BehavioralSummary,
+  ref: ValueRef,
+  sections: readonly DeclaredSection[],
+): string[] | null {
+  const path = readPathOf(summary, ref, EVERY_PARAMETER);
+  if (path !== null || ref.type !== "input") {
+    return path;
+  }
+  const named = sections.some(([, how]) => how.path[0] === ref.inputRef);
+  return named ? [ref.inputRef, ...ref.path] : null;
 }
 
 /**
@@ -460,18 +487,14 @@ function restSpelling(summary: BehavioralSummary): InputSpelling {
  */
 function offTheRequest(
   summary: BehavioralSummary,
-  binding: BoundaryBinding,
   ref: ValueRef,
 ): string[] | null {
-  const spelling =
-    binding.semantics.name === "rest"
-      ? readRequestSpellingMetadata(summary)
-      : undefined;
+  const spelling = readRequestSpellingMetadata(summary);
   if (spelling === undefined) {
     return null;
   }
   const sections = sectionsOf(spelling);
-  const path = readPathOf(summary, ref, EVERY_PARAMETER);
+  const path = requestPathOf(summary, ref, sections);
   const root = sections[0]?.[1].path.slice(0, -1) ?? [];
   const shared = sections.every(([, how]) =>
     startsWith(how.path.slice(0, -1), root),
@@ -561,8 +584,7 @@ export function boundarySourcePathOf(
   ref: ValueRef,
 ): string[] | null {
   return (
-    boundaryInputPathOf(summary, binding, ref) ??
-    offTheRequest(summary, binding, ref)
+    boundaryInputPathOf(summary, binding, ref) ?? offTheRequest(summary, ref)
   );
 }
 

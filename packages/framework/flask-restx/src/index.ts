@@ -127,6 +127,14 @@ export function flaskRestxFramework(
     ],
     // A resource method reads the request off Flask's module-level object.
     requestObjects: [{ module: "flask", name: "request" }],
+    // A path parameter is handed to the method, and the rest is read off
+    // Flask's `request`: `request.args` for the query string.
+    requestSpelling: {
+      headers: { path: ["request", "headers"], saysWhichField: true },
+      query: { path: ["request", "args"], saysWhichField: true },
+      params: { path: ["pathParams"], saysWhichField: true },
+      body: { path: ["request", "json"], saysWhichField: true },
+    },
   };
 }
 

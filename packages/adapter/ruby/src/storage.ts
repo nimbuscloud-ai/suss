@@ -718,6 +718,48 @@ function receiverKeysToAsk(
   return keys;
 }
 
+/** One column of one effect, and the value the call passes for it. */
+export interface EffectSlot extends SlotValue {
+  effect: Effect;
+}
+
+/**
+ * The database work one method's body does, calls nested anywhere in it
+ * included, with the value each column is given.
+ */
+export function methodStorage(
+  method: RbNode,
+  file: string,
+  options: RbStorageOptions,
+): { effects: Effect[]; slots: EffectSlot[] } {
+  const slots: EffectSlot[] = [];
+  const effects = storageEffects(
+    callsUnder(method),
+    file,
+    {
+      ...options,
+      statesSlots: (effect, stated) => {
+        slots.push(...stated.map((one) => ({ ...one, effect })));
+      },
+    },
+    method,
+  );
+  return { effects, slots };
+}
+
+function callsUnder(node: RbNode, found: RbNode[] = []): RbNode[] {
+  for (const child of node.namedChildren) {
+    if (child === null) {
+      continue;
+    }
+    if (child.type === "call") {
+      found.push(child);
+    }
+    callsUnder(child, found);
+  }
+  return found;
+}
+
 /**
  * The database work a body does, one effect per chain, so
  * `Order.where(id: 1).first` counts once. `file` is the absolute path the

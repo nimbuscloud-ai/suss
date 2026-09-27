@@ -186,6 +186,8 @@ export interface RawParameter {
    * the adapter could not tell, with the reason in `readings`.
    */
   role: string | null;
+  /** Which field of the role's value the parameter is, when the library hands over one field. */
+  field?: string;
   typeText: string | null;
 }
 
@@ -1098,6 +1100,7 @@ export function paramToInput(param: RawParameter): Input {
     name: param.name,
     position: param.position,
     role: param.role,
+    ...(param.field === undefined ? {} : { field: param.field }),
     shape: param.typeText ? { type: "ref", name: param.typeText } : null,
   };
 }

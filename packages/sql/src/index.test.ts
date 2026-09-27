@@ -253,6 +253,19 @@ describe("which placeholder gives a column its value", () => {
     ).not.toHaveProperty("placeholders");
   });
 
+  it("counts a dialect's bare ? binds in the order the statement writes them", () => {
+    const bound = (sql: string) =>
+      readSqlAccess(sql, { dialect: "sqlite", placeholders: true }).flatMap(
+        (access) =>
+          (access.placeholders ?? []).map(
+            (one) => `${one.clause} ${one.field}=${one.placeholder}`,
+          ),
+      );
+    expect(
+      bound("UPDATE users SET email = ?, note = '?' WHERE id = ? /* or ? */"),
+    ).toEqual(["fields email=1", "selector id=2"]);
+  });
+
   it("finds no placeholder in an insert that copies rows from a query", () => {
     expect(
       bound("INSERT INTO archive (id) SELECT id FROM orders WHERE total > $1"),

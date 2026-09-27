@@ -12,8 +12,10 @@
 import { sourceRefsOf } from "@suss/extractor";
 import { constantOf, literalOf } from "@suss/values";
 
-import { field, NodeMap } from "./ast.js";
-import { sourcesOf } from "./facts/resolve.js";
+import { children, field, NodeMap } from "./ast.js";
+import { askSourceQuestions, sourcesOf } from "./facts/resolve.js";
+import { operandsOf } from "./paths/predicates.js";
+import { methodStorage } from "./storage.js";
 import {
   evaluatedValue,
   nodeOfResolutionKey,
@@ -25,7 +27,7 @@ import type { Database } from "@suss/datalog";
 import type { RawProvenance, SourceSpelling } from "@suss/extractor";
 import type { SourceLeaf, SourceQuestion } from "@suss/resolution";
 import type { RbNode } from "./parser.js";
-import type { SlotValue } from "./storage.js";
+import type { EffectSlot, RbStorageOptions } from "./storage.js";
 
 /** What a place the walk ended at means, for one unit. */
 export interface SourceContext {
@@ -46,6 +48,92 @@ export function bindRequestAccessors(
 }
 
 /**
+ * Asks both source questions for these methods at once, so each body's
+ * own questions find their keys already asked. DESIGN.md says why a
+ * caller passes only the methods that become units.
+ */
+export function askFileSources(
+  methods: readonly RbNode[],
+  file: string,
+  facts: Database,
+  storage: RbStorageOptions | undefined,
+): void {
+  const operands = methods.flatMap(guardSubjectsIn);
+  const values =
+    storage === undefined
+      ? []
+      : methods.flatMap((method) =>
+          methodStorage(method, file, storage).slots.map((one) => one.value),
+        );
+  askSourceQuestions(facts, keysOf(operands), "wantedInputRead");
+  askSourceQuestions(facts, keysOf(values), "wantedSource");
+}
+
+/**
+ * The same for bodies that may be written in several files, a question
+ * per file, since reading a body's storage work needs the file it is in.
+ */
+export function askSourcesOfBodies(
+  bodies: ReadonlyArray<{ file: string; method: RbNode }>,
+  facts: Database | undefined,
+  storage: RbStorageOptions | undefined,
+): void {
+  if (facts === undefined) {
+    return;
+  }
+  const byFile = new Map<string, RbNode[]>();
+  for (const { file, method } of bodies) {
+    byFile.set(file, [...(byFile.get(file) ?? []), method]);
+  }
+  for (const [file, methods] of byFile) {
+    askFileSources(methods, file, facts, storage);
+  }
+}
+
+/** The nodes whose `condition` a body's paths branch on. */
+const BRANCHING = new Set([
+  "if",
+  "unless",
+  "elsif",
+  "while",
+  "until",
+  "if_modifier",
+  "unless_modifier",
+  "while_modifier",
+  "until_modifier",
+  "conditional",
+]);
+
+/** The subjects of every branch condition written in a method. */
+function guardSubjectsIn(method: RbNode): RbNode[] {
+  const found: RbNode[] = [];
+  const visit = (node: RbNode): void => {
+    const condition = BRANCHING.has(node.type)
+      ? field(node, "condition")
+      : null;
+    if (condition !== null) {
+      found.push(...operandsOf(condition));
+    }
+    for (const child of children(node)) {
+      visit(child);
+    }
+  };
+  visit(method);
+  return found;
+}
+
+function keysOf(nodes: readonly RbNode[]): string[] {
+  const keys = new Set<string>();
+  for (const node of nodes) {
+    const key = resolutionKeyOf(node);
+    if (key !== null) {
+      keys.add(key);
+    }
+  }
+  return [...keys];
+}
+
+/**
  * The input each operand of a unit's conditions reads, by node id, for
  * the operands whose value came from exactly one input. Asked as one
  * question, so a body pays one evaluation for all its guards.
@@ -63,11 +151,6 @@ export function guardInputs(
     }
   }
   return found;
-}
-
-/** One slot of one effect, and the value the call passes for it. */
-export interface EffectSlot extends SlotValue {
-  effect: Effect;
 }
 
 /** Where each slot's value came from, as the entries a branch records. */

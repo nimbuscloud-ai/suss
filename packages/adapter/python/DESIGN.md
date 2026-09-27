@@ -243,7 +243,11 @@ queryFunctions: ["select", "insert", "update", "delete"]
 
 For one of these the function itself is the operation, so `update(User).where(...).values(...)` is an update however the chain ends.
 
-`fields` comes from the columns a query spells out, `User.id` in `select(User.id, User.email)`, and from the keywords of a call the pack lists under `valueMethods`, `name` in `.values(name="x")`. `selector` comes from the keywords that every other call in the chain selects rows by, `id` in `filter_by(id=user_id)`. Raw SQL passed to `text` is read as its own effect, with the kind and table taken from the statement.
+`fields` comes from the columns a query spells out, `User.id` in `select(User.id, User.email)`, and from the keywords of a call the pack lists under `valueMethods`, `name` in `.values(name="x")`. `selector` comes from what every other call in the chain selects rows by: the keywords, `id` in `filter_by(id=user_id)`, and a model's column compared with `==`, `tenant_id` in `where(User.tenant_id == t)` or inside `and_(...)`. Raw SQL passed to `text` is read as its own effect, with the kind and table taken from the statement.
+
+The value each of those columns is given is recorded too, and the summary says where it came from. For `text`, a `:tenant` placeholder takes its value from `.bindparams(tenant=t)` on the statement or from the dictionary handed over beside it, `session.execute(stmt, {"tenant": t})`, and a `?` from its place in a tuple or list handed over the same way.
+
+The two questions about where values came from, which input a guard reads and where a column's value came from, are asked for every route in a file at once, and for every reached function in a file at once. Asking them for every function in a file instead read 16% more rows on a FastAPI service, because the storage reading it takes to find the columns asked questions of its own about functions nothing summarizes.
 
 ## A statement the project wrote as SQL
 

@@ -62,6 +62,7 @@ export type {
   MountObjectPrefix,
   MountPrefixEffect,
   NoValuePrefix,
+  ParameterSource,
   PathRepeatedSlashes,
   PrefixTrailingSlash,
   PyModelEntryFunction,

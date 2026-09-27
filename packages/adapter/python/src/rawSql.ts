@@ -16,13 +16,13 @@ import { storageBinding } from "@suss/ir-core";
 import { readSqlAccess, splitQualifiedTable, sqlFromParts } from "@suss/sql";
 import { force } from "@suss/values";
 
-import { children, field } from "./ast.js";
+import { children, field, stringLiteralValue } from "./ast.js";
 import { receiverTypeOrigins } from "./receiverTypes.js";
 import { evaluatedValue, stringValueOf } from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { SqlAccess } from "@suss/sql";
+import type { SqlAccess, SqlPlaceholder } from "@suss/sql";
 import type { Value } from "@suss/values";
 import type { SubjectOrigin } from "./facts/resolve.js";
 import type {
@@ -31,6 +31,7 @@ import type {
   SqlClientPattern,
 } from "./pack.js";
 import type { PyNode } from "./parser.js";
+import type { SlottedEffects, SlotValue, StorageLookup } from "./storage.js";
 
 export interface RawSqlOptions {
   readonly facts: Database;
@@ -40,6 +41,16 @@ export interface RawSqlOptions {
   readonly clients?: readonly SqlClientPattern[];
 }
 
+/** What the raw-SQL reader is asked with, out of what discovery already looked up for the file. */
+export function rawSqlOptionsOf(lookup: StorageLookup): RawSqlOptions {
+  return {
+    facts: lookup.facts,
+    filePath: lookup.factsPath,
+    patterns: lookup.rawSql ?? [],
+    clients: lookup.sqlClients ?? [],
+  };
+}
+
 /** One call a pattern matched, and the tables its statement reads or writes. */
 interface RawSqlMatch {
   readonly call: PyNode;
@@ -47,16 +58,141 @@ interface RawSqlMatch {
   readonly recognition: string;
   readonly storageSystem: string;
   readonly accesses: readonly SqlAccess[];
+  /** The values bound to the statement's placeholders, or null for a client call, whose binds are not read. */
+  readonly binds: Binds | null;
 }
 
-/** The statements a body hands the database, as storage effects. */
+/** The statements a body hands the database, as storage effects, with the value each placeholder's column is given. */
 export function rawSqlEffects(
   calls: readonly PyNode[],
   options: RawSqlOptions,
-): Effect[] {
-  return matchesIn(calls, options).flatMap((match) =>
-    match.accesses.flatMap((access) => effectFor(match, access)),
+): SlottedEffects {
+  const found: SlottedEffects = { effects: [], slots: [] };
+  for (const match of matchesIn(calls, options)) {
+    for (const access of match.accesses) {
+      const effect = effectFor(match, access);
+      found.effects.push(effect);
+      for (const slot of boundSlots(access, match.binds)) {
+        found.slots.push({ ...slot, effect });
+      }
+    }
+  }
+  return found;
+}
+
+/** The values a call binds to a statement's placeholders. */
+interface Binds {
+  /**
+   * `$1`, or the first `?`, is the first of these. Empty when a piece of
+   * the statement did not settle, since that piece is numbered too.
+   */
+  numbered: readonly PyNode[];
+  /** `:tenant` is the value bound under `tenant`. */
+  named: ReadonlyMap<string, PyNode>;
+}
+
+const SLOT_OF: Record<SqlPlaceholder["clause"], SlotValue["slot"]> = {
+  fields: "field",
+  selector: "selector",
+};
+
+/** Each column the statement gives a placeholder, with the value bound to it. */
+function boundSlots(access: SqlAccess, binds: Binds | null): SlotValue[] {
+  if (binds === null) {
+    return [];
+  }
+  return (access.placeholders ?? []).flatMap((one) => {
+    const value =
+      typeof one.placeholder === "number"
+        ? (binds.numbered[one.placeholder - 1] ?? null)
+        : (binds.named.get(one.placeholder) ?? null);
+    return value === null
+      ? []
+      : [{ slot: SLOT_OF[one.clause], name: one.field, value }];
+  });
+}
+
+/**
+ * Where a `text()` statement's values come from: `.bindparams(tenant=t)`
+ * on the statement, or the argument after it in the call it is handed
+ * to, `session.execute(stmt, {"tenant": t})` or a sequence for `?`.
+ */
+function bindsOf(statementCall: PyNode, wholeText: boolean): Binds {
+  const bindparams = calledOn(statementCall, "bindparams");
+  const handedTo = callTakingFirst(bindparams ?? statementCall);
+  const given = handedTo === null ? null : secondArgument(handedTo);
+  return {
+    numbered:
+      wholeText && (given?.type === "tuple" || given?.type === "list")
+        ? children(given)
+        : [],
+    named: new Map([
+      ...(given === null ? [] : dictionaryEntries(given)),
+      ...(bindparams === null ? [] : keywordValues(bindparams)),
+    ]),
+  };
+}
+
+/** The call `node.method(...)` makes, when `node` is what the method is read off. */
+function calledOn(node: PyNode, method: string): PyNode | null {
+  const attribute = node.parent;
+  const call = attribute?.parent ?? null;
+  const read =
+    attribute?.type === "attribute" &&
+    field(attribute, "object")?.id === node.id &&
+    field(attribute, "attribute")?.text === method;
+  return read &&
+    call?.type === "call" &&
+    field(call, "function")?.id === attribute.id
+    ? call
+    : null;
+}
+
+/** The call `node` is the first positional argument of. */
+function callTakingFirst(node: PyNode): PyNode | null {
+  const list = node.parent;
+  const first = list === null ? undefined : children(list)[0];
+  return list?.type === "argument_list" && first?.id === node.id
+    ? list.parent
+    : null;
+}
+
+/** The second positional argument of a call, or what it passes as `params`. */
+function secondArgument(call: PyNode): PyNode | null {
+  const args = field(call, "arguments");
+  const written = args === null ? [] : children(args);
+  const positional = written.filter((one) => one.type !== "keyword_argument");
+  return positional[1] ?? keywordValue(call, "params");
+}
+
+function keywordValue(call: PyNode, name: string): PyNode | null {
+  return keywordValues(call).find(([keyword]) => keyword === name)?.[1] ?? null;
+}
+
+/** Each keyword a call passes, with the value it passes there. */
+function keywordValues(call: PyNode): Array<[string, PyNode]> {
+  const args = field(call, "arguments");
+  return (args === null ? [] : children(args)).flatMap(
+    (one): Array<[string, PyNode]> => {
+      const name =
+        one.type === "keyword_argument" ? field(one, "name")?.text : undefined;
+      const value = field(one, "value");
+      return name === undefined || value === null ? [] : [[name, value]];
+    },
   );
+}
+
+/** Each value a dictionary written out in the source gives under a string key. */
+function dictionaryEntries(dictionary: PyNode): Array<[string, PyNode]> {
+  if (dictionary.type !== "dictionary") {
+    return [];
+  }
+  return children(dictionary).flatMap((one): Array<[string, PyNode]> => {
+    const written = one.type === "pair" ? field(one, "key") : null;
+    const key = written === null ? null : stringLiteralValue(written);
+    const value = field(one, "value");
+    return key === null || value === null ? [] : [[key, value]];
+  });
 }
 
 /**
@@ -90,27 +226,25 @@ function matchesIn(
 }
 
 /** One effect for a table the reader settled. */
-function effectFor(match: RawSqlMatch, access: SqlAccess): Effect[] {
+function effectFor(match: RawSqlMatch, access: SqlAccess): Effect {
   const operation = field(match.call, "function")?.text ?? "";
-  return [
-    {
-      type: "interaction",
-      binding: storageBinding({
-        recognition: match.recognition,
-        storageSystem: match.storageSystem,
-        scope: access.qualifier[access.qualifier.length - 1] ?? NO_GROUP,
-        container: access.table,
-      }),
-      callee: operation,
-      interaction: {
-        class: "storage-access",
-        kind: access.kind,
-        fields: access.fields,
-        ...(access.selector.length > 0 ? { selector: access.selector } : {}),
-        operation,
-      },
+  return {
+    type: "interaction",
+    binding: storageBinding({
+      recognition: match.recognition,
+      storageSystem: match.storageSystem,
+      scope: access.qualifier[access.qualifier.length - 1] ?? NO_GROUP,
+      container: access.table,
+    }),
+    callee: operation,
+    interaction: {
+      class: "storage-access",
+      kind: access.kind,
+      fields: access.fields,
+      ...(access.selector.length > 0 ? { selector: access.selector } : {}),
+      operation,
     },
-  ];
+  };
 }
 
 /** The scope a table addressed by its name alone is in. */
@@ -145,7 +279,7 @@ function importedFunctionMatch(
   const args = field(call, "arguments");
   const first = args?.namedChildren.find((child) => child !== null) ?? null;
   const statement =
-    first === null ? null : statementAt(first, undefined, options.facts);
+    first === null ? null : writtenStatement(first, undefined, options.facts);
   if (statement === null) {
     return null;
   }
@@ -153,7 +287,11 @@ function importedFunctionMatch(
     call,
     recognition: `python-${pattern.module}`,
     storageSystem: pattern.storageSystem,
-    accesses: readSqlAccess(statement, { dialect: pattern.storageSystem }),
+    accesses: readSqlAccess(statement.sql, {
+      dialect: pattern.storageSystem,
+      placeholders: true,
+    }),
+    binds: bindsOf(call, statement.whole),
   };
 }
 
@@ -178,6 +316,7 @@ function clientMatch(call: PyNode, options: RawSqlOptions): RawSqlMatch | null {
       recognition: `python-${pattern.module}`,
       storageSystem: pattern.storageSystem,
       accesses,
+      binds: null,
     };
   }
   return null;
@@ -303,13 +442,25 @@ function statementAt(
   path: readonly string[] | undefined,
   facts: Database,
 ): string | null {
+  return writtenStatement(node, path, facts)?.sql ?? null;
+}
+
+/**
+ * The statement, and whether it was settled whole. Each piece nothing
+ * settled is written as a numbered placeholder, the same way a bind is.
+ */
+function writtenStatement(
+  node: PyNode,
+  path: readonly string[] | undefined,
+  facts: Database,
+): { sql: string; whole: boolean } | null {
   const reached = valueAt(evaluatedValue(node, facts), path ?? []);
   const parts = reached === null ? null : literalParts(reached);
   if (parts === null) {
     return null;
   }
-  const statement = sqlFromParts(parts);
-  return statement.trim() === "" ? null : statement;
+  const sql = sqlFromParts(parts);
+  return sql.trim() === "" ? null : { sql, whole: parts.length === 1 };
 }
 
 /** The value a path of keys reaches inside a dictionary, or null when nothing wrote one of them. */

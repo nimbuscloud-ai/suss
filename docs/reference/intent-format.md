@@ -262,7 +262,9 @@ results:
 
 The line is satisfied when the code takes the column from that source. When it takes it from somewhere else suss can name, an input path or a literal, the checker reports [`valueFromElsewhere`](/reference/findings#valuefromelsewhere) with the source it found. When the walk from the value stopped at something it cannot follow, such as a call into a library no pack describes, the claim is listed under `unchecked` with where the walk stopped. suss stops loading a document whose `from` gives a column the line does not list, or a source not written as `input.<path>`. A change list and an `always` line do not take `from`.
 
-A route's source reads the same in every language when the pack says which part of the request each read is. The Express, Fastify, Hono and Lambda packs do. A Python or Ruby route records where each value came from, but its packs do not say which part of the request a read is, so a `from` on one is unchecked for now. A Python or Ruby function-call boundary is checked, since its sources are its parameters.
+A route's source reads the same in every language when the pack says which part of the request each read is. The Express, Fastify, Hono, Lambda, FastAPI, flask-restx and Rails packs do. FastAPI's `x_tenant_id: str = Header()` is `input.headers.x-tenant-id`, and a Flask resource's `request.args["q"]` is `input.query.q`. Rails merges the path, the query string and the body into `params`, so a Rails action's `params[:tenant_id]` is `input.params.tenant_id` whichever of the three it came from.
+
+A value the language converts on the way still comes from its input: `Number(req.params.id)`, `int(order_id)` and `params[:id].to_i` satisfy a `from` that names the input.
 
 A command's output is written the same way. `writes: io:stdout` says the outcome prints to standard output, and `shape` says what it prints when it prints JSON:
 

@@ -488,6 +488,9 @@
                     }
                   ]
                 },
+                "field": {
+                  "type": "string"
+                },
                 "shape": {
                   "anyOf": [
                     {

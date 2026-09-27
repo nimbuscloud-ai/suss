@@ -648,6 +648,58 @@ describe("boundarySourcePathOf", () => {
     expect(off(["auth", "tenantId"], route([], spelling))).toBeNull();
   });
 
+  it("spells a parameter that is one field as that field of its part", () => {
+    const summary: BehavioralSummary = {
+      ...receiver({
+        inputs: [
+          {
+            type: "parameter",
+            name: "x_tenant_id",
+            position: 0,
+            role: "headers",
+            field: "x-tenant-id",
+            shape: null,
+          },
+        ],
+      }),
+      metadata: {
+        requestSpelling: {
+          headers: { path: ["headers"], saysWhichField: true },
+        },
+      },
+    };
+    expect(
+      boundarySourcePathOf(summary, GET_INVOICES, {
+        type: "input",
+        inputRef: "x_tenant_id",
+        path: [],
+      }),
+    ).toEqual(["headers", "x-tenant-id"]);
+  });
+
+  it("reads a request the handler is not handed by the word its spelling starts with", () => {
+    const summary: BehavioralSummary = {
+      ...receiver({ inputs: [] }),
+      metadata: {
+        requestSpelling: {
+          headers: { path: ["request", "headers"], saysWhichField: true },
+          params: { path: ["params"], saysWhichField: true },
+        },
+      },
+    };
+    const spelled = (inputRef: string, path: string[]) =>
+      boundarySourcePathOf(summary, GET_INVOICES, {
+        type: "input",
+        inputRef,
+        path,
+      });
+    expect([
+      spelled("params", ["tenant_id"]),
+      spelled("request", ["headers", "X-Tenant-Id"]),
+      spelled("session", ["user_id"]),
+    ]).toEqual([["params", "tenant_id"], ["headers", "X-Tenant-Id"], null]);
+  });
+
   it("gives nothing for a route whose pack recorded no spelling", () => {
     const summary = receiver({ inputs: [parameter("req", "request")] });
     expect(off(["auth", "tenantId"], summary)).toBeNull();

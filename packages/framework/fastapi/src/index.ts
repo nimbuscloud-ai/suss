@@ -11,7 +11,7 @@
 
 import { z } from "zod";
 
-import type { PythonPack } from "@suss/adapter-python";
+import type { ParameterSource, PythonPack } from "@suss/adapter-python";
 import type { PackDeclaration } from "@suss/ir-core";
 
 /**
@@ -41,10 +41,36 @@ const VERB_ATTRIBUTE_NAMES: Record<string, string> = {
   options: "OPTIONS",
 };
 
+/**
+ * The part of the request each of FastAPI's parameter functions reads.
+ * A header parameter's `_` is a `-` on the wire, since FastAPI converts
+ * the name unless the call gives one of its own.
+ */
+const PARAMETER_SOURCES: Record<string, ParameterSource> = {
+  Header: { role: "headers", underscoresAs: "-" },
+  Query: { role: "queryParams" },
+  Path: { role: "pathParams" },
+  Body: { role: "requestBody" },
+  Form: { role: "requestBody" },
+  Cookie: { role: "cookies" },
+};
+
+/**
+ * Which part of the request each parameter role is read from. A cookie
+ * has no section of its own, so a read of one is not compared.
+ */
+const REQUEST_SPELLING = {
+  headers: { path: ["headers"], saysWhichField: true },
+  query: { path: ["queryParams"], saysWhichField: true },
+  params: { path: ["pathParams"], saysWhichField: true },
+  body: { path: ["requestBody"], saysWhichField: true },
+};
+
 export function fastapiFramework(options: FastapiPackOptions = {}): PythonPack {
   return {
     name: "fastapi",
     protocol: "http",
+    requestSpelling: REQUEST_SPELLING,
     ...(options.wrapperModules !== undefined
       ? { projectModules: options.wrapperModules }
       : {}),
@@ -58,6 +84,8 @@ export function fastapiFramework(options: FastapiPackOptions = {}): PythonPack {
         // FastAPI resolves both of these itself and calls the handler with
         // the result, so a parameter defaulted to one is never sent.
         injectedParameterCallees: ["Depends", "Security"],
+        parameterSources: PARAMETER_SOURCES,
+        parameterAliasKeyword: "alias",
         // FastAPI returns 200 for a route that declares no status.
         defaultStatusCode: 200,
         responseModelKeyword: "response_model",

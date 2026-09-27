@@ -12,21 +12,23 @@
 import { sourceRefsOf } from "@suss/extractor";
 import { constantOf, literalOf } from "@suss/values";
 
-import { NodeMap, stripDecorators } from "./ast.js";
-import { sourcesOf } from "./facts/resolve.js";
+import { children, field, NodeMap, stripDecorators } from "./ast.js";
+import { askSourceQuestions, sourcesOf } from "./facts/resolve.js";
+import { operandsOf } from "./paths/predicates.js";
+import { bodyStorage } from "./storage.js";
 import {
   evaluatedValue,
   nodeOfResolutionKey,
   resolutionKeyOf,
 } from "./values/evaluator.js";
 
-import type { Effect, ValueRef } from "@suss/behavioral-ir";
+import type { ValueRef } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { RawProvenance, SourceSpelling } from "@suss/extractor";
 import type { SourceLeaf, SourceQuestion } from "@suss/resolution";
 import type { RequestObject } from "./pack.js";
 import type { PyNode } from "./parser.js";
-import type { SlotValue } from "./storage.js";
+import type { EffectSlot, StorageLookup } from "./storage.js";
 
 /** What a place the walk ended at means, for one unit. */
 export interface SourceContext {
@@ -66,9 +68,70 @@ export function guardInputs(
   return found;
 }
 
-/** One slot of one effect, and the value the call passes for it. */
-export interface EffectSlot extends SlotValue {
-  effect: Effect;
+/**
+ * Asks both source questions for these functions at once, so each body's
+ * own questions find their keys already asked. DESIGN.md says why a
+ * caller passes only the functions that become units.
+ */
+export function askFileSources(
+  functions: readonly PyNode[],
+  facts: Database,
+  lookup: StorageLookup | undefined,
+): void {
+  const operands = functions.flatMap(guardSubjectsIn);
+  const values =
+    lookup === undefined
+      ? []
+      : functions.flatMap((fn) =>
+          bodyStorage(fn, lookup).slots.map((one) => one.value),
+        );
+  askSourceQuestions(facts, keysOf(operands, facts), "wantedInputRead");
+  askSourceQuestions(facts, keysOf(values, facts), "wantedSource");
+}
+
+/** The statements whose `condition` a body's paths branch on. */
+const BRANCHING = new Set(["if_statement", "elif_clause", "while_statement"]);
+
+/** The subjects of every branch condition written in a function, nested ones included. */
+function guardSubjectsIn(fn: PyNode): PyNode[] {
+  const found: PyNode[] = [];
+  const visit = (node: PyNode): void => {
+    const condition = BRANCHING.has(node.type)
+      ? field(node, "condition")
+      : null;
+    if (condition !== null) {
+      found.push(...conditionSubjects(condition));
+    }
+    for (const child of children(node)) {
+      visit(child);
+    }
+  };
+  visit(fn);
+  return found;
+}
+
+/** `a and not b` branches on `a` and on `b`, each on its own path. */
+function conditionSubjects(condition: PyNode): PyNode[] {
+  if (condition.type !== "boolean_operator") {
+    return operandsOf(condition);
+  }
+  const left = field(condition, "left");
+  const right = field(condition, "right");
+  return [
+    ...(left === null ? [] : conditionSubjects(left)),
+    ...(right === null ? [] : conditionSubjects(right)),
+  ];
+}
+
+function keysOf(nodes: readonly PyNode[], facts: Database): string[] {
+  const keys = new Set<string>();
+  for (const node of nodes) {
+    const key = resolutionKeyOf(node, facts);
+    if (key !== null) {
+      keys.add(key);
+    }
+  }
+  return [...keys];
 }
 
 /** Where each slot's value came from, as the entries a branch records. */

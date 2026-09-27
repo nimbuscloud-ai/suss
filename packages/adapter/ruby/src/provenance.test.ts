@@ -135,6 +135,27 @@ describe("where a Rails action's values came from", () => {
     });
   });
 
+  it("writes a converted value as converted from the request", async () => {
+    write("app/controllers/orders_controller.rb", [
+      "class OrdersController < ApplicationController",
+      "  def index",
+      "    Order.where(id: params[:id].to_i, tenant_id: Integer(params[:tenant_id]))",
+      "  end",
+      "end",
+      "",
+    ]);
+
+    const converted = (method: string, key: string) => ({
+      type: "derived",
+      derivation: { type: "methodCall", method, args: [] },
+      from: { type: "input", inputRef: "params", path: [key] },
+    });
+    expect(sourcesIn(await actionNamed("index"))).toEqual({
+      "selector id": [converted("to_i", "id")],
+      "selector tenant_id": [converted("Integer", "tenant_id")],
+    });
+  });
+
   it("writes a guard on params as a read of the request", async () => {
     write("app/controllers/orders_controller.rb", [
       "class OrdersController < ApplicationController",
