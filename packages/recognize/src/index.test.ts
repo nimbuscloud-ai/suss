@@ -596,6 +596,48 @@ describe("a chain about the command a call was handed", () => {
   });
 });
 
+describe("the receivers a chain says it will ask about", () => {
+  /** What the chain announced at one `get` call, as the methods it names. */
+  function announcedAt(chain: ReturnType<typeof store>) {
+    const announced: string[][] = [];
+    const ops = callOps({ method: "get", args: ["a"], from: ["tapedeck"] });
+    Object.assign(ops, {
+      readingReceivers: (methods: ReadonlySet<string>) => {
+        announced.push([...methods]);
+      },
+    });
+    run(chain, ops);
+    return announced;
+  }
+
+  it("says which methods it asks about for a client made from a module", () => {
+    const made = storageCalls({
+      system: "cassette",
+      client: constructedFrom("tapedeck"),
+    }).methods({ get: { kind: "read" }, put: { kind: "write" } });
+
+    expect(announcedAt(made)).toEqual([["get", "put"]]);
+  });
+
+  it("says nothing for a table that ignores case", () => {
+    const anyCase = storageCalls({
+      system: "cassette",
+      client: constructedFrom("tapedeck"),
+    }).methods({ get: { kind: "read" } }, { ignoringCase: true });
+
+    expect(announcedAt(anyCase)).toEqual([]);
+  });
+
+  it("says nothing for a client pinned down by where its method is declared", () => {
+    const declared = storageCalls({
+      system: "cassette",
+      client: declaredBy("tapedeck"),
+    }).methods({ get: { kind: "read" } });
+
+    expect(announcedAt(declared)).toEqual([]);
+  });
+});
+
 describe("a chain read back up its receivers", () => {
   const side = callOps({ method: "side", args: ["a"] });
   const track = callOps({ method: "track", args: ["1"], receiver: side });

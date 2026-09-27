@@ -10,6 +10,7 @@
 export type {
   AstCapableOps,
   CallOps,
+  ClassOps,
   ConstructedFrom,
   DeclaredBy,
   OpsCarrier,

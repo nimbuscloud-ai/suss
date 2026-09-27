@@ -1521,6 +1521,7 @@ function emitConstructorFacts(
     return;
   }
   emitParameters(db, table, classId, implementation.getParameters());
+  emitParameterDecorators(db, table, implementation.getParameters());
 
   const body = implementation.getBody();
   if (body === undefined) {
@@ -1554,6 +1555,32 @@ function emitParameters(
     const fallback = parameter.getInitializer();
     if (fallback !== undefined) {
       fact(db, "paramDefault", parameterId, emitValue(db, table, fallback));
+    }
+  }
+}
+
+/**
+ * A container can fill a constructor parameter from the call written as
+ * its decorator, `@InjectRepository(User) repo`, and a pack word says
+ * which decorators do. The call is emitted as a value so the rule can
+ * see where its callee was imported from.
+ */
+function emitParameterDecorators(
+  db: Database,
+  table: NodeTable,
+  parameters: ParameterDeclaration[],
+): void {
+  for (const parameter of parameters) {
+    for (const decorator of parameter.getDecorators()) {
+      const written = decorator.getExpression();
+      if (Node.isCallExpression(written)) {
+        fact(
+          db,
+          "decoratedWith",
+          nodeId(parameter),
+          emitValue(db, table, written),
+        );
+      }
     }
   }
 }

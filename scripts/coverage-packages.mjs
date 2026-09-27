@@ -51,6 +51,7 @@ export const coveragePackages = [
   ["packages/framework/vitest", "vitest"],
   ["packages/framework/drizzle", "drizzle"],
   ["packages/framework/mongoose", "mongoose"],
+  ["packages/framework/typeorm", "typeorm"],
   ["packages/sql", "sql"],
   ["packages/contract/terraform", "contract-terraform"],
   ["packages/terraform/aws", "terraform-aws"],

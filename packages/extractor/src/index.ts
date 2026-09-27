@@ -120,6 +120,7 @@ export type {
   InputMappingPattern,
   InvocationRecognizer,
   PackDeclarations,
+  ParameterSupplier,
   PatternPack,
   ResponsePropertyMapping,
   ResponsePropertyMeaning,
@@ -1078,6 +1079,7 @@ export type {
 export type {
   AstCapableOps,
   CallOps,
+  ClassOps,
   ConstructedFrom,
   DeclaredBy,
   OpsCarrier,

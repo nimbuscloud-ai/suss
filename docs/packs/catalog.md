@@ -11,7 +11,7 @@ Every pack ships inside the CLI, so there is one install and nothing else to add
 npm install --save-dev @suss/cli
 ```
 
-Fifty packs read code today, across forty-one frameworks, eight HTTP and GraphQL clients, and the Node runtime. Ten contract readers turn a declared artifact into summaries in the same format. `@suss/contract-intent` reads the intent documents your team writes, separately from all of those.
+Fifty-one packs read code today, across forty-two frameworks, eight HTTP and GraphQL clients, and the Node runtime. Ten contract readers turn a declared artifact into summaries in the same format. `@suss/contract-intent` reads the intent documents your team writes, separately from all of those.
 
 Most of that is TypeScript and JavaScript. Four of the packs read another language: flask-restx and FastAPI read Python through `@suss/adapter-python`, and graphql-ruby and rails read Ruby through `@suss/adapter-ruby`. `suss extract` runs those two adapters as well, and the [Python and Ruby guide](/guides/python-and-ruby) shows how.
 
@@ -39,6 +39,7 @@ The first column of every table below is the name `-f` takes, and `-f` is repeat
 | Postgres through Prisma | add `-f prisma`, and `contract --from prisma` |
 | Postgres through Drizzle | add `-f drizzle` |
 | MongoDB through Mongoose | add `-f mongoose` |
+| NestJS with TypeORM repositories | add `-f typeorm` |
 
 ## Frameworks
 
@@ -119,6 +120,7 @@ An effects pack reads the calls inside a unit another pack discovered: a query, 
 | [`redis`](../../packages/framework/redis) | Redis, Valkey and node-redis commands. Each one becomes a storage-access interaction. | ![](../../.github/badges/coverage-redis.svg) |
 | [`sqlalchemy`](../../packages/framework/sqlalchemy) | SQLAlchemy calls (Python). The pack declares which types a query returns and which methods write. The adapter matches a call chain by following a project's own base class to the method behind the call, and reads that method's declared return type. | ![](../../.github/badges/coverage-sqlalchemy.svg) |
 | [`sqlmodel`](../../packages/framework/sqlmodel) | SQLModel calls (Python). The pack declares which types a query returns and which methods write, under the modules SQLModel exports them from. It also includes the SQLAlchemy patterns, since a SQLModel project reaches those too. | ![](../../.github/badges/coverage-sqlmodel.svg) |
+| [`typeorm`](../../packages/framework/typeorm) | TypeORM repositories that NestJS injects with `@InjectRepository`. Each read and write becomes a storage-access interaction on the entity's table, and a `query` on an injected data source or entity manager is read as SQL. | ![](../../.github/badges/coverage-typeorm.svg) |
 | [`zustand`](../../packages/framework/zustand) | zustand stores: `setState` writes and `getState` reads against the store as a client-side container. | ![](../../.github/badges/coverage-zustand.svg) |
 
 <!-- end effects -->

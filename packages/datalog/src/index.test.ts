@@ -1349,7 +1349,9 @@ describe("evaluate: the rules a round runs", () => {
       "cut <- node, !reach: 2 attempts, 17 rows, 10 derived",
       "cutEdge <- cut, edge: 4 attempts, 38 rows, 9 derived",
       "cutEdge <- cutEdge, cutEdge: 6 attempts, 115 rows, 8 derived",
-      "idle <- quiet, node: 2 attempts, 14 rows, 1 derived",
+      // One `quiet` row is read before the new `node` facts, which costs
+      // indexing them, a row more than reading them first would.
+      "idle <- quiet, node: 2 attempts, 15 rows, 1 derived",
       "loose <- cut, !mark: 4 attempts, 20 rows, 7 derived",
       "node <- edge: 4 attempts, 28 rows, 17 derived",
       "reach <- reach, edge: 7 attempts, 16 rows, 5 derived",
@@ -1385,5 +1387,45 @@ describe("evaluate: the rules a round runs", () => {
     ]);
     expect(rounds).toBe(7);
     expect(sorted(db.facts("pair"))).toEqual(["a,b", "b,c", "c,d", "d,a"]);
+  });
+
+  // Three rules read the same forty new `seen` facts, and each has a
+  // literal with one row. The first indexes the new facts, and all three
+  // read their one row and look up the fact it matches.
+  const SHARED = ["one", "two", "three"].map((small) =>
+    rule(`${small}Seen`, [V("x")], [lit("seen", V("x")), lit(small, V("x"))]),
+  );
+  const FORTY = Array.from(
+    { length: 40 },
+    (_, at) => ["seen", [`n${at}`]] as [string, readonly string[]],
+  );
+
+  it("reads a literal much smaller than a round's new facts before them", () => {
+    const { db, cost } = inWaves(SHARED, [
+      [
+        ["one", ["n1"]],
+        ["two", ["n2"]],
+        ["three", ["n3"]],
+      ],
+      FORTY,
+    ]);
+
+    expect(cost).toEqual([
+      "oneSeen <- seen, one: 1 attempts, 42 rows, 1 derived",
+      "threeSeen <- seen, three: 1 attempts, 2 rows, 1 derived",
+      "twoSeen <- seen, two: 1 attempts, 2 rows, 1 derived",
+    ]);
+    expect(db.facts("twoSeen")).toEqual([["n2"]]);
+  });
+
+  it("reads the new facts first when no literal has half as many rows", () => {
+    const halfAsMany = FORTY.slice(0, 20).map(
+      ([, tuple]) => ["one", tuple] as [string, readonly string[]],
+    );
+    const { cost } = inWaves(SHARED.slice(0, 1), [halfAsMany, FORTY]);
+
+    expect(cost).toEqual([
+      "oneSeen <- seen, one: 1 attempts, 60 rows, 20 derived",
+    ]);
   });
 });

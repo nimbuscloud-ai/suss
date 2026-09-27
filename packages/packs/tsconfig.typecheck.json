@@ -138,6 +138,9 @@
       "path": "../framework/ts-rest/tsconfig.typecheck.json"
     },
     {
+      "path": "../framework/typeorm/tsconfig.typecheck.json"
+    },
+    {
       "path": "../manifest/aws/tsconfig.typecheck.json"
     },
     {

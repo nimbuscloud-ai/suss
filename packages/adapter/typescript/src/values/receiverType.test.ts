@@ -115,7 +115,21 @@ describe("receiverTypesOf through the checker", () => {
     expect(typesOf(source)).toContainEqual({
       name: "Database",
       declaredIn: ["/probe.ts"],
+      extendsWritten: [],
     });
+  });
+
+  it("gives the base a project class is written as extending", () => {
+    const source = `
+      import { Client } from "not-installed";
+      class Database extends Client {}
+      declare const db: Database;
+      db.select();
+    `;
+    const database = typesOf(source).find((type) => type.name === "Database");
+    expect(database?.extendsWritten.map((base) => base.getText())).toEqual([
+      "Client",
+    ]);
   });
 });
 
@@ -126,7 +140,9 @@ describe("receiverTypesOf without the library's declarations", () => {
       declare const env: Env;
       env.ORDERS.select();
     `;
-    expect(typesOf(source)).toEqual([{ name: "OrderStore", declaredIn: [] }]);
+    expect(typesOf(source)).toEqual([
+      { name: "OrderStore", declaredIn: [], extendsWritten: [] },
+    ]);
   });
 
   it("reads through a written union, intersection and local alias", () => {

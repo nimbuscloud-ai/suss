@@ -276,6 +276,30 @@ const arbFacts: fc.Arbitrary<Array<[string, Tuple]>> = fc.array(
   { minLength: 1, maxLength: 12 },
 );
 
+/**
+ * Many edges over six nodes and at most two flags, so a join often has a
+ * literal with far fewer rows than a round's new facts and reads it
+ * first. The rules' constants still come from the first three nodes.
+ */
+const WIDE = ["a", "b", "c", "d", "e", "f"] as const;
+
+const arbSkewedFacts: fc.Arbitrary<Array<[string, Tuple]>> = fc
+  .tuple(
+    fc.array(
+      fc
+        .tuple(fc.constantFrom(...WIDE), fc.constantFrom(...WIDE))
+        .map(([from, to]) => ["edge", [from, to]] as [string, Tuple]),
+      { minLength: 6, maxLength: 30 },
+    ),
+    fc.array(
+      fc
+        .constantFrom(...WIDE)
+        .map((node) => ["flag", [node]] as [string, Tuple]),
+      { minLength: 1, maxLength: 2 },
+    ),
+  )
+  .map(([edges, flags]) => [...flags, ...edges]);
+
 /** Every derived relation's contents, sorted, so two runs can be compared. */
 function model(db: Database): Record<string, string[]> {
   const out: Record<string, string[]> = {};
@@ -359,6 +383,35 @@ describe("evaluate holds up under random rule sets", () => {
           }
 
           expect(model(incremental)).toEqual(naiveModel(facts, rules));
+        },
+      ),
+      { numRuns: 300, seed: PROPERTY_SEED },
+    );
+  });
+
+  it("derives the same when a round's new facts far outnumber another literal's rows", () => {
+    fc.assert(
+      fc.property(
+        fc.oneof(arbRules, arbConstantRules),
+        arbSkewedFacts,
+        fc.integer({ min: 1, max: 4 }),
+        (rules, facts, batches) => {
+          const incremental = new Database();
+          const perBatch = Math.ceil(facts.length / batches);
+          for (let start = 0; start < facts.length; start += perBatch) {
+            for (const [relation, tuple] of facts.slice(
+              start,
+              start + perBatch,
+            )) {
+              incremental.add(relation, tuple);
+            }
+            evaluate(incremental, rules);
+          }
+
+          expect(model(incremental)).toEqual(naiveModel(facts, rules));
+          expect(model(evaluatedInOneGo(facts, rules))).toEqual(
+            naiveModel(facts, rules),
+          );
         },
       ),
       { numRuns: 300, seed: PROPERTY_SEED },
