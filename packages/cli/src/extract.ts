@@ -921,13 +921,16 @@ async function runTypeScript(
     });
     return { adapter, reports };
   };
+  // Only a project made from a tsconfig can be refreshed, so an adapter
+  // reading a bare directory is made again each run.
+  const kept = source.kind === "tsconfig" ? options.kept : undefined;
   // Everything that changes what the adapter was built from goes in the
   // key. A pack's version stamp covers its code, its config and its stubs.
   const { adapter, reports } =
-    options.kept === undefined
+    kept === undefined || source.kind !== "tsconfig"
       ? make()
-      : options.kept.keep(
-          `typescript ${source.kind === "tsconfig" ? source.path : source.root}`,
+      : kept.keep(
+          `typescript ${source.path}`,
           JSON.stringify({
             runRoot,
             packs: packs.map((pack) => [pack.name, pack.version]),
@@ -936,11 +939,11 @@ async function runTypeScript(
             noCache: options.noCache === true,
           }),
           make,
-          ({ adapter: kept }) => kept.loadProgram(),
+          ({ adapter: held }) => held.loadProgram(),
         );
   clearReports(reports);
-  if (options.kept !== undefined) {
-    adapter.refresh(options.kept.changedPaths());
+  if (kept !== undefined) {
+    adapter.refresh(kept.changedPaths());
   }
 
   const namedFiles = options.files ?? [];

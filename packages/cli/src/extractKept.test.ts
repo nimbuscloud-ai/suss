@@ -78,6 +78,25 @@ describe("extract with kept adapters", () => {
     expect(JSON.stringify(routes(kept2))).toContain("/invoices");
   }, 60_000);
 
+  it("reads a directory with no tsconfig afresh each run, so an edit shows", async () => {
+    const root = expressProject();
+    fs.rmSync(path.join(root, "tsconfig.json"));
+    const kept = new KeptAdapters();
+    const run = () =>
+      extract({
+        dir: root,
+        frameworks: ["express"],
+        output: path.join(root, "out.json"),
+        kept,
+      });
+
+    await run();
+    writeRoute(root, "/invoices");
+    const after = await run();
+
+    expect(JSON.stringify(routes(after))).toContain("/invoices");
+  }, 60_000);
+
   it("keeps a Python read's parses and parses ahead after a run", async () => {
     const root = tempDir("suss-kept-py-");
     fs.cpSync(path.join(pythonFixture, "myapp"), path.join(root, "myapp"), {
