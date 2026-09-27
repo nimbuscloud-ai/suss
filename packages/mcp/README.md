@@ -98,8 +98,9 @@ program of its own. When no server is up, or it does not serve a
 command, the hooks run the CLI.
 
 Writes under `node_modules`, `dist`, `.git`, `coverage`, `.next`,
-`.turbo`, and `build` are ignored. A watcher that rebuilt on those would
-never stop rebuilding.
+`.turbo`, `build`, and `.suss` are ignored. A watcher that rebuilt on
+those would never stop rebuilding, since a build writes its own cache
+under `.suss`.
 
 ## Mounting it yourself
 

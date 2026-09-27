@@ -172,6 +172,7 @@ interface Transition {
   isDefault: boolean;
   confidence?: ConfidenceInfo;
   expectedInput?: TypeShape;
+  provenance?: ProvenanceEntry[];
   metadata?: Record<string, unknown>;
 }
 ```
@@ -200,6 +201,7 @@ One transition records that when all of these conditions hold, this output comes
 ```
 
   The client reads `body.name` and `body.email`, so a provider `200` without `email` is a mismatch. The field is absent on provider transitions, and on client transitions where the field tracking could not resolve the accesses.
+- **`provenance`** says where the value in each column an effect writes, or picks rows by, came from: a path off one of the unit's inputs, a literal, or the place suss stopped following it. Each entry is `{ at, from }`, where `at` gives the effect's position in `effects` and the column, and `from` is a list of `ValueRef`s. It is absent when no effect of the transition has such a column. [Where a value came from](/reference/summary-format#where-a-value-came-from) has an example.
 
 ### `Predicate`
 

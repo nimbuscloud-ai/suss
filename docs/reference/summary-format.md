@@ -20,7 +20,7 @@ A summary file is a JSON array of objects, one per code unit:
 | Field | Type | What it is |
 |---|---|---|
 | `schemaVersion` | number, optional | The format version. Absent means 1. |
-| `kind` | `CodeUnitKind` | What sort of unit this is: a handler, a client, a component, and eleven more. |
+| `kind` | `CodeUnitKind` | What sort of unit this is: a handler, a client, a component, and twelve more. |
 | `location` | `SourceLocation` | File, line range, character span, export name, workspace, and the module when `suss.json` lists modules. |
 | `identity` | `CodeUnitIdentity` | The name, the export path, the boundary binding, the deployed unit. |
 | `inputs` | `Input[]` | How values reach the unit, one per parameter, injection, hook return or closure. |
@@ -228,7 +228,7 @@ The format is stable enough to build on. These are the guarantees:
 
 - **The parsers read every version ever published.** `parseSummaries` normalizes an older artifact on the way in, so a file written by any released version reads back as the current shape. Nobody rewrites published JSON.
 - **A breaking change bumps the major version** of `@suss/behavioral-ir` and comes with a migration note in the [changelog](/reference/changelog).
-- **Adding an interaction class, a code unit kind or a semantics variant is additive.** A tool that dispatches on `class`, `kind` or `semantics.name` needs a default branch, and it never gets a new required field on a shape it already reads.
+- **Adding an interaction class, a code unit kind, an output type or a semantics variant is additive.** A tool that dispatches on `class`, `kind`, an output's `type` or `semantics.name` needs a default branch, and it never gets a new required field on a shape it already reads.
 - **Transition ids survive reordering and reformatting.** They are computed from the condition chain's source text, with source offsets left out, so a diff across two points in time matches by id.
 - **A null identity field means the source did not say.** It never means the empty string, which is invalid from version 2 on.
 - **The JSON is the canonical artifact.** The text `suss inspect` prints is written for people to read, and it changes with the CLI, so build your tool on the JSON. [Format stability](/reference/cli/inspect#format-stability) lists the parts of the text that do stay put.

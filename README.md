@@ -48,13 +48,18 @@ The same summaries are available to a coding agent over MCP, so it can ask what 
 `inspect --diff` compares two summary files. Run it on the base and the head of a pull request and it reports what the change did to each unit, whichever lines the diff touched:
 
 ```
-handler:GET /users/{id}
-  hono handler
-  3 changes
-    + 200 { id, status }  when  findUser() && findUser().deletedAt
-    - 410 { error }  when  findUser() && findUser().deletedAt
-    ~ 200 { id, name, email }  (default)
-      -> 200 { id, name }  (default)
+1 boundary changed: 3 outcomes.
+
+~ serves GET /users/{id}  src/routes/users.ts::get  (3 outcomes)
+  outcomes
+    + responds 200 { id, status }  when  findUser() && findUser().deletedAt
+    - responds 410 { error }  when  findUser() && findUser().deletedAt
+    ~ responds 200 { id, name, -email }  otherwise
+
+Changes by file
+
+src/routes/users.ts
+  ~ get
 ```
 
 A deleted account used to get a `410` and now gets a `200` with `status: "deleted"`, and `email` is no longer in the response. Both versions compile and the types still line up. Every caller that treats a `200` as a usable account is now wrong. On a large pull request, read this output first.
