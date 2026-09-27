@@ -103,7 +103,17 @@ So code with many nodes to ask about asks about them together, through `askWritt
 
 ### Where a local goes
 
-`usesOf` in `facts/resolve.ts` asks the shared `passedOn` rules whether a local leaves its method, the question the Python and TypeScript router readers ask before recording a mount on an app a function builds. No Ruby reader records such a mount, since a Rails `mount` is drawn on a constant's route set. The facts are stated anyway, so a Rack or Sinatra pack can ask the same question. Beyond the facts every value gets, the adapter states a block's last expression as what the block returns, `yield x` as `yieldsValue`, the branches of `c ? a : b`, of an `if` or `unless` used as a value and of `c && a` as `conditionalBranch`, `h[k] = x`, `apps << x` and a hash entry under a computed key as `holdsUnderKey`, and a write to a global, a class variable or a setter no store collects as an unplaced `storesProperty`. A lambda's parameter default, `case` and `begin` used as values, and `foo(&app)` have no fact yet.
+`usesOf` in `facts/resolve.ts` asks the shared `passedOn` rules whether a local leaves its method. The Python and TypeScript readers ask it before recording a route or a mount on an app a function builds. No Ruby reader records either on a local: Rails draws routes and `mount` on a constant's route set, and a controller action or a GraphQL field is read off its class. The facts are stated anyway, so a Rack or Sinatra pack can ask the same question.
+
+Beyond the facts every value gets, the adapter states:
+
+- a block's last expression as what the block returns, and `yield x` as `yieldsValue`
+- the branches of `c ? a : b`, of `c && a`, and of an `if`, `unless`, `case`, `case ... in` or `begin` used as a value as `conditionalBranch`, with the last expression of each `rescue` clause as one more branch
+- `h[k] = x`, `apps << x`, a hash entry under a computed key and `foo(&x)` as `holdsUnderKey`
+- a lambda's or a block's parameter default as `paramDefault`
+- a write to a global, a class variable or a setter no store collects as an unplaced `storesProperty`
+
+Ruby runs `app.x` as a method call, even with no parentheses, so reading a part of an app counts as calling the method `x` on it. For a dropped app, `serve(app.to_app)` therefore keeps a mount or route only because `to_app` is not a method the pack registers with, and not because the part was passed on. A pack that registered with a method returning part of the app would have the app counted as staying put, and would need the method's result followed the way the TypeScript adapter follows one.
 
 ## Which scope a name belongs to
 

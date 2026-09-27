@@ -87,6 +87,42 @@ describe("where a Ruby local goes", () => {
     ["returns it after &&", ["ready && app"]],
     ["returns it as a fallback", ["holder || app"]],
     ["calls it", ["app.call(holder)", "nil"]],
+    ["gives it to a lambda as a default", ["->(a = app) { a }"]],
+    ["gives it to a block as a default", ["foo { |a = app| a }", "nil"]],
+    [
+      "returns it from a case",
+      ["case holder", "when 1 then app", "else nil", "end"],
+    ],
+    [
+      "returns it from a case's else",
+      ["case holder", "when 1 then nil", "else app", "end"],
+    ],
+    [
+      "returns it from a pattern match",
+      ["case holder", "in Integer then app", "end"],
+    ],
+    ["returns it from a begin", ["begin", "  app", "end"]],
+    [
+      "returns it from a begin's rescue",
+      ["begin", "  nil", "rescue StandardError", "  app", "end"],
+    ],
+    [
+      "returns it from a begin's else",
+      [
+        "begin",
+        "  nil",
+        "rescue StandardError",
+        "  nil",
+        "else",
+        "  app",
+        "end",
+      ],
+    ],
+    [
+      "returns it from the method's rescue",
+      ["nil", "rescue StandardError", "app"],
+    ],
+    ["hands it to a call as its block", ["foo(&app)", "nil"]],
   ])("is passed on when the method %s", async (_, body) => {
     expect((await usesOfApp(body)).passedOn).toBe(true);
   });

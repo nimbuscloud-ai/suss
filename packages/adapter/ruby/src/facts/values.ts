@@ -980,6 +980,39 @@ function emitExpressionFact(
   if (type === "binary" && field(child, "operator")?.text === APPEND) {
     emitAppend(emitter, child);
   }
+  if (type === "block_argument") {
+    emitBlockArgument(emitter, child);
+  }
+  if (type === "optional_parameter") {
+    emitParameterDefault(emitter, child);
+  }
+}
+
+/** `foo(&app)` hands `app` to the call as its block. */
+function emitBlockArgument(emitter: Emitter, argument: RbNode): void {
+  const [handed] = children(argument);
+  if (handed !== undefined) {
+    add(
+      emitter,
+      "holdsUnderKey",
+      nodeId(emitter.filePath, argument),
+      valueKey(emitter, handed, argument),
+    );
+  }
+}
+
+/** `|a = app|` or `->(a = app)`: the parameter takes `app` when nothing is passed. */
+function emitParameterDefault(emitter: Emitter, param: RbNode): void {
+  const name = field(param, "name");
+  const value = field(param, "value");
+  if (name !== null && value !== null) {
+    add(
+      emitter,
+      "paramDefault",
+      valueKey(emitter, name, param),
+      valueKey(emitter, value, param),
+    );
+  }
 }
 
 /** Ruby's append, `apps << app`, which Array, Set and IO all define. */
@@ -1030,7 +1063,39 @@ const BRANCHES_OF: Partial<Record<string, (node: RbNode) => RbNode[]>> = {
   if_modifier: modifierBranch,
   unless_modifier: modifierBranch,
   binary: andBranch,
+  case: caseBranches,
+  case_match: caseBranches,
+  begin: beginBranches,
+  rescue: (node) => lastOf(field(node, "body")),
 };
+
+/** The clauses of a `case`, whose last expressions are the values it can take. */
+const CASE_CLAUSES = new Set(["when", "in_clause"]);
+
+function caseBranches(node: RbNode): RbNode[] {
+  return children(node).flatMap((clause) => {
+    if (CASE_CLAUSES.has(clause.type)) {
+      return lastOf(field(clause, "body"));
+    }
+    return clause.type === "else" ? lastOf(clause) : [];
+  });
+}
+
+/** The clauses of a `begin` that are not its own statements. */
+const BEGIN_CLAUSES = new Set(["rescue", "else", "ensure"]);
+
+/** A `begin` is its last statement, or its `else` clause's. Each `rescue` states its own. */
+function beginBranches(node: RbNode): RbNode[] {
+  const statements = children(node).filter(
+    (child) => !BEGIN_CLAUSES.has(child.type),
+  );
+  const last = statements[statements.length - 1];
+  const otherwise = children(node).find((child) => child.type === "else");
+  return [
+    ...(last === undefined ? [] : [last]),
+    ...(otherwise === undefined ? [] : lastOf(otherwise)),
+  ];
+}
 
 /** `ready && app` is `app` whenever `ready` is true. */
 function andBranch(node: RbNode): RbNode[] {
@@ -1507,6 +1572,15 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
       const paramKey = `${funcKey}#${paramName.text}`;
       add(emitter, "paramOf", funcKey, String(position), paramKey);
       add(emitter, "paramNamed", funcKey, paramName.text, paramKey);
+      // A lambda's default is read where the lambda is written, so it
+      // can name a local of the method around it.
+      const fallback =
+        method.type === LAMBDA_TYPE && param.type === "optional_parameter"
+          ? field(param, "value")
+          : null;
+      if (fallback !== null) {
+        add(emitter, "paramDefault", paramKey, valueKey(emitter, fallback));
+      }
     }
     position += 1;
   }
