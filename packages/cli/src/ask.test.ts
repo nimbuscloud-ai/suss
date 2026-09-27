@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   packageExportBinding,
   restBinding,
+  runtimeConfigBinding,
   storageBinding,
   summaryIdentifier,
 } from "@suss/behavioral-ir";
@@ -1793,6 +1794,71 @@ describe("suss ask what does X reach, when a hop is itself a package export", ()
           boundary: "aws.dynamodb:orders",
           provides: "fn:@demo/orderstore::readRow",
         }),
+      ]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("suss ask what does X reach, when X reads an environment variable", () => {
+  const readsRegion: BehavioralSummary = {
+    kind: "library",
+    location: {
+      file: "src/config.ts",
+      range: { start: 1, end: 4 },
+      exportName: "accountsRegion",
+    },
+    identity: {
+      name: "accountsRegion",
+      exportPath: ["accountsRegion"],
+      boundaryBinding: null,
+      id: "repo::src/config.ts::accountsRegion",
+    },
+    inputs: [],
+    transitions: [
+      {
+        id: "accountsRegion:default",
+        conditions: [],
+        output: { type: "return", value: null },
+        effects: [
+          {
+            type: "interaction",
+            binding: runtimeConfigBinding({
+              recognition: "@suss/runtime-node",
+            }),
+            callee: "process.env.ACCOUNTS_REGION",
+            interaction: {
+              class: "config-read",
+              name: "ACCOUNTS_REGION",
+              defaulted: false,
+            },
+          },
+        ],
+        location: { start: 2, end: 3 },
+        isDefault: true,
+      },
+    ],
+    gaps: [],
+    confidence: { source: "inferred_static", level: "high" },
+  };
+
+  it("prints the read the way the diff does, without the recognizer's package", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-reaches-env-"));
+    fs.writeFileSync(
+      path.join(dir, "code.json"),
+      JSON.stringify([readsRegion]),
+    );
+    try {
+      const { answer: json } = answerQuestion({
+        question: "what does accountsRegion reach",
+        dir,
+        output: path.join(dir, "answer.txt"),
+      });
+      const items = json?.items as Array<{ boundary: string }> | undefined;
+
+      expect(items?.map((item) => item.boundary)).toEqual([
+        "runtime-config ACCOUNTS_REGION",
       ]);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

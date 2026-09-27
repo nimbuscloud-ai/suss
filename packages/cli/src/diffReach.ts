@@ -25,6 +25,7 @@ import {
   boundariesTouchedBy,
   boundarySpelling,
   NO_ACCESS,
+  touchLabel,
 } from "./boundaryReach.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -146,10 +147,7 @@ function reachedFrom(
             continue;
           }
           // Two variables read through one boundary get a line each.
-          const label =
-            touch.detail === undefined
-              ? touch.label
-              : labelWithDetail(touch.binding, touch.detail);
+          const label = touchLabel(touch);
           const key = effectKey(touch.relation, label);
           const access = touch.access ?? NO_ACCESS;
           const already = reached.get(key);

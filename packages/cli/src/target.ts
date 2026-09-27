@@ -29,6 +29,7 @@ import {
   namesBoundaryExactly,
   type Relation,
   type TouchedBoundary,
+  touchLabel,
 } from "./boundaryReach.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -408,12 +409,13 @@ export function collapseTouches(
   const byPair = new Map<string, CollapsedTouch>();
   for (const { summary, touched, through } of touches) {
     const unit = summaryIdentifier(summary);
-    const key = `${touched.label}\u0000${unit}\u0000${touched.callee ?? ""}`;
+    const boundary = touchLabel(touched);
+    const key = `${boundary}\u0000${unit}\u0000${touched.callee ?? ""}`;
     const seen = byPair.get(key);
     if (seen === undefined) {
       const provides = providesKeyOf(summary);
       byPair.set(key, {
-        boundary: touched.label,
+        boundary,
         unit,
         relations: [touched.relation],
         callee: touched.callee,
