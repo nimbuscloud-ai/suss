@@ -150,7 +150,7 @@ Both forms take the same spellings and give the same answer, in text and under `
 
 A long answer stops after ten items and prints how many are left:
 
-<!-- suss:unchecked it runs over summaries of the suss workspace itself, which are built by npm run check:self rather than by a command on this page -->
+<!-- suss:unchecked it runs over summaries of the suss workspace itself, which are built by npm run dogfood rather than by a command on this page -->
 
 ```
 @suss/checker provides 43 boundaries:

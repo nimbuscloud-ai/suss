@@ -27,8 +27,9 @@ concurrency:
 #              reads the tree rather than running it
 #   test       the unit suite, then the badges it writes and the
 #              coverage floor read from them
-#   behaviour  dogfood, the fuzzers, and the acceptance journeys, which
-#              run the CLI over fixtures
+#   behaviour  dogfood and the self check that reads its output, the
+#              fuzzers, and the acceptance journeys, which run the CLI
+#              over fixtures
 #
 # `ci` is the required check. It stays a job of its own, needing the
 # other three, so the name a branch ruleset asks for keeps reporting.
@@ -49,8 +50,9 @@ jobs:
   # so the three jobs skip and ci reports the earlier pass.
   #
   # behaviour is skipped on a narrower condition: refs/behaved/ records
-  # a hash of only what the behaviour job reads, packages and fixtures
-  # and the scripts that drive them. Tests, READMEs and coverage output
+  # a hash of only what the behaviour job reads, packages and fixtures,
+  # the scripts that drive them, and the intent documents the self check
+  # compares against. Tests, READMEs and coverage output
   # are left out. A push that only adds a test or edits a README keeps
   # the same behaviour hash even though the tree changed, so behaviour
   # skips while checks and test still run over the new tree.
@@ -83,8 +85,9 @@ jobs:
         run: |
           HASH=$(
             {
-              git ls-tree -r HEAD -- packages fixtures scripts tools | awk -F'\t' '
+              git ls-tree -r HEAD -- packages fixtures scripts tools intent | awk -F'\t' '
                 $2 ~ /^packages\// && ($2 ~ /\.test\.[^\/]+$/ || $2 ~ /(^|\/)(README|DESIGN)\.md$/ || $2 ~ /(^|\/)coverage\//) { next }
+                $2 == "intent/README.md" { next }
                 { print }
               '
               git ls-tree HEAD -- package.json package-lock.json turbo.json
@@ -177,13 +180,6 @@ jobs:
       - name: Pack wiring
         if: steps.prepare.outputs.docs_only != 'true'
         run: npm run check:packs
-
-      # suss run on suss, through the shipped CLI, against the intent
-      # documents in intent/. It breaks when a change to the checker's
-      # public surface disagrees with what we wrote down about it.
-      - name: Self check
-        if: steps.prepare.outputs.docs_only != 'true'
-        run: npm run check:self
 
       # These read documentation, so they run whatever changed.
       - name: Coverage list completeness
@@ -323,6 +319,13 @@ jobs:
       - name: Dogfood count check
         if: steps.prepare.outputs.docs_only != 'true'
         run: npm run check:dogfood
+
+      # suss checks its own exports against the documents in intent/,
+      # through the shipped CLI, over the summaries the dogfood run
+      # wrote. An intent error fails it.
+      - name: Self check
+        if: steps.prepare.outputs.docs_only != 'true'
+        run: npm run check:self
 
       - name: Save the turbo cache
         if: always()
