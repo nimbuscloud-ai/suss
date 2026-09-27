@@ -27,7 +27,7 @@ import {
 } from "./walk/descent.js";
 
 import type { ArgumentParser, InputRead } from "@suss/extractor";
-import type { CallExpression } from "ts-morph";
+import type { CallExpression, SourceFile } from "ts-morph";
 import type { FunctionRoot } from "./conditions.js";
 import type { ResolutionStore } from "./facts/store.js";
 
@@ -38,17 +38,66 @@ export function flagReads(
   resolution: ResolutionStore | undefined,
   barriers: DescentBarriers = NO_BARRIERS,
 ): InputRead[] {
-  const text = func.getSourceFile().getFullText();
-  const imported = parsers.filter((parser) => text.includes(parser.module));
   if (
-    imported.length === 0 ||
+    parsers.length === 0 ||
     parameterNames.length === 0 ||
     resolution === undefined
   ) {
     return [];
   }
+  const imported = parsers.filter((parser) =>
+    importsParser(func.getSourceFile(), parser),
+  );
+  if (imported.length === 0) {
+    return [];
+  }
+  const modules = [...new Set(imported.map((parser) => parser.module))];
 
-  const reads: InputRead[] = [];
+  // Every callee goes into one question, so a function pays one
+  // derivation however many calls it makes.
+  const calls = namedCallsIn(func, barriers);
+  const origins = resolution.importOriginsOfMany(
+    calls.map((call) => call.getExpression()),
+    modules,
+  );
+  return calls.flatMap((call) => {
+    const parser = parserCalled(origins.get(call.getExpression()), imported);
+    return parser === null
+      ? []
+      : flagsDeclared(call, parser, parameterNames, resolution);
+  });
+}
+
+/**
+ * Whether the file imports the parser itself, or the whole module it
+ * comes from. Most files that import the module take something else
+ * from it, and asking the store about each of their calls costs
+ * seconds on a large project.
+ */
+function importsParser(
+  sourceFile: SourceFile,
+  parser: ArgumentParser,
+): boolean {
+  return sourceFile.getImportDeclarations().some((declaration) => {
+    if (declaration.getModuleSpecifierValue() !== parser.module) {
+      return false;
+    }
+    return (
+      declaration.getDefaultImport() !== undefined ||
+      declaration.getNamespaceImport() !== undefined ||
+      declaration
+        .getNamedImports()
+        .some((named) => named.getName() === parser.name)
+    );
+  });
+}
+
+/** The calls in a body whose callee is a name or a member read. */
+function namedCallsIn(
+  func: FunctionRoot,
+  barriers: DescentBarriers,
+): CallExpression[] {
+  const calls: CallExpression[] = [];
   func.forEachDescendant((node, traversal) => {
     if (barriers.has(node) || startsItsOwnScope(node)) {
       traversal.skip();
@@ -57,31 +106,22 @@ export function flagReads(
     if (!Node.isCallExpression(node)) {
       return;
     }
-    const parser = parserCalled(node, imported, resolution);
-    if (parser !== null) {
-      reads.push(...flagsDeclared(node, parser, parameterNames, resolution));
+    const callee = node.getExpression();
+    if (Node.isIdentifier(callee) || Node.isPropertyAccessExpression(callee)) {
+      calls.push(node);
     }
   });
-  return reads;
+  return calls;
 }
 
 /** The parser a call goes to, by the module export its callee comes from. */
 function parserCalled(
-  call: CallExpression,
+  origins: ReadonlyArray<{ module: string; path: string[] }> | undefined,
   parsers: readonly ArgumentParser[],
-  resolution: ResolutionStore,
 ): ArgumentParser | null {
-  const callee = call.getExpression();
-  if (!Node.isIdentifier(callee) && !Node.isPropertyAccessExpression(callee)) {
-    return null;
-  }
-  const origins = resolution.importOriginsOf(
-    callee,
-    parsers.map((parser) => parser.module),
-  );
   return (
     parsers.find((parser) =>
-      origins.some(
+      (origins ?? []).some(
         (origin) =>
           origin.module === parser.module && origin.path[0] === parser.name,
       ),
