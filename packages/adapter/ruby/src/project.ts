@@ -347,6 +347,7 @@ export async function extractRubyProject(
 
   const db = new Database();
   const summaries: BehavioralSummary[] = [];
+  const gapHandling = options.gapHandling ?? "permissive";
   const tallies = createPackTallies(options.packs);
   // One cache for the run, so a class that is both an input file and the
   // target of a wiring keyword is parsed once.
@@ -500,9 +501,7 @@ export async function extractRubyProject(
         continue;
       }
       const summary = timer.time("summarize", () =>
-        assembleSummary(routingGapUnit(pattern, gaps), {
-          gapHandling: "permissive",
-        }),
+        assembleSummary(routingGapUnit(pattern, gaps), { gapHandling }),
       );
       summary.confidence = { source: "inferred_static", level: "low" };
       found.push({ summary });
@@ -517,6 +516,7 @@ export async function extractRubyProject(
       inheritedMethods,
       bodyBlocks,
       dynamicNames,
+      gapHandling,
     }),
   );
   for (const entry of found) {
@@ -535,7 +535,7 @@ export async function extractRubyProject(
       dropPropertyReads(raw, reached.propertyReadsByKey.get(seedKey));
     }
     const summary = timer.time("summarize", () =>
-      assembleSummary(raw, { gapHandling: "permissive" }),
+      assembleSummary(raw, { gapHandling }),
     );
     // `assembleSummary` scores confidence as if every branch came from
     // tracing the body, which is not true of every unit here.
@@ -551,19 +551,23 @@ export async function extractRubyProject(
 
   for (const [key, owners] of summariesBySeed) {
     for (const summary of owners) {
-      summary.gaps.push(
-        ...(reached.stopsByKey.get(key) ?? []).map(unfollowedCallGap),
-      );
+      if (gapHandling !== "silent") {
+        summary.gaps.push(
+          ...(reached.stopsByKey.get(key) ?? []).map(unfollowedCallGap),
+        );
+      }
       placeCalls(summary, reached.targetsByKey.get(key));
       placeArgTargets(summary, reached.argTargetsByKey.get(key));
       placeCalleeParameters(summary, reached.parameterCallsByKey.get(key));
     }
   }
-  recordParameterGaps(
-    reached.parameterCallsByKey,
-    summariesBySeed,
-    reached.passedPositions,
-  );
+  if (gapHandling !== "silent") {
+    recordParameterGaps(
+      reached.parameterCallsByKey,
+      summariesBySeed,
+      reached.passedPositions,
+    );
+  }
   summaries.push(...reached.summaries);
 
   // Ruby has no import statement, so a file's dependencies are the
@@ -592,9 +596,7 @@ export async function extractRubyProject(
   disambiguateSummaryIds(summaries);
   linkCallsToSummaries(summaries);
   const composed = timer.time("summarize", () =>
-    composeWrappers(summaries, {
-      gapHandling: options.gapHandling ?? "permissive",
-    }),
+    composeWrappers(summaries, { gapHandling }),
   );
 
   await timer.timeAsync("cache.write", async () => {

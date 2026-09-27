@@ -56,7 +56,11 @@ import type {
   ParameterCall,
   UnfollowedCall,
 } from "@suss/behavioral-ir";
-import type { RawCodeStructure, RawParameter } from "@suss/extractor";
+import type {
+  ExtractorOptions,
+  RawCodeStructure,
+  RawParameter,
+} from "@suss/extractor";
 import type { BodyReadOptions } from "../discovery.js";
 import type { RbNode } from "../parser.js";
 import type { ReadableBody } from "../paths/effects.js";
@@ -73,6 +77,8 @@ export interface ReachOptions extends BodyReadOptions {
   readonly context: ReachContext;
   /** Turns an absolute path into the `location.file` or `declaredAt.file` to record, the same way discovered units record theirs. */
   readonly displayPathOf: (file: string) => string;
+  /** How much of what the walk could not follow goes on a summary. Permissive when absent. */
+  readonly gapHandling?: ExtractorOptions["gapHandling"];
 }
 
 /** A discovered unit's method, or a file's program node, keyed the same way as its summary's span. */
@@ -208,6 +214,7 @@ export async function reachedFunctions(
     }
   }
 
+  const gapHandling = options.gapHandling ?? "permissive";
   const summaries: BehavioralSummary[] = [];
   const summariesByKey = new Map<string, BehavioralSummary[]>();
   for (const [keyAtom] of db.facts("reachable")) {
@@ -218,16 +225,20 @@ export async function reachedFunctions(
     }
     const raw = libraryUnit(target, options);
     dropPropertyReads(raw, propertyReadsByKey.get(key));
-    const summary = assembleSummary(raw, { gapHandling: "permissive" });
+    const summary = assembleSummary(raw, { gapHandling });
     summary.confidence = { source: "inferred_static", level: "low" };
-    summary.gaps.push(...(stopsByKey.get(key) ?? []).map(unfollowedCallGap));
+    if (gapHandling !== "silent") {
+      summary.gaps.push(...(stopsByKey.get(key) ?? []).map(unfollowedCallGap));
+    }
     placeCalls(summary, targetsByKey.get(key));
     placeArgTargets(summary, argTargetsByKey.get(key));
     placeCalleeParameters(summary, parameterCallsByKey.get(key));
     summariesByKey.set(key, [summary]);
     summaries.push(summary);
   }
-  recordParameterGaps(parameterCallsByKey, summariesByKey, passedPositions);
+  if (gapHandling !== "silent") {
+    recordParameterGaps(parameterCallsByKey, summariesByKey, passedPositions);
+  }
 
   return {
     summaries,
