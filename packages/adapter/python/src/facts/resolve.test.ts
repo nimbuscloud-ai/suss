@@ -18,6 +18,7 @@ import {
   resolveCalls,
   resolvedFunctions,
   subjectConstructions,
+  writtenValueOf,
   writtenValueUnder,
 } from "./resolve.js";
 import { emitValueFacts } from "./values.js";
@@ -261,6 +262,27 @@ describe("resolving a value across files", () => {
     const before = facts.size("wantedObjectOf");
     resolveCalls(facts, []);
     expect(facts.size("wantedObjectOf")).toBe(before);
+  });
+
+  it("reads what a name is written as without resolving what it calls", async () => {
+    const { facts, dir } = await factsFor({
+      "app.py": [
+        "def run():",
+        "    pass",
+        "",
+        "timeout = 30",
+        "handler = run",
+        "",
+      ].join("\n"),
+    });
+    const app = path.join(dir, "app.py");
+
+    expect(writtenValueOf(facts, `${app}#timeout`)).not.toBeNull();
+    writtenValueOf(facts, `${app}#handler`);
+    expect(facts.facts("wantedResolves")).toEqual([]);
+
+    resolveCalls(facts, [`${app}#handler`]);
+    expect(resolvedFunctions(facts, `${app}#handler`)).toHaveLength(1);
   });
 
   it("reads a returned list back in the order the source writes it", async () => {
