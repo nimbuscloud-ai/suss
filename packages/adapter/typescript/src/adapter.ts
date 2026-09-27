@@ -163,6 +163,7 @@ import { sourceDeclarationsBehind } from "./resolve/sourceDeclaration.js";
 import { unfollowedCallGap } from "./resolve/unfollowedCall.js";
 import { withDefinitions } from "./shapes/definitions.js";
 import { collectClientFieldAccesses } from "./shapes/fieldAccesses.js";
+import { stableTypeText } from "./shapes/typeText.js";
 import {
   createTsSubUnitContext,
   type TsSubUnitContext,
@@ -268,13 +269,13 @@ function componentPropsParameters(
         name: param.getName(),
         position: mapping.paramPosition,
         role: mapping.wholeParamRole ?? "props",
-        typeText: type.getText() || null,
+        typeText: stableTypeText(type, param) || null,
       },
     ];
   }
   return nameNode.getElements().map((element) => {
     const name = element.getName();
-    const typeText = element.getType().getText();
+    const typeText = stableTypeText(element.getType(), element);
     return {
       name,
       position: mapping.paramPosition,

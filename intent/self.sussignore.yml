@@ -46,6 +46,21 @@ rules:
       it, so the cache is on. suss does not follow a call into another
       process.
   - kind: testMissesSubject
+    boundary: "prd:A second run gives the same output as the first"
+    scenario: the cache against no cache
+    effect: mark
+    reason: >-
+      The test runs the built binary in a child process, the way a user runs
+      it, so the cache is on. suss does not follow a call into another
+      process.
+  - kind: testMissesSubject
+    boundary: "prd:A second run gives the same output as the first"
+    scenario: no cache at all
+    effect: mark
+    reason: >-
+      The test runs the built binary in two child processes, so the two runs
+      share nothing. suss does not follow a call into another process.
+  - kind: testMissesSubject
     boundary: "prd:Ask one question, and get an answer or what would let suss answer"
     scenario: an agent asks over MCP
     effect: mark

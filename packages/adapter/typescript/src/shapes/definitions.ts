@@ -14,6 +14,8 @@
 // The lifetime is one synchronous extraction, and a nested one puts the
 // outer table back when it finishes.
 
+import { compareText } from "./typeText.js";
+
 import type { TypeShape } from "@suss/behavioral-ir";
 
 export interface DefinitionTable {
@@ -45,10 +47,14 @@ export function createDefinitionTable(): DefinitionTable {
     define: (key, shape) => {
       shapes.set(key, shape);
     },
+    // Sorted because the walk meets types in the checker's union order,
+    // which changes between runs.
     collected: () => {
       const out: Record<string, TypeShape> = {};
       let any = false;
-      for (const [key, shape] of shapes) {
+      const keys = [...shapes.keys()].sort(compareText);
+      for (const key of keys) {
+        const shape = shapes.get(key) ?? null;
         if (shape !== null) {
           out[key] = shape;
           any = true;

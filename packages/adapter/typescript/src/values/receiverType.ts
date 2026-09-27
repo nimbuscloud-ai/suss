@@ -15,6 +15,7 @@
 
 import { Node } from "ts-morph";
 
+import { compareText } from "../shapes/typeText.js";
 import { peelSyntax } from "../walk/unwrap.js";
 
 import type { Symbol as TsSymbol, Type } from "ts-morph";
@@ -66,10 +67,13 @@ function receiverTypeOf(symbol: TsSymbol): ReceiverType {
 
 /** The types a value of this type is also one of. */
 function typesBehind(type: Type): Type[] {
+  // The checker orders a union by numbers that change between runs, and a
+  // pack that takes the first match would then pick differently.
   if (type.isUnion()) {
     return type
       .getUnionTypes()
-      .filter((member) => !member.isUndefined() && !member.isNull());
+      .filter((member) => !member.isUndefined() && !member.isNull())
+      .sort((a, b) => compareText(memberName(a), memberName(b)));
   }
 
   if (type.isIntersection()) {
@@ -89,6 +93,10 @@ function typesBehind(type: Type): Type[] {
     ...type.getBaseTypes(),
     ...awaitedTypes(type),
   ];
+}
+
+function memberName(type: Type): string {
+  return (type.getAliasSymbol() ?? type.getSymbol())?.getName() ?? "";
 }
 
 /** What a promise of a client resolves to. */

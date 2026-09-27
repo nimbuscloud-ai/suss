@@ -27,6 +27,12 @@ import { createHash } from "node:crypto";
 import { TypeFormatFlags } from "ts-morph";
 
 import { definitionsInProgress } from "./definitions.js";
+import {
+  compareMembers,
+  compareText,
+  stablePropertyName,
+  stableTypeText,
+} from "./typeText.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";
 import type { Node, SourceFile, Symbol as TsSymbol, Type } from "ts-morph";
@@ -275,7 +281,25 @@ function unionToShape(type: Type, ctx: ConvertContext): TypeShape | null {
   if (shapes.length === 0) {
     return { type: "unknown" };
   }
-  return collapseVariants(shapes);
+  return collapseVariants(inMemberOrder(shapes));
+}
+
+/**
+ * The checker lists a union's members in the order it numbered their
+ * types, which changes between runs, so the shapes are sorted instead.
+ */
+function inMemberOrder(shapes: TypeShape[]): TypeShape[] {
+  return shapes
+    .map((shape) => ({ shape, key: memberKey(shape) }))
+    .sort((a, b) => compareMembers(a.key, b.key))
+    .map(({ shape }) => shape);
+}
+
+function memberKey(shape: TypeShape): string {
+  if (shape.type === "null" || shape.type === "undefined") {
+    return shape.type;
+  }
+  return JSON.stringify(shape);
 }
 
 function intersectionToShape(
@@ -354,8 +378,7 @@ function objectToShape(type: Type, ctx: ConvertContext): TypeShape | null {
   }
 
   const properties: Record<string, TypeShape> = {};
-  for (const sym of symbols) {
-    const name = sym.getName();
+  for (const { sym, name } of inStableOrder(symbols, ctx.enclosing)) {
     const propType = propertyTypeOf(sym, ctx.enclosing);
     if (!propType) {
       properties[name] = { type: "unknown" };
@@ -379,6 +402,62 @@ function objectToShape(type: Type, ctx: ConvertContext): TypeShape | null {
   }
 
   return { type: "record", properties };
+}
+
+interface NamedProperty {
+  sym: TsSymbol;
+  name: string;
+  declared: { file: string; start: number } | null;
+}
+
+/**
+ * Properties with their names, in the order they are declared, and by
+ * name after those when they have no declaration. The checker's own order
+ * is not used: `Pick<T, "b" | "a">`, and any spread or rest of one, lists
+ * properties in the order of the key union, which changes between runs.
+ */
+function inStableOrder(symbols: TsSymbol[], reader: Node): NamedProperty[] {
+  return symbols
+    .map((sym) => ({
+      sym,
+      name: stablePropertyName(sym, reader),
+      declared: earliestDeclaration(sym),
+    }))
+    .sort(compareDeclared);
+}
+
+/** The earliest, since merged declarations come in the order files were read. */
+function earliestDeclaration(
+  sym: TsSymbol,
+): { file: string; start: number } | null {
+  let earliest: { file: string; start: number } | null = null;
+  for (const declaration of sym.getDeclarations()) {
+    const at = {
+      file: declaration.getSourceFile().getFilePath(),
+      start: declaration.getStart(),
+    };
+    if (earliest === null || compareAt(at, earliest) < 0) {
+      earliest = at;
+    }
+  }
+  return earliest;
+}
+
+function compareAt(
+  a: { file: string; start: number },
+  b: { file: string; start: number },
+): number {
+  return compareText(a.file, b.file) || a.start - b.start;
+}
+
+function compareDeclared(a: NamedProperty, b: NamedProperty): number {
+  if (a.declared === null || b.declared === null) {
+    return (
+      Number(a.declared === null) - Number(b.declared === null) ||
+      compareText(a.name, b.name)
+    );
+  }
+  return compareAt(a.declared, b.declared) || compareText(a.name, b.name);
 }
 
 function enumToShape(type: Type, ctx: ConvertContext): TypeShape {
@@ -496,7 +575,7 @@ function namedOnce(type: Type, ctx: ConvertContext): TypeShape | null {
     return null;
   }
 
-  const key = definitionKeyFor(type, named.name);
+  const key = definitionKeyFor(type, named.name, ctx.enclosing);
   const filed: TypeShape = { ...named, def: key };
   if (!table.has(key)) {
     // Reserved before expanding, so a type that refers to itself meets
@@ -529,8 +608,8 @@ function namedOnce(type: Type, ctx: ConvertContext): TypeShape | null {
  * way. The name stays on the front so a person reading the table can
  * still tell what they are looking at.
  */
-function definitionKeyFor(type: Type, name: string): string {
-  const written = withoutImportQualifiers(type.getText());
+function definitionKeyFor(type: Type, name: string, reader: Node): string {
+  const written = stableTypeText(type, reader);
   return `${name}@${shortHash(written)}`;
 }
 
@@ -553,10 +632,8 @@ function refFromType(type: Type, ctx: ConvertContext): TypeShape {
   // the name. That text is read without an enclosing node: what
   // `getText` prints for a name depends on what is in scope where you
   // are standing, and the same type reached from two files has to come
-  // out the same. Reading it from nowhere qualifies an imported name
-  // with the absolute path it came from, which is one machine's
-  // result, so that qualifier comes back off.
-  return { type: "ref", name: withoutImportQualifiers(type.getText()) };
+  // out the same.
+  return { type: "ref", name: stableTypeText(type, ctx.enclosing) };
 }
 
 /**
@@ -570,21 +647,9 @@ const PRINTED_NAME_FLAGS =
   TypeFormatFlags.NoTruncation |
   TypeFormatFlags.WriteTypeArgumentsOfSignature;
 
-/**
- * When the enclosing file has no import for a type, the compiler prints it
- * qualified by the absolute path of its module. Two checkouts of the same
- * code would then print different names, so the qualifier is removed.
- */
 function printedTypeName(type: Type, ctx: ConvertContext): string {
-  return withoutImportQualifiers(
-    type.getText(ctx.enclosing, PRINTED_NAME_FLAGS),
-  );
+  return stableTypeText(type, ctx.enclosing, ctx.enclosing, PRINTED_NAME_FLAGS);
 }
-
-const IMPORT_QUALIFIER = /import\("[^"]*"\)\./g;
-
-const withoutImportQualifiers = (text: string): string =>
-  text.replace(IMPORT_QUALIFIER, "");
 
 /** The project file declaring this symbol, or null when nothing in the project does. */
 function declaringFileOf(symbol: TsSymbol): string | null {
