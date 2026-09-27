@@ -220,6 +220,24 @@ export interface DeepImportGraphs {
 /** Well under the depth the checker handles alone, far above a barrel. */
 const WARM_DEPTH = 100;
 
+/**
+ * Hand the load walk the imports an earlier run resolved, so it skips
+ * reading and resolving those files again. Only right for a file whose
+ * content is unchanged, in a project that neither gained nor lost a
+ * file since, because either can change where an import resolves.
+ */
+export function rememberResolvedImports(
+  project: Project,
+  importsByFile: ReadonlyMap<string, readonly string[]>,
+): void {
+  const cache = specifierCacheFor(project);
+  for (const [filePath, imports] of importsByFile) {
+    if (!cache.has(filePath)) {
+      cache.set(filePath, [...imports]);
+    }
+  }
+}
+
 /** Read from the load walk's record, never from the checker. */
 export function importedFilePathsOf(
   project: Project,

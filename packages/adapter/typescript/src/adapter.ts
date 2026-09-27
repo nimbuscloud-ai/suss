@@ -82,9 +82,11 @@ import {
 import {
   createLazyProject,
   type DeepImportGraphs,
+  importedFilePathsOf,
   loadImportGraphsDepthFirst,
   loadImportGraphsDepthFirstFromPaths,
   readTsconfigFileList,
+  rememberResolvedImports,
 } from "./bootstrap/lazyProjectInit.js";
 import { computePackApplicability } from "./bootstrap/preFilter.js";
 import {
@@ -2450,6 +2452,11 @@ export function createTypeScriptAdapter(
 
       const summaries: BehavioralSummary[] = [];
 
+      // A file with the same text, in a project with the same files,
+      // imports what it did last time, so the load walk skips resolving it.
+      if (plan !== null) {
+        rememberResolvedImports(project, plan.resolvedImports);
+      }
       const { sourceFiles, deep } = loadRunFiles(
         project,
         candidatePaths,
@@ -3095,14 +3102,20 @@ function buildCacheAttribution(args: {
       claims: sink.claims,
       meta: { mountPrefixes: Object.fromEntries(sink.mountPrefixes) },
       packs: packNamesByPath.get(rootPath) ?? [],
+      imports: importedFilePathsOf(args.project, rootPath),
     });
   }
 
+  // A reused file's imports are taken from this run, since a file added
+  // or removed elsewhere can change where they resolve.
   if (args.plan !== null) {
     for (const rootPath of args.validRoots) {
       const record = args.plan.roots.get(rootPath);
       if (record !== undefined) {
-        roots.push(record);
+        roots.push({
+          ...record,
+          imports: importedFilePathsOf(args.project, rootPath),
+        });
       }
     }
   }

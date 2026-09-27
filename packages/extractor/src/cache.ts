@@ -59,6 +59,8 @@ export interface RootRecord<Meta = unknown> {
   meta: Meta;
   /** Packs that applied to the file, re-checked on a partial run. */
   packs: string[];
+  /** The files this file imports, in the order the adapter's loader found them. */
+  imports?: string[];
 }
 
 /**
@@ -93,6 +95,8 @@ interface StoredRootMeta<Meta> {
   claims: { key: string; pack: string }[];
   meta: Meta;
   packs: string[];
+  /** Indices into the manifest's depPaths table. */
+  imports?: number[];
 }
 
 /** A unit record with its paths stored as indices into depPaths. */
@@ -168,6 +172,12 @@ export interface PartialPlan<Meta = unknown, UnitData = unknown> {
   /** Paths whose content hash differs, plus paths new to the set. */
   changed: Set<string>;
   removed: Set<string>;
+  /**
+   * The stored import list of every file whose content is unchanged, when
+   * no file joined or left the set, since either can move where an import
+   * resolves. Empty otherwise.
+   */
+  resolvedImports: Map<string, string[]>;
   roots: Map<string, RootRecord<Meta>>;
   validRoots: Set<string>;
   rootsDeclined: number;
@@ -334,6 +344,7 @@ async function buildPlan<Meta, UnitData>(
   const current = new Map(currentStamps.map((f) => [f.path, f]));
 
   const changed = new Set<string>();
+  const added = new Set<string>();
   const removed = new Set<string>();
   for (const p of stored.keys()) {
     if (!current.has(p)) {
@@ -345,6 +356,7 @@ async function buildPlan<Meta, UnitData>(
     const before = stored.get(p);
     if (before === undefined) {
       changed.add(p);
+      added.add(p);
     } else if (!fileStampEquals(before, stamp)) {
       if (before.contentHash === undefined) {
         changed.add(p);
@@ -386,6 +398,7 @@ async function buildPlan<Meta, UnitData>(
       claims: meta.claims,
       meta: meta.meta,
       packs: meta.packs,
+      ...(meta.imports === undefined ? {} : { imports: pathsOf(meta.imports) }),
     });
   });
 
@@ -422,10 +435,20 @@ async function buildPlan<Meta, UnitData>(
     }
   }
 
+  const resolvedImports = new Map<string, string[]>();
+  if (added.size === 0 && removed.size === 0) {
+    for (const [rootPath, record] of roots) {
+      if (record.imports !== undefined && !changed.has(rootPath)) {
+        resolvedImports.set(rootPath, record.imports);
+      }
+    }
+  }
+
   const owners = manifest.owners ?? [];
   return {
     changed,
     removed,
+    resolvedImports,
     roots,
     validRoots,
     rootsDeclined,
@@ -489,6 +512,7 @@ function encodeAttribution<Meta, UnitData>(
     claims: r.claims,
     meta: r.meta,
     packs: r.packs,
+    ...(r.imports === undefined ? {} : { imports: r.imports.map(depIdOf) }),
   }));
   const owners = attribution.owners.map((ownerPaths) =>
     ownerPaths.flatMap((p) => {

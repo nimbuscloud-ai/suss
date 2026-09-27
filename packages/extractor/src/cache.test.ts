@@ -566,6 +566,52 @@ describe("per-file plan", () => {
     expect(plan?.roots.get(path.join(dir, "a.ts"))?.claims).toEqual(claims);
   });
 
+  describe("resolved imports", () => {
+    async function writeImportEntry() {
+      const { cache, input, dir, summaryA, summaryB } =
+        await writeTwoFileEntry();
+      const base = attributionFor(
+        dir,
+        [
+          { summary: summaryA, owners: ["a.ts"] },
+          { summary: summaryB, owners: ["b.ts"] },
+        ],
+        [{ file: "a.ts", deps: ["b.ts"] }, { file: "b.ts" }],
+      );
+      const [rootA, rootB] = base.roots;
+      if (rootA === undefined || rootB === undefined) {
+        throw new Error("expected two roots");
+      }
+      await cache.write(input, [summaryA, summaryB], {
+        ...base,
+        roots: [{ ...rootA, imports: [path.join(dir, "b.ts")] }, rootB],
+      });
+      return { cache, input, dir };
+    }
+
+    it("hands back the imports of every file whose content is unchanged", async () => {
+      const { cache, input, dir } = await writeImportEntry();
+      await fs.writeFile(path.join(dir, "b.ts"), "export const b = 3000;");
+
+      const plan = await cache.plan(input);
+      expect(plan?.resolvedImports).toEqual(
+        new Map([[path.join(dir, "a.ts"), [path.join(dir, "b.ts")]]]),
+      );
+    });
+
+    it("hands back no imports once a file joins the set", async () => {
+      const { cache, input, dir } = await writeImportEntry();
+      const cPath = path.join(dir, "c.ts");
+      await fs.writeFile(cPath, "export const c = 3;");
+
+      const plan = await cache.plan({
+        ...input,
+        files: [...input.files, cPath],
+      });
+      expect(plan?.resolvedImports.size).toBe(0);
+    });
+  });
+
   describe("unit records", () => {
     async function writeUnitEntry() {
       const { cache, input, dir, summaryA, summaryB } =
