@@ -22,6 +22,7 @@ There are two kinds. Boundary intent (`kind: boundary`) says what one boundary s
 | `source` | no | Where the document came from. Defaults to `author`. |
 | `boundary` | yes | Which boundary in the code the document is about. |
 | `transitions` | yes | Every outcome the boundary can produce, at least one. |
+| `always` | no | Effects every outcome has, apart from the ones listed under `except`. |
 
 Nothing else can appear at the top level. Write `transition:` for `transitions:` and suss reports the key and stops. The same goes inside a transition and inside a scenario.
 
@@ -229,6 +230,30 @@ results:
 | `by` | no | What the access picks the item out by. One name or a list of them. |
 
 A `results` line is spelled the same way as the matching `suss ask` question, here `suss ask "what writes aws.dynamodb:Invoices"`. Where a line has a `fields` list, the checker requires that the access cover every column on it.
+
+### `always`
+
+A `results` line says an outcome has an effect, and one transition producing that outcome is enough to satisfy it. `always` says every outcome has the effect. It goes at the top level of the document, next to `transitions`, and the checker requires it of every code transition that produces a declared outcome:
+
+```yaml
+always:
+  - writes: postgresql:audit_log
+    fields: [actor_id, action]
+    except: [not-admin]
+```
+
+| Key | Required | What it means |
+|---|---|---|
+| `reads`, `writes`, `invokes` | one of the three | The boundary, written the same way as on a `results` line. |
+| `fields` | no | The columns the access touches. |
+| `by` | no | What the access picks the item out by. |
+| `except` | no | The ids of the outcomes that do not have to have the effect. |
+
+A throw is an outcome like the others, so a transition that throws needs the effect unless its outcome is listed under `except`. A transition that does not produce any declared outcome is not checked, and the checker reports it as `undeclaredOutcome`. Each transition that lacks the effect is its own [`pathWithoutEffect`](/reference/findings#pathwithouteffect) finding.
+
+An `except` id has to be the id of a transition in the document, and suss stops on one that is not. It also has to be an outcome with a `response`, `returns` or `throws`. An outcome that states only its effects matches every transition, so exempting it would exempt them all.
+
+A change list does not take `always`. It describes one change at a time, and `always` describes the whole boundary.
 
 ## A PRD
 

@@ -92,6 +92,17 @@ The outcome id stays free-form on purpose. A person writes what the outcome mean
 
 Adding `results` changes nothing about `response`, `returns` and `throws`. A doc that states only those parses and pairs the way it always did.
 
+A `results` line is about one outcome, and one transition producing that outcome satisfies it. Some effects belong to the whole boundary: an admin route should write its audit row on every path. `always` is a top-level list of those, in the same verbs, with `except` for the outcome ids that are exempt:
+
+```yaml
+always:
+  - writes: postgresql:audit_log
+    fields: [actor_id, action]
+    except: [not-admin]
+```
+
+It is a key of its own because the claim is about every transition. Writing the same line into each outcome's `results` would still pass when one of two branches producing an outcome skipped the write. The schema checks each `except` id against the transition ids, so a typo stops the load. The change list reuses the `results` schema for its effect entries and does not take `except`, since a change list describes one change and `always` describes the boundary.
+
 ## What a boundary receives
 
 A `receives` block lists the fields of the value the boundary is handed. A function-call boundary writes its arguments by parameter name, and a dot reaches inside one:
