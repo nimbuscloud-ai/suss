@@ -1562,11 +1562,11 @@ export function relativizeSummaryPaths(
   summary: BehavioralSummary,
   projectRoot: string,
 ): void {
-  summary.location.file = path.relative(projectRoot, summary.location.file);
+  summary.location.file = relativeTo(projectRoot, summary.location.file);
   const binding = summary.identity.boundaryBinding;
   if (binding !== null && binding !== undefined) {
     summary.identity.boundaryBinding = withRewrittenPaths(binding, (one) =>
-      path.isAbsolute(one) ? path.relative(projectRoot, one) : one,
+      path.isAbsolute(one) ? relativeTo(projectRoot, one) : one,
     );
   }
   for (const transition of summary.transitions) {
@@ -1579,7 +1579,7 @@ export function relativizeSummaryPaths(
     summary.metadata = {
       ...summary.metadata,
       moduleImports: moduleImports.map((file) =>
-        typeof file === "string" ? path.relative(projectRoot, file) : file,
+        typeof file === "string" ? relativeTo(projectRoot, file) : file,
       ),
     };
   }
@@ -1603,7 +1603,7 @@ function relativizeMockedModules(
       ...test,
       mocks: test.mocks.map((mock) =>
         mock.module !== undefined && path.isAbsolute(mock.module)
-          ? { ...mock, module: path.relative(projectRoot, mock.module) }
+          ? { ...mock, module: relativeTo(projectRoot, mock.module) }
           : mock,
       ),
     },
@@ -1631,7 +1631,7 @@ function relativizeTypeRefs(value: unknown, projectRoot: string): void {
     typeof record.from === "string" &&
     path.isAbsolute(record.from)
   ) {
-    record.from = path.relative(projectRoot, record.from);
+    record.from = relativeTo(projectRoot, record.from);
   }
   for (const child of Object.values(record)) {
     relativizeTypeRefs(child, projectRoot);
@@ -1670,9 +1670,30 @@ function relativizeWrapper(
   return {
     ...wrapper,
     file: path.isAbsolute(wrapper.file)
-      ? path.relative(projectRoot, wrapper.file)
+      ? relativeTo(projectRoot, wrapper.file)
       : wrapper.file,
   };
+}
+
+const relativeByRoot = new Map<string, Map<string, string>>();
+
+/**
+ * `path.relative`, remembered. A large run rewrites the same few
+ * thousand files tens of thousands of times, and each call normalizes
+ * and splits both paths again.
+ */
+function relativeTo(projectRoot: string, file: string): string {
+  let byFile = relativeByRoot.get(projectRoot);
+  if (byFile === undefined) {
+    byFile = new Map();
+    relativeByRoot.set(projectRoot, byFile);
+  }
+  let relative = byFile.get(file);
+  if (relative === undefined) {
+    relative = path.relative(projectRoot, file);
+    byFile.set(file, relative);
+  }
+  return relative;
 }
 
 export function relativizeRenderTargets(
@@ -1690,7 +1711,7 @@ export function relativizeRenderTargets(
     return;
   }
   if (root.target !== undefined) {
-    root.target.file = path.relative(projectRoot, root.target.file);
+    root.target.file = relativeTo(projectRoot, root.target.file);
   }
   for (const child of root.children) {
     relativizeRenderTargets(child, projectRoot);
