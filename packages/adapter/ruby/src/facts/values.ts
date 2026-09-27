@@ -18,6 +18,7 @@ import {
 import {
   bareCallArgumentGroups,
   bodyStatementsRun,
+  children,
   definesClassMethod,
   field,
   INCLUDE_CALL,
@@ -30,6 +31,7 @@ import {
   OWN_BODY_TYPES,
   PREPEND_CALL,
   readCallArgs,
+  runStatements,
   singletonMethodsByName,
 } from "../ast.js";
 import { spellsAName } from "../paths/bareCalls.js";
@@ -74,7 +76,7 @@ function readThrough(node: RbNode): RbNode {
   if (node.type !== "parenthesized_statements") {
     return node;
   }
-  const inner = node.namedChildren.filter((child) => child !== null);
+  const inner = children(node);
   return inner.length === 1 ? readThrough(inner[0] as RbNode) : node;
 }
 
@@ -97,6 +99,8 @@ function nameKey(
 /**
  * The key to ask the rules about when reading this expression. `enclosing`
  * is the method the expression is written in, or null outside one.
+ * `parent` is the node the expression is written in, when the caller has
+ * it, since reading a node's parent off the tree costs a walk from the root.
  *
  * Two kinds of name are keyed on their node instead of on the name. The
  * tree has no node for the `receiver.method` part of a call, so the
@@ -107,20 +111,25 @@ export function readKey(
   filePath: string,
   written: RbNode,
   enclosing: RbNode | null,
+  parent?: RbNode | null,
 ): string {
   const node = readThrough(written);
-  if (node.type !== "identifier" && node.type !== "constant") {
+  const type = node.type;
+  if (type !== "identifier" && type !== "constant") {
     return nodeId(filePath, node);
   }
-  if (isMethodOfReceiver(node) || isBareCall(node, enclosing)) {
+  const above = node === written && parent !== undefined ? parent : node.parent;
+  if (
+    isMethodOfReceiver(node, above) ||
+    (type === "identifier" && bareNameIsCall(node, above, enclosing))
+  ) {
     return nodeId(filePath, node);
   }
   return nameKey(filePath, node, enclosing);
 }
 
 /** Whether this name is the method of a `receiver.method` call. */
-function isMethodOfReceiver(node: RbNode): boolean {
-  const parent = node.parent;
+function isMethodOfReceiver(node: RbNode, parent: RbNode | null): boolean {
   return (
     parent !== null &&
     parent.type === "call" &&
@@ -130,8 +139,7 @@ function isMethodOfReceiver(node: RbNode): boolean {
 }
 
 /** Whether this name is the receiver of a `name.method` call. */
-function isReceiverOfCall(node: RbNode): boolean {
-  const parent = node.parent;
+function isReceiverOfCall(node: RbNode, parent: RbNode | null): boolean {
   return (
     parent !== null &&
     parent.type === "call" &&
@@ -145,10 +153,18 @@ function isReceiverOfCall(node: RbNode): boolean {
  * `connection` is a method, the receiver is a call.
  */
 function isBareCall(node: RbNode, enclosing: RbNode | null): boolean {
-  if (node.type !== "identifier") {
-    return false;
-  }
-  if (spellsAName(node) && !isReceiverOfCall(node)) {
+  return (
+    node.type === "identifier" && bareNameIsCall(node, node.parent, enclosing)
+  );
+}
+
+/** `isBareCall` for an identifier whose parent the caller already has. */
+function bareNameIsCall(
+  node: RbNode,
+  parent: RbNode | null,
+  enclosing: RbNode | null,
+): boolean {
+  if (spellsAName(node, parent) && !isReceiverOfCall(node, parent)) {
     return false;
   }
   return !isLocalName(node, node.text, enclosing);
@@ -179,13 +195,28 @@ const WRITTEN_VALUE_TYPES = new Set([
 /** `%w[a b]` and `%i[a b]` are arrays whose elements are bare words. */
 const ARRAY_TYPES = new Set(["array", "string_array", "symbol_array"]);
 
-/** tree-sitter types a named child as nullable, so the nulls are dropped once here. */
-function children(node: RbNode): RbNode[] {
-  return node.namedChildren.filter((child): child is RbNode => child !== null);
+/** Where the emitter puts a row: the database, or a buffer that passes its rows on later. */
+interface RowSink {
+  add(relation: string, tuple: string[]): unknown;
+}
+
+/** Rows held back so one walk can emit them in the order separate walks would. */
+class RowBuffer implements RowSink {
+  private readonly rows: [string, string[]][] = [];
+
+  add(relation: string, tuple: string[]): void {
+    this.rows.push([relation, tuple]);
+  }
+
+  flushInto(sink: RowSink): void {
+    for (const [relation, tuple] of this.rows) {
+      sink.add(relation, tuple);
+    }
+  }
 }
 
 interface Emitter {
-  db: Database;
+  db: RowSink;
   filePath: string;
   /**
    * The method whose body is being walked. Its parameters and locals are
@@ -239,8 +270,12 @@ function add(emitter: Emitter, relation: string, ...tuple: string[]): void {
   emitter.db.add(relation, tuple);
 }
 
-function valueKey(emitter: Emitter, written: RbNode): string {
-  return readKey(emitter.filePath, written, emitter.enclosing);
+function valueKey(
+  emitter: Emitter,
+  written: RbNode,
+  parent?: RbNode | null,
+): string {
+  return readKey(emitter.filePath, written, emitter.enclosing, parent);
 }
 
 /** A pair's key as text when it is written as a symbol or a string, or null otherwise. */
@@ -270,13 +305,32 @@ export function calleeKeyOf(
   if (isBareCall(node, enclosing)) {
     return nameKey(filePath, node, enclosing);
   }
-  const method = node.type === "call" ? field(node, "method") : null;
+  if (node.type !== "call") {
+    return null;
+  }
+  return sentMethodKey(
+    filePath,
+    field(node, "method"),
+    field(node, "receiver"),
+    enclosing,
+  );
+}
+
+/**
+ * The key of the method a `receiver.method` or bare `method(...)` call
+ * sends. A bare callee is keyed as a name so it resolves to the method in
+ * scope. Keyed on its node, it would find a top-level method instead.
+ */
+function sentMethodKey(
+  filePath: string,
+  method: RbNode | null,
+  receiver: RbNode | null,
+  enclosing: RbNode | null,
+): string | null {
   if (method === null) {
     return null;
   }
-  // A bare callee is keyed as a name so it resolves to the method in
-  // scope. Keyed on its node, it would find a top-level method instead.
-  return field(node, "receiver") === null
+  return receiver === null
     ? nameKey(filePath, method, enclosing)
     : nodeId(filePath, method);
 }
@@ -296,64 +350,107 @@ export function invokedKeyOf(
 }
 
 /**
+ * What the facts say about one call, read off the tree once, since the
+ * body facts and the expression facts both need it.
+ */
+interface CallSite {
+  node: RbNode;
+  key: string;
+  /** For a bare name Ruby runs, the identifier is both the call and its method name. */
+  method: RbNode | null;
+  receiver: RbNode | null;
+  /** The value `f.call(x)` or `f.(x)` runs, or null for an ordinary method call. */
+  invoked: RbNode | null;
+  invokedKey: string | null;
+  calleeKey: string | null;
+}
+
+/**
+ * The call at this node, or null when the node is not one. A call is a
+ * `call` node or a bare name Ruby runs as a method.
+ */
+function callSiteAt(
+  emitter: Emitter,
+  node: RbNode,
+  type: string,
+  parent: RbNode,
+): CallSite | null {
+  const { filePath, enclosing } = emitter;
+  if (type === "identifier" && bareNameIsCall(node, parent, enclosing)) {
+    return {
+      node,
+      key: nodeId(filePath, node),
+      method: node,
+      receiver: null,
+      invoked: null,
+      invokedKey: null,
+      calleeKey: nameKey(filePath, node, enclosing),
+    };
+  }
+  if (type !== "call") {
+    return null;
+  }
+  const method = field(node, "method");
+  const receiver = field(node, "receiver");
+  const invoked = invokedByCall(method, receiver);
+  return {
+    node,
+    key: nodeId(filePath, node),
+    method,
+    receiver,
+    invoked,
+    invokedKey: invoked === null ? null : valueKey(emitter, invoked, node),
+    calleeKey: sentMethodKey(filePath, method, receiver, enclosing),
+  };
+}
+
+/**
  * Every key `call` gives this call's callee: the value `f.call(x)` runs
  * and the method the call sends. `bodyCalls` states the same keys, since
  * the rules take the two for the same value.
  */
-function calleeKeysOf(
-  filePath: string,
-  call: RbNode,
-  enclosing: RbNode | null,
-): string[] {
-  return [
-    invokedKeyOf(filePath, call, enclosing),
-    calleeKeyOf(filePath, call, enclosing),
-  ].filter((key): key is string => key !== null);
+function calleeKeysOf(site: CallSite): string[] {
+  return [site.invokedKey, site.calleeKey].filter(
+    (key): key is string => key !== null,
+  );
 }
 
-function emitCall(emitter: Emitter, call: RbNode): void {
-  const callKey = nodeId(emitter.filePath, call);
+function emitCall(emitter: Emitter, site: CallSite): void {
   // A name bound to a call stops its chain at the call, and `isWrittenAs`
   // reads the call's source back.
-  add(emitter, "writtenValue", callKey);
+  add(emitter, "writtenValue", site.key);
 
-  const invoked = invokedValueOf(call);
-  if (invoked !== null) {
+  if (site.invokedKey !== null) {
     // `f.call(x)` and `f.(x)` run whatever the receiver evaluates to, so
     // the callee is that value, not a method named `call`.
-    add(emitter, "call", callKey, valueKey(emitter, invoked));
+    add(emitter, "call", site.key, site.invokedKey);
   }
-  if (!emitMessageSent(emitter, call, callKey) && invoked === null) {
+  if (!emitMessageSent(emitter, site) && site.invoked === null) {
     return;
   }
-  emitCallArguments(emitter, call, callKey);
+  emitCallArguments(emitter, site);
 }
 
 /**
  * Emits the callee of a method call and the receiver it is looked up on.
  * Returns false for a call with no method name, which is `f.(x)`.
  */
-function emitMessageSent(
-  emitter: Emitter,
-  call: RbNode,
-  callKey: string,
-): boolean {
-  // For a bare name Ruby runs, the identifier is both the call and its method name.
-  const method = call.type === "identifier" ? call : field(call, "method");
-  const calleeKey = calleeKeyOf(emitter.filePath, call, emitter.enclosing);
+function emitMessageSent(emitter: Emitter, site: CallSite): boolean {
+  const { method, receiver, calleeKey } = site;
   if (method === null || calleeKey === null) {
     return false;
   }
-  add(emitter, "call", callKey, calleeKey);
+  add(emitter, "call", site.key, calleeKey);
   if (!emitter.insideMethod) {
-    add(emitter, "callOutsideMethod", callKey);
+    add(emitter, "callOutsideMethod", site.key);
   }
 
-  const receiver = field(call, "receiver");
   // Ruby looks up a call with no receiver on `self`, so inside a class it
   // finds a method that class declares.
   const objectKey =
-    receiver === null ? emitter.selfKey : valueKey(emitter, receiver);
+    receiver === null
+      ? emitter.selfKey
+      : valueKey(emitter, receiver, site.node);
   if (objectKey === null) {
     return true;
   }
@@ -467,20 +564,21 @@ function invokedValueOf(call: RbNode): RbNode | null {
   if (call.type !== "call") {
     return null;
   }
-  const receiver = field(call, "receiver");
+  return invokedByCall(field(call, "method"), field(call, "receiver"));
+}
+
+function invokedByCall(
+  method: RbNode | null,
+  receiver: RbNode | null,
+): RbNode | null {
   if (receiver === null) {
     return null;
   }
-  const method = field(call, "method");
   return method === null || method.text === INVOKE_METHOD ? receiver : null;
 }
 
-function emitCallArguments(
-  emitter: Emitter,
-  call: RbNode,
-  callKey: string,
-): void {
-  const args = field(call, "arguments");
+function emitCallArguments(emitter: Emitter, site: CallSite): void {
+  const args = site.method === site.node ? null : field(site.node, "arguments");
   let position = 0;
   for (const argument of args === null ? [] : children(args)) {
     if (argument.type === "pair") {
@@ -491,9 +589,9 @@ function emitCallArguments(
         add(
           emitter,
           "callKeywordArg",
-          callKey,
+          site.key,
           keyText,
-          valueKey(emitter, value),
+          valueKey(emitter, value, argument),
         );
       }
       continue;
@@ -501,9 +599,9 @@ function emitCallArguments(
     add(
       emitter,
       "callArg",
-      callKey,
+      site.key,
       String(position),
-      valueKey(emitter, argument),
+      valueKey(emitter, argument, args),
     );
     position += 1;
   }
@@ -520,7 +618,7 @@ function emitArray(emitter: Emitter, array: RbNode): void {
       "holdsProperty",
       objectKey,
       String(position),
-      valueKey(emitter, element),
+      valueKey(emitter, element, array),
     );
     position += 1;
   }
@@ -540,7 +638,13 @@ function emitHash(emitter: Emitter, hash: RbNode): void {
     if (keyText === null || value === null) {
       continue;
     }
-    add(emitter, "holdsProperty", objectKey, keyText, valueKey(emitter, value));
+    add(
+      emitter,
+      "holdsProperty",
+      objectKey,
+      keyText,
+      valueKey(emitter, value, pair),
+    );
   }
 }
 
@@ -566,10 +670,16 @@ interface LoopTurn {
   readonly overKey: string;
 }
 
-/** What a loop block binds on each iteration, or null when the block does not belong to a loop call. */
-function loopTurnAt(emitter: Emitter, block: RbNode): LoopTurn | null {
-  const call = block.parent;
-  if (call?.type !== "call") {
+/**
+ * What a loop block binds on each iteration, or null when the block does
+ * not belong to a loop call. `call` is the node the block is written in.
+ */
+function loopTurnAt(
+  emitter: Emitter,
+  block: RbNode,
+  call: RbNode,
+): LoopTurn | null {
+  if (call.type !== "call") {
     return null;
   }
   const receiver = field(call, "receiver");
@@ -601,13 +711,14 @@ function loopTurnAt(emitter: Emitter, block: RbNode): LoopTurn | null {
 function emitDynamicDefinition(
   emitter: Emitter,
   call: RbNode,
+  type: string,
   turns: readonly LoopTurn[],
 ): void {
   if (
     emitter.selfKey === null ||
     // A call inside a method runs when the method runs, not when the class loads.
     emitter.enclosing !== null ||
-    call.type !== "call" ||
+    type !== "call" ||
     field(call, "receiver") !== null ||
     field(call, "method")?.text !== DEFINE_METHOD_CALL
   ) {
@@ -630,25 +741,50 @@ function emitDynamicDefinition(
   }
 }
 
-/** Visits every expression under a node, stopping at nested definitions. `turns` lists the loop blocks around the expression, outermost first. */
+/**
+ * One expression the walk reached. Each read of `type` or `parent` off a
+ * tree-sitter node is a call into WASM, so the walk reads them once and
+ * hands them on.
+ */
+type ExpressionVisit = (
+  child: RbNode,
+  type: string,
+  parent: RbNode,
+  turns: readonly LoopTurn[],
+) => void;
+
+/** A definition nested in the walked body, which the walk does not enter. */
+type NestedVisit = (definition: RbNode, type: string) => void;
+
+function skipNested(): void {}
+
+/**
+ * Visits every expression under a node once, stopping at nested
+ * definitions and handing each to `nested`. `turns` lists the loop blocks
+ * around the expression, outermost first.
+ */
 function walkExpressions(
   node: RbNode,
   emitter: Emitter,
-  visit: (child: RbNode, turns: readonly LoopTurn[]) => void,
+  visit: ExpressionVisit,
+  nested: NestedVisit = skipNested,
   turns: readonly LoopTurn[] = [],
 ): void {
   for (const child of children(node)) {
-    if (OWN_BODY_TYPES.has(child.type)) {
+    const type = child.type;
+    if (OWN_BODY_TYPES.has(type)) {
+      nested(child, type);
       continue;
     }
-    visit(child, turns);
-    const opened = BLOCK_TYPES.has(child.type)
-      ? loopTurnAt(emitter, child)
+    visit(child, type, node, turns);
+    const opened = BLOCK_TYPES.has(type)
+      ? loopTurnAt(emitter, child, node)
       : null;
     walkExpressions(
       child,
       emitter,
       visit,
+      nested,
       opened === null ? turns : [...turns, opened],
     );
   }
@@ -673,6 +809,7 @@ function emitKeyedRead(
   site: RbNode,
   container: RbNode,
   key: RbNode,
+  keyParent: RbNode | null,
 ): void {
   if (WRITTEN_KEY_TYPES.has(key.type)) {
     return;
@@ -681,33 +818,37 @@ function emitKeyedRead(
     emitter,
     "readsKeyed",
     nodeId(emitter.filePath, site),
-    valueKey(emitter, container),
-    valueKey(emitter, key),
+    valueKey(emitter, container, site),
+    valueKey(emitter, key, keyParent),
   );
 }
 
-function emitKeyedElement(emitter: Emitter, node: RbNode): void {
+function emitKeyedElement(
+  emitter: Emitter,
+  node: RbNode,
+  parent: RbNode,
+): void {
   const object = field(node, "object");
-  if (object === null || isWriteTarget(node)) {
+  if (object === null || isWriteTarget(node, parent)) {
     return;
   }
   const index = node.namedChildren.find(
     (child): child is RbNode => child !== null && child.id !== object.id,
   );
   if (index !== undefined) {
-    emitKeyedRead(emitter, node, object, index);
+    emitKeyedRead(emitter, node, object, index, node);
   }
 }
 
-function emitKeyedFetch(emitter: Emitter, call: RbNode): void {
-  const receiver = field(call, "receiver");
-  if (receiver === null || field(call, "method")?.text !== "fetch") {
+function emitKeyedFetch(emitter: Emitter, site: CallSite): void {
+  const { receiver, method } = site;
+  if (receiver === null || method?.text !== "fetch") {
     return;
   }
-  const { positional } = readCallArgs(field(call, "arguments"));
-  const key = positional[0];
+  const args = field(site.node, "arguments");
+  const key = readCallArgs(args).positional[0];
   if (key !== undefined) {
-    emitKeyedRead(emitter, call, receiver, key);
+    emitKeyedRead(emitter, site.node, receiver, key, args);
   }
 }
 
@@ -723,10 +864,11 @@ const FALLBACK_OPERATORS = new Set(["||", "or"]);
  */
 function fallbackBranchesOf(
   node: RbNode,
+  type: string,
   enclosing: RbNode | null,
 ): RbNode[] | null {
   if (
-    node.type !== "binary" ||
+    type !== "binary" ||
     !FALLBACK_OPERATORS.has(field(node, "operator")?.text ?? "")
   ) {
     return null;
@@ -763,62 +905,71 @@ function raises(written: RbNode, enclosing: RbNode | null): boolean {
 function emitExpressionFacts(emitter: Emitter, node: RbNode): void {
   // The walk below starts at the children, so a statement that is itself
   // a `define_method` call is checked here.
-  emitDynamicDefinition(emitter, node, []);
-  walkExpressions(node, emitter, (child, turns) => {
-    emitDynamicDefinition(emitter, child, turns);
-    if (child.type === "call" || isBareCall(child, emitter.enclosing)) {
-      emitCall(emitter, child);
-      emitKeyedFetch(emitter, child);
-    }
-    if (child.type === "element_reference") {
-      emitKeyedElement(emitter, child);
-    }
-    if (ARRAY_TYPES.has(child.type)) {
-      emitArray(emitter, child);
-    }
-    if (child.type === "hash") {
-      emitHash(emitter, child);
-    }
-    const branches = fallbackBranchesOf(child, emitter.enclosing);
-    if (branches !== null) {
-      for (const branch of branches) {
-        add(
-          emitter,
-          "fallbackBranch",
-          nodeId(emitter.filePath, child),
-          valueKey(emitter, branch),
-        );
-      }
-    } else if (WRITTEN_VALUE_TYPES.has(child.type)) {
-      add(emitter, "writtenValue", nodeId(emitter.filePath, child));
-    }
-    if (child.type === "nil") {
-      add(emitter, "placeholderValue", nodeId(emitter.filePath, child));
-    }
-    // A builder method that returns `self` returns an instance of its own
-    // class, so the next call in a chain runs a method that class declares.
-    if (child.type === "self" && emitter.selfKey !== null) {
-      add(emitter, "binds", nodeId(emitter.filePath, child), emitter.selfKey);
-    }
-    if (child.type === "instance_variable") {
-      emitInstanceRead(emitter, child);
-    }
-    if (ASSIGNMENT_TYPES.has(child.type)) {
-      collectInstanceWrite(emitter, child);
-      collectNamedWrite(emitter, child);
-    }
+  emitDynamicDefinition(emitter, node, node.type, []);
+  walkExpressions(node, emitter, (child, type, parent, turns) => {
+    const site = callSiteAt(emitter, child, type, parent);
+    emitExpressionFact(emitter, child, type, parent, turns, site);
   });
+}
+
+/** The facts one expression gives, with the call at it read once by the caller. */
+function emitExpressionFact(
+  emitter: Emitter,
+  child: RbNode,
+  type: string,
+  parent: RbNode,
+  turns: readonly LoopTurn[],
+  site: CallSite | null,
+): void {
+  emitDynamicDefinition(emitter, child, type, turns);
+  if (site !== null) {
+    emitCall(emitter, site);
+    emitKeyedFetch(emitter, site);
+  }
+  if (type === "element_reference") {
+    emitKeyedElement(emitter, child, parent);
+  }
+  if (ARRAY_TYPES.has(type)) {
+    emitArray(emitter, child);
+  }
+  if (type === "hash") {
+    emitHash(emitter, child);
+  }
+  const branches = fallbackBranchesOf(child, type, emitter.enclosing);
+  if (branches !== null) {
+    for (const branch of branches) {
+      add(
+        emitter,
+        "fallbackBranch",
+        nodeId(emitter.filePath, child),
+        valueKey(emitter, branch, child),
+      );
+    }
+  } else if (WRITTEN_VALUE_TYPES.has(type)) {
+    add(emitter, "writtenValue", nodeId(emitter.filePath, child));
+  }
+  if (type === "nil") {
+    add(emitter, "placeholderValue", nodeId(emitter.filePath, child));
+  }
+  // A builder method that returns `self` returns an instance of its own
+  // class, so the next call in a chain runs a method that class declares.
+  if (type === "self" && emitter.selfKey !== null) {
+    add(emitter, "binds", nodeId(emitter.filePath, child), emitter.selfKey);
+  }
+  if (type === "instance_variable") {
+    emitInstanceRead(emitter, child, parent);
+  }
+  if (ASSIGNMENT_TYPES.has(type)) {
+    collectWrite(emitter, child, type);
+  }
 }
 
 const ASSIGNMENT_TYPES = new Set(["assignment", "operator_assignment"]);
 
-/** Whether this node is the left side of an assignment. */
-function isWriteTarget(node: RbNode): boolean {
-  const parent = node.parent;
+/** Whether this node is the left side of an assignment written in `parent`. */
+function isWriteTarget(node: RbNode, parent: RbNode): boolean {
   return (
-    parent !== null &&
-    ASSIGNMENT_TYPES.has(parent.type) &&
-    field(parent, "left")?.id === node.id
+    ASSIGNMENT_TYPES.has(parent.type) && field(parent, "left")?.id === node.id
   );
 }
 
@@ -827,8 +978,12 @@ function isWriteTarget(node: RbNode): boolean {
  * recorded as a property read off the class. `contains` already walks
  * `extends`, so a write in a base class reaches a read in a subclass.
  */
-function emitInstanceRead(emitter: Emitter, node: RbNode): void {
-  if (emitter.selfKey === null || isWriteTarget(node)) {
+function emitInstanceRead(
+  emitter: Emitter,
+  node: RbNode,
+  parent: RbNode,
+): void {
+  if (emitter.selfKey === null || isWriteTarget(node, parent)) {
     return;
   }
   add(
@@ -846,30 +1001,70 @@ interface InstanceWrite {
   target: RbNode;
 }
 
-function collectInstanceWrite(emitter: Emitter, node: RbNode): void {
+/** Collects an assignment to `@name` or through a local's setter, for the body being walked. */
+function collectWrite(emitter: Emitter, node: RbNode, type: string): void {
+  const instances = emitter.instanceWrites;
+  const named = emitter.namedWrites;
+  if (instances === null && named === null) {
+    return;
+  }
   const left = field(node, "left");
   const right = field(node, "right");
-  const collector = emitter.instanceWrites;
-  if (left === null || right === null || collector === null) {
+  if (left === null || right === null) {
     return;
   }
-  if (left.type !== "instance_variable") {
-    return;
+  const leftType = left.type;
+  if (leftType === "instance_variable" && instances !== null) {
+    collectInstanceWrite(emitter, instances, left, {
+      at: node,
+      value: valueWritten(node, type, right),
+    });
   }
-  // `count += 1` writes a value the source never states, so the write
-  // has no value key.
-  const operator = field(node, "operator")?.text;
-  const value =
-    node.type === "assignment" || WHOLE_VALUE_OPERATORS.has(operator ?? "")
-      ? right
-      : null;
+  if (leftType === "call" && named !== null) {
+    collectNamedWrite(emitter, named, left, {
+      at: node,
+      value: valueWritten(node, type, right),
+    });
+  }
+}
+
+/** The assignment a write happens at, and the value it writes. */
+interface Assigned {
+  at: RbNode;
+  value: RbNode | null;
+}
+
+/**
+ * The value an assignment writes. `x ||= y` writes `y` when it writes at
+ * all, and `count += 1` writes a value the source never states, so it has
+ * no value.
+ */
+function valueWritten(
+  node: RbNode,
+  type: string,
+  right: RbNode,
+): RbNode | null {
+  if (type === "assignment") {
+    return right;
+  }
+  return WHOLE_VALUE_OPERATORS.has(field(node, "operator")?.text ?? "")
+    ? right
+    : null;
+}
+
+function collectInstanceWrite(
+  emitter: Emitter,
+  collector: Map<string, InstanceWrite[]>,
+  left: RbNode,
+  { at, value }: Assigned,
+): void {
   const written = collector.get(left.text) ?? [];
   written.push({
     write: describeWrite(emitter, {
       name: left.text,
       target: left,
       value,
-      at: node,
+      at,
       fromParameter: false,
     }),
     target: left,
@@ -883,13 +1078,12 @@ function collectInstanceWrite(emitter: Emitter, node: RbNode): void {
  * parameter, is written at a time this body cannot order against its
  * reads, and `self.x =` and `Const.x =` call a method of a class.
  */
-function collectNamedWrite(emitter: Emitter, node: RbNode): void {
-  const collected = emitter.namedWrites;
-  const left = field(node, "left");
-  const right = field(node, "right");
-  if (collected === null || left?.type !== "call" || right === null) {
-    return;
-  }
+function collectNamedWrite(
+  emitter: Emitter,
+  collected: NamedWrites,
+  left: RbNode,
+  { at, value }: Assigned,
+): void {
   const receiver = field(left, "receiver");
   const method = field(left, "method");
   if (
@@ -899,12 +1093,7 @@ function collectNamedWrite(emitter: Emitter, node: RbNode): void {
   ) {
     return;
   }
-  const operator = field(node, "operator")?.text;
-  const value =
-    node.type === "assignment" || WHOLE_VALUE_OPERATORS.has(operator ?? "")
-      ? right
-      : null;
-  const receiverKey = valueKey(emitter, receiver);
+  const receiverKey = valueKey(emitter, receiver, left);
   const key = `${receiverKey} ${method.text}`;
   const group = collected.byProperty.get(key) ?? {
     receiverKey,
@@ -916,7 +1105,7 @@ function collectNamedWrite(emitter: Emitter, node: RbNode): void {
       name: method.text,
       target: left,
       value,
-      at: node,
+      at,
       fromParameter: false,
     }),
     target: left,
@@ -1054,17 +1243,12 @@ function implicitReturn(body: RbNode): RbNode | null {
  * returns that list.
  */
 function assignedValueOf(node: RbNode): RbNode | null {
-  if (!ASSIGNMENT_TYPES.has(node.type)) {
+  const type = node.type;
+  if (!ASSIGNMENT_TYPES.has(type)) {
     return null;
   }
-  const operator = field(node, "operator")?.text;
-  if (
-    node.type !== "assignment" &&
-    !WHOLE_VALUE_OPERATORS.has(operator ?? "")
-  ) {
-    return null;
-  }
-  return field(node, "right");
+  const right = field(node, "right");
+  return right === null ? null : valueWritten(node, type, right);
 }
 
 /**
@@ -1138,46 +1322,77 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
     return funcKey;
   }
 
-  const recordNested = (node: RbNode): void => {
-    for (const child of children(node)) {
-      if (OWN_BODY_TYPES.has(child.type)) {
-        add(emitter, "containsFn", funcKey, nodeId(emitter.filePath, child));
-        continue;
+  // One walk visits the body, and its rows reach the database grouped by
+  // kind: nested definitions, then calls and returns, then each expression's
+  // facts. The order the database sees then does not depend on the walk.
+  const nested: RbNode[] = [];
+  const lambdas: RbNode[] = [];
+  const bodyFacts = new RowBuffer();
+  const expressionFacts = new RowBuffer();
+  const collecting: Emitter = { ...inside, db: expressionFacts };
+  walkExpressions(
+    body,
+    inside,
+    (child, type, parent, turns) => {
+      const site = callSiteAt(inside, child, type, parent);
+      emitBodyFact(bodyFacts, inside, funcKey, child, type, site);
+      emitExpressionFact(collecting, child, type, parent, turns, site);
+    },
+    (definition, type) => {
+      nested.push(definition);
+      if (type === LAMBDA_TYPE) {
+        lambdas.push(definition);
       }
-      recordNested(child);
-    }
-  };
-  recordNested(body);
+    },
+  );
 
-  walkExpressions(body, inside, (child) => {
-    if (child.type === "return") {
-      // tree-sitter wraps the value of `return x` in an argument list.
-      const first = children(child)[0];
-      const returned =
-        first?.type === "argument_list" ? children(first)[0] : first;
-      if (returned !== undefined) {
-        add(inside, "returnsValue", funcKey, valueKey(inside, returned));
-      }
-    }
-    if (child.type === "call" || isBareCall(child, method)) {
-      for (const callee of calleeKeysOf(inside.filePath, child, method)) {
-        add(inside, "bodyCalls", funcKey, callee);
-      }
-      add(inside, "makesCall", funcKey, nodeId(inside.filePath, child));
-    }
-  });
-
+  for (const definition of nested) {
+    add(emitter, "containsFn", funcKey, nodeId(emitter.filePath, definition));
+  }
+  bodyFacts.flushInto(emitter.db);
   const implicit = implicitReturn(body);
   if (implicit !== null) {
     add(inside, "returnsValue", funcKey, valueKey(inside, implicit));
   }
-
-  emitExpressionFacts(inside, body);
+  expressionFacts.flushInto(emitter.db);
   emitNamedStores(inside);
   emitScopeWrites(inside, writes);
-  emitLambdasIn(inside, body);
+  // A lambda can be assigned to a name and called later, so it gets the
+  // same facts as a method.
+  for (const lambda of lambdas) {
+    emitMethodFacts(inside, lambda);
+  }
 
   return funcKey;
+}
+
+/** What one expression in a method's body says about the method: a value it returns, or a call it makes. */
+function emitBodyFact(
+  rows: RowSink,
+  emitter: Emitter,
+  funcKey: string,
+  child: RbNode,
+  type: string,
+  site: CallSite | null,
+): void {
+  if (type === "return") {
+    // tree-sitter wraps the value of `return x` in an argument list.
+    const first = children(child)[0];
+    const wrapped = first?.type === "argument_list";
+    const returned = wrapped ? children(first)[0] : first;
+    if (returned !== undefined) {
+      rows.add("returnsValue", [
+        funcKey,
+        valueKey(emitter, returned, wrapped ? first : child),
+      ]);
+    }
+  }
+  if (site !== null) {
+    for (const callee of calleeKeysOf(site)) {
+      rows.add("bodyCalls", [funcKey, callee]);
+    }
+    rows.add("makesCall", [funcKey, site.key]);
+  }
 }
 
 /** A call, or an array or hash literal: a value built where it is written. */
@@ -1339,13 +1554,27 @@ const CONSTANT_REF_TYPES = new Set(["constant", "scope_resolution"]);
  * earlier calls' modules, and `include A, B` puts A in front of B, so
  * both the calls and each call's arguments are reversed.
  */
-function mixedInConstants(body: RbNode, callName: string): RbNode[] {
-  return bareCallArgumentGroups(body, callName)
+function mixedInConstants(
+  body: RbNode,
+  callName: string,
+  statements: readonly RbNode[],
+): RbNode[] {
+  return bareCallArgumentGroups(body, callName, statements)
     .flatMap((group) => [...group].reverse())
     .reverse()
     .map(readThrough)
     .filter((argument) => CONSTANT_REF_TYPES.has(argument.type));
 }
+
+/**
+ * Each mixin call and the relation its modules are recorded in. Ruby looks
+ * a method up in prepended modules, then the class itself, then included
+ * modules, then the superclass chain.
+ */
+const MIXIN_CALLS: readonly [string, "extends" | "prepends"][] = [
+  [PREPEND_CALL, "prepends"],
+  [INCLUDE_CALL, "extends"],
+];
 
 /**
  * A module mixed in with `include` or `prepend` is an ancestor in Ruby's
@@ -1362,11 +1591,12 @@ function emitMixinFacts(
   emitter: Emitter,
   classKey: string,
   body: RbNode,
-  callName: string,
-  relation: "extends" | "prepends",
 ): void {
-  for (const mixin of mixedInConstants(body, callName)) {
-    add(emitter, relation, classKey, valueKey(emitter, mixin));
+  const statements = runStatements(body);
+  for (const [callName, relation] of MIXIN_CALLS) {
+    for (const mixin of mixedInConstants(body, callName, statements)) {
+      add(emitter, relation, classKey, valueKey(emitter, mixin));
+    }
   }
 }
 
@@ -1429,11 +1659,8 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
   add(emitter, "objectValue", classKey);
 
   const body = field(cls, "body");
-  // Ruby looks a method up in prepended modules, then the class itself,
-  // then included modules, then the superclass chain.
   if (body !== null) {
-    emitMixinFacts(emitter, classKey, body, PREPEND_CALL, "prepends");
-    emitMixinFacts(emitter, classKey, body, INCLUDE_CALL, "extends");
+    emitMixinFacts(emitter, classKey, body);
   }
 
   const superclass = field(cls, "superclass");

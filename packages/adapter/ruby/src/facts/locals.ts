@@ -190,10 +190,14 @@ function writesUnder(body: RbNode): LocalWrite[] {
   const found: LocalWrite[] = [];
   const visit = (node: RbNode): void => {
     for (const child of bodyStatements(node)) {
-      if (OWN_BODY_TYPES.has(child.type)) {
+      const type = child.type;
+      if (OWN_BODY_TYPES.has(type)) {
         continue;
       }
-      found.push(...(WRITE_READERS[child.type]?.(child) ?? []));
+      const read = WRITE_READERS[type];
+      if (read !== undefined) {
+        found.push(...read(child));
+      }
       visit(child);
     }
   };
@@ -226,13 +230,14 @@ function cacheFor(tree: RbTree): TreeCache {
   return fresh;
 }
 
+/** The names of a scope with these parameters whose body makes these writes. */
 function scopeNames(
   parameters: ReadonlySet<string>,
-  body: RbNode | null,
+  bodyWrites: readonly LocalWrite[],
 ): ScopeNames {
   const locals = new Set<string>(parameters);
   const blockParams = new Set<string>();
-  for (const write of body === null ? [] : writesUnder(body)) {
+  for (const write of bodyWrites) {
     if (write.fromParameter) {
       blockParams.add(write.name);
       continue;
@@ -252,7 +257,11 @@ function namesOfMethod(method: RbNode): ScopeNames {
   if (remembered !== undefined) {
     return remembered;
   }
-  const names = scopeNames(parameterNames(method), field(method, "body"));
+  const body = field(method, "body");
+  const names = scopeNames(
+    parameterNames(method),
+    body === null ? [] : writesUnder(body),
+  );
   cache.byMethod.set(method, names);
   return names;
 }
@@ -260,8 +269,34 @@ function namesOfMethod(method: RbNode): ScopeNames {
 /** The names a file has outside any definition, which is a scope with no parameters. */
 function namesOfFile(tree: RbTree): ScopeNames {
   const cache = cacheFor(tree);
-  cache.file ??= scopeNames(new Set(), tree.rootNode);
+  cache.file ??= scopeNames(new Set(), writesUnder(tree.rootNode));
   return cache.file;
+}
+
+/**
+ * Remembers a scope's names from the writes `collectWrites` already read
+ * off its body, so the first `ownerOfName` in that scope does not walk the
+ * body again. A lambda's facts read the block inside its body, which is
+ * not the body `namesOfMethod` reads, so a lambda is left to be read there.
+ */
+function rememberScopeNames(
+  method: RbNode | null,
+  body: RbNode,
+  bodyWrites: readonly LocalWrite[],
+): void {
+  const cache = cacheFor(body.tree);
+  if (method === null) {
+    if (cache.file === null && body.id === body.tree.rootNode.id) {
+      cache.file = scopeNames(new Set(), bodyWrites);
+    }
+    return;
+  }
+  if (
+    cache.byMethod.get(method) === undefined &&
+    field(method, "body")?.id === body.id
+  ) {
+    cache.byMethod.set(method, scopeNames(parameterNames(method), bodyWrites));
+  }
 }
 
 /**
@@ -373,7 +408,9 @@ export function collectWrites(
   method: RbNode | null,
   body: RbNode,
 ): NameWrites[] {
-  const writes = [...parameterWrites(method), ...writesUnder(body)].sort(
+  const bodyWrites = writesUnder(body);
+  rememberScopeNames(method, body, bodyWrites);
+  const writes = [...parameterWrites(method), ...bodyWrites].sort(
     (left, right) => left.target.startIndex - right.target.startIndex,
   );
   const targetIds = new Set(writes.map((write) => write.target.id));
