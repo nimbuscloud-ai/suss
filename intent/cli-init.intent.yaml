@@ -1,0 +1,24 @@
+kind: boundary
+
+name: cli-init
+purpose: >-
+  Work out which packs, settings and specs a project needs, and either
+  ask the developer through a guided form or print the commands. With
+  no terminal to ask on, in CI, with --plain, or when an agent passes
+  --write, it prints the commands to stdout and exits 0, so nothing ever
+  waits on a prompt nobody can answer.
+audience: a developer adding suss to a project, the agent setting it up for them, and CI jobs
+source: author
+
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "@suss/cli"
+  exportPath: ["initInteractive"]
+
+transitions:
+  - id: without-a-terminal
+    when: there is no terminal to ask on, the run is in CI, or --plain or --write was passed
+    exits: 0
+    results:
+      - writes: io:stdout

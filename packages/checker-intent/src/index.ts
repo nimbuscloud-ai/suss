@@ -19,6 +19,7 @@ import {
   deploymentOf,
   goesThroughRelation,
   groundBinding,
+  readProcessMetadata,
   relationsOf,
   summaryRef,
   withDeclaredDelivery,
@@ -48,6 +49,7 @@ import type {
   Interaction,
   Transition,
   TypeShape,
+  ValueRef,
 } from "@suss/behavioral-ir";
 import type {
   BoundaryIntentSummary,
@@ -78,10 +80,16 @@ export type {
 
 /** A code transition's terminal, reduced to the dimensions intent compares. */
 interface CodeOutcome {
-  kind: "response" | "return" | "throw";
+  kind: "response" | "return" | "throw" | "exit";
+  /** A response's status, or the code an `exit` output ends the process with. */
   status: number | null;
   body: TypeShape | null;
   errorType: string | null;
+  /**
+   * The literal a return hands back when the unit's return becomes the
+   * process's exit code, so `exits: 1` can match `return 1` there.
+   */
+  exitCode: number | null;
   /** What the transition that ends this way did at other boundaries. */
   effects: CodeEffect[];
   /** The boundaries the branch leading here turned on. */
@@ -692,8 +700,9 @@ function compareIntentToImpl(
   const findings: IntentFinding[] = [];
   const ref = codeRef(impl);
   const calls = boundaryCalls(impl);
+  const returnIsExitCode = readProcessMetadata(impl)?.exitCodeFrom === "return";
   const codeOutcomes = impl.transitions
-    .map((t) => toCodeOutcome(t, calls, deployment))
+    .map((t) => toCodeOutcome(t, calls, deployment, returnIsExitCode))
     .filter((o): o is CodeOutcome => o !== null);
   const everyEffect = impl.transitions.flatMap((t) =>
     codeEffectsOf(t, deployment),
@@ -714,7 +723,18 @@ function compareIntentToImpl(
             .filter((co) => outcomeMatches(outcome, co))
             .flatMap((co) => co.effects);
     for (const effect of outcome.effects) {
-      if (reached.some((made) => effectMatches(effect, made))) {
+      const matched = reached.filter((made) => effectMatches(effect, made));
+      if (matched.length > 0) {
+        if (!writesDeclaredShape(effect, matched)) {
+          findings.push({
+            kind: "outcomeShapeMismatch",
+            severity: "error",
+            boundary,
+            intent: { name: intent.name, outcomeId: outcome.id },
+            code: ref,
+            message: `Intent "${intent.name}" says ${outcome.id} results in ${describeEffect(effect)} at ${boundary} with a declared shape; what ${impl.identity.name} writes there has an incompatible shape.`,
+          });
+        }
         continue;
       }
       const finding: IntentFinding = {
@@ -1204,6 +1224,28 @@ export function effectMatches(
 }
 
 /**
+ * Whether one of the writes that matched puts out what the intent's
+ * `shape` says. A write whose payload the code does not state is unread
+ * rather than wrong, the way an access with no columns is.
+ */
+function writesDeclaredShape(
+  declared: IntentEffect,
+  matched: readonly CodeEffect[],
+): boolean {
+  if (declared.shape === undefined) {
+    return true;
+  }
+  const shape = declared.shape;
+  const stated = matched.flatMap((made) =>
+    made.payload === undefined ? [] : [made.payload],
+  );
+  return (
+    stated.length === 0 ||
+    stated.some((payload) => bodyShapesMatch(payload, shape) !== "nomatch")
+  );
+}
+
+/**
  * Whether the access covers every column the intent stated. An access
  * that states none is unread rather than empty: no pack parses a
  * DynamoDB UpdateExpression, so calling that a mismatch would report
@@ -1246,8 +1288,9 @@ function toCodeOutcome(
   t: Transition,
   calls: Map<string, BoundaryCall>,
   deployment: Deployment,
+  returnIsExitCode: boolean,
 ): CodeOutcome | null {
-  const ending = endingOf(t);
+  const ending = endingOf(t, returnIsExitCode);
   if (ending === null) {
     return null;
   }
@@ -1350,26 +1393,27 @@ function checkAlwaysEffects(
 /** How a transition ends, in the terms intent states an ending in. */
 export type CodeEnding = Pick<
   CodeOutcome,
-  "kind" | "status" | "body" | "errorType"
+  "kind" | "status" | "body" | "errorType" | "exitCode"
 >;
 
 /**
  * How a transition ends, or null for an ending intent has no word for,
  * such as a render. A status the code computes has no literal, so it
- * comes back null and matches no declared status.
+ * comes back null and matches no declared status. `returnIsExitCode`
+ * says the unit's return becomes the process's exit code.
  */
-export function endingOf(t: Transition): CodeEnding | null {
+export function endingOf(
+  t: Transition,
+  returnIsExitCode = false,
+): CodeEnding | null {
   const output = t.output;
   if (output.type === "response") {
-    const status =
-      output.statusCode !== null && output.statusCode.type === "literal"
-        ? Number(output.statusCode.value)
-        : null;
     return {
       kind: "response",
-      status: status !== null && Number.isFinite(status) ? status : null,
+      status: literalNumber(output.statusCode),
       body: output.body ?? null,
       errorType: null,
+      exitCode: null,
     };
   }
   if (output.type === "return") {
@@ -1378,6 +1422,7 @@ export function endingOf(t: Transition): CodeEnding | null {
       status: null,
       body: output.value,
       errorType: null,
+      exitCode: returnIsExitCode ? returnedNumber(output.value) : null,
     };
   }
   if (output.type === "throw") {
@@ -1386,9 +1431,36 @@ export function endingOf(t: Transition): CodeEnding | null {
       status: null,
       body: null,
       errorType: output.exceptionType,
+      exitCode: null,
+    };
+  }
+  if (output.type === "exit") {
+    return {
+      kind: "exit",
+      status: literalNumber(output.code),
+      body: null,
+      errorType: null,
+      exitCode: null,
     };
   }
   return null;
+}
+
+function literalNumber(ref: ValueRef | null): number | null {
+  if (ref === null || ref.type !== "literal") {
+    return null;
+  }
+  const value = Number(ref.value);
+  return Number.isFinite(value) ? value : null;
+}
+
+/** The number a return writes out, as `return 1` does. */
+function returnedNumber(shape: TypeShape | null): number | null {
+  return shape !== null &&
+    shape.type === "literal" &&
+    typeof shape.value === "number"
+    ? shape.value
+    : null;
 }
 
 /** One verb and one boundary this transition reaches. */
@@ -1401,6 +1473,8 @@ export interface CodeEffect {
   fields: string[];
   /** What the access picks the item out by, empty when it states none. */
   by: string[];
+  /** The shape of what a write put out, when the code says. */
+  payload?: TypeShape;
 }
 
 /** Every verb and boundary the transition reaches, grounded against the deployment. */
@@ -1439,9 +1513,16 @@ export function codeEffectsOf(
 export function accessDetail(interaction: Interaction): {
   fields: string[];
   by: string[];
+  payload?: TypeShape;
 } {
   if (interaction.class === "config-read") {
     return { fields: [interaction.name], by: [] };
+  }
+
+  if (interaction.class === "stream-write") {
+    return interaction.payload === null
+      ? { fields: [], by: [] }
+      : { fields: [], by: [], payload: interaction.payload };
   }
 
   if (interaction.class !== "storage-access") {
@@ -1458,6 +1539,9 @@ export function outcomeMatches(
   intent: Pick<IntentOutcome, "kind" | "status" | "errorType">,
   code: CodeEnding,
 ): boolean {
+  if (intent.kind === "exit") {
+    return exitsWith(intent.status, code);
+  }
   if (intent.kind !== code.kind) {
     return false;
   }
@@ -1474,6 +1558,21 @@ export function outcomeMatches(
     );
   }
   return true; // any return matches, and the body is compared separately
+}
+
+/**
+ * Whether the code ends the process with this code: an exit that states
+ * it, or a return of it from a unit whose return becomes the exit code.
+ * A code the code computes states no literal and matches nothing.
+ */
+function exitsWith(code: number | null, ending: CodeEnding): boolean {
+  if (code === null) {
+    return false;
+  }
+  if (ending.kind === "exit") {
+    return ending.status === code;
+  }
+  return ending.kind === "return" && ending.exitCode === code;
 }
 
 /**
@@ -1499,6 +1598,7 @@ const WHAT_KEYS: Record<Semantics["name"], string> = {
   metric: "a metric needs a system and a type",
   "unit-invocation":
     "an invoked unit needs a deployment target and the name the platform knows it by",
+  io: "a stream is never a boundary of its own: write it as `- writes: io:stdout` on an outcome of the unit that prints",
 };
 
 function describeOutcome(outcome: IntentOutcome): string {
@@ -1509,6 +1609,9 @@ function describeOutcome(outcome: IntentOutcome): string {
     return outcome.errorType !== null
       ? `throw ${outcome.errorType}`
       : "a thrown error";
+  }
+  if (outcome.kind === "exit") {
+    return `exit code ${outcome.status}`;
   }
   return "a return value";
 }

@@ -33,6 +33,7 @@ import type {
   RawBranch,
   RawCondition,
   RawEffect,
+  RawTerminal,
   Reading,
 } from "@suss/extractor";
 import type { Range } from "./ast.js";
@@ -275,51 +276,72 @@ function handsOnBranch(
 export function returnPathBranches(
   method: RbNode,
   effects: readonly RawEffect[],
+  exits: readonly EndingCall[] = [],
 ): RawBranch[] | null {
   const body = field(method, "body");
   if (body === null) {
     return null;
   }
   const returns = collectReturns(body, []);
-  const lowered = lowerRubyBody(body, returns, []);
+  const exitCalls = exits.map((exit) => exit.call);
+  const lowered = lowerRubyBody(body, [...returns, ...exitCalls], exitCalls);
   const enumerated = enumerateOrDegrade(
     {
       statements: lowered.statements,
       terminalsByStmt: lowered.terminalsByStmt,
     },
-    returns,
+    [...returns, ...exitCalls],
   );
 
   const branches: RawBranch[] = [];
-  const push = (paths: readonly ConditionInfo<RbNode>[][], at: Range): void => {
+  const push = (
+    paths: readonly ConditionInfo<RbNode>[][],
+    terminal: RawTerminal,
+  ): void => {
     for (const path of paths) {
       const conditions = path.map(conditionOf);
       branches.push({
         conditions,
-        terminal: {
-          kind: "return",
-          statusCode: null,
-          body: null,
-          exceptionType: null,
-          message: null,
-          component: null,
-          renderTree: null,
-          delegateTarget: null,
-          emitEvent: null,
-          location: at,
-        },
+        terminal,
         effects: effectsReaching(effects, conditions),
-        location: at,
+        location: terminal.location,
         isDefault: conditions.length === 0,
       });
     }
   };
 
   for (const statement of returns) {
-    push(enumerated.byTerminal.get(statement) ?? [], rangeOf(statement));
+    push(
+      enumerated.byTerminal.get(statement) ?? [],
+      returnTerminal(rangeOf(statement)),
+    );
   }
-  push(enumerated.fallthrough, rangeOf(method));
+  for (const exit of exits) {
+    push(enumerated.byTerminal.get(exit.call) ?? [], exit.terminal);
+  }
+  push(enumerated.fallthrough, returnTerminal(rangeOf(method)));
   return branches.length === 0 ? null : branches;
+}
+
+/** A call that ends the method's run, with the terminal it ends on. */
+export interface EndingCall {
+  call: RbNode;
+  terminal: RawTerminal;
+}
+
+function returnTerminal(location: Range): RawTerminal {
+  return {
+    kind: "return",
+    statusCode: null,
+    body: null,
+    exceptionType: null,
+    message: null,
+    component: null,
+    renderTree: null,
+    delegateTarget: null,
+    emitEvent: null,
+    location,
+  };
 }
 
 /**

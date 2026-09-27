@@ -11,6 +11,7 @@ import {
   readMetricReadingMetadata,
   readModuleImports,
   readMountMetadata,
+  readProcessMetadata,
   readReactMetadata,
   readRequestSpellingMetadata,
   readRoutingMetadata,
@@ -657,5 +658,12 @@ describe("typed metadata namespaces", () => {
       ),
     ).toEqual({ story: "Primary", component: "Button" });
     expect(readStorybookMetadata(carrier({ component: {} }))).toBeUndefined();
+  });
+
+  it("reads whether a unit's return becomes the exit code", () => {
+    expect(
+      readProcessMetadata(carrier({ process: { exitCodeFrom: "return" } })),
+    ).toEqual({ exitCodeFrom: "return" });
+    expect(readProcessMetadata(carrier({}))).toBeUndefined();
   });
 });

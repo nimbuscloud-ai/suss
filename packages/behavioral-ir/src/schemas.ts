@@ -455,6 +455,13 @@ export const OutputSchema = z.discriminatedUnion("type", [
     payload: TypeShapeSchema.optional(),
   }),
   z.object({ type: z.literal("void") }),
+  /**
+   * The process ends here, with this exit code: `process.exit(1)`,
+   * `sys.exit(1)`, Ruby's `exit 1`. Null when the call gives a code the
+   * reader could not work out. Nothing runs after it, which is what
+   * makes it a terminal rather than an effect.
+   */
+  z.object({ type: z.literal("exit"), code: ValueRefSchema.nullable() }),
 ]);
 
 /** Where the type checker found something declared, by file and character span. */
@@ -535,119 +542,140 @@ export const EffectSchema = z.discriminatedUnion("type", [
    * keeps `interaction.class` matching `binding.semantics.name`, though
    * the IR does not enforce it.
    */
-  z.object({
-    ...repeatCount,
-    type: z.literal("interaction"),
-    binding: BoundaryBindingSchema,
-    /** Source text of the call expression, for inspect rendering. */
-    callee: z.string().optional(),
-    /** All the effects from one call site share this id. */
-    groupId: z.string().optional(),
-    preconditions: z.array(PredicateSchema).optional(),
-    interaction: z.discriminatedUnion("class", [
-      z.object({
-        class: z.literal("storage-access"),
-        kind: z.enum(["read", "write"]),
-        fields: z.array(z.string()),
-        selector: z.array(z.string()).optional(),
-        operation: z.string().optional(),
+  z
+    .object({
+      ...repeatCount,
+      type: z.literal("interaction"),
+      binding: BoundaryBindingSchema,
+      /** Source text of the call expression, for inspect rendering. */
+      callee: z.string().optional(),
+      /** All the effects from one call site share this id. */
+      groupId: z.string().optional(),
+      preconditions: z.array(PredicateSchema).optional(),
+      interaction: z.discriminatedUnion("class", [
+        z.object({
+          class: z.literal("storage-access"),
+          kind: z.enum(["read", "write"]),
+          fields: z.array(z.string()),
+          selector: z.array(z.string()).optional(),
+          operation: z.string().optional(),
+          /**
+           * The relation fields this access travelled through, starting
+           * from the container in the binding. A query that asks for a
+           * related record alongside its own gets one access per
+           * relation, and `fields` on each are the fields asked of the
+           * container that relation points at. Only the provider's
+           * contract says which container that is, so the pairing pass
+           * resolves the path there and moves the access to the
+           * container it arrives at. Absent means the access is on the
+           * container in the binding.
+           */
+          relationPath: z.array(z.string()).optional(),
+          /**
+           * Set when the columns this access fills are the ones the
+           * contract declares for the last name in `relationPath`,
+           * rather than columns the call states. A Prisma `connect`
+           * sets the foreign key of the model that declares the
+           * relation, and the call gives the relation's name and never
+           * the column's. So `fields` arrives empty, the pairing pass
+           * looks the name up on the container the rest of the path
+           * arrives at, and the access counts against that container
+           * rather than the one the relation points to.
+           */
+          relationKey: z.boolean().optional(),
+        }),
+        z.object({
+          class: z.literal("service-call"),
+          method: z.string(),
+          payload: z.unknown().optional(),
+          responseShape: TypeShapeSchema.optional(),
+        }),
+        z.object({
+          class: z.literal("message-send"),
+          body: z.unknown().optional(),
+          routingKey: z.string().optional(),
+        }),
         /**
-         * The relation fields this access travelled through, starting
-         * from the container in the binding. A query that asks for a
-         * related record alongside its own gets one access per
-         * relation, and `fields` on each are the fields asked of the
-         * container that relation points at. Only the provider's
-         * contract says which container that is, so the pairing pass
-         * resolves the path there and moves the access to the
-         * container it arrives at. Absent means the access is on the
-         * container in the binding.
+         * Calling a deployed unit by name and waiting, or not, for what
+         * it gives back. Distinct from a service call, whose identity is
+         * a method and a URL path, and from a message send, which goes to
+         * whoever subscribes rather than to one named callee.
          */
-        relationPath: z.array(z.string()).optional(),
+        z.object({
+          class: z.literal("unit-invoke"),
+          /** What the caller hands over, when the source states it. */
+          payload: z.unknown().optional(),
+        }),
         /**
-         * Set when the columns this access fills are the ones the
-         * contract declares for the last name in `relationPath`,
-         * rather than columns the call states. A Prisma `connect`
-         * sets the foreign key of the model that declares the
-         * relation, and the call gives the relation's name and never
-         * the column's. So `fields` arrives empty, the pairing pass
-         * looks the name up on the container the rest of the path
-         * arrives at, and the access counts against that container
-         * rather than the one the relation points to.
+         * The fields a consumer pulls out of a message, with no channel,
+         * since a handler signature does not say which one it is for. The
+         * checker uses the enclosing summary's `binding.semantics.channel`.
          */
-        relationKey: z.boolean().optional(),
-      }),
-      z.object({
-        class: z.literal("service-call"),
-        method: z.string(),
-        payload: z.unknown().optional(),
-        responseShape: TypeShapeSchema.optional(),
-      }),
-      z.object({
-        class: z.literal("message-send"),
-        body: z.unknown().optional(),
-        routingKey: z.string().optional(),
-      }),
-      /**
-       * Calling a deployed unit by name and waiting, or not, for what
-       * it gives back. Distinct from a service call, whose identity is
-       * a method and a URL path, and from a message send, which goes to
-       * whoever subscribes rather than to one named callee.
-       */
-      z.object({
-        class: z.literal("unit-invoke"),
-        /** What the caller hands over, when the source states it. */
-        payload: z.unknown().optional(),
-      }),
-      /**
-       * The fields a consumer pulls out of a message, with no channel,
-       * since a handler signature does not say which one it is for. The
-       * checker uses the enclosing summary's `binding.semantics.channel`.
-       */
-      z.object({
-        class: z.literal("message-receive"),
-        body: z.unknown().optional(),
-      }),
-      z.object({
-        class: z.literal("config-read"),
-        name: z.string(),
-        defaulted: z.boolean(),
-      }),
-      /**
-       * A read of something the runtime provides on its own: the
-       * working directory, the platform, the module's own location.
-       * Separate from `config-read` because no deploy file declares
-       * these and none can fail to, so pairing a read of `__dirname`
-       * against a template's environment would accuse the code of
-       * missing a variable nobody was ever going to set.
-       */
-      z.object({
-        class: z.literal("metadata-read"),
-        name: z.string(),
-      }),
-      /**
-       * A scheduled callback. Nothing pairs against these, so the
-       * enclosing binding uses `function-call` semantics and the
-       * interaction is there for dataflow and inspect rendering.
-       * `hasDelay` says a delay argument was passed, not what it was.
-       */
-      z.object({
-        class: z.literal("schedule"),
+        z.object({
+          class: z.literal("message-receive"),
+          body: z.unknown().optional(),
+        }),
+        z.object({
+          class: z.literal("config-read"),
+          name: z.string(),
+          defaulted: z.boolean(),
+        }),
         /**
-         * What scheduled the callback, as the source spells it:
-         * a runtime primitive (`setTimeout`, `process.nextTick`) or a
-         * library hook (`useQuery`). Open, because each pack knows its
-         * own scheduling surface; nothing dispatches on the value.
+         * A read of something the runtime provides on its own: the
+         * working directory, the platform, the module's own location.
+         * Separate from `config-read` because no deploy file declares
+         * these and none can fail to, so pairing a read of `__dirname`
+         * against a template's environment would accuse the code of
+         * missing a variable nobody was ever going to set.
          */
-        via: z.string(),
-        callbackRef: z.discriminatedUnion("type", [
-          z.object({ type: z.literal("literal") }),
-          z.object({ type: z.literal("identifier"), name: z.string() }),
-          z.object({ type: z.literal("opaque"), reason: z.string() }),
-        ]),
-        hasDelay: z.boolean(),
-      }),
-    ]),
-  }),
+        z.object({
+          class: z.literal("metadata-read"),
+          name: z.string(),
+        }),
+        /**
+         * A scheduled callback. Nothing pairs against these, so the
+         * enclosing binding uses `function-call` semantics and the
+         * interaction is there for dataflow and inspect rendering.
+         * `hasDelay` says a delay argument was passed, not what it was.
+         */
+        z.object({
+          class: z.literal("schedule"),
+          /**
+           * What scheduled the callback, as the source spells it:
+           * a runtime primitive (`setTimeout`, `process.nextTick`) or a
+           * library hook (`useQuery`). Open, because each pack knows its
+           * own scheduling surface; nothing dispatches on the value.
+           */
+          via: z.string(),
+          callbackRef: z.discriminatedUnion("type", [
+            z.object({ type: z.literal("literal") }),
+            z.object({ type: z.literal("identifier"), name: z.string() }),
+            z.object({ type: z.literal("opaque"), reason: z.string() }),
+          ]),
+          hasDelay: z.boolean(),
+        }),
+        /**
+         * A write to one of the process's own streams, such as
+         * `process.stdout.write(report)` or `print(report)`. The binding
+         * uses `io` semantics and says which stream. `payload` is the
+         * shape of what was written, and `serialized` says whether the
+         * code wrote it as JSON or as text.
+         */
+        z.object({
+          class: z.literal("stream-write"),
+          payload: TypeShapeSchema.nullable(),
+          serialized: z.enum(["json", "text"]),
+        }),
+      ]),
+    })
+    // A reader that follows a value into what was written finds the
+    // write by its call site, so a write has to say which one it was.
+    .refine(
+      (effect) =>
+        effect.interaction.class !== "stream-write" ||
+        effect.groupId !== undefined,
+      { message: "a stream-write effect needs a groupId", path: ["groupId"] },
+    ),
 ]);
 
 // ---------------------------------------------------------------------------

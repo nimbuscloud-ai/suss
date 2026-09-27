@@ -287,6 +287,7 @@ const OUTPUT_FORMATTERS: DispatchTable<Output, string> = {
   delegate: (o) => `delegate -> ${o.to}`,
   emit: (o) => `emit "${o.event}"`,
   void: () => "void",
+  exit: (o) => `exit ${o.code !== null ? formatRef(o.code) : "???"}`,
 };
 
 function formatOutput(output: Output): string {

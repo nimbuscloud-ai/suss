@@ -1070,6 +1070,28 @@ describe("terminalToOutput", () => {
     }
   });
 
+  it("converts an exit with the code it hands over, or the text a reader could not settle", () => {
+    expect(
+      terminalToOutput(
+        makeTerminal({
+          kind: "exit",
+          statusCode: { type: "literal", value: 2 },
+        }),
+      ),
+    ).toEqual({ type: "exit", code: { type: "literal", value: 2 } });
+    expect(
+      terminalToOutput(
+        makeTerminal({
+          kind: "exit",
+          statusCode: { type: "dynamic", sourceText: "code" },
+        }),
+      ),
+    ).toEqual({
+      type: "exit",
+      code: { type: "unresolved", sourceText: "code" },
+    });
+  });
+
   it("converts a response with null status code and null body", () => {
     const out = terminalToOutput(makeTerminal({ kind: "response" }));
     if (out.type === "response") {

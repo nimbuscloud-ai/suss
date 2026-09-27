@@ -67,19 +67,3 @@ rules:
     reason: >-
       The test calls the tool through an MCP client, and the request reaches
       the server over an in-memory transport, which suss does not follow.
-  - kind: testMissesSubject
-    boundary: "prd:Set up a project"
-    scenario: an agent sets the project up
-    effect: mark
-    reason: >-
-      The test mocks two modules and then loads initInteractive with a
-      dynamic import, so the mocks apply. suss does not follow a call through
-      a name destructured from a dynamic import yet.
-  - kind: testMissesSubject
-    boundary: "prd:Set up a project"
-    scenario: init in CI
-    effect: mark
-    reason: >-
-      The test mocks two modules and then loads initInteractive with a
-      dynamic import, so the mocks apply. suss does not follow a call through
-      a name destructured from a dynamic import yet.

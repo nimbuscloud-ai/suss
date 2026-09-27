@@ -916,6 +916,7 @@ const ENDING_WORDS: Record<
     verb: "throw",
     object: outcome.errorType === null ? "" : ` ${outcome.errorType}`,
   }),
+  exit: (outcome) => ({ verb: "exit", object: ` ${outcome.status}` }),
   effect: () => ({ verb: "end", object: " with an effect" }),
 };
 

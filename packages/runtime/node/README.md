@@ -15,7 +15,9 @@ setTimeout(() => flush(table), 1000);
 reads. It covers:
 
 - **Invocation recognizers** for the scheduling calls: `setImmediate`,
-  `setTimeout`, `setInterval`, `queueMicrotask` and `process.nextTick`.
+  `setTimeout`, `setInterval`, `queueMicrotask` and `process.nextTick`,
+  and for what a program prints through `console`, `process.stdout` and
+  `process.stderr`.
 - **Access recognizers** for `process.env.X` reads, the keys of a
   schema parsed against `process.env`, the rest of the process object
   (`argv`, `exit` and the process metadata), and the module-location
@@ -238,6 +240,110 @@ name written in the source is the first thing checked.
 A `runtimeEnv` that lists the variables one by one,
 `{ DB_NAME: process.env.DB_NAME }`, is read by the reader for dotted
 access instead of this one, and that reader reports the same names.
+
+## What a program prints
+
+A `console` call and a write to `process.stdout` or `process.stderr`
+become a `stream-write` interaction on an `io` binding, keyed
+`io:stdout` or `io:stderr`:
+
+```ts
+export function printReport(report: Report): number {
+  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  if (!report.passed) {
+    console.error("the run compared nothing");
+    return 1;
+  }
+  return 0;
+}
+```
+
+`suss ask "what writes io:stdout"` lists `printReport`, and an intent
+document can say `writes: io:stdout` on an outcome. The payload of the
+first write is the shape of `report`, with `serialized: json`, because
+the template puts nothing but whitespace around one `JSON.stringify`
+call. A write of anything else records the shape of what was written,
+with `serialized: text`, and a call given several arguments records
+them keyed by position.
+
+`console` is recognized by its spelling, the way `process` is, since
+nothing imports or declares it. The stream follows Node's own split:
+`log`, `info`, `debug`, `table` and `dir` go to stdout, and `warn`,
+`error` and `trace` go to stderr.
+
+A helper that takes the stream it writes to is followed too:
+
+```ts
+function say(out: NodeJS.WritableStream, line: string) {
+  out.write(line);
+}
+say(process.stderr, "usage: report <file>\n");
+```
+
+The pack declares `process.stdout` and `process.stderr` as stream
+objects. The adapter records a fact where the source writes one, and
+the resolution store follows each one into the parameters it is handed,
+once per run, the same walk the environment object gets. The write in
+`say` looks its receiver up in that answer and goes to stderr. When two
+callers pass different streams, the write goes to a stream the source
+does not settle, and its target is null. A parameter annotated
+`Console`, `NodeJS.WriteStream` or `NodeJS.WritableStream` that nothing
+in the run calls is a write with a null target too.
+
+Loggers such as pino, winston and NestJS's `Logger` are left to a pack
+of their own.
+
+## How a program exits
+
+`process.exit(n)` is a terminal. The pack declares it with
+`inEveryUnit`, so it ends a path in a route handler, a helper the
+closure reached and a scheduled callback alike, and the transition's
+output is `{ type: "exit", code }`. A call with no argument exits 0, and
+a code the program computes comes out as the text it came from.
+
+`process.exitCode = 1` lets the function keep going, so it is a
+`stateChange` effect instead, with the code it sets.
+
+Most commands do neither where the decision is made. They return the
+code up a chain of functions and set it in one place:
+
+```ts
+runCli(process.argv.slice(2)).then((code) => {
+  process.exitCode = code;
+});
+```
+
+The pack says `process.exitCode` is where the code goes, and the store
+follows the value assigned there back through the `.then` callback to
+`runCli` and every function it returns the code of, once per run. Each
+of those summaries keeps its `return` outputs and gets
+`metadata.process.exitCodeFrom: "return"`, so an intent document can say
+`exits: 1` about a function that ends in `return result.hasErrors ? 1 : 0`.
+That return comes out as two transitions, one per arm.
+
+## The flags a command takes
+
+A command reads its flags through `parseArgs` from `node:util`, and the
+options object is the only place a flag is written:
+
+```ts
+export function runCheck(args: string[]): number {
+  const { values } = parseArgs({
+    args,
+    options: { dir: { type: "string" }, json: { type: "boolean" } },
+  });
+}
+```
+
+The pack declares `parseArgs` as an argument parser, and the adapter
+records one input read per option, `--dir` and `--json` off `args`, the
+parameter the call takes its arguments from. An intent document lists
+them under `receives` as `"args.--dir"` and `"args.--json"`, and the
+checker reports a flag the document declares that the command no longer
+takes, or one it takes that the document leaves out, the way it does
+for a route's headers. Arguments taken from somewhere other than a
+parameter, such as `process.argv.slice(2)`, give no reads, since
+`process.argv` is already a config read.
 
 ## Options
 

@@ -4,6 +4,7 @@ import {
   type BehavioralSummary,
   type BoundaryBinding,
   functionCallBinding,
+  ioBinding,
   messageBusBinding,
   type Output,
   restBinding,
@@ -1103,6 +1104,201 @@ describe("effect outcomes", () => {
     expect(result.findings[0].boundary).toBe("aws.dynamodb:Invoices");
     expect(result.findings[0].message).toContain("a store has no key at all");
     expect(result.unchecked).toHaveLength(1);
+  });
+});
+
+/** A command whose one return also prints a report with a `run` list. */
+function commandPrinting(payload: TypeShape | null): BehavioralSummary {
+  const summary = codeSummary(
+    fnCodeBinding,
+    [{ type: "return", value: null }],
+    "checkFolder",
+    "library",
+  );
+  summary.transitions[0].effects = [
+    {
+      type: "interaction",
+      binding: ioBinding({
+        recognition: "@suss/runtime-node",
+        target: "stdout",
+      }),
+      callee: "process.stdout.write",
+      groupId: "12:3",
+      interaction: { class: "stream-write", payload, serialized: "json" },
+    },
+  ];
+  return summary;
+}
+
+const printedReport: TypeShape = {
+  type: "record",
+  properties: {
+    run: {
+      type: "array",
+      items: {
+        type: "record",
+        properties: { kind: { type: "literal", value: "nothingPaired" } },
+      },
+    },
+  },
+};
+
+function printsReport(shape?: TypeShape): IntentSummary {
+  return boundaryIntent(
+    fnIntentBinding,
+    [
+      effectOutcome("report-printed", [
+        {
+          does: "writes",
+          names: "io:stdout",
+          fields: [],
+          by: [],
+          ...(shape === undefined ? {} : { shape }),
+        },
+      ]),
+    ],
+    "check-folder",
+  );
+}
+
+describe("a write to one of the process's streams", () => {
+  it("passes when the code prints to the stream the outcome names, by either spelling", () => {
+    for (const names of ["io:stdout", "stdout"]) {
+      const intent = printsReport();
+      const [outcome] = intent.kind === "boundary" ? intent.outcomes : [];
+      if (outcome !== undefined) {
+        outcome.effects[0] = { ...outcome.effects[0], names } as IntentEffect;
+      }
+      const result = checkIntentAgreement(
+        [intent],
+        [commandPrinting(printedReport)],
+      );
+      expect(result.findings).toEqual([]);
+    }
+  });
+
+  it("passes when what the code prints has the declared shape", () => {
+    const result = checkIntentAgreement(
+      [printsReport(printedReport)],
+      [commandPrinting(printedReport)],
+    );
+    expect(result.findings).toEqual([]);
+  });
+
+  it("reports a report whose shape disagrees with the declared one", () => {
+    const renamed: TypeShape = {
+      type: "record",
+      properties: { runs: { type: "array", items: { type: "unknown" } } },
+    };
+    const result = checkIntentAgreement(
+      [printsReport(printedReport)],
+      [commandPrinting(renamed)],
+    );
+    expect(result.findings.map((f) => f.kind)).toEqual([
+      "outcomeShapeMismatch",
+    ]);
+    expect(result.findings[0]?.message).toContain("a write to io:stdout");
+  });
+
+  it("takes a write whose payload the code does not state as unread", () => {
+    const result = checkIntentAgreement(
+      [printsReport(printedReport)],
+      [commandPrinting(null)],
+    );
+    expect(result.findings).toEqual([]);
+  });
+
+  it("reports a print that moved to the other stream as one finding", () => {
+    const intent = printsReport();
+    if (intent.kind === "boundary") {
+      intent.outcomes[0].effects[0].names = "io:stderr";
+    }
+    const result = checkIntentAgreement([intent], [commandPrinting(null)]);
+    expect(result.findings.map((f) => f.kind)).toEqual(["renamedBoundary"]);
+  });
+});
+
+function exits(id: string, code: number): IntentOutcome {
+  return {
+    id,
+    when: "",
+    conditions: [],
+    kind: "exit",
+    status: code,
+    body: null,
+    errorType: null,
+    effects: [],
+  };
+}
+
+function literalReturn(value: number): Output {
+  return { type: "return", value: { type: "literal", value } };
+}
+
+/** A command function whose return, the adapter says, becomes the exit code. */
+function returnsTheExitCode(outputs: Output[]): BehavioralSummary {
+  const summary = codeSummary(fnCodeBinding, outputs, "runCheck", "library");
+  summary.metadata = { process: { exitCodeFrom: "return" } };
+  return summary;
+}
+
+function uncoveredIds(findings: IntentFinding[]): Array<string | undefined> {
+  return findings
+    .filter((f) => f.kind === "uncoveredOutcome")
+    .map((f) => f.intent.outcomeId);
+}
+
+describe("an exit code", () => {
+  const intent = boundaryIntent(
+    fnIntentBinding,
+    [exits("failed", 1), exits("passed", 0)],
+    "run-check",
+  );
+
+  it("matches a return of the code from a unit whose return becomes it", () => {
+    const result = checkIntentAgreement(
+      [intent],
+      [returnsTheExitCode([literalReturn(1), literalReturn(0)])],
+    );
+    expect(result.findings).toEqual([]);
+  });
+
+  it("reports the outcome whose code no transition gives", () => {
+    const result = checkIntentAgreement(
+      [intent],
+      [returnsTheExitCode([literalReturn(0)])],
+    );
+    expect(uncoveredIds(result.findings)).toEqual(["failed"]);
+    expect(result.findings[0]?.message).toContain("exit code 1");
+  });
+
+  it("does not take a return as an exit when nothing says the return becomes one", () => {
+    const summary = codeSummary(
+      fnCodeBinding,
+      [literalReturn(1), literalReturn(0)],
+      "runCheck",
+      "library",
+    );
+    const result = checkIntentAgreement([intent], [summary]);
+    expect(uncoveredIds(result.findings)).toEqual(["failed", "passed"]);
+  });
+
+  it("matches an exit the code states, and not one it computes", () => {
+    const result = checkIntentAgreement(
+      [intent],
+      [
+        codeSummary(
+          fnCodeBinding,
+          [
+            { type: "exit", code: { type: "literal", value: 1 } },
+            { type: "exit", code: { type: "unresolved", sourceText: "code" } },
+          ],
+          "runCheck",
+          "library",
+        ),
+      ],
+    );
+    expect(uncoveredIds(result.findings)).toEqual(["passed"]);
   });
 });
 

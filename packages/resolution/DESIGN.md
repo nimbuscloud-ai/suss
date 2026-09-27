@@ -43,6 +43,9 @@ readsKeyed(site, o, x)      site reads the entry of o at the value of
                             x, where the source does not write the key
                             out
 environmentObject(w)        w is written as the process environment
+streamObject(w)             w is written as one of the process's output
+                            streams, such as process.stdout
+                            (TypeScript)
 ```
 
 Names:
@@ -113,6 +116,14 @@ bodyCalls(f, c)             f's body calls the callee c, keyed the way
 makesCall(f, r)             the call r is written in f's own body
 entersAs(y, r)              y is the name a block opens over the call
                             r, so entering r is what wrote y (Python)
+exitCall(r)                 r ends the process, as a pack's exit
+                            terminal says, and its first argument is
+                            the exit code. The store seeds the exit code
+                            question with it, and no rule reads it
+                            (TypeScript)
+exitCodeWrite(x)            x is assigned to where a pack says the exit
+                            code goes, as in process.exitCode = x. The
+                            store reads it the same way (TypeScript)
 ```
 
 Classes:
@@ -259,7 +270,12 @@ in, which is what a project barrel hides. A declaration a library's own
 `.d.ts` file makes at the top of a module or namespace is recorded as
 that library's name too. That covers a member of a namespace a barrel
 re-exports, a member of a default import of a module written with
-`export =`, and a global a package declares. The Python adapter writes
+`export =`, and a global a package declares. An `import("./run.js")`
+call with a written specifier is recorded the way the static import
+would be: `const mod = await import(...)` as `import * as mod`, and
+`const { runCli } = await import(...)` as a named import of `runCli`.
+The call itself is recorded as a namespace import too, for a member
+read straight off it. The Python adapter writes
 every import under the module as written, and under the file as well
 when the import resolves to one.
 
@@ -932,7 +948,7 @@ const table = requireEnv("TABLE_NAME");
 When an adapter emits facts, it cannot tell that `env[name]` reads the
 environment. It records the two things it can see: `readsKeyed` for a
 read off any container, and `environmentObject` for the expression that
-spells `process.env`. `environmentValue(w, o)` walks outward from the
+spells `process.env`. `runtimeValue(w, o)` walks outward from the
 object, through the names declared as it and the parameters that
 callers pass it to, however many calls deep. A parameter whose default
 is the environment counts too, because a caller that passes nothing
@@ -957,6 +973,54 @@ every join. The walk runs from the argument to the parameter it refers
 to, out to that parameter's callers, and on until it reaches an
 `environmentObject` or runs out of callers. The store exposes this
 question as `isEnvironmentValue`.
+
+An output stream is followed the same way. A helper that takes the
+stream it writes to, `function say(out, line) { out.write(line) }`,
+writes to whatever its callers pass. The adapter records
+`streamObject(w)` where the source spells `process.stdout` or
+`process.stderr`, and `runtimeObject` is either of the two seeds, so
+`runtimeValue` follows both kinds of object with the same three rules.
+`wantedStreamObject` seeds the question from every stream spelling, and
+`wantedStreamValue` hands back every expression a stream reaches. The
+store asks it once per run and keeps the answer, so a recognizer at
+`out.write(...)` looks the receiver up in that answer instead of asking
+a question per call.
+
+## Which returns become the exit code
+
+A command often returns its exit code up a chain of functions and
+hands it to the process in one place:
+
+```ts
+// bin.ts
+runCli(process.argv.slice(2)).then((code) => {
+  process.exitCode = code;
+});
+
+// run.ts
+export async function runCli(args: string[]): Promise<number> {
+  return await dispatch(args);
+}
+```
+
+The adapter records `exitCodeWrite(x)` for the value assigned to
+`process.exitCode`, and `exitCall(r)` for a call a pack's exit terminal
+matches, whose first argument is the code. The store seeds
+`wantedExitSink` with each of those values, and `wantedExitCodeFrom(x, f)`
+lists every function that a call at the value, or one reached from it,
+invokes. The walk is `reaches`, so nothing about it is new except one
+hop. `.then`'s first callback is handed what the promise it was chained
+on settles to, so its first parameter steps to the receiver of `.then`,
+written as `hop` and given its `stepsTo` twin like every other hop.
+From `code` the walk goes through that step to the `runCli(...)` call,
+through the call-result step to what `runCli` returns, and on through
+`dispatch` to each command it returns the code of. A ternary is not a
+step, so the test in `failed ? 1 : 0` never reaches a call and the
+function computing `failed` is not one of them.
+
+The question starts from a parameter on purpose. Everything the walk
+passes after that is a return or a call, and the seed is a handful of
+values in the few files that write the exit code.
 
 ## A type the callers declare
 

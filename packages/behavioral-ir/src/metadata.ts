@@ -1141,6 +1141,26 @@ export function readCodeScopeMetadata(
   return readNamespace(CodeScopeMetadataSchema, summary.metadata?.codeScope);
 }
 
+/**
+ * What the adapter records about how a unit's result reaches the
+ * process. `exitCodeFrom: "return"` says the value the unit returns
+ * ends up as the exit code, through however many callers pass it up.
+ * The unit's outputs stay `return`, so the summary still says what the
+ * code says, and a check of an exit code reads this beside them.
+ */
+const ProcessMetadataSchema = z.object({
+  exitCodeFrom: z.literal("return").optional(),
+});
+
+export type ProcessMetadata = z.infer<typeof ProcessMetadataSchema>;
+
+/** How the unit's result reaches the process, or undefined when nothing says. */
+export function readProcessMetadata(
+  summary: BehavioralSummary,
+): ProcessMetadata | undefined {
+  return readNamespace(ProcessMetadataSchema, summary.metadata?.process);
+}
+
 const ReactMetadataSchema = z.object({
   kind: z.string().optional(),
   deps: z.array(z.string()).nullable().optional(),

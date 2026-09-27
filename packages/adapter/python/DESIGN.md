@@ -430,7 +430,7 @@ POOL_SIZE = env("POOL_SIZE", 5)
 
 The adapter records two facts, and the rules combine them. `readsKeyed(site, o, x)` records that the read at `site` takes the entry of `o` whose key `x` works out to, for any container. `environmentObject(w)` records that `w` is written as `os.environ`. The shared rules in `@suss/resolution` derive `readsEnvNamed(site, x)` from the two, and then `paramNamesEnv(p, site)`. That relation is true when a parameter ends up as the name a read site looks up, either because the site reads the parameter directly or because the parameter is passed on to another helper's parameter that does. That one rule covers forwarding through any number of helpers, across files.
 
-Keeping the two facts separate lets a read count when it is taken off something other than `os.environ`. `make_reader(os.environ)` returning `lambda name: env[name]` reads the environment through a parameter, and a scan of the helper's file would miss it, because that file never writes `os.environ`. `environmentValue(w, o)` starts from the object instead and follows it through the names assigned to it and the parameters callers pass it to. A keyed read off any of those is an environment read.
+Keeping the two facts separate lets a read count when it is taken off something other than `os.environ`. `make_reader(os.environ)` returning `lambda name: env[name]` reads the environment through a parameter, and a scan of the helper's file would miss it, because that file never writes `os.environ`. `runtimeValue(w, o)` starts from the object instead and follows it through the names assigned to it and the parameters callers pass it to. A keyed read off any of those is an environment read.
 
 The query is keyed on the environment objects. A project writes `os.environ` in a handful of places and has thousands of parameters that something could be passed to. So the run seeds `wantedEnvObject` once with every environment object the adapter recorded, and keeps the result: for each parameter, the read sites whose variable name its value ends up as. `os.getenv(name)` has no container, so the adapter records the `os.getenv` reference itself as the environment object and records the read against it.
 
@@ -447,6 +447,16 @@ A helper that is passed the environment itself works too: `make_reader(os.enviro
 Out of scope: a name built out of a parameter (`env(f"{prefix}_URL")` reads nothing), a helper that takes the name off a dict or an options object instead of a parameter, and a helper built by `functools.partial`.
 
 In a project where every read writes out its own variable name, no expression is treated as the environment, and the reader never asks anything at a call.
+
+## What a command prints, how it exits, and which flags it takes
+
+These are the standard library, so the adapter reads them the way it reads `os.environ`, with no pack.
+
+`print(x)` writes to stdout, and to stderr when `file=sys.stderr`. `sys.stdout.write(x)` and `sys.stderr.write(x)` write to the stream they name. Each becomes a `stream-write` interaction on an `io` binding, the effect the Node pack records for `console.log`. A `print` whose `file` is anything else writes to a file and is left alone. `print(json.dumps(report))` records the report's shape with `serialized: json`.
+
+`sys.exit(n)`, the builtins `exit(n)` and `quit(n)`, and `raise SystemExit(n)` end the process. A reached function has one transition, because nothing tells its paths apart. One that ends the process has its paths read one at a time instead, through the same lowering a route uses, so each exit is an `exit` transition with the conditions that lead to it. No code exits 0 and a message exits 1, as Python does. `sys.exit(main())` makes `main`'s return the exit code: the value each exit hands over seeds the shared `wantedExitSink` question over the run's facts, and every function it reaches gets `metadata.process.exitCodeFrom: "return"`.
+
+`parser.add_argument("--dir")` followed by `parser.parse_args(argv)` records an input read of `--dir` off `argv`, the parameter the parser is handed, and a positional argument becomes a read of its position.
 
 ## What a route, or a module loading, reaches
 

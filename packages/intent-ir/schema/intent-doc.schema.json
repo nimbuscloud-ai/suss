@@ -1203,6 +1203,12 @@
                   }
                 ]
               },
+              "exits": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255,
+                "description": "This outcome ends the process with this exit code."
+              },
               "results": {
                 "minItems": 1,
                 "type": "array",
@@ -1238,6 +1244,34 @@
                               }
                             }
                           ]
+                        },
+                        "shape": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/__schema0"
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "properties": {
+                                  "type": "object",
+                                  "propertyNames": {
+                                    "type": "string"
+                                  },
+                                  "additionalProperties": {
+                                    "$ref": "#/$defs/__schema0"
+                                  }
+                                },
+                                "required": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                }
+                              }
+                            }
+                          ],
+                          "description": "The shape of what the effect writes, such as the report a command prints."
                         }
                       },
                       "required": ["reads"],
@@ -1273,6 +1307,34 @@
                               }
                             }
                           ]
+                        },
+                        "shape": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/__schema0"
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "properties": {
+                                  "type": "object",
+                                  "propertyNames": {
+                                    "type": "string"
+                                  },
+                                  "additionalProperties": {
+                                    "$ref": "#/$defs/__schema0"
+                                  }
+                                },
+                                "required": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                }
+                              }
+                            }
+                          ],
+                          "description": "The shape of what the effect writes, such as the report a command prints."
                         }
                       },
                       "required": ["writes"],
@@ -1308,6 +1370,34 @@
                               }
                             }
                           ]
+                        },
+                        "shape": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/__schema0"
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "properties": {
+                                  "type": "object",
+                                  "propertyNames": {
+                                    "type": "string"
+                                  },
+                                  "additionalProperties": {
+                                    "$ref": "#/$defs/__schema0"
+                                  }
+                                },
+                                "required": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                }
+                              }
+                            }
+                          ],
+                          "description": "The shape of what the effect writes, such as the report a command prints."
                         }
                       },
                       "required": ["invokes"],
@@ -1359,6 +1449,34 @@
                       }
                     ]
                   },
+                  "shape": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "properties": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "$ref": "#/$defs/__schema0"
+                            }
+                          },
+                          "required": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "description": "The shape of what the effect writes, such as the report a command prints."
+                  },
                   "except": {
                     "minItems": 1,
                     "type": "array",
@@ -1403,6 +1521,34 @@
                       }
                     ]
                   },
+                  "shape": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "properties": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "$ref": "#/$defs/__schema0"
+                            }
+                          },
+                          "required": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "description": "The shape of what the effect writes, such as the report a command prints."
+                  },
                   "except": {
                     "minItems": 1,
                     "type": "array",
@@ -1446,6 +1592,34 @@
                         }
                       }
                     ]
+                  },
+                  "shape": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "properties": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "$ref": "#/$defs/__schema0"
+                            }
+                          },
+                          "required": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "description": "The shape of what the effect writes, such as the report a command prints."
                   },
                   "except": {
                     "minItems": 1,
@@ -1644,6 +1818,51 @@
             }
           },
           "required": ["type"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "const": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": ["const"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "properties": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              }
+            },
+            "required": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": ["properties"],
+          "additionalProperties": false
         }
       ]
     }

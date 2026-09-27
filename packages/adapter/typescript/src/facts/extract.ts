@@ -13,6 +13,7 @@
 import {
   type BindingElement,
   type Expression,
+  type ExpressionStatement,
   ModuleDeclarationKind,
   Node,
   type ObjectBindingPattern,
@@ -88,10 +89,30 @@ export interface NodeTable {
    * this adapter knows which object that is; a pack says so.
    */
   environmentObjects: readonly string[];
+  /** Dotted paths the packs call the process's output streams, the same way. */
+  streamObjects: readonly string[];
+  /** Callees a pack says end the process, such as `process.exit`. */
+  exitCalls: readonly string[];
+  /** Dotted paths a pack says the exit code is assigned to. */
+  exitCodeWrites: readonly string[];
 }
+
+/** How the packs in a run spell the parts of the process nothing declares. */
+export interface RuntimeSpellings {
+  streamObjects: readonly string[];
+  exitCalls: readonly string[];
+  exitCodeWrites: readonly string[];
+}
+
+export const NO_RUNTIME_SPELLINGS: RuntimeSpellings = {
+  streamObjects: [],
+  exitCalls: [],
+  exitCodeWrites: [],
+};
 
 export function createNodeTable(
   environmentObjects: readonly string[] = [],
+  runtime: RuntimeSpellings = NO_RUNTIME_SPELLINGS,
 ): NodeTable {
   return {
     byId: new Map(),
@@ -101,6 +122,7 @@ export function createNodeTable(
     seenClasses: new Set(),
     seenImports: new Set(),
     environmentObjects,
+    ...runtime,
   };
 }
 
@@ -185,20 +207,68 @@ function emitImportFacts(
   table.seenImports.add(declaration);
   fact(db, "binds", referenceId, declarationId);
 
-  const specifier = importDecl.getModuleSpecifierValue();
-  const packageKeys =
-    specifier === undefined || specifier.startsWith(".")
-      ? []
-      : [specifier, packagePartOf(specifier)];
   const keys = new Set([
-    moduleKey,
-    ...packageKeys,
-    ...packagesDeclaring(moduleKey),
+    ...moduleKeysOf(moduleKey, importDecl.getModuleSpecifierValue()),
     ...packagesBehind(declaration),
   ]);
   for (const key of keys) {
     fact(db, "imports", declarationId, key, name);
   }
+}
+
+/**
+ * The keys an import of one module is recorded under, leaving out the
+ * packages its names turn out to be declared in.
+ */
+function moduleKeysOf(
+  moduleKey: string,
+  specifier: string | undefined,
+): string[] {
+  const packageKeys =
+    specifier === undefined || specifier.startsWith(".")
+      ? []
+      : [specifier, packagePartOf(specifier)];
+  return [moduleKey, ...packageKeys, ...packagesDeclaring(moduleKey)];
+}
+
+/**
+ * The keys `import("./run.js")` loads its module under, or null when
+ * the expression is something else or the specifier is computed.
+ */
+function dynamicImportKeysOf(expression: Expression): string[] | null {
+  const call = unwrapExpression(expression);
+  if (
+    !Node.isCallExpression(call) ||
+    call.getExpression().getKind() !== SyntaxKind.ImportKeyword
+  ) {
+    return null;
+  }
+  const [argument] = call.getArguments();
+  if (argument === undefined || !Node.isStringLiteral(argument)) {
+    return null;
+  }
+  const specifier = argument.getLiteralText();
+  const moduleKey = compilerResolvedPathOf(call, specifier) ?? specifier;
+  return [...new Set(moduleKeysOf(moduleKey, specifier))];
+}
+
+/**
+ * `await import("./run.js")` settles to the module's namespace, so the
+ * call is recorded the way `import * as ns` is.
+ */
+function emitDynamicImportFacts(
+  db: Database,
+  id: string,
+  call: CallExpression,
+): boolean {
+  const keys = dynamicImportKeysOf(call);
+  if (keys === null) {
+    return false;
+  }
+  for (const key of keys) {
+    fact(db, "imports", id, key, NAMESPACE_IMPORT_NAME);
+  }
+  return true;
 }
 
 /**
@@ -416,11 +486,26 @@ function literalIndexOf(index: Expression | undefined): string | null {
  * declaration to resolve to.
  */
 export function isEnvironmentObject(table: NodeTable, node: Node): boolean {
-  if (table.environmentObjects.length === 0) {
+  return spellsOneOf(table.environmentObjects, node);
+}
+
+/** Whether an expression spells one of the output streams a pack declared. */
+export function isStreamObject(table: NodeTable, node: Node): boolean {
+  return spellsOneOf(table.streamObjects, node);
+}
+
+/** The declared stream path an expression spells, or null for any other expression. */
+export function spelledStreamPath(table: NodeTable, node: Node): string | null {
+  const path = dottedPathOf(node);
+  return path !== null && table.streamObjects.includes(path) ? path : null;
+}
+
+function spellsOneOf(paths: readonly string[], node: Node): boolean {
+  if (paths.length === 0) {
     return false;
   }
   const path = dottedPathOf(node);
-  return path !== null && table.environmentObjects.includes(path);
+  return path !== null && paths.includes(path);
 }
 
 /**
@@ -447,16 +532,31 @@ export function environmentObjectsIn(
   table: NodeTable,
   sourceFile: SourceFile,
 ): Node[] {
-  if (table.environmentObjects.length === 0) {
+  return spellingsHandedOn(table.environmentObjects, sourceFile);
+}
+
+/** The same for the output streams: `out.write(...)` hands nothing on. */
+export function streamObjectsIn(
+  table: NodeTable,
+  sourceFile: SourceFile,
+): Node[] {
+  return spellingsHandedOn(table.streamObjects, sourceFile);
+}
+
+function spellingsHandedOn(
+  paths: readonly string[],
+  sourceFile: SourceFile,
+): Node[] {
+  if (paths.length === 0) {
     return [];
   }
   const text = sourceFile.getFullText();
-  if (!table.environmentObjects.some((path) => text.includes(path))) {
+  if (!paths.some((path) => text.includes(path))) {
     return [];
   }
   return sourceFile
     .getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)
-    .filter((node) => isEnvironmentObject(table, node) && flowsOnward(node));
+    .filter((node) => spellsOneOf(paths, node) && flowsOnward(node));
 }
 
 /** Whether anything but a named read of one variable is done with the object. */
@@ -574,6 +674,9 @@ export function emitValue(
     if (isEnvironmentObject(table, expression)) {
       fact(db, "environmentObject", id);
     }
+    if (isStreamObject(table, expression)) {
+      fact(db, "streamObject", id);
+    }
     emitReferenceFacts(db, table, expression);
     return id;
   }
@@ -675,6 +778,13 @@ export function emitValue(
   if (fallback !== null) {
     fact(db, "fallbackBranch", id, emitValue(db, table, fallback.getLeft()));
     fact(db, "fallbackBranch", id, emitValue(db, table, fallback.getRight()));
+    return id;
+  }
+
+  if (
+    Node.isCallExpression(expression) &&
+    emitDynamicImportFacts(db, id, expression)
+  ) {
     return id;
   }
 
@@ -865,7 +975,14 @@ function emitBindingValues(
 
   if (!isWrittenAgain(declaration)) {
     const initializer = declaration.getInitializer();
-    if (initializer !== undefined) {
+    // `const mod = await import("x")` is `import * as mod from "x"`
+    // written at run time, so it is recorded as one.
+    const imported =
+      initializer === undefined ? null : dynamicImportKeysOf(initializer);
+    for (const key of imported ?? []) {
+      fact(db, "imports", declarationId, key, NAMESPACE_IMPORT_NAME);
+    }
+    if (initializer !== undefined && imported === null) {
       fact(db, "binds", declarationId, emitValue(db, table, initializer));
     }
     return;
@@ -976,8 +1093,15 @@ function emitBindingElementFacts(
   const container = Node.isObjectBindingPattern(pattern)
     ? containerOfBindingPattern(pattern)
     : undefined;
-  if (container !== undefined) {
-    const property = element.getPropertyNameNode() ?? element.getNameNode();
+  const property = element.getPropertyNameNode() ?? element.getNameNode();
+  // `const { runCli } = await import("./run.js")` is a named import
+  // written at run time, so it is recorded as one.
+  const imported =
+    container === undefined ? null : dynamicImportKeysOf(container);
+  for (const key of imported ?? []) {
+    fact(db, "imports", id, key, property.getText());
+  }
+  if (container !== undefined && imported === null) {
     fact(
       db,
       "readsProperty",
@@ -1187,6 +1311,9 @@ function emitCallFacts(
   fact(db, "call", callId, calleeId);
   if (!insideMethodBody(call as unknown as Node)) {
     fact(db, "callOutsideMethod", callId);
+  }
+  if (spellsOneOf(table.exitCalls, callee)) {
+    fact(db, "exitCall", callId);
   }
 
   const global = globalNameOf(callee);
@@ -1615,6 +1742,7 @@ function recordBodyCalls(
     emitValue(db, table, node);
   }
   notePropertyWrite(writes, node);
+  emitExitCodeWrite(db, table, node);
   const call = unwrapExpression(node);
   if (!isCall(call)) {
     return false;
@@ -1631,6 +1759,19 @@ function recordBodyCalls(
     fact(db, "bodyCalls", fnId, emitValue(db, table, callee));
   }
   return false;
+}
+
+/** `process.exitCode = code`: the value that becomes the process's exit code. */
+function emitExitCodeWrite(db: Database, table: NodeTable, node: Node): void {
+  if (
+    table.exitCodeWrites.length === 0 ||
+    !Node.isBinaryExpression(node) ||
+    node.getOperatorToken().getKind() !== SyntaxKind.EqualsToken ||
+    !spellsOneOf(table.exitCodeWrites, node.getLeft())
+  ) {
+    return;
+  }
+  fact(db, "exitCodeWrite", emitValue(db, table, node.getRight()));
 }
 
 /** A call or a construction, which the rules read as a call of the class. */
@@ -1662,9 +1803,10 @@ function emitTopLevelStatements(
   const writes = propertyWritesOf(sourceFile, sourceFile);
   for (const statement of sourceFile.getStatements()) {
     if (Node.isExpressionStatement(statement)) {
-      const expression = unwrapExpression(statement.getExpression());
+      const expression = statementExpressionOf(statement);
       emitStatementCall(db, table, expression);
       notePropertyWrite(writes, expression);
+      emitExitCodeWrite(db, table, expression);
       continue;
     }
     // A write under a branch or a loop settles nothing on its own, but
@@ -1680,6 +1822,17 @@ function emitTopLevelStatements(
     }
   }
   emitNamedStores(db, table, writes);
+}
+
+/**
+ * What a statement runs. `void main()` runs `main()` and throws the
+ * promise away, so the call is what runs.
+ */
+function statementExpressionOf(statement: ExpressionStatement): Expression {
+  const expression = unwrapExpression(statement.getExpression());
+  return Node.isVoidExpression(expression)
+    ? unwrapExpression(expression.getExpression())
+    : expression;
 }
 
 /** The statements at the top of a file that run code under them in place. */

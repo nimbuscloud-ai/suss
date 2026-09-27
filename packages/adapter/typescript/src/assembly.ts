@@ -286,10 +286,16 @@ export function extractRawBranches(
   // One condition list per path from entry to terminal. Anything the
   // path engine cannot enumerate comes back as the enclosing conditions
   // plus an opaque conjunct, so there is no second code path here.
+  const endings: ReadonlySet<Node> = new Set(
+    terminals
+      .filter(({ terminal }) => terminal.kind === "exit")
+      .map(({ node }) => node),
+  );
   const { byTerminal } = computePathConditions(
     func,
     terminals.map(({ node }) => node),
     barriers,
+    endings,
   );
 
   // Synthesise a fall-through terminal when (a) the pack opted in by
@@ -322,6 +328,7 @@ export function extractRawBranches(
         func,
         [synthetic.node],
         barriers,
+        endings,
       );
       byTerminal.set(
         synthetic.node,

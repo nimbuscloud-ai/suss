@@ -28,9 +28,11 @@ test is renamed, skipped, or stops reaching what `about` says:
 - The promise is about which values come back, such as a finding that
   was already there not being reported as new. An outcome cannot state
   that.
-- The promise is about a CLI command's exit code or output, or an MCP
-  tool's result. suss has no boundary for either yet, so these list
-  the CLI test for now and move to a link once it has one.
+- The promise is about what a command writes to a file, what its
+  printed text says, or an MCP tool's result, none of which an outcome
+  can state yet. A command's exit code and the stream it prints to can
+  be stated, as `exits:` and `writes: io:stdout`, where the code that
+  decides them is on the command function's own transitions.
 
 The dogfood run reads the test files these scenarios list with the
 vitest pack, and no others.
@@ -48,7 +50,7 @@ vitest pack, and no others.
 ## Boundary intent
 
 Each `*.intent.yaml` is one export another program calls, paired with
-the code by `fn:<package>::<exportPath>`. Three groups of callers rely
+the code by `fn:<package>::<exportPath>`. Four groups of callers rely
 on them:
 
 - Programs using suss as a library: `parseSummaries` and
@@ -64,6 +66,11 @@ on them:
   `createTypeScriptAdapter` and its `extractAll` from
   `@suss/adapter-typescript`, and the four packs in `@suss/packs` that
   refuse to run without a setting only the project knows.
+- People and CI jobs running the commands: `runCheck` and
+  `initInteractive` from `@suss/cli`, whose documents say which flags
+  each command takes, what it prints to which stream, and the code it
+  exits with. The dogfood run reads a package that ships a `bin` with
+  the Node pack, so its summaries have those.
 
 A document lists an outcome only where the code has one: a separate
 return, a throw, or an effect. A function with one return path gets one

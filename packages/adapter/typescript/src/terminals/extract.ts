@@ -56,6 +56,56 @@ export function unwrapJsonStringify(node: Expression): Expression {
   return unwrapAs(args[0] as Expression);
 }
 
+/** What a call writes out, and whether it was serialized as JSON first. */
+export interface WrittenPayload {
+  shape: TypeShape | null;
+  serialized: "json" | "text";
+}
+
+/**
+ * What a call writes, for a pack recording a write to a stream.
+ * `JSON.stringify(report)` writes the report as JSON, and so does a
+ * template that puts nothing but whitespace around one such call, the
+ * way a command ends its report with a newline. Several arguments are
+ * written one after another, so their shapes come back keyed by position.
+ */
+export function writtenPayloadOf(args: readonly Node[]): WrittenPayload {
+  if (args.length !== 1) {
+    const properties: Record<string, TypeShape> = {};
+    for (const [at, arg] of args.entries()) {
+      properties[String(at)] = extractShape(arg) ?? { type: "unknown" };
+    }
+    return { shape: { type: "record", properties }, serialized: "text" };
+  }
+  const only = args[0] as Expression;
+  for (const written of [jsonInWhitespace(only), only]) {
+    const value = written === null ? written : unwrapJsonStringify(written);
+    if (value !== null && value !== written) {
+      return { shape: extractShape(value), serialized: "json" };
+    }
+  }
+  return { shape: extractShape(only), serialized: "text" };
+}
+
+/** The one expression a template wraps in whitespace, or null for any other value. */
+function jsonInWhitespace(node: Expression): Expression | null {
+  const template = unwrapAs(node);
+  if (!Node.isTemplateExpression(template)) {
+    return null;
+  }
+  const spans = template.getTemplateSpans();
+  const only = spans[0];
+  if (
+    spans.length !== 1 ||
+    only === undefined ||
+    template.getHead().getLiteralText().trim() !== "" ||
+    only.getLiteral().getLiteralText().trim() !== ""
+  ) {
+    return null;
+  }
+  return only.getExpression();
+}
+
 // ---------------------------------------------------------------------------
 // Extraction context
 //

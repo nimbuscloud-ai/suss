@@ -125,6 +125,7 @@ const DESCRIBED_WITHOUT_LISTING: Record<
   "graphql-operation": LISTS_EVERYTHING,
   "runtime-config": LISTS_EVERYTHING,
   metric: LISTS_EVERYTHING,
+  io: LISTS_EVERYTHING,
 };
 
 function unreadFinding(

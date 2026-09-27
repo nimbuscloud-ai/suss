@@ -9,6 +9,7 @@ import {
   functionCallBinding,
   graphqlOperationBinding,
   graphqlResolverBinding,
+  ioBinding,
   messageBusBinding,
   type Output,
   type Predicate,
@@ -608,6 +609,26 @@ describe("BehavioralSummaryArraySchema", () => {
     const parsed = parseSummaries([minimal]);
     expect(parsed).toHaveLength(1);
     expect(parsed[0].kind).toBe("handler");
+  });
+
+  it("parseSummaries takes an exit, and refuses a stream write that does not say where it was written", () => {
+    const write = {
+      type: "interaction",
+      binding: ioBinding({ recognition: "test", target: "stdout" }),
+      interaction: { class: "stream-write", payload: null, serialized: "text" },
+    } as const;
+    const summary = (groupId?: string) => {
+      const exits = makeTransition("t1", {
+        type: "exit",
+        code: { type: "literal", value: 1 },
+      });
+      exits.effects = [
+        { ...write, ...(groupId === undefined ? {} : { groupId }) },
+      ];
+      return makeSummary([exits]);
+    };
+    expect(() => parseSummaries([summary("4:3")])).not.toThrow();
+    expect(() => parseSummaries([summary()])).toThrow(/groupId/);
   });
 });
 

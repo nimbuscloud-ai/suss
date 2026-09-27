@@ -162,7 +162,7 @@ The transition above has an `invocation` effect, which records that a call fired
 
 A transition lists each effect once, however many sites on that path produced it. The repeats become `count`, so a path that calls the same validator thirteen times has one effect with `"count": 13`, and a path that calls it once has no `count` at all. `callee` is the source text with its whitespace collapsed, so a chain broken across lines and the same chain written on one line are one effect.
 
-Every `interaction` includes the `BoundaryBinding` of the resource it reaches, so the checker can pair it against whatever declares that thing, such as a Prisma schema or a CloudFormation table. The eight classes are `storage-access`, `service-call`, `message-send`, `message-receive`, `unit-invoke`, `config-read`, `metadata-read` and `schedule`. [IR types](/reference/ir#effect) has each one's fields.
+Every `interaction` includes the `BoundaryBinding` of the resource it reaches, so the checker can pair it against whatever declares that thing, such as a Prisma schema or a CloudFormation table. The nine classes are `storage-access`, `service-call`, `message-send`, `message-receive`, `unit-invoke`, `config-read`, `metadata-read`, `schedule` and `stream-write`. [IR types](/reference/ir#effect) has each one's fields.
 
 ## How two summaries pair
 

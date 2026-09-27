@@ -1,0 +1,50 @@
+kind: boundary
+
+name: cli-check
+purpose: >-
+  Run suss check over the flags it was given and resolve to the process's
+  exit code. A flag it cannot use, or two flags that cannot run together,
+  stop the run with a sentence on stderr and exit 1, so a CI job reading
+  the exit code and a person reading the terminal both find out.
+audience: developers and CI jobs running suss check, and the plugin's hooks
+source: author
+
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "@suss/cli"
+  exportPath: ["runCheck"]
+  receives:
+    args: { type: array, required: true }
+    "args.--dir": { type: string }
+    "args.--json": { type: boolean }
+    "args.--output": { type: string }
+    "args.--at": { type: string }
+    "args.--intent": { type: string }
+    "args.--since": { type: string }
+    "args.--all": { type: boolean }
+    "args.--fail-on": { type: string }
+    "args.--allow-empty": { type: boolean }
+    "args.--fail-on-empty": { type: boolean }
+    "args.--fail-on-unpaired": { type: string }
+    "args.--fail-on-unreadable": { type: boolean }
+    "args.--sussignore": { type: string }
+    "args.--no-suppressions": { type: boolean }
+
+transitions:
+  - id: refused
+    when: >-
+      --fail-on is a word other than error, warning, info or none, --at
+      is given with --intent or --since, one of --at, --intent or --since
+      is given without a folder, or fewer than two summary files are given
+    exits: 1
+    results:
+      - writes: io:stderr
+
+  - id: pair-failed
+    when: two summary files were compared and the comparison found something at or above --fail-on
+    exits: 1
+
+  - id: pair-passed
+    when: two summary files were compared and nothing reached --fail-on
+    exits: 0

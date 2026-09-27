@@ -10,13 +10,13 @@ separate fields: what bytes travel (transport), what the two sides mean by
 the exchange (semantics), and how a particular library expresses that in
 source code (recognition).
 
-Nine semantics variants ship today: `rest`, `function-call`,
+Ten semantics variants ship today: `rest`, `function-call`,
 `graphql-resolver`, `graphql-operation`, `runtime-config`,
-`storage`, `message-bus`, `metric`, and `unit-invocation`, each as its
-own module under `packages/ir-core/src/semantics/`. To find out whether
-a protocol already works, see
+`storage`, `message-bus`, `metric`, `unit-invocation`, and `io`, each as
+its own module under `packages/ir-core/src/semantics/`. To find out
+whether a protocol already works, see
 [What's shipped vs what's deferred](#whats-shipped-vs-whats-deferred).
-The sections before it describe the model those nine variants share.
+The sections before it describe the model those ten variants share.
 
 ## The three layers
 
@@ -133,7 +133,8 @@ type Semantics =
   | { name: "storage"; storageSystem: string | null; scope: string; container: string | null; accessPath: string | null }
   | { name: "message-bus"; messageBus: "aws_sqs" | "aws.sns" | "s3" | "eventbridge" | "bullmq" | "kafka" | "nats"; channel: string | null }
   | { name: "metric"; metricSystem: string; metricType: string | null }
-  | { name: "unit-invocation"; deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment" | "worker"; instanceName: string | null };
+  | { name: "unit-invocation"; deploymentTarget: "lambda" | "ecs-task" | "container" | "k8s-deployment" | "worker"; instanceName: string | null }
+  | { name: "io"; target: string | null };
 ```
 
 An identity field is null when the source never states it. A queue
@@ -224,6 +225,13 @@ Pairing key: `(metricSystem, metricType)`. Whether a measurement is one number
 or a histogram is something only the declaring side can state, so it goes on
 that summary's metadata, the way a storage contract's field list does.
 
+**`io`** is one of the process's own streams, standard output or
+standard error. Only the side that writes is ever in a run, since
+whoever reads the stream is a person, a shell or a test, so nothing
+pairs with it. It is keyed `io:stdout` anyway, so a question, an intent
+document and a review diff all spell the stream the same way. A write
+to a stream the reader could not settle has a null target and no key.
+
 **`unit-invocation`** is a deployed unit something else calls by name: a
 Lambda another Lambda invokes, a Cloud Function, a state machine. Its
 identity is the platform plus the name the platform knows the unit by,
@@ -258,6 +266,7 @@ storageBinding({ recognition, storageSystem /* string | null */, scope, containe
 messageBusBinding({ recognition, messageBus, channel /* string | null */ })
 metricBinding({ recognition, metricSystem, metricType /* string | null */ })
 unitInvocationBinding({ recognition, deploymentTarget, instanceName /* string | null */ })
+ioBinding({ recognition, target /* string | null */ })
 ```
 
 The builders throw on an empty string in an identity field. Write null
@@ -508,12 +517,12 @@ emit the consumer side of each infrastructure component.
 Shipped:
 
 1. `BoundaryBinding` has `transport`, `semantics`, and `recognition` as
-   top-level fields. `@suss/behavioral-ir` exports ten binding builder
+   top-level fields. `@suss/behavioral-ir` exports eleven binding builder
    helpers, and every pack and contract source builds its bindings
    through them.
-2. Nine `semantics` variants: `rest`, `function-call`, `graphql-resolver`,
+2. Ten `semantics` variants: `rest`, `function-call`, `graphql-resolver`,
    `graphql-operation`, `runtime-config`, `storage`, `message-bus`, `metric`,
-   `unit-invocation`.
+   `unit-invocation`, `io`.
 3. Metadata namespaced under `metadata.http.*` and `metadata.graphql.*`,
    with `metadata.runtimeContract.*` and `metadata.storageContract.*` for the
    newer semantics.

@@ -59,6 +59,7 @@ export interface KeptTransition {
   response?: { status: number };
   returns?: Record<string, never>;
   throws?: { errorType?: string };
+  exits?: number;
   results?: EffectOutcome[];
 }
 
@@ -119,6 +120,10 @@ const ENDINGS: Record<
           id: `throws-${slug(outcome.errorType)}`,
           throws: { errorType: outcome.errorType },
         },
+  exit: (outcome) => ({
+    id: `exits-${outcome.status ?? 0}`,
+    exits: outcome.status ?? 0,
+  }),
   effect: () => ({ id: "effect" }),
 };
 
