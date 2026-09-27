@@ -119,6 +119,19 @@ A deployable's environment gets a block of its own when its template and its cod
 
 `from` gives the template parameter or resource the value comes from, when the template sets it with a reference. A read in code states no deployable, so under a route or a file it prints as `reads runtime-config ACCOUNTS_REGION`.
 
+### Module lines
+
+When the project lists its modules in [`suss.json`](/reference/cli/extract#modules-of-one-application), the report adds a `Module lines` block for two kinds of change:
+
+```
+Module lines
+
+  catalog now writes postgresql:invoices. Before this change only billing did.
+  catalog now calls billing's saveInvoice (src/billing/invoiceStore.ts) from priceFor, and billing does not export it.
+```
+
+The first kind is a store whose writing modules changed. A module writes a store when any of its code writes it, directly or through the calls it makes, so a module that starts calling another module's function that writes a table starts writing that table too. The second kind is a call written in one module's code that lands on a function of another module that is not one of its public exports. A test's calls are left out. Neither is a finding, and neither changes the exit code.
+
 `--diff --json` writes `{ version, changed, summaries, boundaries, causes }`. `summaries` has an entry for each summary that moved, marked `added`, `removed` or `changed`, and a changed one has its added, removed and changed transitions written out in full.
 
 `boundaries` and `causes` contain what the printed report lists. The text and the JSON come from the same comparison of the two files, so they list the same boundaries and put the same lines under a wrapper. `boundaries` has one entry for each boundary block, `{ change, does, boundary, unit, file, outcomes, effects }`:
@@ -148,6 +161,8 @@ Each outcome is `{ change, outcome }`. When the text prints a changed outcome as
 Each effect is `{ change, effect, through }`. An effect at a boundary also has `relation` and `boundary`, and `detail` for the variable a config read takes. `through` lists every call between the boundary's unit and the unit that has the effect, and it is empty when the boundary's unit has the effect itself. The `outcome` and `effect` strings are the words the text prints, so a program should match on `relation` and `boundary` rather than parse them.
 
 `causes` has one entry per line printed under a `From <wrapper>` heading: `{ from, change, outcome, at, notAt, covered }`. `at` lists the boundaries that got the line, `notAt` the ones the wrapper runs on that did not, and `covered` how many it runs on. The line is left out of the `outcomes` of each boundary in `at`, and a boundary with nothing else left is left out of `boundaries`, as it is from the text.
+
+`modules` is there only when a module line moved: `{ writers, crossings: { gained, lost } }`. Each entry in `writers` is `{ store, before, after }`, with the writing modules on each side. Each crossing is `{ from, to, caller, callerFile, call, target, targetFile }`, where `call` is the call as the caller's source writes it.
 
 The JSON ignores `--budget` and `--chain`, and it lists every outcome of a boundary that came or went, where the text lists the first few. A field added to this output keeps `version` at 1. Renaming or removing one would change it.
 

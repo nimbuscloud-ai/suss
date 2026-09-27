@@ -43,6 +43,12 @@ import { labelWithDetail } from "@suss/ir-core";
 
 import { interactionDetail } from "./boundaryReach.js";
 import { declarationChanges } from "./declaredEnvironment.js";
+import {
+  hasModuleChanges,
+  type ModuleChanges,
+  moduleChanges,
+  moduleLines,
+} from "./diffModules.js";
 import { boundaryReach, entrypointKey, reachChanges } from "./diffReach.js";
 import { readingPairs, wholeReadings } from "./readingPairs.js";
 import { scopeLines, sharedCauses } from "./sharedCause.js";
@@ -2840,6 +2846,8 @@ export interface DiffReport {
   /** Every boundary that moved, including one whose lines all went to a cause. */
   readonly blocks: readonly BoundaryBlock[];
   readonly causes: readonly SharedCause[];
+  /** Empty unless the summaries carry the modules `suss.json` lists. */
+  readonly modules: ModuleChanges;
 }
 
 /**
@@ -2871,7 +2879,7 @@ function diffReport(
     wrappersApplied(after),
     outcomesAt(after),
   );
-  return { moved, blocks, causes };
+  return { moved, blocks, causes, modules: moduleChanges(before, after) };
 }
 
 /**
@@ -2930,6 +2938,11 @@ function renderReport(
     if (!fits([blockHeading(block), ...blockLines(block, options.hops), ""])) {
       left.boundaries += 1;
     }
+  }
+
+  const modules = moduleLines(report.modules);
+  if (modules.length > 0) {
+    fits(modules);
   }
 
   // The heading is written with the first file that fits, so a report cut
@@ -3064,6 +3077,7 @@ function writeDiffJson(report: DiffReport): void {
     summaries: report.moved.map(diffedSummary),
     boundaries: blocksWithLines(report.blocks).map(diffedBoundary),
     causes: report.causes.map(diffedCause),
+    ...(hasModuleChanges(report.modules) ? { modules: report.modules } : {}),
   };
   process.stdout.write(`${JSON.stringify(json, null, 2)}\n`);
 }
@@ -3079,7 +3093,11 @@ export function inspectDiff(options: DiffOptions): void {
     return;
   }
 
-  if (report.moved.length === 0 && report.blocks.length === 0) {
+  if (
+    report.moved.length === 0 &&
+    report.blocks.length === 0 &&
+    !hasModuleChanges(report.modules)
+  ) {
     process.stdout.write("No behavioral changes.\n");
     return;
   }

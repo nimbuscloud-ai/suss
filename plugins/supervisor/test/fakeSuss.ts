@@ -27,6 +27,8 @@ export interface FakeScript {
   intentFails?: "crash" | "missing";
   /** What `inspect --diff` prints, when something moved. */
   diff?: string;
+  /** The JSON diff reports a module line and no boundary, as when only the modules a call crosses changed. */
+  onlyModulesMoved?: boolean;
 }
 
 const BIN = `import fs from "node:fs";
@@ -54,8 +56,9 @@ const commands = {
     return 0;
   },
   inspect: async () => {
-    const moved = script.diff === undefined ? [] : [{ boundary: "POST /orders" }];
-    process.stdout.write(args.includes("--json") ? JSON.stringify({ version: 1, changed: 0, summaries: [], boundaries: moved }) : (script.diff ?? "No behavioral changes.\\n"));
+    const moved = script.diff === undefined || script.onlyModulesMoved === true ? [] : [{ boundary: "POST /orders" }];
+    const modules = script.onlyModulesMoved === true ? { modules: { writers: [], crossings: { gained: [{ from: "catalog", to: "billing" }], lost: [] } } } : {};
+    process.stdout.write(args.includes("--json") ? JSON.stringify({ version: 1, changed: 0, summaries: [], boundaries: moved, ...modules }) : (script.diff ?? "No behavioral changes.\\n"));
     return 0;
   },
   intent: async () => {
