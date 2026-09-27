@@ -358,6 +358,42 @@ describe("Project", () => {
     fs.rmSync(root, { recursive: true, force: true });
   }, 60_000);
 
+  it("joins a build that is running or queued when it started late enough", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-proj-join-"));
+    projectWithOneRoute(root, "/orders");
+    const project = new Project({ root, watch: false });
+    const asked = Date.now() - 60_000;
+
+    const first = project.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const second = project.buildNow();
+    const joinedQueued = project.buildNow(asked);
+    await first;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const joinedRunning = project.buildNow(asked);
+
+    expect(await joinedQueued).toBe(await second);
+    expect(await joinedRunning).toBe(await second);
+    expect(await second).not.toBe(await first);
+
+    project.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }, 60_000);
+
+  it("lets its adapters go once no build has been asked for in a while", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-proj-idle-"));
+    projectWithOneRoute(root, "/orders");
+    const project = new Project({ root, watch: false, idleMs: 50 });
+    await project.start();
+    expect(project.keptAdapters()).toBe(1);
+
+    await waitFor(() => project.keptAdapters() === 0);
+
+    expect(project.keptAdapters()).toBe(0);
+    project.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }, 60_000);
+
   it("says hasBuilt only once a build has finished", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-proj-hasbuilt-"));
     projectWithOneRoute(root, "/orders");
