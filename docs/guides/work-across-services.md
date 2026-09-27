@@ -76,6 +76,17 @@ Neither repository imports the other, and no type connects them. `check` reports
 Compared 1 boundary.
 
 ────────────────────────────────────────────────────────────
+[WARNING] unhandledProviderCase
+  Provider produces status 404 but no consumer branch handles it
+  provider: src/api.ts::get (src/api.ts:5)
+  consumer: src/product.ts::loadProduct (src/product.ts:1)
+  boundary: hono (http) GET /products/:sku
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: unhandledProviderCase
+      boundary: "GET /products/{sku}"
+      provider: { transitionId: "get:response:404:9cb77da" }
+      reason: TODO say why you accept this
+────────────────────────────────────────────────────────────
 [ERROR] misreadProviderResponse
   The consumer's fall-through path reads "discountedPrice", but the 200 body the provider sends does not include it, and neither does any other response.
   provider: src/api.ts::get (src/api.ts:5)
@@ -89,10 +100,10 @@ Compared 1 boundary.
 ────────────────────────────────────────────────────────────
 2 findings: 1 error, 1 warning, 0 info
 
-Not shown: 1 unhandledProviderCase (warning). Run the same command with --all to see it.
+suss met a call it could not follow in one unit, of 2, so that one is described in part. `suss inspect` says which calls.
 ```
 
-The finding gives a file and a line for each side, so the fix is a two-line diff in whichever repo was wrong. The warning underneath comes from the same pair, seen from the other direction. The catalog service returns 404, and the storefront has no branch for it.
+The error gives a file and a line for each side, so the fix is a two-line diff in whichever repo was wrong. The warning above it comes from the same pair, seen from the other direction. The catalog service returns 404, and the storefront has no branch for it.
 
 ## Set them all up at once
 

@@ -903,19 +903,22 @@ function scopeOf(options: { all?: boolean; failOn?: FailOn }): ReportScope {
 }
 
 /**
- * The severity a finding has to reach to print in full. It matches the
- * severity the run fails on, so every finding that sets the exit code is
- * printed and none is reduced to a count.
+ * The severity a finding has to reach to print in full: a warning, or the
+ * severity the run fails on when that is lower. Every finding that sets
+ * the exit code prints. Warnings print too, because a default run that
+ * counts them and shows none leaves the reader a number with nothing
+ * behind it to open.
  */
 function printedSeverity(failOn: FailOn | undefined): number {
   const threshold =
     failOn === undefined || failOn === "none" ? "error" : failOn;
-  return SEVERITY_ORDER[threshold];
+  return Math.max(SEVERITY_ORDER[threshold], SEVERITY_ORDER.warning);
 }
 
 /**
- * Renders the findings for a person. Findings that fail the run print in
- * full and the rest are counted by kind, unless `scope.all` is set.
+ * Renders the findings for a person. Errors, warnings and anything else
+ * that fails the run print in full, and the rest are counted by kind,
+ * unless `scope.all` is set.
  * `--json` output does not go through here.
  */
 export function renderFindings(
@@ -1258,10 +1261,9 @@ function renderDirHuman(
   // Open with how much was compared. "No findings" alone looks like a
   // pass even when nothing paired and nothing was checked.
   const comparedByBoundary = groupPairsByKey(result.pairs);
+  const coverage = pairingCoverage(result);
   if (comparedByBoundary.size > 0) {
-    const count = comparedByBoundary.size;
-    const noun = `boundar${count === 1 ? "y" : "ies"}`;
-    lines.push(`Compared ${count} ${noun}${all ? ":" : "."}`);
+    lines.push(`${comparedHeadline(coverage)}${all ? ":" : "."}`);
     if (all) {
       for (const [key, sides] of comparedByBoundary) {
         lines.push(`  ${key}`);
@@ -1353,7 +1355,7 @@ function renderDirHuman(
     );
   }
 
-  lines.push(...findingLines(result, confidence, scope, since));
+  lines.push(...findingLines(result, confidence, scope, since, coverage));
   return `${lines.join("\n")}\n`;
 }
 
@@ -1363,6 +1365,7 @@ function findingLines(
   confidence: ConfidenceLookup,
   scope: ReportScope,
   since: SinceReport | null,
+  coverage: PairingCoverage,
 ): string[] {
   if (since !== null) {
     return ["", ...renderSince(since, confidence, scope)];
@@ -1371,9 +1374,69 @@ function findingLines(
     return ["", renderFindings(result.findings, confidence, scope).trimEnd()];
   }
   if (result.pairs.length > 0) {
-    return ["", "No findings. Every compared boundary agreed."];
+    return ["", noFindingsLine(coverage)];
   }
   return [];
+}
+
+/**
+ * How many boundaries the run read, counted by boundary the way the
+ * unpaired lists group them, and how many of those paired.
+ */
+interface PairingCoverage {
+  compared: number;
+  providersOnly: number;
+  clientsOnly: number;
+  nothingToPair: number;
+}
+
+function pairingCoverage(result: CheckAllResult): PairingCoverage {
+  const { providers, consumers, unpairable } = result.unmatched;
+  return {
+    compared: groupPairsByKey(result.pairs).size,
+    providersOnly: groupByKey(providers).size,
+    clientsOnly: groupByKey(consumers).size,
+    nothingToPair: unpairable.filter((u) => u.reason === "unnamedBoundary")
+      .length,
+  };
+}
+
+function unpairedCount(coverage: PairingCoverage): number {
+  return coverage.providersOnly + coverage.clientsOnly + coverage.nothingToPair;
+}
+
+/**
+ * "Compared 1 boundary" when that is every boundary the run read, and
+ * "Compared 1 of 571 boundaries" when the rest went unpaired, so a thin
+ * pairing shows up in the first line of the report.
+ */
+function comparedHeadline(coverage: PairingCoverage): string {
+  const unpaired = unpairedCount(coverage);
+  if (unpaired === 0) {
+    return `Compared ${coverage.compared} ${boundaries(coverage.compared)}`;
+  }
+
+  const total = coverage.compared + unpaired;
+  return `Compared ${coverage.compared} of ${total} ${boundaries(total)}`;
+}
+
+/**
+ * "Agreed" only when pairing covered every boundary the run read. With
+ * boundaries left unpaired, an empty finding list says nothing about them.
+ */
+function noFindingsLine(coverage: PairingCoverage): string {
+  const unpaired = unpairedCount(coverage);
+  if (unpaired === 0) {
+    return "No findings. Every compared boundary agreed.";
+  }
+
+  const compared = `${coverage.compared} ${boundaries(coverage.compared)}`;
+  const rest = unpaired === 1 ? "other boundary" : `${unpaired} others`;
+  return `No findings on the ${compared} that paired. The ${rest} had nothing to pair with, so nothing was checked across ${unpaired === 1 ? "it" : "them"}.`;
+}
+
+function boundaries(count: number): string {
+  return count === 1 ? "boundary" : "boundaries";
 }
 
 /**

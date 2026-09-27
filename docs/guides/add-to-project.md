@@ -149,7 +149,20 @@ Compared 1 boundary.
       provider: { transitionId: "get:response:404:6405be7" }
       reason: TODO say why you accept this
 ────────────────────────────────────────────────────────────
+[WARNING] unhandledProviderCase
+  Provider produces status 410 but no consumer branch handles it
+  provider: src/articles.ts::get (src/articles.ts:14)
+  consumer: web/articleView.ts::loadArticle (web/articleView.ts:1)
+  boundary: express (http) GET /articles/:slug
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: unhandledProviderCase
+      boundary: "GET /articles/{slug}"
+      provider: { transitionId: "get:response:410:c3d4fe5" }
+      reason: TODO say why you accept this
+────────────────────────────────────────────────────────────
 2 findings: 0 error, 2 warning, 0 info
+
+suss met a call it could not follow in one unit, of 2, so that one is described in part. `suss inspect` says which calls.
 ```
 
 Errors fail the run and warnings do not, so a first pass over an old codebase does not have to be all or nothing. `--all` lists every pair suss made and every boundary it skipped, so you can tell "no findings" apart from "nothing got compared". `--at src/articles.ts:14` narrows a run to one file, line, boundary or summary.

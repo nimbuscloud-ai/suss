@@ -10,9 +10,9 @@ import {
   storageBinding,
 } from "@suss/behavioral-ir";
 
-import { check, checkDir, checkDirectory } from "./check.js";
+import { check, checkDir, checkDirectory, renderFindings } from "./check.js";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { BehavioralSummary, Finding } from "@suss/behavioral-ir";
 
 function transition(
   id: string,
@@ -1798,9 +1798,68 @@ describe("checkDir over a run whose only comparison is a storage pass", () => {
       checkDir({ dir: tmpDir, all: true }),
     );
 
-    expect(output).toContain("Compared 1 boundary:");
+    expect(output).toContain("Compared 1 of 2 boundaries:");
     expect(output).not.toContain("Nothing was compared");
     expect(output).toContain("aws.dynamodb:orders");
+  });
+
+  it("opens with how many boundaries paired out of those read", () => {
+    fs.writeFileSync(path.join(tmpDir, "all.json"), JSON.stringify(monorepo()));
+    const { output } = captureQuietly(() => checkDir({ dir: tmpDir }));
+
+    expect(output.split("\n").slice(0, 3)).toEqual([
+      "Compared 1 of 2 boundaries.",
+      "",
+      "  1 provider-side boundary has no client to compare against.",
+    ]);
+  });
+
+  it("stops saying every boundary agreed when some went unpaired", () => {
+    fs.writeFileSync(path.join(tmpDir, "all.json"), JSON.stringify(monorepo()));
+    const { output } = captureQuietly(() => checkDir({ dir: tmpDir }));
+
+    expect(output).not.toContain("Every compared boundary agreed");
+    expect(output).toContain(
+      "No findings on the 1 boundary that paired. The other boundary had nothing to pair with, so nothing was checked across it.",
+    );
+  });
+
+  it("still counts a route as missing its client when its handler paired only at the table it reads", () => {
+    const handler = storageReader({
+      name: "listOrders",
+      container: "orders",
+      fields: ["id", "customerId"],
+    });
+    handler.identity.boundaryBinding = restBinding({
+      transport: "http",
+      recognition: "express",
+      method: "GET",
+      path: "/orders",
+    });
+    fs.writeFileSync(
+      path.join(tmpDir, "all.json"),
+      JSON.stringify([
+        storageTable({ container: "orders", fields: ["id", "customerId"] }),
+        handler,
+      ]),
+    );
+    const { output, result } = captureQuietly(() => checkDir({ dir: tmpDir }));
+
+    expect(result.result.unmatched.providers.map((p) => p.key)).toEqual([
+      "GET /orders",
+    ]);
+    expect(output).toContain("Compared 1 of 2 boundaries.");
+  });
+
+  it("says every boundary agreed when every boundary it read paired", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "all.json"),
+      JSON.stringify(monorepo().slice(0, 2)),
+    );
+    const { output } = captureQuietly(() => checkDir({ dir: tmpDir }));
+
+    expect(output).toContain("Compared 1 boundary.");
+    expect(output).toContain("No findings. Every compared boundary agreed.");
   });
 
   it("stops listing a compared table as a boundary nothing paired with", () => {
@@ -2051,14 +2110,50 @@ describe("the collapsed report", () => {
     );
   }
 
-  it("writes the error out and counts the warning", () => {
+  it("writes the error and the warning out by default", () => {
     mixedSeverities();
     const { output } = captureQuietly(() => checkDir({ dir: tmpDir }));
 
     expect(output).toContain("[ERROR] misreadProviderResponse");
-    expect(output).not.toContain("[WARNING]");
-    expect(output).toContain("Not shown: 1 deadConsumerBranch (warning).");
-    expect(output).toContain("--all to see it");
+    expect(output).toContain("[WARNING] deadConsumerBranch");
+    expect(output).not.toContain("Not shown:");
+  });
+
+  it("counts an info finding it leaves out, and names the flag that shows it", () => {
+    const findings: Finding[] = [
+      {
+        kind: "lowConfidence",
+        severity: "info",
+        description: "The provider summary was read with low confidence",
+        provider: {
+          summary: "src/a.ts::a",
+          location: {
+            file: "src/a.ts",
+            range: { start: 1, end: 2 },
+            exportName: "a",
+          },
+        },
+        consumer: {
+          summary: "src/b.ts::b",
+          location: {
+            file: "src/b.ts",
+            range: { start: 1, end: 2 },
+            exportName: "b",
+          },
+        },
+        boundary: {
+          transport: "http",
+          semantics: { name: "function-call" },
+          recognition: "ts-rest",
+        },
+      },
+    ];
+    const output = renderFindings(findings, new Map());
+
+    expect(output).not.toContain("[INFO]");
+    expect(output).toContain(
+      "Not shown: 1 lowConfidence (info). Run the same command with --all to see it.",
+    );
   });
 
   it("writes both out under --all", () => {
