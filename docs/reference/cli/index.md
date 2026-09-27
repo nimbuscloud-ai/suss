@@ -83,7 +83,7 @@ To choose the size yourself, put it in `NODE_OPTIONS`. suss leaves a size set th
 NODE_OPTIONS=--max-old-space-size=12288 suss extract
 ```
 
-suss raises the limit by starting itself again with `--max-old-space-size`, before it loads anything else. On Node 22.15 and later the new process replaces the first one and keeps its process id. On older versions of Node, and on Windows, the first process stays as a parent: it passes on `SIGINT`, `SIGTERM` and `SIGHUP`, and exits with the child's exit code. The MCP server, `suss-mcp`, does the same.
+suss raises the limit by starting itself again with `--max-old-space-size`, before it loads anything else. On Node 22.15 and later the new process replaces the first one and keeps its process id. On older versions of Node, and on Windows, the first process stays as a parent: it passes on `SIGINT`, `SIGTERM` and `SIGHUP`, and exits with the child's exit code. The MCP server, `suss-mcp`, does the same. With that parent in place, a debugger started with `node --inspect` attaches to the parent, which only waits for the child. To debug a run there, put a size in `NODE_OPTIONS` so suss does not start itself again.
 
 ## Where output goes
 

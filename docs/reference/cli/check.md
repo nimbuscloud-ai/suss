@@ -34,16 +34,16 @@ Given no files and no `--dir`, `check` reads the project it is run in: every ent
 
 | Flag | Default | What it does |
 |---|---|---|
-| `--dir <path>` | none | The folder of summary files, paired by boundary. Every `.json` in it is read, except a `.incomplete.json` note. Does not combine with positional files. |
+| `--dir <path>` | none | The folder of summary files, paired by boundary. Every `.json` in it is read, except a `.incomplete.json` note. Given together with positional files, the run stops with a usage error, since the files would go unread. |
 | `--at <target>` | none | Report on one thing instead of the whole folder. See [Reporting on one thing](#reporting-on-one-thing). Takes `--dir` or no files at all, and does not run with `--intent`. |
 | `--intent <path>` | none | A folder of intent docs (`*.intent.yaml`, `.yml`, `.json`, and the same three for `*.prd`), each paired against the summaries in `--dir`. Takes `--dir` or no files at all. |
 | `--since <path>` | none | A folder of summaries from an earlier run. The report narrows to what changed since then, and the run fails only on new findings. See [Comparing with an earlier run](#comparing-with-an-earlier-run). Takes `--dir` or no files at all, and does not run with `--at` or `--intent`. |
 | `--all` | off | Write out every finding and every list. See [What a run prints](#what-a-run-prints). |
 | `--json` | off | Write findings as JSON instead of text. |
 | `-o`, `--output <path>` | stdout | Write the report to a file. |
-| `--fail-on <severity>` | `error` | Which severity fails the run: `error`, `warning`, `info`, or `none` to never fail. |
-| `--allow-empty` | off | Exit `0` from a run that compared nothing: a folder that paired nothing, a folder that didn't read any summaries, or two files where one has no summaries. Without it that run fails, because a report with nothing in it looks exactly like a report where both sides agreed. The run gets a `nothingPaired` run finding and exits non-zero. |
-| `--fail-on-unpaired <N\|N%>` | off | Fail when more boundaries went unpaired than this: a count (`25`) or a share of all boundaries (`50%`). Needs `--dir`. The report gets a `mostlyUnpaired` run finding with the numbers. |
+| `--fail-on <severity>` | `error` | Which severity of finding fails the run: `error`, `warning`, `info`, or `none` so that no finding fails it. A run that compared nothing still fails under `none`, because `--fail-on` applies to findings and `nothingPaired` is in the `run` list. Pass `--allow-empty` for that case. |
+| `--allow-empty` | off | Exit `0` from a run that compared nothing: a folder whose summary files paired nothing or have no summaries in them, or two files where one has no summaries. Without it that run fails, because a report with nothing in it looks exactly like a report where both sides agreed. The run gets a `nothingPaired` run finding and exits non-zero. A folder with no `.json` files, or with none that read as summaries, fails with a usage error either way. |
+| `--fail-on-unpaired <N\|N%>` | off | Fail when more boundaries went unpaired than this: a count (`25`) or a share of all boundaries (`50%`). It counts boundaries the way the report's first line does, so a route that two summaries serve counts once. Needs `--dir`. The report gets a `mostlyUnpaired` run finding with the numbers. |
 | `--fail-on-unreadable` | off | Fail when a file in `--dir` could not be read as summaries, instead of skipping it with a warning. The report gets an `unreadableInput` run finding, and `--json` lists the skipped files either way. |
 | `--sussignore <path>` | the nearest `.sussignore` | Read this suppressions file instead of searching for one. |
 | `--no-suppressions` | off | Report every finding, ignoring any `.sussignore`. |
