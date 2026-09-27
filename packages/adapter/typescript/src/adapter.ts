@@ -2193,6 +2193,12 @@ export interface TypeScriptAdapter extends LanguageAdapter {
   loadProgram(): Promise<void>;
 }
 
+/**
+ * The adapter a method was called on, so starting over can point its
+ * `tsProject` at the new project. Undefined for a method called detached.
+ */
+type HoldsProject = { tsProject: Project } | undefined;
+
 export interface RefreshReport {
   /** Files parsed again because their text changed. */
   changed: string[];
@@ -2296,8 +2302,11 @@ export function createTypeScriptAdapter(
   let projectFileSet: ReadonlySet<string> | undefined;
   // False until a run or loadProgram has loaded the walked files.
   let programLoaded = false;
-  const startOver = (): void => {
+  const startOver = (holder: HoldsProject): void => {
     project = newProject();
+    if (holder !== undefined) {
+      holder.tsProject = project;
+    }
     loaded = emptyLoadedState();
     projectFileSet = undefined;
     programLoaded = false;
@@ -2337,13 +2346,13 @@ export function createTypeScriptAdapter(
   ): BehavioralSummary[] =>
     composeWrappers(summaries, config.extractorOptions ?? {});
 
-  const loadWalkedFiles = async (): Promise<void> => {
+  const loadWalkedFiles = async (holder: HoldsProject): Promise<void> => {
     const tsConfigFilePath =
       config.tsConfigFilePath ??
       raise("lazy bootstrap requires tsConfigFilePath");
     const tsconfig = readTsconfig(tsConfigFilePath);
     if (noteRunFileList(loaded, tsConfigFilePath, tsconfig.fileNames)) {
-      startOver();
+      startOver(holder);
       noteRunFileList(loaded, tsConfigFilePath, tsconfig.fileNames);
     }
     const lazy = await createLazyProject(
@@ -2358,7 +2367,10 @@ export function createTypeScriptAdapter(
     programLoaded = true;
   };
 
-  const refreshNow = (changedPaths: readonly string[]): RefreshReport => {
+  const refreshNow = (
+    holder: HoldsProject,
+    changedPaths: readonly string[],
+  ): RefreshReport => {
     if (!ownsProject || config.tsConfigFilePath === undefined) {
       return { changed: [], startedOver: null };
     }
@@ -2371,17 +2383,15 @@ export function createTypeScriptAdapter(
     if (outcome.startOver === null) {
       return { changed: outcome.changed, startedOver: null };
     }
-    startOver();
+    startOver(holder);
     return { changed: [], startedOver: outcome.startOver };
   };
 
   return {
-    get tsProject(): Project {
-      return project;
-    },
+    tsProject: project,
 
     refresh(changedPaths: readonly string[] = []): RefreshReport {
-      return refreshNow(changedPaths);
+      return refreshNow(this, changedPaths);
     },
 
     async loadProgram(): Promise<void> {
@@ -2389,11 +2399,11 @@ export function createTypeScriptAdapter(
         return;
       }
       if (!programLoaded) {
-        await loadWalkedFiles();
+        await loadWalkedFiles(this);
       }
       // The first refresh reads every loaded file to compare it with its
       // parse, which this keeps off the first edit.
-      refreshNow([]);
+      refreshNow(this, []);
     },
 
     async extractFromFiles(filePaths: string[]): Promise<BehavioralSummary[]> {
@@ -2494,7 +2504,7 @@ export function createTypeScriptAdapter(
         noteRunFileList(loaded, config.tsConfigFilePath, tsconfigFileList) !==
           null
       ) {
-        startOver();
+        startOver(this);
         noteRunFileList(loaded, config.tsConfigFilePath, tsconfigFileList);
       }
 
