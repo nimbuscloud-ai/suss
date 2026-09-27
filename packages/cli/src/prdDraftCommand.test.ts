@@ -99,6 +99,7 @@ function boundaryIntent(name: string, outcomeIds: string[]): IntentSummary {
       recognition: "intent",
     },
     receives: [],
+    always: [],
     outcomes: outcomeIds.map((id) => ({
       id,
       when: "",

@@ -22,6 +22,7 @@ import {
 } from "./index.js";
 
 import type {
+  IntentAlways,
   IntentCondition,
   IntentEffect,
   IntentFinding,
@@ -50,6 +51,7 @@ function boundaryIntent(
   outcomes: IntentOutcome[],
   name = "users-lookup",
   receives: IntentInputField[] = [],
+  always: IntentAlways[] = [],
 ): IntentSummary {
   return {
     kind: "boundary",
@@ -60,6 +62,7 @@ function boundaryIntent(
     boundary,
     receives,
     outcomes,
+    always,
   };
 }
 
@@ -2158,6 +2161,206 @@ describe("a declared store the unit never touches, paired with one it touches in
     );
     expect(result.findings.some((f) => f.kind === "renamedBoundary")).toBe(
       false,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// always: an effect every transition producing a declared outcome has
+// ---------------------------------------------------------------------------
+
+function auditWrite(container = "audit_log", fields = ["actor_id", "action"]) {
+  return {
+    type: "interaction" as const,
+    binding: storageBinding({
+      recognition: "pg",
+      storageSystem: "postgresql",
+      scope: "default",
+      container,
+    }),
+    callee: "db.query",
+    interaction: {
+      class: "storage-access" as const,
+      kind: "write" as const,
+      fields,
+    },
+  };
+}
+
+const auditAlways = (except: string[] = []): IntentAlways => ({
+  effect: {
+    does: "writes",
+    names: "postgresql:audit_log",
+    fields: ["actor_id", "action"],
+    by: [],
+  },
+  except,
+});
+
+function named(id: string, outcome: IntentOutcome): IntentOutcome {
+  return { ...outcome, id };
+}
+
+const adminOutcomes = [
+  named("deleted", response(204, null)),
+  named("not-found", response(404, null)),
+  named("forbidden", {
+    ...response(204, null),
+    kind: "throw",
+    status: null,
+    errorType: "ForbiddenError",
+  }),
+];
+
+/**
+ * A delete route with three branches, each on its own line: 204, 404,
+ * and a throw. `audited` says which of them write the audit row.
+ */
+function adminRoute(audited: { [line: number]: boolean }): BehavioralSummary {
+  const summary = codeSummary(
+    restCodeBinding,
+    [
+      restResponse(204, null),
+      restResponse(404, null),
+      { type: "throw", exceptionType: "ForbiddenError", message: null },
+    ],
+    "deleteUser",
+  );
+  summary.transitions.forEach((t, i) => {
+    const line = 10 * (i + 1);
+    t.location = { start: line, end: line + 2 };
+    t.effects = audited[line] === false ? [] : [auditWrite()];
+  });
+  return summary;
+}
+
+function checkAdmin(
+  code: BehavioralSummary,
+  always: IntentAlways[],
+  outcomes = adminOutcomes,
+  source: IntentSource = "author",
+) {
+  const intent = boundaryIntent(
+    restIntentBinding,
+    outcomes,
+    "admin-users",
+    [],
+    always,
+  );
+  return checkIntentAgreement([{ ...intent, source } as IntentSummary], [code])
+    .findings;
+}
+
+describe("always: an effect on every path", () => {
+  it("passes when every transition has the effect, and counts it as declared", () => {
+    expect(checkAdmin(adminRoute({}), [auditAlways()])).toEqual([]);
+  });
+
+  it("reports the one transition that skips it, by outcome and line", () => {
+    const findings = checkAdmin(adminRoute({ 20: false }), [auditAlways()]);
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({
+      kind: "pathWithoutEffect",
+      severity: "error",
+      intent: { name: "admin-users", outcomeId: "not-found" },
+      code: "src/handler.ts::deleteUser",
+    });
+    expect(findings[0].message).toBe(
+      'Intent "admin-users" says every outcome results in a write to postgresql:audit_log of actor_id, action at GET /users/{id}; the transition of deleteUser at line 20, which produces not-found (status 404), does not. Add the effect on that path, or list not-found under except.',
+    );
+  });
+
+  it("leaves a transition alone when its outcome is listed under except", () => {
+    const findings = checkAdmin(adminRoute({ 20: false }), [
+      auditAlways(["not-found"]),
+    ]);
+
+    expect(findings).toEqual([]);
+  });
+
+  it("covers a throw transition unless except lists it", () => {
+    const code = adminRoute({ 30: false });
+
+    const findings = checkAdmin(code, [auditAlways()]);
+    expect(findings.map((f) => f.intent.outcomeId)).toEqual(["forbidden"]);
+    expect(findings[0].message).toContain(
+      "which produces forbidden (throw ForbiddenError)",
+    );
+
+    expect(checkAdmin(code, [auditAlways(["forbidden"])])).toEqual([]);
+  });
+
+  it("asks for the columns the line states", () => {
+    const code = adminRoute({});
+    code.transitions[0].effects = [auditWrite("audit_log", ["actor_id"])];
+
+    const missing = checkAdmin(code, [auditAlways()]).filter(
+      (f) => f.kind === "pathWithoutEffect",
+    );
+    expect(missing.map((f) => f.intent.outcomeId)).toEqual(["deleted"]);
+  });
+
+  it("leaves a transition that produces no declared outcome to undeclaredOutcome", () => {
+    const code = adminRoute({});
+    code.transitions.push({
+      id: "t-500",
+      conditions: [],
+      output: restResponse(500, null),
+      effects: [],
+      location: { start: 40, end: 40 },
+      isDefault: false,
+    });
+
+    const findings = checkAdmin(code, [auditAlways()]);
+    expect(findings.map((f) => f.kind)).toEqual(["undeclaredOutcome"]);
+  });
+
+  it("exempts a transition that could be either of two outcomes when one is listed", () => {
+    const outcomes = [
+      ...adminOutcomes,
+      named("crashed", { ...adminOutcomes[2], errorType: null }),
+    ];
+    const code = adminRoute({ 30: false });
+
+    expect(checkAdmin(code, [auditAlways(["forbidden"])], outcomes)).toEqual(
+      [],
+    );
+  });
+
+  it("checks every transition against an outcome that states only its effects", () => {
+    const findings = checkAdmin(
+      adminRoute({ 10: false }),
+      [auditAlways()],
+      [effectOutcome("recorded", [])],
+    );
+
+    const missing = findings.filter((f) => f.kind === "pathWithoutEffect");
+    expect(missing).toHaveLength(1);
+    expect(missing[0].message).toContain("which produces recorded, does not");
+  });
+
+  it("downgrades the finding for intent nobody has curated", () => {
+    const findings = checkAdmin(
+      adminRoute({ 20: false }),
+      [auditAlways()],
+      adminOutcomes,
+      "inferred",
+    );
+
+    expect(findings.map((f) => f.severity)).toEqual(["warning"]);
+  });
+
+  it("folds a renamed audit table into one renamedBoundary", () => {
+    const code = adminRoute({});
+    for (const t of code.transitions) {
+      t.effects = [auditWrite("audit_events")];
+    }
+
+    const findings = checkAdmin(code, [auditAlways()]);
+    expect(findings.map((f) => f.kind)).toEqual(["renamedBoundary"]);
+    expect(findings[0].message).toContain(
+      "writes postgresql:audit_events instead",
     );
   });
 });
