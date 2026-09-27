@@ -207,6 +207,14 @@ export interface CallOps {
    */
   readingArguments?(first: number, last?: number): void;
   /**
+   * Said by a chain before it asks what made a receiver: at every call
+   * the walk visits whose method is one of `methods`, spelled as the
+   * source spells it, it will ask about the receiver. An adapter can
+   * then ask about all of them at once, and leaving it out changes only
+   * how fast a run is.
+   */
+  readingReceivers?(methods: ReadonlySet<string>): void;
+  /**
    * The call the callee itself was written as, or null when nothing
    * wrote it as one. A class a factory made is the case: `new
    * User({...})` says nothing about what `User` is, and the
@@ -252,6 +260,23 @@ export interface CallOps {
    * kind with no construction to hand back.
    */
   anchorCall?(origin: ReceiverOrigin): CallOps | null;
+  /**
+   * The class the argument in this position refers to, or null when it
+   * refers to none the run declares. An ORM that takes an entity class,
+   * `InjectRepository(Order)`, keeps the table on the class itself.
+   */
+  classAt?(index: number): ClassOps | null;
+}
+
+/** One class a call refers to, as the questions a pack can ask about it. */
+export interface ClassOps {
+  /** The name the class is declared under, or null when it has none. */
+  name(): string | null;
+  /**
+   * The one decorator call on the class that the origin accepts, such
+   * as `@Entity("orders")`. Null when none does, or when two do.
+   */
+  decorator(origin: ReceiverOrigin): CallOps | null;
 }
 
 /**

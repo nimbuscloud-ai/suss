@@ -17,6 +17,7 @@ import { rootIdentifier } from "../configuredCall.js";
 import { propertyValueOf, stringValuesOf } from "../discovery/resolveValue.js";
 import { parameterReads } from "../parameterReads.js";
 import { peelValue } from "../walk/unwrap.js";
+import { functionCalledAt } from "./functionBehind.js";
 import {
   type AnchorCallsOf,
   effectArgOf,
@@ -29,6 +30,7 @@ import { readName } from "./readName.js";
 import type {
   AstCapableOps,
   CallOps,
+  ClassOps,
   ReceiverOrigin,
   UnsettledName,
   ValueEntry,
@@ -36,6 +38,8 @@ import type {
 } from "@suss/extractor";
 import type {
   CallExpression,
+  ClassDeclaration,
+  ClassExpression,
   NewExpression,
   ObjectLiteralExpression,
   PropertyAccessExpression,
@@ -82,6 +86,7 @@ const ORIGIN: Record<
       ),
     ),
   constructed: (origin, receiver) =>
+    !goesToProjectMethod(receiver.callee) &&
     madeFromNamed(origin, madeExpression(receiver)) &&
     origin.importedFrom.some((module) =>
       isImportedFrom(madeBy(receiver), module, receiver.originatesFrom),
@@ -211,6 +216,11 @@ export interface WalkArguments {
   /** Ask about these positions of every call in the walk, in one question. */
   settle(first: number, last?: number): void;
   /**
+   * Ask about the receiver of every call in the walk whose method is one
+   * of these, in one question.
+   */
+  settleReceivers(methods: ReadonlySet<string>): void;
+  /**
    * What a value was written as: the walk's own answer for an argument
    * a `settle` covered, and the store's for anything else.
    */
@@ -228,10 +238,20 @@ export function walkArguments(
 ): WalkArguments {
   const written = new Map<Node, Node | null>();
   const asked = new Set<string>();
+  const receiversAsked = new Set<ReadonlySet<string>>();
+  const settleAll = (values: readonly Node[]): void => {
+    const pending = values.filter((value) => !written.has(value));
+    if (resolution === undefined || pending.length === 0) {
+      return;
+    }
+    for (const [value, found] of resolution.resolveWrittenValues(pending)) {
+      written.set(value, found);
+    }
+  };
   return {
     settle: (first, last) => {
       const range = `${first}:${last ?? ""}`;
-      if (resolution === undefined || asked.has(range)) {
+      if (asked.has(range)) {
         return;
       }
       asked.add(range);
@@ -241,20 +261,20 @@ export function walkArguments(
           last === undefined ? undefined : last + 1,
         ),
       );
-      const identifiers = passed
-        .map((argument) => unwrapped(argument))
-        .filter(
-          (step): step is Node =>
-            step !== null && Node.isIdentifier(step) && !written.has(step),
-        );
-      if (identifiers.length === 0) {
+      settleAll(
+        passed
+          .map((argument) => unwrapped(argument))
+          .filter(
+            (step): step is Node => step !== null && Node.isIdentifier(step),
+          ),
+      );
+    },
+    settleReceivers: (methods) => {
+      if (receiversAsked.has(methods)) {
         return;
       }
-      for (const [identifier, value] of resolution.resolveWrittenValues(
-        identifiers,
-      )) {
-        written.set(identifier, value);
-      }
+      receiversAsked.add(methods);
+      settleAll(calls.flatMap((call) => listedReceiver(call, methods)));
     },
     writtenValueOf: (value) => {
       const known = written.get(value);
@@ -266,6 +286,43 @@ export function walkArguments(
         : resolution.resolveWrittenValue(value);
     },
   };
+}
+
+/**
+ * Whether the checker binds the method to a function this project wrote.
+ * A library's client runs the library's own method, so a receiver whose
+ * method the project wrote was not made by the library, and nothing has
+ * to be asked about it.
+ */
+function goesToProjectMethod(callee: PropertyAccessExpression | null): boolean {
+  const call = callee?.getParent();
+  return (
+    call !== undefined &&
+    Node.isCallExpression(call) &&
+    call.getExpression() === callee &&
+    functionCalledAt(call) !== null
+  );
+}
+
+/**
+ * The receiver a chain will ask about at this call, as the node it will
+ * ask with. Only a name or a property read is something the store can
+ * say was written as anything.
+ */
+function listedReceiver(call: Called, methods: ReadonlySet<string>): Node[] {
+  const callee = calleeOf(call);
+  if (
+    !Node.isPropertyAccessExpression(callee) ||
+    !methods.has(callee.getName()) ||
+    goesToProjectMethod(callee)
+  ) {
+    return [];
+  }
+  const receiver = callee.getExpression();
+  return Node.isIdentifier(receiver) ||
+    Node.isPropertyAccessExpression(receiver)
+    ? [receiver]
+    : [];
 }
 
 /** What a declared pack can ask about one TypeScript call. */
@@ -311,9 +368,12 @@ export function callOpsFor(
     namedCallee: () => Node.isIdentifier(expression),
     parameterReadsAt: (index) => selectorReadsOf(argumentsOf()[index]),
     receiver: () =>
-      callee === null ? null : opsOverCall(callee.getExpression(), values),
+      callee === null
+        ? null
+        : opsOverCall(callee.getExpression(), values, "namesAndFields"),
     argument: (index) => opsOverCall(argumentsOf()[index], values),
     readingArguments: (first, last) => walk?.settle(first, last),
+    readingReceivers: (methods) => walk?.settleReceivers(methods),
     callee: () => opsOverCall(expression, values),
     propertyAt: (index, property, unsettled) =>
       propertyAt(argumentsOf()[index], property, unsettled, resolve),
@@ -327,8 +387,60 @@ export function callOpsFor(
         origin,
         reading,
       ),
+    classAt: (index) => classOpsFor(argumentsOf()[index], reading),
     ast: () => call,
   };
+}
+
+/**
+ * The class a value refers to, found through the store, so an entity
+ * imported through a barrel is found the same way as one declared next
+ * to the call.
+ */
+function classOpsFor(
+  value: Node | undefined,
+  reading: CallReading,
+): ClassOps | null {
+  if (value === undefined || reading.resolution === undefined) {
+    return null;
+  }
+  const declared = reading.resolution.resolveWrittenClass(value);
+  if (
+    declared === null ||
+    (!Node.isClassDeclaration(declared) && !Node.isClassExpression(declared))
+  ) {
+    return null;
+  }
+  return {
+    name: () => declared.getName() ?? null,
+    decorator: (origin) => decoratorOn(declared, origin, reading),
+  };
+}
+
+/** The one decorator call on a class that the origin accepts. */
+function decoratorOn(
+  declared: ClassDeclaration | ClassExpression,
+  origin: ReceiverOrigin,
+  reading: CallReading,
+): CallOps | null {
+  const { originatesFrom } = reading;
+  const matching = declared
+    .getDecorators()
+    .map((decorator) => decorator.getExpression())
+    .filter(
+      (written): written is CallExpression =>
+        Node.isCallExpression(written) &&
+        CALL_ORIGIN[origin.origin](origin, {
+          callee: null,
+          expression: written.getExpression(),
+          resolve: reading.resolve ?? (() => null),
+          ...(originatesFrom === undefined ? {} : { originatesFrom }),
+        }),
+    );
+  const only = matching[0];
+  return matching.length === 1 && only !== undefined
+    ? callOpsFor(only, reading)
+    : null;
 }
 
 /**
@@ -580,8 +692,9 @@ function selectorReadsOf(argument: Node | undefined): readonly string[] | null {
 function opsOverCall(
   value: Node | undefined,
   reading: ValueReading,
+  following: Following = "names",
 ): AstCapableOps | null {
-  const written = settled(value, reading.resolve);
+  const written = settled(value, reading.resolve, following);
   if (written === null || !isCalled(written)) {
     return null;
   }
@@ -622,13 +735,30 @@ function argumentsIn(call: Called): Node[] {
  * walkers-and-rules design, and a syntactic fallback here would hide
  * exactly those gaps.
  */
-function settled(value: Node | undefined, resolve: Resolve): Node | null {
+function settled(
+  value: Node | undefined,
+  resolve: Resolve,
+  following: Following = "names",
+): Node | null {
   const step = unwrapped(value ?? null);
-  if (step === null || !Node.isIdentifier(step)) {
+  if (step === null) {
+    return null;
+  }
+  const followed =
+    Node.isIdentifier(step) ||
+    (following === "namesAndFields" && Node.isPropertyAccessExpression(step));
+  if (!followed) {
     return step;
   }
   return unwrapped(resolve(step));
 }
+
+/**
+ * Which values `settled` asks the store about. A receiver kept on a
+ * field, `this.orders`, is the call the field was written as, the same
+ * as one kept in a local, so a receiver follows fields as well.
+ */
+type Following = "names" | "namesAndFields";
 
 /**
  * A value with the wrappers taken off. A document read back off a query

@@ -894,3 +894,162 @@ describe("the arguments of every call one walk visits", () => {
     );
   });
 });
+
+describe("the receivers of every call one walk visits", () => {
+  const MADE_BY_DECK: ReceiverOrigin = {
+    origin: "constructed",
+    importedFrom: ["tapedeck"],
+    named: ["makeDeck"],
+  };
+  const BODY = `
+    import { makeDeck } from "tapedeck";
+    class Own { play(track: string) { return track; } }
+    export class Player {
+      private readonly front = makeDeck();
+      private readonly back = makeDeck();
+      private readonly own = new Own();
+      run() {
+        this.front.play("a");
+        this.back.play("b");
+        this.own.play("c");
+      }
+    }
+  `;
+  const listsPlay: ReadonlySet<string> = new Set(["play"]);
+
+  /** Whether each `play` call's receiver was made by the library, and how many questions that took. */
+  function receiversMade(batched: boolean) {
+    const calls = withLibrary()
+      .createSourceFile("/repo.ts", BODY)
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .filter((call) => call.getExpression().getText().endsWith(".play"));
+    const store = new ResolutionStore();
+    const walk = walkArguments(calls, store);
+    const { result, profile } = profileEvaluation(() =>
+      calls.map((call) => {
+        const ops = callOpsFor(call, {
+          resolution: store,
+          ...(batched
+            ? { walk }
+            : { resolve: (value: TsNode) => store.resolveWrittenValue(value) }),
+        });
+        if (batched) {
+          ops.readingReceivers?.(listsPlay);
+        }
+        return ops.receiverIsFrom(MADE_BY_DECK);
+      }),
+    );
+    return { made: result, evaluations: profile.evaluations };
+  }
+
+  it("finds the same receivers when it asks about them together", () => {
+    expect(receiversMade(true).made).toEqual([true, true, false]);
+    expect(receiversMade(false).made).toEqual([true, true, false]);
+  });
+
+  it("asks one question for the walk, and nothing for a method the project wrote", () => {
+    const libraryReceivers = withLibrary()
+      .createSourceFile("/repo.ts", BODY)
+      .getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)
+      .filter((read) => ["this.front", "this.back"].includes(read.getText()));
+    const asOneQuestion = profileEvaluation(() =>
+      new ResolutionStore().resolveWrittenValues(libraryReceivers),
+    ).profile.evaluations;
+
+    expect(receiversMade(true).evaluations).toBe(asOneQuestion);
+    expect(receiversMade(true).evaluations).toBeLessThan(
+      receiversMade(false).evaluations,
+    );
+  });
+
+  it("asks nothing about a receiver whose method the project wrote", () => {
+    const call = withLibrary()
+      .createSourceFile(
+        "/repo.ts",
+        `
+          class Own { play(track: string) { return track; } }
+          const own = new Own();
+          export const played = own.play("c");
+        `,
+      )
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .find((found) => found.getExpression().getText() === "own.play");
+    if (call === undefined) {
+      throw new Error("the fixture contains no own.play call");
+    }
+    const store = new ResolutionStore();
+    const { result, profile } = profileEvaluation(() =>
+      callOpsFor(call, {
+        resolve: (value) => store.resolveWrittenValue(value),
+        resolution: store,
+      }).receiverIsFrom(MADE_BY_DECK),
+    );
+
+    expect(result).toBe(false);
+    expect(profile.evaluations).toBe(0);
+  });
+
+  it("gives the call a field was written as for the receiver", () => {
+    const ops = opsForLastCall(`
+      import { makeDeck } from "tapedeck";
+      export class Player {
+        private readonly deck = makeDeck();
+        run() { return this.deck.play("a"); }
+      }
+    `);
+    expect(ops.receiver()?.calleeText()).toBe("makeDeck");
+  });
+});
+
+describe("the class a call is handed", () => {
+  const LABEL: ReceiverOrigin = {
+    origin: "constructed",
+    importedFrom: ["tapedeck"],
+    named: ["tape"],
+  };
+
+  function classHanded(order: string) {
+    const project = withLibrary();
+    project.createSourceFile("/order.ts", order);
+    const file = project.createSourceFile(
+      "/repo.ts",
+      `
+        import { tape } from "tapedeck";
+        import { Order } from "./order";
+        export const labelled = tape(Order);
+      `,
+    );
+    const call = file.getDescendantsOfKind(SyntaxKind.CallExpression)[0];
+    if (call === undefined) {
+      throw new Error("the fixture contains no call");
+    }
+    const store = new ResolutionStore();
+    return callOpsFor(call, {
+      resolve: (value) => store.resolveWrittenValue(value),
+      resolution: store,
+    }).classAt?.(0);
+  }
+
+  it("gives the class's name and the decorator the origin accepts", () => {
+    const order = classHanded(`
+      import { tape } from "tapedeck";
+      @tape("orders")
+      export class Order {}
+    `);
+    expect(order?.name()).toBe("Order");
+    expect(order?.decorator(LABEL)?.nameAt(0, "nothing")).toBe("orders");
+  });
+
+  it("gives no decorator when the one on the class comes from elsewhere", () => {
+    const order = classHanded(`
+      import { tape } from "./local";
+      @tape("orders")
+      export class Order {}
+    `);
+    expect(order?.decorator(LABEL)).toBeNull();
+  });
+
+  it("gives nothing for an argument that is not a class", () => {
+    expect(classHanded("export const Order = 1;")).toBeNull();
+  });
+});
