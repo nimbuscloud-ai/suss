@@ -211,10 +211,22 @@ describe("a mount on an app that never leaves the function that built it", () =>
     ]);
   });
 
-  it("keeps the mount when the function hands the app to a call", async () => {
-    const summaries = await summariesOf({
-      "main.py": itemsModule(["    serve(test_app)"]),
-    });
+  it.each([
+    ["hands the app to a call", "    serve(test_app)"],
+    ["yields the app", "    yield test_app"],
+    ["returns the app in parentheses", "    return (test_app)"],
+    [
+      "returns the app from a conditional",
+      "    return test_app if ready else None",
+    ],
+    ["returns a lambda that gives the app back", "    return lambda: test_app"],
+    [
+      "writes the app to a second name",
+      "    served = test_app\n    return served",
+    ],
+    ["returns a property of the app", "    return test_app.router"],
+  ])("keeps the mount when the function %s", async (_, body) => {
+    const summaries = await summariesOf({ "main.py": itemsModule([body]) });
     expect(pathsOf(summaries, "read_item").sort()).toEqual([
       "/items/{item_id}",
       "/t/items/{item_id}",

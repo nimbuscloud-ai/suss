@@ -259,6 +259,48 @@ export function containedValues(db: Database, objectKey: string): string[] {
     .map(([, value]) => value);
 }
 
+/**
+ * The facts that record a read passing a value on, by relation and the
+ * column the value's key is in: a return or a yield, an argument, another
+ * name or object taking it, or an expression whose value it may become.
+ */
+const PASSED_ON_IN: readonly (readonly [string, number])[] = [
+  ["returnsValue", 1],
+  ["yieldsValue", 1],
+  ["callArg", 2],
+  ["callKeywordArg", 2],
+  ["binds", 1],
+  ["endsHolding", 1],
+  ["mayHold", 1],
+  ["holdsProperty", 2],
+  ["storesProperty", 2],
+  ["fallbackBranch", 1],
+  ["readsKeyed", 1],
+  ["readsKeyed", 2],
+  ["entersAs", 1],
+];
+
+/**
+ * Whether any read of the value at `key` passes it on, as the facts record
+ * it. Reading a property off it counts too, since `app.router` hands out a
+ * part of it, unless the property is called at once as a method.
+ */
+export function isPassedOn(db: Database, key: string): boolean {
+  if (
+    PASSED_ON_IN.some(
+      ([relation, column]) => db.lookup(relation, column, key).length > 0,
+    )
+  ) {
+    return true;
+  }
+  return db
+    .lookup("readsProperty", 1, key)
+    .some(
+      (row) =>
+        row[0] === undefined || db.lookup("call", 1, row[0]).length === 0,
+    );
+}
+
 /** The object a call returns, when the rules settled it on one. */
 export function objectReturnedBy(db: Database, callKey: string): string | null {
   const row = db.facts("wantedObjectOf").find((entry) => entry[0] === callKey);
