@@ -564,9 +564,6 @@ async function hashStamps<Meta, UnitData>(
   const before = new Map((previous?.files ?? []).map((f) => [f.path, f]));
   return Promise.all(
     stamps.map(async (stamp) => {
-      if (stamp.mtimeMs === UNSETTLED_MTIME) {
-        return stamp;
-      }
       const prior = before.get(stamp.path);
       if (
         prior !== undefined &&
@@ -760,32 +757,22 @@ async function readManifest<Meta, UnitData>(
 }
 
 /**
- * The stamp a file gets when it changed after the run started. The run
- * may have read it before the change or after, so the summaries cannot
- * be tied to either version. No stat returns this mtime, so the next run
- * finds the stamp moved and, with no hash to compare, reads the file again.
- */
-const UNSETTLED_MTIME = -2;
-
-/**
- * A file's stamp. With `changedSince`, a file whose status changed in a
- * later millisecond is stamped unsettled. The status change time is used
- * because a tool that puts an old mtime back still moves it. The same
- * millisecond is left out, since `Date.now()` rounds down and would
- * otherwise flag every file written moments before the run.
+ * A file's stamp, or null when it changed after `changedSince`. The run
+ * may have read such a file before the change or after, so the manifest
+ * leaves it out and the next run treats it as unread. The status change
+ * time is used because a tool that puts an old mtime back still moves
+ * it. The same millisecond is let through, since `Date.now()` rounds down
+ * and would otherwise catch every file written moments before the run.
  */
 function stampOf(
   filePath: string,
   stat: { mtimeMs: number; ctimeMs: number; size: number },
   changedSince: number | undefined,
-): FileStamp {
-  const unsettled =
-    changedSince !== undefined && Math.floor(stat.ctimeMs) > changedSince;
-  return {
-    path: filePath,
-    mtimeMs: unsettled ? UNSETTLED_MTIME : stat.mtimeMs,
-    size: stat.size,
-  };
+): FileStamp | null {
+  if (changedSince !== undefined && Math.floor(stat.ctimeMs) > changedSince) {
+    return null;
+  }
+  return { path: filePath, mtimeMs: stat.mtimeMs, size: stat.size };
 }
 
 async function stampConfigFile(
@@ -802,7 +789,10 @@ async function stampConfigFile(
   }
 }
 
-/** Resolve the file list, sorted and stamped with mtime and size. */
+/**
+ * Resolve the file list, sorted and stamped with mtime and size. With
+ * `changedSince`, files that changed after it are left out.
+ */
 async function resolveFileStamps(
   input: CacheInput,
   changedSince?: number,
@@ -810,8 +800,8 @@ async function resolveFileStamps(
   // The stats run concurrently, limited by libuv's thread pool. On a
   // project of several thousand files they take around 25ms, most of the
   // cost of a whole-entry lookup.
-  const stamped = await Promise.all(
-    input.files.map(async (p) => {
+  const all = await Promise.all(
+    input.files.map(async (p): Promise<FileStamp | null> => {
       try {
         return stampOf(p, await fs.stat(p), changedSince);
       } catch {
@@ -821,6 +811,7 @@ async function resolveFileStamps(
       }
     }),
   );
+  const stamped = all.filter((stamp) => stamp !== null);
   // `fileStampsEqual` compares two lists position by position, so both
   // have to be in path order whatever order the caller listed the files in.
   stamped.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
