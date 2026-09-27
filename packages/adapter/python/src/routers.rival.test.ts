@@ -242,11 +242,37 @@ describe("a mount on an app that never leaves the function that built it", () =>
       "gives the app to a nested def as a default",
       "    def served(app=test_app):\n        return app\n    return served",
     ],
+    ["runs a method the pack does not register with", "    test_app.run()"],
+    ["calls the app itself", "    test_app(scope, receive, send)"],
+    [
+      "writes the app to a parameter's property twice",
+      "    holder.app = test_app\n    holder.app = None",
+    ],
+    [
+      "returns a closure that gives the app back",
+      "    def served():\n        return test_app\n    return served",
+    ],
+    ["hands a property of the app to a call", "    serve(test_app.router)"],
   ])("keeps the mount when the function %s", async (_, body) => {
     const summaries = await summariesOf({ "main.py": itemsModule([body]) });
     expect(pathsOf(summaries, "read_item").sort()).toEqual([
       "/items/{item_id}",
       "/t/items/{item_id}",
     ]);
+  });
+
+  it.each([
+    [
+      "registers a route of its own on the app",
+      '    @test_app.get("/health")\n    def health():\n        pass',
+    ],
+    ["writes to a part of the app", "    test_app.state.ready = True"],
+    [
+      "mounts twice on the app",
+      '    test_app.include_router(router, prefix="/u")',
+    ],
+  ])("drops the mount when the function %s", async (_, body) => {
+    const summaries = await summariesOf({ "main.py": itemsModule([body]) });
+    expect(pathsOf(summaries, "read_item")).toEqual(["/items/{item_id}"]);
   });
 });
