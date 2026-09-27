@@ -10,6 +10,8 @@
  * which covered routes do not.
  */
 
+import { sentenceList } from "./sentenceList.js";
+
 import type { WrapperReference } from "@suss/behavioral-ir";
 
 /** One line of a boundary's block, and the wrapper that produced it. */
@@ -116,14 +118,6 @@ export function sharedCauses(
   );
 }
 
-/** `GET /a, GET /b and GET /c`, for a list short enough to read. */
-function inWords(items: readonly string[]): string {
-  if (items.length <= 2) {
-    return items.join(" and ");
-  }
-  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
-}
-
 /**
  * The boundaries that have this line now, and the ones the same wrapper
  * runs on without it. The second line lets a reviewer check a route they
@@ -132,14 +126,17 @@ function inWords(items: readonly string[]): string {
 export function scopeLines(cause: SharedCause): string[] {
   const at =
     cause.boundaries.length <= NAMED
-      ? `at ${inWords(cause.boundaries)}`
+      ? `at ${sentenceList(cause.boundaries)}`
       : `at ${cause.boundaries.length} of the ${cause.covered} boundaries it runs on`;
 
   if (cause.exceptions.length === 0) {
     return [at];
   }
   if (cause.exceptions.length <= NAMED) {
-    return [at, `not at ${inWords(cause.exceptions)}, which it also runs on`];
+    return [
+      at,
+      `not at ${sentenceList(cause.exceptions)}, which it also runs on`,
+    ];
   }
   return [at, `not at ${cause.exceptions.length} others it runs on`];
 }

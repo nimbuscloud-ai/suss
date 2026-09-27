@@ -17,6 +17,8 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { modulesStamp, type SettledModule } from "./declaredModules.js";
+
 const ANALYSIS_PACKAGES = [
   "@suss/extractor",
   "@suss/resolution",
@@ -200,6 +202,8 @@ export interface ExtractionConfig {
   projectRoot?: string | undefined;
   /** The directories an absolute import was resolved against. */
   importRoots?: readonly string[] | undefined;
+  /** The modules the project lists, which decide which units discovery finds. */
+  modules?: readonly SettledModule[] | undefined;
 }
 
 /**
@@ -214,6 +218,7 @@ export function extractionConfigStamp(config: ExtractionConfig): string {
     ["workspaceRoot", config.workspaceRoot],
     ["projectRoot", config.projectRoot],
     ["importRoots", config.importRoots?.join(path.delimiter)],
+    ["modules", modulesStamp(config.modules)],
   ];
   return parts
     .flatMap(([name, value]) =>

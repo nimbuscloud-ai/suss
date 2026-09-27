@@ -78,6 +78,7 @@ interface SourceLocation {
   span?: { start: number; end: number };  // character offsets, for joins
   exportName: string | null;              // null for an anonymous function
   workspace?: string;
+  module?: string;                        // set when suss.json lists modules
 }
 
 interface CodeUnitIdentity {
@@ -99,6 +100,7 @@ Location tells you where the code is. Identity tells you what it is, whatever fi
 
 - **`range` and `span`.** The line range is for a reader and an editor link. The character span is what identity and joins measure with, because two functions can share a line and never an offset range. A summary with no source position behind it, such as one read from a contract artifact, has no `span`.
 - **`workspace`** is the extracted project's own name. Paths are relative to wherever the extract ran, so two services in one repository both report `src/handlers.ts`. Once their summaries are merged, the workspace is how you tell them apart.
+- **`module`** is the module of the application the unit is in, by the name the project's `suss.json` gives it. The adapter writes it on every unit under a module's root, so a reader groups by module without working out which folder is which. See [Modules of one application](/reference/cli/extract#modules-of-one-application).
 - **`id`** is workspace, file and export path together. A name on its own collides with other names too often to identify a unit.
 - **`nameKind`** records where the name came from. `"binding"` means other code can call the unit by it. `"label"` means discovery made the name up, and a label is never used as a binding.
 - **`exportPath`** is an array, because deep module namespaces (`namespace.submodule.getUser`) turn up in some frameworks and an array is easier to compare than a dotted string.

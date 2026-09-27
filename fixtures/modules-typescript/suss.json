@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "read": [],
+  "modules": [
+    { "name": "billing", "root": "src/billing" },
+    { "name": "catalog", "root": "src/catalog" }
+  ]
+}

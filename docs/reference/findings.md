@@ -679,10 +679,10 @@ It is at info because a block lists only the fields the author wanted checked. I
 The intent doc is well-formed and its boundary cannot be keyed for pairing, so nothing was checked against it.
 
 ```
-[warning] function-call:intent: Intent "user-cache" has a function-call boundary that can't be keyed for pairing (a function-call boundary needs package + exportPath); it was not checked against code.
+[warning] function-call:intent: Intent "user-cache" has a function-call boundary that can't be keyed for pairing (a function-call boundary needs package + exportPath, or module + exportName where the module is one suss.json lists); it was not checked against code.
 ```
 
-A function-call boundary needs a package and an export path, a message-bus boundary needs a channel, and without those there is nothing to match the code against. The message says what the boundary's own protocol would need.
+A function-call boundary needs a package and an export path, or a module `suss.json` lists and an export name. A message-bus boundary needs a channel, and without those there is nothing to match the code against. The message says what the boundary's own protocol would need.
 
 A store is the one case where filling the fields in does not help. Storage has no identity key by design, because a container name can be a pattern that only a caller or the deployment resolves, and the storage pass resolves it before pairing. Say what the store is for by putting `- writes: aws.dynamodb:Invoices` on an outcome of the boundary that touches it, and the checker compares that instead.
 

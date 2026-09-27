@@ -39,9 +39,23 @@ export interface ContractEntry {
   file: string;
 }
 
+/**
+ * One module of the application: what the team calls it, the folder its
+ * code is in, and the files other modules are meant to call it through.
+ * Paths are relative to the directory `suss.json` is in.
+ */
+export interface ModuleEntry {
+  name: string;
+  root: string;
+  /** Left out, the language's entry file is: `index.ts`, `__init__.py`, or a Ruby file named for the module. */
+  public?: string | string[];
+}
+
 export interface ProjectFile {
   version: 1;
   read: Array<ExtractEntry | ContractEntry>;
+  /** Read by `suss extract`, which keys each module's public exports by its name. */
+  modules?: ModuleEntry[];
 }
 
 /**

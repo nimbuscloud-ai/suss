@@ -15,6 +15,7 @@ import { ChangeListRejected, loadChangeListFile } from "@suss/contract-intent";
 
 import { checkIntent } from "./intentCheck.js";
 import { readingPairs } from "./readingPairs.js";
+import { sentenceList } from "./sentenceList.js";
 import { UsageError } from "./usageError.js";
 
 import type { ChangeListSummary } from "@suss/intent-ir";
@@ -265,12 +266,4 @@ function labelled(label: string, lines: string[]): string[] {
   return lines.map((line, index) =>
     index === 0 ? `${label.padEnd(LABEL_WIDTH)}${line}` : `${INDENT}${line}`,
   );
-}
-
-/** "a", "a and b", or "a, b and c". */
-function sentenceList(parts: string[]): string {
-  if (parts.length <= 1) {
-    return parts.join("");
-  }
-  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
 }

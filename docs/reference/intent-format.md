@@ -93,12 +93,19 @@ A block can leave out what the checker pairs on. The checker reports it as `unke
 | `semantics` | yes | `function-call`. |
 | `package` | no | The package name, when the boundary is something a package publishes. |
 | `exportPath` | no | The path to the export inside the package: the sub-path, then any nested names. |
-| `module` | no | The repo-relative module path, when the boundary is a unit inside this repository. |
+| `module` | no | The module of this application the function belongs to, by the name `suss.json` gives it. A server action gives the file it is written in instead. |
 | `exportName` | no | The name the module or package exports the function under. |
 | `transport` | no | Defaults to `in-process`. |
 | `receives` | no | The arguments the boundary needs, by parameter name. |
 
-The checker pairs a function-call boundary on `package` and `exportPath`. A document that gives a `module` and an `exportName` instead describes a boundary inside one package, which has no key yet, so it goes unchecked.
+The checker pairs a function-call boundary on its key. A document that gives `package` and `exportPath` is keyed `fn:<package>::<exportPath>`, the key a package's public export has. A document that gives `module` and `exportName` is keyed `fn:<module>::<exportName>`, the key `suss extract` gives each public export of a module `suss.json` lists. A class method's `exportName` is `Class.method`:
+
+```yaml
+boundary:
+  semantics: function-call
+  module: billing
+  exportName: chargeInvoice
+```
 
 #### `semantics: message-bus`
 

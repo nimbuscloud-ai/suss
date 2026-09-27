@@ -911,6 +911,20 @@ describe("a function-call binding that states its module", () => {
     );
     expect(untouched.semantics).toMatchObject({ path: "/x" });
   });
+
+  it("leaves a module name alone, since it is not a path", () => {
+    const rewritten = withRewrittenPaths(
+      functionCallBinding({
+        transport: "in-process",
+        recognition: "modules",
+        module: "billing",
+        exportName: "chargeInvoice",
+      }),
+      (one) => `../${one}`,
+    );
+    expect(rewritten.semantics).toMatchObject({ module: "billing" });
+    expect(boundaryKey(rewritten)).toBe("fn:billing::chargeInvoice");
+  });
 });
 
 describe("bindingIs", () => {

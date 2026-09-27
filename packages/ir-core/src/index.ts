@@ -46,7 +46,10 @@ export {
   typeDefinitionKey,
   withDefinitionsInlined,
 } from "./schemas.js";
-export { FunctionCallSemanticsSchema } from "./semantics/functionCall.js";
+export {
+  FunctionCallSemanticsSchema,
+  isModuleName,
+} from "./semantics/functionCall.js";
 export { GraphqlOperationSemanticsSchema } from "./semantics/graphqlOperation.js";
 export { GraphqlResolverSemanticsSchema } from "./semantics/graphqlResolver.js";
 export { MessageBusSemanticsSchema } from "./semantics/messageBus.js";
@@ -305,6 +308,25 @@ export function packageExportBinding(opts: {
     recognition: opts.recognition,
     package: opts.packageName,
     exportPath: opts.exportPath,
+  });
+}
+
+/**
+ * Build a function-call binding for a public export of one of the
+ * modules a project lists in `suss.json`. Its key is
+ * `fn:<module>::<exportName>`, so an intent document or a PRD scenario
+ * can point at it by the module's name.
+ */
+export function moduleExportBinding(opts: {
+  recognition: string;
+  module: string;
+  exportName: string;
+}): BoundaryBinding {
+  return functionCallBinding({
+    transport: "in-process",
+    recognition: opts.recognition,
+    module: opts.module,
+    exportName: opts.exportName,
   });
 }
 

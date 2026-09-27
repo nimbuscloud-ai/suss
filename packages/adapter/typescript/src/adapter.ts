@@ -49,6 +49,7 @@ import {
   commonDirectoryOf,
   composeWrappers,
   createCacheLayer,
+  type DeclaredModule,
   type DiscoveredSubUnit,
   type DiscoveredSubUnitParent,
   type DiscoveryPattern,
@@ -66,7 +67,9 @@ import {
   type ResponsePropertyMapping,
   type RootRecord,
   runDigest,
+  type SettledModule,
   stampModuleImports,
+  stampModules,
   type TerminalPattern,
 } from "@suss/extractor";
 import { force, literalOf, pathOf, type Value } from "@suss/values";
@@ -144,6 +147,7 @@ import {
   warmExportChains,
 } from "./moduleExports.js";
 import { moduleInitSummary } from "./moduleInit.js";
+import { moduleSurfacePack, settleTypeScriptModules } from "./moduleSurface.js";
 import { parameterReads } from "./parameterReads.js";
 import { createReferenceIndex } from "./referencedFiles.js";
 import { clientBasePath, underBasePath } from "./resolve/clientBasePath.js";
@@ -2087,6 +2091,7 @@ function named(
   summaries: BehavioralSummary[],
   workspace: string | undefined,
   runRoot: string | undefined,
+  modules: readonly SettledModule[],
 ): BehavioralSummary[] {
   const projectRoot =
     runRoot ?? commonDirectoryOf(summaries.map((s) => s.location.file));
@@ -2094,6 +2099,7 @@ function named(
     workspace: workspace ?? workspaceNameFor(projectRoot),
     projectRoot,
   });
+  stampModules(summaries, modules, projectRoot);
   return summaries;
 }
 
@@ -2117,6 +2123,8 @@ export interface TypeScriptAdapterConfig {
   onExtractionReport?: (report: ExtractionReport) => void;
   /** Absolute. `.suss/cache/` beside the tsconfig; `null` turns it off. */
   cacheDir?: string | null;
+  /** The modules the project lists in `suss.json`, with absolute paths. */
+  modules?: readonly DeclaredModule[];
 }
 
 export interface TypeScriptAdapter extends LanguageAdapter {
@@ -2174,17 +2182,22 @@ interface TsCacheMeta {
 export function createTypeScriptAdapter(
   suppliedConfig: TypeScriptAdapterConfig,
 ): TypeScriptAdapter {
-  // Workspace-marked patterns become concrete per-package ones before
-  // anything else reads the pack list.
+  // Workspace-marked patterns become concrete per-package ones, and the
+  // module list becomes a pack, before anything else reads the pack list.
+  const modules = settleTypeScriptModules(suppliedConfig.modules);
+  const surfacePack = moduleSurfacePack(modules);
   const config: TypeScriptAdapterConfig = {
     ...suppliedConfig,
-    frameworks: expandWorkspacePatterns(
-      suppliedConfig.frameworks,
-      suppliedConfig.projectRoot ??
-        (suppliedConfig.tsConfigFilePath !== undefined
-          ? path.dirname(suppliedConfig.tsConfigFilePath)
-          : undefined),
-    ),
+    frameworks: [
+      ...expandWorkspacePatterns(
+        suppliedConfig.frameworks,
+        suppliedConfig.projectRoot ??
+          (suppliedConfig.tsConfigFilePath !== undefined
+            ? path.dirname(suppliedConfig.tsConfigFilePath)
+            : undefined),
+      ),
+      ...(surfacePack === null ? [] : [surfacePack]),
+    ],
   };
 
   const project =
@@ -2232,6 +2245,7 @@ export function createTypeScriptAdapter(
   )}|${extractionConfigStamp({
     gapHandling: config.extractorOptions?.gapHandling,
     includeReachable: config.includeReachable !== false,
+    modules,
   })}|ws:${workspaceExpansionStamp(config.frameworks)}`;
 
   // The cache stores summaries before their wrappers are composed, so every
@@ -2310,6 +2324,7 @@ export function createTypeScriptAdapter(
         withWrappersComposed(withClosure),
         config.workspace,
         runRoot,
+        modules,
       );
     },
 
@@ -2373,6 +2388,7 @@ export function createTypeScriptAdapter(
           withWrappersComposed(lookup.summaries),
           config.workspace,
           runRoot,
+          modules,
         );
       }
 
@@ -2404,6 +2420,7 @@ export function createTypeScriptAdapter(
           withWrappersComposed(plan.allSummaries()),
           config.workspace,
           runRoot,
+          modules,
         );
       }
 
@@ -2775,6 +2792,7 @@ export function createTypeScriptAdapter(
         composed,
         config.workspace,
         runRoot ?? commonDirectoryOf(sourceFiles.map((f) => f.getFilePath())),
+        modules,
       );
     },
   };

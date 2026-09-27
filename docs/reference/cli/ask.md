@@ -72,6 +72,8 @@ A boundary is spelled the way reports spell it, and a shorter spelling covers mo
 
 A unit is spelled the way `--at` spells one: a file, a `file:line`, a summary id, or a function name. A package export such as `fn:@suss/datalog::evaluate` resolves to the function behind it, so that spelling, the bare name, and `what reads` on the export all give one answer. A bare name that is two functions in different places is refused, with both listed.
 
+A module that [`suss.json`](/reference/cli/extract#modules-of-one-application) lists is spelled by its name, and means every unit in it: `what does billing reach` walks from all of them, and `what does billing provide` lists its public exports. The name is tried after a file and before a function name, and a name that is both a module and a function is refused, with both listed. When the units in an answer to `what reads`, `what writes` or `what invokes` belong to modules, each line starts with its module in brackets, the lines are grouped by module, and the JSON adds `modules`, each module with the units it contributed.
+
 A service call counts as both a read and a write, since a request sends a body out and gets a response back. Calling a deployed unit by name does the same two things and is reported as `invokes`, because a service made of Lambdas would otherwise read as every function reading and writing every other one.
 
 When the unit an item is about provides a boundary itself, the item gives that boundary after the location: `discoverUnits (src/discovery.ts:150, provides fn:@suss/adapter-python::discoverUnits) calls builtSubjects`. Read the boundary from there. The summary id only spells it out when two summaries share a name.

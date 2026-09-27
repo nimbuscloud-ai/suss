@@ -194,6 +194,21 @@ export type DiscoveryMatch =
     }
   | {
       /**
+       * The public exports of one module the project lists in `suss.json`,
+       * read the way `packageExports` reads a package's entry points: one
+       * unit per exported function, class methods surfaced, barrels
+       * followed. Each binding is keyed `fn:<module>::<exportName>`. The
+       * adapter writes these patterns from the module list, so no pack
+       * declares one.
+       */
+      type: "moduleSurface";
+      /** The module's name, as `suss.json` gives it. */
+      module: string;
+      /** Absolute paths of the files whose exports are the surface. */
+      publicFiles: string[];
+    }
+  | {
+      /**
        * Methods with one of `methodDecorators` on a class with one of
        * `classDecorators`, the way NestJS declares resolvers. At least one
        * method decorator has to be imported from `importModule`, so a
