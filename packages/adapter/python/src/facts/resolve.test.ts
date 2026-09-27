@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { Database, profileEvaluation } from "@suss/datalog";
 
@@ -15,6 +15,7 @@ import {
   containedValues,
   evaluatingUnderSite,
   objectReturnedBy,
+  originsOf,
   resolveCalls,
   resolvedFunctions,
   subjectConstructions,
@@ -309,6 +310,45 @@ describe("resolving a value across files", () => {
       `${path.join(dir, "loader.py")}#second`,
       `${path.join(dir, "loader.py")}#third`,
     ]);
+  });
+
+  it("reads one key's rows through the column index instead of scanning every row", async () => {
+    const { facts, dir } = await factsFor({
+      "lib.py": "def connect():\n    pass\n",
+      "loader.py": [
+        "from lib import connect",
+        "",
+        "def all_types():",
+        "    return [first, second]",
+        "",
+      ].join("\n"),
+      "app.py": [
+        "from loader import all_types",
+        "",
+        "registry = all_types()",
+        "",
+      ].join("\n"),
+    });
+    const call = facts
+      .facts("call")
+      .find((row) => String(row[1]).endsWith("#all_types"));
+    resolveCalls(facts, [String(call?.[0])]);
+    const connect = `${path.join(dir, "loader.py")}#connect`;
+    // Asked once first, so the reads below find it asked and evaluate nothing.
+    originsOf(facts, connect);
+    const scanned: string[] = [];
+    const allRows = facts.facts.bind(facts);
+    vi.spyOn(facts, "facts").mockImplementation((relation) => {
+      scanned.push(relation);
+      return allRows(relation);
+    });
+
+    const returned = objectReturnedBy(facts, String(call?.[0]));
+    expect(containedValues(facts, returned as string)).toHaveLength(2);
+    expect(originsOf(facts, connect)).toEqual(connectFromLib(dir));
+    expect(scanned).not.toContain("wantedObjectOf");
+    expect(scanned).not.toContain("holdsProperty");
+    expect(scanned).not.toContain("wantedComesFrom");
   });
 
   it("derives a call reached through a wrapper as written by the construction it returns", async () => {
