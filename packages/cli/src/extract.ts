@@ -3,8 +3,18 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { extractPythonProject, findPythonFiles } from "@suss/adapter-python";
-import { extractRubyProject, findRubyFiles } from "@suss/adapter-ruby";
+import {
+  extractPythonProject,
+  findPythonFiles,
+  keptPythonParses,
+  parsePythonAhead,
+} from "@suss/adapter-python";
+import {
+  extractRubyProject,
+  findRubyFiles,
+  keptRubyParses,
+  parseRubyAhead,
+} from "@suss/adapter-ruby";
 import {
   computeContentHash,
   createProjectWithoutTsconfig,
@@ -51,6 +61,7 @@ import { UsageError } from "./usageError.js";
 
 import type { PythonPack, UnreadManifest } from "@suss/adapter-python";
 import type { RubyPack } from "@suss/adapter-ruby";
+import type { TypeScriptAdapter } from "@suss/adapter-typescript";
 import type {
   BehavioralSummary,
   RenderNode,
@@ -67,6 +78,7 @@ import type { PackDeclaration } from "@suss/ir-core";
 import type { z } from "zod";
 import type { Diagnosis } from "./diagnosis.js";
 import type { Submodule } from "./gitSubmodules.js";
+import type { KeptAdapters } from "./keptAdapters.js";
 import type { Language } from "./language.js";
 
 /** Each pack types its own options, so the CLI keeps them untyped. */
@@ -763,6 +775,12 @@ export interface ExtractOptions {
    * files its PRDs list under `coveredBy`, instead of every test.
    */
   intent?: string;
+  /**
+   * Adapters an earlier run in this process left, for a process that
+   * reads the same project after every edit. Without it every run starts
+   * from nothing.
+   */
+  kept?: KeptAdapters;
 }
 
 /** Where the code to read comes from. A tsconfig is preferred when one exists, because it has the path aliases. */
@@ -814,6 +832,26 @@ interface LanguageRun {
   explicitFiles: boolean;
 }
 
+/** What the adapter's callbacks reported during the current run. */
+interface AdapterReports {
+  timing: TimingReport | null;
+  cache: CacheDiagnostic | null;
+  extraction: ExtractionReport | null;
+}
+
+interface ReportingAdapter {
+  adapter: TypeScriptAdapter;
+  reports: AdapterReports;
+}
+
+/** A kept adapter reports into the same object each run, so each run starts it empty. */
+function clearReports(reports: Partial<AdapterReports>): AdapterReports {
+  reports.timing = null;
+  reports.cache = null;
+  reports.extraction = null;
+  return reports as AdapterReports;
+}
+
 interface LanguageRunOptions {
   options: ExtractOptions;
   /** The directory the command was pointed at. */
@@ -858,36 +896,60 @@ async function runTypeScript(
 
   const extractorOptions =
     options.gaps !== undefined ? { gapHandling: options.gaps } : undefined;
+  const modules = projectModules(source.root);
 
-  let timingReport: TimingReport | null = null;
-  let cacheDiagnostic: CacheDiagnostic | null = null;
-  let extractionReport: ExtractionReport | null = null;
-
-  const adapter = createTypeScriptAdapter({
-    ...(source.kind === "tsconfig"
-      ? { tsConfigFilePath: source.path }
-      : { project: createProjectWithoutTsconfig(source.root).project }),
-    projectRoot: runRoot,
-    frameworks: packs,
-    modules: projectModules(source.root),
-    ...(extractorOptions !== undefined ? { extractorOptions } : {}),
-    ...(options.noCache === true ? { cacheDir: null } : {}),
-    onTiming: (report) => {
-      timingReport = report;
-    },
-    onCacheDiagnostic: (diag) => {
-      cacheDiagnostic = diag;
-    },
-    onExtractionReport: (report) => {
-      extractionReport = report;
-    },
-  });
+  const make = (): ReportingAdapter => {
+    const reports = clearReports({});
+    const adapter = createTypeScriptAdapter({
+      ...(source.kind === "tsconfig"
+        ? { tsConfigFilePath: source.path }
+        : { project: createProjectWithoutTsconfig(source.root).project }),
+      projectRoot: runRoot,
+      frameworks: packs,
+      modules,
+      ...(extractorOptions !== undefined ? { extractorOptions } : {}),
+      ...(options.noCache === true ? { cacheDir: null } : {}),
+      onTiming: (report) => {
+        reports.timing = report;
+      },
+      onCacheDiagnostic: (diag) => {
+        reports.cache = diag;
+      },
+      onExtractionReport: (report) => {
+        reports.extraction = report;
+      },
+    });
+    return { adapter, reports };
+  };
+  // Everything that changes what the adapter was built from goes in the
+  // key. A pack's version stamp covers its code, its config and its stubs.
+  const { adapter, reports } =
+    options.kept === undefined
+      ? make()
+      : options.kept.keep(
+          `typescript ${source.kind === "tsconfig" ? source.path : source.root}`,
+          JSON.stringify({
+            runRoot,
+            packs: packs.map((pack) => [pack.name, pack.version]),
+            modules,
+            gaps: options.gaps ?? null,
+            noCache: options.noCache === true,
+          }),
+          make,
+          ({ adapter: kept }) => kept.loadProgram(),
+        );
+  clearReports(reports);
+  if (options.kept !== undefined) {
+    adapter.refresh(options.kept.changedPaths());
+  }
 
   const namedFiles = options.files ?? [];
   const explicitFiles = namedFiles.length > 0;
   const summaries = explicitFiles
     ? await adapter.extractFromFiles(namedFiles.map((f) => path.resolve(f)))
     : await adapter.extractAll();
+  const { timing: timingReport, cache: cacheDiagnostic } = reports;
+  const extractionReport: ExtractionReport | null = reports.extraction;
 
   // extractFromFiles builds no extraction report and so no walked count.
   // The length of the given list is the number of files read.
@@ -896,7 +958,7 @@ async function runTypeScript(
     root: runRoot,
     filesRead: explicitFiles
       ? namedFiles.length
-      : ((extractionReport as ExtractionReport | null)?.filesWalked ?? 0),
+      : (extractionReport?.filesWalked ?? 0),
     timingReport,
     cacheDiagnostic,
     extractionReport,
@@ -920,6 +982,13 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
   // the shared framework inside it do not resolve.
   const submodules = runOptions.submodules;
   const files = filesToRead(runOptions, findPythonFiles, submodules);
+  const keptParses = keptParsesFor(
+    runOptions,
+    "python",
+    files,
+    keptPythonParses,
+    parsePythonAhead,
+  );
 
   let timingReport: TimingReport | null = null;
   let extractionReport: ExtractionReport | null = null;
@@ -927,6 +996,7 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
   const { summaries, roots, unreadManifests } = await extractPythonProject({
     files,
     packs,
+    ...(keptParses !== undefined ? { keptParses } : {}),
     additionalRoots: submodules
       .filter((submodule) => submodule.checkedOut)
       .map((submodule) => submodule.directory),
@@ -987,12 +1057,20 @@ async function runRuby(runOptions: LanguageRunOptions): Promise<LanguageRun> {
   // findRubyFiles skips .git directories but still walks the rest of a
   // nested repository, so filesToRead drops those files.
   const files = filesToRead(runOptions, findRubyFiles, runOptions.submodules);
+  const keptParses = keptParsesFor(
+    runOptions,
+    "ruby",
+    files,
+    keptRubyParses,
+    parseRubyAhead,
+  );
   let timingReport: TimingReport | null = null;
   let extractionReport: ExtractionReport | null = null;
   let cacheDiagnostic: CacheDiagnostic | null = null;
   const { summaries } = await extractRubyProject({
     files,
     packs,
+    ...(keptParses !== undefined ? { keptParses } : {}),
     projectRoot: runOptions.root,
     modules: projectModules(runOptions.root),
     ...(runOptions.options.gaps !== undefined
@@ -1018,6 +1096,33 @@ async function runRuby(runOptions: LanguageRunOptions): Promise<LanguageRun> {
     extractionReport,
     cacheDiagnostic,
   );
+}
+
+/**
+ * The parses a kept Python or Ruby read left. A tree depends only on
+ * its file's text, so one holder serves every run over this directory
+ * whatever the packs. After a run served from the cache, the holder
+ * parses the files that run would have read, ahead of the next edit.
+ */
+function keptParsesFor<P>(
+  runOptions: LanguageRunOptions,
+  language: Language,
+  files: string[],
+  make: () => P,
+  parseAhead: (files: readonly string[], parses: P) => Promise<void>,
+): P | undefined {
+  const kept = runOptions.options.kept;
+  if (kept === undefined) {
+    return undefined;
+  }
+  const held = kept.keep(
+    `${language} ${runOptions.root}`,
+    "",
+    () => ({ parses: make(), files }),
+    (value) => parseAhead(value.files, value.parses),
+  );
+  held.files = files;
+  return held.parses;
 }
 
 function languageRun(
