@@ -388,6 +388,22 @@ Both conditions matter. Counting only loops keeps the ordinary case working: two
 
 A module-level mount is never dropped this way. It runs whichever factory the app calls.
 
+### A mount on an app that its function drops
+
+A function can build a second app, mount the project's router on it, and then let it go:
+
+```python
+def build_test_app():
+    test_app = FastAPI()
+    test_app.include_router(router, prefix="/t")   # test_app is never returned
+```
+
+Once the function returns, nothing refers to `test_app` any more, so no request can reach `/t` whether or not anything calls the function. suss does not record that mount. The router keeps whatever paths its other mounts give it.
+
+suss decides this from the function's own source. The app's name has to be assigned once, from the construction, in the function that mounts on it, and every other read of the name has to be a method call on it. Any other read counts as the app leaving: a `return`, an argument such as `serve(test_app)`, a `yield`, or an alias. A read suss misjudges this way keeps the mount, so a served path is not lost.
+
+A pack that declares a mount object is left out, which today is flask-restx. Its `Api` serves through the app or blueprint it was built from or handed, so what happens to the `Api`'s own variable says nothing about whether the app is served.
+
 ## What a file reads from the environment
 
 `os.environ` is part of the standard library, so the adapter recognizes reads of it without a pack. Each read becomes the same `config-read` interaction that the TypeScript adapter emits for `process.env.X`, on the `runtime-config` binding, and is spelled `os.environ["X"]` whichever way the source wrote it. The runtime-config checker pairs those reads against what a template declares for the function the file runs in.
