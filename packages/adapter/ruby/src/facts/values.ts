@@ -195,28 +195,25 @@ const WRITTEN_VALUE_TYPES = new Set([
 /** `%w[a b]` and `%i[a b]` are arrays whose elements are bare words. */
 const ARRAY_TYPES = new Set(["array", "string_array", "symbol_array"]);
 
-/** Where the emitter puts a row: the database, or a buffer that passes its rows on later. */
-interface RowSink {
-  add(relation: string, tuple: string[]): unknown;
-}
-
-/** Rows held back so one walk can emit them in the order separate walks would. */
-class RowBuffer implements RowSink {
+/** Rows held back while a walk runs, so they can reach the database grouped by kind. */
+class RowBuffer {
   private readonly rows: [string, string[]][] = [];
 
   add(relation: string, tuple: string[]): void {
     this.rows.push([relation, tuple]);
   }
 
-  flushInto(sink: RowSink): void {
+  flushInto(db: Database): void {
     for (const [relation, tuple] of this.rows) {
-      sink.add(relation, tuple);
+      db.add(relation, tuple);
     }
   }
 }
 
 interface Emitter {
-  db: RowSink;
+  db: Database;
+  /** The buffer that collects rows instead of the database during a walk, or null. */
+  heldRows: RowBuffer | null;
   filePath: string;
   /**
    * The method whose body is being walked. Its parameters and locals are
@@ -267,6 +264,10 @@ interface NamedWrites {
 }
 
 function add(emitter: Emitter, relation: string, ...tuple: string[]): void {
+  if (emitter.heldRows !== null) {
+    emitter.heldRows.add(relation, tuple);
+    return;
+  }
   emitter.db.add(relation, tuple);
 }
 
@@ -753,27 +754,22 @@ type ExpressionVisit = (
   turns: readonly LoopTurn[],
 ) => void;
 
-/** A definition nested in the walked body, which the walk does not enter. */
-type NestedVisit = (definition: RbNode, type: string) => void;
-
-function skipNested(): void {}
-
 /**
  * Visits every expression under a node once, stopping at nested
- * definitions and handing each to `nested`. `turns` lists the loop blocks
- * around the expression, outermost first.
+ * definitions and adding each to `nested` when the caller passes a list.
+ * `turns` lists the loop blocks around the expression, outermost first.
  */
 function walkExpressions(
   node: RbNode,
   emitter: Emitter,
   visit: ExpressionVisit,
-  nested: NestedVisit = skipNested,
+  nested: RbNode[] | null = null,
   turns: readonly LoopTurn[] = [],
 ): void {
   for (const child of children(node)) {
     const type = child.type;
     if (OWN_BODY_TYPES.has(type)) {
-      nested(child, type);
+      nested?.push(child);
       continue;
     }
     visit(child, type, node, turns);
@@ -1326,10 +1322,9 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
   // kind: nested definitions, then calls and returns, then each expression's
   // facts. The order the database sees then does not depend on the walk.
   const nested: RbNode[] = [];
-  const lambdas: RbNode[] = [];
   const bodyFacts = new RowBuffer();
   const expressionFacts = new RowBuffer();
-  const collecting: Emitter = { ...inside, db: expressionFacts };
+  const collecting: Emitter = { ...inside, heldRows: expressionFacts };
   walkExpressions(
     body,
     inside,
@@ -1338,12 +1333,7 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
       emitBodyFact(bodyFacts, inside, funcKey, child, type, site);
       emitExpressionFact(collecting, child, type, parent, turns, site);
     },
-    (definition, type) => {
-      nested.push(definition);
-      if (type === LAMBDA_TYPE) {
-        lambdas.push(definition);
-      }
-    },
+    nested,
   );
 
   for (const definition of nested) {
@@ -1359,8 +1349,10 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
   emitScopeWrites(inside, writes);
   // A lambda can be assigned to a name and called later, so it gets the
   // same facts as a method.
-  for (const lambda of lambdas) {
-    emitMethodFacts(inside, lambda);
+  for (const definition of nested) {
+    if (definition.type === LAMBDA_TYPE) {
+      emitMethodFacts(inside, definition);
+    }
   }
 
   return funcKey;
@@ -1368,7 +1360,7 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
 
 /** What one expression in a method's body says about the method: a value it returns, or a call it makes. */
 function emitBodyFact(
-  rows: RowSink,
+  rows: RowBuffer,
   emitter: Emitter,
   funcKey: string,
   child: RbNode,
@@ -1745,6 +1737,7 @@ export function emitValueFacts(
   const writes = collectWrites(null, root);
   const emitter: Emitter = {
     db,
+    heldRows: null,
     filePath,
     enclosing: null,
     selfKey: null,

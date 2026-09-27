@@ -194,10 +194,7 @@ function writesUnder(body: RbNode): LocalWrite[] {
       if (OWN_BODY_TYPES.has(type)) {
         continue;
       }
-      const read = WRITE_READERS[type];
-      if (read !== undefined) {
-        found.push(...read(child));
-      }
+      found.push(...(WRITE_READERS[type]?.(child) ?? []));
       visit(child);
     }
   };
