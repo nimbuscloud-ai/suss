@@ -8,6 +8,7 @@ import {
   type GlobalPrefix,
   globalPrefixesIn,
   globalPrefixKey,
+  globalPrefixOf,
   pathUnderGlobalPrefix,
 } from "./globalPrefix.js";
 import { buildMountPrefixIndex } from "./mountPrefix.js";
@@ -249,12 +250,14 @@ describe("the global prefix in the mount prefix index", () => {
     );
   }
 
-  it("answers the pattern's key, and says when the prefix changed", () => {
+  it("gives the pattern's prefix by its key, and says when the prefix changed", () => {
     const index = indexFor("api");
-    expect(index.globalPrefixFor?.(key)).toEqual({
+    expect(globalPrefixOf(index, key)).toEqual({
       prefix: "api",
       excluded: [],
     });
+    expect(globalPrefixOf(index, "global:other")).toBe(null);
+    expect(globalPrefixOf(undefined, key)).toBe(null);
     const recorded = index.prefixForId?.(key);
     expect(indexFor("api").prefixForId?.(key)).toBe(recorded);
     expect(indexFor("v2").prefixForId?.(key)).not.toBe(recorded);

@@ -13,6 +13,7 @@ import { Node, type SourceFile } from "ts-morph";
 
 import { constantOf, force, literalOf } from "@suss/values";
 
+import { recordMountPrefix } from "../depTracking.js";
 import { evaluatedValue } from "../values/evaluator.js";
 import { writtenNodeOf } from "./resolveValue.js";
 import { parameterNamedBy } from "./shared.js";
@@ -21,6 +22,7 @@ import type { GlobalPrefixCall } from "@suss/extractor";
 import type { Value } from "@suss/values";
 import type { CallExpression } from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";
+import type { MountPrefixIndex } from "./registrationCall.js";
 
 /** A route the prefix leaves out. A null method leaves out every verb. */
 export interface ExcludedRoute {
@@ -44,6 +46,20 @@ export function globalPrefixKey(call: GlobalPrefixCall): string {
 /** Whether a recorded assumption is about a global prefix rather than a mount. */
 export function isGlobalPrefixKey(id: string): boolean {
   return id.startsWith(KEY_START);
+}
+
+/**
+ * The prefix the run's calls agree on for this key, recorded as an
+ * assumption of the file being walked. A route's path depends on a call
+ * in another file, so a cached walk is redone when the prefix changes.
+ */
+export function globalPrefixOf(
+  index: MountPrefixIndex | undefined,
+  key: string,
+): GlobalPrefix | null {
+  const prefix = index?.globalPrefixes?.get(key) ?? null;
+  recordMountPrefix(key, describeGlobalPrefix(prefix));
+  return prefix;
 }
 
 /** A prefix as one string, so a cached walk can tell whether it changed. */

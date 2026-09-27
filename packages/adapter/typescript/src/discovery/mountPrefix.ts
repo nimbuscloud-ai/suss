@@ -57,10 +57,6 @@ const NO_MOUNTS: MountPrefixIndex = {
     return "";
   },
   prefixForId: () => "",
-  globalPrefixFor: (key) => {
-    recordMountPrefix(key, describeGlobalPrefix(null));
-    return null;
-  },
 };
 
 type RegistrationMatch = Extract<
@@ -185,8 +181,6 @@ export function buildMountPrefixIndex(
   const edges: MountEdges = edgesByChild;
   const byId = (childId: string): string =>
     agreedMountPrefix(edges, childId) ?? "";
-  const globalFor = (key: string): GlobalPrefix | null =>
-    globalPrefixes.get(key) ?? null;
   return {
     effectivePrefixFor(routerNode: Node): string {
       const childId = nodeId(routerNode);
@@ -195,12 +189,10 @@ export function buildMountPrefixIndex(
       return prefix;
     },
     prefixForId: (id) =>
-      isGlobalPrefixKey(id) ? describeGlobalPrefix(globalFor(id)) : byId(id),
-    globalPrefixFor(key: string): GlobalPrefix | null {
-      const prefix = globalFor(key);
-      recordMountPrefix(key, describeGlobalPrefix(prefix));
-      return prefix;
-    },
+      isGlobalPrefixKey(id)
+        ? describeGlobalPrefix(globalPrefixes.get(id) ?? null)
+        : byId(id),
+    globalPrefixes,
   };
 }
 

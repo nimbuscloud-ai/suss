@@ -61,10 +61,10 @@ export interface MountPrefixIndex {
    */
   prefixForId?(childId: string): string;
   /**
-   * The prefix every call keyed by `globalPrefixKey` agrees an
-   * application puts in front of its routes, or null when none does.
+   * The prefix the calls keyed by `globalPrefixKey` agree an application
+   * puts in front of its routes. A key with no entry has none.
    */
-  globalPrefixFor?(key: string): GlobalPrefix | null;
+  globalPrefixes?: ReadonlyMap<string, GlobalPrefix>;
 }
 
 /** One mount call this file states, before it's folded into the index. */

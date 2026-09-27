@@ -10,7 +10,11 @@ import {
   importedDecoratorLocals,
 } from "./decoratedMembers.js";
 import { classDecoratorStandingFor } from "./decoratorComposition.js";
-import { globalPrefixKey, pathUnderGlobalPrefix } from "./globalPrefix.js";
+import {
+  globalPrefixKey,
+  globalPrefixOf,
+  pathUnderGlobalPrefix,
+} from "./globalPrefix.js";
 import { numberValueOf, stringValueOf } from "./resolveValue.js";
 
 import type {
@@ -161,9 +165,7 @@ export function discoverDecoratedRoutes(
   const globalPrefix =
     match.globalPrefix === undefined
       ? null
-      : (mountPrefixes?.globalPrefixFor?.(
-          globalPrefixKey(match.globalPrefix),
-        ) ?? null);
+      : globalPrefixOf(mountPrefixes, globalPrefixKey(match.globalPrefix));
 
   const results: DiscoveredUnit[] = [];
   for (const cls of sourceFile.getClasses()) {
