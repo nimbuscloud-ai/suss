@@ -16,7 +16,7 @@ import path from "node:path";
 import { Database } from "@suss/datalog";
 import { explainResolvedKey, RESOLUTION_RULES } from "@suss/resolution";
 
-import { enclosingDefinition, field } from "../ast.js";
+import { children, enclosingDefinition, field } from "../ast.js";
 import { parseRubySync } from "../parser.js";
 import { findRubyFiles, RunFacts } from "../project.js";
 import { parametersOf, paramNameOf } from "./locals.js";
@@ -45,10 +45,6 @@ export interface RubyValueHandle {
 interface Located {
   file: string;
   node: RbNode;
-}
-
-function namedChildrenOf(node: RbNode): RbNode[] {
-  return node.namedChildren.filter((child): child is RbNode => child !== null);
 }
 
 /** The statements that write a local, `x = ...` and `x ||= ...`. */
@@ -103,7 +99,7 @@ function indexFile(
       }
     }
 
-    for (const child of namedChildrenOf(node)) {
+    for (const child of children(node)) {
       walk(child);
     }
   };
@@ -181,7 +177,7 @@ export class RubyWhySession {
           found = node;
         }
       }
-      for (const child of namedChildrenOf(node)) {
+      for (const child of children(node)) {
         visit(child);
       }
     };
@@ -217,7 +213,7 @@ export class RubyWhySession {
           found = callee;
         }
       }
-      for (const child of namedChildrenOf(node)) {
+      for (const child of children(node)) {
         visit(child);
       }
     };

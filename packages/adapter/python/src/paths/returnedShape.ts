@@ -4,7 +4,7 @@
  * returned expression instead when it can.
  */
 
-import { field } from "../ast.js";
+import { children, field } from "../ast.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";
 import type { PyNode } from "../parser.js";
@@ -17,10 +17,6 @@ const SCALARS: Record<string, TypeShape> = {
   true: { type: "boolean" },
   false: { type: "boolean" },
 };
-
-function children(node: PyNode): PyNode[] {
-  return node.namedChildren.filter((child): child is PyNode => child !== null);
-}
 
 /** A dict written with string keys is a record; anything else about it is a dictionary. */
 function recordShape(node: PyNode, depth: number): TypeShape {

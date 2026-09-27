@@ -43,8 +43,13 @@ export function isType(node: RbNode, ...types: string[]): boolean {
   return types.includes(node.type);
 }
 
+/** tree-sitter types a named child as nullable. Dropping the nulls here saves every walk a check. */
+export function children(node: RbNode): RbNode[] {
+  return node.namedChildren.filter((child): child is RbNode => child !== null);
+}
+
 export function bodyStatements(body: RbNode): RbNode[] {
-  return body.namedChildren.filter((child): child is RbNode => child !== null);
+  return children(body);
 }
 
 /** The fields of a branching statement that run when the branch is taken; the condition is left out. */

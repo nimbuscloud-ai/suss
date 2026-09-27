@@ -7,7 +7,13 @@
 import { enumerateOrDegrade, sharedGatingConditions } from "@suss/extractor";
 import { constantOf, literalOf } from "@suss/values";
 
-import { field, MODULE_SCOPE_STOPS, NodeMap, OWN_BODY_TYPES } from "../ast.js";
+import {
+  children,
+  field,
+  MODULE_SCOPE_STOPS,
+  NodeMap,
+  OWN_BODY_TYPES,
+} from "../ast.js";
 import { evaluatedValue } from "../values/evaluator.js";
 import { isBareMethodCall, localNamesIn } from "./bareCalls.js";
 import { lowerRubyBody } from "./lowering.js";
@@ -48,10 +54,6 @@ function literalArgOf(
     return { kind: "boolean", value: constant };
   }
   return null;
-}
-
-function children(node: RbNode): RbNode[] {
-  return node.namedChildren.filter((child): child is RbNode => child !== null);
 }
 
 /**
