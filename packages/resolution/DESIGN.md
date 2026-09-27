@@ -100,7 +100,13 @@ storesProperty(r, n, x, k)  x is written to the property n of r. k is
                             receiver's n, or the class for a TypeScript
                             field initializer. k is name when r is a
                             name that the body writing through it
-                            declares, as in client.timeout = 5
+                            declares, as in client.timeout = 5. k is
+                            unplaced for any other write, such as one
+                            through a parameter or one of several
+                            writes that never settle. No rule places
+                            an unplaced write on an object. Python
+                            states them, and its router index reads
+                            them to see where a value went
 ```
 
 Calls:
@@ -248,11 +254,6 @@ yieldsValue(f, v)           f's body yields v. Calling f gives back a
                             The router index reads it to tell whether an
                             app leaves the function that built it
                             (Python)
-writesProperty(r, n, x)     an assignment writes x to the property n of
-                            r, whatever r is. It covers a parameter and
-                            writes that never settle, which
-                            storesProperty leaves out on purpose. The
-                            router index reads it (Python)
 holdsUnderKey(o, x)         o is given x under a key, as in o[k] = x, a
                             dictionary entry whose key is not a string,
                             or the element of a comprehension. The

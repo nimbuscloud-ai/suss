@@ -42,6 +42,11 @@ function rows(db: Database, relation: string): string[][] {
     .map((row) => row.map((value) => String(value).replace("f.py", "")));
 }
 
+/** The stores a rule puts on an object, leaving out the unplaced ones. */
+function placedStores(db: Database): string[][] {
+  return rows(db, "storesProperty").filter((row) => row[3] !== "unplaced");
+}
+
 describe("python value facts", () => {
   it("says a def is a function and binds its name to it", async () => {
     const db = await factsFor("def handler():\n    pass\n");
@@ -252,15 +257,69 @@ describe("python value facts", () => {
     ).toEqual([["(injected)", "#injected"]]);
   });
 
-  it("records a write to a parameter's property, which storesProperty leaves out", async () => {
+  it("records a write to a parameter's property as unplaced", async () => {
     const db = await factsFor(
       "def keep(holder, value):\n    holder.item = value\n",
     );
     const [funcKey] = rows(db, "func")[0] ?? [];
-    expect(rows(db, "writesProperty")).toEqual([
-      [`${funcKey}#holder`, "item", `${funcKey}#value`],
+    expect(rows(db, "storesProperty")).toEqual([
+      [`${funcKey}#holder`, "item", `${funcKey}#value`, "unplaced"],
     ]);
-    expect(db.size("storesProperty")).toBe(0);
+  });
+
+  it("records the writes a settled store leaves out as unplaced", async () => {
+    const db = await factsFor(
+      [
+        "def build(first, second):",
+        "    job = Job()",
+        "    job.item = first",
+        "    job.item = second",
+        "    return job",
+        "",
+      ].join("\n"),
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "storesProperty")).toEqual([
+      [`${funcKey}#job`, "item", `${funcKey}#second`, "name"],
+      [`${funcKey}#job`, "item", `${funcKey}#first`, "unplaced"],
+    ]);
+  });
+
+  it("records every write through a name as unplaced when the writes never settle", async () => {
+    const db = await factsFor(
+      [
+        "def build(first, second, ready):",
+        "    job = Job()",
+        "    if ready:",
+        "        job.item = first",
+        "    else:",
+        "        job.item = second",
+        "    return job",
+        "",
+      ].join("\n"),
+    );
+    expect(rows(db, "storesProperty").map((row) => row[3])).toEqual([
+      "unplaced",
+      "unplaced",
+    ]);
+  });
+
+  it("records a receiver's write that its settled store leaves out as unplaced", async () => {
+    const db = await factsFor(
+      [
+        "class Job:",
+        "    def setup(self, first, second):",
+        "        self.item = first",
+        "        self.item = second",
+        "",
+      ].join("\n"),
+    );
+    expect(
+      rows(db, "storesProperty").map((row) => [row[2]?.split("#")[1], row[3]]),
+    ).toEqual([
+      ["second", "receiver"],
+      ["first", "unplaced"],
+    ]);
   });
 
   it("keeps the elements of a tuple written without parentheses", async () => {
@@ -553,7 +612,7 @@ describe("python value facts", () => {
       "",
     ].join("\n");
     const db = await factsFor(source);
-    const stored = rows(db, "storesProperty");
+    const stored = placedStores(db);
     expect(stored).toHaveLength(1);
     expect(textAt(source, stored[0]?.[2] ?? "")).toBe("second()");
   });
@@ -672,7 +731,7 @@ describe("python value facts", () => {
         "",
       ].join("\n"),
     );
-    expect(rows(db, "storesProperty").map((row) => row[1])).toEqual(["app"]);
+    expect(placedStores(db).map((row) => row[1])).toEqual(["app"]);
   });
 
   describe("a property written through a name", () => {
@@ -708,21 +767,25 @@ describe("python value facts", () => {
           "",
         ].join("\n"),
       );
-      expect(rows(db, "storesProperty")).toEqual([]);
+      expect(rows(db, "storesProperty")).toEqual([
+        ["#job", "on_failure", "#page_oncall", "unplaced"],
+      ]);
     });
 
     it("is left out when the body reads the property before writing it", async () => {
       const db = await factsFor(
         "job = ReportJob()\nprint(job.retries)\njob.retries = limit\n",
       );
-      expect(rows(db, "storesProperty")).toEqual([]);
+      expect(rows(db, "storesProperty")).toEqual([
+        ["#job", "retries", "#limit", "unplaced"],
+      ]);
     });
 
     it("settles two writes in order on the last one", async () => {
       const db = await factsFor(
         "job = ReportJob()\njob.retries = first\njob.retries = second\n",
       );
-      expect(rows(db, "storesProperty")).toEqual([
+      expect(placedStores(db)).toEqual([
         ["#job", "retries", "#second", "name"],
       ]);
     });
@@ -737,7 +800,7 @@ describe("python value facts", () => {
           "",
         ].join("\n"),
       );
-      expect(rows(db, "storesProperty")).toEqual([]);
+      expect(placedStores(db)).toEqual([]);
     });
   });
 

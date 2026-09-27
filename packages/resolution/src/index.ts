@@ -206,6 +206,14 @@ const RECEIVER_STORE = constant(RECEIVER_STORE_NAME);
 export const NAMED_STORE_NAME = "name";
 const NAMED_STORE = constant(NAMED_STORE_NAME);
 
+/**
+ * The last column for a write the adapter does not place on an object:
+ * one through a parameter or a property read, or one of several writes
+ * that never settle. The rules that put a store on an object match the
+ * other two kinds, so these rows only say where a value went.
+ */
+export const UNPLACED_STORE_NAME = "unplaced";
+
 /** The `callArgCount` of a call written with nothing between its parentheses. */
 const NO_ARGUMENTS = constant("0");
 
