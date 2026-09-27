@@ -196,7 +196,7 @@ The first server started for a repository listens on a local socket whose path c
 
 A later server for the same repository has the first one build for it and keeps no program. When the first one goes away, the next build takes the socket over.
 
-The worker sends the time the edit it is reading was queued. A build that started after that read every file after the write, so the server hands it back, the watcher's build included, and builds again only when none did. `check --since` reads the earlier folder a second time on each edit, usually after the session renamed it into place, so the CLI remembers the last two folders it read by the identity of their files.
+The worker sends the time the edit it is reading was queued. A build that started after that read every file after the write, so the server hands it back, the watcher's build included, and builds again only when none did. `check --since` reads the earlier folder a second time on each edit, usually after the session renamed it into place, so the CLI remembers the last two folders it read by the names and contents of their files. A rewrite can keep a file's size, inode and modification time, so a stamp cannot tell the two apart.
 
 ### Python and Ruby: attribute questions to files through demand
 

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -320,11 +321,13 @@ interface CheckedFiles {
 }
 
 /**
- * The folders read most recently, by the name and identity on disk of
- * every file in them. A process that compares each read with the one
- * before it reads the earlier folder a second time, often after it was
- * renamed, and a large project's files take about half a second each to
- * parse and check.
+ * The folders read most recently, by the name and content of every file
+ * in them. A process that compares each read with the one before it
+ * reads the earlier folder a second time, often after it was renamed or
+ * copied, and a large project's files take about half a second each to
+ * parse and check. Hashing one takes a tenth of that. A file's stamp
+ * would be cheaper, and a same-size rewrite within the file system's
+ * timestamp resolution would leave it unchanged.
  */
 const checkedFolders = new Map<string, CheckedFiles>();
 const FOLDERS_KEPT = 2;
@@ -347,15 +350,15 @@ function checkedFiles(dir: string, files: readonly string[]): CheckedFiles {
   return checked;
 }
 
-/** Null when a file cannot be stat'ed, so nothing is remembered. */
+/** Null when a file cannot be read, so nothing is remembered. */
 function folderIdentity(dir: string, files: readonly string[]): string | null {
   const parts: string[] = [];
   for (const file of files) {
     try {
-      const stat = fs.statSync(path.join(dir, file));
-      parts.push(
-        `${file}\0${stat.dev}\0${stat.ino}\0${stat.size}\0${stat.mtimeMs}`,
-      );
+      const digest = createHash("sha1")
+        .update(fs.readFileSync(path.join(dir, file)))
+        .digest("hex");
+      parts.push(`${file}\0${digest}`);
     } catch {
       return null;
     }
