@@ -1198,7 +1198,8 @@ function namespaceRenderers(
       factoryMounts: [],
     }),
     // Both mounts register the same resources at the same path, so
-    // every mount chain agrees and the pack claims that one path.
+    // every mount chain agrees and the pack claims that one path, as
+    // long as it can read the path the `Api` itself is served under.
     mountedTwice: (namespace) => ({
       file: file([
         constructed(`ns${k}`, `, path="/t${k}"`),
@@ -1209,7 +1210,7 @@ function namespaceRenderers(
           state,
           routeDecorator: "ns.route",
           prefix: `${api.prefix}/t${k}`,
-          claimable: true,
+          claimable: api.readable,
         }),
       ]),
       mainImport,
