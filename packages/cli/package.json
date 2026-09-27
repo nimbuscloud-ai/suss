@@ -36,6 +36,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./heap": {
+      "types": "./dist/heapSize.d.ts",
+      "import": "./dist/heapSize.js"
     }
   },
   "files": [

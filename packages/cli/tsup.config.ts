@@ -1,10 +1,11 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig([
-  // Library entry: pure exports, no shebang. Importing this from a host
-  // package must be side-effect free.
+  // Library entries: pure exports, no shebang. Importing these from a host
+  // package must be side-effect free. The heap entry stays apart so another
+  // executable can size its heap before loading the rest of the CLI.
   {
-    entry: ["src/index.ts"],
+    entry: ["src/index.ts", "src/heapSize.ts"],
     format: ["esm"],
     dts: true,
     clean: true,
