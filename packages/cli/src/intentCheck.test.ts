@@ -10,6 +10,7 @@ import {
   caller,
   calls,
   cancelRoute,
+  graphqlField,
   helper,
   responds,
   route,
@@ -312,6 +313,79 @@ describe("unchecked", () => {
       "notDone",
       "notDone",
     ]);
+  });
+});
+
+describe("a boundary spelled without its protocol", () => {
+  const TITLE = graphqlField("Order", "title", 2);
+  const NOTE = graphqlField("Order", "note", 3);
+  const DELIVERY_NOTE = graphqlField("Order", "deliveryNote", 3);
+
+  it("means the one boundary it picks out, the way suss ask reads it", () => {
+    const result = check(
+      "changes:\n  - removes: Order.note",
+      [TITLE, NOTE],
+      [TITLE],
+    );
+
+    expect(result.entries[0]).toMatchObject({
+      said: "- gql:Order.note",
+      verdict: "done",
+      units: ["app/graphql/types/order_type.rb::Order.note"],
+    });
+  });
+
+  it("counts a rename written as a removes of the old field and an adds of the new one", () => {
+    const result = check(
+      "changes:\n  - removes: Order.note\n  - adds: Order.deliveryNote",
+      [TITLE, NOTE],
+      [TITLE, DELIVERY_NOTE],
+    );
+
+    expect(result.entries.map(({ said, verdict }) => [said, verdict])).toEqual([
+      ["- gql:Order.note", "done"],
+      ["+ gql:Order.deliveryNote", "done"],
+    ]);
+    expect(result.notAsked).toEqual([]);
+  });
+
+  it("says how to write a rename when a changes entry finds the old field removed", () => {
+    const result = check(
+      "changes:\n  - changes: Order.note\n    note: renamed to deliveryNote",
+      [TITLE, NOTE],
+      [TITLE, DELIVERY_NOTE],
+    );
+
+    expect(result.entries[0]).toMatchObject({
+      said: "~ gql:Order.note renamed to deliveryNote",
+      verdict: "notDone",
+      reason:
+        "the diff shows gql:Order.note removed. A rename is a removes entry for the old name and an adds entry for the new one.",
+    });
+  });
+
+  it("leaves a spelling that could mean several boundaries unchecked, and lists them", () => {
+    const result = check(
+      "changes:\n  - changes: Order",
+      [TITLE, NOTE],
+      [TITLE, DELIVERY_NOTE],
+    );
+
+    expect(result.entries[0]).toMatchObject({
+      verdict: "unchecked",
+      reason:
+        "Order could mean 3 boundaries here: gql:Order.deliveryNote, gql:Order.note, gql:Order.title, so suss cannot check this entry. Spell out the one it is about.",
+    });
+  });
+
+  it("keeps a route as written when it only partly matches a route that exists", () => {
+    const result = check("changes:\n  - adds: POST /orders", [], [CANCEL()]);
+
+    expect(result.entries[0]).toMatchObject({
+      said: "+ POST /orders",
+      verdict: "notDone",
+      reason: "the diff does not show POST /orders added or changed.",
+    });
   });
 });
 

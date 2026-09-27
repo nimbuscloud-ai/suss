@@ -171,11 +171,21 @@ not asked   serves POST /orders  src/orders/create.ts::post
 | `removes: <effect>` at `B` | A request through B reached the effect before and does not now. |
 | `changes: <effect>` at `B` | The diff shows B changed, and a request through B reaches the effect now. |
 
-A boundary is spelled the way [`suss ask`](/reference/cli/ask) spells one, and it has to pick out one boundary exactly: `POST /orders` is not `POST /orders/:id/cancel`, and `:id` and `{id}` are the same. An effect is compared the way the `results` line of an intent document is, through whatever the request calls on the way.
+A boundary is spelled the way [`suss ask`](/reference/cli/ask) spells one. A route or a `system:name` has to pick out one boundary exactly: `POST /orders` is not `POST /orders/:id/cancel`, and `:id` and `{id}` are the same. Any other spelling is read the way `suss ask` reads it, so a GraphQL field written `Listing.title` means `gql:Listing.title` when no other boundary on either side matches it, and the report prints it as `gql:Listing.title`. An effect is compared the way the `results` line of an intent document is, through whatever the request calls on the way.
 
 A deployable's environment is spelled `runtime-config` in every language, and the variable goes under `fields`. The diff lists a deployable, such as a Lambda function a SAM template declares, as `runtime-config:<logical id>`, and an entry can give that as its `at` to ask about one function.
 
-An entry is unchecked when its subject is no boundary on either side and is not spelled like one: a route such as `POST /refunds`, or a `system:name` such as `postgresql:refunds`. A member of a type, such as `Order.status`, is unchecked. An unchecked entry never fails the run.
+A rename is two entries, a `removes` for the old name and an `adds` for the new one, because the diff shows the old boundary removed and the new one added:
+
+```yaml
+changes:
+  - removes: Listing.shortDesc
+  - adds: Listing.shortDescription
+```
+
+A `changes` entry about the old name is not done, and its reason says the diff shows the boundary removed. suss does not read a new name out of a `note`, since a note is words for the developer.
+
+An entry is unchecked when its subject is no boundary on either side and is not spelled like one: a route such as `POST /refunds`, or a `system:name` such as `postgresql:refunds`. A member of a type that no boundary has, such as `Order.status` in a service with no GraphQL schema, is unchecked. So is a spelling that could mean more than one boundary, such as `Listing` when the type has several fields, and its reason lists the boundaries it could mean. An unchecked entry never fails the run.
 
 ### What counts as not asked
 

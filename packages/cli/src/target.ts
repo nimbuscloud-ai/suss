@@ -237,17 +237,36 @@ function boundaryMatches(
   );
 }
 
+function labelsOf(touches: readonly TargetTouch[]): string[] {
+  return [...new Set(touches.map((touch) => touch.touched.label))].sort();
+}
+
 /** The error for an ambiguous spelling: how many boundaries it could mean, and the first few labels. */
 function ambiguousBoundaryMessage(
   spec: string,
   matching: readonly TargetTouch[],
 ): string {
-  const candidates = [
-    ...new Set(matching.map((touch) => touch.touched.label)),
-  ].sort();
-  const shown = candidates.slice(0, 6);
-  const rest = candidates.length - shown.length;
-  return `${spec} could mean ${candidates.length} boundaries here: ${shown.join(", ")}${rest === 0 ? "" : `, and ${rest} more`}. Ask about one of them.`;
+  return `${couldMean(spec, labelsOf(matching))}. Ask about one of them.`;
+}
+
+/** `Listing could mean 3 boundaries here: gql:Listing.id, ...`, with the first six labels. */
+export function couldMean(spec: string, labels: readonly string[]): string {
+  const shown = labels.slice(0, 6);
+  const rest = labels.length - shown.length;
+  return `${spec} could mean ${labels.length} boundaries here: ${shown.join(", ")}${rest === 0 ? "" : `, and ${rest} more`}`;
+}
+
+/**
+ * The labels of the boundaries a spelling picks out, by the rules `ask`
+ * and `--at` use. With one label, the spelling means that boundary. With
+ * more than one, it could mean any of them.
+ */
+export function boundaryLabelsFor(
+  spec: string,
+  summaries: ReadonlyArray<BehavioralSummary>,
+): string[] {
+  const matching = boundaryMatches(spec, summaries);
+  return labelsOf(narrowedToOne(spec, matching) ?? matching);
 }
 
 /**

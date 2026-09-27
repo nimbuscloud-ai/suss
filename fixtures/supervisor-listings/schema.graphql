@@ -1,0 +1,9 @@
+type Listing {
+  id: ID!
+  title: String!
+  shortDesc: String
+}
+
+type Query {
+  listing(id: ID!): Listing
+}

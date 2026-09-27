@@ -41,6 +41,18 @@ changes:
 
 That entry is done once the code each function runs reads the variable, including code that runs once at startup, such as a service built outside the handler. It also covers the deployment template declaring the variable for those functions, so a new template parameter and the environment entries that pass it on need no entry of their own.
 
+A GraphQL field is a boundary of its own, spelled `gql:<Type>.<field>` with the field's name as the schema spells it. `Listing.shortDesc` works too when no other boundary matches it. A rename is two entries, a `removes` for the old name and an `adds` for the new one, because suss sees the old field go and the new one arrive. A client query you change to select the new name is a change at that query, spelled the way suss spells it:
+
+```yaml
+asked: "Rename the shortDesc field on Listing to shortDescription, in the API and in the listing card."
+changes:
+  - removes: gql:Listing.shortDesc
+  - adds: gql:Listing.shortDescription
+  - changes: query ListingCard
+```
+
+A `changes` entry about the old name comes back not done. Write a renamed route or queue the same way.
+
 Follow these when you write it:
 
 - One change per entry.

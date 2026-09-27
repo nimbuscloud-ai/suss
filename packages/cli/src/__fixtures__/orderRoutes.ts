@@ -1,11 +1,16 @@
 /**
  * Summaries for the change list tests: an orders service with a create
- * route and a cancel route, a client of the create route, and helpers a
- * route calls. The builders keep each test to the one thing it changes
- * between the reading before and the reading after.
+ * route and a cancel route, a client of the create route, helpers a
+ * route calls, and the fields of a GraphQL type. The builders keep each
+ * test to the one thing it changes between the reading before and the
+ * reading after.
  */
 
-import { restBinding, storageBinding } from "@suss/behavioral-ir";
+import {
+  graphqlResolverBinding,
+  restBinding,
+  storageBinding,
+} from "@suss/behavioral-ir";
 
 import type {
   BehavioralSummary,
@@ -179,3 +184,36 @@ export const CREATE_WITH_409 = route(
   ],
   "create",
 );
+
+/** A field of a GraphQL type, read from a schema class with no body to follow. */
+export function graphqlField(
+  typeName: string,
+  fieldName: string,
+  line: number,
+): BehavioralSummary {
+  const name = `${typeName}.${fieldName}`;
+  return {
+    kind: "resolver",
+    location: {
+      file: "app/graphql/types/order_type.rb",
+      range: { start: line, end: line },
+      exportName: null,
+    },
+    identity: {
+      name,
+      nameKind: "label",
+      exportPath: null,
+      boundaryBinding: graphqlResolverBinding({
+        transport: "http-graphql",
+        recognition: "graphql-ruby",
+        typeName,
+        fieldName,
+      }),
+      id: `app/graphql/types/order_type.rb::${name}`,
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: CONFIDENT,
+  };
+}

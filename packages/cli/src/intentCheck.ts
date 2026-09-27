@@ -5,11 +5,11 @@
  *
  * The changes come from `behaviorDiff`, the comparison `inspect --diff`
  * prints, so a change reported as not asked is a line the developer
- * also sees in that diff. A boundary resolves through
- * `namesBoundaryExactly` and an effect through the intent checker's
- * `effectMatches`, which `suss ask` and `check --intent` go through too.
- * The CLI reference for `suss intent` states the rule for each kind of
- * entry.
+ * also sees in that diff. A boundary resolves the way `suss ask`
+ * resolves one, so `Listing.title` means `gql:Listing.title` when no
+ * other boundary matches it. An effect resolves through `effectMatches`,
+ * which `check --intent` goes through too. The CLI reference for
+ * `suss intent` states the rule for each kind of entry.
  */
 
 import { BOUNDARY_ROLE, diffSummaries } from "@suss/behavioral-ir";
@@ -24,6 +24,7 @@ import {
   outcomeTexts,
 } from "./inspect.js";
 import { wholeReadings } from "./readingPairs.js";
+import { boundaryLabelsFor, couldMean } from "./target.js";
 
 import type {
   BehavioralSummary,
@@ -129,26 +130,27 @@ export function checkIntent(
   prompts: readonly string[] | null,
 ): IntentCheckResult {
   const readings = readingsOf(pairs);
-  const entries = list.changes.map((change) => ({
-    said: saidOf(change, readings),
-    ...judged(change, readings),
-    asked: change.asked,
-    requested: prompts === null ? null : quotedIn(change.asked, prompts),
+  const spell = spellerFor(readings);
+  const changes = list.changes.map((change) => respelled(change, spell));
+  const kept = list.explained.map((entry) => respelled(entry, spell).entry);
+  const entries = changes.map(({ entry, unresolved }) => ({
+    said: saidOf(entry, readings),
+    ...judged(entry, unresolved, readings),
+    asked: entry.asked,
+    requested: prompts === null ? null : quotedIn(entry.asked, prompts),
   }));
 
-  const explained: ExplainedLines[] = list.explained.map((entry) => ({
+  const explained: ExplainedLines[] = kept.map((entry) => ({
     said: saidOf(entry, readings),
     why: entry.why,
     lines: [],
   }));
   const unasked: ChangedLine[] = [];
   for (const diffLine of diffLines(readings)) {
-    if (list.changes.some((change) => asksFor(change, diffLine))) {
+    if (changes.some(({ entry }) => asksFor(entry, diffLine))) {
       continue;
     }
-    const keeping = list.explained.findIndex((entry) =>
-      asksFor(entry, diffLine),
-    );
+    const keeping = kept.findIndex((entry) => asksFor(entry, diffLine));
     if (keeping === -1) {
       unasked.push(diffLine.line);
       continue;
@@ -210,16 +212,103 @@ function readingsOf(pairs: readonly ReadingPair[]): Readings {
 }
 
 // ---------------------------------------------------------------------------
+// Which boundary an entry is about
+// ---------------------------------------------------------------------------
+
+/** A spelling on the list that picks out no boundary, or more than one. */
+interface Unresolved {
+  spelled: string;
+  /** The boundaries it could mean, empty when it matches none. */
+  candidates: string[];
+}
+
+/** The spelling to check an entry against, or why there is none. */
+type Spelling = { names: string } | Unresolved;
+
+function isResolved(spelling: Spelling): spelling is { names: string } {
+  return "names" in spelling;
+}
+
+/**
+ * How suss reads a spelling on the list. A boundary on either side
+ * spelled exactly stays as written, and so does a route or a
+ * `system:name` spelling that nothing serves yet, since an entry may add
+ * it. Any other spelling resolves the way `suss ask` resolves one, so
+ * `Listing.title` means `gql:Listing.title` when that is the only
+ * boundary it picks out. A member of a type picks out none.
+ */
+function spellerFor(readings: Readings): (names: string) => Spelling {
+  const units = [...readings.before.units, ...readings.after.units];
+  const bindings = units
+    .map((unit) => unit.identity.boundaryBinding)
+    .filter((binding): binding is BoundaryBinding => binding !== null);
+  return (names) => {
+    const trimmed = names.trim();
+    if (
+      bindings.some((binding) => namesBoundaryExactly(names, binding)) ||
+      ROUTE_SPELLING.test(trimmed) ||
+      SYSTEM_SPELLING.test(trimmed)
+    ) {
+      return { names };
+    }
+    const candidates = boundaryLabelsFor(names, units);
+    const [only] = candidates;
+    return candidates.length === 1 && only !== undefined
+      ? { names: only }
+      : { spelled: names, candidates };
+  };
+}
+
+/** `POST /orders`: a method, a space, then a path. */
+const ROUTE_SPELLING = /^\S+ +\//;
+
+/** `postgresql:orders`, `unit:lambda Worker`: every other label suss prints. */
+const SYSTEM_SPELLING = /^[^\s:]+:\S/;
+
+/** The boundary an entry is about: its subject, or where its effect happens. */
+function placeOf(entry: Entry): string | null {
+  return entry.subject.kind === "boundary" ? entry.subject.names : entry.at;
+}
+
+/**
+ * The entry with its boundary spelled the way suss prints it, and the
+ * spelling that would not resolve, when it did not.
+ */
+function respelled<T extends Entry>(
+  entry: T,
+  spell: (names: string) => Spelling,
+): { entry: T; unresolved: Unresolved | null } {
+  const place = placeOf(entry);
+  if (place === null) {
+    return { entry, unresolved: null };
+  }
+  const spelling = spell(place);
+  if (!isResolved(spelling)) {
+    return { entry, unresolved: spelling };
+  }
+  const names = spelling.names;
+  return {
+    entry:
+      entry.subject.kind === "boundary"
+        ? { ...entry, subject: { kind: "boundary", names } }
+        : { ...entry, at: names },
+    unresolved: null,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Done, not done, or unchecked
 // ---------------------------------------------------------------------------
 
-function judged(change: IntentChange, readings: Readings): Judgement {
-  const place =
-    change.subject.kind === "boundary" ? change.subject.names : change.at;
-  if (place !== null && !knownBoundary(place, readings)) {
+function judged(
+  change: IntentChange,
+  unresolved: Unresolved | null,
+  readings: Readings,
+): Judgement {
+  if (unresolved !== null) {
     return {
       verdict: "unchecked",
-      reason: `suss has no boundary spelled ${place}, so it cannot check this entry.`,
+      reason: uncheckedBecause(unresolved),
       units: [],
     };
   }
@@ -237,29 +326,11 @@ function judged(change: IntentChange, readings: Readings): Judgement {
   );
 }
 
-/**
- * Whether suss could say anything about this spelling. A boundary on
- * either side is one it can; so is a route or a `system:name` spelling
- * that nothing serves yet, since an entry may add it. Anything else,
- * such as a member of a type, is a spelling suss does not have.
- */
-function knownBoundary(names: string, readings: Readings): boolean {
-  const bindings = [...readings.before.units, ...readings.after.units]
-    .map((unit) => unit.identity.boundaryBinding)
-    .filter((binding): binding is BoundaryBinding => binding !== null);
-  if (bindings.some((binding) => namesBoundaryExactly(names, binding))) {
-    return true;
-  }
-  return (
-    ROUTE_SPELLING.test(names.trim()) || SYSTEM_SPELLING.test(names.trim())
-  );
+function uncheckedBecause({ spelled, candidates }: Unresolved): string {
+  return candidates.length === 0
+    ? `suss has no boundary spelled ${spelled}, so it cannot check this entry.`
+    : `${couldMean(spelled, candidates)}, so suss cannot check this entry. Spell out the one it is about.`;
 }
-
-/** `POST /orders`: a method, a space, then a path. */
-const ROUTE_SPELLING = /^\S+ +\//;
-
-/** `postgresql:orders`, `unit:lambda Worker`: every other label suss prints. */
-const SYSTEM_SPELLING = /^[^\s:]+:\S/;
 
 type BoundaryVerdict = (
   names: string,
@@ -290,7 +361,7 @@ const BOUNDARY_VERDICTS: Record<ChangeVerb, BoundaryVerdict> = {
       (block) => block.change === "changed",
     );
     if (moved.length === 0) {
-      return notDone(`the diff does not show ${label} changed.`);
+      return notDone(notChangedBecause(names, label, readings));
     }
     const changed = changedTransitionsAt(names, readings);
     return withOutcomes(
@@ -322,6 +393,26 @@ const BOUNDARY_VERDICTS: Record<ChangeVerb, BoundaryVerdict> = {
     );
   },
 };
+
+/**
+ * Why a `changes` entry found its boundary unchanged. A rename shows in
+ * the diff as the old boundary removed and the new one added, so an
+ * entry about the old name comes here.
+ */
+function notChangedBecause(
+  names: string,
+  label: string,
+  readings: Readings,
+): string {
+  const whole = blocksAt(names, readings).map((block) => block.change);
+  if (whole.includes("removed")) {
+    return `the diff shows ${label} removed. A rename is a removes entry for the old name and an adds entry for the new one.`;
+  }
+  if (whole.includes("added")) {
+    return `the diff shows ${label} added. A new boundary is an adds entry.`;
+  }
+  return `the diff does not show ${label} changed.`;
+}
 
 /** Done when every outcome the entry lists `happened`. */
 function withOutcomes(
@@ -592,8 +683,7 @@ function changedLine(
 
 /** Whether the entry is about this block's boundary, by its subject or its `at`. */
 function mentions(entry: Entry, block: BoundaryBlock): boolean {
-  const names =
-    entry.subject.kind === "boundary" ? entry.subject.names : entry.at;
+  const names = placeOf(entry);
   return (
     names !== null &&
     block.binding !== null &&

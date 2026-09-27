@@ -48,6 +48,7 @@ import { readingPairs, wholeReadings } from "./readingPairs.js";
 import { scopeLines, sharedCauses } from "./sharedCause.js";
 import { firstLineOf, parseSummaryFile } from "./summaryFile.js";
 import { UsageError } from "./usageError.js";
+import { differenceTexts } from "./valueDiff.js";
 
 export { parseSummaryFile } from "./summaryFile.js";
 
@@ -1710,9 +1711,9 @@ function bindingLabel(s: BehavioralSummary): string | null {
 
 /**
  * Which fields of a transition differ, for a pair whose short lines read
- * the same. The short line shows only the output and the conditions, so a
- * change to anything else would print as the same line twice, and a
- * reader gating a review on the diff could not tell what moved.
+ * the same. The short line shows only the top of the output and the
+ * conditions, so without these a reader gating a review on the diff
+ * could not tell what moved.
  */
 function fieldsThatMoved(before: Transition, after: Transition): string[] {
   const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
@@ -1729,25 +1730,19 @@ function fieldsThatMoved(before: Transition, after: Transition): string[] {
     .sort();
 }
 
-const FIELD_VALUE_WIDTH = 90;
-
-function fieldValue(value: unknown): string {
-  const text = JSON.stringify(value) ?? "undefined";
-  return text.length <= FIELD_VALUE_WIDTH
-    ? text
-    : `${text.slice(0, FIELD_VALUE_WIDTH - 3)}...`;
-}
-
 /**
- * Each field the short line does not show, with its old and new values.
- * The field name alone would not tell the reader what changed.
+ * Where each field the short line does not show differs, with the old
+ * and new values there. The field name alone would not tell the reader
+ * what changed, and neither would two copies of a long structure.
  */
 function fieldChanges(before: Transition, after: Transition): string[] {
-  return fieldsThatMoved(before, after).map((key) => {
-    const was = fieldValue(before[key as keyof Transition]);
-    const now = fieldValue(after[key as keyof Transition]);
-    return `${key}: ${was} -> ${now}`;
-  });
+  return fieldsThatMoved(before, after).flatMap((key) =>
+    differenceTexts(
+      key,
+      before[key as keyof Transition],
+      after[key as keyof Transition],
+    ),
+  );
 }
 
 function renderGuard(t: Transition): string {
@@ -1847,7 +1842,10 @@ export interface OutcomeLine {
   readonly outcome: string;
   /** How a changed outcome read before, when the report prints both. */
   readonly was?: string;
-  /** Fields the outcome leaves out, each with its old and new value. */
+  /**
+   * For an outcome whose line reads the same before and after: where the
+   * transition differs, each as a path with its old and new values.
+   */
   readonly fields?: readonly string[];
   /** The wrapper whose body produced this outcome, if one did. */
   readonly wrapper: WrapperReference | undefined;
@@ -2249,10 +2247,21 @@ function transitionLines(diff: SummaryDiff, alone: boolean): OutcomeLine[] {
       });
       continue;
     }
+    if (beforeLine !== afterLine) {
+      lines.push({
+        change: "changed",
+        transition: a,
+        previous: b,
+        outcome: afterLine,
+        was: beforeLine,
+        wrapper: undefined,
+      });
+      continue;
+    }
     // A pair with the same line and no other field changed differs only
     // in its effects, and the unit's effect lines already show those.
-    const fields = beforeLine === afterLine ? fieldChanges(b, a) : [];
-    if (beforeLine === afterLine && fields.length === 0) {
+    const fields = fieldChanges(b, a);
+    if (fields.length === 0) {
       continue;
     }
     lines.push({
@@ -2260,8 +2269,7 @@ function transitionLines(diff: SummaryDiff, alone: boolean): OutcomeLine[] {
       transition: a,
       previous: b,
       outcome: afterLine,
-      was: beforeLine,
-      ...(fields.length === 0 ? {} : { fields }),
+      fields,
       wrapper: undefined,
     });
   }
@@ -2272,16 +2280,17 @@ function transitionLines(diff: SummaryDiff, alone: boolean): OutcomeLine[] {
 /**
  * The printed lines of one outcome. A changed outcome that needs its old
  * line prints both together, since neither makes sense without the other.
+ * One whose line reads the same on both sides prints it once, with where
+ * it differs underneath.
  */
 export function outcomeTexts(line: OutcomeLine): string[] {
   if (line.was === undefined) {
-    return [`${NAME_MARKERS[line.change]} ${line.outcome}`];
+    return [
+      `${NAME_MARKERS[line.change]} ${line.outcome}`,
+      ...(line.fields ?? []).map((field) => `  ${field}`),
+    ];
   }
-  return [
-    `~ was  ${line.was}`,
-    `  now  ${line.outcome}`,
-    ...(line.fields ?? []).map((field) => `  ${field}`),
-  ];
+  return [`~ was  ${line.was}`, `  now  ${line.outcome}`];
 }
 
 /**

@@ -35,6 +35,7 @@ demo/play.mjs                plays a recorded session through the hooks, with no
 demo/orders409.mjs           the 409 story: a finding after an edit, and the stop report
 demo/cancelOrder.mjs         the change list story: a stop that blocks on a 409 nobody asked for
 demo/accountsRegion.mjs      a Lambda service with a SAM template starts reading a new environment variable
+demo/listingRename.mjs       a GraphQL field renamed in a graphql-ruby type and the React query that selects it
 ```
 
 The scripts are plain JavaScript modules with JSDoc types, so an installed plugin runs them with `node` and nothing to build. `tsc` checks them the same as the TypeScript in the rest of the repository (`checkJs` in `tsconfig.json`).
@@ -91,6 +92,7 @@ npx turbo test --filter=@suss/supervisor-plugin
 node plugins/supervisor/demo/orders409.mjs
 node plugins/supervisor/demo/cancelOrder.mjs
 node plugins/supervisor/demo/accountsRegion.mjs
+node plugins/supervisor/demo/listingRename.mjs
 ```
 
-`test/hooks.test.ts` feeds each hook the JSON Claude Code sends and checks what it prints and its exit code. Most of those tests install a stand-in suss in the test project (`test/fakeSuss.ts`), so a test can make suss report an error the fixtures never produce. `test/demo.test.ts` plays the stories with the suss this repository builds: the first two over `fixtures/supervisor-orders`, and the environment variable story over `fixtures/supervisor-accounts`. `test/skill.test.ts` checks that the skill's example change lists are ones suss accepts.
+`test/hooks.test.ts` feeds each hook the JSON Claude Code sends and checks what it prints and its exit code. Most of those tests install a stand-in suss in the test project (`test/fakeSuss.ts`), so a test can make suss report an error the fixtures never produce. `test/demo.test.ts` plays the stories with the suss this repository builds: the first two over `fixtures/supervisor-orders`, the environment variable story over `fixtures/supervisor-accounts`, and the rename story over `fixtures/supervisor-listings`. `test/skill.test.ts` checks that the skill's example change lists are ones suss accepts.
