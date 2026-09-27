@@ -8,6 +8,8 @@ import { z } from "zod";
 
 import { storageSystemOption } from "@suss/extractor";
 
+import { storageSystemFromDatabaseYml } from "./databaseYml.js";
+
 import type {
   RbRawSqlPattern,
   RbStoragePattern,
@@ -328,6 +330,7 @@ export const declares: PackDeclaration = {
     example: { storageSystem: "postgresql" },
     required: true,
     why: "which database is behind the connection: postgresql, mysql, or sqlite. ActiveRecord talks to all of them and database.yml settles which, so the pack cannot.",
+    readFromProject: storageSystemFromDatabaseYml,
   },
 };
 

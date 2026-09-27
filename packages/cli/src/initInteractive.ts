@@ -1,16 +1,16 @@
 /**
  * The guided form of `suss init`.
  *
- * The printed form lists the commands to run. That suits a script, or a
- * user who wants to see what a tool will do before it does it. A person
- * trying suss for the first time would instead have to copy four
- * commands in order.
+ * The printed form lists the commands to run, which suits a script or a
+ * user who wants to see what a tool will do first. A person trying suss
+ * for the first time would instead have to copy four commands in order.
  *
  * With a terminal attached, init turns the same findings into offers:
  * install the packs, run the first check, add a suppressions file, add a
  * CI step. Nothing is written to disk until the user accepts one. Without
  * a terminal, init prints the commands, which CI jobs that pipe
- * `suss init` rely on.
+ * `suss init` rely on. `--write` prints them and then writes the setup
+ * without asking, for an agent that has no terminal to answer in.
  */
 
 import fs from "node:fs";
@@ -27,16 +27,14 @@ import {
   unnamedLanguages,
 } from "./init.js";
 import { run } from "./processRun.js";
-import {
-  PROJECT_FILE,
-  projectFileFor,
-  writeProjectFile,
-} from "./projectFile.js";
+import { PROJECT_FILE, projectFileFor } from "./projectFile.js";
+import { writeProjectSetup } from "./projectSetup.js";
 import { isProjectIn, projectsBelow } from "./projectsBelow.js";
 import { DEFAULT_SUPPRESSIONS_FILENAMES } from "./suppressionsLoader.js";
 import { readWorkspace } from "./workspaces.js";
 
 import type { InitReport, PackSuggestion } from "./init.js";
+import type { SetupLine } from "./projectSetup.js";
 import type { Workspace } from "./workspaces.js";
 
 interface Target {
@@ -50,6 +48,13 @@ export interface InteractiveInitOptions {
   dir?: string;
   /** Force the printed form even with a terminal attached. */
   plain?: boolean;
+  /**
+   * Print the commands, then write the setup without asking. An agent
+   * setting a project up has no terminal to answer the guided form in.
+   */
+  write?: boolean;
+  /** With `write`, replace a `suss.json` that is already there. */
+  overwrite?: boolean;
 }
 
 export async function initInteractive(
@@ -57,6 +62,14 @@ export async function initInteractive(
 ): Promise<number> {
   const root = path.resolve(options.dir ?? process.cwd());
   const targets = await findTargets(root);
+
+  if (options.write === true) {
+    process.stdout.write(printable(root, targets));
+    process.stdout.write(
+      writtenWithoutAsking(root, targets, options.overwrite === true),
+    );
+    return 0;
+  }
 
   if (options.plain === true || !p.isTTY(process.stdout) || p.isCI()) {
     process.stdout.write(printable(root, targets));
@@ -230,6 +243,30 @@ function reportUnnamedLanguages(targets: Target[]): void {
     "Name one yourself with -f, and `suss --help` lists them all.",
     "Reading it anyway",
   );
+}
+
+/**
+ * `init --write`: writes the setup for every project with packs, the
+ * selection the guided form starts with, and returns what to print.
+ */
+function writtenWithoutAsking(
+  root: string,
+  targets: Target[],
+  overwrite: boolean,
+): string {
+  const withPacks = targets.filter(
+    (target) => declaredPacks(target.report).length > 0,
+  );
+  if (withPacks.length === 0) {
+    return "\nNothing matched a pack, so init wrote nothing.\n";
+  }
+
+  if (!overwrite && fs.existsSync(path.join(root, PROJECT_FILE))) {
+    return `\n${PROJECT_FILE} is already here, so init left it alone. Pass --overwrite as well to replace it with what init found.\n`;
+  }
+
+  const lines = writeProjectSetup(root, withPacks).map((line) => line.text);
+  return `\n${lines.join("\n")}\n`;
 }
 
 function printable(root: string, targets: Target[]): string {
@@ -530,18 +567,10 @@ async function offerProjectFile(root: string, chosen: Target[]): Promise<void> {
     return;
   }
 
-  const entries = chosen.flatMap((target) => {
-    const file = projectFileFor(target.report);
-    if (file === null) {
-      return [];
-    }
-    return file.read.map((entry) =>
-      entry.kind === "contract" && target.directory !== "."
-        ? { ...entry, file: path.join(target.directory, entry.file) }
-        : entry,
-    );
-  });
-  if (entries.length === 0) {
+  const found = chosen.some(
+    (target) => projectFileFor(target.report, target.directory) !== null,
+  );
+  if (!found) {
     return;
   }
 
@@ -553,11 +582,15 @@ async function offerProjectFile(root: string, chosen: Target[]): Promise<void> {
     return;
   }
 
-  writeProjectFile(root, { version: 1, read: entries });
-  p.log.success(
-    `Wrote ${PROJECT_FILE}. Commit it: it says what the project contains, which is the same for everybody.`,
-  );
+  for (const line of writeProjectSetup(root, chosen)) {
+    LOG_BY_TONE[line.tone](line.text);
+  }
 }
+
+const LOG_BY_TONE: Record<SetupLine["tone"], (text: string) => void> = {
+  done: (text) => p.log.success(text),
+  note: (text) => p.log.warn(text),
+};
 
 async function offerSuppressions(root: string): Promise<void> {
   const file = path.join(root, ".sussignore.json");

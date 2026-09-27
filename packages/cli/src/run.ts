@@ -55,7 +55,7 @@ import type { ProjectReadReport, ReadEntry } from "./projectRead.js";
 
 export const USAGE = `
 Usage:
-  suss init [directory] [--plain]
+  suss init [directory] [--plain | --write [--overwrite]]
   suss extract [-p <tsconfig> | --dir <directory>] [--lang typescript|python|ruby] [-f <framework>[=<config.json>] ...] [-o <output.json>] [--files <f1> <f2> ...] [--gaps strict|permissive|silent]
   suss extract --out-dir <directory> [--dir <project>]
   suss inspect [<summaries.json> | --dir <directory>]
@@ -78,8 +78,7 @@ Usage:
 
 Commands:
   init      Work out which packs this project needs and offer to set them up.
-            --plain prints the commands instead of asking. Piped or in CI,
-            it prints either way.
+            Piped or in CI, it prints the commands instead of asking.
   extract   Read your source and describe what each boundary does.
             Without -f, it reads the packs from suss.json, or picks the
             ones init would when there is no file.
@@ -115,6 +114,14 @@ Commands:
             changes nobody asked for. "intent keep" writes a change
             list's entries as boundary intent documents.
 
+Options (init):
+  --plain          Print the commands instead of asking, even in a terminal
+  --write          Print the commands, then write suss.json and each pack's
+                   config file without asking, so an agent can finish
+                   setting a project up. A suss.json that is already there
+                   is left alone.
+  --overwrite      With --write, replace a suss.json that is already there
+
 Options (extract):
   -p, --project    Path to the tsconfig covering the code to read. Without it,
                    suss uses the nearest tsconfig, or reads the current
@@ -137,7 +144,8 @@ Options (extract):
   --out-dir        Run every read suss.json lists, contracts included, and
                    write each one's summaries to its own file in this
                    directory. Files an earlier --out-dir run wrote there
-                   are replaced. Exits non-zero when any read failed.
+                   are replaced. Exits non-zero when any read failed, or
+                   when an extract wrote nothing without --allow-empty.
   --files          Read only these source files
   --gaps           What to do with gaps: permissive (default) records them
                    in the summary, strict does the same and then fails the
@@ -150,9 +158,10 @@ Options (extract):
   --fail-on-pack-error  Exit non-zero when a pack throws while it reads
 
 Options (check):
-  --allow-empty    A run over --dir that compares nothing exits
-                   non-zero by default, which otherwise reads the same
-                   as both sides agreeing; this opts back into exiting 0
+  --allow-empty    A run over --dir, or over the project when given
+                   nothing, that compares nothing exits non-zero by
+                   default, which otherwise reads the same as both sides
+                   agreeing; this opts back into exiting 0
   --fail-on-unpaired  Exit non-zero when more boundaries went unpaired
                    than this: a count ("25") or a share ("50%")
   --fail-on-unreadable  Exit non-zero when a file in --dir could not be
@@ -438,11 +447,27 @@ function refuseFailOnEmpty(): never {
 }
 
 async function runInit(args: string[]): Promise<number> {
-  const plain = args.includes("--plain");
-  const dir = args.find((a) => !a.startsWith("-"));
+  const { values, positionals } = parseArgs({
+    args,
+    options: {
+      plain: { type: "boolean" },
+      write: { type: "boolean" },
+      overwrite: { type: "boolean" },
+    },
+    allowPositionals: true,
+  });
+  if (values.overwrite === true && values.write !== true) {
+    throw new UsageError(
+      `--overwrite replaces a ${PROJECT_FILE} that --write would leave alone, so it needs --write. Try: suss init --write --overwrite`,
+    );
+  }
+
+  const dir = positionals[0];
   return await initInteractive({
     ...(dir !== undefined ? { dir } : {}),
-    ...(plain ? { plain: true } : {}),
+    ...(values.plain === true ? { plain: true } : {}),
+    ...(values.write === true ? { write: true } : {}),
+    ...(values.overwrite === true ? { overwrite: true } : {}),
   });
 }
 
@@ -571,11 +596,13 @@ async function readProjectSaying(
  * its own file in the directory, the same files a bare `suss check`
  * reads from a temporary one. Files an earlier run wrote there are
  * replaced. Exits non-zero when any read failed, since a directory with
- * one entry missing describes only part of the project.
+ * one entry missing describes only part of the project. An extract that
+ * didn't write a summary fails it too, as it fails a single `extract`.
  */
 async function extractProjectInto(
   outDir: string,
   root: string | undefined,
+  allowEmpty: boolean,
 ): Promise<number> {
   const resolved = path.resolve(outDir);
   clearEarlierReads(resolved);
@@ -584,6 +611,15 @@ async function extractProjectInto(
     resolved,
   );
   if (report === null) {
+    return 1;
+  }
+
+  if (!allowEmpty && report.empty.length > 0) {
+    for (const command of report.empty) {
+      process.stderr.write(
+        `Failing because \`${command}\` didn't produce any summaries. Pass --allow-empty when that is expected.\n`,
+      );
+    }
     return 1;
   }
   return report.failed.length > 0 ? 1 : 0;
@@ -630,7 +666,11 @@ async function runExtract(args: string[]): Promise<number> {
       );
       return 1;
     }
-    return await extractProjectInto(values["out-dir"], values.dir);
+    return await extractProjectInto(
+      values["out-dir"],
+      values.dir,
+      values["allow-empty"] === true,
+    );
   }
 
   const lang =
@@ -715,22 +755,6 @@ async function runExtract(args: string[]): Promise<number> {
   return process.exitCode === 1 ? 1 : 0;
 }
 
-/** The flags plain `inspect` accepts. `--flow` is dispatched before this check. */
-const INSPECT_FLAGS = new Set(["--dir", "--diff", "--flow", "--json"]);
-
-/** Removes a `--flag value` pair from the arguments and returns the value. */
-function takeValued(
-  args: string[],
-  flag: string,
-): { rest: string[]; value: string | undefined } {
-  const at = args.indexOf(flag);
-  if (at === -1) {
-    return { rest: args, value: undefined };
-  }
-  const rest = [...args.slice(0, at), ...args.slice(at + 2)];
-  return { rest, value: args[at + 1] };
-}
-
 /**
  * How many hops of a call chain a diff prints: a count, `"full"` for the
  * whole chain, undefined when the flag was left off, or `"bad"` when the
@@ -758,15 +782,18 @@ function readChangedFiles(file: string): string[] {
 }
 
 /**
- * The message for a flag inspect does not accept. `--json` is the one
- * people try most, so its message also says where JSON output is.
+ * What plain `inspect` says to `--json`. It is the flag people try most,
+ * so the message says where JSON output is.
  */
-function inspectFlagMessage(flag: string): string {
-  const where =
-    flag === "--json"
-      ? "inspect prints for people. The summaries file it reads is already JSON, suss ask --json gives an answer in JSON, and suss inspect --diff and --flow both take --json.\n"
-      : "";
-  return `inspect does not take ${flag}. It takes --dir, --diff, --types, and --flow.\n${where}`;
+const INSPECT_JSON_MESSAGE =
+  "inspect does not take --json. It prints for people. The summaries file it reads is already JSON, suss ask --json gives an answer in JSON, and suss inspect --diff and --flow both take --json.\n";
+
+/** The flags `inspect --diff` reads, as the argument parser returns them. */
+interface InspectDiffFlags {
+  json?: boolean;
+  budget?: string;
+  chain?: string;
+  "changed-files"?: string;
 }
 
 async function runInspect(argv: string[]): Promise<number> {
@@ -774,22 +801,27 @@ async function runInspect(argv: string[]): Promise<number> {
     return await runFlow(argv);
   }
 
-  const types = argv.includes("--types");
-  const json = argv.includes("--json");
-  const flagless = argv.filter((a) => a !== "--types" && a !== "--json");
-  const withoutChanged = takeValued(flagless, "--changed-files");
-  const withoutBudget = takeValued(withoutChanged.rest, "--budget");
-  const withoutChain = takeValued(withoutBudget.rest, "--chain");
-  const args = withoutChain.rest;
-  const changedFilesAt = withoutChanged.value;
-  const budgetText = withoutBudget.value;
-  const chainText = withoutChain.value;
+  const { values, positionals } = parseArgs({
+    args: argv,
+    options: {
+      dir: { type: "string" },
+      diff: { type: "boolean" },
+      json: { type: "boolean" },
+      types: { type: "boolean" },
+      "changed-files": { type: "string" },
+      budget: { type: "string" },
+      chain: { type: "string" },
+    },
+    allowPositionals: true,
+  });
+  if (values.diff === true) {
+    return runInspectDiff(positionals, values);
+  }
 
   if (
-    (changedFilesAt !== undefined ||
-      budgetText !== undefined ||
-      chainText !== undefined) &&
-    args[0] !== "--diff"
+    values["changed-files"] !== undefined ||
+    values.budget !== undefined ||
+    values.chain !== undefined
   ) {
     process.stderr.write(
       "--changed-files, --budget and --chain belong to inspect --diff. They set which files a pull request touched, how long the report may be, and how much of a call chain it prints.\n",
@@ -798,79 +830,78 @@ async function runInspect(argv: string[]): Promise<number> {
   }
   // Only `--diff` takes --json. Refuse it here once, so no branch can
   // quietly ignore it.
-  if (json && args[0] !== "--diff") {
-    process.stderr.write(inspectFlagMessage("--json"));
+  if (values.json === true) {
+    process.stderr.write(INSPECT_JSON_MESSAGE);
     return 1;
   }
-  const unknown = args.find((a) => a.startsWith("--") && !INSPECT_FLAGS.has(a));
-  if (unknown !== undefined) {
-    process.stderr.write(inspectFlagMessage(unknown));
-    return 1;
-  }
-  if (args[0] === "--diff") {
-    const before = args[1];
-    const after = args[2];
-    if (before === undefined || after === undefined) {
-      process.stderr.write(
-        "--diff compares two summary files, or two folders of them. Try: suss inspect --diff before.json after.json\n",
-      );
-      return 1;
-    }
-    const budget = budgetText === undefined ? undefined : Number(budgetText);
-    if (budget !== undefined && (!Number.isInteger(budget) || budget <= 0)) {
-      process.stderr.write(
-        `--budget takes a number of characters, such as --budget 60000. It got ${budgetText}.\n`,
-      );
-      return 1;
-    }
-    if (changedFilesAt !== undefined && !existsSync(changedFilesAt)) {
-      process.stderr.write(
-        `No file at ${changedFilesAt}. --changed-files reads one path per line, the format \`git diff --name-only\` writes.\n`,
-      );
-      return 1;
-    }
-    const chain = chainHops(chainText);
-    if (chain === "bad") {
-      process.stderr.write(
-        `--chain takes a number of calls or "full", such as --chain 2. It got ${chainText}.\n`,
-      );
-      return 1;
-    }
-    inspectDiff({
-      before,
-      after,
-      ...(json ? { json } : {}),
-      ...(changedFilesAt === undefined
-        ? {}
-        : { changedFiles: readChangedFiles(changedFilesAt) }),
-      ...(budget === undefined ? {} : { budget }),
-      ...(chain === undefined ? {} : { chain }),
-    });
+
+  const types = values.types === true ? { types: true } : {};
+  if (values.dir !== undefined) {
+    inspectDir({ dir: values.dir, ...types });
     return 0;
   }
-  if (args[0] === "--dir") {
-    const dir = args[1];
-    if (dir === undefined) {
-      process.stderr.write(
-        "--dir needs the folder holding your summary files. Try: suss inspect --dir summaries/\n",
-      );
-      return 1;
-    }
-    inspectDir({ dir, ...(types ? { types } : {}) });
-    return 0;
-  }
-  const file = args[0];
+  const file = positionals[0];
   if (file === undefined) {
     // With no file given, extract the current project and render each
     // summaries file as if the user had passed it.
     return await withProjectRead((dir) => {
       for (const name of readdirSync(dir).sort()) {
-        inspect({ file: path.join(dir, name), ...(types ? { types } : {}) });
+        inspect({ file: path.join(dir, name), ...types });
       }
       return 0;
     });
   }
-  inspect({ file, ...(types ? { types } : {}) });
+  inspect({ file, ...types });
+  return 0;
+}
+
+function runInspectDiff(
+  positionals: string[],
+  values: InspectDiffFlags,
+): number {
+  const [before, after] = positionals;
+  if (before === undefined || after === undefined) {
+    process.stderr.write(
+      "--diff compares two summary files, or two folders of them. Try: suss inspect --diff before.json after.json\n",
+    );
+    return 1;
+  }
+
+  const budgetText = values.budget;
+  const budget = budgetText === undefined ? undefined : Number(budgetText);
+  if (budget !== undefined && (!Number.isInteger(budget) || budget <= 0)) {
+    process.stderr.write(
+      `--budget takes a number of characters, such as --budget 60000. It got ${budgetText}.\n`,
+    );
+    return 1;
+  }
+
+  const changedFilesAt = values["changed-files"];
+  if (changedFilesAt !== undefined && !existsSync(changedFilesAt)) {
+    process.stderr.write(
+      `No file at ${changedFilesAt}. --changed-files reads one path per line, the format \`git diff --name-only\` writes.\n`,
+    );
+    return 1;
+  }
+
+  const chain = chainHops(values.chain);
+  if (chain === "bad") {
+    process.stderr.write(
+      `--chain takes a number of calls or "full", such as --chain 2. It got ${values.chain}.\n`,
+    );
+    return 1;
+  }
+
+  inspectDiff({
+    before,
+    after,
+    ...(values.json === true ? { json: true } : {}),
+    ...(changedFilesAt === undefined
+      ? {}
+      : { changedFiles: readChangedFiles(changedFilesAt) }),
+    ...(budget === undefined ? {} : { budget }),
+    ...(chain === undefined ? {} : { chain }),
+  });
   return 0;
 }
 

@@ -732,15 +732,21 @@ function configurationLines(items: ReadonlyArray<PackSuggestion>): string[] {
     if (configuration === undefined) {
       continue;
     }
-    const needs = configuration.required
-      ? "reads nothing until you tell it"
-      : "reads more if you tell it";
-    lines.push(`   ${cyan(item.name)} ${needs} ${configuration.why}`);
+    lines.push(
+      `   ${cyan(item.name)} ${configurationNeed(configuration)} ${configuration.why}`,
+    );
     lines.push(dim(`   Write that to ${configuration.file}:`));
     lines.push(dim(`     ${JSON.stringify(configuration.example)}`));
     lines.push("");
   }
   return lines;
+}
+
+/** How much a pack reads without its config, as the start of a sentence that `why` finishes. */
+export function configurationNeed(configuration: PackConfiguration): string {
+  return configuration.required
+    ? "reads nothing until you tell it"
+    : "reads more if you tell it";
 }
 
 function unreadLines(report: InitReport): string[] {

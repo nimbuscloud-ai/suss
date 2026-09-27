@@ -81,10 +81,10 @@ section to the instructions the agent reads
 The last tab is for any other agent that can start an MCP server.
 
 `suss init` asks before it writes `suss.json`, and an agent has no way
-to answer, so the prompt runs `suss init --plain`, which prints what it
-found and writes nothing. Run `npx @suss/cli init` in your own terminal
-to write the file. Until you do, `suss check` and the MCP server read
-what `init` finds each time they start.
+to answer, so the prompt runs `suss init --write`. That prints what
+`init` found and writes `suss.json` without asking. If your repository
+already has a `suss.json`, `init` leaves it alone, and the agent tells
+you so.
 
 When nothing pairs, the agent stops and says so. A report with no
 findings looks the same when both sides agreed and when nothing was

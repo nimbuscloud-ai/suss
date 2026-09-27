@@ -456,35 +456,46 @@ function renderSince(
 }
 
 /**
- * A `nothingPaired` finding when the run had summaries and paired none
- * of them. The run fails because of this finding, so an automated fixer
- * that sees the red exit also gets a reason and a remedy to act on.
- *
- * A run over no summaries at all is a different mistake that the report
- * already explains, so this returns nothing for it.
+ * A `nothingPaired` finding when the run paired nothing, including a run
+ * over no summaries at all. The run fails because of this finding, so an
+ * automated fixer that sees the red exit also gets a reason and a remedy
+ * to act on.
  */
 function runFindings(
   shouldFail: boolean,
   summaries: readonly BehavioralSummary[],
   result: CheckAllResult,
 ): RunFinding[] {
-  if (!shouldFail || summaries.length === 0 || result.pairs.length > 0) {
+  if (!shouldFail || result.pairs.length > 0) {
     return [];
   }
   return [
-    {
-      kind: "nothingPaired",
-      severity: "error",
-      description:
-        `Read ${summaries.length} ${summaries.length === 1 ? "summary" : "summaries"} and paired nothing. ` +
-        "No boundary in this run had both a provider and a consumer, so nothing was compared.",
-      remedy:
-        "Check that both sides of at least one boundary are in the directory. " +
-        "A provider extracted from code needs its consumer extracted too, or its contract read with `suss contract`. " +
-        "`suss inspect --dir` over the same files lists the boundaries each side claims, and two spellings of one boundary is the usual cause.",
-    },
+    summaries.length === 0
+      ? NOTHING_READ
+      : {
+          kind: "nothingPaired",
+          severity: "error",
+          description:
+            `Read ${summaries.length} ${summaries.length === 1 ? "summary" : "summaries"} and paired nothing. ` +
+            "No boundary in this run had both a provider and a consumer, so nothing was compared.",
+          remedy:
+            "Check that both sides of at least one boundary are in the directory. " +
+            "A provider extracted from code needs its consumer extracted too, or its contract read with `suss contract`. " +
+            "`suss inspect --dir` over the same files lists the boundaries each side claims, and two spellings of one boundary is the usual cause.",
+        },
   ];
 }
+
+const NOTHING_READ: RunFinding = {
+  kind: "nothingPaired",
+  severity: "error",
+  description:
+    "Didn't read any summaries, so there was nothing to pair or compare.",
+  remedy:
+    "Whatever wrote the summaries didn't recognize anything in what it read. " +
+    "Run `suss extract --explain` with the same packs to see how far each pack got. " +
+    "The usual cause is a pack that read the files and didn't recognize a boundary in them.",
+};
 
 function unreadableFindings(
   asked: boolean,
@@ -1252,7 +1263,7 @@ function renderDirHuman(
     // Count by boundary, the way the lists below group them, so two
     // summaries of one route count as one route missing a client.
     lines.push(
-      `  ${nothingComparedReason(groupByKey(providers).size, groupByKey(consumers).size)}`,
+      `  ${nothingComparedReason(groupByKey(providers).size, groupByKey(consumers).size, unpairable.length)}`,
     );
     lines.push(
       "  Extract both sides of the boundary into the same folder, then check them together:",
@@ -1438,7 +1449,11 @@ const DIAGNOSTIC_LIMIT = 10;
 function nothingComparedReason(
   providerCount: number,
   consumerCount: number,
+  unpairableCount: number,
 ): string {
+  if (providerCount + consumerCount + unpairableCount === 0) {
+    return "This run didn't have any summaries, so there was nothing to pair.";
+  }
   if (providerCount > 0 && consumerCount === 0) {
     return `These summaries cover ${providerCount} boundar${providerCount === 1 ? "y" : "ies"} on the provider side and none on the client side, so there was no other side to compare against.`;
   }

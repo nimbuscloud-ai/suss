@@ -42,7 +42,7 @@ Given no files and no `--dir`, `check` reads the project it is run in: every ent
 | `--json` | off | Write findings as JSON instead of text. |
 | `-o`, `--output <path>` | stdout | Write the report to a file. |
 | `--fail-on <severity>` | `error` | Which severity fails the run: `error`, `warning`, `info`, or `none` to never fail. |
-| `--allow-empty` | off | Exit `0` from a `--dir` run that paired nothing. Without it that run fails, because a report with nothing in it looks exactly like a report where both sides agreed. The run gets a `nothingPaired` run finding and exits non-zero. Needs `--dir`; a two-file check never counts pairings, so it refuses the flag. |
+| `--allow-empty` | off | Exit `0` from a run over a folder that paired nothing, including one that didn't read any summaries. Without it that run fails, because a report with nothing in it looks exactly like a report where both sides agreed. The run gets a `nothingPaired` run finding and exits non-zero. Works with `--dir` and with a bare `suss check`; a two-file check never counts pairings, so it refuses the flag. |
 | `--fail-on-unpaired <N\|N%>` | off | Fail when more boundaries went unpaired than this: a count (`25`) or a share of all boundaries (`50%`). Needs `--dir`. The report gets a `mostlyUnpaired` run finding with the numbers. |
 | `--fail-on-unreadable` | off | Fail when a file in `--dir` could not be read as summaries, instead of skipping it with a warning. The report gets an `unreadableInput` run finding, and `--json` lists the skipped files either way. |
 | `--sussignore <path>` | the nearest `.sussignore` | Read this suppressions file instead of searching for one. |
