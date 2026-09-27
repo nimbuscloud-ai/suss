@@ -53,9 +53,11 @@ import {
 import type { Database } from "@suss/datalog";
 import type {
   BinaryExpression,
+  CallExpression,
   ClassDeclaration,
   ElementAccessExpression,
   MethodDeclaration,
+  NewExpression,
   ParameterDeclaration,
   PropertyAccessExpression,
   PropertyDeclaration,
@@ -1614,34 +1616,35 @@ function recordBodyCalls(
   }
   notePropertyWrite(writes, node);
   const call = unwrapExpression(node);
-  if (Node.isCallExpression(call)) {
-    const callee = unwrapExpression(call.getExpression());
-    // A name or a property read: `body(e)` and `opts.body(e)` both say
-    // this function runs its argument, and the property rule needs the
-    // second to see which property it was.
-    if (Node.isIdentifier(callee) || Node.isPropertyAccessExpression(callee)) {
-      fact(db, "bodyCalls", fnId, emitValue(db, table, callee));
-      fact(db, "makesCall", fnId, nodeId(call));
-    }
-    emitNamedCall(db, table, call);
+  if (!isCall(call)) {
+    return false;
+  }
+  fact(db, "makesCall", fnId, emitValue(db, table, call));
+  const callee = unwrapExpression(call.getExpression());
+  // A name or a property read: `body(e)` and `opts.body(e)` both say
+  // this function runs its argument, and the property rule needs the
+  // second to see which property it was.
+  if (
+    Node.isCallExpression(call) &&
+    (Node.isIdentifier(callee) || Node.isPropertyAccessExpression(callee))
+  ) {
+    fact(db, "bodyCalls", fnId, emitValue(db, table, callee));
   }
   return false;
 }
 
+/** A call or a construction, which the rules read as a call of the class. */
+function isCall(node: Node): node is CallExpression | NewExpression {
+  return Node.isCallExpression(node) || Node.isNewExpression(node);
+}
+
 /**
- * The facts of a call written as `name(args)`, so an argument reaches
+ * The facts of a call written as a statement, so an argument reaches
  * the parameter it lands in. Nothing else records one: extraction
  * follows a file's exports, and `registerRoutes(app)` is a statement.
- *
- * A method call is left out. Those are most of the calls in a body, and
- * writing down every argument of every one of them slows a run by more
- * than the handful of extra joins is worth.
  */
-function emitNamedCall(db: Database, table: NodeTable, call: Node): void {
-  if (
-    Node.isCallExpression(call) &&
-    Node.isIdentifier(unwrapExpression(call.getExpression()))
-  ) {
+function emitStatementCall(db: Database, table: NodeTable, call: Node): void {
+  if (isCall(call)) {
     emitValue(db, table, call);
   }
 }
@@ -1660,7 +1663,7 @@ function emitTopLevelStatements(
   for (const statement of sourceFile.getStatements()) {
     if (Node.isExpressionStatement(statement)) {
       const expression = unwrapExpression(statement.getExpression());
-      emitNamedCall(db, table, expression);
+      emitStatementCall(db, table, expression);
       notePropertyWrite(writes, expression);
       continue;
     }

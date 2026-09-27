@@ -1012,6 +1012,157 @@ describe("evaluate: the order a round walks a rule body in", () => {
   });
 });
 
+describe("evaluate: the rows a join reads", () => {
+  // What the second of two evaluations reads, so the rules meet the
+  // facts added in between as new facts rather than in a seed round.
+  const readSecondTime = (
+    rules: Rule[],
+    first: Array<[string, readonly string[]]>,
+    second: Array<[string, readonly string[]]>,
+  ): { db: Database; examined: number } => {
+    const db = new Database();
+    for (const [name, tuple] of first) {
+      db.add(name, tuple);
+    }
+    evaluate(db, rules);
+    for (const [name, tuple] of second) {
+      db.add(name, tuple);
+    }
+    const budget = rowBudget(Number.POSITIVE_INFINITY);
+    evaluate(db, rules, undefined, budget);
+    return { db, examined: budget.examined };
+  };
+
+  it("reads only the new facts that agree with a constant", () => {
+    const rules = [
+      rule("step", [V("x"), V("k")], [lit("raw", V("x"), V("k"))]),
+      rule("value", [V("x")], [lit("step", V("x"), constant("value"))]),
+      rule("inst", [V("x")], [lit("step", V("x"), constant("instance"))]),
+      rule("result", [V("x")], [lit("step", V("x"), constant("result"))]),
+    ];
+    const raw: Array<[string, readonly string[]]> = [];
+    for (let i = 0; i < 10; i++) {
+      raw.push(["raw", [`v${i}`, "value"]]);
+    }
+    raw.push(["raw", ["i", "instance"]], ["raw", ["r", "result"]]);
+
+    const { db, examined } = readSecondTime(rules, [], raw);
+
+    expect(sorted(db.facts("inst"))).toEqual(["i"]);
+    expect(db.facts("value")).toHaveLength(10);
+    // Twelve raw rows for `step`, twelve to sort its new facts by kind
+    // once, then the ten, one and one each kind's rule matches.
+    expect(examined).toBe(36);
+  });
+
+  it("skips a rule whose constant none of the new facts have", () => {
+    const rules = [
+      rule("step", [V("x"), V("k")], [lit("raw", V("x"), V("k"))]),
+      rule("value", [V("x")], [lit("step", V("x"), constant("value"))]),
+      rule("never", [V("x")], [lit("step", V("x"), constant("missing"))]),
+    ];
+    const db = new Database();
+    evaluate(db, rules);
+    db.add("raw", ["a", "value"]);
+    db.add("raw", ["b", "value"]);
+    const { profile } = profileEvaluation(() => evaluate(db, rules));
+
+    expect(sorted(db.facts("value"))).toEqual(["a", "b"]);
+    expect(profile.rules.map((r) => r.head).sort()).toEqual(["step", "value"]);
+  });
+
+  it("reads only the rows that agree with every fixed column", () => {
+    const rules = [
+      rule(
+        "out",
+        [V("x"), V("z")],
+        [lit("asked", V("x")), lit("hop", V("x"), V("z"), constant("value"))],
+      ),
+    ];
+    const hops: Array<[string, readonly string[]]> = [];
+    for (let i = 0; i < 50; i++) {
+      hops.push(["hop", ["a", `n${i}`, "instance"]]);
+      hops.push(["hop", [`b${i}`, "w", "value"]]);
+    }
+    hops.push(["hop", ["a", "v", "value"]]);
+
+    const { db, examined } = readSecondTime(rules, hops, [["asked", ["a"]]]);
+
+    expect(sorted(db.facts("out"))).toEqual(["a,v"]);
+    // The asked row, and the one hop row under both `a` and the kind,
+    // where either column alone has fifty-one.
+    expect(examined).toBe(2);
+  });
+
+  it("leaves a shorter tuple out of the rows under several fixed columns", () => {
+    const db = new Database();
+    const rules = [
+      rule(
+        "out",
+        [V("x"), V("z")],
+        [lit("asked", V("x")), lit("hop", V("x"), V("z"), constant("value"))],
+      ),
+    ];
+    db.add("hop", ["a", "v1", "value"]);
+    db.add("hop", ["a"]);
+    db.add("hop", ["a", "v2", "value"]);
+    for (let i = 0; i < 20; i++) {
+      db.add("hop", [`b${i}`, "w", "instance"]);
+    }
+    evaluate(db, rules);
+    db.add("asked", ["a"]);
+    evaluate(db, rules);
+    const single = [
+      rule("bare", [V("x")], [lit("asked", V("x")), lit("hop", V("x"))]),
+    ];
+    evaluate(db, single);
+    db.retract("hop", [["a"]]);
+
+    expect(sorted(db.facts("out"))).toEqual(["a,v1", "a,v2"]);
+    expect(sorted(db.facts("bare"))).toEqual(["a"]);
+    expect(sorted(db.lookup("hop", 0, "a"))).toEqual([
+      "a,v1,value",
+      "a,v2,value",
+    ]);
+  });
+
+  it("retracts a few facts from a relation nothing has indexed yet", () => {
+    const db = new Database();
+    for (let i = 0; i < 40; i++) {
+      db.add("hop", [`n${i}`, "value"]);
+    }
+    db.retract("hop", [["n3", "value"]]);
+
+    expect(db.size("hop")).toBe(39);
+    expect(db.lookup("hop", 0, "n3")).toEqual([]);
+    expect(db.lookup("hop", 0, "n4")).toEqual([["n4", "value"]]);
+  });
+
+  it("keeps a relation's rows under every fixed column current as facts arrive", () => {
+    const db = new Database();
+    const rules = [
+      rule(
+        "out",
+        [V("x"), V("z")],
+        [lit("asked", V("x")), lit("hop", V("x"), V("z"), constant("value"))],
+      ),
+    ];
+    db.add("hop", ["a", "v1", "value"]);
+    db.add("hop", ["a", "i1", "instance"]);
+    db.add("asked", ["a"]);
+    evaluate(db, rules);
+    db.add("hop", ["a", "v2", "value"]);
+    db.add("hop", ["a", "i2", "instance"]);
+    evaluate(db, rules);
+    db.retract("hop", [["a", "v1", "value"]]);
+    db.add("asked", ["b"]);
+    db.add("hop", ["b", "v3", "value"]);
+    evaluate(db, rules);
+
+    expect(sorted(db.facts("out"))).toEqual(["a,v1", "a,v2", "b,v3"]);
+  });
+});
+
 describe("evaluate: a row budget", () => {
   const CLOSURE = [
     rule("path", [V("x"), V("y")], [lit("edge", V("x"), V("y"))]),

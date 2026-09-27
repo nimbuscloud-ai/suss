@@ -517,6 +517,36 @@ describe("the rewrite itself", () => {
     ]);
   });
 
+  it("does not count a constant as binding a column when ordering the body", () => {
+    // `stores(f, n, v, "receiver")` has the name and a kind fixed, and the
+    // kind has a handful of values. `initializes(cls, f)` has the key.
+    const rules = [
+      rule(
+        "holds",
+        [v("cls"), v("n"), v("v")],
+        [
+          lit("initializes", v("cls"), v("f")),
+          lit("stores", v("f"), v("n"), v("v"), constant("receiver")),
+        ],
+      ),
+      rule(
+        "answer",
+        [v("cls"), v("n"), v("v")],
+        [
+          lit("asked", v("cls"), v("n")),
+          lit("holds", v("cls"), v("n"), v("v")),
+        ],
+      ),
+    ];
+    const { rules: rewritten } = deriveOnDemand(rules, ["answer"]);
+    const holds = rewritten.find((r) => r.head.relation.startsWith("holds"));
+    expect(holds?.body.map((l) => l.relation)).toEqual([
+      "wanted:holds",
+      "initializes",
+      "stores",
+    ]);
+  });
+
   it("says which columns each demand relation binds, so a caller can read what is wanted", () => {
     const rules = [
       rule(

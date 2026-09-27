@@ -2840,6 +2840,40 @@ describe("reading a value under one construction", () => {
     ).toEqual(["nothing"]);
   });
 
+  it("follows a method call written as a statement to the argument it passes", () => {
+    const project = projectOf({
+      "/client.ts": `
+        export class Client {
+          send(path: string) { return path; }
+        }
+      `,
+      "/app.ts": `
+        import { Client } from "./client.js";
+        class Orders {
+          constructor(private client: Client) {}
+          list() { this.client.send("/orders"); }
+        }
+        export const client = new Client();
+        export const orders = new Orders(client);
+      `,
+    });
+    const cls = project
+      .getSourceFileOrThrow("/client.ts")
+      .getClassOrThrow("Client");
+    const read = cls
+      .getMethodOrThrow("send")
+      .getFirstDescendantByKindOrThrow(SyntaxKind.ReturnStatement)
+      .getExpressionOrThrow();
+    const store = new ResolutionStore();
+    store.notePossibleCallers(project.getSourceFiles());
+
+    expect(
+      store
+        .constructionSitesOf(cls)
+        .map((site) => store.resolveWrittenValueUnder(read, site)?.getText()),
+    ).toEqual(['"/orders"']);
+  });
+
   it("does not find a construction for a class nothing builds", () => {
     const project = projectOf({ "/resource.ts": RESOURCE });
     const cls = project
