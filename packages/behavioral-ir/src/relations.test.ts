@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { goesThroughRelation, OWN_BINDING, relationsOf } from "./relations.js";
+import {
+  goesThroughRelation,
+  interactionDetail,
+  OWN_BINDING,
+  relationsOf,
+} from "./relations.js";
 
 import type { Interaction } from "./relations.js";
 
@@ -86,5 +91,23 @@ describe("goesThroughRelation", () => {
       }),
     ).toBe(false);
     expect(goesThroughRelation({ class: "message-send" })).toBe(false);
+  });
+});
+
+describe("interactionDetail", () => {
+  it("is the name a config or metadata read took, and nothing for any other class", () => {
+    expect(
+      interactionDetail({
+        class: "config-read",
+        name: "ORDERS_TABLE",
+        defaulted: false,
+      }),
+    ).toBe("ORDERS_TABLE");
+    expect(
+      interactionDetail({ class: "metadata-read", name: "__dirname" }),
+    ).toBe("__dirname");
+    expect(
+      interactionDetail({ class: "storage-access", kind: "read", fields: [] }),
+    ).toBeUndefined();
   });
 });

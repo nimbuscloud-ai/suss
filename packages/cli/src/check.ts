@@ -3,6 +3,7 @@ import path from "node:path";
 
 import {
   BOUNDARY_ROLE,
+  readHttpMetadata,
   safeParseSummaries,
   summaryRef,
 } from "@suss/behavioral-ir";
@@ -26,7 +27,11 @@ import {
 } from "@suss/checker-intent";
 import { loadIntentDirectory } from "@suss/contract-intent";
 
-import { readProjectFile, unreadArtifacts } from "./projectFile.js";
+import {
+  readEntryIndex,
+  readProjectFile,
+  unreadArtifacts,
+} from "./projectFile.js";
 import {
   DEFAULT_SUPPRESSIONS_FILENAMES,
   loadSuppressionsOrEmpty,
@@ -37,6 +42,7 @@ import type {
   BehavioralSummary,
   ConfidenceInfo,
   Finding,
+  HttpMetadata,
   RunFinding,
 } from "@suss/behavioral-ir";
 import type {
@@ -347,7 +353,7 @@ export function checkDir(
       renderRuntimeNamedCrossings(runtimeNamedCrossings) +
       renderGapCoverage(summariesWithGaps, allSummaries.length) +
       renderCollisions(collisions) +
-      renderUnreadArtifacts(allSummaries, result.unmatched) +
+      renderUnreadArtifacts(sourceFile, result.unmatched) +
       renderIntentSection(intent) +
       renderRunFindings(run);
 
@@ -576,7 +582,7 @@ function findBoundaryCollisions(
   summaries: ReadonlyArray<BehavioralSummary>,
   sourceFile: ReadonlyMap<BehavioralSummary, string>,
 ): BoundaryCollision[] {
-  const filesByKey = new Map<string, Set<string>>();
+  const claimsByKey = new Map<string, Claim[]>();
 
   for (const summary of summaries) {
     const binding = summary.identity.boundaryBinding;
@@ -596,21 +602,61 @@ function findBoundaryCollisions(
     if (key === null || file === undefined) {
       continue;
     }
-    const seen = filesByKey.get(key);
-    if (seen === undefined) {
-      filesByKey.set(key, new Set([file]));
-    } else {
-      seen.add(file);
-    }
+    claimsByKey.set(key, [...(claimsByKey.get(key) ?? []), { summary, file }]);
   }
 
   const collisions: BoundaryCollision[] = [];
-  for (const [key, files] of filesByKey) {
+  for (const [key, claims] of claimsByKey) {
+    const files = new Set(
+      claims
+        .filter((claim) => !implementedIn(claim, claims))
+        .map((claim) => claim.file),
+    );
     if (files.size > 1) {
       collisions.push({ key, files: [...files].sort() });
     }
   }
   return collisions.sort((a, b) => a.key.localeCompare(b.key));
+}
+
+/** A summary that provides a boundary, and the file it was read from. */
+interface Claim {
+  summary: BehavioralSummary;
+  file: string;
+}
+
+type HandlerPointer = NonNullable<HttpMetadata["implementingHandler"]>;
+
+/**
+ * Whether a route a deployment template declares is served by code read
+ * from another file. The template says which handler implements the
+ * route, as SAM does for a Lambda behind API Gateway, and a template and
+ * the code it deploys are one service, so the two are one claim.
+ */
+function implementedIn(claim: Claim, claims: readonly Claim[]): boolean {
+  const pointer = readHttpMetadata(claim.summary)?.implementingHandler;
+  return (
+    pointer !== undefined &&
+    claims.some(
+      (other) => other.file !== claim.file && deploys(pointer, other.summary),
+    )
+  );
+}
+
+/** Whether the handler the template points at is this code: the same deployable, or the same module and export. */
+function deploys(pointer: HandlerPointer, code: BehavioralSummary): boolean {
+  const unit = code.identity.deployableUnit;
+  if (
+    pointer.functionLogicalId !== undefined &&
+    unit?.instanceName === pointer.functionLogicalId
+  ) {
+    return true;
+  }
+  const module = path.posix.join(pointer.codeUri ?? "", pointer.modulePath);
+  return (
+    code.location.exportName === pointer.exportName &&
+    code.location.file.replace(/\.[^./]+$/, "") === module
+  );
 }
 
 function renderCollisions(
@@ -1113,7 +1159,7 @@ function renderGapCoverage(withGaps: number, total: number): string {
  * that skips it leaves those boundaries with nothing to pair against.
  */
 function renderUnreadArtifacts(
-  summaries: ReadonlyArray<BehavioralSummary>,
+  sourceFile: ReadonlyMap<BehavioralSummary, string>,
   unmatched: CheckAllResult["unmatched"],
 ): string {
   if (unmatched.providers.length + unmatched.consumers.length === 0) {
@@ -1125,10 +1171,14 @@ function renderUnreadArtifacts(
     return "";
   }
 
-  const unread = unreadArtifacts(
-    project,
-    new Set(summaries.map((summary) => summary.location.file)),
-  );
+  const unread = unreadArtifacts(project, {
+    labels: new Set([...sourceFile.keys()].map((one) => one.location.file)),
+    entries: new Set(
+      [...sourceFile.values()]
+        .map(readEntryIndex)
+        .filter((index): index is number => index !== null),
+    ),
+  });
   if (unread.length === 0) {
     return "";
   }

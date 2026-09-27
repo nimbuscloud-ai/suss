@@ -294,15 +294,14 @@ async function stopReport(session, context) {
     : null;
   const intentBlocking = blocksOnIntent(intent, new Set(record.intentBlocked));
   const blocks = blocking.length + intentBlocking.length > 0;
-  const againstTheList = intent !== null && intent.kind !== "failed";
   const report = {
     since:
       session.snapshotMeta("baseline")?.from === "stop"
         ? "the agent last stopped"
         : "the session started",
-    // The change list's verdicts cover every line of the diff, so the
-    // report shows those instead of the diff itself.
-    diffs: againstTheList ? [] : await behaviorDiffs(session, run),
+    // Verdicts that account for a change cover every line of the diff at
+    // a boundary, so the report shows them instead of the diff itself.
+    diffs: accountsForAChange(intent) ? [] : await behaviorDiff(session, run),
     intent,
     intentBlocking: intentBlocking.length > 0,
     changeList: session.intentFile(),
@@ -421,48 +420,68 @@ function jsonOf(stdout) {
 }
 
 /**
- * `suss inspect --diff` for each summaries file in both snapshots that
- * changed. The JSON form says whether anything moved; the printed form
- * says what, the way a reviewer reads it.
+ * Whether the change list's verdicts say anything about what changed: an
+ * entry done, a change nobody asked for, or one an `explained` line
+ * keeps. A list of entries suss cannot check says nothing about the
+ * code, so the report still shows what changed.
+ *
+ * @param {IntentVerdicts | null} intent
+ */
+function accountsForAChange(intent) {
+  if (intent?.kind !== "checked") {
+    return false;
+  }
+  const check = intent.check;
+  return (
+    check.entries.some((entry) => entry.verdict === "done") ||
+    check.notAsked.length > 0 ||
+    check.explained.some((one) => one.lines.length > 0)
+  );
+}
+
+/**
+ * `suss inspect --diff` over both snapshots, every summaries file in each
+ * read together, since a deployable's environment is declared in one
+ * file and read in another. The JSON form says whether anything moved;
+ * the printed form says what, the way a reviewer reads it.
  *
  * @param {Session} session
  * @param {(args: string[]) => Promise<import("./types.js").SussRun>} run
  */
-async function behaviorDiffs(session, run) {
-  const after = session.snapshotFiles("current");
-  const diffs = [];
-  for (const file of session
-    .snapshotFiles("baseline")
-    .filter((f) => after.includes(f))) {
-    const pair = [
-      path.join(session.snapshotDir("baseline"), file),
-      path.join(session.snapshotDir("current"), file),
-    ];
-    const moved = await run(["inspect", "--diff", ...pair, "--json"]);
-    if (changedCount(moved.stdout) === 0) {
-      continue;
-    }
-    const printed = await run([
-      "inspect",
-      "--diff",
-      ...pair,
-      "--budget",
-      String(DIFF_BUDGET),
-    ]);
-    if (printed.code === 0) {
-      diffs.push(printed.stdout);
-    }
+async function behaviorDiff(session, run) {
+  const pair = [
+    session.snapshotDir("baseline"),
+    session.snapshotDir("current"),
+  ];
+  const moved = await run(["inspect", "--diff", ...pair, "--json"]);
+  if (!movedAnything(moved.stdout)) {
+    return [];
   }
-  return diffs;
+  const printed = await run([
+    "inspect",
+    "--diff",
+    ...pair,
+    "--budget",
+    String(DIFF_BUDGET),
+  ]);
+  return printed.code === 0 ? [printed.stdout] : [];
 }
 
-/** @param {string} stdout */
-function changedCount(stdout) {
+/**
+ * A unit that moved, or a boundary whose reach or declarations did while
+ * every unit stayed the same.
+ *
+ * @param {string} stdout
+ */
+function movedAnything(stdout) {
   try {
     const diff = JSON.parse(stdout);
-    return typeof diff.changed === "number" ? diff.changed : 0;
+    return (
+      (typeof diff.changed === "number" && diff.changed > 0) ||
+      (Array.isArray(diff.boundaries) && diff.boundaries.length > 0)
+    );
   } catch {
-    return 0;
+    return false;
   }
 }
 

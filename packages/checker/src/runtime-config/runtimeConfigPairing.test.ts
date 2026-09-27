@@ -6,7 +6,7 @@ import {
   withRuntimeContractMetadata,
 } from "@suss/behavioral-ir";
 
-import { checkRuntimeConfig } from "./runtimeConfigPairing.js";
+import { checkRuntimeConfig, runtimeReads } from "./runtimeConfigPairing.js";
 
 import type { BehavioralSummary, Transition } from "@suss/behavioral-ir";
 import type { ComparedPair } from "../pairing/comparedPair.js";
@@ -1112,5 +1112,57 @@ describe("what runtime-config pairing takes for granted", () => {
     });
 
     expect(checkRuntimeConfig([runtime, code])).toEqual([]);
+  });
+});
+
+describe("runtimeReads", () => {
+  it("gives each runtime the reads of the code that runs in it", () => {
+    const checkout = makeRuntimeProvider({
+      instanceName: "checkout",
+      envVars: ["DATABASE_URL"],
+      codeScope: { kind: "codeUri", path: "src/checkout/" },
+    });
+    const batch = makeRuntimeProvider({
+      instanceName: "batch",
+      envVars: [],
+      codeScope: { kind: "codeUri", path: "src/batch/" },
+    });
+    const code = makeCodeSummary({
+      name: "checkoutHandler",
+      file: "src/checkout/index.ts",
+      envReads: ["DATABASE_URL", "STRIPE_API_KEY"],
+    });
+
+    const reads = runtimeReads([checkout, batch, code]).map((one) => ({
+      runtime: one.runtime.identity.name,
+      names: one.reads.map((read) => read.name),
+    }));
+
+    expect(reads).toEqual([
+      { runtime: "checkout", names: ["DATABASE_URL", "STRIPE_API_KEY"] },
+      { runtime: "batch", names: [] },
+    ]);
+  });
+
+  it("gives a read in a file two runtimes' directories contain to neither", () => {
+    const first = makeRuntimeProvider({
+      instanceName: "first",
+      envVars: [],
+      codeScope: { kind: "codeUri", path: "" },
+    });
+    const second = makeRuntimeProvider({
+      instanceName: "second",
+      envVars: [],
+      codeScope: { kind: "codeUri", path: "" },
+    });
+    const shared = makeCodeSummary({
+      name: "logLevel",
+      file: "src/config.ts",
+      envReads: ["LOG_LEVEL"],
+    });
+
+    expect(
+      runtimeReads([first, second, shared]).flatMap((one) => one.reads),
+    ).toEqual([]);
   });
 });

@@ -1,16 +1,18 @@
 /**
- * The two stories from the design, played through every hook with the
- * suss this repository builds.
+ * The recorded stories, played through every hook with the suss this
+ * repository builds.
  *
  * In the 409 story an edit adds a 409 to POST /orders, the edit's hook
  * blocks on the client that does not handle it, the client is fixed,
  * and the stop report lists the change on both sides. In the cancel
  * story the agent writes a change list first, and the stop checks the
- * work against it.
+ * work against it. In the environment variable story a Lambda service
+ * starts reading a new variable in a helper both functions share.
  */
 
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { playAccountsRegion } from "../demo/accountsRegion.mjs";
 import { playCancelOrder } from "../demo/cancelOrder.mjs";
 import { playOrders409 } from "../demo/orders409.mjs";
 
@@ -18,10 +20,12 @@ type Played = ReturnType<typeof playOrders409>;
 
 let played: Played;
 let cancel: Played;
+let region: Played;
 
 beforeAll(() => {
   played = playOrders409();
   cancel = playCancelOrder();
+  region = playAccountsRegion();
 });
 
 function stepOf(demo: Played, index: number) {
@@ -172,5 +176,97 @@ describe("the cancel story, with a change list", () => {
       "explained   ~ POST /orders responds 409\n              why: a second open order for the same sku was charged twice, so POST /orders refuses it",
     );
     expect(report).not.toContain("not asked");
+  });
+});
+
+describe("the environment variable story, on a Lambda service with a SAM template", () => {
+  function said(index: number): string {
+    const output = stepOf(region, index).output;
+    const specific = output?.hookSpecificOutput as
+      | { additionalContext?: string }
+      | undefined;
+    return String(
+      output?.reason ?? specific?.additionalContext ?? output?.systemMessage,
+    );
+  }
+
+  it("runs every hook and exits 0 each time", () => {
+    expect(region.steps.map((s) => s.hook)).toEqual([
+      "session-start",
+      "prompt",
+      "after-edit",
+      "after-edit",
+      "after-edit",
+      "after-edit",
+      "after-edit",
+      "after-edit",
+      "stop",
+      "after-edit",
+      "stop",
+      "session-end",
+    ]);
+    expect(region.steps.every((s) => s.status === 0)).toBe(true);
+  });
+
+  it("says nothing after an edit that changes only functions inside the project", () => {
+    expect(stepOf(region, 3).stdout).toBe("");
+  });
+
+  it("names the variable a helper started reading, and the helper, with no internal key or package name", () => {
+    const output = stepOf(region, 4).output;
+
+    expect(output?.decision).toBe("block");
+    expect(said(4)).toContain(
+      "suss: this edit changed runtime-config ACCOUNTS_REGION through getAccountService and introduced 2 findings to deal with before moving on.",
+    );
+    expect(said(4)).toContain(
+      "[ERROR] boundaryFieldUnknown at runtime-config:GetAccountFunction",
+    );
+    expect(said(4)).toContain(
+      "[ERROR] boundaryFieldUnknown at runtime-config:UpdateAccountFunction",
+    );
+    for (const index of [4, 6, 7]) {
+      expect(said(index)).not.toContain("function-call:");
+      expect(said(index)).not.toContain("@suss/");
+    }
+  });
+
+  it("names the function whose template entry now declares the variable", () => {
+    expect(stepOf(region, 5).stdout).toBe("");
+    expect(said(6)).toBe(
+      "suss: this edit changed runtime-config:GetAccountFunction ACCOUNTS_REGION and resolved boundaryFieldUnknown at runtime-config:GetAccountFunction.",
+    );
+    expect(said(7)).toBe(
+      "suss: this edit changed runtime-config:UpdateAccountFunction ACCOUNTS_REGION and resolved boundaryFieldUnknown at runtime-config:UpdateAccountFunction.",
+    );
+  });
+
+  it("lists what the stop found changed when no entry in the change list can be checked", () => {
+    const output = stepOf(region, 8).output;
+
+    expect(output?.decision).toBe("block");
+    expect(said(8)).toContain(
+      "2 unchecked and 2 boundaries changed where nobody asked.",
+    );
+    for (const fn of ["GetAccountFunction", "UpdateAccountFunction"]) {
+      expect(said(8)).toContain(
+        [
+          `serves runtime-config:${fn}  cloudformation:template.yaml::${fn}`,
+          "              + declares ACCOUNTS_REGION from AccountsRegion",
+          `              + reads runtime-config:${fn} ACCOUNTS_REGION  through getAccountService`,
+        ].join("\n"),
+      );
+    }
+  });
+
+  it("counts the read done for both functions once the list spells it the way the skill shows", () => {
+    const output = stepOf(region, 10).output;
+
+    expect(output?.decision).toBeUndefined();
+    expect(said(10)).toContain("1 done and 1 unchecked.");
+    expect(said(10)).toContain(
+      "done        + reads runtime-config [ACCOUNTS_REGION]  cloudformation:template.yaml::GetAccountFunction, cloudformation:template.yaml::UpdateAccountFunction",
+    );
+    expect(said(10)).not.toContain("not asked");
   });
 });

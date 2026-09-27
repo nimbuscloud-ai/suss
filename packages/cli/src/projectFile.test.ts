@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { projectFileFor, unreadArtifacts } from "./projectFile.js";
+import {
+  projectFileFor,
+  readEntryIndex,
+  readOutputName,
+  unreadArtifacts,
+} from "./projectFile.js";
 
 import type { InitReport } from "./init.js";
 
@@ -49,16 +54,55 @@ describe("what init writes down", () => {
 
 describe("which artifacts a run missed", () => {
   const file = projectFileFor(report());
+  const schema = {
+    kind: "contract",
+    from: "prisma",
+    file: "src/prisma/schema.prisma",
+  };
+  const labelled = (...labels: string[]) => ({
+    labels: new Set(labels),
+    entries: new Set<number>(),
+  });
 
   it("names the artifact no summary came from", () => {
-    expect(unreadArtifacts(file!, new Set(["src/app/routes.ts"]))).toEqual([
-      { kind: "contract", from: "prisma", file: "src/prisma/schema.prisma" },
+    expect(unreadArtifacts(file!, labelled("src/app/routes.ts"))).toEqual([
+      schema,
     ]);
   });
 
   it("stays quiet once the run has read it", () => {
     expect(
-      unreadArtifacts(file!, new Set(["src/prisma/schema.prisma"])),
+      unreadArtifacts(file!, labelled("src/prisma/schema.prisma")),
     ).toEqual([]);
+  });
+
+  it("knows a summary a reader labelled with its name and the path from the repository root", () => {
+    expect(
+      unreadArtifacts(
+        file!,
+        labelled("prisma:services/shop/src/prisma/schema.prisma"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("knows a summary a reader labelled with the file name alone", () => {
+    expect(unreadArtifacts(file!, labelled("schema.prisma"))).toEqual([]);
+  });
+
+  it("counts an entry extract --out-dir wrote into the folder as read", () => {
+    const index = file!.read.findIndex((entry) => entry.kind === "contract");
+    expect(readEntryIndex(readOutputName(index, file!.read[index]!))).toBe(
+      index,
+    );
+    expect(
+      unreadArtifacts(file!, {
+        labels: new Set(["src/app/routes.ts"]),
+        entries: new Set([index]),
+      }),
+    ).toEqual([]);
+  });
+
+  it("gives no entry for a file extract --out-dir did not write", () => {
+    expect(readEntryIndex("summaries.json")).toBeNull();
   });
 });

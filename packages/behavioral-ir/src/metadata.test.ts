@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  declaredEnvVars,
   readCodeScopeMetadata,
   readGraphqlMetadata,
   readHttpMetadata,
@@ -267,6 +268,35 @@ describe("the runtimeContract metadata namespace", () => {
         envVariables: ["ORDERS_QUEUE_URL"],
       }),
     ).toThrow();
+  });
+});
+
+describe("declaredEnvVars", () => {
+  it("lists what the template sets, with the resource a value comes from, and leaves out the platform's", () => {
+    const declared = declaredEnvVars(
+      summaryWith(
+        withRuntimeContractMetadata(undefined, {
+          envVars: ["ORDERS_QUEUE_URL", "LOG_LEVEL", "AWS_REGION"],
+          envVarSources: {
+            ORDERS_QUEUE_URL: "template",
+            LOG_LEVEL: "globals",
+            AWS_REGION: "platform",
+          },
+          envVarTargets: {
+            ORDERS_QUEUE_URL: { kind: "ref", logicalId: "OrdersQueue" },
+          },
+        }),
+      ),
+    );
+
+    expect([...declared]).toEqual([
+      ["ORDERS_QUEUE_URL", "OrdersQueue"],
+      ["LOG_LEVEL", undefined],
+    ]);
+  });
+
+  it("lists nothing for a summary with no runtime contract", () => {
+    expect(declaredEnvVars(summaryWith(undefined)).size).toBe(0);
   });
 });
 

@@ -75,12 +75,24 @@ export function editResult(report, covers) {
 /** @param {EditResult} result */
 export function saysAnything(result) {
   return (
-    result.changed.length +
+    result.changed.filter(hasName).length +
       result.blocking.length +
       result.resolved.length +
       result.notes.length >
     0
   );
+}
+
+/**
+ * Whether a changed boundary is one the agent and the developer can
+ * name. A call between two functions in the project has no name, and
+ * the agent already knows which functions it edited. A suss older than
+ * the `label` field gives no way to tell, so its boundaries all count.
+ *
+ * @param {import("./types.js").ChangedBoundary} boundary
+ */
+export function hasName(boundary) {
+  return boundary.label !== null;
 }
 
 /**

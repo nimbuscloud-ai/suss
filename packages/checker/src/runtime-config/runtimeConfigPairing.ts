@@ -35,6 +35,7 @@ import type {
   EnvVarSource,
   Finding,
   PlacedRuntime,
+  Placement,
   RuntimeConfigSemantics,
   UnitsByFile,
 } from "@suss/behavioral-ir";
@@ -57,7 +58,7 @@ interface ScopedRuntime {
   readNames: Set<string>;
 }
 
-interface EnvVarRead {
+export interface EnvVarRead {
   name: string;
   /** The summary whose effects mentioned the read. */
   summary: BehavioralSummary;
@@ -66,6 +67,68 @@ interface EnvVarRead {
   defaulted: boolean;
   /** How the source spelled the read, so a Python finding does not say `process.env`. */
   spelling?: string;
+}
+
+/** Every environment read in the code, and where each runtime's code is. */
+interface PlacedCode {
+  byFile: UnitsByFile;
+  reads: EnvVarRead[];
+  sawConfigReadEffect: boolean;
+  placement: Placement;
+  /** Files several runtimes' directories contain, which no runtime claims. */
+  contested: ReadonlySet<string>;
+}
+
+function placeCode(
+  summaries: BehavioralSummary[],
+  index: InteractionIndex | undefined,
+): PlacedCode {
+  // A runtime-config provider declares variables and never reads them,
+  // so every other summary counts as code.
+  const collected = collectEnvVarReads(
+    summaries.filter((s) => !isRuntimeConfigProvider(s)),
+    index,
+  );
+  const byFile = unitsByFile(summaries);
+  const placement = placeRuntimes(summaries);
+  return {
+    byFile,
+    reads: collected.reads,
+    sawConfigReadEffect: collected.sawConfigReadEffect,
+    placement,
+    contested: contestedFiles(
+      collected.reads.map((r) => r.summary),
+      placement.placed.map((p) => p.scope),
+      byFile,
+    ),
+  };
+}
+
+/** A runtime the set declares, and the reads the pairing checks against it. */
+export interface RuntimeReads {
+  runtime: BehavioralSummary;
+  binding: BoundaryBinding;
+  reads: EnvVarRead[];
+}
+
+/**
+ * The environment reads of the code each placed runtime runs, placed
+ * the way the pairing places them. A read in a file that several
+ * runtimes' directories contain goes with none of them. A diff reads
+ * this, so a function that starts reading a variable is reported for
+ * the same functions this pass would report it missing from.
+ */
+export function runtimeReads(summaries: BehavioralSummary[]): RuntimeReads[] {
+  const code = placeCode(summaries, undefined);
+  return code.placement.placed.map(({ runtime, binding, scope }) => ({
+    runtime,
+    binding,
+    reads: code.reads.filter(
+      (read) =>
+        runsIn(read.summary, scope, code.byFile) &&
+        !code.contested.has(read.summary.location.file),
+    ),
+  }));
 }
 
 /**
@@ -83,26 +146,17 @@ export function checkRuntimeConfig(
 ): Finding[] {
   const findings: Finding[] = [];
 
-  const byFile = unitsByFile(summaries);
-  // A runtime-config provider declares variables and never reads them,
-  // so every other summary counts as code.
-  const collected = collectEnvVarReads(
-    summaries.filter((s) => !isRuntimeConfigProvider(s)),
-    index,
-  );
-  const codeReads = collected.reads;
-
-  const placement = placeRuntimes(summaries);
+  const {
+    byFile,
+    reads: codeReads,
+    sawConfigReadEffect,
+    placement,
+    contested,
+  } = placeCode(summaries, index);
   for (const { runtime, binding } of placement.unplaced) {
     findings.push(makeScopeUnknownFinding(runtime, binding));
   }
   const placed = placement.placed;
-
-  const contested = contestedFiles(
-    codeReads.map((r) => r.summary),
-    placed.map((p) => p.scope),
-    byFile,
-  );
 
   const scoped: ScopedRuntime[] = [];
   for (const { runtime, binding, scope } of placed) {
@@ -157,7 +211,7 @@ export function checkRuntimeConfig(
     }
   }
 
-  findings.push(...unusedFindings(scoped, collected.sawConfigReadEffect));
+  findings.push(...unusedFindings(scoped, sawConfigReadEffect));
   findings.push(...contestedFindings(codeReads, contested, placed, byFile));
 
   return findings;

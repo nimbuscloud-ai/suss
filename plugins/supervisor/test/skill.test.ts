@@ -41,12 +41,35 @@ describe("the intent skill", () => {
   });
 
   it("shows a change list and an explained line suss accepts", () => {
-    const [list, explained] = yamlBlocks(skill);
+    const [list, , explained] = yamlBlocks(skill);
 
     expect(parseChangeList(list).ok).toBe(true);
     expect(
       parseChangeList({ ...(list as object), ...(explained as object) }),
     ).toMatchObject({ ok: true, list: { explained: [{ verb: "changes" }] } });
+  });
+
+  it("spells an environment read as an effect on runtime-config, with the variable as a field", () => {
+    const [, environment] = yamlBlocks(skill);
+
+    expect(parseChangeList(environment)).toMatchObject({
+      ok: true,
+      list: {
+        changes: [
+          {
+            verb: "adds",
+            subject: {
+              kind: "effect",
+              effect: {
+                does: "reads",
+                names: "runtime-config",
+                fields: ["ACCOUNTS_REGION"],
+              },
+            },
+          },
+        ],
+      },
+    });
   });
 
   it("points at the file the hooks read", () => {

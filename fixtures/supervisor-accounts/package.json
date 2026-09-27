@@ -1,0 +1,7 @@
+{
+  "name": "accounts-service",
+  "private": true,
+  "dependencies": {
+    "@types/aws-lambda": "^8.10.0"
+  }
+}

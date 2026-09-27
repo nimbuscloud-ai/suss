@@ -51,6 +51,24 @@ export const OWN_BINDING: Record<BoundaryRole, Relation[]> = {
 };
 
 /**
+ * The name a read took that the boundary label leaves out. A store's
+ * label already includes the container, but the label of a config or
+ * metadata read only identifies the recognizer, so the detail is the
+ * name that was read.
+ */
+export function interactionDetail(
+  interaction: Interaction,
+): string | undefined {
+  if (
+    interaction.class === "config-read" ||
+    interaction.class === "metadata-read"
+  ) {
+    return interaction.name;
+  }
+  return undefined;
+}
+
+/**
  * Whether a storage access goes through a relation path. The container
  * such an access reaches comes from the provider's contract, so a walk
  * over one summary cannot work it out.

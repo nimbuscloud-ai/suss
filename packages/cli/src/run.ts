@@ -59,7 +59,7 @@ Usage:
   suss extract [-p <tsconfig> | --dir <directory>] [--lang typescript|python|ruby] [-f <framework>[=<config.json>] ...] [-o <output.json>] [--files <f1> <f2> ...] [--gaps strict|permissive|silent]
   suss extract --out-dir <directory> [--dir <project>]
   suss inspect [<summaries.json> | --dir <directory>]
-  suss inspect --diff <before.json> <after.json>
+  suss inspect --diff <before.json | directory> <after.json | directory>
   suss inspect --flow "<METHOD> <url>" [<summaries.json> | --dir <directory>] [--entry <name>] [--scope <document>] [--json]
   suss check [--dir <directory>] [--intent <intent-dir>] [--all] [--json] [-o <output>]
   suss check <provider.json> <consumer.json> [--all] [--json] [-o <output>]
@@ -160,7 +160,8 @@ Options (check):
 
 Options (inspect):
   --dir            Folder of summary files to read, instead of one file
-  --diff           Compare two summary files and report what moved
+  --diff           Compare two summary files, or two folders of them, and
+                   report what moved
   --json           With --diff, write the diff as JSON for a machine
   --changed-files  With --diff, a file listing the paths a change touched,
                    one per line. Those files come last in the report and are
@@ -811,7 +812,7 @@ async function runInspect(argv: string[]): Promise<number> {
     const after = args[2];
     if (before === undefined || after === undefined) {
       process.stderr.write(
-        "--diff compares two summary files. Try: suss inspect --diff before.json after.json\n",
+        "--diff compares two summary files, or two folders of them. Try: suss inspect --diff before.json after.json\n",
       );
       return 1;
     }

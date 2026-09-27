@@ -148,7 +148,7 @@ with `intent` added when `--intent` was passed. Two positional files write the b
 
 `--at --json` writes `{ at, matched, target, touches, findings, pairs, unmatched, gaps }`, where `touches` is one entry per unit and boundary (`{ boundary, relations, unit, via }`). A target that matched nothing writes `{ at, matched: false, message }`.
 
-`--since --json` writes the `--dir` object with `findings` narrowed to the new ones, and three keys added: `since`, the earlier folder; `resolved`, the findings that went away; and `changedBoundaries`, one `{ key, units }` per boundary the code changed at. Each finding in `findings` and `resolved` also has:
+`--since --json` writes the `--dir` object with `findings` narrowed to the new ones, and three keys added: `since`, the earlier folder; `resolved`, the findings that went away; and `changedBoundaries`, one `{ key, label, units }` per boundary the code changed at. `label` is what to show a person: the boundary's own label, followed by any variable whose read or declaration came or went, as in `runtime-config ACCOUNTS_REGION` or `runtime-config:GetAccountFunction ACCOUNTS_REGION`. It is null for a boundary with no name of its own and no name moving on it, such as a call from one function in the project to another; `units` says which functions moved. A deployable counts as changed when the variables its template declares change. Each finding in `findings` and `resolved` also has:
 
 | Key | What it is |
 |---|---|

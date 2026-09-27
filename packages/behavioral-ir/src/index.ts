@@ -161,6 +161,7 @@ export {
 export { normalizeLegacySummary, SUMMARY_SCHEMA_VERSION } from "./legacy.js";
 export {
   type CodeScopeMetadata,
+  declaredEnvVars,
   type EnvVarSource,
   type GraphqlContractProvenance,
   type GraphqlDeclaredContract,
@@ -224,6 +225,7 @@ export {
 export {
   goesThroughRelation,
   type Interaction,
+  interactionDetail,
   OWN_BINDING,
   relationsOf,
 } from "./relations.js";

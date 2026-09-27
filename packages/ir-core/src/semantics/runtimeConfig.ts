@@ -33,6 +33,9 @@ export type RuntimeConfigSemantics = z.infer<
   typeof RuntimeConfigSemanticsSchema
 >;
 
+/** What a recognizer writes for the instance when the code does not say which one runs it. */
+const UNNAMED_INSTANCE = "<unknown>";
+
 export const runtimeConfigSemantics = defineBoundarySemantics({
   name: "runtime-config",
   schema: RuntimeConfigSemanticsSchema,
@@ -48,5 +51,14 @@ export const runtimeConfigSemantics = defineBoundarySemantics({
     leavesTheProcess: true,
     reportsUnpairedItself: false,
     identityKey: () => null,
+    // A reader sees which deployable's environment this is. Code that
+    // reads a variable does not say which deployable runs it, so a read
+    // has no name, or the placeholder the Python and Ruby adapters write.
+    displayLabel(semantics) {
+      const instance = semantics.instanceName;
+      return instance === undefined || instance === UNNAMED_INSTANCE
+        ? null
+        : `runtime-config:${instance}`;
+    },
   },
 });

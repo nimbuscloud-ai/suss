@@ -97,18 +97,65 @@ export function writeProjectFile(root: string, file: ProjectFile): void {
   );
 }
 
+/** The file one entry's summaries go to, numbered by its place in `read`. */
+export function readOutputName(
+  index: number,
+  entry: ExtractEntry | ContractEntry,
+): string {
+  return `${index}-${entry.kind}.json`;
+}
+
+const READ_OUTPUT_NAME = /^(\d+)-(extract|contract)\.json$/;
+
+/**
+ * The place in `read` of the entry whose summaries were written to this
+ * file, or null for a file `readOutputName` did not name.
+ */
+export function readEntryIndex(fileName: string): number | null {
+  const match = READ_OUTPUT_NAME.exec(fileName);
+  return match === null ? null : Number(match[1]);
+}
+
+/** What a run read, as a check over a folder of summaries can tell. */
+export interface ReadInRun {
+  /** Each summary's file, which for a contract is the reader's label for the artifact. */
+  labels: ReadonlySet<string>;
+  /** The places in `read` of the entries `suss extract --out-dir` wrote into the folder. */
+  entries: ReadonlySet<number>;
+}
+
 /**
  * The artifacts listed in `suss.json` that no summary in the run came
- * from.
- *
- * A contract summary's file is the artifact it was read from, so an
- * artifact that was never read is one that no summary has as its file.
+ * from. An artifact counts as read when `extract --out-dir` wrote its
+ * entry into the folder, or when a summary's label says it came from
+ * that file.
  */
 export function unreadArtifacts(
   file: ProjectFile,
-  filesRead: ReadonlySet<string>,
+  read: ReadInRun,
 ): ContractEntry[] {
-  return file.read
-    .filter((entry): entry is ContractEntry => entry.kind === "contract")
-    .filter((entry) => !filesRead.has(entry.file));
+  return file.read.flatMap((entry, index) =>
+    entry.kind !== "contract" ||
+    read.entries.has(index) ||
+    [...read.labels].some((label) => labelIsOf(label, entry))
+      ? []
+      : [entry],
+  );
+}
+
+/**
+ * Whether a summary with this label was read from the artifact. A reader
+ * labels its summaries with its name and the file's path, as in
+ * `cloudformation:infra/template.yaml`. The reader may count the path
+ * from the repository root or give only the file name, while `suss.json`
+ * counts it from the project, so either path may end with the other.
+ */
+function labelIsOf(label: string, entry: ContractEntry): boolean {
+  const prefix = `${entry.from}:`;
+  const written = label.startsWith(prefix) ? label.slice(prefix.length) : label;
+  return (
+    written === entry.file ||
+    written.endsWith(`/${entry.file}`) ||
+    entry.file.endsWith(`/${written}`)
+  );
 }

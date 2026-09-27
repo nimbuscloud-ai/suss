@@ -1,0 +1,47 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: An accounts service behind API Gateway. Both functions build
+  their service through one composition helper, and that helper is where the
+  environment is read.
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    CodeUri: ./
+    Timeout: 10
+
+Resources:
+  AccountsApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+
+  GetAccountFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/getAccount.handler
+      Environment:
+        Variables:
+          ACCOUNTS_TABLE: accounts
+      Events:
+        Get:
+          Type: Api
+          Properties:
+            RestApiId: !Ref AccountsApi
+            Method: GET
+            Path: /accounts/{id}
+
+  UpdateAccountFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/handlers/updateAccount.handler
+      Environment:
+        Variables:
+          ACCOUNTS_TABLE: accounts
+      Events:
+        Update:
+          Type: Api
+          Properties:
+            RestApiId: !Ref AccountsApi
+            Method: PUT
+            Path: /accounts/{id}
