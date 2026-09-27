@@ -4,7 +4,8 @@
  * the call reads or writes through.
  *
  * The typed path reads ts-morph nodes for `<receiver>.<model>.<method>()`
- * and checks the receiver by its type. The `$queryRaw` family is a
+ * and checks the receiver by its type, or by where it was made when the
+ * client was never generated and the type is `any`. The `$queryRaw` family is a
  * `@suss/recognize` declaration. The README covers which methods count,
  * where the fields come from, and how a relation reaches the checker.
  */
@@ -29,6 +30,8 @@ import {
   declaredBy,
   sqlStatements,
 } from "@suss/recognize";
+
+import { generatedClientDirs, isInGeneratedClient } from "./generatedClient.js";
 
 import type { ReceiverType, ResolutionStore } from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
@@ -500,15 +503,42 @@ function fieldsOfRows(read: { rows: ObjectArg[]; written: boolean }): string[] {
  * Checks the receiver's type, so `const db = new PrismaClient()`, a
  * wrapped `ctx.prisma` and a project's `class PrismaService extends
  * PrismaClient` all count. `isPrismaClientPath` lists the places the
- * type may be declared.
+ * type may be declared. When the type is `any`, as it is before
+ * `prisma generate` has run, the store says where the receiver was made.
  */
 function isPrismaClientReceiver(
   node: Node,
   resolution: ResolutionStore | undefined,
 ): boolean {
-  return receiverTypesOf(node).some(
-    (type) => declaredByPrisma(type) || extendsImportedClient(type, resolution),
-  );
+  if (
+    receiverTypesOf(node).some(
+      (type) =>
+        declaredByPrisma(type) || extendsImportedClient(type, resolution),
+    )
+  ) {
+    return true;
+  }
+  return node.getType().isAny() && madeFromImportedClient(node, resolution);
+}
+
+/**
+ * Whether the value is a `PrismaClient` made from `@prisma/client`, or
+ * from a client the schema's generator writes into the project.
+ */
+function madeFromImportedClient(
+  node: Node,
+  resolution: ResolutionStore | undefined,
+): boolean {
+  if (resolution === undefined) {
+    return false;
+  }
+  const modules = [
+    CLIENT_MODULE,
+    ...generatedClientDirs(path.dirname(node.getSourceFile().getFilePath())),
+  ];
+  return resolution
+    .importOriginsOf(node, modules)
+    .some((origin) => origin.path.join(".") === CLIENT_CLASS);
 }
 
 function declaredByPrisma(type: ReceiverType): boolean {
@@ -550,7 +580,7 @@ function isPrismaClientPath(filePath: string): boolean {
     return true;
   }
   const beside = path.join(path.dirname(filePath), GENERATED_CLIENT_MARKER);
-  return fs.existsSync(beside);
+  return fs.existsSync(beside) || isInGeneratedClient(filePath);
 }
 
 function capitalizeFirst(name: string): string | null {
@@ -696,8 +726,10 @@ export function prismaFramework(
     // import `@prisma/client`, so those files are skipped.
     requiresImport: ["@prisma/client"],
     // A generator with its own `output` puts the client in the project,
-    // where the only way to reach it is a relative path.
+    // where the only way to reach it is a relative path. Prisma 7's
+    // `prisma-client` generator writes no schema beside it.
     generatedModuleMarkers: [GENERATED_CLIENT_MARKER],
+    generatedModuleDirs: generatedClientDirs,
     invocationRecognizers: [makeRecognizer(options)],
     // A tagged template is not an invocation, so the raw chain runs on
     // the access walk, which visits calls as well.
