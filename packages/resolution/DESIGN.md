@@ -207,9 +207,10 @@ more. A caller that reads only what x is written as asks
 `wantedWritten(x)` instead. It fills the same answer relations as
 `wanted` does for the written value: `wantedIsWrittenAs`,
 `wantedFallbackBehind`, and the two relations about overridden members.
-The walks behind the other answers are then never derived. On an
-8,400-file TypeScript server, the TypeScript store's batch of argument
-values read 16% fewer rows this way, with byte-identical summaries.
+The walks behind the other answers are then never derived. The
+TypeScript store asks this way for the values it reads as written. On
+an 8,400-file TypeScript server with the packs `suss init` suggests,
+the run read 16% fewer rows, with byte-identical summaries.
 
 Some relations are one adapter's own. The adapter adds them to the
 same store and reads them itself, or through a rule of its own, and no
