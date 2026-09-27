@@ -1055,6 +1055,22 @@ describe("evaluate: the rows a join reads", () => {
     expect(examined).toBe(36);
   });
 
+  it("skips a rule whose constant none of the new facts have", () => {
+    const rules = [
+      rule("step", [V("x"), V("k")], [lit("raw", V("x"), V("k"))]),
+      rule("value", [V("x")], [lit("step", V("x"), constant("value"))]),
+      rule("never", [V("x")], [lit("step", V("x"), constant("missing"))]),
+    ];
+    const db = new Database();
+    evaluate(db, rules);
+    db.add("raw", ["a", "value"]);
+    db.add("raw", ["b", "value"]);
+    const { profile } = profileEvaluation(() => evaluate(db, rules));
+
+    expect(sorted(db.facts("value"))).toEqual(["a", "b"]);
+    expect(profile.rules.map((r) => r.head).sort()).toEqual(["step", "value"]);
+  });
+
   it("reads only the rows that agree with every fixed column", () => {
     const rules = [
       rule(

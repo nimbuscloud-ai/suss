@@ -866,6 +866,30 @@ const deltaBuckets = new WeakMap<
   Map<string, Map<Atom, Tuple[]>>
 >();
 
+const deltaBucketKey = (relation: string, column: number): string =>
+  `${relation}\u0000${column}`;
+
+/**
+ * Whether a literal has nothing to read among a round's new facts. Once
+ * one rule has sorted them by a constant's column, a rule whose constant
+ * none of them have is skipped without being run. The rule that sorts
+ * them is charged the reads.
+ */
+function hasNoNewRows(
+  deltas: Map<string, readonly Tuple[]>,
+  literal: Literal,
+): boolean {
+  const rows = deltas.get(literal.relation) ?? [];
+  const constants = constantColumnsOf(literal);
+  if (rows.length === 0 || constants === null) {
+    return rows.length === 0;
+  }
+  const buckets = deltaBuckets
+    .get(deltas)
+    ?.get(deltaBucketKey(literal.relation, constants.columns[0]));
+  return buckets !== undefined && !buckets.has(constants.values[0]);
+}
+
 /**
  * The round's new facts that have the literal's constants in the
  * literal's columns. Several rules often read one relation, each with
@@ -889,7 +913,7 @@ function deltaRows(
     deltaBuckets.set(deltas, byColumn);
   }
   const column = constants.columns[0];
-  const key = `${literal.relation}\u0000${column}`;
+  const key = deltaBucketKey(literal.relation, column);
   let buckets = byColumn.get(key);
   if (buckets === undefined) {
     buckets = new Map();
@@ -1455,7 +1479,7 @@ function runRules<Tag>(
           if (derivedOnly && !stratum.derived.has(literal.relation)) {
             continue;
           }
-          if ((seed.get(literal.relation) ?? []).length === 0) {
+          if (hasNoNewRows(seed, literal)) {
             continue;
           }
           runOneRule(r, seed, i);
