@@ -29,6 +29,8 @@ export {
   fnIdentityKey,
   type GqlIdentityKey,
   gqlIdentityKey,
+  type IoIdentityKey,
+  ioIdentityKey,
   type MetricIdentityKey,
   metricIdentityKey,
   type UnitIdentityKey,
@@ -52,6 +54,7 @@ export {
 } from "./semantics/functionCall.js";
 export { GraphqlOperationSemanticsSchema } from "./semantics/graphqlOperation.js";
 export { GraphqlResolverSemanticsSchema } from "./semantics/graphqlResolver.js";
+export { IoSemanticsSchema } from "./semantics/io.js";
 export { MessageBusSemanticsSchema } from "./semantics/messageBus.js";
 export { MetricSemanticsSchema } from "./semantics/metric.js";
 export { SemanticsSchema } from "./semantics/registry.js";
@@ -101,6 +104,7 @@ export type { TypeShape } from "./schemas.js";
 export type { FunctionCallSemantics } from "./semantics/functionCall.js";
 export type { GraphqlOperationSemantics } from "./semantics/graphqlOperation.js";
 export type { GraphqlResolverSemantics } from "./semantics/graphqlResolver.js";
+export type { IoSemantics } from "./semantics/io.js";
 export type {
   MessageBusSemantics,
   MessageBusTechnology,
@@ -511,6 +515,23 @@ export function metricBinding(opts: {
       metricSystem: opts.metricSystem,
       metricType: namedOrNull(opts.metricType, "metric type"),
     },
+    recognition: opts.recognition,
+  };
+}
+
+/**
+ * Build an io binding, for a write to one of the process's own streams.
+ * The transport is `"in-process"` because the write is a call the
+ * program makes, and the runtime moves the bytes on from there.
+ */
+export function ioBinding(opts: {
+  recognition: string;
+  /** Null when this source does not say which stream. */
+  target: string | null;
+}): BoundaryBinding {
+  return {
+    transport: "in-process",
+    semantics: { name: "io", target: namedOrNull(opts.target, "io target") },
     recognition: opts.recognition,
   };
 }

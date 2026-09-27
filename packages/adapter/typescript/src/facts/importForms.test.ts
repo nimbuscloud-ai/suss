@@ -89,6 +89,22 @@ describe("what importedNamesOf resolves per import form", () => {
     ).toEqual([{ module: `${PACKAGE}/esm`, path: ["alpha"] }]);
   });
 
+  it("a name destructured from an awaited dynamic import", () => {
+    expect(
+      calleeNamesIn(
+        `export async function run(n: number) {\n  const { alpha } = await import("${PACKAGE}");\n  return alpha(n);\n}\n`,
+      ),
+    ).toEqual(["alpha"]);
+  });
+
+  it("a member of an awaited dynamic import", () => {
+    expect(
+      calleeNamesIn(
+        `export async function run(n: number) {\n  const provider = await import("${PACKAGE}");\n  return provider.alpha(n);\n}\n`,
+      ),
+    ).toEqual(["alpha"]);
+  });
+
   it("local rebinding", () => {
     expect(
       calleeNamesIn(

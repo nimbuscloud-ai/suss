@@ -19,6 +19,7 @@ import { tryMatchJsxReturn } from "./jsx.js";
 import {
   tryMatchFunctionCall,
   tryMatchParameterMethodCall,
+  tryMatchReturnedChoice,
   tryMatchReturnShape,
   tryMatchReturnStatement,
 } from "./returns.js";
@@ -114,6 +115,11 @@ export function findTerminals(
         continue;
       }
       if (pattern.match.type === "returnStatement") {
+        const arms = tryMatchReturnedChoice(node, pattern, func, patterns);
+        if (arms.length > 0) {
+          results.push(...arms);
+          break;
+        }
         found = tryMatchReturnStatement(node, pattern, func, patterns);
       } else if (pattern.match.type === "jsxReturn") {
         found = tryMatchJsxReturn(node, pattern);

@@ -73,6 +73,7 @@ import {
   type LoweredFunctionBody,
   lowerExpressionBodyCallbacks,
   lowerFunctionBody,
+  NO_ENDINGS,
 } from "./lowering.js";
 
 /** Paths for one terminal: each entry is one path's condition list. */
@@ -158,6 +159,7 @@ export function computePathConditions(
   func: FunctionRoot,
   terminalNodes: readonly Node[],
   barriers: DescentBarriers = NO_BARRIERS,
+  endings: ReadonlySet<Node> = NO_ENDINGS,
 ): PathConditionsResult {
   const body = func.getBody();
   if (body === undefined) {
@@ -170,7 +172,7 @@ export function computePathConditions(
 
   try {
     const lowered = Node.isBlock(body)
-      ? lowerFunctionBody(body, terminalNodes, func, barriers)
+      ? lowerFunctionBody(body, terminalNodes, func, barriers, endings)
       : loweredExpressionBody(body, terminalNodes, func, barriers);
     const result = enumerateStructuredPaths({
       statements: lowered.statements,

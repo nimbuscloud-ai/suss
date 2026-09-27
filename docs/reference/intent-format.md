@@ -148,6 +148,14 @@ receives:
   options.stream: { type: string }
 ```
 
+A command's flags are fields of the argument list it parses, written with their dashes. For a function that hands its `args` parameter to Node's `parseArgs`, `--dir` is `"args.--dir"`:
+
+```yaml
+receives:
+  args: { type: array, required: true }
+  "args.--dir": { type: string }
+```
+
 A REST boundary has a section per part of the request, because a sender fills the four parts separately:
 
 ```yaml
@@ -186,13 +194,16 @@ Each transition describes one outcome, and a document has one for every outcome 
 | `response` | no | The outcome sends an HTTP response. |
 | `returns` | no | The outcome returns a value to its caller. |
 | `throws` | no | The outcome raises an error. |
+| `exits` | no | The outcome ends the process with this exit code. |
 | `results` | no | The effects the outcome has. |
 
-A transition ends one way, so it takes at most one of `response`, `returns` and `throws`. It cannot be empty either, so it needs one of those three or a `results` list.
+A transition ends one way, so it takes at most one of `response`, `returns`, `throws` and `exits`. It cannot be empty either, so it needs one of those four or a `results` list.
 
-`response` takes a `status` between 100 and 599, required, and an optional `body`. `returns` takes an optional `body`. `throws` takes an optional `errorType`, the name of the error class.
+`response` takes a `status` between 100 and 599, required, and an optional `body`. `returns` takes an optional `body`. `throws` takes an optional `errorType`, the name of the error class. `exits` takes the code itself, a number from 0 to 255, and a bare `exits:` is refused rather than read as 0.
 
-A `body` takes `type`, plus `items` when it is an array and `properties` when it is an object. `properties:` with no `type:` above it is shorthand for an object. `required` inside a body shape is the list of property names that have to be there. The `required` on a `receives` field is a boolean, and the two are unrelated.
+The checker matches `exits: 1` against a transition that ends the process with `1`, such as `process.exit(1)`, and against a `return 1` in a function whose return becomes the process's exit code. A command usually returns its code up to one place that sets it, so the second is how most commands say it. A code the program computes, `process.exit(code)`, matches no number.
+
+A `body` takes `type`, plus `items` when it is an array and `properties` when it is an object. `properties:` with no `type:` above it is shorthand for an object, at any depth. `const:` pins a value to one literal, such as `{ const: true }` or `{ const: nothingPaired }`. `required` inside a body shape is the list of property names that have to be there. The `required` on a `receives` field is a boolean, and the two are unrelated.
 
 #### `when`
 
@@ -235,8 +246,21 @@ results:
 | `reads`, `writes`, `invokes` | one of the three | The boundary the outcome touches, written the way every report prints it and `suss ask` takes it. |
 | `fields` | no | The columns the access touches. |
 | `by` | no | What the access picks the item out by. One name or a list of them. |
+| `shape` | no | The shape of what the effect writes, in the same words a `body` takes. |
 
 A `results` line is spelled the same way as the matching `suss ask` question, here `suss ask "what writes aws.dynamodb:Invoices"`. Where a line has a `fields` list, the checker requires that the access cover every column on it.
+
+A command's output is written the same way. `writes: io:stdout` says the outcome prints to standard output, and `shape` says what it prints when it prints JSON:
+
+```yaml
+results:
+  - writes: io:stdout
+    shape:
+      properties:
+        run: { type: array, items: { properties: { kind: { const: nothingPaired } } } }
+```
+
+The checker compares `shape` with what the code serialized. When the code prints a value whose shape suss could not read, the line is unchecked rather than wrong, and a shape that disagrees is reported as `outcomeShapeMismatch`.
 
 ### `always`
 

@@ -19,8 +19,13 @@ import {
 } from "./moduleSurface.js";
 import { processSurfaceRecognizer } from "./processSurface.js";
 import { nodeSchedulingSubUnits, schedulingRecognizer } from "./scheduling.js";
+import { PROCESS_STREAMS, streamWriteRecognizer } from "./streamWrites.js";
 
-import type { PatternPack } from "@suss/extractor";
+import type {
+  ArgumentParser,
+  PatternPack,
+  TerminalPattern,
+} from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
 export {
@@ -41,11 +46,12 @@ export {
   nodeSchedulingSubUnits,
   schedulingRecognizer,
 } from "./scheduling.js";
+export { streamWriteRecognizer } from "./streamWrites.js";
 
 // The adapter's extraction cache includes this version in its key, so
 // bump it whenever the pack changes which units it finds or which
 // effects it emits.
-const PACK_VERSION = "0.2.0";
+const PACK_VERSION = "0.3.0";
 
 /**
  * The options in a `-f node=config.json` file. The CLI checks the file
@@ -70,6 +76,29 @@ export const optionsSchema = z
 
 export type NodeRuntimePackOptions = z.infer<typeof optionsSchema>;
 
+/**
+ * `process.exit(n)` ends the process wherever it is written, so every
+ * unit is read with it, and a call with no code exits 0.
+ */
+const PROCESS_EXIT: TerminalPattern = {
+  kind: "exit",
+  inEveryUnit: true,
+  match: { type: "functionCall", functionName: "process.exit" },
+  extraction: {
+    statusCode: { from: "argument", position: 0 },
+    defaultStatusCode: 0,
+  },
+};
+
+/** Node's own flag parser, imported with or without the `node:` prefix. */
+const PARSE_ARGS: ArgumentParser[] = ["node:util", "util"].map((module) => ({
+  module,
+  name: "parseArgs",
+  argument: 0,
+  argsKey: "args",
+  optionsKey: "options",
+}));
+
 export function nodeRuntimePack(
   options: NodeRuntimePackOptions = {},
 ): PatternPack {
@@ -89,10 +118,13 @@ export function nodeRuntimePack(
     protocol: "in-process",
     languages: ["typescript", "javascript"],
     discovery: [],
-    terminals: [],
+    terminals: [PROCESS_EXIT],
+    exitCodeWrites: ["process.exitCode"],
+    argumentParsers: PARSE_ARGS,
     inputMapping: { type: "positionalParams", params: [] },
-    invocationRecognizers: [schedulingRecognizer],
+    invocationRecognizers: [schedulingRecognizer, streamWriteRecognizer],
     environmentObjects: ["process.env"],
+    streamObjects: PROCESS_STREAMS,
     accessRecognizers: [
       // envRecognizer handles `process.env.X` and processRecognizer skips
       // it, so each `process.*` read produces one effect.
@@ -112,7 +144,7 @@ export const declares: PackDeclaration = {
   dependencies: [],
   shippedWith: "typescript",
   reads:
-    "Node.js runtime primitives, scheduling and the \`process\` surface, each recorded as an interaction effect. A \`process.env.X\` read, or a key of a schema parsed against \`process.env\`, becomes a config-read interaction. A module-loading global becomes a metadata-read interaction.",
+    "Node.js runtime primitives, scheduling and the \`process\` surface, each recorded as an interaction effect. A \`process.env.X\` read, or a key of a schema parsed against \`process.env\`, becomes a config-read interaction. A module-loading global becomes a metadata-read interaction. A \`console\` call or a write to \`process.stdout\` or \`process.stderr\` becomes a stream-write interaction on the stream it goes to.",
 };
 
 export default nodeRuntimePack;

@@ -29,7 +29,7 @@
       "exports": 122,
       "internal": 938,
       "consumers": 242,
-      "unfollowedCalls": 116
+      "unfollowedCalls": 118
     },
     "packages/behavioral-ir": {
       "name": "@suss/behavioral-ir",

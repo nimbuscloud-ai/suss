@@ -73,6 +73,7 @@ const RECEIVES_BLOCK: Record<
   "graphql-operation": dottedBlock,
   "runtime-config": dottedBlock,
   metric: dottedBlock,
+  io: dottedBlock,
 };
 
 /** Every path read across the summaries, once each, with whether it is required and its shape. */
@@ -196,7 +197,10 @@ function declaredField(
 ): AuthoredInputField {
   const authored = shape === null ? null : toAuthoredShape(shape);
   return {
-    ...(authored !== null && authored.type !== "unknown" ? authored : {}),
+    ...(authored !== null &&
+    !("type" in authored && authored.type === "unknown")
+      ? authored
+      : {}),
     ...(required ? { required: true } : {}),
   } as AuthoredInputField;
 }

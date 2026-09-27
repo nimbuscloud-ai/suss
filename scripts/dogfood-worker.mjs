@@ -9,6 +9,7 @@ import { parentPort, workerData } from "node:worker_threads";
 
 import { createTypeScriptAdapter } from "../packages/adapter/typescript/dist/index.js";
 import { vitestFramework } from "../packages/framework/vitest/dist/index.js";
+import { nodeRuntimePack } from "../packages/runtime/node/dist/index.js";
 
 const { sussImportTargets, coveringTestFiles } = workerData;
 
@@ -70,11 +71,24 @@ function packFor(pkg) {
   return pack;
 }
 
+/**
+ * A package that ships a `bin` is a command, and what a command prints
+ * and how it exits are what its intent documents promise. The Node pack
+ * reads both, so those packages are read with it.
+ */
+function runtimePacksFor(pkg) {
+  return pkg.packageJson.bin === undefined ? [] : [nodeRuntimePack()];
+}
+
 async function extract(pkg) {
   let report = null;
   const adapter = createTypeScriptAdapter({
     tsConfigFilePath: pkg.tsconfig,
-    frameworks: [packFor(pkg), vitestFramework({ files: coveringTestFiles })],
+    frameworks: [
+      packFor(pkg),
+      ...runtimePacksFor(pkg),
+      vitestFramework({ files: coveringTestFiles }),
+    ],
     // The dogfood counts are a gate, and reading a cache warmed by a
     // different tree can pass the wrong tree (#236). The run is rare
     // enough that extracting from scratch costs little.

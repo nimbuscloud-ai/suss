@@ -28,6 +28,7 @@ export {
   arrayLiteralOf,
   couldNameAValue,
   functionValueOf,
+  numberValueOf,
   objectLiteralOf,
   propertiesOf,
   propertyFunctionOf,
@@ -86,6 +87,10 @@ export {
 export { resolveSubject } from "./subjects.js";
 export { createTsSubUnitContext } from "./subUnitContext.js";
 export { workspaceRootFor } from "./summaryIdentity.js";
+export {
+  type WrittenPayload,
+  writtenPayloadOf,
+} from "./terminals/extract.js";
 export { findTerminals } from "./terminals/index.js";
 export {
   type ReceiverType,
@@ -134,7 +139,10 @@ export type {
 } from "./diagnostics.js";
 export type { ClientCallSite, DiscoveredUnit } from "./discovery/index.js";
 export type { TsDiscoveryContext } from "./discoveryContext.js";
-export type { TsInvocationRecognizerContext } from "./resolve/invocationEffects.js";
+export type {
+  TsAccessRecognizerContext,
+  TsInvocationRecognizerContext,
+} from "./resolve/invocationEffects.js";
 export type {
   TsJsxAttributeLocation,
   TsSubUnitContext,

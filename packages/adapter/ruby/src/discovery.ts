@@ -52,6 +52,7 @@ import {
   walkDefinitions,
 } from "./scope.js";
 import { type RbStorageOptions, storageEffects } from "./storage.js";
+import { streamWriteEffects } from "./streamWrites.js";
 import { typeShapeFromNode } from "./typeShape.js";
 
 import type {
@@ -784,6 +785,7 @@ export function bodyOfMethod(
     ...(storage === undefined
       ? []
       : storageEffects(callsUnder(method), file, storage, method)),
+    ...streamWriteEffects(method),
   ];
   return {
     bodyContent: methodHasStatements(method) ? "statements" : "empty",

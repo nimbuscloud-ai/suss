@@ -72,3 +72,12 @@ export function metricIdentityKey(
 ): MetricIdentityKey {
   return `metric:${metricSystem} ${metricType}` as MetricIdentityKey;
 }
+
+/** `io:stream`, the key a write to one of the process's streams has. */
+export type IoIdentityKey = `io:${string}` & {
+  readonly [IdentityKeyBrand]: "io";
+};
+
+export function ioIdentityKey(target: string): IoIdentityKey {
+  return `io:${target}` as IoIdentityKey;
+}

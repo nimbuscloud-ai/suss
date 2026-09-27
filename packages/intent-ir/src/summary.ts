@@ -23,6 +23,7 @@ import {
 import { oneOrMore, TEST_TITLE_SEPARATOR } from "./schema.js";
 
 import type {
+  AuthoredConstant,
   AuthoredInputField,
   AuthoredShape,
   BodyShape,
@@ -46,7 +47,12 @@ import type {
  * only what it did, which is what a queue consumer or a table writer
  * has to say instead of a status.
  */
-export type IntentOutcomeKind = "response" | "return" | "throw" | "effect";
+export type IntentOutcomeKind =
+  | "response"
+  | "return"
+  | "throw"
+  | "exit"
+  | "effect";
 
 /** One effect an outcome has, in the verbs `suss ask` asks with. */
 export interface IntentEffect {
@@ -57,6 +63,8 @@ export interface IntentEffect {
   fields: string[];
   /** What it picks the item out by. Empty when the doc states none. */
   by: string[];
+  /** The shape of what it writes, when the doc states one. */
+  shape?: TypeShape;
 }
 
 /**
@@ -93,7 +101,7 @@ export interface IntentOutcome {
   /** The same, clause by clause, for the checker to compare. */
   conditions: IntentCondition[];
   kind: IntentOutcomeKind;
-  /** Set only for `response` outcomes (REST status code). */
+  /** The REST status code of a `response` outcome, or the exit code of an `exit` one. */
   status: number | null;
   /** Response / return body shape, when declared. */
   body: TypeShape | null;
@@ -370,11 +378,14 @@ export function toIntentEffect(declared: DeclaredEffect): IntentEffect {
   const [does, names] = Object.entries(declared).find(([key]) =>
     (VERBS as readonly string[]).includes(key),
   ) as [EffectRelation, string];
+  const shape =
+    declared.shape === undefined ? null : bodyToTypeShape(declared.shape);
   return {
     does,
     names,
     fields: declared.fields ?? [],
     by: oneOrMore(declared.by),
+    ...(shape === null ? {} : { shape }),
   };
 }
 
@@ -466,12 +477,24 @@ function toOutcome(t: BoundaryIntent["transitions"][number]): IntentOutcome {
       errorType: t.throws.errorType ?? null,
     };
   }
+  if (t.exits !== undefined) {
+    return {
+      ...base,
+      kind: "exit",
+      status: t.exits,
+      body: null,
+      errorType: null,
+    };
+  }
   // The schema's refines leave one case: a transition that says only
   // what it resulted in.
   return { ...base, kind: "effect", status: null, body: null, errorType: null };
 }
 
 function bodyToTypeShape(body: BodyShape): TypeShape | null {
+  if ("const" in body) {
+    return constantShape(body.const);
+  }
   // Record shorthand: `properties:` with no `type:` field.
   if (!("type" in body)) {
     if (body.properties === undefined) {
@@ -483,6 +506,12 @@ function bodyToTypeShape(body: BodyShape): TypeShape | null {
 }
 
 function shapeToTypeShape(shape: AuthoredShape): TypeShape {
+  if ("const" in shape) {
+    return constantShape(shape.const);
+  }
+  if (!("type" in shape)) {
+    return recordShape(shape.properties);
+  }
   if (shape.type === "array") {
     return {
       type: "array",
@@ -496,6 +525,11 @@ function shapeToTypeShape(shape: AuthoredShape): TypeShape {
     return recordShape(shape.properties ?? {});
   }
   return PRIMITIVE_TYPE_SHAPES[shape.type];
+}
+
+/** A `const:` is the literal the code has to produce; null is its own shape. */
+function constantShape(value: AuthoredConstant): TypeShape {
+  return value === null ? { type: "null" } : { type: "literal", value };
 }
 
 function recordShape(authored: Record<string, AuthoredShape>): TypeShape {

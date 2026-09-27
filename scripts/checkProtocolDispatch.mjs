@@ -39,6 +39,7 @@ const PROTOCOLS = [
   "function-call",
   "metric",
   "unit-invocation",
+  "io",
 ];
 
 const PROTOCOL_SET = new Set(PROTOCOLS);

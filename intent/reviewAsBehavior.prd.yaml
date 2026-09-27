@@ -40,8 +40,8 @@ scenarios:
     coveredBy: packages/checker/src/since/changesSince.test.ts > changedBoundaries > names a store the changed path now writes, beside the route
     about: fn:@suss/checker::changedBoundaries
 
-  # Covered by a CLI test until suss reads a command's output, and then
-  # this moves to an outcome link.
+  # inspectDiff prints the JSON report through a helper, and grouping by
+  # boundary is a claim about the text. A CLI test covers it.
   - title: the reviewer reads the diff
     when: a reviewer runs suss inspect --diff over the summaries from before and after a change
     expect: the diff is grouped by boundary, and says for each one what was added, removed or changed

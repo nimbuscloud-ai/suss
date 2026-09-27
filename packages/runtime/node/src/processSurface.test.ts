@@ -144,4 +144,20 @@ describe("process-surface recognizer", () => {
     expect(configReadsOf(effects)).toHaveLength(0);
     expect(metadataReadsOf(effects)).toHaveLength(0);
   });
+
+  it("records a write of process.exitCode as the code it sets, and ignores a read of it", () => {
+    const file = makeFile(`
+      function finish(code: number) {
+        process.exitCode = 1;
+        process.exitCode = code;
+        return process.exitCode;
+      }
+    `);
+    expect(
+      recognizeAll(file).filter((effect) => effect.type === "stateChange"),
+    ).toEqual([
+      { type: "stateChange", variable: "process.exitCode", newValue: 1 },
+      { type: "stateChange", variable: "process.exitCode", newValue: "code" },
+    ]);
+  });
 });

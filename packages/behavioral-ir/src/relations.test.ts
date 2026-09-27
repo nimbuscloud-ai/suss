@@ -38,6 +38,12 @@ describe("relationsOf", () => {
     expect(relationsOf({ class: "message-receive" })).toEqual(["reads"]);
   });
 
+  it("writes what a program prints", () => {
+    expect(
+      relationsOf({ class: "stream-write", payload: null, serialized: "text" }),
+    ).toEqual(["writes"]);
+  });
+
   it("gives an invoke its own verb rather than a read and a write", () => {
     expect(relationsOf({ class: "unit-invoke" })).toEqual(["invokes"]);
   });

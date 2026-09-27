@@ -52,9 +52,13 @@ import {
   extractFileFacts,
   factKeyOf,
   importedModuleKeys,
+  NO_RUNTIME_SPELLINGS,
   type NodeTable,
   nodeId,
   packagesDeclaring,
+  type RuntimeSpellings,
+  spelledStreamPath,
+  streamObjectsIn,
 } from "./extract.js";
 import {
   LANGUAGE_RECEIVER_RETURNS,
@@ -95,6 +99,8 @@ type Question =
   | "wantedAnchor"
   | "wantedSites"
   | "wantedEnvObject"
+  | "wantedStreamObject"
+  | "wantedExitSink"
   | "wantedSubject";
 
 /**
@@ -171,6 +177,27 @@ interface EnvironmentAsked {
   passingCalls: string[];
 }
 
+/**
+ * What the packs say about the process: the streams it writes to, the
+ * calls that end it, and where its exit code is assigned. An exit call
+ * is whatever an exit terminal a pack declares matches by name.
+ */
+export function runtimeSpellingsOf(
+  packs: readonly PatternPack[],
+): RuntimeSpellings {
+  return {
+    streamObjects: packs.flatMap((pack) => pack.streamObjects ?? []),
+    exitCalls: packs.flatMap((pack) =>
+      pack.terminals.flatMap((pattern) =>
+        pattern.kind === "exit" && pattern.match.type === "functionCall"
+          ? [pattern.match.functionName]
+          : [],
+      ),
+    ),
+    exitCodeWrites: packs.flatMap((pack) => pack.exitCodeWrites ?? []),
+  };
+}
+
 export class ResolutionStore {
   private readonly db = new Database();
   private readonly table: NodeTable;
@@ -221,6 +248,9 @@ export class ResolutionStore {
   private envSiteFiles: readonly SourceFile[] | null = null;
   /** See `environmentAnswers`; null until the first env question. */
   private envAnswers: EnvironmentAnswers | null = null;
+  /** See `streamAnswers`: the declared streams each expression reaches. */
+  private streamsReached: ReadonlyMap<string, ReadonlySet<string>> | null =
+    null;
   private readonly declarations = new Map<Node, Node>();
   private readonly graph = new ModuleGraph();
   /** See `notePossibleCallers`. */
@@ -232,19 +262,21 @@ export class ResolutionStore {
   constructor(
     wrappers: TransparentWrapper[] = [],
     environmentObjects: readonly string[] = [],
+    runtime: RuntimeSpellings = NO_RUNTIME_SPELLINGS,
   ) {
-    this.table = createNodeTable(environmentObjects);
+    this.table = createNodeTable(environmentObjects, runtime);
     addPackWords(this.db, {
       unwrapsByName: [...LANGUAGE_WRAPPERS, ...wrappers],
       returnsReceiver: LANGUAGE_RECEIVER_RETURNS,
     });
   }
 
-  /** A store with the wrappers and environment objects these packs declare, as an extraction over them starts from. */
+  /** A store with the wrappers and runtime objects these packs declare, as an extraction over them starts from. */
   static forPacks(packs: readonly PatternPack[]): ResolutionStore {
     return new ResolutionStore(
       packs.flatMap((pack) => pack.transparentWrappers ?? []),
       packs.flatMap((pack) => pack.environmentObjects ?? []),
+      runtimeSpellingsOf(packs),
     );
   }
 
@@ -768,6 +800,182 @@ export class ResolutionStore {
     this.envSiteFiles = found;
     this.extractFiles(found);
     return found;
+  }
+
+  /**
+   * Which output stream a receiver is, for a writer standing at
+   * `out.write(...)`: the path a pack declared, such as
+   * `process.stdout`. Null when it is a stream and the source does not
+   * settle which one, and undefined when nothing says it is a stream.
+   *
+   * A receiver the source does not spell as a stream is looked up in
+   * one answer worked out for the whole run, so a question is never
+   * asked per call. A parameter nothing in the run passes a stream to
+   * is still a stream when it is annotated as one of `streamTypes`.
+   */
+  streamPathOf(
+    receiver: Node,
+    streamTypes: readonly string[],
+  ): string | null | undefined {
+    const spelled = spelledStreamPath(this.table, factKeyOf(receiver));
+    if (spelled !== null) {
+      return spelled;
+    }
+    const reaching = this.streamAnswers(receiver.getProject()).get(
+      nodeId(factKeyOf(receiver)),
+    );
+    if (reaching !== undefined) {
+      return reaching.size === 1 ? [...reaching][0] : null;
+    }
+    return this.annotatedAsOneOf(receiver, streamTypes) ? null : undefined;
+  }
+
+  private streamAnswers(
+    project: Project,
+  ): ReadonlyMap<string, ReadonlySet<string>> {
+    if (this.streamsReached !== null) {
+      return this.streamsReached;
+    }
+    const siteFiles = project
+      .getSourceFiles()
+      .filter(
+        (one) =>
+          !one.isInNodeModules() && streamObjectsIn(this.table, one).length > 0,
+      );
+    this.extractFiles(siteFiles);
+    this.streamsReached =
+      siteFiles.length === 0 ? new Map() : this.followStreams(siteFiles);
+    return this.streamsReached;
+  }
+
+  /**
+   * The environment's loop for the streams: ask, read the callee of every
+   * call that hands a stream on, and ask again until no new call turns up.
+   */
+  private followStreams(
+    seeds: readonly SourceFile[],
+  ): Map<string, Set<string>> {
+    const followed = new Set<string>();
+    for (;;) {
+      const { reached, passingCalls } = this.askStreams(seeds);
+      const next = passingCalls.filter((call) => !followed.has(call));
+      if (next.length === 0) {
+        return reached;
+      }
+      for (const callId of next) {
+        followed.add(callId);
+        this.readCalleeOf(callId);
+      }
+    }
+  }
+
+  private askStreams(seeds: readonly SourceFile[]): {
+    reached: Map<string, Set<string>>;
+    passingCalls: string[];
+  } {
+    const reached = new Map<string, Set<string>>();
+    const passingCalls: string[] = [];
+    try {
+      for (const [object] of this.db.facts("streamObject")) {
+        this.wantKey("wantedStreamObject", String(object));
+      }
+      this.extractDemanded(seeds);
+      this.derive();
+      for (const [value, object] of this.db.facts("wantedStreamValue")) {
+        const spelling = this.table.byId.get(String(object));
+        const path =
+          spelling === undefined
+            ? null
+            : spelledStreamPath(this.table, spelling);
+        if (path === null) {
+          continue;
+        }
+        const paths = reached.get(String(value)) ?? new Set<string>();
+        paths.add(path);
+        reached.set(String(value), paths);
+      }
+      for (const [call] of this.db.facts("wantedStreamPassingCall")) {
+        passingCalls.push(String(call));
+      }
+    } finally {
+      this.forgetQuery();
+    }
+    return { reached, passingCalls };
+  }
+
+  /**
+   * The functions whose return becomes the process's exit code, asked
+   * once from the files that end the process or set its exit code. Each
+   * value that ends up as the code seeds the walk; DESIGN.md in the
+   * resolution package says how it gets from there to a function.
+   */
+  exitCodeFunctions(project: Project): readonly Node[] {
+    const spellings = [...this.table.exitCalls, ...this.table.exitCodeWrites];
+    if (spellings.length === 0) {
+      return [];
+    }
+    const siteFiles = project.getSourceFiles().filter((one) => {
+      if (one.isInNodeModules()) {
+        return false;
+      }
+      const text = one.getFullText();
+      return spellings.some((spelling) => text.includes(spelling));
+    });
+    if (siteFiles.length === 0) {
+      return [];
+    }
+    this.extractFiles(siteFiles);
+    const found = new Map<string, Node>();
+    try {
+      for (const sink of this.exitSinks()) {
+        this.wantKey("wantedExitSink", sink);
+      }
+      this.extractDemanded(siteFiles);
+      this.derive();
+      for (const [, fn] of this.db.facts("wantedExitCodeFrom")) {
+        const node = this.table.byId.get(String(fn));
+        if (node !== undefined) {
+          found.set(String(fn), node);
+        }
+      }
+    } finally {
+      this.forgetQuery();
+    }
+    return [...found.values()];
+  }
+
+  /** The values that end up as the exit code: an exit call's first argument, or what is assigned to the code. */
+  private exitSinks(): string[] {
+    const sinks = this.db
+      .facts("exitCodeWrite")
+      .map(([value]) => String(value));
+    for (const [call] of this.db.facts("exitCall")) {
+      for (const row of this.db.lookup("callArg", 0, String(call))) {
+        if (String(row[1]) === "0") {
+          sinks.push(String(row[2]));
+        }
+      }
+    }
+    return sinks;
+  }
+
+  /** Whether the parameter a name refers to is annotated as one of these types. */
+  private annotatedAsOneOf(
+    reference: Node,
+    typeNames: readonly string[],
+  ): boolean {
+    if (typeNames.length === 0 || !Node.isIdentifier(reference)) {
+      return false;
+    }
+    this.extractFile(reference.getSourceFile());
+    return this.db.lookup("binds", 0, nodeId(reference)).some((row) => {
+      const declared = this.table.byId.get(String(row[1]));
+      if (declared === undefined || !Node.isParameterDeclaration(declared)) {
+        return false;
+      }
+      const written = declared.getTypeNode()?.getText();
+      return written !== undefined && typeNames.includes(written);
+    });
   }
 
   /**

@@ -58,6 +58,7 @@ const OUTPUT_STATUS: DispatchTable<Output, TransitionStatus> = {
   delegate: () => ({ type: "nonResponse" }),
   emit: () => ({ type: "nonResponse" }),
   void: () => ({ type: "nonResponse" }),
+  exit: () => ({ type: "nonResponse" }),
 };
 
 export function transitionStatus(transition: Transition): TransitionStatus {

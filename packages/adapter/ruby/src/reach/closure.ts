@@ -37,7 +37,9 @@ import {
   spanOf,
 } from "../ast.js";
 import { bodyOfMethod } from "../discovery.js";
+import { exitingBranches } from "../exits.js";
 import { nodeId } from "../facts/values.js";
+import { optionParserFlagReads } from "../flags.js";
 import {
   bodyCalls,
   calleeText,
@@ -832,6 +834,32 @@ export function libraryUnit(
   const { file, node, name, exportPath } = target;
   const body = bodyOfMethod(node, file, options);
   const range = rangeOf(node);
+  const parameters = positionalParameters(node);
+  const flags = optionParserFlagReads(
+    node,
+    parameters.map((parameter) => parameter.name),
+  );
+  const effects = body.effects ?? [];
+  const branches = exitingBranches(node, effects, options.facts) ?? [
+    {
+      conditions: [],
+      terminal: {
+        kind: "return",
+        statusCode: null,
+        body: null,
+        exceptionType: null,
+        message: null,
+        component: null,
+        renderTree: null,
+        delegateTarget: null,
+        emitEvent: null,
+        location: range,
+      },
+      effects,
+      location: range,
+      isDefault: true,
+    },
+  ];
   return {
     identity: {
       name,
@@ -844,30 +872,13 @@ export function libraryUnit(
       exportPath,
     },
     boundaryBinding: binding,
-    parameters: positionalParameters(node),
-    branches: [
-      {
-        conditions: [],
-        terminal: {
-          kind: "return",
-          statusCode: null,
-          body: null,
-          exceptionType: null,
-          message: null,
-          component: null,
-          renderTree: null,
-          delegateTarget: null,
-          emitEvent: null,
-          location: range,
-        },
-        effects: body.effects ?? [],
-        ...(body.extraEffects === undefined
-          ? {}
-          : { extraEffects: body.extraEffects }),
-        location: range,
-        isDefault: true,
-      },
-    ],
+    parameters,
+    branches: branches.map((branch) =>
+      body.extraEffects === undefined
+        ? branch
+        : { ...branch, extraEffects: body.extraEffects },
+    ),
+    ...(flags.length === 0 ? {} : { extraInputReads: flags }),
     bodyContent: body.bodyContent ?? "absent",
     dependencyCalls: [],
     declaredContract: null,

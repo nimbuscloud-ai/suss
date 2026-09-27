@@ -48,6 +48,7 @@ const CLAIMS: DispatchTable<Output, RenderClaim> = {
   delegate: () => ({ type: "nonRender" }),
   emit: () => ({ type: "nonRender" }),
   void: () => ({ type: "nonRender" }),
+  exit: () => ({ type: "nonRender" }),
 };
 
 export function renderClaim(transition: Transition): RenderClaim {
