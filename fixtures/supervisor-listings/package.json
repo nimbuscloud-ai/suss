@@ -1,0 +1,8 @@
+{
+  "name": "listings-app",
+  "private": true,
+  "dependencies": {
+    "@apollo/client": "^3.10.0",
+    "react": "^18.3.0"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "read": [
+    {
+      "kind": "extract",
+      "language": "ruby",
+      "packs": ["graphql-ruby=suss.graphql-ruby.json"]
+    },
+    {
+      "kind": "extract",
+      "language": "typescript",
+      "project": "tsconfig.json",
+      "packs": ["apollo-client", "react"]
+    },
+    {
+      "kind": "contract",
+      "from": "graphql",
+      "file": "schema.graphql"
+    }
+  ]
+}
