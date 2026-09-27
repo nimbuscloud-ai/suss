@@ -2337,50 +2337,63 @@ export function createTypeScriptAdapter(
   ): BehavioralSummary[] =>
     composeWrappers(summaries, config.extractorOptions ?? {});
 
+  const loadWalkedFiles = async (): Promise<void> => {
+    const tsConfigFilePath =
+      config.tsConfigFilePath ??
+      raise("lazy bootstrap requires tsConfigFilePath");
+    const tsconfig = readTsconfig(tsConfigFilePath);
+    if (noteRunFileList(loaded, tsConfigFilePath, tsconfig.fileNames)) {
+      startOver();
+      noteRunFileList(loaded, tsConfigFilePath, tsconfig.fileNames);
+    }
+    const lazy = await createLazyProject(
+      tsConfigFilePath,
+      config.frameworks,
+      tsconfig,
+    );
+    projectFileSet = lazy.projectFileSet;
+    const { deep } = loadRunFiles(project, lazy.candidatePaths, noopTimer());
+    warmExportChains(deep.deepRoots);
+    project.getTypeChecker().compilerObject;
+    programLoaded = true;
+  };
+
+  const refreshNow = (changedPaths: readonly string[]): RefreshReport => {
+    if (!ownsProject || config.tsConfigFilePath === undefined) {
+      return { changed: [], startedOver: null };
+    }
+    const outcome = refreshLoadedProject(
+      project,
+      loaded,
+      config.tsConfigFilePath,
+      changedPaths,
+    );
+    if (outcome.startOver === null) {
+      return { changed: outcome.changed, startedOver: null };
+    }
+    startOver();
+    return { changed: [], startedOver: outcome.startOver };
+  };
+
   return {
     get tsProject(): Project {
       return project;
     },
 
     refresh(changedPaths: readonly string[] = []): RefreshReport {
-      if (!ownsProject || config.tsConfigFilePath === undefined) {
-        return { changed: [], startedOver: null };
-      }
-      const outcome = refreshLoadedProject(
-        project,
-        loaded,
-        config.tsConfigFilePath,
-        changedPaths,
-      );
-      if (outcome.startOver === null) {
-        return { changed: outcome.changed, startedOver: null };
-      }
-      startOver();
-      return { changed: [], startedOver: outcome.startOver };
+      return refreshNow(changedPaths);
     },
 
     async loadProgram(): Promise<void> {
-      if (!ownsProject || programLoaded) {
+      if (!ownsProject) {
         return;
       }
-      const tsConfigFilePath =
-        config.tsConfigFilePath ??
-        raise("lazy bootstrap requires tsConfigFilePath");
-      const tsconfig = readTsconfig(tsConfigFilePath);
-      if (noteRunFileList(loaded, tsConfigFilePath, tsconfig.fileNames)) {
-        startOver();
-        noteRunFileList(loaded, tsConfigFilePath, tsconfig.fileNames);
+      if (!programLoaded) {
+        await loadWalkedFiles();
       }
-      const lazy = await createLazyProject(
-        tsConfigFilePath,
-        config.frameworks,
-        tsconfig,
-      );
-      projectFileSet = lazy.projectFileSet;
-      const { deep } = loadRunFiles(project, lazy.candidatePaths, noopTimer());
-      warmExportChains(deep.deepRoots);
-      project.getTypeChecker().compilerObject;
-      programLoaded = true;
+      // The first refresh reads every loaded file to compare it with its
+      // parse, which this keeps off the first edit.
+      refreshNow([]);
     },
 
     async extractFromFiles(filePaths: string[]): Promise<BehavioralSummary[]> {
