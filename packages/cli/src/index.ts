@@ -2,6 +2,13 @@
 // point, so importing this module runs nothing.
 
 export {
+  type CallFacts,
+  type FunctionKey,
+  functionOf,
+  readCallFacts,
+} from "@suss/checker";
+
+export {
   type AskOptions,
   answerQuestion,
   ask,

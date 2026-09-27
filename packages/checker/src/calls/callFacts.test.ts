@@ -18,7 +18,11 @@ function unit(
 ): BehavioralSummary {
   return {
     kind: "library",
-    location: { file, range: { start: line, end: line + 10 } },
+    location: {
+      file,
+      range: { start: line, end: line + 10 },
+      exportName: name,
+    },
     identity: {
       name,
       exportPath: [name],
