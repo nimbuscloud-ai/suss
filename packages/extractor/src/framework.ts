@@ -1224,6 +1224,16 @@ export interface PatternPack {
    */
   generatedModuleMarkers?: string[];
   /**
+   * The directories this library's code generator writes to, as the
+   * project's own configuration says, for a generator that leaves no
+   * marker file. Given the directory of a file that imports by relative
+   * path, it returns the output directories the configuration governing
+   * that file gives. An import into one counts as the gated package, the
+   * same as a directory with a marker in it, even before the generator
+   * has run.
+   */
+  generatedModuleDirs?: (fromDir: string) => readonly string[];
+  /**
    * Functions the project itself wrote in front of this library, read
    * once across the whole project before any file is walked. What the
    * pack makes of them joins its own patterns and recognizers for the

@@ -144,4 +144,26 @@ describe("what importedNamesOf resolves per import form", () => {
       store.importOriginsOf(receiver, [PACKAGE]).map((one) => one.path),
     ).toEqual([["createClient"]]);
   });
+
+  it("a relative import of a file not written yet, asked about by its directory", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/src/consumer.ts",
+      'import { Client } from "./generated/client";\nconst client = new Client();\nexport const run = () => client.read();\n',
+    );
+    const receiver = file
+      .getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)
+      .at(-1)
+      ?.getExpression();
+    if (receiver === undefined) {
+      throw new Error("fixture shape unexpected");
+    }
+    const store = new ResolutionStore();
+    expect(
+      store
+        .importOriginsOf(receiver, ["/src/generated"])
+        .map((one) => one.path),
+    ).toEqual([["Client"]]);
+    expect(store.importOriginsOf(receiver, ["/src/other"])).toEqual([]);
+  });
 });

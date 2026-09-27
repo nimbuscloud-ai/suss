@@ -19,10 +19,7 @@ import path from "node:path";
 
 import { type Project, type SourceFile, ts } from "ts-morph";
 
-import {
-  collectGeneratedMarkers,
-  GeneratedModules,
-} from "../facts/generatedModules.js";
+import { generatedModulesOf } from "../facts/generatedModules.js";
 import { namesAnyPackage } from "../facts/moduleGraph.js";
 import {
   collectPackGates,
@@ -467,7 +464,7 @@ async function selectCandidateFiles(
   }
   const gates = collectAllGates(packs);
   const marks = collectAllMarks(packs);
-  const generated = new GeneratedModules(collectGeneratedMarkers(packs));
+  const generated = generatedModulesOf(packs);
   if (gates.length === 0 && marks.length === 0 && !generated.declared) {
     return [];
   }

@@ -310,7 +310,10 @@ The callee reaches the import through `comesFrom`, which follows the
 reached it. The TypeScript adapter writes an import once under each
 spelling: the resolved file, the specifier as written, its package part
 (`pkg/esm` is `pkg`), and every package the imported declaration lives
-in, which is what a project barrel hides. A declaration a library's own
+in, which is what a project barrel hides. A relative import that
+resolves to no file is recorded under the absolute path it points at as
+well, so a pack can ask about a directory a code generator has not
+written yet. A declaration a library's own
 `.d.ts` file makes at the top of a module or namespace is recorded as
 that library's name too. That covers a member of a namespace a barrel
 re-exports, a member of a default import of a module written with
