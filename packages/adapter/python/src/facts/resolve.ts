@@ -54,6 +54,14 @@ export function resolveCalls(db: Database, callKeys: readonly string[]): void {
 }
 
 /**
+ * Asks the rules only what these keys are written as, which leaves out
+ * the walks behind every other answer `resolveCalls` would derive.
+ */
+function resolveWritten(db: Database, keys: readonly string[]): void {
+  askResolution(db, keys, "wantedWritten", programFor(db));
+}
+
+/**
  * Asks which parameters end up as the variable name read off each of these
  * environment objects. A project has a handful of environment objects and
  * thousands of parameters, so the question is keyed on the objects, and
@@ -95,14 +103,14 @@ export function constructionSites(db: Database, classKey: string): string[] {
 
 /** The single expression a value was written as, asking the rules about `key` first. */
 export function writtenValueOf(db: Database, key: string): string | null {
-  resolveCalls(db, [key]);
-  return sharedWrittenValueOf(db, key, (keys) => resolveCalls(db, keys));
+  resolveWritten(db, [key]);
+  return sharedWrittenValueOf(db, key, (keys) => resolveWritten(db, keys));
 }
 
 /** Every expression a value was written as, for a caller that handles more than one. */
 export function writtenValuesOf(db: Database, key: string): string[] {
-  resolveCalls(db, [key]);
-  return sharedWrittenValuesOf(db, key, (keys) => resolveCalls(db, keys));
+  resolveWritten(db, [key]);
+  return sharedWrittenValuesOf(db, key, (keys) => resolveWritten(db, keys));
 }
 
 /**
@@ -118,8 +126,8 @@ export function settleWrittenValues(
   if (keys.length === 0) {
     return;
   }
-  resolveCalls(db, keys);
-  writtenValuesByKey(db, keys, (behind) => resolveCalls(db, behind));
+  resolveWritten(db, keys);
+  writtenValuesByKey(db, keys, (behind) => resolveWritten(db, behind));
 }
 
 /** Where a name came from, for one construction: the module and the name that module exports it under. */

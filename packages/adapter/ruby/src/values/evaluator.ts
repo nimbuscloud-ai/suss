@@ -116,6 +116,9 @@ export function askWrittenValues(
     return;
   }
   const asked = [...keys];
+  // This asks `wanted` rather than `wantedWritten` because the reach
+  // closure and the storage recognizer later ask about many of the same
+  // keys, and `writtenValueOf` has to ask the same way to find them settled.
   resolveValues(db, asked);
   // A key the rules settle on a call has to be asked about again. Asking
   // for the whole batch keeps that second round to one question too.
