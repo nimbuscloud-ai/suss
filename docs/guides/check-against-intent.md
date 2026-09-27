@@ -34,7 +34,7 @@ suss infer intent --from summaries --out intent/
 Drafted 1 boundary intent doc in intent, each with purpose and audience left blank. Fill them in, rename the outcome ids to what your team calls them, then set source to "inferred, curated". Until then `suss check --intent` says which files are still waiting.
 
 No document for 3 boundaries:
-  - function-call:reachable: it has no key the checker could pair intent against: a function-call boundary needs package + exportPath
+  - function-call:reachable: it has no key the checker could pair intent against: a function-call boundary needs package + exportPath, or module + exportName where the module is one suss.json lists
   - runtime-config:GetOrderFunction: boundary intent declares rest, function-call, message-bus, storage and unit-invocation boundaries, and this one is runtime-config
   - aws.dynamodb:OrdersTable: it has no key the checker could pair intent against: a store has no key at all: write it as `- writes: <store>` on an outcome of the boundary that touches it instead
 ```

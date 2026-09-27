@@ -144,7 +144,7 @@ $ suss infer intent --from summaries/code.json --out intent/
 Drafted 4 boundary intent docs in /home/dana/shop/intent, each with purpose and audience left blank. Fill them in, rename the outcome ids to what your team calls them, then set source to "inferred, curated". Until then `suss check --intent` says which files are still waiting.
 
 No document for 1 boundary:
-  - function-call:reachable: it has no key the checker could pair intent against: a function-call boundary needs package + exportPath
+  - function-call:reachable: it has no key the checker could pair intent against: a function-call boundary needs package + exportPath, or module + exportName where the module is one suss.json lists
 ```
 
 A store is reported too, for a different reason. Storage has no identity key, so the checker cannot pair a document written against one. The report tells you what to do instead: write `- writes: aws.dynamodb:Invoices` on an outcome of the boundary that touches the store.
