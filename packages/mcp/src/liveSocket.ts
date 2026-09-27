@@ -170,6 +170,7 @@ export class LiveSocket {
     const asked = JSON.parse(line) as LiveRequest;
     if (asked.kind === "read") {
       const report = await this.project.buildNow();
+      clearEarlierReads(asked.outDir);
       copyReads(this.project.summaryDir, asked.outDir);
       return { report };
     }
