@@ -15,7 +15,7 @@
 
 import { z } from "zod";
 
-import { EffectOutcomeSchema } from "./schema.js";
+import { EffectLineSchema } from "./schema.js";
 import { toIntentEffect } from "./summary.js";
 
 import type { DeclaredEffect } from "./schema.js";
@@ -32,7 +32,7 @@ const OutcomeWordSchema = z.union([
   z.strictObject({ throws: z.string().min(1) }),
 ]);
 
-const SubjectSchema = z.union([z.string().min(1), EffectOutcomeSchema]);
+const SubjectSchema = z.union([z.string().min(1), EffectLineSchema]);
 
 const ENTRY_FIELDS = {
   adds: SubjectSchema.optional(),

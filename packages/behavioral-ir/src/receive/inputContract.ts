@@ -453,6 +453,37 @@ function restSpelling(summary: BehavioralSummary): InputSpelling {
   };
 }
 
+/**
+ * A path off the request object outside its four sections, such as the
+ * claims middleware put on it, spelled as the path off the request.
+ * The request is what every section's path starts with.
+ */
+function offTheRequest(
+  summary: BehavioralSummary,
+  binding: BoundaryBinding,
+  ref: ValueRef,
+): string[] | null {
+  const spelling =
+    binding.semantics.name === "rest"
+      ? readRequestSpellingMetadata(summary)
+      : undefined;
+  if (spelling === undefined) {
+    return null;
+  }
+  const sections = sectionsOf(spelling);
+  const path = readPathOf(summary, ref, EVERY_PARAMETER);
+  const root = sections[0]?.[1].path.slice(0, -1) ?? [];
+  const shared = sections.every(([, how]) =>
+    startsWith(how.path.slice(0, -1), root),
+  );
+  if (path === null || root.length === 0 || !shared) {
+    return null;
+  }
+  return startsWith(path, root) && path.length > root.length
+    ? path.slice(root.length)
+    : null;
+}
+
 type BoundaryInputSpellings = {
   [K in Semantics["name"]]: (
     summary: BehavioralSummary,
@@ -516,6 +547,23 @@ export function boundaryInputPathOf(
   ref: ValueRef,
 ): string[] | null {
   return spellingFor(summary, binding).pathOf(ref);
+}
+
+/**
+ * Where a value came from, spelled the way a `from` source spells it:
+ * a path in `receives` terms, or for a request, a path off the request
+ * outside its sections. Null when the reference is not one this rule
+ * follows.
+ */
+export function boundarySourcePathOf(
+  summary: BehavioralSummary,
+  binding: BoundaryBinding,
+  ref: ValueRef,
+): string[] | null {
+  return (
+    boundaryInputPathOf(summary, binding, ref) ??
+    offTheRequest(summary, binding, ref)
+  );
 }
 
 /**

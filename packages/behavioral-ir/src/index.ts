@@ -584,6 +584,7 @@ export {
 export {
   boundaryInputPathOf,
   boundaryInputReads,
+  boundarySourcePathOf,
   type CarriesPayload,
   type ComparisonResult,
   carriesPayloadFor,

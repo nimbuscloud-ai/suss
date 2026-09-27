@@ -103,6 +103,17 @@ always:
 
 It is a key of its own because the claim is about every transition. Writing the same line into each outcome's `results` would still pass when one of two branches producing an outcome skipped the write. The schema checks each `except` id against the transition ids, so a typo stops the load. The change list reuses the `results` schema for its effect entries and does not take `except`, since a change list describes one change and `always` describes the boundary.
 
+A `results` line can say where the value of a column comes from, as a map from the column to a source:
+
+```yaml
+results:
+  - reads: postgresql:orders
+    by: [tenant_id]
+    from: { tenant_id: input.headers.x-tenant-id }
+```
+
+The map is written beside `fields` and `by` rather than inside them, so those stay lists and the rest of the format reads them unchanged. A source is `input.` and a path, written the way `receives` writes one, and the summary keeps it as the path alone. The schema refuses a column the line lists under neither `fields` nor `by`, and a source written some other way. The path is not checked against `receives`, since a claim a middleware puts on the request is a source no request section lists. `always` and the change list take the plain effect schema without `from`, until something checks a source there.
+
 ## What a boundary receives
 
 A `receives` block lists the fields of the value the boundary is handed. A function-call boundary writes its arguments by parameter name, and a dot reaches inside one:

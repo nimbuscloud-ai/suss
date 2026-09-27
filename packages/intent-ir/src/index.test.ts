@@ -1443,3 +1443,94 @@ describe("always: an effect on every outcome", () => {
     expect(IntentFindingKindSchema.options).toContain("pathWithoutEffect");
   });
 });
+
+describe("from: where a column's value comes from", () => {
+  const withResults = (results: unknown[]) =>
+    IntentDocSchema.safeParse({
+      ...restIntent,
+      transitions: [
+        {
+          id: "found",
+          when: "user exists",
+          response: { status: 200 },
+          results,
+        },
+      ],
+    });
+
+  it("reads each source as a path off the input, keyed by its column", () => {
+    const parsed = withResults([
+      {
+        reads: "postgresql:orders",
+        by: ["tenant_id"],
+        from: { tenant_id: "input.headers.x-tenant-id" },
+      },
+    ]);
+    expect(parsed.success).toBe(true);
+    const summary = intentDocToSummary(
+      parsed.data as never,
+    ) as BoundaryIntentSummary;
+    expect(summary.outcomes[0]?.effects).toEqual([
+      {
+        does: "reads",
+        names: "postgresql:orders",
+        fields: [],
+        by: ["tenant_id"],
+        from: [{ column: "tenant_id", path: ["headers", "x-tenant-id"] }],
+      },
+    ]);
+  });
+
+  it("stops on a column the line lists under neither fields nor by", () => {
+    const parsed = withResults([
+      {
+        writes: "postgresql:users",
+        fields: ["email"],
+        from: { name: "input.body.name" },
+      },
+    ]);
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.issues[0].path).toEqual([
+      "transitions",
+      0,
+      "results",
+      0,
+      "from",
+      "name",
+    ]);
+    expect(parsed.error?.issues[0].message).toContain(
+      "lists name under neither fields nor by",
+    );
+  });
+
+  it("stops on a source not written as a path off the input", () => {
+    const parsed = withResults([
+      {
+        writes: "postgresql:users",
+        fields: ["email"],
+        from: { email: "body.email" },
+      },
+    ]);
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.issues[0].message).toContain("input.<path>");
+  });
+
+  it("is not a key an always line takes", () => {
+    expect(
+      IntentDocSchema.safeParse({
+        ...restIntent,
+        always: [
+          {
+            writes: "postgresql:audit_log",
+            fields: ["actor_id"],
+            from: { actor_id: "input.headers.x-actor-id" },
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("has a finding kind for a value taken from somewhere else", () => {
+    expect(IntentFindingKindSchema.options).toContain("valueFromElsewhere");
+  });
+});

@@ -404,7 +404,33 @@ export type DeclaredEffect = Partial<Record<EffectRelation, string>> & {
   by?: string | string[];
   /** The shape of what it writes, such as the report a command prints. */
   shape?: BodyShape;
+  /**
+   * Where the value of a column under `fields` or `by` comes from, by
+   * column: `{ tenant_id: input.headers.x-tenant-id }`. Only a `results`
+   * line takes it.
+   */
+  from?: Record<string, string>;
 };
+
+/** What a source written in `from` starts with. */
+export const INPUT_SOURCE_PREFIX = "input.";
+
+/**
+ * A column's source: a path off the value the boundary is handed,
+ * written after `input.` the way `receives` writes it, such as
+ * `input.headers.x-tenant-id` or `input.body.email`.
+ */
+const SourcesSchema = z
+  .record(
+    z.string().min(1),
+    z.string().regex(/^input\.[^.]+(\.[^.]+)*$/, {
+      message:
+        "a source is written input.<path>, such as input.headers.x-tenant-id or input.body.email",
+    }),
+  )
+  .describe(
+    "Where the value of a column the line lists under fields or by comes from, keyed by the column: input.<path>, spelled the way receives spells it.",
+  );
 
 /** One field or a list of them, so a single field can be written inline. */
 const ONE_OR_MORE = z.union([
@@ -431,7 +457,13 @@ function effectByVerb<T extends DeclaredEffect>(
   ) as unknown as [z.ZodType<T>, ...Array<z.ZodType<T>>];
 }
 
-export const EffectOutcomeSchema = z.union(effectByVerb<DeclaredEffect>());
+/** An effect as a change list states one, which says nothing of sources. */
+export const EffectLineSchema = z.union(effectByVerb<DeclaredEffect>());
+
+/** A `results` line, which can also say where a column's value comes from. */
+export const EffectOutcomeSchema = z.union(
+  effectByVerb<DeclaredEffect>({ from: SourcesSchema.optional() }),
+);
 
 /** One `always` line: an effect, and the outcomes that do not have to have it. */
 export type DeclaredAlways = DeclaredEffect & { except?: string[] };
@@ -620,7 +652,28 @@ const BoundaryIntentSchema = BoundaryIntentFields.superRefine((doc, ctx) => {
       }
     }
   }
+  for (const [at, transition] of doc.transitions.entries()) {
+    for (const [line, effect] of (transition.results ?? []).entries()) {
+      for (const column of Object.keys(effect.from ?? {})) {
+        if (!listsColumn(effect, column)) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["transitions", at, "results", line, "from", column],
+            message: `from says where ${column} comes from, and the line lists ${column} under neither fields nor by`,
+          });
+        }
+      }
+    }
+  }
 });
+
+/** Whether a line lists a column under `fields` or `by`. */
+function listsColumn(effect: DeclaredEffect, column: string): boolean {
+  return (
+    (effect.fields ?? []).includes(column) ||
+    oneOrMore(effect.by).includes(column)
+  );
+}
 
 /**
  * Why an `except` id cannot exempt anything, or null when it can. An

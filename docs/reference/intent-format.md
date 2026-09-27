@@ -247,8 +247,22 @@ results:
 | `fields` | no | The columns the access touches. |
 | `by` | no | What the access picks the item out by. One name or a list of them. |
 | `shape` | no | The shape of what the effect writes, in the same words a `body` takes. |
+| `from` | no | Where the value of a column under `fields` or `by` comes from, by column. |
 
 A `results` line is spelled the same way as the matching `suss ask` question, here `suss ask "what writes aws.dynamodb:Invoices"`. Where a line has a `fields` list, the checker requires that the access cover every column on it.
+
+`from` says where a column's value comes from. Each source is `input.` followed by a path off the value the boundary is handed, written the way `receives` writes it: `input.headers.x-tenant-id`, `input.body.email`, `input.params.id`, and a parameter's name on a function call. A path off the request outside its four parts, such as the claims a middleware puts on it, is written as the path off the request: `input.auth.tenantId`.
+
+```yaml
+results:
+  - reads: postgresql:orders
+    by: [tenant_id]
+    from: { tenant_id: input.auth.tenantId }
+```
+
+The line is satisfied when the code takes the column from that source. When it takes it from somewhere else suss can name, an input path or a literal, the checker reports [`valueFromElsewhere`](/reference/findings#valuefromelsewhere) with the source it found. When the walk from the value stopped at something it cannot follow, such as a call into a library no pack describes, the claim is listed under `unchecked` with where the walk stopped. suss stops loading a document whose `from` gives a column the line does not list, or a source not written as `input.<path>`. A change list and an `always` line do not take `from`.
+
+A route's source reads the same in every language when the pack says which part of the request each read is. The Express, Fastify, Hono and Lambda packs do. A Python or Ruby route records where each value came from, but its packs do not say which part of the request a read is, so a `from` on one is unchecked for now. A Python or Ruby function-call boundary is checked, since its sources are its parameters.
 
 A command's output is written the same way. `writes: io:stdout` says the outcome prints to standard output, and `shape` says what it prints when it prints JSON:
 
