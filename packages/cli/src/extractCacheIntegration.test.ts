@@ -64,8 +64,79 @@ function wrappedRouteProject(): void {
   );
 }
 
+/**
+ * Two routes whose types the checker numbers differently depending on
+ * which file it reads first. The audit file, read first on a cold run,
+ * creates two of the order's status literals before the order file does.
+ * A run that re-reads only the order file creates them in the order file's
+ * order. The error class has a property keyed by a symbol, whose checker
+ * name ends in a number that also moves with how much has been read.
+ */
+function typedRoutesProject(): void {
+  write("package.json", JSON.stringify({ name: "orders-api" }));
+  write(
+    "tsconfig.json",
+    JSON.stringify({
+      compilerOptions: { strict: true, target: "es2022", module: "esnext" },
+      include: ["src"],
+    }),
+  );
+  write(
+    "src/audit.ts",
+    [
+      'import express from "express";',
+      "",
+      'export type AuditEntry = { outcome: "refunded" | "closed"; at: number };',
+      "",
+      "declare function lastAudit(): AuditEntry;",
+      "",
+      "const app = express();",
+      'app.get("/audit", (req: any, res: any) => {',
+      "  res.status(200).json(lastAudit());",
+      "});",
+    ].join("\n"),
+  );
+  write("src/orders.ts", ordersFile(""));
+}
+
+function ordersFile(trailer: string): string {
+  return [
+    'import express from "express";',
+    "",
+    "interface Order {",
+    "  id: string;",
+    '  status: "open" | "closed" | "refunded";',
+    "}",
+    "",
+    'type OrderView = Pick<Order, "status" | "id">;',
+    "",
+    "class OrderError {",
+    "  constructor(public code: string) {}",
+    "  get [Symbol.toStringTag]() {",
+    '    return "OrderError";',
+    "  }",
+    "}",
+    "",
+    "declare function loadOrder(id: string): Order;",
+    "declare function viewOf(order: Order): OrderView;",
+    "declare function failure(code: string): OrderError;",
+    "",
+    "const app = express();",
+    'app.get("/orders/:id", (req: any, res: any) => {',
+    "  if (!req.params.id) {",
+    '    res.status(400).json(failure("missing"));',
+    "    return;",
+    "  }",
+    "  res.status(200).json(viewOf(loadOrder(req.params.id)));",
+    `});${trailer}`,
+  ].join("\n");
+}
+
 /** Runs one extract and returns what it wrote and what it said about the cache. */
-function extract(label: string): { written: string; cacheLine: string } {
+function extract(
+  label: string,
+  options: { noCache?: boolean } = {},
+): { written: string; cacheLine: string } {
   const out = path.join(tmpDir, "out", `${label}.json`);
   const result = spawnSync(
     process.execPath,
@@ -77,6 +148,7 @@ function extract(label: string): { written: string; cacheLine: string } {
       "-f",
       "express",
       "--timing",
+      ...(options.noCache === true ? ["--no-cache"] : []),
       "-o",
       out,
     ],
@@ -128,5 +200,28 @@ describe("the extraction cache through the built binary", () => {
 
     expect(touched.cacheLine).toContain("cache: hit");
     expect(touched.written).toBe(cold.written);
+  });
+
+  it("writes the same bytes on two runs without the cache", () => {
+    typedRoutesProject();
+
+    const first = extract("first", { noCache: true });
+    const second = extract("second", { noCache: true });
+
+    expect(second.written).toBe(first.written);
+    expect(first.written).toContain('"[Symbol.toStringTag]"');
+    expect(first.written).not.toContain("__@");
+  });
+
+  it("writes what a run without the cache writes after re-reading one changed file", () => {
+    typedRoutesProject();
+
+    extract("cold");
+    write("src/orders.ts", ordersFile(" // edited"));
+    const warm = extract("warm");
+    const fresh = extract("fresh", { noCache: true });
+
+    expect(warm.cacheLine).toContain("cache: partial");
+    expect(warm.written).toBe(fresh.written);
   });
 });
