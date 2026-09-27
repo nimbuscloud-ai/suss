@@ -6,11 +6,12 @@
  * run from a new adapter over the same files.
  */
 
+import nodeFs from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
 import { createTypeScriptAdapter } from "../adapter.js";
 
@@ -186,5 +187,23 @@ describe("an adapter kept between runs", () => {
     expect(comparable(await kept.extractAll())).toEqual(
       comparable(await freshRun(dir)),
     );
+  });
+
+  it("compares the loaded files with their parse ahead of the first edit", async () => {
+    const dir = await makeProject();
+    const kept = adapterFor(dir);
+    await kept.extractAll();
+    await kept.loadProgram();
+
+    const reads = vi.spyOn(nodeFs, "readFileSync");
+    try {
+      kept.refresh();
+      const sourceReads = reads.mock.calls.filter(([file]) =>
+        String(file).startsWith(path.join(dir, "src")),
+      );
+      expect(sourceReads).toEqual([]);
+    } finally {
+      reads.mockRestore();
+    }
   });
 });
