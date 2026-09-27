@@ -232,9 +232,43 @@ describe("python value facts", () => {
     expect(db.size("binds")).toBe(0);
   });
 
+  it("states both sides of a conditional as the branches its value picks between", async () => {
+    const source = "client = injected if ready else fallback\n";
+    const db = await factsFor(source);
+    expect(rows(db, "fallbackBranch").map((row) => row[1])).toEqual([
+      "#injected",
+      "#fallback",
+    ]);
+  });
+
+  it("states what parentheses wrap as the one branch of their value", async () => {
+    const source = "client = (injected)\n";
+    const db = await factsFor(source);
+    expect(
+      rows(db, "fallbackBranch").map((row) => [
+        textAt(source, row[0] ?? ""),
+        row[1],
+      ]),
+    ).toEqual([["(injected)", "#injected"]]);
+  });
+
+  it("records what a function yields, and nothing for a yield from", async () => {
+    const db = await factsFor(
+      "def items(source):\n    yield source\n    yield from source\n",
+    );
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "yieldsValue")).toEqual([
+      [funcKey ?? "", `${funcKey}#source`],
+    ]);
+  });
+
   it("treats a lambda as a function of its own", async () => {
     const db = await factsFor("pick = lambda item: item\n");
     expect(db.size("func")).toBe(1);
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "returnsValue")).toEqual([
+      [funcKey ?? "", `${funcKey}#item`],
+    ]);
   });
   it("keys a parameter under its own function, so two functions can both take a loader", async () => {
     const db = await factsFor(

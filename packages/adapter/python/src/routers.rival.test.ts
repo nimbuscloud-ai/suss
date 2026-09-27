@@ -157,3 +157,79 @@ describe("how far a loop this reading cannot enumerate reaches", () => {
     );
   });
 });
+
+function pathsOf(
+  summaries: Awaited<ReturnType<typeof summariesOf>>,
+  name: string,
+): (string | null | undefined)[] {
+  return summaries
+    .filter((s) => s.identity.name === name)
+    .map((s) => {
+      const semantics = s.identity.boundaryBinding?.semantics;
+      return semantics?.name === "rest" ? semantics.path : undefined;
+    });
+}
+
+/** A second app built in a function, mounting the served app's router under a prefix of its own. */
+function itemsModule(testAppBody: string[]): string {
+  return [
+    "from fastapi import APIRouter, FastAPI",
+    "",
+    "app = FastAPI()",
+    'router = APIRouter(prefix="/items")',
+    "",
+    "",
+    '@router.get("/{item_id}")',
+    "def read_item(item_id: int):",
+    "    pass",
+    "",
+    "",
+    "app.include_router(router)",
+    "",
+    "",
+    "def build_test_app():",
+    "    test_app = FastAPI()",
+    '    test_app.include_router(router, prefix="/t")',
+    ...testAppBody,
+    "",
+  ].join("\n");
+}
+
+describe("a mount on an app that never leaves the function that built it", () => {
+  it("claims only the path the served app mounts", async () => {
+    const summaries = await summariesOf({ "main.py": itemsModule([]) });
+    expect(pathsOf(summaries, "read_item")).toEqual(["/items/{item_id}"]);
+  });
+
+  it("keeps the mount when the function returns the app", async () => {
+    const summaries = await summariesOf({
+      "main.py": itemsModule(["    return test_app"]),
+    });
+    expect(pathsOf(summaries, "read_item").sort()).toEqual([
+      "/items/{item_id}",
+      "/t/items/{item_id}",
+    ]);
+  });
+
+  it.each([
+    ["hands the app to a call", "    serve(test_app)"],
+    ["yields the app", "    yield test_app"],
+    ["returns the app in parentheses", "    return (test_app)"],
+    [
+      "returns the app from a conditional",
+      "    return test_app if ready else None",
+    ],
+    ["returns a lambda that gives the app back", "    return lambda: test_app"],
+    [
+      "writes the app to a second name",
+      "    served = test_app\n    return served",
+    ],
+    ["returns a property of the app", "    return test_app.router"],
+  ])("keeps the mount when the function %s", async (_, body) => {
+    const summaries = await summariesOf({ "main.py": itemsModule([body]) });
+    expect(pathsOf(summaries, "read_item").sort()).toEqual([
+      "/items/{item_id}",
+      "/t/items/{item_id}",
+    ]);
+  });
+});
