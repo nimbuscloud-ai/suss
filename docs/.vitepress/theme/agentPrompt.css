@@ -1,27 +1,89 @@
 /*
- * A prompt for a coding agent, shown as a code block to copy. It is prose,
- * so its lines wrap instead of scrolling sideways, and its copy button
- * stays in view instead of waiting for a hover, above the text.
+ * Setup prompts for coding agents. The tab bar gets its look from
+ * VitePress's code group styles, and each panel under it takes the place
+ * and background of the code block a code group would show there.
  */
 
+.agent-prompts {
+  margin: 16px 0;
+}
+
+.agent-prompts .tabs input:focus-visible + label {
+  outline: 2px solid var(--vp-c-brand-1);
+  outline-offset: -2px;
+}
+
+.agent-prompt {
+  margin: 0 -24px;
+  padding: 16px 24px;
+  overflow: hidden;
+  background-color: var(--vp-code-block-bg);
+}
+
+@media (min-width: 640px) {
+  .agent-prompt {
+    margin: 0;
+    border-radius: 0 0 8px 8px;
+  }
+}
+
+.agent-prompt-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.vp-doc .agent-prompt-head p {
+  flex: 1 1 16rem;
+  margin: 0;
+}
+
+.agent-prompt-head .copy-button {
+  flex: none;
+}
+
+.vp-doc .agent-prompt summary {
+  width: fit-content;
+  margin: 12px 0 0;
+  font-weight: 500;
+  color: var(--vp-c-brand-1);
+  cursor: pointer;
+  user-select: none;
+}
+
+.agent-prompt summary:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--vp-c-brand-1);
+  outline-offset: 2px;
+}
+
+.agent-prompt details[open] .agent-prompt-show,
+.agent-prompt details:not([open]) .agent-prompt-hide {
+  display: none;
+}
+
+/* The prompt runs to the panel's edges, so it reads as part of the panel. */
+.vp-doc .agent-prompt div[class*="language-"] {
+  margin: 12px -24px -16px;
+  border-top: 1px solid var(--vp-code-tab-divider);
+  border-radius: 0;
+}
+
+/* The prompt is prose, so its lines wrap instead of scrolling sideways. */
 .agent-prompt div[class*="language-"] pre,
 .agent-prompt div[class*="language-"] code {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
-.agent-prompt div[class*="language-"] pre {
-  padding-top: 60px;
-}
-
 .agent-prompt div[class*="language-"] code {
   width: auto;
 }
 
-.agent-prompt div[class*="language-"] > button.copy {
-  opacity: 1;
-}
-
+/* The Copy prompt button above the prompt does what these would. */
+.agent-prompt div[class*="language-"] > button.copy,
 .agent-prompt div[class*="language-"] > span.lang {
   display: none;
 }

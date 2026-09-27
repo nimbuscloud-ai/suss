@@ -1,0 +1,20 @@
+.copy-button {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  padding: 2px 10px;
+  font-size: 13px;
+  color: var(--vp-c-text-2);
+  transition:
+    color 0.25s,
+    border-color 0.25s;
+}
+
+.copy-button:hover {
+  border-color: var(--vp-c-brand-1);
+  color: var(--vp-c-text-1);
+}
+
+.copy-button:focus-visible {
+  outline: 2px solid var(--vp-c-brand-1);
+  outline-offset: 2px;
+}

@@ -6,15 +6,9 @@
  */
 
 import { useData, withBase } from "vitepress";
-import { defineComponent, h, ref } from "vue";
+import { defineComponent, h } from "vue";
 
-type CopyState = "idle" | "copied" | "failed";
-
-const LABELS: Record<CopyState, string> = {
-  idle: "Copy page as Markdown",
-  copied: "Copied",
-  failed: "Could not copy the page",
-};
+import { CopyButton } from "./copyButton.js";
 
 async function markdownAt(relativePath: string): Promise<Blob> {
   const response = await fetch(withBase(`/${relativePath}`));
@@ -42,23 +36,18 @@ export const CopyPageMarkdown = defineComponent({
   name: "CopyPageMarkdown",
   setup() {
     const { page } = useData();
-    const state = ref<CopyState>("idle");
 
-    async function copy(): Promise<void> {
-      try {
-        await writeClipboard(markdownAt(page.value.relativePath));
-        state.value = "copied";
-      } catch {
-        state.value = "failed";
-      }
-      setTimeout(() => {
-        state.value = "idle";
-      }, 2000);
+    function copy(): Promise<void> {
+      return writeClipboard(markdownAt(page.value.relativePath));
     }
 
     return () =>
       h("div", { class: "copy-page-markdown" }, [
-        h("button", { type: "button", onClick: copy }, LABELS[state.value]),
+        h(CopyButton, {
+          label: "Copy page as Markdown",
+          failedLabel: "Could not copy the page",
+          copy,
+        }),
       ]);
   },
 });
