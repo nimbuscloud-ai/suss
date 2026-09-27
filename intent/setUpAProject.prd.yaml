@@ -26,11 +26,13 @@ scenarios:
       - packs-activerecord.reads-the-project
       - packs-graphql-ruby.reads-the-project
 
-  # No link: what init writes and prints is CLI output, and suss has no
-  # boundary for a command's arguments, exit code and output.
+  # Covered by a CLI test until suss reads a command's output, and then
+  # this moves to an outcome link.
   - title: init cannot work out a setting
     when: a pack needs a setting init cannot work out, such as which database is behind SQLAlchemy
     expect: init leaves the pack out of suss.json and says what to write
+    coveredBy: packages/cli/src/init.test.ts > inspectProject > says which per-project config a suggested pack needs
+    about: inspectProject
 
   - title: the developer writes the setting
     when: the developer writes the config file init asked for, and runs extract with the pack
@@ -48,17 +50,26 @@ scenarios:
       - packs-sqlmodel.needs-storage-system
       - packs-graphql-ruby.needs-root
 
-  # No link, for the same reason.
+  # Covered by CLI tests until suss reads a command's output, and then
+  # this moves to an outcome link.
   - title: an agent sets the project up
     when: an agent runs suss init --write
     expect: init writes suss.json without asking, and leaves an existing suss.json alone and says so
+    coveredBy:
+      - packages/cli/src/initInteractive.test.ts > suss init, guided > with --write > prints the commands, then writes suss.json without asking
+      - packages/cli/src/initInteractive.test.ts > suss init, guided > with --write > leaves a suss.json that is already there alone, and says so
+    about: initInteractive
 
-  # No link, for the same reason.
+  # Covered by a CLI test until suss reads a command's output.
   - title: init in CI
     when: suss init runs in CI, with no terminal to prompt on
     expect: it prints the commands the project needs instead of asking
+    coveredBy: packages/cli/src/initInteractive.test.ts > suss init, guided > without a terminal > prints the commands instead of asking
+    about: initInteractive
 
-  # No link, for the same reason.
+  # Covered by a CLI test until suss reads a command's output.
   - title: a spec is found
     when: the project has an OpenAPI spec, and the developer runs suss init
     expect: suss.json gets an entry that reads the spec, so suss check compares the routes against it instead of leaving them unpaired
+    coveredBy: packages/cli/src/init.test.ts > inspectProject > finds a contract source on disk
+    about: inspectProject

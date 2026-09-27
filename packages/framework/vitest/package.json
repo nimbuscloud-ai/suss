@@ -1,0 +1,63 @@
+{
+  "name": "@suss/framework-vitest",
+  "version": "0.33.1",
+  "type": "module",
+  "description": "PatternPack for vitest: each test case as a unit named by its title path, with whether it is skipped and what it mocks, so a PRD scenario can name the test that covers it.",
+  "keywords": [
+    "suss",
+    "behavioral-summary",
+    "framework-pack",
+    "vitest",
+    "testing",
+    "static-analysis"
+  ],
+  "license": "Apache-2.0",
+  "author": "Nimbus Cloud AI LLC",
+  "homepage": "https://github.com/nimbuscloud-ai/suss/tree/main/packages/framework/vitest#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nimbuscloud-ai/suss.git",
+    "directory": "packages/framework/vitest"
+  },
+  "bugs": {
+    "url": "https://github.com/nimbuscloud-ai/suss/issues"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@suss/extractor": "0.33.1",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@suss/adapter-typescript": "*",
+    "@suss/behavioral-ir": "*",
+    "@suss/ir-core": "*",
+    "@suss/test-project": "*",
+    "ts-morph": "*",
+    "tsup": "*",
+    "typescript": "*",
+    "vitest": "*"
+  },
+  "private": true
+}

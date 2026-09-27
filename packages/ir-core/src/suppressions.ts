@@ -58,11 +58,18 @@ export const SuppressionRuleSchema = z
      */
     provider: SuppressionSideSchema,
     /**
+     * The title of one PRD scenario. A PRD finding's boundary is the
+     * whole PRD, so without this a rule accepts every scenario in it,
+     * including one added later. A rule that sets `scenario` matches
+     * only intent findings about a scenario with that title.
+     */
+    scenario: z.string().optional(),
+    /**
      * "narrow", the default, requires `kind` plus one of `boundary`,
-     * `consumer.transitionId` or `provider.transitionId`, so the rule
-     * targets a specific class of finding. "broad" allows a match on
-     * kind alone or boundary alone, and such a rule also silences future
-     * regressions in that category.
+     * `scenario`, `consumer.transitionId` or `provider.transitionId`, so
+     * the rule targets a specific class of finding. "broad" allows a
+     * match on kind alone or boundary alone, and such a rule also
+     * silences future regressions in that category.
      */
     scope: z.enum(["narrow", "broad"]).default("narrow"),
     /** Required human-written justification. */
@@ -126,22 +133,24 @@ export function validateRule(rule: SuppressionRule): string | null {
     if (
       rule.kind === undefined &&
       rule.boundary === undefined &&
+      rule.scenario === undefined &&
       rule.consumer === undefined &&
       rule.provider === undefined
     ) {
-      return "broad-scope rule must constrain at least one field (kind, boundary, consumer, or provider)";
+      return "broad-scope rule must constrain at least one field (kind, boundary, scenario, consumer, or provider)";
     }
     return null;
   }
   const hasKind = rule.kind !== undefined;
   const hasBoundary = rule.boundary !== undefined;
+  const hasScenario = rule.scenario !== undefined;
   const hasTransition =
     rule.consumer?.transitionId !== undefined ||
     rule.provider?.transitionId !== undefined;
-  if (hasKind && (hasBoundary || hasTransition)) {
+  if (hasKind && (hasBoundary || hasScenario || hasTransition)) {
     return null;
   }
-  return "narrow-scope rule must specify kind AND (boundary OR consumer.transitionId OR provider.transitionId); set scope: 'broad' to silence wider categories";
+  return "narrow-scope rule must specify kind AND (boundary OR scenario OR consumer.transitionId OR provider.transitionId); set scope: 'broad' to silence wider categories";
 }
 
 // ---------------------------------------------------------------------------

@@ -209,6 +209,10 @@
       "types": "./dist/zustand.d.ts",
       "import": "./dist/zustand.js"
     },
+    "./vitest": {
+      "types": "./dist/vitest.d.ts",
+      "import": "./dist/vitest.js"
+    },
     "./sqlalchemy": {
       "types": "./dist/sqlalchemy.d.ts",
       "import": "./dist/sqlalchemy.js"
@@ -293,6 +297,7 @@
     "@suss/framework-react": "*",
     "@suss/framework-react-query": "*",
     "@suss/framework-zustand": "*",
+    "@suss/framework-vitest": "*",
     "@suss/framework-react-router": "*",
     "@suss/framework-redis": "*",
     "@suss/framework-sqlalchemy": "*",

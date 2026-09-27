@@ -14,7 +14,7 @@ npx suss check --dir summaries/ --intent intent/
 An intent document is a YAML file your team writes and commits. There are two kinds:
 
 - **Boundary intent** (`*.intent.yaml`) states what one boundary should do, as in `POST /auth/login` returns 429 with `{ error, retryAfter }`. It is structural, and the checker compares it against the code directly.
-- **A PRD** (`*.prd.yaml`) states what should happen for the person using the system, written as scenarios, and each scenario links to an outcome a boundary document declares.
+- **A PRD** (`*.prd.yaml`) states what should happen for the person using the system, written as scenarios. Each scenario links to an outcome a boundary document declares, or lists the test that covers it.
 
 An OpenAPI document or a Prisma schema covers some of this, but somebody wrote it as a wire contract or a data model. It does not record what the team wanted. An intent document lists what must exist and puts no limit on what else the code may do. When the code does more than the document states, suss reports that as info.
 
@@ -235,6 +235,27 @@ suss can supply the link, which is the boundary document's `name` plus the outco
 
 A boundary intent that a scenario already points at is left alone, so running this again after adding an endpoint writes only what is missing.
 
+## Back a scenario with a test
+
+Some scenarios promise something about which values come back, and no outcome can say that: an archived order is left out of the list, a second cancel changes nothing. For those, the scenario lists the test that covers it, spelled the way the runner prints it, and says what the test has to reach:
+
+```yaml
+  - title: a second cancel
+    when: a customer cancels an order that is already cancelled
+    expect: nothing changes, and the customer is told it was already cancelled
+    coveredBy: src/orders.test.ts > cancel > changes nothing the second time
+    about: POST /orders/:id/cancel
+```
+
+Without `about`, the test has to reach one of the boundaries the PRD's other scenarios link to. Then read the tests your PRDs list along with the code, and check as before:
+
+```bash
+suss extract -f express -f vitest --intent intent/ -o .suss/code.json
+suss check --dir .suss --intent intent/
+```
+
+`--intent` on `extract` hands the vitest pack the test files the PRDs list, so the run reads those and no others. The check then reports a listed test that is gone or renamed, one marked skip or todo, and one whose calls never reach the route, or reach it only through something the test replaced with `vi.mock`. The [intent format](/reference/intent-format#covering-tests) says how a test is spelled and what counts as reaching.
+
 ## Say what the boundary receives
 
 The rest of the document says what a boundary returns and what it does. A `receives` block says what the boundary is passed. Add one to the boundary block, with a line per field:
@@ -291,7 +312,7 @@ A required header is often checked in middleware instead of in the handler. suss
 The [findings catalog](/reference/findings#intent-findings) lists the intent finding kinds, with what makes each one legitimate and what makes it a bug. The severity follows what is being compared:
 
 - **Error**: the code does not do what an authored document says. `unimplementedBoundary`, `uncoveredOutcome`, `outcomeShapeMismatch`, `renamedBoundary`, `pathWithoutEffect`.
-- **Warning**: the documents have a gap, or nothing reads a field the document declares the boundary needs. An intent nothing can be paired against, a scenario linking to an outcome that does not exist, a link that resolves to two documents, `unreadInputField` on a required field.
+- **Warning**: the documents have a gap, or nothing reads a field the document declares the boundary needs. An intent nothing can be paired against, a scenario linking to an outcome that does not exist, a link that resolves to two documents, a scenario with neither a link nor a test, a covering test that is missing, skipped or never reaches its subject, `unreadInputField` on a required field.
 - **Info**: the code does more than the documents claim. A status no outcome mentions, a store no outcome mentions, an input field no `receives` block lists, an outcome no scenario explains.
 
 ## A boundary with no key to pair on
@@ -355,10 +376,12 @@ A scenario in `intent/checkAnAgentsEdit.prd.yaml` links to the rejection:
     link: contract-intent-load-change-list.rejected
 ```
 
-If `loadChangeListFile` stopped throwing `ChangeListRejected`, the self-check would report `uncoveredOutcome` against the document and fail. A scenario whose promise is about which values come back, or about what a command prints, has no link, and a comment beside it says which test covers it or why suss cannot read that boundary. On a green run the intent section starts with:
+If `loadChangeListFile` stopped throwing `ChangeListRejected`, the self-check would report `uncoveredOutcome` against the document and fail. A scenario whose promise is about which values come back lists the test that covers it under `coveredBy`, and so, for now, does a scenario about what a command prints, since suss has no boundary for a command's output yet. The dogfood run reads those test files with the vitest pack, and the self-check fails when one is renamed, skipped, or stops reaching its subject. On a green run the intent section starts with:
 
 ```
 Intent:
   22 boundary intents checked against code
-  7 PRDs checked: 39 scenarios, 16 resolved, 23 unlinked
+  7 PRDs checked: 39 scenarios, 16 resolved, 16 covered by tests, 2 unlinked
 ```
+
+The two unlinked scenarios have no test yet, and `intent/self.sussignore.yml` accepts each one by its title, with the reason.

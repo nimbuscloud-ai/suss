@@ -8,30 +8,30 @@ purpose: >-
 audience: developers triaging suss findings
 source: author
 
+# Which findings a rule matches is about values, which no outcome can
+# state, so each scenario lists the test that covers it and what that
+# test has to reach.
 scenarios:
-  # No link: this is about which findings a rule matches, which no
-  # outcome can state. Covered by the @suss/cli test "silences the
-  # finding whose printed rule was copied, and only that one".
   - title: a pasted rule silences its finding
     when: a developer pastes the rule suss printed under a finding and runs the check again
     expect: that finding is marked as accepted, with the reason, and every other finding still counts
+    coveredBy: packages/cli/src/check.test.ts > check CLI command > silences the finding whose printed rule was copied, and only that one
+    about: fn:@suss/checker::applySuppressions
 
-  # No link, for the same reason. A rule matches on the transition id,
-  # which leaves line numbers out, but no test yet pastes a rule and then
-  # moves the handler.
+  # No test yet pastes a rule and then moves the handler, and
+  # self.sussignore.yml records that.
   - title: moving code keeps the rule matching
     when: after the rule is pasted, someone adds a comment above the handler, which moves every line below it
     expect: the finding stays accepted
 
-  # No link: the behavior is which rules match which findings. Covered
-  # by the @suss/cli test "suppresses intent findings via .sussignore
-  # with the same rule shape".
   - title: intent findings take the same rules
     when: a developer accepts a finding that says the code and an intent document disagree
     expect: the same rule format works, keyed on the finding's kind and boundary
+    coveredBy: packages/cli/src/check.test.ts > checkDir > suppresses intent findings via .sussignore with the same rule shape
+    about: fn:@suss/checker-intent::applyIntentSuppressions
 
-  # No link: what check prints is CLI output. Covered by the @suss/cli
-  # test "stops offering a rule for a finding that a rule already covers".
   - title: no second rule is offered
     when: a finding is already covered by a rule
     expect: suss does not print another rule for it
+    coveredBy: packages/cli/src/check.test.ts > check CLI command > stops offering a rule for a finding that a rule already covers
+    about: formatSuppressionRule

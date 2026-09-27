@@ -5,8 +5,8 @@
 # scenario reads on its own through `when` / `expect` (both human
 # text); the optional `link` is the structured reference to a system
 # intent's transition id (`<intent-name>.<transition-id>`). A scenario
-# with no `link` is a valid pending state — the checker reports it as
-# unlinkedScenario (info), never an error.
+# with neither a `link` nor a test under `coveredBy` is reported as
+# unlinkedScenario, a warning.
 
 kind: prd
 

@@ -1457,8 +1457,12 @@ function extractFromSourceFile(
       }
 
       // Every unit ends up with a binding. A unit nothing else placed is
-      // a TypeScript function with no transport of its own.
-      if (raw.boundaryBinding === null) {
+      // a TypeScript function with no transport of its own. A test case
+      // is no boundary at all, so it keeps none.
+      if (
+        raw.boundaryBinding === null &&
+        matchedPattern?.match.type !== "testCase"
+      ) {
         if (unit.packageExportInfo !== undefined) {
           raw.boundaryBinding = packageExportBinding({
             transport: pack.protocol,

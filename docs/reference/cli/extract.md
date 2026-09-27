@@ -12,7 +12,7 @@ suss extract [-p <tsconfig> | --dir <directory>] [--lang typescript|python|ruby]
              [-f <pack>[=<config.json>] ...] [-o <output.json>]
              [--files <f1> <f2> ...] [--gaps strict|permissive|silent]
              [--explain] [--timing] [--datalog-profile] [--no-cache]
-             [--allow-empty] [--fail-on-pack-error]
+             [--allow-empty] [--fail-on-pack-error] [--intent <directory>]
 
 suss extract --out-dir <directory> [--dir <project>] [--allow-empty]
 ```
@@ -24,7 +24,7 @@ suss extract --out-dir <directory> [--dir <project>] [--allow-empty]
 | `--dir <path>` | the working directory | Read this directory, for a project with no tsconfig. |
 | `--lang <name>` | worked out from what the directory contains, the packs you asked for, and the nearest tsconfig | `typescript`, `python` or `ruby`. When suss cannot work the language out for itself, it stops and asks you to pass this flag. |
 | `-o`, `--output <path>` | stdout | Write the summary JSON to a file. Parent directories are created. |
-| `--out-dir <path>` | none | Run every read `suss.json` lists, contracts included, and write each one to its own file in this folder. See [The whole project into a folder](#the-whole-project-into-a-folder). Takes no `-f`, `-o`, `-p`, `--lang` or files. |
+| `--out-dir <path>` | none | Run every read `suss.json` lists, contracts included, and write each one to its own file in this folder. See [The whole project into a folder](#the-whole-project-into-a-folder). Takes no `-f`, `-o`, `-p`, `--lang`, `--intent` or files. |
 | `--files <f1> <f2> ...` | every file the tsconfig or directory covers | Read only these files, resolved against the working directory. Bare arguments with no flag in front of them mean the same thing when `--files` is absent. |
 | `--gaps <mode>` | `permissive` | `permissive` records in the summary the returns and declared statuses a pack could not account for. `strict` records the same and then exits non-zero. `silent` skips gap detection. |
 | `--explain` | off | Print where the summaries came from, file by file and pack by pack. A run that found nothing prints it either way. |
@@ -33,6 +33,7 @@ suss extract --out-dir <directory> [--dir <project>] [--allow-empty]
 | `--no-cache` | off | Skip the on-disk cache for this run. |
 | `--allow-empty` | off | Exit `0` even when the run produced nothing. Without it that run fails, because a silent zero looks the same in CI as a passing check. |
 | `--fail-on-pack-error` | off | Exit non-zero when a pack throws while it reads. By default the run reports the throw and keeps going with the other packs. |
+| `--intent <path>` | none | A folder of intent documents. A test pack such as `-f vitest` reads only the test files its PRDs list under `coveredBy`, instead of every test, so `check --intent` can check them. A pack given its own `files` in a config file keeps that list. |
 
 `--fail-on-empty` is gone. A run that finds nothing now fails by default, and passing the old flag stops the run and points you at `--allow-empty`.
 
@@ -68,7 +69,7 @@ Files an earlier `--out-dir` run wrote in the folder are removed first, so an en
 
 **Frameworks.** These discover the units a run is about: a route, a resolver, a component, a deployed function.
 
-`apollo`, `aws-lambda`, `cloudflare-workers`, `express`, `fastapi`, `fastify`, `flask-restx`, `graphql-ruby`, `hono`, `nestjs-graphql`, `nestjs-microservices`, `nestjs-rest`, `nextjs`, `package-exports`, `rails`, `react`, `react-query`, `react-router`, `ts-rest`
+`apollo`, `aws-lambda`, `cloudflare-workers`, `express`, `fastapi`, `fastify`, `flask-restx`, `graphql-ruby`, `hono`, `nestjs-graphql`, `nestjs-microservices`, `nestjs-rest`, `nextjs`, `package-exports`, `rails`, `react`, `react-query`, `react-router`, `ts-rest`, `vitest`
 
 **Clients.** These discover the calls your code makes out.
 

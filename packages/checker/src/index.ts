@@ -73,6 +73,7 @@ export {
   type DirectCall,
   type FunctionKey,
   functionOf,
+  type Reached,
   type ReachTarget,
   readCallFacts,
 } from "./calls/callFacts.js";

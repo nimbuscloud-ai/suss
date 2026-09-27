@@ -20,6 +20,8 @@ import {
   unitInvocationBinding,
 } from "@suss/ir-core";
 
+import { oneOrMore, TEST_TITLE_SEPARATOR } from "./schema.js";
+
 import type {
   AuthoredInputField,
   AuthoredShape,
@@ -136,6 +138,25 @@ export interface PrdScenarioSummary {
   expect: string;
   /** Qualified outcome refs (`<intent-name>.<outcome-id>`); empty when unlinked. */
   link: string[];
+  /** The tests the scenario lists as covering it. Empty when it lists none. */
+  coveredBy: CoveringTestSpelling[];
+  /** What a covering test has to reach. Empty means the PRD's linked boundaries. */
+  about: string[];
+}
+
+/** One `coveredBy` entry, split into the test file and its title path. */
+export interface CoveringTestSpelling {
+  /** The entry as the author wrote it. */
+  spelledAs: string;
+  file: string;
+  /** The suite titles, outermost first, then the test's own title. */
+  titles: string[];
+}
+
+/** A `coveredBy` entry split at ` > `: the file, then each title. */
+export function toCoveringTest(spelledAs: string): CoveringTestSpelling {
+  const [file, ...titles] = spelledAs.split(TEST_TITLE_SEPARATOR);
+  return { spelledAs, file: file.trim(), titles };
 }
 
 export interface PrdSummary {
@@ -188,8 +209,9 @@ function prdToSummary(doc: Prd): PrdSummary {
       title: s.title ?? null,
       when: s.when,
       expect: s.expect,
-      link:
-        s.link === undefined ? [] : Array.isArray(s.link) ? s.link : [s.link],
+      link: oneOrMore(s.link),
+      coveredBy: oneOrMore(s.coveredBy).map(toCoveringTest),
+      about: oneOrMore(s.about),
     })),
   };
 }
@@ -354,13 +376,6 @@ export function toIntentEffect(declared: DeclaredEffect): IntentEffect {
     fields: declared.fields ?? [],
     by: oneOrMore(declared.by),
   };
-}
-
-function oneOrMore(written: string | string[] | undefined): string[] {
-  if (written === undefined) {
-    return [];
-  }
-  return typeof written === "string" ? [written] : written;
 }
 
 /** The verb key and the boundary it points at, when a clause has one. */

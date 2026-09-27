@@ -23,6 +23,7 @@ export {
   type CorroborateResult,
   corroborate,
 } from "./corroborateCommand.js";
+export { testFilesListedIn } from "./coveringTests.js";
 export { extract } from "./extract.js";
 export {
   inspect,

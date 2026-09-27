@@ -107,6 +107,30 @@ export function importedRootsOf(
   return roots;
 }
 
+/**
+ * The module a default or namespace import binds to this local name:
+ * the project file it resolves to, or the specifier as written when it
+ * resolves to none. Null when no such import binds the name.
+ */
+export function moduleImportedWholeAs(
+  sourceFile: SourceFile,
+  local: string,
+): string | null {
+  for (const decl of sourceFile.getImportDeclarations()) {
+    const bound =
+      decl.getNamespaceImport()?.getText() ??
+      decl.getDefaultImport()?.getText();
+    if (bound !== local) {
+      continue;
+    }
+    const target = decl.getModuleSpecifierSourceFile();
+    return target !== undefined && !target.isInNodeModules()
+      ? target.getFilePath()
+      : decl.getModuleSpecifierValue();
+  }
+  return null;
+}
+
 /** Every import declaration in the file that names one of `modules`. */
 export function importDeclarationsOf(
   sourceFile: SourceFile,

@@ -172,7 +172,7 @@ Reference and theory: [Summary format](./docs/reference/summary-format.md), [IR 
 
 The behavioral summary format and the IR types in `@suss/behavioral-ir` are stable. The extraction pipeline and the cross-boundary checker are still in active development, and the set of packs keeps growing.
 
-Forty-nine packs read code today. You pick them by name with `-f`:
+Fifty packs read code today. You pick them by name with `-f`:
 
 | What it reads | Packs |
 |---|---|
@@ -191,6 +191,7 @@ Forty-nine packs read code today. You pick them by name with `-f`:
 | Messaging | `aws-sqs` `aws-sns` `aws-eventbridge` `nestjs-microservices` |
 | Runtime surface | `node`, which includes `process.env` |
 | In-process, between workspace packages | `package-exports` |
+| Tests a PRD scenario lists as covering it | `vitest` |
 
 Ten contract readers turn a declared artifact into the same format, reached with `--from`: `openapi`, `graphql` (SDL), `graphql-documents` (committed `.graphql` operations), `cloudformation` (including SAM, and the API Gateway resources in it), `serverless`, `appsync`, `storybook`, `prisma`, `terraform`, `wrangler`. The intent docs your team writes are read separately, by `suss check --intent`.
 

@@ -1020,13 +1020,132 @@ describe("intentDocToSummary — PRD", () => {
         when: "a request arrives with a known id",
         expect: "the caller receives the profile",
         link: ["users-lookup.found"],
+        coveredBy: [],
+        about: [],
       },
       {
         title: null,
         when: "the id is unknown",
         expect: "the caller is told it wasn't found",
         link: [],
+        coveredBy: [],
+        about: [],
       },
+    ]);
+  });
+});
+
+describe("a PRD scenario covered by a test", () => {
+  const scenario = {
+    title: "cancelled twice",
+    when: "an order is cancelled a second time",
+    expect: "the second cancel changes nothing",
+  };
+  const prdWith = (
+    scenarios: Array<Record<string, unknown>>,
+  ): Record<string, unknown> => ({
+    kind: "prd",
+    title: "Cancel an order",
+    purpose: "A customer cancels an order they no longer want.",
+    audience: "customers",
+    scenarios,
+  });
+  const issuesOf = (doc: unknown): string[] => {
+    const parsed = IntentDocSchema.safeParse(doc);
+    return parsed.success
+      ? []
+      : parsed.error.issues.map(
+          (issue) => `${issue.path.join(".")}: ${issue.message}`,
+        );
+  };
+
+  it("splits each test into its file and its titles", () => {
+    const summary = intentDocToSummary(
+      IntentDocSchema.parse(
+        prdWith([
+          { ...scenario, link: "orders-cancel.cancelled" },
+          {
+            ...scenario,
+            coveredBy: [
+              "src/orders.test.ts > cancel > changes nothing the second time",
+              "src/refunds.test.ts > refunds nothing twice",
+            ],
+            about: "fn:@acme/orders::cancelOrder",
+          },
+        ]),
+      ),
+    ) as PrdSummary;
+
+    expect(summary.scenarios[1].coveredBy).toEqual([
+      {
+        spelledAs:
+          "src/orders.test.ts > cancel > changes nothing the second time",
+        file: "src/orders.test.ts",
+        titles: ["cancel", "changes nothing the second time"],
+      },
+      {
+        spelledAs: "src/refunds.test.ts > refunds nothing twice",
+        file: "src/refunds.test.ts",
+        titles: ["refunds nothing twice"],
+      },
+    ]);
+    expect(summary.scenarios[1].about).toEqual([
+      "fn:@acme/orders::cancelOrder",
+    ]);
+  });
+
+  it("falls back on the PRD's links when a scenario says nothing under about", () => {
+    expect(
+      issuesOf(
+        prdWith([
+          { ...scenario, link: "orders-cancel.cancelled" },
+          { ...scenario, coveredBy: "src/orders.test.ts > cancels twice" },
+        ]),
+      ),
+    ).toEqual([]);
+  });
+
+  it("requires about in a PRD that links to nothing, and says which scenario lacks it", () => {
+    expect(
+      issuesOf(
+        prdWith([
+          { ...scenario, coveredBy: "src/orders.test.ts > cancels twice" },
+        ]),
+      ),
+    ).toEqual([
+      'scenarios.0.about: scenario "cancelled twice" lists a covering test, and no scenario in this PRD links to an outcome, so there is nothing to check the test reaches; say what it has to reach under about',
+    ]);
+  });
+
+  it("refuses a test written without a title", () => {
+    expect(
+      issuesOf(
+        prdWith([
+          {
+            ...scenario,
+            coveredBy: "src/orders.test.ts",
+            about: "fn:@acme/orders::cancelOrder",
+          },
+        ]),
+      ),
+    ).toEqual([
+      'scenarios.0.coveredBy.0: scenario "cancelled twice" lists the test "src/orders.test.ts", which has no title; write the file, then each describe title, then the test\'s own title, joined with " > "',
+    ]);
+  });
+
+  it("refuses about on a scenario that lists no test", () => {
+    expect(
+      issuesOf(
+        prdWith([
+          {
+            ...scenario,
+            link: "orders-cancel.cancelled",
+            about: "fn:@acme/orders::cancelOrder",
+          },
+        ]),
+      ),
+    ).toEqual([
+      'scenarios.0.about: scenario "cancelled twice" says what a covering test has to reach, and lists no test under coveredBy',
     ]);
   });
 });

@@ -156,6 +156,9 @@ Options (extract):
   --allow-empty    A run that finds nothing exits non-zero by default;
                    this opts back into exiting 0
   --fail-on-pack-error  Exit non-zero when a pack throws while it reads
+  --intent         A directory of intent documents. With a test pack such
+                   as -f vitest, read only the test files its PRDs list
+                   under coveredBy, instead of every test.
 
 Options (check):
   --allow-empty    A run that compares nothing exits non-zero by default,
@@ -644,6 +647,7 @@ async function runExtract(args: string[]): Promise<number> {
       "fail-on-empty": { type: "boolean" },
       "fail-on-pack-error": { type: "boolean" },
       "out-dir": { type: "string" },
+      intent: { type: "string" },
     },
     allowPositionals: true,
   });
@@ -659,10 +663,11 @@ async function runExtract(args: string[]): Promise<number> {
       values.project,
       values.lang,
       values.files,
+      values.intent,
     ].some((value) => value !== undefined);
     if (oneRead || positionals.length > 0) {
       process.stderr.write(
-        "--out-dir runs every read suss.json lists, so it takes no -f, -o, -p, --lang or files. Drop them, or drop --out-dir to extract with one set of packs.\n",
+        "--out-dir runs every read suss.json lists, so it takes no -f, -o, -p, --lang, --intent or files. Drop them, or drop --out-dir to extract with one set of packs.\n",
       );
       return 1;
     }
@@ -745,6 +750,7 @@ async function runExtract(args: string[]): Promise<number> {
     ...(values.explain === true ? { explain: true } : {}),
     ...(values["allow-empty"] === true ? { allowEmpty: true } : {}),
     ...(values["fail-on-pack-error"] === true ? { failOnPackError: true } : {}),
+    ...(values.intent !== undefined ? { intent: values.intent } : {}),
   };
 
   // extract() reports failure through process.exitCode. Clear it first so

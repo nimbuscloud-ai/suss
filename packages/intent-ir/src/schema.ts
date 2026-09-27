@@ -629,24 +629,36 @@ const PrdScenarioSchema = z.strictObject({
     .min(1)
     .describe("What should happen then, in the author's own words."),
   /**
-   * Optional links to system-intent outcomes, each written
-   * `<intent-name>.<outcome-id>`. A scenario without a link is a valid
-   * pending state: it reads fully, and nobody has linked it yet. A
-   * person, a platform or a model can fill the link in later, and it is
-   * never required.
+   * Links to system-intent outcomes, each written
+   * `<intent-name>.<outcome-id>`. A scenario is backed by a link or by
+   * `coveredBy`, and the checker warns about one with neither. The
+   * schema still accepts it, so a PRD can be written before either
+   * exists.
    *
    * The field is `link` and not `then`, because Promise resolution
    * treats an object with a `then` property as a thenable.
    */
-  link: z
-    .union([z.string().min(1), z.array(z.string().min(1)).min(1)])
-    .describe(
-      "The boundary-intent outcomes this scenario is about, each written <intent-name>.<outcome-id>.",
-    )
-    .optional(),
+  link: ONE_OR_MORE.describe(
+    "The boundary-intent outcomes this scenario is about, each written <intent-name>.<outcome-id>.",
+  ).optional(),
+  /**
+   * The tests that exercise this scenario, for a promise about which
+   * values come back that no outcome can state. Each is spelled the way
+   * the runner prints it: the file, each suite title, then the test's
+   * own title, joined with ` > `.
+   */
+  coveredBy: ONE_OR_MORE.describe(
+    "The tests that exercise this scenario, each written as the test file, then each describe title, then the test's own title, joined with ' > '.",
+  ).optional(),
+  about: ONE_OR_MORE.describe(
+    "What a covering test has to reach for the scenario to count as covered: a boundary or a unit, spelled the way suss ask takes one. Without it, a test has to reach one of the boundaries the PRD's other scenarios link to.",
+  ).optional(),
 });
 
-const PrdSchema = z.strictObject({
+/** What separates the file and the titles in a `coveredBy` spelling. */
+export const TEST_TITLE_SEPARATOR = " > ";
+
+const PrdFields = z.strictObject({
   kind: z
     .literal("prd")
     .describe("Makes this document a PRD, a set of scenarios for a feature."),
@@ -662,6 +674,53 @@ const PrdSchema = z.strictObject({
     .min(1)
     .describe("The situations the feature covers, one entry each."),
 });
+
+const PrdSchema = PrdFields.superRefine((doc, ctx) => {
+  const linksAnything = doc.scenarios.some((s) => s.link !== undefined);
+  for (const [at, scenario] of doc.scenarios.entries()) {
+    const label =
+      scenario.title === undefined ? `#${at + 1}` : `"${scenario.title}"`;
+    for (const [line, spelled] of oneOrMore(scenario.coveredBy).entries()) {
+      if (!spelled.includes(TEST_TITLE_SEPARATOR)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["scenarios", at, "coveredBy", line],
+          message: `scenario ${label} lists the test "${spelled}", which has no title; write the file, then each describe title, then the test's own title, joined with " > "`,
+        });
+      }
+    }
+
+    if (scenario.about !== undefined && scenario.coveredBy === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["scenarios", at, "about"],
+        message: `scenario ${label} says what a covering test has to reach, and lists no test under coveredBy`,
+      });
+    }
+
+    // With no link anywhere in the PRD there is no boundary to fall back
+    // on, so a covering test would count whatever it called.
+    if (
+      scenario.coveredBy !== undefined &&
+      scenario.about === undefined &&
+      !linksAnything
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["scenarios", at, "about"],
+        message: `scenario ${label} lists a covering test, and no scenario in this PRD links to an outcome, so there is nothing to check the test reaches; say what it has to reach under about`,
+      });
+    }
+  }
+});
+
+/** A field written as one string or a list of them, as a list. */
+export function oneOrMore(written: string | string[] | undefined): string[] {
+  if (written === undefined) {
+    return [];
+  }
+  return typeof written === "string" ? [written] : written;
+}
 
 // ---------------------------------------------------------------------------
 // Top-level discriminated union.

@@ -329,6 +329,27 @@ It resolves the `types`, `default` and `import` conditions on `exports`, and fal
 
 Pass exact module specifiers, sub-path included. Several call sites inside one function to the same binding collapse to one unit, and call sites to different bindings produce one unit each. Named and default imports with bare-identifier calls are covered. Namespace imports (`import * as X`) and member-call chains (`X.method()`) are not done yet. The package-exports pack uses it.
 
+### `testCase`
+
+```typescript
+{
+  type: "testCase";
+  style: "block";
+  importModule: string;        // "vitest"
+  suiteNames: string[];        // ["describe", "suite"]
+  caseNames: string[];         // ["it", "test"]
+  skipModifiers: string[];     // ["skip", "todo"]
+  argumentModifiers: string[]; // ["skipIf", "runIf"]
+  rowModifiers: string[];      // ["each", "for"]
+  mocks?: { object: string; moduleMethods: string[]; memberMethods: string[] };
+  files?: string[];
+}
+```
+
+`testCase` finds test cases written as nested calls, the style vitest, jest and mocha share. Each call to a case name imported from `importModule` becomes one unit named by the enclosing suite titles and its own, joined with ` > `, and its body is the callback. A case written with a skip modifier, or inside a suite written with one, is recorded as skipped. A modifier that takes arguments, as in `it.skipIf(condition)("title", fn)`, is followed to the case it returns; a row modifier such as `each` declares the case once under the title as written, which is recorded as unresolved.
+
+`mocks` says how the runner replaces something: the helper object imported from `importModule`, the methods that replace a module given its specifier, and the methods that replace one member given the object and the member's name. A mock applies to the cases in its scope: every case for one at module scope, and the cases inside the suite or case it is written in otherwise. `files` limits the walk to files matching one of the entries on whole path segments from the end. The vitest pack uses it.
+
 ## `BindingExtraction`
 
 `bindingExtraction` on a discovery pattern says where the HTTP method and path come from.

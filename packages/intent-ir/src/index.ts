@@ -36,10 +36,12 @@ export {
   fillBlanks,
   IntentDocSchema,
   IntentSourceSchema,
+  TEST_TITLE_SEPARATOR,
 } from "./schema.js";
 export {
   intentDocToSummary,
   toBoundaryBinding,
+  toCoveringTest,
   toIntentEffect,
   toReceives,
 } from "./summary.js";
@@ -86,6 +88,7 @@ export type {
 } from "./schema.js";
 export type {
   BoundaryIntentSummary,
+  CoveringTestSpelling,
   IntentAlways,
   IntentCondition,
   IntentEffect,

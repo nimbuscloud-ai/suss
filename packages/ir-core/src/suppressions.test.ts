@@ -52,6 +52,14 @@ describe("validateRule", () => {
     ).toBeNull();
   });
 
+  it("accepts narrow rules with kind + scenario", () => {
+    expect(
+      validateRule(
+        rule({ kind: "unlinkedScenario", scenario: "cancel twice" }),
+      ),
+    ).toBeNull();
+  });
+
   it("rejects narrow rules missing a second discriminator", () => {
     expect(validateRule(rule({ kind: "x" }))).toMatch(/narrow-scope/);
     expect(validateRule(rule({ boundary: "GET /a" }))).toMatch(/narrow-scope/);

@@ -274,6 +274,8 @@ Each scenario takes:
 | `expect` | yes | What should happen, in your words. |
 | `title` | no | A short name for the scenario. |
 | `link` | no | The boundary-intent outcomes this scenario is about. |
+| `coveredBy` | no | The tests that exercise this scenario, for a promise no outcome can state. |
+| `about` | no | What a covering test has to reach: a boundary or a unit, spelled the way `suss ask` takes one. Required on a scenario with `coveredBy` when no scenario in the PRD has a `link`. |
 
 The PRD that goes with the boundary document above, whole:
 
@@ -311,7 +313,38 @@ link:
   - order-intake.queued-for-processing
 ```
 
-A scenario can have no `link`. Its words then describe the feature without pointing at any outcome. The checker reports that as `unlinkedScenario` at info. A link to an outcome nothing declares is `danglingScenarioLink` at warning. A link to a name that two boundary documents share is `ambiguousScenarioLink`, also at warning.
+A link to an outcome nothing declares is `danglingScenarioLink` at warning. A link to a name that two boundary documents share is `ambiguousScenarioLink`, also at warning.
+
+### Covering tests
+
+Some promises are about which values come back, such as a finding that was already there not being reported as new. No outcome can state that, so the scenario lists the test that covers it instead, spelled the way the runner prints it: the test file, each `describe` title, then the test's own title, joined with ` > `. One test is a string and several are a list:
+
+```yaml
+- title: a finding that was already there
+  when: a finding was in the code before the agent's edit and is still there after it
+  expect: it is not reported as new, and it does not fail the agent's check
+  coveredBy: packages/checker/src/since/changesSince.test.ts > findingsSince > splits the findings into new and gone, by identity
+  about: fn:@suss/checker::findingsSince
+```
+
+The file matches on whole path segments from the end, so a path from the repository root matches a summary written relative to its package. When two packages have a test at the same path and title, write the workspace in front of the file: `@suss/cli::src/run.test.ts > ...`.
+
+`suss check --intent` checks each covering test three ways. The test has to be in the summaries, which takes a test pack at extract time, such as `suss extract -f vitest --intent intent/`. It has to run, so a test marked skip or todo does not count. And its calls have to reach what the scenario is about without going through something the test replaced with a mock. The findings are `missingCoveringTest`, `coveringTestSkipped` and `testMissesSubject`, each a warning.
+
+What a test has to reach is `about` when the scenario gives it. Without `about`, it is any of the boundaries the PRD's linked scenarios link to, so a test that reaches one of them covers every scenario in that PRD that leaves `about` out. A PRD with no link anywhere has nothing to fall back on, and the schema asks for `about` on each scenario that lists a test.
+
+The check does not read what a test asserts, so a test that calls the subject and asserts nothing counts as covering it. It runs nothing, so a test that fails still counts; the runner's own exit code already fails the build for that.
+
+### A scenario with neither
+
+A scenario can have neither a `link` nor `coveredBy`. Its words then describe the feature and nothing checks them. The checker reports that as `unlinkedScenario` at warning. While a scenario is still being written, record that with a `.sussignore` rule that gives the scenario's title, so the gap is on record and a scenario added to the same PRD later is still reported:
+
+```yaml
+- kind: unlinkedScenario
+  boundary: "prd:Accept a finding once, and it stays accepted"
+  scenario: moving code keeps the rule matching
+  reason: No test pastes a rule and then moves the handler yet.
+```
 
 ## The change list
 
