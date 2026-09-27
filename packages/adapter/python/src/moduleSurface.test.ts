@@ -13,9 +13,12 @@ import type { BehavioralSummary } from "@suss/behavioral-ir";
 const FILES: Record<string, string> = {
   "app/__init__.py": "",
   "app/billing/__init__.py": [
+    "import os",
     "from .charge import charge_invoice",
     "from .service import InvoiceService",
     "from .ledger import _record",
+    "",
+    "VERSION = os.environ.get('BILLING_VERSION')",
     "",
     "def refund(invoice_id):",
     "    return invoice_id",
@@ -31,6 +34,8 @@ const FILES: Record<string, string> = {
   ].join("\n"),
   "app/billing/service.py": [
     "class InvoiceService:",
+    "    rate = 2",
+    "",
     "    def charge(self, invoice_id):",
     "        return invoice_id",
     "",
@@ -43,6 +48,9 @@ const FILES: Record<string, string> = {
     "    return invoice_id",
     "",
   ].join("\n"),
+  "app/ledger/entries.py": ["def post(entry):", "    return entry", ""].join(
+    "\n",
+  ),
   "app/reports.py": [
     "from app.billing import charge_invoice",
     "",
@@ -75,7 +83,17 @@ async function extract(withModules: boolean): Promise<BehavioralSummary[]> {
     workspaceRoot: root,
     cacheDir: null,
     ...(withModules
-      ? { modules: [{ name: "billing", root: path.join(root, "app/billing") }] }
+      ? {
+          modules: [
+            { name: "billing", root: path.join(root, "app/billing") },
+            // Its public file is not among the files read, so it exports nothing.
+            {
+              name: "ledger",
+              root: path.join(root, "app/ledger"),
+              public: [path.join(root, "app/ledger/__init__.py")],
+            },
+          ],
+        }
       : {}),
   });
   return summaries;
