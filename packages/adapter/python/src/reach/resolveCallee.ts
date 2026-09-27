@@ -14,6 +14,7 @@
 import {
   calleeOutcomeOf,
   calleeOutcomes,
+  noteKeyRead,
   writtenSourcesOf,
 } from "@suss/resolution";
 
@@ -450,5 +451,10 @@ function moduleNamed(
       : null;
   }
   const file = ctx.filesByPath.get(resolution.file);
-  return file === undefined ? null : { kind: "module", file };
+  if (file === undefined) {
+    return null;
+  }
+  // The caller goes on to read what that module's own scope binds.
+  noteKeyRead(ctx.facts, file.file);
+  return { kind: "module", file };
 }

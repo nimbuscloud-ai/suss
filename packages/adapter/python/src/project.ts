@@ -6,7 +6,9 @@
  * across all of them, before discovery runs on any file, because a mount in
  * one file can refer to a router built in another. Each discovered unit
  * goes through `@suss/extractor`'s `assembleSummary`, the same assembly the
- * TypeScript adapter uses, so both languages share one gap detection.
+ * TypeScript adapter uses, so both languages share one gap detection. With
+ * a cache, a run after an edit replays the files and functions whose
+ * inputs did not change, through the records in `reuse.ts`.
  */
 
 import fs from "node:fs";
@@ -37,8 +39,17 @@ import {
 } from "@suss/extractor";
 import {
   addPackWords,
+  DependencyLedger,
+  FactLog,
+  hashString,
   importedFilesByFile,
+  mergeStoredDependencies,
+  noDependencies,
+  observeDemand,
   type PackWords,
+  recordsToReplay,
+  underQuestionSpend,
+  walkRecordsByFile,
 } from "@suss/resolution";
 
 import { field, isFunction, rangeOf } from "./ast.js";
@@ -48,33 +59,63 @@ import {
   tallyUnit,
 } from "./diagnostics.js";
 import { discoverUnits } from "./discovery.js";
-import { bindEnvFacts, envFactsIn, envReadEffects } from "./envReads.js";
+import {
+  bindEnvFacts,
+  envFactsIn,
+  envReadEffects,
+  settleNamedParameters,
+} from "./envReads.js";
 import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitModuleImportFacts } from "./facts.js";
 import { importedDefinitionLookup } from "./importedDefinitions.js";
 import { parsePython } from "./parser.js";
 import { moduleLoadInvocationEffects } from "./paths/effects.js";
-import { reachedFunctions } from "./reach/closure.js";
+import { ReplayFailed, reachedFunctions } from "./reach/closure.js";
+import {
+  lookAgainIn,
+  PackPositions,
+  pythonEntryReuse,
+  storedFunction,
+  WalkReplay,
+  WatchedNames,
+  watchRouterIndex,
+} from "./reuse.js";
 import { buildRouterIndex } from "./routers.js";
 import { bindModule } from "./scope.js";
 import { pythonSourceRoots } from "./sourceRoots.js";
-import { bindEvaluator } from "./values/evaluator.js";
+import { bindEvaluator, forgetEvaluations } from "./values/evaluator.js";
 import { adapterStamp } from "./version.js";
 import { buildWrapperIndex } from "./wrappers.js";
 
 import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
 import type {
+  CacheAttribution,
   CacheDiagnostic,
   CacheInput,
   CacheLayer,
   ExtractionReport,
   ExtractorOptions,
+  PartialPlan,
   RawCodeStructure,
+  Timer,
   TimingReport,
 } from "@suss/extractor";
+import type {
+  Changes,
+  Dependencies,
+  StoredDependencies,
+  StoredFacts,
+} from "@suss/resolution";
 import type { PythonPack, StoragePattern } from "./pack.js";
 import type { PyNode } from "./parser.js";
-import type { Seed } from "./reach/closure.js";
+import type { ReachedUnits, Seed } from "./reach/closure.js";
+import type {
+  PythonEntryReuse,
+  PythonFileRecord,
+  StoredModule,
+  StoredRegistration,
+  StoredUnit,
+} from "./reuse.js";
 import type { BoundPythonFile } from "./routers.js";
 import type { ModuleBinding } from "./scope.js";
 import type { UnreadManifest } from "./sourceRoots.js";
@@ -235,7 +276,33 @@ interface ModuleRoot {
   readonly boundFile: BoundPythonFile;
   readonly displayPath: string;
   readonly key: string;
-  readonly loadTimeReads: Effect[];
+  /** Null when the file's record is replayed and its load-time unit comes from there. */
+  readonly loadTimeReads: Effect[] | null;
+}
+
+/** A unit's record while the run that will store it is still going. */
+type UnitDraft = { -readonly [K in keyof StoredUnit]: StoredUnit[K] };
+
+/** What one file's discovery found and depended on, replayed or done in this run. */
+interface FileDiscovery {
+  readonly discovery: StoredDependencies;
+  readonly units: readonly StoredUnit[];
+  readonly registrations: readonly StoredRegistration[];
+  readonly module: StoredModule;
+}
+
+/** The cache a run reads and writes, set up once for the run. */
+interface RunCache {
+  readonly timer: Timer;
+  readonly cacheDir: string | null;
+  readonly layer: CacheLayer<PythonFileRecord>;
+  readonly input: CacheInput;
+}
+
+/** An earlier run's entry, when this run can replay parts of it. */
+interface Previous {
+  readonly plan: PartialPlan<PythonFileRecord>;
+  readonly records: ReadonlyMap<string, PythonFileRecord>;
 }
 
 export async function extractPythonProject(
@@ -252,7 +319,7 @@ export async function extractPythonProject(
             ? path.join(options.projectRoot, ".suss", "cache")
             : null)),
   );
-  const cache: CacheLayer = createCacheLayer(cacheDir);
+  const layer = createCacheLayer<PythonFileRecord>(cacheDir);
   const packsDigest = `${adapterStamp.packsDigest(
     options.packs.map((pack) =>
       pack.version !== undefined
@@ -266,7 +333,7 @@ export async function extractPythonProject(
     // The same files read against other roots resolve other imports.
     importRoots: roots,
   })}`;
-  const cacheInput: CacheInput = {
+  const input: CacheInput = {
     files: cacheDir === null ? [] : options.files,
     adapterPacksDigest:
       cacheDir === null
@@ -274,10 +341,10 @@ export async function extractPythonProject(
         : runDigest(packsDigest, options.packs, options.files),
   };
   const lookup = await timer.timeAsync("cache.lookup", () =>
-    cache.lookup(cacheInput),
+    layer.lookup(input),
   );
-  options.onCacheDiagnostic?.(lookup.diagnostic);
   if (lookup.kind === "hit") {
+    options.onCacheDiagnostic?.(lookup.diagnostic);
     options.onTiming?.(timer.report());
     return {
       summaries: lookup.summaries,
@@ -287,10 +354,76 @@ export async function extractPythonProject(
     };
   }
 
+  const plan =
+    lookup.diagnostic.missReason === "files-changed"
+      ? await timer.timeAsync("cache.plan", () => layer.plan(input))
+      : null;
+  if (plan !== null && plan.changed.size === 0 && plan.removed.size === 0) {
+    // Stamps moved but every content hash matched: a touch, not an edit.
+    // Writing the entry again lets the next run hit on stats alone.
+    try {
+      await layer.write(input, plan.allSummaries(), plan.attribution());
+    } catch {
+      // A failed refresh costs the next run a rehash, nothing more.
+    }
+    options.onCacheDiagnostic?.({ kind: "hit" });
+    options.onTiming?.(timer.report());
+    return {
+      summaries: plan.allSummaries(),
+      facts: new Database(),
+      roots,
+      unreadManifests,
+    };
+  }
+
+  const cache: RunCache = { timer, cacheDir, layer, input };
+  const records =
+    plan === null
+      ? null
+      : recordsToReplay<PythonFileRecord>(
+          plan.roots,
+          plan.changed,
+          plan.removed,
+        );
+  let summaries: BehavioralSummary[] | null = null;
+  let facts: Database | null = null;
+  if (plan !== null && records !== null) {
+    try {
+      ({ summaries, facts } = await runPython(options, roots, cache, {
+        plan,
+        records,
+      }));
+    } catch (error) {
+      if (!(error instanceof ReplayFailed)) {
+        throw error;
+      }
+    }
+  }
+  if (summaries === null || facts === null) {
+    options.onCacheDiagnostic?.(lookup.diagnostic);
+    ({ summaries, facts } = await runPython(options, roots, cache, null));
+  }
+  return { summaries, facts, roots, unreadManifests };
+}
+
+async function runPython(
+  options: ExtractPythonOptions,
+  roots: string[],
+  cache: RunCache,
+  previous: Previous | null,
+): Promise<{ summaries: BehavioralSummary[]; facts: Database }> {
+  const { timer, cacheDir } = cache;
   const db = new Database();
   const summaries: BehavioralSummary[] = [];
   const gapHandling = options.gapHandling ?? "permissive";
   const tallies = createPackTallies(options.packs);
+  // With a cache, every question and every read of another file is charged
+  // to the file's discovery or the function's scan that made it.
+  const ledger = cacheDir === null ? null : new DependencyLedger(options.files);
+  const log = ledger === null ? null : new FactLog(db, ledger);
+  if (ledger !== null) {
+    observeDemand(db, ledger);
+  }
 
   // Facts keep the full filesystem path, because other facts are matched
   // against it. Only a summary's `location.file` is shortened.
@@ -355,17 +488,24 @@ export async function extractPythonProject(
   const definitions = new Map<string, PyNode>();
   timer.time("discover", () => {
     for (const { file, root, module: moduleBinding } of bound) {
+      log?.startFile();
       emitModuleImportFacts(db, file, moduleBinding, { roots });
       if (needsValues) {
         emitValueFacts(db, file, root);
       }
+      log?.endFile(file);
       indexDefinitions(definitions, file, root);
     }
+    log?.startJoined();
     if (needsValues) {
       bindEvaluator(db, { files: bound, definitions });
       bindEnvFacts(db, envFacts);
     }
     addPackWords(db, packWordsOf(options.packs));
+    if (ledger !== null) {
+      settleNamedParameters(db);
+    }
+    log?.endJoined();
   });
 
   reportUnresolvedProjectModules(options.packs, roots, db);
@@ -373,16 +513,28 @@ export async function extractPythonProject(
   // A matching chain starts at a method declared in a file that imports the
   // library. A project that renames the method on the way is missed, since
   // asking the rules about every call instead would cost about a minute.
-  const couldMatch = timer.time("discover", () =>
+  const namesNearStorage = timer.time("discover", () =>
     methodsDeclaredNear(db, storagePatterns, definitions),
   );
+  const couldMatch =
+    ledger === null ? namesNearStorage : new WatchedNames(namesNearStorage, db);
 
-  const routerIndex = timer.time("discover", () =>
+  const plainRouterIndex = timer.time("discover", () =>
     buildRouterIndex(bound, options.packs, {
       roots,
       ...(mountsRouters ? { facts: db } : {}),
     }),
   );
+  const positions = new PackPositions(options.packs);
+  const routerIndex =
+    ledger === null
+      ? plainRouterIndex
+      : watchRouterIndex(
+          plainRouterIndex,
+          db,
+          positions,
+          new Map(bound.map((one) => [one.module, one.file])),
+        );
 
   const storageFor = (file: BoundPythonFile): StorageLookup | undefined =>
     storagePatterns.length > 0 ||
@@ -409,15 +561,76 @@ export async function extractPythonProject(
   );
 
   const importedDefinition = importedDefinitionLookup(db, bound);
+  const filesByPath = new Map(bound.map((one) => [one.file, one]));
+
+  const reuse: PythonEntryReuse | null =
+    previous === null || log === null
+      ? null
+      : timer.time("cache.plan", () => {
+          const changedFiles = previous.plan.changed;
+          const changes: Changes = {
+            files: new Set([...changedFiles].map(hashString)),
+            values: log.changedValues(
+              changedFiles,
+              new Map(
+                [...previous.records].map(([file, record]) => [
+                  file,
+                  record.facts,
+                ]),
+              ),
+            ),
+            lookAgain: lookAgainIn({
+              db,
+              couldMatch: namesNearStorage,
+              routerIndex: plainRouterIndex,
+              wrapperIndex,
+              positions,
+              moduleOfFile: new Map(bound.map((one) => [one.file, one.module])),
+            }),
+          };
+          return pythonEntryReuse(previous.records, changedFiles, changes);
+        });
+
+  // Which wrappers the discovery being charged registered, so a replay of
+  // its file can register the same ones in the same order.
+  let registering: StoredRegistration[] | null = null;
+  if (ledger !== null) {
+    wrapperIndex.onRegistered = (target, declared) => {
+      const form = positions.positionOf(declared);
+      if (registering !== null && form !== undefined) {
+        registering.push({
+          key: nodeId(target.file.file, target.node),
+          name: target.name,
+          exportPath: target.exportPath,
+          form,
+        });
+      }
+    };
+  }
 
   // A route asks the wrapper index about its own parameters as it is
   // discovered, so the wrapper units of a file are complete only once
   // every file has been discovered.
   const discovered = new Map<string, RawCodeStructure[]>();
+  const discoveries = new Map<string, FileDiscovery>();
+  const charges = new Map<string, Dependencies>();
   for (const boundFile of bound) {
     const { file, root, module: moduleBinding } = boundFile;
+    const record = reuse?.discoveryOf(file);
+    if (record !== undefined) {
+      discoveries.set(file, record);
+      for (const registration of record.registrations) {
+        const declared = positions.formAt(registration.form);
+        const target = storedFunction(registration, definitions, filesByPath);
+        if (declared === undefined || target === null) {
+          throw new ReplayFailed(registration.key);
+        }
+        wrapperIndex.registered(target, declared);
+      }
+      continue;
+    }
     const storage = storageFor(boundFile);
-    const rawUnits = timer.time("discover", () =>
+    const discover = (): RawCodeStructure[] =>
       discoverUnits(root, moduleBinding, {
         packs: options.packs,
         filePath: displayPathOf(file),
@@ -428,51 +641,138 @@ export async function extractPythonProject(
         importedDefinition,
         ...(needsValues ? { facts: db } : {}),
         ...(storage === undefined ? {} : { storage }),
-      }),
-    );
+      });
+    const charge = noDependencies();
+    const registrations: StoredRegistration[] = [];
+    const rawUnits = timer.time("discover", () => {
+      if (ledger === null) {
+        return discover();
+      }
+      return ledger.charging(charge, () => {
+        forgetEvaluations(db);
+        ledger.readFile(file);
+        registering = registrations;
+        try {
+          return discover();
+        } finally {
+          registering = null;
+        }
+      });
+    });
     discovered.set(file, rawUnits);
+    charges.set(file, charge);
+    discoveries.set(file, {
+      // Filled in when the entry is written, since the file's load-time
+      // reads are charged to it after the walk.
+      discovery: { files: "", values: "", checks: [] },
+      units: [],
+      registrations,
+      module: { seedKey: null, summary: null },
+    });
   }
+  // More of a file's own work, after other files' work has run in between.
+  const charged = <T>(file: string, work: () => T): T => {
+    const charge = charges.get(file);
+    if (ledger === null || charge === undefined) {
+      return work();
+    }
+    return ledger.charging(charge, () => {
+      forgetEvaluations(db);
+      return work();
+    });
+  };
 
   const seeds: Seed[] = [];
   const summariesBySeed = new Map<string, BehavioralSummary[]>();
+  const assembledHere = new Set<BehavioralSummary>();
   const moduleRoots: ModuleRoot[] = [];
+  const unitDrafts = new Map<
+    string,
+    { summary: BehavioralSummary; draft: UnitDraft }[]
+  >();
+  let summariesReused = 0;
+  const seedFrom = (
+    key: string,
+    boundFile: BoundPythonFile,
+    summary: BehavioralSummary,
+  ): void => {
+    const node = definitions.get(key);
+    if (node === undefined) {
+      return;
+    }
+    const sharing = summariesBySeed.get(key);
+    if (sharing === undefined) {
+      seeds.push({ key, file: boundFile, node });
+      summariesBySeed.set(key, [summary]);
+    } else {
+      sharing.push(summary);
+    }
+  };
+  const assemble = (
+    raw: RawCodeStructure,
+    boundFile: BoundPythonFile,
+  ): { summary: BehavioralSummary; seedKey: string | null } => {
+    const summary = timer.time("summarize", () =>
+      assembleSummary(raw, { gapHandling }),
+    );
+    // Every Python summary reports low confidence, in place of the score
+    // `assembleSummary` computed.
+    summary.confidence = { source: "inferred_static", level: "low" };
+    summaries.push(summary);
+    assembledHere.add(summary);
+    tallyUnit(tallies, raw.boundaryBinding?.recognition);
+    // Two routes on one function, such as one per method, share a seed.
+    const span = raw.identity.span;
+    const key =
+      span === undefined ? null : `${boundFile.file}:${span.start}-${span.end}`;
+    if (key !== null) {
+      seedFrom(key, boundFile, summary);
+    }
+    return { summary, seedKey: key };
+  };
+
   for (const boundFile of bound) {
     const { file, root, module: moduleBinding } = boundFile;
     const displayPath = displayPathOf(file);
-    const rawUnits = [
-      ...(discovered.get(file) ?? []),
-      ...wrapperIndex.unitsIn(file),
-    ];
-    for (const raw of rawUnits) {
-      const summary = timer.time("summarize", () =>
-        assembleSummary(raw, { gapHandling }),
-      );
-      // Every Python summary reports low confidence, in place of the score
-      // `assembleSummary` computed.
-      summary.confidence = { source: "inferred_static", level: "low" };
-      summaries.push(summary);
-      tallyUnit(tallies, raw.boundaryBinding?.recognition);
-
-      // Two routes on one function, such as one per method, share a seed.
-      const span = raw.identity.span;
-      const key =
-        span === undefined ? null : `${file}:${span.start}-${span.end}`;
-      const node = key === null ? undefined : definitions.get(key);
-      if (key === null || node === undefined) {
-        continue;
+    const record = reuse === null ? undefined : reuse.discoveryOf(file);
+    if (record !== undefined && discoveries.get(file) === record) {
+      for (const unit of record.units) {
+        const summary = structuredClone(unit.summary);
+        summariesReused += 1;
+        summaries.push(summary);
+        tallyUnit(tallies, unit.recognition);
+        if (unit.seedKey !== undefined) {
+          seedFrom(unit.seedKey, boundFile, summary);
+        }
       }
-      const sharing = summariesBySeed.get(key);
-      if (sharing === undefined) {
-        seeds.push({ key, file: boundFile, node });
-        summariesBySeed.set(key, [summary]);
-      } else {
-        sharing.push(summary);
+    } else {
+      const drafts: { summary: BehavioralSummary; draft: UnitDraft }[] = [];
+      for (const raw of discovered.get(file) ?? []) {
+        const { summary, seedKey } = assemble(raw, boundFile);
+        const recognition = raw.boundaryBinding?.recognition;
+        drafts.push({
+          summary,
+          draft: {
+            ...(recognition === undefined ? {} : { recognition }),
+            ...(seedKey === null || !definitions.has(seedKey)
+              ? {}
+              : { seedKey }),
+            summary,
+          },
+        });
       }
+      unitDrafts.set(file, drafts);
+    }
+    for (const raw of wrapperIndex.unitsIn(file)) {
+      assemble(raw, boundFile);
     }
 
-    const loadTimeReads = timer.time("discover", () =>
-      envReadEffects(root, moduleBinding, db),
-    );
+    const loadTimeReads =
+      record !== undefined && discoveries.get(file) === record
+        ? null
+        : timer.time("discover", () =>
+            charged(file, () => envReadEffects(root, moduleBinding, db)),
+          );
     // What a module runs on the way in is a caller like any other, so it
     // joins the walk even when it reads nothing from the environment.
     const moduleKey = nodeId(file, root);
@@ -484,6 +784,9 @@ export async function extractPythonProject(
         key: moduleKey,
         loadTimeReads,
       });
+    } else if (loadTimeReads === null) {
+      // The stored run seeded the module node itself, and this one would not.
+      throw new ReplayFailed(moduleKey);
     }
   }
 
@@ -495,6 +798,10 @@ export async function extractPythonProject(
       storageFor,
       facts: db,
       definitions,
+      ...(reuse === null
+        ? {}
+        : { replay: new WalkReplay(reuse, definitions, filesByPath) }),
+      ...(ledger === null ? {} : { ledger }),
     }),
   );
   const placeWhatItReached = (
@@ -512,7 +819,17 @@ export async function extractPythonProject(
   };
   for (const [key, owners] of summariesBySeed) {
     for (const summary of owners) {
-      placeWhatItReached(summary, key);
+      // A replayed summary was placed by the run that stored it.
+      if (assembledHere.has(summary)) {
+        placeWhatItReached(summary, key);
+      }
+    }
+  }
+  if (ledger !== null) {
+    for (const drafts of unitDrafts.values()) {
+      for (const one of drafts) {
+        one.draft.summary = structuredClone(one.summary);
+      }
     }
   }
   if (gapHandling !== "silent") {
@@ -523,9 +840,20 @@ export async function extractPythonProject(
     );
   }
 
+  const modules = new Map<string, StoredModule>();
   for (const { boundFile, displayPath, key, loadTimeReads } of moduleRoots) {
+    const record = discoveries.get(boundFile.file);
+    if (loadTimeReads === null) {
+      const stored = record?.module.summary ?? null;
+      if (stored !== null) {
+        summariesReused += 1;
+        summaries.push(structuredClone(stored));
+      }
+      continue;
+    }
     const calledAtLoad = reached.callsByKey.get(key) ?? [];
     if (loadTimeReads.length === 0 && calledAtLoad.length === 0) {
+      modules.set(boundFile.file, { seedKey: key, summary: null });
       continue;
     }
     const summary = timer.time("summarize", () =>
@@ -536,7 +864,9 @@ export async function extractPythonProject(
           range: rangeOf(boundFile.root),
           effects: [
             ...loadTimeReads,
-            ...moduleLoadInvocationEffects(boundFile.root, db).map(effectToIR),
+            ...charged(boundFile.file, () =>
+              moduleLoadInvocationEffects(boundFile.root, db),
+            ).map(effectToIR),
           ],
         }),
         { gapHandling },
@@ -545,9 +875,21 @@ export async function extractPythonProject(
     summary.confidence = { source: "inferred_static", level: "low" };
     placeWhatItReached(summary, key);
     summaries.push(summary);
+    modules.set(boundFile.file, {
+      seedKey: key,
+      summary: ledger === null ? summary : structuredClone(summary),
+    });
   }
 
   summaries.push(...reached.summaries);
+
+  // An under-question given up on its budget depends on how much the run
+  // asked before it, which a replay changes, so such a run starts over.
+  const spend = underQuestionSpend(db);
+  const overBudget = spend.abandoned + spend.skipped > 0;
+  if (overBudget && reuse !== null) {
+    throw new ReplayFailed("");
+  }
 
   const resolvedImports = importedFilesByFile(db, displayPathOf);
   stampModuleImports(summaries, (file) => resolvedImports.get(file) ?? []);
@@ -585,11 +927,62 @@ export async function extractPythonProject(
       return;
     }
     try {
-      await cache.write(cacheInput, composed);
+      await cache.layer.write(
+        cache.input,
+        composed,
+        log === null || ledger === null || overBudget
+          ? undefined
+          : pythonAttribution({
+              composed,
+              discoveries,
+              charges,
+              unitDrafts,
+              modules,
+              reached,
+              reuse,
+              ledger,
+              facts: log.stored(
+                bound.map(({ file }) => file),
+                new Map(
+                  [...(previous?.records ?? [])].map(([file, record]) => [
+                    file,
+                    record.facts,
+                  ]),
+                ),
+                new Set(
+                  previous === null
+                    ? []
+                    : bound
+                        .map(({ file }) => file)
+                        .filter((file) => !previous.plan.changed.has(file)),
+                ),
+              ),
+            }),
+      );
     } catch {
       // A failed cache write must not fail the extract.
     }
   });
+
+  if (previous !== null && reuse !== null) {
+    const libraryReused = [...reached.beforeGaps].filter(
+      ([key, summary]) => reuse.walkOf(key)?.summary === summary,
+    ).length;
+    const filesReplayed = bound.filter(
+      ({ file }) => discoveries.get(file) === reuse.records.get(file),
+    ).length;
+    options.onCacheDiagnostic?.({
+      kind: "partial",
+      partial: {
+        filesChanged: previous.plan.changed.size,
+        filesRemoved: 0,
+        rootsReused: filesReplayed,
+        rootsReextracted: bound.length - filesReplayed,
+        rootsDeclined: 0,
+        summariesReused: summariesReused + libraryReused,
+      },
+    });
+  }
 
   options.onExtractionReport?.(
     buildPythonExtractionReport({
@@ -601,12 +994,55 @@ export async function extractPythonProject(
   );
   options.onTiming?.(timer.report());
 
-  return {
-    summaries: composed,
-    facts: db,
-    roots,
-    unreadManifests,
-  };
+  return { summaries: composed, facts: db };
+}
+
+/** Every file's record for the entry this run writes. */
+function pythonAttribution(args: {
+  composed: readonly BehavioralSummary[];
+  discoveries: ReadonlyMap<string, FileDiscovery>;
+  /** What each file discovered in this run depended on, by the end of the run. */
+  charges: ReadonlyMap<string, Dependencies>;
+  unitDrafts: ReadonlyMap<
+    string,
+    readonly { summary: BehavioralSummary; draft: UnitDraft }[]
+  >;
+  modules: ReadonlyMap<string, StoredModule>;
+  reached: ReachedUnits;
+  reuse: PythonEntryReuse | null;
+  facts: ReadonlyMap<string, StoredFacts>;
+  ledger: DependencyLedger;
+}): CacheAttribution<PythonFileRecord> {
+  const walkedByFile = walkRecordsByFile({
+    scans: args.reached.scans,
+    charges: args.reached.charges,
+    beforeGaps: args.reached.beforeGaps,
+    replayed: (key) => args.reuse?.walkOf(key),
+    store: (dependencies) => args.ledger.store(dependencies),
+    merge: mergeStoredDependencies,
+  });
+  const roots = [...args.discoveries].map(([file, found]) => {
+    const drafts = args.unitDrafts.get(file);
+    const charge = args.charges.get(file);
+    return {
+      path: file,
+      cacheable: true,
+      deps: [],
+      claims: [],
+      packs: [],
+      meta: {
+        discovery:
+          charge === undefined ? found.discovery : args.ledger.store(charge),
+        units:
+          drafts === undefined ? found.units : drafts.map(({ draft }) => draft),
+        registrations: found.registrations,
+        module: args.modules.get(file) ?? found.module,
+        walked: walkedByFile.get(file) ?? [],
+        facts: args.facts.get(file) ?? { own: "", joined: "" },
+      },
+    };
+  });
+  return { roots, owners: args.composed.map(() => []) };
 }
 
 const SKIPPED_DIRECTORIES = new Set([

@@ -14,6 +14,7 @@
 
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
 import { SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
+import { noteLookup } from "@suss/resolution";
 
 import { enclosingFunction, field, stringLiteralValue } from "./ast.js";
 import { isDefaultedAt } from "./defaulted.js";
@@ -329,6 +330,55 @@ function sitesEachParameterNames(
   return found;
 }
 
+const NAMED_ANY = "envNamedAny";
+const NAMED_PARAMETER = "envNamed ";
+
+/** The sites a parameter names, each with whether it has a fallback, which a reader reads off the site. */
+function describeSites(
+  sites: readonly string[] | undefined,
+  siteById: ReadonlyMap<string, EnvNameSite>,
+): string {
+  return sites === undefined
+    ? "-"
+    : sites
+        .map((id) => `${id}${siteById.get(id)?.defaulted === true ? "!" : ""}`)
+        .join(",");
+}
+
+/**
+ * Asks the run's one question about which parameters name a variable,
+ * so it is answered before any file's work starts and no one file is
+ * charged for every file's reads.
+ */
+export function settleNamedParameters(db: Database): void {
+  const index = sitesByDb.get(db);
+  if (index !== undefined) {
+    sitesEachParameterNames(db, index);
+  }
+}
+
+/**
+ * The same lookup a reader noted under `id`, made again in this run, or
+ * null when `id` is not one of these.
+ */
+export function envLookupAgain(db: Database, id: string): string | null {
+  const index = sitesByDb.get(db);
+  const named =
+    index === undefined
+      ? new Map<string, string[]>()
+      : sitesEachParameterNames(db, index);
+  if (id === NAMED_ANY) {
+    return named.size === 0 ? "none" : "some";
+  }
+  if (id.startsWith(NAMED_PARAMETER)) {
+    return describeSites(
+      named.get(id.slice(NAMED_PARAMETER.length)),
+      index?.byId ?? new Map(),
+    );
+  }
+  return null;
+}
+
 /**
  * The reads each of these calls makes through the helper it calls, keyed
  * by the call's node id. Without any sites in the run it returns an empty
@@ -344,6 +394,7 @@ function helperReadsByCall(
     return found;
   }
   const named = sitesEachParameterNames(db, index);
+  noteLookup(db, NAMED_ANY, named.size === 0 ? "none" : "some");
   if (named.size === 0) {
     return found;
   }
@@ -436,6 +487,11 @@ function readsThroughHelper(
   const reads = new Map<string, boolean>();
   for (const [parameter, argument] of argumentAt) {
     const sites = named.get(parameter);
+    noteLookup(
+      db,
+      `${NAMED_PARAMETER}${parameter}`,
+      describeSites(sites, siteById),
+    );
     if (sites === undefined) {
       continue;
     }
