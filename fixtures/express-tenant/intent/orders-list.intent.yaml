@@ -1,0 +1,27 @@
+kind: boundary
+
+name: orders-list
+purpose: GET /orders lists the orders of the tenant the caller's token names, and nobody else's.
+audience: web-client
+source: author
+
+boundary:
+  transport: http
+  semantics: rest
+  method: GET
+  path: /orders
+
+transitions:
+  - id: no-token
+    when: the caller sent no token, or one that did not check out
+    response:
+      status: 401
+
+  - id: listed
+    when: the caller's token checked out
+    response:
+      status: 200
+    results:
+      - reads: postgresql:orders
+        by: [tenant_id]
+        from: { tenant_id: input.auth.tenantId }

@@ -91,6 +91,13 @@ export {
   writtenAnswersFor,
 } from "./singleAnswer.js";
 export {
+  askSources,
+  type SourceEnd,
+  type SourceLeaf,
+  type SourceQuestion,
+  sourceLeavesOf,
+} from "./sources.js";
+export {
   type AskUnder,
   allocationSitesOf,
   comesToUnder,
@@ -1895,6 +1902,25 @@ export function alsoSteps(rules: readonly Rule[]): Rule[] {
 export const RESOLUTION_RULES = alsoSteps(STATED_RULES);
 
 /**
+ * The steps the source walk takes. An instance step ends at a class,
+ * which is never where a value came from, and asking for one would
+ * settle the callee of every call the walk passes.
+ */
+const SOURCE_STEPS = [VALUE_STEP, RESULT_STEP];
+
+/** The reads at a key the source writes out, which a path keeps. */
+const WRITTEN_KEY_READS = [
+  lit("readsProperty", v("y"), v("o"), v("n")),
+  lit("readsEntry", v("y"), v("o"), v("n")),
+];
+
+/** Every read the walk descends through, from a value to what it was read off. */
+const SOURCE_READS = [
+  ...WRITTEN_KEY_READS,
+  lit("readsKeyed", v("y"), v("o"), v("k")),
+];
+
+/**
  * The questions a caller asks, written as rules. Two facts say somebody
  * is asking: `wanted(x)` for what a value is, and `wantedOrigin(x)` for
  * where a name came from. Each answer relation contains the pairs for the
@@ -2426,6 +2452,119 @@ export const RESOLUTION_QUESTIONS = [
   ),
 
   ...USES_QUESTIONS,
+
+  // Where a value came from, asked from the value. DESIGN.md says why the
+  // walk takes `hop`, why it descends into the object a read is off, and
+  // why a guard's question stops at a call.
+  rule("sourceChain", [v("x"), v("x")], [lit("wantedSource", v("x"))]),
+  ...SOURCE_STEPS.map((kind) =>
+    rule(
+      "sourceChain",
+      [v("x"), v("z")],
+      [lit("sourceChain", v("x"), v("y")), lit("hop", v("y"), v("z"), kind)],
+    ),
+  ),
+  ...SOURCE_READS.map((read) =>
+    rule(
+      "sourceChain",
+      [v("x"), v("o")],
+      [lit("sourceChain", v("x"), v("y")), read],
+    ),
+  ),
+  rule(
+    "sourceChain",
+    [v("x"), v("a")],
+    [
+      lit("sourceChain", v("x"), v("r")),
+      lit("converts", v("r"), v("a"), v("n")),
+    ],
+  ),
+  rule(
+    "wantedSourceConverts",
+    [v("x"), v("r"), v("a"), v("n")],
+    [
+      lit("sourceChain", v("x"), v("r")),
+      lit("converts", v("r"), v("a"), v("n")),
+    ],
+  ),
+  rule("inputChain", [v("x"), v("x")], [lit("wantedInputRead", v("x"))]),
+  rule(
+    "inputChain",
+    [v("x"), v("z")],
+    [lit("inputChain", v("x"), v("y")), lit("nameHop", v("y"), v("z"))],
+  ),
+  ...SOURCE_READS.map((read) =>
+    rule(
+      "inputChain",
+      [v("x"), v("o")],
+      [lit("inputChain", v("x"), v("y")), read],
+    ),
+  ),
+  rule("sourceMember", [v("x"), v("y")], [lit("sourceChain", v("x"), v("y"))]),
+  rule("sourceMember", [v("x"), v("y")], [lit("inputChain", v("x"), v("y"))]),
+  // The chain's steps and what each member is, keyed by the value asked
+  // about, so the asking side can rebuild the path a leaf was read along.
+  ...SOURCE_STEPS.map((kind) =>
+    rule(
+      "wantedSourceHop",
+      [v("x"), v("y"), v("z")],
+      [lit("sourceChain", v("x"), v("y")), lit("hop", v("y"), v("z"), kind)],
+    ),
+  ),
+  rule(
+    "wantedSourceHop",
+    [v("x"), v("y"), v("z")],
+    [lit("inputChain", v("x"), v("y")), lit("nameHop", v("y"), v("z"))],
+  ),
+  ...WRITTEN_KEY_READS.map((read) =>
+    rule(
+      "wantedSourceRead",
+      [v("x"), v("y"), v("o"), v("n")],
+      [lit("sourceMember", v("x"), v("y")), read],
+    ),
+  ),
+  rule(
+    "wantedSourceKeyed",
+    [v("x"), v("y"), v("o")],
+    [
+      lit("sourceMember", v("x"), v("y")),
+      lit("readsKeyed", v("y"), v("o"), v("k")),
+    ],
+  ),
+  rule(
+    "wantedSourceParam",
+    [v("x"), v("p"), v("f")],
+    [
+      lit("sourceMember", v("x"), v("p")),
+      lit("paramOf", v("f"), v("k"), v("p")),
+    ],
+  ),
+  rule(
+    "wantedSourceParam",
+    [v("x"), v("p"), v("f")],
+    [
+      lit("sourceMember", v("x"), v("p")),
+      lit("paramNamed", v("f"), v("n"), v("p")),
+    ],
+  ),
+  rule(
+    "wantedSourceWritten",
+    [v("x"), v("w")],
+    [lit("sourceMember", v("x"), v("w")), lit("writtenValue", v("w"))],
+  ),
+  rule(
+    "wantedSourceCall",
+    [v("x"), v("r")],
+    [lit("sourceMember", v("x"), v("r")), lit("call", v("r"), v("c"))],
+  ),
+  rule(
+    "wantedSourceImport",
+    [v("x"), v("y"), v("m"), v("n")],
+    [
+      lit("sourceMember", v("x"), v("y")),
+      lit("imports", v("y"), v("m"), v("n")),
+    ],
+  ),
 ];
 
 /** The relations `RESOLUTION_QUESTIONS` answers into. */

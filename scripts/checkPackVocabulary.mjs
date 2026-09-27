@@ -75,6 +75,7 @@ const KEYED_BY_IDENTIFIER = new Set([
   "addressing",
   "statements",
   "rowCalls",
+  "parameterSources",
 ]);
 
 /**

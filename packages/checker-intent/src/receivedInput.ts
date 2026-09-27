@@ -59,7 +59,7 @@ function overlaps(a: readonly string[], b: readonly string[]): boolean {
  * handler sees it, so an author writing `X-Tenant-Id` means the header
  * the code reads at `x-tenant-id`.
  */
-function comparable(path: readonly string[]): string[] {
+export function comparable(path: readonly string[]): string[] {
   if (path[0] !== "headers") {
     return [...path];
   }

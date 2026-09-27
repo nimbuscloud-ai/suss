@@ -320,6 +320,15 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
     discovery: [pattern],
     bodyBlocks: BODY_BLOCKS,
     inflections,
+    // An action reads the request through these, and is handed nothing.
+    requestAccessors: ["params", "request"],
+    // Rails merges the path, the query string and the body into `params`,
+    // so an action's read of one cannot be told from the others and all
+    // of them are spelled `params`.
+    requestSpelling: {
+      headers: { path: ["request", "headers"], saysWhichField: true },
+      params: { path: ["params"], saysWhichField: true },
+    },
     // These files change an action's binding without being walked, so the
     // cache key has to list them. This runs before the grammar loads, so
     // nothing here parses Ruby.

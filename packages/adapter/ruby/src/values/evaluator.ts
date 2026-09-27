@@ -48,14 +48,44 @@ const withoutFacts = new WeakMap<object, Evaluator<RbNode>>();
 /** The file a parsed tree came from, for a reader that has only a node. */
 const filesByTree = new WeakMap<object, string>();
 
+/** Every file's root, by the path the facts key it on, per database. */
+const rootsByDb = new WeakMap<Database, ReadonlyMap<string, RbNode>>();
+
 /** Registers the parsed project, so reads through `db` can follow the facts back to nodes. */
 export function bindEvaluator(db: Database, nodes: ProjectNodes): void {
   for (const entry of nodes.files) {
     filesByTree.set(entry.root.tree, entry.file);
   }
+  rootsByDb.set(
+    db,
+    new Map(nodes.files.map((entry) => [entry.file, entry.root])),
+  );
   const context = contextOver(db, nodes);
   contexts.set(db, context);
   evaluators.set(db, new Evaluator(rubyLowering({ context, rows: rubyRows })));
+}
+
+/**
+ * The node a key the rules gave back refers to. Null for a name key,
+ * and until a project has been bound.
+ */
+export function nodeOfResolutionKey(
+  key: string,
+  db: Database | undefined,
+): RbNode | null {
+  const roots = db === undefined ? undefined : rootsByDb.get(db);
+  return roots === undefined ? null : nodeOfKey(roots, key);
+}
+
+/**
+ * The key the rules join a read of this expression on. Null for a node
+ * in a file the run did not bind.
+ */
+export function resolutionKeyOf(node: RbNode): string | null {
+  const file = filesByTree.get(node.tree);
+  return file === undefined
+    ? null
+    : readKey(file, node, enclosingDefinition(node));
 }
 
 /**

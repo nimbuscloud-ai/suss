@@ -119,6 +119,19 @@ export function resolutionKeyOf(
   return bound?.keyOf(node) ?? null;
 }
 
+/**
+ * The node a key the rules gave back refers to, for a caller holding a
+ * key rather than a node. Null for a name key, and until a project has
+ * been bound.
+ */
+export function nodeOfResolutionKey(
+  key: string,
+  db: Database | undefined,
+): PyNode | null {
+  const bound = db === undefined ? undefined : projects.get(db);
+  return bound === undefined ? null : nodeOfKey(bound.roots, key);
+}
+
 /** The call a value was built by, and where that call's callee came from. */
 export interface Construction {
   /** The value key of the call. A router index keys its constructions the same way. */

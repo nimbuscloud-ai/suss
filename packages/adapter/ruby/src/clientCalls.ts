@@ -451,7 +451,11 @@ function callerBranches(
   facts: Database | undefined,
 ): RawBranch[] {
   const effects = invocationEffects(method, undefined, undefined, facts);
-  return returnPathBranches(method, effects) ?? [returnBranch(range, effects)];
+  return (
+    returnPathBranches(method, effects, [], facts) ?? [
+      returnBranch(range, effects),
+    ]
+  );
 }
 
 /** The response members the pack declares for the body, the status and the success flag. */

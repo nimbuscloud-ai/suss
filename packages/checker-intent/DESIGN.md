@@ -6,7 +6,7 @@ The reference for `@suss/checker-intent`: which severity each finding kind gets,
 
 Each finding kind has a fixed severity.
 
-An error means the code does not do something the team wrote down: `unimplementedBoundary`, `uncoveredOutcome`, `outcomeShapeMismatch`, `renamedBoundary` and `pathWithoutEffect`. Somebody wrote the intent doc on purpose, so code that does not satisfy it is a bug.
+An error means the code does not do something the team wrote down: `unimplementedBoundary`, `uncoveredOutcome`, `outcomeShapeMismatch`, `renamedBoundary`, `pathWithoutEffect` and `valueFromElsewhere`. Somebody wrote the intent doc on purpose, so code that does not satisfy it is a bug.
 
 A warning means the intent could not be checked, or a document points at something that is not there: `unkeyableBoundary`, `danglingScenarioLink`, `ambiguousScenarioLink`, `unlinkedScenario`, `missingCoveringTest`, `testMissesSubject` and `coveringTestSkipped`. A dangling or ambiguous link is a planning gap the author has to fix, and so is a scenario that neither a link nor a running test backs. `unreadInputField` is a warning when the author marked the field as required, and info when they did not.
 
@@ -23,6 +23,14 @@ A transition produces an outcome when it ends the way the outcome says and its b
 A transition can match two outcomes at once. A throw with a type the summary does not know matches both a declared `ForbiddenError` throw and a declared throw with no type. When either outcome is listed under `except`, the transition is exempt. The checker cannot tell which of the two the code meant, and a finding would be a guess.
 
 The check reads the transitions and effects the outcome check has already computed, so it adds one pass over them per `always` line.
+
+## Where a value came from
+
+A `results` line with `from` says where the value of a column under `fields` or `by` comes from. The summary records, for each slot of each access, where the walk from the value ended, as value references. The check reads the slots of the effects the line already matched, so it costs nothing on a line without `from`.
+
+An `input` reference is spelled the way a `from` source is, through `boundarySourcePathOf`, which spells a guard's read the same way the `receives` check does, and a path off the request outside its four parts as the path off the request. The line passes when one matched effect takes the column from the given source, since a `results` line is satisfied by one transition. A header name compares without its case, as it does in the `receives` check.
+
+When no matched effect takes the column from the given source, the check needs something it can name before it says so. An input path or a literal is a `valueFromElsewhere` finding. A walk that stopped at a call it cannot follow could still have started at the source the document gives, so the claim goes under `unchecked` as `unreadValue`, with the source text the walk stopped at. The same happens when the summary doesn't record a source for the column.
 
 ## Inferred intent
 

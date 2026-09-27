@@ -55,6 +55,8 @@ async function checkIntent(): Promise<CheckIntentResult> {
       code,
       "-f",
       "express",
+      "-f",
+      "pg",
       "-o",
       path.join(summaries, "code.json"),
     ]),
@@ -93,7 +95,7 @@ describe("a receives block on a REST boundary", () => {
     const intent = await checkIntent();
 
     expect(intent.findings).toEqual([]);
-    expect(intent.checked).toHaveLength(2);
+    expect(intent.checked).toHaveLength(3);
   });
 
   it("reports both sides when the handler reads a header nobody declared", async () => {

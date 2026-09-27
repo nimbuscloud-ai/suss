@@ -11,6 +11,7 @@
  * describes what a library defines, and nothing a project chose.
  */
 
+import type { RequestSpellingMetadata } from "@suss/behavioral-ir";
 import type { UnwrapsByName } from "@suss/resolution";
 
 export interface PythonPack {
@@ -54,6 +55,15 @@ export interface PythonPack {
   sqlClients?: SqlClientPattern[];
   /** Functions the library exports that hand back the argument at `argument`, such as a decorator that returns the function it was given. */
   transparentWrappers?: UnwrapsByName[];
+  /**
+   * The objects the library puts the request on for a route to read,
+   * such as Flask's module-level `request`. A route is handed no
+   * parameter for them, so without this a value read off one is not
+   * known to come from the request.
+   */
+  requestObjects?: RequestObject[];
+  /** Where a route reads each part of the request, recorded on every route the pack finds. */
+  requestSpelling?: RequestSpellingMetadata;
 }
 
 /**
@@ -280,6 +290,12 @@ export interface PyClientResponse {
   failureDelivery?: "response" | "exception";
 }
 
+/** An object a module exports that a route reads the request off. */
+export interface RequestObject {
+  module: string;
+  name: string;
+}
+
 /** Conventions both kinds of route share. Each one describes what the library does, never a project's choice. */
 export interface RouteConventions {
   /** How the library writes a path parameter. DESIGN.md lists the syntaxes the adapter reads. */
@@ -325,8 +341,24 @@ export interface RouteConventions {
   responseConstructors?: PyStatusCall[];
   /** Unset means the library has no router mounting, and a route's decorator path is used as written. */
   routerComposition?: RouterComposition;
+  /**
+   * The callables that say which part of the request a parameter is read
+   * from, by the callee's name, written as the default or inside
+   * `Annotated[...]`: FastAPI's `x_tenant_id: str = Header()` is a header.
+   */
+  parameterSources?: Record<string, ParameterSource>;
+  /** The keyword those callables take a field's name under when it differs from the parameter's, FastAPI's `alias`. */
+  parameterAliasKeyword?: string;
   /** The ways the library runs a project's own function around a route. DESIGN.md lists what each one covers. */
   wrappers?: PyWrapperForm[];
+}
+
+/** The part of the request a parameter declared with one callable is read from. */
+export interface ParameterSource {
+  /** The role the parameter gets, `headers` for FastAPI's `Header`. */
+  role: string;
+  /** What the library writes in place of `_` in the field's name, `-` for a FastAPI header. */
+  underscoresAs?: string;
 }
 
 export type PyWrapperForm = PyDependencyForm | PyDecoratedWrapperForm;

@@ -18,9 +18,10 @@ import type { PatternPack, SqlMethod } from "@suss/recognize";
 const CLIENT_MODULES = ["pg", "@types/pg"];
 
 // `query` takes the statement as its first argument or as the `text` key
-// of a config object.
+// of a config object, and the values beside it the same two ways.
 const STATEMENT: SqlMethod = {
   statement: [{ at: 0 }, { at: 0, property: ["text"] }],
+  parameters: [{ at: 1 }, { at: 0, property: ["values"] }],
 };
 
 const QUERIES = sqlStatements({

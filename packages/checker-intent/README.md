@@ -32,6 +32,7 @@ the same boundary key, and emits:
 - `undescribedOutcome`: a declared outcome no PRD scenario links to (info).
 - `renamedBoundary`: a declared store the unit never touches, paired with an undeclared store of the same system that the unit does touch, with the same verbs on the same outcomes.
 - `pathWithoutEffect`: a transition producing a declared outcome lacks an effect the document's `always` block says every outcome has.
+- `valueFromElsewhere`: a column a `results` line gives a source for under `from` takes its value from somewhere else. A source the code gives no answer for goes under `unchecked` as `unreadValue` instead.
 
 For each PRD, it resolves every scenario's links against the loaded
 boundary intents, and checks the tests a scenario lists under

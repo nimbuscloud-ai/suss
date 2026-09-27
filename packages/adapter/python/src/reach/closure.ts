@@ -45,6 +45,7 @@ import {
   bodyContentOf,
   recognizedBodyEffects,
   recognizedCallIds,
+  withBodyEffects,
 } from "../discovery.js";
 import { exitingBranches } from "../exits.js";
 import { nodeId, readKey } from "../facts/values.js";
@@ -54,6 +55,7 @@ import {
   calleeText,
   invocationEffects,
 } from "../paths/effects.js";
+import { askFileSources } from "../provenance.js";
 import { askWrittenValues, forgetEvaluations } from "../values/evaluator.js";
 import {
   calleeSpellings,
@@ -284,7 +286,7 @@ export function reachedFunctions(
   // A recording run settles each function's values in its own charge,
   // right before its summary is built.
   if (ledger === undefined) {
-    settleBodyValues(reached, functionByKey, options.facts);
+    settleBodyValues(reached, functionByKey, options);
   }
 
   const summaries: BehavioralSummary[] = [];
@@ -601,22 +603,32 @@ function outsideNestedDef(node: PyNode): boolean {
 function settleBodyValues(
   reached: readonly string[],
   functionByKey: ReadonlyMap<string, ReachedFunction>,
-  facts: Database | undefined,
+  options: Pick<ReachOptions, "storageFor" | "facts">,
 ): void {
-  const byFile = new Map<string, PyNode[]>();
+  const byFile = new Map<string, ReachedFunction[]>();
   for (const key of reached) {
     const target = functionByKey.get(key);
     if (target === undefined) {
       continue;
     }
     const listed = byFile.get(target.file.file) ?? [];
-    for (const node of bodyValueNodes(target.node)) {
-      listed.push(node);
-    }
+    listed.push(target);
     byFile.set(target.file.file, listed);
   }
-  for (const nodes of byFile.values()) {
-    askWrittenValues(nodes, facts);
+  const { facts } = options;
+  for (const targets of byFile.values()) {
+    askWrittenValues(
+      targets.flatMap((target) => bodyValueNodes(target.node)),
+      facts,
+    );
+    const [first] = targets;
+    if (facts !== undefined && first !== undefined) {
+      askFileSources(
+        targets.map((target) => target.node),
+        facts,
+        options.storageFor(first.file),
+      );
+    }
   }
 }
 
@@ -879,9 +891,7 @@ export function libraryUnit(
     },
     boundaryBinding: binding,
     parameters,
-    branches: branches.map((branch) =>
-      extra.length === 0 ? branch : { ...branch, extraEffects: extra },
-    ),
+    branches: branches.map((branch) => withBodyEffects(branch, extra)),
     ...(flags.length === 0 ? {} : { extraInputReads: flags }),
     bodyContent: body === null ? "absent" : bodyContentOf(body),
     dependencyCalls: [],

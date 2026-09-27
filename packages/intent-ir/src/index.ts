@@ -32,8 +32,10 @@ export {
   BodyShapeSchema,
   BoundarySchema,
   blanksLeftEmpty,
+  EffectLineSchema,
   EffectOutcomeSchema,
   fillBlanks,
+  INPUT_SOURCE_PREFIX,
   IntentDocSchema,
   IntentSourceSchema,
   TEST_TITLE_SEPARATOR,
@@ -97,6 +99,7 @@ export type {
   IntentOutcome,
   IntentOutcomeKind,
   IntentSummary,
+  IntentValueSource,
   PrdScenarioSummary,
   PrdSummary,
 } from "./summary.js";

@@ -73,6 +73,7 @@ import { importedDefinitionLookup } from "./importedDefinitions.js";
 import { moduleExportUnits, settlePythonModules } from "./moduleSurface.js";
 import { parsePython } from "./parser.js";
 import { moduleLoadInvocationEffects } from "./paths/effects.js";
+import { bindRequestObjects } from "./provenance.js";
 import { ReplayFailed, reachedFunctions } from "./reach/closure.js";
 import {
   lookAgainIn,
@@ -273,6 +274,10 @@ export function factsForFile(options: FileFactsOptions): Database {
     definitions,
   });
   bindEnvFacts(db, [envFactsIn(options.file, options.root, options.module)]);
+  bindRequestObjects(
+    db,
+    options.packs.flatMap((pack) => pack.requestObjects ?? []),
+  );
   addPackWords(db, packWordsOf(options.packs));
   return db;
 }
@@ -522,6 +527,10 @@ async function runPython(
       bindEvaluator(db, { files: bound, definitions });
       bindEnvFacts(db, envFacts);
     }
+    bindRequestObjects(
+      db,
+      options.packs.flatMap((pack) => pack.requestObjects ?? []),
+    );
     addPackWords(db, packWordsOf(options.packs));
     if (ledger !== null) {
       settleNamedParameters(db);

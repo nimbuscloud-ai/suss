@@ -20,6 +20,7 @@ export const IntentFindingKindSchema = z.enum([
   "unkeyableBoundary", // intent boundary can't be keyed, so it can't be checked
   "renamedBoundary", // a declared store vanished and an undeclared one of the same system appeared with the same outcomes
   "pathWithoutEffect", // a transition producing a declared outcome lacks an effect the always block says every outcome has
+  "valueFromElsewhere", // a column's value comes from somewhere other than the source a results line gives
   // What the boundary is handed: the `receives` block against the paths
   // the unit reads off its input.
   "unreadInputField", // intent declares a field no transition of the unit reads

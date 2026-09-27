@@ -10,6 +10,21 @@
 
 export const RECEIVER_RETURNS: readonly string[] = ["freeze", "dup"];
 
+/** The methods that convert the value they are called on to another type. */
+export const CONVERTING_METHODS: ReadonlySet<string> = new Set([
+  "to_i",
+  "to_s",
+  "to_f",
+  "to_sym",
+]);
+
+/** Kernel's functions that convert their first argument to another type. */
+export const CONVERTING_FUNCTIONS: ReadonlySet<string> = new Set([
+  "Integer",
+  "String",
+  "Float",
+]);
+
 /**
  * The method every Ruby class runs to make one of itself. An instance
  * has no `new`, so a read of it keeps its plain name wherever it is

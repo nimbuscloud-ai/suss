@@ -34,10 +34,12 @@ import {
 } from "./annotations.js";
 import {
   bodyStatements,
+  children,
   field,
   parameterNameAndType,
   rangeOf,
   spanOf,
+  stringLiteralValue,
   stripDecorators,
 } from "./ast.js";
 import { clientCallReceivers, clientCallUnits } from "./clientCalls.js";
@@ -53,18 +55,15 @@ import {
   enumerateBodyBranches,
   returnStatements,
 } from "./paths/bodyBranches.js";
-import { bodyCalls, invocationEffects } from "./paths/effects.js";
+import { invocationEffects } from "./paths/effects.js";
 import {
   raisedResponses,
   returnedResponseStatus,
 } from "./paths/raisedResponses.js";
 import { returnedBodyShape } from "./paths/returnedShape.js";
-import { type RawSqlOptions, rawSqlCallIds, rawSqlEffects } from "./rawSql.js";
-import {
-  type StorageLookup,
-  storageCallIds,
-  storageEffects,
-} from "./storage.js";
+import { askFileSources, slotProvenance } from "./provenance.js";
+import { rawSqlCallIds, rawSqlOptionsOf } from "./rawSql.js";
+import { bodyStorage, type StorageLookup, storageCallIds } from "./storage.js";
 import { streamWriteEffects } from "./streamWrites.js";
 import { askWrittenValues, evaluatedValue } from "./values/evaluator.js";
 
@@ -83,6 +82,7 @@ import type {
   RawBranch,
   RawCodeStructure,
   RawParameter,
+  RawProvenance,
   Reading,
   SourceRange,
 } from "@suss/extractor";
@@ -91,6 +91,7 @@ import type { ImportedDefinitionLookup } from "./importedDefinitions.js";
 import type {
   DecoratedClassRoute,
   DecoratedFunctionRoute,
+  ParameterSource,
   PathRepeatedSlashes,
   PyStatusCall,
   PythonDiscoveryPattern,
@@ -189,6 +190,13 @@ export function discoverUnits(
 ): RawCodeStructure[] {
   const decorated = decoratedStatements(root, module, options.facts);
   askWrittenValues(clientCallReceivers(root, module), options.facts);
+  if (options.facts !== undefined) {
+    askFileSources(
+      routedFunctions(decorated, options),
+      options.facts,
+      options.storage,
+    );
+  }
   return [
     ...decorated.flatMap((decoratedStatement) =>
       decoratedUnits(decoratedStatement, module, options),
@@ -211,6 +219,32 @@ function clientUnits(
       }),
     ),
   );
+}
+
+/**
+ * The functions a pattern's decorator is written on, and the methods of
+ * a class one is written on: the bodies whose units ask where their
+ * values came from. A decorator only a project wrapper leads to a
+ * pattern is left out, and its unit asks on its own.
+ */
+function routedFunctions(
+  decorated: readonly DecoratedStatement[],
+  options: DiscoveryOptions,
+): PyNode[] {
+  return decorated
+    .filter(({ decorators }) =>
+      decorators.some(
+        ({ direct }) =>
+          direct.module !== null &&
+          acceptedByAnyPattern(direct.module, options),
+      ),
+    )
+    .flatMap(({ stmt }) => {
+      const { definition } = stripDecorators(stmt);
+      return definition.type === "class_definition"
+        ? definition.descendantsOfType("function_definition")
+        : [definition];
+    });
 }
 
 function decoratedUnits(
@@ -1279,11 +1313,15 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     );
   const parameters = readParameters(
     definitionNode,
-    enclosingScope,
-    ctx,
-    template?.paramNames ?? null,
-    requestBodyFromAnnotatedClass,
-    injectedCallees,
+    {
+      scope: enclosingScope,
+      ctx,
+      pathParamNames: template?.paramNames ?? null,
+      requestBodyFromAnnotatedClass,
+      injectedCallees,
+      sources: pattern.parameterSources ?? {},
+      aliasKeyword: pattern.parameterAliasKeyword,
+    },
     skipReceiverParam,
   );
 
@@ -1311,7 +1349,7 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     },
   });
   const branches: RawBranch[] = (perTerminal ?? []).map((branch) =>
-    extra.length === 0 ? branch : { ...branch, extraEffects: extra },
+    withBodyEffects(branch, extra),
   );
   // A route declaring neither a body shape nor a status still gets a default
   // branch when its body has effects, since an effect with no transition to
@@ -1320,10 +1358,10 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     perTerminal === null &&
     (responseShape.reading.kind !== "absent" ||
       statusCode.reading.kind !== "absent" ||
-      extra.length > 0 ||
+      extra.effects.length > 0 ||
       effects.length > 0)
   ) {
-    branches.push({
+    const bare: RawBranch = {
       conditions: [],
       terminal: {
         kind: "response",
@@ -1342,10 +1380,10 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
       statusCodeReading: statusCode,
       bodyShapeReading: { reading: responseShape.reading },
       effects,
-      ...(extra.length === 0 ? {} : { extraEffects: extra }),
       location: rangeOf(definitionNode),
       isDefault: true,
-    });
+    };
+    branches.push(withBodyEffects(bare, extra));
   }
 
   const bodyNode = field(definitionNode, "body");
@@ -1386,6 +1424,9 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     ...(options.wrappers !== undefined && options.wrappers.length > 0
       ? { wrappers: options.wrappers }
       : {}),
+    ...(pack.requestSpelling === undefined
+      ? {}
+      : { requestSpelling: pack.requestSpelling }),
   };
 }
 
@@ -1406,37 +1447,51 @@ function unreadRoleReadings(
   ];
 }
 
+/** What a body does besides calling, and where the values its effects are given came from. */
+export interface BodyEffects {
+  effects: Effect[];
+  provenance: RawProvenance[];
+}
+
 /** What a body does besides calling: config it reads, database work, SQL it writes itself. */
 export function recognizedBodyEffects(
   definitionNode: PyNode,
   module: ModuleBinding,
   storageLookup: StorageLookup | undefined,
   facts: Database | undefined,
-): Effect[] {
+): BodyEffects {
   const storage =
     storageLookup === undefined
-      ? []
-      : [
-          ...storageEffects(bodyCalls(definitionNode), {
-            ...storageLookup,
-            filePath: storageLookup.factsPath,
+      ? { effects: [], slots: [] }
+      : bodyStorage(definitionNode, storageLookup);
+  return {
+    effects: [
+      ...envReadEffects(definitionNode, module, facts),
+      ...storage.effects,
+      ...streamWriteEffects(definitionNode, module),
+    ],
+    provenance:
+      storage.slots.length === 0 || storageLookup === undefined
+        ? []
+        : slotProvenance(storage.slots, {
+            facts: storageLookup.facts,
+            unit: definitionNode,
           }),
-          ...rawSqlEffects(bodyCalls(definitionNode), rawSqlOf(storageLookup)),
-        ];
-  return [
-    ...envReadEffects(definitionNode, module, facts),
-    ...storage,
-    ...streamWriteEffects(definitionNode, module),
-  ];
+  };
 }
 
-/** What the raw-SQL reader is asked with, out of what discovery already looked up for the file. */
-function rawSqlOf(storageLookup: StorageLookup): RawSqlOptions {
+/** A branch with the body's own effects on it, and where their values came from. */
+export function withBodyEffects(
+  branch: RawBranch,
+  extra: BodyEffects,
+): RawBranch {
+  if (extra.effects.length === 0) {
+    return branch;
+  }
   return {
-    facts: storageLookup.facts,
-    filePath: storageLookup.factsPath,
-    patterns: storageLookup.rawSql ?? [],
-    clients: storageLookup.sqlClients ?? [],
+    ...branch,
+    extraEffects: extra.effects,
+    ...(extra.provenance.length === 0 ? {} : { provenance: extra.provenance }),
   };
 }
 
@@ -1453,7 +1508,7 @@ export function recognizedCallIds(
       ...storageLookup,
       filePath: storageLookup.factsPath,
     }),
-    ...rawSqlCallIds(calls, rawSqlOf(storageLookup)),
+    ...rawSqlCallIds(calls, rawSqlOptionsOf(storageLookup)),
   ]);
 }
 
@@ -1474,13 +1529,20 @@ export function bodyContentOf(bodyNode: PyNode): BodyContent {
   return "empty";
 }
 
+/** What reading a route's parameters needs besides the parameters themselves. */
+interface ParameterReading {
+  scope: Scope;
+  ctx: ReturnType<typeof createAnnotationContext>;
+  pathParamNames: ReadonlySet<string> | null;
+  requestBodyFromAnnotatedClass: boolean;
+  injectedCallees: ReadonlySet<string>;
+  sources: Readonly<Record<string, ParameterSource>>;
+  aliasKeyword: string | undefined;
+}
+
 function readParameters(
   definitionNode: PyNode,
-  scope: Scope,
-  ctx: ReturnType<typeof createAnnotationContext>,
-  pathParamNames: ReadonlySet<string> | null,
-  requestBodyFromAnnotatedClass: boolean,
-  injectedCallees: ReadonlySet<string>,
+  reading: ParameterReading,
   skipReceiverParam: boolean,
 ): RawParameter[] {
   const parametersNode = field(definitionNode, "parameters");
@@ -1498,15 +1560,7 @@ function readParameters(
       position += 1;
       continue;
     }
-    const parsed = readParameter(
-      param,
-      scope,
-      ctx,
-      pathParamNames,
-      requestBodyFromAnnotatedClass,
-      injectedCallees,
-      position,
-    );
+    const parsed = readParameter(param, reading, position);
     if (parsed !== null) {
       out.push(parsed);
     }
@@ -1524,11 +1578,7 @@ function isReceiverParam(param: PyNode): boolean {
 
 function readParameter(
   param: PyNode,
-  scope: Scope,
-  ctx: ReturnType<typeof createAnnotationContext>,
-  pathParamNames: ReadonlySet<string> | null,
-  requestBodyFromAnnotatedClass: boolean,
-  injectedCallees: ReadonlySet<string>,
+  reading: ParameterReading,
   position: number,
 ): RawParameter | null {
   const info = parameterNameAndType(param);
@@ -1537,16 +1587,87 @@ function readParameter(
   }
   const { name, typeNode } = info;
   const shape =
-    typeNode !== null ? annotationToShape(typeNode, scope, ctx) : null;
-  const role = isInjectedParameter(param, injectedCallees, scope, ctx)
-    ? null
-    : roleOf(name, shape, pathParamNames, requestBodyFromAnnotatedClass);
+    typeNode !== null
+      ? annotationToShape(typeNode, reading.scope, reading.ctx)
+      : null;
+  const typeText = typeNode !== null ? typeNode.text : null;
+  if (isInjectedParameter(param, reading)) {
+    return { name, position, role: null, typeText };
+  }
+  const declared = declaringCall(
+    param,
+    new Set(Object.keys(reading.sources)),
+    reading,
+  );
+  const source =
+    declared === null ? undefined : reading.sources[calleeName(declared) ?? ""];
+  const role =
+    source?.role ??
+    roleOf(
+      name,
+      shape,
+      reading.pathParamNames,
+      reading.requestBodyFromAnnotatedClass,
+    );
+  const which =
+    role === null ? null : fieldOf(name, shape, declared, source, reading);
   return {
     name,
     position,
     role,
-    typeText: typeNode !== null ? typeNode.text : null,
+    ...(which === null ? {} : { field: which }),
+    typeText,
   };
+}
+
+/**
+ * Which field of the request part the parameter is: the name the call
+ * gives under the alias keyword, or the parameter's own name as the
+ * library writes it. A class annotation on the body is the whole body.
+ */
+function fieldOf(
+  name: string,
+  shape: TypeShape | null,
+  declared: PyNode | null,
+  source: ParameterSource | undefined,
+  reading: ParameterReading,
+): string | null {
+  const alias =
+    declared === null || reading.aliasKeyword === undefined
+      ? null
+      : keywordString(declared, reading.aliasKeyword);
+  if (alias !== null) {
+    return alias;
+  }
+  if (isModel(shape) && (source === undefined || isBody(source))) {
+    return null;
+  }
+  return source?.underscoresAs === undefined
+    ? name
+    : name.replaceAll("_", source.underscoresAs);
+}
+
+function isModel(shape: TypeShape | null): boolean {
+  return shape?.type === "ref" && shape.def !== undefined;
+}
+
+function isBody(source: ParameterSource): boolean {
+  return source.role === REQUEST_BODY_ROLE;
+}
+
+/** The string a call passes under a keyword, or null when it passes none written out. */
+function keywordString(call: PyNode, keyword: string): string | null {
+  const args = field(call, "arguments");
+  for (const argument of args === null ? [] : children(args)) {
+    if (
+      argument.type === "keyword_argument" &&
+      field(argument, "name")?.text === keyword
+    ) {
+      const value = field(argument, "value");
+      return value === null ? null : stringLiteralValue(value);
+    }
+  }
+  return null;
 }
 
 /**
@@ -1563,13 +1684,8 @@ function roleOf(
   if (pathParamNames?.has(name) === true) {
     return "pathParams";
   }
-  if (
-    requestBodyFromAnnotatedClass &&
-    shape !== null &&
-    shape.type === "ref" &&
-    shape.def !== undefined
-  ) {
-    return "requestBody";
+  if (requestBodyFromAnnotatedClass && isModel(shape)) {
+    return REQUEST_BODY_ROLE;
   }
   if (pathParamNames === null) {
     return null;
@@ -1577,6 +1693,9 @@ function roleOf(
 
   return "queryParams";
 }
+
+/** The role of the parameter a route is handed the request body in. */
+const REQUEST_BODY_ROLE = "requestBody";
 
 /** How far into an annotation the search for an injector call goes. `Annotated[T, Depends(f)]` needs three, and the rest is headroom. */
 const MAX_ANNOTATION_DEPTH = 6;
@@ -1607,52 +1726,66 @@ function calleeName(call: PyNode): string | null {
  */
 function isInjectedParameter(
   param: PyNode,
-  injectedCallees: ReadonlySet<string>,
-  scope: Scope,
-  ctx: ReturnType<typeof createAnnotationContext>,
+  reading: ParameterReading,
 ): boolean {
-  if (injectedCallees.size === 0) {
-    return false;
+  return declaringCall(param, reading.injectedCallees, reading) !== null;
+}
+
+/**
+ * The call of one of `callees` a parameter is declared with, as its
+ * default or inside its annotation, the way `isInjectedParameter` reads
+ * `Depends`. Null when it is declared with none of them.
+ */
+function declaringCall(
+  param: PyNode,
+  callees: ReadonlySet<string>,
+  reading: Pick<ParameterReading, "scope" | "ctx">,
+): PyNode | null {
+  if (callees.size === 0) {
+    return null;
   }
 
-  const callsAnInjector = (node: PyNode | null): boolean => {
-    if (node === null) {
-      return false;
-    }
+  const isOne = (node: PyNode): boolean => {
     const name = calleeName(node);
-    return node.type === "call" && name !== null && injectedCallees.has(name);
+    return node.type === "call" && name !== null && callees.has(name);
   };
 
-  if (callsAnInjector(field(param, "value"))) {
-    return true;
+  const byDefault = field(param, "value");
+  if (byDefault !== null && isOne(byDefault)) {
+    return byDefault;
   }
 
   // `Annotated[User, Depends(get_user)]` wraps the call in a generic type
   // and a type parameter, so the search has to go down rather than read
   // the annotation's own children.
   const followed = new Set<number>();
-  const containsInjectorCall = (
+  const inside = (
     node: PyNode | null,
     nodeScope: Scope,
     depth: number,
-  ): boolean => {
+  ): PyNode | null => {
     if (node === null || depth > MAX_ANNOTATION_DEPTH) {
-      return false;
+      return null;
     }
-    if (callsAnInjector(node)) {
-      return true;
+    if (isOne(node)) {
+      return node;
     }
     if (node.type === "identifier" && !followed.has(node.id)) {
       followed.add(node.id);
-      const alias = aliasValueOf(node.text, nodeScope, ctx);
-      if (alias !== null && containsInjectorCall(alias.node, alias.scope, 0)) {
-        return true;
+      const alias = aliasValueOf(node.text, nodeScope, reading.ctx);
+      const found = alias === null ? null : inside(alias.node, alias.scope, 0);
+      if (found !== null) {
+        return found;
       }
     }
-    return node.namedChildren.some((child) =>
-      containsInjectorCall(child, nodeScope, depth + 1),
-    );
+    for (const child of children(node)) {
+      const found = inside(child, nodeScope, depth + 1);
+      if (found !== null) {
+        return found;
+      }
+    }
+    return null;
   };
 
-  return containsInjectorCall(field(param, "type"), scope, 0);
+  return inside(field(param, "type"), reading.scope, 0);
 }

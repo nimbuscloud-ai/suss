@@ -20,7 +20,11 @@ import {
   unitInvocationBinding,
 } from "@suss/ir-core";
 
-import { oneOrMore, TEST_TITLE_SEPARATOR } from "./schema.js";
+import {
+  INPUT_SOURCE_PREFIX,
+  oneOrMore,
+  TEST_TITLE_SEPARATOR,
+} from "./schema.js";
 
 import type {
   AuthoredConstant,
@@ -65,6 +69,16 @@ export interface IntentEffect {
   by: string[];
   /** The shape of what it writes, when the doc states one. */
   shape?: TypeShape;
+  /** Where the value of each column the doc gives a source for comes from. */
+  from?: IntentValueSource[];
+}
+
+/** Where a `results` line says one column's value comes from. */
+export interface IntentValueSource {
+  /** The column, one the line lists under `fields` or `by`. */
+  column: string;
+  /** The path off the boundary's input: `input.headers.x-tenant-id` is `["headers", "x-tenant-id"]`. */
+  path: string[];
 }
 
 /**
@@ -380,12 +394,17 @@ export function toIntentEffect(declared: DeclaredEffect): IntentEffect {
   ) as [EffectRelation, string];
   const shape =
     declared.shape === undefined ? null : bodyToTypeShape(declared.shape);
+  const from = Object.entries(declared.from ?? {}).map(([column, source]) => ({
+    column,
+    path: source.slice(INPUT_SOURCE_PREFIX.length).split("."),
+  }));
   return {
     does,
     names,
     fields: declared.fields ?? [],
     by: oneOrMore(declared.by),
     ...(shape === null ? {} : { shape }),
+    ...(from.length === 0 ? {} : { from }),
   };
 }
 

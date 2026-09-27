@@ -50,6 +50,7 @@ import {
   writesToBinding,
   writesToField,
 } from "./assignments.js";
+import { CONVERTING_GLOBALS, CONVERTING_METHODS } from "./languageWords.js";
 
 import type { Database } from "@suss/datalog";
 import type {
@@ -1334,6 +1335,36 @@ function emitCallFacts(
       String(position),
       emitValue(db, table, argument),
     );
+  }
+  emitConversion(db, table, callId, callee, global, args);
+}
+
+/** `converts` for a call of one of the language's own conversions. */
+function emitConversion(
+  db: Database,
+  table: NodeTable,
+  callId: string,
+  callee: Expression,
+  global: string | null,
+  args: readonly Node[],
+): void {
+  const [first] = args;
+  if (
+    global !== null &&
+    CONVERTING_GLOBALS.has(global) &&
+    first !== undefined &&
+    Node.isExpression(first)
+  ) {
+    fact(db, "converts", callId, emitValue(db, table, first), global);
+    return;
+  }
+  if (
+    Node.isPropertyAccessExpression(callee) &&
+    CONVERTING_METHODS.has(callee.getName()) &&
+    args.length === 0
+  ) {
+    const receiver = emitValue(db, table, callee.getExpression());
+    fact(db, "converts", callId, receiver, callee.getName());
   }
 }
 

@@ -1272,6 +1272,18 @@
                             }
                           ],
                           "description": "The shape of what the effect writes, such as the report a command prints."
+                        },
+                        "from": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "additionalProperties": {
+                            "type": "string",
+                            "pattern": "^input\\.[^.]+(\\.[^.]+)*$"
+                          },
+                          "description": "Where the value of a column the line lists under fields or by comes from, keyed by the column: input.<path>, spelled the way receives spells it."
                         }
                       },
                       "required": ["reads"],
@@ -1335,6 +1347,18 @@
                             }
                           ],
                           "description": "The shape of what the effect writes, such as the report a command prints."
+                        },
+                        "from": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "additionalProperties": {
+                            "type": "string",
+                            "pattern": "^input\\.[^.]+(\\.[^.]+)*$"
+                          },
+                          "description": "Where the value of a column the line lists under fields or by comes from, keyed by the column: input.<path>, spelled the way receives spells it."
                         }
                       },
                       "required": ["writes"],
@@ -1398,6 +1422,18 @@
                             }
                           ],
                           "description": "The shape of what the effect writes, such as the report a command prints."
+                        },
+                        "from": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "additionalProperties": {
+                            "type": "string",
+                            "pattern": "^input\\.[^.]+(\\.[^.]+)*$"
+                          },
+                          "description": "Where the value of a column the line lists under fields or by comes from, keyed by the column: input.<path>, spelled the way receives spells it."
                         }
                       },
                       "required": ["invokes"],

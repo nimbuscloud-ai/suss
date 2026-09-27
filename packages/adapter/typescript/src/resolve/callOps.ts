@@ -27,11 +27,13 @@ import {
 } from "./invocationEffects.js";
 import { readName } from "./readName.js";
 
+import type { Effect } from "@suss/behavioral-ir";
 import type {
   AstCapableOps,
   CallOps,
   ClassOps,
   ReceiverOrigin,
+  StatedSlot,
   UnsettledName,
   ValueEntry,
   ValueOps,
@@ -199,6 +201,21 @@ export interface CallReading {
    * value it has no answer for.
    */
   readonly walk?: WalkArguments | undefined;
+  /** Where a recognizer's `statesSlots` goes, when somebody listens. */
+  readonly statesSlots?:
+    | ((effect: Effect, slots: readonly StatedSlot[]) => void)
+    | undefined;
+}
+
+/**
+ * The node behind each value handed to a pack, so a slot a recognizer
+ * states can be asked about in the store.
+ */
+const nodesOfValues = new WeakMap<ValueOps, Node>();
+
+/** The node a value handed to a pack was read from, or null for none. */
+export function nodeOfValue(value: ValueOps): Node | null {
+  return nodesOfValues.get(value) ?? null;
 }
 
 /** What the values inside a call, and the calls inside those, are read through. */
@@ -388,6 +405,9 @@ export function callOpsFor(
         reading,
       ),
     classAt: (index) => classOpsFor(argumentsOf()[index], reading),
+    ...(reading.statesSlots === undefined
+      ? {}
+      : { statesSlots: reading.statesSlots }),
     ast: () => call,
   };
 }
@@ -506,7 +526,7 @@ function valueOpsFor(value: Node, reading: ValueReading): ValueOps {
     return settledValue;
   };
 
-  return {
+  const ops: ValueOps = {
     text: () => literalText(written()),
     name: (unsettled) => readName(written(), { resolve, unsettled }),
     names: (cap) => stringValuesOf(value, reading.resolution, cap),
@@ -525,6 +545,8 @@ function valueOpsFor(value: Node, reading: ValueReading): ValueOps {
     holes: () => templateHoles(written(), reading),
     interpolated: () => interpolatedValues(written(), reading),
   };
+  nodesOfValues.set(ops, value);
+  return ops;
 }
 
 /**

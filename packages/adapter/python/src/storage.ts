@@ -11,6 +11,8 @@ import { answersFor } from "@suss/resolution";
 import { children, enclosingFunction, field } from "./ast.js";
 import { originsOf, resolveCalls, settledFunction } from "./facts/resolve.js";
 import { readKey } from "./facts/values.js";
+import { bodyCalls } from "./paths/effects.js";
+import { rawSqlEffects, rawSqlOptionsOf } from "./rawSql.js";
 import {
   firstInBody,
   receiverTypeOrigins,
@@ -311,17 +313,99 @@ function methodNameOf(call: PyNode): string {
 }
 
 function keywordNames(call: PyNode): string[] {
+  return keywordValues(call).map((one) => one.name);
+}
+
+/** Each keyword a call passes, with the value it passes there. */
+function keywordValues(call: PyNode): Array<{ name: string; value: PyNode }> {
   const args = field(call, "arguments");
-  const picked: string[] = [];
+  const picked: Array<{ name: string; value: PyNode }> = [];
   for (const argument of args === null ? [] : children(args)) {
     if (argument.type === "keyword_argument") {
       const name = field(argument, "name");
-      if (name !== null) {
-        picked.push(name.text);
+      const value = field(argument, "value");
+      if (name !== null && value !== null) {
+        picked.push({ name: name.text, value });
       }
     }
   }
   return picked;
+}
+
+/**
+ * The value a chain passes under each keyword: the values a write sets,
+ * and what the calls after the root pick rows by. These are the same
+ * keywords `fieldsOf` and `selectorOf` read the columns from.
+ */
+function slotsOf(chain: Chain, valueMethods: readonly string[]): SlotValue[] {
+  const later = laterCalls(chain);
+  const written = [
+    chain.root,
+    ...later.filter((call) => valueMethods.includes(methodNameOf(call))),
+  ].flatMap(keywordValues);
+  const picked = later
+    .filter((call) => !valueMethods.includes(methodNameOf(call)))
+    .flatMap(pickedBy);
+  return [
+    ...written.map((one) => ({ slot: "field" as const, ...one })),
+    ...picked.map((one) => ({ slot: "selector" as const, ...one })),
+  ];
+}
+
+/**
+ * The columns a call picks rows by, with the value each is compared
+ * with: `filter_by(tenant_id=t)` by keyword, and `where(Order.tenant_id
+ * == t)` or `filter(t == Order.tenant_id)` by comparison.
+ */
+function pickedBy(call: PyNode): Array<{ name: string; value: PyNode }> {
+  const args = field(call, "arguments");
+  return [
+    ...keywordValues(call),
+    ...(args === null ? [] : children(args)).flatMap(columnComparisons),
+  ];
+}
+
+/** The `==` comparisons of a model's column in an argument, `and_(...)` taken apart. */
+function columnComparisons(
+  node: PyNode,
+): Array<{ name: string; value: PyNode }> {
+  if (node.type === "call" && methodNameOf(node) === "and_") {
+    const args = field(node, "arguments");
+    return (args === null ? [] : children(args)).flatMap(columnComparisons);
+  }
+  const operator = node.children.find((child) => !child?.isNamed);
+  const [left, right, ...rest] = children(node);
+  if (
+    node.type !== "comparison_operator" ||
+    operator?.type !== "==" ||
+    left === undefined ||
+    right === undefined ||
+    rest.length > 0
+  ) {
+    return [];
+  }
+  const leftColumn = modelColumn(left);
+  if (leftColumn !== null) {
+    return [{ name: leftColumn, value: right }];
+  }
+  const rightColumn = modelColumn(right);
+  return rightColumn === null ? [] : [{ name: rightColumn, value: left }];
+}
+
+/** The column `Order.tenant_id` reads off a model class, or null for anything else. */
+function modelColumn(node: PyNode): string | null {
+  const object = node.type === "attribute" ? field(node, "object") : null;
+  if (object?.type !== "identifier" || !isClassName(object.text)) {
+    return null;
+  }
+  return field(node, "attribute")?.text ?? null;
+}
+
+/** A column a storage effect writes or picks rows by, and the value passed for it. */
+export interface SlotValue {
+  slot: "field" | "selector";
+  name: string;
+  value: PyNode;
 }
 
 /** What the calls after the root were given to pick rows by. A call that supplies values is not one of them. */
@@ -330,7 +414,7 @@ function selectorOf(chain: Chain, valueMethods: readonly string[]): string[] {
     ...new Set(
       laterCalls(chain)
         .filter((call) => !valueMethods.includes(methodNameOf(call)))
-        .flatMap(keywordNames),
+        .flatMap((call) => pickedBy(call).map((one) => one.name)),
     ),
   ];
 }
@@ -455,7 +539,7 @@ function effectFor(
 ): Effect {
   const valueMethods = pattern.valueMethods ?? [];
   const picked = selectorOf(chain, valueMethods);
-  return {
+  const effect: Effect = {
     type: "interaction",
     binding: storageBinding({
       recognition: "python-storage",
@@ -472,6 +556,13 @@ function effectFor(
       ...(picked.length > 0 ? { selector: picked } : {}),
     },
   };
+  if (options.statesSlots !== undefined) {
+    const slots = slotsOf(chain, valueMethods);
+    if (slots.length > 0) {
+      options.statesSlots(effect, slots);
+    }
+  }
+  return effect;
 }
 
 /** The file part of a node key, which says where a definition was written. */
@@ -492,6 +583,8 @@ export interface StorageOptions {
   readonly patterns: readonly StoragePattern[];
   /** Method names a file importing the library declares, the only ones that can match. */
   readonly couldMatch: ReadonlySet<string>;
+  /** Told the value each effect's columns are given, when somebody listens. */
+  readonly statesSlots?: SlotsStated;
 }
 
 /**
@@ -658,4 +751,42 @@ export function storageEffects(
     ({ chain, pattern, operation }) =>
       operation === null ? [] : [effectFor(pattern, chain, operation, options)],
   );
+}
+
+/** Told the value each column of an effect is given. */
+export type SlotsStated = (effect: Effect, slots: readonly SlotValue[]) => void;
+
+/** One column of one effect, and the value the call passes for it. */
+export interface EffectSlot extends SlotValue {
+  effect: Effect;
+}
+
+/** Effects, and the value each of their columns is given. */
+export interface SlottedEffects {
+  effects: Effect[];
+  slots: EffectSlot[];
+}
+
+/**
+ * The database work a body does through a library and through SQL it
+ * wrote itself, with the value each column is given.
+ */
+export function bodyStorage(
+  definitionNode: PyNode,
+  lookup: StorageLookup,
+): SlottedEffects {
+  const calls = bodyCalls(definitionNode);
+  const slots: EffectSlot[] = [];
+  const effects = storageEffects(calls, {
+    ...lookup,
+    filePath: lookup.factsPath,
+    statesSlots: (effect, stated) => {
+      slots.push(...stated.map((one) => ({ ...one, effect })));
+    },
+  });
+  const raw = rawSqlEffects(calls, rawSqlOptionsOf(lookup));
+  return {
+    effects: [...effects, ...raw.effects],
+    slots: [...slots, ...raw.slots],
+  };
 }

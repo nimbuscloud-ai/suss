@@ -11,8 +11,9 @@
 import { enumerateOrDegrade, guardsHoldOn } from "@suss/extractor";
 
 import { NodeSet } from "../ast.js";
+import { guardInputs } from "../provenance.js";
 import { lowerPythonBody } from "./lowering.js";
-import { predicateOf } from "./predicates.js";
+import { type GuardInputs, operandsOf, predicateOf } from "./predicates.js";
 
 import type { Database } from "@suss/datalog";
 import type {
@@ -109,6 +110,30 @@ export interface EnumerateBodyOptions {
   facts?: Database | undefined;
 }
 
+/**
+ * The input each subject of a body's conditions reads, asked once for
+ * every path. The body's function is the unit whose parameters count.
+ */
+function conditionInputs(
+  pathSets: ReadonlyArray<readonly ConditionInfo<PyNode>[][]>,
+  options: EnumerateBodyOptions,
+): GuardInputs | undefined {
+  const unit = options.body?.parent ?? null;
+  if (options.facts === undefined || unit === null) {
+    return undefined;
+  }
+  const operands = pathSets.flatMap((paths) =>
+    paths.flatMap((path) =>
+      path.flatMap((condition) =>
+        condition.expression === null ? [] : operandsOf(condition.expression),
+      ),
+    ),
+  );
+  return operands.length === 0
+    ? undefined
+    : guardInputs(operands, { facts: options.facts, unit });
+}
+
 /** One branch per path to each terminal, and one per path off the end when the caller says what that does. */
 export function enumerateBodyBranches(
   options: EnumerateBodyOptions,
@@ -134,6 +159,10 @@ export function enumerateBodyBranches(
     statements,
   );
 
+  const inputs = conditionInputs(
+    [...enumerated.byTerminal.values(), enumerated.fallthrough],
+    options,
+  );
   const branches: RawBranch[] = [];
   const push = (
     branch: TerminalBranch,
@@ -145,7 +174,7 @@ export function enumerateBodyBranches(
         structured:
           condition.expression === null
             ? null
-            : predicateOf(condition.expression, options.facts),
+            : predicateOf(condition.expression, options.facts, inputs),
         polarity: condition.polarity,
         source: condition.source,
       }));

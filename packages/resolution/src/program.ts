@@ -50,6 +50,8 @@ export const ASKING_RELATIONS: readonly string[] = [
   "wantedAncestry",
   "wantedType",
   "wantedUses",
+  "wantedSource",
+  "wantedInputRead",
 ];
 
 const NO_LANGUAGE_RULES: readonly Rule[] = [];

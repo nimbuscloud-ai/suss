@@ -170,11 +170,7 @@ describe("a parameter annotated as a model class", () => {
       type: "negation",
       operand: {
         type: "truthinessCheck",
-        subject: {
-          type: "dependency",
-          name: "account",
-          accessChain: ["is_admin"],
-        },
+        subject: { type: "input", inputRef: "account", path: ["is_admin"] },
         negated: false,
       },
     });

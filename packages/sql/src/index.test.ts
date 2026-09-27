@@ -202,6 +202,85 @@ describe("what a statement touches", () => {
   });
 });
 
+describe("which placeholder gives a column its value", () => {
+  /** Each column given a placeholder, as `clause field=placeholder`. */
+  function bound(sql: string): string[] {
+    return readSqlAccess(sql, { placeholders: true }).flatMap((access) =>
+      (access.placeholders ?? []).map(
+        (one) =>
+          `${access.table} ${one.clause} ${one.field}=${one.placeholder}`,
+      ),
+    );
+  }
+
+  it("reads a comparison written either way round, and a named parameter", () => {
+    expect(
+      bound(
+        "SELECT id FROM orders WHERE $1 = tenant_id AND status = :status AND total > $2",
+      ),
+    ).toEqual(["orders selector tenant_id=1", "orders selector status=status"]);
+  });
+
+  it("reads every row of an insert, and leaves a literal out", () => {
+    expect(
+      bound(
+        "INSERT INTO audit_log (actor_id, action) VALUES ($1, 'x'), ($2, $3)",
+      ),
+    ).toEqual([
+      "audit_log fields actor_id=1",
+      "audit_log fields actor_id=2",
+      "audit_log fields action=3",
+    ]);
+  });
+
+  it("puts a qualified column on the table its alias names", () => {
+    expect(
+      bound(
+        "SELECT o.id FROM orders o JOIN tenants t ON t.id = o.tenant_id WHERE o.tenant_id = $1",
+      ),
+    ).toEqual(["orders selector tenant_id=1"]);
+  });
+
+  it("reads an update's assignments and its condition", () => {
+    expect(
+      bound("UPDATE users SET email = $1, name = 'x' WHERE id = $2"),
+    ).toEqual(["users fields email=1", "users selector id=2"]);
+  });
+
+  it("says nothing unless the caller asks", () => {
+    expect(
+      readSqlAccess("SELECT id FROM orders WHERE tenant_id = $1")[0],
+    ).not.toHaveProperty("placeholders");
+  });
+
+  it("counts a dialect's bare ? binds in the order the statement writes them", () => {
+    const bound = (sql: string) =>
+      readSqlAccess(sql, { dialect: "sqlite", placeholders: true }).flatMap(
+        (access) =>
+          (access.placeholders ?? []).map(
+            (one) => `${one.clause} ${one.field}=${one.placeholder}`,
+          ),
+      );
+    expect(
+      bound("UPDATE users SET email = ?, note = '?' WHERE id = ? /* or ? */"),
+    ).toEqual(["fields email=1", "selector id=2"]);
+  });
+
+  it("finds no placeholder in an insert that copies rows from a query", () => {
+    expect(
+      bound("INSERT INTO archive (id) SELECT id FROM orders WHERE total > $1"),
+    ).toEqual([]);
+  });
+
+  it("leaves an unqualified column out of a join, as the selector does", () => {
+    expect(
+      bound(
+        "SELECT o.id FROM orders o JOIN tenants t ON t.id = o.tenant_id WHERE tenant_id = $1",
+      ),
+    ).toEqual([]);
+  });
+});
+
 describe("a parameter written with the type it is read as", () => {
   it("reads the table either side of a cast", () => {
     expect(

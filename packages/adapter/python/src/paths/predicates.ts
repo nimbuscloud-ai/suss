@@ -35,7 +35,18 @@ function operatorText(node: PyNode): string {
     .join(" ");
 }
 
-function valueRefOf(node: PyNode, facts: Database | undefined): ValueRef {
+/**
+ * The input each operand of a body's conditions reads, by node id, for
+ * the operands whose value came from exactly one input. `guardInputs`
+ * builds it.
+ */
+export type GuardInputs = ReadonlyMap<number, ValueRef>;
+
+function valueRefOf(
+  node: PyNode,
+  facts: Database | undefined,
+  inputs: GuardInputs | undefined,
+): ValueRef {
   const value = evaluatedValue(node, facts);
   const constant = constantOf(value);
   if (constant !== undefined) {
@@ -44,6 +55,10 @@ function valueRefOf(node: PyNode, facts: Database | undefined): ValueRef {
   const literal = literalOf(value);
   if (literal !== null) {
     return { type: "literal", value: literal };
+  }
+  const input = inputs?.get(node.id);
+  if (input !== undefined) {
+    return input;
   }
 
   const chain = attributeChain(node);
@@ -89,11 +104,20 @@ function nullCheckOf(
   subject: PyNode,
   negated: boolean,
   facts: Database | undefined,
+  inputs: GuardInputs | undefined,
 ): Predicate {
-  return { type: "nullCheck", subject: valueRefOf(subject, facts), negated };
+  return {
+    type: "nullCheck",
+    subject: valueRefOf(subject, facts, inputs),
+    negated,
+  };
 }
 
-function comparisonOf(node: PyNode, facts: Database | undefined): Predicate {
+function comparisonOf(
+  node: PyNode,
+  facts: Database | undefined,
+  inputs: GuardInputs | undefined,
+): Predicate {
   const [left, right] = node.namedChildren.filter(
     (child): child is PyNode => child !== null,
   );
@@ -103,13 +127,13 @@ function comparisonOf(node: PyNode, facts: Database | undefined): Predicate {
 
   const operator = operatorText(node);
   if (operator === "is" && right.type === "none") {
-    return nullCheckOf(left, false, facts);
+    return nullCheckOf(left, false, facts, inputs);
   }
   if (operator === "is not" && right.type === "none") {
-    return nullCheckOf(left, true, facts);
+    return nullCheckOf(left, true, facts, inputs);
   }
   if (operator === "is" && left.type === "none") {
-    return nullCheckOf(right, false, facts);
+    return nullCheckOf(right, false, facts, inputs);
   }
 
   const op = COMPARISONS[operator];
@@ -119,9 +143,9 @@ function comparisonOf(node: PyNode, facts: Database | undefined): Predicate {
 
   return {
     type: "comparison",
-    left: valueRefOf(left, facts),
+    left: valueRefOf(left, facts, inputs),
     op,
-    right: valueRefOf(right, facts),
+    right: valueRefOf(right, facts, inputs),
   };
 }
 
@@ -129,30 +153,59 @@ function comparisonOf(node: PyNode, facts: Database | undefined): Predicate {
 export function predicateOf(
   node: PyNode,
   facts?: Database | undefined,
+  inputs?: GuardInputs | undefined,
 ): Predicate {
   if (node.type === "parenthesized_expression") {
     const inner = node.namedChildren[0];
-    return inner == null ? opaqueOf(node) : predicateOf(inner, facts);
+    return inner == null ? opaqueOf(node) : predicateOf(inner, facts, inputs);
   }
 
   if (node.type === "comparison_operator") {
-    return comparisonOf(node, facts);
+    return comparisonOf(node, facts, inputs);
   }
 
   if (node.type === "not_operator") {
     const operand = field(node, "argument") ?? node.namedChildren[0];
     return operand == null
       ? opaqueOf(node)
-      : { type: "negation", operand: predicateOf(operand, facts) };
+      : { type: "negation", operand: predicateOf(operand, facts, inputs) };
   }
 
-  if (node.type === "identifier" || node.type === "attribute") {
+  if (
+    node.type === "identifier" ||
+    node.type === "attribute" ||
+    inputs?.has(node.id) === true
+  ) {
     return {
       type: "truthinessCheck",
-      subject: valueRefOf(node, facts),
+      subject: valueRefOf(node, facts, inputs),
       negated: false,
     };
   }
 
   return opaqueOf(node);
+}
+
+/** The subjects a guard can test whose source the walk can follow. */
+const SUBJECT_TYPES = new Set(["identifier", "attribute", "subscript"]);
+
+/**
+ * The values `predicateOf` reads a condition's subjects from, so a body
+ * can ask where all of them came from before it builds any predicate.
+ */
+export function operandsOf(node: PyNode): PyNode[] {
+  if (
+    node.type === "parenthesized_expression" ||
+    node.type === "not_operator"
+  ) {
+    const inner = field(node, "argument") ?? node.namedChildren[0];
+    return inner == null ? [] : operandsOf(inner);
+  }
+  if (node.type === "comparison_operator") {
+    return node.namedChildren.filter(
+      (child): child is PyNode =>
+        child !== null && SUBJECT_TYPES.has(child.type),
+    );
+  }
+  return SUBJECT_TYPES.has(node.type) ? [node] : [];
 }

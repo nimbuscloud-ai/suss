@@ -40,6 +40,7 @@ import {
 
 import { checkCoveringTests } from "./coveringTests.js";
 import { checkReceivesBlock } from "./receivedInput.js";
+import { checkValueSources } from "./valueSources.js";
 
 import type {
   BehavioralSummary,
@@ -47,6 +48,7 @@ import type {
   BoundaryGuard,
   Deployment,
   Interaction,
+  ProvenanceEntry,
   Transition,
   TypeShape,
   ValueRef,
@@ -134,11 +136,17 @@ export interface CheckedPrd {
  */
 export type CheckedIntent = CheckedBoundaryIntent | CheckedPrd;
 
-/** An intent doc that was loaded but not compared, and why. */
+/**
+ * Intent that was loaded and not compared, and why. `unkeyable` is a
+ * whole document whose boundary cannot be paired. `unreadValue` is one
+ * `from` source the code gave no answer to compare against.
+ */
 export interface UncheckedIntent {
   /** The intent doc's `name` (boundary) or `title` (prd). */
   intent: string;
-  reason: "unkeyable";
+  reason: "unkeyable" | "unreadValue";
+  /** The outcome the claim is on, for a claim narrower than the document. */
+  outcomeId?: string;
   /** Human-readable explanation, render-ready. */
   detail: string;
 }
@@ -370,6 +378,7 @@ function checkBoundaryIntent(
     };
   }
   const findings: IntentFinding[] = [];
+  const unchecked: UncheckedIntent[] = [];
   for (const impl of impls) {
     findings.push(
       ...compareIntentToImpl(
@@ -378,6 +387,7 @@ function checkBoundaryIntent(
         label,
         deploymentOfUnit(impl),
         wrappersOfUnit(impl),
+        unchecked,
       ),
     );
   }
@@ -391,7 +401,7 @@ function checkBoundaryIntent(
         implementations: impls.map(codeRef),
       },
     ],
-    unchecked: [],
+    unchecked,
   };
 }
 
@@ -696,6 +706,7 @@ function compareIntentToImpl(
   boundary: string,
   deployment: Deployment,
   wrappers: readonly BehavioralSummary[],
+  unchecked: UncheckedIntent[],
 ): IntentFinding[] {
   const findings: IntentFinding[] = [];
   const ref = codeRef(impl);
@@ -735,6 +746,12 @@ function compareIntentToImpl(
             message: `Intent "${intent.name}" says ${outcome.id} results in ${describeEffect(effect)} at ${boundary} with a declared shape; what ${impl.identity.name} writes there has an incompatible shape.`,
           });
         }
+        const sources = checkValueSources(
+          { intent, outcome, effect, impl, boundary, code: ref },
+          matched,
+        );
+        findings.push(...sources.findings);
+        unchecked.push(...sources.unchecked);
         continue;
       }
       const finding: IntentFinding = {
@@ -1475,6 +1492,10 @@ export interface CodeEffect {
   by: string[];
   /** The shape of what a write put out, when the code says. */
   payload?: TypeShape;
+  /** Where the values in this effect's slots came from, when the summary says. */
+  slots?: ProvenanceEntry[];
+  /** The line the transition that has this effect starts on. */
+  line?: number;
 }
 
 /** Every verb and boundary the transition reaches, grounded against the deployment. */
@@ -1483,7 +1504,7 @@ export function codeEffectsOf(
   deployment: Deployment,
 ): CodeEffect[] {
   const reached: CodeEffect[] = [];
-  for (const effect of t.effects) {
+  for (const [at, effect] of t.effects.entries()) {
     if (effect.type !== "interaction") {
       continue;
     }
@@ -1498,8 +1519,16 @@ export function codeEffectsOf(
     const binding = groundBinding(effect.binding, deployment);
     const label = displayLabel(binding);
     const touched = accessDetail(effect.interaction);
+    const slots = (t.provenance ?? []).filter((one) => one.at.effect === at);
     for (const does of relationsOf(effect.interaction)) {
-      reached.push({ does, binding, label, ...touched });
+      reached.push({
+        does,
+        binding,
+        label,
+        ...touched,
+        ...(slots.length === 0 ? {} : { slots }),
+        line: t.location.start,
+      });
     }
   }
   return reached;

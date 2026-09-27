@@ -34,9 +34,16 @@ import {
   readCallArgs,
   runStatements,
   singletonMethodsByName,
+  stringLiteralValue,
+  symbolValue,
 } from "../ast.js";
 import { spellsAName } from "../paths/bareCalls.js";
-import { CONSTRUCTOR, RECEIVER_RETURNS } from "./languageWords.js";
+import {
+  CONSTRUCTOR,
+  CONVERTING_FUNCTIONS,
+  CONVERTING_METHODS,
+  RECEIVER_RETURNS,
+} from "./languageWords.js";
 import {
   collectWrites,
   instanceWritesRunInOrder,
@@ -431,6 +438,35 @@ function emitCall(emitter: Emitter, site: CallSite): void {
     return;
   }
   emitCallArguments(emitter, site);
+  emitConversion(emitter, site);
+}
+
+/** `converts` for `x.to_i` and the like, and for Kernel's `Integer(x)`. */
+function emitConversion(emitter: Emitter, site: CallSite): void {
+  const { method, receiver, node } = site;
+  const name = method?.text ?? null;
+  const args = method === node ? null : field(node, "arguments");
+  const written = args === null ? [] : children(args);
+  if (
+    name !== null &&
+    receiver !== null &&
+    CONVERTING_METHODS.has(name) &&
+    written.length === 0
+  ) {
+    add(emitter, "converts", site.key, valueKey(emitter, receiver, node), name);
+    return;
+  }
+  const [first] = written;
+  if (
+    name !== null &&
+    receiver === null &&
+    CONVERTING_FUNCTIONS.has(name) &&
+    args !== null &&
+    first !== undefined &&
+    first.type !== "pair"
+  ) {
+    add(emitter, "converts", site.key, valueKey(emitter, first, args), name);
+  }
 }
 
 /**
@@ -841,6 +877,30 @@ function emitKeyedElement(
   );
   if (index !== undefined) {
     emitKeyedRead(emitter, node, object, index, node);
+    emitWrittenKeyRead(emitter, node, object, index);
+  }
+}
+
+/**
+ * `params[:tenant_id]` and `headers["X-Tenant-Id"]`, an entry read at a
+ * key the source writes out. A hash's entries are not its methods, so
+ * this is `readsEntry` and not `readsProperty`.
+ */
+function emitWrittenKeyRead(
+  emitter: Emitter,
+  site: RbNode,
+  container: RbNode,
+  key: RbNode,
+): void {
+  const name = symbolValue(key) ?? stringLiteralValue(key);
+  if (name !== null) {
+    add(
+      emitter,
+      "readsEntry",
+      nodeId(emitter.filePath, site),
+      valueKey(emitter, container, site),
+      name,
+    );
   }
 }
 

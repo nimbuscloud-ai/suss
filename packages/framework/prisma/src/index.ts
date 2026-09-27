@@ -33,9 +33,12 @@ import {
 import type { ReceiverType, ResolutionStore } from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
 import type {
+  CallOps,
   EffectArg,
   InvocationRecognizer,
   PatternPack,
+  StatedSlot,
+  ValueOps,
 } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 import type { SqlMethod, SqlStatements } from "@suss/recognize";
@@ -101,6 +104,7 @@ function recognizePrismaCall(
     sourceFile: SourceFile;
     extractArgs: () => EffectArg[];
     resolution?: ResolutionStore;
+    ops?: CallOps;
   };
 
   // The callee has to be `<receiver>.<delegate>.<method>`.
@@ -145,20 +149,25 @@ function recognizePrismaCall(
     container: tableName,
   });
   const callee = callNode.getExpression().getText();
+  const access: Effect = {
+    type: "interaction",
+    binding,
+    callee,
+    interaction: {
+      class: "storage-access",
+      kind,
+      fields,
+      ...(selector !== null ? { selector } : {}),
+      operation: method,
+    },
+  };
+  statePayloadSlots(recognizerCtx.ops, access, {
+    fields: kind === "write" ? fields : [],
+    selector: selector ?? [],
+  });
 
   return [
-    {
-      type: "interaction",
-      binding,
-      callee,
-      interaction: {
-        class: "storage-access",
-        kind,
-        fields,
-        ...(selector !== null ? { selector } : {}),
-        operation: method,
-      },
-    },
+    access,
     ...nestedReads(optionsArg).map(
       (nested): Effect => ({
         type: "interaction",
@@ -191,6 +200,44 @@ function recognizePrismaCall(
       }),
     ),
   ];
+}
+
+/**
+ * Tell the adapter which value the call states for each column it picks
+ * by under `where` and each one it writes under a payload key, so the
+ * summary can say where those values came from.
+ */
+function statePayloadSlots(
+  ops: CallOps | undefined,
+  effect: Effect,
+  columns: { fields: readonly string[]; selector: readonly string[] },
+): void {
+  const options = ops?.statesSlots === undefined ? null : ops.valueAt(0);
+  if (ops === undefined || options === null) {
+    return;
+  }
+  const slots: StatedSlot[] = [
+    ...slotsUnder(options, ["where"], "selector", columns.selector),
+    ...slotsUnder(options, WRITE_PAYLOAD_KEYS, "field", columns.fields),
+  ];
+  if (slots.length > 0) {
+    ops.statesSlots?.(effect, slots);
+  }
+}
+
+function slotsUnder(
+  options: ValueOps,
+  keys: readonly string[],
+  slot: StatedSlot["slot"],
+  columns: readonly string[],
+): StatedSlot[] {
+  return keys.flatMap((key) =>
+    (options.property(key)?.entries("nothing") ?? []).flatMap((entry) =>
+      entry.key !== null && columns.includes(entry.key)
+        ? [{ slot, name: entry.key, value: entry.value }]
+        : [],
+    ),
+  );
 }
 
 interface NestedRead {
