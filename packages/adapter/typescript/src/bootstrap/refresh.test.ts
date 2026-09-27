@@ -22,6 +22,18 @@ vi.mock("../version.js", async (importOriginal) => ({
 
 import { createTypeScriptAdapter } from "../adapter.js";
 
+/**
+ * The adapter module loaded again, so it picks up the mock above. The
+ * package's tests share one module registry, and a file that ran earlier
+ * may already have loaded the adapter with the cache off.
+ */
+async function adapterModuleWithCacheOn(): Promise<
+  typeof import("../adapter.js")
+> {
+  vi.resetModules();
+  return await import("../adapter.js");
+}
+
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { PatternPack } from "@suss/extractor";
 
@@ -165,21 +177,27 @@ describe("an adapter kept between runs", () => {
     const status = path.join(dir, "src/status.ts");
     const release = holdClockFor(status, Date.now());
     try {
-      const kept = createTypeScriptAdapter({
+      const withCache = await adapterModuleWithCacheOn();
+      const diagnostics: string[] = [];
+      const kept = withCache.createTypeScriptAdapter({
         tsConfigFilePath: path.join(dir, "tsconfig.json"),
         frameworks: [pack],
         cacheDir: path.join(dir, ".suss", "cache"),
+        onCacheDiagnostic: (diagnostic) => diagnostics.push(diagnostic.kind),
       });
       await kept.extractAll();
 
       await write(dir, "src/status.ts", statusFile(503));
       kept.refresh();
+      // No refresh after this write. The cache's lookup sees it, so the
+      // run checks the kept project against the disk again.
       await write(dir, "src/status.ts", statusFile(504));
       const during = await kept.extractAll();
       kept.refresh();
       const after = await kept.extractAll();
 
       const fresh = comparable(await freshRun(dir));
+      expect(diagnostics).toEqual(["miss", "miss", "partial", "hit"]);
       expect(comparable(during)).toEqual(fresh);
       expect(comparable(after)).toEqual(fresh);
     } finally {
