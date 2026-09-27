@@ -104,6 +104,15 @@ export function forgetEvaluations(db: Database): void {
 }
 
 /**
+ * An object that lives as long as the evaluator over `db` does, for a
+ * memo that has to start over whenever `forgetEvaluations` does.
+ * Undefined until a project has been bound.
+ */
+export function evaluationScope(db: Database): object | undefined {
+  return evaluators.get(db);
+}
+
+/**
  * The node of the one expression `node` was written as, for a reader
  * that needs the arguments of the call behind a name instead of the
  * value the name comes down to. It follows a name the same way the

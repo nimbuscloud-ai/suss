@@ -12,11 +12,13 @@ import { parsePython } from "./parser.js";
 import { bodyCalls } from "./paths/effects.js";
 import { findPythonFiles } from "./project.js";
 import { bindModule } from "./scope.js";
-import { storageEffects } from "./storage.js";
+import { bodyStorage, storageEffects } from "./storage.js";
+import { bindEvaluator, forgetEvaluations } from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { StoragePattern } from "./pack.js";
 import type { PyNode } from "./parser.js";
+import type { EvaluatedFile } from "./values/evaluator.js";
 
 const SQLALCHEMY: StoragePattern[] = [
   {
@@ -60,10 +62,14 @@ const MODELS = [
 ].join("\n");
 
 /**
- * The effects of the handler module's own body, or, when `inFunction` is
- * given, of the body of that function within it.
+ * The handler module beside the base and the models, with its facts, and
+ * the body of `inFunction` in it or the module's own body without one.
  */
-async function effectsFor(handler: string, base = BASE, inFunction?: string) {
+async function handlerProject(
+  handler: string,
+  base = BASE,
+  inFunction?: string,
+) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-storage-"));
   fs.writeFileSync(path.join(dir, "base.py"), base);
   fs.writeFileSync(path.join(dir, "models.py"), MODELS);
@@ -74,12 +80,15 @@ async function effectsFor(handler: string, base = BASE, inFunction?: string) {
 
   const db = new Database();
   const definitions = new Map<string, PyNode>();
+  const files: EvaluatedFile[] = [];
   let handlerRoot: PyNode | null = null;
   let handlerPath = "";
 
   for (const file of findPythonFiles(dir)) {
     const tree = await parsePython(fs.readFileSync(file, "utf8"));
-    emitModuleImportFacts(db, file, bindModule(tree.rootNode), {
+    const module = bindModule(tree.rootNode);
+    files.push({ file, root: tree.rootNode, module });
+    emitModuleImportFacts(db, file, module, {
       roots: [dir],
     });
     emitValueFacts(db, file, tree.rootNode);
@@ -111,7 +120,19 @@ async function effectsFor(handler: string, base = BASE, inFunction?: string) {
   if (scanned === undefined) {
     throw new Error(`no function ${inFunction} in the handler`);
   }
+  return { db, definitions, files, handlerPath, scanned };
+}
 
+/**
+ * The effects of the handler module's own body, or, when `inFunction` is
+ * given, of the body of that function within it.
+ */
+async function effectsFor(handler: string, base = BASE, inFunction?: string) {
+  const { db, handlerPath, scanned } = await handlerProject(
+    handler,
+    base,
+    inFunction,
+  );
   return storageEffects(bodyCalls(scanned), {
     facts: db,
     filePath: handlerPath,
@@ -149,6 +170,31 @@ describe("the database work a Python body does", () => {
       "found = Orders.query().filter_by(id=1).all()\n",
     );
     expect(effects).toHaveLength(1);
+  });
+
+  it("recognizes a body once until evaluation starts over", async () => {
+    const { db, definitions, files, handlerPath, scanned } =
+      await handlerProject(
+        "def handler(order_id):\n    Orders.query().filter_by(id=order_id).delete()\n",
+        BASE,
+        "handler",
+      );
+    bindEvaluator(db, { files, definitions });
+    const lookup = {
+      facts: db,
+      factsPath: handlerPath,
+      patterns: SQLALCHEMY,
+      couldMatch: new Set(["query"]),
+    };
+
+    const first = bodyStorage(scanned, lookup);
+    expect(first.effects).toHaveLength(1);
+    expect(bodyStorage(scanned, { ...lookup })).toBe(first);
+
+    forgetEvaluations(db);
+    const again = bodyStorage(scanned, lookup);
+    expect(again).not.toBe(first);
+    expect(again.effects).toEqual(first.effects);
   });
 
   it("says a chain ending in a write is one", async () => {
