@@ -36,6 +36,7 @@ import type { DependencyLedger } from "./dependencyLedger.js";
  */
 export const ASKING_RELATIONS: readonly string[] = [
   "wanted",
+  "wantedWritten",
   "wantedUnder",
   "wantedSites",
   "wantedEnvObject",

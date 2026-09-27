@@ -3351,3 +3351,39 @@ describe("a method a subclass overrides", () => {
     ]);
   });
 });
+
+describe("asking only what a value is written as", () => {
+  // const timeout = 30; const handler = run; function run() {}
+  const facts: Array<[string, ...string[]]> = [
+    ["binds", "timeoutRead", "timeout"],
+    ["binds", "timeout", "thirty"],
+    ["writtenValue", "thirty"],
+    ["binds", "handlerRead", "run"],
+    ["func", "run"],
+  ];
+  const asked = (asking: string): Database => {
+    const db = new Database();
+    for (const [name, ...tuple] of facts) {
+      db.add(name, tuple);
+    }
+    askResolution(db, ["timeoutRead", "handlerRead"], asking);
+    return db;
+  };
+
+  it("fills the written-as relation the way a plain question does", () => {
+    expect(asked("wantedWritten").facts("wantedIsWrittenAs")).toEqual(
+      asked("wanted").facts("wantedIsWrittenAs"),
+    );
+    expect(asked("wantedWritten").facts("wantedIsWrittenAs")).toContainEqual([
+      "timeoutRead",
+      "thirty",
+    ]);
+  });
+
+  it("derives nothing a plain question's other relations need", () => {
+    expect(asked("wanted").facts("wantedResolves")).toEqual([
+      ["handlerRead", "run"],
+    ]);
+    expect(asked("wantedWritten").facts("wantedResolves")).toEqual([]);
+  });
+});
