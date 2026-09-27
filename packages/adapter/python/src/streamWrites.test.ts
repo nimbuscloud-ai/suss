@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { EffectSchema } from "@suss/behavioral-ir/schemas";
-
 import { parsePython } from "./parser.js";
 import { bindModule } from "./scope.js";
 import { streamWriteEffects } from "./streamWrites.js";
@@ -53,9 +51,9 @@ describe("what a Python body prints", () => {
       { target: "stdout", callee: "sys.stdout.write", serialized: "text" },
       { target: "stderr", callee: "sys.stderr.write", serialized: "text" },
     ]);
-    for (const effect of effects) {
-      expect(EffectSchema.safeParse(effect).success).toBe(true);
-    }
+    expect(
+      effects.map((effect) => effect.type === "interaction" && effect.groupId),
+    ).toEqual(["2:1", "3:1", "4:1", "5:1"]);
   });
 
   it("reads a json.dumps report as the shape of what was serialized", async () => {

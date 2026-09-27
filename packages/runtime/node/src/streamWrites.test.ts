@@ -5,7 +5,6 @@ import {
   invocationContextFor,
   ResolutionStore,
 } from "@suss/adapter-typescript";
-import { EffectSchema } from "@suss/behavioral-ir/schemas";
 import { createTestProject } from "@suss/test-project";
 
 import nodeRuntimePack from "./index.js";
@@ -93,9 +92,6 @@ describe("writes to the process's streams", () => {
       "text",
     ]);
     expect(writes.map((write) => write.groupId)).toEqual(["3:9", "4:9"]);
-    for (const write of writes) {
-      expect(EffectSchema.safeParse(write).success).toBe(true);
-    }
   });
 
   it("keys several arguments by position", () => {

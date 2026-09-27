@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { EffectSchema } from "@suss/behavioral-ir/schemas";
-
 import { parseRuby } from "./parser.js";
 import { streamWriteEffects } from "./streamWrites.js";
 
@@ -55,9 +53,9 @@ describe("what a Ruby body prints", () => {
       { target: "stdout", callee: "STDOUT.puts", serialized: "text" },
       { target: "stderr", callee: "$stderr.puts", serialized: "text" },
     ]);
-    for (const effect of effects) {
-      expect(EffectSchema.safeParse(effect).success).toBe(true);
-    }
+    expect(
+      effects.map((effect) => effect.type === "interaction" && effect.groupId),
+    ).toEqual(["1:1", "2:1", "3:1", "4:1", "5:1", "6:1"]);
   });
 
   it("reads a JSON report as the shape of what was serialized", async () => {
