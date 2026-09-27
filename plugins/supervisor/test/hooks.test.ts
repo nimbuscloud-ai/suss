@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import YAML from "yaml";
 
 import { runHook } from "../demo/play.mjs";
+import { STOP_HOOK_MS } from "../scripts/events.mjs";
 import { fakeSussCalls, installFakeSuss, scriptFakeSuss } from "./fakeSuss.js";
 
 import type {
@@ -713,6 +714,33 @@ describe("with a change list", () => {
       expect(next.stdout).toBe("");
     });
   }
+
+  it("cuts a slow compare short to finish the stop within its time, and still moves the baseline", () => {
+    installFakeSuss(project, { intentMs: 10_000 });
+    runHook(event("session-start"), project, {});
+    writeChangeList();
+
+    const started = Date.now();
+    const stop = runHook(event("stop"), project, {
+      SUSS_SUPERVISOR_STOP_HOOK_MS: "1500",
+    });
+
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect(stop.status).toBe(0);
+    expect(String(stop.output?.systemMessage)).toContain(
+      "suss could not check this turn's work against the change list",
+    );
+    expect(fs.existsSync(sessionFile("intent.yaml"))).toBe(false);
+  });
+
+  it("keeps the whole stop inside the timeout hooks.json gives the Stop hook", () => {
+    const hooks = JSON.parse(
+      fs.readFileSync(path.resolve(__dirname, "../hooks/hooks.json"), "utf8"),
+    );
+    const timeoutSeconds: number = hooks.hooks.Stop[0].hooks[0].timeout;
+
+    expect(STOP_HOOK_MS).toBeLessThan(timeoutSeconds * 1000);
+  });
 
   it("keeps a suss failure out of a stop that blocks on something else", () => {
     installFakeSuss(project, { intentFails: "crash" });
