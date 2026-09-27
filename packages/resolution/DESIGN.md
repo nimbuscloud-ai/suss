@@ -110,9 +110,7 @@ callArgCount(r, k)          r is written with k arguments, keyword ones
 callOutsideMethod(r)        the call r is outside every method body
 bodyCalls(f, c)             f's body calls the callee c, keyed the way
                             call keys that call's callee
-makesCall(f, r)             the call r is written in f's own body. The
-                            TypeScript adapter states it only for a
-                            callee written as a name or a property read
+makesCall(f, r)             the call r is written in f's own body
 entersAs(y, r)              y is the name a block opens over the call
                             r, so entering r is what wrote y (Python)
 ```
