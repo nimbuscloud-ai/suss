@@ -1,23 +1,12 @@
-# System intent for @suss/checker's top-level entry point.
-#
-# checkAll is the behavioural orchestrator the CLI drives: given a flat
-# list of summaries, it auto-pairs providers with consumers and returns
-# the findings plus the pairing accounting. The declared outcome is the
-# CheckAllResult shape — a total function over well-typed input, no
-# thrown errors.
-#
-# Each top-level key is declared as the array it actually is. Item
-# shapes stay open (arrays of unknown) until per-element commitments
-# are worth authoring; renaming or dropping a key, or returning a
-# non-array, stops satisfying the declaration.
-
 kind: boundary
 
 name: checker-check-all
 purpose: >-
-  Pair every provider summary against consumers sharing its boundary key
-  and return findings plus pairing accounting for the whole summary set.
-audience: suss-cli
+  Pair every provider summary with the consumers on its boundary and
+  return the findings, the pairs and what went unpaired for the whole
+  set. suss check runs it, and a program calling the library uses it to
+  check a set of summaries without the CLI.
+audience: programs that check summaries through the library, including the suss CLI
 source: author
 
 boundary:

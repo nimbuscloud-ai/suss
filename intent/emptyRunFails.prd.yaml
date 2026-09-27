@@ -1,0 +1,42 @@
+kind: prd
+
+title: A run that compares nothing fails and says why
+purpose: >-
+  A check that compares nothing prints the same "no findings" as a check
+  where both sides agreed, so automation cannot tell the two apart. suss
+  fails that run instead, and says what happened and what to do, so
+  whoever reacts to the failure has something to act on.
+audience: developers and CI jobs running suss check
+source: author
+
+scenarios:
+  - title: the folder is missing
+    when: suss check is pointed at a path with no folder there
+    expect: it stops and says to pass the folder the summaries were written to
+    link: cli-check-directory.no-folder
+
+  - title: the folder has no summaries
+    when: suss check is pointed at a folder with no .json file in it
+    expect: it stops and says to write summaries there with suss extract first
+    link: cli-check-directory.no-summary-files
+
+  - title: nothing in the folder is summaries
+    when: every .json file in the folder is something other than summaries, such as a report written back into it
+    expect: it stops and names each file it could not read as summaries
+    link: cli-check-directory.nothing-readable
+
+  # No link: the exit code and the JSON report are what the CLI prints,
+  # and suss has no boundary for a command's exit code and output.
+  - title: nothing pairs
+    when: suss check reads summaries where no provider and consumer share a boundary
+    expect: it exits non-zero, and the JSON report has a nothingPaired entry under run that says how many summaries were read and what to do next
+
+  # No link, for the same reason.
+  - title: an empty run is expected
+    when: the same check runs with --allow-empty
+    expect: it exits zero
+
+  # No link, for the same reason.
+  - title: compared against intent only
+    when: the summaries pair with nothing but are checked against intent documents
+    expect: the run counts as a comparison, and does not fail as an empty run

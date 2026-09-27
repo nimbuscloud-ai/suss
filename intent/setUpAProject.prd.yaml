@@ -1,0 +1,64 @@
+kind: prd
+
+title: Set up a project
+purpose: >-
+  A developer trying suss on a project runs suss init once and says yes.
+  After that, a bare suss extract reads the right code with the right
+  packs on the first try, and nobody has to work out the flags.
+audience: a developer adding suss to a project for the first time, or the agent setting it up for them
+source: author
+
+scenarios:
+  - title: extract reads what init wrote
+    when: suss init has written suss.json, and the developer runs suss extract with no flags
+    expect: extract reads the code with the packs suss.json lists
+    link: cli-declared-reads.from-project-file
+
+  - title: no suss.json yet
+    when: the project has no suss.json, and the developer runs suss extract with no flags
+    expect: extract reads the code with the packs suss init would pick, and prints a line saying so
+    link: cli-declared-reads.detected
+
+  - title: init works out a pack's setting
+    when: a pack needs a setting and init can work it out, such as reading which database is behind ActiveRecord from config/database.yml
+    expect: init writes the pack's config file beside suss.json and lists the pack with it, so the next extract reads the project
+    link:
+      - packs-activerecord.reads-the-project
+      - packs-graphql-ruby.reads-the-project
+
+  # No link: what init writes and prints is CLI output, and suss has no
+  # boundary for a command's arguments, exit code and output.
+  - title: init cannot work out a setting
+    when: a pack needs a setting init cannot work out, such as which database is behind SQLAlchemy
+    expect: init leaves the pack out of suss.json and says what to write
+
+  - title: the developer writes the setting
+    when: the developer writes the config file init asked for, and runs extract with the pack
+    expect: the pack reads the project
+    link:
+      - packs-sqlalchemy.reads-the-project
+      - packs-sqlmodel.reads-the-project
+
+  - title: a pack needs a setting nobody wrote
+    when: a pack needs a setting nobody has written, and the developer runs extract with that pack and no config file
+    expect: extract stops before reading anything, and says which setting the pack needs and how to pass it
+    link:
+      - packs-activerecord.needs-storage-system
+      - packs-sqlalchemy.needs-storage-system
+      - packs-sqlmodel.needs-storage-system
+      - packs-graphql-ruby.needs-root
+
+  # No link, for the same reason.
+  - title: an agent sets the project up
+    when: an agent runs suss init --write
+    expect: init writes suss.json without asking, and leaves an existing suss.json alone and says so
+
+  # No link, for the same reason.
+  - title: init in CI
+    when: suss init runs in CI, with no terminal to prompt on
+    expect: it prints the commands the project needs instead of asking
+
+  # No link, for the same reason.
+  - title: a spec is found
+    when: the project has an OpenAPI spec, and the developer runs suss init
+    expect: suss.json gets an entry that reads the spec, so suss check compares the routes against it instead of leaving them unpaired

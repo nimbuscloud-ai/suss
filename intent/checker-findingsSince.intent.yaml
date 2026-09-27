@@ -1,0 +1,30 @@
+kind: boundary
+
+name: checker-findings-since
+purpose: >-
+  Split two runs' findings into the ones that are new and the ones that
+  went away. suss check --since reports the new ones and fails only on
+  them, which is how an agent supervisor holds an agent to what its edit
+  introduced and never to what was there before.
+audience: tools that compare findings across runs, including the suss agent supervisor
+source: author
+
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "@suss/checker"
+  exportPath: ["findingsSince"]
+  receives:
+    earlier: { type: array, required: true }
+    later: { type: array, required: true }
+
+transitions:
+  - id: compared
+    when: called with the findings of an earlier run and a later run
+    returns:
+      body:
+        type: object
+        properties:
+          added: { type: array }
+          resolved: { type: array }
+        required: [added, resolved]

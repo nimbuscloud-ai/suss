@@ -1,0 +1,50 @@
+kind: boundary
+
+name: cli-check-directory
+purpose: >-
+  Load every summaries file in a folder and run the checker over them,
+  or stop with a message saying what to do when there is nothing in the
+  folder to check. suss check --dir goes through it, and so does the MCP
+  server's suss_check tool, so a folder with no summaries in it fails
+  with a reason instead of passing as a clean run.
+audience: developers running suss check, CI jobs, and agents checking over MCP
+source: author
+
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "@suss/cli"
+  exportPath: ["checkDirectory"]
+  receives:
+    options: { type: object, required: true }
+    options.dir: { type: string, required: true }
+
+transitions:
+  - id: no-folder
+    when: there is no folder at the path given
+    throws:
+      errorType: UsageError
+
+  - id: no-summary-files
+    when: the folder is there and has no .json file in it
+    throws:
+      errorType: UsageError
+
+  - id: nothing-readable
+    when: the folder has .json files and none of them is a summaries file
+    throws:
+      errorType: UsageError
+
+  - id: loaded
+    when: the folder has at least one summaries file
+    returns:
+      body:
+        type: object
+        properties:
+          summaries: { type: array }
+          skipped: { type: array }
+          result:
+            type: object
+            properties:
+              findings: { type: array }
+        required: [summaries, skipped, result]

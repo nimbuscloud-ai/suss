@@ -1,0 +1,50 @@
+kind: boundary
+
+name: cli-check-intent
+purpose: >-
+  Compare a change list, the behavior changes an agent said it would
+  make, with the code before and after the change. It gives a verdict
+  on every entry and lists every change nobody asked for. suss intent
+  check prints the result, and the agent supervisor runs it when the
+  agent stops.
+audience: the suss agent supervisor, and programs that check a change against its change list
+source: author
+
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "@suss/cli"
+  exportPath: ["checkIntent"]
+  receives:
+    list: { type: object, required: true }
+    pairs: { type: array, required: true }
+    prompts: {}
+
+transitions:
+  - id: checked
+    when: called with a change list and the readings from before and after the change
+    returns:
+      body:
+        type: object
+        properties:
+          entries:
+            type: array
+            items:
+              type: object
+              properties:
+                said: { type: string }
+                verdict: { type: string }
+                units:
+                  type: array
+                  items: { type: string }
+          notAsked:
+            type: array
+            items:
+              type: object
+              properties:
+                identity: { type: string }
+                boundary: { type: string }
+                lines: { type: array }
+          explained: { type: array }
+          fromWrappers: { type: array }
+        required: [entries, notAsked, explained, fromWrappers]

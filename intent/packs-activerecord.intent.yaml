@@ -1,0 +1,36 @@
+kind: boundary
+
+name: packs-activerecord
+purpose: >-
+  Build the ActiveRecord pack from the config a project gives it, or
+  refuse when the config does not say which database is behind the
+  connection. ActiveRecord talks to several databases and only the
+  project knows which, so suss extract turns the refusal into a message
+  that says which setting to write and how to pass it, instead of
+  reading the project with a guess.
+audience: developers running suss extract -f activerecord, after suss init suggested the pack
+source: author
+
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "@suss/packs"
+  exportPath: ["activerecord", "default"]
+  receives:
+    options.storageSystem: { type: string, required: true }
+
+transitions:
+  - id: needs-storage-system
+    when: the config gives no storageSystem, as with a bare -f activerecord
+    throws:
+      errorType: Error
+
+  - id: reads-the-project
+    when: the config says which database is behind the connection
+    returns:
+      body:
+        type: object
+        properties:
+          name: { type: string }
+          protocol: { type: string }
+        required: [name, protocol]

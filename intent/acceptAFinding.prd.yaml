@@ -1,0 +1,37 @@
+kind: prd
+
+title: Accept a finding once, and it stays accepted
+purpose: >-
+  When a team decides a finding is fine, they paste the .sussignore rule
+  suss printed for it and move on. The decision is on record, and nobody
+  has to make the same call again on the next run.
+audience: developers triaging suss findings
+source: author
+
+scenarios:
+  # No link: this is about which findings a rule matches, which no
+  # outcome can state. Covered by the @suss/cli test "silences the
+  # finding whose printed rule was copied, and only that one".
+  - title: a pasted rule silences its finding
+    when: a developer pastes the rule suss printed under a finding and runs the check again
+    expect: that finding is marked as accepted, with the reason, and every other finding still counts
+
+  # No link, for the same reason. A rule matches on the transition id,
+  # which leaves line numbers out, but no test yet pastes a rule and then
+  # moves the handler.
+  - title: moving code keeps the rule matching
+    when: after the rule is pasted, someone adds a comment above the handler, which moves every line below it
+    expect: the finding stays accepted
+
+  # No link: the behavior is which rules match which findings. Covered
+  # by the @suss/cli test "suppresses intent findings via .sussignore
+  # with the same rule shape".
+  - title: intent findings take the same rules
+    when: a developer accepts a finding that says the code and an intent document disagree
+    expect: the same rule format works, keyed on the finding's kind and boundary
+
+  # No link: what check prints is CLI output. Covered by the @suss/cli
+  # test "stops offering a rule for a finding that a rule already covers".
+  - title: no second rule is offered
+    when: a finding is already covered by a rule
+    expect: suss does not print another rule for it

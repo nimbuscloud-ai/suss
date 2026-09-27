@@ -1,0 +1,36 @@
+kind: boundary
+
+name: behavioral-ir-parse-summaries
+purpose: >-
+  A program that reads a summaries file relies on this to get typed,
+  validated summaries back, or an error it can report. It never gets a
+  file that was only partly read.
+audience: programs that read suss summaries through the library
+source: author
+
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "@suss/behavioral-ir"
+  exportPath: ["parseSummaries"]
+  receives:
+    input: { required: true }
+
+transitions:
+  - id: parsed
+    when: the input is an array and every element in it is a valid summary
+    returns:
+      body:
+        type: array
+        items:
+          type: object
+          properties:
+            kind: { type: string }
+            identity: { type: object }
+            transitions: { type: array }
+            gaps: { type: array }
+
+  - id: rejected
+    when: the input is not an array, or one of its elements is not a valid summary
+    throws:
+      errorType: ZodError

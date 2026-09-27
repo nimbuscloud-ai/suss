@@ -1,0 +1,31 @@
+kind: boundary
+
+name: behavioral-ir-diff-summaries
+purpose: >-
+  Say how one unit's behavior changed between two readings of the code,
+  as the transitions that were added, removed and changed. A review
+  tool built on the library relies on it, and suss check --since uses it
+  to decide which boundaries an edit changed.
+audience: programs that compare two runs of suss, including the suss CLI
+source: author
+
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "@suss/behavioral-ir"
+  exportPath: ["diffSummaries"]
+  receives:
+    before: { type: object, required: true }
+    after: { type: object, required: true }
+
+transitions:
+  - id: compared
+    when: called with the same unit's summary from two runs
+    returns:
+      body:
+        type: object
+        properties:
+          addedTransitions: { type: array }
+          removedTransitions: { type: array }
+          changedTransitions: { type: array }
+        required: [addedTransitions, removedTransitions, changedTransitions]
