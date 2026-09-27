@@ -20,7 +20,7 @@ import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
-import { checkDir, clearEarlierReads } from "@suss/cli";
+import { checkDir, checkDirectory, clearEarlierReads } from "@suss/cli";
 
 import type { BuildReport, Project } from "./project.js";
 
@@ -237,6 +237,7 @@ async function extractIntoDirectory(
   const target = path.resolve(cwd, outDir);
   clearEarlierReads(target);
   copyReads(project.summaryDir, target);
+  checkAheadOfTheCompare(target);
   const allowEmpty = parsed.values["allow-empty"] === true;
   const stderr = [
     ...report.failed.map((line) => `  failed: ${line}`),
@@ -300,6 +301,22 @@ async function checkSince(
   } finally {
     fs.rmSync(path.dirname(output), { recursive: true, force: true });
   }
+}
+
+/**
+ * Reads and checks a folder the hook will compare next, once the reply
+ * is on its way. The check remembers the folders it read by their files,
+ * and the session renames this one into place for the compare after, so
+ * the first edit's compare already knows both sides.
+ */
+function checkAheadOfTheCompare(dir: string): void {
+  setImmediate(() => {
+    try {
+      checkDirectory({ dir });
+    } catch {
+      // The compare that follows reads the folder itself and says why.
+    }
+  });
 }
 
 /** What a read of `suss.json` writes: `<n>-<kind>.json` and its notes. */
