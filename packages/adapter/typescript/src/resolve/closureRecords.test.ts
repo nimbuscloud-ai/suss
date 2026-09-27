@@ -94,6 +94,7 @@ interface ClosureRun {
 async function runClosure(
   ws: Workspace,
   previousScans?: ReadonlyMap<string, UnitRecord<ScanRecord>>,
+  served: BehavioralSummary[] = [],
 ): Promise<ClosureRun> {
   const project = new Project({ compilerOptions: { strict: true } });
   for (const file of await ws.files()) {
@@ -118,10 +119,8 @@ async function runClosure(
     undefined,
     undefined,
     facts,
-    {
-      invocation: [],
-      access: [],
-    },
+    { invocation: [], access: [] },
+    served,
   );
   const units = closureUnitRecords(
     scans,
@@ -256,6 +255,20 @@ describe("the closure's scan records", () => {
     expect(second.units.map((unit) => path.basename(unit.file)).sort()).toEqual(
       ["entry.ts", "orders.ts"],
     );
+  });
+});
+
+describe("a summary the cache serves", () => {
+  it("keeps the closure from building the same function again", async () => {
+    const ws = await workspace({ "entry.ts": ENTRY, "orders.ts": ORDERS });
+    const first = await runClosure(ws);
+    const served = first.summaries.filter(
+      (summary) => summary.identity.name === "load",
+    );
+
+    const second = await runClosure(ws, undefined, served);
+    expect(names(second)).toEqual(["run"]);
+    expect(Object.keys(kinds(second))).toHaveLength(2);
   });
 });
 

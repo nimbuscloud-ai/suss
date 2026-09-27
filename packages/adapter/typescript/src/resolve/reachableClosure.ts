@@ -902,17 +902,9 @@ export function expandReachableClosure(
   }
 
   // Units whose summaries a partial run serves from the cache: still
-  // scanned through for reachability, but reaching one emits nothing,
+  // walked through for reachability, but reaching one emits nothing,
   // since its summary already exists with its gaps on it.
-  const knownKeys = new Set<string>();
-  for (const summary of alreadySummarized) {
-    const func = lookup.functionAt(summary.location);
-    if (func !== null) {
-      const key = nodeKey(func);
-      knownKeys.add(key);
-      facts?.unitKeyBySummary.set(summary, key);
-    }
-  }
+  const known = knownUnits(alreadySummarized, lookup, facts);
 
   for (;;) {
     evaluate(db, REACHABLE_RULES);
@@ -961,7 +953,7 @@ export function expandReachableClosure(
   const reached: BehavioralSummary[] = [];
   for (const [keyAtom] of db.facts("reachable")) {
     const key = String(keyAtom);
-    if (seedKeys.has(key) || knownKeys.has(key)) {
+    if (known.has(key) || seedKeys.has(key)) {
       continue;
     }
     const name = nameByKey.get(key);
@@ -1000,6 +992,52 @@ export function expandReachableClosure(
   );
 
   return [...seeds, ...reached];
+}
+
+/**
+ * Which reached functions a summary the cache serves already describes.
+ * Finding a summary's function indexes every function in its file, so a
+ * file's summaries are looked up once the walk reaches a function there,
+ * and a partial run reads the files it walks through instead of every
+ * file the cache serves. Each summary looked up gets its unit key.
+ */
+function knownUnits(
+  summaries: readonly BehavioralSummary[],
+  lookup: SourceFileLookup,
+  facts: ClosureFacts | undefined,
+): { has(key: string): boolean } {
+  const pendingByFile = new Map<string, BehavioralSummary[]>();
+  for (const summary of summaries) {
+    const file = lookup.bySuffix(summary.location.file)?.getFilePath();
+    if (file === undefined) {
+      continue;
+    }
+    const bucket = pendingByFile.get(file) ?? [];
+    bucket.push(summary);
+    pendingByFile.set(file, bucket);
+  }
+
+  const keys = new Set<string>();
+  const lookUpFile = (file: string): void => {
+    for (const summary of pendingByFile.get(file) ?? []) {
+      const func = lookup.functionAt(summary.location);
+      if (func !== null) {
+        const key = nodeKey(func);
+        keys.add(key);
+        facts?.unitKeyBySummary.set(summary, key);
+      }
+    }
+    pendingByFile.delete(file);
+  };
+  return {
+    has(key: string): boolean {
+      const file = fileOfOffsetKey(key);
+      if (file !== null && pendingByFile.has(file)) {
+        lookUpFile(file);
+      }
+      return keys.has(key);
+    },
+  };
 }
 
 /** What the frontier loop needs to find what one body calls. */
