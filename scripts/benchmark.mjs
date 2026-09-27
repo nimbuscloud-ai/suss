@@ -13,9 +13,9 @@
 // order that puts one build in the machine's quiet half hands it the
 // win. It refuses to print anything on a loaded machine.
 //
-// The five targets take about five minutes at three repeats. `--subset`
-// takes about a minute and a half and leaves out twenty-server, where
-// the import gate is most of the run, and twenty-front, the largest
+// The six targets take about twelve minutes at three repeats. `--subset`
+// takes about a minute and a half and leaves out both twenty-server runs,
+// where the import gate is most of the run, and twenty-front, the largest
 // corpus here.
 //
 // `--against` builds the other commit in a worktree under the temp
@@ -45,6 +45,26 @@ const TARGETS = [
     tsconfig: "twenty/packages/twenty-server/tsconfig.json",
     packs: ["nestjs-rest", "nestjs-graphql", "node"],
   },
+  // The packs `suss init` suggests here, which a bare `suss extract` also
+  // picks. This run does far more work than the one above, and a change to
+  // the rules, the store or a recognizer can be flat there and slow here.
+  {
+    name: "twenty-server-init",
+    tsconfig: "twenty/packages/twenty-server/tsconfig.json",
+    packs: [
+      "nestjs-rest",
+      "nestjs-graphql",
+      "express",
+      "react",
+      "aws-lambda",
+      "axios",
+      "fetch",
+      "aws-s3",
+      "redis",
+      "pg",
+      "node",
+    ],
+  },
   {
     name: "twenty-front",
     tsconfig: "twenty/packages/twenty-front/tsconfig.json",
@@ -71,9 +91,14 @@ const TARGETS = [
 // is where engine work shows up at all.
 const SUBSET = ["saleor-dashboard", "saleor-storefront", "directus-api"];
 
-// Above half the cores busy, wall clock stops describing the build. One
+// Above 40% of the cores busy, wall clock stops describing the build. One
 // measurement swung by a factor of two under load.
-const MAX_LOAD_PER_CORE = 0.5;
+const MAX_LOAD_PER_CORE = 0.4;
+
+// A two minute run raises the 1-minute load average by itself, and the
+// average loses about two thirds of that in each minute after the run.
+const SETTLE_LIMIT_MS = 3 * 60 * 1000;
+const SETTLE_POLL_MS = 10 * 1000;
 
 // A machine that speeds up or slows down mid-run invalidates the
 // comparison, however quiet it looked at the start.
@@ -100,6 +125,11 @@ const USAGE = `benchmark.mjs: time suss extract over the public dogfood targets
   --pairs <n>         repeats per build, default 3, minimum 3 when comparing
   --targets-dir <p>   where the checked-out corpora live
   --json <path>       write every run to a file alongside the report
+
+twenty-server-init reads twenty-server with the packs suss init suggests
+there. Each of its runs takes about two minutes. Before every run the script
+waits up to three minutes for the load the previous run left behind to fall
+under ${MAX_LOAD_PER_CORE * 100}% per core, and stops if it stays above that.
 `;
 
 if (values.help === true) {
@@ -135,6 +165,25 @@ function fail(message) {
 
 function loadPerCore() {
   return os.loadavg()[0] / os.cpus().length;
+}
+
+function sleepMs(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/** Waits for the load left by the previous run to die down. */
+function settle() {
+  const deadline = Date.now() + SETTLE_LIMIT_MS;
+  let noted = false;
+  while (loadPerCore() > MAX_LOAD_PER_CORE && Date.now() < deadline) {
+    if (!noted) {
+      process.stderr.write(
+        `  waiting for the load average (${percent(loadPerCore())} per core) to settle\n`,
+      );
+      noted = true;
+    }
+    sleepMs(SETTLE_POLL_MS);
+  }
 }
 
 function refuseIfLoaded() {
@@ -246,6 +295,9 @@ function runOrFail(cwd, command, args, env = {}) {
 
 const DATALOG_LINE = /^datalog: (\d+)ms \(\s*([\d.]+)% of (\d+)ms wall\)/m;
 
+// No single run has come near this. One that does has hung.
+const EXTRACT_TIMEOUT_MS = 15 * 60 * 1000;
+
 function extractOnce(build, target, targetsDir) {
   const tsconfig = path.join(targetsDir, target.tsconfig);
   const output = path.join(os.tmpdir(), `suss-benchmark-${process.pid}.json`);
@@ -266,9 +318,16 @@ function extractOnce(build, target, targetsDir) {
     cwd: build.dir,
     encoding: "utf8",
     maxBuffer: 256 * 1024 * 1024,
+    timeout: EXTRACT_TIMEOUT_MS,
   });
   const wallMs = performance.now() - started;
   fs.rmSync(output, { force: true });
+
+  if (res.error?.code === "ETIMEDOUT") {
+    fail(
+      `extract on ${target.name} at ${build.sha} was still running after ${seconds(EXTRACT_TIMEOUT_MS)}, so it was stopped.`,
+    );
+  }
 
   if (res.status !== 0) {
     fail(
@@ -406,6 +465,7 @@ for (let repeat = 1; repeat <= requestedPairs; repeat++) {
     for (const build of builds) {
       // Checking before every run stops a benchmark that has already been
       // spoiled from spending another ten minutes proving it.
+      settle();
       refuseIfLoaded();
       calibrations.push(bestCalibration(1));
       const run = extractOnce(build, target, targetsDir);
@@ -418,6 +478,7 @@ for (let repeat = 1; repeat <= requestedPairs; repeat++) {
   }
 }
 
+settle();
 calibrations.push(bestCalibration());
 const calibrationMedian = median(calibrations);
 const calibrationDrift =
