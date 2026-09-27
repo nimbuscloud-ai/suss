@@ -432,6 +432,16 @@ A helper passed `ENV` itself is read too. That covers `make_reader(ENV)` returni
 
 The adapter does not read a name the helper builds instead of using whole, such as `ENV["#{prefix}_URL"]`. It also does not read a name the helper takes off a hash or an options object instead of as a parameter, or a proc written as `lambda { |k| ... }` or `proc { |k| ... }` instead of with `->`.
 
+## What a command prints, how it exits, and which flags it takes
+
+These are Ruby's own `Kernel` methods and its standard library, so the adapter reads them the way it reads `ENV`, with no pack.
+
+`puts`, `print` and `warn` with no receiver, and a write to `$stdout`, `STDOUT`, `$stderr` or `STDERR`, become a `stream-write` interaction on an `io` binding, the effect the Node pack records for `console.log`. `JSON.generate(report)` and `report.to_json` record the report's shape with `serialized: json`.
+
+`exit`, `exit!` and `abort` end the process. A reached method has one transition, because nothing tells its paths apart. One that ends the process has its paths read one at a time instead, so each exit is an `exit` transition with the conditions that lead to it. `exit` with no code exits 0, `exit false` and a bare `exit!` exit 1, and `abort` exits 1 after its message, which is recorded as a write to stderr. `exit(main(ARGV))` makes `main`'s return the exit code, through the same `wantedExitSink` question the other adapters ask.
+
+`opts.on("--dir DIR")` in the block of `OptionParser.new`, followed by `parse!(argv)`, records an input read of `--dir` off `argv`. `--[no-]json` declares `--json`.
+
 ## What a run after an edit replays
 
 A run with a cache writes a record for every file beside the summaries: the units the file's discovery found, before any file's duplicates were dropped, with each kept unit's summary; the file's load-time unit; and what the walk found for each method written in the file, with each reached method's summary. Every record also says what its work depended on, as the DESIGN.md of `@suss/resolution` describes under "What a piece of work depended on". A run after an edit parses every file and emits every fact again, then replays each record whose dependencies did not change and does the rest again. The output is the same, byte for byte, as a run without the cache.

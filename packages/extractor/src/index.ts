@@ -64,6 +64,7 @@ export {
   stampModules,
 } from "./declaredModules.js";
 export { guardsHoldOn, runsBefore } from "./effectGuards.js";
+export { markReturnsAsExitCode } from "./exitCode.js";
 export { stampModuleImports } from "./moduleImports.js";
 export { type ModuleInitOptions, moduleInitStructure } from "./moduleInit.js";
 export {

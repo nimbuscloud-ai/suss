@@ -448,6 +448,16 @@ Out of scope: a name built out of a parameter (`env(f"{prefix}_URL")` reads noth
 
 In a project where every read writes out its own variable name, no expression is treated as the environment, and the reader never asks anything at a call.
 
+## What a command prints, how it exits, and which flags it takes
+
+These are the standard library, so the adapter reads them the way it reads `os.environ`, with no pack.
+
+`print(x)` writes to stdout, and to stderr when `file=sys.stderr`. `sys.stdout.write(x)` and `sys.stderr.write(x)` write to the stream they name. Each becomes a `stream-write` interaction on an `io` binding, the effect the Node pack records for `console.log`. A `print` whose `file` is anything else writes to a file and is left alone. `print(json.dumps(report))` records the report's shape with `serialized: json`.
+
+`sys.exit(n)`, the builtins `exit(n)` and `quit(n)`, and `raise SystemExit(n)` end the process. A reached function has one transition, because nothing tells its paths apart. One that ends the process has its paths read one at a time instead, through the same lowering a route uses, so each exit is an `exit` transition with the conditions that lead to it. No code exits 0 and a message exits 1, as Python does. `sys.exit(main())` makes `main`'s return the exit code: the value each exit hands over seeds the shared `wantedExitSink` question over the run's facts, and every function it reaches gets `metadata.process.exitCodeFrom: "return"`.
+
+`parser.add_argument("--dir")` followed by `parser.parse_args(argv)` records an input read of `--dir` off `argv`, the parameter the parser is handed, and a positional argument becomes a read of its position.
+
 ## What a route, or a module loading, reaches
 
 A route's body calls project functions, and those call others. Each function a route reaches this way gets its own summary of kind `library`, bound as `function-call` with `transport: "in-process"` and `recognition: "reachable"`. That summary lists the calls, environment reads and database work in the function's own body. Each invocation effect on a route or a reached function records, in `summary`, which summary the call lands on. A reader answering "what does this route reach" follows `summary` from one unit to the next and never has to match a name. The TypeScript adapter runs the same walk and produces the same output.

@@ -29,6 +29,7 @@ const KERNEL_WRITES: Readonly<Record<string, string>> = {
   puts: "stdout",
   print: "stdout",
   warn: "stderr",
+  abort: "stderr",
 };
 
 /** The ways Ruby spells each stream as a receiver. */
@@ -78,6 +79,10 @@ function streamWriteAt(call: RbNode): Effect | null {
     return null;
   }
   const { positional } = readCallArgs(field(call, "arguments"));
+  // `abort` with no message ends the process without printing anything.
+  if (positional.length === 0 && field(call, "method")?.text === "abort") {
+    return null;
+  }
   return writeEffect(call, target, positional);
 }
 

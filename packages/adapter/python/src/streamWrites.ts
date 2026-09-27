@@ -16,7 +16,7 @@ import { SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
 import { field } from "./ast.js";
 import { callArguments } from "./facts/values.js";
 import { shapeOfReturned } from "./paths/returnedShape.js";
-import { resolveName } from "./scope.js";
+import { isBuiltin, isStdlibMember, isStdlibModule } from "./stdlibNames.js";
 
 import type { Effect, TypeShape } from "@suss/behavioral-ir";
 import type { PyNode } from "./parser.js";
@@ -92,46 +92,13 @@ function streamWriteAt(call: PyNode, scope: Scope): Effect | null {
 
 /** `sys.stdout`, or `stdout` after `from sys import stdout`, as the stream's name. */
 function standardStream(node: PyNode, scope: Scope): string | null {
-  if (node.type === "attribute") {
-    const object = field(node, "object");
-    const name = field(node, "attribute")?.text ?? "";
-    return object !== null &&
-      STREAMS.has(name) &&
-      isStdlibModule(object, scope, "sys")
-      ? name
-      : null;
-  }
-  if (node.type !== "identifier" || !STREAMS.has(node.text)) {
-    return null;
-  }
-  const binding = resolveName(scope, node.text);
-  return binding?.kind === "importFrom" &&
-    binding.module === "sys" &&
-    binding.relativeLevel === 0
-    ? node.text
+  const name =
+    node.type === "attribute" ? field(node, "attribute")?.text : node.text;
+  return name !== undefined &&
+    STREAMS.has(name) &&
+    isStdlibMember(node, scope, "sys", name)
+    ? name
     : null;
-}
-
-/** A name the file bound with `import <module>`. */
-export function isStdlibModule(
-  node: PyNode,
-  scope: Scope,
-  module: string,
-): boolean {
-  if (node.type !== "identifier") {
-    return false;
-  }
-  const binding = resolveName(scope, node.text);
-  return (
-    binding?.kind === "import" &&
-    binding.module === module &&
-    binding.relativeLevel === 0
-  );
-}
-
-/** A name nothing in scope rebinds, so it is the builtin of that name. */
-function isBuiltin(node: PyNode, scope: Scope, name: string): boolean {
-  return node.text === name && resolveName(scope, name) === null;
 }
 
 interface WriteSite {

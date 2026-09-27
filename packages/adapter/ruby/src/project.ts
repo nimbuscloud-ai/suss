@@ -67,6 +67,7 @@ import {
   envReadEffects,
   settleNamedParameters,
 } from "./envReads.js";
+import { exitSites, markExitCodeFunctions } from "./exits.js";
 import { callbacksIn, emitClassCallbacks } from "./facts/callbacks.js";
 import {
   collectFileConstants,
@@ -923,9 +924,20 @@ async function runRuby(
   }
   disambiguateSummaryIds(summaries);
   linkCallsToSummaries(summaries);
-  const composed = timer.time("summarize", () =>
-    composeWrappers(summaries, { gapHandling }),
-  );
+  const composed = timer.time("summarize", () => {
+    // Before the cache write and over every summary, reused ones included:
+    // only a run with every file unchanged serves the stored marks.
+    markExitCodeFunctions(
+      summaries,
+      parsed.map(({ file, root }) => ({ file, sites: exitSites(root) })),
+      db,
+      (summary) =>
+        options.workspaceRoot === undefined
+          ? summary.location.file
+          : path.resolve(options.workspaceRoot, summary.location.file),
+    );
+    return composeWrappers(summaries, { gapHandling });
+  });
 
   await timer.timeAsync("cache.write", async () => {
     // An empty result is not cached. A cache hit skips the stages that

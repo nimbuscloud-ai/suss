@@ -31,6 +31,7 @@ export {
   type StoredWalkRecord,
   walkRecordsByFile,
 } from "./entryReuse.js";
+export { exitCodeFunctions } from "./exitCode.js";
 export { explainResolutionProof, renderExplanation } from "./explain.js";
 export { importedFilesByFile } from "./fileImports.js";
 export {

@@ -66,6 +66,7 @@ import {
   envReadEffects,
   settleNamedParameters,
 } from "./envReads.js";
+import { exitSites, type FileExits, markExitCodeFunctions } from "./exits.js";
 import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitModuleImportFacts } from "./facts.js";
 import { importedDefinitionLookup } from "./importedDefinitions.js";
@@ -482,7 +483,17 @@ async function runPython(
   const readsEnvThroughNames = envFacts.some(
     (one) => one.sites.length > 0 || one.objects.length > 0,
   );
+  // An exit handing over a value is followed back to the functions whose
+  // return that value is, which is a question over the value facts too.
+  const exits: FileExits[] = bound.map(({ file, root, module }) => ({
+    file,
+    sites: exitSites(root, module),
+  }));
+  const handsOverExitCodes = exits.some(({ sites }) =>
+    sites.some((site) => site.code !== null),
+  );
   const needsValues =
+    handsOverExitCodes ||
     discovers ||
     mountsRouters ||
     buildsReceivers ||
@@ -933,9 +944,16 @@ async function runPython(
   }
   disambiguateSummaryIds(summaries);
   linkCallsToSummaries(summaries);
-  const composed = timer.time("summarize", () =>
-    composeWrappers(summaries, { gapHandling }),
-  );
+  const composed = timer.time("summarize", () => {
+    // Before the cache write and over every summary, reused ones included:
+    // only a run with every file unchanged serves the stored marks.
+    markExitCodeFunctions(summaries, exits, db, (summary) =>
+      options.workspaceRoot === undefined
+        ? summary.location.file
+        : path.resolve(options.workspaceRoot, summary.location.file),
+    );
+    return composeWrappers(summaries, { gapHandling });
+  });
 
   await timer.timeAsync("cache.write", async () => {
     // An empty result is never cached. Serving one would skip the
