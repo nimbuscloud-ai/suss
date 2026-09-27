@@ -2340,6 +2340,54 @@ describe("always: an effect on every path", () => {
     expect(missing[0].message).toContain("which produces recorded, does not");
   });
 
+  it("checks a transition only against an outcome whose when clause its branch meets", () => {
+    const readsUsers: IntentCondition = {
+      at: { does: "reads", names: "postgresql:users", fields: [], by: [] },
+      input: null,
+      finds: "nothing",
+      said: "reads postgresql:users finds nothing",
+    };
+    const outcomes = adminOutcomes.map((o) =>
+      o.id === "not-found" ? { ...o, conditions: [readsUsers] } : o,
+    );
+
+    const findings = checkAdmin(
+      adminRoute({ 20: false }),
+      [auditAlways()],
+      outcomes,
+    );
+    expect(findings.map((f) => f.kind)).toEqual(["uncoveredOutcome"]);
+  });
+
+  it("describes a return outcome the transition produces", () => {
+    const summary = codeSummary(
+      busCodeBinding,
+      [{ type: "return", value: null }],
+      "InvoiceWorker.handler",
+    );
+    const returned: IntentOutcome = {
+      ...effectOutcome("returned", []),
+      kind: "return",
+    };
+
+    const findings = checkIntentAgreement(
+      [
+        boundaryIntent(
+          busIntentBinding,
+          [returned],
+          "invoice-intake",
+          [],
+          [auditAlways()],
+        ),
+      ],
+      [summary],
+    ).findings;
+    expect(findings.map((f) => f.kind)).toEqual(["pathWithoutEffect"]);
+    expect(findings[0].message).toContain(
+      "which produces returned (a return value), does not",
+    );
+  });
+
   it("downgrades the finding for intent nobody has curated", () => {
     const findings = checkAdmin(
       adminRoute({ 20: false }),
