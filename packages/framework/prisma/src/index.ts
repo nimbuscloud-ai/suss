@@ -21,7 +21,7 @@ import {
 } from "ts-morph";
 import { z } from "zod";
 
-import { receiverTypesOf } from "@suss/adapter-typescript";
+import { receiverTypesOf, writtenNodeOf } from "@suss/adapter-typescript";
 import { storageBinding } from "@suss/behavioral-ir";
 import { scopeOption, storageSystemOption } from "@suss/extractor";
 import {
@@ -532,13 +532,35 @@ function madeFromImportedClient(
   if (resolution === undefined) {
     return false;
   }
-  const modules = [
-    CLIENT_MODULE,
-    ...generatedClientDirs(path.dirname(node.getSourceFile().getFilePath())),
-  ];
+  if (importedAsClient(node, resolution)) {
+    return true;
+  }
+  // The store traces an import only as far as the import declaration,
+  // so a client another file makes is asked about where it is written.
+  const written = writtenNodeOf(node, resolution);
+  return (
+    written !== null &&
+    written !== node &&
+    importedAsClient(written, resolution)
+  );
+}
+
+/** Whether the value comes down to the `PrismaClient` a client module exports. */
+function importedAsClient(value: Node, resolution: ResolutionStore): boolean {
   return resolution
-    .importOriginsOf(node, modules)
+    .importOriginsOf(value, clientModulesFor(value))
     .some((origin) => origin.path.join(".") === CLIENT_CLASS);
+}
+
+/**
+ * `@prisma/client`, and every directory a generator of the value's own
+ * project writes the client to.
+ */
+function clientModulesFor(value: Node): string[] {
+  return [
+    CLIENT_MODULE,
+    ...generatedClientDirs(path.dirname(value.getSourceFile().getFilePath())),
+  ];
 }
 
 function declaredByPrisma(type: ReceiverType): boolean {
@@ -561,11 +583,7 @@ function extendsImportedClient(
   if (resolution === undefined) {
     return false;
   }
-  return type.extendsWritten.some((base) =>
-    resolution
-      .importOriginsOf(base, [CLIENT_MODULE])
-      .some((origin) => origin.path.join(".") === CLIENT_CLASS),
-  );
+  return type.extendsWritten.some((base) => importedAsClient(base, resolution));
 }
 
 // Prisma copies the schema next to the generated client, wherever the

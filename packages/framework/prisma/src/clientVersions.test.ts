@@ -160,6 +160,44 @@ describe("a Prisma client on each version", () => {
     expect(await accessesIn(root)).toEqual(READ_AND_WRITE);
   }, 60_000);
 
+  const NEVER_GENERATED = {
+    "package.json": JSON.stringify({ name: "orders" }),
+    "tsconfig.json": TSCONFIG,
+    "prisma/schema.prisma": DATASOURCE + MODEL,
+    ...installedClient("export declare const PrismaClient: any;"),
+    "src/lib/db.ts":
+      'import { PrismaClient } from "@prisma/client";\nexport const db = new PrismaClient();\n',
+    "src/lib/index.ts": 'export { db } from "./db";\n',
+  };
+
+  const ORDERS_USING = (from: string) => `
+import { db } from "${from}";
+
+export async function read(reference: string) {
+  return db.order.findUnique({ where: { reference }, select: { id: true } });
+}
+
+export async function write(reference: string) {
+  return db.order.create({ data: { reference, total: 1 } });
+}
+`;
+
+  it("reads a never-generated client that another file makes and exports", async () => {
+    const root = projectOf({
+      ...NEVER_GENERATED,
+      "src/orders.ts": ORDERS_USING("./lib/db"),
+    });
+    expect(await accessesIn(root)).toEqual(READ_AND_WRITE);
+  }, 60_000);
+
+  it("reads a never-generated client that reaches the handler through a barrel", async () => {
+    const root = projectOf({
+      ...NEVER_GENERATED,
+      "src/orders.ts": ORDERS_USING("./lib"),
+    });
+    expect(await accessesIn(root)).toEqual(READ_AND_WRITE);
+  }, 60_000);
+
   it("leaves a client of any type alone when it was made from something else", async () => {
     const root = projectOf({
       "package.json": JSON.stringify({ name: "orders" }),
@@ -204,6 +242,28 @@ describe("a Prisma client on each version", () => {
 
   it("reads a Prisma 7 client before the generator has written anything", async () => {
     const root = projectOf(PRISMA_7);
+    expect(await accessesIn(root)).toEqual(READ_AND_WRITE);
+  }, 60_000);
+
+  it("reads a project's class over a Prisma 7 client before the generator has written anything", async () => {
+    const root = projectOf({
+      ...PRISMA_7,
+      "src/orders.ts": `
+import { PrismaClient } from "./generated/prisma/client";
+
+class Db extends PrismaClient {}
+
+const db = new Db();
+
+export async function read(reference: string) {
+  return db.order.findUnique({ where: { reference }, select: { id: true } });
+}
+
+export async function write(reference: string) {
+  return db.order.create({ data: { reference, total: 1 } });
+}
+`,
+    });
     expect(await accessesIn(root)).toEqual(READ_AND_WRITE);
   }, 60_000);
 });
