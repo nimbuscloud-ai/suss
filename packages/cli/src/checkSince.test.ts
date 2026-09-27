@@ -186,6 +186,21 @@ describe("extract --out-dir", () => {
     expect(run.exit).toBe(1);
     expect(run.stderr).toContain("--out-dir runs every read suss.json lists");
   });
+
+  it("refuses the flags that change one run, since no entry would see them", async () => {
+    const run = await quietly([
+      "extract",
+      "--out-dir",
+      path.join(work, "x"),
+      "--no-cache",
+      "--gaps",
+      "strict",
+    ]);
+
+    expect(run.exit).toBe(1);
+    expect(run.stderr).toContain("so --gaps, --no-cache would go unused");
+    expect(fs.existsSync(path.join(work, "x"))).toBe(false);
+  });
 });
 
 describe("check --since", () => {

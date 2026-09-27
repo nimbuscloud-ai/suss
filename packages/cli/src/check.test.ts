@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   functionCallBinding,
@@ -1524,6 +1524,29 @@ describe("checkDir", () => {
     expect(again.summaries).toBe(first.summaries);
     expect(changed.summaries).not.toBe(first.summaries);
     expect(changed.summaries[0]?.transitions[0]?.id).toBe("t-404");
+  });
+
+  it("reads each file of a folder it has not seen once", () => {
+    for (const name of ["api.json", "web.json"]) {
+      fs.writeFileSync(
+        path.join(tmpDir, name),
+        JSON.stringify([
+          providerWithRoute(`get_${name}`, "GET", `/${name}`, [
+            transition("t-200", { statusCode: 200, isDefault: true }),
+          ]),
+        ]),
+      );
+    }
+    const read = vi.spyOn(fs, "readFileSync");
+    try {
+      checkDirectory({ dir: tmpDir });
+      const inFolder = read.mock.calls.filter(
+        ([file]) => typeof file === "string" && file.startsWith(tmpDir),
+      );
+      expect(inFolder).toHaveLength(2);
+    } finally {
+      read.mockRestore();
+    }
   });
 
   it("reads a folder again each time when one of its entries cannot be read", () => {

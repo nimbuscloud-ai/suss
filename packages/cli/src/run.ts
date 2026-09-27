@@ -628,6 +628,16 @@ async function extractProjectInto(
   return report.failed.length > 0 ? 1 : 0;
 }
 
+/** The extract flags that change one run, which `--out-dir` does not pass to its entries. */
+const OUT_DIR_REFUSES = [
+  "gaps",
+  "timing",
+  "datalog-profile",
+  "no-cache",
+  "explain",
+  "fail-on-pack-error",
+] as const;
+
 async function runExtract(args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
@@ -671,6 +681,15 @@ async function runExtract(args: string[]): Promise<number> {
       );
       return 1;
     }
+
+    const perRun = OUT_DIR_REFUSES.filter((flag) => values[flag] !== undefined);
+    if (perRun.length > 0) {
+      process.stderr.write(
+        `--out-dir runs each entry of suss.json with its default settings, so ${perRun.map((flag) => `--${flag}`).join(", ")} would go unused. Drop ${perRun.length === 1 ? "it" : "them"}, or run one entry with plain \`suss extract\` to use ${perRun.length === 1 ? "it" : "them"}.\n`,
+      );
+      return 1;
+    }
+
     return await extractProjectInto(
       values["out-dir"],
       values.dir,
@@ -867,35 +886,31 @@ function runInspectDiff(
 ): number {
   const [before, after] = positionals;
   if (before === undefined || after === undefined) {
-    process.stderr.write(
-      "--diff compares two summary files, or two folders of them. Try: suss inspect --diff before.json after.json\n",
+    throw new UsageError(
+      "--diff compares two summary files, or two folders of them. Try: suss inspect --diff before.json after.json",
     );
-    return 1;
   }
 
   const budgetText = values.budget;
   const budget = budgetText === undefined ? undefined : Number(budgetText);
   if (budget !== undefined && (!Number.isInteger(budget) || budget <= 0)) {
-    process.stderr.write(
-      `--budget takes a number of characters, such as --budget 60000. It got ${budgetText}.\n`,
+    throw new UsageError(
+      `--budget takes a number of characters, such as --budget 60000. It got ${budgetText}.`,
     );
-    return 1;
   }
 
   const changedFilesAt = values["changed-files"];
   if (changedFilesAt !== undefined && !existsSync(changedFilesAt)) {
-    process.stderr.write(
-      `No file at ${changedFilesAt}. --changed-files reads one path per line, the format \`git diff --name-only\` writes.\n`,
+    throw new UsageError(
+      `No file at ${changedFilesAt}. --changed-files reads one path per line, the format \`git diff --name-only\` writes.`,
     );
-    return 1;
   }
 
   const chain = chainHops(values.chain);
   if (chain === "bad") {
-    process.stderr.write(
-      `--chain takes a number of calls or "full", such as --chain 2. It got ${values.chain}.\n`,
+    throw new UsageError(
+      `--chain takes a number of calls or "full", such as --chain 2. It got ${values.chain}.`,
     );
-    return 1;
   }
 
   inspectDiff({
@@ -925,10 +940,9 @@ async function runFlow(argv: string[]): Promise<number> {
   });
 
   if (values.flow === undefined || values.flow === "") {
-    process.stderr.write(
-      'inspect --flow needs the request to ask about. Try: suss inspect --flow "GET https://shop.example.com/api/orders/123" --dir summaries/\n',
+    throw new UsageError(
+      'inspect --flow needs the request to ask about. Try: suss inspect --flow "GET https://shop.example.com/api/orders/123" --dir summaries/',
     );
-    return 1;
   }
 
   return await inspectFlow({
@@ -984,10 +998,9 @@ export async function runCheck(args: string[]): Promise<number> {
     failOn !== "info" &&
     failOn !== "none"
   ) {
-    process.stderr.write(
-      `Error: --fail-on must be "error", "warning", "info", or "none"\n`,
+    throw new UsageError(
+      `--fail-on takes "error", "warning", "info", or "none". It got "${failOn}".`,
     );
-    return 1;
   }
 
   // --all stays out of `shared` because checkAt reports on one thing and
@@ -1012,17 +1025,15 @@ export async function runCheck(args: string[]): Promise<number> {
   };
 
   if (values.at !== undefined && values.intent !== undefined) {
-    process.stderr.write(
-      "--at reports on one thing and --intent scores every boundary intent against the code, so they cannot run together. Run them one at a time.\n",
+    throw new UsageError(
+      "--at reports on one thing and --intent scores every boundary intent against the code, so they cannot run together. Run them one at a time.",
     );
-    return 1;
   }
 
   if (values.at !== undefined && values.since !== undefined) {
-    process.stderr.write(
-      "--at reports on one thing and --since reports what changed across the whole folder, so they cannot run together. Run them one at a time.\n",
+    throw new UsageError(
+      "--at reports on one thing and --since reports what changed across the whole folder, so they cannot run together. Run them one at a time.",
     );
-    return 1;
   }
 
   const checkFolder = (dir: string): number => {
@@ -1040,6 +1051,12 @@ export async function runCheck(args: string[]): Promise<number> {
     return result.hasErrors ? 1 : 0;
   };
 
+  if (values.dir !== undefined && positionals.length > 0) {
+    throw new UsageError(
+      `--dir pairs every summary file in a folder, and files given after it would go unread. Put ${positionals.join(" ")} in the folder, or drop --dir to compare two files.`,
+    );
+  }
+
   if (values.dir !== undefined) {
     return checkFolder(values.dir);
   }
@@ -1050,31 +1067,27 @@ export async function runCheck(args: string[]): Promise<number> {
   }
 
   if (values.at !== undefined) {
-    process.stderr.write(
-      "--at narrows a run over a folder of summaries, so it takes --dir or no files at all. Try: suss check --at src/editions/dao.ts:43\n",
+    throw new UsageError(
+      "--at narrows a run over a folder of summaries, so it takes --dir or no files at all. Try: suss check --at src/editions/dao.ts:43",
     );
-    return 1;
   }
 
   if (values.intent !== undefined) {
-    process.stderr.write(
-      "--intent checks your intent docs against code summaries, so it takes --dir or no files at all. Try: suss check --intent intent/\n",
+    throw new UsageError(
+      "--intent checks your intent docs against code summaries, so it takes --dir or no files at all. Try: suss check --intent intent/",
     );
-    return 1;
   }
 
   if (values.since !== undefined) {
-    process.stderr.write(
-      "--since compares a folder of summaries with an earlier one, so it takes --dir or no files at all. Try: suss check --dir .suss/after --since .suss/before\n",
+    throw new UsageError(
+      "--since compares a folder of summaries with an earlier one, so it takes --dir or no files at all. Try: suss check --dir .suss/after --since .suss/before",
     );
-    return 1;
   }
 
   if (positionals.length < 2) {
-    process.stderr.write(
-      "check compares two sides of a boundary. Pass both files, or a folder holding them:\n  suss check summaries/api.json summaries/web.json\n  suss check --dir summaries/\n",
+    throw new UsageError(
+      "check compares two sides of a boundary. Pass both files, or a folder holding them:\n  suss check summaries/api.json summaries/web.json\n  suss check --dir summaries/",
     );
-    return 1;
   }
 
   const result = check({
@@ -1445,10 +1458,9 @@ function runIntentOutcomes(args: string[]): number {
   });
 
   if (values.from === undefined) {
-    process.stderr.write(
-      "intent outcomes needs --from, the folder of intent docs to read. Try: suss intent outcomes --from intent/\n",
+    throw new UsageError(
+      "intent outcomes needs --from, the folder of intent docs to read. Try: suss intent outcomes --from intent/",
     );
-    return 1;
   }
 
   return intentOutcomesCommand({
