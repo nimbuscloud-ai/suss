@@ -210,7 +210,7 @@ export default defineConfig({
 
     footer: {
       message: "Released under the Apache-2.0 License.",
-      copyright: "Copyright © 2025 Nimbus Cloud AI LLC",
+      copyright: "Copyright © 2026 Nimbus Cloud AI LLC",
     },
   },
 
