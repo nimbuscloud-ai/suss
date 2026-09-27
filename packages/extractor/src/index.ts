@@ -125,6 +125,7 @@ export type {
   DiscoveryMatch,
   DiscoveryPattern,
   FailureDelivery,
+  GlobalPrefixCall,
   InputMappingPattern,
   InvocationRecognizer,
   PackDeclarations,

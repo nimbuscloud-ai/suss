@@ -10,7 +10,12 @@ import {
   importedDecoratorLocals,
 } from "./decoratedMembers.js";
 import { classDecoratorStandingFor } from "./decoratorComposition.js";
-import { stringValueOf } from "./resolveValue.js";
+import {
+  globalPrefixKey,
+  globalPrefixOf,
+  pathUnderGlobalPrefix,
+} from "./globalPrefix.js";
+import { numberValueOf, stringValueOf } from "./resolveValue.js";
 
 import type {
   ChannelSource,
@@ -18,6 +23,7 @@ import type {
   DiscoveryPattern,
 } from "@suss/extractor";
 import type { ResolutionStore } from "../facts/store.js";
+import type { MountPrefixIndex } from "./registrationCall.js";
 import type { DiscoveredUnit } from "./shared.js";
 
 /**
@@ -99,12 +105,40 @@ function declaredChannelOf(
   return text === null || text === "" ? null : text;
 }
 
+/**
+ * The status a decorator such as `@HttpCode(204)` sets on the member
+ * the route decorator is on. `HttpStatus.NO_CONTENT` and a named
+ * constant resolve through the evaluator the way a path does.
+ */
+function statusCodeDecoratedOn(
+  routeDecorator: Node,
+  statusDecorators: readonly string[],
+  resolution: ResolutionStore | undefined,
+): number | undefined {
+  const member = routeDecorator.getParent();
+  if (
+    member === undefined ||
+    !(Node.isMethodDeclaration(member) || Node.isPropertyDeclaration(member))
+  ) {
+    return undefined;
+  }
+  for (const name of statusDecorators) {
+    const argument = member.getDecorator(name)?.getArguments()[0];
+    if (argument === undefined) {
+      continue;
+    }
+    return numberValueOf(argument, resolution) ?? undefined;
+  }
+  return undefined;
+}
+
 export function discoverDecoratedRoutes(
   sourceFile: SourceFile,
   match: Extract<DiscoveryPattern["match"], { type: "decoratedRoute" }>,
   kind: string,
   resolution?: ResolutionStore,
   binding?: DeclaredBinding,
+  mountPrefixes?: MountPrefixIndex,
 ): DiscoveredUnit[] {
   // Same gate as decoratedMethod: at least one method-route decorator
   // must be imported from the framework module.
@@ -120,6 +154,18 @@ export function discoverDecoratedRoutes(
   if (localRouteDecorators.size === 0) {
     return [];
   }
+  const statusDecorators =
+    match.statusCodeDecorator === undefined
+      ? []
+      : [
+          ...importedDecoratorLocals(sourceFile, acceptedModules, [
+            match.statusCodeDecorator,
+          ]).keys(),
+        ];
+  const globalPrefix =
+    match.globalPrefix === undefined
+      ? null
+      : globalPrefixOf(mountPrefixes, globalPrefixKey(match.globalPrefix));
 
   const results: DiscoveredUnit[] = [];
   for (const cls of sourceFile.getClasses()) {
@@ -158,18 +204,28 @@ export function discoverDecoratedRoutes(
         continue;
       }
 
-      const httpMethod =
-        match.methodDecoratorRouteMap[
-          localRouteDecorators.get(handler.standsFor) ?? handler.standsFor
-        ];
+      const verbDecorator =
+        localRouteDecorators.get(handler.standsFor) ?? handler.standsFor;
+      const httpMethod = match.methodDecoratorRouteMap[verbDecorator];
       const pathSuffix = resolveRoutePathArg(handler.decorator, resolution);
-      const routePath = joinRoutePath(pathPrefix, pathSuffix);
+      const routePath = pathUnderGlobalPrefix(
+        globalPrefix,
+        httpMethod,
+        joinRoutePath(pathPrefix, pathSuffix),
+      );
+      const status =
+        statusCodeDecoratedOn(
+          handler.decorator,
+          statusDecorators,
+          resolution,
+        ) ?? match.defaultStatusCodes?.[verbDecorator];
 
       results.push({
         func: handler.func,
         kind,
         name: `${className}.${handler.name}`,
         routeInfo: { method: httpMethod, path: routePath },
+        ...(status === undefined ? {} : { defaultStatusCode: status }),
       });
     }
   }

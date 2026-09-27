@@ -6,7 +6,7 @@
 // the simple "walk-to-enclosing-function" helper that two unrelated
 // handlers: clientCall and packageImport: both need).
 
-import { type CallExpression, Node } from "ts-morph";
+import { type CallExpression, Node, type ParameterDeclaration } from "ts-morph";
 
 import type {
   DeployableUnit,
@@ -159,6 +159,13 @@ export interface DiscoveredUnit {
     method: string | null;
     path: string | null;
   };
+  /**
+   * The status the framework sends for a response this unit's body
+   * states none for, when the route declares one: `@HttpCode(204)`, or
+   * the 201 NestJS sends for `@Post`. It replaces the default on the
+   * pack's response terminals for this unit alone.
+   */
+  defaultStatusCode?: number;
   /**
    * Populated by a pack's `discoverUnits` callback for a message-bus
    * consumer whose channel the code gives (a handler factory whose
@@ -391,11 +398,18 @@ export function couldStillNameAFunction(value: Node): boolean {
  * comes out false here.
  */
 export function namesAParameter(value: Node): boolean {
+  return parameterNamedBy(value) !== null;
+}
+
+/** The parameter a name is bound to, or null when it is bound to something else. */
+export function parameterNamedBy(value: Node): ParameterDeclaration | null {
   if (!Node.isIdentifier(value)) {
-    return false;
+    return null;
   }
   const declaration = value.getSymbol()?.getDeclarations()?.[0];
-  return declaration !== undefined && Node.isParameterDeclaration(declaration);
+  return declaration !== undefined && Node.isParameterDeclaration(declaration)
+    ? declaration
+    : null;
 }
 
 export function toFunctionRoot(node: Node): FunctionRoot | null {

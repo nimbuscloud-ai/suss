@@ -103,9 +103,12 @@ describe("extraction over fixtures/ruby-graphql", () => {
     expect(source?.kind).toBe("library");
   });
 
-  it("every discovered field is low-confidence: v0 traces nothing through a body", async () => {
+  it("scores a field with no method behind it low, and one with a method by what the method shows", async () => {
     const { summaries } = await extractFixture();
-    expect(summaries.every((s) => s.confidence.level === "low")).toBe(true);
+    const levelOf = (name: string) =>
+      summaries.find((s) => s.identity.name === name)?.confidence.level;
+    expect(levelOf("Campaign.id")).toBe("low");
+    expect(levelOf("Organizer.displayName")).toBe("high");
   });
 
   it("gives a field with a method behind it one transition carrying what that method calls", async () => {

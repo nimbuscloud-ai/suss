@@ -785,9 +785,6 @@ async function runPython(
     const summary = timer.time("summarize", () =>
       assembleSummary(raw, { gapHandling }),
     );
-    // Every Python summary reports low confidence, in place of the score
-    // `assembleSummary` computed.
-    summary.confidence = { source: "inferred_static", level: "low" };
     summaries.push(summary);
     assembledHere.add(summary);
     tallyUnit(tallies, raw.boundaryBinding?.recognition);
@@ -942,7 +939,6 @@ async function runPython(
         { gapHandling },
       ),
     );
-    summary.confidence = { source: "inferred_static", level: "low" };
     placeWhatItReached(summary, key);
     summaries.push(summary);
     modules.set(boundFile.file, {

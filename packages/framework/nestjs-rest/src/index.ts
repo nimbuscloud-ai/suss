@@ -25,6 +25,18 @@ export const optionsSchema = z
 
 export type NestjsRestPackOptions = z.infer<typeof optionsSchema>;
 
+// The numbers `RequestMethod` in `@nestjs/common` gives each verb.
+const REQUEST_METHODS: Record<number, string> = {
+  0: "GET",
+  1: "POST",
+  2: "PUT",
+  3: "DELETE",
+  4: "PATCH",
+  5: "*",
+  6: "OPTIONS",
+  7: "HEAD",
+};
+
 export function nestjsRestFramework(
   options: NestjsRestPackOptions = {},
 ): PatternPack {
@@ -52,15 +64,34 @@ export function nestjsRestFramework(
             Head: "HEAD",
             All: "*",
           },
+          // Nest sends 201 for a POST and 200 for every other verb, and
+          // `@HttpCode(n)` sets the status for one handler.
+          defaultStatusCodes: { Post: 201 },
+          statusCodeDecorator: "HttpCode",
+          globalPrefix: {
+            method: "setGlobalPrefix",
+            application: {
+              importModule: "@nestjs/core",
+              importName: "NestFactory",
+              factory: "create",
+            },
+            // An exclusion is a path, or a `RouteInfo` whose method is a
+            // member of Nest's `RequestMethod` enum.
+            exclude: {
+              option: "exclude",
+              pathKey: "path",
+              methodKey: "method",
+              methods: REQUEST_METHODS,
+            },
+          },
         },
         requiresImport: ["@nestjs/common"],
       },
     ],
 
     terminals: [
-      // NestJS sends the returned value as the body with status 200.
-      // `@HttpCode(N)` can change the status, but the pack does not read
-      // that decorator yet.
+      // NestJS sends the returned value as the body. The route's own
+      // status, from its verb or `@HttpCode`, replaces this 200.
       {
         kind: "response",
         match: { type: "returnStatement", excludeCallReturns: false },
@@ -78,8 +109,7 @@ export function nestjsRestFramework(
       },
       {
         // A method that runs off the end returns undefined, and Nest
-        // sends the same 200 with an empty body it sends for a bare
-        // `return;`. Only `@HttpCode(N)` changes that.
+        // sends the same empty response it sends for a bare `return;`.
         kind: "response",
         match: { type: "functionFallthrough" },
         extraction: {

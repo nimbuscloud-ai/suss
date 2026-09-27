@@ -308,7 +308,6 @@ export function reachedFunctions(
       const summary = assembleSummary(libraryUnit(target, options), {
         gapHandling: options.gapHandling,
       });
-      summary.confidence = { source: "inferred_static", level: "low" };
       if (options.gapHandling !== "silent") {
         summary.gaps.push(
           ...(stopsByKey.get(key) ?? []).map(unfollowedCallGap),

@@ -169,13 +169,34 @@ function pathFromPieces(pieces: readonly Piece[]): string | undefined {
   return path === "" ? undefined : path;
 }
 
+// The fetch standard's local schemes. Fetching a URL with one of them
+// sends no request out of the process.
+const LOCAL_SCHEME = /^(?:about|blob|data):/i;
+
+/**
+ * Whether a forced value is a URL that fetch reads without a network
+ * request, such as a base64 `data:` URI. A call with one crosses no
+ * boundary, so client discovery skips it.
+ */
+export function isLocalUrl(value: Value): boolean {
+  if (value.kind !== "string") {
+    return false;
+  }
+  const first = value.pieces[0];
+  return (
+    first?.kind === "text" &&
+    first.options.length > 0 &&
+    first.options.every((option) => LOCAL_SCHEME.test(option))
+  );
+}
+
 /**
  * The path in a forced value. Undefined when the value is not a string
  * or has no path in it, so the caller leaves the boundary unbound
  * instead of guessing one.
  */
 export function pathOf(value: Value): string | undefined {
-  if (value.kind !== "string") {
+  if (value.kind !== "string" || isLocalUrl(value)) {
     return undefined;
   }
   const literal = literalOf(value);

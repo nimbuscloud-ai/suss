@@ -4,10 +4,7 @@ import path from "node:path";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
-import {
-  collectGeneratedMarkers,
-  GeneratedModules,
-} from "./generatedModules.js";
+import { GeneratedModules, generatedModulesOf } from "./generatedModules.js";
 
 let root: string;
 let consumer: string;
@@ -57,14 +54,34 @@ describe("GeneratedModules", () => {
   });
 });
 
-describe("collectGeneratedMarkers", () => {
+describe("generatedModulesOf", () => {
   it("deduplicates the markers two packs ask for", () => {
-    expect(
-      collectGeneratedMarkers([
-        { generatedModuleMarkers: ["schema.prisma"] },
-        { generatedModuleMarkers: ["schema.prisma", "codegen.yml"] },
-        {},
-      ]),
-    ).toEqual(["schema.prisma", "codegen.yml"]);
+    const generated = generatedModulesOf([
+      { name: "a", generatedModuleMarkers: ["schema.prisma"] },
+      { name: "b", generatedModuleMarkers: ["schema.prisma", "codegen.yml"] },
+      { name: "c" },
+    ]);
+    expect(generated.key).toBe("codegen.yml,schema.prisma");
+  });
+
+  it("counts an import into a directory the project's configuration names, before anything is written there", () => {
+    const asked: string[] = [];
+    const generated = generatedModulesOf([
+      {
+        name: "orm",
+        generatedModuleDirs: (fromDir) => {
+          asked.push(fromDir);
+          return [path.join(root, "src/generated/orm")];
+        },
+      },
+    ]);
+    expect(generated.declared).toBe(true);
+    expect(generated.key).toBe("|orm");
+    expect(generated.reachedFrom(consumer, ["./generated/orm/client"])).toBe(
+      true,
+    );
+    expect(generated.reachedFrom(consumer, ["./generated/orm"])).toBe(true);
+    expect(generated.reachedFrom(consumer, ["./generated/ormish"])).toBe(false);
+    expect(asked).toEqual([path.join(root, "src")]);
   });
 });

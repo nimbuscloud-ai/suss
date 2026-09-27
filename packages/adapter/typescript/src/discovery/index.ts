@@ -164,6 +164,7 @@ function runPattern(
       pattern.kind,
       resolution,
       pattern.binding,
+      mountPrefixes,
     );
   }
   if (pattern.match.type === "jsxElementRoute") {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { pathOf } from "./routePath.js";
+import { isLocalUrl, pathOf } from "./routePath.js";
 import { constant, hole, holePiece, string, text, textPiece } from "./value.js";
 
 describe("pathOf on one literal", () => {
@@ -36,6 +36,36 @@ describe("pathOf on one literal", () => {
   it("gives undefined for a value that is not a string", () => {
     expect(pathOf(constant(404))).toBeUndefined();
     expect(pathOf(hole("route"))).toBeUndefined();
+  });
+
+  it("gives undefined for a URL fetch reads without a request", () => {
+    expect(pathOf(text("data:image/svg+xml;base64,PHN2Zz4="))).toBeUndefined();
+    expect(pathOf(text("blob:https://app.example.com/1f2e"))).toBeUndefined();
+    expect(pathOf(text("about:blank"))).toBeUndefined();
+  });
+});
+
+describe("isLocalUrl", () => {
+  it("is true for a local scheme, whatever its case", () => {
+    expect(isLocalUrl(text("data:text/plain,hi"))).toBe(true);
+    expect(isLocalUrl(text("DATA:text/plain,hi"))).toBe(true);
+  });
+
+  it("is true when the text before a hole starts with a local scheme", () => {
+    expect(
+      isLocalUrl(
+        string([textPiece(["data:image/png;base64,"]), holePiece("b64")]),
+      ),
+    ).toBe(true);
+  });
+
+  it("is false for a network URL, a path, a hole and a non-string", () => {
+    expect(isLocalUrl(text("https://api.example.com/data:x"))).toBe(false);
+    expect(isLocalUrl(text("/data:export"))).toBe(false);
+    expect(isLocalUrl(string([holePiece("base"), textPiece(["data:"])]))).toBe(
+      false,
+    );
+    expect(isLocalUrl(constant(1))).toBe(false);
   });
 });
 

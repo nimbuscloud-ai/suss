@@ -6,18 +6,27 @@
  * The checker has already followed the alias and the enum, so nothing
  * here walks a declaration.
  *
- * Any other type gives null. That includes a union with one member
+ * A numeric enum member gives its number, and any other type gives
+ * null. That includes a union with one member
  * that is not a string literal, such as an optional field that may be
  * `undefined`, since the value there can be something outside the set.
  */
 
-import { SET_CAP, string, textPiece, type Value } from "@suss/values";
+import { constant, SET_CAP, string, textPiece, type Value } from "@suss/values";
 
 import type { Node, Type } from "ts-morph";
 
 /** The literals a node's type allows, as a value, or null. */
 export function declaredValueOf(node: Node): Value | null {
-  const literals = stringLiteralsOf(node.getType());
+  const type = node.getType();
+  // A numeric enum member, `HttpStatus.NO_CONTENT`, has one number as
+  // its type. A union of numbers is left out, since nothing read
+  // through one has needed it.
+  if (type.isNumberLiteral()) {
+    const number = type.getLiteralValue();
+    return typeof number === "number" ? constant(number) : null;
+  }
+  const literals = stringLiteralsOf(type);
   // Past the cap the set would turn into a hole named "value", and
   // null leaves the hole named after the read instead.
   if (literals === null || literals.length > SET_CAP) {

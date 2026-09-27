@@ -20,6 +20,10 @@
   "set": "@prisma/client: nested write operation, replace the joined rows",
   "data": "@prisma/client: write argument key holding the row values",
   "where": "@prisma/client: argument key holding the filter that picks the rows",
+  "schema": "prisma: prisma.config.ts key and package.json prisma key giving the schema's path",
+  "generator": "prisma: schema block declaring a client generator",
+  "output": "prisma: generator block key giving the directory the client is written to",
+  "assignment": "@mrleebo/prisma-ast: node type for a key and value inside a schema block",
   "read": "suss: access kind",
   "write": "suss: access kind"
 }

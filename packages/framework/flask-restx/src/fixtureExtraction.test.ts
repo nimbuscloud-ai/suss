@@ -243,9 +243,9 @@ describe("extraction over fixtures/python-webapp", () => {
     });
   });
 
-  it("every discovered route is low-confidence: v0 reads no body", async () => {
+  it("scores every route high, since each condition in the fixture is read", async () => {
     const { summaries } = await extractFixture();
-    expect(summaries.every((s) => s.confidence.level === "low")).toBe(true);
+    expect(summaries.every((s) => s.confidence.level === "high")).toBe(true);
   });
 
   it("pairs the extracted providers against hand-built consumer summaries by method and path", async () => {
