@@ -453,6 +453,40 @@ hole in a name position that nothing settled also stays a parameter.
 The access is then dropped, so it is never recorded against a table
 called `$1`.
 
+### The values a statement's placeholders take
+
+A method can say where the call passes the values its placeholders
+take, tried in order the way `statement` is:
+
+```ts
+.methods({
+  query: {
+    statement: [{ at: 0 }, { at: 0, property: ["text"] }],
+    parameters: [{ at: 1 }, { at: 0, property: ["values"] }],
+  },
+})
+```
+
+`@suss/sql` says which placeholder gives each column its value, and
+the compiled chain hands the value it finds for each one to the
+adapter through `statesSlots`, so the summary can record where the
+value came from. A template's holes are numbered in order, so there
+the hole is the value, unless the template's text writes placeholders
+of its own. A method without `parameters` still records the access.
+
+## The value a call states for each column
+
+An adapter that wants to know where each column's value came from
+listens through `statesSlots` on the call's ops. A storage chain finds
+the values without the pack saying anything more: the rule that
+reports the columns reads them off the values the call states, and
+the compiled chain notes every entry and property the rule reads.
+Each column the rule reports is given the values it read under that
+name. `where: { tenantId: req.auth.tenantId }` gives `tenantId` the
+expression written there, and a column the rule reported from a fixed
+list gets nothing. A pack written as code states its slots itself,
+as the Prisma pack does for `where` and the write payloads.
+
 ## The example every declaration states
 
 ```ts

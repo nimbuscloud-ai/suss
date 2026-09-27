@@ -39,6 +39,8 @@ import {
   resolutionProgram,
   resolutionUnderProgram,
   RESOLUTION_RULES as SHARED_RULES,
+  type SourceLeaf,
+  sourceLeavesOf,
   type ValueUses,
   writtenAnswersFor,
   writtenValueUnder,
@@ -109,7 +111,19 @@ type Question =
   | "wantedStreamObject"
   | "wantedExitSink"
   | "wantedSubject"
-  | "wantedUses";
+  | "wantedUses"
+  | "wantedSource";
+
+/** One place a value's walk ended, with the nodes the store keyed it by. */
+export interface SourceFound {
+  leaf: SourceLeaf;
+  /** The node the walk ended at, or null when the store keyed none. */
+  node: Node | null;
+  /** The read at a computed key on the way, when there was one. */
+  computedAt: Node | null;
+  /** The function a parameter the walk ended at belongs to. */
+  parameterOf: Node | null;
+}
 
 /**
  * Dropped once a query's result has been read, so the next query does
@@ -459,6 +473,40 @@ export class ResolutionStore {
    */
   resolveWrittenValue(value: Node): Node | null {
     return this.resolveWrittenValues([value]).get(value) ?? null;
+  }
+
+  /**
+   * Where each value came from, asked as one question: every place the
+   * walk from it ended, with the node there and, for a parameter, the
+   * function it belongs to.
+   */
+  sourcesOf(values: readonly Node[]): Map<Node, SourceFound[]> {
+    const found = new Map<Node, SourceFound[]>();
+    if (values.length === 0) {
+      return found;
+    }
+    const targets = new Map(values.map((value) => [value, factKeyOf(value)]));
+    this.askAboutAll([...new Set(targets.values())], "wantedSource", () => {
+      this.derive();
+      for (const [value, target] of targets) {
+        found.set(
+          value,
+          sourceLeavesOf(this.db, nodeId(target)).map((leaf) => ({
+            leaf,
+            node: this.table.byId.get(leaf.key) ?? null,
+            computedAt:
+              leaf.computedAt === null
+                ? null
+                : (this.table.byId.get(leaf.computedAt) ?? null),
+            parameterOf:
+              leaf.end.is === "parameter"
+                ? (this.table.byId.get(leaf.end.of) ?? null)
+                : null,
+          })),
+        );
+      }
+    });
+    return found;
   }
 
   /**

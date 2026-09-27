@@ -682,6 +682,35 @@ export const EffectSchema = z.discriminatedUnion("type", [
 // Transition, Gap, BehavioralSummary
 // ---------------------------------------------------------------------------
 
+/**
+ * A place in a transition's effects that is given a value: a column an
+ * access writes (`field`) or picks rows by (`selector`). `effect` is the
+ * access's position in the transition's `effects`.
+ */
+export const ProvenanceSlotSchema = z.discriminatedUnion("slot", [
+  z.object({
+    slot: z.literal("field"),
+    effect: z.number().int().min(0),
+    name: z.string(),
+  }),
+  z.object({
+    slot: z.literal("selector"),
+    effect: z.number().int().min(0),
+    name: z.string(),
+  }),
+]);
+
+/**
+ * Where the value in one slot came from. An `input` source is a path
+ * off one of the unit's inputs, spelled the way a guard spells one. An
+ * `unresolved` source is where the walk stopped, with the source text
+ * of what it could not follow.
+ */
+export const ProvenanceEntrySchema = z.object({
+  at: ProvenanceSlotSchema,
+  from: z.array(ValueRefSchema),
+});
+
 export const TransitionSchema = z.object({
   id: z.string(),
   conditions: z.array(PredicateSchema),
@@ -691,6 +720,8 @@ export const TransitionSchema = z.object({
   isDefault: z.boolean(),
   confidence: ConfidenceInfoSchema.optional(),
   expectedInput: TypeShapeSchema.optional(),
+  /** Absent when no effect of the transition is given a value suss read. */
+  provenance: z.array(ProvenanceEntrySchema).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 

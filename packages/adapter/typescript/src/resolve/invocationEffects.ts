@@ -38,7 +38,12 @@ import {
   NO_BARRIERS,
 } from "../walk/descent.js";
 import { climbSyntax, peelSyntax } from "../walk/unwrap.js";
-import { callOpsFor, type WalkArguments, walkArguments } from "./callOps.js";
+import {
+  callOpsFor,
+  nodeOfValue,
+  type WalkArguments,
+  walkArguments,
+} from "./callOps.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type {
@@ -48,6 +53,7 @@ import type {
   InvocationRecognizer,
   RawCondition,
   RawEffect,
+  StatedSlot,
 } from "@suss/extractor";
 import type { ResolutionStore } from "../facts/store.js";
 
@@ -89,6 +95,40 @@ export interface RecognizedEffectLocation {
   preconditions: RawCondition[];
   /** True for a call in a `finally` body. See `InvocationEffectLocation`. */
   alwaysRuns: boolean;
+  /** The value the call states for each column the effect has, when known. */
+  slots?: SlotValue[];
+}
+
+/** A column a recognized effect writes or picks rows by, and its value. */
+export interface SlotValue {
+  slot: StatedSlot["slot"];
+  name: string;
+  value: Node;
+}
+
+/**
+ * What a recognizer says about each effect it built at one call, kept
+ * until the dispatch loop knows which effects the recognizer returned.
+ */
+class SlotsStated {
+  private readonly byEffect = new Map<Effect, SlotValue[]>();
+
+  readonly listen = (effect: Effect, slots: readonly StatedSlot[]): void => {
+    const already = this.byEffect.get(effect) ?? [];
+    for (const one of slots) {
+      const value = nodeOfValue(one.value);
+      if (value !== null) {
+        already.push({ slot: one.slot, name: one.name, value });
+      }
+    }
+    this.byEffect.set(effect, already);
+  };
+
+  /** The slots stated for an effect, ready to spread onto its location. */
+  of(effect: Effect): { slots?: SlotValue[] } {
+    const slots = this.byEffect.get(effect) ?? [];
+    return slots.length === 0 ? {} : { slots };
+  }
 }
 
 /**
@@ -194,6 +234,7 @@ export function invocationContextFor(
   originatesFrom?: OriginatesFrom,
   anchorCallsOf?: AnchorCallsOf,
   walk?: WalkArguments,
+  stated?: SlotsStated,
 ): TsInvocationRecognizerContext {
   const resolveWrittenValue = writtenValueResolver(resolution);
   // Built on the first read rather than up front: most calls reach no
@@ -214,6 +255,7 @@ export function invocationContextFor(
         originatesFrom,
         anchorCallsOf,
         walk,
+        statesSlots: stated?.listen,
       });
       return ops;
     },
@@ -488,12 +530,14 @@ export function runInvocationRecognizers(
   const walk = walkArguments(calls, resolution);
 
   for (const node of calls) {
+    const stated = resolution === undefined ? undefined : new SlotsStated();
     const ctx = invocationContextFor(
       node,
       resolution,
       originatesFrom,
       anchorCallsOf,
       walk,
+      stated,
     );
     const line = enclosingStatementLine(node);
     const preconditions = collectPreconditions(node, func);
@@ -524,6 +568,7 @@ export function runInvocationRecognizers(
           line,
           preconditions,
           alwaysRuns,
+          ...stated?.of(eff),
         });
       }
     }
@@ -605,6 +650,7 @@ export function accessContextFor(
   originatesFrom?: OriginatesFrom,
   anchorCallsOf?: AnchorCallsOf,
   walk?: WalkArguments,
+  stated?: SlotsStated,
 ): TsAccessRecognizerContext {
   const resolveWrittenValue = writtenValueResolver(resolution);
   const given = {
@@ -626,6 +672,7 @@ export function accessContextFor(
         originatesFrom,
         anchorCallsOf,
         walk,
+        statesSlots: stated?.listen,
       });
       return ops;
     },
@@ -675,6 +722,7 @@ function dispatchAccessRecognizers(
   );
 
   for (const node of visited) {
+    const stated = resolution === undefined ? undefined : new SlotsStated();
     const ctx = accessContextFor(
       node,
       sourceFile,
@@ -682,6 +730,7 @@ function dispatchAccessRecognizers(
       originatesFrom,
       anchorCallsOf,
       walk,
+      stated,
     );
     const line = enclosingStatementLine(node);
     const preconditions = collectPreconditions(node, root);
@@ -708,7 +757,13 @@ function dispatchAccessRecognizers(
           continue;
         }
         seenEffects.add(key);
-        out.push({ effect, line, preconditions, alwaysRuns });
+        out.push({
+          effect,
+          line,
+          preconditions,
+          alwaysRuns,
+          ...stated?.of(eff),
+        });
       }
     }
   }

@@ -30,6 +30,8 @@ import {
   type OpaqueReasonSchema,
   type OutputSchema,
   type PredicateSchema,
+  type ProvenanceEntrySchema,
+  type ProvenanceSlotSchema,
   type RenderNodeSchema,
   RunFindingKindSchema,
   type RunFindingSchema,
@@ -332,6 +334,8 @@ export type Effect = z.infer<typeof EffectSchema>;
 export type RenderNode = z.infer<typeof RenderNodeSchema>;
 
 export type Transition = z.infer<typeof TransitionSchema>;
+export type ProvenanceSlot = z.infer<typeof ProvenanceSlotSchema>;
+export type ProvenanceEntry = z.infer<typeof ProvenanceEntrySchema>;
 export type Gap = z.infer<typeof GapSchema>;
 export type BehavioralSummary = z.infer<typeof BehavioralSummarySchema>;
 export type SummaryDiff = z.infer<typeof SummaryDiffSchema>;

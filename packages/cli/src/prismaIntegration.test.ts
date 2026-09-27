@@ -107,6 +107,25 @@ describe("prisma integration", () => {
     expect(tables).toContain("Post");
   });
 
+  it("records that the where clause picks the user by the email the event carries", async () => {
+    const code = await extractCode();
+    const lookup = code.find((summary) =>
+      summary.location.file.includes("get-user-by-email"),
+    );
+    const [transition] = lookup?.transitions ?? [];
+    const access = transition?.effects.findIndex(
+      (effect) =>
+        effect.type === "interaction" &&
+        effect.interaction.class === "storage-access",
+    );
+    expect(transition?.provenance).toEqual([
+      {
+        at: { slot: "selector", effect: access, name: "email" },
+        from: [{ type: "input", inputRef: "event", path: ["email"] }],
+      },
+    ]);
+  });
+
   it("flags storageReadFieldUnknown when code reads User.emial (typo)", async () => {
     const findings = await runPipeline();
     const f = findings.find(

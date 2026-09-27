@@ -1587,6 +1587,64 @@
             "expectedInput": {
               "$ref": "#/$defs/__schema0"
             },
+            "provenance": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "at": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "slot": {
+                            "type": "string",
+                            "const": "field"
+                          },
+                          "effect": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["slot", "effect", "name"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "slot": {
+                            "type": "string",
+                            "const": "selector"
+                          },
+                          "effect": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["slot", "effect", "name"],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "from": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/__schema2"
+                    }
+                  }
+                },
+                "required": ["at", "from"],
+                "additionalProperties": false
+              }
+            },
             "metadata": {
               "type": "object",
               "propertyNames": {

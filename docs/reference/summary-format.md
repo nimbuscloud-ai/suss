@@ -164,6 +164,21 @@ A transition lists each effect once, however many sites on that path produced it
 
 Every `interaction` includes the `BoundaryBinding` of the resource it reaches, so the checker can pair it against whatever declares that thing, such as a Prisma schema or a CloudFormation table. The nine classes are `storage-access`, `service-call`, `message-send`, `message-receive`, `unit-invoke`, `config-read`, `metadata-read`, `schedule` and `stream-write`. [IR types](/reference/ir#effect) has each one's fields.
 
+## Where a value came from
+
+A transition whose effects write a column or pick rows by one records where each of those values came from, under `provenance`. The GetItem above, written in an Express route as `{ Key: { invoiceId: req.params.id } }`, gives:
+
+```json
+"provenance": [
+  {
+    "at": { "slot": "selector", "effect": 0, "name": "invoiceId" },
+    "from": [{ "type": "input", "inputRef": "req", "path": ["params", "id"] }]
+  }
+]
+```
+
+`at` says which column of which effect: `effect` is the effect's position in the transition's `effects`, and `slot` is `field` for a column the access writes and `selector` for one it picks rows by. `from` lists every place the value could have come from, in the value references a condition uses. An `input` is a path off one of the unit's inputs, a `literal` is a value written in the source, and an `unresolved` is where suss stopped following the value, with the source text it stopped at: a call into a library no pack describes, or a parameter of a helper function. A transition with no such column has no `provenance` field.
+
 ## How two summaries pair
 
 Two summaries describe opposite sides of one boundary when their `semantics` match, and each protocol matches its own way. REST pairs on `(method, normalizedPath)`. `function-call` pairs on `package::exportPath`. Storage pairs on `(storageSystem, scope, container, accessPath)`. [Boundary semantics](/theory/boundary-semantics) has the whole set.

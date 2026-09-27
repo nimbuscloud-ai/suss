@@ -15,8 +15,11 @@ import {
   type RawEffect,
   type RawParameter,
   type RawTerminal,
+  type SourceSpelling,
+  sourceRefsOf,
   terminalToOutput,
   unreadableReading,
+  type WalkEnd,
   writtenReading,
 } from "./index.js";
 
@@ -482,6 +485,155 @@ describe("assembleSummary: one entry per effect", () => {
       { type: "mutation", target: "orders", operation: "create" },
       { ...read, count: 2 },
     ]);
+  });
+});
+
+describe("assembleSummary: where a slot's value came from", () => {
+  /** A read of `orders` picked by `tenant_id`, at one call site. */
+  const read = (callee: string): Effect => ({
+    type: "interaction",
+    binding: {
+      transport: "postgresql",
+      semantics: {
+        name: "storage",
+        storageSystem: "postgresql",
+        scope: "default",
+        container: "orders",
+        accessPath: null,
+      },
+      recognition: "pg",
+    },
+    callee,
+    interaction: {
+      class: "storage-access",
+      kind: "read",
+      fields: ["id"],
+      selector: ["tenant_id"],
+    },
+  });
+  const header = {
+    type: "input" as const,
+    inputRef: "req",
+    path: ["headers", "x-tenant-id"],
+  };
+  const body = {
+    type: "input" as const,
+    inputRef: "req",
+    path: ["body", "tenantId"],
+  };
+
+  const withReads = (branch: Partial<RawBranch>): RawCodeStructure => ({
+    ...twoPathRaw,
+    declaredContract: null,
+    branches: [
+      {
+        conditions: [],
+        terminal: makeTerminal({ kind: "void" }),
+        effects: [],
+        location: { start: 0, end: 4 },
+        isDefault: true,
+        ...branch,
+      },
+    ],
+  });
+
+  it("points each entry at the effect's place once repeats are folded", () => {
+    const first = read("pool.query");
+    const again = read("pool\n  .query");
+    const raw = withReads({
+      extraEffects: [first, again],
+      provenance: [
+        { effect: first, slot: "selector", name: "tenant_id", from: [header] },
+        { effect: again, slot: "selector", name: "tenant_id", from: [body] },
+      ],
+    });
+
+    const [transition] = assembleSummary(raw).transitions;
+    expect(transition?.effects).toHaveLength(1);
+    expect(transition?.provenance).toEqual([
+      {
+        at: { slot: "selector", effect: 0, name: "tenant_id" },
+        from: [header, body],
+      },
+    ]);
+  });
+
+  it("leaves the field off a transition with no slot anybody stated", () => {
+    const raw = withReads({ extraEffects: [read("pool.query")] });
+    expect(assembleSummary(raw).transitions[0]).not.toHaveProperty(
+      "provenance",
+    );
+  });
+});
+
+describe("sourceRefsOf", () => {
+  const spelling: SourceSpelling<WalkEnd> = {
+    inputOf: (leaf) =>
+      leaf.end.is === "parameter"
+        ? { type: "input", inputRef: "req", path: [...leaf.path] }
+        : null,
+    literalAt: (key) => (key === "literal" ? "open" : undefined),
+    textAt: (key) => (key === "call" ? "verify(\n  token)" : null),
+  };
+
+  it("writes an input, a literal and where a walk stopped, once each", () => {
+    expect(
+      sourceRefsOf(
+        [
+          {
+            key: "req",
+            path: ["body"],
+            computedAt: null,
+            end: { is: "parameter" },
+          },
+          {
+            key: "literal",
+            path: [],
+            computedAt: null,
+            end: { is: "written" },
+          },
+          { key: "call", path: [], computedAt: null, end: { is: "call" } },
+          { key: "call", path: [], computedAt: null, end: { is: "call" } },
+        ],
+        spelling,
+      ),
+    ).toEqual([
+      { type: "input", inputRef: "req", path: ["body"] },
+      { type: "literal", value: "open" },
+      { type: "unresolved", sourceText: "verify( token)" },
+    ]);
+  });
+
+  it("quotes the computed read rather than the input when a key was computed", () => {
+    expect(
+      sourceRefsOf(
+        [
+          {
+            key: "req",
+            path: [],
+            computedAt: "call",
+            end: { is: "parameter" },
+          },
+        ],
+        spelling,
+      ),
+    ).toEqual([{ type: "unresolved", sourceText: "verify( token)" }]);
+  });
+
+  it("quotes a name key by the name after its scope", () => {
+    expect(
+      sourceRefsOf(
+        [
+          {
+            key: "/app/x.py:1-9#tenant",
+            path: [],
+            computedAt: null,
+            end: { is: "other" },
+          },
+        ],
+        spelling,
+      ),
+    ).toEqual([{ type: "unresolved", sourceText: "tenant" }]);
   });
 });
 

@@ -10,6 +10,7 @@ import { storageCalls } from "./storage.js";
 import { unitInvokes } from "./unitInvokes.js";
 
 import type { Effect } from "@suss/behavioral-ir";
+import type { StatedSlot } from "@suss/extractor";
 import type { SqlMethod, StorageMethod } from "./chain.js";
 import type { CallOps, ReceiverOrigin, ValueOps } from "./ops.js";
 
@@ -893,6 +894,130 @@ describe("a rule that says which value it reads", () => {
   });
 });
 
+/** Each slot an effect stated, as `slot name=text of the value`. */
+function slotsStated(
+  calls: ReturnType<typeof store> | ReturnType<typeof queries>,
+  ops: CallOps,
+  runner: (calls: never, ops: CallOps) => Effect[] | null,
+): string[] {
+  const said: string[] = [];
+  const listening = {
+    ...ops,
+    statesSlots: (_effect: Effect, slots: readonly StatedSlot[]) => {
+      for (const one of slots) {
+        said.push(`${one.slot} ${one.name}=${one.value.text()}`);
+      }
+    },
+  } as CallOps;
+  runner(calls as never, listening);
+  return said;
+}
+
+describe("the value a call states for each column", () => {
+  const listing = storageCalls({
+    system: "cassette",
+    client: declaredBy("tapedeck"),
+  }).methods({
+    play: {
+      kind: "read",
+      selector: { of: { at: 0 }, by: ({ input }) => keysIn(input) },
+      fields: ["title"],
+    },
+    record: {
+      kind: "write",
+      fields: {
+        of: { at: 0 },
+        by: ({ input }) =>
+          input.property("side") === null ? [] : ["side", "missing"],
+      },
+    },
+  });
+
+  it("gives each column the rule reported the value it read under that name", () => {
+    expect(
+      slotsStated(
+        listing,
+        callOps({
+          method: "play",
+          from: ["tapedeck"],
+          values: { 0: { side: "a", owner: "b" } },
+        }),
+        run as never,
+      ),
+    ).toEqual(["selector side=a", "selector owner=b"]);
+  });
+
+  it("says nothing of a column the rule never read a value for", () => {
+    expect(
+      slotsStated(
+        listing,
+        callOps({
+          method: "record",
+          from: ["tapedeck"],
+          values: { 0: { side: "a" } },
+        }),
+        run as never,
+      ),
+    ).toEqual(["field side=a"]);
+  });
+
+  it("asks nothing of the rule's values when nobody listens", () => {
+    const effects = run(
+      listing,
+      callOps({
+        method: "play",
+        from: ["tapedeck"],
+        values: { 0: { side: "a" } },
+      }),
+    );
+    expect(effects?.[0]).toMatchObject({ interaction: { selector: ["side"] } });
+  });
+
+  it("answers every other question the rule asks the way the value does", () => {
+    const asked: unknown[][] = [];
+    const inspecting = storageCalls({
+      system: "cassette",
+      client: declaredBy("tapedeck"),
+    }).methods({
+      label: {
+        kind: "read",
+        selector: {
+          of: { at: 0 },
+          by: ({ input }) => {
+            asked.push([
+              input.text(),
+              input.name("nothing"),
+              input.names?.(3),
+              input.flag(),
+              input.asArg(),
+              input.parts(),
+              input.holes(),
+              input.interpolated?.().length,
+              input.items().length,
+              input.property("absent"),
+              input.property("side")?.text(),
+              input.property("side")?.text(),
+              input.property("tracks")?.items()[0]?.text(),
+            ]);
+            return [];
+          },
+        },
+      },
+    });
+    const ops = callOps({
+      method: "label",
+      from: ["tapedeck"],
+      values: { 0: { side: "a", tracks: ["one"] } },
+    });
+
+    slotsStated(inspecting, ops, run as never);
+    run(inspecting, ops);
+
+    expect(asked).toHaveLength(2);
+    expect(asked[0]).toEqual(asked[1]);
+  });
+});
+
 describe("an operation the call says rather than the name it goes to", () => {
   const helper = storageCalls({ system: "cassette" })
     .methods({
@@ -1287,6 +1412,81 @@ describe("a chain over statements written as SQL", () => {
         example: 'deck.query("SELECT id FROM tapes")',
       },
     ]);
+  });
+});
+
+describe("the value a statement's placeholders take", () => {
+  const withValues = sqlStatements({
+    system: "postgresql",
+    dialect: "postgresql",
+    client: declaredBy("tapedeck"),
+  }).methods({
+    query: {
+      statement: [{ at: 0 }, { at: 0, property: ["text"] }],
+      parameters: [{ at: 1 }, { at: 0, property: ["values"] }],
+    },
+  });
+
+  const stated = (values: Record<number, unknown>) =>
+    slotsStated(
+      withValues,
+      callOps({ method: "query", from: ["tapedeck"], values }),
+      runQuery as never,
+    );
+
+  it("takes each numbered placeholder's value from where the method says", () => {
+    expect(
+      stated({
+        0: "UPDATE tapes SET title = $2 WHERE id = $1",
+        1: ["t-1", "Side A"],
+      }),
+    ).toEqual(["field title=Side A", "selector id=t-1"]);
+  });
+
+  it("takes a named placeholder's value from the entry of that name", () => {
+    expect(
+      stated({
+        0: "SELECT id FROM tapes WHERE owner = :owner",
+        1: { owner: "ann" },
+      }),
+    ).toEqual(["selector owner=ann"]);
+  });
+
+  it("reads the values out of a config object the same way", () => {
+    expect(
+      stated({
+        0: { text: "SELECT id FROM tapes WHERE owner = $1", values: ["ann"] },
+      }),
+    ).toEqual(["selector owner=ann"]);
+  });
+
+  it("takes a template's placeholders from what fills its holes", () => {
+    expect(
+      stated({
+        0: {
+          parts: ["SELECT id FROM tapes WHERE owner = ", ""],
+          holes: [null],
+          settled: ["ann"],
+        },
+      }),
+    ).toEqual(["selector owner=ann"]);
+  });
+
+  it("reads a template that writes its own placeholders the way plain text is read", () => {
+    expect(
+      stated({
+        0: {
+          parts: ["SELECT id FROM ", " WHERE owner = $1"],
+          holes: [null],
+          settled: ["tapes"],
+        },
+        1: ["ann"],
+      }),
+    ).toEqual(["selector owner=ann"]);
+  });
+
+  it("says nothing for a placeholder the call passes no value for", () => {
+    expect(stated({ 0: "SELECT id FROM tapes WHERE owner = $1" })).toEqual([]);
   });
 });
 

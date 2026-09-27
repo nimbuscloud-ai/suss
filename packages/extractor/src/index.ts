@@ -13,6 +13,7 @@
 import { createHash } from "node:crypto";
 
 import {
+  effectKey,
   exchangesHttpResponses,
   foldRepeatedEffects,
   normalizeCalleeText,
@@ -43,6 +44,8 @@ import type {
   Input,
   Output,
   Predicate,
+  ProvenanceEntry,
+  ProvenanceSlot,
   RenderNode,
   RequestSpellingMetadata,
   Transition,
@@ -102,6 +105,11 @@ export {
   valueToReadFurtherFrom,
   writtenReading,
 } from "./reading.js";
+export {
+  type SourceSpelling,
+  sourceRefsOf,
+  type WalkEnd,
+} from "./valueSources.js";
 
 export type {
   AccessRecognizer,
@@ -268,6 +276,8 @@ export interface RawBranch {
    * `RawEffect` conversion that `effects` goes through.
    */
   extraEffects?: Effect[];
+  /** Where the values in the slots of `extraEffects` came from. */
+  provenance?: RawProvenance[];
   location: { start: number; end: number };
   isDefault: boolean;
   /** The fields a consumer reads off a response inside this branch. */
@@ -284,6 +294,18 @@ export interface RawBranch {
    * text and also reads its structure can do both.
    */
   bodyShapeReading?: DefaultedReading<TypeShape>;
+}
+
+/**
+ * Where the value in one slot came from, keyed by the effect object an
+ * adapter put in `extraEffects`. Assembly folds repeated effects, so it
+ * works out each effect's position only once the list is final.
+ */
+export interface RawProvenance {
+  effect: Effect;
+  slot: ProvenanceSlot["slot"];
+  name: string;
+  from: ValueRef[];
 }
 
 function valuesOfOutput(output: Transition["output"]): ValueRef[] {
@@ -591,6 +613,51 @@ function effectsOfBranch(branch: RawBranch): Effect[] {
 }
 
 /**
+ * One entry per slot of the folded effects. Two call sites folded into
+ * one effect state their sources side by side, since the transition
+ * lists the effect once for both.
+ */
+function provenanceOf(
+  raw: readonly RawProvenance[],
+  effects: readonly Effect[],
+): ProvenanceEntry[] {
+  if (raw.length === 0) {
+    return [];
+  }
+  const positionOf = new Map(effects.map((one, at) => [effectKey(one), at]));
+  const bySlot = new Map<string, ProvenanceEntry>();
+  const said = new Map<string, Set<string>>();
+  for (const one of raw) {
+    const effect = positionOf.get(effectKey(withNormalizedCallee(one.effect)));
+    if (effect === undefined) {
+      continue;
+    }
+    const slotKey = `${effect}\u0000${one.slot}\u0000${one.name}`;
+    let entry = bySlot.get(slotKey);
+    let seen = said.get(slotKey);
+    if (entry === undefined || seen === undefined) {
+      entry = { at: { slot: one.slot, effect, name: one.name }, from: [] };
+      seen = new Set();
+      bySlot.set(slotKey, entry);
+      said.set(slotKey, seen);
+    }
+    for (const source of one.from) {
+      const spelled = JSON.stringify(source);
+      if (!seen.has(spelled)) {
+        seen.add(spelled);
+        entry.from.push(source);
+      }
+    }
+  }
+  return [...bySlot.values()].sort(
+    (a, b) =>
+      a.at.effect - b.at.effect ||
+      a.at.slot.localeCompare(b.at.slot) ||
+      a.at.name.localeCompare(b.at.name),
+  );
+}
+
+/**
  * Two spellings of one call are one effect, so the callee is normalized
  * before the fold rather than after it.
  */
@@ -616,16 +683,21 @@ export function assembleSummary(
       rawConditionToPredicate,
     );
 
+    const effects = effectsOfBranch(branch);
     const transition: Transition = {
       id: makeTransitionId(raw.identity.name, branch),
       conditions,
       output: terminalToOutput(branch.terminal),
-      effects: effectsOfBranch(branch),
+      effects,
       location: branch.location,
       isDefault: branch.isDefault,
     };
     if (branch.expectedInput != null) {
       transition.expectedInput = branch.expectedInput;
+    }
+    const provenance = provenanceOf(branch.provenance ?? [], effects);
+    if (provenance.length > 0) {
+      transition.provenance = provenance;
     }
     return transition;
   });
@@ -1084,6 +1156,7 @@ export type {
   DeclaredBy,
   OpsCarrier,
   ReceiverOrigin,
+  StatedSlot,
   UnsettledName,
   ValueEntry,
   ValueOps,

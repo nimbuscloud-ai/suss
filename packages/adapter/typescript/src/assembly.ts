@@ -17,6 +17,7 @@ import {
   conditionInfoToRawCondition,
 } from "./conditions.js";
 import { computePathConditions } from "./paths/pathConditions.js";
+import { recordProvenance } from "./provenance.js";
 import {
   extractInvocationEffects,
   runAccessRecognizers,
@@ -51,6 +52,7 @@ import type {
   AnchorCallsOf,
   InvocationEffectLocation,
   OriginatesFrom,
+  RecognizedEffectLocation,
 } from "./resolve/invocationEffects.js";
 import type { ResolveCallee } from "./terminals/helperResolution.js";
 
@@ -401,13 +403,17 @@ export function extractRawBranches(
   // A recognized effect is additive to the invocation effect from the
   // same call, so it skips the terminal dedup and only takes the two
   // branch tests.
+  const firing = new Map<RawBranch, RecognizedEffectLocation[]>();
   for (const branch of distinctBranches) {
-    const extra: Effect[] = recognized
-      .filter((r) => firesOn(r, branch))
-      .map((r) => r.effect);
+    const located = recognized.filter((r) => firesOn(r, branch));
+    const extra: Effect[] = located.map((r) => r.effect);
     if (extra.length > 0) {
       branch.extraEffects = [...(branch.extraEffects ?? []), ...extra];
     }
+    firing.set(branch, located);
+  }
+  if (resolution !== undefined) {
+    recordProvenance(func, firing, resolution);
   }
 
   return {

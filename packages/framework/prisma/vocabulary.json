@@ -19,6 +19,7 @@
   "disconnect": "@prisma/client: nested write operation, drop a joined row",
   "set": "@prisma/client: nested write operation, replace the joined rows",
   "data": "@prisma/client: write argument key holding the row values",
+  "where": "@prisma/client: argument key holding the filter that picks the rows",
   "read": "suss: access kind",
   "write": "suss: access kind"
 }
