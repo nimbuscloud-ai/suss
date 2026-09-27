@@ -1,34 +1,60 @@
 {
   "total": {
     "lines": {
-      "total": 16,
-      "covered": 16,
+      "total": 30,
+      "covered": 30,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 16,
-      "covered": 16,
+      "total": 30,
+      "covered": 30,
       "skipped": 0,
       "pct": 100
     },
     "functions": {
-      "total": 4,
-      "covered": 4,
-      "skipped": 0,
-      "pct": 100
-    },
-    "branches": {
       "total": 6,
       "covered": 6,
       "skipped": 0,
       "pct": 100
+    },
+    "branches": {
+      "total": 18,
+      "covered": 17,
+      "skipped": 0,
+      "pct": 94.44
     },
     "branchesTrue": {
       "total": 0,
       "covered": 0,
       "skipped": 0,
       "pct": "Unknown"
+    }
+  },
+  "src/databaseYml.ts": {
+    "lines": {
+      "total": 14,
+      "covered": 14,
+      "skipped": 0,
+      "pct": 100
+    },
+    "functions": {
+      "total": 2,
+      "covered": 2,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 14,
+      "covered": 14,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 12,
+      "covered": 11,
+      "skipped": 0,
+      "pct": 91.66
     }
   },
   "src/index.ts": {
