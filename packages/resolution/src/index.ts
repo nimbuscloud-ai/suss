@@ -2471,6 +2471,22 @@ export const RESOLUTION_QUESTIONS = [
       [lit("sourceChain", v("x"), v("y")), read],
     ),
   ),
+  rule(
+    "sourceChain",
+    [v("x"), v("a")],
+    [
+      lit("sourceChain", v("x"), v("r")),
+      lit("converts", v("r"), v("a"), v("n")),
+    ],
+  ),
+  rule(
+    "wantedSourceConverts",
+    [v("x"), v("r"), v("a"), v("n")],
+    [
+      lit("sourceChain", v("x"), v("r")),
+      lit("converts", v("r"), v("a"), v("n")),
+    ],
+  ),
   rule("inputChain", [v("x"), v("x")], [lit("wantedInputRead", v("x"))]),
   rule(
     "inputChain",

@@ -34,6 +34,7 @@ describe("askSources", () => {
         key: "req",
         path: ["headers", "x-tenant-id"],
         computedAt: null,
+        conversions: [],
         end: { is: "parameter", of: "handler" },
       },
     ]);
@@ -56,6 +57,7 @@ describe("askSources", () => {
         key: "r",
         path: ["body"],
         computedAt: null,
+        conversions: [],
         end: { is: "parameter", of: "tenantOf" },
       },
     ]);
@@ -80,6 +82,7 @@ describe("askSources", () => {
         key: "helperCall",
         path: [],
         computedAt: null,
+        conversions: [],
         end: { is: "call" },
       },
     ]);
@@ -98,11 +101,18 @@ describe("askSources", () => {
     ]);
     const found = askSources(db, ["either", "argsRead"]);
     expect(found.get("either")).toEqual([
-      { key: "literal", path: [], computedAt: null, end: { is: "written" } },
+      {
+        key: "literal",
+        path: [],
+        computedAt: null,
+        conversions: [],
+        end: { is: "written" },
+      },
       {
         key: "verifyCall",
         path: ["tenantId"],
         computedAt: null,
+        conversions: [],
         end: { is: "call" },
       },
     ]);
@@ -111,6 +121,7 @@ describe("askSources", () => {
         key: "request",
         path: ["args"],
         computedAt: null,
+        conversions: [],
         end: { is: "import", module: "flask", name: "request" },
       },
     ]);
@@ -127,6 +138,7 @@ describe("askSources", () => {
         key: "params",
         path: ["tenant_id"],
         computedAt: null,
+        conversions: [],
         end: { is: "parameter", of: "action" },
       },
     ]);
@@ -142,7 +154,45 @@ describe("askSources", () => {
         key: "req",
         path: [],
         computedAt: "entry",
+        conversions: [],
         end: { is: "parameter", of: "handler" },
+      },
+    ]);
+  });
+
+  it("goes through the language's own conversion and says it did", () => {
+    const db = databaseOf([
+      ...HANDLER,
+      ["call", "toNumber", "numberRef"],
+      ["converts", "toNumber", "tenantRef", "Number"],
+      ["binds", "id", "toNumber"],
+      ["binds", "idRef", "id"],
+    ]);
+    expect(askSources(db, ["idRef"]).get("idRef")).toEqual([
+      {
+        key: "req",
+        path: ["headers", "x-tenant-id"],
+        computedAt: null,
+        conversions: ["Number"],
+        end: { is: "parameter", of: "handler" },
+      },
+    ]);
+  });
+
+  it("walks a member two branches reach once, and ends at a name nothing writes", () => {
+    const db = databaseOf([
+      ["fallbackBranch", "either", "left"],
+      ["fallbackBranch", "either", "right"],
+      ["binds", "left", "shared"],
+      ["binds", "right", "shared"],
+    ]);
+    expect(askSources(db, ["either"]).get("either")).toEqual([
+      {
+        key: "shared",
+        path: [],
+        computedAt: null,
+        conversions: [],
+        end: { is: "other" },
       },
     ]);
   });

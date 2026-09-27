@@ -53,6 +53,9 @@ readsEntry(site, o, n)      site reads the entry of o under the key n,
                             which the source writes out, as
                             params[:id]. Only the source walk reads it
                             (Python, Ruby)
+converts(r, a, n)           the call r converts a to another type with
+                            the language's own n, as Number(x), int(x)
+                            or x.to_i. Only the source walk reads it
 environmentObject(w)        w is written as the process environment
 streamObject(w)             w is written as one of the process's output
                             streams, such as process.stdout
@@ -1170,7 +1173,18 @@ sourceChain(x, z)  :- sourceChain(x, y), hop(y, z, result)
 sourceChain(x, o)  :- sourceChain(x, y), readsProperty(y, o, n)
 sourceChain(x, o)  :- sourceChain(x, y), readsEntry(y, o, n)
 sourceChain(x, o)  :- sourceChain(x, y), readsKeyed(y, o, k)
+sourceChain(x, a)  :- sourceChain(x, r), converts(r, a, n)
 ```
+
+A tenant or user id usually arrives as a string and gets converted:
+`Number(req.params.id)`, `int(tenant_id)`, `params[:id].to_i`. The
+conversion is a different value from its argument, so it is not a
+value hop, and a value hop would let every other question take
+`Number(x)` for `x`. Each adapter states the language's own
+conversions as `converts(r, a, n)` at the call site, and only this
+walk reads it. `wantedSourceConverts` keeps the step, so the answer
+can say the value was converted from the input rather than read
+straight off it.
 
 The walk takes value and result steps and no instance step. An
 instance step ends at a class, which is never where a value came from,
@@ -1207,8 +1221,8 @@ the property's name, which is how `req.headers["x-tenant-id"]` becomes
 a path off `req`.
 
 The question derives the chain's steps and what each member is, keyed
-by the value asked about: `wantedSourceHop`, `wantedSourceRead` and
-`wantedSourceKeyed` for the steps, and `wantedSourceParam`,
+by the value asked about: `wantedSourceHop`, `wantedSourceRead`,
+`wantedSourceKeyed` and `wantedSourceConverts` for the steps, and `wantedSourceParam`,
 `wantedSourceWritten`, `wantedSourceCall` and `wantedSourceImport` for
 the members. `sourceLeavesOf` rebuilds the walk from them and returns
 each place it ended, with the path of properties read on the way.

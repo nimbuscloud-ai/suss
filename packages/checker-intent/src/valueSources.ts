@@ -60,11 +60,10 @@ export function checkValueSources(
   for (const source of claim.effect.from ?? []) {
     const found: CodeSource[] = matched.flatMap((made) =>
       slotsFor(claim.effect, source.column, made).flatMap((slot) =>
-        slot.from.map((ref) => ({
-          ref,
-          path: pathOf(claim, ref),
-          line: made.line,
-        })),
+        slot.from.map((written) => {
+          const ref = unconverted(written);
+          return { ref, path: pathOf(claim, ref), line: made.line };
+        }),
       ),
     );
     if (found.some((one) => samePath(one.path, source.path))) {
@@ -99,6 +98,16 @@ function slotsFor(
   return (made.slots ?? []).filter(
     (slot) => slot.at.name === column && kinds.has(slot.at.slot),
   );
+}
+
+/**
+ * The value a conversion was made from. `Number(req.params.id)` still
+ * takes its value from `req.params.id`, which is the claim `from` makes.
+ */
+function unconverted(ref: ValueRef): ValueRef {
+  return ref.type === "derived" && ref.derivation.type === "methodCall"
+    ? unconverted(ref.from)
+    : ref;
 }
 
 function pathOf(claim: SourceClaim, ref: ValueRef): string[] | null {

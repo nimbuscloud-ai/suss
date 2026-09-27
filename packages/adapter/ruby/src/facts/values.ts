@@ -38,7 +38,12 @@ import {
   symbolValue,
 } from "../ast.js";
 import { spellsAName } from "../paths/bareCalls.js";
-import { CONSTRUCTOR, RECEIVER_RETURNS } from "./languageWords.js";
+import {
+  CONSTRUCTOR,
+  CONVERTING_FUNCTIONS,
+  CONVERTING_METHODS,
+  RECEIVER_RETURNS,
+} from "./languageWords.js";
 import {
   collectWrites,
   instanceWritesRunInOrder,
@@ -433,6 +438,35 @@ function emitCall(emitter: Emitter, site: CallSite): void {
     return;
   }
   emitCallArguments(emitter, site);
+  emitConversion(emitter, site);
+}
+
+/** `converts` for `x.to_i` and the like, and for Kernel's `Integer(x)`. */
+function emitConversion(emitter: Emitter, site: CallSite): void {
+  const { method, receiver, node } = site;
+  const name = method?.text ?? null;
+  const args = method === node ? null : field(node, "arguments");
+  const written = args === null ? [] : children(args);
+  if (
+    name !== null &&
+    receiver !== null &&
+    CONVERTING_METHODS.has(name) &&
+    written.length === 0
+  ) {
+    add(emitter, "converts", site.key, valueKey(emitter, receiver, node), name);
+    return;
+  }
+  const [first] = written;
+  if (
+    name !== null &&
+    receiver === null &&
+    CONVERTING_FUNCTIONS.has(name) &&
+    args !== null &&
+    first !== undefined &&
+    first.type !== "pair"
+  ) {
+    add(emitter, "converts", site.key, valueKey(emitter, first, args), name);
+  }
 }
 
 /**

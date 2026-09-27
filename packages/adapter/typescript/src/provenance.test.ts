@@ -125,6 +125,25 @@ describe("where a written or selected value came from", () => {
     ]);
   });
 
+  it("writes a value a global converted as converted from the input", async () => {
+    const entries = await provenanceOf(`
+      declare function save(tenant: unknown, id: unknown): void;
+      export function handler(event: { id: string; tenant: number }) {
+        save(event.tenant.toString(), Number(event.id));
+        return 1;
+      }
+    `);
+    const converted = (method: string, key: string) => ({
+      type: "derived",
+      derivation: { type: "methodCall", method, args: [] },
+      from: { type: "input", inputRef: "event", path: [key] },
+    });
+    expect(entries.map((entry) => entry.from)).toEqual([
+      [converted("toString", "tenant")],
+      [converted("Number", "id")],
+    ]);
+  });
+
   it("quotes where the walk stopped when it reaches something it cannot follow", async () => {
     const entries = await provenanceOf(`
       declare function save(tenant: unknown, id: unknown): void;

@@ -22,3 +22,15 @@ export const LANGUAGE_WRAPPERS: readonly UnwrapsByName[] = [
 ];
 
 export const LANGUAGE_RECEIVER_RETURNS: readonly string[] = ["bind"];
+
+/** The globals that convert their first argument to another type. */
+export const CONVERTING_GLOBALS: ReadonlySet<string> = new Set([
+  "Number",
+  "String",
+  "parseInt",
+  "parseFloat",
+  "BigInt",
+]);
+
+/** The methods that convert the value they are called on. */
+export const CONVERTING_METHODS: ReadonlySet<string> = new Set(["toString"]);

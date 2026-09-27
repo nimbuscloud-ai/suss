@@ -79,7 +79,7 @@ Three layers do the work.
   <text class="note" x="535" y="450" text-anchor="middle">the same stop, for a</text>
   <text class="note" x="535" y="466" text-anchor="middle">walk that ran a call</text>
 
-  <text class="note" x="330" y="498" text-anchor="middle">and comesFrom, objectOf, resolves: 94 question rules feeding 57 answer relations</text>
+  <text class="note" x="330" y="498" text-anchor="middle">and comesFrom, objectOf, resolves: 96 question rules feeding 58 answer relations</text>
 </svg>
 
 ## Layer 1: the adapter writes down what a file says
@@ -304,8 +304,8 @@ a condition on where the walk ended.
 `resolves` is the one `suss ask why` proves.
 
 At the bottom of the same file, `RESOLUTION_QUESTIONS` turns each of
-those into an answer keyed by the value somebody asked about. It is 94
-question rules feeding 57 answer relations. They are written as rules
+those into an answer keyed by the value somebody asked about. It is 96
+question rules feeding 58 answer relations. They are written as rules
 rather than as loops in the caller
 because `deriveOnDemand` reads them to work out how far to follow each
 chain.

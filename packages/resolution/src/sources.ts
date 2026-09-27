@@ -38,14 +38,17 @@ export interface SourceLeaf {
    * that key out, so a caller that needs the whole path stops here.
    */
   computedAt: string | null;
+  /** The language's own conversions on the way to the value, outermost first. */
+  conversions: string[];
   end: SourceEnd;
 }
 
-/** One step out of a chain member, and what it read on the way. */
+/** One step out of a chain member, and what it read or converted on the way. */
 interface Step {
   to: string;
   property: string | null;
   computed: boolean;
+  conversion: string | null;
 }
 
 /**
@@ -90,7 +93,7 @@ export function sourceLeavesOf(db: Database, key: string): SourceLeaf[] {
   const leaves: SourceLeaf[] = [];
   const seen = new Set<string>([key]);
   const queue: Array<Omit<SourceLeaf, "end">> = [
-    { key, path: [], computedAt: null },
+    { key, path: [], computedAt: null, conversions: [] },
   ];
   for (let at = 0; at < queue.length; at += 1) {
     const here = queue[at];
@@ -114,6 +117,10 @@ export function sourceLeavesOf(db: Database, key: string): SourceLeaf[] {
         path:
           step.property === null ? here.path : [step.property, ...here.path],
         computedAt: here.computedAt ?? (step.computed ? here.key : null),
+        conversions:
+          step.conversion === null
+            ? here.conversions
+            : [...here.conversions, step.conversion],
       });
     }
   }
@@ -133,22 +140,26 @@ function stepsFrom(db: Database, key: string): Map<string, Step[]> {
     }
     already.push(step);
   };
+  const plain = { property: null, computed: false, conversion: null };
   for (const row of db.lookup("wantedSourceHop", 0, key)) {
-    add(String(row[1]), {
-      to: String(row[2]),
-      property: null,
-      computed: false,
-    });
+    add(String(row[1]), { ...plain, to: String(row[2]) });
   }
   for (const row of db.lookup("wantedSourceRead", 0, key)) {
     add(String(row[1]), {
+      ...plain,
       to: String(row[2]),
       property: String(row[3]),
-      computed: false,
     });
   }
   for (const row of db.lookup("wantedSourceKeyed", 0, key)) {
-    add(String(row[1]), { to: String(row[2]), property: null, computed: true });
+    add(String(row[1]), { ...plain, to: String(row[2]), computed: true });
+  }
+  for (const row of db.lookup("wantedSourceConverts", 0, key)) {
+    add(String(row[1]), {
+      ...plain,
+      to: String(row[2]),
+      conversion: String(row[3]),
+    });
   }
   return steps;
 }

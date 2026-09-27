@@ -19,6 +19,8 @@ export interface WalkEnd {
   readonly path: readonly string[];
   /** A read at a key the source computes on the way, or null for none. */
   readonly computedAt: string | null;
+  /** The language's own conversions on the way to the value, outermost first. */
+  readonly conversions: readonly string[];
   readonly end: { readonly is: string };
 }
 
@@ -43,7 +45,7 @@ export function sourceRefsOf<L extends WalkEnd>(
   const refs: ValueRef[] = [];
   const said = new Set<string>();
   for (const leaf of leaves) {
-    const ref = refOf(leaf, spelling);
+    const ref = convertedFrom(refOf(leaf, spelling), leaf.conversions);
     const spelled = JSON.stringify(ref);
     if (!said.has(spelled)) {
       said.add(spelled);
@@ -51,6 +53,24 @@ export function sourceRefsOf<L extends WalkEnd>(
     }
   }
   return refs;
+}
+
+/**
+ * The value each conversion on the way made, innermost first, so
+ * `Number(String(x))` comes out as a `Number` of a `String` of `x`.
+ */
+function convertedFrom(
+  ref: ValueRef,
+  conversions: readonly string[],
+): ValueRef {
+  return conversions.reduceRight<ValueRef>(
+    (from, method) => ({
+      type: "derived",
+      from,
+      derivation: { type: "methodCall", method, args: [] },
+    }),
+    ref,
+  );
 }
 
 /**

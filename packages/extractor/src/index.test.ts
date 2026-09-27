@@ -558,6 +558,30 @@ describe("assembleSummary: where a slot's value came from", () => {
     ]);
   });
 
+  it("lists a source once, and drops an entry whose effect is not on the transition", () => {
+    const kept = read("pool.query");
+    const raw = withReads({
+      extraEffects: [kept],
+      provenance: [
+        { effect: kept, slot: "selector", name: "tenant_id", from: [header] },
+        { effect: kept, slot: "selector", name: "tenant_id", from: [header] },
+        {
+          effect: read("other.query"),
+          slot: "selector",
+          name: "tenant_id",
+          from: [body],
+        },
+      ],
+    });
+
+    expect(assembleSummary(raw).transitions[0]?.provenance).toEqual([
+      {
+        at: { slot: "selector", effect: 0, name: "tenant_id" },
+        from: [header],
+      },
+    ]);
+  });
+
   it("leaves the field off a transition with no slot anybody stated", () => {
     const raw = withReads({ extraEffects: [read("pool.query")] });
     expect(assembleSummary(raw).transitions[0]).not.toHaveProperty(
@@ -576,24 +600,22 @@ describe("sourceRefsOf", () => {
     textAt: (key) => (key === "call" ? "verify(\n  token)" : null),
   };
 
+  /** A place a walk ended, with nothing read or converted on the way unless the test says. */
+  const walked = (over: Partial<WalkEnd> & Pick<WalkEnd, "key" | "end">) => ({
+    path: [],
+    computedAt: null,
+    conversions: [],
+    ...over,
+  });
+
   it("writes an input, a literal and where a walk stopped, once each", () => {
     expect(
       sourceRefsOf(
         [
-          {
-            key: "req",
-            path: ["body"],
-            computedAt: null,
-            end: { is: "parameter" },
-          },
-          {
-            key: "literal",
-            path: [],
-            computedAt: null,
-            end: { is: "written" },
-          },
-          { key: "call", path: [], computedAt: null, end: { is: "call" } },
-          { key: "call", path: [], computedAt: null, end: { is: "call" } },
+          walked({ key: "req", path: ["body"], end: { is: "parameter" } }),
+          walked({ key: "literal", end: { is: "written" } }),
+          walked({ key: "call", end: { is: "call" } }),
+          walked({ key: "call", end: { is: "call" } }),
         ],
         spelling,
       ),
@@ -607,14 +629,7 @@ describe("sourceRefsOf", () => {
   it("quotes the computed read rather than the input when a key was computed", () => {
     expect(
       sourceRefsOf(
-        [
-          {
-            key: "req",
-            path: [],
-            computedAt: "call",
-            end: { is: "parameter" },
-          },
-        ],
+        [walked({ key: "req", computedAt: "call", end: { is: "parameter" } })],
         spelling,
       ),
     ).toEqual([{ type: "unresolved", sourceText: "verify( token)" }]);
@@ -623,17 +638,36 @@ describe("sourceRefsOf", () => {
   it("quotes a name key by the name after its scope", () => {
     expect(
       sourceRefsOf(
-        [
-          {
-            key: "/app/x.py:1-9#tenant",
-            path: [],
-            computedAt: null,
-            end: { is: "other" },
-          },
-        ],
+        [walked({ key: "/app/x.py:1-9#tenant", end: { is: "other" } })],
         spelling,
       ),
     ).toEqual([{ type: "unresolved", sourceText: "tenant" }]);
+  });
+
+  it("writes String(Number(req.params.id)) as a String of a Number of the input", () => {
+    expect(
+      sourceRefsOf(
+        [
+          walked({
+            key: "req",
+            path: ["params", "id"],
+            conversions: ["String", "Number"],
+            end: { is: "parameter" },
+          }),
+        ],
+        spelling,
+      ),
+    ).toEqual([
+      {
+        type: "derived",
+        derivation: { type: "methodCall", method: "String", args: [] },
+        from: {
+          type: "derived",
+          derivation: { type: "methodCall", method: "Number", args: [] },
+          from: { type: "input", inputRef: "req", path: ["params", "id"] },
+        },
+      },
+    ]);
   });
 });
 
