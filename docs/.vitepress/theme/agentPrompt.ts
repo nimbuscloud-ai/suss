@@ -6,7 +6,7 @@
  * check:examples read the same text the button copies.
  *
  * The tab bar borrows VitePress's code group classes for its look. The
- * panels sit outside that element, because VitePress's own tab switching
+ * panels are outside that element, because VitePress's own tab switching
  * and its rule that hides inactive code blocks would otherwise reach into
  * them. Without JavaScript the first tab shows, and its prompt still opens.
  */
