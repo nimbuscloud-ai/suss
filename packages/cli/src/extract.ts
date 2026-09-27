@@ -13,6 +13,7 @@ import {
   workspaceRootFor,
 } from "@suss/adapter-typescript";
 import {
+  readTestMetadata,
   readWrapperMetadata,
   SUMMARY_SCHEMA_VERSION,
   withRewrittenPaths,
@@ -21,6 +22,7 @@ import {
 import { formatProfile, profileEvaluationAsync } from "@suss/datalog";
 import { evaluatePackHealth, formatPackHealth } from "@suss/extractor";
 
+import { testFilesListedIn } from "./coveringTests.js";
 import { renderDiagnosis } from "./diagnosis.js";
 import {
   filesOutsideNestedRepositories,
@@ -228,6 +230,7 @@ export const BUILTIN_FRAMEWORKS: Record<string, string> = {
   pg: "@suss/packs/pg",
   redis: "@suss/packs/redis",
   zustand: "@suss/packs/zustand",
+  vitest: "@suss/packs/vitest",
   fetch: "@suss/packs/fetch",
   axios: "@suss/packs/axios",
   "apollo-client": "@suss/packs/apollo-client",
@@ -415,6 +418,8 @@ interface LoadedFactory {
   handedOver: unknown;
   factory: PackFactory;
   specifier: string;
+  /** Whether the pack takes a `files` list, as a test pack does. */
+  takesFiles: boolean;
 }
 
 /**
@@ -568,6 +573,7 @@ async function loadPackFactory(
       ),
       factory: mod.default,
       specifier,
+      takesFiles: mod.optionsSchema?.shape.files !== undefined,
     };
   };
 
@@ -617,14 +623,39 @@ export async function resolveFramework(
   spec: string,
   stubOverlay?: StubOverlay,
   projectRoot?: string,
+  testFiles?: readonly string[],
 ): Promise<PatternPack> {
   const loaded = await loadPackFactory(spec, projectRoot);
   assertPackLanguage(loaded.name, "typescript");
   return instantiatePack<PatternPack>(
-    withStubbedOptions(loaded, stubOverlay),
+    withTestFiles(withStubbedOptions(loaded, stubOverlay), testFiles),
     loaded.specifier,
     loaded.name,
   );
+}
+
+/**
+ * The test files the PRDs list, handed to a pack that takes `files` and
+ * was given none. Both copies of the options get them, so the cache key
+ * changes when the list does.
+ */
+function withTestFiles(
+  loaded: LoadedFactory,
+  testFiles: readonly string[] | undefined,
+): LoadedFactory {
+  const given = (loaded.options ?? {}) as Record<string, unknown>;
+  if (testFiles === undefined || !loaded.takesFiles || "files" in given) {
+    return loaded;
+  }
+  const files = [...testFiles];
+  return {
+    ...loaded,
+    options: { ...given, files },
+    handedOver: {
+      ...((loaded.handedOver ?? {}) as Record<string, unknown>),
+      files,
+    },
+  };
 }
 
 /**
@@ -725,6 +756,11 @@ export interface ExtractOptions {
   allowEmpty?: boolean;
   /** Exit non-zero when a pack threw while it was reading. */
   failOnPackError?: boolean;
+  /**
+   * A directory of intent documents. A test pack reads only the test
+   * files its PRDs list under `coveredBy`, instead of every test.
+   */
+  intent?: string;
 }
 
 /** Where the code to read comes from. A tsconfig is preferred when one exists, because it has the path aliases. */
@@ -807,9 +843,13 @@ async function runTypeScript(
   // so a reader can rebuild an id from a summary's own fields.
   const runRoot = workspaceRootFor(source.root);
   const stubOverlay = stubOverlayOf(loadStubs(runRoot));
+  const testFiles =
+    options.intent === undefined
+      ? undefined
+      : testFilesListedIn(options.intent);
   const packs = await Promise.all(
     options.frameworks.map((one) =>
-      resolveFramework(one, stubOverlay, runRoot),
+      resolveFramework(one, stubOverlay, runRoot, testFiles),
     ),
   );
   process.stderr.write(formatSecondCopies(checkOneTsMorph(packsLoadedSoFar())));
@@ -1540,6 +1580,29 @@ export function relativizeSummaryPaths(
   }
   relativizeWrapperPaths(summary, projectRoot);
   relativizeTypeRefs(summary, projectRoot);
+  relativizeMockedModules(summary, projectRoot);
+}
+
+/** A mocked module is a file the unit's own path is compared against, so both are relative. */
+function relativizeMockedModules(
+  summary: BehavioralSummary,
+  projectRoot: string,
+): void {
+  const test = readTestMetadata(summary);
+  if (test?.mocks === undefined) {
+    return;
+  }
+  summary.metadata = {
+    ...summary.metadata,
+    test: {
+      ...test,
+      mocks: test.mocks.map((mock) =>
+        mock.module !== undefined && path.isAbsolute(mock.module)
+          ? { ...mock, module: path.relative(projectRoot, mock.module) }
+          : mock,
+      ),
+    },
+  };
 }
 
 /**

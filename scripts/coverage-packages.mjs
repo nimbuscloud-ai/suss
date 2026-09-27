@@ -48,6 +48,7 @@ export const coveragePackages = [
   ["packages/framework/prisma", "prisma"],
   ["packages/framework/redis", "redis"],
   ["packages/framework/zustand", "zustand"],
+  ["packages/framework/vitest", "vitest"],
   ["packages/framework/drizzle", "drizzle"],
   ["packages/framework/mongoose", "mongoose"],
   ["packages/sql", "sql"],

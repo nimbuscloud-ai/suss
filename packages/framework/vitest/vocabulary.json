@@ -1,0 +1,20 @@
+{
+  "vitest": "vitest: the module its test functions and the vi helper are imported from",
+  "test": "suss: code-unit kind; also vitest: the alias of it that declares a case",
+  "testCase": "suss: discovery match type for test cases written as calls",
+  "block": "suss: the testCase style where suites and cases are nested calls",
+  "describe": "vitest: opens a suite of cases",
+  "suite": "vitest: the alias of describe",
+  "it": "vitest: declares one case",
+  "skip": "vitest: the modifier that skips a case or suite",
+  "todo": "vitest: the modifier that marks a case or suite as not written yet",
+  "skipIf": "vitest: the modifier that skips a case when its argument is true",
+  "runIf": "vitest: the modifier that runs a case only when its argument is true",
+  "each": "vitest: the modifier that declares one case per row of a table",
+  "for": "vitest: the modifier that declares one case per row, like each",
+  "vi": "vitest: the helper object mocks and spies are made through",
+  "mock": "vitest: vi.mock, which replaces a module for the whole file",
+  "doMock": "vitest: vi.doMock, which replaces a module for the imports after it",
+  "spyOn": "vitest: vi.spyOn, which replaces one member of an object",
+  "allPositional": "suss: input-mapping kind, one input per declared parameter"
+}
