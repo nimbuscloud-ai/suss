@@ -27,9 +27,13 @@ import type { BuildReport, Project } from "./project.js";
 /** Where the server that keeps the programs says how to reach it. */
 export const LIVE_RECORD = path.join(".suss", "live", "server.json");
 
+/**
+ * `notBefore` is when the caller knew the tree had its latest change, in
+ * milliseconds since the epoch. A build that started after it is reused.
+ */
 export type LiveRequest =
   | { kind: "read"; outDir: string }
-  | { kind: "suss"; args: string[]; cwd: string };
+  | { kind: "suss"; args: string[]; cwd: string; notBefore?: number };
 
 /** What the CLI would have printed, or why the socket does not serve it. */
 export type SussReply =
@@ -169,14 +173,16 @@ export class LiveSocket {
       copyReads(this.project.summaryDir, asked.outDir);
       return { report };
     }
-    return await serveCommand(this.project, asked.args, asked.cwd);
+    return await serveCommand(this.project, asked);
   }
 }
+
+type SussRequest = Extract<LiveRequest, { kind: "suss" }>;
 
 /** The commands the socket serves, keyed by the CLI's command word. */
 const COMMANDS: Record<
   string,
-  (project: Project, args: string[], cwd: string) => Promise<SussReply>
+  (project: Project, args: string[], asked: SussRequest) => Promise<SussReply>
 > = {
   extract: extractIntoDirectory,
   check: checkSince,
@@ -184,15 +190,14 @@ const COMMANDS: Record<
 
 export async function serveCommand(
   project: Project,
-  args: readonly string[],
-  cwd: string,
+  asked: SussRequest,
 ): Promise<SussReply> {
-  const [command, ...rest] = args;
+  const [command, ...rest] = asked.args;
   const serve = command === undefined ? undefined : COMMANDS[command];
   if (serve === undefined) {
     return { unsupported: `the socket does not serve \`${command}\`` };
   }
-  return await serve(project, rest, cwd);
+  return await serve(project, rest, asked);
 }
 
 /**
@@ -203,7 +208,7 @@ export async function serveCommand(
 async function extractIntoDirectory(
   project: Project,
   args: string[],
-  cwd: string,
+  { cwd, notBefore }: SussRequest,
 ): Promise<SussReply> {
   const parsed = parsedOrNull(args, {
     "out-dir": { type: "string" },
@@ -220,7 +225,7 @@ async function extractIntoDirectory(
     return { unsupported: `this server reads ${project.root}, not ${root}` };
   }
 
-  const report = await project.buildNow();
+  const report = await project.buildNow(notBefore);
   if (report.ran.length + report.failed.length === 0) {
     return {
       code: 1,
@@ -252,7 +257,7 @@ async function extractIntoDirectory(
 async function checkSince(
   _project: Project,
   args: string[],
-  cwd: string,
+  { cwd }: SussRequest,
 ): Promise<SussReply> {
   const parsed = parsedOrNull(args, {
     dir: { type: "string" },

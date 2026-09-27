@@ -340,6 +340,24 @@ describe("Project", () => {
     fs.rmSync(root, { recursive: true, force: true });
   }, 60_000);
 
+  it("hands back a build that started after the change a caller asks about", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-proj-now-"));
+    projectWithOneRoute(root, "/orders");
+    const project = new Project({ root, watch: false });
+    const beforeFirst = Date.now();
+    const first = await project.start();
+
+    expect(await project.buildNow(beforeFirst)).toBe(first);
+
+    projectWithOneRoute(root, "/invoices");
+    const rebuilt = await project.buildNow(Date.now());
+    expect(rebuilt).not.toBe(first);
+    expect(boundariesIn(project.summaryDir)).toEqual(["/invoices"]);
+
+    project.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }, 60_000);
+
   it("says hasBuilt only once a build has finished", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-proj-hasbuilt-"));
     projectWithOneRoute(root, "/orders");

@@ -95,6 +95,10 @@ export class Project {
   private chain: Promise<unknown> = Promise.resolve();
   /** A build that is queued and has not started, which a new ask joins. */
   private queued: Promise<BuildReport> | null = null;
+  /** The build running now, and when it started reading the tree. */
+  private started: { at: number; build: Promise<BuildReport> } | null = null;
+  /** When the last finished build started reading the tree. */
+  private lastStart: number | null = null;
   private inFlight = 0;
   /** Work the kept adapters do between builds, which the next build waits on. */
   private preparing: Promise<void> = Promise.resolve();
@@ -149,14 +153,34 @@ export class Project {
   }
 
   /**
-   * Builds now, for a caller that knows the tree changed and cannot wait
-   * out the debounce, such as a hook that runs right after an edit. The
-   * build starts after any build already running, since that one may
-   * have read the tree before the change.
+   * A build that read the tree after `notBefore`, for a caller that
+   * knows the tree changed and cannot wait out the debounce, such as a
+   * hook that runs right after an edit. A build that started at or after
+   * `notBefore` read every file after that moment, so it is reused, the
+   * one the watcher started included. Otherwise a new build starts after
+   * any build already running. Without `notBefore`, it always builds.
    */
-  buildNow(): Promise<BuildReport> {
+  buildNow(notBefore?: number): Promise<BuildReport> {
+    const covering =
+      notBefore === undefined ? null : this.buildStartedSince(notBefore);
+    if (covering !== null) {
+      return covering;
+    }
     this.cancelPending();
     return this.scheduleBuild();
+  }
+
+  private buildStartedSince(notBefore: number): Promise<BuildReport> | null {
+    if (this.queued !== null) {
+      return this.queued;
+    }
+    if (this.started !== null) {
+      return this.started.at >= notBefore ? this.started.build : null;
+    }
+    const last = this.lastStart;
+    return last !== null && last >= notBefore && this.everBuilt
+      ? Promise.resolve(this.report)
+      : null;
   }
 
   /**
@@ -294,11 +318,16 @@ export class Project {
       return this.queued;
     }
     this.inFlight += 1;
-    const build = this.chain
+    const build: Promise<BuildReport> = this.chain
       .then(async () => {
         this.queued = null;
         await this.preparing;
-        return await this.runBuild();
+        const at = Date.now();
+        this.started = { at, build };
+        const report = await this.runBuild();
+        this.started = null;
+        this.lastStart = at;
+        return report;
       })
       .finally(() => {
         this.inFlight -= 1;
