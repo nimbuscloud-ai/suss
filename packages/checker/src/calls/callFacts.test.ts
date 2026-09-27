@@ -224,3 +224,112 @@ describe("readCallFacts", () => {
     ]);
   });
 });
+
+describe("readCallFacts, reached from each start", () => {
+  const store = unit("loadOrder");
+  const service = unit("orderService", [calls("loadOrder", store)]);
+
+  function test(
+    name: string,
+    effects: Effect[],
+    mocks: Array<{ module?: string; name?: string; written: string }> = [],
+  ): BehavioralSummary {
+    return {
+      ...unit(name, effects, 1, "src/orders.test.ts"),
+      kind: "test",
+      metadata: { test: { mocks } },
+    };
+  }
+
+  it("answers every start in one question, each with its own paths", () => {
+    const first = test("loads", [calls("orderService", service)]);
+    const second = { ...test("stores", [calls("loadOrder", store)]) };
+    second.location = {
+      ...second.location,
+      range: { start: 20, end: 30 },
+    };
+    const reached = readCallFacts([
+      store,
+      service,
+      first,
+      second,
+    ]).reachedFromEach([functionOf(first), functionOf(second)]);
+
+    expect(
+      callSpellings(
+        reached.get(functionOf(first))?.functions.get(functionOf(store)) ?? [],
+      ),
+    ).toEqual(["orderService", "loadOrder"]);
+    expect(
+      callSpellings(
+        reached.get(functionOf(second))?.functions.get(functionOf(store)) ?? [],
+      ),
+    ).toEqual(["loadOrder"]);
+  });
+
+  it("refuses a hop into a module the test mocks, and takes it when asked to ignore mocks", () => {
+    const mocked = test(
+      "loads",
+      [calls("orderService", service)],
+      [{ module: store.location.file, written: 'vi.mock("./loadOrder.js")' }],
+    );
+    const facts = readCallFacts([store, service, mocked]);
+    const start = functionOf(mocked);
+
+    const past = facts.reachedFromEach([start], { pastMocks: true });
+    expect(past.get(start)?.functions.has(functionOf(service))).toBe(true);
+    expect(past.get(start)?.functions.has(functionOf(store))).toBe(false);
+
+    const ignoring = facts.reachedFromEach([start]);
+    expect(ignoring.get(start)?.functions.has(functionOf(store))).toBe(true);
+  });
+
+  it("refuses a spy only on a member with that name, never on a function", () => {
+    const method = {
+      ...unit("OrderStore.load", [], 40),
+      location: {
+        file: "src/orderStore.ts",
+        range: { start: 40, end: 50 },
+        exportName: "OrderStore",
+      },
+    };
+    const spied = test(
+      "loads",
+      [calls("store.load", method), calls("load", unit("load", [], 60))],
+      [{ name: "load", written: 'vi.spyOn(store, "load")' }],
+    );
+    const plain = unit("load", [], 60);
+    const facts = readCallFacts([method, plain, spied]);
+    const reached = facts
+      .reachedFromEach([functionOf(spied)], { pastMocks: true })
+      .get(functionOf(spied));
+
+    expect(reached?.functions.has(functionOf(method))).toBe(false);
+    expect(reached?.functions.has(functionOf(plain))).toBe(true);
+  });
+
+  it("reaches an export no summary provides through a caller bound to it, unless the package is mocked", () => {
+    const caller = boundTo(test("loads", []), "caller");
+    const asTest = { ...caller, kind: "test" as const };
+    const facts = readCallFacts([asTest]);
+    const start = functionOf(asTest);
+
+    expect(
+      facts
+        .reachedFromEach([start])
+        .get(start)
+        ?.keys.has("fn:@demo/orders::loadOrder"),
+    ).toBe(true);
+
+    const mocked = {
+      ...asTest,
+      metadata: {
+        test: { mocks: [{ module: "@demo/orders", written: "vi.mock" }] },
+      },
+    };
+    const refused = readCallFacts([mocked]).reachedFromEach([start], {
+      pastMocks: true,
+    });
+    expect(refused.get(start)?.keys.size).toBe(0);
+  });
+});
