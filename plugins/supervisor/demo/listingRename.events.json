@@ -1,0 +1,169 @@
+[
+  {
+    "hook": "session-start",
+    "input": {
+      "session_id": "demo-listing-rename",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "hook_event_name": "SessionStart",
+      "source": "startup"
+    }
+  },
+  {
+    "hook": "prompt",
+    "input": {
+      "session_id": "demo-listing-rename",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "UserPromptSubmit",
+      "prompt": "Rename the shortDesc field on Listing to shortDescription, in the API and in the listing card. Keep the model's short_desc attribute as it is."
+    }
+  },
+  {
+    "hook": "after-edit",
+    "input": {
+      "session_id": "demo-listing-rename",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Write",
+      "tool_input": {
+        "file_path": "<project>/.suss/session/demo-listing-rename/intent.yaml",
+        "content": "asked: \"Rename the shortDesc field on Listing to shortDescription, in the API and in the listing card.\"\nchanges:\n  - changes: Listing.shortDesc\n    note: renamed to shortDescription\n"
+      },
+      "tool_response": {
+        "filePath": "<project>/.suss/session/demo-listing-rename/intent.yaml"
+      },
+      "tool_use_id": "toolu_demo_intent"
+    }
+  },
+  {
+    "hook": "after-edit",
+    "input": {
+      "session_id": "demo-listing-rename",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Edit",
+      "tool_input": {
+        "file_path": "<project>/app/graphql/types/listing_type.rb",
+        "old_string": "  field :short_desc, String, null: true",
+        "new_string": "  field :short_description, String, null: true, method: :short_desc"
+      },
+      "tool_response": {
+        "filePath": "<project>/app/graphql/types/listing_type.rb"
+      },
+      "tool_use_id": "toolu_demo_resolver"
+    }
+  },
+  {
+    "hook": "after-edit",
+    "input": {
+      "session_id": "demo-listing-rename",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Edit",
+      "tool_input": {
+        "file_path": "<project>/web/listings/ListingCard.tsx",
+        "old_string": "      shortDesc\n",
+        "new_string": "      shortDescription\n"
+      },
+      "tool_response": { "filePath": "<project>/web/listings/ListingCard.tsx" },
+      "tool_use_id": "toolu_demo_query"
+    }
+  },
+  {
+    "hook": "after-edit",
+    "input": {
+      "session_id": "demo-listing-rename",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Edit",
+      "tool_input": {
+        "file_path": "<project>/web/listings/ListingCard.tsx",
+        "old_string": "{data?.listing?.shortDesc}",
+        "new_string": "{data?.listing?.shortDescription}"
+      },
+      "tool_response": { "filePath": "<project>/web/listings/ListingCard.tsx" },
+      "tool_use_id": "toolu_demo_render"
+    }
+  },
+  {
+    "hook": "after-edit",
+    "input": {
+      "session_id": "demo-listing-rename",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Edit",
+      "tool_input": {
+        "file_path": "<project>/schema.graphql",
+        "old_string": "  shortDesc: String\n",
+        "new_string": "  shortDescription: String\n"
+      },
+      "tool_response": { "filePath": "<project>/schema.graphql" },
+      "tool_use_id": "toolu_demo_schema"
+    }
+  },
+  {
+    "hook": "stop",
+    "input": {
+      "session_id": "demo-listing-rename",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "Stop",
+      "stop_hook_active": false,
+      "last_assistant_message": "Listing.shortDesc is now shortDescription in the API, the schema and the listing card."
+    }
+  },
+  {
+    "hook": "after-edit",
+    "input": {
+      "session_id": "demo-listing-rename",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Write",
+      "tool_input": {
+        "file_path": "<project>/.suss/session/demo-listing-rename/intent.yaml",
+        "content": "asked: \"Rename the shortDesc field on Listing to shortDescription, in the API and in the listing card.\"\nchanges:\n  - removes: Listing.shortDesc\n  - adds: Listing.shortDescription\n  - changes: query ListingCard\n"
+      },
+      "tool_response": {
+        "filePath": "<project>/.suss/session/demo-listing-rename/intent.yaml"
+      },
+      "tool_use_id": "toolu_demo_rename"
+    }
+  },
+  {
+    "hook": "stop",
+    "input": {
+      "session_id": "demo-listing-rename",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "Stop",
+      "stop_hook_active": true,
+      "last_assistant_message": "The change list now writes the rename as the old field removed and the new one added."
+    }
+  },
+  {
+    "hook": "session-end",
+    "input": {
+      "session_id": "demo-listing-rename",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "hook_event_name": "SessionEnd",
+      "reason": "prompt_input_exit"
+    }
+  }
+]

@@ -7,13 +7,16 @@
  * and the stop report lists the change on both sides. In the cancel
  * story the agent writes a change list first, and the stop checks the
  * work against it. In the environment variable story a Lambda service
- * starts reading a new variable in a helper both functions share.
+ * starts reading a new variable in a helper both functions share. In the
+ * rename story a GraphQL field changes its name in the API and in the
+ * query a React component makes.
  */
 
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { playAccountsRegion } from "../demo/accountsRegion.mjs";
 import { playCancelOrder } from "../demo/cancelOrder.mjs";
+import { playListingRename } from "../demo/listingRename.mjs";
 import { playOrders409 } from "../demo/orders409.mjs";
 
 type Played = ReturnType<typeof playOrders409>;
@@ -21,11 +24,13 @@ type Played = ReturnType<typeof playOrders409>;
 let played: Played;
 let cancel: Played;
 let region: Played;
+let rename: Played;
 
 beforeAll(() => {
   played = playOrders409();
   cancel = playCancelOrder();
   region = playAccountsRegion();
+  rename = playListingRename();
 });
 
 function stepOf(demo: Played, index: number) {
@@ -179,15 +184,20 @@ describe("the cancel story, with a change list", () => {
   });
 });
 
+/** What a hook said to the agent or the developer, whichever field it used. */
+function saidAt(demo: Played, index: number): string {
+  const output = stepOf(demo, index).output;
+  const specific = output?.hookSpecificOutput as
+    | { additionalContext?: string }
+    | undefined;
+  return String(
+    output?.reason ?? specific?.additionalContext ?? output?.systemMessage,
+  );
+}
+
 describe("the environment variable story, on a Lambda service with a SAM template", () => {
   function said(index: number): string {
-    const output = stepOf(region, index).output;
-    const specific = output?.hookSpecificOutput as
-      | { additionalContext?: string }
-      | undefined;
-    return String(
-      output?.reason ?? specific?.additionalContext ?? output?.systemMessage,
-    );
+    return saidAt(region, index);
   }
 
   it("runs every hook and exits 0 each time", () => {
@@ -268,5 +278,72 @@ describe("the environment variable story, on a Lambda service with a SAM templat
       "done        + reads runtime-config [ACCOUNTS_REGION]  cloudformation:template.yaml::GetAccountFunction, cloudformation:template.yaml::UpdateAccountFunction",
     );
     expect(said(10)).not.toContain("not asked");
+  });
+});
+
+describe("the rename story, on a GraphQL API with a React client", () => {
+  function said(index: number): string {
+    return saidAt(rename, index);
+  }
+
+  it("runs every hook and exits 0 each time", () => {
+    expect(rename.steps.map((s) => s.hook)).toEqual([
+      "session-start",
+      "prompt",
+      "after-edit",
+      "after-edit",
+      "after-edit",
+      "after-edit",
+      "after-edit",
+      "stop",
+      "after-edit",
+      "stop",
+      "session-end",
+    ]);
+    expect(rename.steps.every((s) => s.status === 0)).toBe(true);
+  });
+
+  it("blocks the query edit on a field the checked-in schema does not declare, until the schema says it", () => {
+    expect(stepOf(rename, 4).output?.decision).toBe("block");
+    expect(said(4)).toContain(
+      "[ERROR] boundaryFieldUnknown at query ListingCard",
+    );
+    expect(said(6)).toBe(
+      "suss: resolved boundaryFieldUnknown at query ListingCard.",
+    );
+  });
+
+  it("reads the field without its protocol, and says how to write the rename", () => {
+    expect(stepOf(rename, 7).output?.decision).toBe("block");
+    expect(said(7)).toContain(
+      [
+        "not done    ~ gql:Listing.shortDesc renamed to shortDescription",
+        "              the diff shows gql:Listing.shortDesc removed. A rename is a removes entry for the old name and an adds entry for the new one.",
+      ].join("\n"),
+    );
+  });
+
+  it("says what changed in the query, with no was and now lines that read the same", () => {
+    expect(said(7)).toContain(
+      [
+        "not asked   calls query ListingCard  web/listings/ListingCard.tsx::ListingCard.ListingCard",
+        "              ~ return  otherwise",
+        "                expectedInput...listing.properties.shortDesc renamed to shortDescription",
+      ].join("\n"),
+    );
+    expect(said(7)).not.toContain("was  return");
+  });
+
+  it("passes the next stop once the list writes the rename as the skill shows", () => {
+    expect(stepOf(rename, 9).output?.decision).toBeUndefined();
+    expect(said(9)).toContain(
+      [
+        "3 done.",
+        "",
+        "done        - gql:Listing.shortDesc  app/graphql/types/listing_type.rb::Listing.shortDesc",
+        "            + gql:Listing.shortDescription  app/graphql/types/listing_type.rb::Listing.shortDescription",
+        "            ~ query ListingCard  web/listings/ListingCard.tsx::ListingCard.ListingCard",
+      ].join("\n"),
+    );
   });
 });
