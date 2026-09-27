@@ -270,7 +270,12 @@ in, which is what a project barrel hides. A declaration a library's own
 `.d.ts` file makes at the top of a module or namespace is recorded as
 that library's name too. That covers a member of a namespace a barrel
 re-exports, a member of a default import of a module written with
-`export =`, and a global a package declares. The Python adapter writes
+`export =`, and a global a package declares. An `import("./run.js")`
+call with a written specifier is recorded the way the static import
+would be: `const mod = await import(...)` as `import * as mod`, and
+`const { runCli } = await import(...)` as a named import of `runCli`.
+The call itself is recorded as a namespace import too, for a member
+read straight off it. The Python adapter writes
 every import under the module as written, and under the file as well
 when the import resolves to one.
 

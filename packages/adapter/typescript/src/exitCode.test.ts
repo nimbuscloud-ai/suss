@@ -174,6 +174,41 @@ describe("which returns become the exit code", () => {
     });
   });
 
+  it("marks them from an awaited call in an entry that runs through void", async () => {
+    const summaries = await summariesOf({
+      "/run.ts": files["/run.ts"],
+      "/bin.ts": `
+        import { runCli } from "./run.js";
+        async function run(): Promise<void> {
+          process.exitCode = await runCli(process.argv.slice(2));
+        }
+        void run();
+      `,
+    });
+    expect(unit(summaries, "runCli").metadata?.process).toEqual({
+      exitCodeFrom: "return",
+    });
+  });
+
+  it("marks them through a name destructured from a dynamic import", async () => {
+    const summaries = await summariesOf({
+      "/run.ts": files["/run.ts"],
+      "/bin.ts": `
+        async function run(): Promise<void> {
+          const { runCli } = await import("./run.js");
+          process.exitCode = await runCli(process.argv.slice(2));
+        }
+        function start(entry: () => Promise<void>): void {
+          void entry();
+        }
+        start(run);
+      `,
+    });
+    expect(unit(summaries, "runCli").metadata?.process).toEqual({
+      exitCodeFrom: "return",
+    });
+  });
+
   it("marks the function whose call is the exit's argument", async () => {
     const summaries = await summariesOf({
       "/cli.ts": `

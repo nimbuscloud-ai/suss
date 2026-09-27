@@ -13,6 +13,7 @@
 import {
   type BindingElement,
   type Expression,
+  type ExpressionStatement,
   ModuleDeclarationKind,
   Node,
   type ObjectBindingPattern,
@@ -206,20 +207,68 @@ function emitImportFacts(
   table.seenImports.add(declaration);
   fact(db, "binds", referenceId, declarationId);
 
-  const specifier = importDecl.getModuleSpecifierValue();
-  const packageKeys =
-    specifier === undefined || specifier.startsWith(".")
-      ? []
-      : [specifier, packagePartOf(specifier)];
   const keys = new Set([
-    moduleKey,
-    ...packageKeys,
-    ...packagesDeclaring(moduleKey),
+    ...moduleKeysOf(moduleKey, importDecl.getModuleSpecifierValue()),
     ...packagesBehind(declaration),
   ]);
   for (const key of keys) {
     fact(db, "imports", declarationId, key, name);
   }
+}
+
+/**
+ * The keys an import of one module is recorded under, leaving out the
+ * packages its names turn out to be declared in.
+ */
+function moduleKeysOf(
+  moduleKey: string,
+  specifier: string | undefined,
+): string[] {
+  const packageKeys =
+    specifier === undefined || specifier.startsWith(".")
+      ? []
+      : [specifier, packagePartOf(specifier)];
+  return [moduleKey, ...packageKeys, ...packagesDeclaring(moduleKey)];
+}
+
+/**
+ * The keys `import("./run.js")` loads its module under, or null when
+ * the expression is something else or the specifier is computed.
+ */
+function dynamicImportKeysOf(expression: Expression): string[] | null {
+  const call = unwrapExpression(expression);
+  if (
+    !Node.isCallExpression(call) ||
+    call.getExpression().getKind() !== SyntaxKind.ImportKeyword
+  ) {
+    return null;
+  }
+  const [argument] = call.getArguments();
+  if (argument === undefined || !Node.isStringLiteral(argument)) {
+    return null;
+  }
+  const specifier = argument.getLiteralText();
+  const moduleKey = compilerResolvedPathOf(call, specifier) ?? specifier;
+  return [...new Set(moduleKeysOf(moduleKey, specifier))];
+}
+
+/**
+ * `await import("./run.js")` settles to the module's namespace, so the
+ * call is recorded the way `import * as ns` is.
+ */
+function emitDynamicImportFacts(
+  db: Database,
+  id: string,
+  call: CallExpression,
+): boolean {
+  const keys = dynamicImportKeysOf(call);
+  if (keys === null) {
+    return false;
+  }
+  for (const key of keys) {
+    fact(db, "imports", id, key, NAMESPACE_IMPORT_NAME);
+  }
+  return true;
 }
 
 /**
@@ -732,6 +781,13 @@ export function emitValue(
     return id;
   }
 
+  if (
+    Node.isCallExpression(expression) &&
+    emitDynamicImportFacts(db, id, expression)
+  ) {
+    return id;
+  }
+
   // Making one of a class is calling it: the rules read `Foo()` as
   // arriving at an instance, and `new Foo(dao)` puts its argument in
   // the constructor's parameter the way any call does.
@@ -919,7 +975,14 @@ function emitBindingValues(
 
   if (!isWrittenAgain(declaration)) {
     const initializer = declaration.getInitializer();
-    if (initializer !== undefined) {
+    // `const mod = await import("x")` is `import * as mod from "x"`
+    // written at run time, so it is recorded as one.
+    const imported =
+      initializer === undefined ? null : dynamicImportKeysOf(initializer);
+    for (const key of imported ?? []) {
+      fact(db, "imports", declarationId, key, NAMESPACE_IMPORT_NAME);
+    }
+    if (initializer !== undefined && imported === null) {
       fact(db, "binds", declarationId, emitValue(db, table, initializer));
     }
     return;
@@ -1030,8 +1093,15 @@ function emitBindingElementFacts(
   const container = Node.isObjectBindingPattern(pattern)
     ? containerOfBindingPattern(pattern)
     : undefined;
-  if (container !== undefined) {
-    const property = element.getPropertyNameNode() ?? element.getNameNode();
+  const property = element.getPropertyNameNode() ?? element.getNameNode();
+  // `const { runCli } = await import("./run.js")` is a named import
+  // written at run time, so it is recorded as one.
+  const imported =
+    container === undefined ? null : dynamicImportKeysOf(container);
+  for (const key of imported ?? []) {
+    fact(db, "imports", id, key, property.getText());
+  }
+  if (container !== undefined && imported === null) {
     fact(
       db,
       "readsProperty",
@@ -1733,7 +1803,7 @@ function emitTopLevelStatements(
   const writes = propertyWritesOf(sourceFile, sourceFile);
   for (const statement of sourceFile.getStatements()) {
     if (Node.isExpressionStatement(statement)) {
-      const expression = unwrapExpression(statement.getExpression());
+      const expression = statementExpressionOf(statement);
       emitStatementCall(db, table, expression);
       notePropertyWrite(writes, expression);
       emitExitCodeWrite(db, table, expression);
@@ -1752,6 +1822,17 @@ function emitTopLevelStatements(
     }
   }
   emitNamedStores(db, table, writes);
+}
+
+/**
+ * What a statement runs. `void main()` runs `main()` and throws the
+ * promise away, so the call is what runs.
+ */
+function statementExpressionOf(statement: ExpressionStatement): Expression {
+  const expression = unwrapExpression(statement.getExpression());
+  return Node.isVoidExpression(expression)
+    ? unwrapExpression(expression.getExpression())
+    : expression;
 }
 
 /** The statements at the top of a file that run code under them in place. */
