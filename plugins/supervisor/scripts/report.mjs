@@ -6,6 +6,8 @@
  * well short of that and says how much it left out.
  */
 
+import { hasName } from "./policy.mjs";
+
 /** @typedef {import("./types.js").SinceFinding} SinceFinding */
 /** @typedef {import("./types.js").EditResult} EditResult */
 /** @typedef {import("./types.js").ChangedBoundary} ChangedBoundary */
@@ -45,7 +47,7 @@ export function renderEditReport(result, subject) {
  */
 function headlineOf(result, subject) {
   const parts = [];
-  if (result.changed.length > 0) {
+  if (result.changed.some(hasName)) {
     parts.push(`${subject} changed ${listOfBoundaries(result.changed)}`);
   }
 
@@ -300,13 +302,41 @@ function sideOf(side) {
   return `${side.summary} (${side.location.file}:${side.location.range.start})`;
 }
 
-/** @param {ChangedBoundary[]} changed */
+/**
+ * The changed boundaries a developer can name, each followed by the
+ * functions in the project it changed through. A function is named only
+ * with something that moved in it, since the agent already knows which
+ * functions it edited.
+ *
+ * @param {ChangedBoundary[]} changed
+ */
 function listOfBoundaries(changed) {
-  const named = changed.slice(0, BOUNDARIES_LISTED).map((b) => b.key);
-  const left = changed.length - named.length;
+  const inside = new Set(
+    changed.filter((b) => !hasName(b)).flatMap((b) => b.units),
+  );
+  const named = changed
+    .filter(hasName)
+    .slice(0, BOUNDARIES_LISTED)
+    .map((b) => {
+      const through = b.units.filter((unit) => inside.has(unit)).map(unitName);
+      const label = b.label ?? b.key;
+      return through.length === 0
+        ? label
+        : `${label} through ${joinClauses(through)}`;
+    });
+  const left = changed.filter(hasName).length - named.length;
   return left > 0
     ? `${named.join(", ")} and ${left} more boundaries`
     : joinClauses(named);
+}
+
+/**
+ * `getAccountService` from `src/composition.ts::getAccountService`.
+ *
+ * @param {string} unit
+ */
+function unitName(unit) {
+  return unit.slice(unit.lastIndexOf("::") + 2);
 }
 
 /**

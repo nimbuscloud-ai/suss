@@ -9,20 +9,17 @@
 import {
   BOUNDARY_ROLE,
   goesThroughRelation,
+  interactionDetail,
   OWN_BINDING,
   relationsOf,
 } from "@suss/behavioral-ir";
 import { accessDetail } from "@suss/checker-intent";
 import { displayLabel } from "@suss/ir-core";
 
-import type {
-  BehavioralSummary,
-  BoundaryBinding,
-  Interaction,
-} from "@suss/behavioral-ir";
+import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
 import type { Relation } from "@suss/ir-core";
 
-export { relationsOf } from "@suss/behavioral-ir";
+export { interactionDetail, relationsOf } from "@suss/behavioral-ir";
 export {
   bindingTokens,
   namesBoundary,
@@ -35,24 +32,6 @@ export type { Relation } from "@suss/ir-core";
 /** The label a report prints for this boundary, which a user can also type into a question. */
 export function boundarySpelling(binding: BoundaryBinding): string {
   return displayLabel(binding);
-}
-
-/**
- * Detail about an effect that the boundary label leaves out. A store's
- * label already includes the container, but the label of a config or
- * metadata read only identifies the recognizer, so the detail is the name
- * that was read.
- */
-export function interactionDetail(
-  interaction: Interaction,
-): string | undefined {
-  if (
-    interaction.class === "config-read" ||
-    interaction.class === "metadata-read"
-  ) {
-    return interaction.name;
-  }
-  return undefined;
 }
 
 /** What one access states about the columns it touches, empty when it states none. */

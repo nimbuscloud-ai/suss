@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "read": [
+    {
+      "kind": "extract",
+      "language": "typescript",
+      "project": "tsconfig.json",
+      "packs": ["aws-lambda", "fetch", "node"]
+    },
+    {
+      "kind": "contract",
+      "from": "cloudformation",
+      "file": "template.yaml"
+    }
+  ]
+}

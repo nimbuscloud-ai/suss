@@ -169,6 +169,7 @@ describe("check --since", () => {
     expect(report.changedBoundaries).toEqual([
       {
         key: "POST /orders",
+        label: "POST /orders",
         units: ["src/orders/create.ts::post"],
       },
     ]);

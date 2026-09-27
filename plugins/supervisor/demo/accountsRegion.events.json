@@ -1,0 +1,183 @@
+[
+  {
+    "hook": "session-start",
+    "input": {
+      "session_id": "demo-accounts-region",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "hook_event_name": "SessionStart",
+      "source": "startup"
+    }
+  },
+  {
+    "hook": "prompt",
+    "input": {
+      "session_id": "demo-accounts-region",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "UserPromptSubmit",
+      "prompt": "Make the accounts table's region configurable through a new environment variable, ACCOUNTS_REGION. Keep today's behavior when it is unset."
+    }
+  },
+  {
+    "hook": "after-edit",
+    "input": {
+      "session_id": "demo-accounts-region",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Write",
+      "tool_input": {
+        "file_path": "<project>/.suss/session/demo-accounts-region/intent.yaml",
+        "content": "asked: \"Make the accounts table's region configurable through a new environment variable, ACCOUNTS_REGION. Keep today's behavior when it is unset.\"\nchanges:\n  - changes: AccountService\n    note: takes an optional region\n  - changes: getAccountService (src/composition.ts)\n    note: passes ACCOUNTS_REGION to the service\n"
+      },
+      "tool_response": {
+        "filePath": "<project>/.suss/session/demo-accounts-region/intent.yaml"
+      },
+      "tool_use_id": "toolu_demo_intent"
+    }
+  },
+  {
+    "hook": "after-edit",
+    "input": {
+      "session_id": "demo-accounts-region",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Edit",
+      "tool_input": {
+        "file_path": "<project>/src/accountService.ts",
+        "old_string": "  table: string;\n}",
+        "new_string": "  table: string;\n  region?: string;\n}"
+      },
+      "tool_response": { "filePath": "<project>/src/accountService.ts" },
+      "tool_use_id": "toolu_demo_service"
+    }
+  },
+  {
+    "hook": "after-edit",
+    "input": {
+      "session_id": "demo-accounts-region",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Edit",
+      "tool_input": {
+        "file_path": "<project>/src/composition.ts",
+        "old_string": "    table: process.env.ACCOUNTS_TABLE ?? \"accounts\",\n",
+        "new_string": "    table: process.env.ACCOUNTS_TABLE ?? \"accounts\",\n    region: process.env.ACCOUNTS_REGION,\n"
+      },
+      "tool_response": { "filePath": "<project>/src/composition.ts" },
+      "tool_use_id": "toolu_demo_composition"
+    }
+  },
+  {
+    "hook": "after-edit",
+    "input": {
+      "session_id": "demo-accounts-region",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Edit",
+      "tool_input": {
+        "file_path": "<project>/template.yaml",
+        "old_string": "Globals:",
+        "new_string": "Parameters:\n  AccountsRegion:\n    Type: String\n    Default: \"\"\n\nGlobals:"
+      },
+      "tool_response": { "filePath": "<project>/template.yaml" },
+      "tool_use_id": "toolu_demo_parameter"
+    }
+  },
+  {
+    "hook": "after-edit",
+    "input": {
+      "session_id": "demo-accounts-region",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Edit",
+      "tool_input": {
+        "file_path": "<project>/template.yaml",
+        "old_string": "          ACCOUNTS_TABLE: accounts\n      Events:\n        Get:",
+        "new_string": "          ACCOUNTS_TABLE: accounts\n          ACCOUNTS_REGION: !Ref AccountsRegion\n      Events:\n        Get:"
+      },
+      "tool_response": { "filePath": "<project>/template.yaml" },
+      "tool_use_id": "toolu_demo_get_env"
+    }
+  },
+  {
+    "hook": "after-edit",
+    "input": {
+      "session_id": "demo-accounts-region",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Edit",
+      "tool_input": {
+        "file_path": "<project>/template.yaml",
+        "old_string": "          ACCOUNTS_TABLE: accounts\n      Events:\n        Update:",
+        "new_string": "          ACCOUNTS_TABLE: accounts\n          ACCOUNTS_REGION: !Ref AccountsRegion\n      Events:\n        Update:"
+      },
+      "tool_response": { "filePath": "<project>/template.yaml" },
+      "tool_use_id": "toolu_demo_update_env"
+    }
+  },
+  {
+    "hook": "stop",
+    "input": {
+      "session_id": "demo-accounts-region",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "Stop",
+      "stop_hook_active": false
+    }
+  },
+  {
+    "hook": "after-edit",
+    "input": {
+      "session_id": "demo-accounts-region",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "PostToolUse",
+      "tool_name": "Write",
+      "tool_input": {
+        "file_path": "<project>/.suss/session/demo-accounts-region/intent.yaml",
+        "content": "asked: \"Make the accounts table's region configurable through a new environment variable, ACCOUNTS_REGION. Keep today's behavior when it is unset.\"\nchanges:\n  - adds: { reads: runtime-config, fields: [ACCOUNTS_REGION] }\n  - changes: AccountService\n    note: takes an optional region\n"
+      },
+      "tool_response": {
+        "filePath": "<project>/.suss/session/demo-accounts-region/intent.yaml"
+      },
+      "tool_use_id": "toolu_demo_intent_spelled"
+    }
+  },
+  {
+    "hook": "stop",
+    "input": {
+      "session_id": "demo-accounts-region",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "permission_mode": "acceptEdits",
+      "hook_event_name": "Stop",
+      "stop_hook_active": true
+    }
+  },
+  {
+    "hook": "session-end",
+    "input": {
+      "session_id": "demo-accounts-region",
+      "transcript_path": "<project>/.demo/transcript.jsonl",
+      "cwd": "<project>",
+      "hook_event_name": "SessionEnd",
+      "reason": "other"
+    }
+  }
+]

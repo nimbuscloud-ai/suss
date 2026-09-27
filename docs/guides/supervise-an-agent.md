@@ -35,7 +35,7 @@ The hooks run the project's own suss, the one `node_modules/.bin/suss` runs, whe
 | `Stop` | the agent finishes its turn | Reads the project once more, to catch a write made from Bash, and reports what changed since the baseline, checked against the change list when there is one. | 60s |
 | `SessionEnd` | the session closes | Stops any suss still running for the session and removes the summaries it kept. | 5s |
 
-After an edit, the agent hears about a finding the edit introduced when the finding is an error, or a warning at a boundary the edit changed. The hook blocks on those, which puts the finding in front of the agent with the `.sussignore` rule that would accept it. When there is nothing to act on, the agent gets one line saying what the edit changed, and nothing at all when the edit changed no boundary.
+After an edit, the agent hears about a finding the edit introduced when the finding is an error, or a warning at a boundary the edit changed. The hook blocks on those, which puts the finding in front of the agent with the `.sussignore` rule that would accept it. When there is nothing to act on, the agent gets one line saying what the edit changed, and nothing at all when the edit changed no boundary. The line says each boundary the way a report prints it, with any variable that came or went: `suss: this edit changed runtime-config ACCOUNTS_REGION through getAccountService.` A function in the project comes up only with something that moved in it, since the agent already knows which functions it edited.
 
 The agent never hears about a finding that was there before the edit. It did not cause it, and asking it to pay down the project's older findings pulls it away from the task.
 
@@ -134,7 +134,23 @@ explained   ~ POST /orders responds 409
               + responds 409 { error }  when  !(!req.body.sku || !req.body.quantity) && orders.findOpen()
 ```
 
-A stop blocks once on each entry that is not done and once on each boundary that changed where nobody asked, the same way it blocks once on a new error. An unchecked entry is one suss has no spelling for, such as a new value of a type, and it never blocks. An entry whose quote is in none of your messages is listed as unrequested, so you can see what the agent added on its own. Once a stop passes, the list is filed away, and the next request starts with none. A session with no list gets the report from [What it looks like](#what-it-looks-like).
+A stop blocks once on each entry that is not done and once on each boundary that changed where nobody asked, the same way it blocks once on a new error. An unchecked entry is one suss has no spelling for, such as a new value of a type, and it never blocks. When no entry in the list is done and nothing is listed as not asked, the report shows the diff as well, so you still see what changed. An entry whose quote is in none of your messages is listed as unrequested, so you can see what the agent added on its own. Once a stop passes, the list is filed away, and the next request starts with none. A session with no list gets the report from [What it looks like](#what-it-looks-like).
+
+A new environment variable is an entry too. The agent writes the read as an effect on `runtime-config`, the name suss gives a deployable's environment in every language, with the variable under `fields`:
+
+```yaml
+asked: "Make the accounts table's region configurable through a new environment variable, ACCOUNTS_REGION."
+changes:
+  - adds: { reads: runtime-config, fields: [ACCOUNTS_REGION] }
+```
+
+On a Lambda service with a SAM template, that entry is done once the code each function runs reads the variable, even when the read happens once at startup, outside the handler. It also covers the template declaring the variable, so the stop does not ask about the new parameter or the environment entries separately:
+
+```
+done        + reads runtime-config [ACCOUNTS_REGION]  cloudformation:template.yaml::GetAccountFunction, cloudformation:template.yaml::UpdateAccountFunction
+```
+
+Without that entry, the stop lists each function's changed environment as not asked, with the variable the template now declares and the helper that reads it.
 
 A list the agent wrote wrong, one that does not parse or uses a field the format does not have, blocks the stop once so the agent can fix it. When suss itself cannot run the check, because it ran out of time, crashed, or is a release without `suss intent check`, nothing blocks. You get the report of what changed, with one line saying why the list was not checked.
 

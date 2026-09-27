@@ -124,7 +124,7 @@ suss intent check <change-list> --before <dir | file> --after <dir | file> [--pr
 
 | Flag | Default | What it does |
 |---|---|---|
-| `--before <path>` | required | The summaries from before the change: a folder, whose files pair with the other side's by name, or one file. |
+| `--before <path>` | required | The summaries from before the change: a folder, whose files pair with the other side's by name and are compared together, or one file. |
 | `--after <path>` | required | The summaries from after it, the same kind of path. |
 | `--prompts <file>` | none | The developer's messages, to check each entry's quote against. A `.jsonl` file has one JSON object per line with the message under `prompt`, which is what the suss plugin records. Any other file is one message. |
 | `--json` | off | Write the verdicts as JSON. |
@@ -167,10 +167,13 @@ not asked   serves POST /orders  src/orders/create.ts::post
 | `changes: <boundary>` | The diff shows the boundary changed, and each outcome the entry lists is one that is new or changed there. |
 | `removes: <boundary>` | With no outcomes, the diff shows the boundary removed. With outcomes, each one was an outcome of the boundary before the change and is not one after it. |
 | `adds: { writes: S, fields: F }` at `B` | A request through B now reaches a write of S that states every field in F, and did not before. With no `at`, any boundary counts. |
+| `adds: { reads: runtime-config, fields: [V] }` | The code a deployable runs now reads the environment variable V and did not before. That includes code that runs once at startup, such as a service built outside the handler, which no request reaches. |
 | `removes: <effect>` at `B` | A request through B reached the effect before and does not now. |
 | `changes: <effect>` at `B` | The diff shows B changed, and a request through B reaches the effect now. |
 
 A boundary is spelled the way [`suss ask`](/reference/cli/ask) spells one, and it has to pick out one boundary exactly: `POST /orders` is not `POST /orders/:id/cancel`, and `:id` and `{id}` are the same. An effect is compared the way the `results` line of an intent document is, through whatever the request calls on the way.
+
+A deployable's environment is spelled `runtime-config` in every language, and the variable goes under `fields`. The diff lists a deployable, such as a Lambda function a SAM template declares, as `runtime-config:<logical id>`, and an entry can give that as its `at` to ask about one function.
 
 An entry is unchecked when its subject is no boundary on either side and is not spelled like one: a route such as `POST /refunds`, or a `system:name` such as `postgresql:refunds`. A member of a type, such as `Order.status`, is unchecked. An unchecked entry never fails the run.
 
@@ -181,6 +184,7 @@ Each line of the diff at a boundary, the lines [`inspect --diff`](/reference/cli
 - A line at a boundary that no entry is about, through its subject or its `at`, is not asked.
 - At a boundary an entry is about, every effect is asked for, and so is every line of a client calling it. An outcome of the handler's own body is asked for by a boundary entry that lists that outcome, or lists none. An outcome the handler had before as well, whose condition moved because of a new branch beside it, is asked for by any entry about the boundary.
 - An effect entry with no `at` asks for that effect at every boundary, which covers a helper that many routes call.
+- A deployment template that starts declaring a variable is the other side of the code that starts reading it, so an entry about reading the variable asks for the declaration too.
 - An outcome a wrapper brought is listed apart under `wrapper` and never counts either way.
 
 A line that no entry asks for, and that an `explained` entry covers by the same rules, is listed under `explained` with the reason. Anything left over is not asked, one item per boundary.

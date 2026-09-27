@@ -132,7 +132,12 @@ export {
 } from "./pairing/pairing.js";
 export { checkSemanticBridging } from "./pairing/semanticBridging.js";
 export { checkRenderProps } from "./render/renderProps.js";
-export { checkRuntimeConfig } from "./runtime-config/runtimeConfigPairing.js";
+export {
+  checkRuntimeConfig,
+  type EnvVarRead,
+  type RuntimeReads,
+  runtimeReads,
+} from "./runtime-config/runtimeConfigPairing.js";
 export {
   type ChangedBoundary,
   type ChangesSince,

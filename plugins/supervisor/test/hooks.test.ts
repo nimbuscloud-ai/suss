@@ -81,7 +81,30 @@ function sinceReport(findings: SinceFinding[]): SinceReport {
     findings,
     resolved: [],
     changedBoundaries: [
-      { key: "POST /orders", units: ["src/orders/create.ts::post"] },
+      {
+        key: "POST /orders",
+        label: "POST /orders",
+        units: ["src/orders/create.ts::post"],
+      },
+    ],
+    run: [],
+  };
+}
+
+/** What `check --since` says after an edit that makes a helper read a new variable. */
+function helperReadsVariable(): SinceReport {
+  const helper = "src/composition.ts::getAccountService";
+  return {
+    since: "/before",
+    findings: [],
+    resolved: [],
+    changedBoundaries: [
+      { key: "function-call:reachable", label: null, units: [helper] },
+      {
+        key: "runtime-config:@suss/runtime-node",
+        label: "runtime-config ACCOUNTS_REGION",
+        units: [helper],
+      },
     ],
     run: [],
   };
@@ -248,6 +271,39 @@ describe("with a stand-in suss the project installs", () => {
     });
   });
 
+  it("names the variable an edit started reading and the helper it reads it in", () => {
+    installFakeSuss(project, {});
+    runHook(event("session-start"), project, {});
+    scriptFakeSuss(project, { check: helperReadsVariable() });
+
+    const edit = runHook(edited("src/composition.ts"), project, {});
+
+    expect(edit.output).toEqual({
+      hookSpecificOutput: {
+        hookEventName: "PostToolUse",
+        additionalContext:
+          "suss: this edit changed runtime-config ACCOUNTS_REGION through getAccountService.",
+      },
+    });
+  });
+
+  it("says nothing after an edit that changed only functions inside the project", () => {
+    installFakeSuss(project, {});
+    runHook(event("session-start"), project, {});
+    const report = helperReadsVariable();
+    scriptFakeSuss(project, {
+      check: {
+        ...report,
+        changedBoundaries: report.changedBoundaries.slice(0, 1),
+      },
+    });
+
+    const edit = runHook(edited("src/accountService.ts"), project, {});
+
+    expect(edit.status).toBe(0);
+    expect(edit.stdout).toBe("");
+  });
+
   it("delivers a result that missed its edit's budget with the next prompt, as context", async () => {
     installFakeSuss(project, {});
     runHook(event("session-start"), project, {});
@@ -380,6 +436,16 @@ const NOT_DONE = {
   requested: true,
 };
 
+const UNCHECKED = {
+  said: "~ AccountService takes an optional region",
+  verdict: "unchecked" as const,
+  reason:
+    "suss has no boundary spelled AccountService, so it cannot check this entry.",
+  units: [],
+  asked: null,
+  requested: null,
+};
+
 const UNASKED_409 = {
   identity: "POST /orders\nserves src/orders/create.ts::post + responds 409",
   boundary: "POST /orders",
@@ -455,6 +521,49 @@ describe("with a change list", () => {
       sessionFile("prompts.jsonl"),
       "--json",
     ]);
+  });
+
+  it("shows what changed when no entry of the change list can be checked", () => {
+    installFakeSuss(project, {
+      intent: verdicts({
+        entries: [UNCHECKED],
+        text: "1 unchecked.\n\nunchecked   ~ AccountService takes an optional region",
+      }),
+      diff: "1 unit inside the project changed.\n\nsrc/accountService.ts\n  ~ AccountService\n",
+    });
+    runHook(event("session-start"), project, {});
+    writeChangeList();
+
+    const stop = runHook(event("stop"), project, {});
+
+    const report = String(stop.output?.systemMessage);
+    expect(report).toContain("1 unchecked.");
+    expect(report).toContain("src/accountService.ts\n  ~ AccountService");
+    expect(
+      fakeSussCalls(project).filter((args) => args[0] === "inspect"),
+    ).toContainEqual([
+      "inspect",
+      "--diff",
+      sessionFile(path.join("state", "baseline")),
+      sessionFile(path.join("state", "current")),
+      "--json",
+    ]);
+  });
+
+  it("leaves the diff out when the verdicts account for what changed", () => {
+    installFakeSuss(project, {
+      intent: verdicts({
+        entries: [{ ...NOT_DONE, verdict: "done", reason: null }],
+        text: "1 done.",
+      }),
+      diff: "the diff",
+    });
+    runHook(event("session-start"), project, {});
+    writeChangeList();
+
+    const stop = runHook(event("stop"), project, {});
+
+    expect(String(stop.output?.systemMessage)).not.toContain("the diff");
   });
 
   it("blocks a stop once on an entry not done, then passes and puts the list away", () => {

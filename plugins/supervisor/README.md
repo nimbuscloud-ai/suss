@@ -34,6 +34,7 @@ scripts/keepIntent.mjs       what /suss:keep-intent runs: finds the session and 
 demo/play.mjs                plays a recorded session through the hooks, with no Claude Code
 demo/orders409.mjs           the 409 story: a finding after an edit, and the stop report
 demo/cancelOrder.mjs         the change list story: a stop that blocks on a 409 nobody asked for
+demo/accountsRegion.mjs      a Lambda service with a SAM template starts reading a new environment variable
 ```
 
 The scripts are plain JavaScript modules with JSDoc types, so an installed plugin runs them with `node` and nothing to build. `tsc` checks them the same as the TypeScript in the rest of the repository (`checkJs` in `tsconfig.json`).
@@ -44,11 +45,11 @@ A hook has a few seconds, and reading a large project takes longer. So a hook qu
 
 One worker runs per session. It takes a lock file with its process id, works until the queue is empty, and exits. The `SessionEnd` hook sends SIGTERM to the worker's process group, which stops the suss it is running as well.
 
-The rules about what to pass on live here, in `policy.mjs`. What a finding is and what changed between two readings live in suss: `findingIdentity`, `findingsSince` and `changedBoundaries` in `@suss/checker`, which `check --since` prints.
+The rules about what to pass on live here, in `policy.mjs`. What a finding is and what changed between two readings live in suss: `findingIdentity`, `findingsSince` and `changedBoundaries` in `@suss/checker`, which `check --since` prints. Each changed boundary comes with the `label` the edit's line prints. A boundary whose label is null, such as a call from one function in the project to another, is left out of the line, and its functions are named only after a boundary that moved in them.
 
 ## The change list
 
-The `UserPromptSubmit` hook tells the agent where to write the change list when the session has none, and the `suss:intent` skill says how. At a stop, the hook runs `suss intent check` over the list, the baseline, the current summaries and the recorded prompts. Whether an entry is done, and which changes nobody asked for, is decided in suss, so CI or another agent's integration gets the same answer from the same command. The plugin decides only what blocks: each entry not done and each boundary changed where nobody asked, once each, the way a new error blocks once. A stop that passes files the list away in `intents/`, so the next request starts with none. With no list, the stop report is the diff, as before.
+The `UserPromptSubmit` hook tells the agent where to write the change list when the session has none, and the `suss:intent` skill says how. At a stop, the hook runs `suss intent check` over the list, the baseline, the current summaries and the recorded prompts. Whether an entry is done, and which changes nobody asked for, is decided in suss, so CI or another agent's integration gets the same answer from the same command. The plugin decides only what blocks: each entry not done and each boundary changed where nobody asked, once each, the way a new error blocks once. A stop that passes files the list away in `intents/`, so the next request starts with none. With no list, the stop report is the diff, as before. The diff is one `suss inspect --diff` over the baseline and current folders, since a deployable's environment is declared in one summaries file and read in another. It also goes in a report whose verdicts account for no change, as when every entry is unchecked.
 
 The hook reads what `intent check --json` printed three ways, in `verdictsFrom`. A report with `entries` is the verdicts. A refusal under `rejected` means the list itself is wrong, and the stop blocks once so the agent can fix it. Anything else means suss did not get as far as checking: it ran out of time, crashed, or is a release without the command. That never blocks, since the agent cannot fix it. The next report that reaches the developer shows the diff instead of the verdicts, with one line saying why.
 
@@ -89,6 +90,7 @@ The plugin's version in `plugin.json` moves with every suss release, because `sc
 npx turbo test --filter=@suss/supervisor-plugin
 node plugins/supervisor/demo/orders409.mjs
 node plugins/supervisor/demo/cancelOrder.mjs
+node plugins/supervisor/demo/accountsRegion.mjs
 ```
 
-`test/hooks.test.ts` feeds each hook the JSON Claude Code sends and checks what it prints and its exit code. Most of those tests install a stand-in suss in the test project (`test/fakeSuss.ts`), so a test can make suss report an error the fixtures never produce. `test/demo.test.ts` plays both stories over `fixtures/supervisor-orders` with the suss this repository builds. `test/skill.test.ts` checks that the skill's example change list is one suss accepts.
+`test/hooks.test.ts` feeds each hook the JSON Claude Code sends and checks what it prints and its exit code. Most of those tests install a stand-in suss in the test project (`test/fakeSuss.ts`), so a test can make suss report an error the fixtures never produce. `test/demo.test.ts` plays the stories with the suss this repository builds: the first two over `fixtures/supervisor-orders`, and the environment variable story over `fixtures/supervisor-accounts`. `test/skill.test.ts` checks that the skill's example change lists are ones suss accepts.

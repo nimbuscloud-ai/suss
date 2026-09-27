@@ -1223,11 +1223,19 @@ export function codeEffectsOf(
   return reached;
 }
 
-/** What a storage access states about the columns; nothing for any other class. */
+/**
+ * The fields an access states: a storage access's columns and key, or
+ * the variable a config read takes, which is a field of the runtime's
+ * contract. Nothing for any other class.
+ */
 export function accessDetail(interaction: Interaction): {
   fields: string[];
   by: string[];
 } {
+  if (interaction.class === "config-read") {
+    return { fields: [interaction.name], by: [] };
+  }
+
   if (interaction.class !== "storage-access") {
     return { fields: [], by: [] };
   }

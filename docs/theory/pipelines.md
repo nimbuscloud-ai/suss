@@ -349,11 +349,11 @@ The other 23 are the template's own resources, printed as one tree under the tem
 
 ```
 cloudformation:fixtures/aws-lambda/template.yaml
-├─ ConfirmTokenFunction  (cloudformation library | line 1)
+├─ runtime-config:ConfirmTokenFunction  (cloudformation library | line 1)
 │
-├─ ListWidgetsFunction  (cloudformation library | line 1)
+├─ runtime-config:ListWidgetsFunction  (cloudformation library | line 1)
 │
-├─ WidgetItemFunction  (cloudformation library | line 1)
+├─ runtime-config:WidgetItemFunction  (cloudformation library | line 1)
 ```
 
 and where it ends:
@@ -368,7 +368,7 @@ and where it ends:
 29 summaries.
 ```
 
-A Lambda becomes a `library` summary and a queue becomes one too. The wiring between them becomes a `consumer` summary that says which function reads which queue, and one of those reads `OrderIndexerFunction.Orders → aws_sqs default#order.placed`: the template routes that EventBridge subject into a queue, and that queue feeds that Lambda, so the reader followed the rule to the queue to the function. The `29 summaries.` line at the end is the count to check when a resource you expected goes missing.
+A Lambda becomes a `library` summary for the environment the template gives it, printed as `runtime-config:<function>`, and a queue becomes one too. The wiring between them becomes a `consumer` summary that says which function reads which queue, and one of those reads `OrderIndexerFunction.Orders → aws_sqs default#order.placed`: the template routes that EventBridge subject into a queue, and that queue feeds that Lambda, so the reader followed the rule to the queue to the function. The `29 summaries.` line at the end is the count to check when a resource you expected goes missing.
 
 The three layers, and why each one is separate:
 

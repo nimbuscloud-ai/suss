@@ -15,6 +15,7 @@ import {
   graphqlResolverBinding,
   groundBinding,
   groundedPairingKey,
+  labelWithDetail,
   leavesTheProcess,
   messageBusBinding,
   methodsAgree,
@@ -399,6 +400,70 @@ describe("displayLabel", () => {
     });
     expect(boundaryLabel(binding)).toBeNull();
     expect(displayLabel(binding)).toBe("rest:express");
+  });
+
+  it("names the deployable a runtime's environment belongs to", () => {
+    const declared: BoundaryBinding = {
+      transport: "os",
+      recognition: "cloudformation",
+      semantics: {
+        name: "runtime-config",
+        deploymentTarget: "lambda",
+        instanceName: "GetAccountFunction",
+      },
+    };
+    expect(displayLabel(declared)).toBe("runtime-config:GetAccountFunction");
+  });
+
+  it("keeps the fallback for a read in code, which states no deployable", () => {
+    const read: BoundaryBinding = {
+      transport: "os",
+      recognition: "@suss/runtime-node",
+      semantics: { name: "runtime-config" },
+    };
+    expect(boundaryLabel(read)).toBeNull();
+    expect(displayLabel(read)).toBe("runtime-config:@suss/runtime-node");
+  });
+
+  it("does not print the placeholder a read in Python or Ruby carries", () => {
+    const read: BoundaryBinding = {
+      transport: "os",
+      recognition: "python-env",
+      semantics: {
+        name: "runtime-config",
+        deploymentTarget: "lambda",
+        instanceName: "<unknown>",
+      },
+    };
+    expect(boundaryLabel(read)).toBeNull();
+  });
+});
+
+describe("labelWithDetail", () => {
+  it("prints a read with no label of its own as the protocol and the name", () => {
+    const read: BoundaryBinding = {
+      transport: "os",
+      recognition: "@suss/runtime-node",
+      semantics: { name: "runtime-config" },
+    };
+    expect(labelWithDetail(read, "ACCOUNTS_REGION")).toBe(
+      "runtime-config ACCOUNTS_REGION",
+    );
+  });
+
+  it("keeps a boundary's own label in front of the name", () => {
+    const declared: BoundaryBinding = {
+      transport: "os",
+      recognition: "cloudformation",
+      semantics: {
+        name: "runtime-config",
+        deploymentTarget: "lambda",
+        instanceName: "GetAccountFunction",
+      },
+    };
+    expect(labelWithDetail(declared, "ACCOUNTS_REGION")).toBe(
+      "runtime-config:GetAccountFunction ACCOUNTS_REGION",
+    );
   });
 });
 

@@ -317,7 +317,7 @@ Each entry of `changes` takes:
 
 | Field | Required | What it means |
 |---|---|---|
-| `adds`, `removes`, `changes` | one of the three | The verb, and the subject it applies to: a boundary written the way `suss ask` writes one, such as `POST /orders/:id/cancel`, or an effect written like a `results` line, such as `{ writes: postgresql:orders, fields: [cancelled_at] }`. |
+| `adds`, `removes`, `changes` | one of the three | The verb, and the subject it applies to: a boundary written the way `suss ask` writes one, such as `POST /orders/:id/cancel`, or an effect written like a `results` line, such as `{ writes: postgresql:orders, fields: [cancelled_at] }`. A read of an environment variable is `{ reads: runtime-config, fields: [ACCOUNTS_REGION] }`. |
 | `outcomes` | no | For a boundary, the outcomes it should have: statuses such as `404`, or `returns`, `throws` and `{ throws: NotFoundError }`. |
 | `at` | no | For an effect, the boundary it happens at. With no `at`, the effect counts at any boundary. |
 | `asked` | no | The message this entry comes from, when it is not the list's. |

@@ -309,8 +309,8 @@ shop/main.py
        -> 200 { region, tier }
          + shop/config.setting →
          + shop/config.setting →
-         + reads runtime-config:python-env SHOP_REGION
-         + reads runtime-config:python-env SHOP_TIER
+         + reads runtime-config SHOP_REGION
+         + reads runtime-config SHOP_TIER
 ```
 
 suss reports the variable names on the route that reads them, and not on the helper. suss reads Ruby the same way, through `ENV["X"]`, `ENV.fetch("X")` and a helper in front of either:
@@ -321,8 +321,8 @@ app/controllers/health_controller.rb
 │      -> 200
 │        + setting →
 │        + setting →
-│        + reads runtime-config:ruby-env SHOP_REGION
-│        + reads runtime-config:ruby-env SHOP_TIER
+│        + reads runtime-config SHOP_REGION
+│        + reads runtime-config SHOP_TIER
 ```
 
 `suss ask "what does app/controllers/health_controller.rb reach"` lists them for a file.

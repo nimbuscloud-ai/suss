@@ -2,11 +2,11 @@
  * Plays a recorded Claude Code session through the hooks, with no
  * Claude Code involved.
  *
- * It copies the orders fixture, an Express service and a fetch client in
- * one project, to a temporary directory. Then it feeds each hook the
- * event recorded in a `.events.json` file beside this one, applying an
- * Edit or Write event's change to the file first, the way the tool has
- * already written it by the time PostToolUse fires.
+ * It copies a fixture to a temporary directory: by default the orders
+ * fixture, an Express service and a fetch client in one project. Then it
+ * feeds each hook the event recorded in a `.events.json` file beside
+ * this one, applying an Edit or Write event's change to the file first,
+ * the way the tool has already written it by the time PostToolUse fires.
  *
  * The demos need the built CLI, so run `npm run build` first.
  */
@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PLUGIN_ROOT = path.resolve(HERE, "..");
-const FIXTURE = path.resolve(PLUGIN_ROOT, "../../fixtures/supervisor-orders");
+const FIXTURES = path.resolve(PLUGIN_ROOT, "../../fixtures");
 
 /**
  * @typedef {{ hook: string, input: Record<string, unknown> }} RecordedEvent
@@ -39,14 +39,18 @@ const FIXTURE = path.resolve(PLUGIN_ROOT, "../../fixtures/supervisor-orders");
  * is set.
  *
  * @param {string} events the recording's file name in this directory
- * @param {{ keep?: boolean, env?: Record<string, string> }} [options]
+ * @param {{ keep?: boolean, env?: Record<string, string>, fixture?: string }} [options]
  */
 export function playRecorded(events, options = {}) {
   const project = fs.mkdtempSync(path.join(os.tmpdir(), "suss-demo-"));
-  fs.cpSync(FIXTURE, project, {
-    recursive: true,
-    filter: (source) => !source.split(path.sep).includes(".suss"),
-  });
+  fs.cpSync(
+    path.join(FIXTURES, options.fixture ?? "supervisor-orders"),
+    project,
+    {
+      recursive: true,
+      filter: (source) => !source.split(path.sep).includes(".suss"),
+    },
+  );
   /** @type {RecordedEvent[]} */
   const recorded = JSON.parse(
     fs
