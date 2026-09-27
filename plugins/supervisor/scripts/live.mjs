@@ -17,19 +17,28 @@ import path from "node:path";
 /** @typedef {import("./types.js").SussRun} SussRun */
 
 /**
+ * `notBefore` is when the latest change the caller wants read was made;
+ * the server may hand back a build it started after that.
+ *
  * @param {string} projectDir
  * @param {string[]} args
  * @param {number} timeoutMs
+ * @param {number} [notBefore]
  * @returns {Promise<SussRun | null>}
  */
-export async function askLiveServer(projectDir, args, timeoutMs) {
+export async function askLiveServer(projectDir, args, timeoutMs, notBefore) {
   const socketPath = liveSocketOf(projectDir);
   if (socketPath === null) {
     return null;
   }
   const reply = await request(
     socketPath,
-    { kind: "suss", args, cwd: projectDir },
+    {
+      kind: "suss",
+      args,
+      cwd: projectDir,
+      ...(notBefore === undefined ? {} : { notBefore }),
+    },
     timeoutMs,
   );
   if (

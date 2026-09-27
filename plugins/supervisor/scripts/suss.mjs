@@ -157,7 +157,7 @@ function numbersOf(version) {
   return match === null ? null : match.slice(1).map(Number);
 }
 
-/** @typedef {{ cwd: string, timeoutMs: number, onSpawn?: (child: import("node:child_process").ChildProcess) => void }} RunOptions */
+/** @typedef {{ cwd: string, timeoutMs: number, notBefore?: number, onSpawn?: (child: import("node:child_process").ChildProcess) => void }} RunOptions */
 
 /**
  * Runs suss and collects what it printed. The MCP server for this
@@ -171,7 +171,12 @@ function numbersOf(version) {
  * @returns {Promise<SussRun>}
  */
 export async function runSuss(suss, args, options) {
-  const served = await askLiveServer(options.cwd, args, options.timeoutMs);
+  const served = await askLiveServer(
+    options.cwd,
+    args,
+    options.timeoutMs,
+    options.notBefore,
+  );
   return served ?? (await runCli(suss, args, options));
 }
 
