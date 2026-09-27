@@ -46,7 +46,7 @@ This adapter uses the extraction cache from `@suss/extractor` that every languag
 
 ## Keeping a project between runs
 
-The MCP server reads a project again after every edit, and it keeps one adapter per project rather than building one per run. Before each run it calls `refresh`, which stats every file the project has loaded, compares a file whose stamp moved with the text ts-morph parsed, and parses again only the files whose text changed. The compiler builds the next program from the old one, so every other file keeps its parse and its binding.
+The MCP server reads a project again after every edit, and it keeps one adapter per project rather than building one per run. Before each run it calls `refresh`, which stats every file the project has loaded, compares a file whose stamp moved with the text ts-morph parsed, and parses again only the files whose text changed. A file changed in the two seconds before the stat is compared whatever its stamp says, since a second write in the same clock tick can keep the stamp. The compiler builds the next program from the old one, so every other file keeps its parse and its binding. A run that misses the extraction cache refreshes once more after the cache's lookup, because the cache records the stamps that lookup took.
 
 What was worked out from a changed file goes with it. The load walk forgets the file's imports and the chain depth of every file that reaches it, and every memo made with `createProgramMemo` is emptied, since a memo like that can rest on any file. A result that depends on one file's text alone uses `createPerFileCache`, which expires when that file is parsed again.
 

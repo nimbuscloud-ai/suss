@@ -15,6 +15,8 @@
 
 import fs from "node:fs";
 
+import { stampMayMissAWrite } from "@suss/extractor";
+
 import { forgetProgramMemos } from "../programMemo.js";
 import { forgetImportsOf } from "./lazyProjectInit.js";
 
@@ -83,24 +85,31 @@ export function refreshLoadedProject(
   }
 
   const changed: SourceFile[] = [];
+  const checkedAt = Date.now();
   for (const sourceFile of project.getSourceFiles()) {
     if (sourceFile.isInNodeModules()) {
       continue;
     }
     const filePath = sourceFile.getFilePath();
-    const stamp = stampOf(filePath);
-    if (stamp === null) {
+    const stat = statOf(filePath);
+    if (stat === null) {
       return { changed: [], startOver: `${filePath} was deleted` };
     }
+    const stamp = stampFrom(stat);
     if (state.verified.get(filePath) === stamp) {
       continue;
     }
     if (readText(filePath) !== sourceFile.getFullText()) {
       changed.push(sourceFile);
     }
-    // Stat'ed before the read, so a write in between leaves an old stamp
-    // and the next refresh reads the file again.
-    state.verified.set(filePath, stamp);
+    // Stat'ed before the read, so a later write moves the stamp, unless it
+    // lands in the clock tick of the last change. Then the text is compared
+    // again next time.
+    if (stampMayMissAWrite(stat, checkedAt)) {
+      state.verified.delete(filePath);
+    } else {
+      state.verified.set(filePath, stamp);
+    }
   }
 
   for (const sourceFile of changed) {
@@ -115,13 +124,21 @@ export function refreshLoadedProject(
   return { changed: changedPaths, startOver: null };
 }
 
-function stampOf(filePath: string): string | null {
+function statOf(filePath: string): fs.Stats | null {
   try {
-    const stat = fs.statSync(filePath);
-    return `${stat.ino}:${stat.mtimeMs}:${stat.size}`;
+    return fs.statSync(filePath);
   } catch {
     return null;
   }
+}
+
+function stampFrom(stat: fs.Stats): string {
+  return `${stat.ino}:${stat.mtimeMs}:${stat.size}`;
+}
+
+function stampOf(filePath: string): string | null {
+  const stat = statOf(filePath);
+  return stat === null ? null : stampFrom(stat);
 }
 
 function readText(filePath: string): string | null {

@@ -104,6 +104,37 @@ async function freshRun(dir: string): Promise<BehavioralSummary[]> {
   return await adapterFor(dir).extractAll();
 }
 
+/**
+ * Stats `file` with its mtime and ctime held at `at`, as a file system
+ * whose clock has not ticked since would report them. Returns the undo.
+ */
+function holdClockFor(file: string, at: number): () => void {
+  const hold = <S extends { mtimeMs: number; ctimeMs: number }>(
+    target: unknown,
+    stat: S,
+  ): S => {
+    if (String(target) === file) {
+      stat.mtimeMs = at;
+      stat.ctimeMs = at;
+    }
+    return stat;
+  };
+  const realSync = nodeFs.statSync;
+  const realAsync = fs.stat.bind(fs);
+  const sync = vi
+    .spyOn(nodeFs, "statSync")
+    .mockImplementation(((target: nodeFs.PathLike) =>
+      hold(target, realSync(target))) as typeof nodeFs.statSync);
+  const promised = vi
+    .spyOn(fs, "stat")
+    .mockImplementation((async (target: nodeFs.PathLike) =>
+      hold(target, await realAsync(target))) as typeof fs.stat);
+  return () => {
+    sync.mockRestore();
+    promised.mockRestore();
+  };
+}
+
 /** What a run writes, as the bytes a caller compares. */
 function comparable(summaries: BehavioralSummary[]): string {
   return JSON.stringify(summaries);
@@ -125,26 +156,49 @@ describe("an adapter kept between runs", () => {
     expect(comparable(after)).toEqual(comparable(await freshRun(dir)));
   });
 
-  it("reads a file written after the refresh on the next run, with the cache on", async () => {
+  it("reads a file written after the refresh, with the cache on and a clock that did not tick", async () => {
     const dir = await makeProject();
-    const kept = createTypeScriptAdapter({
-      tsConfigFilePath: path.join(dir, "tsconfig.json"),
-      frameworks: [pack],
-      cacheDir: path.join(dir, ".suss", "cache"),
-    });
-    await kept.extractAll();
+    const status = path.join(dir, "src/status.ts");
+    const release = holdClockFor(status, Date.now());
+    try {
+      const kept = createTypeScriptAdapter({
+        tsConfigFilePath: path.join(dir, "tsconfig.json"),
+        frameworks: [pack],
+        cacheDir: path.join(dir, ".suss", "cache"),
+      });
+      await kept.extractAll();
 
-    await write(dir, "src/status.ts", statusFile(503));
-    kept.refresh();
-    // Written after the refresh compared the files, in a later millisecond,
-    // so this run reads the parse from before it.
-    await new Promise((resolve) => setTimeout(resolve, 2));
-    await write(dir, "src/status.ts", statusFile(504));
-    await kept.extractAll();
-    kept.refresh();
-    const after = await kept.extractAll();
+      await write(dir, "src/status.ts", statusFile(503));
+      kept.refresh();
+      await write(dir, "src/status.ts", statusFile(504));
+      const during = await kept.extractAll();
+      kept.refresh();
+      const after = await kept.extractAll();
 
-    expect(comparable(after)).toEqual(comparable(await freshRun(dir)));
+      const fresh = comparable(await freshRun(dir));
+      expect(comparable(during)).toEqual(fresh);
+      expect(comparable(after)).toEqual(fresh);
+    } finally {
+      release();
+    }
+  });
+
+  it("compares a file again when a write in the same clock tick kept its stamp", async () => {
+    const dir = await makeProject();
+    const release = holdClockFor(path.join(dir, "src/status.ts"), Date.now());
+    try {
+      const kept = adapterFor(dir);
+      await kept.extractAll();
+      kept.refresh();
+
+      await write(dir, "src/status.ts", statusFile(503));
+      kept.refresh();
+      const after = await kept.extractAll();
+
+      expect(comparable(after)).toEqual(comparable(await freshRun(dir)));
+    } finally {
+      release();
+    }
   });
 
   it("parses nothing again when a file was written with the same text", async () => {
@@ -222,10 +276,13 @@ describe("an adapter kept between runs", () => {
     const dir = await makeProject();
     const kept = adapterFor(dir);
     await kept.extractAll();
-    await kept.loadProgram();
-
+    // A file changed moments ago is compared on every refresh, so the
+    // project's files are made to look a minute old.
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + 60_000 });
     const reads = vi.spyOn(nodeFs, "readFileSync");
     try {
+      await kept.loadProgram();
+      reads.mockClear();
       kept.refresh();
       const sourceReads = reads.mock.calls.filter(([file]) =>
         String(file).startsWith(path.join(dir, "src")),
@@ -233,6 +290,7 @@ describe("an adapter kept between runs", () => {
       expect(sourceReads).toEqual([]);
     } finally {
       reads.mockRestore();
+      vi.useRealTimers();
     }
   });
 });
