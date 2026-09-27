@@ -6,7 +6,7 @@
     "internal": 4045,
     "consumers": 2256,
     "pairs": 2244,
-    "unfollowedCalls": 463,
+    "unfollowedCalls": 488,
     "findingErrors": 0
   },
   "packages": {
@@ -15,14 +15,14 @@
       "exports": 60,
       "internal": 505,
       "consumers": 253,
-      "unfollowedCalls": 52
+      "unfollowedCalls": 71
     },
     "packages/adapter/ruby": {
       "name": "@suss/adapter-ruby",
       "exports": 71,
       "internal": 470,
       "consumers": 201,
-      "unfollowedCalls": 74
+      "unfollowedCalls": 78
     },
     "packages/adapter/typescript": {
       "name": "@suss/adapter-typescript",
@@ -533,7 +533,7 @@
       "exports": 39,
       "internal": 51,
       "consumers": 131,
-      "unfollowedCalls": 16
+      "unfollowedCalls": 19
     },
     "packages/runtime/node": {
       "name": "@suss/runtime-node",
