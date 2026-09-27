@@ -71,7 +71,11 @@ import {
 } from "./moduleGraph.js";
 
 import type { Atom, Proof } from "@suss/datalog";
-import type { PatternPack, TransparentWrapper } from "@suss/extractor";
+import type {
+  ParameterSupplier,
+  PatternPack,
+  TransparentWrapper,
+} from "@suss/extractor";
 import type { Project, SourceFile } from "ts-morph";
 
 const RESOLUTION_PROGRAM: OnDemandRules = resolutionProgram();
@@ -263,11 +267,13 @@ export class ResolutionStore {
     wrappers: TransparentWrapper[] = [],
     environmentObjects: readonly string[] = [],
     runtime: RuntimeSpellings = NO_RUNTIME_SPELLINGS,
+    parameterSuppliers: readonly ParameterSupplier[] = [],
   ) {
     this.table = createNodeTable(environmentObjects, runtime);
     addPackWords(this.db, {
       unwrapsByName: [...LANGUAGE_WRAPPERS, ...wrappers],
       returnsReceiver: LANGUAGE_RECEIVER_RETURNS,
+      suppliesParameter: parameterSuppliers,
     });
   }
 
@@ -277,6 +283,7 @@ export class ResolutionStore {
       packs.flatMap((pack) => pack.transparentWrappers ?? []),
       packs.flatMap((pack) => pack.environmentObjects ?? []),
       runtimeSpellingsOf(packs),
+      packs.flatMap((pack) => pack.parameterSuppliers ?? []),
     );
   }
 

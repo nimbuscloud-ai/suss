@@ -120,6 +120,7 @@ export type {
   InputMappingPattern,
   InvocationRecognizer,
   PackDeclarations,
+  ParameterSupplier,
   PatternPack,
   ResponsePropertyMapping,
   ResponsePropertyMeaning,

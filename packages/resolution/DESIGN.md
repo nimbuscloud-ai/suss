@@ -81,6 +81,8 @@ paramOf(f, k, p)            p is f's parameter at position k. A class
 paramNamed(f, n, p)         p is f's parameter called n
 paramDefault(p, d)          p takes the value d when a caller passes no
                             argument at all (TypeScript)
+decoratedWith(p, d)         the constructor parameter p is written with
+                            the decorator call d (TypeScript)
 returnsValue(f, v)          f returns v
 returnsClass(f, c)          f is annotated as returning c, and its body
                             states no value of its own
@@ -206,6 +208,9 @@ returnsReceiver(m)          calling a method named m hands back the
                             object it was called on. Each adapter adds
                             its language's own: bind in TypeScript,
                             freeze and dup in Ruby (TypeScript, Ruby)
+suppliesParameter(mod, n)   a parameter decorated with a call of the n
+                            that module mod exports takes that call as
+                            its value (TypeScript)
 ```
 
 A caller asks a question by adding a row to one of the relations in
@@ -295,6 +300,20 @@ directly, but the demand rewrite refuses any negation, so
 `describesValue` lists the kinds that do. An object written with
 properties stays in, since a pack's wrapper can hand one back as it is:
 `createRoute({ method, path })` in `@hono/zod-openapi` is the route.
+
+A dependency injection container builds some constructor arguments
+itself. In `constructor(@InjectRepository(Order) private repo:
+Repository<Order>)` the library makes the repository, and no class in
+the run describes it. The decorator call is what says which repository
+it is, so a pack states `suppliesParameter(module, name)` for each
+decorator that fills its parameter, and a rule steps from the parameter
+to the call. `this.repo` is then written as `InjectRepository(Order)`,
+and a pack reads the entity off that call the way the Mongoose pack
+reads a model off `model("User", schema)`. The rule matches the
+decorator by the module it came from, as the declared wrapper does. The
+adapter states `decoratedWith` for constructor parameters only, since a
+method parameter's decorator, such as `@Body()`, describes a request
+and not an object the container built.
 
 Every fact a pack declares goes in through `addPackWords`, which takes
 the declarations in one format for every language. Each adapter

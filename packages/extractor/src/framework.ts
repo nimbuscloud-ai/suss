@@ -1010,6 +1010,18 @@ export interface TransparentWrapper {
 }
 
 /**
+ * A library decorator that fills the parameter it decorates. The library
+ * builds the value, so nothing in the project describes it, and the
+ * decorator call is the only thing that says what the parameter is.
+ */
+export interface ParameterSupplier {
+  /** The module that exports the decorator, e.g. "@nestjs/typeorm". */
+  module: string;
+  /** The name the module exports the decorator under. */
+  name: string;
+}
+
+/**
  * A command-line parser a runtime or library provides, and where its
  * settings say which flags a command takes. `parseArgs({ args, options })`
  * from `node:util` is one: its options object lists every flag, and
@@ -1191,6 +1203,13 @@ export interface PatternPack {
    * argument. See `TransparentWrapper`.
    */
   transparentWrappers?: TransparentWrapper[];
+  /**
+   * Parameter decorators whose call is the value a container passes
+   * in. A constructor parameter written `@InjectRepository(User) repo`
+   * then reads as that call, and a pack can match `this.repo.find()` by
+   * the decorator it came from.
+   */
+  parameterSuppliers?: ParameterSupplier[];
   /**
    * Objects whose properties are the process environment, written as
    * the dotted path the code spells, e.g. `"process.env"`. The adapter
