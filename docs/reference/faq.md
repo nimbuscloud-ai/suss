@@ -49,6 +49,102 @@ suss check --dir summaries/
 
 Both files typecheck. Nobody wrote a shared type between them, and `customerName` comes back undefined at runtime with no error to say so.
 
+## How is this different from TypeScript types or a generated client?
+
+A shared type or a generated client catches a wrong shape: a missing field, or a field of the wrong type. It works when both sides are TypeScript and the spec the client was generated from matches the handler. It does not say which branch of the handler returns which status and body. It does not reach a caller written in Python or Ruby, and it trusts a spec even when the handler behind it does something else.
+
+suss reads the branches on both sides, in whichever language each side is written, and compares a spec with the handler as well as with the client. Here the type is the same on two branches and the behavior is not.
+
+<!-- suss:example -->
+
+`src/contract.ts`, the type both sides share:
+
+```ts
+import { initContract } from "@ts-rest/core";
+
+const c = initContract();
+
+export const contract = c.router({
+  getAccount: {
+    method: "GET",
+    path: "/accounts/:id",
+    responses: {
+      200: c.type<{ id: string; plan: string; closed: boolean }>(),
+      404: c.type<{ error: string }>(),
+    },
+  },
+});
+```
+
+`src/handler.ts`, which also returns a 200 for a closed account:
+
+```ts
+import { initServer } from "@ts-rest/express";
+import { contract } from "./contract";
+
+declare function findAccount(
+  id: string,
+): Promise<{ id: string; plan: string; closedAt: Date | null } | null>;
+
+const s = initServer();
+
+export const router = s.router(contract, {
+  getAccount: async ({ params }) => {
+    const account = await findAccount(params.id);
+
+    if (!account) {
+      return { status: 404 as const, body: { error: "not found" } };
+    }
+
+    if (account.closedAt) {
+      return {
+        status: 200 as const,
+        body: { id: account.id, plan: "none", closed: true },
+      };
+    }
+
+    return {
+      status: 200 as const,
+      body: { id: account.id, plan: account.plan, closed: false },
+    };
+  },
+});
+```
+
+`src/billingPanel.ts`, a client that shows the plan on every response except a 404:
+
+```ts
+export async function loadPlan(id: string) {
+  const response = await fetch(`/accounts/${id}`);
+
+  if (response.status === 404) {
+    return { plan: null };
+  }
+
+  const account = await response.json();
+  return { plan: account.plan };
+}
+```
+
+```bash
+suss extract --dir . -f ts-rest -f fetch -o summaries/all.json
+suss check --dir summaries/
+```
+
+<!-- suss:excerpt -->
+
+```
+[WARNING] unhandledProviderCase
+  Provider returns status 200 in 2 different situations, and the consumer treats them all the same
+  provider: src/handler.ts::getAccount (src/handler.ts:11)
+  consumer: src/billingPanel.ts::loadPlan (src/billingPanel.ts:1)
+  boundary: ts-rest (http) GET /accounts/:id
+```
+
+Both 200 branches match `{ id: string; plan: string; closed: boolean }`, so the compiler has nothing to say. The panel shows `"none"` as the plan of a closed account, because it never reads `closed`.
+
+<!-- suss:unchecked the rest of this page shows output from projects it does not build -->
+
 ## How do I run it for the first time?
 
 Run `suss init` in your project. It reads your dependencies, works out which packs your stack needs, and prints or runs the commands.
