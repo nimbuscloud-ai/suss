@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "read": [],
+  "read": [{ "kind": "extract", "language": "ruby", "packs": ["pg-ruby"] }],
   "modules": [
     { "name": "billing", "root": "lib/billing" },
     { "name": "catalog", "root": "lib/catalog" }
