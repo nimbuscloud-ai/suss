@@ -1,0 +1,54 @@
+kind: boundary
+
+name: cli-answer-question
+purpose: >-
+  Answer one question about the summaries on disk, or say that it is not
+  one of the questions suss takes. suss ask prints the answer, and the
+  MCP server's suss_ask tool hands the same answer to a model. When the
+  answer comes back empty, needs says what input would let suss answer.
+audience: agents asking over MCP, and people running suss ask
+source: author
+
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "@suss/cli"
+  exportPath: ["answerQuestion"]
+  receives:
+    options: { type: object, required: true }
+    options.question: {}
+
+transitions:
+  - id: not-a-question
+    when: no question was given, or the question is not one of the ten suss answers
+    returns:
+      body:
+        type: object
+        properties:
+          exitCode: { type: number }
+          answer: { type: "null" }
+        required: [exitCode, answer]
+
+  - id: answered
+    when: the question is one of the ten suss answers
+    returns:
+      body:
+        type: object
+        properties:
+          exitCode: { type: number }
+          answer:
+            type: object
+            properties:
+              question: { type: string }
+              subject: { type: string }
+              found: { type: boolean }
+              headline: { type: string }
+              items: { type: array }
+              needs:
+                type: array
+                items: { type: string }
+              caveats:
+                type: array
+                items: { type: string }
+            required: [found, headline, items, needs, caveats]
+        required: [exitCode, answer]

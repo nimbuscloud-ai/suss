@@ -1,14 +1,11 @@
-# System intent for @suss/checker's single-pair entry point.
-#
-# checkPair runs the provider/consumer checks for one already-paired
-# summary pair and returns the findings: an array of records that each
-# carry at least a kind and a severity.
-
 kind: boundary
 
 name: checker-check-pair
-purpose: Run the provider/consumer checks for one summary pair and return the findings.
-audience: downstream-consumers
+purpose: >-
+  Compare one provider with one consumer and return the findings. A
+  program calling the library uses it when it has already decided which
+  two summaries face each other.
+audience: programs that check summaries through the library
 source: author
 
 boundary:
@@ -31,4 +28,3 @@ transitions:
           properties:
             kind: { type: string }
             severity: { type: string }
-

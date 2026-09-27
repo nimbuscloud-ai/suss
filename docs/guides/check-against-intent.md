@@ -302,45 +302,63 @@ A store is the one case where filling in fields does not help, because a contain
 
 ## suss checks its own intent
 
-<!-- suss:unchecked it runs over this repository's own packages, whose summaries npm run check:self builds rather than a command on this page -->
+<!-- suss:unchecked it runs over this repository's own packages, whose summaries npm run dogfood builds rather than a command on this page -->
 
-The `intent/` directory in this repository has a boundary document for each public export of the two checker packages, and `npm run check:self` extracts those packages with the `package-exports` pack and pairs each document against them. Every step goes through the shipped CLI, so a change that breaks `suss extract` or `suss check` breaks the self-check with it.
+The `intent/` directory in this repository says what suss promises the people who use it. Seven PRDs state features such as "A run that compares nothing fails and says why", and boundary documents state what the exports behind them do: the library functions a program calls, the functions the agent supervisor and the MCP server call, and the helpers a pack author calls. `npm run check:self` runs `suss check --intent` over the summaries `npm run dogfood` writes for every package, so a change that breaks `suss extract`, `suss check` or one of those exports breaks the self-check too.
 
-`intent/checker-checkPair.intent.yaml` is one of them:
+`intent/contract-intent-loadChangeListFile.intent.yaml` says how suss reads the change list an agent writes, with one outcome for each way the function can end:
 
 ```yaml
 kind: boundary
 
-name: checker-check-pair
-purpose: Run the provider/consumer checks for one summary pair and return the findings.
-audience: downstream-consumers
+name: contract-intent-load-change-list
+purpose: >-
+  Read the change list an agent wrote before its first edit, or reject
+  it with every problem listed, so the agent can fix them all in one go.
+  suss intent check reads a change list through it, and tells a list
+  somebody has to fix apart from any other failure by the error it
+  throws.
+audience: the suss agent supervisor, and programs that read change lists
 source: author
 
 boundary:
   transport: in-process
   semantics: function-call
-  package: "@suss/checker"
-  exportPath: ["checkPair"]
+  package: "@suss/contract-intent"
+  exportPath: ["loadChangeListFile"]
   receives:
-    provider: { type: object, required: true }
-    consumer: { type: object, required: true }
+    filepath: { type: string, required: true }
 
 transitions:
-  - id: findings
-    when: called with a provider summary and a consumer summary
+  - id: loaded
+    when: the file parses and fits the change list schema
     returns:
       body:
-        type: array
-        items:
-          type: object
-          properties:
-            kind: { type: string }
-            severity: { type: string }
+        type: object
+        properties:
+          changes: { type: array }
+          explained: { type: array }
+        required: [changes, explained]
+
+  - id: rejected
+    when: the file is missing, does not parse, or does not fit the change list schema
+    throws:
+      errorType: ChangeListRejected
 ```
 
-This one says `source: author` instead of `inferred, curated`, because a person wrote it from scratch instead of editing a draft. On a green run the output ends with:
+A scenario in `intent/checkAnAgentsEdit.prd.yaml` links to the rejection:
+
+```yaml
+  - title: the agent's change list does not fit
+    when: the change list the agent wrote before its first edit does not fit the schema
+    expect: suss rejects it and lists every problem, so the agent can fix them in one go
+    link: contract-intent-load-change-list.rejected
+```
+
+If `loadChangeListFile` stopped throwing `ChangeListRejected`, the self-check would report `uncoveredOutcome` against the document and fail. A scenario whose promise is about which values come back, or about what a command prints, has no link, and a comment beside it says which test covers it or why suss cannot read that boundary. On a green run the intent section starts with:
 
 ```
 Intent:
-  5 boundary intents checked against code
+  22 boundary intents checked against code
+  7 PRDs checked: 36 scenarios, 15 resolved, 21 unlinked
 ```

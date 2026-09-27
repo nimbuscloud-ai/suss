@@ -1,0 +1,47 @@
+kind: prd
+
+title: An agent's edit is checked, and the agent is never blamed for what was there before
+purpose: >-
+  A coding agent working with suss has each edit checked as it goes. It
+  hears about the findings its own edit introduced and the boundaries it
+  changed, and never about findings that were already in the code. When
+  it stops, its work is checked against the changes it said it would make.
+audience: developers who let a coding agent edit their code under the suss supervisor
+source: author
+
+scenarios:
+  - title: before and after an edit
+    when: the supervisor compares the findings from before an edit with the findings from after it
+    expect: it gets the findings the edit added and the findings it resolved, as two lists
+    link: checker-findings-since.compared
+
+  # No link: the promise is about which findings land in which list,
+  # which no outcome can state. Covered by the @suss/checker test
+  # "splits the findings into new and gone, by identity".
+  - title: a finding that was already there
+    when: a finding was in the code before the agent's edit and is still there after it
+    expect: it is not reported as new, and it does not fail the agent's check
+
+  # No link, for the same reason. Covered by the @suss/checker test
+  # "sees a finding whose unit moved down the file as the one it was".
+  - title: the agent moved code
+    when: the agent's edit moved a handler with an old finding further down its file
+    expect: the old finding is still recognized as the same one, not reported as new
+
+  - title: the agent's change list does not fit
+    when: the change list the agent wrote before its first edit does not fit the schema
+    expect: suss rejects it and lists every problem, so the agent can fix them in one go
+    link: contract-intent-load-change-list.rejected
+
+  - title: the agent stops
+    when: the agent stops, and the change list it wrote fits the schema
+    expect: the work is checked against the list, with a verdict on every entry and every change nobody asked for
+    link:
+      - contract-intent-load-change-list.loaded
+      - cli-check-intent.checked
+
+  # No link: which changes count as asked for is about values. Covered
+  # by the @suss/cli test "lists a change at a boundary no entry is about".
+  - title: a change nobody asked for
+    when: the agent changed a boundary that no entry in its change list is about
+    expect: the change is listed as not asked, and the agent has to revert it or say why it stays

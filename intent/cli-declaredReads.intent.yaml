@@ -1,0 +1,40 @@
+kind: boundary
+
+name: cli-declared-reads
+purpose: >-
+  Decide what to read in a project when the command line does not say:
+  the entries suss.json lists, or, when there is no suss.json, the packs
+  suss init would pick. A bare suss extract, a bare suss inspect and the
+  MCP server all read a project through it, so once suss init has
+  written the file, every one of them reads what it says.
+audience: developers running suss with no flags, and the MCP server
+source: author
+
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "@suss/cli"
+  exportPath: ["declaredReads"]
+  receives:
+    root: { type: string, required: true }
+
+transitions:
+  - id: from-project-file
+    when: the project root has a suss.json with a read list in it
+    returns:
+      body:
+        type: object
+        properties:
+          reads: { type: array }
+          declared: { type: boolean }
+        required: [reads, declared]
+
+  - id: detected
+    when: the project root has no suss.json
+    returns:
+      body:
+        type: object
+        properties:
+          reads: { type: array }
+          declared: { type: boolean }
+        required: [reads, declared]

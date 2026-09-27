@@ -1,0 +1,11 @@
+version: 1
+rules:
+  - kind: uncoveredOutcome
+    boundary: "fn:@suss/behavioral-ir::parseSummaries"
+    effect: mark
+    reason: >-
+      parseSummaries does throw on input that is not summaries, from inside
+      zod's parse. suss records a throw only where the function itself
+      throws, so a throw raised by a function it calls is not an outcome of
+      the caller. The behavioral-ir tests check that safeParseSummaries
+      rejects the same input.

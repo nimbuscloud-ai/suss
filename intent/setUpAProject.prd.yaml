@@ -1,0 +1,49 @@
+kind: prd
+
+title: Set up a project
+purpose: >-
+  A developer trying suss on a project runs suss init once and says yes.
+  After that, a bare suss extract reads the right code with the right
+  packs on the first try, and nobody has to work out the flags.
+audience: a developer adding suss to a project for the first time
+source: author
+
+scenarios:
+  - title: extract reads what init wrote
+    when: suss init has written suss.json, and the developer runs suss extract with no flags
+    expect: extract reads the code with the packs suss.json lists
+    link: cli-declared-reads.from-project-file
+
+  - title: no suss.json yet
+    when: the project has no suss.json, and the developer runs suss extract with no flags
+    expect: extract reads the code with the packs suss init would pick, and prints a line saying so
+    link: cli-declared-reads.detected
+
+  - title: a pack needs a setting nobody wrote
+    when: init suggested a pack that needs a setting, such as which database is behind ActiveRecord, and the developer runs extract without writing the config file
+    expect: extract stops before reading anything, and says which setting the pack needs and how to pass it
+    link:
+      - packs-activerecord.needs-storage-system
+      - packs-sqlalchemy.needs-storage-system
+      - packs-sqlmodel.needs-storage-system
+      - packs-graphql-ruby.needs-root
+
+  - title: the setting is written
+    when: the developer writes the config file init printed and runs extract again
+    expect: the pack reads the project
+    link:
+      - packs-activerecord.reads-the-project
+      - packs-sqlalchemy.reads-the-project
+      - packs-sqlmodel.reads-the-project
+      - packs-graphql-ruby.reads-the-project
+
+  # No link: init's prompt is a CLI command, and suss has no boundary
+  # for a command's arguments, exit code and output.
+  - title: init in CI
+    when: suss init runs in CI, with no terminal to prompt on
+    expect: it prints the commands the project needs instead of asking
+
+  # No link, for the same reason.
+  - title: a spec is found
+    when: the project has an OpenAPI spec, and the developer runs suss init
+    expect: suss.json gets an entry that reads the spec, so suss check compares the routes against it instead of leaving them unpaired

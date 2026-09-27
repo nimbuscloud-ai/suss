@@ -1,0 +1,35 @@
+kind: boundary
+
+name: contract-intent-load-change-list
+purpose: >-
+  Read the change list an agent wrote before its first edit, or reject
+  it with every problem listed, so the agent can fix them all in one go.
+  suss intent check reads a change list through it, and tells a list
+  somebody has to fix apart from any other failure by the error it
+  throws.
+audience: the suss agent supervisor, and programs that read change lists
+source: author
+
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "@suss/contract-intent"
+  exportPath: ["loadChangeListFile"]
+  receives:
+    filepath: { type: string, required: true }
+
+transitions:
+  - id: loaded
+    when: the file parses and fits the change list schema
+    returns:
+      body:
+        type: object
+        properties:
+          changes: { type: array }
+          explained: { type: array }
+        required: [changes, explained]
+
+  - id: rejected
+    when: the file is missing, does not parse, or does not fit the change list schema
+    throws:
+      errorType: ChangeListRejected

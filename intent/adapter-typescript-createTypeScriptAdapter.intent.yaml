@@ -1,0 +1,29 @@
+kind: boundary
+
+name: adapter-typescript-create-adapter
+purpose: >-
+  Build the TypeScript adapter a pack's test runs the pack through. The
+  test adds its fixture to the adapter's ts-morph project and calls
+  extractAll. The Write a pack guide's end to end test is written this
+  way, and so are tests for packs published outside this repository.
+audience: pack authors writing tests
+source: author
+
+boundary:
+  transport: in-process
+  semantics: function-call
+  package: "@suss/adapter-typescript"
+  exportPath: ["createTypeScriptAdapter"]
+  receives:
+    suppliedConfig: { type: object, required: true }
+    suppliedConfig.frameworks: { type: array, required: true }
+
+transitions:
+  - id: adapter
+    when: called with the packs to run and, optionally, a tsconfig
+    returns:
+      body:
+        type: object
+        properties:
+          tsProject: { type: unknown }
+        required: [tsProject]
