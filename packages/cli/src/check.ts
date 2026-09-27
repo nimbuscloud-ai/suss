@@ -89,7 +89,7 @@ export interface CheckOptions {
    * A run that pairs no boundary has no findings, and passing it would
    * hide that suss could not see enough of the code to compare anything.
    * `extract` takes the same option for the same reason. A two-file
-   * `check` never counts pairs, so it refuses this option.
+   * `check` compares nothing when either file has no summaries in it.
    */
   allowEmpty?: boolean;
 }
@@ -162,7 +162,51 @@ export function check(options: CheckOptions): CheckResult {
     providerSummaries,
     consumerSummaries,
   );
-  return emitFindings(findings, confidence, options);
+  const run =
+    options.allowEmpty === true
+      ? []
+      : twoFileRunFindings([
+          { file: options.providerFile, summaries: providerSummaries },
+          { file: options.consumerFile, summaries: consumerSummaries },
+        ]);
+  return emitFindings(findings, run, confidence, options);
+}
+
+/**
+ * A parser of the bare findings array keeps working on every run that
+ * compared something. A run that compared nothing fails, and the object
+ * gives its `nothingPaired` finding somewhere to go.
+ */
+function twoFileJson(
+  findings: Finding[],
+  run: RunFinding[],
+): Finding[] | { findings: Finding[]; run: RunFinding[] } {
+  return run.length === 0 ? findings : { findings, run };
+}
+
+/**
+ * A `nothingPaired` finding when one of the two files has no summaries,
+ * since every provider in the first is compared with every consumer in
+ * the second and an empty side leaves nothing to compare.
+ */
+function twoFileRunFindings(
+  sides: ReadonlyArray<{ file: string; summaries: readonly unknown[] }>,
+): RunFinding[] {
+  const empty = sides.filter((side) => side.summaries.length === 0);
+  if (empty.length === 0) {
+    return [];
+  }
+  return [
+    {
+      kind: "nothingPaired",
+      severity: "error",
+      description: `${empty.map((side) => side.file).join(" and ")} ${empty.length === 1 ? "has" : "have"} no summaries in it, so nothing was compared.`,
+      remedy:
+        "Check that the extract or contract that wrote the file found what you expected. " +
+        "Run `suss extract --explain` with the same packs to see how far each pack got. " +
+        "Pass --allow-empty when an empty side is expected.",
+    },
+  ];
 }
 
 function loadSuppressionsForOptions(
@@ -682,18 +726,22 @@ function renderIntentSection(intent: CheckIntentResult | undefined): string {
 
 function emitFindings(
   findings: Finding[],
+  run: RunFinding[],
   confidence: ConfidenceLookup,
   options: { json?: boolean; output?: string; failOn?: FailOn; all?: boolean },
 ): CheckResult {
   const rendered = options.json
-    ? `${JSON.stringify(findings, null, 2)}\n`
-    : renderFindings(findings, confidence, scopeOf(options));
+    ? `${JSON.stringify(twoFileJson(findings, run), null, 2)}\n`
+    : renderFindings(findings, confidence, scopeOf(options)) +
+      renderRunFindings(run);
 
   writeReport(rendered, options.output);
 
   return {
     findings,
-    hasErrors: meetsThreshold(findings, options.failOn ?? "error"),
+    ...(run.length > 0 ? { run } : {}),
+    hasErrors:
+      meetsThreshold(findings, options.failOn ?? "error") || run.length > 0,
   };
 }
 

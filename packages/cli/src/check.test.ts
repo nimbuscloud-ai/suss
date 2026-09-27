@@ -2132,6 +2132,69 @@ describe("failing when the run compares nothing", () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
+  describe("comparing two files", () => {
+    function twoFiles(consumers: BehavioralSummary[]): {
+      providerFile: string;
+      consumerFile: string;
+      root: string;
+    } {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-two-files-"));
+      const providerFile = path.join(root, "orders.json");
+      const consumerFile = path.join(root, "web.json");
+      fs.writeFileSync(
+        providerFile,
+        JSON.stringify([providerWithRoute("getOrder", "GET", "/orders", [])]),
+      );
+      fs.writeFileSync(consumerFile, JSON.stringify(consumers));
+      return { providerFile, consumerFile, root };
+    }
+
+    it("fails when one file is empty, and names that file", () => {
+      const { root, ...files } = twoFiles([]);
+
+      const { output, result } = captureQuietly(() =>
+        check({ ...files, json: true }),
+      );
+      expect(result.hasErrors).toBe(true);
+      const parsed = JSON.parse(output) as {
+        findings: unknown[];
+        run: Array<{ kind: string; description: string }>;
+      };
+      expect(parsed.findings).toEqual([]);
+      expect(parsed.run[0]?.kind).toBe("nothingPaired");
+      expect(parsed.run[0]?.description).toContain(files.consumerFile);
+
+      fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    it("passes an empty file with --allow-empty", () => {
+      const { root, ...files } = twoFiles([]);
+
+      const { output, result } = captureQuietly(() =>
+        check({ ...files, json: true, allowEmpty: true }),
+      );
+      expect(result.hasErrors).toBe(false);
+      expect(result.run).toBeUndefined();
+      expect(JSON.parse(output)).toEqual([]);
+
+      fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    it("keeps the bare findings array when both files have summaries", () => {
+      const { root, ...files } = twoFiles([
+        consumerWithRoute("fetchOrder", "GET", "/orders", []),
+      ]);
+
+      const { output, result } = captureQuietly(() =>
+        check({ ...files, json: true }),
+      );
+      expect(result.run).toBeUndefined();
+      expect(Array.isArray(JSON.parse(output))).toBe(true);
+
+      fs.rmSync(root, { recursive: true, force: true });
+    });
+  });
+
   it("stays quiet when something did pair", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-paired-"));
     fs.writeFileSync(

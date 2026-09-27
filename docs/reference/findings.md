@@ -745,7 +745,7 @@ Run findings are a third list, under `run` in the JSON. They are about the run i
 
 ### `nothingPaired`
 
-**Severity:** error. Emitted by `suss check --dir`, and by a bare `suss check` over the project, unless `--allow-empty` was passed.
+**Severity:** error. Emitted by `suss check --dir`, by a bare `suss check` over the project, and by `suss check <a.json> <b.json>` when one of the two files has no summaries, unless `--allow-empty` was passed.
 
 The run paired nothing. No boundary had both a provider and a consumer, so nothing was compared. Without this finding the report would look exactly like one where both sides agreed.
 
