@@ -5,7 +5,11 @@ import path from "node:path";
 import { type CallExpression, Node, type SourceFile } from "ts-morph";
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { callOpsFor } from "@suss/adapter-typescript";
+import {
+  callOpsFor,
+  invocationContextFor,
+  ResolutionStore,
+} from "@suss/adapter-typescript";
 import { runExamples } from "@suss/recognize";
 import { createFixtureProject, createTestProject } from "@suss/test-project";
 
@@ -1043,5 +1047,56 @@ describe("prisma raw SQL", () => {
       fields: ["id", "email"],
       operation: "$queryRawUnsafe",
     });
+  });
+});
+
+describe("a client class the project extends, with the client not installed", () => {
+  /** The containers the Prisma calls in `/users.ts` reach, with `/db.ts` as the client class. */
+  function containersReached(db: string): Array<string | null> {
+    const project = createTestProject();
+    project.createSourceFile("/db.ts", db);
+    const users = project.createSourceFile(
+      "/users.ts",
+      `
+        import { Db } from "./db";
+        export class Users {
+          constructor(private readonly db: Db) {}
+          list() { return this.db.user.findMany(); }
+        }
+      `,
+    );
+    const store = new ResolutionStore();
+    const recognizer =
+      prismaFramework().invocationRecognizers?.[0] ?? raise("no recognizer");
+    return users
+      .getDescendants()
+      .filter((node): node is CallExpression => Node.isCallExpression(node))
+      .flatMap(
+        (call) => recognizer(call, invocationContextFor(call, store)) ?? [],
+      )
+      .map((effect) =>
+        effect.type === "interaction" &&
+        effect.binding.semantics.name === "storage"
+          ? effect.binding.semantics.container
+          : null,
+      );
+  }
+
+  it("reads a call through a class that extends PrismaClient", () => {
+    expect(
+      containersReached(`
+        import { PrismaClient } from "@prisma/client";
+        export class Db extends PrismaClient {}
+      `),
+    ).toEqual(["User"]);
+  });
+
+  it("leaves a class alone that extends another library's client", () => {
+    expect(
+      containersReached(`
+        import { PrismaClient } from "./fake";
+        export class Db extends PrismaClient {}
+      `),
+    ).toEqual([]);
   });
 });
