@@ -1471,6 +1471,36 @@ describe("checkDir", () => {
     expect(errors.join("")).toContain("not JSON suss can read");
   });
 
+  it("reads a folder once until one of its files changes, wherever it moved", () => {
+    const summaries = path.join(tmpDir, "summaries.json");
+    fs.writeFileSync(
+      summaries,
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+      ]),
+    );
+    const first = checkDirectory({ dir: tmpDir });
+    const moved = `${tmpDir}-moved`;
+    fs.renameSync(tmpDir, moved);
+    const again = checkDirectory({ dir: moved });
+    fs.renameSync(moved, tmpDir);
+    fs.writeFileSync(
+      summaries,
+      JSON.stringify([
+        providerWithRoute("getUser", "GET", "/users/:id", [
+          transition("t-404", { statusCode: 404, isDefault: true }),
+        ]),
+      ]),
+    );
+    const changed = checkDirectory({ dir: tmpDir });
+
+    expect(again.summaries).toBe(first.summaries);
+    expect(changed.summaries).not.toBe(first.summaries);
+    expect(changed.summaries[0]?.transitions[0]?.id).toBe("t-404");
+  });
+
   it("turns down a folder where nothing is summaries", () => {
     fs.writeFileSync(path.join(tmpDir, "report.json"), "not json{");
 
