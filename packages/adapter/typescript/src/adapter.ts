@@ -135,6 +135,7 @@ import {
   type WrapperIndex,
 } from "./discovery/wrapperIndex.js";
 import { createTsDiscoveryContext } from "./discoveryContext.js";
+import { stampExitCodeFrom } from "./exitCode.js";
 import {
   forgetReassignedNamesUnstated,
   reassignedNamesUnstated,
@@ -612,6 +613,7 @@ export function extractCodeStructure(
   originatesFrom?: OriginatesFrom,
   anchorCallsOf?: AnchorCallsOf,
   resolveCallee?: ResolveCallee,
+  everyUnitTerminals: readonly TerminalPattern[] = [],
 ): RawCodeStructure {
   // One table per unit: every shape read during this call goes into it.
   const read = withDefinitions(() =>
@@ -625,6 +627,7 @@ export function extractCodeStructure(
       originatesFrom,
       anchorCallsOf,
       resolveCallee,
+      everyUnitTerminals,
     ),
   );
   return read.definitions === null
@@ -764,12 +767,17 @@ function continuationTerminal(unit: DiscoveredUnit): TerminalPattern[] {
 function terminalsFor(
   unit: DiscoveredUnit,
   pack: PatternPack,
+  everyUnitTerminals: readonly TerminalPattern[],
 ): TerminalPattern[] {
   // A pack whose units follow more than one convention overrides the
-  // pack-level terminals per unit.
+  // pack-level terminals per unit. The ones every unit is read with go
+  // first, so the call they match is theirs.
+  const own = (
+    unit.terminals ?? pastFrameworkValue(pack.terminals, frameworkValueAt(unit))
+  ).filter((pattern) => pattern.inEveryUnit !== true);
   const declared = [
-    ...(unit.terminals ??
-      pastFrameworkValue(pack.terminals, frameworkValueAt(unit))),
+    ...everyUnitTerminals,
+    ...own,
     ...continuationTerminal(unit),
   ];
   if (unit.callSite === undefined) {
@@ -791,6 +799,7 @@ function readCodeStructure(
   originatesFrom?: OriginatesFrom,
   anchorCallsOf?: AnchorCallsOf,
   resolveCallee?: ResolveCallee,
+  everyUnitTerminals: readonly TerminalPattern[] = [],
 ): RawCodeStructure {
   const { func, kind, name } = unit;
   if (func === null) {
@@ -805,7 +814,7 @@ function readCodeStructure(
   );
   const extracted = extractRawBranches(
     func,
-    terminalsFor(unit, pack),
+    terminalsFor(unit, pack, everyUnitTerminals),
     invocationRecognizers,
     accessRecognizers,
     barriers,
@@ -1072,6 +1081,15 @@ function collectInvocationRecognizers(
   return out;
 }
 
+/** The terminals every unit is read with, whichever pack discovered it. */
+export function collectEveryUnitTerminals(
+  frameworks: readonly PatternPack[],
+): TerminalPattern[] {
+  return frameworks.flatMap((pack) =>
+    pack.terminals.filter((pattern) => pattern.inEveryUnit === true),
+  );
+}
+
 function collectAccessRecognizers(
   frameworks: PatternPack[],
   tallies?: Map<string, PackTally>,
@@ -1157,6 +1175,7 @@ function extractFromSourceFile(
     ...(projectHelpers?.contributedRecognizers() ?? []),
   ];
   const allAccessRecognizers = collectAccessRecognizers(frameworks, tallies);
+  const everyUnitTerminals = collectEveryUnitTerminals(frameworks);
   const gatedIn: PackTally[] = [];
   let unitsWalkedHere = 0;
   const subUnitCtx = createTsSubUnitContext();
@@ -1290,6 +1309,7 @@ function extractFromSourceFile(
         resolution === undefined
           ? undefined
           : (value) => resolution.resolveCallable(value),
+        everyUnitTerminals,
       );
 
       // Set before the branches below, since both of them overwrite it
@@ -2320,6 +2340,7 @@ export function createTypeScriptAdapter(
               {
                 invocation: collectInvocationRecognizers(config.frameworks),
                 access: collectAccessRecognizers(config.frameworks),
+                terminals: collectEveryUnitTerminals(config.frameworks),
                 resolution,
                 resolveCallableSources: (value, alsoFrom) =>
                   resolution.resolveCallableSources(value, alsoFrom),
@@ -2329,6 +2350,8 @@ export function createTypeScriptAdapter(
               [],
               recognizerOnlyRoots(packsByFile),
             );
+
+      stampExitCodeFrom(withClosure, project, resolution);
 
       // A route's own middleware is read from the same file, so it
       // composes here as it does in a full run.
@@ -2674,6 +2697,7 @@ export function createTypeScriptAdapter(
                     ...projectHelpers.contributedRecognizers(),
                   ],
                   access: collectAccessRecognizers(config.frameworks, tallies),
+                  terminals: collectEveryUnitTerminals(config.frameworks),
                   resolution,
                   resolveCallableSources: (value, alsoFrom) =>
                     resolution.resolveCallableSources(value, alsoFrom),
@@ -2737,6 +2761,11 @@ export function createTypeScriptAdapter(
           config.frameworks,
           resolution,
         ),
+      );
+      // Before the cache write, over reused summaries too: a hit serves
+      // what this run marks, and only a run with every file unchanged hits.
+      timer.time("stampExitCodeFrom", () =>
+        stampExitCodeFrom(enriched, project, resolution),
       );
 
       if (config.onCacheDiagnostic !== undefined && plan !== null) {
@@ -3232,6 +3261,7 @@ function synthesizeSubUnits(
     tallies,
   );
   const allAccessRecognizers = collectAccessRecognizers(frameworks, tallies);
+  const everyUnitTerminals = collectEveryUnitTerminals(frameworks);
 
   const synthesized: BehavioralSummary[] = [];
   const subUnitCtx = createTsSubUnitContext();
@@ -3288,8 +3318,11 @@ function synthesizeSubUnits(
       const summary = buildSubUnitSummary(
         subUnit,
         parent,
-        allInvocationRecognizers,
-        allAccessRecognizers,
+        {
+          invocation: allInvocationRecognizers,
+          access: allAccessRecognizers,
+          terminals: everyUnitTerminals,
+        },
         options,
       );
       if (summary !== null) {
@@ -3316,8 +3349,11 @@ const DEFAULT_SUB_UNIT_INPUT_MAPPING: InputMappingPattern = {
 function buildSubUnitSummary(
   subUnit: DiscoveredSubUnit,
   parent: BehavioralSummary,
-  invocationRecognizers: InvocationRecognizer[],
-  accessRecognizers: AccessRecognizer[],
+  everyUnit: {
+    invocation: InvocationRecognizer[];
+    access: AccessRecognizer[];
+    terminals: readonly TerminalPattern[];
+  },
   options?: ExtractorOptions,
 ): BehavioralSummary | null {
   const func = subUnit.func as FunctionRoot;
@@ -3330,7 +3366,10 @@ function buildSubUnitSummary(
     protocol: "sub-unit-scaffold",
     languages: ["typescript", "javascript"],
     discovery: [],
-    terminals: subUnit.terminals ?? DEFAULT_SUB_UNIT_TERMINALS,
+    terminals: [
+      ...everyUnit.terminals,
+      ...(subUnit.terminals ?? DEFAULT_SUB_UNIT_TERMINALS),
+    ],
     inputMapping: subUnit.inputMapping ?? DEFAULT_SUB_UNIT_INPUT_MAPPING,
   };
 
@@ -3343,8 +3382,8 @@ function buildSubUnitSummary(
   const raw = extractCodeStructure(
     unit,
     scaffoldPack,
-    invocationRecognizers,
-    accessRecognizers,
+    everyUnit.invocation,
+    everyUnit.access,
   );
 
   // A sub-unit runs on the parent's runtime, so it takes the parent's

@@ -293,6 +293,34 @@ in the run calls is a write with a null target too.
 Loggers such as pino, winston and NestJS's `Logger` are left to a pack
 of their own.
 
+## How a program exits
+
+`process.exit(n)` is a terminal. The pack declares it with
+`inEveryUnit`, so it ends a path in a route handler, a helper the
+closure reached and a scheduled callback alike, and the transition's
+output is `{ type: "exit", code }`. A call with no argument exits 0, and
+a code the program computes comes out as the text it came from.
+
+`process.exitCode = 1` lets the function keep going, so it is a
+`stateChange` effect instead, with the code it sets.
+
+Most commands do neither where the decision is made. They return the
+code up a chain of functions and set it in one place:
+
+```ts
+runCli(process.argv.slice(2)).then((code) => {
+  process.exitCode = code;
+});
+```
+
+The pack says `process.exitCode` is where the code goes, and the store
+follows the value assigned there back through the `.then` callback to
+`runCli` and every function it returns the code of, once per run. Each
+of those summaries keeps its `return` outputs and gets
+`metadata.process.exitCodeFrom: "return"`, so an intent document can say
+`exits: 1` about a function that ends in `return result.hasErrors ? 1 : 0`.
+That return comes out as two transitions, one per arm.
+
 ## Options
 
 ```json

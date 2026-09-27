@@ -13,10 +13,17 @@ import {
   type ElementAccessExpression,
   Node,
   type PropertyAccessExpression,
+  SyntaxKind,
 } from "ts-morph";
+
+import { numberValueOf } from "@suss/adapter-typescript";
 
 import { configBinding, opaqueRuntimeRead } from "./configBinding.js";
 
+import type {
+  ResolutionStore,
+  TsAccessRecognizerContext,
+} from "@suss/adapter-typescript";
 import type { Effect } from "@suss/behavioral-ir";
 import type { AccessRecognizer } from "@suss/extractor";
 import type { DeploymentOptions } from "./configBinding.js";
@@ -59,10 +66,14 @@ const OPAQUE_PROPERTY_NAMES = new Set([
 function makeProcessSurfaceRecognizer(
   where: ProcessSurfaceOptions,
 ): AccessRecognizer {
-  return (access, _ctx) => {
+  return (access, ctx) => {
     const node = access as Node;
     if (Node.isPropertyAccessExpression(node)) {
-      return recognizeProperty(node, where);
+      return recognizeProperty(
+        node,
+        where,
+        (ctx as TsAccessRecognizerContext | undefined)?.resolution,
+      );
     }
     if (Node.isElementAccessExpression(node)) {
       return recognizeElementAccess(node, where);
@@ -74,6 +85,7 @@ function makeProcessSurfaceRecognizer(
 function recognizeProperty(
   node: PropertyAccessExpression,
   where: DeploymentOptions,
+  resolution: ResolutionStore | undefined,
 ): Effect[] | null {
   if (isProcessEnvVarRead(node)) {
     return null;
@@ -90,7 +102,38 @@ function recognizeProperty(
     return [opaqueRuntimeRead(node.getText())];
   }
 
+  if (isProcessIdentifier(subject) && name === "exitCode") {
+    return exitCodeSet(node, resolution);
+  }
+
   return null;
+}
+
+/**
+ * `process.exitCode = 1` sets the code the process ends with once its
+ * work drains, so the function keeps going and this is an effect rather
+ * than a terminal. A read of `process.exitCode` is neither.
+ */
+function exitCodeSet(
+  node: PropertyAccessExpression,
+  resolution: ResolutionStore | undefined,
+): Effect[] | null {
+  const assignment = node.getParent();
+  if (
+    !Node.isBinaryExpression(assignment) ||
+    assignment.getLeft() !== node ||
+    assignment.getOperatorToken().getKind() !== SyntaxKind.EqualsToken
+  ) {
+    return null;
+  }
+  const written = assignment.getRight();
+  return [
+    {
+      type: "stateChange",
+      variable: node.getText(),
+      newValue: numberValueOf(written, resolution) ?? written.getText(),
+    },
+  ];
 }
 
 function recognizeElementAccess(

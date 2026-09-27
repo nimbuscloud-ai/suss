@@ -29,32 +29,39 @@ import {
   NO_BARRIERS,
   startsItsOwnScope,
 } from "../walk/descent.js";
+import { peelValue } from "../walk/unwrap.js";
 
 /**
  * What the walk needs at every node: the pack's sub-unit barriers, the
  * unit root they are relative to, and the map back from a raw statement
  * to what it lowered into.
  */
+/** A body with no call that ends the process. */
+export const NO_ENDINGS: ReadonlySet<Node> = new Set();
+
 interface LowerContext {
   readonly func: Node;
   readonly barriers: DescentBarriers;
   readonly rawToStructured: Map<Node, StructuredStatement<Expression>>;
+  /** Terminal calls that end the process, so nothing after one runs. */
+  readonly endings: ReadonlySet<Node>;
 }
 
 /**
  * Does this statement's own subtree exit the unit (return/throw not
  * nested inside an inner function)? Any throw wins the classification.
+ * A call that ends the process leaves the unit the way a return does.
  * Feeds `StructuredStatement.exitKind`, computed once per node here so
  * the generic engine never has to re-walk a subtree to find one.
  */
-function exitKindOf(stmt: Node): ExitKind {
+function exitKindOf(stmt: Node, endings: ReadonlySet<Node>): ExitKind {
   let sawReturn = false;
   let sawThrow = false;
   const visit = (node: Node): void => {
     if (node !== stmt && startsItsOwnScope(node)) {
       return;
     }
-    if (Node.isReturnStatement(node)) {
+    if (Node.isReturnStatement(node) || endings.has(node)) {
       sawReturn = true;
     }
     if (Node.isThrowStatement(node)) {
@@ -227,6 +234,7 @@ export function lowerExpressionBodyCallbacks(
     func,
     barriers,
     rawToStructured: new Map(),
+    endings: NO_ENDINGS,
   });
 }
 
@@ -246,6 +254,7 @@ function buildStructured(
   stmt: Statement,
   ctx: LowerContext,
 ): StructuredStatement<Expression> {
+  const exitKind = exitKindOf(stmt, ctx.endings);
   if (Node.isIfStatement(stmt)) {
     const elseBranch = stmt.getElseStatement();
     return {
@@ -256,7 +265,7 @@ function buildStructured(
         elseBranch === undefined
           ? null
           : lowerList(statementsOf(elseBranch), ctx),
-      exitKind: exitKindOf(stmt),
+      exitKind,
     };
   }
 
@@ -264,7 +273,7 @@ function buildStructured(
     return {
       kind: "switch",
       groups: lowerSwitchGroups(stmt, ctx),
-      exitKind: exitKindOf(stmt),
+      exitKind,
     };
   }
 
@@ -273,7 +282,7 @@ function buildStructured(
       kind: "loop",
       condition: { sourceText: loopHeaderText(stmt), expression: null },
       body: lowerList(statementsOf(getLoopBody(stmt)), ctx),
-      exitKind: exitKindOf(stmt),
+      exitKind,
     };
   }
 
@@ -291,24 +300,37 @@ function buildStructured(
         finallyBlock === undefined
           ? null
           : lowerList(finallyBlock.getStatements(), ctx),
-      exitKind: exitKindOf(stmt),
+      exitKind,
     };
   }
 
-  if (Node.isReturnStatement(stmt)) {
-    return { kind: "exit", exit: "return", exitKind: exitKindOf(stmt) };
+  if (Node.isReturnStatement(stmt) || endsTheProcess(stmt, ctx.endings)) {
+    return { kind: "exit", exit: "return", exitKind };
   }
   if (Node.isThrowStatement(stmt)) {
-    return { kind: "exit", exit: "throw", exitKind: exitKindOf(stmt) };
+    return { kind: "exit", exit: "throw", exitKind };
   }
   if (Node.isBreakStatement(stmt)) {
-    return { kind: "exit", exit: "break", exitKind: exitKindOf(stmt) };
+    return { kind: "exit", exit: "break", exitKind };
   }
   if (Node.isContinueStatement(stmt)) {
-    return { kind: "exit", exit: "continue", exitKind: exitKindOf(stmt) };
+    return { kind: "exit", exit: "continue", exitKind };
   }
 
-  return { kind: "opaque", exitKind: exitKindOf(stmt) };
+  return { kind: "opaque", exitKind };
+}
+
+/**
+ * A statement that is nothing but a call ending the process, such as
+ * `process.exit(1);`. A call written inside something that decides
+ * whether it runs, `failed && process.exit(1)`, does not end every path.
+ */
+function endsTheProcess(stmt: Statement, endings: ReadonlySet<Node>): boolean {
+  return (
+    endings.size > 0 &&
+    Node.isExpressionStatement(stmt) &&
+    endings.has(peelValue(stmt.getExpression()))
+  );
 }
 
 /**
@@ -462,9 +484,10 @@ export function lowerFunctionBody(
   terminalNodes: readonly Node[],
   func: Node = body,
   barriers: DescentBarriers = NO_BARRIERS,
+  endings: ReadonlySet<Node> = NO_ENDINGS,
 ): LoweredFunctionBody {
   const rawToStructured = new Map<Node, StructuredStatement<Expression>>();
-  const ctx: LowerContext = { func, barriers, rawToStructured };
+  const ctx: LowerContext = { func, barriers, rawToStructured, endings };
   const statements = lowerList(body.getStatements(), ctx);
 
   const terminalsByStmt = new Map<StructuredStatement<Expression>, Node[]>();

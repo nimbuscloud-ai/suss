@@ -15,6 +15,7 @@ import { importedRootsOf, namedImportsOf } from "../discovery/importScan.js";
 import { endLineOf, startLineOf } from "../lines.js";
 import { parseConditionExpression } from "../predicates.js";
 import { extractShape } from "../shapes/shapes.js";
+import { peelSyntax } from "../walk/unwrap.js";
 import {
   declaredStatusCode,
   type ExtractionContext,
@@ -476,6 +477,67 @@ export function tryMatchReturnStatement(
   }
 
   return null;
+}
+
+/**
+ * `return failed ? 1 : 0` as two terminals, one per arm, so each arm's
+ * value comes out on a transition of its own with the test as its guard.
+ * Read as one return it is a single transition whose value is `0 | 1`,
+ * and nothing downstream can tell which code goes with which condition.
+ *
+ * An arm that is a call or a member read is left as one return, since
+ * the terminal would sit on the call node and the call would no longer
+ * count as an effect of its own. A pack that reads returned objects
+ * already matches each arm's object, so the choice stays whole there.
+ */
+export function tryMatchReturnedChoice(
+  node: Node,
+  pattern: TerminalPattern,
+  func: FunctionRoot,
+  allPatterns: TerminalPattern[],
+): FoundTerminal[] {
+  if (
+    !Node.isReturnStatement(node) ||
+    allPatterns.some((one) => one.match.type === "returnShape")
+  ) {
+    return [];
+  }
+  const returned = node.getExpression();
+  const choice = returned === undefined ? null : peelSyntax(returned);
+  if (choice === null || !Node.isConditionalExpression(choice)) {
+    return [];
+  }
+  const arms = [choice.getWhenTrue(), choice.getWhenFalse()];
+  if (!arms.every(standsOnItsOwn)) {
+    return [];
+  }
+  if (
+    pattern.match.type === "returnStatement" &&
+    pattern.match.excludeCallReturns === true &&
+    returnCoveredByParameterMethodCall(choice, func, allPatterns)
+  ) {
+    return [];
+  }
+  return arms.map((arm) => {
+    const shape = extractShape(arm);
+    const found = buildReturnTerminal(
+      arm,
+      pattern,
+      shape === null ? null : { typeText: null, shape },
+    );
+    return { ...found, source: node };
+  });
+}
+
+/** An arm the assembly pass can place a terminal on without claiming a call it makes. */
+function standsOnItsOwn(arm: Node): boolean {
+  const value = peelSyntax(arm);
+  return !(
+    Node.isCallExpression(value) ||
+    Node.isNewExpression(value) ||
+    Node.isPropertyAccessExpression(value) ||
+    Node.isElementAccessExpression(value)
+  );
 }
 
 function buildReturnTerminal(

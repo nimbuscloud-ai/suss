@@ -825,10 +825,21 @@ export interface TerminalExtraction {
 }
 
 export interface TerminalPattern {
-  /** What kind of output this terminal produces: "response", "throw", "return", "render", "delegate" */
-  kind: "response" | "throw" | "return" | "render" | "delegate";
+  /**
+   * What kind of output this terminal produces. An `exit` terminal ends
+   * the process, so a path that reaches one goes no further, and the
+   * status code it extracts is the exit code.
+   */
+  kind: "response" | "throw" | "return" | "render" | "delegate" | "exit";
   match: TerminalMatch;
   extraction: TerminalExtraction;
+  /**
+   * Read in every unit, whichever pack discovered it, the way an
+   * invocation recognizer is. A runtime's own way of ending the process,
+   * `process.exit(n)`, ends a route handler and a helper alike, and the
+   * pack that declares it discovers no units of its own.
+   */
+  inEveryUnit?: boolean;
   /**
    * On a throw terminal: the framework turns the thrown status into
    * the wire response, so a resolved status makes the output a
@@ -1176,6 +1187,13 @@ export interface PatternPack {
    * which stream it goes to.
    */
   streamObjects?: string[];
+  /**
+   * Dotted paths a program assigns its exit code to without ending
+   * there, e.g. `"process.exitCode"`. The value assigned, and the
+   * argument of a call an `exit` terminal matches, are where the adapter
+   * starts when it works out which functions' returns become the code.
+   */
+  exitCodeWrites?: string[];
   /**
    * How this library's client object is constructed, so an operation
    * summary can say which endpoint its calls go to. Each entry is a

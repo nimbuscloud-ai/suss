@@ -240,7 +240,8 @@ type Output =
   | { type: "return"; value: TypeShape | null }
   | { type: "delegate"; to: string }
   | { type: "emit"; event: string; payload?: TypeShape }
-  | { type: "void" };
+  | { type: "void" }
+  | { type: "exit"; code: ValueRef | null };
 ```
 
 `Output` is what a terminal produces. Each pack uses the variants its framework needs, and the union itself has nothing framework-specific in it.
@@ -252,6 +253,9 @@ type Output =
 - **`delegate`** passes control on, to the next middleware or handler. `to` is a symbolic name such as `"next"`.
 - **`emit`** puts an event or a message on a channel.
 - **`void`** is an explicit void return, or a fall-through producing nothing observable.
+- **`exit`** ends the process, as `process.exit(1)` does. `code` is a `ValueRef` for the same reason a status is one: `process.exit(code)` computes it, and comes out as the source text it came from. Nothing runs after an exit, so the path ends there. `process.exitCode = 1` lets the function keep going, and is a `stateChange` effect instead.
+
+A function whose return value becomes the process's exit code, however many callers pass it up, keeps its `return` outputs and gets `metadata.process.exitCodeFrom: "return"`. The summary still says what the function's own code does, and a check of an exit code reads the mark beside it. A command that returns `failed ? 1 : 0` gets one transition per arm, each guarded by the test, so the two codes can be told apart.
 
 ### `RenderNode`
 

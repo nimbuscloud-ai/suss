@@ -19,6 +19,7 @@ import {
   deploymentOf,
   goesThroughRelation,
   groundBinding,
+  readProcessMetadata,
   relationsOf,
   summaryRef,
   withDeclaredDelivery,
@@ -48,6 +49,7 @@ import type {
   Interaction,
   Transition,
   TypeShape,
+  ValueRef,
 } from "@suss/behavioral-ir";
 import type {
   BoundaryIntentSummary,
@@ -78,10 +80,16 @@ export type {
 
 /** A code transition's terminal, reduced to the dimensions intent compares. */
 interface CodeOutcome {
-  kind: "response" | "return" | "throw";
+  kind: "response" | "return" | "throw" | "exit";
+  /** A response's status, or the code an `exit` output ends the process with. */
   status: number | null;
   body: TypeShape | null;
   errorType: string | null;
+  /**
+   * The literal a return hands back when the unit's return becomes the
+   * process's exit code, so `exits: 1` can match `return 1` there.
+   */
+  exitCode: number | null;
   /** What the transition that ends this way did at other boundaries. */
   effects: CodeEffect[];
   /** The boundaries the branch leading here turned on. */
@@ -692,8 +700,9 @@ function compareIntentToImpl(
   const findings: IntentFinding[] = [];
   const ref = codeRef(impl);
   const calls = boundaryCalls(impl);
+  const returnIsExitCode = readProcessMetadata(impl)?.exitCodeFrom === "return";
   const codeOutcomes = impl.transitions
-    .map((t) => toCodeOutcome(t, calls, deployment))
+    .map((t) => toCodeOutcome(t, calls, deployment, returnIsExitCode))
     .filter((o): o is CodeOutcome => o !== null);
   const everyEffect = impl.transitions.flatMap((t) =>
     codeEffectsOf(t, deployment),
@@ -1279,8 +1288,9 @@ function toCodeOutcome(
   t: Transition,
   calls: Map<string, BoundaryCall>,
   deployment: Deployment,
+  returnIsExitCode: boolean,
 ): CodeOutcome | null {
-  const ending = endingOf(t);
+  const ending = endingOf(t, returnIsExitCode);
   if (ending === null) {
     return null;
   }
@@ -1383,26 +1393,27 @@ function checkAlwaysEffects(
 /** How a transition ends, in the terms intent states an ending in. */
 export type CodeEnding = Pick<
   CodeOutcome,
-  "kind" | "status" | "body" | "errorType"
+  "kind" | "status" | "body" | "errorType" | "exitCode"
 >;
 
 /**
  * How a transition ends, or null for an ending intent has no word for,
  * such as a render. A status the code computes has no literal, so it
- * comes back null and matches no declared status.
+ * comes back null and matches no declared status. `returnIsExitCode`
+ * says the unit's return becomes the process's exit code.
  */
-export function endingOf(t: Transition): CodeEnding | null {
+export function endingOf(
+  t: Transition,
+  returnIsExitCode = false,
+): CodeEnding | null {
   const output = t.output;
   if (output.type === "response") {
-    const status =
-      output.statusCode !== null && output.statusCode.type === "literal"
-        ? Number(output.statusCode.value)
-        : null;
     return {
       kind: "response",
-      status: status !== null && Number.isFinite(status) ? status : null,
+      status: literalNumber(output.statusCode),
       body: output.body ?? null,
       errorType: null,
+      exitCode: null,
     };
   }
   if (output.type === "return") {
@@ -1411,6 +1422,7 @@ export function endingOf(t: Transition): CodeEnding | null {
       status: null,
       body: output.value,
       errorType: null,
+      exitCode: returnIsExitCode ? returnedNumber(output.value) : null,
     };
   }
   if (output.type === "throw") {
@@ -1419,9 +1431,36 @@ export function endingOf(t: Transition): CodeEnding | null {
       status: null,
       body: null,
       errorType: output.exceptionType,
+      exitCode: null,
+    };
+  }
+  if (output.type === "exit") {
+    return {
+      kind: "exit",
+      status: literalNumber(output.code),
+      body: null,
+      errorType: null,
+      exitCode: null,
     };
   }
   return null;
+}
+
+function literalNumber(ref: ValueRef | null): number | null {
+  if (ref === null || ref.type !== "literal") {
+    return null;
+  }
+  const value = Number(ref.value);
+  return Number.isFinite(value) ? value : null;
+}
+
+/** The number a return writes out, as `return 1` does. */
+function returnedNumber(shape: TypeShape | null): number | null {
+  return shape !== null &&
+    shape.type === "literal" &&
+    typeof shape.value === "number"
+    ? shape.value
+    : null;
 }
 
 /** One verb and one boundary this transition reaches. */
@@ -1500,6 +1539,9 @@ export function outcomeMatches(
   intent: Pick<IntentOutcome, "kind" | "status" | "errorType">,
   code: CodeEnding,
 ): boolean {
+  if (intent.kind === "exit") {
+    return exitsWith(intent.status, code);
+  }
   if (intent.kind !== code.kind) {
     return false;
   }
@@ -1516,6 +1558,21 @@ export function outcomeMatches(
     );
   }
   return true; // any return matches, and the body is compared separately
+}
+
+/**
+ * Whether the code ends the process with this code: an exit that states
+ * it, or a return of it from a unit whose return becomes the exit code.
+ * A code the code computes states no literal and matches nothing.
+ */
+function exitsWith(code: number | null, ending: CodeEnding): boolean {
+  if (code === null) {
+    return false;
+  }
+  if (ending.kind === "exit") {
+    return ending.status === code;
+  }
+  return ending.kind === "return" && ending.exitCode === code;
 }
 
 /**
@@ -1552,6 +1609,9 @@ function describeOutcome(outcome: IntentOutcome): string {
     return outcome.errorType !== null
       ? `throw ${outcome.errorType}`
       : "a thrown error";
+  }
+  if (outcome.kind === "exit") {
+    return `exit code ${outcome.status}`;
   }
   return "a return value";
 }

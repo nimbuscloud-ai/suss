@@ -47,7 +47,12 @@ import type {
  * only what it did, which is what a queue consumer or a table writer
  * has to say instead of a status.
  */
-export type IntentOutcomeKind = "response" | "return" | "throw" | "effect";
+export type IntentOutcomeKind =
+  | "response"
+  | "return"
+  | "throw"
+  | "exit"
+  | "effect";
 
 /** One effect an outcome has, in the verbs `suss ask` asks with. */
 export interface IntentEffect {
@@ -96,7 +101,7 @@ export interface IntentOutcome {
   /** The same, clause by clause, for the checker to compare. */
   conditions: IntentCondition[];
   kind: IntentOutcomeKind;
-  /** Set only for `response` outcomes (REST status code). */
+  /** The REST status code of a `response` outcome, or the exit code of an `exit` one. */
   status: number | null;
   /** Response / return body shape, when declared. */
   body: TypeShape | null;
@@ -470,6 +475,15 @@ function toOutcome(t: BoundaryIntent["transitions"][number]): IntentOutcome {
       status: null,
       body: null,
       errorType: t.throws.errorType ?? null,
+    };
+  }
+  if (t.exits !== undefined) {
+    return {
+      ...base,
+      kind: "exit",
+      status: t.exits,
+      body: null,
+      errorType: null,
     };
   }
   // The schema's refines leave one case: a transition that says only

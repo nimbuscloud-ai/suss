@@ -21,7 +21,7 @@ import { processSurfaceRecognizer } from "./processSurface.js";
 import { nodeSchedulingSubUnits, schedulingRecognizer } from "./scheduling.js";
 import { PROCESS_STREAMS, streamWriteRecognizer } from "./streamWrites.js";
 
-import type { PatternPack } from "@suss/extractor";
+import type { PatternPack, TerminalPattern } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
 export {
@@ -72,6 +72,20 @@ export const optionsSchema = z
 
 export type NodeRuntimePackOptions = z.infer<typeof optionsSchema>;
 
+/**
+ * `process.exit(n)` ends the process wherever it is written, so every
+ * unit is read with it, and a call with no code exits 0.
+ */
+const PROCESS_EXIT: TerminalPattern = {
+  kind: "exit",
+  inEveryUnit: true,
+  match: { type: "functionCall", functionName: "process.exit" },
+  extraction: {
+    statusCode: { from: "argument", position: 0 },
+    defaultStatusCode: 0,
+  },
+};
+
 export function nodeRuntimePack(
   options: NodeRuntimePackOptions = {},
 ): PatternPack {
@@ -91,7 +105,8 @@ export function nodeRuntimePack(
     protocol: "in-process",
     languages: ["typescript", "javascript"],
     discovery: [],
-    terminals: [],
+    terminals: [PROCESS_EXIT],
+    exitCodeWrites: ["process.exitCode"],
     inputMapping: { type: "positionalParams", params: [] },
     invocationRecognizers: [schedulingRecognizer, streamWriteRecognizer],
     environmentObjects: ["process.env"],

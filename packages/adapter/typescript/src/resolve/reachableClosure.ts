@@ -662,6 +662,10 @@ function extractReachableSummary(
     recognizers.access,
     undefined,
     recognizers.resolution,
+    undefined,
+    undefined,
+    undefined,
+    recognizers.terminals,
   );
   raw.boundaryBinding = functionCallBinding({
     transport: "in-process",
@@ -735,6 +739,8 @@ export interface ClosureRecognizers {
   sourceDeclarationsBehind?: (declaration: Node) => Node[];
   invocation: InvocationRecognizer[];
   access: AccessRecognizer[];
+  /** Terminals a pack applies in every unit, such as the runtime's own exit. */
+  terminals?: readonly TerminalPattern[];
 }
 
 const NO_RECOGNIZERS: ClosureRecognizers = { invocation: [], access: [] };

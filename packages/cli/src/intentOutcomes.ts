@@ -137,6 +137,7 @@ const ENDINGS: Record<IntentOutcomeKind, (outcome: IntentOutcome) => string> = {
     outcome.errorType === null
       ? "throws an error"
       : `throws ${outcome.errorType}`,
+  exit: (outcome) => `exits ${outcome.status}`,
   effect: (outcome) => effectsOf(outcome),
 };
 

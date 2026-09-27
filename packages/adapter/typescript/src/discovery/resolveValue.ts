@@ -12,7 +12,7 @@
 
 import { Node } from "ts-morph";
 
-import { force, literalOf, literalsOf } from "@suss/values";
+import { constantOf, force, literalOf, literalsOf } from "@suss/values";
 
 import { factKeyOf } from "../facts/extract.js";
 import { evaluatedValue } from "../values/evaluator.js";
@@ -333,6 +333,17 @@ export function stringValueOf(
   resolution: ResolutionStore | undefined,
 ): string | null {
   return literalOf(evaluatedValue(value, resolution));
+}
+
+/** The number this value comes to, or null when it does not settle to one. */
+export function numberValueOf(
+  value: Node,
+  resolution: ResolutionStore | undefined,
+): number | null {
+  const settled = constantOf(evaluatedValue(value, resolution));
+  return typeof settled === "number" && Number.isFinite(settled)
+    ? settled
+    : null;
 }
 
 /**

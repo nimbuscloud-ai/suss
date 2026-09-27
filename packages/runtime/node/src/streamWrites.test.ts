@@ -18,12 +18,7 @@ type StreamWrite = Extract<Effect, { type: "interaction" }> & {
 };
 
 function storeFor(file: SourceFile): ResolutionStore {
-  const pack = nodeRuntimePack();
-  const store = new ResolutionStore(
-    [],
-    pack.environmentObjects ?? [],
-    pack.streamObjects ?? [],
-  );
+  const store = ResolutionStore.forPacks([nodeRuntimePack()]);
   const files = file
     .getProject()
     .getSourceFiles()

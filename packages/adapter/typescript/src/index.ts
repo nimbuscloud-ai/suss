@@ -28,6 +28,7 @@ export {
   arrayLiteralOf,
   couldNameAValue,
   functionValueOf,
+  numberValueOf,
   objectLiteralOf,
   propertiesOf,
   propertyFunctionOf,
@@ -138,7 +139,10 @@ export type {
 } from "./diagnostics.js";
 export type { ClientCallSite, DiscoveredUnit } from "./discovery/index.js";
 export type { TsDiscoveryContext } from "./discoveryContext.js";
-export type { TsInvocationRecognizerContext } from "./resolve/invocationEffects.js";
+export type {
+  TsAccessRecognizerContext,
+  TsInvocationRecognizerContext,
+} from "./resolve/invocationEffects.js";
 export type {
   TsJsxAttributeLocation,
   TsSubUnitContext,

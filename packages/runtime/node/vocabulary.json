@@ -2,6 +2,7 @@
   "process": "Node: the global process object",
   "stdout": "Node: process field holding the standard output stream",
   "stderr": "Node: process field holding the standard error stream",
+  "exitCode": "Node: process field holding the code the process exits with",
   "write": "Node: stream.Writable method writing a chunk to the stream",
   "console": "Node: the global console object",
   "Console": "Node: the class of the console global, which a parameter can be annotated as",

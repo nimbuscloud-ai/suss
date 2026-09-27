@@ -840,6 +840,107 @@ describe("intentDocToSummary — message-bus and storage boundaries", () => {
   });
 });
 
+describe("what a command prints and how it exits", () => {
+  const command = {
+    kind: "boundary",
+    name: "cli-check",
+    purpose: "suss check exits 1 when it compared nothing.",
+    audience: "CI jobs",
+    boundary: {
+      semantics: "function-call",
+      package: "@suss/cli",
+      exportPath: ["runCheck"],
+    },
+  };
+
+  it("reads exits as an outcome that ends with that code", () => {
+    const summary = intentDocToSummary(
+      IntentDocSchema.parse({
+        ...command,
+        transitions: [{ id: "nothing-paired", when: "empty", exits: 1 }],
+      }),
+    ) as BoundaryIntentSummary;
+    expect(summary.outcomes[0]).toMatchObject({ kind: "exit", status: 1 });
+  });
+
+  it("refuses a bare exits, and exits beside another ending", () => {
+    for (const transition of [
+      { id: "bare", when: "empty", exits: null },
+      { id: "both", when: "empty", exits: 1, returns: {} },
+    ]) {
+      expect(
+        IntentDocSchema.safeParse({ ...command, transitions: [transition] })
+          .success,
+      ).toBe(false);
+    }
+  });
+
+  it("reads the shape a results line declares, with const and nested shorthand", () => {
+    const summary = intentDocToSummary(
+      IntentDocSchema.parse({
+        ...command,
+        transitions: [
+          {
+            id: "report",
+            when: "json",
+            results: [
+              {
+                writes: "io:stdout",
+                shape: {
+                  properties: {
+                    run: {
+                      type: "array",
+                      items: {
+                        properties: { kind: { const: "nothingPaired" } },
+                      },
+                    },
+                    passed: { const: false },
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    ) as BoundaryIntentSummary;
+    expect(summary.outcomes[0]?.effects[0]).toEqual({
+      does: "writes",
+      names: "io:stdout",
+      fields: [],
+      by: [],
+      shape: {
+        type: "record",
+        properties: {
+          run: {
+            type: "array",
+            items: {
+              type: "record",
+              properties: {
+                kind: { type: "literal", value: "nothingPaired" },
+              },
+            },
+          },
+          passed: { type: "literal", value: false },
+        },
+      },
+    });
+  });
+
+  it("refuses a misspelt type instead of reading it as an empty object", () => {
+    const result = IntentDocSchema.safeParse({
+      ...command,
+      transitions: [
+        {
+          id: "report",
+          when: "json",
+          returns: { body: { properties: { run: { typ: "array" } } } },
+        },
+      ],
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
 describe("intentDocToSummary — body shapes and outcome edges", () => {
   it("maps arrays and nested objects onto TypeShape recursively", () => {
     const doc = {

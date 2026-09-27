@@ -1203,6 +1203,12 @@
                   }
                 ]
               },
+              "exits": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255,
+                "description": "This outcome ends the process with this exit code."
+              },
               "results": {
                 "minItems": 1,
                 "type": "array",

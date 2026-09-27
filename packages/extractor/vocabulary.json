@@ -70,6 +70,8 @@
   "in": "suss: message location, the property named beside it contains many messages",
   "independent": "suss: resolution confidence",
   "interaction": "suss: effect class",
+  "exit": "suss: terminal kind and output type for a call that ends the process",
+  "stateChange": "suss: effect type for a variable the unit sets",
   "javascript": "language the adapter reads",
   "jsxElementRoute": "suss: DiscoveryMatch variant tag",
   "jsxReturn": "suss: TerminalMatch variant tag",

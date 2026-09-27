@@ -193,7 +193,8 @@ export interface RawTerminal {
     | "render"
     | "delegate"
     | "emit"
-    | "void";
+    | "void"
+    | "exit";
   statusCode:
     | { type: "literal"; value: number }
     | { type: "dynamic"; sourceText: string }
@@ -906,31 +907,37 @@ function bodyToShape(
   return null;
 }
 
+/** A status or exit code as the IR writes it: a number, or the source text a reader could not settle. */
+function statusValueRef(code: RawTerminal["statusCode"]): ValueRef | null {
+  if (code === null) {
+    return null;
+  }
+  return code.type === "literal"
+    ? { type: "literal", value: code.value }
+    : { type: "unresolved", sourceText: code.sourceText };
+}
+
 const terminalConverters: Record<
   RawTerminal["kind"],
   (t: RawTerminal) => Output
 > = {
   response: (t) => {
-    const statusCode: ValueRef | null = t.statusCode
-      ? t.statusCode.type === "literal"
-        ? { type: "literal", value: t.statusCode.value }
-        : { type: "unresolved", sourceText: t.statusCode.sourceText }
-      : null;
     const body: TypeShape | null = bodyToShape(t.body);
-    return { type: "response", statusCode, body, headers: {} };
+    return {
+      type: "response",
+      statusCode: statusValueRef(t.statusCode),
+      body,
+      headers: {},
+    };
   },
   throw: (t) => {
     // A response only when the pack declared that the framework turns
     // the thrown status into the wire response, never from the status
     // being present alone (#149).
     if (t.statusCode && t.producesResponse === true) {
-      const statusCode: ValueRef =
-        t.statusCode.type === "literal"
-          ? { type: "literal", value: t.statusCode.value }
-          : { type: "unresolved", sourceText: t.statusCode.sourceText };
       return {
         type: "response",
-        statusCode,
+        statusCode: statusValueRef(t.statusCode),
         body: bodyToShape(t.body),
         headers: {},
       };
@@ -959,6 +966,7 @@ const terminalConverters: Record<
     value: bodyToShape(t.body),
   }),
   void: (_t) => ({ type: "void" }),
+  exit: (t) => ({ type: "exit", code: statusValueRef(t.statusCode) }),
 };
 
 export function terminalToOutput(terminal: RawTerminal): Output {

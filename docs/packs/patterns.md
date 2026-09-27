@@ -468,6 +468,19 @@ Set `requiresImport` whenever the function belongs to a library. Matching on a b
 
 For a project's own response helper, declare the envelope with a `returnShape` terminal instead. The adapter follows a returned call into the project and reads the helper's parameters, which covers the helper whatever it is called and whatever order its arguments come in.
 
+A runtime's own way of ending the process is a `functionCall` terminal too, with `kind: "exit"` and `inEveryUnit: true`. The Node pack declares `process.exit` that way:
+
+```ts
+{
+  kind: "exit",
+  inEveryUnit: true,
+  match: { type: "functionCall", functionName: "process.exit" },
+  extraction: { statusCode: { from: "argument", position: 0 }, defaultStatusCode: 0 },
+}
+```
+
+`inEveryUnit` has the adapter read the terminal in every unit, whichever pack found it, the way a recognizer fires in every unit. The pack that declares it discovers nothing of its own. An `exit` terminal ends the path it is on, so the statements after `process.exit(1)` are not on that path, and the status it extracts is the exit code. The pack's `exitCodeWrites` says where a program assigns the code instead, `process.exitCode`, and the adapter follows that value back to the functions whose return ends up there.
+
 ### `jsxReturn`
 
 ```typescript

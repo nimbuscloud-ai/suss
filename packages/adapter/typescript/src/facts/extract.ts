@@ -90,11 +90,28 @@ export interface NodeTable {
   environmentObjects: readonly string[];
   /** Dotted paths the packs call the process's output streams, the same way. */
   streamObjects: readonly string[];
+  /** Callees a pack says end the process, such as `process.exit`. */
+  exitCalls: readonly string[];
+  /** Dotted paths a pack says the exit code is assigned to. */
+  exitCodeWrites: readonly string[];
 }
+
+/** How the packs in a run spell the parts of the process nothing declares. */
+export interface RuntimeSpellings {
+  streamObjects: readonly string[];
+  exitCalls: readonly string[];
+  exitCodeWrites: readonly string[];
+}
+
+export const NO_RUNTIME_SPELLINGS: RuntimeSpellings = {
+  streamObjects: [],
+  exitCalls: [],
+  exitCodeWrites: [],
+};
 
 export function createNodeTable(
   environmentObjects: readonly string[] = [],
-  streamObjects: readonly string[] = [],
+  runtime: RuntimeSpellings = NO_RUNTIME_SPELLINGS,
 ): NodeTable {
   return {
     byId: new Map(),
@@ -104,7 +121,7 @@ export function createNodeTable(
     seenClasses: new Set(),
     seenImports: new Set(),
     environmentObjects,
-    streamObjects,
+    ...runtime,
   };
 }
 
@@ -1225,6 +1242,9 @@ function emitCallFacts(
   if (!insideMethodBody(call as unknown as Node)) {
     fact(db, "callOutsideMethod", callId);
   }
+  if (spellsOneOf(table.exitCalls, callee)) {
+    fact(db, "exitCall", callId);
+  }
 
   const global = globalNameOf(callee);
   if (global !== null) {
@@ -1652,6 +1672,7 @@ function recordBodyCalls(
     emitValue(db, table, node);
   }
   notePropertyWrite(writes, node);
+  emitExitCodeWrite(db, table, node);
   const call = unwrapExpression(node);
   if (!isCall(call)) {
     return false;
@@ -1668,6 +1689,19 @@ function recordBodyCalls(
     fact(db, "bodyCalls", fnId, emitValue(db, table, callee));
   }
   return false;
+}
+
+/** `process.exitCode = code`: the value that becomes the process's exit code. */
+function emitExitCodeWrite(db: Database, table: NodeTable, node: Node): void {
+  if (
+    table.exitCodeWrites.length === 0 ||
+    !Node.isBinaryExpression(node) ||
+    node.getOperatorToken().getKind() !== SyntaxKind.EqualsToken ||
+    !spellsOneOf(table.exitCodeWrites, node.getLeft())
+  ) {
+    return;
+  }
+  fact(db, "exitCodeWrite", emitValue(db, table, node.getRight()));
 }
 
 /** A call or a construction, which the rules read as a call of the class. */
@@ -1702,6 +1736,7 @@ function emitTopLevelStatements(
       const expression = unwrapExpression(statement.getExpression());
       emitStatementCall(db, table, expression);
       notePropertyWrite(writes, expression);
+      emitExitCodeWrite(db, table, expression);
       continue;
     }
     // A write under a branch or a loop settles nothing on its own, but

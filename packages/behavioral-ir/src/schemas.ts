@@ -455,6 +455,13 @@ export const OutputSchema = z.discriminatedUnion("type", [
     payload: TypeShapeSchema.optional(),
   }),
   z.object({ type: z.literal("void") }),
+  /**
+   * The process ends here, with this exit code: `process.exit(1)`,
+   * `sys.exit(1)`, Ruby's `exit 1`. Null when the call gives a code the
+   * reader could not work out. Nothing runs after it, which is what
+   * makes it a terminal rather than an effect.
+   */
+  z.object({ type: z.literal("exit"), code: ValueRefSchema.nullable() }),
 ]);
 
 /** Where the type checker found something declared, by file and character span. */

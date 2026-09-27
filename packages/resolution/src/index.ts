@@ -207,6 +207,12 @@ const NAMED_STORE = constant(NAMED_STORE_NAME);
 /** The `callArgCount` of a call written with nothing between its parentheses. */
 const NO_ARGUMENTS = constant("0");
 
+/** The position of a call's first argument, and of a function's first parameter. */
+const FIRST_POSITION = constant("0");
+
+/** The method a promise hands its settled value on through. */
+const THEN_METHOD = constant("then");
+
 /** A step to what running the call x is handed back. */
 export const RESULT_STEP = constant("result");
 
@@ -478,6 +484,20 @@ const STATED_RULES = [
     [v("r"), v("ret"), RESULT_STEP],
     [lit("invokes", v("r"), v("f")), lit("returnsValue", v("f"), v("ret"))],
     "call result",
+  ),
+
+  // A `.then` callback's first parameter is handed what the promise it
+  // was chained on settles to, so the parameter steps to that receiver.
+  rule(
+    "hop",
+    [v("p"), v("r"), VALUE_STEP],
+    [
+      lit("paramOf", v("cb"), FIRST_POSITION, v("p")),
+      lit("callArg", v("t"), FIRST_POSITION, v("cb")),
+      lit("call", v("t"), v("m")),
+      lit("readsProperty", v("m"), v("r"), THEN_METHOD),
+    ],
+    "then gives",
   ),
 
   // What a function says it gives back when its body never states a
@@ -2044,6 +2064,22 @@ export const RESOLUTION_QUESTIONS = [
     "wantedStreamValue",
     [v("o"), v("w")],
     [lit("wantedStreamObject", v("w")), lit("runtimeValue", v("w"), v("o"))],
+  ),
+  // The functions whose return becomes the exit code: a call the value
+  // that ends up as the code is, or one it reaches. DESIGN.md has the seeds.
+  rule(
+    "wantedExitCodeFrom",
+    [v("x"), v("f")],
+    [lit("wantedExitSink", v("x")), lit("invokes", v("x"), v("f"))],
+  ),
+  rule(
+    "wantedExitCodeFrom",
+    [v("x"), v("f")],
+    [
+      lit("wantedExitSink", v("x")),
+      lit("reaches", v("x"), v("y"), v("kind")),
+      lit("invokes", v("y"), v("f")),
+    ],
   ),
   // The calls that hand a stream on, so the asker can read the callee's file.
   rule(

@@ -531,6 +531,13 @@ const BoundaryTransitionSchema = z
     throws: emptyIfNull(ThrowsOutcomeSchema)
       .describe("This outcome raises an error.")
       .optional(),
+    exits: z
+      .number()
+      .int()
+      .min(0)
+      .max(255)
+      .describe("This outcome ends the process with this exit code.")
+      .optional(),
     results: z
       .array(EffectOutcomeSchema)
       .min(1)
@@ -541,19 +548,22 @@ const BoundaryTransitionSchema = z
   })
   .refine((t) => endingsOf(t).length <= 1, {
     message:
-      "a transition ends one way: give it at most one of response, returns, or throws",
+      "a transition ends one way: give it at most one of response, returns, throws, or exits",
   })
   .refine((t) => endingsOf(t).length === 1 || t.results !== undefined, {
     message:
-      "each transition must declare an outcome: response, returns, throws, or the effects it results in",
+      "each transition must declare an outcome: response, returns, throws, exits, or the effects it results in",
   });
 
 function endingsOf(t: {
   response?: unknown;
   returns?: unknown;
   throws?: unknown;
+  exits?: unknown;
 }): unknown[] {
-  return [t.response, t.returns, t.throws].filter((o) => o !== undefined);
+  return [t.response, t.returns, t.throws, t.exits].filter(
+    (o) => o !== undefined,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -627,7 +637,7 @@ function exceptProblem(
     return `except lists ${id}, and no transition has that id (known: ${transitions.map((t) => t.id).join(", ")})`;
   }
   if (endingsOf(outcome).length === 0) {
-    return `except lists ${id}, which states only its effects; an outcome with no response, returns or throws matches every transition, so it cannot be exempted`;
+    return `except lists ${id}, which states only its effects; an outcome with no response, returns, throws or exits matches every transition, so it cannot be exempted`;
   }
   return null;
 }
