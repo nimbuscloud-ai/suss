@@ -299,6 +299,9 @@ export const declares: PackDeclaration = {
     file: "suss.typeorm.json",
     example: { storageSystem: "postgresql" },
     required: false,
+    // The extract command init prints passes this file, so init always
+    // writes it, with the pack's own default when the project does not say.
+    defaults: { storageSystem: "postgresql" },
     why: "which database the connection uses: postgresql, mysql, or sqlite. It assumes postgresql otherwise, and the calls do not pair with a store on another database.",
     readFromProject: storageSystemFromDataSource,
   },
