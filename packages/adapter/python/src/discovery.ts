@@ -46,6 +46,7 @@ import {
   decoratorReceiver,
   unwrapDecorator,
 } from "./decorators.js";
+import { routeOnDroppedApp } from "./droppedApps.js";
 import { envReadEffects } from "./envReads.js";
 import {
   bodyTerminals,
@@ -238,6 +239,16 @@ function decoratedUnits(
       const decoratorModule = classification.module;
       for (const pack of options.packs) {
         for (const pattern of pack.discovery) {
+          if (
+            declaredOnDroppedApp(
+              pattern,
+              classification,
+              decoratorNode,
+              options,
+            )
+          ) {
+            continue;
+          }
           units.push(
             ...unitsFor(
               pattern,
@@ -254,6 +265,26 @@ function decoratedUnits(
     }
   }
   return units;
+}
+
+/**
+ * Whether a route's decorator is called on an app its own function builds
+ * and drops, so no request can reach the route.
+ */
+function declaredOnDroppedApp(
+  pattern: PythonDiscoveryPattern,
+  classification: DecoratorClassification,
+  decoratorNode: PyNode,
+  options: DiscoveryOptions,
+): boolean {
+  const built = classification.subjectConstruction;
+  const object = decoratorReceiver(decoratorNode)?.object;
+  return (
+    options.facts !== undefined &&
+    object !== undefined &&
+    built !== undefined &&
+    routeOnDroppedApp(options.facts, object, built.key, pattern)
+  );
 }
 
 function acceptedByAnyPattern(

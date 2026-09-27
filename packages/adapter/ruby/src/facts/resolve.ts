@@ -11,10 +11,13 @@ import {
   askResolution,
   askResolutionUnder,
   INSTANCE_STEP,
+  readUses,
   resolutionProgram,
   resolutionUnderProgram,
   writtenValueOf as sharedWrittenValueOf,
   writtenValueUnder as sharedWrittenValueUnder,
+  USES_QUESTION,
+  type ValueUses,
 } from "@suss/resolution";
 
 import { CONSTRUCTOR } from "./languageWords.js";
@@ -113,4 +116,13 @@ export function writtenValueUnder(
 export function constructionSites(db: Database, classKey: string): string[] {
   askResolution(db, [classKey], "wantedSites", RUBY_PROGRAM);
   return allocationSitesOf(db, classKey);
+}
+
+/**
+ * What the reads of the value at `key` do with it. A local's reads all
+ * share the local's key, so one question covers them.
+ */
+export function usesOf(db: Database, key: string): ValueUses {
+  askResolution(db, [key], USES_QUESTION, RUBY_PROGRAM);
+  return readUses(db, key);
 }

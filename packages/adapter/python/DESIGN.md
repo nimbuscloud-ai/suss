@@ -400,13 +400,28 @@ def build_test_app():
 
 Once the function returns, nothing refers to `test_app` any more, so no request can reach `/t` whether or not anything calls the function. suss does not record that mount. The router keeps whatever paths its other mounts give it.
 
-suss decides this from the value facts. The app's name has to be written once, from the construction, in the function that mounts on it. Then no fact may record a read that passes the app on: a return or a `yield`, an argument such as `serve(test_app)`, a second name or an object that takes it, an `or`, a conditional or parentheses around it, a keyed read, or a property read that is not called at once as a method. A lambda counts as returning its body, so `lambda: test_app` passes the app on as well.
+The app's name has to be written once, from the construction, in the function that mounts on it. Then the router index asks the shared `passedOn` rules in `@suss/resolution` where the app goes, and their DESIGN.md lists the facts they read. A return or a `yield`, an argument such as `serve(test_app)`, a second name or an object that takes it, an `or`, a conditional or parentheses around it, and a property that is itself passed on, as in `serve(test_app.router)`, all pass the app on. A lambda counts as returning its body, so `lambda: test_app` passes the app on as well.
 
-Storing the app on any object's property (`holder.app = test_app`, with `holder` a parameter), storing it under a key (`apps["t"] = test_app`) and entering it in a `with` statement count too, and so do a tuple written without parentheses (`return test_app, client`), the element of a comprehension, a dictionary value under a computed key, and a parameter default on a nested def. Each has a fact that only this adapter reads, because the shared rules leave a write through a parameter out on purpose.
+Storing the app on any object's property (`holder.app = test_app`, with `holder` a parameter), storing it under a key (`apps["t"] = test_app`) and entering it in a `with` statement count too, and so do a tuple written without parentheses (`return test_app, client`), the element of a comprehension, a dictionary value under a computed key, and a parameter default on a nested def. A write through a parameter is stated as an unplaced `storesProperty`, which no rule places on an object.
+
+Calling a method on the app keeps the mount unless the pack registers something with that method: a verb such as `get`, the mount method `include_router`, or a wrapper decorator such as `middleware`. `test_app.run()` may serve the app from inside the function, so the mount stays. Calling the app itself keeps it too.
 
 A read the facts do not record looks like no read at all, and then the mount is dropped when it may serve. So a spelling that passes a value on needs a fact before this check can see it.
 
 A pack that declares a mount object is left out, which today is flask-restx. Its `Api` serves through the app or blueprint it was built from or handed, so what happens to the `Api`'s own variable says nothing about whether the app is served.
+
+A route declared straight on such an app is left out the same way, since no request can reach it either:
+
+```python
+def build_test_app():
+    test_app = FastAPI()
+
+    @test_app.get("/health")   # not reported
+    def health():
+        pass
+```
+
+Discovery asks the same question through `routeOnDroppedApp` before it builds the route's unit, and the route is reported again as soon as the function returns the app, runs it, or hands it anywhere.
 
 ## What a file reads from the environment
 

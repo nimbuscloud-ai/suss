@@ -15,6 +15,7 @@ import {
   NAMED_STORE_NAME,
   RECEIVER_STORE_NAME,
   startsAtName,
+  UNPLACED_STORE_NAME,
   valueLeftByWrites,
   writesRunInOrder,
 } from "@suss/resolution";
@@ -126,7 +127,7 @@ const WRITTEN_VALUE_TYPES = new Set([
   "concatenated_string",
   // Composed from other expressions, so a chain ends here and the
   // evaluator reads the expression back in the scope it is written in.
-  // `a or b`, `a if c else b` and `(a)` are stated as their branches instead.
+  // `a or b` and `(a)` are stated as their branches instead.
   "binary_operator",
   "boolean_operator",
   "comparison_operator",
@@ -231,6 +232,8 @@ interface Emitter {
   insideMethod: boolean;
   /** Where the walk puts each write to a property of a name the body declares. */
   namedWrites: NamedWrites | null;
+  /** The assignments a receiver's or a declared name's stores collected, by node key. */
+  placedWrites: Set<string>;
 }
 
 /**
@@ -639,7 +642,6 @@ const FALLBACK_BRANCH_READERS: Partial<
   Record<string, (node: PyNode) => PyNode[] | null>
 > = {
   boolean_operator: orBranches,
-  conditional_expression: conditionalBranches,
   parenthesized_expression: parenthesizedBranch,
 };
 
@@ -649,14 +651,17 @@ function fallbackBranchesOf(node: PyNode, type: string): PyNode[] | null {
 
 /**
  * Where an assignment puts its value when the target is not a plain name.
- * `writesProperty` covers every object, a parameter included, and every
- * write whether or not the writes to that property settle, which is why
- * it is kept apart from `storesProperty`.
+ * A property write that neither the receiver's stores nor a declared
+ * name's stores collected is stated as unplaced here, so a write through
+ * a parameter or a property read is still on record.
  */
 const STORE_TARGETS: Partial<
-  Record<string, (emitter: Emitter, target: PyNode, value: string) => void>
+  Record<
+    string,
+    (emitter: Emitter, target: PyNode, value: string, at: string) => void
+  >
 > = {
-  attribute: (emitter, target, value) => {
+  attribute: (emitter, target, value, at) => {
     const object = field(target, "object");
     const property = field(target, "attribute");
     /* v8 ignore start */
@@ -664,12 +669,16 @@ const STORE_TARGETS: Partial<
       return;
     }
     /* v8 ignore stop */
+    if (emitter.placedWrites.has(at)) {
+      return;
+    }
     add(
       emitter,
-      "writesProperty",
+      "storesProperty",
       valueKey(emitter, object),
       property.text,
       value,
+      UNPLACED_STORE_NAME,
     );
   },
   subscript: (emitter, target, value) => {
@@ -686,7 +695,37 @@ function emitStoreTarget(emitter: Emitter, assignment: PyNode): void {
   if (left === null || right === null) {
     return;
   }
-  STORE_TARGETS[left.type]?.(emitter, left, valueKey(emitter, right));
+  STORE_TARGETS[left.type]?.(
+    emitter,
+    left,
+    valueKey(emitter, right),
+    nodeId(emitter.filePath, assignment),
+  );
+}
+
+/**
+ * The writes to one property that its settled stores leave out, stated as
+ * unplaced so a question about where a value goes still finds them.
+ */
+function emitUnplacedWrites(
+  emitter: Emitter,
+  objectKey: string,
+  property: string,
+  writes: readonly NameWrite[],
+  isStated: (write: NameWrite) => boolean,
+): void {
+  for (const write of writes) {
+    if (write.value !== null && !isStated(write)) {
+      add(
+        emitter,
+        "storesProperty",
+        objectKey,
+        property,
+        write.value,
+        UNPLACED_STORE_NAME,
+      );
+    }
+  }
 }
 
 /** The value a `with` item enters, with or without an `as` name after it. */
@@ -772,6 +811,16 @@ function emitExpressionFact(
     }
   } else if (WRITTEN_VALUE_TYPES.has(type)) {
     add(emitter, "writtenValue", nodeId(emitter.filePath, child));
+  }
+  const conditional =
+    type === "conditional_expression" ? conditionalBranches(child) : null;
+  for (const branch of conditional ?? []) {
+    add(
+      emitter,
+      "conditionalBranch",
+      nodeId(emitter.filePath, child),
+      valueKey(emitter, branch),
+    );
   }
   if (type === "none") {
     add(emitter, "placeholderValue", nodeId(emitter.filePath, child));
@@ -884,6 +933,7 @@ function emitFunctionFacts(
               reading.locals.has(name) && !parameters.has(name),
             byProperty: new Map(),
           },
+    placedWrites: new Set(),
   };
   emitScopeWrites(inside, reading, false);
 
@@ -1010,6 +1060,7 @@ function collectReceiverProperty(
   ) {
     return;
   }
+  emitter.placedWrites.add(nodeId(emitter.filePath, assignment));
   const written = stores.get(property.text) ?? [];
   written.push({
     write: describeWrite(
@@ -1038,32 +1089,32 @@ function emitReceiverStores(
 ): void {
   for (const [name, writes] of stores) {
     const spelling = writes[0]?.spelling ?? name;
+    const described = writes.map((written) => written.write);
     const settled = valueLeftByWrites(
-      writes.map((written) => written.write),
+      described,
       writesRunInOrder(body, spelling, writes, ATTRIBUTE_READS),
     );
-    if (settled !== null) {
-      add(
-        emitter,
-        "storesProperty",
-        funcKey,
-        name,
-        settled,
-        RECEIVER_STORE_NAME,
-      );
-      continue;
+    const isStated = (write: NameWrite): boolean =>
+      settled === null ? !write.narrowsName : write.value === settled;
+    const stated =
+      settled === null
+        ? described.flatMap((write) =>
+            write.value !== null && isStated(write) ? [write.value] : [],
+          )
+        : [settled];
+    for (const value of stated) {
+      add(emitter, "storesProperty", funcKey, name, value, RECEIVER_STORE_NAME);
     }
-    for (const { write } of writes) {
-      if (write.value !== null && !write.narrowsName) {
-        add(
-          emitter,
-          "storesProperty",
-          funcKey,
-          name,
-          write.value,
-          RECEIVER_STORE_NAME,
-        );
-      }
+    const object =
+      writes[0] === undefined ? null : field(writes[0].at, "object");
+    if (object !== null) {
+      emitUnplacedWrites(
+        emitter,
+        valueKey(emitter, object),
+        name,
+        described,
+        isStated,
+      );
     }
   }
 }
@@ -1088,6 +1139,7 @@ function collectNamedWrite(emitter: Emitter, assignment: PyNode): void {
   ) {
     return;
   }
+  emitter.placedWrites.add(nodeId(emitter.filePath, assignment));
   const receiverKey = valueKey(emitter, object);
   const key = `${receiverKey} ${property.text}`;
   const group = collected.byProperty.get(key) ?? {
@@ -1120,8 +1172,9 @@ function emitNamedStores(emitter: Emitter): void {
   }
   for (const group of collected.byProperty.values()) {
     const spelling = group.writes[0]?.spelling ?? group.property;
+    const described = group.writes.map((written) => written.write);
     const settled = valueLeftByWrites(
-      group.writes.map((written) => written.write),
+      described,
       writesRunInOrder(collected.body, spelling, group.writes, ATTRIBUTE_READS),
     );
     if (settled !== null) {
@@ -1134,6 +1187,13 @@ function emitNamedStores(emitter: Emitter): void {
         NAMED_STORE_NAME,
       );
     }
+    emitUnplacedWrites(
+      emitter,
+      group.receiverKey,
+      group.property,
+      described,
+      (write) => write.value === settled,
+    );
   }
 }
 
@@ -2073,6 +2133,7 @@ export function emitValueFacts(
     insideMethod: false,
     // Every name read at the top of a module belongs to the module.
     namedWrites: { body: root, declares: () => true, byProperty: new Map() },
+    placedWrites: new Set(),
   };
   emitNestedDefinitions(emitter, root);
   emitScopeWrites(emitter, readScope(root, []), true);

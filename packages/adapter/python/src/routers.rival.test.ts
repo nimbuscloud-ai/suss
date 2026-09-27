@@ -242,11 +242,89 @@ describe("a mount on an app that never leaves the function that built it", () =>
       "gives the app to a nested def as a default",
       "    def served(app=test_app):\n        return app\n    return served",
     ],
+    ["runs a method the pack does not register with", "    test_app.run()"],
+    ["calls the app itself", "    test_app(scope, receive, send)"],
+    [
+      "writes the app to a parameter's property twice",
+      "    holder.app = test_app\n    holder.app = None",
+    ],
+    [
+      "returns a closure that gives the app back",
+      "    def served():\n        return test_app\n    return served",
+    ],
+    ["hands a property of the app to a call", "    serve(test_app.router)"],
   ])("keeps the mount when the function %s", async (_, body) => {
     const summaries = await summariesOf({ "main.py": itemsModule([body]) });
     expect(pathsOf(summaries, "read_item").sort()).toEqual([
       "/items/{item_id}",
       "/t/items/{item_id}",
     ]);
+  });
+
+  it.each([
+    [
+      "registers a route of its own on the app",
+      '    @test_app.get("/health")\n    def health():\n        pass',
+    ],
+    ["writes to a part of the app", "    test_app.state.ready = True"],
+    [
+      "mounts twice on the app",
+      '    test_app.include_router(router, prefix="/u")',
+    ],
+  ])("drops the mount when the function %s", async (_, body) => {
+    const summaries = await summariesOf({ "main.py": itemsModule([body]) });
+    expect(pathsOf(summaries, "read_item")).toEqual(["/items/{item_id}"]);
+  });
+});
+
+/** A route declared straight on an app a function builds, then `after`. */
+function healthModule(after: string[]): string {
+  return [
+    "from fastapi import FastAPI",
+    "",
+    "",
+    "def build_test_app(holder):",
+    "    test_app = FastAPI()",
+    "",
+    '    @test_app.get("/health")',
+    "    def health():",
+    "        pass",
+    "",
+    ...after,
+    "",
+  ].join("\n");
+}
+
+describe("a route declared on an app that never leaves the function that built it", () => {
+  it("is not reported", async () => {
+    const summaries = await summariesOf({ "main.py": healthModule([]) });
+    expect(pathsOf(summaries, "health")).toEqual([]);
+  });
+
+  it.each([
+    ["returns the app", "    return test_app"],
+    ["runs the app", "    test_app.run()"],
+    ["hands the app to a call", "    serve(test_app)"],
+    ["stores the app on a parameter", "    holder.app = test_app"],
+  ])("is reported when the function %s", async (_, line) => {
+    const summaries = await summariesOf({ "main.py": healthModule([line]) });
+    expect(pathsOf(summaries, "health")).toEqual(["/health"]);
+  });
+
+  it("is reported on a module-level app", async () => {
+    const summaries = await summariesOf({
+      "main.py": [
+        "from fastapi import FastAPI",
+        "",
+        "app = FastAPI()",
+        "",
+        "",
+        '@app.get("/health")',
+        "def health():",
+        "    pass",
+        "",
+      ].join("\n"),
+    });
+    expect(pathsOf(summaries, "health")).toEqual(["/health"]);
   });
 });
