@@ -229,6 +229,9 @@ function resolveCallee(
     Node.isPropertyAccessExpression(callee) &&
     declarations.some(isDeclaredShape)
   ) {
+    if (scan.sourcesAsked !== undefined) {
+      scan.sourcesAsked.asked = true;
+    }
     const sources = resolveSources(callee, scan.reachedFrom);
     const only = sources.length === 1 ? sources[0] : undefined;
     const resolved = only === undefined ? null : resolveDecl(only, calleeName);
@@ -457,6 +460,8 @@ interface ScanContext {
   sourceDeclarationsBehind?: (declaration: Node) => Node[];
   reachedFrom?: SourceFile;
   scanning?: FunctionRoot;
+  /** Set once the scan asks which class a declared shape was given. */
+  sourcesAsked?: { asked: boolean };
 }
 
 /** The key a (callee function, parameter position) pair is tracked under. */
@@ -1080,22 +1085,18 @@ function findingsFor(key: string, ctx: FindingContext): ScanFindings | null {
 
   const { resolution, resolveCallableSources, sourceDeclarationsBehind } =
     ctx.recognizers;
-  let askedSources = false;
-  const trackedSources = (value: Node, alsoFrom?: SourceFile): Node[] => {
-    askedSources = true;
-    return resolveCallableSources?.(value, alsoFrom) ?? [];
-  };
   const reachedFrom =
     cameFrom === undefined
       ? undefined
       : (ctx.lookup.byPath(cameFrom) ?? ctx.project.getSourceFile(cameFrom));
+  const sourcesAsked = { asked: false };
   const scan: ScanContext = {
     ...(resolution === undefined
       ? {}
       : { resolution, storeAnswers: ctx.storeAnswers }),
     ...(resolveCallableSources === undefined
       ? {}
-      : { resolveCallableSources: trackedSources }),
+      : { resolveCallableSources, sourcesAsked }),
     ...(sourceDeclarationsBehind === undefined
       ? {}
       : { sourceDeclarationsBehind }),
@@ -1107,7 +1108,7 @@ function findingsFor(key: string, ctx: FindingContext): ScanFindings | null {
   ctx.facts?.scans?.set(key, {
     kind: "fresh",
     findings: result,
-    from: askedSources ? (cameFrom ?? null) : undefined,
+    from: sourcesAsked.asked ? (cameFrom ?? null) : undefined,
     read,
   });
   return result;

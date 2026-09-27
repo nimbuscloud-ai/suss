@@ -131,22 +131,24 @@ async function runClosure(
   return { summaries, scans, units };
 }
 
-/** Store a run's records, and read back the ones still valid for the tree on disk. */
-async function keptAcrossEdit(
+function cacheOf(ws: Workspace) {
+  return createCacheLayer<undefined, ScanRecord>(path.join(ws.dir, ".cache"));
+}
+
+/** Store a run's records against the files on disk now. */
+async function storeRecords(ws: Workspace, run: ClosureRun): Promise<void> {
+  await cacheOf(ws).write(
+    { files: await ws.files(), adapterPacksDigest: "test" },
+    run.summaries,
+    { roots: [], owners: run.summaries.map(() => []), units: run.units },
+  );
+}
+
+/** The stored records the cache still hands back for the files on disk now. */
+async function keptRecords(
   ws: Workspace,
-  first: ClosureRun,
-  edit: () => Promise<void>,
 ): Promise<ReadonlyMap<string, UnitRecord<ScanRecord>>> {
-  const cacheDir = path.join(ws.dir, ".cache");
-  const cache = createCacheLayer<undefined, ScanRecord>(cacheDir);
-  const before = { files: await ws.files(), adapterPacksDigest: "test" };
-  await cache.write(before, first.summaries, {
-    roots: [],
-    owners: first.summaries.map(() => []),
-    units: first.units,
-  });
-  await edit();
-  const plan = await cache.plan({
+  const plan = await cacheOf(ws).plan({
     files: await ws.files(),
     adapterPacksDigest: "test",
   });
@@ -183,20 +185,19 @@ describe("the closure's scan records", () => {
     const first = await runClosure(ws);
     expect(names(first)).toEqual(["load", "run"]);
 
-    const kept = await keptAcrossEdit(ws, first, () =>
-      ws.write(
-        "orders.ts",
-        [
-          'import { audit } from "./audit";',
-          "export function load() {",
-          "  audit();",
-          "  return 1;",
-          "}",
-          "",
-        ].join("\n"),
-      ),
+    await storeRecords(ws, first);
+    await ws.write(
+      "orders.ts",
+      [
+        'import { audit } from "./audit";',
+        "export function load() {",
+        "  audit();",
+        "  return 1;",
+        "}",
+        "",
+      ].join("\n"),
     );
-    const second = await runClosure(ws, kept);
+    const second = await runClosure(ws, await keptRecords(ws));
     const fresh = await runClosure(ws);
 
     expect(names(second)).toEqual(["audit", "load", "run"]);
@@ -212,10 +213,9 @@ describe("the closure's scan records", () => {
     });
     const first = await runClosure(ws);
 
-    const kept = await keptAcrossEdit(ws, first, () =>
-      ws.write("totals.ts", "export function total() {\n  return 30;\n}\n"),
-    );
-    const second = await runClosure(ws, kept);
+    await storeRecords(ws, first);
+    await ws.write("totals.ts", "export function total() {\n  return 30;\n}\n");
+    const second = await runClosure(ws, await keptRecords(ws));
     const fresh = await runClosure(ws);
 
     expect(Object.values(kinds(second))).toEqual(["reused", "reused"]);
@@ -243,10 +243,10 @@ describe("the closure's scan records", () => {
       "orders.ts",
     ]);
 
-    const kept = await keptAcrossEdit(ws, first, async () => {
-      await ws.remove("audit.ts");
-      await ws.write("entry.ts", ENTRY);
-    });
+    await storeRecords(ws, first);
+    await ws.remove("audit.ts");
+    await ws.write("entry.ts", ENTRY);
+    const kept = await keptRecords(ws);
     const second = await runClosure(ws, kept);
 
     expect(kinds(second)).toEqual({
