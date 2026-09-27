@@ -64,6 +64,7 @@ import {
   storageCallIds,
   storageEffects,
 } from "./storage.js";
+import { streamWriteEffects } from "./streamWrites.js";
 import { askWrittenValues, evaluatedValue } from "./values/evaluator.js";
 
 import type {
@@ -1391,7 +1392,11 @@ export function recognizedBodyEffects(
           }),
           ...rawSqlEffects(bodyCalls(definitionNode), rawSqlOf(storageLookup)),
         ];
-  return [...envReadEffects(definitionNode, module, facts), ...storage];
+  return [
+    ...envReadEffects(definitionNode, module, facts),
+    ...storage,
+    ...streamWriteEffects(definitionNode, module),
+  ];
 }
 
 /** What the raw-SQL reader is asked with, out of what discovery already looked up for the file. */

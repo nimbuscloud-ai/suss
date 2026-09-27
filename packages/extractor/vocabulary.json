@@ -4,6 +4,7 @@
   "HEAD": "HTTP method, RFC 9110",
   "HTTP": "transport name, HTTP",
   "JSON": "JavaScript built-in namespace object",
+  "json": "suss: stream-write serialization tag, for a write of a value serialized as JSON first",
   "Mutation": "GraphQL spec: operation root type",
   "OPTIONS": "HTTP method, RFC 9110",
   "PATCH": "HTTP method, RFC 5789",

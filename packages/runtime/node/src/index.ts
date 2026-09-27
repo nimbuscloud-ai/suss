@@ -19,6 +19,7 @@ import {
 } from "./moduleSurface.js";
 import { processSurfaceRecognizer } from "./processSurface.js";
 import { nodeSchedulingSubUnits, schedulingRecognizer } from "./scheduling.js";
+import { PROCESS_STREAMS, streamWriteRecognizer } from "./streamWrites.js";
 
 import type { PatternPack } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
@@ -41,11 +42,12 @@ export {
   nodeSchedulingSubUnits,
   schedulingRecognizer,
 } from "./scheduling.js";
+export { streamWriteRecognizer } from "./streamWrites.js";
 
 // The adapter's extraction cache includes this version in its key, so
 // bump it whenever the pack changes which units it finds or which
 // effects it emits.
-const PACK_VERSION = "0.2.0";
+const PACK_VERSION = "0.3.0";
 
 /**
  * The options in a `-f node=config.json` file. The CLI checks the file
@@ -91,8 +93,9 @@ export function nodeRuntimePack(
     discovery: [],
     terminals: [],
     inputMapping: { type: "positionalParams", params: [] },
-    invocationRecognizers: [schedulingRecognizer],
+    invocationRecognizers: [schedulingRecognizer, streamWriteRecognizer],
     environmentObjects: ["process.env"],
+    streamObjects: PROCESS_STREAMS,
     accessRecognizers: [
       // envRecognizer handles `process.env.X` and processRecognizer skips
       // it, so each `process.*` read produces one effect.
@@ -112,7 +115,7 @@ export const declares: PackDeclaration = {
   dependencies: [],
   shippedWith: "typescript",
   reads:
-    "Node.js runtime primitives, scheduling and the \`process\` surface, each recorded as an interaction effect. A \`process.env.X\` read, or a key of a schema parsed against \`process.env\`, becomes a config-read interaction. A module-loading global becomes a metadata-read interaction.",
+    "Node.js runtime primitives, scheduling and the \`process\` surface, each recorded as an interaction effect. A \`process.env.X\` read, or a key of a schema parsed against \`process.env\`, becomes a config-read interaction. A module-loading global becomes a metadata-read interaction. A \`console\` call or a write to \`process.stdout\` or \`process.stderr\` becomes a stream-write interaction on the stream it goes to.",
 };
 
 export default nodeRuntimePack;

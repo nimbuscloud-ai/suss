@@ -714,7 +714,18 @@ function compareIntentToImpl(
             .filter((co) => outcomeMatches(outcome, co))
             .flatMap((co) => co.effects);
     for (const effect of outcome.effects) {
-      if (reached.some((made) => effectMatches(effect, made))) {
+      const matched = reached.filter((made) => effectMatches(effect, made));
+      if (matched.length > 0) {
+        if (!writesDeclaredShape(effect, matched)) {
+          findings.push({
+            kind: "outcomeShapeMismatch",
+            severity: "error",
+            boundary,
+            intent: { name: intent.name, outcomeId: outcome.id },
+            code: ref,
+            message: `Intent "${intent.name}" says ${outcome.id} results in ${describeEffect(effect)} at ${boundary} with a declared shape; what ${impl.identity.name} writes there has an incompatible shape.`,
+          });
+        }
         continue;
       }
       const finding: IntentFinding = {
@@ -1204,6 +1215,28 @@ export function effectMatches(
 }
 
 /**
+ * Whether one of the writes that matched puts out what the intent's
+ * `shape` says. A write whose payload the code does not state is unread
+ * rather than wrong, the way an access with no columns is.
+ */
+function writesDeclaredShape(
+  declared: IntentEffect,
+  matched: readonly CodeEffect[],
+): boolean {
+  if (declared.shape === undefined) {
+    return true;
+  }
+  const shape = declared.shape;
+  const stated = matched.flatMap((made) =>
+    made.payload === undefined ? [] : [made.payload],
+  );
+  return (
+    stated.length === 0 ||
+    stated.some((payload) => bodyShapesMatch(payload, shape) !== "nomatch")
+  );
+}
+
+/**
  * Whether the access covers every column the intent stated. An access
  * that states none is unread rather than empty: no pack parses a
  * DynamoDB UpdateExpression, so calling that a mismatch would report
@@ -1401,6 +1434,8 @@ export interface CodeEffect {
   fields: string[];
   /** What the access picks the item out by, empty when it states none. */
   by: string[];
+  /** The shape of what a write put out, when the code says. */
+  payload?: TypeShape;
 }
 
 /** Every verb and boundary the transition reaches, grounded against the deployment. */
@@ -1439,9 +1474,16 @@ export function codeEffectsOf(
 export function accessDetail(interaction: Interaction): {
   fields: string[];
   by: string[];
+  payload?: TypeShape;
 } {
   if (interaction.class === "config-read") {
     return { fields: [interaction.name], by: [] };
+  }
+
+  if (interaction.class === "stream-write") {
+    return interaction.payload === null
+      ? { fields: [], by: [] }
+      : { fields: [], by: [], payload: interaction.payload };
   }
 
   if (interaction.class !== "storage-access") {
@@ -1499,6 +1541,7 @@ const WHAT_KEYS: Record<Semantics["name"], string> = {
   metric: "a metric needs a system and a type",
   "unit-invocation":
     "an invoked unit needs a deployment target and the name the platform knows it by",
+  io: "a stream is never a boundary of its own: write it as `- writes: io:stdout` on an outcome of the unit that prints",
 };
 
 function describeOutcome(outcome: IntentOutcome): string {

@@ -1170,6 +1170,13 @@ export interface PatternPack {
    */
   environmentObjects?: string[];
   /**
+   * The process's output streams, written the same way, e.g.
+   * `"process.stdout"`. The adapter follows each one into the helpers
+   * it is passed to, so a write through a stream parameter can say
+   * which stream it goes to.
+   */
+  streamObjects?: string[];
+  /**
    * How this library's client object is constructed, so an operation
    * summary can say which endpoint its calls go to. Each entry is a
    * constructor or factory imported from `importModule`, with

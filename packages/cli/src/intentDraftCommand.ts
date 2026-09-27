@@ -156,7 +156,7 @@ function declaredBody(shape: TypeShape | null): AuthoredShape | null {
     return null;
   }
   const authored = toAuthoredShape(shape);
-  return authored.type === "unknown" ? null : authored;
+  return "type" in authored && authored.type === "unknown" ? null : authored;
 }
 
 /** `404` becomes `404-not-found`; a status with no name keeps its number. */
@@ -399,6 +399,7 @@ const BOUNDARY_BLOCKS: BoundaryBlocks = {
   "graphql-operation": NO_BLOCK,
   "runtime-config": NO_BLOCK,
   metric: NO_BLOCK,
+  io: NO_BLOCK,
 };
 
 /** The protocols boundary intent can declare. */

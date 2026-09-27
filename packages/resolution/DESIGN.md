@@ -43,6 +43,9 @@ readsKeyed(site, o, x)      site reads the entry of o at the value of
                             x, where the source does not write the key
                             out
 environmentObject(w)        w is written as the process environment
+streamObject(w)             w is written as one of the process's output
+                            streams, such as process.stdout
+                            (TypeScript)
 ```
 
 Names:
@@ -932,7 +935,7 @@ const table = requireEnv("TABLE_NAME");
 When an adapter emits facts, it cannot tell that `env[name]` reads the
 environment. It records the two things it can see: `readsKeyed` for a
 read off any container, and `environmentObject` for the expression that
-spells `process.env`. `environmentValue(w, o)` walks outward from the
+spells `process.env`. `runtimeValue(w, o)` walks outward from the
 object, through the names declared as it and the parameters that
 callers pass it to, however many calls deep. A parameter whose default
 is the environment counts too, because a caller that passes nothing
@@ -957,6 +960,18 @@ every join. The walk runs from the argument to the parameter it refers
 to, out to that parameter's callers, and on until it reaches an
 `environmentObject` or runs out of callers. The store exposes this
 question as `isEnvironmentValue`.
+
+An output stream is followed the same way. A helper that takes the
+stream it writes to, `function say(out, line) { out.write(line) }`,
+writes to whatever its callers pass. The adapter records
+`streamObject(w)` where the source spells `process.stdout` or
+`process.stderr`, and `runtimeObject` is either of the two seeds, so
+`runtimeValue` follows both kinds of object with the same three rules.
+`wantedStreamObject` seeds the question from every stream spelling, and
+`wantedStreamValue` hands back every expression a stream reaches. The
+store asks it once per run and keeps the answer, so a recognizer at
+`out.write(...)` looks the receiver up in that answer instead of asking
+a question per call.
 
 ## A type the callers declare
 

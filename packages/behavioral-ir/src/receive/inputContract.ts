@@ -284,6 +284,7 @@ const PAYLOAD_INPUT: Record<Semantics["name"], CarriesPayload | null> = {
   "graphql-operation": null,
   "runtime-config": null,
   metric: null,
+  io: null,
 };
 
 /**
@@ -474,6 +475,7 @@ const BOUNDARY_INPUT_SPELLINGS: BoundaryInputSpellings = {
   "graphql-operation": UNMAPPED,
   "runtime-config": UNMAPPED,
   metric: UNMAPPED,
+  io: UNMAPPED,
 };
 
 function spellingFor(

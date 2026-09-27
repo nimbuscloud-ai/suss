@@ -35,6 +35,7 @@ const RELATIONS: RelationTable = {
   "config-read": () => ["reads"],
   "metadata-read": () => ["reads"],
   schedule: () => [],
+  "stream-write": () => ["writes"],
 };
 
 export function relationsOf(interaction: Interaction): Relation[] {

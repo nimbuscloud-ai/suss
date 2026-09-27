@@ -88,10 +88,13 @@ export interface NodeTable {
    * this adapter knows which object that is; a pack says so.
    */
   environmentObjects: readonly string[];
+  /** Dotted paths the packs call the process's output streams, the same way. */
+  streamObjects: readonly string[];
 }
 
 export function createNodeTable(
   environmentObjects: readonly string[] = [],
+  streamObjects: readonly string[] = [],
 ): NodeTable {
   return {
     byId: new Map(),
@@ -101,6 +104,7 @@ export function createNodeTable(
     seenClasses: new Set(),
     seenImports: new Set(),
     environmentObjects,
+    streamObjects,
   };
 }
 
@@ -416,11 +420,26 @@ function literalIndexOf(index: Expression | undefined): string | null {
  * declaration to resolve to.
  */
 export function isEnvironmentObject(table: NodeTable, node: Node): boolean {
-  if (table.environmentObjects.length === 0) {
+  return spellsOneOf(table.environmentObjects, node);
+}
+
+/** Whether an expression spells one of the output streams a pack declared. */
+export function isStreamObject(table: NodeTable, node: Node): boolean {
+  return spellsOneOf(table.streamObjects, node);
+}
+
+/** The declared stream path an expression spells, or null for any other expression. */
+export function spelledStreamPath(table: NodeTable, node: Node): string | null {
+  const path = dottedPathOf(node);
+  return path !== null && table.streamObjects.includes(path) ? path : null;
+}
+
+function spellsOneOf(paths: readonly string[], node: Node): boolean {
+  if (paths.length === 0) {
     return false;
   }
   const path = dottedPathOf(node);
-  return path !== null && table.environmentObjects.includes(path);
+  return path !== null && paths.includes(path);
 }
 
 /**
@@ -447,16 +466,31 @@ export function environmentObjectsIn(
   table: NodeTable,
   sourceFile: SourceFile,
 ): Node[] {
-  if (table.environmentObjects.length === 0) {
+  return spellingsHandedOn(table.environmentObjects, sourceFile);
+}
+
+/** The same for the output streams: `out.write(...)` hands nothing on. */
+export function streamObjectsIn(
+  table: NodeTable,
+  sourceFile: SourceFile,
+): Node[] {
+  return spellingsHandedOn(table.streamObjects, sourceFile);
+}
+
+function spellingsHandedOn(
+  paths: readonly string[],
+  sourceFile: SourceFile,
+): Node[] {
+  if (paths.length === 0) {
     return [];
   }
   const text = sourceFile.getFullText();
-  if (!table.environmentObjects.some((path) => text.includes(path))) {
+  if (!paths.some((path) => text.includes(path))) {
     return [];
   }
   return sourceFile
     .getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)
-    .filter((node) => isEnvironmentObject(table, node) && flowsOnward(node));
+    .filter((node) => spellsOneOf(paths, node) && flowsOnward(node));
 }
 
 /** Whether anything but a named read of one variable is done with the object. */
@@ -573,6 +607,9 @@ export function emitValue(
     );
     if (isEnvironmentObject(table, expression)) {
       fact(db, "environmentObject", id);
+    }
+    if (isStreamObject(table, expression)) {
+      fact(db, "streamObject", id);
     }
     emitReferenceFacts(db, table, expression);
     return id;

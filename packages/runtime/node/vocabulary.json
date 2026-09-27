@@ -1,5 +1,10 @@
 {
   "process": "Node: the global process object",
+  "stdout": "Node: process field holding the standard output stream",
+  "stderr": "Node: process field holding the standard error stream",
+  "write": "Node: stream.Writable method writing a chunk to the stream",
+  "console": "Node: the global console object",
+  "Console": "Node: the class of the console global, which a parameter can be annotated as",
   "env": "Node: process field holding the environment",
   "argv": "Node: process field holding the command line",
   "cwd": "Node: process method answering the working directory",

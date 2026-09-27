@@ -13,6 +13,7 @@ import { z } from "zod";
 import { functionCallSemantics } from "./functionCall.js";
 import { graphqlOperationSemantics } from "./graphqlOperation.js";
 import { graphqlResolverSemantics } from "./graphqlResolver.js";
+import { ioSemantics } from "./io.js";
 import { messageBusSemantics } from "./messageBus.js";
 import { metricSemantics } from "./metric.js";
 import { restSemantics } from "./rest.js";
@@ -36,6 +37,7 @@ export const SemanticsSchema = z.discriminatedUnion("name", [
   messageBusSemantics.schema,
   metricSemantics.schema,
   unitInvocationSemantics.schema,
+  ioSemantics.schema,
 ]);
 
 export type Semantics = z.infer<typeof SemanticsSchema>;
@@ -50,6 +52,7 @@ const DEFINITIONS = [
   messageBusSemantics,
   metricSemantics,
   unitInvocationSemantics,
+  ioSemantics,
 ] as const;
 
 const BY_NAME = new Map<string, (typeof DEFINITIONS)[number]>(

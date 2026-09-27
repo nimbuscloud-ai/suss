@@ -86,6 +86,10 @@ export {
 export { resolveSubject } from "./subjects.js";
 export { createTsSubUnitContext } from "./subUnitContext.js";
 export { workspaceRootFor } from "./summaryIdentity.js";
+export {
+  type WrittenPayload,
+  writtenPayloadOf,
+} from "./terminals/extract.js";
 export { findTerminals } from "./terminals/index.js";
 export {
   type ReceiverType,

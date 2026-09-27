@@ -62,6 +62,7 @@ export {
   graphqlResolverBinding,
   groundBinding,
   hasNameHole,
+  ioBinding,
   isGraphqlOperationBinding,
   isModuleName,
   leavesTheProcess,

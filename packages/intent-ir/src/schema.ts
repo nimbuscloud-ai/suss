@@ -121,15 +121,25 @@ const PrimitiveTypeName = z.enum([
   "unknown",
 ]);
 
-export interface AuthoredShape {
-  type: z.infer<typeof PrimitiveTypeName> | "array" | "object";
-  items?: AuthoredShape | undefined;
-  properties?: Record<string, AuthoredShape> | undefined;
-  required?: string[] | undefined;
-}
+export type AuthoredShape =
+  | {
+      type: z.infer<typeof PrimitiveTypeName> | "array" | "object";
+      items?: AuthoredShape | undefined;
+      properties?: Record<string, AuthoredShape> | undefined;
+      required?: string[] | undefined;
+    }
+  | { const: AuthoredConstant }
+  | {
+      properties: Record<string, AuthoredShape>;
+      required?: string[] | undefined;
+    };
 
-// A property can itself be an array or a nested object, so a declared
-// body can describe a `Finding[]` return or nested records.
+/** A literal a value has to equal, such as a finding kind or a flag that is always true. */
+export type AuthoredConstant = string | number | boolean | null;
+
+// A property can itself be an array, a nested object or one literal. The
+// last two forms are strict, so a misspelt `type:` is refused instead of
+// being read as an object with nothing declared in it.
 const ShapeSchema: z.ZodType<AuthoredShape> = z.lazy(() =>
   z.union([
     z.object({ type: PrimitiveTypeName }),
@@ -137,6 +147,13 @@ const ShapeSchema: z.ZodType<AuthoredShape> = z.lazy(() =>
     z.object({
       type: z.literal("object"),
       properties: z.record(z.string(), ShapeSchema).optional(),
+      required: z.array(z.string()).optional(),
+    }),
+    z.strictObject({
+      const: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+    }),
+    z.strictObject({
+      properties: z.record(z.string(), ShapeSchema),
       required: z.array(z.string()).optional(),
     }),
   ]),
@@ -385,6 +402,8 @@ export type DeclaredEffect = Partial<Record<EffectRelation, string>> & {
   fields?: string[];
   /** What it picks the item out by. */
   by?: string | string[];
+  /** The shape of what it writes, such as the report a command prints. */
+  shape?: BodyShape;
 };
 
 /** One field or a list of them, so a single field can be written inline. */
@@ -404,6 +423,9 @@ function effectByVerb<T extends DeclaredEffect>(
       [verb]: z.string().min(1),
       fields: z.array(z.string().min(1)).min(1).optional(),
       by: ONE_OR_MORE.optional(),
+      shape: BodyShapeSchema.describe(
+        "The shape of what the effect writes, such as the report a command prints.",
+      ).optional(),
       ...extra,
     }),
   ) as unknown as [z.ZodType<T>, ...Array<z.ZodType<T>>];

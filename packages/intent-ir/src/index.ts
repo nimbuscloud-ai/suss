@@ -67,6 +67,7 @@ export type {
 } from "./findings.js";
 export type {
   AuthoredBoundary,
+  AuthoredConstant,
   AuthoredInputField,
   AuthoredReceives,
   AuthoredRestReceives,

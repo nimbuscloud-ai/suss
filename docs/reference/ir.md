@@ -138,7 +138,8 @@ type Semantics =
   | { name: "message-bus"; messageBus: MessageBus; channel: string | null }
   | { name: "metric"; metricSystem: string; metricType: string | null }
   | { name: "unit-invocation"; deploymentTarget: string;
-      instanceName: string | null };
+      instanceName: string | null }
+  | { name: "io"; target: string | null };
 
 type MessageBus =
   | "aws_sqs" | "aws.sns" | "s3" | "eventbridge"
@@ -150,6 +151,8 @@ type MessageBus =
 An identity field is null when the source does not say what it is. The empty string is invalid there, because every empty string would pair with every other. REST's `method` also takes `"*"`, for a handler that serves every method, and it pairs with whatever method each consumer uses.
 
 `runtime-config` and `unit-invocation` both take their two fields from `DeployableUnit`, because the pairing key is a deployed unit, and one deployed unit has both of those boundaries on it. `unit-invocation` makes `instanceName` nullable, since only the provider side always has the name.
+
+`io` is one of the process's own streams, keyed `io:stdout` or `io:stderr`. Only the writing side is ever in a run, so it never pairs. It has a key so `suss ask "what writes io:stdout"`, an intent document's `results` line and `inspect --diff` can all name the stream the same way. `target` is null when the source hands the write a stream the reader could not settle.
 
 Storage's `container` and `accessPath` use the boundary-name syntax: a literal (`orders-v1`), a pattern with deploy-time holes (`{stage}-orders-v1`), or a reference to somewhere else that has the value (`{ORDER_TABLE}`). You can tell the three apart by the braces. `parseBoundaryName` in `@suss/ir-core` is the only function that parses that syntax, and the package's README describes the three forms. A REST `path` also uses braces, but a route parameter stops at the `/` between segments, so the two conventions do not collide.
 
@@ -314,7 +317,9 @@ type Interaction =
       callbackRef:
         | { type: "literal" }
         | { type: "identifier"; name: string }
-        | { type: "opaque"; reason: string } };
+        | { type: "opaque"; reason: string } }
+  | { class: "stream-write"; payload: TypeShape | null;
+      serialized: "json" | "text" };
 ```
 
 - **`storage-access`** covers Prisma calls, Drizzle queries, ActiveRecord chains and raw SQL. It pairs against a storage provider on `(storageSystem, scope, container, accessPath)`, and a provider whose `storageSystem` is null, which is a store whose deploy configuration picks its engine from a variable, meets an access on any engine. `relationPath` is the relation fields the access travelled through from the container in the binding; only the provider's contract says where a relation points, so the pairing pass resolves the path and moves the access to the container it arrives at. `relationKey` marks an access whose columns come from the contract's own declaration for the last relation in the path, instead of from columns the call spells out. A Prisma `connect` is the usual case.
@@ -325,6 +330,7 @@ type Interaction =
 - **`config-read`** is a `process.env.X` access or its equivalent. It pairs against a runtime-config provider on the variable name plus the code scope.
 - **`metadata-read`** is a read of something the runtime provides on its own: `__dirname`, `import.meta.url`, `process.cwd`, `process.platform`. It goes on the same runtime-config boundary as a config read, and nothing pairs against it, because no deploy file declares these.
 - **`schedule`** is a callback handed to `setTimeout`, `process.nextTick` or a library hook. Nothing pairs against these, so the enclosing binding uses `function-call` semantics and the interaction is there for dataflow and for `inspect`. `hasDelay` records only that a delay argument was passed, without its value.
+- **`stream-write`** is a write to one of the process's own streams: `console.log`, `process.stdout.write`, Python's `print`, Ruby's `puts`. The binding uses `io` semantics, whose `target` says which stream. `payload` is the shape of what was written, and `serialized` says whether the code wrote it through `JSON.stringify`, `json.dumps` or `JSON.generate` first, in which case `payload` is the shape of the value it serialized. `groupId` is required on this class, and says which call site the write came from. Nothing pairs against it, since whoever reads a stream is a person, a shell or a test that no run declares.
 
 Adding a class is an additive IR change. Each class maps one to one onto a `binding.semantics.name` by convention. The IR does not enforce that, but every shipped recognizer follows it. See [Pack patterns](/packs/patterns#recognizers) for the recognizers that emit them.
 

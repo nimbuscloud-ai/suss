@@ -252,7 +252,7 @@ describe("nodeRuntimePack — pack shape", () => {
     expect(pack.languages).toEqual(["typescript", "javascript"]);
     expect(pack.discovery).toEqual([]);
     expect(pack.terminals).toEqual([]);
-    expect(pack.invocationRecognizers).toHaveLength(1);
+    expect(pack.invocationRecognizers).toHaveLength(2);
     expect(pack.subUnits).toBe(nodeSchedulingSubUnits);
   });
 });

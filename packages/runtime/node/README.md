@@ -15,7 +15,9 @@ setTimeout(() => flush(table), 1000);
 reads. It covers:
 
 - **Invocation recognizers** for the scheduling calls: `setImmediate`,
-  `setTimeout`, `setInterval`, `queueMicrotask` and `process.nextTick`.
+  `setTimeout`, `setInterval`, `queueMicrotask` and `process.nextTick`,
+  and for what a program prints through `console`, `process.stdout` and
+  `process.stderr`.
 - **Access recognizers** for `process.env.X` reads, the keys of a
   schema parsed against `process.env`, the rest of the process object
   (`argv`, `exit` and the process metadata), and the module-location
@@ -238,6 +240,58 @@ name written in the source is the first thing checked.
 A `runtimeEnv` that lists the variables one by one,
 `{ DB_NAME: process.env.DB_NAME }`, is read by the reader for dotted
 access instead of this one, and that reader reports the same names.
+
+## What a program prints
+
+A `console` call and a write to `process.stdout` or `process.stderr`
+become a `stream-write` interaction on an `io` binding, keyed
+`io:stdout` or `io:stderr`:
+
+```ts
+export function printReport(report: Report): number {
+  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  if (!report.passed) {
+    console.error("the run compared nothing");
+    return 1;
+  }
+  return 0;
+}
+```
+
+`suss ask "what writes io:stdout"` lists `printReport`, and an intent
+document can say `writes: io:stdout` on an outcome. The payload of the
+first write is the shape of `report`, with `serialized: json`, because
+the template puts nothing but whitespace around one `JSON.stringify`
+call. A write of anything else records the shape of what was written,
+with `serialized: text`, and a call given several arguments records
+them keyed by position.
+
+`console` is recognized by its spelling, the way `process` is, since
+nothing imports or declares it. The stream follows Node's own split:
+`log`, `info`, `debug`, `table` and `dir` go to stdout, and `warn`,
+`error` and `trace` go to stderr.
+
+A helper that takes the stream it writes to is followed too:
+
+```ts
+function say(out: NodeJS.WritableStream, line: string) {
+  out.write(line);
+}
+say(process.stderr, "usage: report <file>\n");
+```
+
+The pack declares `process.stdout` and `process.stderr` as stream
+objects. The adapter records a fact where the source writes one, and
+the resolution store follows each one into the parameters it is handed,
+once per run, the same walk the environment object gets. The write in
+`say` looks its receiver up in that answer and goes to stderr. When two
+callers pass different streams, the write goes to a stream the source
+does not settle, and its target is null. A parameter annotated
+`Console`, `NodeJS.WriteStream` or `NodeJS.WritableStream` that nothing
+in the run calls is a write with a null target too.
+
+Loggers such as pino, winston and NestJS's `Logger` are left to a pack
+of their own.
 
 ## Options
 

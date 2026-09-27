@@ -4,6 +4,7 @@ import {
   type BehavioralSummary,
   type BoundaryBinding,
   functionCallBinding,
+  ioBinding,
   messageBusBinding,
   type Output,
   restBinding,
@@ -1103,6 +1104,117 @@ describe("effect outcomes", () => {
     expect(result.findings[0].boundary).toBe("aws.dynamodb:Invoices");
     expect(result.findings[0].message).toContain("a store has no key at all");
     expect(result.unchecked).toHaveLength(1);
+  });
+});
+
+/** A command whose one return also prints a report with a `run` list. */
+function commandPrinting(payload: TypeShape | null): BehavioralSummary {
+  const summary = codeSummary(
+    fnCodeBinding,
+    [{ type: "return", value: null }],
+    "checkFolder",
+    "library",
+  );
+  summary.transitions[0].effects = [
+    {
+      type: "interaction",
+      binding: ioBinding({
+        recognition: "@suss/runtime-node",
+        target: "stdout",
+      }),
+      callee: "process.stdout.write",
+      groupId: "12:3",
+      interaction: { class: "stream-write", payload, serialized: "json" },
+    },
+  ];
+  return summary;
+}
+
+const printedReport: TypeShape = {
+  type: "record",
+  properties: {
+    run: {
+      type: "array",
+      items: {
+        type: "record",
+        properties: { kind: { type: "literal", value: "nothingPaired" } },
+      },
+    },
+  },
+};
+
+function printsReport(shape?: TypeShape): IntentSummary {
+  return boundaryIntent(
+    fnIntentBinding,
+    [
+      effectOutcome("report-printed", [
+        {
+          does: "writes",
+          names: "io:stdout",
+          fields: [],
+          by: [],
+          ...(shape === undefined ? {} : { shape }),
+        },
+      ]),
+    ],
+    "check-folder",
+  );
+}
+
+describe("a write to one of the process's streams", () => {
+  it("passes when the code prints to the stream the outcome names, by either spelling", () => {
+    for (const names of ["io:stdout", "stdout"]) {
+      const intent = printsReport();
+      const [outcome] = intent.kind === "boundary" ? intent.outcomes : [];
+      if (outcome !== undefined) {
+        outcome.effects[0] = { ...outcome.effects[0], names } as IntentEffect;
+      }
+      const result = checkIntentAgreement(
+        [intent],
+        [commandPrinting(printedReport)],
+      );
+      expect(result.findings).toEqual([]);
+    }
+  });
+
+  it("passes when what the code prints has the declared shape", () => {
+    const result = checkIntentAgreement(
+      [printsReport(printedReport)],
+      [commandPrinting(printedReport)],
+    );
+    expect(result.findings).toEqual([]);
+  });
+
+  it("reports a report whose shape disagrees with the declared one", () => {
+    const renamed: TypeShape = {
+      type: "record",
+      properties: { runs: { type: "array", items: { type: "unknown" } } },
+    };
+    const result = checkIntentAgreement(
+      [printsReport(printedReport)],
+      [commandPrinting(renamed)],
+    );
+    expect(result.findings.map((f) => f.kind)).toEqual([
+      "outcomeShapeMismatch",
+    ]);
+    expect(result.findings[0]?.message).toContain("a write to io:stdout");
+  });
+
+  it("takes a write whose payload the code does not state as unread", () => {
+    const result = checkIntentAgreement(
+      [printsReport(printedReport)],
+      [commandPrinting(null)],
+    );
+    expect(result.findings).toEqual([]);
+  });
+
+  it("reports a print that moved to the other stream as one finding", () => {
+    const intent = printsReport();
+    if (intent.kind === "boundary") {
+      intent.outcomes[0].effects[0].names = "io:stderr";
+    }
+    const result = checkIntentAgreement([intent], [commandPrinting(null)]);
+    expect(result.findings.map((f) => f.kind)).toEqual(["renamedBoundary"]);
   });
 });
 

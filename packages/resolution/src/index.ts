@@ -1098,19 +1098,25 @@ const STATED_RULES = [
     [lit("refersToParam", v("y"), v("p")), lit("nameHop", v("x"), v("y"))],
   ),
 
-  // An expression whose value is the environment object w: the way a
-  // pack spells it, a name declared as that, or a parameter a caller
-  // handed one of those to, however many calls deep.
+  // An object the runtime provides and nothing declares: the process
+  // environment, or one of the process's output streams. Each is
+  // followed the same way, from the spot a pack says spells it.
+  rule("runtimeObject", [v("w")], [lit("environmentObject", v("w"))]),
+  rule("runtimeObject", [v("w")], [lit("streamObject", v("w"))]),
+
+  // An expression whose value is the runtime object w: the way a pack
+  // spells it, a name declared as that, or a parameter a caller handed
+  // one of those to, however many calls deep.
   rule(
-    "environmentValue",
+    "runtimeValue",
     [v("w"), v("o")],
-    [lit("environmentObject", v("w")), lit("refersToObject", v("o"), v("w"))],
+    [lit("runtimeObject", v("w")), lit("refersToObject", v("o"), v("w"))],
   ),
   rule(
-    "environmentValue",
+    "runtimeValue",
     [v("w"), v("o")],
     [
-      lit("environmentValue", v("w"), v("a")),
+      lit("runtimeValue", v("w"), v("a")),
       lit("passesArgument", v("r"), v("p"), v("a")),
       lit("refersToParam", v("o"), v("p")),
     ],
@@ -1119,10 +1125,10 @@ const STATED_RULES = [
   // pass nothing. `loadConfig(env = process.env)` is written that way
   // so that most of the program never mentions the environment at all.
   rule(
-    "environmentValue",
+    "runtimeValue",
     [v("w"), v("o")],
     [
-      lit("environmentValue", v("w"), v("d")),
+      lit("runtimeValue", v("w"), v("d")),
       lit("paramDefault", v("p"), v("d")),
       lit("refersToParam", v("o"), v("p")),
     ],
@@ -1135,7 +1141,8 @@ const STATED_RULES = [
     "environmentRead",
     [v("w"), v("site"), v("x")],
     [
-      lit("environmentValue", v("w"), v("o")),
+      lit("environmentObject", v("w")),
+      lit("runtimeValue", v("w"), v("o")),
       lit("readsKeyed", v("site"), v("o"), v("x")),
     ],
   ),
@@ -1362,9 +1369,10 @@ const STATED_RULES = [
     [v("site"), v("site")],
     [lit("allocates", v("site"), v("c"))],
   ),
-  // The process environment is an object nothing declares, so a pack
-  // saying which expression spells it is the only way in.
-  rule("refersToObject", [v("w"), v("w")], [lit("environmentObject", v("w"))]),
+  // The process environment and the output streams are objects nothing
+  // declares, so a pack saying which expression spells one is the only
+  // way in.
+  rule("refersToObject", [v("w"), v("w")], [lit("runtimeObject", v("w"))]),
   // The hop comes first so a check with both ends bound walks forward from
   // the name, which the named store needs. With one end bound, the bound
   // literal goes first whatever order the body is written in.
@@ -2003,7 +2011,7 @@ export const RESOLUTION_QUESTIONS = [
     [v("p")],
     [
       lit("wantedEnvObject", v("w")),
-      lit("environmentValue", v("w"), v("p")),
+      lit("runtimeValue", v("w"), v("p")),
       lit("paramNamed", v("f"), v("n"), v("p")),
     ],
   ),
@@ -2014,7 +2022,7 @@ export const RESOLUTION_QUESTIONS = [
     [v("r")],
     [
       lit("wantedEnvObject", v("w")),
-      lit("environmentValue", v("w"), v("a")),
+      lit("runtimeValue", v("w"), v("a")),
       lit("callArg", v("r"), v("k"), v("a")),
     ],
   ),
@@ -2024,7 +2032,28 @@ export const RESOLUTION_QUESTIONS = [
   rule(
     "wantedEnvironmentValue",
     [v("o"), v("w")],
-    [lit("wanted", v("o")), lit("environmentValue", v("w"), v("o"))],
+    [
+      lit("wanted", v("o")),
+      lit("runtimeValue", v("w"), v("o")),
+      lit("environmentObject", v("w")),
+    ],
+  ),
+  // Every expression an output stream reaches, from the spots that spell
+  // one, so a writer at `out.write(...)` looks its receiver up.
+  rule(
+    "wantedStreamValue",
+    [v("o"), v("w")],
+    [lit("wantedStreamObject", v("w")), lit("runtimeValue", v("w"), v("o"))],
+  ),
+  // The calls that hand a stream on, so the asker can read the callee's file.
+  rule(
+    "wantedStreamPassingCall",
+    [v("r")],
+    [
+      lit("wantedStreamObject", v("w")),
+      lit("runtimeValue", v("w"), v("a")),
+      lit("callArg", v("r"), v("k"), v("a")),
+    ],
   ),
   // Whether an expression is a parameter under another name, for a
   // caller deciding whether going and reading that parameter's callers

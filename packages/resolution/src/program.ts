@@ -40,6 +40,7 @@ export const ASKING_RELATIONS: readonly string[] = [
   "wantedUnder",
   "wantedSites",
   "wantedEnvObject",
+  "wantedStreamObject",
   "wantedOrigin",
   "wantedCallOrigin",
   "wantedExportsOf",
