@@ -204,11 +204,13 @@ describe("LiveSocket", () => {
     await open(root, at);
     const { project, live } = await open(root, at);
 
+    fs.writeFileSync(path.join(project.summaryDir, "1-contract.json"), "[]");
     const report = await project.start();
 
     expect(live.owner).toBe(false);
     expect(report.configured).toBe(true);
     expect(routesIn(project.summaryDir)).toEqual(["/orders"]);
+    expect(fs.readdirSync(project.summaryDir)).toEqual(["0-extract.json"]);
     expect(project.keptAdapters()).toBe(0);
   }, 60_000);
 
