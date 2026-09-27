@@ -159,11 +159,85 @@ const CONSUMERS: Partial<Record<SyntaxKind, ConsumerReader>> = {
   [SyntaxKind.VariableDeclaration]: emitNameWrite,
   [SyntaxKind.BinaryExpression]: emitBinary,
   [SyntaxKind.ConditionalExpression]: emitConditionalBranch,
+  [SyntaxKind.SpreadElement]: emitGivenTo,
+  [SyntaxKind.SpreadAssignment]: emitGivenTo,
+  [SyntaxKind.JsxSpreadAttribute]: emitGivenToElement,
+  [SyntaxKind.JsxExpression]: emitGivenToElement,
+  [SyntaxKind.PropertyDeclaration]: emitFieldInitializer,
 };
 
 /**
+ * `[...app]`, `f(...app)` or `{ ...app }`: the call, array or object is
+ * given the value's contents under keys the source does not write.
+ */
+function emitGivenTo(
+  db: Database,
+  _table: NodeTable,
+  _operand: Expression,
+  key: string,
+  parent: Node,
+): void {
+  const container = parent.getParent();
+  if (container !== undefined) {
+    fact(db, "holdsUnderKey", nodeId(container), key);
+  }
+}
+
+/**
+ * `<Server app={app} />`, `<Server {...app} />` or `<Server>{app}</Server>`:
+ * the element is given the value as a prop or a child.
+ */
+function emitGivenToElement(
+  db: Database,
+  _table: NodeTable,
+  _operand: Expression,
+  key: string,
+  parent: Node,
+): void {
+  const element = parent.getFirstAncestor(
+    (ancestor) =>
+      Node.isJsxOpeningElement(ancestor) ||
+      Node.isJsxSelfClosingElement(ancestor) ||
+      Node.isJsxElement(ancestor) ||
+      Node.isJsxFragment(ancestor),
+  );
+  if (element !== undefined) {
+    fact(db, "holdsUnderKey", nodeId(element), key);
+  }
+}
+
+/**
+ * `class Holder { app = app }` in the function: every instance, or the
+ * class for a static field, keeps the value.
+ */
+function emitFieldInitializer(
+  db: Database,
+  _table: NodeTable,
+  operand: Expression,
+  key: string,
+  parent: Node,
+): void {
+  const cls = parent.getParent();
+  if (
+    Node.isPropertyDeclaration(parent) &&
+    parent.getInitializer() === operand &&
+    cls !== undefined
+  ) {
+    fact(
+      db,
+      "storesProperty",
+      nodeId(cls),
+      parent.getName(),
+      key,
+      UNPLACED_STORE_NAME,
+    );
+  }
+}
+
+/**
  * `app.router` or `app[key]` hands out a part of the value, which goes
- * wherever the part goes, unless the part is called at once as a method.
+ * wherever the part goes. A method called at once goes wherever its
+ * result goes, since the result can be the value itself.
  */
 function emitPartRead(
   db: Database,
@@ -191,7 +265,7 @@ function emitPartRead(
     (Node.isCallExpression(around) || Node.isNewExpression(around)) &&
     around.getExpression() === part
   ) {
-    emitValue(db, table, around);
+    emitUse(db, table, operandOf(around));
     return;
   }
   emitUse(db, table, part);

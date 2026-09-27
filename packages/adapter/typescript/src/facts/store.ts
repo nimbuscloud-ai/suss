@@ -79,7 +79,7 @@ import type {
   PatternPack,
   TransparentWrapper,
 } from "@suss/extractor";
-import type { Project, SourceFile } from "ts-morph";
+import type { Project, SourceFile, VariableDeclaration } from "ts-morph";
 
 const RESOLUTION_PROGRAM: OnDemandRules = resolutionProgram();
 
@@ -256,6 +256,8 @@ export class ResolutionStore {
   /** Keyed by value and site both, since one value differs per site. */
   private readonly writtenUnderSite = new Map<string, Node | null>();
   private readonly constructionSites = new Map<string, string[]>();
+  /** What each local's reads do with it, by its declaration. A local's function is walked whole, so an answer stays true. */
+  private readonly localUses = new Map<string, ValueUses>();
   /** Files the most recent query read, for the memo to keep. */
   private lastQueryWalked: string[] = [];
   /** See `environmentSiteFiles`; null until the first env question. */
@@ -1038,6 +1040,17 @@ export class ResolutionStore {
     if (declaration === null) {
       return null;
     }
+    const id = nodeId(declaration);
+    const known = this.localUses.get(id);
+    if (known !== undefined) {
+      return known;
+    }
+    const uses = this.askLocalUses(declaration);
+    this.localUses.set(id, uses);
+    return uses;
+  }
+
+  private askLocalUses(declaration: VariableDeclaration): ValueUses {
     const keys = emitLocalUses(this.db, this.table, declaration);
     this.stale = true;
     try {

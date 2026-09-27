@@ -112,6 +112,19 @@ export const PASSED_ON_RULES: readonly Rule[] = [
     [lit("readsKeyed", v("r"), v("x"), v("k")), lit("passedOn", v("r"))],
     "an entry passed on",
   ),
+  // A method's result can be the value itself, as a builder's is, or
+  // carry what was registered on it, as `s.router(contract, handlers)`
+  // does, so passing the result on passes the value on.
+  rule(
+    "passedOn",
+    [v("x")],
+    [
+      lit("readsProperty", v("r"), v("x"), v("n")),
+      lit("call", v("c"), v("r")),
+      lit("passedOn", v("c")),
+    ],
+    "a method result passed on",
+  ),
 ];
 
 /**

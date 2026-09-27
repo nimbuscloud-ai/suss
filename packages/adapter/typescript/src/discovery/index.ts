@@ -16,7 +16,10 @@ import {
   discoverPackageExports,
 } from "./packageExports.js";
 import { discoverPackageImports } from "./packageImport.js";
-import { discoverRegistrationCalls } from "./registrationCall.js";
+import {
+  discoverRegistrationCalls,
+  methodsRegisteredOn,
+} from "./registrationCall.js";
 import { discoverRegistrationLoops } from "./registrationLoop.js";
 import { discoverRegistrationTemplates } from "./registrationTemplate.js";
 import { discoverResolverMaps } from "./resolverMap.js";
@@ -46,6 +49,7 @@ function runPattern(
   mountPrefixes?: MountPrefixIndex,
   expandedElsewhere?: ExpandedRegistrations,
   routeWrapperPattern?: DiscoveryPattern,
+  packMethods?: ReadonlySet<string>,
 ): DiscoveredUnit[] {
   if (pattern.match.type === "namedExport") {
     return discoverNamedExports(
@@ -65,6 +69,7 @@ function runPattern(
       mountPrefixes,
       expandedElsewhere,
       routeWrapperPattern,
+      packMethods,
     );
   }
   if (pattern.match.type === "registrationTemplate") {
@@ -224,6 +229,7 @@ export function discoverUnits(
   const store = resolution ?? new ResolutionStore();
   const allResults: DiscoveredUnit[] = [];
   const routeWrapperPattern = routeWrapperPatternOf(patterns);
+  const packMethods = methodsRegisteredOn(patterns);
 
   for (const pattern of patterns) {
     const found = runPattern(
@@ -233,6 +239,7 @@ export function discoverUnits(
       mountPrefixes,
       expandedElsewhere,
       routeWrapperPattern,
+      packMethods,
     );
     for (const unit of found) {
       // A handler that already says which pattern to read it with is a

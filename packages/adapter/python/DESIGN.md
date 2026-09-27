@@ -410,6 +410,19 @@ A read the facts do not record looks like no read at all, and then the mount is 
 
 A pack that declares a mount object is left out, which today is flask-restx. Its `Api` serves through the app or blueprint it was built from or handed, so what happens to the `Api`'s own variable says nothing about whether the app is served.
 
+A route declared straight on such an app is left out the same way, since no request can reach it either:
+
+```python
+def build_test_app():
+    test_app = FastAPI()
+
+    @test_app.get("/health")   # not reported
+    def health():
+        pass
+```
+
+Discovery asks the same question through `routeOnDroppedApp` before it builds the route's unit, and the route is reported again as soon as the function returns the app, runs it, or hands it anywhere.
+
 ## What a file reads from the environment
 
 `os.environ` is part of the standard library, so the adapter recognizes reads of it without a pack. Each read becomes the same `config-read` interaction that the TypeScript adapter emits for `process.env.X`, on the `runtime-config` binding, and is spelled `os.environ["X"]` whichever way the source wrote it. The runtime-config checker pairs those reads against what a template declares for the function the file runs in.

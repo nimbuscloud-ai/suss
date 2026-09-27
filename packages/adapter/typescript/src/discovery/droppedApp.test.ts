@@ -155,6 +155,22 @@ describe("a mount on an app that never leaves the function that built it", () =>
       "function inner(a = testApp) { return a; } return inner;",
     ],
     ["hands a property of the app on", "serve({ fetch: testApp.handle });"],
+    ["spreads the app into an object", "return { ...testApp };"],
+    ["spreads the app into a call", "serve(...[testApp]);"],
+    ["spreads the app as call arguments", "serve(...testApp);"],
+    ["spreads the app into an array", "return [...testApp];"],
+    [
+      "keeps the app in a class field",
+      "class Holder { app = testApp; } return Holder;",
+    ],
+    [
+      "keeps the app in a static class field",
+      "return class { static app = testApp; };",
+    ],
+    [
+      "returns the result of a method called on the app",
+      'return testApp.use("/v", orders);',
+    ],
     ["returns the app under a cast", "return testApp as unknown;"],
     ["returns the app with a non-null assertion", "return testApp!;"],
   ])("keeps the mount when the function %s", async (_, body) => {
@@ -167,6 +183,73 @@ describe("a mount on an app that never leaves the function that built it", () =>
       "async function buildTestApp()",
     );
     expect(await pathsFor(expressLike, source)).toEqual(["/ping"]);
+  });
+
+  it.each([
+    ["an attribute", "return <Server app={testApp} />;"],
+    ["a spread attribute", "return <Server {...testApp} />;"],
+    ["a child", "return <Server>{testApp}</Server>;"],
+  ])(
+    "keeps the mount when the function hands the app to JSX as %s",
+    async (_, body) => {
+      const project = createTestProject();
+      project.createSourceFile(
+        "/app.tsx",
+        withTestApp(`${body}`).replace(
+          "export let outer: unknown;",
+          "export let outer: unknown;\n  declare function Server(props: any): any;",
+        ),
+      );
+      const adapter = createTypeScriptAdapter({
+        project,
+        frameworks: [expressLike],
+        cacheDir: null,
+      });
+      expect(pathsOf(await adapter.extractAll())).toEqual(["/ping"]);
+    },
+  );
+
+  it("drops a route registered on an app its function drops", async () => {
+    const source = withTestApp(
+      'testApp.get("/health", (req, res) => { res.json({}); });',
+    );
+    expect(await pathsFor(expressLike, source)).toEqual(["/api/ping"]);
+  });
+
+  it("drops a Hono route registered on an app its function drops", async () => {
+    const source = `
+      import { Hono } from "hono";
+      function buildTestApp() {
+        const testApp = new Hono();
+        testApp.get("/health", (c) => c.json({}));
+      }
+    `;
+    expect(await pathsFor(honoLike, source)).toEqual([]);
+  });
+
+  it.each([
+    ["returns the app", "return testApp;"],
+    ["listens on the app", "testApp.listen(3000);"],
+    ["hands the app to a call", "serve(testApp);"],
+  ])(
+    "keeps a route registered on the app when the function %s",
+    async (_, body) => {
+      const source = withTestApp(
+        `testApp.get("/health", (req, res) => { res.json({}); });\n    ${body}`,
+      );
+      expect(await pathsFor(expressLike, source)).toContain("/health");
+    },
+  );
+
+  it("keeps a route on a router whose registration result the function returns", async () => {
+    const source = `
+      import express from "express";
+      function buildRouter() {
+        const router = express();
+        return router.get("/health", (req, res) => { res.json({}); });
+      }
+    `;
+    expect(await pathsFor(expressLike, source)).toEqual(["/health"]);
   });
 
   it("keeps the mount when a generator yields the app", async () => {

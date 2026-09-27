@@ -78,6 +78,7 @@ export function discoverRegistrationCalls(
   mountPrefixes?: MountPrefixIndex,
   expandedElsewhere?: ExpandedRegistrations,
   routeWrapperPattern?: DiscoveryPattern,
+  packMethods: ReadonlySet<string> = new Set(),
 ): DiscoveredUnit[] {
   const results: DiscoveredUnit[] = [];
 
@@ -142,6 +143,16 @@ export function discoverRegistrationCalls(
       return;
     }
     const subjectNode = receiver.node;
+    if (
+      appStaysInItsFunction(
+        callee.getExpression(),
+        subjectNode,
+        new Set([...packMethods, ...registrationMethods]),
+        resolution,
+      )
+    ) {
+      return;
+    }
 
     // Step 4: Extract handlers from the call
     const args = node.getArguments();
@@ -906,9 +917,9 @@ export function discoverMountEdges(
 }
 
 /**
- * Whether a mount's app is a local its function builds and then drops,
- * so no request reaches the paths the mount adds. The app may still
- * serve when any method outside `ownMethods` runs on it, `listen` say.
+ * Whether a registration's or a mount's app is a local its function
+ * builds and then drops, so no request reaches what is registered on it.
+ * The app may still serve when a method outside `ownMethods` runs on it.
  */
 function appStaysInItsFunction(
   receiver: Node,
@@ -918,6 +929,32 @@ function appStaysInItsFunction(
 ): boolean {
   const uses = resolution?.usesOfLocal(receiver, construction) ?? null;
   return uses !== null && staysInItsFunction(uses, ownMethods);
+}
+
+/**
+ * Every method a pack registers something on a routable with: route
+ * methods, mount methods and wrapper methods, such as `get` and `use`.
+ * Calling any other method on an app, `listen` say, may serve it.
+ */
+export function methodsRegisteredOn(
+  patterns: readonly DiscoveryPattern[],
+): Set<string> {
+  const methods = new Set<string>();
+  for (const pattern of patterns) {
+    if (pattern.match.type !== "registrationCall") {
+      continue;
+    }
+    for (const method of registrationMethodsOf(pattern.match)) {
+      methods.add(method);
+    }
+    if (pattern.mount !== undefined) {
+      methods.add(pattern.mount.method);
+    }
+    if (pattern.wraps !== undefined && "method" in pattern.wraps) {
+      methods.add(pattern.wraps.method);
+    }
+  }
+  return methods;
 }
 
 /** The methods a registration pattern registers with, `get` for `.get`. */

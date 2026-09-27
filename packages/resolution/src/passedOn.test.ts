@@ -75,6 +75,11 @@ describe("where a value goes", () => {
     expect(uses.passedOn).toBe(true);
   });
 
+  it("is passed on when the result of a method called on it is passed on", () => {
+    const uses = usesAfter([...MOUNT, ["returnsValue", "build", "mountCall"]]);
+    expect(uses.passedOn).toBe(true);
+  });
+
   it("stays put when a property read off it goes nowhere", () => {
     const uses = usesAfter([
       ...MOUNT,

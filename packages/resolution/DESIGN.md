@@ -45,8 +45,10 @@ readsKeyed(site, o, x)      site reads the entry of o at the value of
 holdsUnderKey(o, x)         o is given x under a key the source computes,
                             as in o[k] = x, a dictionary entry whose key
                             is not a string, the element of a
-                            comprehension, or Ruby's apps << x. Only
-                            passedOn reads it
+                            comprehension, or Ruby's apps << x. A spread
+                            of x into o, a JSX element given x as a prop
+                            or a child, and Ruby's foo(&x) are stated
+                            this way too. Only passedOn reads it
 environmentObject(w)        w is written as the process environment
 streamObject(w)             w is written as one of the process's output
                             streams, such as process.stdout
@@ -75,13 +77,14 @@ writesUnstated(x)           a write to x states no value at all. The
 fallbackBranch(x, b)        x is a fallback expression, a || b or
                             a ?? b, or a or b in Python and Ruby, and b
                             is one of its branches. Python also states
-                            a if c else b and (a) this way
+                            (a) this way, whose one branch is a
 conditionalBranch(x, b)     x is a conditional expression and b is one
-                            of its branches, as in c ? a : b, c && b, or
-                            a Ruby if used as a value. The value rules
-                            keep such an expression a written value in
-                            these languages, so only passedOn reads it
-                            (TypeScript, Ruby)
+                            of its branches, as in c ? a : b, a if c
+                            else b, c && b, or a Ruby if, case or begin
+                            used as a value. Every language keeps a
+                            conditional a written value, which the value
+                            evaluator reads with its test, so only
+                            passedOn reads this
 instanceOf(x, cls)          x is one of cls, and nothing says which: a
                             method's receiver, or a name Python
                             annotates with a type. cls can be a name
@@ -95,7 +98,8 @@ paramOf(f, k, p)            p is f's parameter at position k. A class
                             lists its constructor's parameters here
 paramNamed(f, n, p)         p is f's parameter called n
 paramDefault(p, d)          p takes the value d when a caller passes no
-                            argument at all (TypeScript, Python)
+                            argument at all. Ruby states it for a lambda's
+                            or a block's parameter only
 decoratedWith(p, d)         the constructor parameter p is written with
                             the decorator call d (TypeScript)
 returnsValue(f, v)          f returns v. A Ruby block returns its last
@@ -1004,7 +1008,9 @@ passedOn(x)                 a read hands x on: it is returned, yielded,
                             entersAs), made a parameter's default, or
                             made a branch of a fallback or a
                             conditional. A property or an entry read off
-                            x that is itself passed on counts as well
+                            x that is itself passed on counts as well,
+                            and so does the result of a method called
+                            on x, since it can be x itself
 wantedPassedOn(x)           passedOn for a key asked about with
                             wantedUses, or a call of x itself
 wantedCalledMethod(x, n)    the method n is called on x, as in x.n()
@@ -1027,13 +1033,21 @@ Calling the value itself counts as passing it on, since an app can be
 a function that a handler calls with the request.
 
 A property read off the value is passed on only when that property is:
-`serve({ fetch: app.fetch })` passes the app on, and `app.use(...)`,
-which calls the property at once, does not.
+`serve({ fetch: app.fetch })` passes the app on, and `app.use(...)`
+as a statement, which calls the property at once and drops the
+result, does not.
 
-The Python router index and TypeScript mount discovery ask this
-question. Ruby states the same facts, but no Ruby reader records a
-mount on a local: a Rails `mount` is drawn on a constant's route set,
-which no function can drop.
+Python and TypeScript ask this question before recording a mount on
+an app or a route registered on one, since no request reaches either
+once the app is dropped. Ruby states the same facts, but no Ruby
+reader records a route or a mount on a local: Rails draws both on a
+constant's route set, and a controller or GraphQL field is read off
+its class, so no function can drop them.
+
+A method's result counts because it can carry what was registered.
+`s.router(contract, handlers)` returns the router that serves the
+handlers, and Express's `app.use(...)` returns `app` itself, so
+`return app.use(mw)` hands the app on.
 
 Python and Ruby key every read of a name on the name, so a caller asks
 about that one key. TypeScript keys each reference apart and joins it
