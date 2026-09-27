@@ -92,6 +92,8 @@ A command needs a project to run in, and not every page builds one, so a page op
 <!-- suss:example fixtures=aws-lambda -->   the same, with fixtures/aws-lambda
                                             copied in at that path, for a page
                                             whose commands name a fixture
+<!-- suss:example install -->               the same, and also run the npm and
+                                            npx lines the page shows
 <!-- suss:file src/client.ts -->            write the next code fence there
 <!-- suss:excerpt -->                       the next output fence shows part of
                                             the output, so look for those lines
@@ -105,7 +107,7 @@ A command needs a project to run in, and not every page builds one, so a page op
 
 Inside a run, a code fence introduced by a paragraph that starts with a backticked path and ends with a colon is written to that path. Both tutorials already write their fences that way. Use `suss:file` when the prose around a fence doesn't spell out where it goes.
 
-Only suss commands run. `npm install express` and `mkdir` are left where they are, because extraction reads import specifiers rather than resolved packages and these projects need no `node_modules`. Where a bash fence has several commands in it, the output below it is compared against the last one, and timings and absolute paths are normalised out first.
+Only suss commands run. `npm install express` and `mkdir` are left where they are, because extraction reads import specifiers rather than resolved packages and most of these projects need no `node_modules`. A pack that recognizes a call by its type needs the package installed, and the Prisma client needs `prisma generate` as well, so a page like that says `install` and its `npm` and `npx` lines run too. Where a bash fence has several commands in it, the output below it is compared against the last one, and timings and absolute paths are normalised out first.
 
 A prompt has its commands in inline code. Every flag on a suss command in it has to be one `suss --help` lists for that command, and every command spelled `npx @suss/cli ...` has to exit 0 in the fixture, since that is the spelling an agent runs. A bare `suss check --since` is a mention, so it is looked up and not run. The check reads a page with its `<!--@include: -->` lines expanded, so a prompt kept in its own file is checked where the page shows it.
 

@@ -206,6 +206,32 @@ function tokenize(line) {
   return words;
 }
 
+/** The npm or npx command a line runs, other than suss, or null. */
+function packageCommand(line) {
+  const words = tokenize(line);
+  if (words[0] !== "npm" && words[0] !== "npx") {
+    return null;
+  }
+  return sussCommand(line) === null ? words : null;
+}
+
+/** Runs an install or a generator the page shows, so the suss commands after it see what a reader's project would have. */
+function runSetup(words, cwd) {
+  const result = spawnSync(words[0], words.slice(1), {
+    cwd,
+    encoding: "utf8",
+    timeout: 300_000,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (result.error !== undefined) {
+    return { output: String(result.error.message), status: null };
+  }
+  return {
+    output: `${result.stdout ?? ""}${result.stderr ?? ""}`,
+    status: result.status,
+  };
+}
+
 function runSuss(args, cwd) {
   const result = spawnSync(process.execPath, [SUSS_BIN, ...args], {
     cwd,
@@ -300,6 +326,7 @@ function openProject(options) {
     pathPrefixes: [fs.realpathSync(dir), dir, ROOT],
     lastRun: null,
     keep: false,
+    installs: options.has("install"),
   };
 
   const root = options.get("fixture");
@@ -358,10 +385,25 @@ function writeFileFence(fence, filePath, project) {
 }
 
 /** Run every suss command in one bash fence. The output a page shows below
- * such a fence is the last command's, which is how the pages are written. */
-function runBlock(fence, project) {
+ * such a fence is the last command's, which is how the pages are written.
+ * On a page whose example says `install`, the npm and npx lines run too. */
+function runBlock(file, fence, project) {
   let last = null;
   for (const line of fence.body) {
+    const setup = project.installs ? packageCommand(line) : null;
+    if (setup !== null) {
+      const run = runSetup(setup, project.dir);
+      if (run.status !== 0) {
+        project.keep = true;
+        record(file, fence.line, "failed", {
+          command: line.trim(),
+          summary: `it exited ${run.status}: ${run.output.trim().split("\n").at(-1)}`,
+          kept: project.dir,
+        });
+      }
+      continue;
+    }
+
     const args = sussCommand(line);
     if (args === null) {
       continue;
@@ -641,7 +683,7 @@ function checkPage(file) {
 
     if (item.lang === "bash") {
       if (project !== null) {
-        runs.set(index, runBlock(item, project));
+        runs.set(index, runBlock(file, item, project));
       }
       previous = null;
       continue;

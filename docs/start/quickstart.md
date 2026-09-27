@@ -15,9 +15,9 @@ npx @suss/cli inspect summaries/code.json
 
 suss does not run your code, and you do not have to annotate anything
 first. The output below comes from a small Hono API with a Prisma schema
-behind it.
+behind it, on Prisma 5.22.0, which is what `^5.0.0` installs.
 
-<!-- suss:example -->
+<!-- suss:example install -->
 
 `package.json`:
 
@@ -29,6 +29,9 @@ behind it.
   "dependencies": {
     "@prisma/client": "^5.0.0",
     "hono": "^4.0.0"
+  },
+  "devDependencies": {
+    "prisma": "^5.0.0"
   }
 }
 ```
@@ -38,6 +41,10 @@ behind it.
 <!-- suss:file prisma/schema.prisma -->
 
 ```prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -93,6 +100,18 @@ app.post("/orders", async (c) => {
 
 export default app;
 ```
+
+## Install the project
+
+```bash
+npm install
+npx prisma generate
+```
+
+The Prisma pack knows a query by the type of the client it runs on, so it
+needs the client that `prisma generate` writes. Without it, `extract`
+lists `prisma` under Pack health as having read nothing, and nothing
+pairs with the schema.
 
 ## Work out which packs the project needs
 
@@ -162,10 +181,12 @@ src/api.ts
 │        -> 404 { error }
 │          + c.req.param
 │          + db.order.findUnique
+│          + reads postgresql:Order
 │      else
-│        -> 200 order
+│        -> 200 { id, reference, total }
 │          + c.req.param
 │          + db.order.findUnique
+│          + reads postgresql:Order
 │
 └─ POST /orders  (hono handler | line 20)
        if  typeof body.total !== "number"
@@ -175,14 +196,16 @@ src/api.ts
          -> 201 { reference }
            + c.req.json
            + db.order.create
+           + writes postgresql:Order
 
 2 summaries.
 ```
 
 Under each route you get the branches it takes, the condition that leads
 to each one, and the status and body it returns there. The `+` lines are
-the calls that branch makes. `POST /orders` only writes to Prisma on the
-branch that returns 201.
+the calls that branch makes, and the tables it reads and writes. The 200
+body lists the three columns the query selects, and `POST /orders` only
+writes the `Order` table on the branch that returns 201.
 
 ## Compare it against the schema
 
@@ -211,17 +234,16 @@ npx @suss/cli check --dir summaries/ --all
 ```
 
 ```
-Compared 1 boundary:
+Compared 2 of 3 boundaries:
   GET /orders/{reference}
     orders-api::src/api.ts::get <-> orders-api::src/client.ts::loadOrder
+  postgresql:Order
+    prisma/schema.prisma::Order <-> orders-api::src/api.ts::get
+    prisma/schema.prisma::Order <-> orders-api::src/api.ts::post
 
 Providers with no client to compare against:
   POST /orders
     orders-api::src/api.ts::post
-
-Nothing in this run paired with this boundary, so nothing was checked across it:
-  postgresql:Order
-    prisma/schema.prisma::Order
 
 ────────────────────────────────────────────────────────────
 [WARNING] unhandledProviderCase
@@ -235,15 +257,22 @@ Nothing in this run paired with this boundary, so nothing was checked across it:
       provider: { transitionId: "get:response:404:ca40ca7" }
       reason: TODO say why you accept this
 ────────────────────────────────────────────────────────────
-1 finding: 0 error, 1 warning, 0 info
+[WARNING] boundaryFieldUnused
+  Order declares "placedAt" and code here writes to it, but no query reads it. suss counts a column as read only when a query selects it, so before you treat the write as pointless, look for code that takes "placedAt" off a record it already fetched.
+  provider: prisma/schema.prisma::Order (prisma/schema.prisma:1)
+  consumer: prisma/schema.prisma::Order (prisma/schema.prisma:1)
+  boundary: prisma (postgresql)
+────────────────────────────────────────────────────────────
+2 findings: 0 error, 2 warning, 0 info
 ```
 
-One boundary had both sides in this run. Across it, `loadOrder` treats
-every status other than 200 the same way, so a missing order and a failed
-request both end up on the screen as one generic error. The two entries
-above the finding had only one side here, and suss compared nothing for
-them. An empty finding list on its own does not mean the two sides
-agreed.
+Two boundaries had both sides in this run. At the route, `loadOrder`
+treats every status other than 200 the same way, so a missing order and a
+failed request both end up on the screen as one generic error. At the
+table, both handlers are compared against the schema, and nothing in the
+project selects `placedAt` after `POST /orders` writes it. `POST /orders`
+has no caller here, so suss compared nothing across that route. An empty
+finding list on its own does not mean the two sides agreed.
 
 Every finding gives you the boundary, both sides, a file and line to
 open, and a rule you can paste if you decide to live with it. The
