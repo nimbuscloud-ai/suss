@@ -62,6 +62,12 @@ export {
   type UnwrapsByName,
 } from "./packWords.js";
 export {
+  readUses,
+  staysInItsFunction,
+  USES_QUESTION,
+  type ValueUses,
+} from "./passedOn.js";
+export {
   ASKING_RELATIONS,
   askResolution,
   askResolutionUnder,
@@ -149,6 +155,8 @@ export type {
 // `storesProperty` about the name.
 
 import { constant, lit, rule, variable as v } from "@suss/datalog";
+
+import { PASSED_ON_RULES, USES_QUESTIONS } from "./passedOn.js";
 
 import type { Rule } from "@suss/datalog";
 
@@ -1861,6 +1869,8 @@ const STATED_RULES = [
     [v("x"), v("z")],
     [lit("comesTo", v("x"), v("z")), lit("func", v("z"))],
   ),
+
+  ...PASSED_ON_RULES,
 ];
 
 /**
@@ -2414,6 +2424,8 @@ export const RESOLUTION_QUESTIONS = [
     [v("x"), v("r")],
     [lit("anchorChain", v("x"), v("r")), lit("call", v("r"), v("c"))],
   ),
+
+  ...USES_QUESTIONS,
 ];
 
 /** The relations `RESOLUTION_QUESTIONS` answers into. */
