@@ -58,7 +58,7 @@ GraphQL:
 
 ```
 [ERROR] boundaryFieldUnknown
-  GraphQL operation "GetUser" selects "User.email" but the provider's schema doesn't declare that field on "User". Likely a stale selection after a schema change.
+  GraphQL operation "GetUser" selects "User.email" but the provider's schema doesn't declare that field on "User". The selection is probably left over from before a schema change.
 ```
 
 The server rejects the whole operation at validation, so every operation using that selection fails outright. A selection kept in a shared fragment breaks every operation that spreads it.
@@ -67,7 +67,7 @@ A message bus, where the consumer reads a field off the message body:
 
 ```
 [WARNING] boundaryFieldUnknown
-  OrderConsumer.handler reads "totalAmount" off a message on aws_sqs channel "OrdersQueue" but no producer in the analysed scope sends "totalAmount". Likely a producer/consumer drift: the producer renamed or removed the field, or the consumer expects a field that was never sent.
+  OrderConsumer.handler reads "totalAmount" off a message on aws_sqs channel "OrdersQueue" but no producer in this run sends "totalAmount". Either a producer renamed or removed the field, or the consumer expects a field that was never sent.
 ```
 
 A queue takes a string, so nothing on either side type-checks the payload and the consumer throws on every message. A producer whose body suss cannot read takes the channel out of the comparison, so a missing finding here does not mean the two sides agree.
@@ -343,7 +343,7 @@ Code sends to a queue or a topic that no provider in the analyzed scope declares
 
 ```
 [WARNING] messageBusProducerOrphan
-  handler sends to aws_sqs channel "https://sqs.us-east-1.amazonaws.com/123456789012/AuditQueue" but nothing in the analysed scope declares this channel, and no handler answers it. Likely cases: (a) the queue is declared in another stack we don't analyse (multi-repo); (b) work-in-progress before infra is wired up; (c) a real misconfiguration. Severity is warning rather than error because (a) and (b) are common false-positive sources.
+  handler sends to aws_sqs channel "https://sqs.us-east-1.amazonaws.com/123456789012/AuditQueue", but nothing in this run declares the channel and no handler receives from it. The channel may be declared in a stack or repository this run did not read, or not be set up yet. If neither is true, the channel name is wrong.
 ```
 
 The queue may be declared in a stack suss did not read, so the provider side is not in the run and no outcome can be stated.
@@ -358,7 +358,7 @@ A consumer is wired to receive from a channel that no code in the project sends 
 
 ```
 [WARNING] messageBusConsumerOrphan
-  ChargeWorkerFunction.FromCharges is wired to receive messages from aws_sqs channel "ChargesQueue" but no code in the project sends to this channel. Either dead infra or the producer lives outside this repo.
+  ChargeWorkerFunction.FromCharges is wired to receive messages from aws_sqs channel "ChargesQueue" but no code in the project sends to this channel. Either nothing uses the channel any more, or the producer lives outside this repository.
   boundary: cloudformation (aws_sqs)
 ```
 
@@ -374,7 +374,7 @@ A queue or a topic is declared in infrastructure and neither produced to nor con
 
 ```
 [WARNING] messageBusUnused
-  aws_sqs channel "LeftoverQueue" is declared in infrastructure but has no identified producer or consumer. Likely orphan resource left over from a removed feature.
+  aws_sqs channel "LeftoverQueue" is declared in infrastructure, but nothing in this run sends to it or receives from it. It is often left over from a feature that was removed.
   boundary: cloudformation (aws_sqs)
 ```
 
@@ -410,7 +410,7 @@ An SQS queue that is not FIFO can deliver one message more than once, and the ha
 
 ```
 [WARNING] repeatUnsafeConsumer
-  SQS queue "ChargesQueue" can deliver one message more than once, and handler makes POST /v1/charges while handling it. A second delivery makes that call again. If the far side takes an idempotency key and this call sends one, it is safe and worth suppressing: a summary does not record the headers a call sends, so this cannot tell.
+  SQS queue "ChargesQueue" can deliver one message more than once, and handler makes POST /v1/charges while handling it. A second delivery makes that call again. If the far side takes an idempotency key and this call sends one, the repeat is harmless and the finding can be accepted. A summary does not record the headers a call sends, so suss cannot tell.
   consumer: src/handlers/chargeWorker.ts::handler (src/handlers/chargeWorker.ts:3)
   boundary: cloudformation (aws_sqs)
 ```
@@ -429,7 +429,7 @@ Code invokes a deployed unit by name and no deployment source in the run declare
 
 ```
 [WARNING] unitInvocationTargetUnknown
-  OrderApi.handler invokes the lambda "legacy-pricing", and nothing in the analysed scope deploys a unit by that name. Likely cases: (a) it is deployed by another stack we don't analyse; (b) work-in-progress before the infrastructure is wired up; (c) a name that no longer exists. Severity is warning rather than error because (a) and (b) are common.
+  OrderApi.handler invokes the lambda "legacy-pricing", but nothing in this run deploys a unit by that name. The unit may be deployed by a stack this run did not read, or not be set up yet. If neither is true, the name no longer exists.
 ```
 
 **Legitimate when:** the callee is deployed by another stack, or the infrastructure has not landed yet.
@@ -446,7 +446,7 @@ suss could not tell which code a runtime runs, so it paired that runtime's envir
 
 ```
 [INFO] runtimeScopeUnknown
-  ReportBuilder (lambda) has no codeScope; cannot verify whether code in this runtime reads its declared environment variables. Add Metadata.SussCodeScope to the resource (or use SAM CodeUri) to enable env-var pairing.
+  ReportBuilder (lambda) has no codeScope, so suss cannot tell whether code in this runtime reads its declared environment variables. Add Metadata.SussCodeScope to the resource, or give it a SAM CodeUri, so its environment can be paired with the code that reads it.
   boundary: cloudformation (os)
 ```
 
@@ -480,7 +480,7 @@ A pack found a boundary but cannot work out its other side. The finding records 
 
 ```
 [INFO] unsupportedSemantics
-  SNS subscription "FromEvents" on topic "EventsTopic" routes to AuditFunction.FromEvents, but subscription declares a FilterPolicy; v0 pairs on the whole topic only, filter-policy reduction is out of scope. It's surfaced as unpaired-unresolvable rather than dropped.
+  SNS subscription "FromEvents" on topic "EventsTopic" routes to AuditFunction.FromEvents, but the subscription declares a FilterPolicy, and suss pairs a subscription only on its whole topic. No producer was paired with it, so what reaches it went unchecked.
   boundary: cloudformation (aws.sns)
 ```
 
@@ -745,7 +745,7 @@ Run findings are a third list, under `run` in the JSON. They are about the run i
 
 ### `nothingPaired`
 
-**Severity:** error. Emitted by `suss check --dir`, and by a bare `suss check` over the project, unless `--allow-empty` was passed.
+**Severity:** error. Emitted by `suss check --dir`, by a bare `suss check` over the project, and by `suss check <a.json> <b.json>` when one of the two files has no summaries, unless `--allow-empty` was passed.
 
 The run paired nothing. No boundary had both a provider and a consumer, so nothing was compared. Without this finding the report would look exactly like one where both sides agreed.
 

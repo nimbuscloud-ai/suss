@@ -412,7 +412,7 @@ function makeRepeatUnsafeFinding(
     boundary: binding,
     provider: makeSide(consumer),
     consumer: makeSide(handler),
-    description: `SQS queue "${semantics.channel}" can deliver one message more than once, and ${handler.identity.name} makes ${call.label}${through} while handling it. A second delivery makes that call again. If the far side takes an idempotency key and this call sends one, it is safe and worth suppressing: a summary does not record the headers a call sends, so this cannot tell.`,
+    description: `SQS queue "${semantics.channel}" can deliver one message more than once, and ${handler.identity.name} makes ${call.label}${through} while handling it. A second delivery makes that call again. If the far side takes an idempotency key and this call sends one, the repeat is harmless and the finding can be accepted. A summary does not record the headers a call sends, so suss cannot tell.`,
     severity: "warning",
   };
 }
@@ -584,7 +584,7 @@ function makeOrphanProducerFinding(
       : `"${effectiveCh}" (resolved from env var "${original}")`;
   const description = opts.onlySubscriberDisabled
     ? `${producer.summary.identity.name} sends to ${semantics.messageBus} channel ${channelDisplay}, and the only subscription on this channel is deployed disabled, so nothing receives what it sends until someone switches the subscription on.`
-    : `${producer.summary.identity.name} sends to ${semantics.messageBus} channel ${channelDisplay} but nothing in the analysed scope declares this channel, and no handler answers it. Likely cases: (a) the queue is declared in another stack we don't analyse (multi-repo); (b) work-in-progress before infra is wired up; (c) a real misconfiguration. Severity is warning rather than error because (a) and (b) are common false-positive sources.`;
+    : `${producer.summary.identity.name} sends to ${semantics.messageBus} channel ${channelDisplay}, but nothing in this run declares the channel and no handler receives from it. The channel may be declared in a stack or repository this run did not read, or not be set up yet. If neither is true, the channel name is wrong.`;
   return {
     kind: "messageBusProducerOrphan",
     boundary: producer.effect.binding,
@@ -605,7 +605,7 @@ function makeOrphanConsumerFinding(
     boundary: binding,
     provider: makeSide(consumer),
     consumer: makeSide(consumer),
-    description: `${consumer.identity.name} is wired to receive messages from ${semantics.messageBus} channel "${semantics.channel}" but no code in the project sends to this channel. Either dead infra or the producer lives outside this repo.`,
+    description: `${consumer.identity.name} is wired to receive messages from ${semantics.messageBus} channel "${semantics.channel}" but no code in the project sends to this channel. Either nothing uses the channel any more, or the producer lives outside this repository.`,
     severity: "warning",
   };
 }
@@ -649,7 +649,7 @@ function makeUnusedQueueFinding(
     boundary: binding,
     provider: makeSide(provider),
     consumer: makeSide(provider),
-    description: `${semantics.messageBus} channel "${semantics.channel}" is declared in infrastructure but has no identified producer or consumer. Likely orphan resource left over from a removed feature.${caveat}`,
+    description: `${semantics.messageBus} channel "${semantics.channel}" is declared in infrastructure, but nothing in this run sends to it or receives from it. It is often left over from a feature that was removed.${caveat}`,
     severity: "warning",
   };
 }
@@ -691,15 +691,15 @@ function unresolvableDescription(
 ): string {
   if (semantics.messageBus === "aws.sns") {
     const subscription = meta?.subscription ?? consumer.identity.name;
-    return `SNS subscription "${subscription}" on topic "${semantics.channel}" routes to ${consumer.identity.name}, but ${reason}. It's surfaced as unpaired-unresolvable rather than dropped.`;
+    return `SNS subscription "${subscription}" on topic "${semantics.channel}" routes to ${consumer.identity.name}, but ${reason}. No producer was paired with it, so what reaches it went unchecked.`;
   }
   if (semantics.messageBus === "s3") {
     const notification = meta?.notification ?? consumer.identity.name;
-    return `S3 notification "${notification}" on bucket "${semantics.channel}" routes to ${consumer.identity.name}, but ${reason}. It's surfaced as unpaired-unresolvable rather than dropped.`;
+    return `S3 notification "${notification}" on bucket "${semantics.channel}" routes to ${consumer.identity.name}, but ${reason}. No producer was paired with it, so what reaches it went unchecked.`;
   }
   const rule = meta?.rule ?? consumer.identity.name;
   const eventBus = meta?.eventBus ?? "default";
-  return `EventBridge rule "${rule}" on bus "${eventBus}" routes to ${consumer.identity.name}, but ${reason}. v0 pairs producers to rules on exact detail-type match, so this rule can't be paired, and it's surfaced as unpaired-unresolvable rather than dropped. Pattern subsumption (prefix / content-based filtering) is out of scope for now.`;
+  return `EventBridge rule "${rule}" on bus "${eventBus}" routes to ${consumer.identity.name}, but ${reason}. suss pairs a producer with a rule only when the detail-type matches exactly, and does not read prefix or content-based patterns, so no producer was paired with this rule and what reaches it went unchecked.`;
 }
 
 function makeSide(
@@ -901,7 +901,7 @@ function makeBodyShapeFinding(
     boundary: binding,
     provider: makeSide(cfnConsumer),
     consumer: makeSide(receive.summary, receive.transitionId),
-    description: `${receive.summary.identity.name} reads "${missingField}" off a message on ${semantics.messageBus} channel "${semantics.channel}" but no producer in the analysed scope sends "${missingField}". Likely a producer/consumer drift: the producer renamed or removed the field, or the consumer expects a field that was never sent.`,
+    description: `${receive.summary.identity.name} reads "${missingField}" off a message on ${semantics.messageBus} channel "${semantics.channel}" but no producer in this run sends "${missingField}". Either a producer renamed or removed the field, or the consumer expects a field that was never sent.`,
     severity: "warning",
   };
 }

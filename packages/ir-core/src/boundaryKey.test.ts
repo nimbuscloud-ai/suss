@@ -424,19 +424,6 @@ describe("displayLabel", () => {
     expect(boundaryLabel(read)).toBeNull();
     expect(displayLabel(read)).toBe("runtime-config:@suss/runtime-node");
   });
-
-  it("does not print the placeholder a read in Python or Ruby carries", () => {
-    const read: BoundaryBinding = {
-      transport: "os",
-      recognition: "python-env",
-      semantics: {
-        name: "runtime-config",
-        deploymentTarget: "lambda",
-        instanceName: "<unknown>",
-      },
-    };
-    expect(boundaryLabel(read)).toBeNull();
-  });
 });
 
 describe("labelWithDetail", () => {

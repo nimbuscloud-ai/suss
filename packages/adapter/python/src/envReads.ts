@@ -107,11 +107,7 @@ export function envReadEffects(
 function configReadEffect(read: EnvRead): Effect {
   return {
     type: "interaction",
-    binding: runtimeConfigBinding({
-      recognition: PYTHON_ENV_RECOGNITION,
-      deploymentTarget: "lambda",
-      instanceName: "<unknown>",
-    }),
+    binding: runtimeConfigBinding({ recognition: PYTHON_ENV_RECOGNITION }),
     callee: `os.environ["${read.name}"]`,
     interaction: {
       class: "config-read",

@@ -1,14 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import {
-  BOUNDARY_ROLE,
-  readHttpMetadata,
-  safeParseSummaries,
-  summaryRef,
-} from "@suss/behavioral-ir";
+import { safeParseSummaries, summaryRef } from "@suss/behavioral-ir";
 import {
   applySuppressions,
+  boundaryCollisions,
   boundaryKey,
   boundaryKeyOf,
   changesSince,
@@ -17,8 +13,6 @@ import {
   countsForThreshold,
   findingIdentity,
   normalizedDescription,
-  readDeclaredContract,
-  readGraphqlDeclaredContract,
   summaryWithDefinitionsInlined,
 } from "@suss/checker";
 import {
@@ -42,10 +36,10 @@ import type {
   BehavioralSummary,
   ConfidenceInfo,
   Finding,
-  HttpMetadata,
   RunFinding,
 } from "@suss/behavioral-ir";
 import type {
+  BoundaryCollision,
   ChangesSince,
   CheckAllResult,
   CheckedRun,
@@ -95,7 +89,7 @@ export interface CheckOptions {
    * A run that pairs no boundary has no findings, and passing it would
    * hide that suss could not see enough of the code to compare anything.
    * `extract` takes the same option for the same reason. A two-file
-   * `check` never counts pairs, so it refuses this option.
+   * `check` compares nothing when either file has no summaries in it.
    */
   allowEmpty?: boolean;
 }
@@ -168,7 +162,51 @@ export function check(options: CheckOptions): CheckResult {
     providerSummaries,
     consumerSummaries,
   );
-  return emitFindings(findings, confidence, options);
+  const run =
+    options.allowEmpty === true
+      ? []
+      : twoFileRunFindings([
+          { file: options.providerFile, summaries: providerSummaries },
+          { file: options.consumerFile, summaries: consumerSummaries },
+        ]);
+  return emitFindings(findings, run, confidence, options);
+}
+
+/**
+ * A parser of the bare findings array keeps working on every run that
+ * compared something. A run that compared nothing fails, and the object
+ * gives its `nothingPaired` finding somewhere to go.
+ */
+function twoFileJson(
+  findings: Finding[],
+  run: RunFinding[],
+): Finding[] | { findings: Finding[]; run: RunFinding[] } {
+  return run.length === 0 ? findings : { findings, run };
+}
+
+/**
+ * A `nothingPaired` finding when one of the two files has no summaries,
+ * since every provider in the first is compared with every consumer in
+ * the second and an empty side leaves nothing to compare.
+ */
+function twoFileRunFindings(
+  sides: ReadonlyArray<{ file: string; summaries: readonly unknown[] }>,
+): RunFinding[] {
+  const empty = sides.filter((side) => side.summaries.length === 0);
+  if (empty.length === 0) {
+    return [];
+  }
+  return [
+    {
+      kind: "nothingPaired",
+      severity: "error",
+      description: `${empty.map((side) => side.file).join(" and ")} ${empty.length === 1 ? "has" : "have"} no summaries in it, so nothing was compared.`,
+      remedy:
+        "Check that the extract or contract that wrote the file found what you expected. " +
+        "Run `suss extract --explain` with the same packs to see how far each pack got. " +
+        "Pass --allow-empty when an empty side is expected.",
+    },
+  ];
 }
 
 function loadSuppressionsForOptions(
@@ -287,9 +325,10 @@ export function checkDirectory(options: {
   };
 }
 
-export function checkDir(
-  options: CheckDirOptions,
-): CheckResult & { result: CheckAllResult } {
+export function checkDir(options: CheckDirOptions): CheckResult & {
+  result: CheckAllResult;
+  collisions: BoundaryCollision[];
+} {
   if (options.since !== undefined && options.intent !== undefined) {
     throw new UsageError(
       "--since reports what changed between two runs and --intent scores the code against your intent docs, so they cannot run together. Run them one at a time.",
@@ -320,7 +359,9 @@ export function checkDir(
   // of the report. The same .sussignore rules apply to both lists.
   const intent = runIntentPass(options.intent, allSummaries, suppressions);
 
-  const collisions = findBoundaryCollisions(allSummaries, sourceFile);
+  const collisions = boundaryCollisions(
+    [...sourceFile].map(([summary, file]) => ({ summary, file })),
+  );
 
   const runtimeNamedCrossings = countRuntimeNamedCrossings(allSummaries);
   const summariesWithGaps = countSummariesWithGaps(allSummaries);
@@ -369,6 +410,7 @@ export function checkDir(
       intentMeetsThreshold(intent?.findings ?? [], failOn) ||
       run.length > 0,
     result,
+    collisions,
   };
 }
 
@@ -573,103 +615,6 @@ function renderRunFindings(findings: readonly RunFinding[]): string {
     .join("");
 }
 
-/** A boundary whose providers came from more than one summary file. */
-interface BoundaryCollision {
-  key: string;
-  files: string[];
-}
-
-/**
- * Boundaries that two different summary files both claim to provide.
- *
- * suss keys an HTTP boundary by method and path, without the service
- * that serves it, so two services that both expose `GET /users` share one
- * key. A caller of either one is then compared with both, and gets
- * findings from an API it never calls. Projects usually write one file
- * per service, so two files providing one key most likely means this
- * happened, and the report says so.
- */
-function findBoundaryCollisions(
-  summaries: ReadonlyArray<BehavioralSummary>,
-  sourceFile: ReadonlyMap<BehavioralSummary, string>,
-): BoundaryCollision[] {
-  const claimsByKey = new Map<string, Claim[]>();
-
-  for (const summary of summaries) {
-    const binding = summary.identity.boundaryBinding;
-    if (binding === null || BOUNDARY_ROLE[summary.kind] !== "provider") {
-      continue;
-    }
-    // A spec read with `suss contract` describes the handler's route. It
-    // does not serve it, so it is no second claim on the key.
-    if (
-      readDeclaredContract(summary)?.provenance === "derived" ||
-      readGraphqlDeclaredContract(summary)?.provenance === "derived"
-    ) {
-      continue;
-    }
-    const key = boundaryKey(binding);
-    const file = sourceFile.get(summary);
-    if (key === null || file === undefined) {
-      continue;
-    }
-    claimsByKey.set(key, [...(claimsByKey.get(key) ?? []), { summary, file }]);
-  }
-
-  const collisions: BoundaryCollision[] = [];
-  for (const [key, claims] of claimsByKey) {
-    const files = new Set(
-      claims
-        .filter((claim) => !implementedIn(claim, claims))
-        .map((claim) => claim.file),
-    );
-    if (files.size > 1) {
-      collisions.push({ key, files: [...files].sort() });
-    }
-  }
-  return collisions.sort((a, b) => a.key.localeCompare(b.key));
-}
-
-/** A summary that provides a boundary, and the file it was read from. */
-interface Claim {
-  summary: BehavioralSummary;
-  file: string;
-}
-
-type HandlerPointer = NonNullable<HttpMetadata["implementingHandler"]>;
-
-/**
- * Whether a route a deployment template declares is served by code read
- * from another file. The template says which handler implements the
- * route, as SAM does for a Lambda behind API Gateway, and a template and
- * the code it deploys are one service, so the two are one claim.
- */
-function implementedIn(claim: Claim, claims: readonly Claim[]): boolean {
-  const pointer = readHttpMetadata(claim.summary)?.implementingHandler;
-  return (
-    pointer !== undefined &&
-    claims.some(
-      (other) => other.file !== claim.file && deploys(pointer, other.summary),
-    )
-  );
-}
-
-/** Whether the handler the template points at is this code: the same deployable, or the same module and export. */
-function deploys(pointer: HandlerPointer, code: BehavioralSummary): boolean {
-  const unit = code.identity.deployableUnit;
-  if (
-    pointer.functionLogicalId !== undefined &&
-    unit?.instanceName === pointer.functionLogicalId
-  ) {
-    return true;
-  }
-  const module = path.posix.join(pointer.codeUri ?? "", pointer.modulePath);
-  return (
-    code.location.exportName === pointer.exportName &&
-    code.location.file.replace(/\.[^./]+$/, "") === module
-  );
-}
-
 function renderCollisions(
   collisions: ReadonlyArray<BoundaryCollision>,
 ): string {
@@ -781,18 +726,22 @@ function renderIntentSection(intent: CheckIntentResult | undefined): string {
 
 function emitFindings(
   findings: Finding[],
+  run: RunFinding[],
   confidence: ConfidenceLookup,
   options: { json?: boolean; output?: string; failOn?: FailOn; all?: boolean },
 ): CheckResult {
   const rendered = options.json
-    ? `${JSON.stringify(findings, null, 2)}\n`
-    : renderFindings(findings, confidence, scopeOf(options));
+    ? `${JSON.stringify(twoFileJson(findings, run), null, 2)}\n`
+    : renderFindings(findings, confidence, scopeOf(options)) +
+      renderRunFindings(run);
 
   writeReport(rendered, options.output);
 
   return {
     findings,
-    hasErrors: meetsThreshold(findings, options.failOn ?? "error"),
+    ...(run.length > 0 ? { run } : {}),
+    hasErrors:
+      meetsThreshold(findings, options.failOn ?? "error") || run.length > 0,
   };
 }
 

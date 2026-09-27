@@ -18,21 +18,20 @@ import {
   isRuntimeConfigProvider,
   leavesTheProcess,
 } from "@suss/behavioral-ir";
-import { runtimeReads } from "@suss/checker";
+import { functionOf, readCallFacts, runtimeReads } from "@suss/checker";
 import { labelWithDetail } from "@suss/ir-core";
 
 import {
   boundariesTouchedBy,
   boundarySpelling,
   NO_ACCESS,
+  touchLabel,
 } from "./boundaryReach.js";
-import { functionOf, readCallFacts } from "./callFacts.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
-import type { EnvVarRead } from "@suss/checker";
+import type { CallEdge, EnvVarRead, FunctionKey } from "@suss/checker";
 import type { BoundaryBinding, Relation } from "@suss/ir-core";
 import type { Access } from "./boundaryReach.js";
-import type { CallEdge, FunctionKey } from "./callFacts.js";
 
 /** One boundary a unit reaches, and the chain of calls that gets there. */
 export interface ReachedEffect {
@@ -148,10 +147,7 @@ function reachedFrom(
             continue;
           }
           // Two variables read through one boundary get a line each.
-          const label =
-            touch.detail === undefined
-              ? touch.label
-              : labelWithDetail(touch.binding, touch.detail);
+          const label = touchLabel(touch);
           const key = effectKey(touch.relation, label);
           const access = touch.access ?? NO_ACCESS;
           const already = reached.get(key);

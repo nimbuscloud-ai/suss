@@ -1004,11 +1004,7 @@ describe("inspect --diff, human output", () => {
 
   const readsEnv = (name: string): Effect => ({
     type: "interaction",
-    binding: runtimeConfigBinding({
-      recognition: "python-env",
-      deploymentTarget: "lambda",
-      instanceName: "<unknown>",
-    }),
+    binding: runtimeConfigBinding({ recognition: "python-env" }),
     callee: `os.environ["${name}"]`,
     interaction: { class: "config-read", name, defaulted: false },
   });
@@ -1543,11 +1539,7 @@ describe("a config read in a body", () => {
         effects: [
           {
             type: "interaction",
-            binding: runtimeConfigBinding({
-              recognition: "python-env",
-              deploymentTarget: "lambda",
-              instanceName: "<unknown>",
-            }),
+            binding: runtimeConfigBinding({ recognition: "python-env" }),
             callee: 'os.environ["BUCKET"]',
             interaction: {
               class: "config-read",

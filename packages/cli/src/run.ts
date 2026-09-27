@@ -158,10 +158,10 @@ Options (extract):
   --fail-on-pack-error  Exit non-zero when a pack throws while it reads
 
 Options (check):
-  --allow-empty    A run over --dir, or over the project when given
-                   nothing, that compares nothing exits non-zero by
-                   default, which otherwise reads the same as both sides
-                   agreeing; this opts back into exiting 0
+  --allow-empty    A run that compares nothing exits non-zero by default,
+                   which otherwise reads the same as both sides agreeing;
+                   this opts back into exiting 0. Two files compare
+                   nothing when either one has no summaries
   --fail-on-unpaired  Exit non-zero when more boundaries went unpaired
                    than this: a count ("25") or a share ("50%")
   --fail-on-unreadable  Exit non-zero when a file in --dir could not be
@@ -1067,14 +1067,6 @@ async function runCheck(args: string[]): Promise<number> {
     return 1;
   }
 
-  // A two-file check compares every provider with every consumer without
-  // pairing them, so there is no empty pairing for --allow-empty to accept.
-  if (values["allow-empty"] === true) {
-    process.stderr.write(
-      "--allow-empty needs --dir. Comparing two files checks every provider against every consumer without pairing them, so there is no count of what paired.\n",
-    );
-    return 1;
-  }
   const result = check({
     providerFile: positionals[0],
     consumerFile: positionals[1],

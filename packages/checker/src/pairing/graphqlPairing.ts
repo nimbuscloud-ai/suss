@@ -775,7 +775,7 @@ function nestedFieldUnknownFinding(
       summary: sideSummary,
       location: operation.location,
     },
-    description: `GraphQL operation "${operation.identity.name}" selects "${parentTypeName}.${fieldName}" but the provider's schema doesn't declare that field on "${parentTypeName}". Likely a stale selection after a schema change.`,
+    description: `GraphQL operation "${operation.identity.name}" selects "${parentTypeName}.${fieldName}" but the provider's schema doesn't declare that field on "${parentTypeName}". The selection is probably left over from before a schema change.`,
     // The schema is in the run and does not declare the field, so the
     // server rejects every operation using this selection at validation.
     severity: "error",

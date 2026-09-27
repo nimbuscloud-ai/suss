@@ -48,8 +48,10 @@ read-only, so a host never has to ask a person before calling one.
 Each answer is trimmed to leave the model room to act on it. On a
 repository of any size, `suss_check` produces hundreds of findings. It
 shows the first twenty, counts every kind in `findingCounts`, and tells
-the model to ask again about one boundary for the rest. `suss_boundaries`
-does the same with its three lists and keeps the totals in `counts`.
+the model to ask again about one boundary for the rest. When two
+summaries files both provide one boundary, it lists them under
+`collisions`, as `suss check` does. `suss_boundaries` does the same
+trimming with its three lists and keeps the totals in `counts`.
 
 Reach for `suss_ask` first. Ask about a table before changing it, and
 ask what calls a function before changing its signature. When it cannot

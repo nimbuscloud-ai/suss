@@ -28,7 +28,7 @@ suss check --dir <directory> --since <earlier-directory> [--json] [-o <output>]
 suss check [--at <target>] [--since <earlier-directory>] [--intent <intent-dir>] ...
 ```
 
-`--dir` reads every summary file in a folder and pairs them by boundary key, so a provider and its consumer meet whichever file each arrived in. Two positional files skip the pairing and compare every provider in the first against every consumer in the second. Nothing goes unpaired in that form, so a two-file run doesn't report an unpaired count.
+`--dir` reads every summary file in a folder and pairs them by boundary key, so a provider and its consumer meet whichever file each arrived in. Two positional files skip the pairing and compare every provider in the first against every consumer in the second. Nothing goes unpaired in that form, so a two-file run doesn't report an unpaired count. When either file has no summaries in it, nothing was compared, and the run fails the same way an empty `--dir` run does.
 
 Given no files and no `--dir`, `check` reads the project it is run in: every entry in `suss.json`, or what `init` would pick when there is no file, into a temporary folder, then the `--dir` form over that. It prints the commands it ran to stderr.
 
@@ -42,7 +42,7 @@ Given no files and no `--dir`, `check` reads the project it is run in: every ent
 | `--json` | off | Write findings as JSON instead of text. |
 | `-o`, `--output <path>` | stdout | Write the report to a file. |
 | `--fail-on <severity>` | `error` | Which severity fails the run: `error`, `warning`, `info`, or `none` to never fail. |
-| `--allow-empty` | off | Exit `0` from a run over a folder that paired nothing, including one that didn't read any summaries. Without it that run fails, because a report with nothing in it looks exactly like a report where both sides agreed. The run gets a `nothingPaired` run finding and exits non-zero. Works with `--dir` and with a bare `suss check`; a two-file check never counts pairings, so it refuses the flag. |
+| `--allow-empty` | off | Exit `0` from a run that compared nothing: a folder that paired nothing, a folder that didn't read any summaries, or two files where one has no summaries. Without it that run fails, because a report with nothing in it looks exactly like a report where both sides agreed. The run gets a `nothingPaired` run finding and exits non-zero. |
 | `--fail-on-unpaired <N\|N%>` | off | Fail when more boundaries went unpaired than this: a count (`25`) or a share of all boundaries (`50%`). Needs `--dir`. The report gets a `mostlyUnpaired` run finding with the numbers. |
 | `--fail-on-unreadable` | off | Fail when a file in `--dir` could not be read as summaries, instead of skipping it with a warning. The report gets an `unreadableInput` run finding, and `--json` lists the skipped files either way. |
 | `--sussignore <path>` | the nearest `.sussignore` | Read this suppressions file instead of searching for one. |
@@ -144,7 +144,7 @@ The exit code counts only the new findings, so a CI job can pass `--since` with 
 { findings, run, pairs, unmatched, skipped, runtimeNamedCrossings, summariesWithGaps, collisions }
 ```
 
-with `intent` added when `--intent` was passed. Two positional files write the bare `findings` array instead.
+with `intent` added when `--intent` was passed. Two positional files write the bare `findings` array instead. When one of the two files was empty and the run failed for it, they write `{ findings, run }` so the `nothingPaired` finding has a place in the report.
 
 `--at --json` writes `{ at, matched, target, touches, findings, pairs, unmatched, gaps }`, where `touches` is one entry per unit and boundary (`{ boundary, relations, unit, via }`). A target that matched nothing writes `{ at, matched: false, message }`.
 

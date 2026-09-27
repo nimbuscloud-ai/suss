@@ -1039,7 +1039,7 @@ function reduceFilterPolicy(filterPolicy: unknown): FilterPolicyResolution {
   return {
     kind: "unresolvable",
     reason:
-      "subscription declares a FilterPolicy; v0 pairs on the whole topic only, filter-policy reduction is out of scope",
+      "the subscription declares a FilterPolicy, and suss pairs a subscription only on its whole topic",
   };
 }
 
@@ -1294,7 +1294,7 @@ function reduceS3Filter(filter: unknown): FilterPolicyResolution {
   return {
     kind: "unresolvable",
     reason:
-      "notification declares a Filter; v0 pairs on the whole bucket only, filter reduction is out of scope",
+      "the notification declares a Filter, and suss pairs a notification only on its whole bucket",
   };
 }
 

@@ -302,6 +302,30 @@ describe("envBindingRecognizer", () => {
     );
   });
 
+  it("names the Worker on a read only when the caller says which Worker this is", async () => {
+    const semanticsOfReads = async (scriptName?: string) =>
+      inFile(await run(scriptName), "allTriggers.ts")
+        .flatMap((unit) => unit.transitions.flatMap((t) => t.effects))
+        .flatMap((e) =>
+          e.type === "interaction" && e.interaction.class === "config-read"
+            ? [e.binding.semantics]
+            : [],
+        );
+
+    expect(
+      new Set((await semanticsOfReads()).map((s) => JSON.stringify(s))),
+    ).toEqual(
+      new Set([
+        JSON.stringify({ name: "runtime-config", deploymentTarget: "worker" }),
+      ]),
+    );
+    expect(await semanticsOfReads("greeting-router")).toContainEqual({
+      name: "runtime-config",
+      deploymentTarget: "worker",
+      instanceName: "greeting-router",
+    });
+  });
+
   it("reads the argument whatever the project calls it", async () => {
     const units = inFile(await run(), "named.ts");
     // One read reaches every branch it ran on, so the same read comes

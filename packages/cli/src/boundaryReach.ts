@@ -14,7 +14,7 @@ import {
   relationsOf,
 } from "@suss/behavioral-ir";
 import { accessDetail } from "@suss/checker-intent";
-import { displayLabel } from "@suss/ir-core";
+import { displayLabel, labelWithDetail } from "@suss/ir-core";
 
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
 import type { Relation } from "@suss/ir-core";
@@ -32,6 +32,19 @@ export type { Relation } from "@suss/ir-core";
 /** The label a report prints for this boundary, which a user can also type into a question. */
 export function boundarySpelling(binding: BoundaryBinding): string {
   return displayLabel(binding);
+}
+
+/**
+ * A touch as a report line prints it: the boundary, with the name read
+ * across it when the touch read one. The diff and findings print a
+ * config read the same way, without the recognizer's package name.
+ */
+export function touchLabel(
+  touch: Pick<TouchedBoundary, "label" | "binding" | "detail">,
+): string {
+  return touch.detail === undefined
+    ? touch.label
+    : labelWithDetail(touch.binding, touch.detail);
 }
 
 /** What one access states about the columns it touches, empty when it states none. */

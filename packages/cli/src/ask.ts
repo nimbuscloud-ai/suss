@@ -24,6 +24,7 @@ import {
   summaryIdentifier,
   unsettledSummaryId,
 } from "@suss/behavioral-ir";
+import { callSpellings, functionOf } from "@suss/checker";
 
 import { answerCalls } from "./askCalls.js";
 import { gapCaveats } from "./askCaveats.js";
@@ -36,10 +37,10 @@ import {
   unitAt,
   WHY_SHAPES,
 } from "./askWhy.js";
-import { callSpellings, functionOf, reachTargetOf } from "./callFacts.js";
 import { writeReport } from "./check.js";
 import { parseSummaryFile, readSummariesFromDir } from "./inspect.js";
 import { loadedSummaries } from "./loadedSummaries.js";
+import { reachTargetOf } from "./reachTarget.js";
 import {
   ambiguousBoundarySpelling,
   collapseTouches,
@@ -58,9 +59,9 @@ import type {
   TypeShape,
   ValueRef,
 } from "@suss/behavioral-ir";
+import type { CallFacts, CallPath, FunctionKey } from "@suss/checker";
 import type { GroundingNote } from "./askGrounding.js";
 import type { WhyShape } from "./askWhy.js";
-import type { CallFacts, CallPath, FunctionKey } from "./callFacts.js";
 import type { LoadedSummaries } from "./loadedSummaries.js";
 import type { WhyPacks } from "./whyPacks.js";
 
