@@ -117,4 +117,88 @@ describe("a partial run of the extraction cache", () => {
     expect(partial.cacheLine).toContain("2 summaries reused");
     expect(contents(partial)).toEqual(contents(fresh));
   });
+
+  it("follows an unchanged caller into what its edited callee now calls", () => {
+    configProject();
+    write("src/store.ts", [
+      "export function loadOrders(): string[] {",
+      "  return [];",
+      "}",
+    ]);
+    write("src/report.ts", [
+      'import { loadOrders } from "./store";',
+      "",
+      "export function orderReport(): number {",
+      "  return loadOrders().length;",
+      "}",
+    ]);
+    extract("cold");
+
+    write("src/store.ts", [
+      "function audit(): void {",
+      '  console.log(process.env.AUDIT_LOG ?? "off");',
+      "}",
+      "",
+      "export function loadOrders(): string[] {",
+      "  audit();",
+      "  return [];",
+      "}",
+    ]);
+    const partial = extract("partial");
+    const fresh = extract("fresh", ["--no-cache"]);
+
+    expect(names(partial)).toContain("audit");
+    expect(contents(partial)).toEqual(contents(fresh));
+  });
+
+  it("drops a deleted file's records from the cache", () => {
+    configProject();
+    write("src/audit.ts", [
+      "export function audit(): string {",
+      '  return process.env.AUDIT_LOG ?? "off";',
+      "}",
+    ]);
+    write("src/report.ts", [
+      'import { audit } from "./audit";',
+      "",
+      "export function orderReport(): string {",
+      "  return audit();",
+      "}",
+    ]);
+    extract("cold");
+    expect(recordedFiles()).toContain(path.join(tmpDir, "src", "audit.ts"));
+
+    fs.rmSync(path.join(tmpDir, "src", "audit.ts"));
+    write("src/report.ts", [
+      "export function orderReport(): string {",
+      '  return "none";',
+      "}",
+    ]);
+    const partial = extract("partial");
+    const fresh = extract("fresh", ["--no-cache"]);
+
+    expect(recordedFiles()).not.toContain(path.join(tmpDir, "src", "audit.ts"));
+    expect(contents(partial)).toEqual(contents(fresh));
+  });
 });
+
+function names(run: Run): string[] {
+  return run.summaries.map(
+    (summary) => (summary as { identity: { name: string } }).identity.name,
+  );
+}
+
+/** The files the cache kept closure records for. */
+function recordedFiles(): string[] {
+  const cacheDir = path.join(tmpDir, ".suss", "cache");
+  const files: string[] = [];
+  for (const entry of fs.readdirSync(cacheDir)) {
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(cacheDir, entry, "manifest.json"), "utf8"),
+    ) as { depPaths?: string[]; units?: Array<{ file: number }> };
+    for (const unit of manifest.units ?? []) {
+      files.push(manifest.depPaths?.[unit.file] ?? "");
+    }
+  }
+  return files;
+}
