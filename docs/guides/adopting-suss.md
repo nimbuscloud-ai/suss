@@ -149,7 +149,7 @@ Before you remove a field or change a status, run this and read the list. If the
 Two things go into CI. The `inspect-diff` action reads the base and the head of a pull request and posts what the change did to each unit, and `check --fail-on error` fails the build on an error-severity finding:
 
 ```yaml
-- uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@main
+- uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@v0.33.1
   with:
     extract: --dir . -f aws-lambda -f aws-sqs
 
