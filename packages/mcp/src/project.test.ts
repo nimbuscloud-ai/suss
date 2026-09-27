@@ -344,7 +344,7 @@ describe("Project", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-proj-now-"));
     projectWithOneRoute(root, "/orders");
     const project = new Project({ root, watch: false });
-    const beforeFirst = Date.now();
+    const beforeFirst = Date.now() - 1;
     const first = await project.start();
 
     expect(await project.buildNow(beforeFirst)).toBe(first);

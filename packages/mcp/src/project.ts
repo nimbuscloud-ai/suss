@@ -155,7 +155,7 @@ export class Project {
   /**
    * A build that read the tree after `notBefore`, for a caller that
    * knows the tree changed and cannot wait out the debounce, such as a
-   * hook that runs right after an edit. A build that started at or after
+   * hook that runs right after an edit. A build that started after
    * `notBefore` read every file after that moment, so it is reused, the
    * one the watcher started included. Otherwise a new build starts after
    * any build already running. Without `notBefore`, it always builds.
@@ -174,11 +174,13 @@ export class Project {
     if (this.queued !== null) {
       return this.queued;
     }
+    // Both are whole milliseconds, so a build stamped with the same one
+    // may have started a moment before the change.
     if (this.started !== null) {
-      return this.started.at >= notBefore ? this.started.build : null;
+      return this.started.at > notBefore ? this.started.build : null;
     }
     const last = this.lastStart;
-    return last !== null && last >= notBefore && this.everBuilt
+    return last !== null && last > notBefore && this.everBuilt
       ? Promise.resolve(this.report)
       : null;
   }
