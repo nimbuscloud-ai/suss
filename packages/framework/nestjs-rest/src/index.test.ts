@@ -57,9 +57,14 @@ async function runAdapter(dir = fixturesDir): Promise<BehavioralSummary[]> {
   );
   project.createSourceFile(
     path.join(dir, "node_modules/@nestjs/core/index.d.ts"),
-    `import type { INestApplication } from "@nestjs/common";
+    // Declared here rather than imported from `@nestjs/common`, so a file
+    // importing only `@nestjs/core` does not reach the controllers' module.
+    `interface NestApplication {
+       setGlobalPrefix(prefix: string, options?: unknown): this;
+       listen(port: number): Promise<void>;
+     }
      export declare class NestFactory {
-       static create(module: unknown): Promise<INestApplication>;
+       static create(module: unknown): Promise<NestApplication>;
      }`,
   );
 
@@ -70,6 +75,24 @@ async function runAdapter(dir = fixturesDir): Promise<BehavioralSummary[]> {
   });
 
   return await adapter.extractAll();
+}
+
+function routesOf(
+  summaries: BehavioralSummary[],
+): Record<string, string | null> {
+  return Object.fromEntries(
+    summaries
+      .filter((s) => s.kind === "handler")
+      .map((s) => {
+        const semantics = s.identity.boundaryBinding?.semantics;
+        return [
+          s.identity.name,
+          semantics?.name === "rest"
+            ? `${semantics.method} ${semantics.path}`
+            : null,
+        ];
+      }),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -269,20 +292,7 @@ describe("nestjsRestFramework: the status a route sends", () => {
   });
 
   it("puts the global prefix the bootstrap sets in front of every route it does not exclude", () => {
-    const routes = Object.fromEntries(
-      summaries
-        .filter((s) => s.kind === "handler")
-        .map((s) => {
-          const semantics = s.identity.boundaryBinding?.semantics;
-          return [
-            s.identity.name,
-            semantics?.name === "rest"
-              ? `${semantics.method} ${semantics.path}`
-              : null,
-          ];
-        }),
-    );
-    expect(routes).toEqual({
+    expect(routesOf(summaries)).toEqual({
       "OrdersController.list": "GET /api/orders",
       "OrdersController.create": "POST /api/orders",
       "OrdersController.importMany": "POST /api/orders/import",
@@ -305,4 +315,15 @@ describe("nestjsRestFramework: the status a route sends", () => {
       { type: "literal", value: 204 },
     ]);
   });
+});
+
+describe("nestjsRestFramework: a bootstrap that imports only @nestjs/core", () => {
+  it("still reads the global prefix it sets", async () => {
+    const summaries = await runAdapter(
+      path.resolve(__dirname, "../../../../fixtures/nestjs-rest-bootstrap"),
+    );
+    expect(routesOf(summaries)).toEqual({
+      "OrdersController.list": "GET /v2/orders",
+    });
+  }, 60_000);
 });
