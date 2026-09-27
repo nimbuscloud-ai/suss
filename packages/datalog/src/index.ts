@@ -661,7 +661,8 @@ export class BudgetExhausted extends Error {
  * from the delta set and every other positive literal from the full
  * database. Returns the derived head tuples.
  *
- * The delta is read first. The rest of the body is walked in whatever
+ * The delta is read first unless `smallerStart` finds a literal worth
+ * reading before it. The rest of the body is walked in whatever
  * order the bindings so far make cheapest, chosen afresh under each
  * binding; DESIGN.md shows what a fixed order costs. A bitmask
  * records which literals a branch has taken, so a body is limited to
@@ -717,13 +718,143 @@ function evaluateRule(
     walk(index, nextSource, taken, bindings);
   };
 
-  // The delta is read once, first, and never under a binding.
   if (deltaAt === -1) {
     step(0, null);
-  } else {
-    walk(deltaAt, deltaRows(deltas, body[deltaAt], budget), 0, null);
+    return results;
+  }
+  const rows = deltaRows(deltas, body[deltaAt], budget);
+  const start = smallerStart(db, body, deltaAt, rows);
+  if (start === null) {
+    walk(deltaAt, rows, 0, null);
+    return results;
+  }
+  // The smaller literal is read whole, and each of its rows reads only
+  // the new facts that agree with it on the variable the two share.
+  const byValue = newFactsByColumn(rows, start.column, budget);
+  const first = body[start.index];
+  for (const tuple of start.source) {
+    budget.examined++;
+    if (budget.examined > budget.limit) {
+      throw OUT_OF_BUDGET;
+    }
+    const bindings = unify(first, tuple, null);
+    if (bindings === NO_MATCH) {
+      continue;
+    }
+    const value = boundValue(bindings, start.variable);
+    const matching = value === undefined ? undefined : byValue.get(value);
+    if (matching !== undefined) {
+      walk(deltaAt, matching, 1 << start.index, bindings);
+    }
   }
   return results;
+}
+
+/**
+ * A literal the join reads before a round's new facts because it has
+ * fewer rows than they do, and the variable it shares with them.
+ */
+interface SmallerStart {
+  /** The literal's position in the body. */
+  index: number;
+  /** Its rows, narrowed by any constants it writes. */
+  source: readonly Tuple[];
+  /** The variable both literals name. */
+  variable: string;
+  /** Where the new facts' literal names that variable. */
+  column: number;
+}
+
+/**
+ * A round's new facts per column, keyed by the rows `deltaRows` handed
+ * out, which stay the same array for the whole round.
+ */
+const newFactIndexes = new WeakMap<
+  readonly Tuple[],
+  Map<number, Map<Atom, Tuple[]>>
+>();
+
+/**
+ * The positive literal to read before the round's new facts, or null to
+ * read the new facts first as usual. It has to share a variable with
+ * them, so each of its rows looks up the new facts under that variable
+ * instead of reading them all. Indexing the new facts on a column reads
+ * each of them once, and every rule in the round that starts the same
+ * way shares that index. Until the index exists, a literal is worth
+ * starting from only when it has fewer than half as many rows.
+ */
+function smallerStart(
+  db: Database,
+  body: readonly Literal[],
+  deltaAt: number,
+  rows: readonly Tuple[],
+): SmallerStart | null {
+  const newFacts = body[deltaAt];
+  const indexed = newFactIndexes.get(rows);
+  let best: SmallerStart | null = null;
+  for (let index = 0; index < body.length; index++) {
+    const literal = body[index];
+    if (index === deltaAt || literal.negated) {
+      continue;
+    }
+    const column = sharedColumn(newFacts, literal);
+    if (column === -1) {
+      continue;
+    }
+    const source =
+      narrowedSource(db, literal, null) ?? db.facts(literal.relation);
+    const worthIt = indexed?.has(column)
+      ? source.length < rows.length
+      : source.length * 2 < rows.length;
+    if (worthIt && (best === null || source.length < best.source.length)) {
+      best = {
+        index,
+        source,
+        variable: (newFacts.terms[column] as { name: string }).name,
+        column,
+      };
+    }
+  }
+  return best;
+}
+
+/** The first column of `from` whose variable `other` names too, or -1. */
+function sharedColumn(from: Literal, other: Literal): number {
+  return from.terms.findIndex(
+    (term) =>
+      term.type === "variable" &&
+      other.terms.some((t) => t.type === "variable" && t.name === term.name),
+  );
+}
+
+/**
+ * The round's new facts under each value in one column, built the first
+ * time a rule starts from a smaller literal. The rule that builds it is
+ * charged a read of every new fact, the way `deltaRows` charges its sort.
+ */
+function newFactsByColumn(
+  rows: readonly Tuple[],
+  column: number,
+  budget: RowBudget,
+): Map<Atom, Tuple[]> {
+  let byColumn = newFactIndexes.get(rows);
+  if (byColumn === undefined) {
+    byColumn = new Map();
+    newFactIndexes.set(rows, byColumn);
+  }
+  let byValue = byColumn.get(column);
+  if (byValue === undefined) {
+    byValue = new Map();
+    for (const tuple of rows) {
+      const value = tuple[column];
+      if (value !== undefined) {
+        addToBucket(byValue, value, tuple);
+      }
+    }
+    budget.examined += rows.length;
+    byColumn.set(column, byValue);
+  }
+  return byValue;
 }
 
 /** The rows `nextLiteral` chose for the positive literal it returned. */
