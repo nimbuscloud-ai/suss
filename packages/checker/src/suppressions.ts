@@ -103,6 +103,11 @@ function providerSideMatches(
 }
 
 function ruleMatchesFinding(rule: SuppressionRule, finding: Finding): boolean {
+  // A behavioural finding is about no PRD scenario.
+  if (rule.scenario !== undefined) {
+    return false;
+  }
+
   if (
     rule.boundary !== undefined &&
     !ruleBoundaryMatchesKey(rule.boundary, boundaryKey(finding.boundary))

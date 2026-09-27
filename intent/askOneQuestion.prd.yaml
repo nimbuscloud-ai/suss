@@ -15,13 +15,12 @@ scenarios:
     expect: they get an answer that says whether suss found it, with a one line headline and the items behind it
     link: cli-answer-question.answered
 
-  # No link: which items come back, and what needs says, depend on the
-  # summaries asked about, which no outcome can state. Covered by the
-  # @suss/cli test "says which functions do reach the target when the
-  # subject does not".
+  # Which items come back, and what needs says, depend on the summaries
+  # asked about, which no outcome can state.
   - title: suss cannot answer from what it has
     when: the question is one suss takes, but nothing in the summaries answers it
     expect: found is false, and needs says what input would let suss answer
+    coveredBy: packages/cli/src/ask.test.ts > suss ask about one function, however it is spelled > says which functions do reach the target when the subject does not
 
   - title: a question suss does not take
     when: someone asks something that is not one of the ten questions
@@ -33,9 +32,9 @@ scenarios:
     expect: suss prints the ten questions and exits zero
     link: cli-answer-question.not-a-question
 
-  # No link: suss_ask is an MCP tool, and suss has no boundary for a
-  # tool's input and result. The tool calls the same function suss ask
-  # does, so the outcomes above describe what it returns.
+  # Covered by a test until suss reads an MCP tool's result, and then
+  # this moves to an outcome link.
   - title: an agent asks over MCP
     when: an agent calls the suss_ask tool with one of the ten questions
     expect: it gets the same answer suss ask --json prints
+    coveredBy: packages/mcp/src/index.test.ts > the suss MCP server > answers a question about a boundary in the project

@@ -9,3 +9,62 @@ rules:
       throws, so a throw raised by a function it calls is not an outcome of
       the caller. The behavioral-ir tests check that safeParseSummaries
       rejects the same input.
+
+  # Scenarios no test covers yet. Each rule accepts one scenario, so a
+  # scenario added to the same PRD later is still reported.
+  - kind: unlinkedScenario
+    boundary: "prd:Accept a finding once, and it stays accepted"
+    scenario: moving code keeps the rule matching
+    effect: mark
+    reason: >-
+      A rule matches on the transition id, which leaves line numbers out, so
+      the finding should stay accepted after a move. No test pastes a rule
+      and then moves the handler yet.
+  - kind: unlinkedScenario
+    boundary: "prd:A second run gives the same output as the first"
+    scenario: the cache against no cache
+    effect: mark
+    reason: >-
+      The cache tests compare a warm run with the cold run that filled the
+      cache. None compares a warm run with a --no-cache run yet.
+
+  # Tests that do cover their scenario, through a call suss does not follow.
+  - kind: testMissesSubject
+    boundary: "prd:A second run gives the same output as the first"
+    scenario: nothing changed
+    effect: mark
+    reason: >-
+      The test runs the built binary in a child process, the way a user runs
+      it, so the cache is on. suss does not follow a call into another
+      process.
+  - kind: testMissesSubject
+    boundary: "prd:A second run gives the same output as the first"
+    scenario: a file was touched but not changed
+    effect: mark
+    reason: >-
+      The test runs the built binary in a child process, the way a user runs
+      it, so the cache is on. suss does not follow a call into another
+      process.
+  - kind: testMissesSubject
+    boundary: "prd:Ask one question, and get an answer or what would let suss answer"
+    scenario: an agent asks over MCP
+    effect: mark
+    reason: >-
+      The test calls the tool through an MCP client, and the request reaches
+      the server over an in-memory transport, which suss does not follow.
+  - kind: testMissesSubject
+    boundary: "prd:Set up a project"
+    scenario: an agent sets the project up
+    effect: mark
+    reason: >-
+      The test mocks two modules and then loads initInteractive with a
+      dynamic import, so the mocks apply. suss does not follow a call through
+      a name destructured from a dynamic import yet.
+  - kind: testMissesSubject
+    boundary: "prd:Set up a project"
+    scenario: init in CI
+    effect: mark
+    reason: >-
+      The test mocks two modules and then loads initInteractive with a
+      dynamic import, so the mocks apply. suss does not follow a call through
+      a name destructured from a dynamic import yet.

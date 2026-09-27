@@ -66,13 +66,14 @@ function missingProviders(packages) {
  * Anything a pack recognised has the package and export path a
  * pairing key is built from.
  *
- * Two kinds of summary are exempt. A helper the transitive closure
+ * Three kinds of summary are exempt. A helper the transitive closure
  * reaches is inside a package rather than on its edge, so it has no
  * export path, cannot pair, and `pairSummaries` reports it as
- * unpairable. What a module does when it loads has no boundary at all:
- * nobody calls it, so there is nothing on the other side to pair with.
- * Every other summary came from a pack that matched a boundary, and a
- * boundary with no name on it is a pairing key that stopped being built.
+ * unpairable. What a module does when it loads, and a test case, have
+ * no boundary at all: nobody calls them, so there is nothing on the
+ * other side to pair with. Every other summary came from a pack that
+ * matched a boundary, and a boundary with no name on it is a pairing
+ * key that stopped being built.
  */
 function bindingsWithoutIdentity(packages) {
   const violations = [];
@@ -82,7 +83,7 @@ function bindingsWithoutIdentity(packages) {
       if (binding?.recognition === "reachable") {
         continue;
       }
-      if (summary.kind === "module-init") {
+      if (summary.kind === "module-init" || summary.kind === "test") {
         continue;
       }
 

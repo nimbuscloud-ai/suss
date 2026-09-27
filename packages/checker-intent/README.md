@@ -33,8 +33,15 @@ the same boundary key, and emits:
 - `renamedBoundary`: a declared store the unit never touches, paired with an undeclared store of the same system that the unit does touch, with the same verbs on the same outcomes.
 - `pathWithoutEffect`: a transition producing a declared outcome lacks an effect the document's `always` block says every outcome has.
 
-v0 checks system intent (`kind: boundary`). PRD outcome intent
-(`kind: prd`), which covers scenarios and links, is a separate pass.
+For each PRD, it resolves every scenario's links against the loaded
+boundary intents, and checks the tests a scenario lists under
+`coveredBy` through the `CoveringTestLookup` passed as the third
+argument. That lookup turns a spelled test or subject into summaries,
+and the CLI builds it with the resolver `suss ask` uses. Whether a test
+reaches its subject is asked of `@suss/checker`'s call facts, once for
+every test. It emits `unlinkedScenario`, `danglingScenarioLink`,
+`ambiguousScenarioLink`, `missingCoveringTest`, `testMissesSubject` and
+`coveringTestSkipped`, each a warning.
 
 ## How a declared effect is compared
 

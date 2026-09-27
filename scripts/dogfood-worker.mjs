@@ -8,8 +8,9 @@ import vm from "node:vm";
 import { parentPort, workerData } from "node:worker_threads";
 
 import { createTypeScriptAdapter } from "../packages/adapter/typescript/dist/index.js";
+import { vitestFramework } from "../packages/framework/vitest/dist/index.js";
 
-const { sussImportTargets } = workerData;
+const { sussImportTargets, coveringTestFiles } = workerData;
 
 /**
  * A full collection, run between packages. V8 collects when the heap
@@ -73,7 +74,7 @@ async function extract(pkg) {
   let report = null;
   const adapter = createTypeScriptAdapter({
     tsConfigFilePath: pkg.tsconfig,
-    frameworks: [packFor(pkg)],
+    frameworks: [packFor(pkg), vitestFramework({ files: coveringTestFiles })],
     // The dogfood counts are a gate, and reading a cache warmed by a
     // different tree can pass the wrong tree (#236). The run is rare
     // enough that extracting from scratch costs little.

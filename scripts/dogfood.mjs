@@ -36,7 +36,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
-import { checkAll, pairSummaries } from "../packages/checker/dist/index.js";
+import {
+  checkAll,
+  functionOf,
+  pairSummaries,
+  readCallFacts,
+} from "../packages/checker/dist/index.js";
+import { testFilesListedIn } from "../packages/cli/dist/index.js";
 import { evaluatePackHealth } from "../packages/extractor/dist/index.js";
 import {
   declaredExports,
@@ -48,6 +54,35 @@ import {
   SUMMARIES_DIR,
   SUMMARIES_FILE,
 } from "./dogfoodOutputs.mjs";
+
+/**
+ * The test units the vitest pack wrote, and the helpers the reachable
+ * closure pulled in only because a test calls them. A helper that some
+ * other unit also reaches stays counted, as it was before tests were read.
+ */
+function summariesOnlyTestsReach(summaries) {
+  const tests = summaries.filter((s) => s.kind === "test");
+  if (tests.length === 0) {
+    return new Set();
+  }
+  const roots = summaries
+    .filter(
+      (s) =>
+        s.kind !== "test" &&
+        s.identity.boundaryBinding?.recognition !== "reachable",
+    )
+    .map((s) => functionOf(s));
+  const reached = readCallFacts(summaries).reachedFrom(roots);
+  const fromSource = new Set([...roots, ...reached.keys()]);
+  return new Set(
+    summaries.filter(
+      (s) =>
+        s.kind === "test" ||
+        (s.identity.boundaryBinding?.recognition === "reachable" &&
+          !fromSource.has(functionOf(s))),
+    ),
+  );
+}
 
 async function mapWithConcurrency(items, limit, fn) {
   const results = new Array(items.length);
@@ -134,10 +169,16 @@ const allSummaries = [];
 
 const workerScript = path.join(__dirname, "dogfood-worker.mjs");
 const sussImportTargetsList = [...sussImportTargets];
+// The tests intent/ lists under coveredBy, so check:self can check them.
+// Only those files are read as tests, which keeps the run's cost flat.
+const coveringTestFiles = testFilesListedIn(path.join(repoRoot, "intent"));
 
 function spawnWorker() {
   return new Worker(workerScript, {
-    workerData: { sussImportTargets: sussImportTargetsList },
+    workerData: {
+      sussImportTargets: sussImportTargetsList,
+      coveringTestFiles,
+    },
   });
 }
 
@@ -303,8 +344,11 @@ for (const result of extractResults) {
     .flatMap((t) => t.conditions).length;
 
   // Calls the walk stopped at, which is the other half of what a count
-  // of summaries means: how much of the code behind them was read.
+  // of summaries means: how much of the code behind them was read. Test
+  // code is left out, so a regression in source cannot hide under it.
+  const testCode = summariesOnlyTestsReach(summaries);
   const unfollowedCalls = summaries
+    .filter((s) => !testCode.has(s))
     .flatMap((s) => s.gaps)
     .filter((g) => g.type === "unfollowedCall").length;
 

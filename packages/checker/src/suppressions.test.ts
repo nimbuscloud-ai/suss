@@ -110,6 +110,14 @@ describe("validateRule", () => {
 // ---------------------------------------------------------------------------
 
 describe("applySuppressions", () => {
+  it("never matches a behavioural finding with a rule for a PRD scenario", () => {
+    const out = applySuppressions(
+      [finding()],
+      [rule({ scenario: "cancel twice" })],
+    );
+    expect(out[0].suppressed).toBeUndefined();
+  });
+
   it("leaves unmatched findings untouched", () => {
     const [out] = applySuppressions(
       [finding()],

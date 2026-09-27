@@ -116,6 +116,7 @@ export type {
   TerminalExtraction,
   TerminalMatch,
   TerminalPattern,
+  TestCaseMatch,
   TransparentWrapper,
   WrapperMethodRegistration,
   WrapperOptionRegistration,

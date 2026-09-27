@@ -28,6 +28,7 @@ boundary:
   receives:
     intents: { type: array, required: true }
     code: { type: array, required: true }
+    tests: { type: object }
 
 transitions:
   - id: result

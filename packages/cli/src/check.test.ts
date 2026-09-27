@@ -1328,7 +1328,7 @@ describe("checkDir", () => {
             title: "Missing id",
             when: "the id is omitted",
             expect: "the caller is told the id is required",
-            // no link: a valid pending state
+            // Neither a link nor a covering test, so nothing checks it.
           },
           {
             title: "Soft-deleted user",
@@ -1352,10 +1352,11 @@ describe("checkDir", () => {
           intent: "profile-lookup",
           scenarios: 3,
           resolved: 1,
+          covered: 0,
           unlinked: 1,
         });
-        // The dangling link is a warning: it gates at --fail-on warning
-        // but not at the default error threshold.
+        // Both are warnings: they gate at --fail-on warning but not at
+        // the default error threshold.
         expect(result.hasErrors).toBe(false);
         expect(
           checkDir({
@@ -1367,7 +1368,7 @@ describe("checkDir", () => {
       });
       expect(output).toContain("Intent:");
       expect(output).toContain(
-        "1 PRD checked: 3 scenarios, 1 resolved, 1 unlinked",
+        "1 PRD checked: 3 scenarios, 1 resolved, 0 covered by tests, 1 unlinked",
       );
     } finally {
       fs.rmSync(intentDir, { recursive: true, force: true });

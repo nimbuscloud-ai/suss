@@ -118,6 +118,7 @@ rules:
 | `consumer.summary` | optional | `${file}::${name}` for the consumer side. |
 | `provider.transitionId` | optional | Matches the provider side's branch. A finding about a status the provider produces puts its id here, not on the consumer. |
 | `provider.summary` | optional | `${file}::${name}` for the provider side. Also matches a contributor listed in `sources` when two identical findings were collapsed. |
+| `scenario` | optional | The title of one PRD scenario. Matches only intent findings about that scenario. |
 | `scope` | optional, default `narrow` | `broad` allows a rule with only a `kind` or only a `boundary`. |
 | `reason` | yes | Free text. It shows in the report next to the suppressed finding. |
 | `effect` | optional, default `mark` | `mark`, `downgrade` or `hide`. |
@@ -128,7 +129,7 @@ No other keys are accepted, and there is no `expires`.
 
 A finding matches a rule when every field the rule states equals the finding's. Fields the rule leaves out match anything, and there is no wildcard syntax: `boundary: "GET /legacy/*"` matches a route literally spelled `/legacy/*`, not everything under `/legacy`. The first rule that matches wins, so order matters when two rules overlap.
 
-A narrow rule, which is the default, needs `kind` plus one of `boundary`, `consumer.transitionId` or `provider.transitionId`. The rule suss prints always satisfies that, because it identifies the transition on whichever side has one. A finding with no transition on either side gets no printed rule, since `kind` plus `boundary` would silence every other finding of that kind on that boundary.
+A narrow rule, which is the default, needs `kind` plus one of `boundary`, `scenario`, `consumer.transitionId` or `provider.transitionId`. The rule suss prints always satisfies that, because it identifies the transition on whichever side has one. A finding with no transition on either side gets no printed rule, since `kind` plus `boundary` would silence every other finding of that kind on that boundary.
 
 For a whole category, `scope: broad` opts in to a rule keyed on `kind` alone:
 
@@ -144,6 +145,19 @@ rules:
 A broad rule also silences regressions in that category later on, so the `reason` is all anyone will have to go on.
 
 Intent findings from `suss check --intent` take the same rules. `kind` and `boundary` match the same way; `consumer` and `provider` never match an intent finding, which has neither side. A PRD scenario finding that resolves to no boundary is keyed `prd:<title>`, so match it on that string or with `scope: broad`.
+
+That key covers every scenario in the PRD, so a rule on it alone also accepts a scenario somebody adds next month. Give the scenario's title under `scenario` to accept that one and leave the rest reported:
+
+```yaml
+version: 1
+rules:
+  - kind: coveringTestSkipped
+    boundary: "prd:Cancel an order"
+    scenario: cancelled twice
+    reason: The test is skipped until the payment sandbox is back.
+```
+
+A rule that sets `scenario` never matches a behavioral finding, which is about no scenario.
 
 ## When a rule stops matching
 

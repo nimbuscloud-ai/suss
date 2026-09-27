@@ -125,6 +125,8 @@ function prd(links: string[]): IntentSummary {
       when: "a caller asks",
       expect: "they are told",
       link: [link],
+      coveredBy: [],
+      about: [],
     })),
   };
 }

@@ -21,14 +21,19 @@ describe older code, so run it again after a change.
 Each `*.prd.yaml` is one feature, written as scenarios in the words of
 the person using suss. A scenario that links to a boundary outcome
 (`link: <name>.<outcome-id>`) is backed by that outcome, and the check
-fails when the outcome goes away. A scenario with no link has a comment
-saying why:
+fails when the outcome goes away. A scenario with no link lists the
+test that covers it under `coveredBy`, and the check fails when that
+test is renamed, skipped, or stops reaching what `about` says:
 
 - The promise is about which values come back, such as a finding that
   was already there not being reported as new. An outcome cannot state
-  that, and the comment says which test covers it.
+  that.
 - The promise is about a CLI command's exit code or output, or an MCP
-  tool's result. suss has no boundary for either.
+  tool's result. suss has no boundary for either yet, so these list
+  the CLI test for now and move to a link once it has one.
+
+The dogfood run reads the test files these scenarios list with the
+vitest pack, and no others.
 
 | File | Feature |
 |---|---|

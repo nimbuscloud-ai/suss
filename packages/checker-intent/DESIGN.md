@@ -8,9 +8,11 @@ Each finding kind has a fixed severity.
 
 An error means the code does not do something the team wrote down: `unimplementedBoundary`, `uncoveredOutcome`, `outcomeShapeMismatch`, `renamedBoundary` and `pathWithoutEffect`. Somebody wrote the intent doc on purpose, so code that does not satisfy it is a bug.
 
-A warning means the intent could not be checked, or a document points at something that is not there: `unkeyableBoundary`, `danglingScenarioLink` and `ambiguousScenarioLink`. A dangling or ambiguous link is a planning gap the author has to fix. `unreadInputField` is a warning when the author marked the field as required, and info when they did not.
+A warning means the intent could not be checked, or a document points at something that is not there: `unkeyableBoundary`, `danglingScenarioLink`, `ambiguousScenarioLink`, `unlinkedScenario`, `missingCoveringTest`, `testMissesSubject` and `coveringTestSkipped`. A dangling or ambiguous link is a planning gap the author has to fix, and so is a scenario that neither a link nor a running test backs. `unreadInputField` is a warning when the author marked the field as required, and info when they did not.
 
-Info means the code goes further than the document, or the document is not finished yet: `undeclaredOutcome`, `undeclaredInputRead`, `unlinkedScenario` and `undescribedOutcome`. An intent doc states a minimum, so these are expected while the documents catch up with the code.
+Info means the code goes further than the document: `undeclaredOutcome`, `undeclaredInputRead` and `undescribedOutcome`. An intent doc states a minimum, so these are expected while the documents catch up with the code.
+
+`unlinkedScenario` was info while a link was the only way to back a scenario, since a promise about which values come back had no way to be linked. A scenario can list its covering test now, so one with neither is the same kind of gap as a link to nothing. A scenario still being written is recorded with a `.sussignore` rule that gives its title under `scenario`, so the gap is on record and a scenario added to the same PRD later is still reported.
 
 ## Effects on every path
 
@@ -31,3 +33,11 @@ A finding against intent whose `source` is `"inferred"` drops one level, from er
 A PRD scenario has `when` and `expect` in plain language, and an optional `link`: a list of `<intent-name>.<outcome-id>` references into the loaded boundary intents. The PRD pass resolves each reference against those intents and goes no further.
 
 Whether the code implements a linked outcome is a question for the boundary pass, which reports it as `uncoveredOutcome` or `unimplementedBoundary`. Keeping the two apart means a PRD can be checked before any code exists.
+
+## Covering tests
+
+A scenario can list tests under `coveredBy` instead of, or beside, a link. The check asks three things of each: that a test unit with that file and title path is in the summaries, that it is not marked skip or todo, and that its calls reach the scenario's subject. The subject is `about` when the scenario gives it, and otherwise any boundary the PRD's links resolve to, so a test that reaches one of them covers every scenario in the PRD that leaves `about` out. The schema requires `about` in a PRD with no link at all.
+
+Reach is the forward question over `@suss/checker`'s call facts, asked for every test in one fixpoint. The facts include the mocks a test pack recorded on each test, and the rule refuses a hop into a module or member the test mocks. A test that misses its subject is asked again without that refusal, which tells a test that never reaches its subject from one that reaches it only through a mock, and the message says which. When the test's own body makes a call with the subject's name that suss could not follow, the message says that too, since it is the likeliest reason.
+
+Spelling a test or a subject is resolved by the caller, through a `CoveringTestLookup`, because the resolver for a spelled file or unit lives with the commands. The check does not read assertions and runs nothing, so a failing test that calls its subject counts as covering it; the runner's own exit code already fails the build.

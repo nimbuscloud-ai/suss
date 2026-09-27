@@ -532,7 +532,7 @@ They have a different shape, because one side is a document rather than code, so
 | `boundary` | string | A readable label, such as `GET /users/:id` or `fn:@suss/cli::contract`. The key the intent and the code paired on. |
 | `intent` | `{ name, outcomeId? }` | The document's `name` for a boundary intent or `title` for a PRD, plus the declared outcome where the finding is about one. |
 | `code` | string? | The matched summary as `${file}::${name}`. Absent on `unimplementedBoundary`, where no code matched. |
-| `scenario` | `{ title?, link }`? | Set only on the three scenario kinds. |
+| `scenario` | `{ title?, link?, coveredBy? }`? | Set only on the scenario kinds: the scenario's title, and the link or the covering test the finding is about. |
 | `message` | string | One line of human-readable text. |
 | `suppressed` | `IntentFindingSuppression?` | Set only when a `.sussignore` rule matched. |
 
@@ -692,17 +692,61 @@ A store is the one case where filling the fields in does not help. Storage has n
 
 ### `unlinkedScenario`
 
-**Severity:** info.
+**Severity:** warning. It was info until a scenario could be backed by a test as well as a link.
 
-A scenario in a PRD is not linked to any system-intent outcome. The scenario makes sense as text, but nothing checks whether the behavior it describes exists.
+A scenario in a PRD has neither a `link` to a boundary outcome nor a test under `coveredBy`. The scenario makes sense as text, but nothing checks whether the behavior it describes exists.
 
 ```
-[info] prd:Reading a user: Scenario #3 in PRD "Reading a user" has no structured link to a system-intent outcome; it reads on its own, but its coverage can't be checked until a link is added.
+[warning] prd:Reading a user: Scenario #3 in PRD "Reading a user" has neither a link to a boundary outcome nor a covering test, so nothing checks it; add a link, or list the test that covers it under coveredBy.
 ```
 
-**Legitimate when:** the PRD is still being written, or the scenario describes something outside any one boundary. This is a valid pending state.
+**Legitimate when:** the scenario is still being written, or no test covers it yet. Record that with a `.sussignore` rule that gives the scenario's title under `scenario`, with the reason, so the gap is on record and a scenario added later is still reported.
 
-**A bug when:** never on its own. Treat the count as a coverage number: how much of what the PRD describes is connected to something suss can check.
+**A bug when:** the scenario describes something the code does and a link or a test could back it. Add one.
+
+### `missingCoveringTest`
+
+**Severity:** warning.
+
+A scenario lists a test under `coveredBy`, and no test unit in the summaries has that file and that title path. The message lists the titles the file does have, so a renamed test is easy to spot.
+
+```
+[warning] prd:Cancel an order: Scenario "cancelled twice" in PRD "Cancel an order" lists the test "src/orders.test.ts > cancel > changes nothing the second time", and no test in src/orders.test.ts has that title. Tests there: cancel > marks the order cancelled; cancel > refunds the payment.
+```
+
+**Legitimate when:** the test file was not read. Extract it with a test pack, such as `suss extract -f vitest --intent <dir>`. A title a runner builds per row, like `it.each`, is read once under its pattern, so a spelling of one expanded row is reported here too.
+
+**A bug when:** the test was renamed, moved or deleted, and the scenario still claims it. Update the spelling, or find the test that covers the scenario now.
+
+### `testMissesSubject`
+
+**Severity:** warning.
+
+The test exists and runs, and its calls never reach what the scenario is about, or reach it only through something the test replaced with a mock. What it has to reach is the scenario's `about`, or, without one, one of the boundaries the PRD's other scenarios link to.
+
+```
+[warning] prd:Cancel an order: Scenario "cancelled" in PRD "Cancel an order" lists the test "src/checkout.test.ts > cancels on a failed checkout", which reaches cancelOrder only through a call its mocks replace (vi.mock("./orders")), by checkout -> cancelOrder.
+```
+
+When the test's own body calls something with the subject's name that suss could not follow, the message says which call, since that is the likeliest reason.
+
+**Legitimate when:** the test reaches the subject through something suss does not follow, such as a child process or a call destructured from a dynamic import. Accept it with a rule for that scenario, saying why.
+
+**A bug when:** the test was changed to call something else, or a mock was added in front of the subject. The scenario no longer rests on a test that exercises it.
+
+### `coveringTestSkipped`
+
+**Severity:** warning.
+
+A scenario lists a test that is marked to not run: `it.skip`, `it.todo`, or a case under a skipped suite.
+
+```
+[warning] prd:Cancel an order: Scenario "skipped" in PRD "Cancel an order" lists the test "src/orders.test.ts > cancel > cancels twice without harm", which is marked skip or todo, so it does not run.
+```
+
+**Legitimate when:** the test is skipped for a while on purpose. Accept it with a rule for that scenario, saying until when.
+
+**A bug when:** the skip was left in. Nothing checks the scenario while the test does not run.
 
 ### `danglingScenarioLink`
 

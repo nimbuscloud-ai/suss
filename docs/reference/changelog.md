@@ -7,6 +7,26 @@ description: What changed in each suss release, newest first.
 
 One section per release, newest first.
 
+## Unreleased
+
+### Behavior changes
+
+`unlinkedScenario` is a warning now, where it was info. A scenario can be backed by a test under `coveredBy` as well as by a `link`, and a scenario with neither is the same kind of gap as a link to nothing. A project on the default `--fail-on error` sees no change in its exit code. A project that runs `suss check --intent` with `--fail-on warning` and has PRD scenarios with neither a link nor a test will start failing. Give each one a link or a covering test, or accept it with a `.sussignore` rule that gives the scenario's title under the new `scenario` field.
+
+### A PRD scenario lists the test that covers it
+
+A scenario whose promise is about which values come back, which no outcome can state, lists the test that covers it, spelled the way the runner prints it:
+
+```yaml
+- title: a finding that was already there
+  when: a finding was in the code before the agent's edit and is still there after it
+  expect: it is not reported as new
+  coveredBy: packages/checker/src/since/changesSince.test.ts > findingsSince > splits the findings into new and gone, by identity
+  about: fn:@suss/checker::findingsSince
+```
+
+`suss extract -f vitest --intent intent/` reads the tests the PRDs list, and only those, and `suss check --intent intent/` reports a listed test that is gone or renamed (`missingCoveringTest`), one marked skip or todo (`coveringTestSkipped`), and one whose calls never reach what the scenario is about, or reach it only through something the test mocked (`testMissesSubject`). A `.sussignore` rule can give one scenario by its title, so accepting one gap in a PRD leaves the others reported.
+
 ## 0.33.1 (2026-09-23)
 
 0.33.1 takes back the time 0.33.0 added to a TypeScript service that reads its environment through helpers.

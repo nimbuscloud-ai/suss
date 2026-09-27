@@ -205,11 +205,15 @@ export {
   readSourceDocumentMetadata,
   readStorageContractMetadata,
   readStorybookMetadata,
+  readTestMetadata,
   readWrapperMetadata,
   type SourceDocumentMetadata,
   SourceDocumentMetadataSchema,
   type StorageContractMetadata,
   type StorybookMetadata,
+  type TestMetadata,
+  TestMetadataSchema,
+  type TestMock,
   type WrapperMetadata,
   type WrapperReference,
   withGraphqlMetadata,
@@ -400,6 +404,7 @@ export const BOUNDARY_ROLE: Record<CodeUnitKind, BoundaryRole> = {
   caller: "consumer",
   "module-init": "consumer",
   "scheduled-callback": "consumer",
+  test: "consumer",
 };
 
 // ---------------------------------------------------------------------------

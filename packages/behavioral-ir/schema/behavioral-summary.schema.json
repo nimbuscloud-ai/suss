@@ -26,7 +26,8 @@
           "library",
           "caller",
           "module-init",
-          "scheduled-callback"
+          "scheduled-callback",
+          "test"
         ]
       },
       "location": {

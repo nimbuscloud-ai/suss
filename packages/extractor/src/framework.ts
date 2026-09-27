@@ -408,7 +408,63 @@ export type DiscoveryMatch =
        * side of the package-export boundary, whichever two they are.
        */
       workspaces?: true;
-    };
+    }
+  | TestCaseMatch;
+
+/**
+ * Test cases written as nested calls, the way vitest, jest and mocha
+ * write them: `describe("orders", () => { it("cancels", () => ...) })`.
+ * Each case becomes a unit named by its title path, the suite titles
+ * then its own, joined with ` > `. A title the adapter cannot read as a
+ * string keeps its source text and is recorded as unresolved.
+ */
+export interface TestCaseMatch {
+  type: "testCase";
+  style: "block";
+  /** The module the runner's functions are imported from, e.g. "vitest". */
+  importModule: string;
+  /** The functions that open a group of cases, e.g. ["describe", "suite"]. */
+  suiteNames: string[];
+  /** The functions that declare one case, e.g. ["it", "test"]. */
+  caseNames: string[];
+  /**
+   * Modifiers that mean the case does not run, written after a suite
+   * or case name: `it.skip`, `describe.todo`. A case under a skipped
+   * suite is skipped too.
+   */
+  skipModifiers: string[];
+  /**
+   * Modifiers that take arguments of their own and return the function
+   * to call, such as `it.skipIf(condition)`. The case called through one
+   * is read like any other.
+   */
+  argumentModifiers: string[];
+  /**
+   * Modifiers that take a table and declare one case per row, such as
+   * `it.each(rows)`. The runner fills the title in per row, so the case
+   * is read once, under the title as written, and that title is
+   * recorded as unresolved.
+   */
+  rowModifiers: string[];
+  /**
+   * How the runner replaces something before a case runs. `object` is
+   * the runner's helper object, imported from `importModule`.
+   * `moduleMethods` replace a whole module given its specifier
+   * (`vi.mock("./orders.js")`), and `memberMethods` replace one member
+   * given the object and the member's name (`vi.spyOn(orders, "cancel")`).
+   */
+  mocks?: {
+    object: string;
+    moduleMethods: string[];
+    memberMethods: string[];
+  };
+  /**
+   * Walk only these files, matched on whole path segments from the end,
+   * so `src/orders.test.ts` matches `/repo/pkg/src/orders.test.ts`. Left
+   * out, every file that imports the runner is walked.
+   */
+  files?: string[];
+}
 
 export type BindingExtraction = {
   method:

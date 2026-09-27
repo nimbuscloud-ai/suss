@@ -18,6 +18,7 @@ import {
   readSourceDocumentMetadata,
   readStorageContractMetadata,
   readStorybookMetadata,
+  readTestMetadata,
   readWrapperMetadata,
   withGraphqlMetadata,
   withHttpMetadata,
@@ -68,6 +69,23 @@ function transitionWith(
     ...(metadata !== undefined ? { metadata } : {}),
   };
 }
+
+describe("the test metadata namespace", () => {
+  it("reads what a test pack recorded, and keeps the fields that parse", () => {
+    const summary = summaryWith({
+      test: {
+        skipped: true,
+        mocks: [{ module: "src/orders.ts", written: 'vi.mock("./orders")' }],
+        unresolvedTitle: 7,
+      },
+    });
+    expect(readTestMetadata(summary)).toEqual({
+      skipped: true,
+      mocks: [{ module: "src/orders.ts", written: 'vi.mock("./orders")' }],
+    });
+    expect(readTestMetadata(summaryWith(undefined))).toBeUndefined();
+  });
+});
 
 describe("the mount metadata namespace", () => {
   it("round-trips the sibling count and the prefix", () => {

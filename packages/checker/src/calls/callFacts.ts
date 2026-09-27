@@ -17,6 +17,7 @@ import {
   bindingIs,
   boundaryKey,
   displayLabel,
+  readTestMetadata,
   summaryIdentifier,
   wrapperChain,
   wrapperFor,
@@ -32,7 +33,10 @@ import {
   variable as v,
 } from "@suss/datalog";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  FunctionCallSemantics,
+} from "@suss/behavioral-ir";
 import type { BodyMatch, Rule, TagAlgebra } from "@suss/datalog";
 
 /** What `functionOf` returns. */
@@ -78,6 +82,26 @@ export interface CallFacts {
   reaching(target: ReachTarget): Map<FunctionKey, CallPath>;
   /** Every function these ones end up calling, with the shortest path. */
   reachedFrom(start: Iterable<FunctionKey>): Map<FunctionKey, CallPath>;
+  /**
+   * What each start ends up calling, asked for every start in one
+   * fixpoint, so a caller with one question per test pays for one. With
+   * `pastMocks`, a hop into something the start's test replaces with a
+   * mock is not taken.
+   */
+  reachedFromEach(
+    starts: Iterable<FunctionKey>,
+    options?: { pastMocks?: boolean },
+  ): Map<FunctionKey, Reached>;
+}
+
+/** What one start reaches, each with the shortest path to it. */
+export interface Reached {
+  functions: ReadonlyMap<FunctionKey, CallPath>;
+  /**
+   * The exports it reaches by calling a function bound to them, which is
+   * how a call into a package no summary here provides is recorded.
+   */
+  keys: ReadonlyMap<string, CallPath>;
 }
 
 /** Where a reach question ends. */
@@ -117,10 +141,16 @@ export function readCallFacts(
   const provides: Array<[FunctionKey, string]> = [];
   const passes: Array<[FunctionKey, FunctionKey, number, FunctionKey]> = [];
   const callsParameter: Array<[FunctionKey, number, string]> = [];
+  const mocks: MockFacts = { module: [], name: [], member: [] };
+  const placed: PlaceFacts = { inModule: [], named: [], memberNamed: [] };
 
   for (const summary of summaries) {
     const fn = functionOf(summary);
+    if (!units.has(fn)) {
+      placeFunction(fn, summary, placed);
+    }
     units.set(fn, [...(units.get(fn) ?? []), summary]);
+    addMockFacts(fn, summary, mocks);
     for (const reference of wrapperChain(summary)) {
       const wrapper = wrapperFor(chain, reference);
       if (wrapper !== undefined) {
@@ -175,6 +205,7 @@ export function readCallFacts(
       provides.push([fn, key]);
     } else {
       boundTo.push([fn, key, displayLabel(binding)]);
+      placeExport(key, binding.semantics, placed);
     }
   }
 
@@ -203,13 +234,116 @@ export function readCallFacts(
     return db;
   };
 
+  // Only the question that honours mocks needs to know where each
+  // function lives, so the other questions never load these facts.
+  const pastMocks = (db: Database): Database => {
+    for (const fact of mocks.module) {
+      db.add("mocksModule", fact);
+    }
+    for (const fact of mocks.name) {
+      db.add("mocksName", fact);
+    }
+    for (const fact of mocks.member) {
+      db.add("mocksMember", fact);
+    }
+    for (const fact of placed.inModule) {
+      db.add("inModule", fact);
+    }
+    for (const fact of placed.named) {
+      db.add("named", fact);
+    }
+    for (const fact of placed.memberNamed) {
+      db.add("memberNamed", fact);
+    }
+    return db;
+  };
+
   return {
     units,
     edges: () => callEdges(database()),
     callersOf: (target) => directCallers(database(), target),
     reaching: (target) => reachingFunctions(database(), target),
     reachedFrom: (start) => reachedFunctions(database(), start),
+    reachedFromEach: (starts, options) =>
+      reachedFromEachStart(
+        options?.pastMocks === true ? pastMocks(database()) : database(),
+        starts,
+      ),
   };
+}
+
+interface MockFacts {
+  module: Array<[FunctionKey, string]>;
+  name: Array<[FunctionKey, string]>;
+  member: Array<[FunctionKey, string, string]>;
+}
+
+/** Where each function and bound export lives, which is what a mock is matched against. */
+interface PlaceFacts {
+  inModule: Array<[string, string]>;
+  named: Array<[string, string]>;
+  /** The subset of `named` that is a member of an object, which a spy can replace. */
+  memberNamed: Array<[string, string]>;
+}
+
+/** A test's mocks, from what its pack recorded, as facts about the test's function. */
+function addMockFacts(
+  fn: FunctionKey,
+  summary: BehavioralSummary,
+  facts: MockFacts,
+): void {
+  for (const mock of readTestMetadata(summary)?.mocks ?? []) {
+    if (mock.module !== undefined && mock.name !== undefined) {
+      facts.member.push([fn, mock.module, mock.name]);
+    } else if (mock.module !== undefined) {
+      facts.module.push([fn, mock.module]);
+    } else if (mock.name !== undefined) {
+      facts.name.push([fn, mock.name]);
+    }
+  }
+}
+
+/**
+ * A function is in its file and in its workspace package, since a mock
+ * gives a relative import as the file and a package import by name.
+ * Its name is the last part of a dotted name, the member a spy replaces.
+ */
+function placeFunction(
+  fn: FunctionKey,
+  summary: BehavioralSummary,
+  facts: PlaceFacts,
+): void {
+  facts.inModule.push([fn, summary.location.file]);
+  if (summary.location.workspace !== undefined) {
+    facts.inModule.push([fn, summary.location.workspace]);
+  }
+  const name = summary.identity.name;
+  facts.named.push([fn, lastSegment(name)]);
+  if (name.includes(".")) {
+    facts.memberNamed.push([fn, lastSegment(name)]);
+  }
+}
+
+function placeExport(
+  key: string,
+  semantics: FunctionCallSemantics,
+  facts: PlaceFacts,
+): void {
+  if (semantics.package !== undefined) {
+    facts.inModule.push([key, semantics.package]);
+  }
+  const path = semantics.exportPath ?? [];
+  const name = path.at(-1) ?? semantics.exportName;
+  if (name !== undefined) {
+    facts.named.push([key, name]);
+  }
+  if (name !== undefined && path.length > 1) {
+    facts.memberNamed.push([key, name]);
+  }
+}
+
+function lastSegment(name: string): string {
+  return name.slice(name.lastIndexOf(".") + 1);
 }
 
 /** A function's key is its location, since every summary of one function shares it. */
@@ -306,6 +440,60 @@ const REACHED: Rule[] = [
   ),
 ];
 
+const S = v("s");
+const X = v("x");
+const M = v("m");
+const N = v("n");
+
+// The same walk as REACHED, keyed by the start so one fixpoint covers
+// every start. A hop into a function or export the start's test mocks
+// is refused. A spy on an object replaces a member, never a function.
+const REACHED_EACH: Rule[] = [
+  ...CALLS,
+  rule(
+    "refused",
+    [S, X],
+    [lit("mocksModule", S, M), lit("inModule", X, M)],
+    "refused-module",
+  ),
+  rule(
+    "refused",
+    [S, X],
+    [lit("mocksName", S, N), lit("memberNamed", X, N)],
+    "refused-name",
+  ),
+  rule(
+    "refused",
+    [S, X],
+    [lit("mocksMember", S, M, N), lit("inModule", X, M), lit("named", X, N)],
+    "refused-member",
+  ),
+  rule(
+    "reachedBy",
+    [S, G],
+    [lit("start", S), lit("calls", S, G, L, W), notLit("refused", S, G)],
+    "reached-by-from",
+  ),
+  rule(
+    "reachedBy",
+    [S, G],
+    [lit("reachedBy", S, F), lit("calls", F, G, L, W), notLit("refused", S, G)],
+    "reached-by-onward",
+  ),
+  rule(
+    "reachedKey",
+    [S, K],
+    [lit("start", S), lit("boundTo", S, K, L), notLit("refused", S, K)],
+    "reached-key-from",
+  ),
+  rule(
+    "reachedKey",
+    [S, K],
+    [lit("reachedBy", S, F), lit("boundTo", F, K, L), notLit("refused", S, K)],
+    "reached-key-onward",
+  ),
+];
+
 /** The `CallRecord` for a `calls` fact's kind slot. Unknown kinds fall back to "written". */
 const CALL_RECORD_OF: Record<string, CallRecord> = {
   written: "written",
@@ -352,6 +540,13 @@ const PATH_OF: Record<
   "reaches-through": (body, tags) => [callAt(body, 1), ...tags[0]],
   "reached-from": (body) => [callAt(body, 1)],
   "reached-onward": (body, tags) => [...tags[0], callAt(body, 1)],
+  "refused-module": () => [],
+  "refused-name": () => [],
+  "refused-member": () => [],
+  "reached-by-from": (body) => [callAt(body, 1)],
+  "reached-by-onward": (body, tags) => [...tags[0], callAt(body, 1)],
+  "reached-key-from": (body) => [bindingAt(body, 1)],
+  "reached-key-onward": (body, tags) => [...tags[0], bindingAt(body, 1)],
 };
 
 /** Keeps the shortest path. Between two of the same length, it keeps the one whose callees sort first. */
@@ -413,6 +608,35 @@ function reachedFunctions(
     paths.delete(fn);
   }
   return paths;
+}
+
+function reachedFromEachStart(
+  db: Database,
+  starts: Iterable<FunctionKey>,
+): Map<FunctionKey, Reached> {
+  const answers = new Map<
+    FunctionKey,
+    { functions: Map<FunctionKey, CallPath>; keys: Map<string, CallPath> }
+  >();
+  for (const fn of starts) {
+    db.add("start", [fn]);
+    answers.set(fn, { functions: new Map(), keys: new Map() });
+  }
+  evaluate(db, REACHED_EACH, SHORTEST_PATH);
+  for (const tuple of db.facts("reachedBy")) {
+    const [start, reached] = [String(tuple[0]), String(tuple[1])];
+    if (start !== reached) {
+      answers
+        .get(start)
+        ?.functions.set(reached, db.tagOf("reachedBy", tuple) as CallPath);
+    }
+  }
+  for (const tuple of db.facts("reachedKey")) {
+    answers
+      .get(String(tuple[0]))
+      ?.keys.set(String(tuple[1]), db.tagOf("reachedKey", tuple) as CallPath);
+  }
+  return answers;
 }
 
 /** Every derived call, once per caller, target function and call spelling. */

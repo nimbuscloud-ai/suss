@@ -21,6 +21,7 @@ import {
 } from "@suss/checker-intent";
 import { loadIntentDirectory } from "@suss/contract-intent";
 
+import { coveringTestLookup } from "./coveringTests.js";
 import {
   readEntryIndex,
   readProjectFile,
@@ -670,7 +671,7 @@ function runIntentPass(
       `${intentDir} holds no intent docs. suss looks for *.intent.yaml, *.intent.yml, *.intent.json, and the same three for *.prd.`,
     );
   }
-  const result = checkIntentAgreement(intents, code);
+  const result = checkIntentAgreement(intents, code, coveringTestLookup(code));
   return {
     ...result,
     findings: applyIntentSuppressions(result.findings, suppressions),
@@ -705,9 +706,10 @@ function renderIntentSection(intent: CheckIntentResult | undefined): string {
   if (prds.length > 0) {
     const scenarios = prds.reduce((sum, p) => sum + p.scenarios, 0);
     const resolved = prds.reduce((sum, p) => sum + p.resolved, 0);
+    const covered = prds.reduce((sum, p) => sum + p.covered, 0);
     const unlinked = prds.reduce((sum, p) => sum + p.unlinked, 0);
     lines.push(
-      `  ${prds.length} PRD${prds.length === 1 ? "" : "s"} checked: ${scenarios} scenario${scenarios === 1 ? "" : "s"}, ${resolved} resolved, ${unlinked} unlinked`,
+      `  ${prds.length} PRD${prds.length === 1 ? "" : "s"} checked: ${scenarios} scenario${scenarios === 1 ? "" : "s"}, ${resolved} resolved, ${covered} covered by tests, ${unlinked} unlinked`,
     );
   }
   for (const f of intent.findings) {
