@@ -54,15 +54,10 @@ function packFor(pkg) {
       { kind: "return", match: { type: "returnStatement" }, extraction: {} },
       { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
     ],
-    inputMapping: {
-      type: "positionalParams",
-      params: [
-        { position: 0, role: "arg0" },
-        { position: 1, role: "arg1" },
-        { position: 2, role: "arg2" },
-        { position: 3, role: "arg3" },
-      ],
-    },
+    // Each input keeps its parameter name from the source, as in the
+    // shipped package-exports pack, so an intent `receives` block
+    // written with parameter names compares against these summaries.
+    inputMapping: { type: "allPositional" },
   };
 
   // This pack is written here rather than published, so its version is
