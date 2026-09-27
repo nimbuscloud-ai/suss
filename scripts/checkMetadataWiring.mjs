@@ -107,10 +107,6 @@ const EXEMPT = new Map([
     "Why an operation's document could not be assembled. unresolvedFragments has its unchecked-selection finding now; nothing reports the assembly failure itself yet. #464.",
   ],
   [
-    "http.implementingHandler",
-    "The API Gateway readers point a declared route at the code that implements it, for the correlation pass its comment describes. Nothing correlates them. #464.",
-  ],
-  [
     "libraryEnvReads.module",
     "Which library a marker summary speaks for. The pairing matches on prefixes and names and never asks which library declared them, so a finding cannot say. #464.",
   ],
