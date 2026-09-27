@@ -279,25 +279,10 @@ export function checkDirectory(options: {
     );
   }
 
-  const summaries: BehavioralSummary[] = [];
-  // Lets a caller report a boundary that two files both claim to provide.
-  const sourceFile = new Map<BehavioralSummary, string>();
-  const skipped: string[] = [];
-  for (const file of files) {
-    let read: BehavioralSummary[];
-    try {
-      read = readSummaries(path.join(resolved, file));
-    } catch (error) {
-      // Other JSON ends up in a summaries folder, most often a report
-      // written next to the summaries. Name the file and check the rest.
-      skipped.push(`${file}: ${reasonOf(error)}`);
-      continue;
-    }
-    for (const summary of read) {
-      summaries.push(summary);
-      sourceFile.set(summary, file);
-    }
-  }
+  const { summaries, sourceFile, skipped, rawResult } = checkedFiles(
+    resolved,
+    files,
+  );
 
   if (skipped.length === files.length) {
     throw new UsageError(
@@ -311,7 +296,6 @@ export function checkDirectory(options: {
     );
   }
 
-  const rawResult = checkAll(summaries);
   const suppressions = loadSuppressionsForOptions(options, resolved);
   return {
     summaries,
@@ -324,6 +308,81 @@ export function checkDirectory(options: {
     suppressions,
     confidence: buildConfidenceLookup(summaries),
   };
+}
+
+interface CheckedFiles {
+  summaries: BehavioralSummary[];
+  /** Lets a caller report a boundary that two files both claim to provide. */
+  sourceFile: Map<BehavioralSummary, string>;
+  skipped: string[];
+  /** The checker's result before any `.sussignore` rule. */
+  rawResult: CheckAllResult;
+}
+
+/**
+ * The folders read most recently, by the name and identity on disk of
+ * every file in them. A process that compares each read with the one
+ * before it reads the earlier folder a second time, often after it was
+ * renamed, and a large project's files take about half a second each to
+ * parse and check.
+ */
+const checkedFolders = new Map<string, CheckedFiles>();
+const FOLDERS_KEPT = 2;
+
+function checkedFiles(dir: string, files: readonly string[]): CheckedFiles {
+  const key = folderIdentity(dir, files);
+  const known = key === null ? undefined : checkedFolders.get(key);
+  if (key !== null && known !== undefined) {
+    checkedFolders.delete(key);
+    checkedFolders.set(key, known);
+    return known;
+  }
+  const checked = readAndCheck(dir, files);
+  if (key !== null) {
+    checkedFolders.set(key, checked);
+    for (const stale of [...checkedFolders.keys()].slice(0, -FOLDERS_KEPT)) {
+      checkedFolders.delete(stale);
+    }
+  }
+  return checked;
+}
+
+/** Null when a file cannot be stat'ed, so nothing is remembered. */
+function folderIdentity(dir: string, files: readonly string[]): string | null {
+  const parts: string[] = [];
+  for (const file of files) {
+    try {
+      const stat = fs.statSync(path.join(dir, file));
+      parts.push(
+        `${file}\0${stat.dev}\0${stat.ino}\0${stat.size}\0${stat.mtimeMs}`,
+      );
+    } catch {
+      return null;
+    }
+  }
+  return parts.join("\n");
+}
+
+function readAndCheck(dir: string, files: readonly string[]): CheckedFiles {
+  const summaries: BehavioralSummary[] = [];
+  const sourceFile = new Map<BehavioralSummary, string>();
+  const skipped: string[] = [];
+  for (const file of files) {
+    let read: BehavioralSummary[];
+    try {
+      read = readSummaries(path.join(dir, file));
+    } catch (error) {
+      // Other JSON ends up in a summaries folder, most often a report
+      // written next to the summaries. Name the file and check the rest.
+      skipped.push(`${file}: ${reasonOf(error)}`);
+      continue;
+    }
+    for (const summary of read) {
+      summaries.push(summary);
+      sourceFile.set(summary, file);
+    }
+  }
+  return { summaries, sourceFile, skipped, rawResult: checkAll(summaries) };
 }
 
 export function checkDir(options: CheckDirOptions): CheckResult & {
