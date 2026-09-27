@@ -66,7 +66,8 @@ writesUnstated(x)           a write to x states no value at all. The
                             no rule does (Python, Ruby)
 fallbackBranch(x, b)        x is a fallback expression, a || b or
                             a ?? b, or a or b in Python and Ruby, and b
-                            is one of its branches
+                            is one of its branches. Python also states
+                            a if c else b and (a) this way
 instanceOf(x, cls)          x is one of cls, and nothing says which: a
                             method's receiver, or a name Python
                             annotates with a type. cls can be a name
@@ -242,6 +243,11 @@ definesMethodFrom(c, x)     c's body calls define_method, and x is the
 nameTurnsOn(x, element, index, over)  the name x is written in a loop
                             block that binds element, and index when it
                             has one, to each item of over (Ruby)
+yieldsValue(f, v)           f's body yields v. Calling f gives back a
+                            generator, so no rule treats it as a return.
+                            The router index reads it to tell whether an
+                            app leaves the function that built it
+                            (Python)
 ```
 
 `declaresName` is the only fact an adapter records after asking these
