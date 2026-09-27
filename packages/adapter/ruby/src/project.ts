@@ -931,10 +931,7 @@ async function runRuby(
       summaries,
       parsed.map(({ file, root }) => ({ file, sites: exitSites(root) })),
       db,
-      (summary) =>
-        options.workspaceRoot === undefined
-          ? summary.location.file
-          : path.resolve(options.workspaceRoot, summary.location.file),
+      options.workspaceRoot,
     );
     return composeWrappers(summaries, { gapHandling });
   });

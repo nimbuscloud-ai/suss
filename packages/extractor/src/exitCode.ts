@@ -10,14 +10,32 @@
  * edit to the entry file.
  */
 
+import path from "node:path";
+
+import { declarationKey } from "@suss/behavioral-ir";
+
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
+/**
+ * `returnsTheCode` contains function keys, the absolute file and the
+ * function's span as `declarationKey` writes them. A summary whose file
+ * was shortened is resolved against `workspaceRoot` first.
+ */
 export function markReturnsAsExitCode(
   summaries: readonly BehavioralSummary[],
-  returnsTheCode: (summary: BehavioralSummary) => boolean,
+  returnsTheCode: ReadonlySet<string>,
+  workspaceRoot?: string,
 ): void {
   for (const summary of summaries) {
-    markExitCodeFrom(summary, returnsTheCode(summary));
+    const span = summary.location.span;
+    const file =
+      workspaceRoot === undefined
+        ? summary.location.file
+        : path.resolve(workspaceRoot, summary.location.file);
+    markExitCodeFrom(
+      summary,
+      span !== undefined && returnsTheCode.has(declarationKey(file, span)),
+    );
   }
 }
 

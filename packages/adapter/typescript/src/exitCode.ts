@@ -2,12 +2,13 @@
  * Which summaries return the value that becomes the process's exit code.
  * The store works the functions out once per run, from the files that
  * end the process or set its exit code, and the shared marker records
- * the answer on every summary the run hands back.
+ * the answer on every summary the run hands back. A summary's file is
+ * still absolute here, the way a function key's is.
  */
 
 import { markReturnsAsExitCode } from "@suss/extractor";
 
-import { offsetKeyFor, offsetKeyOf } from "./walk/nodeKeys.js";
+import { offsetKeyOf } from "./walk/nodeKeys.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { Project } from "ts-morph";
@@ -18,14 +19,8 @@ export function stampExitCodeFrom(
   project: Project,
   resolution: ResolutionStore,
 ): void {
-  const returnsTheCode = new Set(
-    resolution.exitCodeFunctions(project).map(offsetKeyOf),
+  markReturnsAsExitCode(
+    summaries,
+    new Set(resolution.exitCodeFunctions(project).map(offsetKeyOf)),
   );
-  markReturnsAsExitCode(summaries, (summary) => {
-    const span = summary.location.span;
-    return (
-      span !== undefined &&
-      returnsTheCode.has(offsetKeyFor(summary.location.file, span))
-    );
-  });
 }

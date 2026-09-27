@@ -12,7 +12,6 @@
  * to it.
  */
 
-import { declarationKey } from "@suss/behavioral-ir";
 import {
   markReturnsAsExitCode,
   SKIP_CHILDREN,
@@ -154,21 +153,16 @@ export function markExitCodeFunctions(
   summaries: readonly BehavioralSummary[],
   exits: readonly FileExits[],
   facts: Database,
-  absolutePathOf: (summary: BehavioralSummary) => string,
+  workspaceRoot: string | undefined,
 ): void {
-  const returnsTheCode = exitCodeFunctions(
-    facts,
-    exits.flatMap(({ file, sites }) =>
-      sites.flatMap((site) =>
-        site.code === null ? [] : [nodeId(file, site.code)],
-      ),
+  const sinks = exits.flatMap(({ file, sites }) =>
+    sites.flatMap((site) =>
+      site.code === null ? [] : [nodeId(file, site.code)],
     ),
   );
-  markReturnsAsExitCode(summaries, (summary) => {
-    const span = summary.location.span;
-    return (
-      span !== undefined &&
-      returnsTheCode.has(declarationKey(absolutePathOf(summary), span))
-    );
-  });
+  markReturnsAsExitCode(
+    summaries,
+    exitCodeFunctions(facts, sinks),
+    workspaceRoot,
+  );
 }

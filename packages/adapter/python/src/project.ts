@@ -947,11 +947,7 @@ async function runPython(
   const composed = timer.time("summarize", () => {
     // Before the cache write and over every summary, reused ones included:
     // only a run with every file unchanged serves the stored marks.
-    markExitCodeFunctions(summaries, exits, db, (summary) =>
-      options.workspaceRoot === undefined
-        ? summary.location.file
-        : path.resolve(options.workspaceRoot, summary.location.file),
-    );
+    markExitCodeFunctions(summaries, exits, db, options.workspaceRoot);
     return composeWrappers(summaries, { gapHandling });
   });
 
