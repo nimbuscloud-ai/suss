@@ -320,6 +320,16 @@ asks for every call made under that context, which is every call. With
 the label columns left out, `paramOf` goes first, binds `f`, and the
 demand on `entersUnder` is for one function.
 
+A constant written in the literal itself does not count as fixing its
+column either, for the same reason. In `contains(cls, n, held) <-
+initializes(cls, f), storesProperty(f, n, held, receiver)` asked with
+`cls` and `n` bound, counting the store kind put `storesProperty`
+first, with the property name and the kind fixed, and the demand read
+every store of that name before `initializes` bound the function. With
+constants left out, the two literals tie at one fixed column each and
+written order puts `initializes` first. Summaries came out identical on
+five projects, and a Python service read 6% fewer rows.
+
 The rewrite costs two things. The companion relations are stored like
 any other, at a few tuples per value asked about, so a caller who asks
 about most of a program ends up deriving more than it would without

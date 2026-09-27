@@ -318,7 +318,8 @@ function boundFirst(
     literal.terms.filter(
       (term, column) =>
         !labels.get(literal.relation)?.has(column) &&
-        (term.type === "constant" || bound.has(term.name)),
+        term.type === "variable" &&
+        bound.has(term.name),
     ).length;
 
   const remaining = [...r.body];
