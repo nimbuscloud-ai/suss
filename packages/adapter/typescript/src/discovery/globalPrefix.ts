@@ -245,12 +245,17 @@ function excludedRoute(
     return null;
   }
   const methodValue = fieldValue(entry, exclude.methodKey);
-  const code = methodValue === null ? undefined : constantOf(methodValue);
+  if (methodValue === null) {
+    return { path: routePath, method: null };
+  }
+  const code = constantOf(methodValue);
   const method = typeof code === "number" ? exclude.methods[code] : undefined;
-  return {
-    path: routePath,
-    method: method === undefined || method === "*" ? null : method,
-  };
+  // Reading an unknown method as every verb would unprefix routes the
+  // entry never named, so the entry is dropped and the route keeps the prefix.
+  if (method === undefined) {
+    return null;
+  }
+  return { path: routePath, method: method === "*" ? null : method };
 }
 
 function fieldValue(record: Value, key: string): Value | null {
