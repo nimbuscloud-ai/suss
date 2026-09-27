@@ -59,6 +59,7 @@ import {
   returnedResponseStatus,
 } from "./paths/raisedResponses.js";
 import { returnedBodyShape } from "./paths/returnedShape.js";
+import { type EffectSlot, slotProvenance } from "./provenance.js";
 import { type RawSqlOptions, rawSqlCallIds, rawSqlEffects } from "./rawSql.js";
 import {
   type StorageLookup,
@@ -83,6 +84,7 @@ import type {
   RawBranch,
   RawCodeStructure,
   RawParameter,
+  RawProvenance,
   Reading,
   SourceRange,
 } from "@suss/extractor";
@@ -1311,7 +1313,7 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     },
   });
   const branches: RawBranch[] = (perTerminal ?? []).map((branch) =>
-    extra.length === 0 ? branch : { ...branch, extraEffects: extra },
+    withBodyEffects(branch, extra),
   );
   // A route declaring neither a body shape nor a status still gets a default
   // branch when its body has effects, since an effect with no transition to
@@ -1320,10 +1322,10 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     perTerminal === null &&
     (responseShape.reading.kind !== "absent" ||
       statusCode.reading.kind !== "absent" ||
-      extra.length > 0 ||
+      extra.effects.length > 0 ||
       effects.length > 0)
   ) {
-    branches.push({
+    const bare: RawBranch = {
       conditions: [],
       terminal: {
         kind: "response",
@@ -1342,10 +1344,10 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
       statusCodeReading: statusCode,
       bodyShapeReading: { reading: responseShape.reading },
       effects,
-      ...(extra.length === 0 ? {} : { extraEffects: extra }),
       location: rangeOf(definitionNode),
       isDefault: true,
-    });
+    };
+    branches.push(withBodyEffects(bare, extra));
   }
 
   const bodyNode = field(definitionNode, "body");
@@ -1406,13 +1408,20 @@ function unreadRoleReadings(
   ];
 }
 
+/** What a body does besides calling, and where the values its effects are given came from. */
+export interface BodyEffects {
+  effects: Effect[];
+  provenance: RawProvenance[];
+}
+
 /** What a body does besides calling: config it reads, database work, SQL it writes itself. */
 export function recognizedBodyEffects(
   definitionNode: PyNode,
   module: ModuleBinding,
   storageLookup: StorageLookup | undefined,
   facts: Database | undefined,
-): Effect[] {
+): BodyEffects {
+  const slots: EffectSlot[] = [];
   const storage =
     storageLookup === undefined
       ? []
@@ -1420,14 +1429,41 @@ export function recognizedBodyEffects(
           ...storageEffects(bodyCalls(definitionNode), {
             ...storageLookup,
             filePath: storageLookup.factsPath,
+            statesSlots: (effect, stated) => {
+              slots.push(...stated.map((one) => ({ ...one, effect })));
+            },
           }),
           ...rawSqlEffects(bodyCalls(definitionNode), rawSqlOf(storageLookup)),
         ];
-  return [
-    ...envReadEffects(definitionNode, module, facts),
-    ...storage,
-    ...streamWriteEffects(definitionNode, module),
-  ];
+  return {
+    effects: [
+      ...envReadEffects(definitionNode, module, facts),
+      ...storage,
+      ...streamWriteEffects(definitionNode, module),
+    ],
+    provenance:
+      slots.length === 0 || storageLookup === undefined
+        ? []
+        : slotProvenance(slots, {
+            facts: storageLookup.facts,
+            unit: definitionNode,
+          }),
+  };
+}
+
+/** A branch with the body's own effects on it, and where their values came from. */
+export function withBodyEffects(
+  branch: RawBranch,
+  extra: BodyEffects,
+): RawBranch {
+  if (extra.effects.length === 0) {
+    return branch;
+  }
+  return {
+    ...branch,
+    extraEffects: extra.effects,
+    ...(extra.provenance.length === 0 ? {} : { provenance: extra.provenance }),
+  };
 }
 
 /** What the raw-SQL reader is asked with, out of what discovery already looked up for the file. */

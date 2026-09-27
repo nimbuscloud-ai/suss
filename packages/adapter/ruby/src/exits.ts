@@ -134,7 +134,7 @@ export function exitingBranches(
     call: site.call,
     terminal: exitTerminal(site, facts),
   }));
-  return returnPathBranches(method, effects, exits);
+  return returnPathBranches(method, effects, exits, facts);
 }
 
 /** The places each file ends the process, for the run to ask about once. */

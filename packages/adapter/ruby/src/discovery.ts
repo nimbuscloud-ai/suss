@@ -45,6 +45,11 @@ import {
   filterUnit,
 } from "./filters.js";
 import { EVERY_ARGLESS_CALL, invocationEffects } from "./paths/effects.js";
+import {
+  type EffectSlot,
+  slotProvenance,
+  withSlotSources,
+} from "./provenance.js";
 import { responseBranches } from "./responseStatus.js";
 import {
   constantRefCandidates,
@@ -69,6 +74,7 @@ import type {
   RawCodeStructure,
   RawEffect,
   RawParameter,
+  RawProvenance,
   Reading,
 } from "@suss/extractor";
 import type {
@@ -579,33 +585,36 @@ function buildControllerActionUnit(
             recognition: pack.name,
           }),
     parameters: [],
-    branches: perResponse ?? [
-      {
-        conditions: [],
-        terminal: {
-          kind: "response",
-          statusCode: null,
-          body: null,
-          exceptionType: null,
-          message: null,
-          component: null,
-          renderTree: null,
-          delegateTarget: null,
-          emitEvent: null,
+    branches: withSlotSources(
+      perResponse ?? [
+        {
+          conditions: [],
+          terminal: {
+            kind: "response",
+            statusCode: null,
+            body: null,
+            exceptionType: null,
+            message: null,
+            component: null,
+            renderTree: null,
+            delegateTarget: null,
+            emitEvent: null,
+            location: range,
+          },
+          statusCodeReading: {
+            reading: absentReading,
+            libraryDefault: pattern.defaultStatusCode,
+          },
+          effects: body.effects ?? [],
+          ...(body.extraEffects === undefined
+            ? {}
+            : { extraEffects: body.extraEffects }),
           location: range,
+          isDefault: true,
         },
-        statusCodeReading: {
-          reading: absentReading,
-          libraryDefault: pattern.defaultStatusCode,
-        },
-        effects: body.effects ?? [],
-        ...(body.extraEffects === undefined
-          ? {}
-          : { extraEffects: body.extraEffects }),
-        location: range,
-        isDefault: true,
-      },
-    ],
+      ],
+      body.provenance,
+    ),
     bodyContent: body.bodyContent ?? "absent",
     dependencyCalls: [],
     declaredContract: null,
@@ -715,29 +724,28 @@ function branchesFor(body: BodyReport, range: Range): RawBranch[] {
   if (body.effects === undefined && body.extraEffects === undefined) {
     return [];
   }
-  return [
-    {
-      conditions: [],
-      terminal: {
-        kind: "void",
-        statusCode: null,
-        body: null,
-        exceptionType: null,
-        message: null,
-        component: null,
-        renderTree: null,
-        delegateTarget: null,
-        emitEvent: null,
-        location: range,
-      },
-      effects: body.effects ?? [],
-      ...(body.extraEffects === undefined
-        ? {}
-        : { extraEffects: body.extraEffects }),
+  const branch: RawBranch = {
+    conditions: [],
+    terminal: {
+      kind: "void",
+      statusCode: null,
+      body: null,
+      exceptionType: null,
+      message: null,
+      component: null,
+      renderTree: null,
+      delegateTarget: null,
+      emitEvent: null,
       location: range,
-      isDefault: true,
     },
-  ];
+    effects: body.effects ?? [],
+    ...(body.extraEffects === undefined
+      ? {}
+      : { extraEffects: body.extraEffects }),
+    location: range,
+    isDefault: true,
+  };
+  return withSlotSources([branch], body.provenance);
 }
 
 /** A field's contract and the method behind it, read together because a wiring keyword decides both. */
@@ -757,6 +765,8 @@ export interface BodyReport {
   effects?: RawEffect[];
   /** Effects a recognizer built in IR form, such as database work. */
   extraEffects?: Effect[];
+  /** Where the values in the slots of `extraEffects` came from. */
+  provenance?: RawProvenance[];
   /** Set when this body came from a method, so the reach walk can follow the calls it makes. */
   reachSeed?: ReachSeed;
 }
@@ -777,6 +787,7 @@ export function bodyOfMethod(
   );
   const storage = bodyRead.storage;
   const facts = bodyRead.facts;
+  const slots: EffectSlot[] = [];
   const extra = [
     ...envReadEffects(
       method,
@@ -784,14 +795,29 @@ export function bodyOfMethod(
     ),
     ...(storage === undefined
       ? []
-      : storageEffects(callsUnder(method), file, storage, method)),
+      : storageEffects(
+          callsUnder(method),
+          file,
+          {
+            ...storage,
+            statesSlots: (effect, stated) => {
+              slots.push(...stated.map((one) => ({ ...one, effect })));
+            },
+          },
+          method,
+        )),
     ...streamWriteEffects(method),
   ];
+  const provenance =
+    slots.length === 0 || storage === undefined
+      ? []
+      : slotProvenance(slots, { facts: storage.facts, unit: method });
   return {
     bodyContent: methodHasStatements(method) ? "statements" : "empty",
     readings: [],
     ...(effects.length > 0 ? { effects } : {}),
     ...(extra.length > 0 ? { extraEffects: extra } : {}),
+    ...(provenance.length > 0 ? { provenance } : {}),
   };
 }
 

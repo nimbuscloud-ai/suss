@@ -68,6 +68,13 @@ export interface RubyPack {
   storage?: RbStoragePattern[];
   /** The calls the library offers for sending the store a statement the project wrote itself. */
   rawSql?: RbRawSqlPattern[];
+  /**
+   * The methods an action calls with no receiver to read the request,
+   * such as Rails' `params` and `request`. An action is handed no
+   * parameter for the request, so without these a value read off one is
+   * not known to come from the request.
+   */
+  requestAccessors?: string[];
   /** Calls that read a model through a batching loader, where the model is an argument instead of the receiver. */
   loaders?: RbLoaderPattern[];
   /** Calls in a class or module body whose block runs as part of that body. */

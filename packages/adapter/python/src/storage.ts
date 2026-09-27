@@ -311,17 +311,50 @@ function methodNameOf(call: PyNode): string {
 }
 
 function keywordNames(call: PyNode): string[] {
+  return keywordValues(call).map((one) => one.name);
+}
+
+/** Each keyword a call passes, with the value it passes there. */
+function keywordValues(call: PyNode): Array<{ name: string; value: PyNode }> {
   const args = field(call, "arguments");
-  const picked: string[] = [];
+  const picked: Array<{ name: string; value: PyNode }> = [];
   for (const argument of args === null ? [] : children(args)) {
     if (argument.type === "keyword_argument") {
       const name = field(argument, "name");
-      if (name !== null) {
-        picked.push(name.text);
+      const value = field(argument, "value");
+      if (name !== null && value !== null) {
+        picked.push({ name: name.text, value });
       }
     }
   }
   return picked;
+}
+
+/**
+ * The value a chain passes under each keyword: the values a write sets,
+ * and what the calls after the root pick rows by. These are the same
+ * keywords `fieldsOf` and `selectorOf` read the columns from.
+ */
+function slotsOf(chain: Chain, valueMethods: readonly string[]): SlotValue[] {
+  const later = laterCalls(chain);
+  const written = [
+    chain.root,
+    ...later.filter((call) => valueMethods.includes(methodNameOf(call))),
+  ].flatMap(keywordValues);
+  const picked = later
+    .filter((call) => !valueMethods.includes(methodNameOf(call)))
+    .flatMap(keywordValues);
+  return [
+    ...written.map((one) => ({ slot: "field" as const, ...one })),
+    ...picked.map((one) => ({ slot: "selector" as const, ...one })),
+  ];
+}
+
+/** A column a storage effect writes or picks rows by, and the value passed for it. */
+export interface SlotValue {
+  slot: "field" | "selector";
+  name: string;
+  value: PyNode;
 }
 
 /** What the calls after the root were given to pick rows by. A call that supplies values is not one of them. */
@@ -455,7 +488,7 @@ function effectFor(
 ): Effect {
   const valueMethods = pattern.valueMethods ?? [];
   const picked = selectorOf(chain, valueMethods);
-  return {
+  const effect: Effect = {
     type: "interaction",
     binding: storageBinding({
       recognition: "python-storage",
@@ -472,6 +505,13 @@ function effectFor(
       ...(picked.length > 0 ? { selector: picked } : {}),
     },
   };
+  if (options.statesSlots !== undefined) {
+    const slots = slotsOf(chain, valueMethods);
+    if (slots.length > 0) {
+      options.statesSlots(effect, slots);
+    }
+  }
+  return effect;
 }
 
 /** The file part of a node key, which says where a definition was written. */
@@ -492,6 +532,8 @@ export interface StorageOptions {
   readonly patterns: readonly StoragePattern[];
   /** Method names a file importing the library declares, the only ones that can match. */
   readonly couldMatch: ReadonlySet<string>;
+  /** Told the value each effect's columns are given, when somebody listens. */
+  readonly statesSlots?: (effect: Effect, slots: readonly SlotValue[]) => void;
 }
 
 /**

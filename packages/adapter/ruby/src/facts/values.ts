@@ -34,6 +34,8 @@ import {
   readCallArgs,
   runStatements,
   singletonMethodsByName,
+  stringLiteralValue,
+  symbolValue,
 } from "../ast.js";
 import { spellsAName } from "../paths/bareCalls.js";
 import { CONSTRUCTOR, RECEIVER_RETURNS } from "./languageWords.js";
@@ -841,6 +843,30 @@ function emitKeyedElement(
   );
   if (index !== undefined) {
     emitKeyedRead(emitter, node, object, index, node);
+    emitWrittenKeyRead(emitter, node, object, index);
+  }
+}
+
+/**
+ * `params[:tenant_id]` and `headers["X-Tenant-Id"]`, an entry read at a
+ * key the source writes out. A hash's entries are not its methods, so
+ * this is `readsEntry` and not `readsProperty`.
+ */
+function emitWrittenKeyRead(
+  emitter: Emitter,
+  site: RbNode,
+  container: RbNode,
+  key: RbNode,
+): void {
+  const name = symbolValue(key) ?? stringLiteralValue(key);
+  if (name !== null) {
+    add(
+      emitter,
+      "readsEntry",
+      nodeId(emitter.filePath, site),
+      valueKey(emitter, container, site),
+      name,
+    );
   }
 }
 

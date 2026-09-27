@@ -12,6 +12,7 @@
 
 import { inheritedStatements, methodInAncestry } from "./ancestry.js";
 import { field, rangeOf, readCallArgs, spanOf } from "./ast.js";
+import { withSlotSources } from "./provenance.js";
 import { responseBranches } from "./responseStatus.js";
 import { stringValueOf } from "./values/evaluator.js";
 import { namesOf } from "./values/literals.js";
@@ -152,6 +153,7 @@ export function filterReference(
 export interface FilterBody {
   effects?: RawBranch["effects"];
   extraEffects?: RawBranch["extraEffects"];
+  provenance?: RawBranch["provenance"];
   bodyContent?: RawCodeStructure["bodyContent"];
 }
 
@@ -187,7 +189,10 @@ export function filterUnit(
     },
     boundaryBinding: null,
     parameters: [],
-    branches: branches ?? [handsOn(range, body)],
+    branches: withSlotSources(
+      branches ?? [handsOn(range, body)],
+      body.provenance,
+    ),
     bodyContent: body.bodyContent ?? "absent",
     dependencyCalls: [],
     declaredContract: null,

@@ -8,6 +8,7 @@ import {
   allocationSitesOf,
   askResolution,
   askResolutionUnder,
+  askSources,
   declaredTypesOf,
   readUses,
   resolutionProgram,
@@ -21,6 +22,7 @@ import {
 } from "@suss/resolution";
 
 import type { Database, OnDemandRules } from "@suss/datalog";
+import type { SourceLeaf, SourceQuestion } from "@suss/resolution";
 
 export { resolvedFunctions, settledFunction } from "@suss/resolution";
 
@@ -54,6 +56,15 @@ function programFor(db: Database): OnDemandRules {
 /** Asks the rules to resolve these keys, and derives what follows. */
 export function resolveCalls(db: Database, callKeys: readonly string[]): void {
   askResolution(db, callKeys, "wanted", programFor(db));
+}
+
+/** Where each of these values came from, asked as one question. */
+export function sourcesOf(
+  db: Database,
+  keys: readonly string[],
+  question: SourceQuestion = "wantedSource",
+): Map<string, SourceLeaf[]> {
+  return askSources(db, keys, programFor(db), question);
 }
 
 /**

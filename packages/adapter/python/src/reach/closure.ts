@@ -45,6 +45,7 @@ import {
   bodyContentOf,
   recognizedBodyEffects,
   recognizedCallIds,
+  withBodyEffects,
 } from "../discovery.js";
 import { exitingBranches } from "../exits.js";
 import { nodeId, readKey } from "../facts/values.js";
@@ -879,9 +880,7 @@ export function libraryUnit(
     },
     boundaryBinding: binding,
     parameters,
-    branches: branches.map((branch) =>
-      extra.length === 0 ? branch : { ...branch, extraEffects: extra },
-    ),
+    branches: branches.map((branch) => withBodyEffects(branch, extra)),
     ...(flags.length === 0 ? {} : { extraInputReads: flags }),
     bodyContent: body === null ? "absent" : bodyContentOf(body),
     dependencyCalls: [],

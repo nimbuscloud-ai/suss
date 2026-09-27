@@ -16,6 +16,7 @@
   "trimmed": "suss: PrefixTrailingSlash value, defined in @suss/adapter-python; says the library drops trailing slashes off a namespace path before a route path joins it",
   "unstated": "suss: NoValuePrefix value, defined in @suss/adapter-python; says the library reads a path written as an empty string, None, False or zero the way it reads no path at all",
   "merged": "suss: PathRepeatedSlashes value, defined in @suss/adapter-python; says the library answers a path carrying repeated slashes at the merged one",
+  "request": "flask: the module-level object a view reads the current request from",
   "Flask": "flask: the app constructor, whose before_request hooks and error handlers reach every route",
   "Api": "flask-restx: the constructor the namespaces are mounted on; its error handlers reach every route",
   "before_request": "flask: the app decorator that registers a hook run before every request; a value it returns is the response",

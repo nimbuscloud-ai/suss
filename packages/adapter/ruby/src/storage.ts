@@ -73,6 +73,8 @@ export interface RbStorageOptions {
   readonly loaders?: readonly RbLoaderPattern[];
   /** The pack declarations for calls that take SQL the project wrote itself. */
   readonly rawSql?: readonly RbRawSqlPattern[];
+  /** Told the value each effect's columns are given, when somebody listens. */
+  readonly statesSlots?: (effect: Effect, slots: readonly SlotValue[]) => void;
 }
 
 function isConstant(node: RbNode): boolean {
@@ -179,6 +181,66 @@ function keywordKeys(call: RbNode, facts: Database): string[] {
     }
   }
   return keys;
+}
+
+/** Each key a call is passed as a pair, with the value passed under it. */
+function pairValues(call: RbNode): Array<{ name: string; value: RbNode }> {
+  const found: Array<{ name: string; value: RbNode }> = [];
+  for (const argument of argumentsOf(call)) {
+    if (argument.type !== "pair") {
+      continue;
+    }
+    const key = field(argument, "key");
+    const value = field(argument, "value");
+    const name = key === null ? null : keyNameOf(key);
+    if (name !== null && value !== null) {
+      found.push({ name, value });
+    }
+  }
+  return found;
+}
+
+/**
+ * The value a chain passes for each column it picks rows by or writes,
+ * where the call writes the column as a key: the pairs the reads along
+ * the chain are passed, the id a lookup by primary key is passed, and
+ * the pairs a write is passed.
+ */
+function slotsOf(
+  call: RbNode,
+  pattern: RbStoragePattern,
+  kind: StorageKind,
+  facts: Database,
+): SlotValue[] {
+  const slots: SlotValue[] = [];
+  for (const link of chainLinks(call)) {
+    const id = primaryKeySelector(link, pattern, facts)[0];
+    const passed = argumentsOf(link).find((one) => one.type !== "pair");
+    if (id !== undefined && passed !== undefined) {
+      slots.push({ slot: "selector", name: id, value: passed });
+    }
+    if (pattern.reads.includes(methodOf(link))) {
+      slots.push(
+        ...pairValues(link).map((one) => ({
+          slot: "selector" as const,
+          ...one,
+        })),
+      );
+    }
+  }
+  if (kind === "write") {
+    slots.push(
+      ...pairValues(call).map((one) => ({ slot: "field" as const, ...one })),
+    );
+  }
+  return slots;
+}
+
+/** A column a storage effect writes or picks rows by, and the value passed for it. */
+export interface SlotValue {
+  slot: "field" | "selector";
+  name: string;
+  value: RbNode;
 }
 
 /** A hash key's name, `id` for each of `id:`, `:id =>` and `"id" =>`. */
@@ -506,17 +568,21 @@ function modelCallEffects(
       library.kind === "write"
         ? callbacksRunBy(options.facts, target.classKey, pattern, method)
         : [];
-    return [
-      storageEffect(
-        worked,
-        target.container,
-        pattern,
-        library.kind,
-        selectorOf(worked, pattern, options.facts),
-        fieldsOf(worked, pattern, library.kind, options.facts),
-      ),
-      ...ran.map(callbackEffect),
-    ];
+    const access = storageEffect(
+      worked,
+      target.container,
+      pattern,
+      library.kind,
+      selectorOf(worked, pattern, options.facts),
+      fieldsOf(worked, pattern, library.kind, options.facts),
+    );
+    if (options.statesSlots !== undefined) {
+      const slots = slotsOf(worked, pattern, library.kind, options.facts);
+      if (slots.length > 0) {
+        options.statesSlots(access, slots);
+      }
+    }
+    return [access, ...ran.map(callbackEffect)];
   }
   return [];
 }

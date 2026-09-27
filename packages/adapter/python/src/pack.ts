@@ -54,6 +54,13 @@ export interface PythonPack {
   sqlClients?: SqlClientPattern[];
   /** Functions the library exports that hand back the argument at `argument`, such as a decorator that returns the function it was given. */
   transparentWrappers?: UnwrapsByName[];
+  /**
+   * The objects the library puts the request on for a route to read,
+   * such as Flask's module-level `request`. A route is handed no
+   * parameter for them, so without this a value read off one is not
+   * known to come from the request.
+   */
+  requestObjects?: RequestObject[];
 }
 
 /**
@@ -278,6 +285,12 @@ export interface PyClientResponse {
   body?: string[];
   /** Whether a refused request comes back as a response or raises where it was made. */
   failureDelivery?: "response" | "exception";
+}
+
+/** An object a module exports that a route reads the request off. */
+export interface RequestObject {
+  module: string;
+  name: string;
 }
 
 /** Conventions both kinds of route share. Each one describes what the library does, never a project's choice. */

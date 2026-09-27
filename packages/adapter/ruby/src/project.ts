@@ -83,6 +83,7 @@ import {
   EVERY_ARGLESS_CALL,
   moduleScopeInvocationEffects,
 } from "./paths/effects.js";
+import { bindRequestAccessors } from "./provenance.js";
 import {
   dropPropertyReads,
   ReplayFailed,
@@ -267,6 +268,10 @@ export class RunFacts {
       files: this.parsed,
       definitions: this.definitions,
     });
+    bindRequestAccessors(
+      this.db,
+      this.packs.flatMap((pack) => pack.requestAccessors ?? []),
+    );
     addPackWords(this.db, packWordsOf(this.packs));
     const callbacks = callbacksIn(
       this.packs.flatMap((pack) => pack.storage ?? []),

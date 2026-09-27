@@ -10,6 +10,7 @@ import {
   alsoSteps,
   askResolution,
   askResolutionUnder,
+  askSources,
   INSTANCE_STEP,
   readUses,
   resolutionProgram,
@@ -23,6 +24,7 @@ import {
 import { CONSTRUCTOR } from "./languageWords.js";
 
 import type { Database } from "@suss/datalog";
+import type { SourceLeaf, SourceQuestion } from "@suss/resolution";
 
 export { resolvedFunctions, settledFunction } from "@suss/resolution";
 
@@ -65,6 +67,15 @@ export const RUBY_PROGRAM = resolutionProgram(RUBY_RULES);
 /** Asks what these values come down to, and adds the answers to `db`. */
 export function resolveValues(db: Database, keys: readonly string[]): void {
   askResolution(db, keys, "wanted", RUBY_PROGRAM);
+}
+
+/** Where each of these values came from, asked as one question. */
+export function sourcesOf(
+  db: Database,
+  keys: readonly string[],
+  question: SourceQuestion = "wantedSource",
+): Map<string, SourceLeaf[]> {
+  return askSources(db, keys, RUBY_PROGRAM, question);
 }
 
 /**

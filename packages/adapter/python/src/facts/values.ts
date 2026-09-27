@@ -549,7 +549,7 @@ function walkExpressions(
   }
 }
 
-/** A key the source writes out, which `readsProperty` covers instead. */
+/** A key the source writes out, which `readsEntry` covers when it is a string. */
 const WRITTEN_KEY_TYPES = new Set(["string", "integer", "concatenated_string"]);
 
 /**
@@ -573,6 +573,38 @@ function emitKeyedRead(
     valueKey(emitter, container),
     valueKey(emitter, key),
   );
+}
+
+/**
+ * `headers["x-tenant-id"]`, an entry read at a key the source writes out.
+ * It is `readsEntry` and not `readsProperty`, since a dict's entries are
+ * not its attributes. The resolution DESIGN.md says what the difference
+ * changes.
+ */
+function emitWrittenKeyRead(
+  emitter: Emitter,
+  site: PyNode,
+  container: PyNode,
+  key: PyNode,
+): void {
+  const name = plainStringOf(key);
+  if (name !== null) {
+    add(
+      emitter,
+      "readsEntry",
+      nodeId(emitter.filePath, site),
+      valueKey(emitter, container),
+      name,
+    );
+  }
+}
+
+/** What a string written with one pair of plain quotes says, or null. */
+function plainStringOf(node: PyNode): string | null {
+  const written = /^(['"])([^'"\\]*)\1$/.exec(node.text);
+  return node.type === "string" && written !== null
+    ? (written[2] ?? null)
+    : null;
 }
 
 /** The subscript of `a[i]`, when the source writes exactly one. */
@@ -777,6 +809,7 @@ function emitExpressionFact(
     const container = field(child, "value");
     if (index !== null && container !== null) {
       emitKeyedRead(emitter, child, container, index);
+      emitWrittenKeyRead(emitter, child, container, index);
     }
   }
   if (type === "dictionary") {

@@ -125,6 +125,8 @@ export function flaskRestxFramework(
         ],
       },
     ],
+    // A resource method reads the request off Flask's module-level object.
+    requestObjects: [{ module: "flask", name: "request" }],
   };
 }
 

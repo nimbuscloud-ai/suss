@@ -320,6 +320,8 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
     discovery: [pattern],
     bodyBlocks: BODY_BLOCKS,
     inflections,
+    // An action reads the request through these, and is handed nothing.
+    requestAccessors: ["params", "request"],
     // These files change an action's binding without being walked, so the
     // cache key has to list them. This runs before the grammar loads, so
     // nothing here parses Ruby.

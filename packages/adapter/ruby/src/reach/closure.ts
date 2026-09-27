@@ -48,6 +48,7 @@ import {
   methodBody,
   moduleScopeBody,
 } from "../paths/effects.js";
+import { withSlotSources } from "../provenance.js";
 import { callbacksReached, storageClaims } from "../storage.js";
 import { forgetEvaluations } from "../values/evaluator.js";
 import {
@@ -873,10 +874,13 @@ export function libraryUnit(
     },
     boundaryBinding: binding,
     parameters,
-    branches: branches.map((branch) =>
-      body.extraEffects === undefined
-        ? branch
-        : { ...branch, extraEffects: body.extraEffects },
+    branches: withSlotSources(
+      branches.map((branch) =>
+        body.extraEffects === undefined
+          ? branch
+          : { ...branch, extraEffects: body.extraEffects },
+      ),
+      body.provenance,
     ),
     ...(flags.length === 0 ? {} : { extraInputReads: flags }),
     bodyContent: body.bodyContent ?? "absent",

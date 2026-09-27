@@ -71,6 +71,7 @@ export type {
   PythonDiscoveryPattern,
   PythonPack,
   RawSqlPattern,
+  RequestObject,
   RouteConventions,
   RouterComposition,
   SqlCallArgument,
