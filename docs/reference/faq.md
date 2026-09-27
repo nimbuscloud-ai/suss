@@ -122,6 +122,10 @@ Yes. Run `suss extract` once per package with that package's `tsconfig.json`, th
 
 The contract commands are independent of the source repo, so a spec that lives somewhere else still pairs. [Work across services](/guides/work-across-services) has the commands.
 
+## What if a run runs out of memory?
+
+suss runs with a heap limit of up to 8 GB, about twice the peak of the largest project it has been measured on. If a run still stops with "JavaScript heap out of memory", give it more with `NODE_OPTIONS=--max-old-space-size=12288`. suss uses a size set there as it is. [Memory](/reference/cli/#memory) says how it picks the limit.
+
 ## Why did my run find nothing?
 
 Almost always because the pack list does not match the stack, or because a pack needs a dependency that is not installed.
