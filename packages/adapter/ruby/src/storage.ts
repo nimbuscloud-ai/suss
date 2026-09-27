@@ -16,6 +16,7 @@ import { storageBinding } from "@suss/ir-core";
 import { answersFor, askResolution, classMemberName } from "@suss/resolution";
 
 import {
+  children,
   field,
   hashKeySymbolName,
   readCallArgs,
@@ -44,10 +45,6 @@ import type {
   RbStoragePattern,
 } from "./pack.js";
 import type { RbNode } from "./parser.js";
-
-function children(node: RbNode): RbNode[] {
-  return node.namedChildren.filter((child): child is RbNode => child !== null);
-}
 
 function receiverOf(node: RbNode): RbNode | null {
   return node.type === "call" ? field(node, "receiver") : null;

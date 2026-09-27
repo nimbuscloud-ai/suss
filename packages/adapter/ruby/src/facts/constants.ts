@@ -4,7 +4,7 @@
  * reference is bound directly to its definition.
  */
 
-import { field, NESTING_TYPES } from "../ast.js";
+import { children, field, NESTING_TYPES } from "../ast.js";
 import { associationsDeclaredIn } from "./associations.js";
 import { nodeId } from "./values.js";
 
@@ -36,10 +36,6 @@ export interface FileConstants {
   readonly references: readonly ConstantReference[];
   /** Empty unless a pack in the run declares association calls. */
   readonly associations: readonly AssociationDeclaration[];
-}
-
-function children(node: RbNode): RbNode[] {
-  return node.namedChildren.filter((child): child is RbNode => child !== null);
 }
 
 /** The name a constant or a `scope_resolution` is written as, `Types::Order` included. */

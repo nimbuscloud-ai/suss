@@ -5,7 +5,7 @@
  * the whole contract between this module and the engine.
  */
 
-import { field, NodeMap, NodeSet, OWN_BODY_TYPES } from "../ast.js";
+import { children, field, NodeMap, NodeSet, OWN_BODY_TYPES } from "../ast.js";
 
 import type {
   CaseGroup,
@@ -113,10 +113,7 @@ function callHeaderOf(call: RbNode, block: RbNode): ConditionHandle<RbNode> {
 
 /** `then`, `else` and a bare body all read as a list of statements. */
 function blockStatements(block: RbNode | null): RbNode[] {
-  if (block === null) {
-    return [];
-  }
-  return block.namedChildren.filter((child): child is RbNode => child !== null);
+  return block === null ? [] : children(block);
 }
 
 class Lowerer {

@@ -64,10 +64,6 @@ interface Located {
 
 const IMPORT_TYPES = new Set(["import_statement", "import_from_statement"]);
 
-function namedChildrenOf(node: PyNode): PyNode[] {
-  return node.namedChildren.filter((child): child is PyNode => child !== null);
-}
-
 /**
  * The local name an import statement binds, and where it is written: the
  * alias in `import x as y`, the bare name otherwise. This follows the
@@ -144,7 +140,7 @@ function indexFile(
       }
     }
 
-    for (const child of namedChildrenOf(node)) {
+    for (const child of children(node)) {
       walk(child);
     }
   };
@@ -215,7 +211,7 @@ export class PythonWhySession {
           found = node;
         }
       }
-      for (const child of namedChildrenOf(node)) {
+      for (const child of children(node)) {
         visit(child);
       }
     };
@@ -251,7 +247,7 @@ export class PythonWhySession {
           found = callee;
         }
       }
-      for (const child of namedChildrenOf(node)) {
+      for (const child of children(node)) {
         visit(child);
       }
     };
