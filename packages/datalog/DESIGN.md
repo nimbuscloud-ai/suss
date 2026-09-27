@@ -37,6 +37,28 @@ relation. The engine builds a column's index the first time a join asks
 for it and keeps it up to date after that. A relation that no join
 reads by that column never gets an index.
 
+When a literal has two or more terms fixed, the join still picks it by
+the smallest one-column bucket, and then reads the rows that agree on
+every fixed column from an index over that set of columns. Take
+`reaches(x, z, instance) <- reaches(x, y, instance), stepsTo(y, z,
+value)` in the round where `reaches(a, b, instance)` is new. The bucket
+for `y = b` has every step out of `b`, of every kind. The index over
+`y` and the kind has only the value steps. Those rows come in the order
+the one-column bucket has them, so the join finds the same matches in
+the same order and derives the same facts in the same order. It skips
+only rows that would fail to unify.
+
+The facts new in a round have no index, so a literal reading them
+checks each one. A literal with a constant reads them sorted by that
+column instead, and the sort happens once per round, relation and
+column. suss's closure rules state each step's kind as a constant, and
+a demand-rewritten program has twenty or more rules reading one demand
+relation with a different kind each. Before the sort each of them read
+every new demand fact. On an 8,400-file TypeScript server with the
+packs `suss init` suggests, the sort and the index over several columns
+took the rows read from 64.3 million to 39.3 million with
+byte-identical summaries.
+
 Each relation stores its facts in a trie keyed on the tuple's atoms: a
 tree of maps with one level per column. The node at the end of a walk
 is the fact. If the node exists, the fact is known, and the node stores
@@ -298,6 +320,16 @@ asks for every call made under that context, which is every call. With
 the label columns left out, `paramOf` goes first, binds `f`, and the
 demand on `entersUnder` is for one function.
 
+A constant written in the literal itself does not count as fixing its
+column either, for the same reason. In `contains(cls, n, held) <-
+initializes(cls, f), storesProperty(f, n, held, receiver)` asked with
+`cls` and `n` bound, counting the store kind put `storesProperty`
+first, with the property name and the kind fixed, and the demand read
+every store of that name before `initializes` bound the function. With
+constants left out, the two literals tie at one fixed column each and
+written order puts `initializes` first. Summaries came out identical on
+five projects, and a Python service read 6% fewer rows.
+
 The rewrite costs two things. The companion relations are stored like
 any other, at a few tuples per value asked about, so a caller who asks
 about most of a program ends up deriving more than it would without
@@ -340,6 +372,18 @@ read.
 Keep the facts you add and the facts the rules derive in separate
 relations. When a conclusion is taken back, the engine cannot tell the
 two apart. Most Datalog is written with them split anyway.
+
+`retract` of a few facts from a large relation takes each of them out
+of the buckets it is in, and leaves the rest of every index alone. It
+finds the relation's own tuple objects through a column index already
+built, so the list is filtered by identity rather than by looking each
+tuple up in the trie. When the facts going are one in sixteen of the
+relation or more, or no column has an index yet, it drops the indexes
+and the next lookup rebuilds them. Either way the buckets end up in the
+order a rebuild would give. The TypeScript store retracts one file's
+export rows from the whole project's export table for every file it
+reads, and on a large project that used to rebuild the table's index
+each time.
 
 ### Reading what the rules are waiting on
 

@@ -1848,6 +1848,36 @@ export const RESOLUTION_RULES = alsoSteps(STATED_RULES);
  * the value's function makes, so a caller that only wants to know what a
  * handler resolves to should not pay for that.
  */
+/**
+ * What a value is written as, and what reading it needs besides: the
+ * fallbacks the walk passed and the members a property read finds or
+ * sees overridden, for the values `asking` lists.
+ */
+function writtenAnswers(asking: string): Rule[] {
+  return [
+    rule(
+      "wantedIsWrittenAs",
+      [v("x"), v("z")],
+      [lit(asking, v("x")), lit("isWrittenAs", v("x"), v("z"))],
+    ),
+    rule(
+      "wantedFallbackBehind",
+      [v("x"), v("f")],
+      [lit(asking, v("x")), lit("fallbackBehind", v("x"), v("f"))],
+    ),
+    rule(
+      "wantedReadsOverridden",
+      [v("x"), v("obj"), v("h")],
+      [lit(asking, v("x")), lit("readsOverridden", v("x"), v("obj"), v("h"))],
+    ),
+    rule(
+      "wantedReadsMemberOn",
+      [v("x"), v("obj"), v("h")],
+      [lit(asking, v("x")), lit("readsMemberOn", v("x"), v("obj"), v("h"))],
+    ),
+  ];
+}
+
 export const RESOLUTION_QUESTIONS = [
   rule(
     "wantedResolves",
@@ -1864,26 +1894,10 @@ export const RESOLUTION_QUESTIONS = [
     [v("x"), v("z")],
     [lit("wantedOrigin", v("x")), lit("comesTo", v("x"), v("z"))],
   ),
-  rule(
-    "wantedIsWrittenAs",
-    [v("x"), v("z")],
-    [lit("wanted", v("x")), lit("isWrittenAs", v("x"), v("z"))],
-  ),
-  rule(
-    "wantedFallbackBehind",
-    [v("x"), v("f")],
-    [lit("wanted", v("x")), lit("fallbackBehind", v("x"), v("f"))],
-  ),
-  rule(
-    "wantedReadsOverridden",
-    [v("x"), v("obj"), v("h")],
-    [lit("wanted", v("x")), lit("readsOverridden", v("x"), v("obj"), v("h"))],
-  ),
-  rule(
-    "wantedReadsMemberOn",
-    [v("x"), v("obj"), v("h")],
-    [lit("wanted", v("x")), lit("readsMemberOn", v("x"), v("obj"), v("h"))],
-  ),
+  ...writtenAnswers("wanted"),
+  // A caller that reads only what a value is written as asks this way,
+  // and the walks behind every other `wanted` answer are never derived.
+  ...writtenAnswers("wantedWritten"),
   // A call is given no `comesTo`, so this is the only way to ask what
   // object one arrives at, and a demand-driven run derives `objectOf`
   // nowhere without it. An allocation site is not one of the answers.

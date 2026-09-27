@@ -12,6 +12,8 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import {
+  type Atom,
+  constant,
   Database,
   evaluate,
   lit,
@@ -19,6 +21,8 @@ import {
   type Rule,
   rowBudget,
   rule,
+  stratify,
+  type Term,
   type Tuple,
   variable as v,
 } from "./index.js";
@@ -134,6 +138,132 @@ const rulesFrom = (allowNegation: boolean): fc.Arbitrary<Rule[]> =>
 const arbRules = rulesFrom(true);
 const arbPositiveRules = rulesFrom(false);
 
+const ATOMS = ["a", "b", "c"] as const;
+
+/**
+ * A rule with some of its body variables written as constants instead.
+ * A head or negated variable no positive literal binds any more becomes
+ * a constant too, so the rule stays well-formed.
+ */
+function withConstants(r: Rule, picks: readonly number[]): Rule {
+  let at = 0;
+  const pick = (): number => picks[at++ % picks.length] ?? 0;
+  const body = r.body.map((literal) =>
+    literal.negated
+      ? literal
+      : {
+          ...literal,
+          terms: literal.terms.map((term) => {
+            const choice = pick();
+            return choice < ATOMS.length ? constant(ATOMS[choice]) : term;
+          }),
+        },
+  );
+  const bound = new Set(
+    body
+      .filter((literal) => !literal.negated)
+      .flatMap((literal) =>
+        literal.terms.map((t) => (t.type === "variable" ? t.name : "")),
+      ),
+  );
+  const grounded = (term: Term): Term =>
+    term.type === "variable" && !bound.has(term.name) ? constant("a") : term;
+  return {
+    head: { ...r.head, terms: r.head.terms.map(grounded) },
+    body: body.map((literal) =>
+      literal.negated
+        ? { ...literal, terms: literal.terms.map(grounded) }
+        : literal,
+    ),
+  };
+}
+
+// Picks from 0 to 5: under three is a constant, the rest keep the variable.
+const arbConstantRules: fc.Arbitrary<Rule[]> = fc
+  .tuple(arbRules, fc.array(fc.integer({ min: 0, max: 5 }), { minLength: 1 }))
+  .map(([rules, picks]) => rules.map((r) => withConstants(r, picks)));
+
+/**
+ * Every derived relation's contents from a fixpoint that tries every
+ * binding of every rule, stratum by stratum, in written order. It shares
+ * nothing with the engine but `stratify`, so it checks what the joins
+ * leave out.
+ */
+function naiveModel(
+  facts: Array<[string, Tuple]>,
+  rules: Rule[],
+): Record<string, string[]> {
+  const known = new Map<string, Map<string, Tuple>>();
+  const add = (relation: string, tuple: Tuple): boolean => {
+    const rows = known.get(relation) ?? new Map<string, Tuple>();
+    known.set(relation, rows);
+    const key = tuple.join(",");
+    if (rows.has(key)) {
+      return false;
+    }
+    rows.set(key, tuple);
+    return true;
+  };
+  for (const [relation, tuple] of facts) {
+    add(relation, tuple);
+  }
+  const termValue = (
+    term: Term,
+    bindings: Map<string, Atom>,
+  ): Atom | undefined =>
+    term.type === "constant" ? term.value : bindings.get(term.name);
+  const bindingsOf = (
+    body: Rule["body"],
+    bindings: Map<string, Atom>,
+  ): Map<string, Atom>[] => {
+    const [literal, ...rest] = body;
+    if (literal === undefined) {
+      return [bindings];
+    }
+    if (literal.negated) {
+      const key = literal.terms.map((t) => termValue(t, bindings)).join(",");
+      return known.get(literal.relation)?.has(key)
+        ? []
+        : bindingsOf(rest, bindings);
+    }
+    const out: Map<string, Atom>[] = [];
+    for (const tuple of known.get(literal.relation)?.values() ?? []) {
+      const next = new Map(bindings);
+      const fits = literal.terms.every((term, column) => {
+        const value = termValue(term, next);
+        if (value === undefined && term.type === "variable") {
+          next.set(term.name, tuple[column] as Atom);
+          return true;
+        }
+        return value === tuple[column];
+      });
+      if (fits) {
+        out.push(...bindingsOf(rest, next));
+      }
+    }
+    return out;
+  };
+  for (const stratum of stratify(rules)) {
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const r of stratum) {
+        for (const bindings of bindingsOf(r.body, new Map())) {
+          const tuple = r.head.terms.map(
+            (term) => termValue(term, bindings) as Atom,
+          );
+          changed = add(r.head.relation, tuple) || changed;
+        }
+      }
+    }
+  }
+  const out: Record<string, string[]> = {};
+  for (const name of DERIVED) {
+    out[name] = [...(known.get(name)?.keys() ?? [])].sort();
+  }
+  return out;
+}
+
 const arbFacts: fc.Arbitrary<Array<[string, Tuple]>> = fc.array(
   fc.oneof(
     fc
@@ -198,6 +328,43 @@ describe("evaluate holds up under random rule sets", () => {
     );
   });
 
+  it("derives what trying every binding derives, with constants in the rules", () => {
+    fc.assert(
+      fc.property(arbConstantRules, arbFacts, (rules, facts) => {
+        expect(model(evaluatedInOneGo(facts, rules))).toEqual(
+          naiveModel(facts, rules),
+        );
+      }),
+      { numRuns: 300, seed: PROPERTY_SEED },
+    );
+  });
+
+  it("derives the same in pieces, with constants in the rules", () => {
+    fc.assert(
+      fc.property(
+        arbConstantRules,
+        arbFacts,
+        fc.integer({ min: 1, max: 5 }),
+        (rules, facts, batches) => {
+          const incremental = new Database();
+          const perBatch = Math.ceil(facts.length / batches);
+          for (let start = 0; start < facts.length; start += perBatch) {
+            for (const [relation, tuple] of facts.slice(
+              start,
+              start + perBatch,
+            )) {
+              incremental.add(relation, tuple);
+            }
+            evaluate(incremental, rules);
+          }
+
+          expect(model(incremental)).toEqual(naiveModel(facts, rules));
+        },
+      ),
+      { numRuns: 300, seed: PROPERTY_SEED },
+    );
+  });
+
   it("does not depend on the order facts arrived in", () => {
     fc.assert(
       fc.property(arbRules, arbFacts, (rules, facts) => {
@@ -237,6 +404,73 @@ describe("evaluate holds up under random rule sets", () => {
         },
       ),
       { numRuns: 200, seed: PROPERTY_SEED },
+    );
+  });
+
+  it("leaves the lookups and joins a rebuild would give after retracting a few facts", () => {
+    const atom = fc.constantFrom("a", "b", "c", "d");
+    const joinInto = (head: string): Rule[] => [
+      rule(
+        head,
+        [v("x"), v("z")],
+        [lit("asked", v("x")), lit("t", v("x"), v("z"), constant("a"))],
+      ),
+      rule(
+        head,
+        [v("x"), v("x")],
+        [lit("asked", v("x")), lit("t", v("x"), constant("b"), constant("a"))],
+      ),
+    ];
+    const JOIN = joinInto("out");
+    const built = (tuples: readonly Tuple[], asked: readonly string[]) => {
+      const db = new Database();
+      for (const tuple of tuples) {
+        db.add("t", tuple);
+      }
+      for (const one of asked) {
+        db.add("asked", [one]);
+      }
+      evaluate(db, JOIN);
+      return db;
+    };
+    const lookups = (db: Database): string[][] =>
+      [0, 1, 2].flatMap((column) =>
+        ["a", "b", "c", "d"].map((value) =>
+          db.lookup("t", column, value).map((tuple) => tuple.join(",")),
+        ),
+      );
+    fc.assert(
+      fc.property(
+        fc.uniqueArray(fc.tuple(atom, atom, atom), {
+          minLength: 16,
+          maxLength: 64,
+          selector: (tuple) => tuple.join(","),
+        }),
+        fc.array(fc.nat(), { minLength: 1, maxLength: 4 }),
+        (tuples, picks) => {
+          const inPlace = built(tuples, ["a", "b"]);
+          lookups(inPlace);
+          const going = picks.map((i) => [
+            ...(tuples[i % tuples.length] ?? []),
+          ]);
+          const leaving = new Set(going.map((tuple) => tuple.join(",")));
+          inPlace.retract("t", going);
+          const rebuilt = built(
+            tuples.filter((tuple) => !leaving.has(tuple.join(","))),
+            ["a", "b"],
+          );
+
+          expect(inPlace.facts("t")).toEqual(rebuilt.facts("t"));
+          expect(lookups(inPlace)).toEqual(lookups(rebuilt));
+          // A rule set neither database has seen starts from nothing on
+          // both, so its joins read the indexes in the order they have.
+          const fresh = joinInto("again");
+          evaluate(inPlace, fresh);
+          evaluate(rebuilt, fresh);
+          expect(inPlace.facts("again")).toEqual(rebuilt.facts("again"));
+        },
+      ),
+      { numRuns: 300, seed: PROPERTY_SEED },
     );
   });
 

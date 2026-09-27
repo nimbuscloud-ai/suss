@@ -298,8 +298,8 @@ function labelColumns(
 
 /**
  * The rule with its body in the order demand should travel: at each
- * step, the literal with the most columns already fixed, label columns
- * aside, and written order between equals. DESIGN.md shows what
+ * step, the literal with the most columns a bound variable fixes, label
+ * columns and constants aside, and written order between equals. DESIGN.md shows what
  * written order costs when the head binds a column the body's first
  * literal does not mention.
  */
@@ -318,7 +318,8 @@ function boundFirst(
     literal.terms.filter(
       (term, column) =>
         !labels.get(literal.relation)?.has(column) &&
-        (term.type === "constant" || bound.has(term.name)),
+        term.type === "variable" &&
+        bound.has(term.name),
     ).length;
 
   const remaining = [...r.body];

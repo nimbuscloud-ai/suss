@@ -89,6 +89,7 @@ const NOT_BASE_FACTS = new Set([
 
 type Question =
   | "wanted"
+  | "wantedWritten"
   | "wantedOrigin"
   | "wantedCallOrigin"
   | "wantedAnchor"
@@ -447,7 +448,7 @@ export class ResolutionStore {
       return found;
     }
 
-    this.askAboutAll([...asked.values()], "wanted", () => {
+    this.askAboutAll([...asked.values()], "wantedWritten", () => {
       for (const [key, target] of asked) {
         this.writtenValues.set(key, {
           written: this.lookupWritten(target),
@@ -1433,7 +1434,7 @@ export class ResolutionStore {
     }
     const fallback = fallbackWrittenAs(this.db, key, (keys) => {
       for (const behind of keys) {
-        this.wantKey("wanted", behind);
+        this.wantKey("wantedWritten", behind);
       }
       this.derive();
     });

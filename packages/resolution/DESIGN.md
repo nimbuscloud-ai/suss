@@ -110,9 +110,7 @@ callArgCount(r, k)          r is written with k arguments, keyword ones
 callOutsideMethod(r)        the call r is outside every method body
 bodyCalls(f, c)             f's body calls the callee c, keyed the way
                             call keys that call's callee
-makesCall(f, r)             the call r is written in f's own body. The
-                            TypeScript adapter states it only for a
-                            callee written as a name or a property read
+makesCall(f, r)             the call r is written in f's own body
 entersAs(y, r)              y is the name a block opens over the call
                             r, so entering r is what wrote y (Python)
 ```
@@ -202,6 +200,17 @@ returnsReceiver(m)          calling a method named m hands back the
 A caller asks a question by adding a row to one of the relations in
 `ASKING_RELATIONS`, such as `wanted(x)`. No rule derives those, and
 the questions in `RESOLUTION_QUESTIONS` are the rules that read them.
+
+`wanted(x)` asks everything the rules can say about x: what it resolves
+to, what it comes to, what it is written as, what a call returns, and
+more. A caller that reads only what x is written as asks
+`wantedWritten(x)` instead. It fills the same answer relations as
+`wanted` does for the written value: `wantedIsWrittenAs`,
+`wantedFallbackBehind`, and the two relations about overridden members.
+The walks behind the other answers are then never derived. The
+TypeScript store asks this way for the values it reads as written. On
+an 8,400-file TypeScript server with the packs `suss init` suggests,
+the run read 16% fewer rows, with byte-identical summaries.
 
 Some relations are one adapter's own. The adapter adds them to the
 same store and reads them itself, or through a rule of its own, and no
