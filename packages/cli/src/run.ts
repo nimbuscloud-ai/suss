@@ -941,7 +941,11 @@ async function runFlow(argv: string[]): Promise<number> {
   });
 }
 
-async function runCheck(args: string[]): Promise<number> {
+/**
+ * Runs `suss check` over its own flags and resolves to its exit code.
+ * Exported so an intent document can say what the command promises.
+ */
+export async function runCheck(args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
     options: {

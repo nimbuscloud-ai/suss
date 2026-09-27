@@ -26,6 +26,10 @@ export {
 export { testFilesListedIn } from "./coveringTests.js";
 export { extract } from "./extract.js";
 export {
+  type InteractiveInitOptions,
+  initInteractive,
+} from "./initInteractive.js";
+export {
   inspect,
   inspectDiff,
   inspectDir,
@@ -95,7 +99,7 @@ export {
   readProjectInto,
   whereReadsCameFrom,
 } from "./projectRead.js";
-export { runCli, USAGE } from "./run.js";
+export { runCheck, runCli, USAGE } from "./run.js";
 export {
   draftYaml,
   type StubDraftOptions,

@@ -26,8 +26,8 @@ scenarios:
       - packs-activerecord.reads-the-project
       - packs-graphql-ruby.reads-the-project
 
-  # Covered by a CLI test until suss reads a command's output, and then
-  # this moves to an outcome link.
+  # What init says about the setting is part of the text it prints, and
+  # leaving the pack out is a file write, which suss does not record.
   - title: init cannot work out a setting
     when: a pack needs a setting init cannot work out, such as which database is behind SQLAlchemy
     expect: init leaves the pack out of suss.json and says what to write
@@ -50,8 +50,7 @@ scenarios:
       - packs-sqlmodel.needs-storage-system
       - packs-graphql-ruby.needs-root
 
-  # Covered by CLI tests until suss reads a command's output, and then
-  # this moves to an outcome link.
+  # Writing suss.json is a file write, which suss does not record yet.
   - title: an agent sets the project up
     when: an agent runs suss init --write
     expect: init writes suss.json without asking, and leaves an existing suss.json alone and says so
@@ -60,14 +59,12 @@ scenarios:
       - packages/cli/src/initInteractive.test.ts > suss init, guided > with --write > leaves a suss.json that is already there alone, and says so
     about: initInteractive
 
-  # Covered by a CLI test until suss reads a command's output.
   - title: init in CI
     when: suss init runs in CI, with no terminal to prompt on
     expect: it prints the commands the project needs instead of asking
-    coveredBy: packages/cli/src/initInteractive.test.ts > suss init, guided > without a terminal > prints the commands instead of asking
-    about: initInteractive
+    link: cli-init.without-a-terminal
 
-  # Covered by a CLI test until suss reads a command's output.
+  # The entry goes into suss.json, a file write suss does not record yet.
   - title: a spec is found
     when: the project has an OpenAPI spec, and the developer runs suss init
     expect: suss.json gets an entry that reads the spec, so suss check compares the routes against it instead of leaving them unpaired
