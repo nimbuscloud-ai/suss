@@ -1953,6 +1953,40 @@ describe("checkDir over a run whose only comparison is a storage pass", () => {
     expect(output).toContain("    infra::infra/tables.tf::orders");
   });
 
+  it("suggests the tsconfig form of extract after reading TypeScript", () => {
+    fs.writeFileSync(
+      path.join(tmpDir, "all.json"),
+      JSON.stringify([
+        providerWithRoute("health", "GET", "/health", [
+          transition("t-200", { statusCode: 200, isDefault: true }),
+        ]),
+      ]),
+    );
+    const { output } = captureQuietly(() =>
+      checkDir({ dir: tmpDir, allowEmpty: true }),
+    );
+
+    expect(output).toContain(
+      "    suss extract -p <tsconfig> -f <pack> -o summaries/<name>.json",
+    );
+  });
+
+  it("suggests the directory form of extract after reading Python", () => {
+    const handler = providerWithRoute("health", "GET", "/health", [
+      transition("t-200", { statusCode: 200, isDefault: true }),
+    ]);
+    handler.location = { ...handler.location, file: "app/api/health.py" };
+    fs.writeFileSync(path.join(tmpDir, "all.json"), JSON.stringify([handler]));
+    const { output } = captureQuietly(() =>
+      checkDir({ dir: tmpDir, allowEmpty: true }),
+    );
+
+    expect(output).toContain(
+      "    suss extract --dir <project> -f <pack> -o summaries/<name>.json",
+    );
+    expect(output).not.toContain("<tsconfig>");
+  });
+
   it("counts one boundary when a table is read from two places", () => {
     fs.writeFileSync(
       path.join(tmpDir, "all.json"),

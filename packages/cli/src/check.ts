@@ -23,6 +23,7 @@ import {
 import { loadIntentDirectory } from "@suss/contract-intent";
 
 import { coveringTestLookup } from "./coveringTests.js";
+import { languageOfFile } from "./language.js";
 import {
   readEntryIndex,
   readProjectFile,
@@ -453,7 +454,13 @@ export function checkDir(options: CheckDirOptions): CheckResult & {
   };
   const rendered = options.json
     ? `${JSON.stringify(since === null ? { findings: result.findings, ...rest } : { ...sinceJson(since), ...rest }, null, 2)}\n`
-    : renderDirHuman(result, confidence, scopeOf(options), since) +
+    : renderDirHuman(
+        result,
+        confidence,
+        scopeOf(options),
+        since,
+        extractHintFor(allSummaries),
+      ) +
       renderRuntimeNamedCrossings(runtimeNamedCrossings) +
       renderGapCoverage(summariesWithGaps, allSummaries.length) +
       renderCollisions(collisions) +
@@ -1230,6 +1237,7 @@ function renderDirHuman(
   confidence: ConfidenceLookup,
   scope: ReportScope,
   since: SinceReport | null,
+  extractHint: string,
 ): string {
   const all = scope.all === true;
   const lines: string[] = [];
@@ -1283,9 +1291,7 @@ function renderDirHuman(
     lines.push(
       "  Extract both sides of the boundary into the same folder, then check them together:",
     );
-    lines.push(
-      "    suss extract -p <tsconfig> -f <pack> -o summaries/<name>.json",
-    );
+    lines.push(`    ${extractHint}`);
     lines.push("    suss check --dir summaries/");
   }
 
@@ -1437,6 +1443,22 @@ function noFindingsLine(coverage: PairingCoverage): string {
 
 function boundaries(count: number): string {
   return count === 1 ? "boundary" : "boundaries";
+}
+
+/**
+ * The extract command to suggest when one side is missing. A Python or
+ * Ruby project has no tsconfig, so after reading either language the
+ * hint points extract at a directory instead.
+ */
+function extractHintFor(summaries: ReadonlyArray<BehavioralSummary>): string {
+  const languages = new Set(
+    summaries.map((summary) => languageOfFile(summary.location.file)),
+  );
+  if (languages.has("python") || languages.has("ruby")) {
+    return "suss extract --dir <project> -f <pack> -o summaries/<name>.json";
+  }
+
+  return "suss extract -p <tsconfig> -f <pack> -o summaries/<name>.json";
 }
 
 /**
