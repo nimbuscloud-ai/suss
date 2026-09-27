@@ -1,0 +1,14 @@
+kind: prd
+
+title: Checkout charges the invoice
+purpose: A shopper pays for a priced basket, and the invoice records the charge.
+audience: shopper
+
+scenarios:
+  - when: the shopper's card is accepted
+    expect: the shopper sees the order confirmed
+    link: billing-charge.charged
+
+  - when: the shopper's card is declined
+    expect: the shopper is told to try another card
+    link: billing-charge.declined

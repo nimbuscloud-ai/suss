@@ -550,6 +550,20 @@ describe("with a change list", () => {
     ]);
   });
 
+  it("shows the diff when only a module line moved", () => {
+    installFakeSuss(project, {
+      diff: "Module lines\n\n  catalog now calls billing's saveInvoice (src/billing/invoiceStore.ts) from priceFor, and billing does not export it.\n",
+      onlyModulesMoved: true,
+    });
+    runHook(event("session-start"), project, {});
+
+    const stop = runHook(event("stop"), project, {});
+
+    expect(String(stop.output?.systemMessage)).toContain(
+      "catalog now calls billing's saveInvoice",
+    );
+  });
+
   it("leaves the diff out when the verdicts account for what changed", () => {
     installFakeSuss(project, {
       intent: verdicts({

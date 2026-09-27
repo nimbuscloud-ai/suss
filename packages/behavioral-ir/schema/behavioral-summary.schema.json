@@ -74,6 +74,9 @@
           },
           "workspace": {
             "type": "string"
+          },
+          "module": {
+            "type": "string"
           }
         },
         "required": ["file", "range", "exportName"],

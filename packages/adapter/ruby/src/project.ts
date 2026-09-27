@@ -36,6 +36,7 @@ import {
   noopTimer,
   runDigest,
   stampModuleImports,
+  stampModules,
 } from "@suss/extractor";
 import {
   addPackWords,
@@ -74,6 +75,7 @@ import {
 } from "./facts/constants.js";
 import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitRequireFacts } from "./facts.js";
+import { moduleExportUnits, settleRubyModules } from "./moduleSurface.js";
 import { bodyBlocksIn, inflectionsIn } from "./pack.js";
 import { parseRuby } from "./parser.js";
 import {
@@ -108,6 +110,7 @@ import type {
   CacheDiagnostic,
   CacheInput,
   CacheLayer,
+  DeclaredModule,
   ExtractionReport,
   ExtractorOptions,
   PartialPlan,
@@ -153,6 +156,8 @@ export interface ExtractRubyOptions {
   cacheDir?: string | null;
   /** How to handle gaps. Composing a controller's filters into its actions can add one. */
   gapHandling?: ExtractorOptions["gapHandling"];
+  /** The modules the project lists in `suss.json`, with absolute paths. */
+  modules?: readonly DeclaredModule[];
 }
 
 export interface ExtractRubyResult {
@@ -421,6 +426,7 @@ export async function extractRubyProject(
     gapHandling: options.gapHandling,
     workspaceRoot: options.workspaceRoot,
     projectRoot: options.projectRoot,
+    modules: settleRubyModules(options.modules),
   })}`;
   const input: CacheInput = {
     files: cacheDir === null ? [] : options.files,
@@ -565,6 +571,7 @@ async function runRuby(
         }
       : undefined;
   const inheritedMethods = inheritedMethodsIn(options.packs);
+  const declaredModules = settleRubyModules(options.modules);
   const plainContext = await timer.timeAsync("discover", () =>
     buildReachContext(parsed, db, bodyBlocks, watchedNames, loaderPatterns),
   );
@@ -653,8 +660,11 @@ async function runRuby(
     // A unit whose body is a method, such as a graphql-ruby field's
     // resolver, reports that method here as a starting point for the walk.
     const seedByRaw = new Map<RawCodeStructure, ReachSeed>();
-    const discover = (): Promise<RawCodeStructure[]> =>
-      discoverUnits(root, {
+    const onReachSeed = (raw: RawCodeStructure, seed: ReachSeed): void => {
+      seedByRaw.set(raw, seed);
+    };
+    const discover = async (): Promise<RawCodeStructure[]> => [
+      ...(await discoverUnits(root, {
         packs: options.packs,
         filePath: displayPath,
         absoluteFile: file,
@@ -665,8 +675,19 @@ async function runRuby(
         dynamicNames: watchedNames,
         displayPathOf,
         facts: db,
-        onReachSeed: (raw, seed) => seedByRaw.set(raw, seed),
-      });
+        onReachSeed,
+      })),
+      ...moduleExportUnits(root, file, {
+        modules: declaredModules,
+        ...(storage === undefined ? {} : { storage }),
+        inheritedMethods,
+        bodyBlocks,
+        dynamicNames: watchedNames,
+        displayPathOf,
+        facts: db,
+        onReachSeed,
+      }),
+    ];
     const rawUnits = await timer.timeAsync("discover", () =>
       ledger === null
         ? discover()
@@ -880,6 +901,7 @@ async function runRuby(
   // `require_relative` lines and the constants other files in the run define.
   const dependencies = importedFilesByFile(db, displayPathOf);
   stampModuleImports(summaries, (file) => dependencies.get(file) ?? []);
+  stampModules(summaries, declaredModules, options.workspaceRoot);
 
   // Ids use paths relative to the project root, because the CLI later
   // shortens `location.file` to that root and the two have to match.

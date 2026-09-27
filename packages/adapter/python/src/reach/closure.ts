@@ -62,6 +62,7 @@ import {
 
 import type {
   BehavioralSummary,
+  BoundaryBinding,
   DeclaredAt,
   ParameterCall,
   UnfollowedCall,
@@ -810,9 +811,17 @@ function identifiersUnder(node: PyNode, found: string[] = []): string[] {
   return found;
 }
 
-function libraryUnit(
+/**
+ * A reached function's unit. A module export is built the same way, with
+ * the binding that keys it by its module, so the two cannot drift apart.
+ */
+export function libraryUnit(
   target: ReachedFunction,
-  options: ReachOptions,
+  options: Pick<ReachOptions, "storageFor" | "facts">,
+  binding: BoundaryBinding = functionCallBinding({
+    transport: "in-process",
+    recognition: "reachable",
+  }),
 ): RawCodeStructure {
   const { file, node, name, exportPath } = target;
   const body = field(node, "body");
@@ -834,10 +843,7 @@ function libraryUnit(
       exportName: exportPath[0] ?? name,
       exportPath,
     },
-    boundaryBinding: functionCallBinding({
-      transport: "in-process",
-      recognition: "reachable",
-    }),
+    boundaryBinding: binding,
     parameters: positionalParameters(node, exportPath.length > 1),
     branches: [
       {

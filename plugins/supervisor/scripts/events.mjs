@@ -468,8 +468,9 @@ async function behaviorDiff(session, run) {
 }
 
 /**
- * A unit that moved, or a boundary whose reach or declarations did while
- * every unit stayed the same.
+ * A unit that moved, a boundary whose reach or declarations did while
+ * every unit stayed the same, or a module line: a store's writing modules
+ * changed, or a call now enters a module off its public exports.
  *
  * @param {string} stdout
  */
@@ -478,7 +479,8 @@ function movedAnything(stdout) {
     const diff = JSON.parse(stdout);
     return (
       (typeof diff.changed === "number" && diff.changed > 0) ||
-      (Array.isArray(diff.boundaries) && diff.boundaries.length > 0)
+      (Array.isArray(diff.boundaries) && diff.boundaries.length > 0) ||
+      (typeof diff.modules === "object" && diff.modules !== null)
     );
   } catch {
     return false;

@@ -58,6 +58,7 @@ import {
 
 import type {
   BehavioralSummary,
+  BoundaryBinding,
   DeclaredAt,
   ParameterCall,
   UnfollowedCall,
@@ -816,9 +817,17 @@ function propertyReadsAmong(
   return reads;
 }
 
-function libraryUnit(
-  target: ReachedFunction,
-  options: ReachOptions,
+/**
+ * A reached method's unit. A module export is built the same way, with
+ * the binding that keys it by its module, so the two cannot drift apart.
+ */
+export function libraryUnit(
+  target: Omit<ReachedFunction, "enclosingQualifiedName">,
+  options: BodyReadOptions & Pick<ReachOptions, "displayPathOf">,
+  binding: BoundaryBinding = functionCallBinding({
+    transport: "in-process",
+    recognition: "reachable",
+  }),
 ): RawCodeStructure {
   const { file, node, name, exportPath } = target;
   const body = bodyOfMethod(node, file, options);
@@ -834,10 +843,7 @@ function libraryUnit(
       exportName: exportPath[0] ?? name,
       exportPath,
     },
-    boundaryBinding: functionCallBinding({
-      transport: "in-process",
-      recognition: "reachable",
-    }),
+    boundaryBinding: binding,
     parameters: positionalParameters(node),
     branches: [
       {

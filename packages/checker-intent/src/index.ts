@@ -1487,7 +1487,8 @@ export function whatWouldKeyIt(protocol: Semantics["name"]): string {
 
 const WHAT_KEYS: Record<Semantics["name"], string> = {
   rest: "a REST boundary needs a method and a path",
-  "function-call": "a function-call boundary needs package + exportPath",
+  "function-call":
+    "a function-call boundary needs package + exportPath, or module + exportName where the module is one suss.json lists",
   "message-bus": "a message-bus boundary needs a channel",
   storage:
     "a store has no key at all: write it as `- writes: <store>` on an outcome of the boundary that touches it instead",

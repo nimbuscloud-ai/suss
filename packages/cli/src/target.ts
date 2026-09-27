@@ -3,10 +3,11 @@
  * summaries and boundary touches it means.
  *
  * The spellings are tried in this order: a summary id, which is anything
- * with `::` in it; a file and a line, `src/dao.ts:43`; a file; a summary
- * by its function name; and a boundary,
- * `aws.dynamodb:editions#by-publication`. A file comes before a boundary,
- * so a path is never read as a boundary whose words happen to match.
+ * with `::` in it; a file and a line, `src/dao.ts:43`; a file; a module
+ * `suss.json` lists, such as `billing`; a summary by its function name;
+ * and a boundary, `aws.dynamodb:editions#by-publication`. A file comes
+ * before a boundary, so a path is never read as a boundary whose words
+ * happen to match.
  *
  * When a spelling matches nothing, the result has a message for the caller
  * to print. An empty report would look like agreement.
@@ -34,7 +35,7 @@ import {
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
-export type TargetKind = "summary" | "file" | "line" | "boundary";
+export type TargetKind = "summary" | "file" | "line" | "module" | "boundary";
 
 /** A unit the target picked out, and what it does at one boundary. */
 export interface TargetTouch {
@@ -103,6 +104,14 @@ export function resolveTarget(
   // A report prints both a handler's function name and its route, so a
   // user may type either one.
   const asSummary = summaryTarget(spec, summaries);
+  const inModule = summaries.filter(
+    (summary) => summary.location.module === spec,
+  );
+  if (inModule.length > 0) {
+    return asSummary.matched
+      ? moduleOrFunction(spec, inModule, asSummary.target)
+      : moduleTarget(spec, inModule);
+  }
   if (asSummary.matched) {
     return asSummary;
   }
@@ -137,6 +146,43 @@ function summaryTarget(
       transitionIds: [],
       touches: touchesOf(matched),
     },
+  };
+}
+
+/** Every unit the adapter placed in the module `suss.json` gives this name. */
+function moduleTarget(
+  spec: string,
+  inModule: BehavioralSummary[],
+): TargetResolution {
+  return {
+    matched: true,
+    target: {
+      kind: "module",
+      spelledAs: spec,
+      detail: `the module ${spec}, ${describeUnits(inModule)}`,
+      summaries: inModule,
+      transitionIds: [],
+      touches: touchesOf(inModule),
+    },
+  };
+}
+
+/**
+ * A name that is both a module and a function is refused, since an
+ * answer about the wrong one would look like a valid answer.
+ */
+function moduleOrFunction(
+  spec: string,
+  inModule: readonly BehavioralSummary[],
+  asFunction: ResolvedTarget,
+): TargetResolution {
+  const functions = asFunction.summaries
+    .slice(0, 3)
+    .map((summary) => summaryIdentifier(summary));
+  return {
+    matched: false,
+    spelledAs: spec,
+    message: `${spec} is both a module (${describeUnits(inModule)}) and a function here (${functions.join(", ")}). Ask about a file in the module, or about the function by its full id.`,
   };
 }
 

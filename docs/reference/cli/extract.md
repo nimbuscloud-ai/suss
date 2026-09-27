@@ -63,6 +63,32 @@ Wrote 2 summaries to /home/dana/shop/.suss/now/0-extract.json in 0.74s
 
 Files an earlier `--out-dir` run wrote in the folder are removed first, so an entry that fails this time leaves nothing stale behind. The run exits non-zero when any entry failed, because the folder then describes only part of the project. It also exits non-zero when an extract entry didn't write a summary, the same as a single `extract` does, unless you pass `--allow-empty`.
 
+## Modules of one application
+
+An application split into modules inside one package can list them in `suss.json`. Each entry has the name your team uses for the module, the folder its code is in, and optionally `public`, the file or files other modules are meant to call it through:
+
+```json
+{
+  "version": 1,
+  "read": [],
+  "modules": [
+    { "name": "billing", "root": "src/billing" },
+    { "name": "catalog", "root": "src/catalog", "public": "src/catalog/api.ts" }
+  ]
+}
+```
+
+Paths are relative to the directory `suss.json` is in, and `extract` uses the nearest `suss.json` at or above the project. When `public` is left out, the language decides which file is public: `index.ts` or `index.tsx` under the root in TypeScript, the root's `__init__.py` in Python, and in Ruby the file named for the module, inside the root or next to it, as `lib/billing.rb` is next to `lib/billing/`.
+
+With the list in place, `extract` does two things:
+
+- It writes the module on every summary whose file is under a module's root, as `location.module`.
+- It writes a `library` summary for each public export, keyed `fn:<module>::<export>`. That is `fn:billing::chargeInvoice` for a function, `fn:billing::InvoiceService.charge` for a class method in TypeScript or Python, and `fn:billing::Billing.charge_invoice` or `fn:billing::Billing::Invoice#total` for a class method or an instance method in Ruby. A [boundary intent](/reference/intent-format#semantics-function-call) with `module` and `exportName` pairs with it, so a PRD scenario can link to one of its outcomes.
+
+The name is the key, so moving a module's folder renames no boundary. A name can use letters, digits, `_`, `-` and `.`. A module named like a package in the workspace is refused, since both would key their exports `fn:<name>::`.
+
+suss enforces nothing about how modules call each other. [`inspect --diff`](/reference/cli/inspect#module-lines) says when a change adds a module that writes a store, or a call that enters another module somewhere other than its public exports, and [`suss ask`](/reference/cli/ask#spelling-the-subject) takes a module's name as a subject.
+
 ## Pack names
 
 `-f` takes these 44 names out of the box. Every one of them ships inside the CLI, so there is nothing else to install. The [pack catalog](/packs/catalog) describes what each one reads.

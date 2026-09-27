@@ -36,6 +36,7 @@ import {
   noopTimer,
   runDigest,
   stampModuleImports,
+  stampModules,
 } from "@suss/extractor";
 import {
   addPackWords,
@@ -68,6 +69,7 @@ import {
 import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitModuleImportFacts } from "./facts.js";
 import { importedDefinitionLookup } from "./importedDefinitions.js";
+import { moduleExportUnits, settlePythonModules } from "./moduleSurface.js";
 import { parsePython } from "./parser.js";
 import { moduleLoadInvocationEffects } from "./paths/effects.js";
 import { ReplayFailed, reachedFunctions } from "./reach/closure.js";
@@ -93,6 +95,7 @@ import type {
   CacheDiagnostic,
   CacheInput,
   CacheLayer,
+  DeclaredModule,
   ExtractionReport,
   ExtractorOptions,
   PartialPlan,
@@ -148,6 +151,8 @@ export interface ExtractPythonOptions {
   onCacheDiagnostic?: (diagnostic: CacheDiagnostic) => void;
   /** Absolute. `<projectRoot>/.suss/cache` by default; `null` turns it off. */
   cacheDir?: string | null;
+  /** The modules the project lists in `suss.json`, with absolute paths. */
+  modules?: readonly DeclaredModule[];
 }
 
 export interface ExtractPythonResult {
@@ -332,6 +337,7 @@ export async function extractPythonProject(
     projectRoot: options.projectRoot,
     // The same files read against other roots resolve other imports.
     importRoots: roots,
+    modules: settlePythonModules(options.modules),
   })}`;
   const input: CacheInput = {
     files: cacheDir === null ? [] : options.files,
@@ -456,7 +462,11 @@ async function runPython(
   const rawSqlPatterns = options.packs.flatMap((pack) => pack.rawSql ?? []);
   const sqlClients = options.packs.flatMap((pack) => pack.sqlClients ?? []);
   const modelQueries = options.packs.flatMap((pack) => pack.models ?? []);
-  const discovers = options.packs.some((pack) => pack.discovery.length > 0);
+  // A module's public exports are discovered like a pack's routes.
+  const declaredModules = settlePythonModules(options.modules);
+  const discovers =
+    declaredModules.length > 0 ||
+    options.packs.some((pack) => pack.discovery.length > 0);
   // A client pattern with a receiver asks the rules what built it.
   const buildsReceivers = options.packs.some((pack) =>
     (pack.clients ?? []).some(
@@ -630,8 +640,8 @@ async function runPython(
       continue;
     }
     const storage = storageFor(boundFile);
-    const discover = (): RawCodeStructure[] =>
-      discoverUnits(root, moduleBinding, {
+    const discover = (): RawCodeStructure[] => [
+      ...discoverUnits(root, moduleBinding, {
         packs: options.packs,
         filePath: displayPathOf(file),
         absoluteFile: file,
@@ -641,7 +651,14 @@ async function runPython(
         importedDefinition,
         ...(needsValues ? { facts: db } : {}),
         ...(storage === undefined ? {} : { storage }),
-      });
+      }),
+      ...moduleExportUnits(boundFile, {
+        modules: declaredModules,
+        filesByPath,
+        facts: db,
+        storageFor,
+      }),
+    ];
     const charge = noDependencies();
     const registrations: StoredRegistration[] = [];
     const rawUnits = timer.time("discover", () => {
@@ -893,6 +910,7 @@ async function runPython(
 
   const resolvedImports = importedFilesByFile(db, displayPathOf);
   stampModuleImports(summaries, (file) => resolvedImports.get(file) ?? []);
+  stampModules(summaries, declaredModules, options.workspaceRoot);
 
   // A summary's id is measured from the project root, because the CLI
   // shortens `location.file` to that root after this returns and an id

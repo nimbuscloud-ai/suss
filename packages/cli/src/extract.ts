@@ -32,6 +32,7 @@ import {
 import { writeJson } from "./jsonStream.js";
 import { LANGUAGE_LABEL, languageOfProject } from "./language.js";
 import { checkOneTsMorph, formatSecondCopies } from "./oneTsMorph.js";
+import { projectModules } from "./projectModules.js";
 import { formatProjectsBelow, projectsBelow } from "./projectsBelow.js";
 import {
   retiredOptionRefusal,
@@ -867,6 +868,7 @@ async function runTypeScript(
       : { project: createProjectWithoutTsconfig(source.root).project }),
     projectRoot: runRoot,
     frameworks: packs,
+    modules: projectModules(source.root),
     ...(extractorOptions !== undefined ? { extractorOptions } : {}),
     ...(options.noCache === true ? { cacheDir: null } : {}),
     onTiming: (report) => {
@@ -928,6 +930,7 @@ async function runPython(runOptions: LanguageRunOptions): Promise<LanguageRun> {
       .filter((submodule) => submodule.checkedOut)
       .map((submodule) => submodule.directory),
     projectRoot: runOptions.root,
+    modules: projectModules(runOptions.root),
     ...(runOptions.options.gaps !== undefined
       ? { gapHandling: runOptions.options.gaps }
       : {}),
@@ -990,6 +993,7 @@ async function runRuby(runOptions: LanguageRunOptions): Promise<LanguageRun> {
     files,
     packs,
     projectRoot: runOptions.root,
+    modules: projectModules(runOptions.root),
     ...(runOptions.options.gaps !== undefined
       ? { gapHandling: runOptions.options.gaps }
       : {}),

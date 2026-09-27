@@ -4,9 +4,9 @@
  * This covers React components, exported functions and a package's
  * public surface. A package export gets an identity key, because two
  * repositories can both refer to its name. An in-repo unit that gives
- * its module and export name, such as a server action, gets one too.
- * Components and plain handlers give neither and pair through call
- * edges.
+ * its module and export name, such as a server action or a public
+ * export of a module `suss.json` lists, gets one too. Components and
+ * plain handlers give neither and pair through call edges.
  */
 
 import { z } from "zod";
@@ -17,10 +17,11 @@ import { defineBoundarySemantics } from "./definition.js";
 export const FunctionCallSemanticsSchema = z.object({
   name: z.literal("function-call"),
   /**
-   * Optional module identifier for cross-unit references
-   * (e.g. `"./components/Button"` for a React component, or the TS
-   * module path for a bare function export). Packs that don't do
-   * cross-module pairing can leave it unset.
+   * Where the function lives inside this repository. It is either the
+   * name of a module the project lists in `suss.json`, such as
+   * `"billing"`, or a module path, such as the file a server action is
+   * written in. A name has no separator in it and a path always does.
+   * Packs that don't do cross-module pairing can leave it unset.
    */
   module: z.string().optional(),
   /** Named export within the module, when applicable. */
@@ -48,6 +49,15 @@ export const FunctionCallSemanticsSchema = z.object({
 
 export type FunctionCallSemantics = z.infer<typeof FunctionCallSemanticsSchema>;
 
+/**
+ * Whether `module` is the name a project gave one of its modules rather
+ * than a path. A path always has a separator in it, and a module name
+ * never does, so a rewrite that makes paths relative leaves a name alone.
+ */
+export function isModuleName(module: string): boolean {
+  return !module.includes("/") && !module.includes("\\");
+}
+
 export const functionCallSemantics = defineBoundarySemantics({
   name: "function-call",
   schema: FunctionCallSemanticsSchema,
@@ -66,7 +76,7 @@ export const functionCallSemantics = defineBoundarySemantics({
      */
     canPair: () => true,
     rewritePaths(semantics, rewrite) {
-      if (semantics.module === undefined) {
+      if (semantics.module === undefined || isModuleName(semantics.module)) {
         return semantics;
       }
       return { ...semantics, module: rewrite(semantics.module) };
