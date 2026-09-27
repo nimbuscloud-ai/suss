@@ -145,6 +145,13 @@ function wholeProject(dir: string): Record<string, unknown> {
       : {}),
     ...(result.run !== undefined ? { run: result.run } : {}),
     ...(result.intent !== undefined ? { intent: result.intent } : {}),
+    ...(result.collisions.length > 0
+      ? {
+          collisions: result.collisions,
+          collisionNote:
+            "Each of these boundaries is provided by more than one summaries file. suss tells boundaries apart by method and path, so a caller of either service was compared against both.",
+        }
+      : {}),
   };
 }
 

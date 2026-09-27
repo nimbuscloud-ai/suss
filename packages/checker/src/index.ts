@@ -118,6 +118,11 @@ export { type MatchResult, predicatesMatch, subjectsMatch } from "./match.js";
 export { checkMessageBus } from "./message-bus/messageBusPairing.js";
 export { checkMetric } from "./metric/metricPairing.js";
 export {
+  type BoundaryCollision,
+  boundaryCollisions,
+  type SummaryClaim,
+} from "./pairing/boundaryCollisions.js";
+export {
   type GraphqlPairingResult,
   pairGraphqlOperations,
 } from "./pairing/graphqlPairing.js";

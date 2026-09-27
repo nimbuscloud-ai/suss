@@ -4,6 +4,8 @@ import path from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
+import { restBinding } from "@suss/behavioral-ir";
+
 import { Project } from "./project.js";
 import {
   askTool,
@@ -12,6 +14,8 @@ import {
   inspectTool,
   statusTool,
 } from "./tools.js";
+
+import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 /** The text a tool wrote, out of the several shapes a result allows. */
 function textOf(result: { content: Array<{ type: string }> }): string {
@@ -65,6 +69,32 @@ function manyRoutes(root: string, count: number): void {
   );
 }
 
+/** A handler for `GET /users` in the named service's source tree. */
+function routeServedBy(service: string): BehavioralSummary {
+  return {
+    kind: "handler",
+    location: {
+      file: `${service}/src/users.ts`,
+      range: { start: 1, end: 10 },
+      exportName: "listUsers",
+    },
+    identity: {
+      name: "listUsers",
+      exportPath: ["listUsers"],
+      boundaryBinding: restBinding({
+        transport: "http",
+        recognition: "express",
+        method: "GET",
+        path: "/users",
+      }),
+    },
+    inputs: [],
+    transitions: [],
+    gaps: [],
+    confidence: { source: "inferred_static", level: "high" },
+  };
+}
+
 async function projectWith(count: number): Promise<Project> {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-tools-"));
   manyRoutes(root, count);
@@ -113,6 +143,29 @@ describe("the tools, on a project bigger than one answer", () => {
 
     project.close();
   }, 60_000);
+
+  it("lists a boundary two summaries files both provide", async () => {
+    const summaryDir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-tools-"));
+    for (const service of ["accounts", "billing"]) {
+      fs.writeFileSync(
+        path.join(summaryDir, `${service}.json`),
+        JSON.stringify([routeServedBy(service)]),
+      );
+    }
+    const project = {
+      summaryDir,
+      settled: async () => undefined,
+    } as unknown as Project;
+
+    const result = await checkTool(project, {});
+    const payload = result.structuredContent as {
+      collisions?: Array<{ key: string; files: string[] }>;
+    };
+
+    expect(payload.collisions).toEqual([
+      { key: "GET /users", files: ["accounts.json", "billing.json"] },
+    ]);
+  });
 
   it("reports on one boundary when given one", async () => {
     const project = await projectWith(2);
