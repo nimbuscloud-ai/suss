@@ -97,7 +97,14 @@ src/server.ts
 
 The first line counts what moved. Then comes a block per boundary, with up to two groups under it: `outcomes` for what the boundary returns and under what test, and `effects` for what a request now reaches, or stopped reaching, through the calls it makes.
 
-A path whose body moved under the same status and the same test prints as one line with a marker on each field: `{ id, ~total: string -> number, +currency: string, -email }`. Anything else prints as a `~ was` line and a `now` line. `otherwise` marks the path taken when none of the tests above it matched.
+A path whose body moved under the same status and the same test prints as one line with a marker on each field: `{ id, ~total: string -> number, +currency: string, -email }`. A path whose line reads the same before and after, because what moved is deep inside it, prints the line once, and under it where the path differs, with the old and new values there:
+
+```
+~ render <article />  otherwise
+  output.root.children[1].children[0].sourceText: "data?.listing?.shortDesc" -> "data?.listing?.shortDescription"
+```
+
+A key that went away while another came with the same value prints as `renamed to`, and a value too long for the line prints as what kind of value it is. Anything else prints as a `~ was` line and a `now` line. `otherwise` marks the path taken when none of the tests above it matched.
 
 When several boundaries got the same outcome from one wrapper, the report prints it once under a `From <wrapper>` heading, with how many of the boundaries that wrapper runs on have that outcome and which ones are missing it. The files whose units moved come last.
 
@@ -136,7 +143,7 @@ A deployable's environment gets a block of its own when its template and its cod
 }
 ```
 
-Each outcome is `{ change, outcome }`. When the text prints a changed outcome as a `was` line and a `now` line, the entry also has `was`. When those two lines read the same because only a field the line leaves out moved, it has `fields` too, each with its old and new value. An outcome that came from a wrapper also has `from`, the wrapper's `{ file, name }`.
+Each outcome is `{ change, outcome }`. When the text prints a changed outcome as a `was` line and a `now` line, the entry also has `was`. When the line reads the same before and after, the entry has `fields` in its place, the lines the text prints under it, each a path with its old and new values. An outcome that came from a wrapper also has `from`, the wrapper's `{ file, name }`.
 
 Each effect is `{ change, effect, through }`. An effect at a boundary also has `relation` and `boundary`, and `detail` for the variable a config read takes. `through` lists every call between the boundary's unit and the unit that has the effect, and it is empty when the boundary's unit has the effect itself. The `outcome` and `effect` strings are the words the text prints, so a program should match on `relation` and `boundary` rather than parse them.
 
