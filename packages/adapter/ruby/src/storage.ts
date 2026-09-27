@@ -13,7 +13,7 @@
  */
 
 import { storageBinding } from "@suss/ir-core";
-import { askResolution, classMemberName } from "@suss/resolution";
+import { answersFor, askResolution, classMemberName } from "@suss/resolution";
 
 import {
   field,
@@ -304,10 +304,8 @@ function storageEffect(
  */
 function classSettledOn(facts: Database, key: string): string | undefined {
   askResolution(facts, [key], "wanted", RUBY_PROGRAM);
-  const objects = new Set(
-    facts.lookup("wantedObjectOf", 0, key).map((row) => String(row[1])),
-  );
-  return objects.size === 1 ? [...objects][0] : undefined;
+  const objects = answersFor(facts, "wantedObjectOf", key);
+  return objects.length === 1 ? objects[0] : undefined;
 }
 
 /**

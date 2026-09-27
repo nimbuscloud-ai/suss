@@ -1,74 +1,19 @@
 /**
- * What counts as an answer to a question shaped `[key, answer]`, such as
- * `wantedIsWrittenAs` or `wantedSubjectWritten`. A call is written as
- * itself, so a call asked about directly always matches its own key; that
- * row is dropped before the count so one other answer settles it instead
- * of counting as two.
+ * The one reader for an answer the rules derived, such as `wantedResolves`
+ * or `wantedIsWrittenAs`. Adapters and the readers in this package read
+ * every answer through it, so a policy is applied in one place and a new
+ * policy is one edit.
  *
- * A placeholder write, `client = None` before a guard fills it in, is
- * set aside the same way when the key has any other answer. A key
- * written only as a placeholder keeps it. `answersFor` also sets aside
- * a member that a subclass overrides, when the key reads it through
- * that subclass.
- *
- * A caller that can only use one answer takes `singleAnswers`; one with
- * something to say about a value written two ways takes `answersByKey`.
+ * A placeholder write, `client = None` before a guard fills it in, is set
+ * aside when the key has another answer. A member a subclass overrides is
+ * set aside when the key reads it through that subclass; the demand
+ * rewrite refuses negation, so that happens here rather than in a rule.
+ * A written-as question also sets aside a key's match against itself,
+ * since a call is written as itself. A function does come to itself, so
+ * the other questions keep that row. DESIGN.md has the detail.
  */
 
-import type { Database, Tuple } from "@suss/datalog";
-
-const NO_PLACEHOLDERS: ReadonlySet<string> = new Set();
-
-/** Every answer each key has, in the order the rows arrive, with the two drops above applied. */
-export function answersByKey(
-  rows: Iterable<Tuple>,
-  placeholders: ReadonlySet<string> = NO_PLACEHOLDERS,
-): Map<string, string[]> {
-  const candidates = new Map<string, Set<string>>();
-  for (const row of rows) {
-    const key = String(row[0]);
-    const answer = String(row[1]);
-    if (answer === key) {
-      continue;
-    }
-    const set = candidates.get(key) ?? new Set<string>();
-    set.add(answer);
-    candidates.set(key, set);
-  }
-
-  const answers = new Map<string, string[]>();
-  for (const [key, set] of candidates) {
-    answers.set(key, withoutPlaceholders(set, placeholders));
-  }
-  return answers;
-}
-
-/**
- * The answers one key has, read through the relation's index on the
- * key column rather than a pass over every row. A caller asking about
- * one key at a time, which is every adapter asking at a call site,
- * pays for the key's own rows and nothing else.
- */
-export function answersFor(
-  db: Database,
-  relation: string,
-  key: string,
-): string[] {
-  const rows = db.lookup(relation, 0, key);
-  if (rows.length === 0) {
-    return [];
-  }
-  const placeholders = new Set(
-    rows
-      .map((row) => String(row[1]))
-      .filter((answer) => db.has("placeholderValue", [answer])),
-  );
-  return withoutOverridden(
-    db,
-    key,
-    answersByKey(rows, placeholders).get(key) ?? [],
-  );
-}
+import type { Database } from "@suss/datalog";
 
 /** Where the rules list, for a read asked about, the members a nearer declaration overrides. */
 export interface OverrideRelations {
@@ -83,6 +28,106 @@ export const WANTED_OVERRIDES: OverrideRelations = {
   overridden: "wantedReadsOverridden",
   found: "wantedReadsMemberOn",
 };
+
+/**
+ * Every answer `key` has in a `[key, answer]` relation, in the order the
+ * rows arrive, with placeholders and overridden members set aside. The
+ * read goes through the relation's index on the key, so a caller asking
+ * about one key pays for that key's rows and nothing else.
+ */
+export function answersFor(
+  db: Database,
+  relation: string,
+  key: string,
+  overrides: OverrideRelations = WANTED_OVERRIDES,
+): string[] {
+  return settle(db, key, answerColumn(db, relation, key), overrides);
+}
+
+/** `answersFor`, for a written-as question, with the key's match against itself set aside. */
+export function writtenAnswersFor(
+  db: Database,
+  relation: string,
+  key: string,
+): string[] {
+  const answers = answerColumn(db, relation, key).filter(
+    (answer) => answer !== key,
+  );
+  return settle(db, key, answers, WANTED_OVERRIDES);
+}
+
+/**
+ * `writtenAnswersFor` over a `[key, site, answer]` relation, for the
+ * rows under one allocation site. Nothing lists overrides under a site,
+ * so only the placeholder policy applies.
+ */
+export function writtenAnswersUnder(
+  db: Database,
+  relation: string,
+  key: string,
+  site: string,
+): string[] {
+  const answers = db
+    .lookup(relation, 0, key)
+    .filter((row) => String(row[1]) === site)
+    .map((row) => String(row[2]))
+    .filter((answer) => answer !== key);
+  return settle(db, key, answers, null);
+}
+
+/**
+ * Every function that calling this value runs: what the value resolves
+ * to, and what a factory returned when the value was assigned from a
+ * call. The two are settled together, so an override found through one
+ * sets aside the member the other found.
+ */
+export function resolvedFunctions(db: Database, key: string): string[] {
+  return settle(
+    db,
+    key,
+    [
+      ...answerColumn(db, "wantedResolves", key),
+      ...answerColumn(db, "wantedGivesBack", key),
+    ],
+    WANTED_OVERRIDES,
+  );
+}
+
+/** The one function calling this value runs, or null when it settles on none or on several. */
+export function settledFunction(db: Database, key: string): string | null {
+  const functions = resolvedFunctions(db, key);
+  return functions.length === 1 ? (functions[0] as string) : null;
+}
+
+function answerColumn(db: Database, relation: string, key: string): string[] {
+  return db.lookup(relation, 0, key).map((row) => String(row[1]));
+}
+
+/** Every answer policy, applied to one key's answers. */
+function settle(
+  db: Database,
+  key: string,
+  answers: readonly string[],
+  overrides: OverrideRelations | null,
+): string[] {
+  const kept = withoutPlaceholders(db, [...new Set(answers)]);
+  return overrides === null
+    ? kept
+    : withoutOverridden(db, key, kept, overrides);
+}
+
+function withoutPlaceholders(
+  db: Database,
+  answers: readonly string[],
+): string[] {
+  if (answers.length < 2) {
+    return [...answers];
+  }
+  const kept = answers.filter(
+    (answer) => !db.has("placeholderValue", [answer]),
+  );
+  return kept.length > 0 ? kept : [...answers];
+}
 
 /**
  * The answers left once a member a nearer class overrides is set aside.
@@ -131,34 +176,4 @@ function objectsByMember(
     byMember.set(member, objects);
   }
   return byMember;
-}
-
-/** The one answer each key settles on, for a caller that treats several as none. */
-export function singleAnswers(
-  rows: Iterable<Tuple>,
-  placeholders: ReadonlySet<string> = NO_PLACEHOLDERS,
-): Map<string, string> {
-  const settled = new Map<string, string>();
-  for (const [key, answers] of answersByKey(rows, placeholders)) {
-    if (answers.length === 1) {
-      settled.set(key, answers[0] as string);
-    }
-  }
-  return settled;
-}
-
-/** The keys an adapter marked `placeholderValue`, for passing to `singleAnswers`. */
-export function placeholderValues(db: Database): ReadonlySet<string> {
-  return new Set(db.facts("placeholderValue").map((row) => String(row[0])));
-}
-
-function withoutPlaceholders(
-  answers: ReadonlySet<string>,
-  placeholders: ReadonlySet<string>,
-): string[] {
-  const kept = [...answers].filter((answer) => !placeholders.has(answer));
-  if (kept.length === 0) {
-    return [...answers];
-  }
-  return kept;
 }

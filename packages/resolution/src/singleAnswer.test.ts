@@ -3,146 +3,83 @@ import { describe, expect, it } from "vitest";
 import { Database } from "@suss/datalog";
 
 import {
-  answersByKey,
   answersFor,
-  placeholderValues,
-  singleAnswers,
+  resolvedFunctions,
+  settledFunction,
   withoutOverridden,
+  writtenAnswersFor,
+  writtenAnswersUnder,
 } from "./singleAnswer.js";
 
-describe("the single-answer policy over a [key, answer] relation", () => {
-  it("settles a key with exactly one answer", () => {
-    const settled = singleAnswers([["a", "b"]]);
-    expect(settled.get("a")).toBe("b");
-  });
-
-  it("drops a key's match against itself before counting", () => {
-    const settled = singleAnswers([
-      ["a", "a"],
-      ["a", "b"],
-    ]);
-    expect(settled.get("a")).toBe("b");
-  });
-
-  it("leaves out a key whose only answer is itself", () => {
-    const settled = singleAnswers([["a", "a"]]);
-    expect(settled.has("a")).toBe(false);
-  });
-
-  it("leaves out a key with two distinct answers", () => {
-    const settled = singleAnswers([
-      ["a", "b"],
-      ["a", "c"],
-    ]);
-    expect(settled.has("a")).toBe(false);
-  });
-
-  it("leaves out a key with no answers", () => {
-    const settled = singleAnswers([]);
-    expect(settled.size).toBe(0);
-  });
-
-  it("sets a placeholder answer aside when the key has another", () => {
-    const settled = singleAnswers(
-      [
-        ["a", "none"],
-        ["a", "b"],
-      ],
-      new Set(["none"]),
-    );
-    expect(settled.get("a")).toBe("b");
-  });
-
-  it("keeps a placeholder answer when it is the only one", () => {
-    const settled = singleAnswers([["a", "none"]], new Set(["none"]));
-    expect(settled.get("a")).toBe("none");
-  });
-
-  it("reads the placeholder keys an adapter marked out of the database", () => {
-    const db = new Database();
-    db.add("placeholderValue", ["f.py:1-5"]);
-    db.add("writtenValue", ["f.py:1-5"]);
-    db.add("writtenValue", ["f.py:7-12"]);
-    expect([...placeholderValues(db)]).toEqual(["f.py:1-5"]);
-  });
-
-  it("still leaves out a key with two answers besides the placeholder", () => {
-    const settled = singleAnswers(
-      [
-        ["a", "none"],
-        ["a", "b"],
-        ["a", "c"],
-      ],
-      new Set(["none"]),
-    );
-    expect(settled.has("a")).toBe(false);
-  });
-});
-
-describe("every answer a key has", () => {
-  it("lists the answers of a key written two ways", () => {
-    const answers = answersByKey([
-      ["a", "b"],
-      ["a", "c"],
-    ]);
-    expect(answers.get("a")).toEqual(["b", "c"]);
-  });
-
-  it("drops a key's match against itself, and the key with it", () => {
-    const answers = answersByKey([["a", "a"]]);
-    expect(answers.has("a")).toBe(false);
-  });
-
-  it("lists a repeated answer once", () => {
-    const answers = answersByKey([
-      ["a", "b"],
-      ["a", "b"],
-    ]);
-    expect(answers.get("a")).toEqual(["b"]);
-  });
-
-  it("sets a placeholder answer aside when the key has others", () => {
-    const answers = answersByKey(
-      [
-        ["a", "none"],
-        ["a", "b"],
-        ["a", "c"],
-      ],
-      new Set(["none"]),
-    );
-    expect(answers.get("a")).toEqual(["b", "c"]);
-  });
-});
-
-describe("the answers of one key, read through the index", () => {
+describe("the answers to a written-as question", () => {
   const filled = (): Database => {
     const db = new Database();
     db.add("written", ["a", "a"]);
     db.add("written", ["a", "none"]);
     db.add("written", ["a", "b"]);
     db.add("written", ["z", "none"]);
+    db.add("written", ["two", "b"]);
+    db.add("written", ["two", "c"]);
+    db.add("written", ["self", "self"]);
     db.add("placeholderValue", ["none"]);
     return db;
   };
 
-  it("applies the same drops as the pass over every row", () => {
-    expect(answersFor(filled(), "written", "a")).toEqual(["b"]);
+  it("sets aside a key's match against itself and a placeholder", () => {
+    expect(writtenAnswersFor(filled(), "written", "a")).toEqual(["b"]);
+  });
+
+  it("is empty for a key whose only answer is itself", () => {
+    expect(writtenAnswersFor(filled(), "written", "self")).toEqual([]);
   });
 
   it("keeps a placeholder that is the key's only answer", () => {
-    expect(answersFor(filled(), "written", "z")).toEqual(["none"]);
+    expect(writtenAnswersFor(filled(), "written", "z")).toEqual(["none"]);
+  });
+
+  it("lists every answer of a key written two ways, in row order", () => {
+    expect(writtenAnswersFor(filled(), "written", "two")).toEqual(["b", "c"]);
   });
 
   it("is empty for a key with no rows, and for a relation with none", () => {
-    expect(answersFor(filled(), "written", "q")).toEqual([]);
-    expect(answersFor(filled(), "absent", "a")).toEqual([]);
+    expect(writtenAnswersFor(filled(), "written", "q")).toEqual([]);
+    expect(writtenAnswersFor(filled(), "absent", "a")).toEqual([]);
   });
 
   it("sees a row added after the first read", () => {
     const db = filled();
-    expect(answersFor(db, "written", "q")).toEqual([]);
+    expect(writtenAnswersFor(db, "written", "q")).toEqual([]);
     db.add("written", ["q", "r"]);
-    expect(answersFor(db, "written", "q")).toEqual(["r"]);
+    expect(writtenAnswersFor(db, "written", "q")).toEqual(["r"]);
+  });
+});
+
+describe("the answers under one allocation site", () => {
+  it("reads only that site's rows, with the same drops", () => {
+    const db = new Database();
+    db.add("writtenUnder", ["a", "s1", "a"]);
+    db.add("writtenUnder", ["a", "s1", "none"]);
+    db.add("writtenUnder", ["a", "s1", "b"]);
+    db.add("writtenUnder", ["a", "s2", "c"]);
+    db.add("placeholderValue", ["none"]);
+    expect(writtenAnswersUnder(db, "writtenUnder", "a", "s1")).toEqual(["b"]);
+    expect(writtenAnswersUnder(db, "writtenUnder", "a", "s2")).toEqual(["c"]);
+  });
+});
+
+describe("the answers to any other question", () => {
+  it("keeps a key that is its own answer, since a function comes to itself", () => {
+    const db = new Database();
+    db.add("wantedComesTo", ["f", "f"]);
+    expect(answersFor(db, "wantedComesTo", "f")).toEqual(["f"]);
+  });
+
+  it("sets a placeholder aside the same way", () => {
+    const db = new Database();
+    db.add("wantedComesTo", ["x", "none"]);
+    db.add("wantedComesTo", ["x", "obj"]);
+    db.add("placeholderValue", ["none"]);
+    expect(answersFor(db, "wantedComesTo", "x")).toEqual(["obj"]);
   });
 });
 
@@ -186,10 +123,42 @@ describe("a member a nearer class overrides", () => {
     ]);
   });
 
-  it("is set aside by answersFor too", () => {
+  it("is set aside by every reader", () => {
     const db = overriddenOnSub();
     db.add("wantedIsWrittenAs", ["x", "baseSave"]);
     db.add("wantedIsWrittenAs", ["x", "subSave"]);
-    expect(answersFor(db, "wantedIsWrittenAs", "x")).toEqual(["subSave"]);
+    db.add("wantedResolves", ["x", "baseSave"]);
+    db.add("wantedResolves", ["x", "subSave"]);
+    expect(writtenAnswersFor(db, "wantedIsWrittenAs", "x")).toEqual([
+      "subSave",
+    ]);
+    expect(answersFor(db, "wantedResolves", "x")).toEqual(["subSave"]);
+    expect(settledFunction(db, "x")).toBe("subSave");
+  });
+});
+
+describe("the functions calling a value runs", () => {
+  it("lists what the value resolves to and what a factory gave back, once each", () => {
+    const db = new Database();
+    db.add("wantedResolves", ["x", "f"]);
+    db.add("wantedGivesBack", ["x", "f"]);
+    db.add("wantedGivesBack", ["x", "g"]);
+    expect(resolvedFunctions(db, "x")).toEqual(["f", "g"]);
+    expect(settledFunction(db, "x")).toBeNull();
+  });
+
+  it("settles a value a factory gave back one function for", () => {
+    const db = new Database();
+    db.add("wantedGivesBack", ["make()", "handler"]);
+    expect(settledFunction(db, "make()")).toBe("handler");
+  });
+
+  it("sets aside an override found through the other relation", () => {
+    const db = new Database();
+    db.add("wantedResolves", ["x", "baseSave"]);
+    db.add("wantedGivesBack", ["x", "subSave"]);
+    db.add("wantedReadsOverridden", ["x", "Sub", "baseSave"]);
+    db.add("wantedReadsMemberOn", ["x", "Sub", "baseSave"]);
+    expect(resolvedFunctions(db, "x")).toEqual(["subSave"]);
   });
 });

@@ -1203,7 +1203,9 @@ const INIT_METHOD = "__init__";
  * once `plainClass` and `extendsOnly` show the class is plain.
  */
 function classBodyValueRelation(assignment: PyNode): string {
-  return field(assignment, "type") === null ? "holdsProperty" : "holdsDefault";
+  return field(assignment, "type") === null
+    ? "holdsProperty"
+    : "declaresDefault";
 }
 
 /** The base Python gives a class written without one. */

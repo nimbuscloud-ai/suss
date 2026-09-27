@@ -350,7 +350,7 @@ describe("python value facts", () => {
         textAt(source, row[2] ?? ""),
       ]);
     expect(named("holdsProperty")).toEqual([[cls?.[0], "table", '"orders"']]);
-    expect(named("holdsDefault")).toEqual([[cls?.[0], "region", '"eu"']]);
+    expect(named("declaresDefault")).toEqual([[cls?.[0], "region", '"eu"']]);
   });
 
   it("says a class is plain only where its statement shows nothing could generate a constructor", async () => {
