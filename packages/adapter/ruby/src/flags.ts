@@ -28,20 +28,20 @@ export function optionParserFlagReads(
   if (body === null) {
     return [];
   }
-  // A parse call chained on the construction is its parent, so every
-  // parser is collected before any parse call is read.
+  // A parse call chained on the construction is its parent, and so is an
+  // assignment naming it, so every parser is collected before either is read.
   const flagsByParser = new Map<number, string[]>();
   const parserNamed = new Map<string, number>();
   walkBody(body, (node) => {
     if (node.type === "call" && isNewOptionParser(node)) {
       flagsByParser.set(node.id, flagsDeclaredIn(node));
     }
-    if (node.type === "assignment") {
-      noteParserName(node, flagsByParser, parserNamed);
-    }
   });
   const reads: InputRead[] = [];
   walkBody(body, (node) => {
+    if (node.type === "assignment") {
+      noteParserName(node, flagsByParser, parserNamed);
+    }
     if (node.type === "call") {
       reads.push(
         ...readsOfParse(node, flagsByParser, parserNamed, parameterNames),

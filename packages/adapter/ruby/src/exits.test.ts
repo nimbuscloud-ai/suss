@@ -103,4 +103,35 @@ describe("how a Ruby program exits", () => {
       ]),
     );
   });
+
+  it("reads a parser named first, and nothing from a parse it cannot tie to one", async () => {
+    const summaries = await extract(
+      [
+        "require 'optparse'",
+        "",
+        "def main(argv, rest)",
+        "  parser = OptionParser.new do |opts|",
+        '    opts.on("-v") { }',
+        '    opts.on("Verbose output") { }',
+        "  end",
+        "  bare = OptionParser.new",
+        "  bare.parse!(rest)",
+        "  other.parse!(argv)",
+        "  parse!(argv)",
+        "  parser.parse!(ARGV)",
+        "  parser.parse!(argv)",
+        "  exit 0",
+        "end",
+        "",
+        "main(ARGV, [])",
+        "",
+      ].join("\n"),
+    );
+    expect(unit(summaries, "main").inputReads).toEqual(
+      expect.arrayContaining([{ input: "argv", path: ["-v"] }]),
+    );
+    expect(unit(summaries, "main").inputReads).not.toContainEqual(
+      expect.objectContaining({ input: "rest" }),
+    );
+  });
 });
