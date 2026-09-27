@@ -13,11 +13,11 @@ changes from one tab to the next.
 
 <!-- suss:prompt fixture=supervisor-orders -->
 
-<div class="agent-prompt">
+<AgentPrompts>
 
-::: code-group
+<AgentPrompt agent="Claude Code" description="Claude Code installs the CLI, runs one check, and adds the suss plugin, which checks each edit it makes.">
 
-```md [Claude Code]
+```md
 <!--@include: ./agentSetupPrompt.txt#setup-->
 
 <!--@include: ./agentSetupPrompt.txt#claude-code-->
@@ -25,7 +25,11 @@ changes from one tab to the next.
 <!--@include: ./agentSetupPrompt.txt#report-->
 ```
 
-```md [Cursor]
+</AgentPrompt>
+
+<AgentPrompt agent="Cursor" description="Cursor installs the CLI, runs one check, adds the suss MCP server, and writes a project rule that says when to use it.">
+
+```md
 <!--@include: ./agentSetupPrompt.txt#setup-->
 
 <!--@include: ./agentSetupPrompt.txt#cursor-->
@@ -33,7 +37,11 @@ changes from one tab to the next.
 <!--@include: ./agentSetupPrompt.txt#report-->
 ```
 
-```md [Codex]
+</AgentPrompt>
+
+<AgentPrompt agent="Codex" description="Codex installs the CLI, runs one check, adds the suss MCP server, and writes a section in AGENTS.md that says when to use it.">
+
+```md
 <!--@include: ./agentSetupPrompt.txt#setup-->
 
 <!--@include: ./agentSetupPrompt.txt#codex-->
@@ -41,7 +49,11 @@ changes from one tab to the next.
 <!--@include: ./agentSetupPrompt.txt#report-->
 ```
 
-```md [Other agent]
+</AgentPrompt>
+
+<AgentPrompt agent="Other agent" description="Your agent installs the CLI, runs one check, adds the suss MCP server, and writes a section in its instructions that says when to use it.">
+
+```md
 <!--@include: ./agentSetupPrompt.txt#setup-->
 
 <!--@include: ./agentSetupPrompt.txt#other-->
@@ -49,9 +61,9 @@ changes from one tab to the next.
 <!--@include: ./agentSetupPrompt.txt#report-->
 ```
 
-:::
+</AgentPrompt>
 
-</div>
+</AgentPrompts>
 
 In Claude Code the prompt installs [the suss plugin](/guides/supervise-an-agent),
 which starts the MCP server described below and checks each edit the

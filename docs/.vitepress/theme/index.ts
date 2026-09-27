@@ -1,10 +1,11 @@
 // The default VitePress theme, with a "Copy page as Markdown" button above
-// each page and the styles for agent prompts and diagrams. The diagrams are
-// inline in the markdown so they follow the theme's colors in light and dark.
+// each page, the agent setup prompts, and the diagram styles. The diagrams
+// are inline in the markdown so they follow the theme's colors in dark mode.
 
 import DefaultTheme from "vitepress/theme";
 import { h } from "vue";
 
+import { AgentPrompt, AgentPrompts } from "./agentPrompt.js";
 import { CopyPageMarkdown } from "./copyPageMarkdown.js";
 
 import type { Theme } from "vitepress";
@@ -20,4 +21,8 @@ export default {
     h(DefaultTheme.Layout, null, {
       "doc-before": () => h(CopyPageMarkdown),
     }),
+  enhanceApp({ app }) {
+    app.component("AgentPrompts", AgentPrompts);
+    app.component("AgentPrompt", AgentPrompt);
+  },
 } satisfies Theme;
