@@ -3,7 +3,9 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { checkDirectory } from "@suss/cli";
 
 import { LIVE_RECORD, LiveSocket, socketPathFor } from "./liveSocket.js";
 import { Project } from "./project.js";
@@ -179,6 +181,30 @@ describe("LiveSocket", () => {
     expect(report.since).toBe(before);
     expect(Array.isArray(report.findings)).toBe(true);
     expect(report.changedBoundaries.length).toBeGreaterThan(0);
+  }, 60_000);
+
+  it("reads the folder it wrote ahead of the compare that follows", async () => {
+    const root = projectWithOneRoute("/orders");
+    const at = socketPath();
+    await open(root, at);
+    const out = path.join(root, ".suss", "next");
+    await ask(at, {
+      kind: "suss",
+      args: ["extract", "--out-dir", out],
+      cwd: root,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const reads = vi.spyOn(fs, "readFileSync");
+    try {
+      checkDirectory({ dir: out });
+      const summaryReads = reads.mock.calls.filter(([file]) =>
+        String(file).startsWith(out),
+      );
+      expect(summaryReads).toEqual([]);
+    } finally {
+      reads.mockRestore();
+    }
   }, 60_000);
 
   it("says a command it does not serve is unsupported, so the hook runs the CLI", async () => {
