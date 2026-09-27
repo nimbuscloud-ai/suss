@@ -35,9 +35,11 @@ import {
   proofRules,
   queryFacts,
   RESOLUTION_QUESTIONS,
+  readUses,
   resolutionProgram,
   resolutionUnderProgram,
   RESOLUTION_RULES as SHARED_RULES,
+  type ValueUses,
   writtenAnswersFor,
   writtenValueUnder,
 } from "@suss/resolution";
@@ -64,6 +66,7 @@ import {
   LANGUAGE_RECEIVER_RETURNS,
   LANGUAGE_WRAPPERS,
 } from "./languageWords.js";
+import { emitLocalUses, localBuiltOnce } from "./localUses.js";
 import {
   type FileSetQuery,
   ModuleGraph,
@@ -105,7 +108,8 @@ type Question =
   | "wantedEnvObject"
   | "wantedStreamObject"
   | "wantedExitSink"
-  | "wantedSubject";
+  | "wantedSubject"
+  | "wantedUses";
 
 /**
  * Dropped once a query's result has been read, so the next query does
@@ -1022,6 +1026,33 @@ export class ResolutionStore {
         handedBack,
       );
     });
+  }
+
+  /**
+   * What the reads of a local do with it, when `receiver` is a local a
+   * function declares once as `construction`. Null for anything else,
+   * such as a module-level value, which some other file may serve.
+   */
+  usesOfLocal(receiver: Node, construction: Node): ValueUses | null {
+    const declaration = localBuiltOnce(receiver, construction);
+    if (declaration === null) {
+      return null;
+    }
+    const keys = emitLocalUses(this.db, this.table, declaration);
+    this.stale = true;
+    try {
+      for (const key of keys) {
+        this.wantKey("wantedUses", key);
+      }
+      this.derive();
+      const uses = keys.map((key) => readUses(this.db, key));
+      return {
+        passedOn: uses.some((one) => one.passedOn),
+        methodsCalled: [...new Set(uses.flatMap((one) => one.methodsCalled))],
+      };
+    } finally {
+      this.forgetQuery();
+    }
   }
 
   /**

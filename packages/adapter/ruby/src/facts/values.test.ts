@@ -39,6 +39,11 @@ function rows(db: Database, relation: string): string[][] {
     .map((row) => row.map((value) => String(value).replace("f.rb", "")));
 }
 
+/** The stores a rule puts on an object, leaving out the unplaced ones. */
+function placedStores(db: Database): string[][] {
+  return rows(db, "storesProperty").filter((row) => row[3] !== "unplaced");
+}
+
 /** The key the facts give a node, worked out from where its text starts in the source. */
 function keyOf(source: string, text: string): string {
   const start = source.indexOf(text);
@@ -291,21 +296,26 @@ describe("ruby value facts", () => {
         "",
       ].join("\n");
       const db = await factsFor(source);
-      expect(rows(db, "storesProperty")).toEqual([]);
+      expect(placedStores(db)).toEqual([]);
+      expect(rows(db, "storesProperty").map((row) => row[3])).toEqual([
+        "unplaced",
+        "unplaced",
+        "unplaced",
+      ]);
     });
 
     it("is left out when the body reads the property before the setter runs", async () => {
       const source =
         "job = ReportJob.new\nputs job.retries\njob.retries = limit\n";
       const db = await factsFor(source);
-      expect(rows(db, "storesProperty")).toEqual([]);
+      expect(placedStores(db)).toEqual([]);
     });
 
     it("is left out when a later write states no value of its own", async () => {
       const source =
         "job = ReportJob.new\njob.retries = limit\njob.retries += 1\n";
       const db = await factsFor(source);
-      expect(rows(db, "storesProperty")).toEqual([]);
+      expect(placedStores(db)).toEqual([]);
     });
   });
 
@@ -1202,7 +1212,7 @@ describe("ruby value facts", () => {
       "",
     ].join("\n");
     const db = await factsFor(source);
-    expect(rows(db, "storesProperty").map((row) => row[2])).toEqual([
+    expect(placedStores(db).map((row) => row[2])).toEqual([
       keyOf(source, "Second.all"),
     ]);
   });
@@ -1249,7 +1259,7 @@ describe("ruby value facts", () => {
     ].join("\n");
     const db = await factsFor(source);
     expect(
-      rows(db, "storesProperty")
+      placedStores(db)
         .filter((row) => row[1] === "@thing")
         .map((row) => row[2]),
     ).toEqual([keyOf(source, "First.all")]);
@@ -1312,7 +1322,7 @@ describe("ruby value facts", () => {
 
   it("says nothing about an instance variable written outside any class", async () => {
     const db = await factsFor("@thing = Entity.all\n@thing\n");
-    expect(db.size("storesProperty")).toBe(0);
+    expect(placedStores(db)).toEqual([]);
     expect(db.size("holdsProperty")).toBe(0);
     expect(rows(db, "readsProperty").map((row) => row[2])).not.toContain(
       "@thing",

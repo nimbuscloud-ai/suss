@@ -12,6 +12,7 @@ import {
   NAMED_STORE_NAME,
   RECEIVER_STORE_NAME,
   startsAtName,
+  UNPLACED_STORE_NAME,
   valueLeftByWrites,
 } from "@suss/resolution";
 
@@ -625,7 +626,10 @@ function emitArray(emitter: Emitter, array: RbNode): void {
   }
 }
 
-/** Records a hash's values under their keys, when a key is written as a symbol or string. */
+/**
+ * Records a hash's values under their keys, when a key is written as a
+ * symbol or string, and under a computed key otherwise.
+ */
 function emitHash(emitter: Emitter, hash: RbNode): void {
   const objectKey = nodeId(emitter.filePath, hash);
   add(emitter, "objectValue", objectKey);
@@ -635,8 +639,12 @@ function emitHash(emitter: Emitter, hash: RbNode): void {
     }
     const key = field(pair, "key");
     const value = field(pair, "value");
-    const keyText = key === null ? null : pairKeyText(key);
-    if (keyText === null || value === null) {
+    if (key === null || value === null) {
+      continue;
+    }
+    const keyText = pairKeyText(key);
+    if (keyText === null) {
+      add(emitter, "holdsUnderKey", objectKey, valueKey(emitter, value, pair));
       continue;
     }
     add(
@@ -955,9 +963,97 @@ function emitExpressionFact(
   if (type === "instance_variable") {
     emitInstanceRead(emitter, child, parent);
   }
-  if (ASSIGNMENT_TYPES.has(type)) {
-    collectWrite(emitter, child, type);
+  if (ASSIGNMENT_TYPES.has(type) && !collectWrite(emitter, child, type)) {
+    emitUnplacedWrite(emitter, child, type);
   }
+  if (BLOCK_TYPES.has(type)) {
+    emitBlockValue(emitter, child);
+  }
+  for (const branch of BRANCHES_OF[type]?.(child) ?? []) {
+    add(
+      emitter,
+      "conditionalBranch",
+      nodeId(emitter.filePath, child),
+      valueKey(emitter, branch, child),
+    );
+  }
+  if (type === "binary" && field(child, "operator")?.text === APPEND) {
+    emitAppend(emitter, child);
+  }
+}
+
+/** Ruby's append, `apps << app`, which Array, Set and IO all define. */
+const APPEND = "<<";
+
+function emitAppend(emitter: Emitter, binary: RbNode): void {
+  const left = field(binary, "left");
+  const right = field(binary, "right");
+  if (left !== null && right !== null) {
+    add(
+      emitter,
+      "holdsUnderKey",
+      valueKey(emitter, left, binary),
+      valueKey(emitter, right, binary),
+    );
+  }
+}
+
+/** What a block gives back to whatever runs it: its last expression. */
+function emitBlockValue(emitter: Emitter, block: RbNode): void {
+  const body = field(block, "body");
+  const last = body === null ? null : implicitReturn(body);
+  if (last !== null) {
+    add(
+      emitter,
+      "returnsValue",
+      nodeId(emitter.filePath, block),
+      valueKey(emitter, last),
+    );
+  }
+}
+
+/** The last expression of a branch body, or nothing for an empty one. */
+function lastOf(body: RbNode | null): RbNode[] {
+  const last = body === null ? null : implicitReturn(body);
+  return last === null ? [] : [last];
+}
+
+/** The expressions a conditional's value can be, by the conditional's node type. */
+const BRANCHES_OF: Partial<Record<string, (node: RbNode) => RbNode[]>> = {
+  conditional: (node) =>
+    [field(node, "consequence"), field(node, "alternative")].filter(
+      (branch): branch is RbNode => branch !== null,
+    ),
+  if: ifBranches,
+  unless: ifBranches,
+  elsif: ifBranches,
+  if_modifier: modifierBranch,
+  unless_modifier: modifierBranch,
+  binary: andBranch,
+};
+
+/** `ready && app` is `app` whenever `ready` is true. */
+function andBranch(node: RbNode): RbNode[] {
+  const right = field(node, "right");
+  return right !== null &&
+    AND_OPERATORS.has(field(node, "operator")?.text ?? "")
+    ? [right]
+    : [];
+}
+
+const AND_OPERATORS = new Set(["&&", "and"]);
+
+function ifBranches(node: RbNode): RbNode[] {
+  const alternative = field(node, "alternative");
+  return [
+    ...lastOf(field(node, "consequence")),
+    ...(alternative?.type === "elsif" ? [alternative] : lastOf(alternative)),
+  ];
+}
+
+function modifierBranch(node: RbNode): RbNode[] {
+  const body = field(node, "body");
+  return body === null ? [] : [body];
 }
 
 const ASSIGNMENT_TYPES = new Set(["assignment", "operator_assignment"]);
@@ -997,17 +1093,17 @@ interface InstanceWrite {
   target: RbNode;
 }
 
-/** Collects an assignment to `@name` or through a local's setter, for the body being walked. */
-function collectWrite(emitter: Emitter, node: RbNode, type: string): void {
+/**
+ * Collects an assignment to `@name` or through a local's setter, for the
+ * body being walked. Returns whether it collected one.
+ */
+function collectWrite(emitter: Emitter, node: RbNode, type: string): boolean {
   const instances = emitter.instanceWrites;
   const named = emitter.namedWrites;
-  if (instances === null && named === null) {
-    return;
-  }
   const left = field(node, "left");
   const right = field(node, "right");
   if (left === null || right === null) {
-    return;
+    return false;
   }
   const leftType = left.type;
   if (leftType === "instance_variable" && instances !== null) {
@@ -1015,14 +1111,87 @@ function collectWrite(emitter: Emitter, node: RbNode, type: string): void {
       at: node,
       value: valueWritten(node, type, right),
     });
+    return true;
   }
   if (leftType === "call" && named !== null) {
-    collectNamedWrite(emitter, named, left, {
+    return collectNamedWrite(emitter, named, left, {
       at: node,
       value: valueWritten(node, type, right),
     });
   }
+  return false;
 }
+
+/**
+ * A write no store collected: through a key, `h[k] = app`, to a global
+ * or a class variable, or through a setter on something other than a
+ * local the body declares. Each is stated so `passedOn` can see it.
+ */
+function emitUnplacedWrite(emitter: Emitter, node: RbNode, type: string): void {
+  const left = field(node, "left");
+  const right = field(node, "right");
+  const value = right === null ? null : valueWritten(node, type, right);
+  if (left === null || value === null) {
+    return;
+  }
+  const valueAt = valueKey(emitter, value, node);
+  if (left.type === "element_reference") {
+    const object = field(left, "object");
+    if (object !== null) {
+      add(emitter, "holdsUnderKey", valueKey(emitter, object, left), valueAt);
+    }
+    return;
+  }
+  const target = UNPLACED_TARGETS[left.type]?.(emitter, left) ?? null;
+  if (target !== null) {
+    add(
+      emitter,
+      "storesProperty",
+      target.objectKey,
+      target.property,
+      valueAt,
+      UNPLACED_STORE_NAME,
+    );
+  }
+}
+
+/** The object and the property a write goes to, for a target no store places. */
+interface UnplacedTarget {
+  objectKey: string;
+  property: string;
+}
+
+/** By the node type of the left side. A global belongs to the program, keyed where it is written. */
+const UNPLACED_TARGETS: Partial<
+  Record<string, (emitter: Emitter, left: RbNode) => UnplacedTarget | null>
+> = {
+  global_variable: (emitter, left) => ({
+    objectKey: nodeId(emitter.filePath, left),
+    property: left.text,
+  }),
+  class_variable: (emitter, left) => ({
+    objectKey: emitter.selfKey ?? nodeId(emitter.filePath, left),
+    property: left.text,
+  }),
+  instance_variable: (emitter, left) => ({
+    objectKey: emitter.selfKey ?? nodeId(emitter.filePath, left),
+    property: left.text,
+  }),
+  call: (emitter, left) => {
+    const receiver = field(left, "receiver");
+    const method = field(left, "method");
+    if (method === null) {
+      return null;
+    }
+    return {
+      objectKey:
+        receiver === null
+          ? (emitter.selfKey ?? nodeId(emitter.filePath, left))
+          : valueKey(emitter, receiver, left),
+      property: method.text,
+    };
+  },
+};
 
 /** The assignment a write happens at, and the value it writes. */
 interface Assigned {
@@ -1079,7 +1248,7 @@ function collectNamedWrite(
   collected: NamedWrites,
   left: RbNode,
   { at, value }: Assigned,
-): void {
+): boolean {
   const receiver = field(left, "receiver");
   const method = field(left, "method");
   if (
@@ -1087,7 +1256,7 @@ function collectNamedWrite(
     method === null ||
     !declaresLocal(emitter, collected, receiver)
   ) {
-    return;
+    return false;
   }
   const receiverKey = valueKey(emitter, receiver, left);
   const key = `${receiverKey} ${method.text}`;
@@ -1107,6 +1276,7 @@ function collectNamedWrite(
     target: left,
   });
   collected.byProperty.set(key, group);
+  return true;
 }
 
 /** Whether a name is a local of the body being walked, and not one of its parameters. */
@@ -1135,8 +1305,9 @@ function emitNamedStores(emitter: Emitter): void {
   }
   for (const group of collected.byProperty.values()) {
     const targets = group.writes.map((written) => written.target);
+    const described = group.writes.map((written) => written.write);
     const settled = valueLeftByWrites(
-      group.writes.map((written) => written.write),
+      described,
       propertyWritesRunInOrder(
         collected.body,
         targets[0]?.text ?? group.property,
@@ -1151,6 +1322,34 @@ function emitNamedStores(emitter: Emitter): void {
         group.property,
         settled,
         NAMED_STORE_NAME,
+      );
+    }
+    emitUnplacedWrites(emitter, group.receiverKey, group.property, described, [
+      settled,
+    ]);
+  }
+}
+
+/**
+ * The writes to one property that its stated stores leave out, stated as
+ * unplaced so a question about where a value goes still finds them.
+ */
+function emitUnplacedWrites(
+  emitter: Emitter,
+  objectKey: string,
+  property: string,
+  writes: readonly NameWrite[],
+  stated: readonly (string | null)[],
+): void {
+  for (const write of writes) {
+    if (write.value !== null && !stated.includes(write.value)) {
+      add(
+        emitter,
+        "storesProperty",
+        objectKey,
+        property,
+        write.value,
+        UNPLACED_STORE_NAME,
       );
     }
   }
@@ -1187,9 +1386,17 @@ function emitInstanceWrites(
   collected: ReadonlyMap<string, InstanceWrite[]>,
 ): void {
   for (const [name, writes] of collected) {
-    for (const value of settledWrites(writes, false)) {
+    const stated = settledWrites(writes, false);
+    for (const value of stated) {
       add(emitter, "holdsProperty", classKey, name, value);
     }
+    emitUnplacedWrites(
+      emitter,
+      classKey,
+      name,
+      writes.map((written) => written.write),
+      stated,
+    );
   }
 }
 
@@ -1207,17 +1414,27 @@ function emitInstanceStores(
 ): void {
   for (const [name, writes] of collected) {
     const deciding = writes.filter((written) => !written.write.narrowsName);
-    if (deciding.length === 0) {
-      continue;
-    }
-    const ordered = instanceWritesRunInOrder(
-      body,
-      name,
-      deciding.map((written) => written.target),
-    );
-    for (const value of settledWrites(deciding, ordered)) {
+    const stated =
+      deciding.length === 0
+        ? []
+        : settledWrites(
+            deciding,
+            instanceWritesRunInOrder(
+              body,
+              name,
+              deciding.map((written) => written.target),
+            ),
+          );
+    for (const value of stated) {
       add(emitter, "storesProperty", funcKey, name, value, RECEIVER_STORE_NAME);
     }
+    emitUnplacedWrites(
+      emitter,
+      emitter.selfKey ?? funcKey,
+      name,
+      writes.map((written) => written.write),
+      stated,
+    );
   }
 }
 
@@ -1377,6 +1594,19 @@ function emitBodyFact(
         funcKey,
         valueKey(emitter, returned, wrapped ? first : child),
       ]);
+    }
+    // `return a, b` returns an array of both.
+    const values = wrapped ? children(first) : [];
+    for (const value of values.length > 1 ? values : []) {
+      rows.add("holdsUnderKey", [
+        nodeId(emitter.filePath, first as RbNode),
+        valueKey(emitter, value, first),
+      ]);
+    }
+  }
+  if (type === "yield") {
+    for (const value of children(children(child)[0] ?? child)) {
+      rows.add("yieldsValue", [funcKey, valueKey(emitter, value)]);
     }
   }
   if (site !== null) {

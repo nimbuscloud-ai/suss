@@ -44,9 +44,9 @@ readsKeyed(site, o, x)      site reads the entry of o at the value of
                             out
 holdsUnderKey(o, x)         o is given x under a key the source computes,
                             as in o[k] = x, a dictionary entry whose key
-                            is not a string, or the element of a
-                            comprehension. Only passedOn reads it
-                            (Python)
+                            is not a string, the element of a
+                            comprehension, or Ruby's apps << x. Only
+                            passedOn reads it
 environmentObject(w)        w is written as the process environment
 streamObject(w)             w is written as one of the process's output
                             streams, such as process.stdout
@@ -62,7 +62,10 @@ endsHolding(x, y)           the name x is written more than once and
                             is left with y once the writes have run.
                             valueLeftByWrites picks y
 mayHold(x, y)               one write to x wrote y, and nothing says
-                            which write ran last (Python, Ruby)
+                            which write ran last. TypeScript states it
+                            only for a local a router reader asks about,
+                            and never states writesAllStated, so no
+                            rule steps through those rows
 writesAllStated(x)          every write to x states a value, so the
                             mayHold rows for x are all of them
                             (Python, Ruby)
@@ -74,10 +77,11 @@ fallbackBranch(x, b)        x is a fallback expression, a || b or
                             is one of its branches. Python also states
                             a if c else b and (a) this way
 conditionalBranch(x, b)     x is a conditional expression and b is one
-                            of its branches, as in c ? a : b. The value
-                            rules keep such an expression a written
-                            value in these languages, so only passedOn
-                            reads it (TypeScript, Ruby)
+                            of its branches, as in c ? a : b, c && b, or
+                            a Ruby if used as a value. The value rules
+                            keep such an expression a written value in
+                            these languages, so only passedOn reads it
+                            (TypeScript, Ruby)
 instanceOf(x, cls)          x is one of cls, and nothing says which: a
                             method's receiver, or a name Python
                             annotates with a type. cls can be a name
@@ -94,10 +98,11 @@ paramDefault(p, d)          p takes the value d when a caller passes no
                             argument at all (TypeScript, Python)
 decoratedWith(p, d)         the constructor parameter p is written with
                             the decorator call d (TypeScript)
-returnsValue(f, v)          f returns v
-yieldsValue(f, v)           f's body yields v. Calling f gives back a
-                            generator, so no rule treats it as a
-                            return. Only passedOn reads it (Python)
+returnsValue(f, v)          f returns v. A Ruby block returns its last
+                            expression to whatever runs it
+yieldsValue(f, v)           f's body yields v. A Python generator's
+                            caller gets the generator, so no rule treats
+                            it as a return, and only passedOn reads it
 returnsClass(f, c)          f is annotated as returning c, and its body
                             states no value of its own
                             (TypeScript, Python)
@@ -118,7 +123,9 @@ storesProperty(r, n, x, k)  x is written to the property n of r. k is
                             through a parameter or one of several
                             writes that never settle. No rule places
                             an unplaced write on an object, and only
-                            passedOn reads one. Python states them
+                            passedOn reads one. Python and Ruby state
+                            one for every such write, and TypeScript
+                            only for a local a router reader asks about
 ```
 
 Calls:
@@ -1022,6 +1029,11 @@ a function that a handler calls with the request.
 A property read off the value is passed on only when that property is:
 `serve({ fetch: app.fetch })` passes the app on, and `app.use(...)`,
 which calls the property at once, does not.
+
+The Python router index and TypeScript mount discovery ask this
+question. Ruby states the same facts, but no Ruby reader records a
+mount on a local: a Rails `mount` is drawn on a constant's route set,
+which no function can drop.
 
 Python and Ruby key every read of a name on the name, so a caller asks
 about that one key. TypeScript keys each reference apart and joins it

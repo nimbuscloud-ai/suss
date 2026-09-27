@@ -12,7 +12,7 @@
 
 import { type CallExpression, Node, type SourceFile } from "ts-morph";
 
-import { joinMountedPath } from "@suss/resolution";
+import { joinMountedPath, staysInItsFunction } from "@suss/resolution";
 
 import { nodeId } from "../facts/extract.js";
 import { pathFromArgument } from "../resolve/routePath.js";
@@ -89,9 +89,7 @@ export function discoverRegistrationCalls(
     match.importName,
     resolution,
   );
-  const registrationMethods = match.registrationChain.map((c) =>
-    c.startsWith(".") ? c.slice(1) : c,
-  );
+  const registrationMethods = registrationMethodsOf(match);
   if (
     registrationSubjects.size === 0 &&
     !storeCanFindSubjects(sourceFile, match, resolution, registrationMethods)
@@ -825,7 +823,13 @@ export function discoverMountEdges(
   mount: NonNullable<DiscoveryPattern["mount"]>,
   knownSubjectIds: ReadonlySet<string>,
   resolution?: ResolutionStore,
+  packMethods: ReadonlySet<string> = new Set(),
 ): MountEdgeCandidate[] {
+  const ownMethods = new Set([
+    ...packMethods,
+    ...registrationMethodsOf(match),
+    mount.method,
+  ]);
   const subjects = registrationSubjectsOf(
     sourceFile,
     match.importModule,
@@ -878,6 +882,17 @@ export function discoverMountEdges(
       knownSubjectIds,
       resolution,
     );
+    if (
+      targetNodes.length > 0 &&
+      appStaysInItsFunction(
+        callee.getExpression(),
+        subjectNode,
+        ownMethods,
+        resolution,
+      )
+    ) {
+      return;
+    }
     for (const targetNode of targetNodes) {
       edges.push({
         parentRouterId: nodeId(subjectNode),
@@ -888,6 +903,30 @@ export function discoverMountEdges(
   });
 
   return edges;
+}
+
+/**
+ * Whether a mount's app is a local its function builds and then drops,
+ * so no request reaches the paths the mount adds. The app may still
+ * serve when any method outside `ownMethods` runs on it, `listen` say.
+ */
+function appStaysInItsFunction(
+  receiver: Node,
+  construction: Node,
+  ownMethods: ReadonlySet<string>,
+  resolution: ResolutionStore | undefined,
+): boolean {
+  const uses = resolution?.usesOfLocal(receiver, construction) ?? null;
+  return uses !== null && staysInItsFunction(uses, ownMethods);
+}
+
+/** The methods a registration pattern registers with, `get` for `.get`. */
+export function registrationMethodsOf(
+  match: Extract<DiscoveryPattern["match"], { type: "registrationCall" }>,
+): string[] {
+  return match.registrationChain.map((c) =>
+    c.startsWith(".") ? c.slice(1) : c,
+  );
 }
 
 /**
