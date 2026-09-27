@@ -2748,7 +2748,7 @@ export function createTypeScriptAdapter(
             rootsReused: validRoots.size,
             rootsReextracted: walkList.length,
             rootsDeclined: plan.rootsDeclined,
-            summariesReused: merged.reusedKept.length,
+            summariesReused: merged.reusedOwners.size,
           },
         });
       }
@@ -2772,11 +2772,9 @@ export function createTypeScriptAdapter(
             filesByKey: closureFacts.filesByKey,
             scans: closureFacts.scans ?? new Map(),
             packsByFile,
-            reusedKept: merged.reusedKept,
+            // The passes' own additions (markers, schema documents) included.
+            summaries: enriched,
             reusedOwners: merged.reusedOwners,
-            // Everything after the reused prefix, the passes' own
-            // additions (markers, schema documents) included.
-            fresh: enriched.slice(merged.reusedKept.length),
           });
           await cache.write(cacheInput, enriched, attribution);
         } catch {
@@ -2955,10 +2953,10 @@ function summaryMergeKey(summary: BehavioralSummary): string {
 }
 
 /**
- * Combine reused summaries with this run's. A fresh copy supersedes a
- * reused one for the same unit (a shared helper reached from both a
- * reused and a re-walked file), and the reused copy's owners fold into
- * the fresh one so the other file's later edits keep it alive.
+ * Combine reused summaries with this run's, in writing order. A fresh copy
+ * supersedes a reused one for the same unit (a shared helper reached from
+ * both a reused and a re-walked file), and the reused copy's owners fold
+ * into the fresh one so the other file's later edits keep it alive.
  */
 function mergeWithReused(
   reused: { summaries: BehavioralSummary[]; owners: string[][] } | null,
@@ -2966,18 +2964,17 @@ function mergeWithReused(
   ownersBySummary: Map<BehavioralSummary, Set<string>>,
 ): {
   summaries: BehavioralSummary[];
-  reusedKept: BehavioralSummary[];
-  reusedOwners: string[][];
+  /** Each reused summary kept, with the files that own it. */
+  reusedOwners: Map<BehavioralSummary, string[]>;
 } {
+  const reusedOwners = new Map<BehavioralSummary, string[]>();
   if (reused === null) {
-    return { summaries: fresh, reusedKept: [], reusedOwners: [] };
+    return { summaries: inWritingOrder(fresh), reusedOwners };
   }
   const freshByKey = new Map<string, BehavioralSummary>();
   for (const summary of fresh) {
     freshByKey.set(summaryMergeKey(summary), summary);
   }
-  const reusedKept: BehavioralSummary[] = [];
-  const reusedOwners: string[][] = [];
   reused.summaries.forEach((summary, i) => {
     const owners = reused.owners[i] ?? [];
     const supersededBy = freshByKey.get(summaryMergeKey(summary));
@@ -2990,10 +2987,63 @@ function mergeWithReused(
       ownersBySummary.set(supersededBy, freshOwners);
       return;
     }
-    reusedKept.push(summary);
-    reusedOwners.push(owners);
+    reusedOwners.set(summary, owners);
   });
-  return { summaries: [...reusedKept, ...fresh], reusedKept, reusedOwners };
+  return {
+    summaries: inWritingOrder([...reusedOwners.keys(), ...fresh]),
+    reusedOwners,
+  };
+}
+
+/**
+ * The order a run writes the summaries it built: by file, then by where
+ * in the file each one starts, then by the unit's spelling. A partial run
+ * builds its list from reused summaries and rebuilt ones, so an order
+ * that followed how the list was built would differ from a cold run's.
+ * The passes after the merge read the list in this order too.
+ */
+function inWritingOrder(summaries: BehavioralSummary[]): BehavioralSummary[] {
+  const keyed = summaries.map(writingOrderKey);
+  keyed.sort(compareWritingOrder);
+  return keyed.map((one) => one.summary);
+}
+
+interface WritingOrderKey {
+  summary: BehavioralSummary;
+  file: string;
+  start: number;
+  end: number;
+  unit: string;
+}
+
+function writingOrderKey(summary: BehavioralSummary): WritingOrderKey {
+  const { location } = summary;
+  return {
+    summary,
+    file: location.file,
+    start: location.span?.start ?? -1,
+    end: location.span?.end ?? -1,
+    unit: summaryMergeKey(summary),
+  };
+}
+
+/** Two summaries of one unit, rare as that is, fall back to their whole text. */
+function compareWritingOrder(a: WritingOrderKey, b: WritingOrderKey): number {
+  if (a.file !== b.file) {
+    return a.file < b.file ? -1 : 1;
+  }
+  if (a.start !== b.start) {
+    return a.start - b.start;
+  }
+  if (a.end !== b.end) {
+    return a.end - b.end;
+  }
+  if (a.unit !== b.unit) {
+    return a.unit < b.unit ? -1 : 1;
+  }
+  const aText = JSON.stringify(a.summary);
+  const bText = JSON.stringify(b.summary);
+  return aText < bText ? -1 : aText > bText ? 1 : 0;
 }
 
 /**
@@ -3033,10 +3083,13 @@ function buildCacheAttribution(args: {
   filesByKey: Map<string, Set<string>> | undefined;
   scans: ReadonlyMap<string, RecordedScan>;
   packsByFile: ReadonlyMap<SourceFile, readonly PatternPack[]>;
-  reusedKept: BehavioralSummary[];
-  reusedOwners: string[][];
-  fresh: BehavioralSummary[];
+  /** Every summary the write stores, in the order it stores them. */
+  summaries: BehavioralSummary[];
+  reusedOwners: ReadonlyMap<BehavioralSummary, string[]>;
 }): CacheAttribution<TsCacheMeta, ScanRecord> {
+  const fresh = args.summaries.filter(
+    (summary) => !args.reusedOwners.has(summary),
+  );
   const references = createReferenceIndex(
     args.project.getSourceFiles().filter((sf) => !sf.isDeclarationFile()),
   );
@@ -3054,7 +3107,7 @@ function buildCacheAttribution(args: {
   }
 
   const summariesByRoot = new Map<string, BehavioralSummary[]>();
-  for (const summary of args.fresh) {
+  for (const summary of fresh) {
     for (const root of args.ownersBySummary.get(summary) ?? []) {
       const bucket = summariesByRoot.get(root) ?? [];
       bucket.push(summary);
@@ -3120,24 +3173,36 @@ function buildCacheAttribution(args: {
     }
   }
 
-  // A reused summary a fresh walk also reaches gains the fresh owners,
-  // so a later edit to either side still re-extracts or serves it.
-  const reusedOwners = args.reusedKept.map((summary, i) => {
-    const combined = new Set(args.reusedOwners[i] ?? []);
-    const key = args.unitKeyBySummary.get(summary);
-    if (key !== undefined) {
-      for (const root of args.closureOwnership?.rootsByKey.get(key) ?? []) {
-        combined.add(root);
-      }
-    }
-    return [...combined];
-  });
-
-  const owners: string[][] = [
-    ...reusedOwners,
-    ...args.fresh.map((s) => [...(args.ownersBySummary.get(s) ?? [])]),
-  ];
+  const owners = args.summaries.map((summary) => ownersOf(summary, args));
   return { roots, owners, units };
+}
+
+/**
+ * The files a stored summary belongs to. A reused summary a fresh walk
+ * also reaches gains the fresh owners, so a later edit to either side
+ * still re-extracts or serves it.
+ */
+function ownersOf(
+  summary: BehavioralSummary,
+  args: {
+    reusedOwners: ReadonlyMap<BehavioralSummary, string[]>;
+    ownersBySummary: Map<BehavioralSummary, Set<string>>;
+    unitKeyBySummary: Map<BehavioralSummary, string>;
+    closureOwnership: ClosureOwnership | null;
+  },
+): string[] {
+  const reused = args.reusedOwners.get(summary);
+  if (reused === undefined) {
+    return [...(args.ownersBySummary.get(summary) ?? [])];
+  }
+  const combined = new Set(reused);
+  const key = args.unitKeyBySummary.get(summary);
+  for (const root of key === undefined
+    ? []
+    : (args.closureOwnership?.rootsByKey.get(key) ?? [])) {
+    combined.add(root);
+  }
+  return [...combined];
 }
 
 // One summary per callback a framework's runtime schedules out of a

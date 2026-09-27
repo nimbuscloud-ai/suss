@@ -62,6 +62,7 @@ function configProject(): void {
 }
 
 interface Run {
+  written: string;
   summaries: Array<{ identity: { id?: string } }>;
   cacheLine: string;
 }
@@ -85,16 +86,13 @@ function extract(label: string, extra: string[] = []): Run {
     { encoding: "utf8", timeout: 120_000 },
   );
   expect(result.status, result.stderr).toBe(0);
+  const written = fs.readFileSync(out, "utf8");
   return {
-    summaries: JSON.parse(fs.readFileSync(out, "utf8")),
+    written,
+    summaries: JSON.parse(written),
     cacheLine:
       result.stderr.split("\n").find((line) => line.includes("cache:")) ?? "",
   };
-}
-
-/** Each summary's JSON, sorted, since a partial run writes reused ones first. */
-function contents(run: Run): string[] {
-  return run.summaries.map((summary) => JSON.stringify(summary)).sort();
 }
 
 describe("a partial run of the extraction cache", () => {
@@ -115,7 +113,28 @@ describe("a partial run of the extraction cache", () => {
 
     // readPort and ordersUrl belong to files the edit left alone.
     expect(partial.cacheLine).toContain("2 summaries reused");
-    expect(contents(partial)).toEqual(contents(fresh));
+    expect(partial.written).toBe(fresh.written);
+  });
+
+  it("writes the summaries in a cold run's order after an edit to the first file", () => {
+    configProject();
+    extract("cold");
+
+    // The reused summaries come from files after config.ts, so a merge
+    // that put them first would write them before readPort.
+    write("src/config.ts", [
+      "export function readPort(): number {",
+      "  if (process.env.PORT === undefined) {",
+      "    return 3000;",
+      "  }",
+      "  return Number(process.env.PORT);",
+      "}",
+    ]);
+    const partial = extract("partial");
+    const fresh = extract("fresh", ["--no-cache"]);
+
+    expect(partial.cacheLine).toContain("cache: partial");
+    expect(partial.written).toBe(fresh.written);
   });
 
   it("follows an unchanged caller into what its edited callee now calls", () => {
@@ -148,7 +167,7 @@ describe("a partial run of the extraction cache", () => {
     const fresh = extract("fresh", ["--no-cache"]);
 
     expect(names(partial)).toContain("audit");
-    expect(contents(partial)).toEqual(contents(fresh));
+    expect(partial.written).toBe(fresh.written);
   });
 
   it("drops a deleted file's records from the cache", () => {
@@ -178,7 +197,7 @@ describe("a partial run of the extraction cache", () => {
     const fresh = extract("fresh", ["--no-cache"]);
 
     expect(recordedFiles()).not.toContain(path.join(tmpDir, "src", "audit.ts"));
-    expect(contents(partial)).toEqual(contents(fresh));
+    expect(partial.written).toBe(fresh.written);
   });
 });
 
