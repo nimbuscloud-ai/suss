@@ -30,6 +30,7 @@ scripts/policy.mjs           which findings reach the agent after an edit, and w
 scripts/report.mjs           the text the agent and the developer read
 scripts/session.mjs          the session record on disk
 scripts/suss.mjs             which suss to run, and running it
+scripts/live.mjs             asking the MCP server to run a command instead of the CLI
 scripts/keepIntent.mjs       what /suss:keep-intent runs: finds the session and its list, then suss intent keep
 demo/play.mjs                plays a recorded session through the hooks, with no Claude Code
 demo/orders409.mjs           the 409 story: a finding after an edit, and the stop report
@@ -82,6 +83,8 @@ Beside the session folders, `.suss/session/current.json` says which session a sl
 ## Which suss the hooks run
 
 `scripts/suss.mjs` looks for `@suss/cli` in `node_modules` from the project directory upward, and uses it when its version is at least the plugin's. Otherwise it looks the same way from the plugin's directory, and then falls back to `npx --yes --package=@suss/cli@<plugin version> suss`. The MCP server is found the same way, as `@suss/mcp`.
+
+Before starting the CLI, `runSuss` asks the MCP server. The server that keeps the project's program writes its socket's path to `.suss/live/server.json`, and it runs `extract --out-dir` and `check --since --json` itself, returning what the CLI would have printed. It keeps the program between edits, so a read after an edit parses only the files that changed and starts no process. When no server is up, or it does not serve the command, the CLI runs as before.
 
 The plugin's version in `plugin.json` moves with every suss release, because `scripts/preparePublish.mjs` sets it when `npm run bump` runs.
 

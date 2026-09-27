@@ -21,7 +21,12 @@ import { whyItFailed } from "./suss.mjs";
 /** @typedef {import("./types.js").EditResult} EditResult */
 /** @typedef {import("./types.js").SinceReport} SinceReport */
 /** @typedef {import("./types.js").SussRun} SussRun */
-/** @typedef {(args: string[]) => Promise<SussRun>} RunSuss */
+/**
+ * Runs suss. `notBefore` says the read has to start after that moment, so
+ * the MCP server can hand back a build it already started since.
+ *
+ * @typedef {(args: string[], notBefore?: number) => Promise<SussRun>} RunSuss
+ */
 
 /**
  * Starts a worker for the session unless one is already running. The
@@ -156,7 +161,10 @@ async function takeBaseline(session, run) {
  * @param {number} target
  */
 async function readEdits(session, run, target) {
-  const extracted = await run(["extract", "--out-dir", session.freshNext()]);
+  const extracted = await run(
+    ["extract", "--out-dir", session.freshNext()],
+    session.editQueuedAt(target),
+  );
   const after = session.snapshotFiles("next");
   const lost = session
     .snapshotFiles("current")

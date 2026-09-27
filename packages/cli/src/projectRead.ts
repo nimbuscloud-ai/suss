@@ -25,6 +25,7 @@ import {
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { ContractSource } from "./contract.js";
+import type { KeptAdapters } from "./keptAdapters.js";
 import type { Language } from "./language.js";
 import type { ContractEntry, ExtractEntry } from "./projectFile.js";
 
@@ -118,21 +119,25 @@ export function whereReadsCameFrom(root: string, declared: boolean): string {
  * Runs every entry and writes each one's summaries to its own file in
  * `summaryDir`. An entry that throws loses only its own file, so a
  * project with one unreadable spec still gets summaries for the rest.
+ * A process that reads the project after every edit passes `kept`, so
+ * each entry reuses the adapter the last read of it left.
  */
 export async function readProjectInto(
   root: string,
   summaryDir: string,
   reads: DeclaredReads,
+  kept?: KeptAdapters,
 ): Promise<ProjectReadReport> {
   fs.mkdirSync(summaryDir, { recursive: true });
   const ran: string[] = [];
   const failed: string[] = [];
   const empty: string[] = [];
+  kept?.startRead();
 
   for (const [index, entry] of reads.reads.entries()) {
     const out = path.join(summaryDir, readOutputName(index, entry));
     try {
-      const wrote = await runEntry(entry, root, out);
+      const wrote = await runEntry(entry, root, out, kept);
       ran.push(commandFor(entry));
       if (entry.kind === "extract" && wrote.length === 0) {
         empty.push(commandFor(entry));
@@ -164,6 +169,7 @@ async function runEntry(
   entry: ReadEntry,
   root: string,
   out: string,
+  kept: KeptAdapters | undefined,
 ): Promise<BehavioralSummary[]> {
   if (entry.kind === "contract") {
     return await contract({
@@ -178,6 +184,7 @@ async function runEntry(
     output: out,
     lang: entry.language as Language,
     allowEmpty: true,
+    ...(kept !== undefined ? { kept } : {}),
     ...(entry.project !== undefined
       ? { tsconfig: path.resolve(root, entry.project) }
       : {}),

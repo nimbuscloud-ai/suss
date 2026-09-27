@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   type CacheAttribution,
@@ -98,6 +98,145 @@ describe("createCacheLayer", () => {
 
     const result = await cache.tryHit(input);
     expect(result).toBeNull();
+  });
+
+  describe("a file that changes while a run reads it", () => {
+    /**
+     * Keeps `Date.now()` at the moment of the call, so however long the
+     * test runs, no time has passed. With `file`, its stats report an mtime
+     * and ctime of `changedAt`, as a file system whose clock has not ticked
+     * would. Returns the undo.
+     */
+    function holdClock(file?: string, changedAt = Date.now()): () => void {
+      vi.useFakeTimers({ toFake: ["Date"], now: Date.now() });
+      const realStat = fs.stat.bind(fs);
+      const stat = vi.spyOn(fs, "stat").mockImplementation((async (
+        target: Parameters<typeof fs.stat>[0],
+      ) => {
+        const found = await realStat(target);
+        if (String(target) === file) {
+          found.mtimeMs = changedAt;
+          found.ctimeMs = changedAt;
+        }
+        return found;
+      }) as typeof fs.stat);
+      return () => {
+        stat.mockRestore();
+        vi.useRealTimers();
+      };
+    }
+
+    it("is read again by the next run", async () => {
+      const cacheDir = await makeTempDir();
+      const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
+      const cache = createCacheLayer(cacheDir);
+      const run = { files: paths, adapterPacksDigest: "test@1" };
+
+      await cache.lookup(run);
+      await fs.writeFile(paths[0] ?? "", "export const a = 22;");
+      await cache.write(run, [fakeSummary]);
+
+      expect((await cache.lookup({ ...run })).kind).toBe("miss");
+    });
+
+    it("is read again when a write in the same clock tick kept its stamp", async () => {
+      const cacheDir = await makeTempDir();
+      const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
+      const file = paths[0] ?? "";
+      const release = holdClock(file);
+      try {
+        const cache = createCacheLayer(cacheDir);
+        const run = { files: paths, adapterPacksDigest: "test@1" };
+
+        await cache.lookup(run);
+        await fs.writeFile(file, "export const a = 2;");
+        await cache.write(run, [fakeSummary]);
+
+        expect((await cache.lookup({ ...run })).kind).toBe("miss");
+      } finally {
+        release();
+      }
+    });
+
+    it("is read again when the change put the old mtime back", async () => {
+      const cacheDir = await makeTempDir();
+      const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
+      const file = paths[0] ?? "";
+      const before = await fs.stat(file);
+      const release = holdClock();
+      try {
+        const cache = createCacheLayer(cacheDir);
+        const run = { files: paths, adapterPacksDigest: "test@1" };
+
+        await cache.lookup(run);
+        await fs.writeFile(file, "export const a = 2;");
+        await fs.utimes(file, before.atime, before.mtime);
+        await cache.write(run, [fakeSummary]);
+
+        expect((await cache.lookup({ ...run })).kind).toBe("miss");
+      } finally {
+        release();
+      }
+    });
+
+    it("trusts the stamp of a file last changed well before the run", async () => {
+      const cacheDir = await makeTempDir();
+      const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
+      const file = paths[0] ?? "";
+      const release = holdClock(file, Date.now() - 60_000);
+      try {
+        const cache = createCacheLayer(cacheDir);
+        const run = { files: paths, adapterPacksDigest: "test@1" };
+        await cache.lookup(run);
+        await cache.write(run, [fakeSummary]);
+
+        const reads = vi.spyOn(fs, "readFile");
+        try {
+          expect((await cache.lookup({ ...run })).kind).toBe("hit");
+          expect(reads.mock.calls.map(([p]) => String(p))).not.toContain(file);
+        } finally {
+          reads.mockRestore();
+        }
+      } finally {
+        release();
+      }
+    });
+
+    it("leaves a config file that changed during the run to be read again", async () => {
+      const cacheDir = await makeTempDir();
+      const { dir, paths } = await writeFiles({
+        "a.ts": "export const a = 1;",
+        "tsconfig.json": "{}",
+      });
+      const configPath = path.join(dir, "tsconfig.json");
+      const cache = createCacheLayer(cacheDir);
+      const run = {
+        files: paths.filter((p) => p !== configPath),
+        adapterPacksDigest: "test@1",
+        configPath,
+      };
+
+      await cache.lookup(run);
+      await fs.writeFile(configPath, '{"compilerOptions":{}}');
+      await cache.write(run, [fakeSummary]);
+
+      const next = await cache.lookup({ ...run });
+      expect(next.kind === "miss" && next.diagnostic.missReason).toBe(
+        "config-changed",
+      );
+    });
+
+    it("still hits when the files were written moments before the run", async () => {
+      const cacheDir = await makeTempDir();
+      const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
+      const cache = createCacheLayer(cacheDir);
+      const run = { files: paths, adapterPacksDigest: "test@1" };
+
+      await cache.lookup(run);
+      await cache.write(run, [fakeSummary]);
+
+      expect((await cache.lookup({ ...run })).kind).toBe("hit");
+    });
   });
 
   it("returns a no-op layer when cacheDir is null", async () => {
@@ -393,7 +532,7 @@ describe("per-file plan", () => {
         [{ file: "a.ts", deps: ["b.ts"] }, { file: "b.ts" }],
       ),
     );
-    return { cache, input, dir, summaryA, summaryB };
+    return { cache, cacheDir, input, dir, summaryA, summaryB };
   }
 
   it("returns null for an entry written without attribution", async () => {
@@ -425,6 +564,29 @@ describe("per-file plan", () => {
 
     const plan = await cache.plan(input);
     expect(plan?.changed).toEqual(new Set([path.join(dir, "b.ts")]));
+  });
+
+  it("counts a file edited during the last run as changed, and keeps the rest", async () => {
+    const { cache, input, dir, summaryA, summaryB } = await writeTwoFileEntry();
+    const run = { ...input };
+    await cache.lookup(run);
+    await fs.writeFile(path.join(dir, "b.ts"), "export const b = 7777;");
+    await cache.write(
+      run,
+      [summaryA, summaryB],
+      attributionFor(
+        dir,
+        [
+          { summary: summaryA, owners: ["a.ts"] },
+          { summary: summaryB, owners: ["b.ts"] },
+        ],
+        [{ file: "a.ts" }, { file: "b.ts" }],
+      ),
+    );
+
+    const plan = await cache.plan({ ...input });
+    expect(plan?.changed).toEqual(new Set([path.join(dir, "b.ts")]));
+    expect(plan?.validRoots).toEqual(new Set([path.join(dir, "a.ts")]));
   });
 
   it("keeps the file that did not change and drops the one that did", async () => {
@@ -708,5 +870,67 @@ describe("per-file plan", () => {
     await fs.writeFile(path.join(dir, "b.ts"), "export const b = 3000;");
     const after = await cache.plan(input);
     expect(after?.validRoots).toEqual(new Set());
+  });
+
+  describe("reading the manifest", () => {
+    function manifestReads(reads: { mock: { calls: unknown[][] } }): number {
+      return reads.mock.calls.filter(([file]) =>
+        String(file).endsWith("manifest.json"),
+      ).length;
+    }
+
+    it("parses it once for the lookup, the plan and the write of one run", async () => {
+      const { cache, input, dir } = await writeTwoFileEntry();
+      await fs.writeFile(path.join(dir, "b.ts"), "export const b = 3000;");
+      const reads = vi.spyOn(fs, "readFile");
+      try {
+        expect((await cache.lookup(input)).kind).toBe("miss");
+        const plan = await cache.plan(input);
+        if (plan === null) {
+          throw new Error("expected a plan");
+        }
+        await cache.write(input, plan.allSummaries(), plan.attribution());
+        expect(manifestReads(reads)).toBe(1);
+      } finally {
+        reads.mockRestore();
+      }
+    });
+
+    it("reads it again when another process wrote the entry after the lookup", async () => {
+      const { cache, cacheDir, input, dir, summaryA } =
+        await writeTwoFileEntry();
+      await fs.writeFile(path.join(dir, "b.ts"), "export const b = 3000;");
+      expect((await cache.lookup(input)).kind).toBe("miss");
+
+      const other = createCacheLayer(cacheDir);
+      await other.write(
+        input,
+        [summaryA],
+        attributionFor(
+          dir,
+          [{ summary: summaryA, owners: ["a.ts"] }],
+          [{ file: "a.ts" }, { file: "b.ts" }],
+        ),
+      );
+
+      const plan = await cache.plan(input);
+      expect(plan?.changed.size).toBe(0);
+      expect(plan?.allSummaries().map((s) => s.identity.name)).toEqual([
+        "summaryA",
+      ]);
+    });
+
+    it("reads it again at the start of the next run", async () => {
+      const { cache, input, dir } = await writeTwoFileEntry();
+      await fs.writeFile(path.join(dir, "b.ts"), "export const b = 3000;");
+      await cache.lookup(input);
+      const reads = vi.spyOn(fs, "readFile");
+      try {
+        await cache.lookup(input);
+        expect(manifestReads(reads)).toBe(1);
+      } finally {
+        reads.mockRestore();
+      }
+    });
   });
 });

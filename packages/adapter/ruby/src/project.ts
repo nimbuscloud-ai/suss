@@ -32,6 +32,7 @@ import {
   createCacheLayer,
   createTimer,
   extractionConfigStamp,
+  KeptParses,
   moduleInitStructure,
   noopTimer,
   runDigest,
@@ -160,6 +161,34 @@ export interface ExtractRubyOptions {
   gapHandling?: ExtractorOptions["gapHandling"];
   /** The modules the project lists in `suss.json`, with absolute paths. */
   modules?: readonly DeclaredModule[];
+  /** Parses an earlier run in this process left, for a file whose text is unchanged. */
+  keptParses?: KeptRubyParses;
+}
+
+export type KeptRubyParses = KeptParses<RbNode>;
+
+/** A holder for parses between runs, which frees each tree it lets go of. */
+export function keptRubyParses(): KeptRubyParses {
+  return new KeptParses((root) => root.tree.delete());
+}
+
+/**
+ * Parses these files into `kept` before any run needs them. A run served
+ * whole from the cache parses nothing, so a process that keeps parses
+ * calls this while nobody is waiting.
+ */
+export async function parseRubyAhead(
+  files: readonly string[],
+  kept: KeptRubyParses,
+): Promise<void> {
+  for (const file of files) {
+    await kept.parse(file, fs.readFileSync(file, "utf8"), parseRubyRoot);
+  }
+  kept.keepOnly(files);
+}
+
+async function parseRubyRoot(source: string): Promise<RbNode> {
+  return (await parseRuby(source)).rootNode;
 }
 
 export interface ExtractRubyResult {
@@ -529,8 +558,9 @@ async function runRuby(
   }
   // One cache for the run, so a class that is both an input file and the
   // target of a wiring keyword is parsed once.
+  const parses = options.keptParses ?? keptRubyParses();
   const trees = createFileCache(
-    (source) => parseRuby(source).then((tree) => tree.rootNode),
+    (source, absPath) => parses.parse(absPath, source, parseRubyRoot),
     (absPath) =>
       fs.existsSync(absPath) ? fs.readFileSync(absPath, "utf8") : null,
   );
@@ -550,6 +580,9 @@ async function runRuby(
       }
     });
   }
+  // A file read later in the run for its constants is parsed through the
+  // same holder, so letting go of the rest now frees only last run's trees.
+  options.keptParses?.keepOnly(options.files);
   const rootsByFile = new Map(parsed.map(({ file, root }) => [file, root]));
   const dynamicNames = timer.time("discover", () => {
     log?.startJoined();

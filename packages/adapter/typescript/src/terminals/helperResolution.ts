@@ -31,6 +31,7 @@
 import { Node, SyntaxKind } from "ts-morph";
 
 import { resolveAliasedSymbol } from "../moduleExports.js";
+import { createProgramMemo } from "../programMemo.js";
 import { peelParens } from "../walk/unwrap.js";
 
 import type {
@@ -262,7 +263,7 @@ type LocalHelper =
  * Covers `function json(...)` and `const json = (...) => ...`, both of
  * which show up as a project's response helper.
  */
-const helperBySymbol = new WeakMap<object, LocalHelper>();
+const helperBySymbol = createProgramMemo<object, LocalHelper>();
 
 /**
  * One resolution per callee symbol per program. Ten handlers returning
@@ -277,12 +278,13 @@ function memoizedLocalHelper(
   if (symbol === undefined) {
     return resolveLocalHelper(callee, resolveCallee);
   }
-  const cached = helperBySymbol.get(symbol);
+  const project = callee.getProject();
+  const cached = helperBySymbol.get(project, symbol);
   if (cached !== undefined) {
     return cached;
   }
   const helper = resolveLocalHelper(callee, resolveCallee);
-  helperBySymbol.set(symbol, helper);
+  helperBySymbol.set(project, symbol, helper);
   return helper;
 }
 

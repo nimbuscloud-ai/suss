@@ -1,6 +1,6 @@
 # A suss plugin that supervises a coding agent
 
-Steps 1 to 3 of the plan at the end are in the repository, in `plugins/supervisor`, `suss check --since`, `suss extract --out-dir` and `suss intent`. The later steps are the plan.
+Steps 1 to 6 of the plan at the end are in the repository: `plugins/supervisor`, `suss check --since`, `suss extract --out-dir` and `suss intent`, closure reuse in the manifest, the live process and its socket in `@suss/mcp`, and per-file reuse for Python and Ruby. Step 7 is the plan.
 
 ## What the developer gets
 
@@ -175,17 +175,28 @@ The closure already records, per scanned function key, the other files its scan 
 
 ### TypeScript: keep the program alive
 
-The MCP server re-runs `extract()` on every change, and each run builds a new adapter and a new ts-morph `Project`. The adapter already accepts a caller-supplied `Project`, and `reparse.test.ts` runs two extractions over one. So the server keeps one adapter per `suss.json` entry and calls it again on each change, passing the changed paths. The hooks then talk to that server over a local socket instead of running the CLI, and a socket client is what lets the same plugin serve an agent that has hooks and no MCP. What lives in the process, and how each part is invalidated:
+The MCP server keeps one adapter per read in `suss.json`, through the CLI's `KeptAdapters`, and runs it again after each change. The adapter makes its own `Project` from the tsconfig and keeps it. Before each run the server calls the adapter's `refresh`, with the paths the watcher reported, and the rule for what to read again lives in the adapter:
 
-- The ts-morph `Project`, with the compiler program and the checker. On a change, `refreshFromFileSystem()` on the changed files and add or remove for created and deleted ones. ts-morph rebuilds the program lazily and reuses every unchanged file's tree; the checker is rebuilt. Expected under 2s on twenty-server against the 6.4s cold build, to be measured.
-- The per-project maps, `specifiersByProject`, `depthsByProject` and the `ModuleResolutionCache`. Drop the changed files' entries and their importers', which needs a reverse import index built once from the forward one. `warmedFiles` is keyed on the compiler's source file object and expires on its own when a file is re-parsed.
-- The store's per-file facts. Extraction re-emits facts every run. Keep each file's tuples keyed by content hash and rebuild the `Database` from cached tuples plus the changed files' fresh ones. Answers are not kept, because the engine cannot take a derived tuple back; a rebuild from the 328k tuples the survey counted on twenty-server costs a fraction of a second at the measured rates.
-- The manifest: summaries, roots, owners, deps and the per-key closure records above, in memory, written to disk as today so the CLI shares it.
-- The baseline and the last-reported findings per session, for the diffs the hooks ask for.
+- Every file the project has loaded is stat'ed. A file whose stamp moved is read and compared with the text ts-morph parsed, and one whose text differs gets `refreshFromFileSystemSync()`. The compiler builds the next program from the old one, so every other file keeps its parse and its binding. The checker is new on every run.
+- The load walk forgets the changed files' imports and the chain depth of every file that reaches them, through a reverse index built from the forward one. The `ModuleResolutionCache` stays, since a content edit does not move where an import resolves.
+- A memo whose result can rest on any file (the local helper behind a call, the evaluator a caller without a store shares, the GraphQL fragment index) goes through `createProgramMemo`, and every such memo is emptied after a refresh that changed something. A result that depends on one file's text alone stays in a `createPerFileCache`, which expires when that file is parsed again. That now includes a file's function index and where its imports resolve.
+- A file joining or leaving the tsconfig's include set, or a tsconfig edit, starts the project over, since either can move where an unchanged file's imports resolve. The run finds the first case when it reads the include set, which it does once per run.
 
-Two things to settle in the adapter first. The disk cache switches itself off for a caller-supplied `Project` because in-memory paths would never stat; the server passes on-disk paths, so that rule needs a knob. And on a whole hit the TypeScript path returns the stored summaries without `composeWrappers`, while a partial run returns composed ones, so a hook diff across the two would show wrapper outcomes appearing and vanishing.
+The manifest is still read from disk, once per run: the lookup parses it and the plan and the write reuse that parse, which also takes a second off the CLI's partial run. The store's facts are emitted again on every run, and the closure records live in the manifest as step 4 left them.
 
-The cost is a resident program. twenty-server peaks at 3.7 GB without the heap override, and one process per session means one program per session.
+A run served whole from the cache loads nothing, so after a build the server calls `loadProgram`, which loads the walked files and builds the program while nobody is waiting. The server raises its own heap the way the CLI does (#1222), and lets the programs go after 30 minutes with no build.
+
+The two adapter items settled this way. The adapter keeps the project it made, so the rule that a caller-supplied `Project` without a tsconfig gets no disk cache never comes into play. And a whole hit already composes wrappers on the way out, as every other path does.
+
+Python and Ruby keep each file's tree in memory by its text, through `keptParses`, and still emit every file's facts on every run.
+
+### The socket
+
+The first server started for a repository listens on a local socket whose path comes from the repository root, and writes that path to `.suss/live/server.json`. The hooks send it the arguments they would give the CLI and get back what the CLI would have printed, so `policy.mjs` and `report.mjs` read the reply unchanged. It serves `extract --out-dir`, copying what each read wrote, and `check --dir --since --json`, with the report going to a file because stdout is the MCP transport. Anything else comes back unsupported and the hook runs the CLI, which is also what happens when no server is up.
+
+A later server for the same repository has the first one build for it and keeps no program. When the first one goes away, the next build takes the socket over.
+
+The worker sends the time the edit it is reading was queued. A build that started after that read every file after the write, so the server hands it back, the watcher's build included, and builds again only when none did. `check --since` reads the earlier folder a second time on each edit, usually after the session renamed it into place, so the CLI remembers the last two folders it read by the names and contents of their files. A rewrite can keep a file's size, inode and modification time, so a stamp cannot tell the two apart.
 
 ### Python and Ruby: attribute questions to files through demand
 
@@ -193,7 +204,7 @@ Both adapters emit facts per file (`factsForFile` exists in both) into one datab
 
 Demand misses one case: an answer that depends on a fact being absent. Ruby binds a constant only when exactly one file defines it, so a new definition elsewhere changes an answer whose derivation never touched the new file. So the root also records the demanded keys themselves, and a changed file whose fresh facts mention a demanded key invalidates the roots that demanded it. A file added or removed re-runs the project whole for now.
 
-Parsing (0.3s) and fact emission (0.8s to 1.5s) still run whole from the CLI; the live process caches both per file. Rails' `config/routes.rb` becomes the config file the entry key guards, since the routing-gap accumulator reads it whole.
+Parsing (0.3s) and fact emission (0.8s to 1.5s) still run whole from the CLI. The live process keeps each file's parse, and still emits every file's facts. Rails' `config/routes.rb` becomes the config file the entry key guards, since the routing-gap accumulator reads it whole.
 
 The 2026-09-03 decision to shelve per-file reuse was taken when the largest cold run was 1.5s. Mastodon is 17.8s now, and two of the three file classes the earlier design had to decline (ancestry walks, storage through `couldMatch`) have since become demand-driven rules, which is what lets demand attribute them.
 
@@ -207,6 +218,25 @@ The 2026-09-03 decision to shelve per-file reuse was taken when the largest cold
 | dispatch, one file | 17.8s | about 3s | about 1.5s | 5s |
 
 The CLI columns come from the survey's `warm.ts` harness with one change: the edit adds a branch instead of a comment, so the partial path runs rather than the touch path. Three alternating runs each, under 40% load, and the output byte-identical to a `--no-cache` run, which is the cache contract. The live column is a script that writes the same edit and times the server from the write to its rebuilt status, plus the hook end to end, from the PostToolUse start to its output. The corpora are the survey's, so the numbers compare.
+
+### What the live process measured
+
+The plugin's PostToolUse hook ran on two copies of each corpus. One copy had the server, and on the other the hooks fell back to the CLI. Both got the same edit, and the order alternated. The rebuild and the compare are the durations the worker logged for its two commands. The machine was shared with other builds and its 1-minute load stayed between 0.6 and 3 times its core count, so every number below is slower than a quiet machine would give, and the comparison between the two columns is the part to trust. Medians of five or six samples, leaving out the first edit after the program loads:
+
+| edit | CLI hook | live hook | live rebuild | live compare | server memory |
+|-|-:|-:|-:|-:|-:|
+| NestJS service, benchmark packs, leaf | 14.4s | 7.6s | 5.3s | 2.1s | 3.2 to 4.8 GB |
+| the same, a widely injected service | 33.8s | 24.0s | 21.7s | 1.9s | |
+| NestJS service, `suss init` packs, leaf | 28.3s | 21.5s | 19.2s | 2.1s | 4.6 to 5.2 GB |
+| the same, a widely injected service | 56.9s | 48.1s | 45.7s | 2.2s | |
+| Rails app, leaf | 5.0s | 3.0s | 2.6s | 0.25s | 1.2 to 2.1 GB |
+| Rails app, a model | 9.2s | 7.7s | 7.3s | 0.26s | |
+| FastAPI app, leaf | 8.1s | 6.5s | 6.0s | 0.29s | 1.9 to 2.4 GB |
+| FastAPI app, a service | 8.4s | 6.8s | 6.3s | 0.29s | |
+
+At that load only the Rails leaf edit is inside the 5s budget, and neither pack set is for the NestJS service. Every rebuilt read was byte-identical to a `--no-cache` run over the same tree, and every served compare to the CLI's.
+
+With the `suss init` packs, `registeringFiles` is 10s of a warm leaf edit's 15s: it emits the store's facts for every file a registering pack applies to, and a third of that is the checker resolving property accesses. Keeping those facts per file needs each file's reads of other files recorded, since the store emits a function's facts once, in whichever file reaches it first, and emission follows aliases across files. That is the next lever. After it come the manifest's parse and write, about 0.8s a run, and the new checker answering symbol questions for the files read again. A widely injected service costs what it costs from the CLI less the program build, because the cache re-walks every file whose recorded dependencies include it.
 
 ## The plan
 
