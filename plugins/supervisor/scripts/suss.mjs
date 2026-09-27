@@ -171,13 +171,22 @@ function numbersOf(version) {
  * @returns {Promise<SussRun>}
  */
 export async function runSuss(suss, args, options) {
+  const deadline = Date.now() + options.timeoutMs;
   const served = await askLiveServer(
     options.cwd,
     args,
     options.timeoutMs,
     options.notBefore,
   );
-  return served ?? (await runCli(suss, args, options));
+  if (served !== null) {
+    return served;
+  }
+  // A server that held the request until the deadline has used the
+  // budget, so the CLI gets only what is left of it.
+  return await runCli(suss, args, {
+    ...options,
+    timeoutMs: deadline - Date.now(),
+  });
 }
 
 /**
@@ -187,6 +196,14 @@ export async function runSuss(suss, args, options) {
  * @returns {Promise<SussRun>}
  */
 function runCli(suss, args, options) {
+  if (options.timeoutMs <= 0) {
+    return Promise.resolve({
+      code: null,
+      stdout: "",
+      stderr: "",
+      failure: "suss had no time left to run",
+    });
+  }
   return new Promise((resolve) => {
     const child = spawn(suss.command, [...suss.prefix, ...args], {
       cwd: options.cwd,
