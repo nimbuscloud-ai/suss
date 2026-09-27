@@ -151,6 +151,11 @@ import { moduleSurfacePack, settleTypeScriptModules } from "./moduleSurface.js";
 import { parameterReads } from "./parameterReads.js";
 import { createReferenceIndex } from "./referencedFiles.js";
 import { clientBasePath, underBasePath } from "./resolve/clientBasePath.js";
+import {
+  closureUnitRecords,
+  type RecordedScan,
+  type ScanRecord,
+} from "./resolve/closureRecords.js";
 import { runAccessRecognizersAtModuleScope } from "./resolve/invocationEffects.js";
 import {
   type ClosureFacts,
@@ -184,7 +189,7 @@ import {
   isDescentStop,
   NO_BARRIERS,
 } from "./walk/descent.js";
-import { offsetKeyOf } from "./walk/nodeKeys.js";
+import { fileOfOffsetKey, offsetKeyOf } from "./walk/nodeKeys.js";
 import {
   expandWorkspacePatterns,
   workspaceExpansionStamp,
@@ -2237,8 +2242,10 @@ export function createTypeScriptAdapter(
             ? path.join(path.dirname(config.tsConfigFilePath), ".suss", "cache")
             : null)),
   );
-  const cache: CacheLayer<TsCacheMeta> =
-    createCacheLayer<TsCacheMeta>(cacheDir);
+  const cache: CacheLayer<TsCacheMeta, ScanRecord> = createCacheLayer<
+    TsCacheMeta,
+    ScanRecord
+  >(cacheDir);
   const packsDigest = `${computeAdapterPacksDigest(
     config.frameworks.map((p) =>
       p.version !== undefined
@@ -2637,7 +2644,13 @@ export function createTypeScriptAdapter(
       const closureFacts: ClosureFacts = {
         db: new Database(),
         unitKeyBySummary: new Map(),
-        ...(caching ? { filesByKey: new Map<string, Set<string>>() } : {}),
+        ...(caching
+          ? {
+              filesByKey: new Map<string, Set<string>>(),
+              scans: new Map<string, RecordedScan>(),
+            }
+          : {}),
+        ...(plan === null ? {} : { previousScans: plan.validUnits }),
       };
       const withClosure =
         config.includeReachable !== false
@@ -2750,6 +2763,7 @@ export function createTypeScriptAdapter(
             closureOwnership,
             unitKeyBySummary: closureFacts.unitKeyBySummary,
             filesByKey: closureFacts.filesByKey,
+            scans: closureFacts.scans ?? new Map(),
             packsByFile,
             reusedKept: merged.reusedKept,
             reusedOwners: merged.reusedOwners,
@@ -2917,15 +2931,6 @@ function attributeReachedSummaries(
 }
 
 /**
- * A unit key is `file:start-end`; everything before the last colon is
- * the file. Null for a key with no colon, which no walk produces.
- */
-function fileOfNodeKey(key: string): string | null {
-  const cut = key.lastIndexOf(":");
-  return cut <= 0 ? null : key.slice(0, cut);
-}
-
-/**
  * The unit a summary describes, spelled from fields that survive the
  * round trip through the manifest. Two runs over an unchanged file
  * spell the same unit the same way, which is what merge dedup needs.
@@ -3012,20 +3017,26 @@ function readsRunLevelJoins(summary: BehavioralSummary): boolean {
  */
 function buildCacheAttribution(args: {
   project: Project;
-  plan: PartialPlan<TsCacheMeta> | null;
+  plan: PartialPlan<TsCacheMeta, ScanRecord> | null;
   validRoots: Set<string>;
   sinkByRoot: Map<string, DependencySink>;
   ownersBySummary: Map<BehavioralSummary, Set<string>>;
   closureOwnership: ClosureOwnership | null;
   unitKeyBySummary: Map<BehavioralSummary, string>;
   filesByKey: Map<string, Set<string>> | undefined;
+  scans: ReadonlyMap<string, RecordedScan>;
   packsByFile: ReadonlyMap<SourceFile, readonly PatternPack[]>;
   reusedKept: BehavioralSummary[];
   reusedOwners: string[][];
   fresh: BehavioralSummary[];
-}): CacheAttribution<TsCacheMeta> {
+}): CacheAttribution<TsCacheMeta, ScanRecord> {
   const references = createReferenceIndex(
     args.project.getSourceFiles().filter((sf) => !sf.isDeclarationFile()),
+  );
+  const units = closureUnitRecords(
+    args.scans,
+    args.plan?.validUnits ?? new Map(),
+    references,
   );
   const packNamesByPath = new Map<string, string[]>();
   for (const [sf, packs] of args.packsByFile) {
@@ -3063,7 +3074,7 @@ function buildCacheAttribution(args: {
     const reachable =
       args.closureOwnership?.reachableByRoot.get(rootPath) ?? [];
     for (const key of reachable) {
-      const keyFile = fileOfNodeKey(key);
+      const keyFile = fileOfOffsetKey(key);
       if (keyFile !== null) {
         deps.add(keyFile);
         // One hop past a reached file covers the types and helpers its
@@ -3113,7 +3124,7 @@ function buildCacheAttribution(args: {
     ...reusedOwners,
     ...args.fresh.map((s) => [...(args.ownersBySummary.get(s) ?? [])]),
   ];
-  return { roots, owners };
+  return { roots, owners, units };
 }
 
 // One summary per callback a framework's runtime schedules out of a

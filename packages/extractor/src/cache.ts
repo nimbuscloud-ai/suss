@@ -18,7 +18,7 @@ import path from "node:path";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
-const SCHEMA_VERSION = "7";
+const SCHEMA_VERSION = "8";
 
 /**
  * How many entries a cache directory keeps. Two lets a pair of builds
@@ -62,13 +62,28 @@ export interface RootRecord<Meta = unknown> {
 }
 
 /**
+ * What an adapter worked out about one unit of its own, such as the calls
+ * one function body makes. `file` is the file the unit is in and `deps`
+ * the other files that went into `data`. A partial run hands the record
+ * back while `file` and every one of `deps` hash the same, so the adapter
+ * can skip the work that produced it. The cache never reads `data`.
+ */
+export interface UnitRecord<Data = unknown> {
+  key: string;
+  file: string;
+  deps: string[];
+  data: Data;
+}
+
+/**
  * Which files each summary belongs to. `summaries[i]` is reused while at
  * least one file in `owners[i]` is. An empty list marks a summary built
  * over the whole run, which a partial run always recomputes.
  */
-export interface CacheAttribution<Meta = unknown> {
+export interface CacheAttribution<Meta = unknown, UnitData = unknown> {
   roots: RootRecord<Meta>[];
   owners: string[][];
+  units?: UnitRecord<UnitData>[];
 }
 
 interface StoredRootMeta<Meta> {
@@ -80,7 +95,15 @@ interface StoredRootMeta<Meta> {
   packs: string[];
 }
 
-interface Manifest<Meta> {
+/** A unit record with its paths stored as indices into depPaths. */
+interface StoredUnit<UnitData> {
+  key: string;
+  file: number;
+  deps: number[];
+  data: UnitData;
+}
+
+interface Manifest<Meta, UnitData> {
   schemaVersion: string;
   adapterPacksDigest: string;
   configStamp: FileStamp | null;
@@ -92,6 +115,7 @@ interface Manifest<Meta> {
   depPaths?: string[];
   /** Parallel to summaries: indices into roots, [] for run-level. */
   owners?: number[][];
+  units?: StoredUnit<UnitData>[];
 }
 
 /** Reported by `lookup`: what the cache decided, and why. */
@@ -140,23 +164,25 @@ export type CacheLookup =
  * least one remaining file, in stored order, with their owners, so the
  * caller can merge them and write the result back.
  */
-export interface PartialPlan<Meta = unknown> {
+export interface PartialPlan<Meta = unknown, UnitData = unknown> {
   /** Paths whose content hash differs, plus paths new to the set. */
   changed: Set<string>;
   removed: Set<string>;
   roots: Map<string, RootRecord<Meta>>;
   validRoots: Set<string>;
   rootsDeclined: number;
+  /** Unit records whose file and deps are all unchanged, by key. */
+  validUnits: Map<string, UnitRecord<UnitData>>;
   reuse(valid: ReadonlySet<string>): {
     summaries: BehavioralSummary[];
     owners: string[][];
   };
   allSummaries(): BehavioralSummary[];
   /** The stored attribution decoded, for a write that changes nothing. */
-  attribution(): CacheAttribution<Meta>;
+  attribution(): CacheAttribution<Meta, UnitData>;
 }
 
-export interface CacheLayer<Meta = unknown> {
+export interface CacheLayer<Meta = unknown, UnitData = unknown> {
   /** The summary list on a hit, null on a miss. */
   tryHit(input: CacheInput): Promise<BehavioralSummary[] | null>;
   /**
@@ -169,7 +195,7 @@ export interface CacheLayer<Meta = unknown> {
    * work out which files' summaries survive. Null when the entry has
    * no per-file layer to reuse, or no entry matches the key at all.
    */
-  plan(input: CacheInput): Promise<PartialPlan<Meta> | null>;
+  plan(input: CacheInput): Promise<PartialPlan<Meta, UnitData> | null>;
   /**
    * Save a fresh extraction's summaries against this file list, so a later
    * `lookup` with the same files returns them. Without `attribution` the
@@ -178,7 +204,7 @@ export interface CacheLayer<Meta = unknown> {
   write(
     input: CacheInput,
     summaries: BehavioralSummary[],
-    attribution?: CacheAttribution<Meta>,
+    attribution?: CacheAttribution<Meta, UnitData>,
   ): Promise<void>;
 }
 
@@ -198,9 +224,9 @@ export interface CacheInput {
  * `write` does nothing, for a one-shot extract where the cache would only
  * add time.
  */
-export function createCacheLayer<Meta = unknown>(
+export function createCacheLayer<Meta = unknown, UnitData = unknown>(
   cacheDir: string | null,
-): CacheLayer<Meta> {
+): CacheLayer<Meta, UnitData> {
   if (cacheDir === null) {
     return {
       tryHit: async () => null,
@@ -219,7 +245,7 @@ export function createCacheLayer<Meta = unknown>(
     },
     async lookup(input: CacheInput): Promise<CacheLookup> {
       const entryDir = entryDirFor(cacheDir, input);
-      const manifest = await readManifest<Meta>(
+      const manifest = await readManifest<Meta, UnitData>(
         path.join(entryDir, "manifest.json"),
       );
       if (manifest === null) {
@@ -245,9 +271,9 @@ export function createCacheLayer<Meta = unknown>(
         diagnostic: { kind: "hit" },
       };
     },
-    async plan(input: CacheInput): Promise<PartialPlan<Meta> | null> {
+    async plan(input: CacheInput): Promise<PartialPlan<Meta, UnitData> | null> {
       const entryDir = entryDirFor(cacheDir, input);
-      const manifest = await readManifest<Meta>(
+      const manifest = await readManifest<Meta, UnitData>(
         path.join(entryDir, "manifest.json"),
       );
       if (
@@ -268,15 +294,15 @@ export function createCacheLayer<Meta = unknown>(
     async write(
       input: CacheInput,
       summaries: BehavioralSummary[],
-      attribution?: CacheAttribution<Meta>,
+      attribution?: CacheAttribution<Meta, UnitData>,
     ): Promise<void> {
       const entryDir = entryDirFor(cacheDir, input);
-      const previous = await readManifest<Meta>(
+      const previous = await readManifest<Meta, UnitData>(
         path.join(entryDir, "manifest.json"),
       );
       const configStamp = await stampConfigFile(input.configPath);
       const files = await hashStamps(await resolveFileStamps(input), previous);
-      const manifest: Manifest<Meta> = {
+      const manifest: Manifest<Meta, UnitData> = {
         schemaVersion: SCHEMA_VERSION,
         adapterPacksDigest: input.adapterPacksDigest,
         configStamp,
@@ -300,10 +326,10 @@ export function createCacheLayer<Meta = unknown>(
  * alone does not count as a change. A stored file without a hash counts as
  * changed whenever its stamp moved.
  */
-async function buildPlan<Meta>(
-  manifest: Manifest<Meta>,
+async function buildPlan<Meta, UnitData>(
+  manifest: Manifest<Meta, UnitData>,
   currentStamps: FileStamp[],
-): Promise<PartialPlan<Meta>> {
+): Promise<PartialPlan<Meta, UnitData>> {
   const stored = new Map(manifest.files.map((f) => [f.path, f]));
   const current = new Map(currentStamps.map((f) => [f.path, f]));
 
@@ -339,6 +365,11 @@ async function buildPlan<Meta>(
   const roots = new Map<string, RootRecord<Meta>>();
   const rootNames = manifest.roots ?? [];
   const depPaths = manifest.depPaths ?? [];
+  const pathsOf = (ids: number[]): string[] =>
+    ids.flatMap((d) => {
+      const p = depPaths[d];
+      return p === undefined ? [] : [p];
+    });
   let rootsDeclined = 0;
   rootNames.forEach((rootPath, i) => {
     const meta = manifest.rootMeta?.[i];
@@ -351,27 +382,43 @@ async function buildPlan<Meta>(
     roots.set(rootPath, {
       path: rootPath,
       cacheable: meta.cacheable,
-      deps: meta.deps.flatMap((d) => {
-        const p = depPaths[d];
-        return p === undefined ? [] : [p];
-      }),
+      deps: pathsOf(meta.deps),
       claims: meta.claims,
       meta: meta.meta,
       packs: meta.packs,
     });
   });
 
+  // A file or dependency that moved invalidates whatever was read from it.
+  const unchanged = (filePath: string, deps: readonly string[]): boolean =>
+    current.has(filePath) &&
+    !changed.has(filePath) &&
+    !deps.some((d) => changed.has(d) || removed.has(d));
+
   const validRoots = new Set<string>();
   for (const [rootPath, record] of roots) {
-    if (!record.cacheable || !current.has(rootPath)) {
-      continue;
-    }
-    if (changed.has(rootPath)) {
-      continue;
-    }
-    const depMoved = record.deps.some((d) => changed.has(d) || removed.has(d));
-    if (!depMoved) {
+    if (record.cacheable && unchanged(rootPath, record.deps)) {
       validRoots.add(rootPath);
+    }
+  }
+
+  const units = (manifest.units ?? []).flatMap((stored) => {
+    const file = depPaths[stored.file];
+    return file === undefined
+      ? []
+      : [
+          {
+            key: stored.key,
+            file,
+            deps: pathsOf(stored.deps),
+            data: stored.data,
+          },
+        ];
+  });
+  const validUnits = new Map<string, UnitRecord<UnitData>>();
+  for (const unit of units) {
+    if (unchanged(unit.file, unit.deps)) {
+      validUnits.set(unit.key, unit);
     }
   }
 
@@ -382,6 +429,7 @@ async function buildPlan<Meta>(
     roots,
     validRoots,
     rootsDeclined,
+    validUnits,
     reuse(valid: ReadonlySet<string>) {
       const summaries: BehavioralSummary[] = [];
       const reusedOwners: string[][] = [];
@@ -409,14 +457,18 @@ async function buildPlan<Meta>(
             return p === undefined ? [] : [p];
           }),
         ),
+        units,
       };
     },
   };
 }
 
-function encodeAttribution<Meta>(
-  attribution: CacheAttribution<Meta>,
-): Pick<Manifest<Meta>, "roots" | "rootMeta" | "depPaths" | "owners"> {
+function encodeAttribution<Meta, UnitData>(
+  attribution: CacheAttribution<Meta, UnitData>,
+): Pick<
+  Manifest<Meta, UnitData>,
+  "roots" | "rootMeta" | "depPaths" | "owners" | "units"
+> {
   const roots = attribution.roots.map((r) => r.path);
   const rootIndex = new Map(roots.map((p, i) => [p, i]));
   const depIndex = new Map<string, number>();
@@ -444,13 +496,25 @@ function encodeAttribution<Meta>(
       return i === undefined ? [] : [i];
     }),
   );
-  return { roots, rootMeta, depPaths, owners };
+  const units = attribution.units?.map((unit) => ({
+    key: unit.key,
+    file: depIdOf(unit.file),
+    deps: unit.deps.map(depIdOf),
+    data: unit.data,
+  }));
+  return {
+    roots,
+    rootMeta,
+    depPaths,
+    owners,
+    ...(units === undefined ? {} : { units }),
+  };
 }
 
 /** Reuse the previous hash when the stamp did not move; hash the rest. */
-async function hashStamps<Meta>(
+async function hashStamps<Meta, UnitData>(
   stamps: FileStamp[],
-  previous: Manifest<Meta> | null,
+  previous: Manifest<Meta, UnitData> | null,
 ): Promise<FileStamp[]> {
   const before = new Map((previous?.files ?? []).map((f) => [f.path, f]));
   return Promise.all(
@@ -576,12 +640,12 @@ function missDiag(reason: NonNullable<CacheDiagnostic["missReason"]>): {
   };
 }
 
-async function readManifest<Meta>(
+async function readManifest<Meta, UnitData>(
   manifestPath: string,
-): Promise<Manifest<Meta> | null> {
+): Promise<Manifest<Meta, UnitData> | null> {
   try {
     const raw = await fs.readFile(manifestPath, "utf-8");
-    return JSON.parse(raw) as Manifest<Meta>;
+    return JSON.parse(raw) as Manifest<Meta, UnitData>;
   } catch {
     // A missing, unparseable or unreadable manifest is a miss. The worst
     // case is an extraction the cache could have saved.

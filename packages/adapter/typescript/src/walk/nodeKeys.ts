@@ -41,6 +41,29 @@ export function offsetKeyFor(
 }
 
 /**
+ * The file an offset key was minted in: everything before the last
+ * colon. Null for a key with no colon, which no walk produces.
+ */
+export function fileOfOffsetKey(key: string): string | null {
+  const cut = key.lastIndexOf(":");
+  return cut <= 0 ? null : key.slice(0, cut);
+}
+
+/** The offsets an offset key was minted from, or null when it has none. */
+export function spanOfOffsetKey(
+  key: string,
+): { start: number; end: number } | null {
+  const offsets = key.slice(key.lastIndexOf(":") + 1).split("-");
+  const start = Number(offsets[0]);
+  const end = Number(offsets[1]);
+  return offsets.length === 2 &&
+    Number.isInteger(start) &&
+    Number.isInteger(end)
+    ? { start, end }
+    : null;
+}
+
+/**
  * A summary's location by line numbers, the way `location.range`
  * measures. Joinable only with keys minted by this same function.
  */
