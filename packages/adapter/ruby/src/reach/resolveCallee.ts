@@ -14,6 +14,7 @@
  */
 
 import {
+  answersFor,
   calleeOutcomeOf,
   calleeOutcomes,
   couldBeSettled,
@@ -319,11 +320,7 @@ function asCallee(
  * `self` needs the first case, which `comesTo` does not cover.
  */
 function objectsBehind(facts: Database, key: string): string[] {
-  return [
-    ...new Set(
-      facts.lookup("wantedObjectOf", 0, key).map((row) => String(row[1])),
-    ),
-  ];
+  return answersFor(facts, "wantedObjectOf", key);
 }
 
 /**

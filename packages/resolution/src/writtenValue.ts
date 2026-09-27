@@ -1,4 +1,4 @@
-import { answersByKey, answersFor, placeholderValues } from "./singleAnswer.js";
+import { writtenAnswersFor, writtenAnswersUnder } from "./singleAnswer.js";
 
 import type { Database } from "@suss/datalog";
 
@@ -103,14 +103,9 @@ export function answersAt(
   key: string,
   site: string | null,
 ): string[] {
-  if (site === null) {
-    return answersFor(db, relation, key);
-  }
-  const rows = db
-    .lookup(relation, 0, key)
-    .filter((row) => String(row[1]) === site)
-    .map((row) => [key, String(row[2])]);
-  return answersByKey(rows, placeholderValues(db)).get(key) ?? [];
+  return site === null
+    ? writtenAnswersFor(db, relation, key)
+    : writtenAnswersUnder(db, relation, key, site);
 }
 
 function sameAnswers(
@@ -170,7 +165,7 @@ function settledByKey(
   relation: string,
 ): Map<string, string[]> {
   const direct = new Map(
-    keys.map((key) => [key, answersFor(db, relation, key)]),
+    keys.map((key) => [key, writtenAnswersFor(db, relation, key)]),
   );
 
   const throughCalls = [...direct.values()]
@@ -210,7 +205,7 @@ function collapseCalls(
 
 /** What an asked-about call comes down to, or the call itself when the rules settled on nothing or on several. */
 function behindCall(db: Database, relation: string, call: string): string {
-  const answers = answersFor(db, relation, call);
+  const answers = writtenAnswersFor(db, relation, call);
   return answers.length === 1 ? (answers[0] as string) : call;
 }
 
@@ -224,6 +219,6 @@ function writesLeft(db: Database, key: string): string[] {
   if (db.has("writesUnstated", [key])) {
     return [];
   }
-  const candidates = answersFor(db, "mayHold", key);
+  const candidates = writtenAnswersFor(db, "mayHold", key);
   return candidates.length > 1 ? candidates : [];
 }

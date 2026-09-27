@@ -17,8 +17,8 @@ import { Evaluator, force, literalOf, text } from "@suss/values";
 import { enclosingDefinition, field, METHOD_TYPES } from "../ast.js";
 import {
   constructionSites,
-  resolvedFunctions,
   resolveValues,
+  settledFunction,
   writtenValueOf,
   writtenValueUnder,
 } from "../facts/resolve.js";
@@ -250,11 +250,8 @@ function contextOver(db: Database, nodes: ProjectNodes): EvaluationContext {
           ? readKey(file, method, enclosingDefinition(call))
           : nodeId(file, method);
       resolveValues(db, [key]);
-      const resolved = resolvedFunctions(db, key);
-      const settled = resolved.length === 1 ? resolved[0] : undefined;
-      return settled === undefined
-        ? null
-        : (nodes.definitions.get(settled) ?? null);
+      const settled = settledFunction(db, key);
+      return settled === null ? null : (nodes.definitions.get(settled) ?? null);
     },
   };
 }

@@ -14,11 +14,12 @@ import {
   writtenValueOf as sharedWrittenValueOf,
   writtenValuesOf as sharedWrittenValuesOf,
   writtenValueUnder as sharedWrittenValueUnder,
-  withoutOverridden,
   writtenValuesByKey,
 } from "@suss/resolution";
 
 import type { Database, OnDemandRules } from "@suss/datalog";
+
+export { resolvedFunctions, settledFunction } from "@suss/resolution";
 
 /** How many evaluations under an allocation site are running over each database. */
 const evaluationsUnderSite = new WeakMap<Database, number>();
@@ -63,20 +64,6 @@ export function resolveEnvObjects(
   objectKeys: readonly string[],
 ): void {
   askResolution(db, objectKeys, "wantedEnvObject", programFor(db));
-}
-
-/**
- * Every function that calling this value runs: what the value resolves to,
- * and what a factory returned when the value was assigned from a call.
- * This runs once per call in a body, so it looks rows up by key instead of
- * scanning the whole relation.
- */
-export function resolvedFunctions(db: Database, key: string): string[] {
-  const found = [
-    ...db.lookup("wantedResolves", 0, key),
-    ...db.lookup("wantedGivesBack", 0, key),
-  ].map((row) => String(row[1]));
-  return withoutOverridden(db, key, found);
 }
 
 /**

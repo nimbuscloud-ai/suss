@@ -50,12 +50,10 @@ export {
 } from "./program.js";
 export { explainResolvedKey, proofRules } from "./session.js";
 export {
-  answersByKey,
-  type OverrideRelations,
-  placeholderValues,
-  singleAnswers,
-  WANTED_OVERRIDES,
-  withoutOverridden,
+  answersFor,
+  resolvedFunctions,
+  settledFunction,
+  writtenAnswersFor,
 } from "./singleAnswer.js";
 export {
   type AskUnder,

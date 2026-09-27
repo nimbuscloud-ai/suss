@@ -32,7 +32,7 @@ writtenValue(x)             x is an expression written out in source
                             rather than a name for one
 placeholderValue(x)         x is a written value a later write is
                             expected to replace, such as None or nil.
-                            singleAnswers reads it, and no rule does
+                            answersFor reads it, and no rule does
                             (Python, Ruby)
 holdsProperty(o, n, x)      object o has x under the name n
 holdsDefault(cls, n, x)     cls's body gives its field n the value x,
@@ -392,9 +392,11 @@ that contains h, and the full mastodon run ran out of memory. The
 object matters. A parameter that one caller passes an `Accounts` and
 another a plain `Repository` finds `Repository.save` on the plain one
 with nothing overriding it, so the read keeps both methods and a caller
-that needs one refuses it. `answersFor`, the callee outcomes, each
-adapter's reads of `wantedResolves`, and the proof pass behind
-`suss ask why` all apply it, so they give the same answer.
+that needs one refuses it. Every answer is read through `answersFor`
+or one of its siblings in `singleAnswer.ts`, which applies it along
+with the placeholder policy, so the callee outcomes, every adapter's
+reads and the proof pass behind `suss ask why` give the same answer.
+A new policy for picking one answer goes there too.
 
 Ruby looks a method up in the modules a class prepends before the class
 itself. So a prepended module is recorded as `prepends` rather than as
@@ -1063,15 +1065,16 @@ class its own ancestor at the top of the chain. So when an adapter asks
 `wantedSubjectWritten` about a call directly, the answers include the
 call itself as well as whatever the walk reaches. A call with one other
 answer would then count as two and be refused as ambiguous.
-`singleAnswers` drops the row whose answer is its own key before
-counting, and every adapter reads the relation through it.
+`writtenAnswersFor` drops the row whose answer is its own key before
+counting, and every adapter reads the relation through it. The other
+questions keep that row, since a function or an object comes to itself
+and that is the answer a caller wants.
 
 A name that is set to a placeholder until a guard fills it in also has
 two answers, for example `_client = None` at module level and
 `_client = make_client()` inside a getter. An adapter marks the
-placeholder write with `placeholderValue(x)` and passes those keys to
-`singleAnswers`, which sets them aside whenever the key has another
-answer. A name written only as a placeholder keeps that answer.
+placeholder write with `placeholderValue(x)`, and the answer readers
+set it aside whenever the key has another answer. A name written only as a placeholder keeps that answer.
 `valueLeftByWrites` sets `null` and `undefined` aside in the same way
 when it compares the writes to a name.
 

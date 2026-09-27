@@ -13,7 +13,7 @@
  */
 
 import { askResolution, resolutionProgram } from "./program.js";
-import { withoutOverridden } from "./singleAnswer.js";
+import { answersFor } from "./singleAnswer.js";
 
 import type { Database, OnDemandRules } from "@suss/datalog";
 
@@ -83,7 +83,7 @@ function askAboutSources(
     askResolution(db, wave, "wanted", program);
     const next: string[] = [];
     for (const key of wave) {
-      if (!decidedByCallers(db, key) && answersFor(db, key).length > 0) {
+      if (!decidedByCallers(db, key) && settledOutcomes(db, key).length > 0) {
         continue;
       }
       for (const source of sourcesOf(db, key)) {
@@ -143,12 +143,9 @@ export function writtenSourcesOf(db: Database, key: string): string[] {
 }
 
 /** The functions and objects the rules settled a key on, without repeats. */
-function answersFor(db: Database, key: string): CalleeOutcome[] {
+function settledOutcomes(db: Database, key: string): CalleeOutcome[] {
   const found = new Map<string, CalleeOutcome>();
-  const answers = db
-    .lookup("wantedComesTo", 0, key)
-    .map((row) => String(row[1]));
-  for (const answer of withoutOverridden(db, key, answers)) {
+  for (const answer of answersFor(db, "wantedComesTo", key)) {
     if (db.has("func", [answer])) {
       found.set(answer, { kind: "function", key: answer });
       continue;
@@ -221,7 +218,7 @@ class Reading {
     if (decidedByCallers(this.db, key)) {
       return this.fromWrites(key);
     }
-    const answers = answersFor(this.db, key);
+    const answers = settledOutcomes(this.db, key);
     if (answers.length > 1) {
       return {
         outcome: { kind: "severalSources", sources: answers.map(outcomeKey) },
