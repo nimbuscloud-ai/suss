@@ -14,6 +14,7 @@
 
 import { Node } from "ts-morph";
 
+import { importedNamesOf, importedRootsOf } from "./discovery/importScan.js";
 import {
   objectLiteralOf,
   propertiesOf,
@@ -78,18 +79,11 @@ function importsParser(
   sourceFile: SourceFile,
   parser: ArgumentParser,
 ): boolean {
-  return sourceFile.getImportDeclarations().some((declaration) => {
-    if (declaration.getModuleSpecifierValue() !== parser.module) {
-      return false;
-    }
-    return (
-      declaration.getDefaultImport() !== undefined ||
-      declaration.getNamespaceImport() !== undefined ||
-      declaration
-        .getNamedImports()
-        .some((named) => named.getName() === parser.name)
-    );
-  });
+  const modules = [parser.module];
+  return (
+    importedRootsOf(sourceFile, modules).size > 0 ||
+    [...importedNamesOf(sourceFile, modules).values()].includes(parser.name)
+  );
 }
 
 /** The calls in a body whose callee is a name or a member read. */
