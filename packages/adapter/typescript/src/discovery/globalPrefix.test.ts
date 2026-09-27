@@ -125,6 +125,24 @@ describe("globalPrefixesIn", () => {
     ).toEqual([]);
   });
 
+  it("drops an exclusion whose method does not read as a member of the enum", () => {
+    expect(
+      prefixesIn({
+        "/main.ts": `
+          import { AppFactory, Verb } from "@acme/web";
+          export async function boot(verb: Verb) {
+            const app = await AppFactory.create({});
+            app.setGlobalPrefix("api", {
+              exclude: [{ path: "export", method: verb }, { path: "health" }],
+            });
+          }
+        `,
+      }),
+    ).toEqual([
+      { prefix: "api", excluded: [{ path: "health", method: null }] },
+    ]);
+  });
+
   it("reads the default an environment variable falls back to", () => {
     expect(
       prefixesIn({

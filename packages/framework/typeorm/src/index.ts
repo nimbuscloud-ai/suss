@@ -21,6 +21,8 @@ import {
   storageCalls,
 } from "@suss/recognize";
 
+import { storageSystemFromDataSource } from "./dataSourceType.js";
+
 import type { PackDeclaration } from "@suss/ir-core";
 import type {
   CallOps,
@@ -293,6 +295,16 @@ export const declares: PackDeclaration = {
   dependencies: [{ ecosystem: "npm", name: NEST_MODULE }],
   reads:
     "TypeORM repositories that NestJS injects with `@InjectRepository`. Each read and write becomes a storage-access interaction on the entity's table, and a `query` on an injected data source or entity manager is read as SQL.",
+  configuration: {
+    file: "suss.typeorm.json",
+    example: { storageSystem: "postgresql" },
+    required: false,
+    // The extract command init prints passes this file, so init always
+    // writes it, with the pack's own default when the project does not say.
+    defaults: { storageSystem: "postgresql" },
+    why: "which database the connection uses: postgresql, mysql, or sqlite. It assumes postgresql otherwise, and the calls do not pair with a store on another database.",
+    readFromProject: storageSystemFromDataSource,
+  },
 };
 
 export default typeormFramework;
