@@ -25,6 +25,7 @@ import {
 import { readCallArguments } from "./decorators.js";
 import {
   containedValues,
+  isPassedOn,
   objectReturnedBy,
   resolveCalls,
   subjectConstructions,
@@ -1495,10 +1496,9 @@ function importedModuleSpec(
 }
 
 /**
- * Whether the mount is called on an app that its own function builds and
- * then drops, so nobody can request a path the mount adds. Any read of the
- * name other than a method call on it counts as the app leaving. DESIGN.md
- * has the cases and why a pack with a mount object is left out.
+ * Whether the mount is called on an app that its own function builds once
+ * and then drops, with no fact recording a read that passes the app on, so
+ * nobody can request a path the mount adds. DESIGN.md has the cases.
  */
 function appNeverLeavesItsFunction(
   objectName: string,
@@ -1506,7 +1506,9 @@ function appNeverLeavesItsFunction(
   position: WalkPosition,
   scan: Scan,
 ): boolean {
+  const facts = scan.index.facts;
   if (
+    facts === undefined ||
     scan.composition.mountObjectPrefix !== undefined ||
     position.site.kind !== "function" ||
     position.scope.bindings.get(objectName)?.kind !== "assignment"
@@ -1514,54 +1516,12 @@ function appNeverLeavesItsFunction(
     return false;
   }
 
-  for (const identifier of position.scope.node.descendantsOfType(
-    "identifier",
-  )) {
-    if (
-      identifier.text === objectName &&
-      !isConstructionTarget(identifier, includerCall) &&
-      !isMethodReceiver(identifier) &&
-      !isAttributeName(identifier)
-    ) {
-      return false;
-    }
-  }
-  return true;
-}
-
-/** `name = <the construction>`, the one write the app's name gets. */
-function isConstructionTarget(
-  identifier: PyNode,
-  construction: PyNode,
-): boolean {
-  const parent = identifier.parent;
+  const nameKey = nameKeyIn(scan.bound.file, position.scope.node, objectName);
+  const writes = facts.lookup("binds", 0, nameKey);
   return (
-    parent?.type === "assignment" &&
-    field(parent, "left")?.id === identifier.id &&
-    field(parent, "right")?.id === construction.id
-  );
-}
-
-/** `name.method(...)`, which uses the object without handing it anywhere. */
-function isMethodReceiver(identifier: PyNode): boolean {
-  const attribute = identifier.parent;
-  if (
-    attribute?.type !== "attribute" ||
-    field(attribute, "object")?.id !== identifier.id
-  ) {
-    return false;
-  }
-
-  const call = attribute.parent;
-  return call?.type === "call" && field(call, "function")?.id === attribute.id;
-}
-
-/** The `name` in `other.name`, which is not a read of the variable at all. */
-function isAttributeName(identifier: PyNode): boolean {
-  const parent = identifier.parent;
-  return (
-    parent?.type === "attribute" &&
-    field(parent, "attribute")?.id === identifier.id
+    writes.length === 1 &&
+    writes[0]?.[1] === nodeId(scan.bound.file, includerCall) &&
+    !isPassedOn(facts, nameKey)
   );
 }
 
