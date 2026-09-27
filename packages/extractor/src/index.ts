@@ -1056,6 +1056,7 @@ export type {
   CacheLookup,
   PartialPlan,
   RootRecord,
+  UnitRecord,
 } from "./cache.js";
 export type {
   EmptyStage,

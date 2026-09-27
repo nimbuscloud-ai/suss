@@ -992,7 +992,11 @@ describe("apolloClientPack, client-preset fragments", () => {
       `,
       "profile.ts": profilePage,
     });
-    const graphql = readGraphqlMetadata(summaries[0]);
+    const operations = withGraphql(summaries);
+    expect(operations.map((s) => s.identity.name)).toEqual([
+      "useProfile.Profile",
+    ]);
+    const graphql = readGraphqlMetadata(operations[0]);
     expect(graphql?.document).not.toContain("fragment UserCard");
     expect(graphql?.unresolvedFragments).toEqual(["UserCard"]);
     expect(graphql?.ambiguousFragments).toEqual(["UserCard"]);

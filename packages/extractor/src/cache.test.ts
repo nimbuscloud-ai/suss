@@ -566,6 +566,132 @@ describe("per-file plan", () => {
     expect(plan?.roots.get(path.join(dir, "a.ts"))?.claims).toEqual(claims);
   });
 
+  describe("resolved imports", () => {
+    async function writeImportEntry() {
+      const { cache, input, dir, summaryA, summaryB } =
+        await writeTwoFileEntry();
+      const base = attributionFor(
+        dir,
+        [
+          { summary: summaryA, owners: ["a.ts"] },
+          { summary: summaryB, owners: ["b.ts"] },
+        ],
+        [{ file: "a.ts", deps: ["b.ts"] }, { file: "b.ts" }],
+      );
+      const [rootA, rootB] = base.roots;
+      if (rootA === undefined || rootB === undefined) {
+        throw new Error("expected two roots");
+      }
+      await cache.write(input, [summaryA, summaryB], {
+        ...base,
+        roots: [{ ...rootA, imports: [path.join(dir, "b.ts")] }, rootB],
+      });
+      return { cache, input, dir };
+    }
+
+    it("hands back the imports of every file whose content is unchanged", async () => {
+      const { cache, input, dir } = await writeImportEntry();
+      await fs.writeFile(path.join(dir, "b.ts"), "export const b = 3000;");
+
+      const plan = await cache.plan(input);
+      expect(plan?.resolvedImports).toEqual(
+        new Map([[path.join(dir, "a.ts"), [path.join(dir, "b.ts")]]]),
+      );
+    });
+
+    it("hands back no imports once a file joins the set", async () => {
+      const { cache, input, dir } = await writeImportEntry();
+      const cPath = path.join(dir, "c.ts");
+      await fs.writeFile(cPath, "export const c = 3;");
+
+      const plan = await cache.plan({
+        ...input,
+        files: [...input.files, cPath],
+      });
+      expect(plan?.resolvedImports.size).toBe(0);
+    });
+  });
+
+  describe("unit records", () => {
+    async function writeUnitEntry() {
+      const { cache, input, dir, summaryA, summaryB } =
+        await writeTwoFileEntry();
+      const base = attributionFor(
+        dir,
+        [
+          { summary: summaryA, owners: ["a.ts"] },
+          { summary: summaryB, owners: ["b.ts"] },
+        ],
+        [{ file: "a.ts", deps: ["b.ts"] }, { file: "b.ts" }],
+      );
+      // The body in a.ts called into b.ts; the body in b.ts read nothing else.
+      await cache.write(input, [summaryA, summaryB], {
+        ...base,
+        units: [
+          {
+            key: "a.ts:0-10",
+            file: path.join(dir, "a.ts"),
+            deps: [path.join(dir, "b.ts")],
+            data: { calls: ["b.ts:0-10"] },
+          },
+          {
+            key: "b.ts:0-10",
+            file: path.join(dir, "b.ts"),
+            deps: [],
+            data: { calls: [] },
+          },
+        ],
+      });
+      return { cache, input, dir };
+    }
+
+    it("hands every record back while nothing it read has changed", async () => {
+      const { cache, input } = await writeUnitEntry();
+
+      const plan = await cache.plan(input);
+      expect([...(plan?.validUnits.keys() ?? [])]).toEqual([
+        "a.ts:0-10",
+        "b.ts:0-10",
+      ]);
+      expect(plan?.validUnits.get("a.ts:0-10")?.data).toEqual({
+        calls: ["b.ts:0-10"],
+      });
+    });
+
+    it("drops the records that read an edited file and keeps the rest", async () => {
+      const { cache, input, dir } = await writeUnitEntry();
+      await fs.writeFile(path.join(dir, "a.ts"), "export const a = 9000;");
+
+      const plan = await cache.plan(input);
+      expect([...(plan?.validUnits.keys() ?? [])]).toEqual(["b.ts:0-10"]);
+    });
+
+    it("drops a record whose file or dependency was deleted", async () => {
+      const { cache, input, dir } = await writeUnitEntry();
+      const bPath = path.join(dir, "b.ts");
+      await fs.unlink(bPath);
+      const shrunk = {
+        ...input,
+        files: input.files.filter((p) => p !== bPath),
+      };
+
+      const plan = await cache.plan(shrunk);
+      expect(plan?.validUnits.size).toBe(0);
+    });
+
+    it("keeps the records through a touch refresh", async () => {
+      const { cache, input } = await writeUnitEntry();
+      const plan = await cache.plan(input);
+      if (plan === null) {
+        throw new Error("expected a plan");
+      }
+      await cache.write(input, plan.allSummaries(), plan.attribution());
+
+      const again = await cache.plan(input);
+      expect(again?.validUnits.size).toBe(2);
+    });
+  });
+
   it("round-trips attribution, so a touch refresh keeps the layer", async () => {
     const { cache, input, dir } = await writeTwoFileEntry();
     const plan = await cache.plan(input);

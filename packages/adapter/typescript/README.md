@@ -42,7 +42,7 @@ If the warmed compiler still cannot follow a chain, the adapter records that and
 
 ## Extraction cache
 
-This adapter uses the extraction cache from `@suss/extractor` that every language adapter shares. It supplies the files by reading the tsconfig's include list, and gives the tsconfig path as the config path that guards the entry along with the file list. Each adapter still chooses its own cache directory. This one keeps it beside the tsconfig, at `.suss/cache/`, and turns caching off for a `Project` the caller supplied or for `--no-cache` on one run. Before reusing a cached route, it reads the mount prefixes back out of each cached file's record to confirm the route's mount still resolves the same way. See the extractor package's README for the design.
+This adapter uses the extraction cache from `@suss/extractor` that every language adapter shares. It supplies the files by reading the tsconfig's include list, and gives the tsconfig path as the config path that guards the entry along with the file list. Each adapter still chooses its own cache directory. This one keeps it beside the tsconfig, at `.suss/cache/`, and turns caching off for a `Project` the caller supplied or for `--no-cache` on one run. Before reusing a cached route, it reads the mount prefixes back out of each cached file's record to confirm the route's mount still resolves the same way. Each file's record also lists the project files it imports, and after an edit that added and removed no file, the import graph loader takes an unchanged file's imports from there instead of resolving them again. The reachable closure keeps what each function body's scan found as a unit record, described in `src/resolve/README.md`. See the extractor package's README for the design.
 
 ## Status
 

@@ -52,6 +52,14 @@ export interface SourceFileLookup {
    * one wins, which is what a document-order scan used to return.
    */
   functionAt(location: SummaryLocation): FunctionRoot | null;
+  /**
+   * The function at exactly these offsets in the file at this absolute
+   * path, loading the file when no pass has read it yet.
+   */
+  functionWithSpan(
+    absolutePath: string,
+    span: { start: number; end: number },
+  ): FunctionRoot | null;
 }
 
 /**
@@ -98,6 +106,13 @@ export function createSourceFileLookup(project: Project): SourceFileLookup {
   const bySuffixResult = new Map<string, SourceFile | null>();
   const functionsByFile = new Map<string, Map<string, FunctionRoot>>();
 
+  function functionsOf(sf: SourceFile): Map<string, FunctionRoot> {
+    const filePath = sf.getFilePath();
+    const index = functionsByFile.get(filePath) ?? indexFunctions(sf);
+    functionsByFile.set(filePath, index);
+    return index;
+  }
+
   function bySuffix(pathSuffix: string): SourceFile | null {
     const memo = bySuffixResult.get(pathSuffix);
     if (memo !== undefined) {
@@ -118,9 +133,7 @@ export function createSourceFileLookup(project: Project): SourceFileLookup {
       if (sf === null) {
         return null;
       }
-      const path = sf.getFilePath();
-      const index = functionsByFile.get(path) ?? indexFunctions(sf);
-      functionsByFile.set(path, index);
+      const index = functionsOf(sf);
       if (location.span !== undefined) {
         const bySpan = index.get(spanKey(location.span));
         if (bySpan !== undefined) {
@@ -128,6 +141,13 @@ export function createSourceFileLookup(project: Project): SourceFileLookup {
         }
       }
       return index.get(rangeKey(location.range)) ?? null;
+    },
+    functionWithSpan(absolutePath, span): FunctionRoot | null {
+      const sf =
+        byAbs.get(absolutePath) ?? sourceFileFor(project, absolutePath);
+      return sf === undefined
+        ? null
+        : (functionsOf(sf).get(spanKey(span)) ?? null);
     },
   };
 }
