@@ -184,6 +184,7 @@ import {
   isDescentStop,
   NO_BARRIERS,
 } from "./walk/descent.js";
+import { offsetKeyOf } from "./walk/nodeKeys.js";
 import {
   expandWorkspacePatterns,
   workspaceExpansionStamp,
@@ -199,6 +200,7 @@ import type {
   ValueRef,
 } from "@suss/behavioral-ir";
 import type { FunctionRoot } from "./conditions.js";
+import type { ReachableCandidate } from "./resolve/functionBehind.js";
 import type {
   AnchorCallsOf,
   OriginatesFrom,
@@ -2621,6 +2623,14 @@ export function createTypeScriptAdapter(
           },
         ),
       );
+      // A recognizer-only pack's exports are roots owned by their file, the
+      // way a seed is, so a partial run takes them only from re-walked files.
+      const extraRoots =
+        config.includeReachable === false
+          ? []
+          : recognizerOnlyRoots(
+              reused === null ? packsByFile : packsOf(packsByFile, walkList),
+            );
       // Closure needs `projectFileSet` to lazy-add a callee's file as it
       // walks in: symbol resolution alone loads it into the program but
       // leaves it off `getSourceFiles`, which the rethrow lookup uses.
@@ -2653,11 +2663,7 @@ export function createTypeScriptAdapter(
                 // Reached units the cache already serves emit nothing,
                 // the way a cold run's seeds do not.
                 reused?.summaries ?? [],
-                // A recognizer-only pack's effects need a function to
-                // live on even when nothing discovers units in its
-                // files, so those files' exports join the walk as
-                // roots.
-                recognizerOnlyRoots(packsByFile),
+                extraRoots,
               ),
             )
           : withSubUnits;
@@ -2672,6 +2678,7 @@ export function createTypeScriptAdapter(
                 withClosure.slice(withSubUnits.length),
                 closureFacts,
                 ownersBySummary,
+                extraRoots,
               ),
             )
           : null;
@@ -2814,6 +2821,15 @@ function mountAssumptionsAgree(
   );
 }
 
+/** The pack applicability map, cut down to these files. */
+function packsOf(
+  packsByFile: ReadonlyMap<SourceFile, PatternPack[]>,
+  files: readonly SourceFile[],
+): Map<SourceFile, PatternPack[]> {
+  const wanted = new Set(files);
+  return new Map([...packsByFile].filter(([file]) => wanted.has(file)));
+}
+
 /**
  * Give each closure-reached summary the owners of every walked file
  * whose seeds reach its function, and return the reachable key set per
@@ -2832,6 +2848,7 @@ function attributeReachedSummaries(
   reached: BehavioralSummary[],
   facts: ClosureFacts,
   owners: Map<BehavioralSummary, Set<string>>,
+  extraRoots: ReadonlyArray<ReachableCandidate>,
 ): ClosureOwnership {
   const adjacency = new Map<string, string[]>();
   for (const [from, to] of facts.db.facts("calls")) {
@@ -2842,16 +2859,25 @@ function attributeReachedSummaries(
   }
 
   const seedKeysByRoot = new Map<string, string[]>();
+  const addSeedKey = (root: string, key: string): void => {
+    const bucket = seedKeysByRoot.get(root) ?? [];
+    bucket.push(key);
+    seedKeysByRoot.set(root, bucket);
+  };
   for (const seed of seeds) {
     const key = facts.unitKeyBySummary.get(seed);
     if (key === undefined) {
       continue;
     }
     for (const root of owners.get(seed) ?? []) {
-      const bucket = seedKeysByRoot.get(root) ?? [];
-      bucket.push(key);
-      seedKeysByRoot.set(root, bucket);
+      addSeedKey(root, key);
     }
+  }
+
+  // Without an owner, what an extra root reaches would be rebuilt on
+  // every partial run, however far away the edit was.
+  for (const root of extraRoots) {
+    addSeedKey(root.func.getSourceFile().getFilePath(), offsetKeyOf(root.func));
   }
 
   const reachableByRoot = new Map<string, Set<string>>();
