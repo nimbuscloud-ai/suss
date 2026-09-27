@@ -152,6 +152,18 @@ done        + reads runtime-config [ACCOUNTS_REGION]  cloudformation:template.ya
 
 Without that entry, the stop lists each function's changed environment as not asked, with the variable the template now declares and the helper that reads it.
 
+A renamed GraphQL field is two entries, the old field removed and the new one added, and the client query that selects it is a change of its own. The agent can write a field without the `gql:` suss prints in front of it, as long as no other boundary matches:
+
+```yaml
+asked: "Rename the shortDesc field on Listing to shortDescription, in the API and in the listing card."
+changes:
+  - removes: Listing.shortDesc
+  - adds: Listing.shortDescription
+  - changes: query ListingCard
+```
+
+A list that says `changes: Listing.shortDesc` instead blocks the stop once, with a reason saying the diff shows the field removed and how to write a rename.
+
 A list the agent wrote wrong, one that does not parse or uses a field the format does not have, blocks the stop once so the agent can fix it. When suss itself cannot run the check, because it ran out of time, crashed, or is a release without `suss intent check`, nothing blocks. You get the report of what changed, with one line saying why the list was not checked.
 
 Two slash commands go with it. `/suss:intent` prints the current list. `/suss:keep-intent` writes the list as boundary intent documents in `intent/`, with your request as each one's purpose, so that [`suss check --intent`](/guides/check-against-intent) checks the code against them from then on.

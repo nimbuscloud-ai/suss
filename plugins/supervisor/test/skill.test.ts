@@ -41,7 +41,7 @@ describe("the intent skill", () => {
   });
 
   it("shows a change list and an explained line suss accepts", () => {
-    const [list, , explained] = yamlBlocks(skill);
+    const [list, , , explained] = yamlBlocks(skill);
 
     expect(parseChangeList(list).ok).toBe(true);
     expect(
@@ -66,6 +66,33 @@ describe("the intent skill", () => {
                 fields: ["ACCOUNTS_REGION"],
               },
             },
+          },
+        ],
+      },
+    });
+  });
+
+  it("writes a renamed GraphQL field as a removes of the old name and an adds of the new one", () => {
+    const [, , rename] = yamlBlocks(skill);
+
+    expect(parseChangeList(rename)).toMatchObject({
+      ok: true,
+      list: {
+        changes: [
+          {
+            verb: "removes",
+            subject: { kind: "boundary", names: "gql:Listing.shortDesc" },
+          },
+          {
+            verb: "adds",
+            subject: {
+              kind: "boundary",
+              names: "gql:Listing.shortDescription",
+            },
+          },
+          {
+            verb: "changes",
+            subject: { kind: "boundary", names: "query ListingCard" },
           },
         ],
       },
