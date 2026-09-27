@@ -41,6 +41,7 @@ import { writeReport } from "./check.js";
 import { parseSummaryFile, readSummariesFromDir } from "./inspect.js";
 import { loadedSummaries } from "./loadedSummaries.js";
 import { reachTargetOf } from "./reachTarget.js";
+import { sentenceList } from "./sentenceList.js";
 import {
   ambiguousBoundarySpelling,
   collapseTouches,
@@ -509,18 +510,24 @@ function answerDirection(
   }
 
   const label = boundaryLabelFor(subject, touches);
-  const matching = touches.filter((touch) => touch.touched.relation === shape);
+  const matching = byModule(
+    touches.filter((touch) => touch.touched.relation === shape),
+  );
   const named = spansWorkspaces(matching.map((touch) => touch.summary));
   const items = matching.map(({ summary, touched, grounding }) => ({
-    text: `${unitLabel(summary, named)} (${summary.location.file}:${summary.location.range.start})${touched.label === label ? "" : `  at ${touched.label}`}${touched.callee === undefined ? "" : ` through ${touched.callee}`}${groundsClause(grounding)}`,
+    text: `${moduleTag(summary)}${unitLabel(summary, named)} (${summary.location.file}:${summary.location.range.start})${touched.label === label ? "" : `  at ${touched.label}`}${touched.callee === undefined ? "" : ` through ${touched.callee}`}${groundsClause(grounding)}`,
     data: {
       unit: summaryIdentifier(summary),
       file: summary.location.file,
       line: summary.location.range.start,
+      ...(summary.location.module !== undefined
+        ? { module: summary.location.module }
+        : {}),
       ...(touched.callee !== undefined ? { via: touched.callee } : {}),
       ...(grounding !== undefined ? { grounding } : {}),
     },
   }));
+  const modules = modulesOf(matching);
 
   const providers = touches
     .filter((touch) => touch.touched.relation === "provides")
@@ -545,8 +552,9 @@ function answerDirection(
   return {
     shape,
     subject,
-    headline: `${items.length} unit${items.length === 1 ? "" : "s"} ${items.length === 1 ? shape : PLURAL_VERB[shape]} ${label}:`,
+    headline: `${items.length} unit${items.length === 1 ? "" : "s"} ${items.length === 1 ? shape : PLURAL_VERB[shape]} ${label}${fromModules(modules)}:`,
     items,
+    ...(modules.length === 0 ? {} : { detail: { modules } }),
     needs: servedBy,
     caveats: [
       ...hints,
@@ -581,6 +589,57 @@ function reachedFrom(target: ResolvedTarget, facts: CallFacts): ReachedTouch[] {
 /** A touch, and the calls from the unit in the question to the unit that makes it. */
 interface ReachedTouch extends TargetTouch {
   through?: string[];
+}
+
+/** Units in a module first, grouped by module name, and the rest after in their order. */
+function byModule<T extends { summary: BehavioralSummary }>(
+  touches: readonly T[],
+): T[] {
+  return [...touches].sort((a, b) => {
+    const left = a.summary.location.module;
+    const right = b.summary.location.module;
+    if (left === right) {
+      return 0;
+    }
+    if (left === undefined || right === undefined) {
+      return left === undefined ? 1 : -1;
+    }
+    return left.localeCompare(right);
+  });
+}
+
+/** `[billing] `, in front of a unit a module listed in suss.json owns. */
+function moduleTag(summary: BehavioralSummary): string {
+  const module = summary.location.module;
+  return module === undefined ? "" : `[${module}] `;
+}
+
+/** Each module the units are in, with its units, in the order they are listed. */
+function modulesOf(
+  touches: ReadonlyArray<{ summary: BehavioralSummary }>,
+): Array<{ module: string; units: string[] }> {
+  const byName = new Map<string, string[]>();
+  for (const { summary } of touches) {
+    const module = summary.location.module;
+    if (module === undefined) {
+      continue;
+    }
+    const units = byName.get(module) ?? [];
+    const unit = summaryIdentifier(summary);
+    if (!units.includes(unit)) {
+      units.push(unit);
+    }
+    byName.set(module, units);
+  }
+  return [...byName].map(([module, units]) => ({ module, units }));
+}
+
+/** ", from billing and catalog", or nothing when no unit is in a module. */
+function fromModules(modules: ReadonlyArray<{ module: string }>): string {
+  if (modules.length === 0) {
+    return "";
+  }
+  return `, from ${sentenceList(modules.map((one) => one.module))}`;
 }
 
 /**
@@ -840,6 +899,8 @@ const PROVIDES_GAP_NEED: Record<TargetKind, (subject: string) => string> = {
     `The units ${subject} picked out only consume boundaries.`,
   file: (subject) => `The units ${subject} picked out only consume boundaries.`,
   line: (subject) => `The units ${subject} picked out only consume boundaries.`,
+  module: (subject) =>
+    `The module ${subject} has no public export here. Its public file is its index.ts, __init__.py or the Ruby file named for it, unless suss.json gives "public".`,
 };
 
 function providesAnswer(

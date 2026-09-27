@@ -205,3 +205,38 @@ describe("resolveTarget", () => {
     expect(result.message).toContain("needs something to point at");
   });
 });
+
+describe("a module as the target", () => {
+  function inModule(
+    summary: BehavioralSummary,
+    module: string,
+  ): BehavioralSummary {
+    return { ...summary, location: { ...summary.location, module } };
+  }
+
+  it("picks out every unit in the module suss.json names", () => {
+    const summaries = [inModule(dao, "editions"), inModule(route, "editions")];
+    const result = resolveTarget("editions", summaries);
+
+    expect(result.matched).toBe(true);
+    if (!result.matched) {
+      return;
+    }
+    expect(result.target.kind).toBe("module");
+    expect(result.target.summaries).toEqual(summaries);
+  });
+
+  it("refuses a name that is both a module and a function, listing both", () => {
+    const result = resolveTarget("byPublication", [
+      dao,
+      inModule(route, "byPublication"),
+    ]);
+
+    expect(result.matched).toBe(false);
+    if (result.matched) {
+      return;
+    }
+    expect(result.message).toContain("is both a module (1 summary)");
+    expect(result.message).toContain("byPublication");
+  });
+});
