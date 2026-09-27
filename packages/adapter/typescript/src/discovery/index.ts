@@ -11,7 +11,10 @@ import { discoverGraphqlHookCalls } from "./graphqlHookCall.js";
 import { discoverGraphqlImperativeCalls } from "./graphqlImperativeCall.js";
 import { discoverJsxElementRoutes } from "./jsxElementRoute.js";
 import { discoverNamedExports } from "./namedExport.js";
-import { discoverPackageExports } from "./packageExports.js";
+import {
+  discoverModuleSurface,
+  discoverPackageExports,
+} from "./packageExports.js";
 import { discoverPackageImports } from "./packageImport.js";
 import { discoverRegistrationCalls } from "./registrationCall.js";
 import { discoverRegistrationLoops } from "./registrationLoop.js";
@@ -116,6 +119,14 @@ function runPattern(
   }
   if (pattern.match.type === "packageExports") {
     return discoverPackageExports(
+      sourceFile,
+      pattern.match,
+      pattern.kind,
+      resolution,
+    );
+  }
+  if (pattern.match.type === "moduleSurface") {
+    return discoverModuleSurface(
       sourceFile,
       pattern.match,
       pattern.kind,

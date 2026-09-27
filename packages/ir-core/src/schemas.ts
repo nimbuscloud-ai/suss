@@ -96,6 +96,12 @@ export const SourceLocationSchema = z.object({
    * reader groups by it.
    */
   workspace: z.string().optional(),
+  /**
+   * The module of the application the unit belongs to, by the name the
+   * project's `suss.json` gives it. Set only when the project lists its
+   * modules, and then on every unit whose file is under a module's root.
+   */
+  module: z.string().optional(),
 });
 
 // ---------------------------------------------------------------------------

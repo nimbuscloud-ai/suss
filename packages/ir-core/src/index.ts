@@ -312,6 +312,25 @@ export function packageExportBinding(opts: {
 }
 
 /**
+ * Build a function-call binding for a public export of one of the
+ * modules a project lists in `suss.json`. Its key is
+ * `fn:<module>::<exportName>`, so an intent document or a PRD scenario
+ * can point at it by the module's name.
+ */
+export function moduleExportBinding(opts: {
+  recognition: string;
+  module: string;
+  exportName: string;
+}): BoundaryBinding {
+  return functionCallBinding({
+    transport: "in-process",
+    recognition: opts.recognition,
+    module: opts.module,
+    exportName: opts.exportName,
+  });
+}
+
+/**
  * Build a graphql-resolver-semantics binding. Transport varies by
  * deployment: `"http"` for Apollo Server, `"aws-https"` for AppSync.
  */

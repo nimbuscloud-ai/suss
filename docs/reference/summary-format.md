@@ -21,7 +21,7 @@ A summary file is a JSON array of objects, one per code unit:
 |---|---|---|
 | `schemaVersion` | number, optional | The format version. Absent means 1. |
 | `kind` | `CodeUnitKind` | What sort of unit this is: a handler, a client, a component, and eleven more. |
-| `location` | `SourceLocation` | File, line range, character span, export name, workspace. |
+| `location` | `SourceLocation` | File, line range, character span, export name, workspace, and the module when `suss.json` lists modules. |
 | `identity` | `CodeUnitIdentity` | The name, the export path, the boundary binding, the deployed unit. |
 | `inputs` | `Input[]` | How values reach the unit, one per parameter, injection, hook return or closure. |
 | `transitions` | `Transition[]` | One per execution path. |

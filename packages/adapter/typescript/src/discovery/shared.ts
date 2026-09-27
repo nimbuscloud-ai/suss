@@ -262,9 +262,7 @@ export function unitDedupKey(unit: DiscoveredUnit): string {
       ? ""
       : `${at.getSourceFile().getFilePath()}:${at.getStart()}-${at.getEnd()}`,
     unit.kind,
-    unit.packageExportInfo === undefined
-      ? ""
-      : `${unit.packageExportInfo.packageName}::${unit.packageExportInfo.exportPath.join(".")}`,
+    exportIdentityOf(unit),
     unit.routeInfo === undefined
       ? ""
       : `${unit.routeInfo.method} ${unit.routeInfo.path}`,
@@ -286,6 +284,17 @@ export function unitDedupKey(unit: DiscoveredUnit): string {
     unit.callSite?.under ?? "",
   ];
   return parts.join("-");
+}
+
+/** One function exported under two names is two boundaries, so each name keeps its unit. */
+function exportIdentityOf(unit: DiscoveredUnit): string {
+  if (unit.packageExportInfo !== undefined) {
+    return `${unit.packageExportInfo.packageName}::${unit.packageExportInfo.exportPath.join(".")}`;
+  }
+  if (unit.functionCallInfo !== undefined) {
+    return `${unit.functionCallInfo.module}::${unit.functionCallInfo.exportName}`;
+  }
+  return "";
 }
 
 /** Whether a node is one of the four function-shaped declarations. */
