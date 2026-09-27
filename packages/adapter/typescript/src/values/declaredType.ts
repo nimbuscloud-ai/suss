@@ -6,7 +6,8 @@
  * The checker has already followed the alias and the enum, so nothing
  * here walks a declaration.
  *
- * Any other type gives null. That includes a union with one member
+ * A numeric enum member gives its number, and any other type gives
+ * null. That includes a union with one member
  * that is not a string literal, such as an optional field that may be
  * `undefined`, since the value there can be something outside the set.
  */
