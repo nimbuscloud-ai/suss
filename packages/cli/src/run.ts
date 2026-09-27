@@ -137,7 +137,8 @@ Options (extract):
   --out-dir        Run every read suss.json lists, contracts included, and
                    write each one's summaries to its own file in this
                    directory. Files an earlier --out-dir run wrote there
-                   are replaced. Exits non-zero when any read failed.
+                   are replaced. Exits non-zero when any read failed, or
+                   when an extract wrote nothing without --allow-empty.
   --files          Read only these source files
   --gaps           What to do with gaps: permissive (default) records them
                    in the summary, strict does the same and then fails the
@@ -150,9 +151,10 @@ Options (extract):
   --fail-on-pack-error  Exit non-zero when a pack throws while it reads
 
 Options (check):
-  --allow-empty    A run over --dir that compares nothing exits
-                   non-zero by default, which otherwise reads the same
-                   as both sides agreeing; this opts back into exiting 0
+  --allow-empty    A run over --dir, or over the project when given
+                   nothing, that compares nothing exits non-zero by
+                   default, which otherwise reads the same as both sides
+                   agreeing; this opts back into exiting 0
   --fail-on-unpaired  Exit non-zero when more boundaries went unpaired
                    than this: a count ("25") or a share ("50%")
   --fail-on-unreadable  Exit non-zero when a file in --dir could not be
@@ -571,11 +573,13 @@ async function readProjectSaying(
  * its own file in the directory, the same files a bare `suss check`
  * reads from a temporary one. Files an earlier run wrote there are
  * replaced. Exits non-zero when any read failed, since a directory with
- * one entry missing describes only part of the project.
+ * one entry missing describes only part of the project. An extract that
+ * didn't write a summary fails it too, as it fails a single `extract`.
  */
 async function extractProjectInto(
   outDir: string,
   root: string | undefined,
+  allowEmpty: boolean,
 ): Promise<number> {
   const resolved = path.resolve(outDir);
   clearEarlierReads(resolved);
@@ -584,6 +588,15 @@ async function extractProjectInto(
     resolved,
   );
   if (report === null) {
+    return 1;
+  }
+
+  if (!allowEmpty && report.empty.length > 0) {
+    for (const command of report.empty) {
+      process.stderr.write(
+        `Failing because \`${command}\` didn't produce any summaries. Pass --allow-empty when that is expected.\n`,
+      );
+    }
     return 1;
   }
   return report.failed.length > 0 ? 1 : 0;
@@ -630,7 +643,11 @@ async function runExtract(args: string[]): Promise<number> {
       );
       return 1;
     }
-    return await extractProjectInto(values["out-dir"], values.dir);
+    return await extractProjectInto(
+      values["out-dir"],
+      values.dir,
+      values["allow-empty"] === true,
+    );
   }
 
   const lang =

@@ -196,6 +196,22 @@ function fetchProjectIn(dir: string): string {
   return path.join(dir, "out", "summaries.json");
 }
 
+/** A project init picks the express pack for, with no route in it for the pack to find. */
+function projectWithNothingToRead(dir: string): void {
+  fs.writeFileSync(
+    path.join(dir, "package.json"),
+    JSON.stringify({ name: "orders", dependencies: { express: "^4.19.0" } }),
+  );
+  fs.writeFileSync(
+    path.join(dir, "tsconfig.json"),
+    JSON.stringify({ compilerOptions: { strict: true }, include: ["*.ts"] }),
+  );
+  fs.writeFileSync(
+    path.join(dir, "constants.ts"),
+    'export const ORDERS_TABLE = "orders";\n',
+  );
+}
+
 function summaryNamesIn(file: string): string[] {
   const written = JSON.parse(fs.readFileSync(file, "utf8")) as Array<{
     identity: { name: string };
@@ -1074,6 +1090,30 @@ describe("runCli check", () => {
     );
     expect(exit).toBe(1);
     expect(io.stderr).toContain(`Nothing in ${tmpDir} matched a pack`);
+  });
+
+  it("fails when the project's extract writes no summaries, and says why in the JSON", async () => {
+    projectWithNothingToRead(tmpDir);
+    const { exit, io } = await inDirectory(tmpDir, () =>
+      capture(() => runCli(["check", "--json"])),
+    );
+
+    expect(exit).toBe(1);
+    const report = JSON.parse(io.stdout) as {
+      run: Array<{ kind: string; description: string }>;
+    };
+    expect(report.run[0]?.kind).toBe("nothingPaired");
+    expect(report.run[0]?.description).toContain("Didn't read any summaries");
+  });
+
+  it("passes that project with --allow-empty, without telling the user to pass it", async () => {
+    projectWithNothingToRead(tmpDir);
+    const { exit, io } = await inDirectory(tmpDir, () =>
+      capture(() => runCli(["check", "--allow-empty"])),
+    );
+
+    expect(exit).toBe(0);
+    expect(io.stderr).not.toContain("Failing because");
   });
 
   it("rejects an invalid --fail-on value", async () => {

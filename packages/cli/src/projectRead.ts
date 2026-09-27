@@ -23,6 +23,7 @@ import {
   readProjectFile,
 } from "./projectFile.js";
 
+import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { ContractSource } from "./contract.js";
 import type { Language } from "./language.js";
 import type { ContractEntry, ExtractEntry } from "./projectFile.js";
@@ -42,6 +43,12 @@ export interface ProjectReadReport {
   readonly ran: string[];
   /** One line per entry that threw, with its error message. */
   readonly failed: string[];
+  /**
+   * The command line of each extract that ran and didn't write a summary.
+   * Whether that fails the run is up to the command that asked for the
+   * read, so the extract itself is told to allow it.
+   */
+  readonly empty: string[];
   readonly declared: boolean;
 }
 
@@ -120,18 +127,22 @@ export async function readProjectInto(
   fs.mkdirSync(summaryDir, { recursive: true });
   const ran: string[] = [];
   const failed: string[] = [];
+  const empty: string[] = [];
 
   for (const [index, entry] of reads.reads.entries()) {
     const out = path.join(summaryDir, readOutputName(index, entry));
     try {
-      await runEntry(entry, root, out);
+      const wrote = await runEntry(entry, root, out);
       ran.push(commandFor(entry));
+      if (entry.kind === "extract" && wrote.length === 0) {
+        empty.push(commandFor(entry));
+      }
     } catch (error) {
       failed.push(`${commandFor(entry)}: ${messageOf(error)}`);
     }
   }
 
-  return { summaryDir, ran, failed, declared: reads.declared };
+  return { summaryDir, ran, failed, empty, declared: reads.declared };
 }
 
 /**
@@ -153,20 +164,20 @@ async function runEntry(
   entry: ReadEntry,
   root: string,
   out: string,
-): Promise<void> {
+): Promise<BehavioralSummary[]> {
   if (entry.kind === "contract") {
-    await contract({
+    return await contract({
       from: entry.from as ContractSource,
       spec: path.resolve(root, entry.file),
       output: out,
     });
-    return;
   }
-  await extract({
+  return await extract({
     dir: root,
     frameworks: packSpecsOf(entry, root),
     output: out,
     lang: entry.language as Language,
+    allowEmpty: true,
     ...(entry.project !== undefined
       ? { tsconfig: path.resolve(root, entry.project) }
       : {}),

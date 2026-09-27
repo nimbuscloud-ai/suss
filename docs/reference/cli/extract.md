@@ -14,7 +14,7 @@ suss extract [-p <tsconfig> | --dir <directory>] [--lang typescript|python|ruby]
              [--explain] [--timing] [--datalog-profile] [--no-cache]
              [--allow-empty] [--fail-on-pack-error]
 
-suss extract --out-dir <directory> [--dir <project>]
+suss extract --out-dir <directory> [--dir <project>] [--allow-empty]
 ```
 
 | Flag | Default | What it does |
@@ -60,7 +60,7 @@ Reading what suss.json says.
 Wrote 2 summaries to /home/dana/shop/.suss/now/0-extract.json in 0.74s
 ```
 
-Files an earlier `--out-dir` run wrote in the folder are removed first, so an entry that fails this time leaves nothing stale behind. The run exits non-zero when any entry failed, because the folder then describes only part of the project.
+Files an earlier `--out-dir` run wrote in the folder are removed first, so an entry that fails this time leaves nothing stale behind. The run exits non-zero when any entry failed, because the folder then describes only part of the project. It also exits non-zero when an extract entry didn't write a summary, the same as a single `extract` does, unless you pass `--allow-empty`.
 
 ## Pack names
 
