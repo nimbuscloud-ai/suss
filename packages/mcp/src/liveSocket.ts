@@ -51,6 +51,7 @@ export function socketPathFor(root: string): string {
 
 export class LiveSocket {
   private server: net.Server | null = null;
+  private socketInode: number | null = null;
   private closed = false;
 
   private constructor(
@@ -80,27 +81,31 @@ export class LiveSocket {
     if (this.server === null) {
       return;
     }
-    this.server.close();
+    const server = this.server;
     this.server = null;
     const record = path.join(this.project.root, LIVE_RECORD);
     if (readRecord(record)?.pid === process.pid) {
       fs.rmSync(record, { force: true });
     }
-    if (process.platform !== "win32") {
-      fs.rmSync(this.socketPath, { force: true });
+    // Closing a server unlinks the path it listened on. When another
+    // server has since listened there, the handle is left for the
+    // process exit to drop, so that server keeps its socket file.
+    if (this.socketFileIsOurs()) {
+      server.close();
     }
   }
 
   /**
-   * Listens on the socket. A socket file whose server is gone is removed
-   * and taken; one whose server replies is left alone.
+   * Listens on the socket. A socket file nobody accepts on is removed and
+   * taken. One whose server accepts is left alone, even when that server
+   * is too busy to reply, since it may be in the middle of a build.
    */
   private async takeOver(): Promise<boolean> {
     if (this.closed) {
       return false;
     }
     this.server = await listens(this.socketPath, this.handler());
-    if (this.server === null && !(await replies(this.socketPath))) {
+    if (this.server === null && (await nobodyAccepts(this.socketPath))) {
       if (process.platform !== "win32") {
         fs.rmSync(this.socketPath, { force: true });
       }
@@ -113,7 +118,18 @@ export class LiveSocket {
     return true;
   }
 
+  private socketFileIsOurs(): boolean {
+    if (process.platform === "win32") {
+      return true;
+    }
+    const now = fs.statSync(this.socketPath, { throwIfNoEntry: false });
+    return now === undefined || now.ino === this.socketInode;
+  }
+
   private becameOwner(): void {
+    if (process.platform !== "win32") {
+      this.socketInode = fs.statSync(this.socketPath).ino;
+    }
     this.project.buildElsewhere(null);
     const record = path.join(this.project.root, LIVE_RECORD);
     fs.mkdirSync(path.dirname(record), { recursive: true });
@@ -362,20 +378,32 @@ function listens(
   });
 }
 
-/** Whether a server replies on the socket at all. */
-async function replies(socketPath: string): Promise<boolean> {
-  const reply = await request(
-    socketPath,
-    { kind: "suss", args: ["status"], cwd: "/" },
-    2000,
-  );
-  return reply !== null;
+/** The errors a connect gets when no server is listening at the path. */
+const NOBODY_LISTENING = new Set(["ECONNREFUSED", "ENOENT", "ENOTSOCK"]);
+
+/**
+ * Whether a connect to the socket is refused. A server that accepts the
+ * connection is alive, whether or not it replies in time, so a connect
+ * that neither succeeds nor fails within the wait counts as alive too.
+ */
+function nobodyAccepts(socketPath: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect(socketPath);
+    const done = (gone: boolean): void => {
+      socket.destroy();
+      resolve(gone);
+    };
+    socket.setTimeout(2000, () => done(false));
+    socket.on("connect", () => done(false));
+    socket.on("error", (error: NodeJS.ErrnoException) =>
+      done(NOBODY_LISTENING.has(error.code ?? "")),
+    );
+  });
 }
 
 function request(
   socketPath: string,
   body: LiveRequest,
-  timeoutMs?: number,
 ): Promise<Record<string, unknown> | null> {
   return new Promise((resolve) => {
     let buffered = "";
@@ -384,9 +412,6 @@ function request(
       socket.destroy();
       resolve(value);
     };
-    if (timeoutMs !== undefined) {
-      socket.setTimeout(timeoutMs, () => done(null));
-    }
     socket.setEncoding("utf8");
     socket.on("connect", () => socket.write(`${JSON.stringify(body)}\n`));
     socket.on("data", (chunk: string) => {
