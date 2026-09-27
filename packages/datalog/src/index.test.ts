@@ -1094,6 +1094,50 @@ describe("evaluate: the rows a join reads", () => {
     expect(examined).toBe(2);
   });
 
+  it("leaves a shorter tuple out of the rows under several fixed columns", () => {
+    const db = new Database();
+    const rules = [
+      rule(
+        "out",
+        [V("x"), V("z")],
+        [lit("asked", V("x")), lit("hop", V("x"), V("z"), constant("value"))],
+      ),
+    ];
+    db.add("hop", ["a", "v1", "value"]);
+    db.add("hop", ["a"]);
+    db.add("hop", ["a", "v2", "value"]);
+    for (let i = 0; i < 20; i++) {
+      db.add("hop", [`b${i}`, "w", "instance"]);
+    }
+    evaluate(db, rules);
+    db.add("asked", ["a"]);
+    evaluate(db, rules);
+    const single = [
+      rule("bare", [V("x")], [lit("asked", V("x")), lit("hop", V("x"))]),
+    ];
+    evaluate(db, single);
+    db.retract("hop", [["a"]]);
+
+    expect(sorted(db.facts("out"))).toEqual(["a,v1", "a,v2"]);
+    expect(sorted(db.facts("bare"))).toEqual(["a"]);
+    expect(sorted(db.lookup("hop", 0, "a"))).toEqual([
+      "a,v1,value",
+      "a,v2,value",
+    ]);
+  });
+
+  it("retracts a few facts from a relation nothing has indexed yet", () => {
+    const db = new Database();
+    for (let i = 0; i < 40; i++) {
+      db.add("hop", [`n${i}`, "value"]);
+    }
+    db.retract("hop", [["n3", "value"]]);
+
+    expect(db.size("hop")).toBe(39);
+    expect(db.lookup("hop", 0, "n3")).toEqual([]);
+    expect(db.lookup("hop", 0, "n4")).toEqual([["n4", "value"]]);
+  });
+
   it("keeps a relation's rows under every fixed column current as facts arrive", () => {
     const db = new Database();
     const rules = [

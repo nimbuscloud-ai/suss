@@ -57,17 +57,12 @@ export function storedTuplesOf(
   if (buckets === undefined) {
     return null;
   }
-  const stored: Tuple[] = [];
-  for (const fact of facts) {
-    const found = buckets
-      .get(fact[column] as Atom)
-      ?.find((tuple) => sameTuple(tuple, fact));
-    if (found === undefined) {
-      return null;
-    }
-    stored.push(found);
-  }
-  return stored;
+  const stored = facts.map((fact) =>
+    buckets.get(fact[column] as Atom)?.find((tuple) => sameTuple(tuple, fact)),
+  );
+  return stored.every((tuple) => tuple !== undefined)
+    ? (stored as Tuple[])
+    : null;
 }
 
 function removeFrom<K>(buckets: Map<K, Tuple[]>, key: K, tuple: Tuple): void {
