@@ -609,7 +609,7 @@ export function formatInitReport(report: InitReport): string {
   lines.push("");
   const code = [...frameworks, ...clients];
   if (declaredCode.length > 0) {
-    lines.push(...configurationLines([...code, ...effects]));
+    lines.push(...configurationLines([...code, ...effects], report.root));
     // One command per language, because each pack works with one
     // language's adapter.
     lines.push(...extractCommands([...code, ...effects]));
@@ -719,27 +719,69 @@ function extractCommands(items: ReadonlyArray<PackSuggestion>): string[] {
   });
 }
 
-/** For each pack that takes config, what it reads and an example config file to write. */
-function configurationLines(items: ReadonlyArray<PackSuggestion>): string[] {
-  const configured = items.filter((item) => item.configuration !== undefined);
-  if (configured.length === 0) {
-    return [];
-  }
-
+/**
+ * For each pack that takes config, the config `init --write` would write.
+ * When the project does not say and the pack has no defaults, what the
+ * pack needs and an example to fill in instead.
+ */
+function configurationLines(
+  items: ReadonlyArray<PackSuggestion>,
+  projectRoot: string,
+): string[] {
   const lines: string[] = [];
-  for (const item of configured) {
+  for (const item of items) {
     const configuration = item.configuration;
     if (configuration === undefined) {
       continue;
     }
+
     lines.push(
-      `   ${cyan(item.name)} ${configurationNeed(configuration)} ${configuration.why}`,
+      ...packConfigurationLines(item.name, configuration, projectRoot),
     );
-    lines.push(dim(`   Write that to ${configuration.file}:`));
-    lines.push(dim(`     ${JSON.stringify(configuration.example)}`));
     lines.push("");
   }
   return lines;
+}
+
+function packConfigurationLines(
+  pack: string,
+  configuration: PackConfiguration,
+  projectRoot: string,
+): string[] {
+  if (fs.existsSync(path.join(projectRoot, configuration.file))) {
+    return [
+      `   ${cyan(pack)} reads ${configuration.file}, which is already here.`,
+    ];
+  }
+
+  const values = valuesFor(configuration, projectRoot);
+  if (values !== null) {
+    return [
+      `   ${cyan(pack)} reads ${configuration.file}, and \`suss init --write\` writes this to it:`,
+      dim(`     ${JSON.stringify(values)}`),
+    ];
+  }
+
+  return [
+    `   ${cyan(pack)} ${configurationNeed(configuration)} ${configuration.why}`,
+    dim(`   Write that to ${configuration.file}:`),
+    dim(`     ${JSON.stringify(configuration.example)}`),
+  ];
+}
+
+/**
+ * The values init writes for a pack: what the project says, over the
+ * pack's defaults. Null when there is neither.
+ */
+export function valuesFor(
+  configuration: PackConfiguration,
+  projectRoot: string,
+): Record<string, unknown> | null {
+  const read = configuration.readFromProject?.(projectRoot) ?? null;
+  if (read === null && configuration.defaults === undefined) {
+    return null;
+  }
+  return { ...configuration.defaults, ...read };
 }
 
 /** How much a pack reads without its config, as the start of a sentence that `why` finishes. */
