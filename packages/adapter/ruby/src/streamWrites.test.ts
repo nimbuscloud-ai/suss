@@ -80,6 +80,40 @@ describe("what a Ruby body prints", () => {
     });
   });
 
+  it("keys several printed values by position, and reads arrays, hashes and other dumps", async () => {
+    const [several, list, hash, other] = await writesIn(
+      [
+        'puts "id", 7',
+        "puts [1, 2]",
+        "puts({ ok: true, **rest })",
+        "puts Marshal.dump(report)",
+        "abort",
+      ].join("\n"),
+    );
+    expect(several).toMatchObject({
+      interaction: {
+        payload: {
+          type: "record",
+          properties: {
+            "0": { type: "literal", value: "id" },
+            "1": { type: "integer" },
+          },
+        },
+      },
+    });
+    expect(list).toMatchObject({
+      interaction: { payload: { type: "array", items: { type: "integer" } } },
+    });
+    expect(hash).toMatchObject({
+      interaction: {
+        payload: { type: "record", properties: { ok: { type: "boolean" } } },
+      },
+    });
+    expect(other).toMatchObject({
+      interaction: { serialized: "text", payload: { type: "unknown" } },
+    });
+  });
+
   it("leaves a method call on anything else, and a nested method, alone", async () => {
     const effects = await writesIn(
       [

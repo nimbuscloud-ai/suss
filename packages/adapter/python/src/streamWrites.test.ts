@@ -84,6 +84,33 @@ describe("what a Python body prints", () => {
     ]);
   });
 
+  it("keys several printed values by position, and keeps dumps off anything but json as text", async () => {
+    const [several, other, bare, nested] = await writesIn(
+      [
+        "import json",
+        'print("id", 7)',
+        'print(serializer.dumps({"a": 1}))',
+        "print(json.dumps())",
+        'print(vendor.json.dumps({"a": 1}))',
+      ].join("\n"),
+    );
+    expect(several).toMatchObject({
+      interaction: {
+        serialized: "text",
+        payload: {
+          type: "record",
+          properties: {
+            "0": { type: "literal", value: "id" },
+            "1": { type: "literal", value: 7 },
+          },
+        },
+      },
+    });
+    expect(other).toMatchObject({ interaction: { serialized: "text" } });
+    expect(bare).toMatchObject({ interaction: { serialized: "text" } });
+    expect(nested).toMatchObject({ interaction: { serialized: "text" } });
+  });
+
   it("leaves a print to a file, a rebound print and a nested function alone", async () => {
     const effects = await writesIn(
       [

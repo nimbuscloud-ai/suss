@@ -108,6 +108,65 @@ describe("how a Python program exits", () => {
     );
   });
 
+  it("reads a bare exit as 0, the builtins as exits, and a computed code as its text", async () => {
+    const summaries = await extract(
+      [
+        "import sys",
+        "",
+        "def run(mode, code):",
+        "    if mode == 'none':",
+        "        sys.exit()",
+        "    if mode == 'nothing':",
+        "        sys.exit(None)",
+        "    if mode == 'builtin':",
+        "        exit(3)",
+        "    if mode == 'quit':",
+        "        quit()",
+        "    if mode == 'computed':",
+        "        sys.exit(code)",
+        "    return 0",
+        "",
+        "sys.exit(run(sys.argv[1], int(sys.argv[2])))",
+        "",
+      ].join("\n"),
+    );
+    const outputs = unit(summaries, "run").transitions.map((t) => t.output);
+    expect(outputs.slice(0, 5)).toEqual([
+      { type: "exit", code: { type: "literal", value: 0 } },
+      { type: "exit", code: { type: "literal", value: 0 } },
+      { type: "exit", code: { type: "literal", value: 3 } },
+      { type: "exit", code: { type: "literal", value: 0 } },
+      { type: "exit", code: { type: "unresolved", sourceText: "code" } },
+    ]);
+  });
+
+  it("reads no flags from a parser the function does not hand its parameter to", async () => {
+    const summaries = await extract(
+      [
+        "import argparse",
+        "import sys",
+        "",
+        "def main(argv):",
+        "    parser = argparse.ArgumentParser()",
+        '    parser.add_argument("--dir")',
+        "    parsers = {}",
+        '    parsers["x"] = argparse.ArgumentParser()',
+        "    def later(rest):",
+        "        return parser.parse_args(rest)",
+        "    get_parser().parse_args(argv)",
+        "    parser.parse_args(sys.argv)",
+        "    return 0",
+        "",
+        "sys.exit(main(sys.argv[1:]))",
+        "",
+      ].join("\n"),
+    );
+    expect(unit(summaries, "main").inputReads ?? []).not.toContainEqual({
+      input: "argv",
+      path: ["--dir"],
+    });
+  });
+
   it("keeps one transition, and no mark, for a reached function that never exits", async () => {
     const summaries = await extract(
       [

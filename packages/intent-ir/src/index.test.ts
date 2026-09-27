@@ -926,6 +926,25 @@ describe("what a command prints and how it exits", () => {
     });
   });
 
+  it("reads a whole shape pinned to one value", () => {
+    const summary = intentDocToSummary(
+      IntentDocSchema.parse({
+        ...command,
+        transitions: [
+          {
+            id: "done",
+            when: "plain",
+            results: [{ writes: "io:stdout", shape: { const: "done" } }],
+          },
+        ],
+      }),
+    ) as BoundaryIntentSummary;
+    expect(summary.outcomes[0]?.effects[0]?.shape).toEqual({
+      type: "literal",
+      value: "done",
+    });
+  });
+
   it("refuses a misspelt type instead of reading it as an empty object", () => {
     const result = IntentDocSchema.safeParse({
       ...command,
