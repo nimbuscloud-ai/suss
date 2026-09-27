@@ -323,11 +323,7 @@ function readsAtCall(
 function configReadEffect(read: EnvRead): Effect {
   return {
     type: "interaction",
-    binding: runtimeConfigBinding({
-      recognition: RUBY_ENV_RECOGNITION,
-      deploymentTarget: "lambda",
-      instanceName: "<unknown>",
-    }),
+    binding: runtimeConfigBinding({ recognition: RUBY_ENV_RECOGNITION }),
     callee: `ENV["${read.name}"]`,
     interaction: {
       class: "config-read",

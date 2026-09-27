@@ -484,11 +484,15 @@ describe("what a method body reads", () => {
     expect(effect).toMatchObject({
       type: "interaction",
       callee: 'ENV["A"]',
-      binding: {
-        transport: "os",
-        semantics: { name: "runtime-config", deploymentTarget: "lambda" },
-        recognition: "ruby-env",
-      },
+      binding: { transport: "os", recognition: "ruby-env" },
+    });
+  });
+
+  it("leaves the deployment off a read, since the code does not say which one runs it", async () => {
+    const tree = await parseRuby('A = ENV.fetch("A")\n');
+    const [effect] = envReadEffects(tree.rootNode);
+    expect(effect?.type === "interaction" && effect.binding.semantics).toEqual({
+      name: "runtime-config",
     });
   });
 });

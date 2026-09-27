@@ -48,11 +48,10 @@ export interface EnvBindingRecognizerOptions {
 export function envBindingRecognizer(
   options: EnvBindingRecognizerOptions = {},
 ): AccessRecognizer {
-  const instanceName = options.scriptName ?? "<unknown>";
   return (access, ctx) => {
     const { resolution } = ctx as { resolution?: ResolutionStore };
     const read = envReadAt(access as Node, resolution);
-    return read === null ? null : [configReadEffect(read, instanceName)];
+    return read === null ? null : [configReadEffect(read, options.scriptName)];
   };
 }
 
@@ -140,13 +139,16 @@ function writtenUnderTriggerName(owner: Node): boolean {
   return propertyFunctionOf(property, undefined) === owner;
 }
 
-function configReadEffect(read: EnvRead, instanceName: string): Effect {
+function configReadEffect(
+  read: EnvRead,
+  instanceName: string | undefined,
+): Effect {
   return {
     type: "interaction",
     binding: runtimeConfigBinding({
       recognition: "@suss/framework-cloudflare-workers",
       deploymentTarget: "worker",
-      instanceName,
+      ...(instanceName === undefined ? {} : { instanceName }),
     }),
     callee: readName(read.name),
     interaction: {

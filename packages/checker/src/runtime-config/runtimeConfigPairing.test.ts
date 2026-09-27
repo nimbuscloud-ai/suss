@@ -100,11 +100,7 @@ function makeCodeSummary(opts: {
 }): BehavioralSummary {
   const runtimeConfig = {
     transport: "os",
-    semantics: {
-      name: "runtime-config" as const,
-      deploymentTarget: "lambda" as const,
-      instanceName: "<unknown>",
-    },
+    semantics: { name: "runtime-config" as const },
     recognition: "@suss/runtime-node",
   };
   const transition: Transition = {

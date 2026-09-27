@@ -496,11 +496,15 @@ describe("what a function body reads", () => {
     expect(effect).toMatchObject({
       type: "interaction",
       callee: 'os.environ["A"]',
-      binding: {
-        transport: "os",
-        semantics: { name: "runtime-config", deploymentTarget: "lambda" },
-        recognition: "python-env",
-      },
+      binding: { transport: "os", recognition: "python-env" },
+    });
+  });
+
+  it("leaves the deployment off a read, since the code does not say which one runs it", async () => {
+    const tree = await parsePython('import os\nA = os.getenv("A")\n');
+    const [effect] = envReadEffects(tree.rootNode, bindModule(tree.rootNode));
+    expect(effect?.type === "interaction" && effect.binding.semantics).toEqual({
+      name: "runtime-config",
     });
   });
 });
