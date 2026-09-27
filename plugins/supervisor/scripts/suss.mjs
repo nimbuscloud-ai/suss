@@ -13,6 +13,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
+import { askLiveServer } from "./live.mjs";
 import { readJson } from "./session.mjs";
 
 /** @typedef {import("./types.js").SussCommand} SussCommand */
@@ -156,16 +157,31 @@ function numbersOf(version) {
   return match === null ? null : match.slice(1).map(Number);
 }
 
+/** @typedef {{ cwd: string, timeoutMs: number, onSpawn?: (child: import("node:child_process").ChildProcess) => void }} RunOptions */
+
 /**
- * Runs suss and collects what it printed. Never rejects: a run that
- * could not start, or ran past its deadline, comes back with `failure`.
+ * Runs suss and collects what it printed. The MCP server for this
+ * project runs the command when it is up and serves it, and the CLI runs
+ * it otherwise. Never rejects: a run that could not start, or ran past
+ * its deadline, comes back with `failure`.
  *
  * @param {SussCommand} suss
  * @param {string[]} args
- * @param {{ cwd: string, timeoutMs: number, onSpawn?: (child: import("node:child_process").ChildProcess) => void }} options
+ * @param {RunOptions} options
  * @returns {Promise<SussRun>}
  */
-export function runSuss(suss, args, options) {
+export async function runSuss(suss, args, options) {
+  const served = await askLiveServer(options.cwd, args, options.timeoutMs);
+  return served ?? (await runCli(suss, args, options));
+}
+
+/**
+ * @param {SussCommand} suss
+ * @param {string[]} args
+ * @param {RunOptions} options
+ * @returns {Promise<SussRun>}
+ */
+function runCli(suss, args, options) {
   return new Promise((resolve) => {
     const child = spawn(suss.command, [...suss.prefix, ...args], {
       cwd: options.cwd,
