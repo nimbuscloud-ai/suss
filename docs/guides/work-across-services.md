@@ -134,21 +134,21 @@ You get one block per package, each with the extract command that package needs.
 
 ## Two services that serve the same path
 
-When two services both serve `GET /users`, suss sees one boundary and compares a client of either service against both. `check` warns about it:
+When two services both serve `GET /users`, suss sees one boundary. A client inside one of those services is compared with its own service's route. A client anywhere else could reach either one, so `check` compares it with neither and says so:
 
 ```
-1 boundary is claimed by more than one file:
-  GET /users  in auth.json and directory.json
-
-  suss tells boundaries apart by method and path, so two services that
-  serve the same route look like one. Anything compared against these
-  was compared against both. Check one service at a time to be sure.
+[WARNING] ambiguousProvider
+  web::src/users.ts::loadUsers calls GET /users, and 2 services serve it (auth, directory). Nothing here says which one it reaches, so no pair was checked. Give the client the base URL it calls, or check one service at a time.
+  provider: src/api.ts::get (src/api.ts:3)
+  consumer: src/users.ts::loadUsers (src/users.ts:1)
+  boundary: fetch (http) GET /users
 ```
 
-suss cannot tell the two services apart, so check one service at a time:
+To compare that client, check it against one service at a time:
 
 ```bash
 npx @suss/cli extract -p services/auth/tsconfig.json -f hono -o auth/api.json
+cp summaries/web.json auth/
 npx @suss/cli check --dir auth/
 ```
 

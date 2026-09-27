@@ -121,7 +121,7 @@ Could not follow:
   left out
 ```
 
-**Two services in one folder.** suss identifies an HTTP boundary by its method and path and nothing else, so two services that both expose `GET /users` count as one boundary and a client of either pairs against both. Check one service at a time until this is fixed; [Work across services](/guides/work-across-services#two-services-that-serve-the-same-path) has the commands.
+**Two services in one folder.** suss identifies an HTTP boundary by its method and path and nothing else, so two services that both expose `GET /users` count as one boundary. A client inside one of those services is compared with its own service's route. A client anywhere else gets an `ambiguousProvider` warning and is compared with neither, so check it against one service per run; [Work across services](/guides/work-across-services#two-services-that-serve-the-same-path) has the commands.
 
 **Routes registered at runtime.** suss gets nothing out of `registerRoutes(configBuiltAtRuntime)`, because it reads what the code says without running it.
 

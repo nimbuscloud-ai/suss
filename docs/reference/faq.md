@@ -118,7 +118,7 @@ The IR and the checker never see which language a summary came from. Both read `
 
 ## Does it work in monorepos?
 
-Yes. Run `suss extract` once per package with that package's `tsconfig.json`, then `suss check --dir` pairs across the files.
+Yes. Run `suss extract` once per package with that package's `tsconfig.json`, then `suss check --dir` pairs across the files. When two services serve the same route, a client outside both of them is compared with neither, so check that client against one service per run. [Compatibility](/reference/compatibility#where-it-stops) has the detail.
 
 The contract commands are independent of the source repo, so a spec that lives somewhere else still pairs. [Work across services](/guides/work-across-services) has the commands.
 
