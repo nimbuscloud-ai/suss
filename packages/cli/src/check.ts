@@ -676,9 +676,11 @@ function unpairedFindings(
     );
   }
 
-  const unpaired =
-    result.unmatched.providers.length + result.unmatched.consumers.length;
-  const total = unpaired + result.pairs.length;
+  // Counted by boundary the way the report's first line counts them, so
+  // the floor and that line agree on how many went unpaired.
+  const coverage = pairingCoverage(result);
+  const unpaired = unpairedCount(coverage);
+  const total = unpaired + coverage.compared;
   if (total === 0) {
     return [];
   }
@@ -695,7 +697,7 @@ function unpairedFindings(
       severity: "error",
       description:
         `${unpaired} of ${total} boundaries had nothing to pair with, over the --fail-on-unpaired floor of ${threshold}. ` +
-        `${result.pairs.length} paired.`,
+        `${coverage.compared} paired.`,
       remedy:
         "The unmatched lists in this report say which side each boundary is missing. " +
         "Extract the missing side, read its contract with `suss contract`, or raise the floor if this share is expected.",

@@ -1650,6 +1650,42 @@ describe("runCli check floors", () => {
     expect(exit).toBe(0);
   });
 
+  it("counts unpaired boundaries the way the first line of the report does", async () => {
+    const unpairedRoute = (name: string): BehavioralSummary => ({
+      ...minimalSummary,
+      location: { ...minimalSummary.location, exportName: name },
+      identity: {
+        name,
+        exportPath: [name],
+        boundaryBinding: {
+          transport: "http",
+          semantics: { name: "rest", method: "GET", path: "/y" },
+          recognition: "test",
+        },
+      },
+    });
+    writeJson("provider.json", [
+      minimalSummary,
+      unpairedRoute("listOrders"),
+      unpairedRoute("listOrdersAgain"),
+    ]);
+    writeJson("consumer.json", [matchingConsumer]);
+
+    // Two summaries serve the one unpaired route, so one boundary is unpaired.
+    const under = await capture(() =>
+      runCli(["check", "--dir", tmpDir, "--fail-on-unpaired", "1"]),
+    );
+    expect(under.exit).toBe(0);
+
+    const over = await capture(() =>
+      runCli(["check", "--dir", tmpDir, "--fail-on-unpaired", "0"]),
+    );
+    expect(over.exit).toBe(1);
+    expect(over.io.stdout).toContain("Compared 1 of 2 boundaries");
+    expect(over.io.stdout).toContain("1 of 2 boundaries had nothing to pair");
+    expect(over.io.stdout).toContain("1 paired.");
+  });
+
   it("rejects a floor it cannot parse", async () => {
     writeJson("provider.json", [minimalSummary]);
     const { exit, io } = await capture(() =>
