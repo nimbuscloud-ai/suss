@@ -167,7 +167,7 @@ function makeUnknownTargetFinding(invoke: InvokeRecord): Finding {
     boundary: binding,
     provider: side(summary, record.transitionId),
     consumer: side(summary, record.transitionId),
-    description: `${summary.identity.name} invokes the ${semantics.deploymentTarget} "${semantics.instanceName}", and nothing in the analysed scope deploys a unit by that name. Likely cases: (a) it is deployed by another stack we don't analyse; (b) work-in-progress before the infrastructure is wired up; (c) a name that no longer exists. Severity is warning rather than error because (a) and (b) are common.`,
+    description: `${summary.identity.name} invokes the ${semantics.deploymentTarget} "${semantics.instanceName}", but nothing in this run deploys a unit by that name. The unit may be deployed by a stack this run did not read, or not be set up yet. If neither is true, the name no longer exists.`,
     severity: "warning",
   };
 }

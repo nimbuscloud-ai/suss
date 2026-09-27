@@ -14,9 +14,9 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { extractPythonProject, findPythonFiles } from "@suss/adapter-python";
+import { functionOf, readCallFacts } from "@suss/checker";
 
 import { answerQuestion } from "./ask.js";
-import { functionOf, readCallFacts } from "./callFacts.js";
 import { relativizeSummaryPaths } from "./extract.js";
 import { touchesOfUnits } from "./target.js";
 

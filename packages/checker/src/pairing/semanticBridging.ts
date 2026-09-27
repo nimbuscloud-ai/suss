@@ -418,7 +418,7 @@ export function checkSemanticBridging(
                   boundary,
                   provider: makeSide(provider, pt.id),
                   consumer: makeSide(consumer),
-                  description: `Provider transition ${pt.id} for status ${status} produces body with ${formatPath(lit.path)} = ${JSON.stringify(lit.value)}, and no decomposed consumer branch tests for it, but a consumer condition could not be read, so it may`,
+                  description: `Provider transition ${pt.id} for status ${status} produces body with ${formatPath(lit.path)} = ${JSON.stringify(lit.value)}, and no decomposed consumer branch tests for it. One consumer condition could not be read, so the consumer may test for it there.`,
                   severity: "info",
                 }
               : {
@@ -454,7 +454,7 @@ export function checkSemanticBridging(
                   boundary,
                   provider: makeSide(provider, pt.id),
                   consumer: makeSide(consumer),
-                  description: `Provider transition ${pt.id} for status ${status} has body field ${formatPath(field.path)} that other transitions lack, and no decomposed consumer branch tests for it, but a consumer condition could not be read, so it may`,
+                  description: `Provider transition ${pt.id} for status ${status} has body field ${formatPath(field.path)} that other transitions lack, and no decomposed consumer branch tests for it. One consumer condition could not be read, so the consumer may test for it there.`,
                   severity: "info",
                 }
               : {

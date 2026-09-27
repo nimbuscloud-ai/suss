@@ -171,6 +171,24 @@ export function ittyRouter(options: IttyRouterOptions = {}): PatternPack {
 
 A name that one codebase chose gives every other user false matches. It also inflates any coverage number measured against that codebase, because discovery then finds those units by name instead of by pattern.
 
+## Ask the project for a value the code does not show
+
+Some packs cannot read anything until the project tells them one fact. ActiveRecord talks to Postgres, MySQL and SQLite through the same calls, so the pack has to be told which database is behind the connection. A pack declares a value like that under `configuration` on its `declares`:
+
+```ts
+configuration: {
+  file: "suss.activerecord.json",
+  example: { storageSystem: "postgresql" },
+  required: true,
+  why: "which database is behind the connection: postgresql, mysql, or sqlite.",
+  readFromProject: storageSystemFromDatabaseYml,
+},
+```
+
+`suss init` writes `file` for the project when it can fill the values in, and lists the pack in `suss.json`. It fills them from two places. `defaults` is for values that every project the library's own generator makes has, and init writes them as they are. `readFromProject` is for a value the project has already written down in a file the library itself reads, such as Rails' `config/database.yml`. Init calls it with the project root, and what it returns goes over the defaults. When a required value comes from neither, init leaves the pack out and prints `example` for the user to fill in.
+
+Write `readFromProject` only when the library says where that file lives, for the same reason a pack hardcodes only what the library defines. The function should read that one file and return. It returns null when the file is missing or does not settle the value, for example when `database.yml` lists two adapters. Init then asks the user, where a guess would have been written into the project and never looked at again.
+
 ## Ship it
 
 A pack works as soon as the CLI can import it. `-f @acme/suss-pack-itty-router` imports the package as written, so a pack published under your own scope, or linked into `node_modules`, runs with no further setup.

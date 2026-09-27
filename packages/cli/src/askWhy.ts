@@ -21,30 +21,30 @@ import { summaryIdentifier } from "@suss/behavioral-ir";
 import { gapCaveats } from "./askCaveats.js";
 import { groundedTouchesAt } from "./askGrounding.js";
 import { boundariesTouchedBy } from "./boundaryReach.js";
+import { checkedOutSubmodules } from "./gitSubmodules.js";
+import { LANGUAGE_LABEL, languageOfFile } from "./language.js";
 import {
   functionsSpelled,
   reachTargetOfTouches,
   representativeUnit,
-} from "./callFacts.js";
-import { checkedOutSubmodules } from "./gitSubmodules.js";
-import { LANGUAGE_LABEL, languageOfFile } from "./language.js";
+} from "./reachTarget.js";
 import { providesKeyOf, resolveTarget } from "./target.js";
 import { NO_WHY_PACKS, unloadedPackCaveats, whyPacksFor } from "./whyPacks.js";
 
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
-import type { ValueLocation, WhyExplained } from "@suss/resolution";
-import type { Answer, AnswerItem, AskOptions, ParsedQuestion } from "./ask.js";
-import type { TouchedBoundary } from "./boundaryReach.js";
 import type {
   CallFacts,
   CallPath,
   CallRecord,
   FunctionKey,
   ReachTarget,
-  SpelledFunctions,
-} from "./callFacts.js";
+} from "@suss/checker";
+import type { ValueLocation, WhyExplained } from "@suss/resolution";
+import type { Answer, AnswerItem, AskOptions, ParsedQuestion } from "./ask.js";
+import type { TouchedBoundary } from "./boundaryReach.js";
 import type { Language } from "./language.js";
 import type { LoadedSummaries } from "./loadedSummaries.js";
+import type { SpelledFunctions } from "./reachTarget.js";
 import type { TargetTouch } from "./target.js";
 import type { WhyPacks } from "./whyPacks.js";
 

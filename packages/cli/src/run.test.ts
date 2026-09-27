@@ -1162,14 +1162,17 @@ describe("runCli check", () => {
     expect(io.stderr).toContain("--allow-empty");
   });
 
-  it("refuses --allow-empty on a two-file check, which has no pairing count", async () => {
+  it("fails a two-file check with an empty file unless --allow-empty is set", async () => {
     const provider = writeJson("provider.json", [minimalSummary]);
-    const consumer = writeJson("consumer.json", [matchingConsumer]);
-    const { exit, io } = await capture(() =>
+    const consumer = writeJson("consumer.json", []);
+    const failed = await capture(() => runCli(["check", provider, consumer]));
+    expect(failed.exit).toBe(1);
+    expect(failed.io.stdout).toContain("nothingPaired");
+
+    const allowed = await capture(() =>
       runCli(["check", provider, consumer, "--allow-empty"]),
     );
-    expect(exit).toBe(1);
-    expect(io.stderr).toContain("--allow-empty needs --dir");
+    expect(allowed.exit).toBe(0);
   });
 
   it("returns 0 when consumer covers every provider status", async () => {

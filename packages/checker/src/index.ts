@@ -63,6 +63,19 @@ function reportedByItsOwnPass(summary: BehavioralSummary): boolean {
 
 export { checkBodyCompatibility } from "./body/bodyCompatibility.js";
 export { bodyShapesMatch } from "./body/bodyMatch.js";
+export {
+  type CallEdge,
+  type CallFacts,
+  type CallHop,
+  type CallPath,
+  type CallRecord,
+  callSpellings,
+  type DirectCall,
+  type FunctionKey,
+  functionOf,
+  type ReachTarget,
+  readCallFacts,
+} from "./calls/callFacts.js";
 export { checkConsumerContract } from "./consumer/consumerContract.js";
 export { checkConsumerSatisfaction } from "./consumer/consumerSatisfaction.js";
 export { checkContractAgreement } from "./contract/contractAgreement.js";
@@ -117,6 +130,11 @@ export {
 export { type MatchResult, predicatesMatch, subjectsMatch } from "./match.js";
 export { checkMessageBus } from "./message-bus/messageBusPairing.js";
 export { checkMetric } from "./metric/metricPairing.js";
+export {
+  type BoundaryCollision,
+  boundaryCollisions,
+  type SummaryClaim,
+} from "./pairing/boundaryCollisions.js";
 export {
   type GraphqlPairingResult,
   pairGraphqlOperations,

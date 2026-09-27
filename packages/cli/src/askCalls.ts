@@ -13,7 +13,7 @@ import { summaryIdentifier } from "@suss/behavioral-ir";
 
 import { hiddenBehindLine, unfollowedCalls } from "./ask.js";
 import { gapCaveats } from "./askCaveats.js";
-import { functionsSpelled, representativeUnit } from "./callFacts.js";
+import { functionsSpelled, representativeUnit } from "./reachTarget.js";
 import { providesKeyOf } from "./target.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
