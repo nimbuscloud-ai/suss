@@ -16,9 +16,21 @@ import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import {
+  fileStampEquals,
+  filesStillMatch,
+  hashOf,
+  hashRecentChanges,
+  recordedStamp,
+  startRun,
+  stillMatches,
+} from "./cacheStamps.js";
 
-const SCHEMA_VERSION = "8";
+import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { FileStamp, RunStart } from "./cacheStamps.js";
+
+// 9: stamps come from before the run read the files, not from the write.
+const SCHEMA_VERSION = "9";
 
 /**
  * How many entries a cache directory keeps. Two lets a pair of builds
@@ -29,16 +41,6 @@ export const MAX_ENTRIES = 2;
 
 const ENTRY_PREFIX = "key-";
 const ENTRY_DIR_NAME = new RegExp(`^${ENTRY_PREFIX}[0-9a-f]{16}$`);
-
-interface FileStamp {
-  /** Absolute path. */
-  path: string;
-  /** mtime in ms. */
-  mtimeMs: number;
-  size: number;
-  /** Absent on entries written without per-file attribution. */
-  contentHash?: string;
-}
 
 /**
  * What one walked file contributed to the run, and what its walk read.
@@ -196,8 +198,8 @@ export interface CacheLayer<Meta = unknown, UnitData = unknown> {
   /** The summary list on a hit, null on a miss. */
   tryHit(input: CacheInput): Promise<BehavioralSummary[] | null>;
   /**
-   * The lookup behind `tryHit`, with the reason for a miss. It only stats
-   * files and never reads or parses them.
+   * The lookup behind `tryHit`, with the reason for a miss. It stats the
+   * files, and reads only those changed shortly before, to hash them.
    */
   lookup(input: CacheInput): Promise<CacheLookup>;
   /**
@@ -227,13 +229,6 @@ export interface CacheInput {
    * a project manifest. Not every adapter has one.
    */
   configPath?: string;
-  /**
-   * When the run began reading its files, in milliseconds since the
-   * epoch, for an adapter that read some of them before the lookup, such
-   * as one that keeps a project and checked it against the disk first.
-   * Without it, the run is taken to start at its lookup.
-   */
-  readSince?: number;
 }
 
 /**
@@ -256,44 +251,65 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
     };
   }
   const manifests = new ManifestReads<Meta, UnitData>();
-  // When each run started, keyed by the input it passes to every call.
-  const runStarts = new WeakMap<CacheInput, number>();
+  // What each run saw before it read anything, keyed by the input it
+  // passes to every call. A run starts at its lookup.
+  const runs = new WeakMap<CacheInput, RunStart>();
+  const runFor = async (input: CacheInput): Promise<RunStart> =>
+    runs.get(input) ?? (await startRun(input.files, input.configPath));
+
+  const lookupWith = async (
+    input: CacheInput,
+    run: RunStart,
+  ): Promise<CacheLookup> => {
+    const entryDir = entryDirFor(cacheDir, input);
+    const manifest = await manifests.readAtRunStart(
+      path.join(entryDir, "manifest.json"),
+    );
+    if (manifest === null) {
+      // The entry directory's name is a hash of the schema, digest and
+      // config path, so a manifest found here already agrees with this
+      // run on all three.
+      return missDiag(await describeAbsentEntry(cacheDir));
+    }
+    if (
+      !(await stillMatches(
+        manifest.configStamp,
+        run.config?.stamp ?? null,
+        run,
+      ))
+    ) {
+      return missDiag("config-changed");
+    }
+    if (!(await filesStillMatch(manifest.files, run))) {
+      return missDiag("files-changed");
+    }
+    // Eviction keeps the most recently used entries, and a run that hits
+    // never writes, so the hit has to mark the entry as used.
+    await markUsed(entryDir);
+    // The caller owns these summaries now and may change them.
+    manifests.forget();
+    return {
+      kind: "hit",
+      summaries: manifest.summaries,
+      diagnostic: { kind: "hit" },
+    };
+  };
+
   return {
     async tryHit(input: CacheInput): Promise<BehavioralSummary[] | null> {
       const result = await this.lookup(input);
       return result.kind === "hit" ? result.summaries : null;
     },
     async lookup(input: CacheInput): Promise<CacheLookup> {
-      const now = Date.now();
-      runStarts.set(input, Math.min(now, input.readSince ?? now));
-      const entryDir = entryDirFor(cacheDir, input);
-      const manifest = await manifests.readAtRunStart(
-        path.join(entryDir, "manifest.json"),
-      );
-      if (manifest === null) {
-        // The entry directory's name is a hash of the schema, digest and
-        // config path, so a manifest found here already agrees with this
-        // run on all three.
-        return missDiag(await describeAbsentEntry(cacheDir));
+      const run = await startRun(input.files, input.configPath);
+      runs.set(input, run);
+      const result = await lookupWith(input, run);
+      // A miss goes on to read files and write an entry, which records
+      // these hashes for the files a stamp cannot vouch for.
+      if (result.kind === "miss") {
+        await hashRecentChanges(run);
       }
-      const currentConfigStamp = await stampConfigFile(input.configPath);
-      if (!fileStampEquals(manifest.configStamp, currentConfigStamp)) {
-        return missDiag("config-changed");
-      }
-      const currentFiles = await resolveFileStamps(input);
-      if (!fileStampsEqual(manifest.files, currentFiles)) {
-        return missDiag("files-changed");
-      }
-      // Eviction keeps the most recently used entries, and a run that hits
-      // never writes, so the hit has to mark the entry as used.
-      await markUsed(entryDir);
-      // The caller owns these summaries now and may change them.
-      manifests.forget();
-      return {
-        kind: "hit",
-        summaries: manifest.summaries,
-        diagnostic: { kind: "hit" },
-      };
+      return result;
     },
     async plan(input: CacheInput): Promise<PartialPlan<Meta, UnitData> | null> {
       const entryDir = entryDirFor(cacheDir, input);
@@ -308,12 +324,18 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
       ) {
         return null;
       }
-      const currentConfigStamp = await stampConfigFile(input.configPath);
-      if (!fileStampEquals(manifest.configStamp, currentConfigStamp)) {
+      const run = await runFor(input);
+      if (
+        !(await stillMatches(
+          manifest.configStamp,
+          run.config?.stamp ?? null,
+          run,
+        ))
+      ) {
         return null;
       }
       await markUsed(entryDir);
-      return buildPlan(manifest, await resolveFileStamps(input));
+      return buildPlan(manifest, run);
     },
     async write(
       input: CacheInput,
@@ -327,12 +349,25 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
         path.join(entryDir, "manifest.json"),
       );
       manifests.forget();
-      const since = runStarts.get(input) ?? input.readSince;
-      const configStamp = await stampConfigFile(input.configPath, since);
-      const files = await hashStamps(
-        await resolveFileStamps(input, since),
-        previous,
+      // A write with no lookup before it stats the files now, after they
+      // were read, so it can only guard the files changed recently.
+      const known = runs.get(input);
+      const run = known ?? (await runFor(input));
+      if (known === undefined) {
+        await hashRecentChanges(run);
+      }
+      runs.delete(input);
+      const configStamp =
+        run.config === null
+          ? null
+          : await recordedStamp(run.config, run, undefined);
+      const prior = new Map((previous?.files ?? []).map((f) => [f.path, f]));
+      const recorded = await Promise.all(
+        run.files.map((file) =>
+          recordedStamp(file, run, prior.get(file.stamp.path)),
+        ),
       );
+      const files = recorded.filter((stamp) => stamp !== null);
       const manifest: Manifest<Meta, UnitData> = {
         schemaVersion: SCHEMA_VERSION,
         adapterPacksDigest: input.adapterPacksDigest,
@@ -352,17 +387,17 @@ export function createCacheLayer<Meta = unknown, UnitData = unknown>(
 }
 
 /**
- * Compare the stored per-file records against the current stamps. A file
- * whose stamp moved is read and hashed, so a touch that left the content
- * alone does not count as a change. A stored file without a hash counts as
- * changed whenever its stamp moved.
+ * Compare the stored per-file records against the run's stamps. A file
+ * whose stamp moved, or whose entry asks for it, is hashed, so a touch
+ * that left the content alone does not count as a change. A stored file
+ * without a hash counts as changed whenever its stamp moved.
  */
 async function buildPlan<Meta, UnitData>(
   manifest: Manifest<Meta, UnitData>,
-  currentStamps: FileStamp[],
+  run: RunStart,
 ): Promise<PartialPlan<Meta, UnitData>> {
   const stored = new Map(manifest.files.map((f) => [f.path, f]));
-  const current = new Map(currentStamps.map((f) => [f.path, f]));
+  const current = new Map(run.files.map((f) => [f.stamp.path, f.stamp]));
 
   const changed = new Set<string>();
   const added = new Set<string>();
@@ -384,11 +419,13 @@ async function buildPlan<Meta, UnitData>(
       } else {
         toVerify.push(p);
       }
+    } else if (before.verifyHash === true) {
+      toVerify.push(p);
     }
   }
   await Promise.all(
     toVerify.map(async (p) => {
-      const hash = await hashFile(p);
+      const hash = await hashOf(run, p);
       if (hash === null || hash !== stored.get(p)?.contentHash) {
         changed.add(p);
       }
@@ -554,37 +591,6 @@ function encodeAttribution<Meta, UnitData>(
     owners,
     ...(units === undefined ? {} : { units }),
   };
-}
-
-/** Reuse the previous hash when the stamp did not move; hash the rest. */
-async function hashStamps<Meta, UnitData>(
-  stamps: FileStamp[],
-  previous: Manifest<Meta, UnitData> | null,
-): Promise<FileStamp[]> {
-  const before = new Map((previous?.files ?? []).map((f) => [f.path, f]));
-  return Promise.all(
-    stamps.map(async (stamp) => {
-      const prior = before.get(stamp.path);
-      if (
-        prior !== undefined &&
-        prior.contentHash !== undefined &&
-        fileStampEquals(prior, stamp)
-      ) {
-        return { ...stamp, contentHash: prior.contentHash };
-      }
-      const contentHash = await hashFile(stamp.path);
-      return contentHash === null ? stamp : { ...stamp, contentHash };
-    }),
-  );
-}
-
-async function hashFile(filePath: string): Promise<string | null> {
-  try {
-    const content = await fs.readFile(filePath);
-    return createHash("sha256").update(content).digest("hex").slice(0, 16);
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -754,88 +760,4 @@ async function readManifest<Meta, UnitData>(
     // case is an extraction the cache could have saved.
     return null;
   }
-}
-
-/**
- * A file's stamp, or null when it changed after `changedSince`. The run
- * may have read such a file before the change or after, so the manifest
- * leaves it out and the next run treats it as unread. The status change
- * time is used because a tool that puts an old mtime back still moves
- * it. The same millisecond is let through, since `Date.now()` rounds down
- * and would otherwise catch every file written moments before the run.
- */
-function stampOf(
-  filePath: string,
-  stat: { mtimeMs: number; ctimeMs: number; size: number },
-  changedSince: number | undefined,
-): FileStamp | null {
-  if (changedSince !== undefined && Math.floor(stat.ctimeMs) > changedSince) {
-    return null;
-  }
-  return { path: filePath, mtimeMs: stat.mtimeMs, size: stat.size };
-}
-
-async function stampConfigFile(
-  configPath: string | undefined,
-  changedSince?: number,
-): Promise<FileStamp | null> {
-  if (configPath === undefined) {
-    return null;
-  }
-  try {
-    return stampOf(configPath, await fs.stat(configPath), changedSince);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Resolve the file list, sorted and stamped with mtime and size. With
- * `changedSince`, files that changed after it are left out.
- */
-async function resolveFileStamps(
-  input: CacheInput,
-  changedSince?: number,
-): Promise<FileStamp[]> {
-  // The stats run concurrently, limited by libuv's thread pool. On a
-  // project of several thousand files they take around 25ms, most of the
-  // cost of a whole-entry lookup.
-  const all = await Promise.all(
-    input.files.map(async (p): Promise<FileStamp | null> => {
-      try {
-        return stampOf(p, await fs.stat(p), changedSince);
-      } catch {
-        // The file was deleted after the list was made. The sentinel never
-        // matches a stored stamp, so the lookup misses.
-        return { path: p, mtimeMs: -1, size: -1 };
-      }
-    }),
-  );
-  const stamped = all.filter((stamp) => stamp !== null);
-  // `fileStampsEqual` compares two lists position by position, so both
-  // have to be in path order whatever order the caller listed the files in.
-  stamped.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-  return stamped;
-}
-
-/**
- * Whether two file lists have the same stamps. Both arrive sorted by path,
- * so one pass is enough. Content hashes are left out, since the fast
- * lookup compares stats alone and `plan` is where hashes are compared.
- */
-function fileStampsEqual(
-  a: ReadonlyArray<FileStamp>,
-  b: ReadonlyArray<FileStamp>,
-): boolean {
-  return a.length === b.length && a.every((s, i) => fileStampEquals(s, b[i]));
-}
-
-function fileStampEquals(a: FileStamp | null, b: FileStamp | null): boolean {
-  if (a === null && b === null) {
-    return true;
-  }
-  if (a === null || b === null) {
-    return false;
-  }
-  return a.path === b.path && a.mtimeMs === b.mtimeMs && a.size === b.size;
 }

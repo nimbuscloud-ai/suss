@@ -101,10 +101,23 @@ describe("createCacheLayer", () => {
   });
 
   describe("a file that changes while a run reads it", () => {
-    // A change in the millisecond the run started in is not told apart
-    // from one moments before it, so each test waits for the next.
-    const nextMillisecond = () =>
-      new Promise((resolve) => setTimeout(resolve, 2));
+    /**
+     * Stats `file` with its mtime and ctime held at `at`, as a file system
+     * whose clock has not ticked since would report them.
+     */
+    function holdClockFor(file: string, at: number) {
+      const realStat = fs.stat.bind(fs);
+      return vi.spyOn(fs, "stat").mockImplementation((async (
+        target: Parameters<typeof fs.stat>[0],
+      ) => {
+        const stat = await realStat(target);
+        if (String(target) === file) {
+          stat.mtimeMs = at;
+          stat.ctimeMs = at;
+        }
+        return stat;
+      }) as typeof fs.stat);
+    }
 
     it("is read again by the next run", async () => {
       const cacheDir = await makeTempDir();
@@ -113,11 +126,29 @@ describe("createCacheLayer", () => {
       const run = { files: paths, adapterPacksDigest: "test@1" };
 
       await cache.lookup(run);
-      await nextMillisecond();
       await fs.writeFile(paths[0] ?? "", "export const a = 22;");
       await cache.write(run, [fakeSummary]);
 
       expect((await cache.lookup({ ...run })).kind).toBe("miss");
+    });
+
+    it("is read again when a write in the same clock tick kept its stamp", async () => {
+      const cacheDir = await makeTempDir();
+      const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
+      const file = paths[0] ?? "";
+      const stat = holdClockFor(file, Date.now());
+      try {
+        const cache = createCacheLayer(cacheDir);
+        const run = { files: paths, adapterPacksDigest: "test@1" };
+
+        await cache.lookup(run);
+        await fs.writeFile(file, "export const a = 2;");
+        await cache.write(run, [fakeSummary]);
+
+        expect((await cache.lookup({ ...run })).kind).toBe("miss");
+      } finally {
+        stat.mockRestore();
+      }
     });
 
     it("is read again when the change put the old mtime back", async () => {
@@ -129,7 +160,6 @@ describe("createCacheLayer", () => {
       const run = { files: paths, adapterPacksDigest: "test@1" };
 
       await cache.lookup(run);
-      await nextMillisecond();
       await fs.writeFile(file, "export const a = 2;");
       await fs.utimes(file, before.atime, before.mtime);
       await cache.write(run, [fakeSummary]);
@@ -137,19 +167,27 @@ describe("createCacheLayer", () => {
       expect((await cache.lookup({ ...run })).kind).toBe("miss");
     });
 
-    it("counts from the moment the caller says it read the files", async () => {
+    it("trusts the stamp of a file last changed well before the run", async () => {
       const cacheDir = await makeTempDir();
       const { paths } = await writeFiles({ "a.ts": "export const a = 1;" });
-      const cache = createCacheLayer(cacheDir);
-      const readSince = Date.now();
-      await nextMillisecond();
-      await fs.writeFile(paths[0] ?? "", "export const a = 22;");
-      const run = { files: paths, adapterPacksDigest: "test@1", readSince };
+      const file = paths[0] ?? "";
+      const stat = holdClockFor(file, Date.now() - 60_000);
+      try {
+        const cache = createCacheLayer(cacheDir);
+        const run = { files: paths, adapterPacksDigest: "test@1" };
+        await cache.lookup(run);
+        await cache.write(run, [fakeSummary]);
 
-      await cache.lookup(run);
-      await cache.write(run, [fakeSummary]);
-
-      expect((await cache.lookup({ ...run })).kind).toBe("miss");
+        const reads = vi.spyOn(fs, "readFile");
+        try {
+          expect((await cache.lookup({ ...run })).kind).toBe("hit");
+          expect(reads.mock.calls.map(([p]) => String(p))).not.toContain(file);
+        } finally {
+          reads.mockRestore();
+        }
+      } finally {
+        stat.mockRestore();
+      }
     });
 
     it("leaves a config file that changed during the run to be read again", async () => {
@@ -167,7 +205,6 @@ describe("createCacheLayer", () => {
       };
 
       await cache.lookup(run);
-      await nextMillisecond();
       await fs.writeFile(configPath, '{"compilerOptions":{}}');
       await cache.write(run, [fakeSummary]);
 
@@ -519,11 +556,9 @@ describe("per-file plan", () => {
 
   it("counts a file edited during the last run as changed, and keeps the rest", async () => {
     const { cache, input, dir, summaryA, summaryB } = await writeTwoFileEntry();
-    await new Promise((r) => setTimeout(r, 20));
     const run = { ...input };
     await cache.lookup(run);
-    await new Promise((r) => setTimeout(r, 2));
-    await fs.writeFile(path.join(dir, "b.ts"), "export const b = 7;");
+    await fs.writeFile(path.join(dir, "b.ts"), "export const b = 7777;");
     await cache.write(
       run,
       [summaryA, summaryB],

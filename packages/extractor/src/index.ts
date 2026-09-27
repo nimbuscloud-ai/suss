@@ -1114,6 +1114,7 @@ export {
   runDigest,
 } from "./adapterStamp.js";
 export { createCacheLayer, MAX_ENTRIES } from "./cache.js";
+export { stampMayMissAWrite } from "./cacheStamps.js";
 export {
   buildUngatedExtractionReport,
   createPackTallies,
