@@ -17,7 +17,8 @@ export class OrdersController {
 `@suss/framework-nestjs-rest` exports a `PatternPack`, which is data the adapter reads. It covers:
 
 - **Discovery**: `decoratedRoute` against `@nestjs/common`, which matches a class decorated with `@Controller(pathPrefix?)` whose methods have an HTTP-verb decorator. The route joins the class decorator's first argument with the method decorator's first argument. Both are optional, so `@Controller()` mounts at the root and a bare `@Get()` matches the prefix exactly. The HTTP method comes from the decorator: `@Get` becomes `GET`, `@Post` becomes `POST`, and `@All` becomes `*`, which pairing treats as a wildcard over every method. `@Options`, `@Head`, `@Put`, `@Delete` and `@Patch` are read too.
-- **Terminals**: a bare `return` becomes a response with a default status of 200, since NestJS serializes the returned value as the body. A `throw` records the exception type, so the contract check can pair it with the status the framework would send on the wire. A method that falls off the end also produces a 200 response, so a fire-and-forget controller does not come back with an empty list of transitions.
+- **Global prefix**: `app.setGlobalPrefix("api")` on the app `NestFactory.create` made puts `/api` in front of every route. The call can be in any file, including a function the bootstrap hands the app to. The prefix can be a constant or an environment variable's default. Routes in its `exclude` list keep their own path, whether an entry is a path, a path ending in a wildcard, or `{ path, method }` with a `RequestMethod` member.
+- **Terminals**: a bare `return` becomes a response, since NestJS serializes the returned value as the body. Its status is 201 under `@Post` and 200 under every other verb, and `@HttpCode(n)` replaces either, including when it is written `@HttpCode(HttpStatus.NO_CONTENT)` or with a constant. A `throw` records the exception type, so the contract check can pair it with the status the framework would send on the wire. A method that falls off the end produces the same response as a bare `return`, so a fire-and-forget controller does not come back with an empty list of transitions.
 - **Input mapping**: `decoratedParams`, which maps `@Body`, `@Param`, `@Query`, `@Headers`, `@Req` / `@Request`, `@Res` / `@Response`, `@Next`, `@Session`, `@Ip`, `@HostParam`, `@UploadedFile` and `@UploadedFiles` to their roles.
 
 ## Options
@@ -40,7 +41,10 @@ The `classDecorators` pack option did the same job until 0.21.0 removed it. A co
 ## Not covered yet
 
 - Field-level decorator arguments. `@Param('id')` and `@Query('search')` land as a single `pathParams` or `queryParams` Input whatever the field name is. That is enough for the binding identity, but checking types per argument would need fuller parsing of decorator arguments.
-- `@HttpCode(N)`, which is only metadata today, so the default status stays 200.
+- A global prefix per app. suss applies the prefix to every controller in the run when all the `setGlobalPrefix` calls it finds agree, and applies none when they differ. So two Nest apps with different prefixes in one run get no prefix, and an app with no prefix beside one with a prefix gets it too.
+- An `exclude` entry written some other way than above: it is dropped, and that route gets the prefix.
+- `enableVersioning()`, which adds a version segment the path does not show.
+- A status set on the response object, as in `@Res({ passthrough: true }) res` with `res.status(200)`. An `@HttpCode` argument that does not read as a number falls back to the verb's status.
 - NestJS-style path globs (`*` and `(.*)`). The joined path goes through unchanged.
 - Class inheritance and mixins. A controller split across an abstract base and a concrete child is discovered as two units, and pairing does not merge them.
 
