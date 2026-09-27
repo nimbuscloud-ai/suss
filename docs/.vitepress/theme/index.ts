@@ -10,6 +10,7 @@ import { CopyPageMarkdown } from "./copyPageMarkdown.js";
 import type { Theme } from "vitepress";
 
 import "./agentPrompt.css";
+import "./copyButton.css";
 import "./copyPageMarkdown.css";
 import "./diagrams.css";
 
