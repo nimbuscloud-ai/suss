@@ -57,7 +57,32 @@ describe("boundaryCollisions", () => {
         { summary: route("listOrders"), file: "orders.json" },
         { summary: route("listOrders"), file: "billing.json" },
       ]),
-    ).toEqual([{ key: "GET /orders", files: ["billing.json", "orders.json"] }]);
+    ).toEqual([
+      {
+        key: "GET /orders",
+        files: ["billing.json", "orders.json"],
+        services: [],
+      },
+    ]);
+  });
+
+  it("lists the services the claiming summaries say they came from", () => {
+    const inService = (workspace: string): BehavioralSummary => {
+      const summary = route("listOrders");
+      return { ...summary, location: { ...summary.location, workspace } };
+    };
+    expect(
+      boundaryCollisions([
+        { summary: inService("orders"), file: "orders.json" },
+        { summary: inService("billing"), file: "billing.json" },
+      ]),
+    ).toEqual([
+      {
+        key: "GET /orders",
+        files: ["billing.json", "orders.json"],
+        services: ["billing", "orders"],
+      },
+    ]);
   });
 
   it("stays quiet when one file provides the key twice", () => {
@@ -119,7 +144,11 @@ describe("boundaryCollisions", () => {
         { summary: template, file: "1-contract.json" },
       ]),
     ).toEqual([
-      { key: "GET /orders", files: ["0-extract.json", "1-contract.json"] },
+      {
+        key: "GET /orders",
+        files: ["0-extract.json", "1-contract.json"],
+        services: [],
+      },
     ]);
   });
 });

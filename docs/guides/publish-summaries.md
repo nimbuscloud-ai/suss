@@ -8,7 +8,7 @@ description: Write your service's summaries to a file, commit it, and let anothe
 Write the summaries to a file with `-o` and commit it. Another repo can then check its own code against that file without access to yours.
 
 ```bash
-npx suss extract -p tsconfig.json -f hono -o suss/catalog.json
+npx @suss/cli extract -p tsconfig.json -f hono -o suss/catalog.json
 git add suss/catalog.json
 ```
 
@@ -36,14 +36,14 @@ The downstream repo puts the file in the folder it passes to `check --dir`, next
 
 ```bash
 cp node_modules/@acme/catalog/suss/catalog.json summaries/
-npx suss extract -p tsconfig.json -f fetch -o summaries/web.json
-npx suss check --dir summaries/
+npx @suss/cli extract -p tsconfig.json -f fetch -o summaries/web.json
+npx @suss/cli check --dir summaries/
 ```
 
 `check --dir` pairs summaries by boundary, so it does not matter which run wrote which file. The two sides can come from different repositories and different languages, and they do not have to be written on the same day. You can also pass both files to check one pair:
 
 ```bash
-npx suss check node_modules/@acme/catalog/suss/catalog.json summaries/web.json
+npx @suss/cli check node_modules/@acme/catalog/suss/catalog.json summaries/web.json
 ```
 
 [Work across services](/guides/work-across-services) walks through the two-repo flow end to end and shows a finding for two sides that disagree.
@@ -64,7 +64,7 @@ Transition ids are deterministic per branch. suss builds each one from the funct
 A package whose public API is plain functions has a boundary too: everything its `exports` makes reachable. The `package-exports` pack reads that side without you listing the exports.
 
 ```bash
-npx suss extract -p tsconfig.json -f package-exports -o suss/summaries.json
+npx @suss/cli extract -p tsconfig.json -f package-exports -o suss/summaries.json
 ```
 
 ```

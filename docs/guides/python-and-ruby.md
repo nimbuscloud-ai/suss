@@ -8,8 +8,8 @@ description: Point suss at a FastAPI, flask-restx, Rails or graphql-ruby project
 Point `suss extract` at the directory instead of a tsconfig, and pass the packs for the frameworks the project uses.
 
 ```bash
-npx suss extract --dir services/shop -f fastapi -o summaries/shop.json
-npx suss inspect summaries/shop.json
+npx @suss/cli extract --dir services/shop -f fastapi -o summaries/shop.json
+npx @suss/cli inspect summaries/shop.json
 ```
 
 The summaries are the same format a TypeScript run writes, so `check` compares a Python handler against a TypeScript client in one pass. Neither adapter needs an installed interpreter, a virtualenv or a bundle. Both parse with tree-sitter compiled to WASM, which ships inside the CLI.
@@ -17,7 +17,7 @@ The summaries are the same format a TypeScript run writes, so `check` compares a
 ## Let init pick the packs
 
 ```bash
-npx suss init services/shop --plain
+npx @suss/cli init services/shop --plain
 ```
 
 For a Python project it reads `requirements.txt` and the other requirements files beside it, `pyproject.toml` (the standard table and Poetry's two), `Pipfile`, `setup.cfg` and a literal `install_requires` list in `setup.py`. For a Ruby project it reads `Gemfile.lock`. Over this repo's `fixtures/python-webapp`:
@@ -52,8 +52,8 @@ A pack for one language cannot run alongside a pack for another in the same comm
 ## Python
 
 ```bash
-npx suss extract --dir fixtures/python-fastapi -f fastapi -o summaries/shop.json
-npx suss inspect summaries/shop.json
+npx @suss/cli extract --dir fixtures/python-fastapi -f fastapi -o summaries/shop.json
+npx @suss/cli inspect summaries/shop.json
 ```
 
 ```
@@ -139,8 +139,8 @@ Dependencies, middleware and mounted sub-apps are not read yet.
 The rails pack needs nothing from you: `root` defaults to `app` and `routesFile` to `config/routes.rb`.
 
 ```bash
-npx suss extract --dir fixtures/ruby-rails -f rails -f activerecord=suss.activerecord.json -o summaries/rails.json
-npx suss inspect summaries/rails.json
+npx @suss/cli extract --dir fixtures/ruby-rails -f rails -f activerecord=suss.activerecord.json -o summaries/rails.json
+npx @suss/cli inspect summaries/rails.json
 ```
 
 `suss.activerecord.json` sets which database is behind the connection. ActiveRecord works with several, and only `database.yml` records which one a project uses:
@@ -201,7 +201,7 @@ An action the routes file does not reach is still discovered, with its calls fol
 ### graphql-ruby
 
 ```bash
-npx suss extract --dir . -f graphql-ruby=suss.graphql-ruby.json -o summaries/schema.json
+npx @suss/cli extract --dir . -f graphql-ruby=suss.graphql-ruby.json -o summaries/schema.json
 ```
 
 ```json
@@ -226,7 +226,7 @@ A `Gemfile`, a `Gemfile.lock` or a Rails `config/application.rb` is enough for s
 Most packs need nothing from you, because everything they match on is something their library defines. When a pack does need something from you about your project, write it to a JSON file and give the file name on the flag:
 
 ```bash
-npx suss extract --lang ruby --dir . -f graphql-ruby=suss.graphql-ruby.json
+npx @suss/cli extract --lang ruby --dir . -f graphql-ruby=suss.graphql-ruby.json
 ```
 
 A pack that cannot work without a value stops and says so, instead of quietly reading half a project. A relative path in an option is read against the config file itself, so the same file works whichever directory you run from.

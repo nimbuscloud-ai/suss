@@ -22,13 +22,15 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@main
+      - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@v0.33.1
 ```
+
+`@v0.33.1` pins the action to a release. A commit SHA in place of the tag pins it to code you have read.
 
 The action reads the packs from the project's `suss.json`, which `suss init` writes. Without that file, it picks the packs `init` would pick. Set `extract` to choose them yourself:
 
 ```yaml
-      - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@main
+      - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@v0.33.1
         with:
           extract: -p tsconfig.json -f hono -f prisma
 ```
@@ -82,7 +84,7 @@ The comment looks like this:
 A job condition can read `changed`:
 
 ```yaml
-      - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@main
+      - uses: nimbuscloud-ai/suss/.github/actions/inspect-diff@v0.33.1
         id: suss
         with:
           extract: -p tsconfig.json -f hono

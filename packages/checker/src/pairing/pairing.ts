@@ -153,7 +153,7 @@ function servedBy(
  * a single-project run labels nothing at all. Neither is a rival to
  * choose between.
  */
-function servicesOf(summaries: readonly BehavioralSummary[]): string[] {
+export function servicesOf(summaries: readonly BehavioralSummary[]): string[] {
   const stated = summaries
     .map((summary) => summary.location.workspace)
     .filter((workspace): workspace is string => workspace !== undefined);

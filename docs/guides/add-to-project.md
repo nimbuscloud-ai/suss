@@ -9,7 +9,7 @@ Install suss in a repository you already have and get a first answer out of it. 
 
 ```bash
 npm install --save-dev @suss/cli
-npx suss init
+npx @suss/cli init
 ```
 
 Everything ships inside `@suss/cli`, so there is one install, and you refer to each pack by name after that.
@@ -44,7 +44,7 @@ Then it asks five questions, one at a time:
 If the output is piped, if the run is in CI, or if you pass `--plain`, `init` prints the commands instead of asking:
 
 ```bash
-npx suss init --plain
+npx @suss/cli init --plain
 ```
 
 ```
@@ -95,7 +95,7 @@ Commit it. It records what the project contains, which is the same for everybody
 With `suss.json` in place, `extract`, `inspect` and `check` need no flags. Each one prints the command it worked out before it runs it:
 
 ```bash
-npx suss check
+npx @suss/cli check
 ```
 
 ```
@@ -149,7 +149,20 @@ Compared 1 boundary.
       provider: { transitionId: "get:response:404:6405be7" }
       reason: TODO say why you accept this
 ────────────────────────────────────────────────────────────
+[WARNING] unhandledProviderCase
+  Provider produces status 410 but no consumer branch handles it
+  provider: src/articles.ts::get (src/articles.ts:14)
+  consumer: web/articleView.ts::loadArticle (web/articleView.ts:1)
+  boundary: express (http) GET /articles/:slug
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: unhandledProviderCase
+      boundary: "GET /articles/{slug}"
+      provider: { transitionId: "get:response:410:c3d4fe5" }
+      reason: TODO say why you accept this
+────────────────────────────────────────────────────────────
 2 findings: 0 error, 2 warning, 0 info
+
+suss met a call it could not follow in one unit, of 2, so that one is described in part. `suss inspect` says which calls.
 ```
 
 Errors fail the run and warnings do not, so a first pass over an old codebase does not have to be all or nothing. `--all` lists every pair suss made and every boundary it skipped, so you can tell "no findings" apart from "nothing got compared". `--at src/articles.ts:14` narrows a run to one file, line, boundary or summary.
@@ -162,17 +175,17 @@ When a run turns up nothing, every command prints where it stopped. [Fix a run t
 
 ```bash
 # The service
-npx suss extract -p tsconfig.json -f express -o summaries/api.json
+npx @suss/cli extract -p tsconfig.json -f express -o summaries/api.json
 
 # The web client that calls it, from its own tsconfig
-npx suss extract -p apps/web/tsconfig.json -f fetch -o summaries/web.json
+npx @suss/cli extract -p apps/web/tsconfig.json -f fetch -o summaries/web.json
 ```
 
 `suss contract --from` reads a document you already keep and produces summaries in the same format:
 
 ```bash
-npx suss contract --from openapi openapi.yaml -o summaries/contract.json
-npx suss contract --from cloudformation template.yaml -o summaries/infra.json
+npx @suss/cli contract --from openapi openapi.yaml -o summaries/contract.json
+npx @suss/cli contract --from cloudformation template.yaml -o summaries/infra.json
 ```
 
 The [pack catalog](/packs/catalog) lists every `-f` name and every `--from` source with what each one reads.

@@ -54,21 +54,37 @@ A finding that points at one transition prints a `.sussignore` rule for it, read
 
 ## What a run prints
 
-A run prints the errors in full, then counts everything else: the findings below error severity, grouped by kind, and the boundaries that went unpaired.
+A run opens with how many boundaries paired, out of every boundary it read, and counts the ones that went unpaired on each side. Then it prints every error and warning in full, and counts the info findings by kind. Over the [quickstart](/start/quickstart) project:
 
 ```
 $ suss check --dir summaries/
-Compared 4 boundaries.
+Compared 2 of 3 boundaries.
 
-  13 boundaries had nothing to pair with, so nothing was checked across them.
+  1 provider-side boundary has no client to compare against.
   Run the same command with --all to list them.
 
-3 findings: 0 error, 2 warning, 1 info
-
-Not shown: 2 boundaryFieldUnknown (warning), 1 boundaryFieldUnused (info). Run the same command with --all to see them.
+────────────────────────────────────────────────────────────
+[WARNING] unhandledProviderCase
+  Provider produces status 404 but no consumer branch handles it
+  provider: src/api.ts::get (src/api.ts:7)
+  consumer: src/client.ts::loadOrder (src/client.ts:1)
+  boundary: hono (http) GET /orders/:reference
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: unhandledProviderCase
+      boundary: "GET /orders/{reference}"
+      provider: { transitionId: "get:response:404:ca40ca7" }
+      reason: TODO say why you accept this
+────────────────────────────────────────────────────────────
+[WARNING] boundaryFieldUnused
+  Order declares "placedAt" and code here writes to it, but no query reads it. suss counts a column as read only when a query selects it, so before you treat the write as pointless, look for code that takes "placedAt" off a record it already fetched.
+  provider: prisma/schema.prisma::Order (prisma/schema.prisma:1)
+  consumer: prisma/schema.prisma::Order (prisma/schema.prisma:1)
+  boundary: prisma (postgresql)
+────────────────────────────────────────────────────────────
+2 findings: 0 error, 2 warning, 0 info
 ```
 
-Errors are what `--fail-on error` gates on, so a run leads with them. `--all` writes the rest out in full. Three things do not change with the flag: `--json` always includes every finding and every list, `--at` always prints in full because it is already narrowed to one thing, and the exit code comes from `--fail-on` rather than from what got printed.
+A run with no findings says "Every compared boundary agreed" only when every boundary it read paired. When some went unpaired, it says how many were left unchecked instead, because an empty finding list says nothing about a boundary nobody compared. `--all` lists every pair and every unpaired boundary, and writes the info findings out in full. Three things do not change with the flag: `--json` always includes every finding and every list, `--at` always prints in full because it is already narrowed to one thing, and the exit code comes from `--fail-on` rather than from what got printed.
 
 Without the collapse, a first run over a repository of any size prints thousands of lines before the first error. Over five public repositories and suss's own packages, the unpaired lists alone were between 66% and 99% of the report.
 

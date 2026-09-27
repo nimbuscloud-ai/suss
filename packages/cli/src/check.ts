@@ -23,6 +23,7 @@ import {
 import { loadIntentDirectory } from "@suss/contract-intent";
 
 import { coveringTestLookup } from "./coveringTests.js";
+import { languageOfFile } from "./language.js";
 import {
   readEntryIndex,
   readProjectFile,
@@ -453,7 +454,13 @@ export function checkDir(options: CheckDirOptions): CheckResult & {
   };
   const rendered = options.json
     ? `${JSON.stringify(since === null ? { findings: result.findings, ...rest } : { ...sinceJson(since), ...rest }, null, 2)}\n`
-    : renderDirHuman(result, confidence, scopeOf(options), since) +
+    : renderDirHuman(
+        result,
+        confidence,
+        scopeOf(options),
+        since,
+        extractHintFor(allSummaries),
+      ) +
       renderRuntimeNamedCrossings(runtimeNamedCrossings) +
       renderGapCoverage(summariesWithGaps, allSummaries.length) +
       renderCollisions(collisions) +
@@ -678,12 +685,53 @@ function renderRunFindings(findings: readonly RunFinding[]): string {
     .join("");
 }
 
+/**
+ * Whether pairing could tell the claiming services apart. It can when the
+ * summaries name more than one service, and then a caller outside all of
+ * them is compared with none.
+ */
+type CollisionKind = "namedServices" | "unnamedServices";
+
+const COLLISION_NOTE: Record<CollisionKind, readonly string[]> = {
+  namedServices: [
+    "  suss tells boundaries apart by method and path, so two services that",
+    "  serve the same route share one boundary. A client inside one of these",
+    "  services is compared with its own service's route. Any other client",
+    "  is compared with neither and gets an ambiguousProvider warning, so",
+    "  check it against one service at a time.",
+  ],
+  unnamedServices: [
+    "  suss tells boundaries apart by method and path, so two services that",
+    "  serve the same route look like one. These summaries do not say which",
+    "  service they came from, so anything compared against these was",
+    "  compared against both. Check one service at a time to be sure.",
+  ],
+};
+
+function collisionKind(collision: BoundaryCollision): CollisionKind {
+  return collision.services.length > 1 ? "namedServices" : "unnamedServices";
+}
+
 function renderCollisions(
   collisions: ReadonlyArray<BoundaryCollision>,
+): string {
+  const blocks = (["namedServices", "unnamedServices"] as const).map((kind) =>
+    collisionBlock(
+      collisions.filter((collision) => collisionKind(collision) === kind),
+      COLLISION_NOTE[kind],
+    ),
+  );
+  return blocks.join("");
+}
+
+function collisionBlock(
+  collisions: ReadonlyArray<BoundaryCollision>,
+  note: readonly string[],
 ): string {
   if (collisions.length === 0) {
     return "";
   }
+
   const lines = [
     "",
     `${collisions.length} ${collisions.length === 1 ? "boundary is" : "boundaries are"} claimed by more than one file:`,
@@ -691,16 +739,7 @@ function renderCollisions(
   for (const collision of collisions) {
     lines.push(`  ${collision.key}  in ${collision.files.join(" and ")}`);
   }
-  lines.push("");
-  lines.push(
-    "  suss tells boundaries apart by method and path, so two services that",
-  );
-  lines.push(
-    "  serve the same route look like one. Anything compared against these",
-  );
-  lines.push(
-    "  was compared against both. Check one service at a time to be sure.",
-  );
+  lines.push("", ...note);
   return `${lines.join("\n")}\n`;
 }
 
@@ -903,19 +942,22 @@ function scopeOf(options: { all?: boolean; failOn?: FailOn }): ReportScope {
 }
 
 /**
- * The severity a finding has to reach to print in full. It matches the
- * severity the run fails on, so every finding that sets the exit code is
- * printed and none is reduced to a count.
+ * The severity a finding has to reach to print in full: a warning, or the
+ * severity the run fails on when that is lower. Every finding that sets
+ * the exit code prints. Warnings print too, because a default run that
+ * counts them and shows none leaves the reader a number with nothing
+ * behind it to open.
  */
 function printedSeverity(failOn: FailOn | undefined): number {
   const threshold =
     failOn === undefined || failOn === "none" ? "error" : failOn;
-  return SEVERITY_ORDER[threshold];
+  return Math.max(SEVERITY_ORDER[threshold], SEVERITY_ORDER.warning);
 }
 
 /**
- * Renders the findings for a person. Findings that fail the run print in
- * full and the rest are counted by kind, unless `scope.all` is set.
+ * Renders the findings for a person. Errors, warnings and anything else
+ * that fails the run print in full, and the rest are counted by kind,
+ * unless `scope.all` is set.
  * `--json` output does not go through here.
  */
 export function renderFindings(
@@ -1227,6 +1269,7 @@ function renderDirHuman(
   confidence: ConfidenceLookup,
   scope: ReportScope,
   since: SinceReport | null,
+  extractHint: string,
 ): string {
   const all = scope.all === true;
   const lines: string[] = [];
@@ -1258,10 +1301,9 @@ function renderDirHuman(
   // Open with how much was compared. "No findings" alone looks like a
   // pass even when nothing paired and nothing was checked.
   const comparedByBoundary = groupPairsByKey(result.pairs);
+  const coverage = pairingCoverage(result);
   if (comparedByBoundary.size > 0) {
-    const count = comparedByBoundary.size;
-    const noun = `boundar${count === 1 ? "y" : "ies"}`;
-    lines.push(`Compared ${count} ${noun}${all ? ":" : "."}`);
+    lines.push(`${comparedHeadline(coverage)}${all ? ":" : "."}`);
     if (all) {
       for (const [key, sides] of comparedByBoundary) {
         lines.push(`  ${key}`);
@@ -1281,9 +1323,7 @@ function renderDirHuman(
     lines.push(
       "  Extract both sides of the boundary into the same folder, then check them together:",
     );
-    lines.push(
-      "    suss extract -p <tsconfig> -f <pack> -o summaries/<name>.json",
-    );
+    lines.push(`    ${extractHint}`);
     lines.push("    suss check --dir summaries/");
   }
 
@@ -1353,7 +1393,7 @@ function renderDirHuman(
     );
   }
 
-  lines.push(...findingLines(result, confidence, scope, since));
+  lines.push(...findingLines(result, confidence, scope, since, coverage));
   return `${lines.join("\n")}\n`;
 }
 
@@ -1363,6 +1403,7 @@ function findingLines(
   confidence: ConfidenceLookup,
   scope: ReportScope,
   since: SinceReport | null,
+  coverage: PairingCoverage,
 ): string[] {
   if (since !== null) {
     return ["", ...renderSince(since, confidence, scope)];
@@ -1371,9 +1412,85 @@ function findingLines(
     return ["", renderFindings(result.findings, confidence, scope).trimEnd()];
   }
   if (result.pairs.length > 0) {
-    return ["", "No findings. Every compared boundary agreed."];
+    return ["", noFindingsLine(coverage)];
   }
   return [];
+}
+
+/**
+ * How many boundaries the run read, counted by boundary the way the
+ * unpaired lists group them, and how many of those paired.
+ */
+interface PairingCoverage {
+  compared: number;
+  providersOnly: number;
+  clientsOnly: number;
+  nothingToPair: number;
+}
+
+function pairingCoverage(result: CheckAllResult): PairingCoverage {
+  const { providers, consumers, unpairable } = result.unmatched;
+  return {
+    compared: groupPairsByKey(result.pairs).size,
+    providersOnly: groupByKey(providers).size,
+    clientsOnly: groupByKey(consumers).size,
+    nothingToPair: unpairable.filter((u) => u.reason === "unnamedBoundary")
+      .length,
+  };
+}
+
+function unpairedCount(coverage: PairingCoverage): number {
+  return coverage.providersOnly + coverage.clientsOnly + coverage.nothingToPair;
+}
+
+/**
+ * "Compared 1 boundary" when that is every boundary the run read, and
+ * "Compared 1 of 571 boundaries" when the rest went unpaired, so a thin
+ * pairing shows up in the first line of the report.
+ */
+function comparedHeadline(coverage: PairingCoverage): string {
+  const unpaired = unpairedCount(coverage);
+  if (unpaired === 0) {
+    return `Compared ${coverage.compared} ${boundaries(coverage.compared)}`;
+  }
+
+  const total = coverage.compared + unpaired;
+  return `Compared ${coverage.compared} of ${total} ${boundaries(total)}`;
+}
+
+/**
+ * "Agreed" only when pairing covered every boundary the run read. With
+ * boundaries left unpaired, an empty finding list says nothing about them.
+ */
+function noFindingsLine(coverage: PairingCoverage): string {
+  const unpaired = unpairedCount(coverage);
+  if (unpaired === 0) {
+    return "No findings. Every compared boundary agreed.";
+  }
+
+  const compared = `${coverage.compared} ${boundaries(coverage.compared)}`;
+  const rest = unpaired === 1 ? "other boundary" : `${unpaired} others`;
+  return `No findings on the ${compared} that paired. The ${rest} had nothing to pair with, so nothing was checked across ${unpaired === 1 ? "it" : "them"}.`;
+}
+
+function boundaries(count: number): string {
+  return count === 1 ? "boundary" : "boundaries";
+}
+
+/**
+ * The extract command to suggest when one side is missing. A Python or
+ * Ruby project has no tsconfig, so after reading either language the
+ * hint points extract at a directory instead.
+ */
+function extractHintFor(summaries: ReadonlyArray<BehavioralSummary>): string {
+  const languages = new Set(
+    summaries.map((summary) => languageOfFile(summary.location.file)),
+  );
+  if (languages.has("python") || languages.has("ruby")) {
+    return "suss extract --dir <project> -f <pack> -o summaries/<name>.json";
+  }
+
+  return "suss extract -p <tsconfig> -f <pack> -o summaries/<name>.json";
 }
 
 /**
