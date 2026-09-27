@@ -23,7 +23,13 @@ import {
   chargeRule,
   isProfiling,
 } from "./profile.js";
-import { addToBucket, bucketIn, type Relation } from "./relation.js";
+import {
+  addToBucket,
+  addToCombined,
+  bucketIn,
+  combinedBucketIn,
+  type Relation,
+} from "./relation.js";
 import { planStratum, rulesReading, type Stratum } from "./stratum.js";
 
 export {
@@ -143,6 +149,7 @@ export class Database {
       index: new FactIndex(),
       tuples: [],
       columns: [],
+      combined: new Map(),
     };
     this.store.set(name, created);
     return created;
@@ -199,6 +206,9 @@ export class Database {
       if (buckets !== undefined && value !== undefined) {
         addToBucket(buckets, value, tuple);
       }
+    }
+    for (const combined of relation.combined.values()) {
+      addToCombined(combined, tuple);
     }
     return "added";
   }
@@ -286,6 +296,7 @@ export class Database {
     // them is cheaper than hunting through every bucket for the removed
     // tuples.
     relation.columns.length = 0;
+    relation.combined.clear();
     forgetFacts(this, relationName, going);
     return going.size;
   }
@@ -304,6 +315,7 @@ export class Database {
     relation.tuples = [];
     relation.index.clear();
     relation.columns.length = 0;
+    relation.combined.clear();
     forgetRelation(this, relationName);
     return removed;
   }
@@ -685,12 +697,11 @@ function evaluateRule(
     walk(index, nextSource, taken, bindings);
   };
 
-  // The delta has no index, so it is read once, first, and never under
-  // a binding.
+  // The delta is read once, first, and never under a binding.
   if (deltaAt === -1) {
     step(0, null);
   } else {
-    walk(deltaAt, deltas.get(body[deltaAt].relation) ?? [], 0, null);
+    walk(deltaAt, deltaRows(deltas, body[deltaAt], budget), 0, null);
   }
   return results;
 }
@@ -740,8 +751,8 @@ function nextLiteral(
     }
   }
   if (narrowest !== null) {
-    nextSource = narrowest;
-    return pick;
+    nextSource = narrowedFurther(db, body[pick], bindings, narrowest);
+    return nextSource.length === 0 ? -1 : pick;
   }
   for (let index = 0; index < body.length; index++) {
     if (!(taken & (1 << index)) && !body[index].negated) {
@@ -786,6 +797,120 @@ function narrowedSource(
     }
   }
   return narrowest;
+}
+
+/**
+ * The rows of `source`, a one-column bucket, that also agree with the
+ * literal's other fixed columns. They come in the same order, so the
+ * join finds the same matches in the same order and reads no row that
+ * would fail to unify on a fixed column.
+ */
+function narrowedFurther(
+  db: Database,
+  literal: Literal,
+  bindings: Bindings | null,
+  source: readonly Tuple[],
+): readonly Tuple[] {
+  if (source.length <= 1) {
+    return source;
+  }
+  let mask = 0;
+  const values: Atom[] = [];
+  for (let column = 0; column < literal.terms.length && column < 31; column++) {
+    const term = literal.terms[column];
+    const value =
+      term.type === "constant" ? term.value : boundValue(bindings, term.name);
+    if (value !== undefined) {
+      mask |= 1 << column;
+      values.push(value);
+    }
+  }
+  const relation = db.relationOf(literal.relation);
+  if (values.length < 2 || relation === undefined) {
+    return source;
+  }
+  return combinedBucketIn(relation, mask, values);
+}
+
+/** Where a literal writes constants, worked out once per literal. */
+interface ConstantColumns {
+  columns: readonly number[];
+  values: readonly Atom[];
+}
+
+const constantColumns = new WeakMap<Literal, ConstantColumns | null>();
+
+function constantColumnsOf(literal: Literal): ConstantColumns | null {
+  let known = constantColumns.get(literal);
+  if (known === undefined) {
+    const columns: number[] = [];
+    const values: Atom[] = [];
+    literal.terms.forEach((term, column) => {
+      if (term.type === "constant") {
+        columns.push(column);
+        values.push(term.value);
+      }
+    });
+    known = columns.length === 0 ? null : { columns, values };
+    constantColumns.set(literal, known);
+  }
+  return known;
+}
+
+/**
+ * A round's new facts per relation and column, sorted by the value in
+ * that column the first time a literal with a constant there reads them.
+ */
+const deltaBuckets = new WeakMap<
+  Map<string, readonly Tuple[]>,
+  Map<string, Map<Atom, Tuple[]>>
+>();
+
+/**
+ * The round's new facts that have the literal's constants in the
+ * literal's columns. Several rules often read one relation, each with
+ * its own constant such as a kind. Sorting the new facts by that column
+ * once costs one read per fact, where each rule scanning them would
+ * cost one read per fact per rule.
+ */
+function deltaRows(
+  deltas: Map<string, readonly Tuple[]>,
+  literal: Literal,
+  budget: RowBudget,
+): readonly Tuple[] {
+  const rows = deltas.get(literal.relation) ?? [];
+  const constants = constantColumnsOf(literal);
+  if (constants === null || rows.length <= 1) {
+    return rows;
+  }
+  let byColumn = deltaBuckets.get(deltas);
+  if (byColumn === undefined) {
+    byColumn = new Map();
+    deltaBuckets.set(deltas, byColumn);
+  }
+  const column = constants.columns[0];
+  const key = `${literal.relation}\u0000${column}`;
+  let buckets = byColumn.get(key);
+  if (buckets === undefined) {
+    buckets = new Map();
+    for (const tuple of rows) {
+      const value = tuple[column];
+      if (value !== undefined) {
+        addToBucket(buckets, value, tuple);
+      }
+    }
+    budget.examined += rows.length;
+    byColumn.set(key, buckets);
+  }
+  const bucket = buckets.get(constants.values[0]) ?? [];
+  if (constants.columns.length === 1) {
+    return bucket;
+  }
+  return bucket.filter((tuple) =>
+    constants.columns.every(
+      (at, i) => at === column || tuple[at] === constants.values[i],
+    ),
+  );
 }
 
 /** One derived head tuple and the tag its derivation combined to. */
@@ -885,7 +1010,7 @@ function evaluateRuleTagged<Tag>(
   if (deltaAt === -1) {
     step(0, null);
   } else {
-    walk(deltaAt, deltas.get(body[deltaAt].relation) ?? [], 0, null);
+    walk(deltaAt, deltaRows(deltas, body[deltaAt], budget), 0, null);
   }
   return results;
 }

@@ -37,6 +37,28 @@ relation. The engine builds a column's index the first time a join asks
 for it and keeps it up to date after that. A relation that no join
 reads by that column never gets an index.
 
+When a literal has two or more terms fixed, the join still picks it by
+the smallest one-column bucket, and then reads the rows that agree on
+every fixed column from an index over that set of columns. Take
+`reaches(x, z, instance) <- reaches(x, y, instance), stepsTo(y, z,
+value)` in the round where `reaches(a, b, instance)` is new. The bucket
+for `y = b` has every step out of `b`, of every kind. The index over
+`y` and the kind has only the value steps. Those rows come in the order
+the one-column bucket has them, so the join finds the same matches in
+the same order and derives the same facts in the same order. It skips
+only rows that would fail to unify.
+
+The facts new in a round have no index, so a literal reading them
+checks each one. A literal with a constant reads them sorted by that
+column instead, and the sort happens once per round, relation and
+column. suss's closure rules state each step's kind as a constant, and
+a demand-rewritten program has twenty or more rules reading one demand
+relation with a different kind each. Before the sort each of them read
+every new demand fact. On an 8,400-file TypeScript server with the
+packs `suss init` suggests, the sort and the index over several columns
+took the rows read from 64.3 million to 39.3 million with
+byte-identical summaries.
+
 Each relation stores its facts in a trie keyed on the tuple's atoms: a
 tree of maps with one level per column. The node at the end of a walk
 is the fact. If the node exists, the fact is known, and the node stores
