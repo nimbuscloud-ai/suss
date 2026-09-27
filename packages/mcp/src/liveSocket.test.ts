@@ -386,6 +386,44 @@ describe("LiveSocket", () => {
     expect(String(reply.stderr)).toContain("matched a pack");
   });
 
+  it("leaves the socket to a server that accepts and is too busy to reply", async () => {
+    const root = projectWithOneRoute("/orders");
+    const at = socketPath();
+    const held: net.Socket[] = [];
+    const busy = net.createServer((socket) => held.push(socket));
+    await new Promise<void>((resolve) => busy.listen(at, resolve));
+    cleanups.push(() => {
+      for (const socket of held) {
+        socket.destroy();
+      }
+      busy.close();
+    });
+    const inode = fs.statSync(at).ino;
+
+    const started = Date.now();
+    const { live } = await open(root, at);
+
+    expect(live.owner).toBe(false);
+    expect(fs.statSync(at).ino).toBe(inode);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it("keeps the socket file of a server that listened after its own was removed", async () => {
+    const root = projectWithOneRoute("/orders");
+    const at = socketPath();
+    const first = await open(root, at);
+    fs.rmSync(at);
+    const second = await open(root, at);
+
+    first.live.close();
+
+    expect(second.live.owner).toBe(true);
+    expect(fs.existsSync(at)).toBe(true);
+    expect(
+      await ask(at, { kind: "suss", args: ["inspect"], cwd: root }),
+    ).toHaveProperty("unsupported");
+  });
+
   it("takes the socket over when the first server has gone", async () => {
     const root = projectWithOneRoute("/orders");
     const at = socketPath();

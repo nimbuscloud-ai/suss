@@ -8,7 +8,8 @@
 
 import { startWithEnoughHeap } from "@suss/cli/heap";
 
-import type { BuildReport } from "./project.js";
+import type { LiveSocket } from "./liveSocket.js";
+import type { BuildReport, Project } from "./project.js";
 
 async function main(): Promise<void> {
   // Loaded only after the heap is settled, so a process that starts
@@ -25,6 +26,7 @@ async function main(): Promise<void> {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
+  stopWhenTheHostLeaves(live, project);
 
   // Written once the first build finishes rather than at startup, so
   // the handshake above never waits on a cold extract.
@@ -33,13 +35,36 @@ async function main(): Promise<void> {
   for (const line of startupNotes(root, report, whereReadsCameFrom)) {
     process.stderr.write(`[suss] ${line}\n`);
   }
+  await live;
+}
 
-  const socket = await live;
+/**
+ * Gives up the socket and exits when the host closes stdin or sends a
+ * signal. A host can drop the pipe without a signal, and the file
+ * watcher would otherwise keep the process running with the program.
+ */
+function stopWhenTheHostLeaves(
+  live: Promise<LiveSocket> | null,
+  project: Project,
+): void {
+  let stopping = false;
   const stop = (): void => {
-    socket?.close();
-    project.close();
-    process.exit(0);
+    if (stopping) {
+      return;
+    }
+    stopping = true;
+    void Promise.resolve(live)
+      .then(
+        (socket) => socket?.close(),
+        () => undefined,
+      )
+      .finally(() => {
+        project.close();
+        process.exit(0);
+      });
   };
+  process.stdin.once("end", stop);
+  process.stdin.once("close", stop);
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
 }

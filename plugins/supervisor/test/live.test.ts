@@ -125,4 +125,35 @@ describe("asking the MCP server to run a command", () => {
 
     expect(run).toEqual({ code: 1, stdout: "", stderr: "failed\n" });
   });
+
+  it("gives the CLI only what a server that never replied left of the budget", async () => {
+    const socket = path.join(project, "live.sock");
+    const held: net.Socket[] = [];
+    const silent = net.createServer((connection) => held.push(connection));
+    silent.listen(socket);
+    servers.push(silent);
+    record(socket);
+    await listening();
+    const slow = path.join(project, "slow.mjs");
+    fs.writeFileSync(slow, "setTimeout(() => {}, 10_000);\n");
+    const suss = {
+      command: process.execPath,
+      prefix: [slow],
+      from: "plugin" as const,
+      version: null,
+      shell: false,
+    };
+
+    const started = Date.now();
+    const run = await runSuss(suss, ["check"], {
+      cwd: project,
+      timeoutMs: 1500,
+    });
+    for (const connection of held) {
+      connection.destroy();
+    }
+
+    expect(Date.now() - started).toBeLessThan(2500);
+    expect(run.failure).toBeDefined();
+  });
 });

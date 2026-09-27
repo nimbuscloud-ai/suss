@@ -97,6 +97,8 @@ export interface Budgets {
   stopMs: number;
   /** How long each comparison a stop runs may take. */
   compareMs: number;
+  /** How long a whole stop may take, the wait and every comparison together. */
+  stopHookMs: number;
 }
 
 export interface HookContext {

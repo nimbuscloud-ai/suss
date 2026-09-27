@@ -84,9 +84,17 @@ export function contextFor(input) {
       editMs: budget("SUSS_SUPERVISOR_EDIT_MS", 5_000),
       stopMs: budget("SUSS_SUPERVISOR_STOP_MS", 45_000),
       compareMs: budget("SUSS_SUPERVISOR_COMPARE_MS", 60_000),
+      stopHookMs: budget("SUSS_SUPERVISOR_STOP_HOOK_MS", STOP_HOOK_MS),
     },
   };
 }
+
+/**
+ * Everything a stop does, the wait and every compare, fits in this, so
+ * the hook prints its report and moves the baseline before Claude Code's
+ * 60 second timeout for the Stop hook ends it.
+ */
+export const STOP_HOOK_MS = 55_000;
 
 /**
  * @param {string} name
@@ -212,6 +220,7 @@ async function fileEdited(input, context) {
  * @param {HookContext} context
  */
 async function agentStopping(input, context) {
+  const deadline = Date.now() + context.budgets.stopHookMs;
   const session = sessionFor(input, context);
   if (!session.hasSnapshot("baseline")) {
     return disabledNotice(session);
@@ -223,7 +232,7 @@ async function agentStopping(input, context) {
   startWorker(session, context);
   const read = await waitUntil(
     () => session.processed() >= place || session.disabledReason() !== null,
-    context.budgets.stopMs,
+    Math.min(context.budgets.stopMs, deadline - Date.now()),
   );
   if (!read) {
     return {
@@ -234,7 +243,7 @@ async function agentStopping(input, context) {
   // The report covers everything since the baseline, including what the
   // waiting results say.
   session.claimResults();
-  return await stopReport(session, context);
+  return await stopReport(session, context, deadline);
 }
 
 /**
@@ -256,16 +265,21 @@ async function sessionEnded(input, context) {
 }
 
 /**
+ * Each compare gets the compare budget or what is left before the
+ * deadline, whichever is less. A compare that runs out of time fails
+ * like any other, and the report goes out without it.
+ *
  * @param {Session} session
  * @param {HookContext} context
+ * @param {number} deadline
  * @returns {Promise<HookOutput>}
  */
-async function stopReport(session, context) {
+async function stopReport(session, context, deadline) {
   const suss = findSuss(context.projectDir, context.pluginRoot);
   const run = (/** @type {string[]} */ args) =>
     runSuss(suss, args, {
       cwd: context.projectDir,
-      timeoutMs: context.budgets.compareMs,
+      timeoutMs: Math.min(context.budgets.compareMs, deadline - Date.now()),
     });
 
   const baseline = session.snapshotDir("baseline");
