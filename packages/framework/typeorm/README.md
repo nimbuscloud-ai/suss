@@ -66,6 +66,8 @@ A `where` written as a list of conditions selects on the keys of all of them. A 
 
 `-f typeorm=config.json` may set `storageSystem`, `"postgresql"` when unset, and `scope`, `"default"` when unset. Both have to match the other side of the boundary for the calls to pair.
 
+`suss init` fills in `storageSystem` in `suss.typeorm.json` from the `type` the project hands `TypeOrmModule.forRoot`, `TypeOrmModule.forRootAsync` or `new DataSource`, when it is written as a string. `postgres` is `postgresql`, `mysql` and `mariadb` are `mysql`, and `sqlite` and `better-sqlite3` are `sqlite`. A type read from the environment, or connections to two kinds of database, leave the file for you to write.
+
 ## Out of scope for now
 
 - **`create`**, which builds an entity in memory and touches no table.
