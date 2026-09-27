@@ -52,7 +52,7 @@ export {
   startsWith,
   stripped,
 } from "./operations.js";
-export { pathOf } from "./routePath.js";
+export { isLocalUrl, pathOf } from "./routePath.js";
 export {
   type Constant,
   concat,

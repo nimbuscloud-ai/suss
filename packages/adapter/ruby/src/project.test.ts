@@ -82,7 +82,7 @@ describe("extractRubyProject", () => {
     expect(summaries.map((s) => s.identity.name).sort()).toEqual(
       ["Campaign.id", "Query.campaign"].sort(),
     );
-    expect(summaries.every((s) => s.confidence.level === "low")).toBe(true);
+    expect(summaries.every((s) => s.confidence.level === "high")).toBe(true);
 
     const queryCampaign = summaries.find(
       (s) => s.identity.name === "Query.campaign",

@@ -14,7 +14,10 @@
 // from `"@foo/bar"` AND `"@foo/bar/sub-path"`. Empty array (or
 // undefined) means "no gate": the pattern applies to every file.
 
-import { GeneratedModules } from "../facts/generatedModules.js";
+import {
+  type GeneratedModules,
+  generatedModulesOf,
+} from "../facts/generatedModules.js";
 import { namesAnyPackage } from "../facts/moduleGraph.js";
 
 import type { PatternPack } from "@suss/extractor";
@@ -42,7 +45,6 @@ export function computePackApplicability(
   const gatedPacks: Array<{
     pack: PatternPack;
     gates: string[];
-    markers: string[];
     generated: GeneratedModules;
   }> = [];
   for (const pack of packs) {
@@ -50,12 +52,10 @@ export function computePackApplicability(
       ungatedPacks.push(pack);
       continue;
     }
-    const markers = pack.generatedModuleMarkers ?? [];
     gatedPacks.push({
       pack,
       gates: collectPackGates(pack),
-      markers,
-      generated: new GeneratedModules(markers),
+      generated: generatedModulesOf([pack]),
     });
   }
 
@@ -87,12 +87,12 @@ export function computePackApplicability(
   const reachingByPack = new Map<PatternPack, ReadonlySet<SourceFile>>();
   if (resolution !== undefined && gatedPacks.length > 0) {
     const answers = resolution.filesImportingTransitively(
-      gatedPacks.map(({ gates, markers, generated }) => ({
+      gatedPacks.map(({ gates, generated }) => ({
         sourceFiles: sourceFiles.filter(
           (sf) => !gateMatches(sf, gates, generated),
         ),
         packages: gates,
-        generatedMarkers: markers,
+        generated,
       })),
     );
     gatedPacks.forEach(({ pack }, i) => {

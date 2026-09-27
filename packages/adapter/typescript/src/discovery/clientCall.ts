@@ -23,7 +23,11 @@ import { Node, type SourceFile, SyntaxKind } from "ts-morph";
 
 import { hasNameHole } from "@suss/behavioral-ir";
 
-import { pathFromArgument, pathFromProperty } from "../resolve/routePath.js";
+import {
+  pathFromArgument,
+  pathFromProperty,
+  statesLocalUrl,
+} from "../resolve/routePath.js";
 import { resolvedModuleFile } from "./importScan.js";
 import { resolveImportedLocalName } from "./resolveImport.js";
 import { stringPropertyOf, writtenNodesOf } from "./resolveValue.js";
@@ -66,6 +70,9 @@ export function discoverClientCalls(
     if (methodName === undefined) {
       continue;
     }
+    if (fetchesLocally(call, binding, resolution)) {
+      continue;
+    }
     const enclosingFunc = findEnclosingFunction(call);
     if (enclosingFunc === null) {
       continue;
@@ -86,6 +93,30 @@ export function discoverClientCalls(
   }
 
   return results;
+}
+
+/**
+ * Whether the call's URL is one fetch reads without a request, such as
+ * a base64 `data:` URI. No provider serves it, so it is no client call.
+ */
+function fetchesLocally(
+  call: CallExpression,
+  binding: BindingExtraction | undefined,
+  resolution: ResolutionStore | undefined,
+): boolean {
+  const p = binding?.path;
+  if (p?.type !== "fromArgument" && p?.type !== "fromArgumentProperty") {
+    return false;
+  }
+  const arg = call.getArguments()[p.position];
+  if (arg === undefined) {
+    return false;
+  }
+  return statesLocalUrl(
+    arg,
+    p.type === "fromArgumentProperty" ? p.property : undefined,
+    resolution,
+  );
 }
 
 /**

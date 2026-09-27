@@ -36,6 +36,7 @@ import type {
   PatternPack,
 } from "@suss/extractor";
 import type { ResolutionStore } from "../facts/store.js";
+import type { GlobalPrefix } from "./globalPrefix.js";
 import type { DiscoveredUnit } from "./shared.js";
 
 /**
@@ -59,6 +60,11 @@ export interface MountPrefixIndex {
    * re-checks a stored prefix against a rebuilt index this way).
    */
   prefixForId?(childId: string): string;
+  /**
+   * The prefix the calls keyed by `globalPrefixKey` agree an application
+   * puts in front of its routes. A key with no entry has none.
+   */
+  globalPrefixes?: ReadonlyMap<string, GlobalPrefix>;
 }
 
 /** One mount call this file states, before it's folded into the index. */

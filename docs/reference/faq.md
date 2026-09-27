@@ -203,10 +203,10 @@ Neither Python nor Ruby needs an installed interpreter. `suss extract --lang pyt
 
 ```
 myapp/fastapi_app.py
-├─ GET /items/{item_id}  (fastapi handler | line 26 | confidence: low)
+├─ GET /items/{item_id}  (fastapi handler | line 26)
 │      -> 200 TodoResponse
 │
-└─ POST /items  (fastapi handler | line 31 | confidence: low)
+└─ POST /items  (fastapi handler | line 31)
        -> 201 TodoResponse
 ```
 

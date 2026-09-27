@@ -112,6 +112,20 @@ describe("a read whose declared type is a few strings", () => {
     expect(value).toEqual(hole("metric"));
   });
 
+  it("reads a numeric enum member declared in a library", () => {
+    expect(
+      constant(
+        'import { Status } from "codes"; export const subject = Status.NO_CONTENT;',
+        {
+          files: {
+            "/node_modules/codes/index.d.ts":
+              "export declare enum Status { OK = 200, NO_CONTENT = 204 }",
+          },
+        },
+      ),
+    ).toBe(204);
+  });
+
   it("gives up on a union with a member that is not a string", () => {
     const value = subjectOf(
       'declare const event: { op?: "a" | "b" }; export const subject = event.op;',

@@ -19,6 +19,8 @@ import { GeneratedModules } from "./generatedModules.js";
 
 import type { SourceFile } from "ts-morph";
 
+const NO_GENERATOR = new GeneratedModules([]);
+
 /**
  * `importsFile(f, g)` says f writes a specifier resolving to file g.
  * `importsPackage(f, p)` says one of f's own specifiers is p or a
@@ -61,11 +63,11 @@ export interface FileSetQuery {
   sourceFiles: ReadonlyArray<SourceFile>;
   packages: ReadonlyArray<string>;
   /**
-   * Files the asking pack's code generator leaves beside a module it
-   * wrote into the project. A relative import into such a directory
-   * counts as an import of the package.
+   * Where the asking pack's code generator writes a module into the
+   * project. A relative import into such a directory counts as an
+   * import of the package.
    */
-  generatedMarkers?: ReadonlyArray<string>;
+  generated?: GeneratedModules;
 }
 
 /** One question: which of these files reach that one. */
@@ -112,8 +114,11 @@ export class ModuleGraph {
   filesReachingAnyPackage(
     fileSets: ReadonlyArray<FileSetQuery>,
   ): ReadonlyArray<ReadonlySet<SourceFile>> {
-    for (const { sourceFiles, packages, generatedMarkers } of fileSets) {
-      const generated = new GeneratedModules(generatedMarkers ?? []);
+    for (const {
+      sourceFiles,
+      packages,
+      generated = NO_GENERATOR,
+    } of fileSets) {
       for (const name of packages) {
         for (const sourceFile of sourceFiles) {
           this.settle(sourceFile, name, generated);

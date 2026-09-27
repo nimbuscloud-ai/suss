@@ -247,6 +247,42 @@ describe("a path a constructor argument states", () => {
   });
 });
 
+describe("a URL fetch reads without a request", () => {
+  const match = {
+    type: "clientCall",
+    importModule: "global",
+    importName: "fetch",
+  } as Extract<DiscoveryPattern["match"], { type: "clientCall" }>;
+
+  const binding = {
+    method: { type: "literal", value: "GET" },
+    path: { type: "fromArgument", position: 0 },
+  } as NonNullable<DiscoveryPattern["bindingExtraction"]>;
+
+  it("is no client call, written out, named or built from a template", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/consumer.ts",
+      `
+      const ICON = "data:image/svg+xml;base64,PHN2Zz4=";
+      export const icon = () => fetch(ICON);
+      export const inline = (b64: string) => fetch(\`data:image/png;base64,\${b64}\`);
+      export const page = () => fetch("about:blank");
+      export const orders = () => fetch("/orders");
+      export const any = (url: string) => fetch(url);
+      `,
+    );
+    const names = discoverClientCalls(
+      file,
+      match,
+      "client",
+      new ResolutionStore(),
+      binding,
+    ).map((unit) => unit.name);
+    expect(names.sort()).toEqual(["any", "orders"]);
+  });
+});
+
 describe("a file's receivers, asked about together", () => {
   const match = {
     type: "clientCall",

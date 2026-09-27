@@ -830,6 +830,8 @@ async function runRuby(
       const summary = timer.time("summarize", () =>
         assembleSummary(routingGapUnit(pattern, gaps), { gapHandling }),
       );
+      // This unit reports routes the adapter could not read. Its one
+      // empty branch would otherwise score high.
       summary.confidence = { source: "inferred_static", level: "low" };
       found.push({ summary });
     }
@@ -885,9 +887,6 @@ async function runRuby(
     const summary = timer.time("summarize", () =>
       assembleSummary(raw, { gapHandling }),
     );
-    // `assembleSummary` scores confidence as if every branch came from
-    // tracing the body, which is not true of every unit here.
-    summary.confidence = { source: "inferred_static", level: "low" };
     summaries.push(summary);
     assembledHere.add(summary);
     if (entry.draft !== undefined) {
