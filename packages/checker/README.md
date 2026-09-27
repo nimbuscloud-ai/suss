@@ -33,6 +33,10 @@ The engine stores rows of data and joins two facts by lining them up on a column
 
 Walking those edges is a job the engine does well. You follow an edge to a node, then follow the edges out of that node, and keep going until nothing new shows up. That is ordinary recursion, so it is written as rules. It finishes even when the routing graph has a cycle. Each round can only produce pairs built from nodes already in the data, and a pair is never removed once it is derived. A set that only grows, drawn from a fixed pool, has to stop growing eventually. A load balancer that routes back to something upstream of it produces pairs that already exist, adds nothing new that round, and the evaluation stops.
 
+## Call reach
+
+`readCallFacts` turns the calls a set of summaries records into one-hop datalog facts. From those facts it works out which functions end up calling into a target and which ones a function ends up calling, with the shortest call path for each. `suss ask` runs its reach questions on these facts, and `inspect --diff` walks the edges they give. They live here so a check that needs to know what reaches what can use them without going through the CLI. Working out which functions a typed spelling means stays in the CLI, next to the resolver `--at` uses.
+
 ## What each comparison assumes about the protocol
 
 Comparing two sides of a boundary means assuming something about how the protocol behaves. Reporting an unhandled 404 assumes the status the handler wrote is the status the caller receives, and a middleware or a gateway can make that false. [`docs/theory/protocol-assumptions.md`](../../docs/theory/protocol-assumptions.md) lists every such assumption per protocol. It explains what a finding means once an assumption stops being true, and links the test that pins today's behaviour.

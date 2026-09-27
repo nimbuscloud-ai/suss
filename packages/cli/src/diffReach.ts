@@ -18,7 +18,7 @@ import {
   isRuntimeConfigProvider,
   leavesTheProcess,
 } from "@suss/behavioral-ir";
-import { runtimeReads } from "@suss/checker";
+import { functionOf, readCallFacts, runtimeReads } from "@suss/checker";
 import { labelWithDetail } from "@suss/ir-core";
 
 import {
@@ -26,13 +26,11 @@ import {
   boundarySpelling,
   NO_ACCESS,
 } from "./boundaryReach.js";
-import { functionOf, readCallFacts } from "./callFacts.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
-import type { EnvVarRead } from "@suss/checker";
+import type { CallEdge, EnvVarRead, FunctionKey } from "@suss/checker";
 import type { BoundaryBinding, Relation } from "@suss/ir-core";
 import type { Access } from "./boundaryReach.js";
-import type { CallEdge, FunctionKey } from "./callFacts.js";
 
 /** One boundary a unit reaches, and the chain of calls that gets there. */
 export interface ReachedEffect {

@@ -12,10 +12,10 @@
  * boundary declares never needs them.
  */
 
-import { readCallFacts } from "./callFacts.js";
+import { readCallFacts } from "@suss/checker";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
-import type { CallFacts } from "./callFacts.js";
+import type { CallFacts } from "@suss/checker";
 
 export interface LoadedSummaries {
   readonly summaries: BehavioralSummary[];
