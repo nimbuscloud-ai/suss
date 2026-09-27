@@ -26,6 +26,7 @@ import path from "node:path";
 import { Node } from "ts-morph";
 
 import { endLineOf, startLineOf } from "../lines.js";
+import { createPerFileCache } from "../perFileCache.js";
 
 import type { Project, SourceFile } from "ts-morph";
 import type { FunctionRoot } from "../conditions.js";
@@ -104,12 +105,14 @@ export function createSourceFileLookup(project: Project): SourceFileLookup {
     byAbs.set(sf.getFilePath(), sf);
   }
   const bySuffixResult = new Map<string, SourceFile | null>();
-  const functionsByFile = new Map<string, Map<string, FunctionRoot>>();
 
   function functionsOf(sf: SourceFile): Map<string, FunctionRoot> {
-    const filePath = sf.getFilePath();
-    const index = functionsByFile.get(filePath) ?? indexFunctions(sf);
-    functionsByFile.set(filePath, index);
+    const known = functionIndexes.get(sf);
+    if (known !== undefined) {
+      return known;
+    }
+    const index = indexFunctions(sf);
+    functionIndexes.set(sf, index);
     return index;
   }
 
@@ -176,6 +179,9 @@ function rangeKey(range: { start: number; end: number }): string {
 function spanKey(span: { start: number; end: number }): string {
   return `span ${span.start}:${span.end}`;
 }
+
+/** A file's functions by where they are, kept for as long as its parse. */
+const functionIndexes = createPerFileCache<Map<string, FunctionRoot>>();
 
 function indexFunctions(sf: SourceFile): Map<string, FunctionRoot> {
   const index = new Map<string, FunctionRoot>();
